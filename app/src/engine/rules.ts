@@ -1,4 +1,4 @@
-import type { DailyReadiness, UserContext, Recommendation, SessionTemplate } from './models';
+import type { DailyReadiness, UserContext, Recommendation } from './models';
 import { TEMPLATES } from './templates';
 
 export function evaluateTraining(readiness: DailyReadiness, context: UserContext): Recommendation {
@@ -10,7 +10,7 @@ export function evaluateTraining(readiness: DailyReadiness, context: UserContext
     const invertedReadiness = 10 - subjective.readiness;
     
     // Core subjective penalty calculation
-    const overallFatigueScore = (subjective.fatigue + subjective.soreness + invertedReadiness + invertedSleepQual) / 4;
+    const overallFatigueScore = (subjective.fatigue + subjective.soreness + invertedReadiness + invertedSleepQual + invertedMotivation) / 5;
     
     // 2. Objective penalty logic (analyzing deltas vs baselines)
     let objectivePenalty = 0;
