@@ -1,0 +1,13 @@
+[project]
+name = "adaptive-training-recommender"
+version = "0.1.0"
+description = "Garmin data fetcher for adaptive training"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "firebase-admin",
+    "garminconnect",
+    "python-dotenv",
+]
+
+[tool.uv]
