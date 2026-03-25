@@ -1,11 +1,9 @@
-import { doc, getDoc } from 'firebase/firestore';
-import { db } from '../firebase';
-import type { DailyDecisionInput, DailyRecoverySnapshot } from './models';
+import type { DailyDecisionInput } from './models';
 import { checkinService } from '../services/checkinService';
 import { goalService } from '../services/goalService';
 import { constraintService } from '../services/constraintService';
 import { preferencesService } from '../services/preferencesService';
-import { localDataService } from '../services/localDataService';
+import { recoverySnapshotService } from '../services/recoverySnapshotService';
 
 export class DecisionComposer {
     /**
@@ -17,7 +15,7 @@ export class DecisionComposer {
         try {
             // Use Promise.allSettled to handle individual service failures
             const results = await Promise.allSettled([
-                this.getRecoverySnapshot(userId, targetDate),
+                recoverySnapshotService.getRecoverySnapshotByDate(userId, targetDate),
                 checkinService.getCheckin(userId, targetDate),
                 goalService.getActiveGoals(userId),
                 constraintService.getActiveConstraints(userId),
@@ -47,7 +45,7 @@ export class DecisionComposer {
             // Compute data quality flags
             const dataQuality = {
                 hasRecoverySnapshot: recoverySnapshot !== null,
-                hasSubjectiveCheckin: subjectiveCheckin !== null && subjectiveCheckin.dataQuality?.isComplete || false,
+                hasSubjectiveCheckin: subjectiveCheckin !== null,
                 profileReady: preferences !== null
             };
 
@@ -67,51 +65,6 @@ export class DecisionComposer {
         } catch (error) {
             console.error('Error composing daily decision input:', error);
             throw error;
-        }
-    }
-
-    /**
-     * Get recovery snapshot from user-scoped path
-     * Falls back to legacy path if needed
-     */
-    private async getRecoverySnapshot(userId: string, date: string): Promise<DailyRecoverySnapshot | null> {
-        try {
-            // First try local cache file (for development)
-            console.log('Trying local cache first...');
-            const localSnapshot = await localDataService.getRecoverySnapshot(date, userId);
-            if (localSnapshot) {
-                console.log('Found data in local cache for', date);
-                return localSnapshot;
-            }
-
-            // If not in cache, try Firestore user-scoped path
-            console.log('No data in local cache, trying Firestore...');
-            const docRef = doc(db, 'users', userId, 'daily_recovery_snapshots', date);
-            const docSnap = await getDoc(docRef);
-            
-            if (docSnap.exists()) {
-                console.log('Found data in Firestore for', date);
-                return docSnap.data() as DailyRecoverySnapshot;
-            }
-
-            // Fall back to legacy path for backward compatibility
-            const legacyDocRef = doc(db, 'daily_recovery_snapshot', date);
-            const legacyDocSnap = await getDoc(legacyDocRef);
-            
-            if (legacyDocSnap.exists()) {
-                const snapshot = legacyDocSnap.data() as DailyRecoverySnapshot;
-                // Verify it belongs to the user
-                if (snapshot.userId === userId) {
-                    console.log('Found data in legacy Firestore for', date);
-                    return snapshot;
-                }
-            }
-
-            console.log('No recovery data found for', date);
-            return null;
-        } catch (error) {
-            console.error('Error fetching recovery snapshot:', error);
-            return null;
         }
     }
 

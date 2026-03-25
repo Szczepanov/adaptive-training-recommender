@@ -151,11 +151,13 @@ export interface DailySubjectiveCheckin {
     };
     // Optional free text
     notes: string | null;
+    submittedAt: string;
     // Data quality metadata
     dataQuality: {
         isComplete: boolean;
         missingFields: string[];
     };
+    schemaVersion: number;
     createdAt: string;
     updatedAt: string;
 }
@@ -174,6 +176,7 @@ export interface UserGoal {
     targetUnit?: string | null; // e.g., 'minutes', 'kg', 'sessions'
     // Optional dates
     targetDate?: string | null; // YYYY-MM-DD
+    schemaVersion: number;
     createdAt: string;
     updatedAt: string;
 }
@@ -181,6 +184,8 @@ export interface UserGoal {
 export interface UserConstraint {
     userId: string;
     key: string; // Stable identifier for predefined constraints, generated for custom
+    label: string;
+    valueType: 'boolean' | 'number' | 'string' | 'string_array';
     type: 'boolean' | 'number' | 'string' | 'string_array';
     value: boolean | number | string | string[];
     severity: 'hard' | 'soft'; // Hard = must not violate, Soft = try to avoid
@@ -188,6 +193,7 @@ export interface UserConstraint {
     category: 'equipment' | 'physical_caution' | 'schedule' | 'environment' | 'custom';
     displayName: string; // Human-readable name
     description?: string | null; // Optional explanation
+    schemaVersion: number;
     createdAt: string;
     updatedAt: string;
 }
@@ -202,15 +208,19 @@ export interface UserPreferences {
     preferredTimeOfDay: 'morning' | 'midday' | 'evening' | 'flexible';
     // Modality preferences
     preferredModalities: string[]; // e.g., ['Running', 'Cycling', 'Strength']
+    deprioritizedModalities: string[]; // Canonical Phase 4 name
     avoidedModalities: string[]; // e.g., ['Running']
     // UI/Explanation preferences
+    explanationStyle: 'brief' | 'detailed' | 'technical';
     explanationVerbosity: 'brief' | 'detailed' | 'technical';
+    conservativeBias: boolean;
     // Metric preferences
     preferredUnits: {
         distance: 'km' | 'miles';
         weight: 'kg' | 'lbs';
         temperature: 'celsius' | 'fahrenheit';
     };
+    schemaVersion: number;
     createdAt: string;
     updatedAt: string;
 }

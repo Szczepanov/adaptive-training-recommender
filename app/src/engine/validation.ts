@@ -157,7 +157,9 @@ export function validateCheckin(raw: any): ValidationResult<DailySubjectiveCheck
             indoorOnly: raw.availability?.indoorOnly ?? false
         },
         notes: notes,
+        submittedAt: raw.submittedAt || new Date().toISOString(),
         dataQuality: computeDataQuality(raw),
+        schemaVersion: raw.schemaVersion ?? 1,
         createdAt: raw.createdAt || new Date().toISOString(),
         updatedAt: new Date().toISOString()
     };
@@ -281,6 +283,7 @@ export function validateGoal(raw: any): ValidationResult<UserGoal> {
         targetValue: normalizeEmptyToNull(raw.targetValue),
         targetUnit: normalizeEmptyToNull(raw.targetUnit),
         targetDate: normalizeEmptyToNull(raw.targetDate),
+        schemaVersion: raw.schemaVersion ?? 1,
         createdAt: raw.createdAt || new Date().toISOString(),
         updatedAt: new Date().toISOString()
     };
@@ -302,6 +305,10 @@ export function validateConstraint(raw: any): ValidationResult<UserConstraint> {
     }
     if (!raw.displayName || typeof raw.displayName !== 'string' || raw.displayName.trim() === '') {
         errors.push({ field: 'displayName', message: 'Display name is required' });
+    }
+
+    if (raw.label !== undefined && typeof raw.label !== 'string') {
+        errors.push({ field: 'label', message: 'Label must be a string when provided' });
     }
 
     // Type validation
@@ -384,6 +391,8 @@ export function validateConstraint(raw: any): ValidationResult<UserConstraint> {
     const constraint: UserConstraint = {
         userId: raw.userId,
         key: raw.key.trim(),
+        label: (raw.label || raw.displayName).trim(),
+        valueType: raw.valueType || raw.type,
         type: raw.type,
         value: raw.value,
         severity: raw.severity,
@@ -391,6 +400,7 @@ export function validateConstraint(raw: any): ValidationResult<UserConstraint> {
         category: raw.category,
         displayName: raw.displayName.trim(),
         description: normalizeEmptyToNull(raw.description),
+        schemaVersion: raw.schemaVersion ?? 1,
         createdAt: raw.createdAt || new Date().toISOString(),
         updatedAt: new Date().toISOString()
     };
@@ -466,12 +476,40 @@ export function validatePreferences(raw: any): ValidationResult<UserPreferences>
         });
     }
 
+    if (raw.deprioritizedModalities !== undefined) {
+        if (!Array.isArray(raw.deprioritizedModalities)) {
+            errors.push({
+                field: 'deprioritizedModalities',
+                message: 'Deprioritized modalities must be an array'
+            });
+        } else if (!raw.deprioritizedModalities.every((m: any) => typeof m === 'string')) {
+            errors.push({
+                field: 'deprioritizedModalities',
+                message: 'All deprioritized modalities must be strings'
+            });
+        }
+    }
+
     // Explanation verbosity validation
     const validVerbosity: ExplanationVerbosity[] = ['brief', 'detailed', 'technical'];
     if (!raw.explanationVerbosity || !validVerbosity.includes(raw.explanationVerbosity)) {
         errors.push({ 
             field: 'explanationVerbosity', 
             message: `Explanation verbosity must be one of: ${validVerbosity.join(', ')}` 
+        });
+    }
+
+    if (raw.explanationStyle !== undefined && !validVerbosity.includes(raw.explanationStyle)) {
+        errors.push({
+            field: 'explanationStyle',
+            message: `Explanation style must be one of: ${validVerbosity.join(', ')}`
+        });
+    }
+
+    if (raw.conservativeBias !== undefined && typeof raw.conservativeBias !== 'boolean') {
+        errors.push({
+            field: 'conservativeBias',
+            message: 'Conservative bias must be a boolean'
         });
     }
 
@@ -519,9 +557,13 @@ export function validatePreferences(raw: any): ValidationResult<UserPreferences>
         defaultWeekendTimeMin: raw.defaultWeekendTimeMin,
         preferredTimeOfDay: raw.preferredTimeOfDay,
         preferredModalities: raw.preferredModalities,
+        deprioritizedModalities: raw.deprioritizedModalities ?? raw.avoidedModalities,
         avoidedModalities: raw.avoidedModalities,
+        explanationStyle: raw.explanationStyle ?? raw.explanationVerbosity,
         explanationVerbosity: raw.explanationVerbosity,
+        conservativeBias: raw.conservativeBias ?? false,
         preferredUnits: raw.preferredUnits,
+        schemaVersion: raw.schemaVersion ?? 1,
         createdAt: raw.createdAt || new Date().toISOString(),
         updatedAt: new Date().toISOString()
     };

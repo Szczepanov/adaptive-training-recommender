@@ -42,13 +42,17 @@ export class PreferencesService {
                 defaultWeekendTimeMin: existingPrefs?.defaultWeekendTimeMin ?? 60,
                 preferredTimeOfDay: existingPrefs?.preferredTimeOfDay ?? 'flexible',
                 preferredModalities: existingPrefs?.preferredModalities ?? [],
+                deprioritizedModalities: existingPrefs?.deprioritizedModalities ?? existingPrefs?.avoidedModalities ?? [],
                 avoidedModalities: existingPrefs?.avoidedModalities ?? [],
+                explanationStyle: existingPrefs?.explanationStyle ?? existingPrefs?.explanationVerbosity ?? 'detailed',
                 explanationVerbosity: existingPrefs?.explanationVerbosity ?? 'detailed',
+                conservativeBias: existingPrefs?.conservativeBias ?? false,
                 preferredUnits: existingPrefs?.preferredUnits ?? {
                     distance: 'km',
                     weight: 'kg',
                     temperature: 'celsius'
                 },
+                schemaVersion: existingPrefs?.schemaVersion ?? 1,
                 // Override with provided updates
                 ...prefsData,
                 // Preserve timestamps if they exist
@@ -85,13 +89,17 @@ export class PreferencesService {
             defaultWeekendTimeMin: 60,
             preferredTimeOfDay: 'flexible',
             preferredModalities: ['Running', 'Cycling', 'Strength'],
+            deprioritizedModalities: [],
             avoidedModalities: [],
+            explanationStyle: 'detailed',
             explanationVerbosity: 'detailed',
+            conservativeBias: false,
             preferredUnits: {
                 distance: 'km',
                 weight: 'kg',
                 temperature: 'celsius'
-            }
+            },
+            schemaVersion: 1
         };
 
         return this.upsertPreferences(userId, defaultPrefs);
@@ -307,17 +315,21 @@ export class PreferencesService {
                 
                 // Modality preferences
                 preferredModalities: [],
+                deprioritizedModalities: [],
                 avoidedModalities: [],
                 
                 // UI/Explanation preferences
+                explanationStyle: 'detailed',
                 explanationVerbosity: 'detailed',
+                conservativeBias: false,
                 
                 // Metric preferences
                 preferredUnits: {
                     distance: 'km',
                     weight: 'kg',
                     temperature: 'celsius'
-                }
+                },
+                schemaVersion: 1
             };
 
             return this.upsertPreferences(userId, defaultPreferences);

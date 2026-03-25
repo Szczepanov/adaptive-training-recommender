@@ -172,6 +172,18 @@ export const PREDEFINED_CONSTRAINTS = {
 export class ConstraintService {
     private readonly collectionPath = 'constraints';
 
+    private normalizeInput(
+        constraintData: Omit<UserConstraint, 'userId' | 'createdAt' | 'updatedAt' | 'label' | 'valueType' | 'schemaVersion'> &
+            Partial<Pick<UserConstraint, 'label' | 'valueType' | 'schemaVersion'>>
+    ) {
+        return {
+            ...constraintData,
+            label: constraintData.label ?? constraintData.displayName,
+            valueType: constraintData.valueType ?? constraintData.type,
+            schemaVersion: constraintData.schemaVersion ?? 1
+        };
+    }
+
     /**
      * List all constraints for a user
      */
@@ -275,12 +287,16 @@ export class ConstraintService {
      * For predefined constraints, uses the key as document ID
      * For custom constraints, generates a new ID
      */
-    async upsertConstraint(userId: string, constraintData: Omit<UserConstraint, 'userId' | 'createdAt' | 'updatedAt'>): Promise<UserConstraint> {
+    async upsertConstraint(
+        userId: string,
+        constraintData: Omit<UserConstraint, 'userId' | 'createdAt' | 'updatedAt' | 'label' | 'valueType' | 'schemaVersion'> &
+            Partial<Pick<UserConstraint, 'label' | 'valueType' | 'schemaVersion'>>
+    ): Promise<UserConstraint> {
         try {
             // Prepare data for validation
             const rawData = {
                 userId,
-                ...constraintData
+                ...this.normalizeInput(constraintData)
             };
 
             // Validate the data
@@ -293,8 +309,7 @@ export class ConstraintService {
             const validatedConstraint = validation.data!;
             
             // Determine document ID
-            const isPredefined = Object.keys(PREDEFINED_CONSTRAINTS).includes(validatedConstraint.key);
-            const docId = isPredefined ? validatedConstraint.key : validatedConstraint.key;
+            const docId = validatedConstraint.key;
             
             // Save to Firestore
             const docRef = doc(db, 'users', userId, this.collectionPath, docId);
@@ -413,7 +428,8 @@ export class ConstraintService {
      */
     async createCustomConstraint(
         userId: string, 
-        constraintData: Omit<UserConstraint, 'userId' | 'key' | 'createdAt' | 'updatedAt'>
+        constraintData: Omit<UserConstraint, 'userId' | 'key' | 'createdAt' | 'updatedAt' | 'label' | 'valueType' | 'schemaVersion'> &
+            Partial<Pick<UserConstraint, 'label' | 'valueType' | 'schemaVersion'>>
     ): Promise<UserConstraint> {
         try {
             // Generate a unique key for custom constraints
