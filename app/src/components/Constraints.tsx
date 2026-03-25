@@ -8,7 +8,7 @@ interface ConstraintsProps {
   onNavigate?: (screen: 'home' | 'checkin' | 'goals' | 'constraints' | 'preferences') => void;
 }
 
-export function Constraints({ userId }: ConstraintsProps) {
+export function Constraints({ userId, onNavigate }: ConstraintsProps) {
   const [constraints, setConstraints] = useState<UserConstraint[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -99,6 +99,10 @@ export function Constraints({ userId }: ConstraintsProps) {
 
   return (
     <div className="constraints-container">
+      <button className="constraints-back-btn" onClick={() => onNavigate?.('home')}>
+        ← Back
+      </button>
+
       <div className="constraints-header">
         <h1>Constraints</h1>
         <button 
