@@ -5,6 +5,7 @@ import { checkinService } from '../services/checkinService';
 import { goalService } from '../services/goalService';
 import { constraintService } from '../services/constraintService';
 import { preferencesService } from '../services/preferencesService';
+import { localDataService } from '../services/localDataService';
 
 export class DecisionComposer {
     /**
@@ -21,7 +22,7 @@ export class DecisionComposer {
                 activeGoals,
                 activeConstraints,
                 preferences
-            ] = await Promise.all([
+            ] = await Promise.allSettled([
                 this.getRecoverySnapshot(userId, targetDate),
                 checkinService.getCheckin(userId, targetDate),
                 goalService.getActiveGoals(userId),
@@ -29,22 +30,46 @@ export class DecisionComposer {
                 preferencesService.getPreferences(userId)
             ]);
 
+            // Extract values or defaults from settled promises
+            const recoveryValue = recoverySnapshot.status === 'fulfilled' ? recoverySnapshot.value : null;
+            const checkinValue = subjectiveCheckin.status === 'fulfilled' ? subjectiveCheckin.value : null;
+            const goalsValue = activeGoals.status === 'fulfilled' ? activeGoals.value : [];
+            const constraintsValue = activeConstraints.status === 'fulfilled' ? activeConstraints.value : [];
+            const preferencesValue = preferences.status === 'fulfilled' ? preferences.value : null;
+
+            // Log any rejections for debugging
+            if (recoverySnapshot.status === 'rejected') {
+                console.warn('Failed to load recovery snapshot:', recoverySnapshot.reason);
+            }
+            if (subjectiveCheckin.status === 'rejected') {
+                console.warn('Failed to load checkin:', subjectiveCheckin.reason);
+            }
+            if (activeGoals.status === 'rejected') {
+                console.warn('Failed to load goals:', activeGoals.reason);
+            }
+            if (activeConstraints.status === 'rejected') {
+                console.warn('Failed to load constraints:', activeConstraints.reason);
+            }
+            if (preferences.status === 'rejected') {
+                console.warn('Failed to load preferences:', preferences.reason);
+            }
+
             // Compute data quality flags
             const dataQuality = {
-                hasRecoverySnapshot: recoverySnapshot !== null,
-                hasSubjectiveCheckin: subjectiveCheckin !== null && subjectiveCheckin.dataQuality.isComplete,
-                profileReady: preferences !== null
+                hasRecoverySnapshot: recoveryValue !== null,
+                hasSubjectiveCheckin: checkinValue !== null && checkinValue.dataQuality?.isComplete || false,
+                profileReady: preferencesValue !== null
             };
 
             // Compose the final decision input
             const decisionInput: DailyDecisionInput = {
                 userId,
                 date: targetDate,
-                recoverySnapshot,
-                subjectiveCheckin,
-                activeGoals,
-                activeConstraints,
-                preferences,
+                recoverySnapshot: recoveryValue,
+                subjectiveCheckin: checkinValue,
+                activeGoals: goalsValue,
+                activeConstraints: constraintsValue,
+                preferences: preferencesValue,
                 dataQuality
             };
 
@@ -79,6 +104,14 @@ export class DecisionComposer {
                 if (snapshot.userId === userId) {
                     return snapshot;
                 }
+            }
+
+            // Final fallback: try local cache file (for development)
+            console.log('No data in Firestore, trying local cache...');
+            const localSnapshot = await localDataService.getRecoverySnapshot(date, userId);
+            if (localSnapshot) {
+                console.log('Found data in local cache for', date);
+                return localSnapshot;
             }
 
             return null;

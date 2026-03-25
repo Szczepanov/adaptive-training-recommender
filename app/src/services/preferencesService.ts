@@ -290,6 +290,42 @@ export class PreferencesService {
             throw error;
         }
     }
+
+    /**
+     * Create default preferences for a new user
+     */
+    async createDefaultPreferences(userId: string): Promise<UserPreferences> {
+        try {
+            const defaultPreferences: Omit<UserPreferences, 'userId' | 'createdAt' | 'updatedAt'> = {
+                // Recovery preferences
+                preferredRecoveryStyle: 'mixed',
+                
+                // Time preferences
+                defaultWeekdayTimeMin: 45,
+                defaultWeekendTimeMin: 60,
+                preferredTimeOfDay: 'flexible',
+                
+                // Modality preferences
+                preferredModalities: [],
+                avoidedModalities: [],
+                
+                // UI/Explanation preferences
+                explanationVerbosity: 'detailed',
+                
+                // Metric preferences
+                preferredUnits: {
+                    distance: 'km',
+                    weight: 'kg',
+                    temperature: 'celsius'
+                }
+            };
+
+            return this.upsertPreferences(userId, defaultPreferences);
+        } catch (error) {
+            console.error('Error creating default preferences:', error);
+            throw error;
+        }
+    }
 }
 
 // Export singleton instance

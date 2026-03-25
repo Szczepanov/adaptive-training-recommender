@@ -8,6 +8,8 @@ import { DailyCheckin } from './components/DailyCheckin';
 import { Goals } from './components/Goals';
 import { Constraints } from './components/Constraints';
 import { Preferences } from './components/Preferences';
+import { constraintService } from './services/constraintService';
+import { preferencesService } from './services/preferencesService';
 
 type Screen = 'home' | 'checkin' | 'goals' | 'constraints' | 'preferences';
 
@@ -20,11 +22,32 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
+  // Initialize user data on first login
+  const initializeUserData = async (userId: string) => {
+    try {
+      // Check if preferences exist, if not create defaults
+      const prefs = await preferencesService.getPreferences(userId);
+      if (!prefs) {
+        await preferencesService.createDefaultPreferences(userId);
+        console.log('Created default preferences for user');
+      }
+      
+      // Initialize predefined constraints (they'll be created as inactive)
+      await constraintService.initializePredefinedConstraints(userId);
+      console.log('Initialized predefined constraints for user');
+      
+    } catch (error) {
+      console.error('Error initializing user data:', error);
+    }
+  };
+
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
         setUserId(user.uid);
         setAuthPhase('AUTHENTICATED');
+        // Initialize user data in the background
+        initializeUserData(user.uid);
       } else {
         setUserId(null);
         setAuthPhase('LOGIN');
