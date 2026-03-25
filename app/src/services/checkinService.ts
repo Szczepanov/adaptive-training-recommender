@@ -28,6 +28,20 @@ export class CheckinService {
         }
     }
 
+    // Canonical Phase 4 alias
+    async upsertTodayCheckin(userId: string, checkinData: Partial<DailySubjectiveCheckin>): Promise<DailySubjectiveCheckin> {
+        const today = new Date().toISOString().split('T')[0];
+        return this.upsertCheckin(userId, {
+            ...checkinData,
+            date: checkinData.date ?? today
+        });
+    }
+
+    // Canonical Phase 4 alias
+    async getCheckinByDate(userId: string, date: string): Promise<DailySubjectiveCheckin | null> {
+        return this.getCheckin(userId, date);
+    }
+
     /**
      * Get today's check-in for a user
      */

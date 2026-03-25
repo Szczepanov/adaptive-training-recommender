@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { checkinService } from '../services/checkinService';
+import { recoverySnapshotService } from '../services/recoverySnapshotService';
 import type { DailySubjectiveCheckin } from '../engine/models';
 import './DailyCheckin.css';
 
@@ -15,6 +16,7 @@ export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [currentStep, setCurrentStep] = useState(0);
+  const [recoverySummary, setRecoverySummary] = useState<{ sleepScore: number | null; bodyBattery: number | null; restingHr: number | null } | null>(null);
 
   const readinessFields = [
     { key: 'readiness', label: 'Overall Readiness', desc: 'How ready do you feel to train today?' },
@@ -37,6 +39,16 @@ export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) 
       
       try {
         const existing = await checkinService.getCheckin(userId, today);
+        const snapshot = await recoverySnapshotService.getRecoverySnapshotByDate(userId, today);
+        if (snapshot) {
+          setRecoverySummary({
+            sleepScore: snapshot.raw.sleepScore,
+            bodyBattery: snapshot.raw.bodyBatteryWake,
+            restingHr: snapshot.raw.restingHr
+          });
+        } else {
+          setRecoverySummary(null);
+        }
         
         if (existing) {
           setCheckin(existing);
@@ -60,10 +72,12 @@ export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) 
               indoorOnly: false
             },
             notes: null,
+            submittedAt: new Date().toISOString(),
             dataQuality: {
               isComplete: false,
               missingFields: []
             },
+            schemaVersion: 1,
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString()
           } as DailySubjectiveCheckin);
@@ -90,10 +104,12 @@ export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) 
             indoorOnly: false
           },
           notes: null,
+          submittedAt: new Date().toISOString(),
           dataQuality: {
             isComplete: false,
             missingFields: []
           },
+          schemaVersion: 1,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString()
         } as DailySubjectiveCheckin);
@@ -160,7 +176,7 @@ export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) 
       setError(null);
       
       try {
-        const result = await checkinService.upsertCheckin(userId, checkin);
+        const result = await checkinService.upsertTodayCheckin(userId, checkin);
         setCheckin(result);
         
         // Show success and navigate back
@@ -222,6 +238,13 @@ export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) 
         </div>
 
         <div className="question-card">
+          {recoverySummary && (
+            <div className="checkin-recovery-summary">
+              <p>
+                Recovery today: Sleep {recoverySummary.sleepScore ?? '--'} / Body Battery {recoverySummary.bodyBattery ?? '--'} / RHR {recoverySummary.restingHr ?? '--'}
+              </p>
+            </div>
+          )}
           <h2>{field.label}</h2>
           <p>{field.desc}</p>
 
@@ -264,6 +287,13 @@ export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) 
         </div>
 
         <div className="question-card">
+          {recoverySummary && (
+            <div className="checkin-recovery-summary">
+              <p>
+                Recovery today: Sleep {recoverySummary.sleepScore ?? '--'} / Body Battery {recoverySummary.bodyBattery ?? '--'} / RHR {recoverySummary.restingHr ?? '--'}
+              </p>
+            </div>
+          )}
           <h2>Health Status</h2>
           <p>Let us know about any current issues</p>
 
@@ -331,6 +361,13 @@ export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) 
       </div>
 
       <div className="question-card">
+        {recoverySummary && (
+          <div className="checkin-recovery-summary">
+            <p>
+              Recovery today: Sleep {recoverySummary.sleepScore ?? '--'} / Body Battery {recoverySummary.bodyBattery ?? '--'} / RHR {recoverySummary.restingHr ?? '--'}
+            </p>
+          </div>
+        )}
         <h2>Availability & Notes</h2>
         <p>Help us plan the perfect session</p>
 

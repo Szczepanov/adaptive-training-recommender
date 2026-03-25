@@ -35,6 +35,26 @@ export function Goals({ userId, onNavigate }: GoalsProps) {
     }
   };
 
+  const handlePauseGoal = async (goalId: string) => {
+    try {
+      setError(null);
+      await goalService.pauseGoal(userId, goalId);
+      await loadGoals();
+    } catch (err: any) {
+      setError(err.message || 'Failed to pause goal');
+    }
+  };
+
+  const handleReactivateGoal = async (goalId: string) => {
+    try {
+      setError(null);
+      await goalService.reactivateGoal(userId, goalId);
+      await loadGoals();
+    } catch (err: any) {
+      setError(err.message || 'Failed to reactivate goal');
+    }
+  };
+
   const handleAddGoal = async (goalData: Omit<UserGoal, 'userId' | 'createdAt' | 'updatedAt'>) => {
     try {
       setError(null);
@@ -174,12 +194,35 @@ export function Goals({ userId, onNavigate }: GoalsProps) {
                         Edit
                       </button>
                       {goal.status === 'active' ? (
-                        <button 
-                          onClick={() => handleArchiveGoal(goal.id)}
-                          className="action-btn archive"
-                        >
-                          Archive
-                        </button>
+                        <>
+                          <button
+                            onClick={() => handlePauseGoal(goal.id)}
+                            className="action-btn edit"
+                          >
+                            Pause
+                          </button>
+                          <button 
+                            onClick={() => handleArchiveGoal(goal.id)}
+                            className="action-btn archive"
+                          >
+                            Archive
+                          </button>
+                        </>
+                      ) : goal.status === 'paused' ? (
+                        <>
+                          <button
+                            onClick={() => handleReactivateGoal(goal.id)}
+                            className="action-btn edit"
+                          >
+                            Reactivate
+                          </button>
+                          <button 
+                            onClick={() => handleArchiveGoal(goal.id)}
+                            className="action-btn archive"
+                          >
+                            Archive
+                          </button>
+                        </>
                       ) : (
                         <button 
                           onClick={() => handleDeleteGoal(goal.id)}
