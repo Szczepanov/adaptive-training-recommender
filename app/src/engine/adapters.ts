@@ -1,4 +1,4 @@
-import { DailyRecoverySnapshot, EngineObjectiveInput } from './models';
+import type { DailyRecoverySnapshot, EngineObjectiveInput } from './models';
 
 /**
  * Maps the Firestore canonical model (DailyRecoverySnapshot) to the internal engine 
