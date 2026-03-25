@@ -1,0 +1,13 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /garmin_metrics/{document=**} {
+      // allow anyone to read the metrics for the MVP
+      allow read: if request.auth != null;
+      
+      // deny all client writes (the python backend uses firebase-admin which bypasses these rules)
+      allow write: if false;
+    }
+  }
+}

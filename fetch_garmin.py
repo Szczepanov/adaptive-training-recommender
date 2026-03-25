@@ -10,6 +10,23 @@ from firebase_admin import credentials, firestore
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+def init_garmin(email, password):
+    tokenstore = os.getenv("GARMIN_TOKENS", "~/.garminconnect")
+    tokenstore = os.path.expanduser(tokenstore)
+    
+    api = Garmin(email, password)
+    try:
+        api.login(tokenstore)
+        logger.info("Successfully logged in using cached Garmin Connect tokens.")
+        return api
+    except Exception:
+        logger.info("Cached tokens failed/missing, performing full login...")
+        api.login()
+        os.makedirs(tokenstore, exist_ok=True)
+        api.garth.dump(tokenstore)
+        logger.info(f"Oauth tokens saved to directory '{tokenstore}' for future use.")
+        return api
+
 def fetch_garmin_data():
     load_dotenv()
     email = os.getenv("GARMIN_EMAIL")
@@ -19,9 +36,7 @@ def fetch_garmin_data():
         return
 
     try:
-        client = Garmin(email, password)
-        client.login()
-        logger.info("Successfully logged into Garmin Connect.")
+        client = init_garmin(email, password)
         
         today = datetime.date.today()
         yesterday = today - datetime.timedelta(days=1)

@@ -3,12 +3,15 @@ import './index.css';
 import { evaluateTraining } from './engine/rules';
 import type { SubjectiveInput, ObjectiveInput, UserContext, Recommendation, DailyReadiness } from './engine/models';
 import { doc, getDoc } from 'firebase/firestore';
-import { db } from './firebase';
+import { db, auth } from './firebase';
+import { signInWithEmailAndPassword, onAuthStateChanged, signOut } from 'firebase/auth';
 
-type Phase = 'WELCOME' | 'SETTINGS' | 'QUESTIONNAIRE' | 'DASHBOARD';
+type Phase = 'CHECK_AUTH' | 'LOGIN' | 'WELCOME' | 'SETTINGS' | 'QUESTIONNAIRE' | 'DASHBOARD';
 
 function App() {
-  const [phase, setPhase] = useState<Phase>('WELCOME');
+  const [phase, setPhase] = useState<Phase>('CHECK_AUTH');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
   
@@ -39,6 +42,37 @@ function App() {
     const saved = localStorage.getItem('adaptive_coach_constraints');
     if (saved) setConstraints(JSON.parse(saved));
   }, []);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      if (currentUser) {
+        if (phase === 'CHECK_AUTH' || phase === 'LOGIN') {
+          setPhase('WELCOME');
+        }
+      } else {
+        setPhase('LOGIN');
+      }
+    });
+    return () => unsubscribe();
+  }, [phase]);
+
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setErrorMsg("");
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
+    } catch (e: any) {
+      console.error(e);
+      setErrorMsg(e.message || "Failed to log in.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    await signOut(auth);
+  };
 
   const saveConstraints = (newConstraints: typeof constraints) => {
     setConstraints(newConstraints);
@@ -121,6 +155,41 @@ function App() {
 
   return (
     <div className="glass-card question-transition" key={phase}>
+      {phase === 'CHECK_AUTH' && (
+        <div style={{ textAlign: 'center' }}>
+          <p>Checking authentication...</p>
+        </div>
+      )}
+
+      {phase === 'LOGIN' && (
+        <form onSubmit={handleLogin} className="question-transition" style={{ textAlign: 'center' }}>
+          <h1 style={{fontSize: '2.5rem', marginBottom: '1rem'}}>Secure Login</h1>
+          <p style={{marginBottom: '2rem'}}>Access is restricted to authorized users.</p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', maxWidth: '300px', margin: '0 auto' }}>
+            <input 
+               type="email" 
+               placeholder="Email"
+               value={email}
+               onChange={(e) => setEmail(e.target.value)}
+               required
+               style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', background: 'rgba(0,0,0,0.3)', color: 'white', border: '1px solid rgba(255,255,255,0.1)' }}
+            />
+            <input 
+               type="password" 
+               placeholder="Password"
+               value={password}
+               onChange={(e) => setPassword(e.target.value)}
+               required
+               style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', background: 'rgba(0,0,0,0.3)', color: 'white', border: '1px solid rgba(255,255,255,0.1)' }}
+            />
+            {errorMsg && <p style={{color: '#f87171', fontSize: '0.875rem'}}>{errorMsg}</p>}
+            <button type="submit" className="btn-primary" disabled={loading}>
+              {loading ? 'Logging in...' : 'Log In'}
+            </button>
+          </div>
+        </form>
+      )}
+
       {phase === 'WELCOME' && (
         <div style={{ textAlign: 'center' }}>
           <h1 style={{fontSize: '2.5rem', marginBottom: '1rem'}}>Adaptive Coach</h1>
@@ -166,6 +235,11 @@ function App() {
           <button className="btn-primary" onClick={() => setPhase('WELCOME')}>
             Save & Return
           </button>
+          <div style={{marginTop: '2rem', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '1rem'}}>
+             <button className="btn-secondary" style={{ background: 'rgba(239, 68, 68, 0.2)' }} onClick={handleLogout}>
+               Sign Out
+             </button>
+          </div>
         </div>
       )}
 
