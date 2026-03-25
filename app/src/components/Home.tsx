@@ -8,12 +8,14 @@ import './Home.css';
 interface HomeProps {
   userId: string;
   onNavigate: (screen: 'home' | 'checkin' | 'goals' | 'constraints' | 'preferences') => void;
+  onViewData?: () => void;
 }
 
-export function Home({ userId, onNavigate }: HomeProps) {
+export function Home({ userId, onNavigate, onViewData }: HomeProps) {
   const [decisionInput, setDecisionInput] = useState<DailyDecisionInput | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [showRecoveryData, setShowRecoveryData] = useState(false);
 
   useEffect(() => {
     loadDashboardData();
@@ -97,10 +99,23 @@ export function Home({ userId, onNavigate }: HomeProps) {
         </div>
       </div>
 
+      {/* Quick Actions */}
+      <div className="quick-actions">
+        <h2>Quick Actions</h2>
+        <div className="action-buttons">
+          {onViewData && (
+            <button onClick={onViewData} className="action-btn secondary">
+              📊 View Detailed Data
+            </button>
+          )}
+        </div>
+      </div>
+
       {/* Dashboard Cards */}
       <div className="dashboard-grid">
         {/* Today's Recovery Card */}
-        <div className="dashboard-card">
+        <div className={`dashboard-card ${decisionInput?.recoverySnapshot ? 'clickable' : ''}`} 
+             onClick={() => decisionInput?.recoverySnapshot && setShowRecoveryData(!showRecoveryData)}>
           <div className="card-header">
             <h3>Today's Recovery</h3>
             {decisionInput?.recoverySnapshot ? (
@@ -111,28 +126,39 @@ export function Home({ userId, onNavigate }: HomeProps) {
           </div>
           
           {decisionInput?.recoverySnapshot ? (
-            <div className="recovery-metrics">
-              <div className="metric">
-                <span className="metric-label">Sleep Score</span>
-                <span className="metric-value">
-                  {decisionInput.recoverySnapshot.raw.sleepScore ?? '--'}
-                </span>
-              </div>
-              <div className="metric">
-                <span className="metric-label">HRV Delta</span>
-                <span className="metric-value">
-                  {decisionInput.recoverySnapshot.derived.deltas.hrvVs7d !== null 
-                    ? `${decisionInput.recoverySnapshot.derived.deltas.hrvVs7d > 0 ? '+' : ''}${decisionInput.recoverySnapshot.derived.deltas.hrvVs7d}`
-                    : '--'
-                  }
-                </span>
-              </div>
-              <div className="metric">
-                <span className="metric-label">Body Battery</span>
-                <span className="metric-value">
-                  {decisionInput.recoverySnapshot.raw.bodyBatteryWake ?? '--'}
-                </span>
-              </div>
+            <div className={`recovery-metrics ${showRecoveryData ? 'revealed' : 'blurred'}`}>
+              {showRecoveryData ? (
+                <>
+                  <div className="metric">
+                    <span className="metric-label">Sleep Score</span>
+                    <span className="metric-value">
+                      {decisionInput.recoverySnapshot.raw.sleepScore ?? '--'}
+                    </span>
+                  </div>
+                  <div className="metric">
+                    <span className="metric-label">Resting HR</span>
+                    <span className="metric-value">
+                      {decisionInput.recoverySnapshot.raw.restingHr ?? '--'}
+                    </span>
+                  </div>
+                  <div className="metric">
+                    <span className="metric-label">HRV</span>
+                    <span className="metric-value">
+                      {decisionInput.recoverySnapshot.raw.hrvOvernightAvg ?? '--'}
+                    </span>
+                  </div>
+                  <div className="metric">
+                    <span className="metric-label">Body Battery</span>
+                    <span className="metric-value">
+                      {decisionInput.recoverySnapshot.raw.bodyBatteryWake ?? '--'}
+                    </span>
+                  </div>
+                </>
+              ) : (
+                <div className="metric-placeholder">
+                  <p>Click to reveal recovery metrics</p>
+                </div>
+              )}
             </div>
           ) : (
             <p className="card-empty">No Garmin data synced today</p>

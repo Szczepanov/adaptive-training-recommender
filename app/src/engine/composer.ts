@@ -86,11 +86,21 @@ export class DecisionComposer {
      */
     private async getRecoverySnapshot(userId: string, date: string): Promise<DailyRecoverySnapshot | null> {
         try {
-            // First try the new user-scoped path
+            // First try local cache file (for development)
+            console.log('Trying local cache first...');
+            const localSnapshot = await localDataService.getRecoverySnapshot(date, userId);
+            if (localSnapshot) {
+                console.log('Found data in local cache for', date);
+                return localSnapshot;
+            }
+
+            // If not in cache, try Firestore user-scoped path
+            console.log('No data in local cache, trying Firestore...');
             const docRef = doc(db, 'users', userId, 'daily_recovery_snapshots', date);
             const docSnap = await getDoc(docRef);
             
             if (docSnap.exists()) {
+                console.log('Found data in Firestore for', date);
                 return docSnap.data() as DailyRecoverySnapshot;
             }
 
@@ -102,18 +112,12 @@ export class DecisionComposer {
                 const snapshot = legacyDocSnap.data() as DailyRecoverySnapshot;
                 // Verify it belongs to the user
                 if (snapshot.userId === userId) {
+                    console.log('Found data in legacy Firestore for', date);
                     return snapshot;
                 }
             }
 
-            // Final fallback: try local cache file (for development)
-            console.log('No data in Firestore, trying local cache...');
-            const localSnapshot = await localDataService.getRecoverySnapshot(date, userId);
-            if (localSnapshot) {
-                console.log('Found data in local cache for', date);
-                return localSnapshot;
-            }
-
+            console.log('No recovery data found for', date);
             return null;
         } catch (error) {
             console.error('Error fetching recovery snapshot:', error);

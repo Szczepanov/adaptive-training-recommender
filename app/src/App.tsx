@@ -8,10 +8,13 @@ import { DailyCheckin } from './components/DailyCheckin';
 import { Goals } from './components/Goals';
 import { Constraints } from './components/Constraints';
 import { Preferences } from './components/Preferences';
+import { DataView } from './components/DataView';
 import { constraintService } from './services/constraintService';
 import { preferencesService } from './services/preferencesService';
+import { decisionComposer } from './engine/composer';
+import type { DailyDecisionInput } from './engine/models';
 
-type Screen = 'home' | 'checkin' | 'goals' | 'constraints' | 'preferences';
+type Screen = 'home' | 'checkin' | 'goals' | 'constraints' | 'preferences' | 'data';
 
 function App() {
   const [screen, setScreen] = useState<Screen>('home');
@@ -21,6 +24,7 @@ function App() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  const [decisionInput, setDecisionInput] = useState<DailyDecisionInput | null>(null);
 
   // Initialize user data on first login
   const initializeUserData = async (userId: string) => {
@@ -82,6 +86,23 @@ function App() {
     setScreen(newScreen);
   };
 
+  const loadDecisionInput = async () => {
+    if (!userId) return;
+    try {
+      const input = await decisionComposer.composeDailyDecisionInput(userId);
+      setDecisionInput(input);
+    } catch (error) {
+      console.error('Error loading decision input:', error);
+    }
+  };
+
+  // Load decision input when authenticated
+  useEffect(() => {
+    if (userId && authPhase === 'AUTHENTICATED') {
+      loadDecisionInput();
+    }
+  }, [userId, authPhase]);
+
   // Auth screen
   if (authPhase === 'CHECKING') {
     return (
@@ -137,7 +158,21 @@ function App() {
     <div className="app-container">
       <div className="app-content">
         {screen === 'home' && (
-          <Home userId={userId!} onNavigate={navigateTo} />
+          <Home 
+            userId={userId!} 
+            onNavigate={navigateTo}
+            onViewData={() => {
+              loadDecisionInput();
+              navigateTo('data');
+            }}
+          />
+        )}
+        
+        {screen === 'data' && (
+          <DataView 
+            decisionInput={decisionInput}
+            onBack={() => navigateTo('home')}
+          />
         )}
         
         {screen === 'checkin' && (
