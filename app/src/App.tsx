@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import './index.css';
 import { evaluateTraining } from './engine/rules';
-import type { SubjectiveInput, ObjectiveInput, UserContext, Recommendation, DailyReadiness } from './engine/models';
+import type { DailyRecoverySnapshot, EngineObjectiveInput, SubjectiveInput, UserContext, Recommendation, DailyReadiness } from './engine/models';
+import { mapSnapshotToEngineInput } from './engine/adapters';
 import { doc, getDoc } from 'firebase/firestore';
 import { db, auth } from './firebase';
 import { signInWithEmailAndPassword, onAuthStateChanged, signOut } from 'firebase/auth';
@@ -114,13 +115,14 @@ function App() {
         const todayIso = new Date().toISOString().split('T')[0];
         
         // Live Fetch from Firestore
-        const docRef = doc(db, 'garmin_metrics', todayIso);
+        const docRef = doc(db, 'daily_recovery_snapshot', todayIso);
         const docSnap = await getDoc(docRef);
         
-        let objective: ObjectiveInput;
+        let objective: EngineObjectiveInput;
         
         if (docSnap.exists()) {
-            objective = docSnap.data() as ObjectiveInput;
+            const rawSnapshot = docSnap.data() as DailyRecoverySnapshot;
+            objective = mapSnapshotToEngineInput(rawSnapshot);
         } else {
             console.warn("No Garmin data found for today, defaulting to an empty/conservative object for MVP.");
             objective = {

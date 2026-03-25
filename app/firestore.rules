@@ -2,12 +2,15 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /garmin_metrics/{document=**} {
-      // allow anyone to read the metrics for the MVP
+    // Only the authenticated owner can access their personalized data
+    match /daily_recovery_snapshot/{document=**} {
       allow read: if request.auth != null;
-      
-      // deny all client writes (the python backend uses firebase-admin which bypasses these rules)
-      allow write: if false;
+      allow write: if false; // Only backend scripts write
+    }
+    
+    match /daily_subjective_checkin/{document=**} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null; // User writes their checkins
     }
   }
 }
