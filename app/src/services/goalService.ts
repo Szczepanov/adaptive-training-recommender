@@ -41,17 +41,23 @@ export class GoalService {
             const collRef = collection(db, 'users', userId, this.collectionPath);
             const q = query(
                 collRef,
-                where('userId', '==', userId),
-                where('status', '==', 'active'),
-                orderBy('category', 'asc'),
-                orderBy('priority', 'desc')
+                where('status', '==', 'active')
             );
             
             const querySnapshot = await getDocs(q);
-            return querySnapshot.docs.map(doc => ({
+            const goals = querySnapshot.docs.map(doc => ({
                 ...doc.data(),
                 id: doc.id
             } as UserGoal & { id: string }));
+
+            return goals.sort((a, b) => {
+                const categoryCompare = a.category.localeCompare(b.category);
+                if (categoryCompare !== 0) {
+                    return categoryCompare;
+                }
+
+                return b.priority - a.priority;
+            });
         } catch (error: any) {
             if (error?.code === 'permission-denied' || (error.message && error.message.includes('Missing or insufficient permissions'))) {
                 console.warn('Permission denied accessing goals. User may need to complete first check-in.');

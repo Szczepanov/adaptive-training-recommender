@@ -201,14 +201,19 @@ export class ConstraintService {
             const collRef = collection(db, 'users', userId, this.collectionPath);
             const q = query(
                 collRef,
-                where('userId', '==', userId),
-                where('isActive', '==', true),
-                orderBy('severity', 'desc'), // Hard constraints first
-                orderBy('category', 'asc')
+                where('isActive', '==', true)
             );
             
             const querySnapshot = await getDocs(q);
-            return querySnapshot.docs.map(doc => doc.data() as UserConstraint);
+            const constraints = querySnapshot.docs.map(doc => doc.data() as UserConstraint);
+
+            return constraints.sort((a, b) => {
+                if (a.severity !== b.severity) {
+                    return a.severity === 'hard' ? -1 : 1;
+                }
+
+                return a.category.localeCompare(b.category);
+            });
         } catch (error: any) {
             if (error.message && error.message.includes('Missing or insufficient permissions')) {
                 console.warn('Permission denied accessing constraints. Using default constraints.');

@@ -137,10 +137,10 @@ export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) 
   };
 
   const handleNext = () => {
-    if (currentStep < readinessFields.length - 1) {
+    const finalStepIndex = readinessFields.length + 1;
+
+    if (currentStep < finalStepIndex) {
       setCurrentStep(currentStep + 1);
-    } else {
-      setCurrentStep(readinessFields.length); // Move to boolean flags
     }
   };
 
