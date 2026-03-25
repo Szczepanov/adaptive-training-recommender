@@ -19,7 +19,7 @@ export class CheckinService {
             }
             return null;
         } catch (error: any) {
-            if (error.message && error.message.includes('Missing or insufficient permissions')) {
+            if (error?.code === 'permission-denied' || (error.message && error.message.includes('Missing or insufficient permissions'))) {
                 console.warn('Permission denied accessing check-ins. User may need to complete first check-in.');
                 return null;
             }

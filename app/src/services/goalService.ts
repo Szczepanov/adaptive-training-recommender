@@ -52,7 +52,11 @@ export class GoalService {
                 ...doc.data(),
                 id: doc.id
             } as UserGoal & { id: string }));
-        } catch (error) {
+        } catch (error: any) {
+            if (error?.code === 'permission-denied' || (error.message && error.message.includes('Missing or insufficient permissions'))) {
+                console.warn('Permission denied accessing goals. User may need to complete first check-in.');
+                return [];
+            }
             console.error('Error fetching active goals:', error);
             throw error;
         }
