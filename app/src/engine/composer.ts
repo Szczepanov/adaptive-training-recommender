@@ -15,14 +15,8 @@ export class DecisionComposer {
         const targetDate = date || new Date().toISOString().split('T')[0];
         
         try {
-            // Fetch all data sources in parallel for better performance
-            const [
-                recoverySnapshot,
-                subjectiveCheckin,
-                activeGoals,
-                activeConstraints,
-                preferences
-            ] = await Promise.allSettled([
+            // Use Promise.allSettled to handle individual service failures
+            const results = await Promise.allSettled([
                 this.getRecoverySnapshot(userId, targetDate),
                 checkinService.getCheckin(userId, targetDate),
                 goalService.getActiveGoals(userId),
@@ -30,46 +24,42 @@ export class DecisionComposer {
                 preferencesService.getPreferences(userId)
             ]);
 
-            // Extract values or defaults from settled promises
-            const recoveryValue = recoverySnapshot.status === 'fulfilled' ? recoverySnapshot.value : null;
-            const checkinValue = subjectiveCheckin.status === 'fulfilled' ? subjectiveCheckin.value : null;
-            const goalsValue = activeGoals.status === 'fulfilled' ? activeGoals.value : [];
-            const constraintsValue = activeConstraints.status === 'fulfilled' ? activeConstraints.value : [];
-            const preferencesValue = preferences.status === 'fulfilled' ? preferences.value : null;
+            // Extract results or provide fallbacks
+            const recoverySnapshot = results[0].status === 'fulfilled' ? results[0].value : null;
+            const subjectiveCheckin = results[1].status === 'fulfilled' ? results[1].value : null;
+            const activeGoals = results[2].status === 'fulfilled' ? results[2].value : [];
+            const activeConstraints = results[3].status === 'fulfilled' ? results[3].value : [];
+            const preferences = results[4].status === 'fulfilled' ? results[4].value : null;
 
-            // Log any rejections for debugging
-            if (recoverySnapshot.status === 'rejected') {
-                console.warn('Failed to load recovery snapshot:', recoverySnapshot.reason);
-            }
-            if (subjectiveCheckin.status === 'rejected') {
-                console.warn('Failed to load checkin:', subjectiveCheckin.reason);
-            }
-            if (activeGoals.status === 'rejected') {
-                console.warn('Failed to load goals:', activeGoals.reason);
-            }
-            if (activeConstraints.status === 'rejected') {
-                console.warn('Failed to load constraints:', activeConstraints.reason);
-            }
-            if (preferences.status === 'rejected') {
-                console.warn('Failed to load preferences:', preferences.reason);
-            }
+            // Log permission errors for debugging
+            results.forEach((result, index) => {
+                if (result.status === 'rejected') {
+                    const serviceNames = ['recoverySnapshot', 'checkinService', 'goalService', 'constraintService', 'preferencesService'];
+                    console.warn(`${serviceNames[index]} failed:`, result.reason);
+                    
+                    // If it's a permission error, provide a helpful message
+                    if (result.reason instanceof Error && result.reason.message.includes('Missing or insufficient permissions')) {
+                        console.warn(`Permission denied for ${serviceNames[index]}. This may be due to missing Firebase security rules.`);
+                    }
+                }
+            });
 
             // Compute data quality flags
             const dataQuality = {
-                hasRecoverySnapshot: recoveryValue !== null,
-                hasSubjectiveCheckin: checkinValue !== null && checkinValue.dataQuality?.isComplete || false,
-                profileReady: preferencesValue !== null
+                hasRecoverySnapshot: recoverySnapshot !== null,
+                hasSubjectiveCheckin: subjectiveCheckin !== null && subjectiveCheckin.dataQuality?.isComplete || false,
+                profileReady: preferences !== null
             };
 
             // Compose the final decision input
             const decisionInput: DailyDecisionInput = {
                 userId,
                 date: targetDate,
-                recoverySnapshot: recoveryValue,
-                subjectiveCheckin: checkinValue,
-                activeGoals: goalsValue,
-                activeConstraints: constraintsValue,
-                preferences: preferencesValue,
+                recoverySnapshot,
+                subjectiveCheckin,
+                activeGoals,
+                activeConstraints,
+                preferences,
                 dataQuality
             };
 

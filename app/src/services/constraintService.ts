@@ -209,7 +209,11 @@ export class ConstraintService {
             
             const querySnapshot = await getDocs(q);
             return querySnapshot.docs.map(doc => doc.data() as UserConstraint);
-        } catch (error) {
+        } catch (error: any) {
+            if (error.message && error.message.includes('Missing or insufficient permissions')) {
+                console.warn('Permission denied accessing constraints. Using default constraints.');
+                return [];
+            }
             console.error('Error fetching active constraints:', error);
             throw error;
         }

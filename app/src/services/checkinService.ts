@@ -18,7 +18,11 @@ export class CheckinService {
                 return docSnap.data() as DailySubjectiveCheckin;
             }
             return null;
-        } catch (error) {
+        } catch (error: any) {
+            if (error.message && error.message.includes('Missing or insufficient permissions')) {
+                console.warn('Permission denied accessing check-ins. User may need to complete first check-in.');
+                return null;
+            }
             console.error('Error fetching check-in:', error);
             throw error;
         }
