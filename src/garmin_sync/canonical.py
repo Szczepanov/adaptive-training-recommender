@@ -28,7 +28,10 @@ class CanonicalDailyMetrics:
 
 @dataclass
 class CanonicalActivity:
-    activity_id: str
+    # None means Garmin didn't supply an activityId for this activity (e.g. an
+    # in-progress/pending upload) -- callers must not persist such an activity under a
+    # shared placeholder key (see GarminSyncService._archive_activities).
+    activity_id: str | None
     date: str
     type: str
     duration_min: int | None

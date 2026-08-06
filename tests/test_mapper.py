@@ -174,6 +174,68 @@ def test_build_snapshot_today_training_is_none_when_no_same_day_activity():
     assert snapshot.raw.todayTraining is None
 
 
+def test_build_snapshot_activity_missing_id_does_not_win_primary_tie_break():
+    """An activity missing its Garmin activityId must not be selected as the day's
+    primary/displayed activity over a legitimately-identified one on a tie."""
+    derived = DerivedMetrics()
+    activities = [
+        # Identical load/training-effect/duration to the one below, but no activityId.
+        CanonicalActivity(
+            activity_id=None, date="2026-08-05", type="cycling",
+            duration_min=30, duration_seconds=1800,
+            training_effect_aerobic=2.0, training_effect_anaerobic=0.0,
+            average_hr=None, training_load=50.0, intensity_tag="moderate/easy",
+        ),
+        CanonicalActivity(
+            activity_id="777", date="2026-08-05", type="running",
+            duration_min=30, duration_seconds=1800,
+            training_effect_aerobic=2.0, training_effect_anaerobic=0.0,
+            average_hr=None, training_load=50.0, intensity_tag="moderate/easy",
+        ),
+    ]
+    canonical = CanonicalDailyMetrics(date="2026-08-06")
+
+    snapshot = build_snapshot_from_canonical(
+        user_id="test_uid",
+        target_date_iso="2026-08-06",
+        canonical=canonical,
+        canonical_activities=activities,
+        derived_metrics=derived,
+    )
+
+    y = snapshot.raw.yesterdayTraining
+    assert y is not None
+    assert y.primaryActivity is not None
+    assert y.primaryActivity.activityId == "777"
+
+
+def test_build_snapshot_activities_through_iso_override():
+    """rebuild() passes an explicit, more conservative activities_through_iso than the
+    default (target_date_iso) since it can't verify an archived activities entry's true
+    fetch coverage."""
+    derived = DerivedMetrics()
+    canonical = CanonicalDailyMetrics(date="2026-08-06")
+
+    default_snapshot = build_snapshot_from_canonical(
+        user_id="test_uid",
+        target_date_iso="2026-08-06",
+        canonical=canonical,
+        canonical_activities=[],
+        derived_metrics=derived,
+    )
+    assert default_snapshot.source.metricDates.activitiesThrough == "2026-08-06"
+
+    conservative_snapshot = build_snapshot_from_canonical(
+        user_id="test_uid",
+        target_date_iso="2026-08-06",
+        canonical=canonical,
+        canonical_activities=[],
+        derived_metrics=derived,
+        activities_through_iso="2026-08-05",
+    )
+    assert conservative_snapshot.source.metricDates.activitiesThrough == "2026-08-05"
+
+
 def test_normalize_activity_maps_canonical_fields():
     activity = CanonicalActivity(
         activity_id="999", date="2026-08-05", type="running",

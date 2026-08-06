@@ -203,6 +203,41 @@ def test_sync_service_fetches_activities_through_today_for_same_day_detection():
     assert saved_payload["raw"]["todayTraining"]["primaryActivity"]["type"] == "running"
 
 
+def test_sync_service_skips_archiving_activity_with_missing_id():
+    """An activity with no Garmin activityId must not be written to
+    users/{userId}/activities/ -- doing so under a shared placeholder key would let it
+    silently collide with another such activity."""
+    settings = Settings(app_user_id="test_uid_789")
+    mock_repo = MagicMock()
+    mock_repo.is_fresh.return_value = False
+    mock_repo.get_historical_snapshots.return_value = {}
+
+    mock_client = MagicMock()
+    mock_client.get_stats.return_value = {"restingHeartRate": 55, "totalSteps": 10000}
+    mock_client.get_sleep_data.return_value = {"dailySleepDTO": {"sleepScores": {"overall": {"value": 80}}}}
+    mock_client.get_hrv_data.return_value = {"hrvSummary": {"lastNightAvg": 65}}
+    mock_client.get_activities_window.return_value = [
+        {
+            # No "activityId" key -- e.g. an in-progress/pending upload.
+            "startTimeLocal": "2026-08-06T07:00:00",
+            "activityType": {"typeKey": "running"},
+            "duration": 1800,
+            "aerobicTrainingEffect": 3.5,
+        }
+    ]
+
+    service = GarminSyncService(settings=settings, repository=mock_repo, garmin_client=mock_client)
+    result = service.sync_daily(target_date_str="2026-08-06", force=True)
+
+    assert result is True
+    mock_repo.upsert_activity.assert_not_called()
+    # The malformed activity still counts toward todayTraining's aggregates -- only
+    # per-activity archiving is skipped.
+    saved_payload = mock_repo.upsert_snapshot.call_args[0][1]
+    assert saved_payload["raw"]["todayTraining"] is not None
+    assert saved_payload["raw"]["todayTraining"]["activityCount"] == 1
+
+
 def test_sync_service_works_with_a_non_garmin_provider():
     """GarminSyncService depends on WearableProvider, not GarminClientWrapper directly --
     a fake second provider must be able to satisfy it with zero Garmin-specific code."""
