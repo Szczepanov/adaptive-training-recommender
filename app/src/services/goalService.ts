@@ -4,6 +4,7 @@ import type { UserGoal, GoalCategory } from '../engine/models';
 
 type UserGoalWithId = UserGoal & { id: string };
 import { validateGoal } from '../engine/validation';
+import { getErrorCode, getErrorMessage } from '../utils/errors';
 
 export class GoalService {
     private readonly collectionPath = 'goals';
@@ -58,8 +59,8 @@ export class GoalService {
 
                 return b.priority - a.priority;
             });
-        } catch (error: any) {
-            if (error?.code === 'permission-denied' || (error.message && error.message.includes('Missing or insufficient permissions'))) {
+        } catch (error: unknown) {
+            if (getErrorCode(error) === 'permission-denied' || getErrorMessage(error).includes('Missing or insufficient permissions')) {
                 console.warn('Permission denied accessing goals. User may need to complete first check-in.');
                 return [];
             }
@@ -117,7 +118,7 @@ export class GoalService {
     /**
      * Create a new goal
      */
-    async createGoal(userId: string, goalData: Omit<UserGoal, 'userId' | 'createdAt' | 'updatedAt'>): Promise<UserGoal> {
+    async createGoal(userId: string, goalData: Omit<UserGoal, 'userId' | 'createdAt' | 'updatedAt' | 'schemaVersion'>): Promise<UserGoal> {
         try {
             // Prepare data for validation
             const rawData = {
@@ -234,7 +235,7 @@ export class GoalService {
     async getTopGoalsByCategory(userId: string): Promise<Record<GoalCategory, UserGoal | null>> {
         try {
             const categories: GoalCategory[] = ['short-term', 'mid-term', 'long-term'];
-            const result: Record<GoalCategory, UserGoal | null> = {} as any;
+            const result = {} as Record<GoalCategory, UserGoal | null>;
 
             for (const category of categories) {
                 const goals = await this.getGoalsByCategory(userId, category);

@@ -57,7 +57,7 @@ export function evaluateTraining(readiness: DailyReadiness, context: UserContext
     const availableTime = Math.min(context.constraints.maxTimeMinutes, subjective.timeAvailable);
 
     // 5. Filter templates by constraints
-    let availableTemplates = TEMPLATES.filter(t => {
+    const availableTemplates = TEMPLATES.filter(t => {
         if (t.durationMin > availableTime) return false;
         
         for (const req of t.requiredEquipment) {

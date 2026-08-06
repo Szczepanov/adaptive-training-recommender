@@ -1,16 +1,31 @@
 import type { DailyRecoverySnapshot } from '../engine/models';
 
+/** Shape of a single day's entry in the local raw_cache.json dev fixture. */
+interface RawCacheSnapshot {
+    sleepScore?: number | null;
+    sleepDurationSec?: number | null;
+    restingHr?: number | null;
+    hrvOvernightAvg?: number | null;
+    hrvStatus?: string | null;
+    respirationAvg?: number | null;
+    bodyBatteryWake?: number | null;
+    bodyBatteryChange?: number | null;
+    totalSteps?: number | null;
+    last3DaysHardSessionsCount?: number;
+    yesterdayTraining?: DailyRecoverySnapshot['raw']['yesterdayTraining'];
+}
+
 /**
  * Local data service for reading from raw_cache.json
  * This is a fallback for development when Garmin data isn't synced to Firestore
  */
 export class LocalDataService {
-    private cacheData: Record<string, any> | null = null;
+    private cacheData: Record<string, RawCacheSnapshot> | null = null;
 
     /**
      * Load the raw cache file
      */
-    private async loadCacheData(): Promise<Record<string, any>> {
+    private async loadCacheData(): Promise<Record<string, RawCacheSnapshot>> {
         if (this.cacheData !== null) {
             return this.cacheData;
         }

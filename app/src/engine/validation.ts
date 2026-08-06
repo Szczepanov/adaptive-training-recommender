@@ -1,3 +1,13 @@
+/**
+ * This module validates *untyped external input* (raw Firestore documents / client
+ * payloads) before it becomes a typed model — the point of these functions is that the
+ * shape of `raw` is not yet known or trusted. `any` is used deliberately here rather than
+ * `unknown` so the runtime checks below (`.includes()`, `.trim()`, `Number.isInteger()`,
+ * nested `raw.availability.*` access, etc.) don't require a cast at every access; each
+ * field is still validated at runtime before being written into a typed model. Do not use
+ * `any` this way outside of a validation/parsing boundary like this one.
+ */
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import type {
     DailySubjectiveCheckin,
     UserGoal,

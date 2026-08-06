@@ -3,6 +3,7 @@ import { db } from '../firebase';
 import type { DailySubjectiveCheckin } from '../engine/models';
 import { validateCheckin } from '../engine/validation';
 import { getLocalDateString } from '../utils/localDate';
+import { isPermissionDeniedError } from '../utils/errors';
 
 export class CheckinService {
     private readonly collectionPath = 'daily_subjective_checkins';
@@ -19,8 +20,8 @@ export class CheckinService {
                 return docSnap.data() as DailySubjectiveCheckin;
             }
             return null;
-        } catch (error: any) {
-            if (error?.code === 'permission-denied' || (error.message && error.message.includes('Missing or insufficient permissions'))) {
+        } catch (error: unknown) {
+            if (isPermissionDeniedError(error)) {
                 console.warn('Permission denied accessing check-ins. User may need to complete first check-in.');
                 return null;
             }

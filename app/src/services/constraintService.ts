@@ -2,6 +2,7 @@ import { doc, setDoc, deleteDoc, collection, query, where, orderBy, getDocs, lim
 import { db } from '../firebase';
 import type { UserConstraint, ConstraintCategory } from '../engine/models';
 import { validateConstraint } from '../engine/validation';
+import { getErrorMessage } from '../utils/errors';
 
 // Predefined constraints with stable keys
 export const PREDEFINED_CONSTRAINTS = {
@@ -173,8 +174,8 @@ export class ConstraintService {
     private readonly collectionPath = 'constraints';
 
     private normalizeInput(
-        constraintData: Omit<UserConstraint, 'userId' | 'createdAt' | 'updatedAt' | 'label' | 'valueType' | 'schemaVersion'> &
-            Partial<Pick<UserConstraint, 'label' | 'valueType' | 'schemaVersion'>>
+        constraintData: Omit<UserConstraint, 'userId' | 'createdAt' | 'updatedAt' | 'label' | 'valueType' | 'schemaVersion' | 'isActive'> &
+            Partial<Pick<UserConstraint, 'label' | 'valueType' | 'schemaVersion' | 'isActive'>>
     ) {
         return {
             ...constraintData,
@@ -226,8 +227,8 @@ export class ConstraintService {
 
                 return a.category.localeCompare(b.category);
             });
-        } catch (error: any) {
-            if (error.message && error.message.includes('Missing or insufficient permissions')) {
+        } catch (error: unknown) {
+            if (getErrorMessage(error).includes('Missing or insufficient permissions')) {
                 console.warn('Permission denied accessing constraints. Using default constraints.');
                 return [];
             }
@@ -289,8 +290,8 @@ export class ConstraintService {
      */
     async upsertConstraint(
         userId: string,
-        constraintData: Omit<UserConstraint, 'userId' | 'createdAt' | 'updatedAt' | 'label' | 'valueType' | 'schemaVersion'> &
-            Partial<Pick<UserConstraint, 'label' | 'valueType' | 'schemaVersion'>>
+        constraintData: Omit<UserConstraint, 'userId' | 'createdAt' | 'updatedAt' | 'label' | 'valueType' | 'schemaVersion' | 'isActive'> &
+            Partial<Pick<UserConstraint, 'label' | 'valueType' | 'schemaVersion' | 'isActive'>>
     ): Promise<UserConstraint> {
         try {
             // Prepare data for validation
@@ -427,9 +428,9 @@ export class ConstraintService {
      * Create a custom constraint
      */
     async createCustomConstraint(
-        userId: string, 
-        constraintData: Omit<UserConstraint, 'userId' | 'key' | 'createdAt' | 'updatedAt' | 'label' | 'valueType' | 'schemaVersion'> &
-            Partial<Pick<UserConstraint, 'label' | 'valueType' | 'schemaVersion'>>
+        userId: string,
+        constraintData: Omit<UserConstraint, 'userId' | 'key' | 'createdAt' | 'updatedAt' | 'label' | 'valueType' | 'schemaVersion' | 'isActive'> &
+            Partial<Pick<UserConstraint, 'label' | 'valueType' | 'schemaVersion' | 'isActive'>>
     ): Promise<UserConstraint> {
         try {
             // Generate a unique key for custom constraints
