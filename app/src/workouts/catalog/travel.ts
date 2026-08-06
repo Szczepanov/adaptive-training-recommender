@@ -13,7 +13,7 @@ export const TRAVEL_WORKOUTS: WorkoutDefinition[] = [
     equipment: ['hotel_gym'], contraindicationTags: ['acute_knee_pain'],
     blocks: [
       { id: 'warmup', name: 'Easy start', role: 'warmup', steps: [ timeStep('travel_aerobic_warmup', 'aerobic_machine_easy', 'Easy machine warm-up', 480, { target: { type: 'rpe', min: 1, max: 2 } }) ]},
-      { id: 'main', name: 'Aerobic maintenance', role: 'main', steps: [ timeStep('travel_aerobic_main', 'aerobic_machine_easy', 'Steady aerobic work', 1440, { target: { type: 'rpe', min: 2, max: 4 }, notes: ['Use any available aerobic machine', 'Do not compare machine watts with another device'] }) ]},
+      { id: 'main', name: 'Aerobic maintenance', role: 'main', steps: [ timeStep('travel_aerobic_main', 'aerobic_machine_easy', 'Steady aerobic work', 1500, { target: { type: 'rpe', min: 2, max: 4 }, notes: ['Use any available aerobic machine', 'Do not compare machine watts with another device'] }) ]},
       { id: 'cooldown', name: 'Easy finish', role: 'cooldown', steps: [ timeStep('travel_aerobic_cooldown', 'aerobic_machine_easy', 'Easy cool-down', 480, { target: { type: 'rpe', min: 1, max: 2 } }) ]}
     ],
     variants: [
@@ -22,7 +22,7 @@ export const TRAVEL_WORKOUTS: WorkoutDefinition[] = [
       { id: 'return_to_training', targetDurationMin: 25, loadMultiplier: 0.5, rationale: 'Keep the session purely easy and symptom-free.', stepOverrides: [{ stepId: 'travel_aerobic_main', durationSeconds: 720, target: { type: 'rpe', min: 1, max: 3 } }, { stepId: 'travel_aerobic_cooldown', durationSeconds: 300 }] }
     ],
     parameters: [
-      { id: 'aerobic_duration', label: 'Steady aerobic duration', unit: 'minutes', defaultValue: 24, minimum: 15, maximum: 30, step: 5, appliesToStepIds: ['travel_aerobic_main'], description: 'Adjust around sightseeing, travel fatigue and available time.' },
+      { id: 'aerobic_duration', label: 'Steady aerobic duration', unit: 'minutes', defaultValue: 25, minimum: 15, maximum: 30, step: 5, appliesToStepIds: ['travel_aerobic_main'], description: 'Adjust around sightseeing, travel fatigue and available time.' },
       { id: 'aerobic_rpe', label: 'Aerobic RPE', unit: 'rpe', defaultValue: 3, minimum: 2, maximum: 4, step: 0.5, appliesToStepIds: ['travel_aerobic_main'], description: 'Machine-independent effort control.' }
     ],
     regressions: ['rest_complete_01'], progressions: ['cycling_zone2_standard_01'], substitutions: [],

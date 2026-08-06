@@ -1,4 +1,15 @@
-import type { ExerciseDefinition, IntensityTarget, WorkoutDefinition } from './models.ts';
+import type {
+  Equipment,
+  ExerciseDefinition,
+  IntensityTarget,
+  WorkoutDefinition,
+  WorkoutModality,
+  WorkoutParameter,
+  WorkoutParameterBinding,
+  WorkoutParameterBindingSet,
+  WorkoutParameterStepField,
+  WorkoutParameterUnit
+} from './models.ts';
 
 export interface WorkoutLibraryValidationResult {
   valid: boolean;
@@ -7,6 +18,18 @@ export interface WorkoutLibraryValidationResult {
 }
 
 const expectedVariantIds = new Set(['full', 'reduced', 'return_to_training']);
+
+const compatibleExerciseModalities: Record<WorkoutModality, WorkoutModality[]> = {
+  cycling: ['cycling'],
+  running: ['running'],
+  strength: ['strength'],
+  field: ['field'],
+  mobility: ['mobility', 'strength'],
+  recovery: ['recovery', 'mobility', 'strength', 'cycling'],
+  cross_training: ['cross_training']
+};
+
+const hotelGymEquipment = new Set<Equipment>(['dumbbells', 'bench', 'treadmill', 'bodyweight']);
 
 function validateTarget(target: IntensityTarget, path: string, errors: string[]): void {
   if (target.type === 'rpe' && (target.min < 1 || target.max > 10 || target.min > target.max)) errors.push(`${path}: invalid RPE range ${target.min}-${target.max}`);
@@ -17,15 +40,153 @@ function validateTarget(target: IntensityTarget, path: string, errors: string[])
   if (target.type === 'reps_in_reserve' && (target.min < 0 || target.max > 10 || target.min > target.max)) errors.push(`${path}: invalid repetitions-in-reserve range ${target.min}-${target.max}`);
 }
 
-export function validateWorkoutLibrary(exercises: ExerciseDefinition[], workouts: WorkoutDefinition[]): WorkoutLibraryValidationResult {
+function isReachable(value: number, minimum: number, step: number): boolean {
+  const increments = (value - minimum) / step;
+  return Math.abs(increments - Math.round(increments)) < 1e-8;
+}
+
+function equipmentIsAvailable(required: Equipment, available: Set<Equipment>): boolean {
+  if (required === 'bodyweight') return true;
+  if (available.has(required)) return true;
+  return available.has('hotel_gym') && hotelGymEquipment.has(required);
+}
+
+function expectedUnits(field: WorkoutParameterStepField): WorkoutParameterUnit[] {
+  switch (field) {
+    case 'sets': return ['sets', 'repetitions'];
+    case 'duration.seconds':
+    case 'restAfterSec': return ['seconds', 'minutes'];
+    case 'duration.repetitions': return ['repetitions'];
+    case 'target.rpe': return ['rpe'];
+    case 'target.reps_in_reserve': return ['repetitions', 'reps_in_reserve'];
+  }
+}
+
+function validateBindingUnit(
+  parameter: WorkoutParameter,
+  binding: WorkoutParameterBinding,
+  path: string,
+  errors: string[]
+): void {
+  if (binding.kind === 'resolver') {
+    if (binding.resolver === 'walk_run_distribution' && parameter.unit !== 'minutes') errors.push(`${path}: walk-run resolver requires minute parameters`);
+    if ((binding.resolver === 'embedded_short_surges' || binding.resolver === 'embedded_gap_closing_efforts') && !['sets', 'repetitions'].includes(parameter.unit)) errors.push(`${path}: embedded effort resolver requires a count parameter`);
+    if (binding.resolver === 'over_under_internal_pattern' && parameter.unit !== 'seconds') errors.push(`${path}: over-under internal pattern requires seconds`);
+    return;
+  }
+
+  if (!expectedUnits(binding.field).includes(parameter.unit)) errors.push(`${path}: unit ${parameter.unit} is incompatible with ${binding.field}`);
+
+  const timeField = binding.field === 'duration.seconds' || binding.field === 'restAfterSec';
+  if (parameter.unit === 'minutes' && timeField && binding.transform !== 'minutes_to_seconds') errors.push(`${path}: minute parameters require minutes_to_seconds`);
+  if (parameter.unit !== 'minutes' && binding.transform === 'minutes_to_seconds') errors.push(`${path}: minutes_to_seconds requires a minute parameter`);
+
+  if (parameter.minimum === 0 && ['sets', 'duration.seconds', 'duration.repetitions'].includes(binding.field) && binding.zeroBehavior === undefined) errors.push(`${path}: a zero minimum requires explicit zeroBehavior`);
+
+  if (binding.field === 'target.rpe' || binding.field === 'target.reps_in_reserve') {
+    if (!binding.range) errors.push(`${path}: target range binding is required`);
+    if (binding.range) {
+      const lower = parameter.minimum + binding.range.minOffset;
+      const upper = parameter.maximum + binding.range.maxOffset;
+      const validLower = binding.field === 'target.rpe' ? 1 : 0;
+      if (lower < validLower || upper > 10 || binding.range.minOffset > binding.range.maxOffset) errors.push(`${path}: resolved target range can leave valid bounds`);
+    }
+  } else if (binding.range) {
+    errors.push(`${path}: range offsets are only valid for target bindings`);
+  }
+}
+
+function validateParameterBindings(
+  workouts: WorkoutDefinition[],
+  bindingSets: WorkoutParameterBindingSet[],
+  errors: string[]
+): void {
+  const workoutById = new Map(workouts.map((workout) => [workout.id, workout]));
+  const bindingSetByWorkout = new Map<string, WorkoutParameterBindingSet>();
+
+  for (const bindingSet of bindingSets) {
+    if (bindingSetByWorkout.has(bindingSet.workoutId)) errors.push(`Duplicate parameter binding set: ${bindingSet.workoutId}`);
+    bindingSetByWorkout.set(bindingSet.workoutId, bindingSet);
+    if (!workoutById.has(bindingSet.workoutId)) errors.push(`Parameter bindings reference unknown workout ${bindingSet.workoutId}`);
+  }
+
+  for (const workout of workouts) {
+    const parameters = workout.parameters ?? [];
+    const bindingSet = bindingSetByWorkout.get(workout.id);
+    if (parameters.length === 0) {
+      if (bindingSet && bindingSet.bindings.length > 0) errors.push(`${workout.id}: bindings exist but the workout has no parameters`);
+      continue;
+    }
+    if (!bindingSet) {
+      errors.push(`${workout.id}: adjustable workout is missing an explicit parameter binding set`);
+      continue;
+    }
+
+    const parameterById = new Map(parameters.map((parameter) => [parameter.id, parameter]));
+    const boundStepsByParameter = new Map<string, Set<string>>();
+
+    for (const binding of bindingSet.bindings) {
+      const parameter = parameterById.get(binding.parameterId);
+      const path = `${workout.id}/binding/${binding.parameterId}`;
+      if (!parameter) {
+        errors.push(`${path}: unknown parameter`);
+        continue;
+      }
+      if (binding.stepIds.length === 0) errors.push(`${path}: at least one step is required`);
+      const seen = boundStepsByParameter.get(binding.parameterId) ?? new Set<string>();
+      for (const stepId of binding.stepIds) {
+        if (seen.has(stepId)) errors.push(`${path}: step ${stepId} is bound more than once`);
+        seen.add(stepId);
+      }
+      boundStepsByParameter.set(binding.parameterId, seen);
+      validateBindingUnit(parameter, binding, path, errors);
+    }
+
+    for (const parameter of parameters) {
+      const declaredSteps = new Set(parameter.appliesToStepIds);
+      const boundSteps = boundStepsByParameter.get(parameter.id) ?? new Set<string>();
+      for (const stepId of declaredSteps) if (!boundSteps.has(stepId)) errors.push(`${workout.id}/${parameter.id}: step ${stepId} has no explicit binding`);
+      for (const stepId of boundSteps) if (!declaredSteps.has(stepId)) errors.push(`${workout.id}/${parameter.id}: binding includes undeclared step ${stepId}`);
+    }
+  }
+}
+
+function validateProgressionGraph(workouts: WorkoutDefinition[], errors: string[]): void {
+  const graph = new Map(workouts.map((workout) => [workout.id, workout.progressions]));
+  const visiting = new Set<string>();
+  const visited = new Set<string>();
+
+  function visit(workoutId: string, path: string[]): void {
+    if (visiting.has(workoutId)) {
+      const cycleStart = path.indexOf(workoutId);
+      errors.push(`Progression cycle: ${[...path.slice(cycleStart), workoutId].join(' -> ')}`);
+      return;
+    }
+    if (visited.has(workoutId)) return;
+    visiting.add(workoutId);
+    for (const next of graph.get(workoutId) ?? []) visit(next, [...path, workoutId]);
+    visiting.delete(workoutId);
+    visited.add(workoutId);
+  }
+
+  for (const workout of workouts) visit(workout.id, []);
+}
+
+export function validateWorkoutLibrary(
+  exercises: ExerciseDefinition[],
+  workouts: WorkoutDefinition[],
+  parameterBindings: WorkoutParameterBindingSet[] = []
+): WorkoutLibraryValidationResult {
   const errors: string[] = [];
   const warnings: string[] = [];
   const exerciseIds = new Set<string>();
+  const exerciseById = new Map<string, ExerciseDefinition>();
   const workoutIds = new Set<string>();
 
   for (const exercise of exercises) {
     if (exerciseIds.has(exercise.id)) errors.push(`Duplicate exercise id: ${exercise.id}`);
     exerciseIds.add(exercise.id);
+    exerciseById.set(exercise.id, exercise);
     if (!exercise.name.trim()) errors.push(`${exercise.id}: exercise name is required`);
     if (!exercise.instruction.trim()) errors.push(`${exercise.id}: exercise instruction is required`);
   }
@@ -38,6 +199,9 @@ export function validateWorkoutLibrary(exercises: ExerciseDefinition[], workouts
   for (const workout of workouts) {
     const prefix = workout.id;
     const isCompleteRest = workout.id === 'rest_complete_01';
+    const availableEquipment = new Set(workout.equipment);
+    const usedExerciseIds = new Set<string>();
+
     if (workout.version < 1) errors.push(`${prefix}: version must be positive`);
     if (workout.duration.minimumMin < 0 || workout.duration.defaultMin < 0 || workout.duration.maximumMin < 0) errors.push(`${prefix}: duration values cannot be negative`);
     if (workout.duration.minimumMin > workout.duration.defaultMin || workout.duration.defaultMin > workout.duration.maximumMin) errors.push(`${prefix}: duration must satisfy minimum <= default <= maximum`);
@@ -48,10 +212,20 @@ export function validateWorkoutLibrary(exercises: ExerciseDefinition[], workouts
     if (workout.sourceNotes.length === 0) warnings.push(`${prefix}: add sourceNotes for coaching provenance`);
 
     const variantIds = new Set(workout.variants.map((variant) => variant.id));
-    for (const expectedId of expectedVariantIds) {
-      if (!variantIds.has(expectedId as 'full' | 'reduced' | 'return_to_training')) errors.push(`${prefix}: missing ${expectedId} variant`);
-    }
+    for (const expectedId of expectedVariantIds) if (!variantIds.has(expectedId as 'full' | 'reduced' | 'return_to_training')) errors.push(`${prefix}: missing ${expectedId} variant`);
     if (variantIds.size !== workout.variants.length) errors.push(`${prefix}: duplicate variant id`);
+
+    const fullVariant = workout.variants.find((variant) => variant.id === 'full');
+    const reducedVariant = workout.variants.find((variant) => variant.id === 'reduced');
+    const returnVariant = workout.variants.find((variant) => variant.id === 'return_to_training');
+    if (workout.status === 'active' && !fullVariant) errors.push(`${prefix}: active workout requires a full variant`);
+    if (fullVariant) {
+      if (fullVariant.targetDurationMin < workout.duration.minimumMin || fullVariant.targetDurationMin > workout.duration.maximumMin) errors.push(`${prefix}/full: target duration must remain inside the canonical full-workout range`);
+      if (fullVariant.targetDurationMin !== workout.duration.defaultMin) warnings.push(`${prefix}/full: target duration differs from canonical defaultMin`);
+      if (fullVariant.stepOverrides.length > 0) warnings.push(`${prefix}/full: canonical full variant normally should not need overrides`);
+    }
+    if (fullVariant && reducedVariant && reducedVariant.targetDurationMin > fullVariant.targetDurationMin) errors.push(`${prefix}: reduced duration cannot exceed full duration`);
+    if (reducedVariant && returnVariant && returnVariant.targetDurationMin > reducedVariant.targetDurationMin) errors.push(`${prefix}: return-to-training duration cannot exceed reduced duration`);
 
     const stepIds = new Set<string>();
     for (const block of workout.blocks) {
@@ -60,7 +234,14 @@ export function validateWorkoutLibrary(exercises: ExerciseDefinition[], workouts
         const stepPath = `${prefix}/${block.id}/${step.id}`;
         if (stepIds.has(step.id)) errors.push(`${prefix}: duplicate step id ${step.id}`);
         stepIds.add(step.id);
-        if (!exerciseIds.has(step.exerciseId)) errors.push(`${stepPath}: unknown exercise ${step.exerciseId}`);
+        usedExerciseIds.add(step.exerciseId);
+        const exercise = exerciseById.get(step.exerciseId);
+        if (!exercise) {
+          errors.push(`${stepPath}: unknown exercise ${step.exerciseId}`);
+        } else {
+          if (!compatibleExerciseModalities[workout.modality].includes(exercise.modality)) errors.push(`${stepPath}: exercise modality ${exercise.modality} is incompatible with workout modality ${workout.modality}`);
+          for (const required of exercise.equipment) if (!equipmentIsAvailable(required, availableEquipment)) errors.push(`${stepPath}: workout equipment does not provide ${required}`);
+        }
         if (step.sets !== undefined && step.sets < 1) errors.push(`${stepPath}: sets must be positive`);
         if (step.restAfterSec !== undefined && step.restAfterSec < 0) errors.push(`${stepPath}: restAfterSec cannot be negative`);
         if (step.duration.type === 'time' && step.duration.seconds <= 0) errors.push(`${stepPath}: time duration must be positive`);
@@ -90,7 +271,10 @@ export function validateWorkoutLibrary(exercises: ExerciseDefinition[], workouts
       if (!parameter.description.trim()) errors.push(`${parameterPath}: description is required`);
       if (parameter.minimum > parameter.defaultValue || parameter.defaultValue > parameter.maximum) errors.push(`${parameterPath}: range must satisfy minimum <= defaultValue <= maximum`);
       if (parameter.step <= 0) errors.push(`${parameterPath}: step must be positive`);
+      if (parameter.step > 0 && !isReachable(parameter.defaultValue, parameter.minimum, parameter.step)) errors.push(`${parameterPath}: defaultValue is not reachable from minimum by whole steps`);
+      if (parameter.step > 0 && !isReachable(parameter.maximum, parameter.minimum, parameter.step)) errors.push(`${parameterPath}: maximum is not reachable from minimum by whole steps`);
       if (parameter.appliesToStepIds.length === 0) errors.push(`${parameterPath}: at least one step reference is required`);
+      if (new Set(parameter.appliesToStepIds).size !== parameter.appliesToStepIds.length) errors.push(`${parameterPath}: duplicate step reference`);
       for (const stepId of parameter.appliesToStepIds) if (!stepIds.has(stepId)) errors.push(`${parameterPath}: unknown step ${stepId}`);
       if (parameter.unit === 'rpe' && (parameter.minimum < 1 || parameter.maximum > 10)) errors.push(`${parameterPath}: RPE parameter must remain between 1 and 10`);
     }
@@ -101,13 +285,17 @@ export function validateWorkoutLibrary(exercises: ExerciseDefinition[], workouts
     }
 
     for (const substitution of workout.substitutions) {
-      if (!exerciseIds.has(substitution.exerciseId)) errors.push(`${prefix}: substitution source ${substitution.exerciseId} does not exist`);
+      if (!usedExerciseIds.has(substitution.exerciseId)) errors.push(`${prefix}: substitution source ${substitution.exerciseId} is not used by the workout`);
       if (!exerciseIds.has(substitution.substituteExerciseId)) errors.push(`${prefix}: substitution target ${substitution.substituteExerciseId} does not exist`);
+      if (!substitution.reason.trim()) errors.push(`${prefix}: substitution reason is required`);
     }
 
     if (workout.garmin.exportable && workout.modality !== 'cycling' && workout.modality !== 'running') errors.push(`${prefix}: only cycling and running workouts may be Garmin-exportable`);
     if (workout.garmin.exportable && workout.garmin.supportedSport !== workout.modality) errors.push(`${prefix}: Garmin supportedSport must match workout modality`);
   }
+
+  validateParameterBindings(workouts, parameterBindings, errors);
+  validateProgressionGraph(workouts, errors);
 
   return { valid: errors.length === 0, errors, warnings };
 }

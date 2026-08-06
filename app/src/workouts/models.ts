@@ -134,7 +134,8 @@ export type WorkoutParameterUnit =
   | 'seconds'
   | 'repetitions'
   | 'sets'
-  | 'rpe';
+  | 'rpe'
+  | 'reps_in_reserve';
 
 /** A coach- or engine-adjustable dimension of a generic workout family. */
 export interface WorkoutParameter {
@@ -149,6 +150,60 @@ export interface WorkoutParameter {
   description: string;
 }
 
+export type WorkoutParameterTransform = 'identity' | 'minutes_to_seconds';
+export type WorkoutParameterZeroBehavior = 'omit_step' | 'allow_zero';
+
+export type WorkoutParameterStepField =
+  | 'sets'
+  | 'duration.seconds'
+  | 'duration.repetitions'
+  | 'restAfterSec'
+  | 'target.rpe'
+  | 'target.reps_in_reserve';
+
+export interface WorkoutParameterStepFieldBinding {
+  kind: 'step_field';
+  parameterId: string;
+  stepIds: string[];
+  field: WorkoutParameterStepField;
+  transform?: WorkoutParameterTransform;
+  zeroBehavior?: WorkoutParameterZeroBehavior;
+  /** Offsets applied around the resolved value for range targets. */
+  range?: { minOffset: number; maxOffset: number };
+}
+
+export type WorkoutParameterResolver =
+  | 'embedded_short_surges'
+  | 'embedded_gap_closing_efforts'
+  | 'over_under_internal_pattern'
+  | 'walk_run_distribution';
+
+export interface WorkoutParameterResolverBinding {
+  kind: 'resolver';
+  parameterId: string;
+  stepIds: string[];
+  resolver: WorkoutParameterResolver;
+}
+
+export type WorkoutParameterBinding =
+  | WorkoutParameterStepFieldBinding
+  | WorkoutParameterResolverBinding;
+
+/** Explicitly describes how every adjustable parameter changes a prescription. */
+export interface WorkoutParameterBindingSet {
+  workoutId: string;
+  bindings: WorkoutParameterBinding[];
+}
+
+export interface WorkoutDurationRange {
+  /** Minimum supported duration for the canonical full workout. */
+  minimumMin: number;
+  /** Default duration for the canonical full workout. */
+  defaultMin: number;
+  /** Maximum supported duration for the canonical full workout. */
+  maximumMin: number;
+}
+
 export interface WorkoutDefinition {
   id: string;
   version: number;
@@ -158,11 +213,11 @@ export interface WorkoutDefinition {
   modality: WorkoutModality;
   category: WorkoutCategory;
   objectives: TrainingObjective[];
-  duration: {
-    defaultMin: number;
-    minimumMin: number;
-    maximumMin: number;
-  };
+  /**
+   * Canonical full-workout duration range. Reduced and return-to-training
+   * variants may intentionally target a duration below minimumMin.
+   */
+  duration: WorkoutDurationRange;
   loadProfile: {
     cardiovascular: LoadLevel;
     muscular: LoadLevel;

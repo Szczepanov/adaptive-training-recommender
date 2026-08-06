@@ -58,6 +58,19 @@ const requiredCoverageKeys: EventPlanCoverageKey[] = [
   'pre_race_openers', 'race_week_strength', 'race_day'
 ];
 
+const phaseRestrictedCoverage: Partial<Record<EventPlanCoverageKey, EventPlanPhase[]>> = {
+  travel_aerobic: ['travel'],
+  travel_strength: ['travel'],
+  taper_sharpening: ['taper'],
+  pre_race_openers: ['taper'],
+  race_week_strength: ['taper'],
+  race_day: ['race']
+};
+
+function samePhases(actual: EventPlanPhase[], expected: EventPlanPhase[]): boolean {
+  return actual.length === expected.length && expected.every((phase) => actual.includes(phase));
+}
+
 export function validateEventPlanCoverage(
   workouts: WorkoutDefinition[],
   coverage: EventPlanSessionCoverage[] = SEPTEMBER_CYCLING_EVENT_SESSION_COVERAGE
@@ -69,7 +82,17 @@ export function validateEventPlanCoverage(
   for (const item of coverage) {
     if (coverageKeys.has(item.key)) errors.push(`Duplicate event-plan coverage key: ${item.key}`);
     coverageKeys.add(item.key);
+    if (!item.label.trim()) errors.push(`${item.key}: label is required`);
+    if (!item.notes.trim()) errors.push(`${item.key}: notes are required`);
+    if (item.phases.length === 0) errors.push(`${item.key}: at least one phase is required`);
+    if (new Set(item.phases).size !== item.phases.length) errors.push(`${item.key}: duplicate phase`);
     if (item.workoutIds.length === 0) errors.push(`${item.key}: at least one workout is required`);
+    if (new Set(item.workoutIds).size !== item.workoutIds.length) errors.push(`${item.key}: duplicate workout mapping`);
+
+    const restrictedPhases = phaseRestrictedCoverage[item.key];
+    if (restrictedPhases && !samePhases(item.phases, restrictedPhases)) errors.push(`${item.key}: must be restricted to ${restrictedPhases.join(', ')}`);
+    if (item.key === 'field_maintenance' && item.phases.some((phase) => phase === 'taper' || phase === 'race')) errors.push('field_maintenance: cannot be scheduled in taper or race phases');
+
     for (const workoutId of item.workoutIds) {
       const workout = workoutById.get(workoutId);
       if (!workout) errors.push(`${item.key}: missing workout ${workoutId}`);
@@ -77,12 +100,12 @@ export function validateEventPlanCoverage(
     }
   }
 
-  for (const requiredKey of requiredCoverageKeys) {
-    if (!coverageKeys.has(requiredKey)) errors.push(`Missing required event-plan coverage key: ${requiredKey}`);
-  }
+  for (const requiredKey of requiredCoverageKeys) if (!coverageKeys.has(requiredKey)) errors.push(`Missing required event-plan coverage key: ${requiredKey}`);
 
   for (const phase of ['build', 'travel', 'peak', 'taper', 'race'] as EventPlanPhase[]) {
-    if (!coverage.some((item) => item.phases.includes(phase))) errors.push(`No workout coverage declared for phase: ${phase}`);
+    const phaseCoverage = coverage.filter((item) => item.phases.includes(phase));
+    if (phaseCoverage.length === 0) errors.push(`No workout coverage declared for phase: ${phase}`);
+    if (!phaseCoverage.some((item) => item.requirement === 'required')) errors.push(`No required workout coverage declared for phase: ${phase}`);
   }
 
   return errors;
