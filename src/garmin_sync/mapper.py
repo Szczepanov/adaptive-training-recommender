@@ -41,6 +41,41 @@ def normalize_activity(activity: CanonicalActivity, sync_run_id: str) -> dict[st
     }
 
 
+def _build_training_summary(activities: list[CanonicalActivity], date_iso: str) -> YesterdayTraining | None:
+    """Summarize all canonical activities that occurred on a single date (used for both
+    `yesterdayTraining` and `todayTraining` -- the shape is identical, only which date
+    is being summarized differs)."""
+    day_acts = [act for act in activities if act.date == date_iso]
+    if not day_acts:
+        return None
+
+    hard_count = sum(1 for act in day_acts if act.intensity_tag == "hard")
+    total_dur_sec = sum(act.duration_seconds for act in day_acts)
+
+    def primary_sort_key(act: CanonicalActivity) -> tuple[float, float, int, str]:
+        load = act.training_load or 0.0
+        te_max = max(act.training_effect_aerobic, act.training_effect_anaerobic)
+        return (load, te_max, act.duration_seconds, act.activity_id)
+
+    best_act = max(day_acts, key=primary_sort_key)
+    te_best = max(best_act.training_effect_aerobic, best_act.training_effect_anaerobic)
+
+    primary_act = PrimaryActivity(
+        activityId=best_act.activity_id,
+        type=best_act.type,
+        durationMin=best_act.duration_min,
+        trainingEffect=te_best,
+        intensityTag=best_act.intensity_tag,
+    )
+
+    return YesterdayTraining(
+        activityCount=len(day_acts),
+        totalDurationMin=round(total_dur_sec / 60),
+        hardActivityCount=hard_count,
+        primaryActivity=primary_act,
+    )
+
+
 def build_snapshot_from_canonical(
     user_id: str,
     target_date_iso: str,
@@ -65,49 +100,22 @@ def build_snapshot_from_canonical(
         restingHr=canonical.resting_heart_rate_date,
         bodyBatteryWake=canonical.body_battery_wake_date,
         steps=canonical.steps_date,
-        activitiesThrough=yesterday_iso,
+        # `canonical_activities` now spans through target_date_iso itself (not just
+        # yesterday) across all three call paths -- sync_daily's live fetch, backfill's
+        # full-batch window, and rebuild's archived per-date slice -- so this can
+        # accurately claim same-day coverage.
+        activitiesThrough=target_date_iso,
     )
 
-    # Activities (3-day lookback ending at yesterday)
-    hard_sessions_count = 0
-    yesterday_acts: list[CanonicalActivity] = []
+    # 3-day hard-session lookback stays yesterday-and-earlier by design: it measures
+    # accumulated load *going into* today, not today's own session.
+    hard_sessions_count = sum(
+        1 for act in canonical_activities
+        if act.date and three_days_ago_iso <= act.date <= yesterday_iso and act.intensity_tag == "hard"
+    )
 
-    for act in canonical_activities:
-        if not act.date:
-            continue
-        if three_days_ago_iso <= act.date <= yesterday_iso:
-            if act.intensity_tag == "hard":
-                hard_sessions_count += 1
-            if act.date == yesterday_iso:
-                yesterday_acts.append(act)
-
-    y_train: YesterdayTraining | None = None
-    if yesterday_acts:
-        y_hard_count = sum(1 for act in yesterday_acts if act.intensity_tag == "hard")
-        total_dur_sec = sum(act.duration_seconds for act in yesterday_acts)
-
-        def primary_sort_key(act: CanonicalActivity) -> tuple[float, float, int, str]:
-            load = act.training_load or 0.0
-            te_max = max(act.training_effect_aerobic, act.training_effect_anaerobic)
-            return (load, te_max, act.duration_seconds, act.activity_id)
-
-        best_act = max(yesterday_acts, key=primary_sort_key)
-        te_best = max(best_act.training_effect_aerobic, best_act.training_effect_anaerobic)
-
-        primary_act = PrimaryActivity(
-            activityId=best_act.activity_id,
-            type=best_act.type,
-            durationMin=best_act.duration_min,
-            trainingEffect=te_best,
-            intensityTag=best_act.intensity_tag,
-        )
-
-        y_train = YesterdayTraining(
-            activityCount=len(yesterday_acts),
-            totalDurationMin=round(total_dur_sec / 60),
-            hardActivityCount=y_hard_count,
-            primaryActivity=primary_act,
-        )
+    y_train = _build_training_summary(canonical_activities, yesterday_iso)
+    today_train = _build_training_summary(canonical_activities, target_date_iso)
 
     now_iso = synced_at_iso or datetime.now(timezone.utc).isoformat()
 
@@ -131,6 +139,7 @@ def build_snapshot_from_canonical(
         totalSteps=canonical.steps_count,
         last3DaysHardSessionsCount=hard_sessions_count,
         yesterdayTraining=y_train,
+        todayTraining=today_train,
     )
 
     data_quality = DataQuality(

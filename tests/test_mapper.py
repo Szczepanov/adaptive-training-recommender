@@ -98,6 +98,82 @@ def test_build_snapshot_deterministic_yesterday_activity_selection():
     assert y.primaryActivity.intensityTag == "hard"
 
 
+def test_build_snapshot_populates_today_training_from_same_day_activity():
+    """A Garmin activity already synced for target_date_iso itself should populate
+    raw.todayTraining, independent of (and with the same shape as) yesterdayTraining."""
+    derived = DerivedMetrics()
+    activities = [
+        # Yesterday's easy session
+        CanonicalActivity(
+            activity_id="201", date="2026-08-05", type="cycling",
+            duration_min=30, duration_seconds=1800,
+            training_effect_aerobic=1.5, training_effect_anaerobic=0.0,
+            average_hr=None, training_load=15.0, intensity_tag="moderate/easy",
+        ),
+        # Today's hard interval session (already uploaded by the time sync ran)
+        CanonicalActivity(
+            activity_id="202", date="2026-08-06", type="running",
+            duration_min=45, duration_seconds=2700,
+            training_effect_aerobic=4.2, training_effect_anaerobic=0.5,
+            average_hr=160, training_load=140.0, intensity_tag="hard",
+        ),
+    ]
+    canonical = CanonicalDailyMetrics(date="2026-08-06")
+
+    snapshot = build_snapshot_from_canonical(
+        user_id="test_uid",
+        target_date_iso="2026-08-06",
+        canonical=canonical,
+        canonical_activities=activities,
+        derived_metrics=derived,
+    )
+
+    today = snapshot.raw.todayTraining
+    assert today is not None
+    assert today.activityCount == 1
+    assert today.totalDurationMin == 45
+    assert today.hardActivityCount == 1
+    assert today.primaryActivity is not None
+    assert today.primaryActivity.activityId == "202"
+    assert today.primaryActivity.type == "running"
+    assert today.primaryActivity.intensityTag == "hard"
+
+    # Today's own hard session must NOT count toward the 3-day *lookback* -- that
+    # measures accumulated load going into today, not today's own session.
+    assert snapshot.raw.last3DaysHardSessionsCount == 0
+
+    # yesterdayTraining is unaffected by the presence of a same-day activity.
+    yesterday = snapshot.raw.yesterdayTraining
+    assert yesterday is not None
+    assert yesterday.primaryActivity is not None
+    assert yesterday.primaryActivity.activityId == "201"
+
+    assert snapshot.source.metricDates.activitiesThrough == "2026-08-06"
+
+
+def test_build_snapshot_today_training_is_none_when_no_same_day_activity():
+    derived = DerivedMetrics()
+    activities = [
+        CanonicalActivity(
+            activity_id="301", date="2026-08-05", type="running",
+            duration_min=40, duration_seconds=2400,
+            training_effect_aerobic=3.8, training_effect_anaerobic=0.0,
+            average_hr=None, training_load=120.0, intensity_tag="hard",
+        ),
+    ]
+    canonical = CanonicalDailyMetrics(date="2026-08-06")
+
+    snapshot = build_snapshot_from_canonical(
+        user_id="test_uid",
+        target_date_iso="2026-08-06",
+        canonical=canonical,
+        canonical_activities=activities,
+        derived_metrics=derived,
+    )
+
+    assert snapshot.raw.todayTraining is None
+
+
 def test_normalize_activity_maps_canonical_fields():
     activity = CanonicalActivity(
         activity_id="999", date="2026-08-05", type="running",

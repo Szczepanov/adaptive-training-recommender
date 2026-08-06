@@ -77,11 +77,19 @@ class RawMetrics:
     totalSteps: int | None = None
     last3DaysHardSessionsCount: int = 0
     yesterdayTraining: YesterdayTraining | None = None
+    # Same-day activity synced from Garmin for `date` itself. Reuses the YesterdayTraining
+    # shape (it's just "activity summary for one specific day"). Only populated if a sync
+    # runs after the activity was uploaded to Garmin -- absent doesn't mean "didn't train
+    # today", just "not yet synced". See CLAUDE.md / DailySubjectiveCheckin.alreadyTrainedToday
+    # for the reliable same-day signal the recommendation engine prefers.
+    todayTraining: YesterdayTraining | None = None
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
         if self.yesterdayTraining:
             d["yesterdayTraining"] = self.yesterdayTraining.to_dict()
+        if self.todayTraining:
+            d["todayTraining"] = self.todayTraining.to_dict()
         return d
 
 

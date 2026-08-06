@@ -185,8 +185,12 @@ class GarminSyncService:
             archive_endpoint = "stats" if endpoint == "stats_fallback" else ("sleep" if endpoint == "sleep_fallback" else endpoint)
             self._archive_raw(archive_endpoint, logical_date, payload, sync_run_id)
 
-        logger.info(f"[{target_iso}] Fetching activities window ({three_days_ago_iso} -> {yesterday_iso})...")
-        activities_result = provider.fetch_activities(three_days_ago_iso, yesterday_iso)
+        # Upper bound includes target_iso (not just yesterday) so a same-day activity --
+        # already uploaded to Garmin by the time this sync runs -- is captured as
+        # raw.todayTraining. Requires a re-sync after training to pick it up; see
+        # DailySubjectiveCheckin.alreadyTrainedToday for the instant, sync-independent signal.
+        logger.info(f"[{target_iso}] Fetching activities window ({three_days_ago_iso} -> {target_iso})...")
+        activities_result = provider.fetch_activities(three_days_ago_iso, target_iso)
         self._archive_raw("activities", target_iso, activities_result.raw_payload, sync_run_id)
         self._archive_activities(activities_result.raw_payload, activities_result.canonical, sync_run_id)
 
@@ -285,10 +289,12 @@ class GarminSyncService:
 
                 # Archive the per-date-relevant activities slice (not the whole batch) so
                 # a single date can be rebuilt independently from its own archive entry.
+                # Upper bound is target_iso itself (not yesterday_iso) to match the live
+                # sync_daily window and preserve that date's own todayTraining on rebuild.
                 three_days_ago_iso = get_date_string(n_days_ago(target_date, 3))
                 date_activities_raw = [
                     a for a in all_activities_raw
-                    if three_days_ago_iso <= a.get("startTimeLocal", "")[:10] <= yesterday_iso
+                    if three_days_ago_iso <= a.get("startTimeLocal", "")[:10] <= target_iso
                 ]
                 self._archive_raw("activities", target_iso, date_activities_raw, run_id)
 

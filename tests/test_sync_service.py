@@ -170,6 +170,39 @@ def test_backfill_seeds_prehistory_from_firestore():
     assert saved_payload["derived"]["restingHr28dAvg"] == 50.0
 
 
+def test_sync_service_fetches_activities_through_today_for_same_day_detection():
+    """sync_daily's activity window must include target_iso itself (not just
+    yesterday) so an already-uploaded same-day session can populate raw.todayTraining."""
+    settings = Settings(app_user_id="test_uid_789")
+    mock_repo = MagicMock()
+    mock_repo.is_fresh.return_value = False
+    mock_repo.get_historical_snapshots.return_value = {}
+
+    mock_client = MagicMock()
+    mock_client.get_stats.return_value = {"restingHeartRate": 55, "totalSteps": 10000}
+    mock_client.get_sleep_data.return_value = {"dailySleepDTO": {"sleepScores": {"overall": {"value": 80}}}}
+    mock_client.get_hrv_data.return_value = {"hrvSummary": {"lastNightAvg": 65}}
+    mock_client.get_activities_window.return_value = [
+        {
+            "activityId": 555,
+            "startTimeLocal": "2026-08-06T07:00:00",
+            "activityType": {"typeKey": "running"},
+            "duration": 1800,
+            "aerobicTrainingEffect": 3.5,
+            "activityTrainingLoad": 90.0,
+        }
+    ]
+
+    service = GarminSyncService(settings=settings, repository=mock_repo, garmin_client=mock_client)
+    result = service.sync_daily(target_date_str="2026-08-06", force=True)
+
+    assert result is True
+    mock_client.get_activities_window.assert_called_once_with("2026-08-03", "2026-08-06")
+    saved_payload = mock_repo.upsert_snapshot.call_args[0][1]
+    assert saved_payload["raw"]["todayTraining"] is not None
+    assert saved_payload["raw"]["todayTraining"]["primaryActivity"]["type"] == "running"
+
+
 def test_sync_service_works_with_a_non_garmin_provider():
     """GarminSyncService depends on WearableProvider, not GarminClientWrapper directly --
     a fake second provider must be able to satisfy it with zero Garmin-specific code."""
