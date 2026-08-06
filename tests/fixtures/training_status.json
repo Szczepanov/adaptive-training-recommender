@@ -1,0 +1,48 @@
+{
+  "userId": 1,
+  "mostRecentVO2Max": {
+    "userId": 1,
+    "generic": {
+      "calendarDate": "2026-07-17",
+      "vo2MaxPreciseValue": 48.0,
+      "vo2MaxValue": 48.0,
+      "fitnessAge": 20
+    },
+    "cycling": {
+      "calendarDate": "2026-07-24",
+      "vo2MaxPreciseValue": 48.0,
+      "vo2MaxValue": 48.0
+    }
+  },
+  "mostRecentTrainingLoadBalance": {
+    "userId": 1,
+    "metricsTrainingLoadBalanceDTOMap": {
+      "1234": {
+        "calendarDate": "2026-08-05",
+        "deviceId": 1234,
+        "trainingBalanceFeedbackPhrase": "AEROBIC_HIGH_SHORTAGE"
+      }
+    }
+  },
+  "mostRecentTrainingStatus": {
+    "userId": 1,
+    "latestTrainingStatusData": {
+      "1234": {
+        "calendarDate": "2026-08-05",
+        "trainingStatus": 8,
+        "deviceId": 1234,
+        "sport": "CYCLING",
+        "trainingStatusFeedbackPhrase": "STRAINED_1",
+        "trainingPaused": false,
+        "acuteTrainingLoadDTO": {
+          "acwrPercent": 25,
+          "acwrStatus": "LOW",
+          "dailyTrainingLoadAcute": 137,
+          "maxTrainingLoadChronic": 328.5,
+          "minTrainingLoadChronic": 175.2
+        }
+      }
+    },
+    "recordedDevices": [{"deviceId": 1234, "deviceName": "fenix 7"}]
+  }
+}

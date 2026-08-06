@@ -1,4 +1,4 @@
-import type { DailyReadiness, UserContext, Recommendation, SessionTemplate } from './models';
+import type { DailyReadiness, UserContext, Recommendation, SessionTemplate, NextDayPotentialPlan, NextDayPlanBranch } from './models';
 import { TEMPLATES } from './templates';
 
 /**
@@ -156,3 +156,195 @@ export function evaluateTraining(readiness: DailyReadiness, context: UserContext
         rationale
     };
 }
+
+/**
+ * Calculates tomorrow's YYYY-MM-DD date string based on a given date.
+ */
+function getTomorrowDateString(dateStr: string): string {
+    const d = new Date(dateStr + 'T00:00:00');
+    d.setDate(d.getDate() + 1);
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
+/**
+ * Evaluates next-day potential training plans (Green / Yellow / Red contingencies or a Single Plan override).
+ */
+export function evaluateNextDayPlan(
+    todayReadiness: DailyReadiness,
+    context: UserContext,
+    todayDate: string,
+    todayRec: Recommendation
+): NextDayPotentialPlan {
+    const tomorrowDate = getTomorrowDateString(todayDate);
+
+    // 1. Single Plan Override Check
+    const isPainOrInjury = todayReadiness.subjective.painFlag;
+    const isTodayHardSession = todayRec.template.category === 'Hard Endurance' || 
+        todayRec.template.category === 'Full-body Strength' || 
+        todayRec.template.category === 'Lower-body Strength' || 
+        todayRec.template.category === 'Upper-body Strength';
+
+    const recentHardSessions = todayReadiness.objective.last_3_days_hard_sessions_count || 0;
+    const isCumulativeOverload = recentHardSessions >= 2 && isTodayHardSession;
+
+    // Check goals for explicit taper / pre-big-day preparation
+    const goalText = (context.goals.shortTerm + ' ' + context.goals.midTerm + ' ' + context.goals.longTerm).toLowerCase();
+    const isPreKeyDayTaper = goalText.includes('taper') || goalText.includes('pre-race') || goalText.includes('recovery prior to big');
+
+    let singlePlanReason: string | undefined = undefined;
+    if (isPainOrInjury) {
+        singlePlanReason = "Active pain/injury reported today. Tomorrow requires dedicated recovery regardless of morning metrics.";
+    } else if (isCumulativeOverload) {
+        singlePlanReason = "High cumulative load (multiple hard sessions back-to-back). Tomorrow is locked to active recovery to prevent overtraining.";
+    } else if (isPreKeyDayTaper) {
+        singlePlanReason = "Pre-key event taper protocol: mandatory recovery day to preserve fresh legs for your upcoming big event/workout.";
+    }
+
+    if (singlePlanReason) {
+        // Generate a single recovery/primer recommendation
+        const syntheticRecoveryReadiness: DailyReadiness = {
+            subjective: {
+                ...todayReadiness.subjective,
+                fatigue: 7,
+                soreness: 7,
+                readiness: 4,
+                alreadyTrainedToday: false
+            },
+            objective: {
+                ...todayReadiness.objective,
+                last_3_days_hard_sessions_count: recentHardSessions + (isTodayHardSession ? 1 : 0),
+                today_training: null
+            }
+        };
+
+        const singleRec = evaluateTraining(syntheticRecoveryReadiness, context, tomorrowDate);
+        const singleBranch: NextDayPlanBranch = {
+            tier: 'green',
+            label: 'Mandatory Plan',
+            condition: singlePlanReason,
+            recommendation: singleRec
+        };
+
+        return {
+            date: tomorrowDate,
+            isSinglePlan: true,
+            singlePlanReason,
+            branches: {
+                green: { ...singleBranch, tier: 'green', label: 'Mandatory Recovery Plan' },
+                yellow: { ...singleBranch, tier: 'yellow', label: 'Mandatory Recovery Plan' },
+                red: { ...singleBranch, tier: 'red', label: 'Mandatory Recovery Plan' }
+            }
+        };
+    }
+
+    // 2. Multi-Branch Evaluation (Green / Yellow / Red Options)
+    const updatedHardCount = recentHardSessions + (isTodayHardSession ? 1 : 0);
+
+    // Green Scenario: Strong overnight recovery & feel
+    const greenReadiness: DailyReadiness = {
+        subjective: {
+            readiness: 9,
+            sleepQuality: 9,
+            fatigue: 2,
+            soreness: 2,
+            stress: 2,
+            motivation: 9,
+            timeAvailable: todayReadiness.subjective.timeAvailable,
+            painFlag: false,
+            alreadyTrainedToday: false
+        },
+        objective: {
+            ...todayReadiness.objective,
+            sleep_score: 88,
+            sleep_duration_min: 480,
+            rhr_delta: 0,
+            hrv_delta: 2,
+            body_battery_wake: 88,
+            last_3_days_hard_sessions_count: updatedHardCount,
+            today_training: null
+        }
+    };
+
+    // Yellow Scenario: Moderate recovery or mild soreness
+    const yellowReadiness: DailyReadiness = {
+        subjective: {
+            readiness: 6,
+            sleepQuality: 6,
+            fatigue: 5,
+            soreness: 5,
+            stress: 5,
+            motivation: 6,
+            timeAvailable: todayReadiness.subjective.timeAvailable,
+            painFlag: false,
+            alreadyTrainedToday: false
+        },
+        objective: {
+            ...todayReadiness.objective,
+            sleep_score: 68,
+            sleep_duration_min: 420,
+            rhr_delta: 3,
+            hrv_delta: -4,
+            body_battery_wake: 62,
+            last_3_days_hard_sessions_count: updatedHardCount,
+            today_training: null
+        }
+    };
+
+    // Red Scenario: Low recovery, high fatigue, or HRV drop
+    const redReadiness: DailyReadiness = {
+        subjective: {
+            readiness: 3,
+            sleepQuality: 4,
+            fatigue: 8,
+            soreness: 7,
+            stress: 7,
+            motivation: 4,
+            timeAvailable: todayReadiness.subjective.timeAvailable,
+            painFlag: false,
+            alreadyTrainedToday: false
+        },
+        objective: {
+            ...todayReadiness.objective,
+            sleep_score: 50,
+            sleep_duration_min: 360,
+            rhr_delta: 6,
+            hrv_delta: -8,
+            body_battery_wake: 42,
+            last_3_days_hard_sessions_count: updatedHardCount,
+            today_training: null
+        }
+    };
+
+    const greenRec = evaluateTraining(greenReadiness, context, tomorrowDate);
+    const yellowRec = evaluateTraining(yellowReadiness, context, tomorrowDate);
+    const redRec = evaluateTraining(redReadiness, context, tomorrowDate);
+
+    return {
+        date: tomorrowDate,
+        isSinglePlan: false,
+        branches: {
+            green: {
+                tier: 'green',
+                label: 'Optimal Readiness',
+                condition: 'If tomorrow morning HRV is baseline/elevated, sleep score > 80, and fatigue is low.',
+                recommendation: greenRec
+            },
+            yellow: {
+                tier: 'yellow',
+                label: 'Moderate Readiness',
+                condition: 'If tomorrow sleep quality is average (60-75), HRV shows mild dip, or moderate soreness is present.',
+                recommendation: yellowRec
+            },
+            red: {
+                tier: 'red',
+                label: 'Low Readiness / High Fatigue',
+                condition: 'If tomorrow sleep score drops (< 60), HRV drops significantly, or elevated fatigue/soreness is reported.',
+                recommendation: redRec
+            }
+        }
+    };
+}
+

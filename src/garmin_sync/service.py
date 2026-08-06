@@ -371,6 +371,15 @@ class GarminSyncService:
             stats_fallback = self.archive_store.load("stats", yesterday_iso)
             sleep_fallback = self.archive_store.load("sleep", yesterday_iso) if not raw_sleep else None
 
+            # Metric enrichment (stress/body battery/training readiness/training status)
+            # is best-effort here, unlike the four required payloads above -- it wasn't
+            # part of the archive contract before item 4, so older archived dates simply
+            # won't have it, and that must not block rebuildability.
+            stress_today = self.archive_store.load("stress", target_iso)
+            body_battery_today = self.archive_store.load("body_battery", target_iso)
+            training_readiness_today = self.archive_store.load("training_readiness", target_iso)
+            training_status_today = self.archive_store.load("training_status", target_iso)
+
             try:
                 canonical = canonicalize_from_raw(
                     stats_today=raw_stats,
@@ -380,6 +389,10 @@ class GarminSyncService:
                     hrv_today=raw_hrv,
                     target_date_iso=target_iso,
                     yesterday_iso=yesterday_iso,
+                    stress_today=stress_today,
+                    body_battery_today=body_battery_today,
+                    training_readiness_today=training_readiness_today,
+                    training_status_today=training_status_today,
                 )
                 canonical_activities = canonicalize_activities(raw_activities)
 

@@ -15,6 +15,9 @@ from .models import (
     RawMetrics,
     SCHEMA_VERSION,
     SourceMetadata,
+    StressSummary,
+    TrainingReadinessSummary,
+    TrainingStatusSummary,
     YesterdayTraining,
 )
 
@@ -111,6 +114,10 @@ def build_snapshot_from_canonical(
         # before same-day activity fetching existed may only cover through yesterday, so
         # rebuild must not assume the newer, wider guarantee applies to old archives.
         activitiesThrough=activities_through_iso or target_date_iso,
+        stress=target_date_iso if canonical.stress is not None else None,
+        bodyBattery=target_date_iso if canonical.body_battery is not None else None,
+        trainingReadiness=target_date_iso if canonical.training_readiness is not None else None,
+        trainingStatus=target_date_iso if canonical.training_status is not None else None,
     )
 
     # 3-day hard-session lookback stays yesterday-and-earlier by design: it measures
@@ -122,6 +129,31 @@ def build_snapshot_from_canonical(
 
     y_train = _build_training_summary(canonical_activities, yesterday_iso)
     today_train = _build_training_summary(canonical_activities, target_date_iso)
+
+    stress_summary = (
+        StressSummary(avg=canonical.stress.avg, max=canonical.stress.max)
+        if canonical.stress is not None else None
+    )
+    training_readiness_summary = (
+        TrainingReadinessSummary(
+            score=canonical.training_readiness.score,
+            level=canonical.training_readiness.level,
+            feedback=canonical.training_readiness.feedback,
+        )
+        if canonical.training_readiness is not None else None
+    )
+    training_status_summary = (
+        TrainingStatusSummary(
+            statusPhrase=canonical.training_status.status_phrase,
+            acuteTrainingLoad=canonical.training_status.acute_training_load,
+            acwrStatus=canonical.training_status.acwr_status,
+            vo2MaxRunning=canonical.training_status.vo2max_running,
+            vo2MaxRunningDate=canonical.training_status.vo2max_running_date,
+            vo2MaxCycling=canonical.training_status.vo2max_cycling,
+            vo2MaxCyclingDate=canonical.training_status.vo2max_cycling_date,
+        )
+        if canonical.training_status is not None else None
+    )
 
     now_iso = synced_at_iso or datetime.now(timezone.utc).isoformat()
 
@@ -141,11 +173,16 @@ def build_snapshot_from_canonical(
         hrvStatus=canonical.hrv_status,
         respirationAvg=canonical.respiration_rate_brpm,
         bodyBatteryWake=canonical.body_battery_wake,
-        bodyBatteryChange=None,
+        bodyBatteryChange=canonical.body_battery.change if canonical.body_battery is not None else None,
+        bodyBatteryCharged=canonical.body_battery.charged if canonical.body_battery is not None else None,
+        bodyBatteryDrained=canonical.body_battery.drained if canonical.body_battery is not None else None,
         totalSteps=canonical.steps_count,
         last3DaysHardSessionsCount=hard_sessions_count,
         yesterdayTraining=y_train,
         todayTraining=today_train,
+        stress=stress_summary,
+        trainingReadiness=training_readiness_summary,
+        trainingStatus=training_status_summary,
     )
 
     data_quality = DataQuality(
@@ -154,6 +191,10 @@ def build_snapshot_from_canonical(
         hrvAvailable=canonical.hrv_overnight_avg_ms is not None,
         baseline7dReady=derived_metrics.restingHr7dAvg is not None,
         baseline28dReady=derived_metrics.restingHr28dAvg is not None,
+        stressAvailable=canonical.stress is not None and canonical.stress.avg is not None,
+        bodyBatteryDetailAvailable=canonical.body_battery is not None and canonical.body_battery.change is not None,
+        trainingReadinessAvailable=canonical.training_readiness is not None and canonical.training_readiness.score is not None,
+        trainingStatusAvailable=canonical.training_status is not None and canonical.training_status.status_phrase is not None,
     )
 
     return DailyRecoverySnapshot(

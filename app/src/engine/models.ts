@@ -74,6 +74,24 @@ export interface Recommendation {
     rationale: string;
 }
 
+export interface NextDayPlanBranch {
+    tier: 'green' | 'yellow' | 'red';
+    label: string;
+    condition: string;
+    recommendation: Recommendation;
+}
+
+export interface NextDayPotentialPlan {
+    date: string; // Tomorrow's date YYYY-MM-DD
+    isSinglePlan: boolean;
+    singlePlanReason?: string;
+    branches: {
+        green: NextDayPlanBranch;
+        yellow: NextDayPlanBranch;
+        red: NextDayPlanBranch;
+    };
+}
+
 // --- Firestore Canonical Models (Phase 3) ---
 
 /** Raw Garmin activity summary for a single day, as stored under `raw.yesterdayTraining` / `raw.todayTraining`. */

@@ -258,3 +258,38 @@ def test_sync_service_works_with_a_non_garmin_provider():
     saved_payload = mock_repo.upsert_snapshot.call_args[0][1]
     assert saved_payload["raw"]["sleepScore"] == 91.0
     assert saved_payload["raw"]["restingHr"] == 47.0
+
+
+def test_sync_service_survives_a_failed_enrichment_fetch():
+    """A metric-enrichment endpoint (stress/body battery/training readiness/training
+    status) failing must not abort the whole sync -- the core snapshot (sleep/HRV/RHR)
+    still saves, just without that one enrichment field."""
+    settings = Settings(app_user_id="test_uid_789")
+    mock_repo = MagicMock()
+    mock_repo.is_fresh.return_value = False
+    mock_repo.get_historical_snapshots.return_value = {}
+
+    mock_client = MagicMock()
+    mock_client.get_stats.return_value = {"restingHeartRate": 55, "totalSteps": 10000}
+    mock_client.get_sleep_data.return_value = {"dailySleepDTO": {"sleepScores": {"overall": {"value": 80}}}}
+    mock_client.get_hrv_data.return_value = {"hrvSummary": {"lastNightAvg": 65}}
+    mock_client.get_activities_window.return_value = []
+    mock_client.get_stress_data.return_value = {"avgStressLevel": 30, "maxStressLevel": 80}
+    mock_client.get_body_battery.return_value = [{"charged": 70, "drained": 60}]
+    mock_client.get_training_readiness.return_value = [{"score": 65, "level": "HIGH", "feedbackLong": "OK"}]
+    mock_client.get_training_status.side_effect = RuntimeError("training status endpoint down")
+
+    service = GarminSyncService(settings=settings, repository=mock_repo, garmin_client=mock_client)
+    result = service.sync_daily(target_date_str="2026-08-06", force=True)
+
+    assert result is True
+    saved_payload = mock_repo.upsert_snapshot.call_args[0][1]
+    # Core metrics unaffected by the enrichment failure.
+    assert saved_payload["raw"]["sleepScore"] == 80
+    assert saved_payload["raw"]["restingHr"] == 55
+    # The endpoint that succeeded is populated...
+    assert saved_payload["raw"]["stress"]["avg"] == 30
+    assert saved_payload["dataQuality"]["bodyBatteryDetailAvailable"] is True
+    # ...the one that failed degrades to absent, not a crash.
+    assert saved_payload["raw"]["trainingStatus"] is None
+    assert saved_payload["dataQuality"]["trainingStatusAvailable"] is False

@@ -257,3 +257,79 @@ def test_normalize_activity_maps_canonical_fields():
     assert normalized["intensityTag"] == "hard"
     assert normalized["syncRunId"] == "run-abc"
     assert "syncedAt" in normalized
+
+
+def test_build_snapshot_populates_metric_enrichment_fields():
+    from garmin_sync.canonical import (
+        CanonicalBodyBattery,
+        CanonicalStress,
+        CanonicalTrainingReadiness,
+        CanonicalTrainingStatus,
+    )
+
+    canonical = CanonicalDailyMetrics(
+        date="2026-08-06",
+        stress=CanonicalStress(avg=43, max=100),
+        body_battery=CanonicalBodyBattery(charged=75, drained=84, change=-9),
+        training_readiness=CanonicalTrainingReadiness(score=59, level="MODERATE", feedback="MOD_HRV_LOW"),
+        training_status=CanonicalTrainingStatus(
+            status_phrase="STRAINED_1",
+            acute_training_load=137,
+            acwr_status="LOW",
+            vo2max_running=48.0,
+            vo2max_running_date="2026-07-17",
+            vo2max_cycling=48.0,
+            vo2max_cycling_date="2026-07-24",
+        ),
+    )
+
+    snapshot = build_snapshot_from_canonical(
+        user_id="test_uid",
+        target_date_iso="2026-08-06",
+        canonical=canonical,
+        canonical_activities=[],
+        derived_metrics=DerivedMetrics(),
+    )
+
+    raw = snapshot.raw
+    assert raw.stress is not None and raw.stress.avg == 43 and raw.stress.max == 100
+    assert raw.bodyBatteryChange == -9
+    assert raw.bodyBatteryCharged == 75
+    assert raw.bodyBatteryDrained == 84
+    assert raw.trainingReadiness is not None and raw.trainingReadiness.score == 59
+    assert raw.trainingStatus is not None
+    assert raw.trainingStatus.statusPhrase == "STRAINED_1"
+    assert raw.trainingStatus.vo2MaxRunningDate == "2026-07-17"
+
+    dq = snapshot.dataQuality
+    assert dq.stressAvailable is True
+    assert dq.bodyBatteryDetailAvailable is True
+    assert dq.trainingReadinessAvailable is True
+    assert dq.trainingStatusAvailable is True
+
+    dates = snapshot.source.metricDates
+    assert dates.stress == "2026-08-06"
+    assert dates.bodyBattery == "2026-08-06"
+    assert dates.trainingReadiness == "2026-08-06"
+    assert dates.trainingStatus == "2026-08-06"
+
+
+def test_build_snapshot_metric_enrichment_fields_absent_when_no_canonical_data():
+    """No enrichment data (e.g. archived rebuild of a pre-item-4 date) must degrade to
+    None fields and False availability flags, not an error."""
+    canonical = CanonicalDailyMetrics(date="2026-08-06")
+
+    snapshot = build_snapshot_from_canonical(
+        user_id="test_uid",
+        target_date_iso="2026-08-06",
+        canonical=canonical,
+        canonical_activities=[],
+        derived_metrics=DerivedMetrics(),
+    )
+
+    assert snapshot.raw.stress is None
+    assert snapshot.raw.trainingReadiness is None
+    assert snapshot.raw.trainingStatus is None
+    assert snapshot.raw.bodyBatteryChange is None
+    assert snapshot.dataQuality.stressAvailable is False
+    assert snapshot.source.metricDates.stress is None

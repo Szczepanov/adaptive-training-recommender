@@ -4,7 +4,14 @@ hrvSummary, activityType, etc.) -- everything downstream (mapper.py, service.py,
 recommendation engine) operates on canonical.py types only."""
 import logging
 from typing import Any
-from .canonical import CanonicalActivity, CanonicalDailyMetrics
+from .canonical import (
+    CanonicalActivity,
+    CanonicalBodyBattery,
+    CanonicalDailyMetrics,
+    CanonicalStress,
+    CanonicalTrainingReadiness,
+    CanonicalTrainingStatus,
+)
 from .garmin_client import GarminClientWrapper
 from .metrics import classify_activity_intensity
 from .provider import ProviderActivitiesResult, ProviderCapabilities, ProviderFetchResult
@@ -32,6 +39,62 @@ def extract_sleep_metrics(sleep_obj: dict[str, Any]) -> tuple[int | float | None
     return sleep_score, sleep_sec, avg_resp
 
 
+def _canonicalize_stress(stress_today: dict[str, Any] | None) -> CanonicalStress | None:
+    if not stress_today:
+        return None
+    return CanonicalStress(avg=stress_today.get("avgStressLevel"), max=stress_today.get("maxStressLevel"))
+
+
+def _canonicalize_body_battery(body_battery_today: list[dict[str, Any]] | None) -> CanonicalBodyBattery | None:
+    """get_body_battery(date, date) returns a list (one entry per requested day)."""
+    if not body_battery_today:
+        return None
+    entry = body_battery_today[0]
+    charged = entry.get("charged")
+    drained = entry.get("drained")
+    change = charged - drained if charged is not None and drained is not None else None
+    return CanonicalBodyBattery(charged=charged, drained=drained, change=change)
+
+
+def _canonicalize_training_readiness(readings: list[dict[str, Any]] | None) -> CanonicalTrainingReadiness | None:
+    """get_training_readiness(date) returns multiple intraday readings (the device
+    re-evaluates through the day); readings[0] is the newest per the observed API
+    ordering -- used as the day's representative value."""
+    if not readings:
+        return None
+    latest = readings[0]
+    return CanonicalTrainingReadiness(
+        score=latest.get("score"),
+        level=latest.get("level"),
+        feedback=latest.get("feedbackLong"),
+    )
+
+
+def _canonicalize_training_status(training_status_today: dict[str, Any] | None) -> CanonicalTrainingStatus | None:
+    """Deeply nested and device-ID-keyed -- every level extracted defensively, since a
+    missing device/metric must degrade to None fields, never a KeyError."""
+    if not training_status_today:
+        return None
+
+    status_data = (training_status_today.get("mostRecentTrainingStatus") or {}).get("latestTrainingStatusData") or {}
+    device_status = next(iter(status_data.values()), {}) if status_data else {}
+    acute_load_dto = device_status.get("acuteTrainingLoadDTO") or {}
+
+    vo2max = training_status_today.get("mostRecentVO2Max") or {}
+    generic_vo2max = vo2max.get("generic") or {}
+    cycling_vo2max = vo2max.get("cycling") or {}
+
+    return CanonicalTrainingStatus(
+        status_phrase=device_status.get("trainingStatusFeedbackPhrase"),
+        acute_training_load=acute_load_dto.get("dailyTrainingLoadAcute"),
+        acwr_status=acute_load_dto.get("acwrStatus"),
+        vo2max_running=generic_vo2max.get("vo2MaxValue"),
+        vo2max_running_date=generic_vo2max.get("calendarDate"),
+        vo2max_cycling=cycling_vo2max.get("vo2MaxValue"),
+        vo2max_cycling_date=cycling_vo2max.get("calendarDate"),
+    )
+
+
 def canonicalize_from_raw(
     stats_today: dict[str, Any],
     stats_fallback: dict[str, Any] | None,
@@ -40,6 +103,10 @@ def canonicalize_from_raw(
     hrv_today: dict[str, Any],
     target_date_iso: str,
     yesterday_iso: str,
+    stress_today: dict[str, Any] | None = None,
+    body_battery_today: list[dict[str, Any]] | None = None,
+    training_readiness_today: list[dict[str, Any]] | None = None,
+    training_status_today: dict[str, Any] | None = None,
 ) -> CanonicalDailyMetrics:
     """Pure Garmin-shape parsing + fallback logic, producing a provider-neutral
     CanonicalDailyMetrics. Shared by GarminProviderAdapter.fetch_daily_metrics (live
@@ -95,6 +162,10 @@ def canonicalize_from_raw(
         body_battery_wake_date=bb_wake_date if bb_wake is not None else None,
         steps_count=total_steps,
         steps_date=steps_date,
+        stress=_canonicalize_stress(stress_today),
+        body_battery=_canonicalize_body_battery(body_battery_today),
+        training_readiness=_canonicalize_training_readiness(training_readiness_today),
+        training_status=_canonicalize_training_status(training_status_today),
     )
 
 
@@ -165,6 +236,17 @@ class GarminProviderAdapter:
             self._sleep_cache[date_iso] = self.client.get_sleep_data(date_iso)
         return self._sleep_cache[date_iso]
 
+    def _fetch_enrichment(self, name: str, fetch_fn) -> Any:
+        """Best-effort fetch for metric-enrichment endpoints (stress/body battery/
+        training readiness/training status): log and continue on failure rather than
+        aborting the whole sync. Unlike stats/sleep/hrv/activities, these are
+        supplementary and not yet consumed by anything downstream."""
+        try:
+            return fetch_fn()
+        except Exception as e:
+            logger.warning(f"Enrichment fetch '{name}' failed for this sync, continuing without it: {e}")
+            return None
+
     def fetch_daily_metrics(self, target_date_iso: str, yesterday_iso: str) -> ProviderFetchResult:
         stats_today = self._get_stats(target_date_iso)
         # Always fetch D-1 stats: totalSteps must reflect the previous completed day per
@@ -176,6 +258,11 @@ class GarminProviderAdapter:
 
         hrv_today = self.client.get_hrv_data(target_date_iso)
 
+        stress_today = self._fetch_enrichment("stress", lambda: self.client.get_stress_data(target_date_iso))
+        body_battery_today = self._fetch_enrichment("body_battery", lambda: self.client.get_body_battery(target_date_iso))
+        training_readiness_today = self._fetch_enrichment("training_readiness", lambda: self.client.get_training_readiness(target_date_iso))
+        training_status_today = self._fetch_enrichment("training_status", lambda: self.client.get_training_status(target_date_iso))
+
         canonical = canonicalize_from_raw(
             stats_today=stats_today,
             stats_fallback=stats_fallback,
@@ -184,6 +271,10 @@ class GarminProviderAdapter:
             hrv_today=hrv_today,
             target_date_iso=target_date_iso,
             yesterday_iso=yesterday_iso,
+            stress_today=stress_today,
+            body_battery_today=body_battery_today,
+            training_readiness_today=training_readiness_today,
+            training_status_today=training_status_today,
         )
 
         raw_payloads: dict[str, Any] = {
@@ -194,6 +285,14 @@ class GarminProviderAdapter:
         }
         if sleep_fallback is not None:
             raw_payloads["sleep_fallback"] = sleep_fallback
+        if stress_today is not None:
+            raw_payloads["stress"] = stress_today
+        if body_battery_today is not None:
+            raw_payloads["body_battery"] = body_battery_today
+        if training_readiness_today is not None:
+            raw_payloads["training_readiness"] = training_readiness_today
+        if training_status_today is not None:
+            raw_payloads["training_status"] = training_status_today
 
         return ProviderFetchResult(canonical=canonical, raw_payloads=raw_payloads)
 

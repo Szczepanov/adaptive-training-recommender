@@ -158,3 +158,97 @@ def test_provider_adapter_reuses_cached_stats_and_sleep_across_overlapping_dates
     # 08-06 is fetched once as "today" and again as the next call's "yesterday".
     assert mock_client.get_stats.call_count == 3
     assert {c.args[0] for c in mock_client.get_stats.call_args_list} == {"2026-08-05", "2026-08-06", "2026-08-07"}
+
+
+# --- Metric enrichment (item 4) ---------------------------------------------------
+
+def test_canonicalize_from_raw_populates_stress_body_battery_readiness_status():
+    """Real-shape fixtures (captured from a live account) round-trip into the 4 new
+    canonical enrichment fields."""
+    with open(FIXTURES_DIR / "stats.json") as f:
+        stats = json.load(f)
+    with open(FIXTURES_DIR / "sleep.json") as f:
+        sleep = json.load(f)
+    with open(FIXTURES_DIR / "hrv.json") as f:
+        hrv = json.load(f)
+    with open(FIXTURES_DIR / "stress.json") as f:
+        stress = json.load(f)
+    with open(FIXTURES_DIR / "body_battery.json") as f:
+        body_battery = json.load(f)
+    with open(FIXTURES_DIR / "training_readiness.json") as f:
+        training_readiness = json.load(f)
+    with open(FIXTURES_DIR / "training_status.json") as f:
+        training_status = json.load(f)
+
+    canonical = canonicalize_from_raw(
+        stats_today=stats,
+        stats_fallback=None,
+        sleep_today=sleep,
+        sleep_fallback=None,
+        hrv_today=hrv,
+        target_date_iso="2026-08-06",
+        yesterday_iso="2026-08-05",
+        stress_today=stress,
+        body_battery_today=body_battery,
+        training_readiness_today=training_readiness,
+        training_status_today=training_status,
+    )
+
+    assert canonical.stress is not None
+    assert canonical.stress.avg == 43
+    assert canonical.stress.max == 100
+
+    assert canonical.body_battery is not None
+    assert canonical.body_battery.charged == 75
+    assert canonical.body_battery.drained == 84
+    assert canonical.body_battery.change == -9  # net drain that day
+
+    assert canonical.training_readiness is not None
+    assert canonical.training_readiness.score == 59  # readings[0], newest-first
+    assert canonical.training_readiness.level == "MODERATE"
+    assert canonical.training_readiness.feedback == "MOD_HRV_LOW"
+
+    assert canonical.training_status is not None
+    assert canonical.training_status.status_phrase == "STRAINED_1"
+    assert canonical.training_status.acute_training_load == 137
+    assert canonical.training_status.acwr_status == "LOW"
+    assert canonical.training_status.vo2max_running == 48.0
+    assert canonical.training_status.vo2max_running_date == "2026-07-17"  # stale, not today
+    assert canonical.training_status.vo2max_cycling == 48.0
+    assert canonical.training_status.vo2max_cycling_date == "2026-07-24"
+
+
+def test_canonicalize_from_raw_enrichment_fields_absent_when_not_provided():
+    """Existing callers that don't pass the 4 new optional params (e.g. tests written
+    before item 4) must keep working -- new fields default to None, not an error."""
+    with open(FIXTURES_DIR / "stats.json") as f:
+        stats = json.load(f)
+
+    canonical = canonicalize_from_raw(
+        stats_today=stats,
+        stats_fallback=None,
+        sleep_today={},
+        sleep_fallback=None,
+        hrv_today={},
+        target_date_iso="2026-08-06",
+        yesterday_iso="2026-08-05",
+    )
+
+    assert canonical.stress is None
+    assert canonical.body_battery is None
+    assert canonical.training_readiness is None
+    assert canonical.training_status is None
+
+
+def test_canonicalize_training_status_handles_missing_device_data_gracefully():
+    """A malformed/empty training_status payload (e.g. no devices recorded yet) must
+    degrade to a CanonicalTrainingStatus of all-None fields, never a KeyError."""
+    from garmin_sync.garmin_provider import _canonicalize_training_status
+
+    result = _canonicalize_training_status({"mostRecentTrainingStatus": {}, "mostRecentVO2Max": {}})
+    assert result.status_phrase is None
+    assert result.vo2max_running is None
+    assert result.acute_training_load is None
+
+    assert _canonicalize_training_status({}) is None
+    assert _canonicalize_training_status(None) is None
