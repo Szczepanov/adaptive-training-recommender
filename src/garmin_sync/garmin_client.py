@@ -16,6 +16,10 @@ class GarminDataClient(Protocol):
     def get_sleep_data(self, date_iso: str) -> dict[str, Any]: ...
     def get_hrv_data(self, date_iso: str) -> dict[str, Any]: ...
     def get_activities_window(self, start_date_iso: str, end_date_iso: str) -> list[dict[str, Any]]: ...
+    def get_stress_data(self, date_iso: str) -> dict[str, Any]: ...
+    def get_body_battery(self, date_iso: str) -> list[dict[str, Any]]: ...
+    def get_training_readiness(self, date_iso: str) -> list[dict[str, Any]]: ...
+    def get_training_status(self, date_iso: str) -> dict[str, Any]: ...
 
 
 class GarminClientWrapper:
@@ -102,6 +106,26 @@ class GarminClientWrapper:
         if not self.api:
             raise RuntimeError("Garmin client is not authenticated. Call login first.")
         return self.api.get_hrv_data(date_iso) or {}
+
+    def get_stress_data(self, date_iso: str) -> dict[str, Any]:
+        if not self.api:
+            raise RuntimeError("Garmin client is not authenticated. Call login first.")
+        return self.api.get_all_day_stress(date_iso) or {}
+
+    def get_body_battery(self, date_iso: str) -> list[dict[str, Any]]:
+        if not self.api:
+            raise RuntimeError("Garmin client is not authenticated. Call login first.")
+        return self.api.get_body_battery(date_iso, date_iso) or []
+
+    def get_training_readiness(self, date_iso: str) -> list[dict[str, Any]]:
+        if not self.api:
+            raise RuntimeError("Garmin client is not authenticated. Call login first.")
+        return self.api.get_training_readiness(date_iso) or []
+
+    def get_training_status(self, date_iso: str) -> dict[str, Any]:
+        if not self.api:
+            raise RuntimeError("Garmin client is not authenticated. Call login first.")
+        return self.api.get_training_status(date_iso) or {}
 
     def get_activities_window(self, start_date_iso: str, end_date_iso: str) -> list[dict[str, Any]]:
         """Paginate get_activities (newest first) to retrieve activities in [start_date_iso, end_date_iso]."""

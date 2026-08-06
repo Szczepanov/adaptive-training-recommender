@@ -9,6 +9,37 @@ from dataclasses import dataclass
 
 
 @dataclass
+class CanonicalStress:
+    avg: int | None = None
+    max: int | None = None
+
+
+@dataclass
+class CanonicalBodyBattery:
+    charged: int | None = None
+    drained: int | None = None
+    change: int | None = None  # charged - drained
+
+
+@dataclass
+class CanonicalTrainingReadiness:
+    score: int | None = None
+    level: str | None = None
+    feedback: str | None = None
+
+
+@dataclass
+class CanonicalTrainingStatus:
+    status_phrase: str | None = None
+    acute_training_load: float | None = None
+    acwr_status: str | None = None
+    vo2max_running: float | None = None
+    vo2max_running_date: str | None = None
+    vo2max_cycling: float | None = None
+    vo2max_cycling_date: str | None = None
+
+
+@dataclass
 class CanonicalDailyMetrics:
     date: str
     resting_heart_rate_bpm: float | None = None
@@ -24,6 +55,13 @@ class CanonicalDailyMetrics:
     body_battery_wake_date: str | None = None
     steps_count: int | None = None
     steps_date: str | None = None
+    # Metric enrichment (item 4) -- archived + recorded, not yet consumed by the
+    # recommendation engine. See CLAUDE.md-adjacent review notes: expose to rules only
+    # after measuring real-world availability.
+    stress: CanonicalStress | None = None
+    body_battery: CanonicalBodyBattery | None = None
+    training_readiness: CanonicalTrainingReadiness | None = None
+    training_status: CanonicalTrainingStatus | None = None
 
 
 @dataclass

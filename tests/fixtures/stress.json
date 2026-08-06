@@ -1,0 +1,13 @@
+{
+  "userProfilePK": 1,
+  "calendarDate": "2026-08-05",
+  "maxStressLevel": 100,
+  "avgStressLevel": 43,
+  "stressChartValueOffset": 1,
+  "stressChartYAxisOrigin": -1,
+  "stressValueDescriptorsDTOList": [
+    {"index": 0, "key": "timestamp"},
+    {"index": 1, "key": "stressLevel"}
+  ],
+  "stressValuesArray": [[1785880800000, 14], [1785880980000, 17]]
+}

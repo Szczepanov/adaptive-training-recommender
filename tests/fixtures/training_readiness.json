@@ -1,0 +1,28 @@
+[
+  {
+    "userProfilePK": 1,
+    "calendarDate": "2026-08-05",
+    "timestamp": "2026-08-05T06:50:07.0",
+    "deviceId": 1234,
+    "level": "MODERATE",
+    "feedbackLong": "MOD_HRV_LOW",
+    "feedbackShort": "LISTEN_TO_YOUR_BODY",
+    "score": 59,
+    "sleepScore": 87,
+    "recoveryTime": 1273,
+    "inputContext": "AFTER_POST_EXERCISE_RESET"
+  },
+  {
+    "userProfilePK": 1,
+    "calendarDate": "2026-08-05",
+    "timestamp": "2026-08-05T06:49:10.0",
+    "deviceId": 1234,
+    "level": "MODERATE",
+    "feedbackLong": "MOD_HRV_LOW",
+    "feedbackShort": "LISTEN_TO_YOUR_BODY",
+    "score": 74,
+    "sleepScore": 87,
+    "recoveryTime": 1,
+    "inputContext": "UPDATE_REALTIME_VARIABLES"
+  }
+]
