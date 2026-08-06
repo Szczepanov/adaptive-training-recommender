@@ -16,12 +16,23 @@ def run_daily_sync(args: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run daily Garmin recovery ingestion.")
     parser.add_argument("--date", type=str, default=None, help="Target date YYYY-MM-DD (default local today in Warsaw)")
     parser.add_argument("--force", action="store_true", help="Force refresh even if snapshot is fresh")
+    parser.add_argument(
+        "--resync-days",
+        type=int,
+        default=None,
+        help="Days before --date to also force-resync (default GARMIN_RESYNC_LOOKBACK_DAYS, normally 1). "
+        "Picks up late-arriving Garmin data for prior days, e.g. a training session logged after that day's own sync ran.",
+    )
     parsed_args = parser.parse_args(args)
 
     try:
         settings = load_settings()
         service = GarminSyncService(settings)
-        success = service.sync_daily(target_date_str=parsed_args.date, force=parsed_args.force)
+        success = service.sync_daily(
+            target_date_str=parsed_args.date,
+            force=parsed_args.force,
+            resync_lookback_days=parsed_args.resync_days,
+        )
         return 0 if success else 1
     except Exception as e:
         logger.error(f"Daily sync execution error: {e}")
@@ -92,6 +103,12 @@ def main() -> int:
     sync_parser = subparsers.add_parser("sync", help="Run daily sync")
     sync_parser.add_argument("--date", type=str, default=None, help="Target date YYYY-MM-DD")
     sync_parser.add_argument("--force", action="store_true", help="Force refresh")
+    sync_parser.add_argument(
+        "--resync-days",
+        type=int,
+        default=None,
+        help="Days before --date to also force-resync (default GARMIN_RESYNC_LOOKBACK_DAYS, normally 1)",
+    )
 
     # Backfill subcommand
     backfill_parser = subparsers.add_parser("backfill", help="Run historical backfill")

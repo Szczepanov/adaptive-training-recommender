@@ -64,7 +64,7 @@ def test_sync_service_forces_refresh():
     mock_client.get_activities_window.return_value = []
 
     service = GarminSyncService(settings=settings, repository=mock_repo, garmin_client=mock_client)
-    result = service.sync_daily(target_date_str="2026-08-06", force=True)
+    result = service.sync_daily(target_date_str="2026-08-06", force=True, resync_lookback_days=0)
 
     assert result is True
     mock_client.get_stats.assert_called()
@@ -91,7 +91,7 @@ def test_sync_service_uses_d1_steps_even_when_todays_rhr_is_present():
     mock_client.get_activities_window.return_value = []
 
     service = GarminSyncService(settings=settings, repository=mock_repo, garmin_client=mock_client)
-    result = service.sync_daily(target_date_str="2026-08-06", force=True)
+    result = service.sync_daily(target_date_str="2026-08-06", force=True, resync_lookback_days=0)
 
     assert result is True
     assert mock_client.get_stats.call_count == 2
@@ -131,7 +131,7 @@ def test_sync_service_computes_sleep_score_delta():
     mock_client.get_activities_window.return_value = []
 
     service = GarminSyncService(settings=settings, repository=mock_repo, garmin_client=mock_client)
-    result = service.sync_daily(target_date_str="2026-08-06", force=True)
+    result = service.sync_daily(target_date_str="2026-08-06", force=True, resync_lookback_days=0)
 
     assert result is True
     saved_payload = mock_repo.upsert_snapshot.call_args[0][1]
@@ -197,7 +197,7 @@ def test_sync_service_fetches_activities_through_today_for_same_day_detection():
     ]
 
     service = GarminSyncService(settings=settings, repository=mock_repo, garmin_client=mock_client)
-    result = service.sync_daily(target_date_str="2026-08-06", force=True)
+    result = service.sync_daily(target_date_str="2026-08-06", force=True, resync_lookback_days=0)
 
     assert result is True
     mock_client.get_activities_window.assert_called_once_with("2026-08-03", "2026-08-06")
@@ -230,7 +230,7 @@ def test_sync_service_skips_archiving_activity_with_missing_id():
     ]
 
     service = GarminSyncService(settings=settings, repository=mock_repo, garmin_client=mock_client)
-    result = service.sync_daily(target_date_str="2026-08-06", force=True)
+    result = service.sync_daily(target_date_str="2026-08-06", force=True, resync_lookback_days=0)
 
     assert result is True
     mock_repo.upsert_activity.assert_not_called()
@@ -254,7 +254,7 @@ def test_sync_service_works_with_a_non_garmin_provider():
     # to a real GarminClientWrapper it would raise (no credentials configured).
     service = GarminSyncService(settings=settings, repository=mock_repo, provider=fake_provider)
 
-    result = service.sync_daily(target_date_str="2026-08-06", force=True)
+    result = service.sync_daily(target_date_str="2026-08-06", force=True, resync_lookback_days=0)
 
     assert result is True
     assert fake_provider.fetch_daily_metrics_calls == [("2026-08-06", "2026-08-05")]
@@ -283,7 +283,7 @@ def test_sync_service_survives_a_failed_enrichment_fetch():
     mock_client.get_training_status.side_effect = RuntimeError("training status endpoint down")
 
     service = GarminSyncService(settings=settings, repository=mock_repo, garmin_client=mock_client)
-    result = service.sync_daily(target_date_str="2026-08-06", force=True)
+    result = service.sync_daily(target_date_str="2026-08-06", force=True, resync_lookback_days=0)
 
     assert result is True
     saved_payload = mock_repo.upsert_snapshot.call_args[0][1]
@@ -321,12 +321,106 @@ def test_sync_service_does_not_serve_stale_cache_across_repeated_force_runs():
 
     service = GarminSyncService(settings=settings, repository=mock_repo, garmin_client=mock_client)
 
-    service.sync_daily(target_date_str="2026-08-06", force=True)
+    service.sync_daily(target_date_str="2026-08-06", force=True, resync_lookback_days=0)
     first_payload = mock_repo.upsert_snapshot.call_args[0][1]
     assert first_payload["raw"]["restingHr"] == 50
 
-    service.sync_daily(target_date_str="2026-08-06", force=True)
+    service.sync_daily(target_date_str="2026-08-06", force=True, resync_lookback_days=0)
     second_payload = mock_repo.upsert_snapshot.call_args[0][1]
     assert second_payload["raw"]["restingHr"] == 61  # fresh fetch, not the 1st run's cache
 
     assert mock_client.get_stats.call_count == 4  # 2 calls per run, not cached across runs
+
+
+def test_sync_service_resyncs_previous_day_by_default():
+    """The core feature this covers: a training session logged today isn't guaranteed
+    to be reflected by today's own sync -- e.g. it's uploaded to Garmin after that sync
+    already ran. sync_daily's default lookback (settings.garmin_resync_lookback_days,
+    normally 1) must revisit D-1 too, so tomorrow's sync is what actually picks it up."""
+    settings = Settings(app_user_id="test_uid_789")
+    assert settings.garmin_resync_lookback_days == 1
+    mock_repo = MagicMock()
+    mock_repo.is_fresh.return_value = False
+    mock_repo.get_historical_snapshots.return_value = {}
+
+    fake_provider = FakeTestProvider(sleep_score=91.0, resting_hr=47.0)
+    service = GarminSyncService(settings=settings, repository=mock_repo, provider=fake_provider)
+
+    result = service.sync_daily(target_date_str="2026-08-06", force=False)
+
+    assert result is True
+    # Target date, then D-1 -- both actually fetched from the provider.
+    assert fake_provider.fetch_daily_metrics_calls == [
+        ("2026-08-06", "2026-08-05"),
+        ("2026-08-05", "2026-08-04"),
+    ]
+    assert mock_repo.upsert_snapshot.call_count == 2
+    stored_dates = [call.args[0] for call in mock_repo.upsert_snapshot.call_args_list]
+    assert stored_dates == ["2026-08-06", "2026-08-05"]
+
+
+def test_sync_service_lookback_days_can_be_overridden():
+    """--resync-days (resync_lookback_days) overrides settings.garmin_resync_lookback_days
+    per call, e.g. to widen the window after an extended outage or narrow it to 0."""
+    settings = Settings(app_user_id="test_uid_789")
+    mock_repo = MagicMock()
+    mock_repo.is_fresh.return_value = False
+    mock_repo.get_historical_snapshots.return_value = {}
+
+    fake_provider = FakeTestProvider()
+    service = GarminSyncService(settings=settings, repository=mock_repo, provider=fake_provider)
+
+    result = service.sync_daily(target_date_str="2026-08-06", force=False, resync_lookback_days=3)
+
+    assert result is True
+    assert fake_provider.fetch_daily_metrics_calls == [
+        ("2026-08-06", "2026-08-05"),
+        ("2026-08-05", "2026-08-04"),
+        ("2026-08-04", "2026-08-03"),
+        ("2026-08-03", "2026-08-02"),
+    ]
+
+
+def test_sync_service_fresh_target_skips_lookback_resync_too():
+    """A retriggered run within the staleness window is a full no-op -- it must not
+    re-hit the lookback dates either, or every duplicate cron/manual re-trigger would
+    double the Garmin API calls for no reason."""
+    settings = Settings(app_user_id="test_uid_789")
+    mock_repo = MagicMock()
+    mock_repo.is_fresh.return_value = True
+
+    fake_provider = FakeTestProvider()
+    service = GarminSyncService(settings=settings, repository=mock_repo, provider=fake_provider)
+
+    result = service.sync_daily(target_date_str="2026-08-06", force=False)
+
+    assert result is True
+    assert fake_provider.fetch_daily_metrics_calls == []
+    mock_repo.upsert_snapshot.assert_not_called()
+    mock_repo.is_fresh.assert_called_once_with("2026-08-06", 60)
+
+
+def test_sync_service_lookback_failure_does_not_hide_primary_success_but_reports_false():
+    """If the D-1 lookback resync blows up (e.g. a transient Garmin error), the primary
+    target-date sync must still have been saved -- but the overall call reports False so
+    the failure isn't silently swallowed."""
+    settings = Settings(app_user_id="test_uid_789")
+    mock_repo = MagicMock()
+    mock_repo.is_fresh.return_value = False
+    mock_repo.get_historical_snapshots.return_value = {}
+
+    call_count = {"n": 0}
+
+    class FlakyLookbackProvider(FakeTestProvider):
+        def fetch_daily_metrics(self, target_date_iso: str, yesterday_iso: str):
+            call_count["n"] += 1
+            if call_count["n"] == 2:
+                raise RuntimeError("transient Garmin error on lookback date")
+            return super().fetch_daily_metrics(target_date_iso, yesterday_iso)
+
+    service = GarminSyncService(settings=settings, repository=mock_repo, provider=FlakyLookbackProvider())
+    result = service.sync_daily(target_date_str="2026-08-06", force=False)
+
+    assert result is False
+    mock_repo.upsert_snapshot.assert_called_once()
+    assert mock_repo.upsert_snapshot.call_args[0][0] == "2026-08-06"

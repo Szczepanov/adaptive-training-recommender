@@ -32,10 +32,11 @@ Adaptive Training Recommendation
 2. **Explicit Warsaw Timezone**: Uses `Europe/Warsaw` calendar dates to prevent UTC boundary shifts around midnight.
 3. **Stateless Token Persistence**: Integrates `GcsTokenStore` to restore and persist Garmin OAuth token JSON file across ephemeral Cloud Run executions with strict OS file permissions.
 4. **D-1 Step Count & Completed Training**: Uses previous completed day (`D - 1`) for step counts and training history lookback window.
-5. **Schema Version 3 & Provenance**: Tracks exact source dates for sleep, HRV, resting HR, waking body battery, steps, and deterministic primary activity.
-6. **Graceful Migration Utility**: Includes `scripts/migrate_legacy_snapshots.py` to copy legacy root documents to user-scoped Firestore paths.
-7. **Raw Archive & Offline Rebuild** (opt-in via `GARMIN_ARCHIVE_ENABLED`): every raw Garmin payload is archived immutably (gzip-compressed, content-addressed/idempotent) so `garmin_sync rebuild` can recompute Firestore snapshots without calling Garmin again, and `garmin_sync audit` reports completeness. Activities also get a standalone normalized record at `users/{firebaseUid}/activities/{activityId}`, decoupled from any single day's 3-day lookback window.
-8. **Metric Enrichment (recorded, not yet acted on)**: stress, Body Battery charge/drain, training readiness, and training status (incl. VO2max) are fetched best-effort, archived, and stored on `raw`/`dataQuality` alongside their own availability flags. Intentionally not wired into the recommendation engine yet — the plan is to observe real availability for a few weeks first.
+5. **Lookback Resync**: Each daily sync also force-resyncs the preceding `GARMIN_RESYNC_LOOKBACK_DAYS` day(s) (default 1) so late-arriving Garmin data — e.g. a training session logged after that day's own sync already ran — is captured the next time sync runs.
+6. **Schema Version 3 & Provenance**: Tracks exact source dates for sleep, HRV, resting HR, waking body battery, steps, and deterministic primary activity.
+7. **Graceful Migration Utility**: Includes `scripts/migrate_legacy_snapshots.py` to copy legacy root documents to user-scoped Firestore paths.
+8. **Raw Archive & Offline Rebuild** (opt-in via `GARMIN_ARCHIVE_ENABLED`): every raw Garmin payload is archived immutably (gzip-compressed, content-addressed/idempotent) so `garmin_sync rebuild` can recompute Firestore snapshots without calling Garmin again, and `garmin_sync audit` reports completeness. Activities also get a standalone normalized record at `users/{firebaseUid}/activities/{activityId}`, decoupled from any single day's 3-day lookback window.
+9. **Metric Enrichment (recorded, not yet acted on)**: stress, Body Battery charge/drain, training readiness, and training status (incl. VO2max) are fetched best-effort, archived, and stored on `raw`/`dataQuality` alongside their own availability flags. Intentionally not wired into the recommendation engine yet — the plan is to observe real availability for a few weeks first.
 
 ---
 
@@ -54,6 +55,7 @@ Set the following environment variables (e.g. in `.env` locally or Secret Manage
 | `GARMIN_TOKEN_BUCKET` | For GCS | — | Private GCS bucket name storing Garmin token JSON |
 | `GARMIN_TOKEN_OBJECT` | For GCS | `garmin/garmin_tokens.json` | GCS token object name |
 | `GARMIN_STALENESS_MINUTES` | No | `60` | Skip Garmin API fetch if snapshot updated within N mins |
+| `GARMIN_RESYNC_LOOKBACK_DAYS` | No | `1` | After syncing the target date, also force-resync this many preceding day(s), to pick up Garmin data that finalized/arrived after that day's own sync ran (e.g. a training session logged later that day). Override per-run with `sync --resync-days N` |
 | `GARMIN_ALLOW_CREDENTIAL_LOGIN` | No | `false` | Cloud/automated runs set `false` (token-only); bootstrap sets `true` |
 | `FIREBASE_CREDENTIALS_PATH` | Local only | — | Path to local Firebase service account JSON |
 | `GARMIN_ARCHIVE_ENABLED` | No | `false` | Opt-in: archive raw Garmin JSON immutably for audit/rebuild |
@@ -77,8 +79,13 @@ uv run pytest
 # Authenticate Garmin account locally
 uv run python garmin_login.py
 
-# Run daily sync locally
+# Run daily sync locally (also force-resyncs the preceding GARMIN_RESYNC_LOOKBACK_DAYS
+# day(s), default 1, to pick up late-arriving Garmin data such as a training session
+# logged after that day's own sync already ran)
 uv run python -m garmin_sync sync
+
+# Override the lookback window for one run, e.g. after an extended outage
+uv run python -m garmin_sync sync --resync-days 3
 
 # Run historical backfill (56 days)
 uv run python -m garmin_sync backfill --days 56
