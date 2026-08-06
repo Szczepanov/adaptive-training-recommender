@@ -179,11 +179,18 @@ def _canonicalize_activity(act: dict[str, Any]) -> CanonicalActivity:
     te_aero = float(act.get("aerobicTrainingEffect", 0.0) or 0.0)
     te_anaero = float(act.get("anaerobicTrainingEffect", 0.0) or 0.0)
     avg_hr = act.get("averageHeartRate")
+    # Use whichever training effect is higher: an interval/strength session can be a hard
+    # stimulus through anaerobic load alone even when its aerobic TE stays moderate, and
+    # only consulting aerobic TE (as the pre-canonical-layer code did) would silently
+    # under-count those sessions as "hard" for last3DaysHardSessionsCount purposes. See
+    # tests/test_garmin_provider.py for the discriminating case this covers.
     _, intensity_tag = classify_activity_intensity(max(te_aero, te_anaero), avg_hr)
     duration_sec = act.get("duration", 0)
 
+    raw_activity_id = act.get("activityId")
+
     return CanonicalActivity(
-        activity_id=str(act.get("activityId", "unknown")),
+        activity_id=str(raw_activity_id) if raw_activity_id is not None else None,
         date=act.get("startTimeLocal", "")[:10] or "",
         type=act.get("activityType", {}).get("typeKey", "unknown"),
         duration_min=round(duration_sec / 60) if duration_sec else None,
@@ -210,6 +217,33 @@ class GarminProviderAdapter:
 
     def __init__(self, client: GarminClientWrapper):
         self.client = client
+        # Per-instance, per-date cache for get_stats/get_sleep_data. A single
+        # GarminSyncService (and its one provider instance) is reused across an entire
+        # backfill's chronological date loop, where consecutive fetch_daily_metrics calls
+        # overlap by one day (date D is fetched as "today" for D, then again as
+        # "yesterday" fallback for D+1) -- caching by date halves those Garmin API calls
+        # instead of re-fetching the same date twice.
+        self._stats_cache: dict[str, dict[str, Any]] = {}
+        self._sleep_cache: dict[str, dict[str, Any]] = {}
+
+    def clear_cache(self) -> None:
+        """Called by GarminSyncService at the start of each sync_daily/backfill
+        operation -- see WearableProvider.clear_cache. Caching is only safe *within*
+        one such operation's chronological date loop; across separate operations
+        (e.g. two --force sync_daily calls reusing the same service/provider instance)
+        the cache must not leak stale data."""
+        self._stats_cache.clear()
+        self._sleep_cache.clear()
+
+    def _get_stats(self, date_iso: str) -> dict[str, Any]:
+        if date_iso not in self._stats_cache:
+            self._stats_cache[date_iso] = self.client.get_stats(date_iso)
+        return self._stats_cache[date_iso]
+
+    def _get_sleep_data(self, date_iso: str) -> dict[str, Any]:
+        if date_iso not in self._sleep_cache:
+            self._sleep_cache[date_iso] = self.client.get_sleep_data(date_iso)
+        return self._sleep_cache[date_iso]
 
     def _fetch_enrichment(self, name: str, fetch_fn) -> Any:
         """Best-effort fetch for metric-enrichment endpoints (stress/body battery/
@@ -223,13 +257,13 @@ class GarminProviderAdapter:
             return None
 
     def fetch_daily_metrics(self, target_date_iso: str, yesterday_iso: str) -> ProviderFetchResult:
-        stats_today = self.client.get_stats(target_date_iso)
+        stats_today = self._get_stats(target_date_iso)
         # Always fetch D-1 stats: totalSteps must reflect the previous completed day per
         # the snapshot date contract, not just serve as an RHR fallback.
-        stats_fallback = self.client.get_stats(yesterday_iso)
+        stats_fallback = self._get_stats(yesterday_iso)
 
-        sleep_today = self.client.get_sleep_data(target_date_iso)
-        sleep_fallback = self.client.get_sleep_data(yesterday_iso) if not sleep_today else None
+        sleep_today = self._get_sleep_data(target_date_iso)
+        sleep_fallback = self._get_sleep_data(yesterday_iso) if not sleep_today else None
 
         hrv_today = self.client.get_hrv_data(target_date_iso)
 

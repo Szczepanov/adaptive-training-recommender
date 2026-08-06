@@ -58,13 +58,16 @@ def _build_training_summary(activities: list[CanonicalActivity], date_iso: str) 
     def primary_sort_key(act: CanonicalActivity) -> tuple[float, float, int, str]:
         load = act.training_load or 0.0
         te_max = max(act.training_effect_aerobic, act.training_effect_anaerobic)
-        return (load, te_max, act.duration_seconds, act.activity_id)
+        # An activity missing its Garmin activityId sorts last on ties (empty string),
+        # matching how it's excluded from archiving -- it must never win a tie over a
+        # legitimately-identified activity for the displayed "primary" session.
+        return (load, te_max, act.duration_seconds, act.activity_id or "")
 
     best_act = max(day_acts, key=primary_sort_key)
     te_best = max(best_act.training_effect_aerobic, best_act.training_effect_anaerobic)
 
     primary_act = PrimaryActivity(
-        activityId=best_act.activity_id,
+        activityId=best_act.activity_id or "unknown",
         type=best_act.type,
         durationMin=best_act.duration_min,
         trainingEffect=te_best,
@@ -88,6 +91,7 @@ def build_snapshot_from_canonical(
     timezone_name: str = "Europe/Warsaw",
     garminconnect_version: str | None = None,
     synced_at_iso: str | None = None,
+    activities_through_iso: str | None = None,
 ) -> DailyRecoverySnapshot:
     """Map a CanonicalDailyMetrics + activity list into a normalized DailyRecoverySnapshot
     with explicit provenance. Same logic/output shape as the pre-canonical-layer
@@ -103,11 +107,13 @@ def build_snapshot_from_canonical(
         restingHr=canonical.resting_heart_rate_date,
         bodyBatteryWake=canonical.body_battery_wake_date,
         steps=canonical.steps_date,
-        # `canonical_activities` now spans through target_date_iso itself (not just
-        # yesterday) across all three call paths -- sync_daily's live fetch, backfill's
-        # full-batch window, and rebuild's archived per-date slice -- so this can
-        # accurately claim same-day coverage.
-        activitiesThrough=target_date_iso,
+        # Defaults to target_date_iso because that's accurate for sync_daily and
+        # backfill's live fetch -- both actually fetch activities through target_date_iso
+        # (see service.py). rebuild() passes an explicit, more conservative value: it can
+        # only replay whatever was archived for this date, and an archive entry written
+        # before same-day activity fetching existed may only cover through yesterday, so
+        # rebuild must not assume the newer, wider guarantee applies to old archives.
+        activitiesThrough=activities_through_iso or target_date_iso,
         stress=target_date_iso if canonical.stress is not None else None,
         bodyBattery=target_date_iso if canonical.body_battery is not None else None,
         trainingReadiness=target_date_iso if canonical.training_readiness is not None else None,

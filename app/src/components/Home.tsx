@@ -33,8 +33,13 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
       setDecisionInput(input);
 
       // A recommendation needs at least today's Garmin recovery snapshot to be meaningful;
-      // the check-in, goals, and constraints all fall back to neutral/default values when absent.
-      if (input.recoverySnapshot) {
+      // the check-in, goals, and constraints all fall back to neutral/default values when
+      // *absent*. A check-in that exists but is only partially filled in is different --
+      // its alreadyTrainedToday (and other) fields silently default to false/neutral when
+      // unanswered, which could mask a genuine "already trained, recommend rest" signal.
+      // So an incomplete-but-present check-in blocks generation rather than being trusted.
+      const checkinUsable = !input.subjectiveCheckin || input.dataQuality.subjectiveCheckinComplete;
+      if (input.recoverySnapshot && checkinUsable) {
         const objective = mapSnapshotToEngineInput(input.recoverySnapshot);
         const subjective = mapCheckinToSubjectiveInput(input.subjectiveCheckin);
         const context = mapContextFromGoalsAndConstraints(input.activeGoals, input.activeConstraints);
@@ -137,9 +142,11 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
           </div>
         ) : (
           <p className="card-empty">
-            {decisionInput?.dataQuality.hasRecoverySnapshot
-              ? 'Unable to compute a recommendation yet.'
-              : "No Garmin recovery data synced today yet — that's required to generate a recommendation."}
+            {!decisionInput?.dataQuality.hasRecoverySnapshot
+              ? "No Garmin recovery data synced today yet — that's required to generate a recommendation."
+              : decisionInput.subjectiveCheckin && !decisionInput.dataQuality.subjectiveCheckinComplete
+              ? "Today's check-in is only partially filled in — finish it to get a recommendation."
+              : 'Unable to compute a recommendation yet.'}
           </p>
         )}
       </div>

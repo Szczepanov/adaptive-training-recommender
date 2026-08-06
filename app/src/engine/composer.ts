@@ -47,6 +47,7 @@ export class DecisionComposer {
             const dataQuality = {
                 hasRecoverySnapshot: recoverySnapshot !== null,
                 hasSubjectiveCheckin: subjectiveCheckin !== null,
+                subjectiveCheckinComplete: subjectiveCheckin?.dataQuality.isComplete ?? false,
                 profileReady: preferences !== null
             };
 
@@ -121,6 +122,8 @@ export class DecisionComposer {
 
             if (!input.dataQuality.hasSubjectiveCheckin) {
                 missingItems.push('Daily subjective check-in');
+            } else if (!input.dataQuality.subjectiveCheckinComplete) {
+                missingItems.push('Complete daily check-in (some fields left unanswered)');
             }
 
             if (!input.dataQuality.profileReady) {

@@ -40,3 +40,11 @@ class WearableProvider(Protocol):
     def fetch_daily_metrics(self, target_date_iso: str, yesterday_iso: str) -> ProviderFetchResult: ...
 
     def fetch_activities(self, start_date_iso: str, end_date_iso: str) -> ProviderActivitiesResult: ...
+
+    def clear_cache(self) -> None:
+        """Clear any internal per-date caching. GarminSyncService calls this at the
+        start of each sync_daily/backfill operation so a provider instance reused
+        across separate operations (e.g. two --force sync_daily calls on one service)
+        never serves stale cached data from an earlier operation -- providers that
+        don't cache anything can no-op."""
+        ...

@@ -196,6 +196,7 @@ export function computeDataQuality(raw: any): { isComplete: boolean; missingFiel
     if (raw.painOrInjury === undefined) missingFields.push('painOrInjury');
     if (raw.illnessSymptoms === undefined) missingFields.push('illnessSymptoms');
     if (raw.unusuallyLimitedTime === undefined) missingFields.push('unusuallyLimitedTime');
+    if (raw.alreadyTrainedToday === undefined) missingFields.push('alreadyTrainedToday');
 
     // Time available must be present
     const timeAvailable = normalizeEmptyToNull(raw.availability?.timeAvailableMin);

@@ -294,6 +294,12 @@ export interface DailyDecisionInput {
     dataQuality: {
         hasRecoverySnapshot: boolean;
         hasSubjectiveCheckin: boolean;
+        // True only when a check-in exists AND its own dataQuality.isComplete is true.
+        // False (not just absent) when a check-in exists but is missing fields -- a
+        // partially-filled check-in must not be treated as trustworthy input, since an
+        // unanswered field like alreadyTrainedToday silently defaults to `false` and a
+        // recommendation generated from it could miss a "you already trained" signal.
+        subjectiveCheckinComplete: boolean;
         profileReady: boolean; // True if preferences exist
     };
 }

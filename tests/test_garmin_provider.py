@@ -1,6 +1,12 @@
 import json
 from pathlib import Path
-from garmin_sync.garmin_provider import canonicalize_activities, canonicalize_from_raw, extract_sleep_metrics
+from unittest.mock import MagicMock
+from garmin_sync.garmin_provider import (
+    GarminProviderAdapter,
+    canonicalize_activities,
+    canonicalize_from_raw,
+    extract_sleep_metrics,
+)
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
@@ -92,6 +98,75 @@ def test_canonicalize_activities_maps_fields_and_intensity():
     assert act.average_hr == 150
     assert act.training_load == 120.0
     assert act.intensity_tag == "hard"
+
+
+def test_canonicalize_activities_uses_anaerobic_training_effect_for_hard_classification():
+    """A strength/interval session can be a hard stimulus through anaerobic load alone
+    even when its aerobic training effect stays below the threshold on its own -- the
+    discriminating case for using max(aerobic, anaerobic) rather than aerobic-only."""
+    raw = [{
+        "activityId": 1000,
+        "startTimeLocal": "2026-08-05T18:00:00",
+        "activityType": {"typeKey": "strength_training"},
+        "duration": 1800,
+        "aerobicTrainingEffect": 2.0,
+        "anaerobicTrainingEffect": 3.5,
+        "averageHeartRate": 140,
+        "activityTrainingLoad": 80.0,
+    }]
+
+    act = canonicalize_activities(raw)[0]
+
+    assert act.intensity_tag == "hard"
+
+
+def test_canonicalize_activities_handles_missing_activity_id():
+    """A Garmin activity payload without an activityId (e.g. an in-progress/pending
+    upload) must canonicalize to activity_id=None rather than a shared placeholder
+    string, so callers can skip archiving it instead of colliding with another such
+    activity."""
+    raw = [{
+        "startTimeLocal": "2026-08-05T18:00:00",
+        "activityType": {"typeKey": "running"},
+        "duration": 1200,
+        "aerobicTrainingEffect": 1.0,
+    }]
+
+    act = canonicalize_activities(raw)[0]
+
+    assert act.activity_id is None
+
+
+def test_provider_adapter_reuses_cached_stats_and_sleep_across_overlapping_dates():
+    """Regression test: a backfill's chronological date loop reuses the same
+    GarminProviderAdapter instance across dates whose fetch_daily_metrics windows
+    overlap by one day (date D is fetched as "today", then again as "yesterday" for
+    D+1). The adapter must not re-fetch a date it already has cached."""
+    mock_client = MagicMock()
+    mock_client.get_stats.return_value = {"restingHeartRate": 50, "totalSteps": 9000}
+    # Empty (falsy) so fetch_daily_metrics takes the sleep_fallback branch and actually
+    # calls _get_sleep_data(yesterday_iso) too -- a truthy sleep_today would short-circuit
+    # that call and this test would never exercise sleep-cache reuse.
+    mock_client.get_sleep_data.return_value = {}
+    mock_client.get_hrv_data.return_value = {"hrvSummary": {"lastNightAvg": 60}}
+
+    adapter = GarminProviderAdapter(mock_client)
+
+    adapter.fetch_daily_metrics("2026-08-06", "2026-08-05")
+    adapter.fetch_daily_metrics("2026-08-07", "2026-08-06")
+
+    # get_stats is unconditionally fetched for both the target date and its D-1 fallback
+    # on every call. 3 unique dates are touched (08-05, 08-06, 08-07) across the two
+    # overlapping calls -- without caching this would be 4 calls (2 per call), since
+    # 08-06 is fetched once as "today" and again as the next call's "yesterday".
+    assert mock_client.get_stats.call_count == 3
+    assert {c.args[0] for c in mock_client.get_stats.call_args_list} == {"2026-08-05", "2026-08-06", "2026-08-07"}
+
+    # Same reasoning applies to sleep: get_sleep_data(target) always fires, and (since
+    # sleep_today is empty here) get_sleep_data(yesterday_iso) fires for the fallback too
+    # -- caching must dedup that fallback call the same way it dedups get_stats.
+    assert mock_client.get_sleep_data.call_count == 3
+    assert {c.args[0] for c in mock_client.get_sleep_data.call_args_list} == {"2026-08-05", "2026-08-06", "2026-08-07"}
 
 
 # --- Metric enrichment (item 4) ---------------------------------------------------

@@ -63,7 +63,8 @@ export function evaluateTraining(readiness: DailyReadiness, context: UserContext
         objectivePenalty += 1; // 2+ hard sessions in 3 days warrants caution
     }
 
-    if (overallFatigueScore > 7 || extremeFatigue || objectivePenalty >= 3) {
+    const fatigueTriggeredRecover = overallFatigueScore > 7 || extremeFatigue || objectivePenalty >= 3;
+    if (fatigueTriggeredRecover) {
         mode = 'recover';
     } else if (overallFatigueScore > 5 || subjective.soreness > 6 || objectivePenalty >= 1) {
         mode = 'modify'; // Demote to Zone 2 / easier sessions
@@ -99,28 +100,42 @@ export function evaluateTraining(readiness: DailyReadiness, context: UserContext
 
     if (mode === 'recover') {
         const recoverOptions = availableTemplates.filter(t => t.category === 'Rest' || t.category === 'Mobility/Recovery');
-        if (recoverOptions.length > 0) selectedTemplate = pickTemplate(recoverOptions, date) ?? recoverOptions[0];
+        // pickTemplate only returns undefined for an empty array, already excluded by the guard.
+        if (recoverOptions.length > 0) selectedTemplate = pickTemplate(recoverOptions, date)!;
 
         if (alreadyTrainedOverride) {
             const loggedSession = objective.today_training;
             const sessionDescription = loggedSession
                 ? `Garmin shows you already completed a ${loggedSession.type} session today (~${loggedSession.duration_min} min).`
                 : "You've already logged a training session today.";
-            rationale = `${sessionDescription} Nice work -- no further training is needed. Focus on recovery (hydration, nutrition, sleep) for the rest of the day.`;
+
+            if (fatigueTriggeredRecover) {
+                // Fatigue/pain independently pushed mode to 'recover' -- don't let the
+                // already-trained message crowd out that safety-relevant context.
+                const cautionNote = subjective.painFlag
+                    ? "You're also flagging pain or injury today, so prioritize recovery and get it checked out if it persists."
+                    : "Your fatigue markers are also elevated today, so prioritize recovery (hydration, nutrition, sleep) rather than adding anything further.";
+                rationale = `${sessionDescription} ${cautionNote}`;
+            } else {
+                rationale = `${sessionDescription} Nice work -- no further training is needed. Focus on recovery (hydration, nutrition, sleep) for the rest of the day.`;
+            }
         } else {
             rationale = "Your overall fatigue markers are high today (combining subjective feel with drops in objective baselines). Pushing hard could be counter-productive; focus on active or passive recovery.";
         }
 
     } else if (mode === 'modify') {
-        const modifyOptions = availableTemplates.filter(t => t.category === 'Easy Endurance' || t.category === 'Moderate Endurance' || t.category === 'Mobility/Recovery');
-        if (modifyOptions.length > 0) selectedTemplate = pickTemplate(modifyOptions, date) ?? modifyOptions[0];
+        const modifyOptions = availableTemplates.filter(t => t.category === 'Easy Endurance' || t.category === 'Mobility/Recovery');
+        if (modifyOptions.length > 0) selectedTemplate = pickTemplate(modifyOptions, date)!;
         else selectedTemplate = TEMPLATES[0]; // Rest fallback
 
         rationale = "You're showing moderate soreness or slight downward trends in Garmin baselines. We are capping intensity today to build base capacity without taxing the CNS.";
 
     } else {
-        const trainOptions = availableTemplates.filter(t => t.category === 'Hard Endurance' || t.category === 'Full-body Strength' || t.category === 'Upper-body Strength' || t.category === 'Lower-body Strength');
-        if (trainOptions.length > 0) selectedTemplate = pickTemplate(trainOptions, date) ?? trainOptions[0];
+        // 'Moderate Endurance' (Zone-3 tempo) belongs here, not in 'modify' -- it's
+        // explicitly a comfortably-hard, full-intensity option, which would contradict
+        // modify mode's "capping intensity" rationale above.
+        const trainOptions = availableTemplates.filter(t => t.category === 'Hard Endurance' || t.category === 'Moderate Endurance' || t.category === 'Full-body Strength' || t.category === 'Upper-body Strength' || t.category === 'Lower-body Strength');
+        if (trainOptions.length > 0) selectedTemplate = pickTemplate(trainOptions, date)!;
 
         rationale = "Readiness is solid across both subjective feelings and Garmin baselines. Great day for a hard session aligned with your primary goals!";
     }
