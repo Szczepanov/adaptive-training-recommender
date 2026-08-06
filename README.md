@@ -35,6 +35,7 @@ Adaptive Training Recommendation
 5. **Schema Version 3 & Provenance**: Tracks exact source dates for sleep, HRV, resting HR, waking body battery, steps, and deterministic primary activity.
 6. **Graceful Migration Utility**: Includes `scripts/migrate_legacy_snapshots.py` to copy legacy root documents to user-scoped Firestore paths.
 7. **Raw Archive & Offline Rebuild** (opt-in via `GARMIN_ARCHIVE_ENABLED`): every raw Garmin payload is archived immutably (gzip-compressed, content-addressed/idempotent) so `garmin_sync rebuild` can recompute Firestore snapshots without calling Garmin again, and `garmin_sync audit` reports completeness. Activities also get a standalone normalized record at `users/{firebaseUid}/activities/{activityId}`, decoupled from any single day's 3-day lookback window.
+8. **Metric Enrichment (recorded, not yet acted on)**: stress, Body Battery charge/drain, training readiness, and training status (incl. VO2max) are fetched best-effort, archived, and stored on `raw`/`dataQuality` alongside their own availability flags. Intentionally not wired into the recommendation engine yet — the plan is to observe real availability for a few weeks first.
 
 ---
 

@@ -13,6 +13,10 @@ class MetricDates:
     bodyBatteryWake: str | None = None
     steps: str | None = None
     activitiesThrough: str | None = None
+    stress: str | None = None
+    bodyBattery: str | None = None
+    trainingReadiness: str | None = None
+    trainingStatus: str | None = None
 
     def to_dict(self) -> dict[str, str | None]:
         return asdict(self)
@@ -65,6 +69,39 @@ class YesterdayTraining:
 
 
 @dataclass
+class StressSummary:
+    avg: int | None = None
+    max: int | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
+class TrainingReadinessSummary:
+    score: int | None = None
+    level: str | None = None
+    feedback: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
+class TrainingStatusSummary:
+    statusPhrase: str | None = None
+    acuteTrainingLoad: float | None = None
+    acwrStatus: str | None = None
+    vo2MaxRunning: float | None = None
+    vo2MaxRunningDate: str | None = None
+    vo2MaxCycling: float | None = None
+    vo2MaxCyclingDate: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
 class RawMetrics:
     sleepScore: int | float | None = None
     sleepDurationSec: int | None = None
@@ -83,6 +120,14 @@ class RawMetrics:
     # today", just "not yet synced". See CLAUDE.md / DailySubjectiveCheckin.alreadyTrainedToday
     # for the reliable same-day signal the recommendation engine prefers.
     todayTraining: YesterdayTraining | None = None
+    # Metric enrichment (item 4): archived + recorded, not yet consumed by the
+    # recommendation engine -- see DataQuality.*Available for observed real-world
+    # availability before these get wired into any rule.
+    bodyBatteryCharged: int | None = None
+    bodyBatteryDrained: int | None = None
+    stress: StressSummary | None = None
+    trainingReadiness: TrainingReadinessSummary | None = None
+    trainingStatus: TrainingStatusSummary | None = None
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
@@ -90,6 +135,12 @@ class RawMetrics:
             d["yesterdayTraining"] = self.yesterdayTraining.to_dict()
         if self.todayTraining:
             d["todayTraining"] = self.todayTraining.to_dict()
+        if self.stress:
+            d["stress"] = self.stress.to_dict()
+        if self.trainingReadiness:
+            d["trainingReadiness"] = self.trainingReadiness.to_dict()
+        if self.trainingStatus:
+            d["trainingStatus"] = self.trainingStatus.to_dict()
         return d
 
 
@@ -134,6 +185,12 @@ class DataQuality:
     hrvAvailable: bool = False
     baseline7dReady: bool = False
     baseline28dReady: bool = False
+    # Metric enrichment (item 4) availability tracking -- the mechanism for "measure
+    # availability for several weeks" before deciding whether to expose these to rules.
+    stressAvailable: bool = False
+    bodyBatteryDetailAvailable: bool = False
+    trainingReadinessAvailable: bool = False
+    trainingStatusAvailable: bool = False
 
     def to_dict(self) -> dict[str, bool]:
         return asdict(self)
