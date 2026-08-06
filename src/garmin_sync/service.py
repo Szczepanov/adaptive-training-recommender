@@ -6,7 +6,7 @@ from .config import Settings
 from .dates import get_date_range, get_date_string, local_today, n_days_ago, parse_date_string
 from .firestore_repository import FirestoreRecoveryRepository
 from .garmin_client import GarminClientWrapper
-from .mapper import map_garmin_payload_to_snapshot
+from .mapper import extract_sleep_metrics, map_garmin_payload_to_snapshot
 from .metrics import compute_derived_metrics
 from .token_store import create_token_store
 
@@ -104,11 +104,15 @@ class GarminSyncService:
         window_7d = [history_raws[d] for d in sorted_history_dates if d >= w7_start]
         window_28d = [history_raws[d] for d in sorted_history_dates]
 
+        # Reuse mapper's sleep extraction (handles both Garmin response shapes) instead of a
+        # separate naive lookup, which previously always returned None for sleepScore here
+        # and silently broke sleepScoreVs7d/sleepScoreVs28d deltas.
+        current_sleep_score, _, current_resp_avg = extract_sleep_metrics(sleep_today)
         dummy_current = {
-            "sleepScore": sleep_today.get("overallSleepScore", {}).get("value") if sleep_today else None,
+            "sleepScore": current_sleep_score,
             "restingHr": stats_today.get("restingHeartRate"),
             "hrvOvernightAvg": hrv_today.get("hrvSummary", {}).get("lastNightAvg") if hrv_today else None,
-            "respirationAvg": sleep_today.get("dailySleepDTO", {}).get("averageRespirationValue") if sleep_today else None,
+            "respirationAvg": current_resp_avg,
         }
 
         derived = compute_derived_metrics(dummy_current, window_7d, window_28d)
@@ -205,11 +209,12 @@ class GarminSyncService:
                 window_7d = [raw_memory_store[d] for d in sorted_history_dates if d >= w7_start]
                 window_28d = [raw_memory_store[d] for d in sorted_history_dates if d >= w28_start]
 
+                current_sleep_score, _, current_resp_avg = extract_sleep_metrics(sleep_today)
                 dummy_current = {
-                    "sleepScore": sleep_today.get("overallSleepScore", {}).get("value") if sleep_today else None,
+                    "sleepScore": current_sleep_score,
                     "restingHr": stats_today.get("restingHeartRate"),
                     "hrvOvernightAvg": hrv_today.get("hrvSummary", {}).get("lastNightAvg") if hrv_today else None,
-                    "respirationAvg": sleep_today.get("dailySleepDTO", {}).get("averageRespirationValue") if sleep_today else None,
+                    "respirationAvg": current_resp_avg,
                 }
 
                 derived = compute_derived_metrics(dummy_current, window_7d, window_28d)

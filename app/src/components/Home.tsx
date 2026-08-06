@@ -2,7 +2,9 @@ import { useState, useEffect } from 'react';
 import { auth } from '../firebase';
 import { signOut } from 'firebase/auth';
 import { decisionComposer } from '../engine/composer';
-import type { DailyDecisionInput } from '../engine/models';
+import { evaluateTraining } from '../engine/rules';
+import { mapSnapshotToEngineInput, mapCheckinToSubjectiveInput, mapContextFromGoalsAndConstraints } from '../engine/adapters';
+import type { DailyDecisionInput, Recommendation } from '../engine/models';
 import './Home.css';
 
 interface HomeProps {
@@ -13,6 +15,7 @@ interface HomeProps {
 
 export function Home({ userId, onNavigate, onViewData }: HomeProps) {
   const [decisionInput, setDecisionInput] = useState<DailyDecisionInput | null>(null);
+  const [recommendation, setRecommendation] = useState<Recommendation | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showRecoveryData, setShowRecoveryData] = useState(false);
@@ -26,6 +29,17 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
       setLoading(true);
       const input = await decisionComposer.composeDailyDecisionInput(userId);
       setDecisionInput(input);
+
+      // A recommendation needs at least today's Garmin recovery snapshot to be meaningful;
+      // the check-in, goals, and constraints all fall back to neutral/default values when absent.
+      if (input.recoverySnapshot) {
+        const objective = mapSnapshotToEngineInput(input.recoverySnapshot);
+        const subjective = mapCheckinToSubjectiveInput(input.subjectiveCheckin);
+        const context = mapContextFromGoalsAndConstraints(input.activeGoals, input.activeConstraints);
+        setRecommendation(evaluateTraining({ subjective, objective }, context));
+      } else {
+        setRecommendation(null);
+      }
     } catch (err) {
       console.error('Error loading dashboard data:', err);
       setError('Failed to load dashboard data');
@@ -97,6 +111,30 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
             style={{ width: `${completeness}%` }}
           />
         </div>
+      </div>
+
+      {/* Today's Recommendation */}
+      <div className="dashboard-card recommendation-card">
+        <div className="card-header">
+          <h3>Today's Recommendation</h3>
+          {recommendation && <span className="status-badge success">Ready</span>}
+        </div>
+        {recommendation ? (
+          <div className="recommendation-content">
+            <h4 className="recommendation-title">{recommendation.template.title}</h4>
+            <p className="recommendation-meta">
+              {recommendation.template.category} · {recommendation.template.durationMin}-{recommendation.template.durationMax} min
+            </p>
+            <p className="recommendation-description">{recommendation.template.description}</p>
+            <p className="recommendation-rationale">{recommendation.rationale}</p>
+          </div>
+        ) : (
+          <p className="card-empty">
+            {decisionInput?.dataQuality.hasRecoverySnapshot
+              ? 'Unable to compute a recommendation yet.'
+              : "No Garmin recovery data synced today yet — that's required to generate a recommendation."}
+          </p>
+        )}
       </div>
 
       {/* Quick Actions */}

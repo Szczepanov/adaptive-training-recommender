@@ -293,6 +293,43 @@
   margin-top: 0.5rem;
 }
 
+/* Today's Recommendation */
+.recommendation-card {
+  cursor: default;
+  margin-bottom: 2rem;
+  border: 1px solid rgba(56, 189, 248, 0.2);
+  background: linear-gradient(135deg, rgba(56, 189, 248, 0.08), rgba(255, 255, 255, 0.03));
+}
+
+.recommendation-card:hover {
+  transform: none;
+}
+
+.recommendation-title {
+  font-size: 1.375rem;
+  font-weight: 700;
+  margin: 0 0 0.25rem 0;
+}
+
+.recommendation-meta {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin: 0 0 0.75rem 0;
+}
+
+.recommendation-description {
+  margin: 0 0 0.75rem 0;
+}
+
+.recommendation-rationale {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  font-style: italic;
+  margin: 0;
+}
+
 /* Quick Actions */
 .quick-actions {
   display: flex;

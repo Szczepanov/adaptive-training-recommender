@@ -84,3 +84,34 @@ def test_sync_service_propagates_rate_limit_exhaustion():
         service.sync_daily(target_date_str="2026-08-06", force=True)
 
     mock_repo.upsert_snapshot.assert_not_called()
+
+
+def test_sync_service_computes_sleep_score_delta():
+    """Regression test: sleepScoreVs7d/Vs28d must be computed from the same sleep-score
+    extraction as raw.sleepScore. A previous separate/naive extraction in the delta
+    calculation always evaluated to None for real Garmin response shapes, silently
+    leaving these deltas null even though raw.sleepScore and the 7d/28d averages
+    themselves were correct."""
+    settings = Settings(app_user_id="test_uid_789")
+    mock_repo = MagicMock()
+    mock_repo.is_fresh.return_value = False
+    # 4 days of history with sleepScore present -> 7d baseline should be ready
+    mock_repo.get_historical_snapshots.return_value = {
+        f"2026-08-0{i}": {"raw": {"sleepScore": 70}} for i in range(1, 5)
+    }
+
+    mock_client = MagicMock()
+    mock_client.get_stats.return_value = {"restingHeartRate": 55, "totalSteps": 10000}
+    # Real Garmin response shape: score lives under dailySleepDTO.sleepScores.overall.value
+    mock_client.get_sleep_data.return_value = {"dailySleepDTO": {"sleepScores": {"overall": {"value": 90}}}}
+    mock_client.get_hrv_data.return_value = {"hrvSummary": {"lastNightAvg": 65}}
+    mock_client.get_activities_batch.return_value = []
+
+    service = GarminSyncService(settings=settings, repository=mock_repo, garmin_client=mock_client)
+    result = service.sync_daily(target_date_str="2026-08-06", force=True)
+
+    assert result is True
+    saved_payload = mock_repo.upsert_snapshot.call_args[0][1]
+    assert saved_payload["raw"]["sleepScore"] == 90
+    assert saved_payload["derived"]["sleepScore7dAvg"] == 70.0
+    assert saved_payload["derived"]["deltas"]["sleepScoreVs7d"] == 20.0
