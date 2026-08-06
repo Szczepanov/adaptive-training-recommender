@@ -13,6 +13,7 @@ import { constraintService } from './services/constraintService';
 import { preferencesService } from './services/preferencesService';
 import { decisionComposer } from './engine/composer';
 import type { DailyDecisionInput } from './engine/models';
+import { getErrorMessage } from './utils/errors';
 
 type Screen = 'home' | 'checkin' | 'goals' | 'constraints' | 'preferences' | 'data';
 
@@ -69,9 +70,9 @@ function App() {
       // Import signInWithEmailAndPassword only when needed
       const { signInWithEmailAndPassword } = await import('firebase/auth');
       await signInWithEmailAndPassword(auth, email, password);
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error(e);
-      setErrorMsg(e.message || "Failed to log in.");
+      setErrorMsg(getErrorMessage(e) || "Failed to log in.");
     } finally {
       setLoading(false);
     }

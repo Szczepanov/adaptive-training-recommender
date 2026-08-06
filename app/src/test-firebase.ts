@@ -1,6 +1,7 @@
 // Test Firebase connection
 import { auth } from './firebase';
 import { signInWithEmailAndPassword } from 'firebase/auth';
+import { getErrorMessage } from './utils/errors';
 
 // Extend Window interface to include our test function
 declare global {
@@ -19,8 +20,8 @@ async function testConnection() {
     const userCredential = await signInWithEmailAndPassword(auth, testEmail, testPassword);
     console.log('Successfully logged in:', userCredential.user.uid);
     return true;
-  } catch (error: any) {
-    console.error('Firebase connection error:', error.message);
+  } catch (error: unknown) {
+    console.error('Firebase connection error:', getErrorMessage(error));
     return false;
   }
 }

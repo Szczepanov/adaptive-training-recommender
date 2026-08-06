@@ -1,8 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { goalService } from '../services/goalService';
-import type { UserGoal, GoalCategory, GoalStatus } from '../engine/models';
+import type { UserGoal, GoalCategory, GoalDomain, GoalStatus } from '../engine/models';
+import { getErrorMessage } from '../utils/errors';
 
 type UserGoalWithId = UserGoal & { id: string };
+/** Fields the add/edit goal form collects; matches goalService.createGoal's input. */
+type GoalInput = Omit<UserGoal, 'userId' | 'createdAt' | 'updatedAt' | 'schemaVersion'>;
 import './Goals.css';
 
 interface GoalsProps {
@@ -40,8 +43,8 @@ export function Goals({ userId, onNavigate }: GoalsProps) {
       setError(null);
       await goalService.pauseGoal(userId, goalId);
       await loadGoals();
-    } catch (err: any) {
-      setError(err.message || 'Failed to pause goal');
+    } catch (err: unknown) {
+      setError(getErrorMessage(err) || 'Failed to pause goal');
     }
   };
 
@@ -50,19 +53,19 @@ export function Goals({ userId, onNavigate }: GoalsProps) {
       setError(null);
       await goalService.reactivateGoal(userId, goalId);
       await loadGoals();
-    } catch (err: any) {
-      setError(err.message || 'Failed to reactivate goal');
+    } catch (err: unknown) {
+      setError(getErrorMessage(err) || 'Failed to reactivate goal');
     }
   };
 
-  const handleAddGoal = async (goalData: Omit<UserGoal, 'userId' | 'createdAt' | 'updatedAt'>) => {
+  const handleAddGoal = async (goalData: GoalInput) => {
     try {
       setError(null);
       await goalService.createGoal(userId, goalData);
       await loadGoals();
       setShowAddModal(false);
-    } catch (err: any) {
-      setError(err.message || 'Failed to create goal');
+    } catch (err: unknown) {
+      setError(getErrorMessage(err) || 'Failed to create goal');
     }
   };
 
@@ -72,8 +75,8 @@ export function Goals({ userId, onNavigate }: GoalsProps) {
       await goalService.updateGoal(userId, goalId, updates);
       await loadGoals();
       setEditingGoal(null);
-    } catch (err: any) {
-      setError(err.message || 'Failed to update goal');
+    } catch (err: unknown) {
+      setError(getErrorMessage(err) || 'Failed to update goal');
     }
   };
 
@@ -82,20 +85,20 @@ export function Goals({ userId, onNavigate }: GoalsProps) {
       setError(null);
       await goalService.archiveGoal(userId, goalId);
       await loadGoals();
-    } catch (err: any) {
-      setError(err.message || 'Failed to archive goal');
+    } catch (err: unknown) {
+      setError(getErrorMessage(err) || 'Failed to archive goal');
     }
   };
 
   const handleDeleteGoal = async (goalId: string) => {
     if (!confirm('Are you sure you want to delete this goal?')) return;
-    
+
     try {
       setError(null);
       await goalService.deleteGoal(userId, goalId);
       await loadGoals();
-    } catch (err: any) {
-      setError(err.message || 'Failed to delete goal');
+    } catch (err: unknown) {
+      setError(getErrorMessage(err) || 'Failed to delete goal');
     }
   };
 
@@ -301,7 +304,7 @@ export function Goals({ userId, onNavigate }: GoalsProps) {
 
 interface GoalModalProps {
   goal: UserGoalWithId | null;
-  onSave: (data: any) => void;
+  onSave: (data: GoalInput) => void;
   onClose: () => void;
 }
 
@@ -310,7 +313,7 @@ function GoalModal({ goal, onSave, onClose }: GoalModalProps) {
     title: goal?.title || '',
     description: goal?.description || '',
     category: goal?.category || 'short-term' as GoalCategory,
-    domain: goal?.domain || 'general_fitness' as any,
+    domain: goal?.domain || 'general_fitness' as GoalDomain,
     priority: goal?.priority || 3,
     status: goal?.status || 'active' as GoalStatus,
     targetMetric: goal?.targetMetric || '',
@@ -383,7 +386,7 @@ function GoalModal({ goal, onSave, onClose }: GoalModalProps) {
               <label>Domain</label>
               <select
                 value={formData.domain}
-                onChange={(e) => setFormData({...formData, domain: e.target.value})}
+                onChange={(e) => setFormData({...formData, domain: e.target.value as GoalDomain})}
               >
                 <option value="endurance">Endurance</option>
                 <option value="strength">Strength</option>

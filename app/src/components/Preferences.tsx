@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { preferencesService } from '../services/preferencesService';
-import type { UserPreferences } from '../engine/models';
+import type { UserPreferences, RecoveryStyle, TimeOfDay, ExplanationVerbosity } from '../engine/models';
+import { getErrorMessage } from '../utils/errors';
 import './Preferences.css';
 
 interface PreferencesProps {
@@ -47,8 +48,8 @@ export function Preferences({ userId }: PreferencesProps) {
       setError(null);
       await preferencesService.upsertPreferences(userId, preferences);
       setHasChanges(false);
-    } catch (err: any) {
-      setError(err.message || 'Failed to save preferences');
+    } catch (err: unknown) {
+      setError(getErrorMessage(err) || 'Failed to save preferences');
     } finally {
       setSaving(false);
     }
@@ -153,7 +154,7 @@ export function Preferences({ userId }: PreferencesProps) {
               <button
                 key={style}
                 className={`segment ${preferences.preferredRecoveryStyle === style ? 'active' : ''}`}
-                onClick={() => updatePreference('preferredRecoveryStyle', style as any)}
+                onClick={() => updatePreference('preferredRecoveryStyle', style as RecoveryStyle)}
               >
                 {style.charAt(0).toUpperCase() + style.slice(1)}
               </button>
@@ -205,7 +206,7 @@ export function Preferences({ userId }: PreferencesProps) {
               <button
                 key={time}
                 className={`segment ${preferences.preferredTimeOfDay === time ? 'active' : ''}`}
-                onClick={() => updatePreference('preferredTimeOfDay', time as any)}
+                onClick={() => updatePreference('preferredTimeOfDay', time as TimeOfDay)}
               >
                 {time.charAt(0).toUpperCase() + time.slice(1)}
               </button>
@@ -285,7 +286,7 @@ export function Preferences({ userId }: PreferencesProps) {
               <button
                 key={style}
                 className={`segment ${preferences.explanationVerbosity === style ? 'active' : ''}`}
-                onClick={() => updatePreference('explanationVerbosity', style as any)}
+                onClick={() => updatePreference('explanationVerbosity', style as ExplanationVerbosity)}
               >
                 {style.charAt(0).toUpperCase() + style.slice(1)}
               </button>
@@ -304,7 +305,7 @@ export function Preferences({ userId }: PreferencesProps) {
               <label>Distance</label>
               <select
                 value={preferences.preferredUnits.distance}
-                onChange={(e) => updateNestedPreference('distance', e.target.value as any)}
+                onChange={(e) => updateNestedPreference('distance', e.target.value as UserPreferences['preferredUnits']['distance'])}
               >
                 <option value="km">Kilometers</option>
                 <option value="miles">Miles</option>
@@ -314,7 +315,7 @@ export function Preferences({ userId }: PreferencesProps) {
               <label>Weight</label>
               <select
                 value={preferences.preferredUnits.weight}
-                onChange={(e) => updateNestedPreference('weight', e.target.value as any)}
+                onChange={(e) => updateNestedPreference('weight', e.target.value as UserPreferences['preferredUnits']['weight'])}
               >
                 <option value="kg">Kilograms</option>
                 <option value="lbs">Pounds</option>
@@ -324,7 +325,7 @@ export function Preferences({ userId }: PreferencesProps) {
               <label>Temperature</label>
               <select
                 value={preferences.preferredUnits.temperature}
-                onChange={(e) => updateNestedPreference('temperature', e.target.value as any)}
+                onChange={(e) => updateNestedPreference('temperature', e.target.value as UserPreferences['preferredUnits']['temperature'])}
               >
                 <option value="celsius">Celsius</option>
                 <option value="fahrenheit">Fahrenheit</option>

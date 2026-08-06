@@ -1,7 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { constraintService, PREDEFINED_CONSTRAINTS } from '../services/constraintService';
-import type { UserConstraint, ConstraintCategory } from '../engine/models';
+import type { UserConstraint, ConstraintCategory, ConstraintType, ConstraintSeverity } from '../engine/models';
+import { getErrorMessage } from '../utils/errors';
 import './Constraints.css';
+
+/** Fields the custom-constraint form collects; matches constraintService.createCustomConstraint's input. */
+type CustomConstraintInput = Omit<UserConstraint, 'userId' | 'key' | 'createdAt' | 'updatedAt' | 'label' | 'valueType' | 'schemaVersion' | 'isActive'> &
+    Partial<Pick<UserConstraint, 'label' | 'valueType' | 'schemaVersion' | 'isActive'>>;
 
 interface ConstraintsProps {
   userId: string;
@@ -49,31 +54,31 @@ export function Constraints({ userId, onNavigate }: ConstraintsProps) {
       setError(null);
       await constraintService.toggleConstraint(userId, key, isActive);
       await loadConstraints();
-    } catch (err: any) {
-      setError(err.message || 'Failed to update constraint');
+    } catch (err: unknown) {
+      setError(getErrorMessage(err) || 'Failed to update constraint');
     }
   };
 
-  const handleAddCustom = async (constraintData: Omit<UserConstraint, 'userId' | 'key' | 'createdAt' | 'updatedAt'>) => {
+  const handleAddCustom = async (constraintData: CustomConstraintInput) => {
     try {
       setError(null);
       await constraintService.createCustomConstraint(userId, constraintData);
       await loadConstraints();
       setShowCustomModal(false);
-    } catch (err: any) {
-      setError(err.message || 'Failed to create constraint');
+    } catch (err: unknown) {
+      setError(getErrorMessage(err) || 'Failed to create constraint');
     }
   };
 
   const handleDeleteCustom = async (key: string) => {
     if (!confirm('Are you sure you want to delete this custom constraint?')) return;
-    
+
     try {
       setError(null);
       await constraintService.deleteConstraint(userId, key);
       await loadConstraints();
-    } catch (err: any) {
-      setError(err.message || 'Failed to delete constraint');
+    } catch (err: unknown) {
+      setError(getErrorMessage(err) || 'Failed to delete constraint');
     }
   };
 
@@ -296,18 +301,25 @@ function ConstraintItem({ constraint, onToggle, onDelete, canDelete }: Constrain
 }
 
 interface CustomConstraintModalProps {
-  onSave: (data: any) => void;
+  onSave: (data: CustomConstraintInput) => void;
   onClose: () => void;
 }
 
 function CustomConstraintModal({ onSave, onClose }: CustomConstraintModalProps) {
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<{
+    displayName: string;
+    description: string;
+    type: ConstraintType;
+    value: boolean | number | string | string[];
+    severity: ConstraintSeverity;
+    category: 'custom';
+  }>({
     displayName: '',
     description: '',
-    type: 'boolean' as 'boolean' | 'number' | 'string' | 'string_array',
-    value: false as boolean | number | string | string[],
-    severity: 'hard' as const,
-    category: 'custom' as const
+    type: 'boolean',
+    value: false,
+    severity: 'hard',
+    category: 'custom'
   });
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -398,8 +410,8 @@ function CustomConstraintModal({ onSave, onClose }: CustomConstraintModalProps) 
               <select
                 value={formData.type}
                 onChange={(e) => setFormData({
-                  ...formData, 
-                  type: e.target.value as any,
+                  ...formData,
+                  type: e.target.value as ConstraintType,
                   value: e.target.value === 'boolean' ? false : e.target.value === 'number' ? 0 : ''
                 })}
               >
@@ -414,7 +426,7 @@ function CustomConstraintModal({ onSave, onClose }: CustomConstraintModalProps) 
               <label>Severity</label>
               <select
                 value={formData.severity}
-                onChange={(e) => setFormData({...formData, severity: e.target.value as any})}
+                onChange={(e) => setFormData({...formData, severity: e.target.value as ConstraintSeverity})}
               >
                 <option value="hard">Hard (Must not violate)</option>
                 <option value="soft">Soft (Try to avoid)</option>

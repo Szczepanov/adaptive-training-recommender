@@ -3,6 +3,7 @@ import { checkinService } from '../services/checkinService';
 import { recoverySnapshotService } from '../services/recoverySnapshotService';
 import type { DailySubjectiveCheckin } from '../engine/models';
 import { getLocalDateString } from '../utils/localDate';
+import { getErrorMessage } from '../utils/errors';
 import './DailyCheckin.css';
 
 interface DailyCheckinProps {
@@ -83,7 +84,7 @@ export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) 
             updatedAt: new Date().toISOString()
           } as DailySubjectiveCheckin);
         }
-      } catch (serviceError: any) {
+      } catch (serviceError: unknown) {
         console.error('Service error loading check-in:', serviceError);
         // If service fails, still initialize with defaults so user can check in
         const today = getLocalDateString();
@@ -137,7 +138,7 @@ export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) 
     setCheckin({ ...checkin, [field]: !checkin[field] });
   };
 
-  const handleAvailabilityChange = (field: string, value: any) => {
+  const handleAvailabilityChange = (field: string, value: number | string | boolean | null) => {
     if (!checkin) return;
     setCheckin({
       ...checkin,
@@ -184,7 +185,7 @@ export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) 
         setTimeout(() => {
           onNavigate('home');
         }, 1000);
-      } catch (serviceError: any) {
+      } catch (serviceError: unknown) {
         console.error('Service error saving check-in:', serviceError);
         // Even if save fails, show a message and navigate back
         // The user can still proceed with using the app
@@ -192,9 +193,9 @@ export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) 
           onNavigate('home');
         }, 2000);
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Unexpected error saving check-in:', err);
-      setError(err.message || 'Failed to save check-in');
+      setError(getErrorMessage(err) || 'Failed to save check-in');
     } finally {
       setSaving(false);
     }
