@@ -28,7 +28,8 @@ const modalityMap: Record<WorkoutDefinition['modality'], SessionTemplate['modali
   strength: 'Strength',
   field: 'Running',
   mobility: 'Mobility',
-  recovery: 'Mobility'
+  recovery: 'Mobility',
+  cross_training: 'Cycling'
 };
 
 export function toLegacySessionTemplate(workout: WorkoutDefinition): SessionTemplate {
@@ -37,11 +38,12 @@ export function toLegacySessionTemplate(workout: WorkoutDefinition): SessionTemp
       .map((equipment) => legacyEquipmentMap[equipment])
       .filter((equipment): equipment is SessionTemplate['requiredEquipment'][number] => equipment !== undefined)
   ));
+  const isCompleteRest = workout.id === 'rest_complete_01';
 
   return {
     id: workout.id,
-    category: categoryMap[workout.category],
-    modality: modalityMap[workout.modality],
+    category: isCompleteRest ? 'Rest' : categoryMap[workout.category],
+    modality: isCompleteRest ? 'None' : modalityMap[workout.modality],
     durationMin: workout.duration.minimumMin,
     durationMax: workout.duration.maximumMin,
     title: workout.name,

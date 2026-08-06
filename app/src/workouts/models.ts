@@ -4,7 +4,8 @@ export type WorkoutModality =
   | 'strength'
   | 'field'
   | 'mobility'
-  | 'recovery';
+  | 'recovery'
+  | 'cross_training';
 
 export type WorkoutCategory =
   | 'recovery'
@@ -32,7 +33,11 @@ export type TrainingObjective =
   | 'braking'
   | 'change_of_direction'
   | 'football_skill'
-  | 'mobility';
+  | 'mobility'
+  | 'travel_maintenance'
+  | 'running_exposure'
+  | 'freshness'
+  | 'race_execution';
 
 export type Equipment =
   | 'bike'
@@ -53,7 +58,8 @@ export type Equipment =
   | 'field'
   | 'treadmill'
   | 'foam_roller'
-  | 'bodyweight';
+  | 'bodyweight'
+  | 'hotel_gym';
 
 export type LoadLevel = 1 | 2 | 3 | 4 | 5;
 
@@ -123,6 +129,26 @@ export interface WorkoutVariant {
   stepOverrides: WorkoutVariantStepOverride[];
 }
 
+export type WorkoutParameterUnit =
+  | 'minutes'
+  | 'seconds'
+  | 'repetitions'
+  | 'sets'
+  | 'rpe';
+
+/** A coach- or engine-adjustable dimension of a generic workout family. */
+export interface WorkoutParameter {
+  id: string;
+  label: string;
+  unit: WorkoutParameterUnit;
+  defaultValue: number;
+  minimum: number;
+  maximum: number;
+  step: number;
+  appliesToStepIds: string[];
+  description: string;
+}
+
 export interface WorkoutDefinition {
   id: string;
   version: number;
@@ -155,6 +181,7 @@ export interface WorkoutDefinition {
   contraindicationTags: string[];
   blocks: WorkoutBlock[];
   variants: WorkoutVariant[];
+  parameters?: WorkoutParameter[];
   regressions: string[];
   progressions: string[];
   substitutions: Array<{
@@ -179,6 +206,7 @@ export interface WorkoutPrescription {
   variantId: WorkoutVariant['id'];
   targetDurationMin: number;
   adjustedBlocks: WorkoutBlock[];
+  resolvedParameters?: Record<string, number>;
   rationale: string[];
   adjustmentReasons: string[];
   source: {
