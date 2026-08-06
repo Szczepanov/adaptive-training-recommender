@@ -52,12 +52,12 @@ class GarminSyncService:
             verify_login=self.settings.garmin_verify_login,
             allow_credential_login=self.settings.garmin_allow_credential_login,
         )
-        try:
-            wrapper.login_with_tokens_or_credentials(self.token_file_path)
-        except Exception as e:
-            if not self.settings.garmin_allow_credential_login:
-                raise RuntimeError(f"token_rebootstrap_required: {e}") from e
-            raise
+        # garmin_client.py already raises correctly-typed exceptions here (a
+        # token_rebootstrap_required GarminConnectAuthenticationError, or the original
+        # GarminConnectTooManyRequestsError/GarminConnectConnectionError untouched) --
+        # no extra wrapping needed, it would only risk re-masking a rate-limit/connection
+        # failure as an auth problem.
+        wrapper.login_with_tokens_or_credentials(self.token_file_path)
 
         self.token_store.persist(self.token_file_path)
         self.garmin_client = wrapper

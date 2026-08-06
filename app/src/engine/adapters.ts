@@ -19,7 +19,7 @@ export function mapSnapshotToEngineInput(snapshot: DailyRecoverySnapshot): Engin
         ? Math.round(snapshot.raw.sleepDurationSec / 60) 
         : null;
 
-    const rawY = snapshot.raw.yesterdayTraining as any;
+    const rawY = snapshot.raw.yesterdayTraining;
     let yesterdayTrainingObj = null;
     if (rawY) {
         if (rawY.primaryActivity) {

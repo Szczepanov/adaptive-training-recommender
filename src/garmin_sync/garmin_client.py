@@ -5,7 +5,6 @@ from garminconnect import (
     Garmin,
     GarminConnectAuthenticationError,
     GarminConnectConnectionError,
-    GarminConnectNotFoundError,
     GarminConnectTooManyRequestsError,
 )
 
@@ -44,7 +43,24 @@ class GarminClientWrapper:
         self.api: Garmin | None = None
 
     def login_with_tokens_or_credentials(self, token_path: Path | str) -> None:
+        """Log in via garminconnect's own load-or-refresh-or-fresh-login flow.
+
+        `Garmin.login(token_file)` transparently: loads and validates a cached token if
+        present, refreshes it if needed, falls back to a full credential (+ MFA) login
+        when credentials are set and the cached token is missing/invalid, and persists
+        the resulting (possibly refreshed) token back to `token_file` on every success
+        path -- upstream only calls its internal dump() when a tokenstore path was
+        actually passed in, so this must always be a single call with that path, not a
+        separate argless fallback call (which would authenticate but never save).
+        """
         token_file = Path(token_path).expanduser().resolve()
+        token_file.parent.mkdir(parents=True, exist_ok=True)
+
+        if self.allow_credential_login and not (self.email and self.password):
+            raise RuntimeError(
+                "Garmin credentials (GARMIN_EMAIL, GARMIN_PASSWORD) are required when "
+                "credential login is enabled but were not provided."
+            )
 
         self.api = Garmin(
             email=self.email,
@@ -53,32 +69,23 @@ class GarminClientWrapper:
             retry_attempts=self.retry_attempts,
             retry_min_wait=self.retry_min_wait,
             retry_max_wait=self.retry_max_wait,
+            verify_login=self.verify_login,
         )
 
-        if token_file.exists():
-            try:
-                self.api.login(str(token_file))
-                logger.info(f"Successfully logged in using token file '{token_file}'.")
-                return
-            except Exception as e:
-                logger.warning(f"Cached token login failed ({e}).")
-
-        if not self.allow_credential_login:
-            raise GarminConnectAuthenticationError(
-                f"token_rebootstrap_required: Token file '{token_file}' missing or invalid and credential login is prohibited."
-            )
-
-        if not self.email or not self.password:
-            raise RuntimeError(
-                "Garmin credentials (GARMIN_EMAIL, GARMIN_PASSWORD) missing and valid tokens unavailable."
-            )
-
-        logger.info("Performing full Garmin SSO credential authentication...")
         try:
-            self.api.login()
-            logger.info("Garmin SSO authentication completed.")
+            self.api.login(str(token_file))
+            logger.info(f"Garmin login succeeded; tokens persisted to '{token_file}'.")
+        except (GarminConnectTooManyRequestsError, GarminConnectConnectionError):
+            # Transient/infra failure, not a token problem -- surface as-is rather than
+            # falling through to a credential-login retry right after a 429/5xx.
+            raise
+        except GarminConnectAuthenticationError:
+            raise
         except Exception as e:
-            logger.error(f"Garmin SSO login failed: {e}")
+            if not self.allow_credential_login:
+                raise GarminConnectAuthenticationError(
+                    f"token_rebootstrap_required: token-only login failed for '{token_file}': {e}"
+                ) from e
             raise
 
     def get_stats(self, date_iso: str) -> dict[str, Any]:

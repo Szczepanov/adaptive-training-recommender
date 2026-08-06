@@ -164,7 +164,10 @@ def map_garmin_payload_to_snapshot(
             return (load, te_max, duration, act_id)
 
         best_act = max(yesterday_acts, key=primary_sort_key)
-        te_best = float(best_act.get("aerobicTrainingEffect", 0.0) or 0.0)
+        te_best = max(
+            float(best_act.get("aerobicTrainingEffect", 0.0) or 0.0),
+            float(best_act.get("anaerobicTrainingEffect", 0.0) or 0.0),
+        )
         dur_sec = best_act.get("duration", 0)
         dur_min = round(dur_sec / 60) if dur_sec else None
         act_type = best_act.get("activityType", {}).get("typeKey", "unknown")
