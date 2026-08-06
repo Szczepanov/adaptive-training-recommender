@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from typing import Any
 import firebase_admin
 from firebase_admin import credentials, firestore
+from google.cloud.firestore_v1.base_query import FieldFilter
 
 logger = logging.getLogger(__name__)
 
@@ -117,8 +118,8 @@ class FirestoreRecoveryRepository:
             db.collection("users")
             .document(self.user_id)
             .collection(self.collection_name)
-            .where("date", ">=", start_date_iso)
-            .where("date", "<=", end_date_iso)
+            .where(filter=FieldFilter("date", ">=", start_date_iso))
+            .where(filter=FieldFilter("date", "<=", end_date_iso))
             .stream()
         )
 
