@@ -30,7 +30,7 @@ jobs:
         run: uv run pytest
 
   frontend-build:
-    name: Frontend Lint & Build
+    name: Frontend Lint, Workout Validation & Build
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -41,7 +41,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
           cache: "npm"
           cache-dependency-path: app/package-lock.json
 
@@ -50,6 +50,9 @@ jobs:
 
       - name: Lint frontend
         run: npm run lint
+
+      - name: Validate workout library
+        run: npm run validate:workouts
 
       - name: Build frontend
         run: npm run build
