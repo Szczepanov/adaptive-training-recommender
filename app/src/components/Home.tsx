@@ -2,9 +2,9 @@ import { useState, useEffect } from 'react';
 import { auth } from '../firebase';
 import { signOut } from 'firebase/auth';
 import { decisionComposer } from '../engine/composer';
-import { evaluateTraining } from '../engine/rules';
+import { evaluateTraining, evaluateNextDayPlan } from '../engine/rules';
 import { mapSnapshotToEngineInput, mapCheckinToSubjectiveInput, mapContextFromGoalsAndConstraints } from '../engine/adapters';
-import type { DailyDecisionInput, Recommendation } from '../engine/models';
+import type { DailyDecisionInput, Recommendation, NextDayPotentialPlan } from '../engine/models';
 import './Home.css';
 
 interface HomeProps {
@@ -16,6 +16,8 @@ interface HomeProps {
 export function Home({ userId, onNavigate, onViewData }: HomeProps) {
   const [decisionInput, setDecisionInput] = useState<DailyDecisionInput | null>(null);
   const [recommendation, setRecommendation] = useState<Recommendation | null>(null);
+  const [nextDayPlan, setNextDayPlan] = useState<NextDayPotentialPlan | null>(null);
+  const [selectedBranch, setSelectedBranch] = useState<'green' | 'yellow' | 'red'>('green');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showRecoveryData, setShowRecoveryData] = useState(false);
@@ -36,9 +38,14 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
         const objective = mapSnapshotToEngineInput(input.recoverySnapshot);
         const subjective = mapCheckinToSubjectiveInput(input.subjectiveCheckin);
         const context = mapContextFromGoalsAndConstraints(input.activeGoals, input.activeConstraints);
-        setRecommendation(evaluateTraining({ subjective, objective }, context, input.date));
+        const todayRec = evaluateTraining({ subjective, objective }, context, input.date);
+        setRecommendation(todayRec);
+        
+        const tomorrowPlan = evaluateNextDayPlan({ subjective, objective }, context, input.date, todayRec);
+        setNextDayPlan(tomorrowPlan);
       } else {
         setRecommendation(null);
+        setNextDayPlan(null);
       }
     } catch (err) {
       console.error('Error loading dashboard data:', err);
@@ -136,6 +143,96 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
           </p>
         )}
       </div>
+
+      {/* Tomorrow's Potential Plan Card */}
+      {nextDayPlan && (
+        <div className="dashboard-card next-day-card">
+          <div className="card-header">
+            <h3>Tomorrow's Potential Plan</h3>
+            <span className="status-badge info">{nextDayPlan.date}</span>
+          </div>
+
+          {nextDayPlan.isSinglePlan ? (
+            <div className="single-plan-container">
+              <div className="single-plan-banner">
+                <span className="banner-icon">📌</span>
+                <div className="banner-text">
+                  <strong>Single Mandatory Plan:</strong>
+                  <p>{nextDayPlan.singlePlanReason}</p>
+                </div>
+              </div>
+
+              <div className="recommendation-content">
+                <h4 className="recommendation-title">
+                  {nextDayPlan.branches.green.recommendation.template.title}
+                </h4>
+                <p className="recommendation-meta">
+                  {nextDayPlan.branches.green.recommendation.template.category} · {nextDayPlan.branches.green.recommendation.template.durationMin}-{nextDayPlan.branches.green.recommendation.template.durationMax} min
+                </p>
+                <p className="recommendation-description">
+                  {nextDayPlan.branches.green.recommendation.template.description}
+                </p>
+                <p className="recommendation-rationale">
+                  {nextDayPlan.branches.green.recommendation.rationale}
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="multi-branch-container">
+              <p className="contingency-intro">
+                Projected morning readiness options:
+              </p>
+
+              {/* Branch Selector Tabs */}
+              <div className="branch-tabs">
+                <button
+                  className={`branch-tab green ${selectedBranch === 'green' ? 'active' : ''}`}
+                  onClick={() => setSelectedBranch('green')}
+                >
+                  <span className="tier-indicator">🟢</span>
+                  <span className="tab-label">Green (High)</span>
+                </button>
+                <button
+                  className={`branch-tab yellow ${selectedBranch === 'yellow' ? 'active' : ''}`}
+                  onClick={() => setSelectedBranch('yellow')}
+                >
+                  <span className="tier-indicator">🟡</span>
+                  <span className="tab-label">Yellow (Mid)</span>
+                </button>
+                <button
+                  className={`branch-tab red ${selectedBranch === 'red' ? 'active' : ''}`}
+                  onClick={() => setSelectedBranch('red')}
+                >
+                  <span className="tier-indicator">🔴</span>
+                  <span className="tab-label">Red (Low)</span>
+                </button>
+              </div>
+
+              {/* Branch Details */}
+              {(() => {
+                const branch = nextDayPlan.branches[selectedBranch];
+                return (
+                  <div className={`branch-details tier-${selectedBranch}`}>
+                    <div className="condition-box">
+                      <span className="condition-label">Condition:</span>
+                      <span className="condition-text">{branch.condition}</span>
+                    </div>
+
+                    <div className="recommendation-content">
+                      <h4 className="recommendation-title">{branch.recommendation.template.title}</h4>
+                      <p className="recommendation-meta">
+                        {branch.recommendation.template.category} · {branch.recommendation.template.durationMin}-{branch.recommendation.template.durationMax} min
+                      </p>
+                      <p className="recommendation-description">{branch.recommendation.template.description}</p>
+                      <p className="recommendation-rationale">{branch.recommendation.rationale}</p>
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Quick Actions */}
       <div className="quick-actions">

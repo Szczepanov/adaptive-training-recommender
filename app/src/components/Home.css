@@ -117,6 +117,11 @@
   color: #f87171;
 }
 
+.status-badge.info {
+  background: rgba(56, 189, 248, 0.2);
+  color: #38bdf8;
+}
+
 .card-count {
   background: rgba(255, 255, 255, 0.1);
   color: var(--text-secondary);
@@ -484,3 +489,134 @@
     grid-template-columns: repeat(2, 1fr);
   }
 }
+
+/* Next-Day Potential Plan Card Styles */
+.next-day-card {
+  cursor: default;
+  margin-bottom: 2rem;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.next-day-card:hover {
+  transform: none;
+}
+
+.single-plan-banner {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+  background: rgba(234, 179, 8, 0.12);
+  border: 1px solid rgba(234, 179, 8, 0.3);
+  padding: 0.875rem 1rem;
+  border-radius: 10px;
+  margin-bottom: 1rem;
+}
+
+.single-plan-banner .banner-icon {
+  font-size: 1.25rem;
+}
+
+.single-plan-banner .banner-text strong {
+  display: block;
+  font-size: 0.875rem;
+  color: #fde047;
+  margin-bottom: 0.25rem;
+}
+
+.single-plan-banner .banner-text p {
+  margin: 0;
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.contingency-intro {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  margin: 0 0 0.75rem 0;
+}
+
+.branch-tabs {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1.25rem;
+}
+
+.branch-tab {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  padding: 0.65rem 0.5rem;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.branch-tab:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.branch-tab.active.green {
+  background: rgba(34, 197, 94, 0.16);
+  border-color: rgba(34, 197, 94, 0.4);
+  color: #4ade80;
+  font-weight: 600;
+}
+
+.branch-tab.active.yellow {
+  background: rgba(234, 179, 8, 0.16);
+  border-color: rgba(234, 179, 8, 0.4);
+  color: #facc15;
+  font-weight: 600;
+}
+
+.branch-tab.active.red {
+  background: rgba(239, 68, 68, 0.16);
+  border-color: rgba(239, 68, 68, 0.4);
+  color: #f87171;
+  font-weight: 600;
+}
+
+.tier-indicator {
+  font-size: 0.9rem;
+}
+
+.condition-box {
+  background: rgba(255, 255, 255, 0.03);
+  padding: 0.625rem 0.875rem;
+  border-radius: 0 8px 8px 0;
+  margin-bottom: 1rem;
+  font-size: 0.85rem;
+  border-left: 3px solid var(--primary-color);
+}
+
+.branch-details.tier-green .condition-box {
+  border-left-color: #22c55e;
+}
+
+.branch-details.tier-yellow .condition-box {
+  border-left-color: #eab308;
+}
+
+.branch-details.tier-red .condition-box {
+  border-left-color: #ef4444;
+}
+
+.condition-label {
+  font-weight: 600;
+  margin-right: 0.5rem;
+  color: var(--text-primary);
+}
+
+.condition-text {
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
