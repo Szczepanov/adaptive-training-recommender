@@ -17,8 +17,8 @@ const categoryMap: Record<WorkoutDefinition['category'], SessionTemplate['catego
   surge_tolerance: 'Hard Endurance',
   race_simulation: 'Hard Endurance',
   full_body_strength: 'Full-body Strength',
-  power_maintenance: 'Upper-body Strength',
-  field_maintenance: 'Moderate Endurance',
+  power_maintenance: 'Power Maintenance',
+  field_maintenance: 'Field Maintenance',
   mobility_recovery: 'Mobility/Recovery'
 };
 
@@ -26,10 +26,10 @@ const modalityMap: Record<WorkoutDefinition['modality'], SessionTemplate['modali
   cycling: 'Cycling',
   running: 'Running',
   strength: 'Strength',
-  field: 'Running',
+  field: 'Field',
   mobility: 'Mobility',
   recovery: 'Mobility',
-  cross_training: 'Cycling'
+  cross_training: 'Cross Training'
 };
 
 export function toLegacySessionTemplate(workout: WorkoutDefinition): SessionTemplate {
