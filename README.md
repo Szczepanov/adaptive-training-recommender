@@ -12,7 +12,7 @@ Garmin Connect API
 Cloud Scheduler (06:15 Europe/Warsaw)
     ↓
 Cloud Run Job
-    ├── TokenStore (Downloads/Uploads encrypted .garth tokens from/to GCS)
+    ├── TokenStore (Downloads/Uploads encrypted garmin_tokens.json from/to GCS)
     ├── GarminSyncService (Fetches stats, sleep, HRV, activities)
     ├── Metrics & Baselines (7-day and 28-day historical averages & deltas)
     └── FirestoreRepository (Writes to users/{firebaseUid}/daily_recovery_snapshots/{YYYY-MM-DD})
@@ -28,9 +28,9 @@ Adaptive Training Recommendation
 
 1. **User-Scoped Isolation**: All Firestore snapshots are saved strictly under `users/{firebaseUid}/daily_recovery_snapshots/{YYYY-MM-DD}`.
 2. **Explicit Warsaw Timezone**: Uses `Europe/Warsaw` calendar dates to prevent UTC boundary shifts around midnight.
-3. **Stateless Token Persistence**: Integrates `GcsTokenStore` to restore and persist Garth OAuth tokens across ephemeral Cloud Run executions.
+3. **Stateless Token Persistence**: Integrates `GcsTokenStore` to restore and persist Garmin OAuth token JSON file across ephemeral Cloud Run executions with strict OS file permissions.
 4. **D-1 Step Count & Completed Training**: Uses previous completed day (`D - 1`) for step counts and training history lookback window.
-5. **Schema Version 2 & Provenance**: Tracks exact source dates for sleep, HRV, resting HR, waking body battery, and steps.
+5. **Schema Version 3 & Provenance**: Tracks exact source dates for sleep, HRV, resting HR, waking body battery, steps, and deterministic primary activity.
 6. **Graceful Migration Utility**: Includes `scripts/migrate_legacy_snapshots.py` to copy legacy root documents to user-scoped Firestore paths.
 
 ---
@@ -43,14 +43,14 @@ Set the following environment variables (e.g. in `.env` locally or Secret Manage
 |---|---|---|---|
 | `APP_USER_ID` | **Yes** | — | Target Firebase Auth UID (Must NOT be `"default_user"`) |
 | `APP_TIMEZONE` | No | `Europe/Warsaw` | Application logical timezone |
-| `GARMIN_EMAIL` | Optional | — | Garmin Connect login email |
+| `GARMIN_EMAIL` | Optional | — | Garmin Connect login email (used for interactive bootstrap) |
 | `GARMIN_PASSWORD` | Optional | — | Garmin Connect login password |
-| `GARMIN_TOKENS` | No | `.garth` | Path to local token directory |
+| `GARMIN_TOKEN_PATH` | No | `.garmin_tokens/garmin_tokens.json` | Path to local single token JSON file |
 | `GARMIN_TOKEN_STORE` | No | `local` | Token store backend (`local` or `gcs`) |
-| `GARMIN_TOKEN_BUCKET` | For GCS | — | Private GCS bucket name storing Garmin token archive |
-| `GARMIN_TOKEN_OBJECT` | For GCS | `garmin_tokens.tar.gz` | GCS token object name |
+| `GARMIN_TOKEN_BUCKET` | For GCS | — | Private GCS bucket name storing Garmin token JSON |
+| `GARMIN_TOKEN_OBJECT` | For GCS | `garmin/garmin_tokens.json` | GCS token object name |
 | `GARMIN_STALENESS_MINUTES` | No | `60` | Skip Garmin API fetch if snapshot updated within N mins |
-| `GARMIN_MAX_RETRIES` | No | `4` | Max HTTP 429 exponential backoff retries |
+| `GARMIN_ALLOW_CREDENTIAL_LOGIN` | No | `false` | Cloud/automated runs set `false` (token-only); bootstrap sets `true` |
 | `FIREBASE_CREDENTIALS_PATH` | Local only | — | Path to local Firebase service account JSON |
 
 ---

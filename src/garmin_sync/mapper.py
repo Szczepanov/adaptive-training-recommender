@@ -1,3 +1,4 @@
+import importlib.metadata
 import logging
 from datetime import datetime, timezone
 from typing import Any
@@ -8,6 +9,7 @@ from .models import (
     DataQuality,
     DerivedMetrics,
     MetricDates,
+    PrimaryActivity,
     RawMetrics,
     SCHEMA_VERSION,
     SourceMetadata,
@@ -35,24 +37,16 @@ def extract_sleep_metrics(sleep_obj: dict[str, Any]) -> tuple[int | float | None
     return sleep_score, sleep_sec, avg_resp
 
 
-def map_garmin_payload_to_snapshot(
-    user_id: str,
-    target_date_iso: str,
+def normalize_current_metrics(
     stats_today: dict[str, Any],
     stats_fallback: dict[str, Any] | None,
     sleep_today: dict[str, Any],
     sleep_fallback: dict[str, Any] | None,
     hrv_today: dict[str, Any],
-    activities_window: list[dict[str, Any]],
-    derived_metrics: DerivedMetrics,
-    timezone_name: str = "Europe/Warsaw",
-    synced_at_iso: str | None = None,
-) -> DailyRecoverySnapshot:
-    """Map raw Garmin responses into normalized DailyRecoverySnapshot with explicit provenance."""
-    target_date = parse_date_string(target_date_iso)
-    yesterday_iso = get_date_string(n_days_ago(target_date, 1))
-    three_days_ago_iso = get_date_string(n_days_ago(target_date, 3))
-
+    target_date_iso: str,
+    yesterday_iso: str,
+) -> tuple[dict[str, Any], MetricDates]:
+    """Consolidate current metrics extraction and fallback logic into a single normalized view."""
     # 1. RHR & Waking Body Battery
     rhr = stats_today.get("restingHeartRate")
     rhr_date = target_date_iso
@@ -88,31 +82,16 @@ def map_garmin_payload_to_snapshot(
     hrv_status = hrv_summary.get("status")
     hrv_date = target_date_iso if hrv_last is not None else None
 
-    # 4. Activities (3-day lookback ending at yesterday)
-    y_train = None
-    hard_sessions_count = 0
-
-    for act in activities_window:
-        act_date = act.get("startTimeLocal", "")[:10]
-        if not act_date:
-            continue
-
-        if three_days_ago_iso <= act_date <= yesterday_iso:
-            is_hard, intensity_tag = classify_activity_intensity(act)
-            if is_hard:
-                hard_sessions_count += 1
-
-            if act_date == yesterday_iso and y_train is None:
-                te = act.get("aerobicTrainingEffect", 0.0) or 0.0
-                duration_sec = act.get("duration", 0)
-                dur_min = round(duration_sec / 60) if duration_sec else None
-                act_type = act.get("activityType", {}).get("typeKey", "unknown")
-                y_train = YesterdayTraining(
-                    type=act_type,
-                    durationMin=dur_min,
-                    trainingEffect=te,
-                    intensityTag=intensity_tag,
-                )
+    normalized_dict = {
+        "sleepScore": sleep_score,
+        "sleepDurationSec": sleep_sec,
+        "restingHr": rhr,
+        "hrvOvernightAvg": hrv_last,
+        "hrvStatus": hrv_status,
+        "respirationAvg": avg_resp,
+        "bodyBatteryWake": bb_wake,
+        "totalSteps": total_steps,
+    }
 
     metric_dates = MetricDates(
         sleep=sleep_date if sleep_score is not None else None,
@@ -123,33 +102,122 @@ def map_garmin_payload_to_snapshot(
         activitiesThrough=yesterday_iso,
     )
 
+    return normalized_dict, metric_dates
+
+
+def map_garmin_payload_to_snapshot(
+    user_id: str,
+    target_date_iso: str,
+    stats_today: dict[str, Any],
+    stats_fallback: dict[str, Any] | None,
+    sleep_today: dict[str, Any],
+    sleep_fallback: dict[str, Any] | None,
+    hrv_today: dict[str, Any],
+    activities_window: list[dict[str, Any]],
+    derived_metrics: DerivedMetrics,
+    timezone_name: str = "Europe/Warsaw",
+    synced_at_iso: str | None = None,
+) -> DailyRecoverySnapshot:
+    """Map raw Garmin responses into normalized DailyRecoverySnapshot with explicit provenance."""
+    target_date = parse_date_string(target_date_iso)
+    yesterday_iso = get_date_string(n_days_ago(target_date, 1))
+    three_days_ago_iso = get_date_string(n_days_ago(target_date, 3))
+
+    normalized, metric_dates = normalize_current_metrics(
+        stats_today=stats_today,
+        stats_fallback=stats_fallback,
+        sleep_today=sleep_today,
+        sleep_fallback=sleep_fallback,
+        hrv_today=hrv_today,
+        target_date_iso=target_date_iso,
+        yesterday_iso=yesterday_iso,
+    )
+
+    # Activities (3-day lookback ending at yesterday)
+    hard_sessions_count = 0
+    yesterday_acts: list[dict[str, Any]] = []
+
+    for act in activities_window:
+        act_date = act.get("startTimeLocal", "")[:10]
+        if not act_date:
+            continue
+
+        if three_days_ago_iso <= act_date <= yesterday_iso:
+            is_hard, _ = classify_activity_intensity(act)
+            if is_hard:
+                hard_sessions_count += 1
+            if act_date == yesterday_iso:
+                yesterday_acts.append(act)
+
+    y_train: YesterdayTraining | None = None
+    if yesterday_acts:
+        y_hard_count = sum(1 for act in yesterday_acts if classify_activity_intensity(act)[0])
+        total_dur_sec = sum(act.get("duration", 0) or 0 for act in yesterday_acts)
+
+        def primary_sort_key(act: dict[str, Any]) -> tuple[float, float, int, str]:
+            load = float(act.get("activityTrainingLoad", 0.0) or 0.0)
+            te_aero = float(act.get("aerobicTrainingEffect", 0.0) or 0.0)
+            te_anaero = float(act.get("anaerobicTrainingEffect", 0.0) or 0.0)
+            te_max = max(te_aero, te_anaero)
+            duration = int(act.get("duration", 0) or 0)
+            act_id = str(act.get("activityId", ""))
+            return (load, te_max, duration, act_id)
+
+        best_act = max(yesterday_acts, key=primary_sort_key)
+        te_best = float(best_act.get("aerobicTrainingEffect", 0.0) or 0.0)
+        dur_sec = best_act.get("duration", 0)
+        dur_min = round(dur_sec / 60) if dur_sec else None
+        act_type = best_act.get("activityType", {}).get("typeKey", "unknown")
+        _, intensity_tag = classify_activity_intensity(best_act)
+
+        primary_act = PrimaryActivity(
+            activityId=best_act.get("activityId", "unknown"),
+            type=act_type,
+            durationMin=dur_min,
+            trainingEffect=te_best,
+            intensityTag=intensity_tag,
+        )
+
+        y_train = YesterdayTraining(
+            activityCount=len(yesterday_acts),
+            totalDurationMin=round(total_dur_sec / 60),
+            hardActivityCount=y_hard_count,
+            primaryActivity=primary_act,
+        )
+
     now_iso = synced_at_iso or datetime.now(timezone.utc).isoformat()
+
+    try:
+        gc_version = importlib.metadata.version("garminconnect")
+    except Exception:
+        gc_version = None
 
     source = SourceMetadata(
         garminSyncedAt=now_iso,
         sourceSchemaVersion=SCHEMA_VERSION,
         timezone=timezone_name,
         metricDates=metric_dates,
+        garminconnectVersion=gc_version,
     )
 
     raw = RawMetrics(
-        sleepScore=sleep_score,
-        sleepDurationSec=sleep_sec,
-        restingHr=rhr,
-        hrvOvernightAvg=hrv_last,
-        hrvStatus=hrv_status,
-        respirationAvg=avg_resp,
-        bodyBatteryWake=bb_wake,
+        sleepScore=normalized["sleepScore"],
+        sleepDurationSec=normalized["sleepDurationSec"],
+        restingHr=normalized["restingHr"],
+        hrvOvernightAvg=normalized["hrvOvernightAvg"],
+        hrvStatus=normalized["hrvStatus"],
+        respirationAvg=normalized["respirationAvg"],
+        bodyBatteryWake=normalized["bodyBatteryWake"],
         bodyBatteryChange=None,
-        totalSteps=total_steps,
+        totalSteps=normalized["totalSteps"],
         last3DaysHardSessionsCount=hard_sessions_count,
         yesterdayTraining=y_train,
     )
 
     data_quality = DataQuality(
-        sleepScoreAvailable=sleep_score is not None,
-        restingHrAvailable=rhr is not None,
-        hrvAvailable=hrv_last is not None,
+        sleepScoreAvailable=normalized["sleepScore"] is not None,
+        restingHrAvailable=normalized["restingHr"] is not None,
+        hrvAvailable=normalized["hrvOvernightAvg"] is not None,
         baseline7dReady=derived_metrics.restingHr7dAvg is not None,
         baseline28dReady=derived_metrics.restingHr28dAvg is not None,
     )

@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field, asdict
 from typing import Any
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 BASELINE_COMPUTATION_VERSION = 1
 
 
@@ -24,18 +24,23 @@ class SourceMetadata:
     sourceSchemaVersion: int = SCHEMA_VERSION
     timezone: str = "Europe/Warsaw"
     metricDates: MetricDates = field(default_factory=MetricDates)
+    garminconnectVersion: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        d = {
             "garminSyncedAt": self.garminSyncedAt,
             "sourceSchemaVersion": self.sourceSchemaVersion,
             "timezone": self.timezone,
             "metricDates": self.metricDates.to_dict(),
         }
+        if self.garminconnectVersion:
+            d["garminconnectVersion"] = self.garminconnectVersion
+        return d
 
 
 @dataclass
-class YesterdayTraining:
+class PrimaryActivity:
+    activityId: int | str
     type: str
     durationMin: int | None
     trainingEffect: float
@@ -43,6 +48,20 @@ class YesterdayTraining:
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
+
+
+@dataclass
+class YesterdayTraining:
+    activityCount: int
+    totalDurationMin: int
+    hardActivityCount: int
+    primaryActivity: PrimaryActivity | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        d = asdict(self)
+        if self.primaryActivity:
+            d["primaryActivity"] = self.primaryActivity.to_dict()
+        return d
 
 
 @dataclass

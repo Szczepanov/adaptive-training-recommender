@@ -19,13 +19,25 @@ export function mapSnapshotToEngineInput(snapshot: DailyRecoverySnapshot): Engin
         ? Math.round(snapshot.raw.sleepDurationSec / 60) 
         : null;
 
-    // Convert intensityTag to lowercase to match engine expectations if needed, but the backend provides it as standard.
-    const yesterdayTrainingObj = snapshot.raw.yesterdayTraining ? {
-        type: snapshot.raw.yesterdayTraining.type,
-        duration_min: snapshot.raw.yesterdayTraining.durationMin,
-        training_effect: snapshot.raw.yesterdayTraining.trainingEffect,
-        intensity_tag: snapshot.raw.yesterdayTraining.intensityTag
-    } : null;
+    const rawY = snapshot.raw.yesterdayTraining as any;
+    let yesterdayTrainingObj = null;
+    if (rawY) {
+        if (rawY.primaryActivity) {
+            yesterdayTrainingObj = {
+                type: rawY.primaryActivity.type,
+                duration_min: rawY.primaryActivity.durationMin ?? 0,
+                training_effect: rawY.primaryActivity.trainingEffect ?? 0,
+                intensity_tag: rawY.primaryActivity.intensityTag ?? 'moderate/easy',
+            };
+        } else if (rawY.type) {
+            yesterdayTrainingObj = {
+                type: rawY.type,
+                duration_min: rawY.durationMin ?? 0,
+                training_effect: rawY.trainingEffect ?? 0,
+                intensity_tag: rawY.intensityTag ?? 'moderate/easy',
+            };
+        }
+    }
 
     return {
         total_steps: snapshot.raw.totalSteps,

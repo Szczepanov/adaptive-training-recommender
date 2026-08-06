@@ -62,7 +62,7 @@ export class LocalDataService {
                 date,
                 source: {
                     garminSyncedAt: new Date().toISOString(),
-                    sourceSchemaVersion: 1
+                    sourceSchemaVersion: 3
                 },
                 raw: {
                     sleepScore: rawData.sleepScore || null,

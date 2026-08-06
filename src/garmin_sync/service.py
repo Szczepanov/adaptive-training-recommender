@@ -6,7 +6,7 @@ from .config import Settings
 from .dates import get_date_range, get_date_string, local_today, n_days_ago, parse_date_string
 from .firestore_repository import FirestoreRecoveryRepository
 from .garmin_client import GarminClientWrapper
-from .mapper import extract_sleep_metrics, map_garmin_payload_to_snapshot
+from .mapper import extract_sleep_metrics, map_garmin_payload_to_snapshot, normalize_current_metrics
 from .metrics import compute_derived_metrics
 from .token_store import create_token_store
 
@@ -30,27 +30,36 @@ class GarminSyncService:
         self.garmin_client = garmin_client
         self.token_store = create_token_store(
             store_type=settings.garmin_token_store,
-            local_dir=settings.garmin_tokens,
+            local_path=settings.garmin_token_path,
             bucket_name=settings.garmin_token_bucket,
             object_name=settings.garmin_token_object,
         )
-        self.token_dir = Path(settings.garmin_tokens).expanduser().resolve()
+        self.token_file_path = Path(settings.garmin_token_path).expanduser().resolve()
 
     def _init_garmin_client(self) -> GarminClientWrapper:
         if self.garmin_client is not None:
             return self.garmin_client
 
         logger.info(f"Restoring Garmin tokens via store backend '{self.settings.garmin_token_store}'...")
-        self.token_store.restore(self.token_dir)
+        self.token_store.restore(self.token_file_path)
 
         wrapper = GarminClientWrapper(
             email=self.settings.garmin_email,
             password=self.settings.garmin_password,
-            max_retries=self.settings.garmin_max_retries,
-            base_backoff=self.settings.garmin_base_backoff_seconds,
+            retry_attempts=self.settings.garmin_retry_attempts,
+            retry_min_wait=self.settings.garmin_retry_min_wait,
+            retry_max_wait=self.settings.garmin_retry_max_wait,
+            verify_login=self.settings.garmin_verify_login,
+            allow_credential_login=self.settings.garmin_allow_credential_login,
         )
-        wrapper.login_with_tokens_or_credentials(self.token_dir)
-        self.token_store.persist(self.token_dir)
+        try:
+            wrapper.login_with_tokens_or_credentials(self.token_file_path)
+        except Exception as e:
+            if not self.settings.garmin_allow_credential_login:
+                raise RuntimeError(f"token_rebootstrap_required: {e}") from e
+            raise
+
+        self.token_store.persist(self.token_file_path)
         self.garmin_client = wrapper
         return wrapper
 
@@ -84,12 +93,11 @@ class GarminSyncService:
 
         hrv_today = client.get_hrv_data(target_iso)
 
-        logger.info(f"[{target_iso}] Fetching activities batch ({three_days_ago_iso} -> {yesterday_iso})...")
-        activities_window = client.get_activities_batch(three_days_ago_iso, yesterday_iso)
+        logger.info(f"[{target_iso}] Fetching activities window ({three_days_ago_iso} -> {yesterday_iso})...")
+        activities_window = client.get_activities_window(three_days_ago_iso, yesterday_iso)
 
         # Persist refreshed tokens after API calls
-        client.dump_tokens(self.token_dir)
-        self.token_store.persist(self.token_dir)
+        self.token_store.persist(self.token_file_path)
 
         # Load prior 28 days for baselines
         start_28d = get_date_string(n_days_ago(target_date, 28))
@@ -104,15 +112,20 @@ class GarminSyncService:
         window_7d = [history_raws[d] for d in sorted_history_dates if d >= w7_start]
         window_28d = [history_raws[d] for d in sorted_history_dates]
 
-        # Reuse mapper's sleep extraction (handles both Garmin response shapes) instead of a
-        # separate naive lookup, which previously always returned None for sleepScore here
-        # and silently broke sleepScoreVs7d/sleepScoreVs28d deltas.
-        current_sleep_score, _, current_resp_avg = extract_sleep_metrics(sleep_today)
+        norm_today, _ = normalize_current_metrics(
+            stats_today=stats_today,
+            stats_fallback=stats_yesterday,
+            sleep_today=sleep_today,
+            sleep_fallback=sleep_yesterday,
+            hrv_today=hrv_today,
+            target_date_iso=target_iso,
+            yesterday_iso=yesterday_iso,
+        )
         dummy_current = {
-            "sleepScore": current_sleep_score,
-            "restingHr": stats_today.get("restingHeartRate"),
-            "hrvOvernightAvg": hrv_today.get("hrvSummary", {}).get("lastNightAvg") if hrv_today else None,
-            "respirationAvg": current_resp_avg,
+            "sleepScore": norm_today["sleepScore"],
+            "restingHr": norm_today["restingHr"],
+            "hrvOvernightAvg": norm_today["hrvOvernightAvg"],
+            "respirationAvg": norm_today["respirationAvg"],
         }
 
         derived = compute_derived_metrics(dummy_current, window_7d, window_28d)
@@ -174,13 +187,22 @@ class GarminSyncService:
 
         client = self._init_garmin_client()
 
-        logger.info(f"Batch fetching all activities {batch_start_iso} -> {batch_end_iso}...")
-        all_activities = client.get_activities_batch(batch_start_iso, batch_end_iso)
-        logger.info(f"Retrieved {len(all_activities)} activities in batch.")
+        logger.info(f"Window fetching all activities {batch_start_iso} -> {batch_end_iso}...")
+        all_activities = client.get_activities_window(batch_start_iso, batch_end_iso)
+        logger.info(f"Retrieved {len(all_activities)} activities in window.")
 
         # Process dates in chronological order
         raw_memory_store: dict[str, dict[str, Any]] = {}
         failed_dates: list[str] = []
+
+        # Fix B: Seed prehistory from existing Firestore history prior to start_d
+        pre_start_iso = get_date_string(n_days_ago(start_d, 28))
+        pre_end_iso = get_date_string(n_days_ago(start_d, 1))
+        logger.info(f"Seeding backfill prehistory from Firestore ({pre_start_iso} -> {pre_end_iso})...")
+        prehistory_docs = self.repository.get_historical_snapshots(pre_start_iso, pre_end_iso)
+        for date_key, doc in prehistory_docs.items():
+            if "raw" in doc:
+                raw_memory_store[date_key] = doc["raw"]
 
         for target_date in target_dates:
             target_iso = get_date_string(target_date)
@@ -209,12 +231,20 @@ class GarminSyncService:
                 window_7d = [raw_memory_store[d] for d in sorted_history_dates if d >= w7_start]
                 window_28d = [raw_memory_store[d] for d in sorted_history_dates if d >= w28_start]
 
-                current_sleep_score, _, current_resp_avg = extract_sleep_metrics(sleep_today)
+                norm_today, _ = normalize_current_metrics(
+                    stats_today=stats_today,
+                    stats_fallback=stats_yesterday,
+                    sleep_today=sleep_today,
+                    sleep_fallback=sleep_yesterday,
+                    hrv_today=hrv_today,
+                    target_date_iso=target_iso,
+                    yesterday_iso=yesterday_iso,
+                )
                 dummy_current = {
-                    "sleepScore": current_sleep_score,
-                    "restingHr": stats_today.get("restingHeartRate"),
-                    "hrvOvernightAvg": hrv_today.get("hrvSummary", {}).get("lastNightAvg") if hrv_today else None,
-                    "respirationAvg": current_resp_avg,
+                    "sleepScore": norm_today["sleepScore"],
+                    "restingHr": norm_today["restingHr"],
+                    "hrvOvernightAvg": norm_today["hrvOvernightAvg"],
+                    "respirationAvg": norm_today["respirationAvg"],
                 }
 
                 derived = compute_derived_metrics(dummy_current, window_7d, window_28d)
@@ -240,8 +270,7 @@ class GarminSyncService:
                 logger.error(f"[{target_iso}] Backfill failed: {e}")
                 failed_dates.append(target_iso)
 
-        client.dump_tokens(self.token_dir)
-        self.token_store.persist(self.token_dir)
+        self.token_store.persist(self.token_file_path)
 
         if failed_dates:
             logger.warning(f"Backfill finished with {len(failed_dates)} failures: {failed_dates}")

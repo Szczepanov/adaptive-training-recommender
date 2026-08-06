@@ -100,10 +100,20 @@ export interface DailyRecoverySnapshot {
         totalSteps: number | null;
         last3DaysHardSessionsCount: number;
         yesterdayTraining: {
-            type: string;
-            durationMin: number;
-            trainingEffect: number;
-            intensityTag: string;
+            activityCount?: number;
+            totalDurationMin?: number;
+            hardActivityCount?: number;
+            primaryActivity?: {
+                activityId: number | string;
+                type: string;
+                durationMin: number | null;
+                trainingEffect: number;
+                intensityTag: string;
+            } | null;
+            type?: string;
+            durationMin?: number | null;
+            trainingEffect?: number;
+            intensityTag?: string;
         } | null;
     };
     derived: {

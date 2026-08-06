@@ -209,5 +209,7 @@ __marimo__/
 .venv/
 firebase-service-account.json
 .garth
+.garmin_tokens/
+garmin_tokens.json
 *.cache*
 *cache*
