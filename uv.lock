@@ -11,7 +11,7 @@ resolution-markers = [
 [[package]]
 name = "adaptive-training-recommender"
 version = "0.1.0"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
     { name = "firebase-admin" },
     { name = "garminconnect" },

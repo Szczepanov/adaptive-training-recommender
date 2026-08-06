@@ -24,7 +24,13 @@ def init_firestore_client(credentials_path: str | None = None) -> Any:
 class FirestoreRecoveryRepository:
     """Repository managing user-scoped Firestore operations for daily recovery snapshots."""
 
-    def __init__(self, user_id: str, collection_name: str = "daily_recovery_snapshots", db: Any = None):
+    def __init__(
+        self,
+        user_id: str,
+        collection_name: str = "daily_recovery_snapshots",
+        db: Any = None,
+        credentials_path: str | None = None,
+    ):
         if not user_id or user_id.strip() == "default_user":
             raise ValueError(
                 "FirestoreRecoveryRepository requires a valid non-default user_id (Firebase UID)."
@@ -32,10 +38,11 @@ class FirestoreRecoveryRepository:
         self.user_id = user_id.strip()
         self.collection_name = collection_name
         self.db = db
+        self.credentials_path = credentials_path
 
     def _get_db(self) -> Any:
         if self.db is None:
-            self.db = init_firestore_client()
+            self.db = init_firestore_client(self.credentials_path)
         return self.db
 
     def _get_doc_ref(self, date_iso: str) -> Any:

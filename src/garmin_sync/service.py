@@ -25,6 +25,7 @@ class GarminSyncService:
             user_id=settings.app_user_id,
             collection_name=settings.firestore_recovery_collection,
             db=None,
+            credentials_path=settings.firebase_credentials_path,
         )
         self.garmin_client = garmin_client
         self.token_store = create_token_store(
