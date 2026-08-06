@@ -46,7 +46,7 @@ export const STRENGTH_WORKOUTS: WorkoutDefinition[] = [
       duration: { defaultMin: 35, minimumMin: 25, maximumMin: 45 },
       loadProfile: { cardiovascular: 2, muscular: 3, mechanical: 2, eccentric: 2, coordination: 3, recoveryHours: 30 },
       eligibility: { minimumReadiness: 5, maximumSoreness: 7, forbiddenPainFlags: ['knee_swelling'] },
-      equipment: ['medicine_ball', 'bench', 'pullup_bar', 'bodyweight'], contraindicationTags: [],
+      equipment: ['medicine_ball', 'barbell', 'rack', 'bench', 'pullup_bar', 'bodyweight'], contraindicationTags: [],
       blocks: [
         { id: 'activation', name: 'Power', role: 'activation', steps: [
           repsStep('slam', 'medicine_ball_slam', 'Medicine-ball slam', 5, { sets: 4, restAfterSec: 60, target: { type: 'technical_quality', cue: 'Explosive and crisp; stop before fatigue.' } })
