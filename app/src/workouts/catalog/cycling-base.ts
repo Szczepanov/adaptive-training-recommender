@@ -20,7 +20,7 @@ export const CYCLING_BASE_WORKOUTS: WorkoutDefinition[] = [
       { id: 'reduced', targetDurationMin: 20, loadMultiplier: 0.7, rationale: 'Shorten when recovery capacity or time is limited.', stepOverrides: [{ stepId: 'easy_spin', durationSeconds: 900 }, { stepId: 'downshift', durationSeconds: 300 }] },
       { id: 'return_to_training', targetDurationMin: 20, loadMultiplier: 0.6, rationale: 'Use only if symptoms remain quiet during movement.', stepOverrides: [{ stepId: 'easy_spin', durationSeconds: 900, target: { type: 'rpe', min: 1, max: 2 } }, { stepId: 'downshift', durationSeconds: 300 }] }
     ],
-    parameters: [{ id: 'easy_duration', label: 'Easy riding duration', unit: 'minutes', defaultValue: 20, minimum: 15, maximum: 35, step: 5, appliesToStepIds: ['easy_spin'], description: 'Adjust recovery volume without raising intensity.' }],
+    parameters: [{ id: 'easy_duration', label: 'Easy riding duration', unit: 'minutes', defaultValue: 20, minimum: 15, maximum: 35, step: 5, appliesToStepIds: ['easy_spin'], bindings: [{ stepId: 'easy_spin', property: 'duration.seconds' }], description: 'Adjust recovery volume without raising intensity.' }],
     regressions: ['rest_complete_01'], progressions: ['cycling_zone2_standard_01'], substitutions: [],
     garmin: { exportable: true, supportedSport: 'cycling' },
     tags: ['low_fatigue', 'indoor_or_outdoor', 'recovery', 'adjustable'],
@@ -46,8 +46,8 @@ export const CYCLING_BASE_WORKOUTS: WorkoutDefinition[] = [
       { id: 'return_to_training', targetDurationMin: 30, loadMultiplier: 0.55, rationale: 'Use a conservative conversational exposure.', stepOverrides: [{ stepId: 'zone2_main', durationSeconds: 900 }, { stepId: 'cooldown_easy', durationSeconds: 300 }] }
     ],
     parameters: [
-      { id: 'zone2_duration', label: 'Zone 2 duration', unit: 'minutes', defaultValue: 40, minimum: 15, maximum: 70, step: 5, appliesToStepIds: ['zone2_main'], description: 'Adjust total aerobic volume from recovery support to a longer endurance ride.' },
-      { id: 'zone2_rpe', label: 'Zone 2 RPE', unit: 'rpe', defaultValue: 2.5, minimum: 2, maximum: 3, step: 0.5, appliesToStepIds: ['zone2_main'], description: 'Keep intensity conversational and device-independent.' }
+      { id: 'zone2_duration', label: 'Zone 2 duration', unit: 'minutes', defaultValue: 40, minimum: 15, maximum: 70, step: 5, appliesToStepIds: ['zone2_main'], bindings: [{ stepId: 'zone2_main', property: 'duration.seconds' }], description: 'Adjust total aerobic volume from recovery support to a longer endurance ride.' },
+      { id: 'zone2_rpe', label: 'Zone 2 RPE', unit: 'rpe', defaultValue: 2.5, minimum: 2, maximum: 3, step: 0.5, appliesToStepIds: ['zone2_main'], bindings: [{ stepId: 'zone2_main', property: 'target.rpe.max' }], description: 'Keep intensity conversational and device-independent.' }
     ],
     regressions: ['cycling_recovery_spin_01'], progressions: ['cycling_controlled_threshold_4x8_01', 'cycling_event_specific_endurance_01'], substitutions: [],
     garmin: { exportable: true, supportedSport: 'cycling' },

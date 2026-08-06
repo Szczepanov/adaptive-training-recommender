@@ -137,6 +137,19 @@ export type WorkoutParameterUnit =
   | 'rpe'
   | 'reps_in_reserve';
 
+export type WorkoutParameterProperty =
+  | 'sets'
+  | 'duration.seconds'
+  | 'restAfterSec'
+  | 'target.rpe.min'
+  | 'target.rpe.max';
+
+export interface WorkoutParameterBinding {
+  stepId: string;
+  property: WorkoutParameterProperty;
+  zeroBehavior?: 'omit_step' | 'use_zero';
+}
+
 /** A coach- or engine-adjustable dimension of a generic workout family. */
 export interface WorkoutParameter {
   id: string;
@@ -147,6 +160,7 @@ export interface WorkoutParameter {
   maximum: number;
   step: number;
   appliesToStepIds: string[];
+  bindings: WorkoutParameterBinding[];
   description: string;
 }
 
@@ -185,22 +199,22 @@ export interface WorkoutParameterResolverBinding {
   resolver: WorkoutParameterResolver;
 }
 
-export type WorkoutParameterBinding =
+export type WorkoutParameterLegacyBinding =
   | WorkoutParameterStepFieldBinding
   | WorkoutParameterResolverBinding;
 
 /** Explicitly describes how every adjustable parameter changes a prescription. */
 export interface WorkoutParameterBindingSet {
   workoutId: string;
-  bindings: WorkoutParameterBinding[];
+  bindings: WorkoutParameterLegacyBinding[];
 }
 
 export interface WorkoutDurationRange {
-  /** Minimum supported duration for the canonical full workout. */
+  /** Minimum target duration across all variants of the workout family. */
   minimumMin: number;
   /** Default duration for the canonical full workout. */
   defaultMin: number;
-  /** Maximum supported duration for the canonical full workout. */
+  /** Maximum target duration across all variants of the workout family. */
   maximumMin: number;
 }
 

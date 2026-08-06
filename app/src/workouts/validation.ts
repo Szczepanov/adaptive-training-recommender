@@ -5,8 +5,8 @@ import type {
   WorkoutDefinition,
   WorkoutModality,
   WorkoutParameter,
-  WorkoutParameterBinding,
   WorkoutParameterBindingSet,
+  WorkoutParameterLegacyBinding,
   WorkoutParameterStepField,
   WorkoutParameterUnit
 } from './models.ts';
@@ -64,7 +64,7 @@ function expectedUnits(field: WorkoutParameterStepField): WorkoutParameterUnit[]
 
 function validateBindingUnit(
   parameter: WorkoutParameter,
-  binding: WorkoutParameterBinding,
+  binding: WorkoutParameterLegacyBinding,
   path: string,
   errors: string[]
 ): void {
@@ -277,6 +277,58 @@ export function validateWorkoutLibrary(
       if (new Set(parameter.appliesToStepIds).size !== parameter.appliesToStepIds.length) errors.push(`${parameterPath}: duplicate step reference`);
       for (const stepId of parameter.appliesToStepIds) if (!stepIds.has(stepId)) errors.push(`${parameterPath}: unknown step ${stepId}`);
       if (parameter.unit === 'rpe' && (parameter.minimum < 1 || parameter.maximum > 10)) errors.push(`${parameterPath}: RPE parameter must remain between 1 and 10`);
+
+      if (!parameter.bindings || parameter.bindings.length === 0) {
+        errors.push(`${parameterPath}: explicit parameter bindings array is required`);
+      } else {
+        const boundStepIds = new Set<string>();
+        for (const binding of parameter.bindings) {
+          if (!stepIds.has(binding.stepId)) errors.push(`${parameterPath}: binding references unknown step ${binding.stepId}`);
+          if (!parameter.appliesToStepIds.includes(binding.stepId)) errors.push(`${parameterPath}: binding step ${binding.stepId} not in appliesToStepIds`);
+          boundStepIds.add(binding.stepId);
+
+          if (binding.property === 'sets' && !['sets', 'repetitions'].includes(parameter.unit)) {
+            errors.push(`${parameterPath}: unit ${parameter.unit} is incompatible with property ${binding.property}`);
+          }
+          if ((binding.property === 'duration.seconds' || binding.property === 'restAfterSec') && !['minutes', 'seconds'].includes(parameter.unit)) {
+            errors.push(`${parameterPath}: unit ${parameter.unit} is incompatible with property ${binding.property}`);
+          }
+          if ((binding.property === 'target.rpe.min' || binding.property === 'target.rpe.max') && !['rpe', 'reps_in_reserve', 'repetitions'].includes(parameter.unit)) {
+            errors.push(`${parameterPath}: unit ${parameter.unit} is incompatible with property ${binding.property}`);
+          }
+
+          if (parameter.minimum === 0 && ['sets', 'duration.seconds', 'restAfterSec'].includes(binding.property) && binding.zeroBehavior === undefined) {
+            errors.push(`${parameterPath}: zero minimum requires explicit zeroBehavior for property ${binding.property}`);
+          }
+        }
+        for (const declaredStepId of parameter.appliesToStepIds) {
+          if (!boundStepIds.has(declaredStepId)) errors.push(`${parameterPath}: step ${declaredStepId} declared in appliesToStepIds is missing from bindings`);
+        }
+      }
+    }
+
+    for (const variant of workout.variants) {
+      let totalSeconds = 0;
+      let hasTimeBasedSteps = false;
+      const overrideMap = new Map(variant.stepOverrides.map((o) => [o.stepId, o]));
+      for (const block of workout.blocks) {
+        for (const step of block.steps) {
+          const override = overrideMap.get(step.id);
+          if (override?.omit) continue;
+          const sets = override?.sets ?? step.sets ?? 1;
+          const durSec = override?.durationSeconds ?? (step.duration.type === 'time' ? step.duration.seconds : (step.duration.type === 'repetitions' ? 60 : 0));
+          if (step.duration.type === 'time') hasTimeBasedSteps = true;
+          const restSec = override?.restAfterSec ?? step.restAfterSec ?? 0;
+          totalSeconds += (durSec * sets) + (restSec * Math.max(0, sets - 1));
+        }
+      }
+      const computedMin = Math.round(totalSeconds / 60);
+      if (workout.id !== 'rest_complete_01' && computedMin > 0 && hasTimeBasedSteps) {
+        const diff = Math.abs(computedMin - variant.targetDurationMin);
+        if (diff > 15) {
+          warnings.push(`${prefix}/${variant.id}: computed step duration (${computedMin}m) differs from targetDurationMin (${variant.targetDurationMin}m) by ${diff}m`);
+        }
+      }
     }
 
     for (const relatedId of [...workout.regressions, ...workout.progressions]) {

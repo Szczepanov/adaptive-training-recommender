@@ -1,6 +1,6 @@
 import type {
-  WorkoutParameterBinding,
   WorkoutParameterBindingSet,
+  WorkoutParameterLegacyBinding,
   WorkoutParameterStepField,
   WorkoutParameterTransform,
   WorkoutParameterZeroBehavior
@@ -17,7 +17,7 @@ function stepField(
   stepIds: string[],
   field: WorkoutParameterStepField,
   options: StepFieldOptions = {}
-): WorkoutParameterBinding {
+): WorkoutParameterLegacyBinding {
   return { kind: 'step_field', parameterId, stepIds, field, ...options };
 }
 
@@ -29,7 +29,7 @@ function resolver(
     | 'embedded_gap_closing_efforts'
     | 'over_under_internal_pattern'
     | 'walk_run_distribution'
-): WorkoutParameterBinding {
+): WorkoutParameterLegacyBinding {
   return { kind: 'resolver', parameterId, stepIds, resolver: resolverId };
 }
 

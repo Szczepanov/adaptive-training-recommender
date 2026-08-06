@@ -7,7 +7,7 @@ export const BUILD_SUPPORT_WORKOUTS: WorkoutDefinition[] = [
     name: 'Event-specific Endurance Ride',
     description: 'Adjustable outdoor endurance ride combining steady aerobic work, short accelerations, optional gap-closing work and a late controlled finish.',
     modality: 'cycling', category: 'race_simulation', objectives: ['aerobic_base', 'surge_tolerance', 'fatigue_resistant_finish'],
-    duration: { defaultMin: 90, minimumMin: 60, maximumMin: 150 },
+    duration: { defaultMin: 90, minimumMin: 50, maximumMin: 150 },
     loadProfile: { cardiovascular: 4, muscular: 3, mechanical: 1, eccentric: 1, coordination: 3, recoveryHours: 48 },
     eligibility: { minimumReadiness: 6, maximumSoreness: 6, minimumDaysAfterHardLowerBody: 1, forbiddenPainFlags: ['knee_swelling', 'acute_knee_pain'] },
     equipment: ['bike'], contraindicationTags: ['acute_knee_pain'],
@@ -31,12 +31,12 @@ export const BUILD_SUPPORT_WORKOUTS: WorkoutDefinition[] = [
       { id: 'return_to_training', targetDurationMin: 50, loadMultiplier: 0.5, rationale: 'Use easy aerobic riding with a few controlled accelerations only.', stepOverrides: [{ stepId: 'event_base', durationSeconds: 1800 }, { stepId: 'event_surges', sets: 3, target: { type: 'rpe', min: 5, max: 7 } }, { stepId: 'event_gap_close', omit: true }, { stepId: 'event_finish', omit: true }, { stepId: 'event_cooldown', durationSeconds: 300 }] }
     ],
     parameters: [
-      { id: 'base_duration', label: 'Aerobic base duration', unit: 'minutes', defaultValue: 50, minimum: 30, maximum: 100, step: 5, appliesToStepIds: ['event_base'], description: 'Adjust total steady endurance volume without changing the session purpose.' },
-      { id: 'surge_count', label: 'Short surge count', unit: 'repetitions', defaultValue: 6, minimum: 3, maximum: 12, step: 1, appliesToStepIds: ['event_surges'], description: 'Progress surge count before making every effort harder.' },
-      { id: 'surge_duration', label: 'Short surge duration', unit: 'seconds', defaultValue: 20, minimum: 10, maximum: 30, step: 5, appliesToStepIds: ['event_surges'], description: 'Event-relevant acceleration duration.' },
-      { id: 'gap_close_count', label: 'Gap-closing effort count', unit: 'sets', defaultValue: 1, minimum: 0, maximum: 2, step: 1, appliesToStepIds: ['event_gap_close'], description: 'Optional longer event-specific efforts.' },
-      { id: 'gap_close_duration', label: 'Gap-closing effort duration', unit: 'seconds', defaultValue: 120, minimum: 60, maximum: 180, step: 30, appliesToStepIds: ['event_gap_close'], description: 'Adjust within the expected one-to-three-minute event demand.' },
-      { id: 'finish_duration', label: 'Late finish duration', unit: 'seconds', defaultValue: 90, minimum: 0, maximum: 120, step: 30, appliesToStepIds: ['event_finish'], description: 'Optional fatigued finish; zero means omit it.' }
+      { id: 'base_duration', label: 'Aerobic base duration', unit: 'minutes', defaultValue: 50, minimum: 30, maximum: 100, step: 5, appliesToStepIds: ['event_base'], bindings: [{ stepId: 'event_base', property: 'duration.seconds' }], description: 'Adjust total steady endurance volume without changing the session purpose.' },
+      { id: 'surge_count', label: 'Short surge count', unit: 'repetitions', defaultValue: 6, minimum: 3, maximum: 12, step: 1, appliesToStepIds: ['event_surges'], bindings: [{ stepId: 'event_surges', property: 'sets' }], description: 'Progress surge count before making every effort harder.' },
+      { id: 'surge_duration', label: 'Short surge duration', unit: 'seconds', defaultValue: 20, minimum: 10, maximum: 30, step: 5, appliesToStepIds: ['event_surges'], bindings: [{ stepId: 'event_surges', property: 'duration.seconds' }], description: 'Event-relevant acceleration duration.' },
+      { id: 'gap_close_count', label: 'Gap-closing effort count', unit: 'sets', defaultValue: 1, minimum: 0, maximum: 2, step: 1, appliesToStepIds: ['event_gap_close'], bindings: [{ stepId: 'event_gap_close', property: 'sets', zeroBehavior: 'omit_step' }], description: 'Optional longer event-specific efforts.' },
+      { id: 'gap_close_duration', label: 'Gap-closing effort duration', unit: 'seconds', defaultValue: 120, minimum: 60, maximum: 180, step: 30, appliesToStepIds: ['event_gap_close'], bindings: [{ stepId: 'event_gap_close', property: 'duration.seconds' }], description: 'Adjust within the expected one-to-three-minute event demand.' },
+      { id: 'finish_duration', label: 'Late finish duration', unit: 'seconds', defaultValue: 90, minimum: 0, maximum: 120, step: 30, appliesToStepIds: ['event_finish'], bindings: [{ stepId: 'event_finish', property: 'duration.seconds', zeroBehavior: 'omit_step' }], description: 'Optional fatigued finish; zero means omit it.' }
     ],
     regressions: ['cycling_zone2_standard_01'], progressions: ['cycling_race_simulation_50_01'], substitutions: [],
     garmin: { exportable: true, supportedSport: 'cycling' },
@@ -48,7 +48,7 @@ export const BUILD_SUPPORT_WORKOUTS: WorkoutDefinition[] = [
     name: 'Adjustable Gap-closing Intervals',
     description: 'Longer event-specific efforts followed by continued moderate pedalling to train closing gaps without requiring complete recovery.',
     modality: 'cycling', category: 'surge_tolerance', objectives: ['high_aerobic_power', 'surge_tolerance'],
-    duration: { defaultMin: 60, minimumMin: 45, maximumMin: 80 },
+    duration: { defaultMin: 60, minimumMin: 40, maximumMin: 80 },
     loadProfile: { cardiovascular: 4, muscular: 4, mechanical: 1, eccentric: 1, coordination: 2, recoveryHours: 48 },
     eligibility: { minimumReadiness: 6, maximumSoreness: 6, minimumDaysAfterHardLowerBody: 1, forbiddenPainFlags: ['knee_swelling', 'acute_knee_pain'] },
     equipment: ['bike'], contraindicationTags: ['acute_knee_pain'],
@@ -70,10 +70,10 @@ export const BUILD_SUPPORT_WORKOUTS: WorkoutDefinition[] = [
       { id: 'return_to_training', targetDurationMin: 40, loadMultiplier: 0.55, rationale: 'Use fewer shorter efforts at controlled intensity.', stepOverrides: [{ stepId: 'gap_efforts', sets: 2, durationSeconds: 60, target: { type: 'rpe', min: 5, max: 7 } }, { stepId: 'gap_aerobic_finish', durationSeconds: 900 }, { stepId: 'gap_cooldown', durationSeconds: 300 }] }
     ],
     parameters: [
-      { id: 'effort_count', label: 'Effort count', unit: 'sets', defaultValue: 4, minimum: 3, maximum: 6, step: 1, appliesToStepIds: ['gap_efforts'], description: 'Adjust the number of repeatable gap-closing efforts.' },
-      { id: 'effort_duration', label: 'Effort duration', unit: 'seconds', defaultValue: 120, minimum: 30, maximum: 180, step: 30, appliesToStepIds: ['gap_efforts'], description: 'Covers short high-lactate work through longer one-to-three-minute efforts.' },
-      { id: 'recovery_duration', label: 'Pedalling recovery', unit: 'seconds', defaultValue: 240, minimum: 120, maximum: 360, step: 30, appliesToStepIds: ['gap_efforts'], description: 'Recovery remains active rather than complete rest.' },
-      { id: 'effort_rpe', label: 'Effort RPE', unit: 'rpe', defaultValue: 8, minimum: 6, maximum: 9, step: 0.5, appliesToStepIds: ['gap_efforts'], description: 'Use an RPE that keeps the set repeatable unless deliberately simulating the race.' }
+      { id: 'effort_count', label: 'Effort count', unit: 'sets', defaultValue: 4, minimum: 3, maximum: 6, step: 1, appliesToStepIds: ['gap_efforts'], bindings: [{ stepId: 'gap_efforts', property: 'sets' }], description: 'Adjust the number of repeatable gap-closing efforts.' },
+      { id: 'effort_duration', label: 'Effort duration', unit: 'seconds', defaultValue: 120, minimum: 30, maximum: 180, step: 30, appliesToStepIds: ['gap_efforts'], bindings: [{ stepId: 'gap_efforts', property: 'duration.seconds' }], description: 'Covers short high-lactate work through longer one-to-three-minute efforts.' },
+      { id: 'recovery_duration', label: 'Pedalling recovery', unit: 'seconds', defaultValue: 240, minimum: 120, maximum: 360, step: 30, appliesToStepIds: ['gap_efforts'], bindings: [{ stepId: 'gap_efforts', property: 'restAfterSec' }], description: 'Recovery remains active rather than complete rest.' },
+      { id: 'effort_rpe', label: 'Effort RPE', unit: 'rpe', defaultValue: 8, minimum: 6, maximum: 9, step: 0.5, appliesToStepIds: ['gap_efforts'], bindings: [{ stepId: 'gap_efforts', property: 'target.rpe.max' }], description: 'Use an RPE that keeps the set repeatable unless deliberately simulating the race.' }
     ],
     regressions: ['cycling_controlled_threshold_4x8_01'], progressions: ['cycling_event_specific_endurance_01'], substitutions: [],
     garmin: { exportable: true, supportedSport: 'cycling' },
@@ -100,9 +100,9 @@ export const BUILD_SUPPORT_WORKOUTS: WorkoutDefinition[] = [
       { id: 'return_to_training', targetDurationMin: 25, loadMultiplier: 0.4, rationale: 'Use mostly walking with only brief symptom-free jogging.', stepOverrides: [{ stepId: 'walk_run_main', durationSeconds: 420, target: { type: 'rpe', min: 1, max: 2 } }, { stepId: 'walk_run_cooldown', durationSeconds: 480 }] }
     ],
     parameters: [
-      { id: 'total_running_minutes', label: 'Total easy running', unit: 'minutes', defaultValue: 18, minimum: 0, maximum: 25, step: 1, appliesToStepIds: ['walk_run_main'], description: 'Running volume inside the walk; zero converts the session to walking only.' },
-      { id: 'run_interval_minutes', label: 'Run interval duration', unit: 'minutes', defaultValue: 3, minimum: 1, maximum: 5, step: 1, appliesToStepIds: ['walk_run_main'], description: 'Keep individual running blocks short and quiet.' },
-      { id: 'walk_interval_minutes', label: 'Walk interval duration', unit: 'minutes', defaultValue: 2, minimum: 1, maximum: 4, step: 1, appliesToStepIds: ['walk_run_main'], description: 'Walking recovery between easy run blocks.' }
+      { id: 'total_running_minutes', label: 'Total easy running', unit: 'minutes', defaultValue: 18, minimum: 0, maximum: 25, step: 1, appliesToStepIds: ['walk_run_main'], bindings: [{ stepId: 'walk_run_main', property: 'duration.seconds', zeroBehavior: 'use_zero' }], description: 'Running volume inside the walk; zero converts the session to walking only.' },
+      { id: 'run_interval_minutes', label: 'Run interval duration', unit: 'minutes', defaultValue: 3, minimum: 1, maximum: 5, step: 1, appliesToStepIds: ['walk_run_main'], bindings: [{ stepId: 'walk_run_main', property: 'duration.seconds' }], description: 'Keep individual running blocks short and quiet.' },
+      { id: 'walk_interval_minutes', label: 'Walk interval duration', unit: 'minutes', defaultValue: 2, minimum: 1, maximum: 4, step: 1, appliesToStepIds: ['walk_run_main'], bindings: [{ stepId: 'walk_run_main', property: 'duration.seconds' }], description: 'Walking recovery between easy run blocks.' }
     ],
     regressions: ['recovery_mobility_tissue_01'], progressions: [], substitutions: [],
     garmin: { exportable: true, supportedSport: 'running' },

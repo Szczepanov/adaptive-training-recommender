@@ -7,7 +7,7 @@ export const TAPER_RACE_WORKOUTS: WorkoutDefinition[] = [
     name: 'Taper Sharpening Ride',
     description: 'Short adjustable quality session that retains event-specific intensity while reducing total training volume.',
     modality: 'cycling', category: 'surge_tolerance', objectives: ['high_aerobic_power', 'surge_tolerance', 'freshness'],
-    duration: { defaultMin: 45, minimumMin: 35, maximumMin: 55 },
+    duration: { defaultMin: 45, minimumMin: 30, maximumMin: 55 },
     loadProfile: { cardiovascular: 4, muscular: 3, mechanical: 1, eccentric: 1, coordination: 2, recoveryHours: 36 },
     eligibility: { minimumReadiness: 6, maximumSoreness: 5, minimumDaysAfterHardLowerBody: 1, forbiddenPainFlags: ['knee_swelling', 'acute_knee_pain'] },
     equipment: ['bike'], contraindicationTags: ['acute_knee_pain'],
@@ -25,9 +25,9 @@ export const TAPER_RACE_WORKOUTS: WorkoutDefinition[] = [
       { id: 'return_to_training', targetDurationMin: 30, loadMultiplier: 0.5, rationale: 'Use easy riding with two controlled sub-threshold efforts.', stepOverrides: [{ stepId: 'sharpen_efforts', sets: 2, durationSeconds: 60, target: { type: 'rpe', min: 5, max: 7 } }, { stepId: 'sharpen_surges', omit: true }, { stepId: 'sharpen_cooldown', durationSeconds: 420 }] }
     ],
     parameters: [
-      { id: 'stimulus_count', label: 'Quality effort count', unit: 'sets', defaultValue: 3, minimum: 2, maximum: 5, step: 1, appliesToStepIds: ['sharpen_efforts'], description: 'Use the smallest dose that preserves confidence and sharpness.' },
-      { id: 'stimulus_duration', label: 'Quality effort duration', unit: 'seconds', defaultValue: 120, minimum: 60, maximum: 180, step: 30, appliesToStepIds: ['sharpen_efforts'], description: 'Keep the final taper stimulus brief.' },
-      { id: 'surge_count', label: 'Short acceleration count', unit: 'sets', defaultValue: 3, minimum: 0, maximum: 5, step: 1, appliesToStepIds: ['sharpen_surges'], description: 'Optional extra event-specific sharpness without fatigue.' }
+      { id: 'stimulus_count', label: 'Quality effort count', unit: 'sets', defaultValue: 3, minimum: 2, maximum: 5, step: 1, appliesToStepIds: ['sharpen_efforts'], bindings: [{ stepId: 'sharpen_efforts', property: 'sets' }], description: 'Use the smallest dose that preserves confidence and sharpness.' },
+      { id: 'stimulus_duration', label: 'Quality effort duration', unit: 'seconds', defaultValue: 120, minimum: 60, maximum: 180, step: 30, appliesToStepIds: ['sharpen_efforts'], bindings: [{ stepId: 'sharpen_efforts', property: 'duration.seconds' }], description: 'Keep the final taper stimulus brief.' },
+      { id: 'surge_count', label: 'Short acceleration count', unit: 'sets', defaultValue: 3, minimum: 0, maximum: 5, step: 1, appliesToStepIds: ['sharpen_surges'], bindings: [{ stepId: 'sharpen_surges', property: 'sets', zeroBehavior: 'omit_step' }], description: 'Optional extra event-specific sharpness without fatigue.' }
     ],
     regressions: ['cycling_zone2_standard_01'], progressions: ['cycling_pre_race_openers_01'], substitutions: [],
     garmin: { exportable: true, supportedSport: 'cycling' },
@@ -57,9 +57,9 @@ export const TAPER_RACE_WORKOUTS: WorkoutDefinition[] = [
       { id: 'return_to_training', targetDurationMin: 20, loadMultiplier: 0.4, rationale: 'Easy spin only; use complete rest instead when symptoms or fatigue are present.', stepOverrides: [{ stepId: 'openers_warmup', durationSeconds: 600 }, { stepId: 'openers_cadence', omit: true }, { stepId: 'openers_effort', omit: true }, { stepId: 'openers_cooldown', durationSeconds: 600 }] }
     ],
     parameters: [
-      { id: 'opener_count', label: 'Opener count', unit: 'sets', defaultValue: 3, minimum: 0, maximum: 5, step: 1, appliesToStepIds: ['openers_cadence'], description: 'Zero converts the workout to an easy spin.' },
-      { id: 'opener_duration', label: 'Opener duration', unit: 'seconds', defaultValue: 15, minimum: 10, maximum: 30, step: 5, appliesToStepIds: ['openers_cadence'], description: 'Keep activation short enough to avoid fatigue.' },
-      { id: 'race_touch_duration', label: 'Race-intensity touch', unit: 'seconds', defaultValue: 45, minimum: 0, maximum: 60, step: 15, appliesToStepIds: ['openers_effort'], description: 'Optional controlled effort; zero means omit.' }
+      { id: 'opener_count', label: 'Opener count', unit: 'sets', defaultValue: 3, minimum: 0, maximum: 5, step: 1, appliesToStepIds: ['openers_cadence'], bindings: [{ stepId: 'openers_cadence', property: 'sets', zeroBehavior: 'omit_step' }], description: 'Zero converts the workout to an easy spin.' },
+      { id: 'opener_duration', label: 'Opener duration', unit: 'seconds', defaultValue: 15, minimum: 10, maximum: 30, step: 5, appliesToStepIds: ['openers_cadence'], bindings: [{ stepId: 'openers_cadence', property: 'duration.seconds' }], description: 'Keep activation short enough to avoid fatigue.' },
+      { id: 'race_touch_duration', label: 'Race-intensity touch', unit: 'seconds', defaultValue: 45, minimum: 0, maximum: 60, step: 15, appliesToStepIds: ['openers_effort'], bindings: [{ stepId: 'openers_effort', property: 'duration.seconds', zeroBehavior: 'omit_step' }], description: 'Optional controlled effort; zero means omit.' }
     ],
     regressions: ['rest_complete_01'], progressions: ['cycling_race_day_01'], substitutions: [],
     garmin: { exportable: true, supportedSport: 'cycling' },
@@ -71,7 +71,7 @@ export const TAPER_RACE_WORKOUTS: WorkoutDefinition[] = [
     name: 'Race-week Strength Primer',
     description: 'Short early-week neural and strength-maintenance session with sharply reduced volume and no grinding.',
     modality: 'strength', category: 'power_maintenance', objectives: ['power_maintenance', 'strength_maintenance', 'freshness'],
-    duration: { defaultMin: 30, minimumMin: 20, maximumMin: 35 },
+    duration: { defaultMin: 30, minimumMin: 18, maximumMin: 35 },
     loadProfile: { cardiovascular: 1, muscular: 2, mechanical: 2, eccentric: 1, coordination: 3, recoveryHours: 24 },
     eligibility: { minimumReadiness: 5, maximumSoreness: 5, minimumDaysAfterHardLowerBody: 1, forbiddenPainFlags: ['knee_swelling', 'worsening_achilles_pain'] },
     equipment: ['medicine_ball', 'barbell', 'rack', 'bench', 'pullup_bar'], contraindicationTags: ['knee_swelling'],
@@ -89,8 +89,8 @@ export const TAPER_RACE_WORKOUTS: WorkoutDefinition[] = [
       { id: 'return_to_training', targetDurationMin: 18, loadMultiplier: 0.4, rationale: 'Use upper body and easy activation only.', stepOverrides: [{ stepId: 'primer_slam', sets: 2 }, { stepId: 'primer_squat', omit: true }, { stepId: 'primer_bench', sets: 2, target: { type: 'reps_in_reserve', min: 6, max: 8 } }, { stepId: 'primer_pull', sets: 2, target: { type: 'reps_in_reserve', min: 6, max: 8 } }] }
     ],
     parameters: [
-      { id: 'primer_sets', label: 'Working sets', unit: 'sets', defaultValue: 2, minimum: 1, maximum: 2, step: 1, appliesToStepIds: ['primer_squat', 'primer_bench', 'primer_pull'], description: 'Race-week strength volume remains 30–50% below normal.' },
-      { id: 'primer_rir', label: 'Repetitions in reserve', unit: 'repetitions', defaultValue: 6, minimum: 4, maximum: 8, step: 1, appliesToStepIds: ['primer_squat', 'primer_bench', 'primer_pull'], description: 'Keep every repetition fast and non-fatiguing.' }
+      { id: 'primer_sets', label: 'Working sets', unit: 'sets', defaultValue: 2, minimum: 1, maximum: 2, step: 1, appliesToStepIds: ['primer_squat', 'primer_bench', 'primer_pull'], bindings: [{ stepId: 'primer_squat', property: 'sets' }, { stepId: 'primer_bench', property: 'sets' }, { stepId: 'primer_pull', property: 'sets' }], description: 'Race-week strength volume remains 30–50% below normal.' },
+      { id: 'primer_rir', label: 'Repetitions in reserve', unit: 'repetitions', defaultValue: 6, minimum: 4, maximum: 8, step: 1, appliesToStepIds: ['primer_squat', 'primer_bench', 'primer_pull'], bindings: [{ stepId: 'primer_squat', property: 'target.rpe.max' }, { stepId: 'primer_bench', property: 'target.rpe.max' }, { stepId: 'primer_pull', property: 'target.rpe.max' }], description: 'Keep every repetition fast and non-fatiguing.' }
     ],
     regressions: ['strength_upper_body_trunk_01'], progressions: [], substitutions: [{ exerciseId: 'front_squat', substituteExerciseId: 'goblet_squat', reason: 'Use a lighter simple squat pattern when appropriate.' }],
     garmin: { exportable: false },
@@ -102,7 +102,7 @@ export const TAPER_RACE_WORKOUTS: WorkoutDefinition[] = [
     name: 'Cycling Event — Race Day',
     description: 'Generic event-day structure for warm-up, variable group-race execution, repeated surges and a final fatigued effort.',
     modality: 'cycling', category: 'race_simulation', objectives: ['race_execution', 'surge_tolerance', 'fatigue_resistant_finish'],
-    duration: { defaultMin: 70, minimumMin: 55, maximumMin: 90 },
+    duration: { defaultMin: 70, minimumMin: 30, maximumMin: 90 },
     loadProfile: { cardiovascular: 5, muscular: 5, mechanical: 1, eccentric: 1, coordination: 5, recoveryHours: 96 },
     eligibility: { minimumReadiness: 1, maximumSoreness: 10, forbiddenPainFlags: ['knee_swelling', 'acute_knee_pain', 'worsening_achilles_pain'] },
     equipment: ['bike'], contraindicationTags: ['acute_knee_pain'],
@@ -120,9 +120,9 @@ export const TAPER_RACE_WORKOUTS: WorkoutDefinition[] = [
       { id: 'return_to_training', targetDurationMin: 30, loadMultiplier: 0.4, rationale: 'Not a race prescription; use easy riding when the event is skipped or symptoms prevent racing.', stepOverrides: [{ stepId: 'race_day_warmup', durationSeconds: 600 }, { stepId: 'race_day_main', durationSeconds: 900, target: { type: 'rpe', min: 2, max: 4 } }, { stepId: 'race_day_finish', omit: true }, { stepId: 'race_day_cooldown', durationSeconds: 300 }] }
     ],
     parameters: [
-      { id: 'event_duration', label: 'Expected race duration', unit: 'minutes', defaultValue: 50, minimum: 40, maximum: 60, step: 5, appliesToStepIds: ['race_day_main'], description: 'Adjust to the confirmed event format.' },
-      { id: 'warmup_duration', label: 'Warm-up duration', unit: 'minutes', defaultValue: 15, minimum: 10, maximum: 25, step: 5, appliesToStepIds: ['race_day_warmup'], description: 'Enough activation to feel ready without accumulating fatigue.' },
-      { id: 'finish_duration', label: 'Final hard effort', unit: 'seconds', defaultValue: 90, minimum: 60, maximum: 120, step: 30, appliesToStepIds: ['race_day_finish'], description: 'Represents the final kilometre or equivalent event finish.' }
+      { id: 'event_duration', label: 'Expected race duration', unit: 'minutes', defaultValue: 50, minimum: 40, maximum: 60, step: 5, appliesToStepIds: ['race_day_main'], bindings: [{ stepId: 'race_day_main', property: 'duration.seconds' }], description: 'Adjust to the confirmed event format.' },
+      { id: 'warmup_duration', label: 'Warm-up duration', unit: 'minutes', defaultValue: 15, minimum: 10, maximum: 25, step: 5, appliesToStepIds: ['race_day_warmup'], bindings: [{ stepId: 'race_day_warmup', property: 'duration.seconds' }], description: 'Enough activation to feel ready without accumulating fatigue.' },
+      { id: 'finish_duration', label: 'Final hard effort', unit: 'seconds', defaultValue: 90, minimum: 60, maximum: 120, step: 30, appliesToStepIds: ['race_day_finish'], bindings: [{ stepId: 'race_day_finish', property: 'duration.seconds' }], description: 'Represents the final kilometre or equivalent event finish.' }
     ],
     regressions: ['cycling_pre_race_openers_01'], progressions: [], substitutions: [],
     garmin: { exportable: false },

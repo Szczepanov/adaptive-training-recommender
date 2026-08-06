@@ -7,7 +7,7 @@ export const FIELD_WORKOUTS: WorkoutDefinition[] = [
       name: 'Controlled Field and Football Maintenance',
       description: 'Low-frequency exposure to acceleration, braking, cutting and ball skill without chaotic fatigue.',
       modality: 'field', category: 'field_maintenance', objectives: ['acceleration', 'braking', 'change_of_direction', 'football_skill', 'tissue_capacity'],
-      duration: { defaultMin: 40, minimumMin: 25, maximumMin: 50 },
+      duration: { defaultMin: 40, minimumMin: 22, maximumMin: 50 },
       loadProfile: { cardiovascular: 3, muscular: 3, mechanical: 4, eccentric: 4, coordination: 5, recoveryHours: 48 },
       eligibility: { minimumReadiness: 7, maximumSoreness: 4, minimumDaysAfterHardLowerBody: 2, forbiddenPainFlags: ['knee_swelling', 'instability', 'worsening_achilles_pain', 'painful_braking'] },
       equipment: ['field', 'cones'], contraindicationTags: ['knee_swelling', 'worsening_achilles_pain'],

@@ -7,7 +7,7 @@ export const TRAVEL_WORKOUTS: WorkoutDefinition[] = [
     name: 'Travel Aerobic Maintenance',
     description: 'Generic hotel-machine aerobic session using RPE and breathing rather than machine-specific watts.',
     modality: 'cross_training', category: 'easy_endurance', objectives: ['aerobic_base', 'travel_maintenance'],
-    duration: { defaultMin: 40, minimumMin: 30, maximumMin: 45 },
+    duration: { defaultMin: 40, minimumMin: 25, maximumMin: 45 },
     loadProfile: { cardiovascular: 2, muscular: 2, mechanical: 1, eccentric: 1, coordination: 1, recoveryHours: 16 },
     eligibility: { maximumSoreness: 7, forbiddenPainFlags: ['knee_swelling', 'worsening_achilles_pain'] },
     equipment: ['hotel_gym'], contraindicationTags: ['acute_knee_pain'],
@@ -22,8 +22,8 @@ export const TRAVEL_WORKOUTS: WorkoutDefinition[] = [
       { id: 'return_to_training', targetDurationMin: 25, loadMultiplier: 0.5, rationale: 'Keep the session purely easy and symptom-free.', stepOverrides: [{ stepId: 'travel_aerobic_main', durationSeconds: 720, target: { type: 'rpe', min: 1, max: 3 } }, { stepId: 'travel_aerobic_cooldown', durationSeconds: 300 }] }
     ],
     parameters: [
-      { id: 'aerobic_duration', label: 'Steady aerobic duration', unit: 'minutes', defaultValue: 25, minimum: 15, maximum: 30, step: 5, appliesToStepIds: ['travel_aerobic_main'], description: 'Adjust around sightseeing, travel fatigue and available time.' },
-      { id: 'aerobic_rpe', label: 'Aerobic RPE', unit: 'rpe', defaultValue: 3, minimum: 2, maximum: 4, step: 0.5, appliesToStepIds: ['travel_aerobic_main'], description: 'Machine-independent effort control.' }
+      { id: 'aerobic_duration', label: 'Steady aerobic duration', unit: 'minutes', defaultValue: 25, minimum: 15, maximum: 30, step: 5, appliesToStepIds: ['travel_aerobic_main'], bindings: [{ stepId: 'travel_aerobic_main', property: 'duration.seconds' }], description: 'Adjust around sightseeing, travel fatigue and available time.' },
+      { id: 'aerobic_rpe', label: 'Aerobic RPE', unit: 'rpe', defaultValue: 3, minimum: 2, maximum: 4, step: 0.5, appliesToStepIds: ['travel_aerobic_main'], bindings: [{ stepId: 'travel_aerobic_main', property: 'target.rpe.max' }], description: 'Machine-independent effort control.' }
     ],
     regressions: ['rest_complete_01'], progressions: ['cycling_zone2_standard_01'], substitutions: [],
     garmin: { exportable: false },
@@ -35,7 +35,7 @@ export const TRAVEL_WORKOUTS: WorkoutDefinition[] = [
     name: 'Travel Strength Maintenance',
     description: 'Adjustable hotel-gym circuit preserving strength and tissue capacity without creating soreness.',
     modality: 'strength', category: 'full_body_strength', objectives: ['strength_maintenance', 'tissue_capacity', 'travel_maintenance'],
-    duration: { defaultMin: 35, minimumMin: 25, maximumMin: 40 },
+    duration: { defaultMin: 35, minimumMin: 20, maximumMin: 40 },
     loadProfile: { cardiovascular: 2, muscular: 3, mechanical: 2, eccentric: 2, coordination: 2, recoveryHours: 24 },
     eligibility: { minimumReadiness: 5, maximumSoreness: 7, forbiddenPainFlags: ['knee_swelling'] },
     equipment: ['hotel_gym'], contraindicationTags: ['knee_swelling'],
@@ -54,9 +54,9 @@ export const TRAVEL_WORKOUTS: WorkoutDefinition[] = [
       { id: 'return_to_training', targetDurationMin: 20, loadMultiplier: 0.5, rationale: 'Use upper body, trunk and optional symptom-free lower work only.', stepOverrides: [{ stepId: 'travel_squat', omit: true }, { stepId: 'travel_push', sets: 2, target: { type: 'reps_in_reserve', min: 5, max: 7 } }, { stepId: 'travel_pull', sets: 2, target: { type: 'reps_in_reserve', min: 5, max: 7 } }, { stepId: 'travel_trunk', sets: 2 }, { stepId: 'travel_soleus', sets: 2 }] }
     ],
     parameters: [
-      { id: 'circuit_rounds', label: 'Circuit rounds', unit: 'sets', defaultValue: 3, minimum: 2, maximum: 4, step: 1, appliesToStepIds: ['travel_squat', 'travel_push', 'travel_pull', 'travel_trunk'], description: 'Adjust total work to walking and travel load.' },
-      { id: 'working_repetitions', label: 'Working repetitions', unit: 'repetitions', defaultValue: 10, minimum: 6, maximum: 12, step: 1, appliesToStepIds: ['travel_squat', 'travel_push', 'travel_pull'], description: 'Use smooth repetitions and stop well before failure.' },
-      { id: 'strength_rir', label: 'Repetitions in reserve', unit: 'repetitions', defaultValue: 4, minimum: 3, maximum: 7, step: 1, appliesToStepIds: ['travel_squat', 'travel_push', 'travel_pull'], description: 'Higher values keep the session low-fatigue.' }
+      { id: 'circuit_rounds', label: 'Circuit rounds', unit: 'sets', defaultValue: 3, minimum: 2, maximum: 4, step: 1, appliesToStepIds: ['travel_squat', 'travel_push', 'travel_pull', 'travel_trunk'], bindings: [{ stepId: 'travel_squat', property: 'sets' }, { stepId: 'travel_push', property: 'sets' }, { stepId: 'travel_pull', property: 'sets' }, { stepId: 'travel_trunk', property: 'sets' }], description: 'Adjust total work to walking and travel load.' },
+      { id: 'working_repetitions', label: 'Working repetitions', unit: 'repetitions', defaultValue: 10, minimum: 6, maximum: 12, step: 1, appliesToStepIds: ['travel_squat', 'travel_push', 'travel_pull'], bindings: [{ stepId: 'travel_squat', property: 'sets' }, { stepId: 'travel_push', property: 'sets' }, { stepId: 'travel_pull', property: 'sets' }], description: 'Use smooth repetitions and stop well before failure.' },
+      { id: 'strength_rir', label: 'Repetitions in reserve', unit: 'repetitions', defaultValue: 4, minimum: 3, maximum: 7, step: 1, appliesToStepIds: ['travel_squat', 'travel_push', 'travel_pull'], bindings: [{ stepId: 'travel_squat', property: 'target.rpe.max' }, { stepId: 'travel_push', property: 'target.rpe.max' }, { stepId: 'travel_pull', property: 'target.rpe.max' }], description: 'Higher values keep the session low-fatigue.' }
     ],
     regressions: ['strength_upper_body_trunk_01'], progressions: ['strength_full_body_maintenance_01'],
     substitutions: [

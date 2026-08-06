@@ -27,10 +27,10 @@ export const CYCLING_QUALITY_WORKOUTS: WorkoutDefinition[] = [
       { id: 'return_to_training', targetDurationMin: 45, loadMultiplier: 0.6, rationale: 'Shift toward controlled tempo if warm-up response is uncertain.', stepOverrides: [{ stepId: 'threshold_repeats', sets: 3, durationSeconds: 360, target: { type: 'rpe', min: 5, max: 7 } }] }
     ],
     parameters: [
-      { id: 'interval_count', label: 'Interval count', unit: 'sets', defaultValue: 4, minimum: 3, maximum: 5, step: 1, appliesToStepIds: ['threshold_repeats'], description: 'Progress count only after the existing structure remains repeatable.' },
-      { id: 'interval_duration', label: 'Interval duration', unit: 'minutes', defaultValue: 8, minimum: 4, maximum: 12, step: 1, appliesToStepIds: ['threshold_repeats'], description: 'Increase duration before aggressively increasing intensity.' },
-      { id: 'recovery_duration', label: 'Recovery duration', unit: 'minutes', defaultValue: 4, minimum: 2, maximum: 6, step: 1, appliesToStepIds: ['threshold_repeats'], description: 'Adjust to keep the set repeatable while continuing to pedal.' },
-      { id: 'target_rpe', label: 'Target RPE', unit: 'rpe', defaultValue: 7.5, minimum: 6, maximum: 8, step: 0.5, appliesToStepIds: ['threshold_repeats'], description: 'Primary generic intensity control when device-specific power is uncertain.' }
+      { id: 'interval_count', label: 'Interval count', unit: 'sets', defaultValue: 4, minimum: 3, maximum: 5, step: 1, appliesToStepIds: ['threshold_repeats'], bindings: [{ stepId: 'threshold_repeats', property: 'sets' }], description: 'Progress count only after the existing structure remains repeatable.' },
+      { id: 'interval_duration', label: 'Interval duration', unit: 'minutes', defaultValue: 8, minimum: 4, maximum: 12, step: 1, appliesToStepIds: ['threshold_repeats'], bindings: [{ stepId: 'threshold_repeats', property: 'duration.seconds' }], description: 'Increase duration before aggressively increasing intensity.' },
+      { id: 'recovery_duration', label: 'Recovery duration', unit: 'minutes', defaultValue: 4, minimum: 2, maximum: 6, step: 1, appliesToStepIds: ['threshold_repeats'], bindings: [{ stepId: 'threshold_repeats', property: 'restAfterSec' }], description: 'Adjust to keep the set repeatable while continuing to pedal.' },
+      { id: 'target_rpe', label: 'Target RPE', unit: 'rpe', defaultValue: 7.5, minimum: 6, maximum: 8, step: 0.5, appliesToStepIds: ['threshold_repeats'], bindings: [{ stepId: 'threshold_repeats', property: 'target.rpe.max' }], description: 'Primary generic intensity control when device-specific power is uncertain.' }
     ],
     regressions: ['cycling_zone2_standard_01'], progressions: ['cycling_over_under_3x12_01', 'cycling_gap_closing_01'], substitutions: [],
     garmin: { exportable: true, supportedSport: 'cycling' },
@@ -57,10 +57,10 @@ export const CYCLING_QUALITY_WORKOUTS: WorkoutDefinition[] = [
       { id: 'return_to_training', targetDurationMin: 50, loadMultiplier: 0.6, rationale: 'Reduce both block count and intensity variability.', stepOverrides: [{ stepId: 'ou_repeats', sets: 2, durationSeconds: 600, target: { type: 'rpe', min: 5, max: 7 } }] }
     ],
     parameters: [
-      { id: 'block_count', label: 'Block count', unit: 'sets', defaultValue: 3, minimum: 2, maximum: 4, step: 1, appliesToStepIds: ['ou_repeats'], description: 'Adjust total over-under volume.' },
-      { id: 'block_duration', label: 'Block duration', unit: 'minutes', defaultValue: 12, minimum: 8, maximum: 15, step: 1, appliesToStepIds: ['ou_repeats'], description: 'Progress total block duration gradually.' },
-      { id: 'surge_duration', label: 'Internal surge duration', unit: 'seconds', defaultValue: 60, minimum: 30, maximum: 120, step: 15, appliesToStepIds: ['ou_repeats'], description: 'Adjust the above-sustainable portions inside each block.' },
-      { id: 'recovery_duration', label: 'Between-block recovery', unit: 'minutes', defaultValue: 5, minimum: 3, maximum: 7, step: 1, appliesToStepIds: ['ou_repeats'], description: 'Recovery remains active and should preserve repeatability.' }
+      { id: 'block_count', label: 'Block count', unit: 'sets', defaultValue: 3, minimum: 2, maximum: 4, step: 1, appliesToStepIds: ['ou_repeats'], bindings: [{ stepId: 'ou_repeats', property: 'sets' }], description: 'Adjust total over-under volume.' },
+      { id: 'block_duration', label: 'Block duration', unit: 'minutes', defaultValue: 12, minimum: 8, maximum: 15, step: 1, appliesToStepIds: ['ou_repeats'], bindings: [{ stepId: 'ou_repeats', property: 'duration.seconds' }], description: 'Progress total block duration gradually.' },
+      { id: 'surge_duration', label: 'Internal surge duration', unit: 'seconds', defaultValue: 60, minimum: 30, maximum: 120, step: 15, appliesToStepIds: ['ou_repeats'], bindings: [{ stepId: 'ou_repeats', property: 'duration.seconds' }], description: 'Adjust the above-sustainable portions inside each block.' },
+      { id: 'recovery_duration', label: 'Between-block recovery', unit: 'minutes', defaultValue: 5, minimum: 3, maximum: 7, step: 1, appliesToStepIds: ['ou_repeats'], bindings: [{ stepId: 'ou_repeats', property: 'restAfterSec' }], description: 'Recovery remains active and should preserve repeatability.' }
     ],
     regressions: ['cycling_controlled_threshold_4x8_01'], progressions: ['cycling_event_specific_endurance_01', 'cycling_race_simulation_50_01'], substitutions: [],
     garmin: { exportable: true, supportedSport: 'cycling' },
@@ -87,10 +87,10 @@ export const CYCLING_QUALITY_WORKOUTS: WorkoutDefinition[] = [
       { id: 'return_to_training', targetDurationMin: 42, loadMultiplier: 0.6, rationale: 'Use controlled accelerations with complete technical control.', stepOverrides: [{ stepId: 'surges', sets: 5, target: { type: 'rpe', min: 6, max: 8 } }, { stepId: 'surge_aerobic_finish', durationSeconds: 600 }] }
     ],
     parameters: [
-      { id: 'surge_count', label: 'Surge count', unit: 'sets', defaultValue: 10, minimum: 6, maximum: 15, step: 1, appliesToStepIds: ['surges'], description: 'Adjust repetition count before increasing intensity.' },
-      { id: 'surge_duration', label: 'Surge duration', unit: 'seconds', defaultValue: 20, minimum: 10, maximum: 30, step: 5, appliesToStepIds: ['surges'], description: 'Initial event-relevant acceleration range.' },
-      { id: 'recovery_duration', label: 'Pedalling recovery', unit: 'seconds', defaultValue: 160, minimum: 90, maximum: 240, step: 10, appliesToStepIds: ['surges'], description: 'Recovery is incomplete but should preserve surge quality.' },
-      { id: 'surge_rpe', label: 'Surge RPE', unit: 'rpe', defaultValue: 8.5, minimum: 7, maximum: 9, step: 0.5, appliesToStepIds: ['surges'], description: 'Keep most surges below maximal sprint effort.' }
+      { id: 'surge_count', label: 'Surge count', unit: 'sets', defaultValue: 10, minimum: 6, maximum: 15, step: 1, appliesToStepIds: ['surges'], bindings: [{ stepId: 'surges', property: 'sets' }], description: 'Adjust repetition count before increasing intensity.' },
+      { id: 'surge_duration', label: 'Surge duration', unit: 'seconds', defaultValue: 20, minimum: 10, maximum: 30, step: 5, appliesToStepIds: ['surges'], bindings: [{ stepId: 'surges', property: 'duration.seconds' }], description: 'Initial event-relevant acceleration range.' },
+      { id: 'recovery_duration', label: 'Pedalling recovery', unit: 'seconds', defaultValue: 160, minimum: 90, maximum: 240, step: 10, appliesToStepIds: ['surges'], bindings: [{ stepId: 'surges', property: 'restAfterSec' }], description: 'Recovery is incomplete but should preserve surge quality.' },
+      { id: 'surge_rpe', label: 'Surge RPE', unit: 'rpe', defaultValue: 8.5, minimum: 7, maximum: 9, step: 0.5, appliesToStepIds: ['surges'], bindings: [{ stepId: 'surges', property: 'target.rpe.max' }], description: 'Keep most surges below maximal sprint effort.' }
     ],
     regressions: ['cycling_zone2_standard_01'], progressions: ['cycling_gap_closing_01', 'cycling_event_specific_endurance_01'], substitutions: [],
     garmin: { exportable: true, supportedSport: 'cycling' },
