@@ -211,6 +211,7 @@ firebase-service-account.json
 .garth
 .garmin_tokens/
 garmin_tokens.json
+.garmin_archive/
 sleep_daily_sample.json
 hrv_range_sample.json
 *.cache*

@@ -8,6 +8,15 @@ export interface SubjectiveInput {
     motivation: number; // 1-10
     timeAvailable: number; // Minutes
     painFlag: boolean;     // Injury/Pain flag
+    alreadyTrainedToday: boolean; // User-reported: a session was already completed today
+}
+
+/** A completed training session summary, as reported for a specific day (yesterday or today). */
+export interface TrainingRecord {
+    type: string;
+    duration_min: number;
+    training_effect: number;
+    intensity_tag: string;
 }
 
 export interface EngineObjectiveInput {
@@ -23,12 +32,9 @@ export interface EngineObjectiveInput {
     respiration: number | null;
     body_battery_wake: number | null;
     last_3_days_hard_sessions_count: number;
-    yesterday_training: {
-        type: string;
-        duration_min: number;
-        training_effect: number;
-        intensity_tag: string;
-    } | null;
+    yesterday_training: TrainingRecord | null;
+    /** Garmin-detected activity synced for *today's* date (requires a re-sync after training to appear). */
+    today_training: TrainingRecord | null;
 }
 
 export interface DailyReadiness {
@@ -70,6 +76,24 @@ export interface Recommendation {
 
 // --- Firestore Canonical Models (Phase 3) ---
 
+/** Raw Garmin activity summary for a single day, as stored under `raw.yesterdayTraining` / `raw.todayTraining`. */
+export interface RawActivitySummary {
+    activityCount?: number;
+    totalDurationMin?: number;
+    hardActivityCount?: number;
+    primaryActivity?: {
+        activityId: number | string;
+        type: string;
+        durationMin: number | null;
+        trainingEffect: number;
+        intensityTag: string;
+    } | null;
+    type?: string;
+    durationMin?: number | null;
+    trainingEffect?: number;
+    intensityTag?: string;
+}
+
 export interface DailyRecoverySnapshot {
     userId: string;
     date: string;
@@ -99,22 +123,12 @@ export interface DailyRecoverySnapshot {
         bodyBatteryChange: number | null;
         totalSteps: number | null;
         last3DaysHardSessionsCount: number;
-        yesterdayTraining: {
-            activityCount?: number;
-            totalDurationMin?: number;
-            hardActivityCount?: number;
-            primaryActivity?: {
-                activityId: number | string;
-                type: string;
-                durationMin: number | null;
-                trainingEffect: number;
-                intensityTag: string;
-            } | null;
-            type?: string;
-            durationMin?: number | null;
-            trainingEffect?: number;
-            intensityTag?: string;
-        } | null;
+        yesterdayTraining: RawActivitySummary | null;
+        /** Same-day activity synced from Garmin for `date` itself. Only populated if a
+         * sync ran after the activity was uploaded -- absent doesn't mean "didn't train",
+         * just "not yet synced today". Prefer the check-in's `alreadyTrainedToday` flag
+         * when you need a reliable same-day signal. */
+        todayTraining?: RawActivitySummary | null;
     };
     derived: {
         baselineComputationVersion: number;
@@ -164,6 +178,7 @@ export interface DailySubjectiveCheckin {
     painOrInjury: boolean;
     illnessSymptoms: boolean;
     unusuallyLimitedTime: boolean;
+    alreadyTrainedToday: boolean; // Already completed a session today -- recommendation should be rest/recovery only
     // Availability block
     availability: {
         timeAvailableMin: number | null;

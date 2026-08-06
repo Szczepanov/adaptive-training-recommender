@@ -13,6 +13,7 @@ interface RawCacheSnapshot {
     totalSteps?: number | null;
     last3DaysHardSessionsCount?: number;
     yesterdayTraining?: DailyRecoverySnapshot['raw']['yesterdayTraining'];
+    todayTraining?: DailyRecoverySnapshot['raw']['todayTraining'];
 }
 
 /**
@@ -75,7 +76,8 @@ export class LocalDataService {
                     bodyBatteryChange: rawData.bodyBatteryChange || null,
                     totalSteps: rawData.totalSteps || null,
                     last3DaysHardSessionsCount: rawData.last3DaysHardSessionsCount || 0,
-                    yesterdayTraining: rawData.yesterdayTraining || null
+                    yesterdayTraining: rawData.yesterdayTraining || null,
+                    todayTraining: rawData.todayTraining || null
                 },
                 derived: {
                     baselineComputationVersion: 1,

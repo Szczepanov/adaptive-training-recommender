@@ -21,13 +21,17 @@ def calculate_delta(current: float | int | None, baseline: float | None) -> floa
     return None
 
 
-def classify_activity_intensity(activity: dict[str, Any]) -> tuple[bool, str]:
+def classify_activity_intensity(training_effect: float, average_hr: float | None) -> tuple[bool, str]:
     """
     Classify activity intensity based on Training Effect or Average HR.
-    Rule: aerobicTrainingEffect >= 3.0 OR averageHeartRate >= 145 -> Hard
+    Rule: training_effect >= 3.0 OR average_hr >= 145 -> Hard
+
+    Provider-neutral: takes plain extracted values, not a raw provider payload, so any
+    adapter can call this shared domain rule after extracting its own training-effect
+    and average-HR fields.
     """
-    te = activity.get("aerobicTrainingEffect", 0.0) or 0.0
-    avg_hr = activity.get("averageHeartRate", 0) or 0
+    te = training_effect or 0.0
+    avg_hr = average_hr or 0
     is_hard = (te >= HARD_SESSION_MIN_TRAINING_EFFECT or avg_hr >= HARD_SESSION_MIN_AVERAGE_HR)
     intensity_tag = "hard" if is_hard else "moderate/easy"
     return is_hard, intensity_tag

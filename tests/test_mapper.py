@@ -1,11 +1,18 @@
 import json
 from pathlib import Path
-from garmin_sync.mapper import map_garmin_payload_to_snapshot, normalize_activity, normalize_current_metrics
+from garmin_sync.canonical import CanonicalActivity, CanonicalDailyMetrics
+from garmin_sync.garmin_provider import canonicalize_activities, canonicalize_from_raw
+from garmin_sync.mapper import build_snapshot_from_canonical, normalize_activity
 from garmin_sync.models import DerivedMetrics
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
-def test_map_garmin_payload_to_snapshot():
+
+def test_build_snapshot_from_canonical_using_real_fixture_shapes():
+    """End-to-end regression test: real Garmin fixtures -> canonicalize -> build snapshot,
+    asserting the exact same field values the pre-canonical-layer
+    map_garmin_payload_to_snapshot test asserted, to guarantee the refactor didn't
+    change output."""
     with open(FIXTURES_DIR / "stats.json") as f:
         stats = json.load(f)
     with open(FIXTURES_DIR / "sleep.json") as f:
@@ -15,19 +22,26 @@ def test_map_garmin_payload_to_snapshot():
     with open(FIXTURES_DIR / "activities.json") as f:
         activities = json.load(f)
 
-    derived = DerivedMetrics(restingHr7dAvg=53.0, restingHr28dAvg=54.0)
+    stats_fallback = {"totalSteps": 8420, "restingHeartRate": 51}
 
-    stats_yesterday = {"totalSteps": 8420, "restingHeartRate": 51}
-
-    snapshot = map_garmin_payload_to_snapshot(
-        user_id="test_firebase_uid_123",
-        target_date_iso="2026-08-06",
+    canonical = canonicalize_from_raw(
         stats_today=stats,
-        stats_fallback=stats_yesterday,
+        stats_fallback=stats_fallback,
         sleep_today=sleep,
         sleep_fallback=None,
         hrv_today=hrv,
-        activities_window=activities,
+        target_date_iso="2026-08-06",
+        yesterday_iso="2026-08-05",
+    )
+    canonical_activities = canonicalize_activities(activities)
+
+    derived = DerivedMetrics(restingHr7dAvg=53.0, restingHr28dAvg=54.0)
+
+    snapshot = build_snapshot_from_canonical(
+        user_id="test_firebase_uid_123",
+        target_date_iso="2026-08-06",
+        canonical=canonical,
+        canonical_activities=canonical_activities,
         derived_metrics=derived,
         timezone_name="Europe/Warsaw",
     )
@@ -47,63 +61,29 @@ def test_map_garmin_payload_to_snapshot():
     assert snapshot.source.metricDates.steps == "2026-08-05"  # D-1 steps semantics
 
 
-def test_normalize_current_metrics_fallback_consistency():
-    stats_today = {}  # missing RHR
-    stats_fallback = {"restingHeartRate": 50, "totalSteps": 12000}
-    sleep_today = {}  # missing sleep
-    sleep_fallback = {"dailySleepDTO": {"sleepScores": {"overall": {"value": 78}}, "sleepTimeSeconds": 28800}}
-    hrv_today = {"hrvSummary": {"lastNightAvg": 62, "status": "BALANCED"}}
-
-    norm, dates = normalize_current_metrics(
-        stats_today=stats_today,
-        stats_fallback=stats_fallback,
-        sleep_today=sleep_today,
-        sleep_fallback=sleep_fallback,
-        hrv_today=hrv_today,
-        target_date_iso="2026-08-06",
-        yesterday_iso="2026-08-05",
-    )
-
-    assert norm["restingHr"] == 50
-    assert dates.restingHr == "2026-08-05"
-    assert norm["sleepScore"] == 78
-    assert dates.sleep == "2026-08-05"
-    assert norm["hrvOvernightAvg"] == 62
-    assert dates.hrv == "2026-08-06"
-
-
-def test_deterministic_yesterday_activity_selection():
+def test_build_snapshot_deterministic_yesterday_activity_selection():
     derived = DerivedMetrics()
     activities = [
-        # Morning light mobility session
-        {
-            "activityId": 101,
-            "startTimeLocal": "2026-08-05T08:00:00",
-            "activityType": {"typeKey": "other"},
-            "duration": 1800,
-            "aerobicTrainingEffect": 1.0,
-            "activityTrainingLoad": 10.0,
-        },
-        # Evening hard running session
-        {
-            "activityId": 102,
-            "startTimeLocal": "2026-08-05T18:00:00",
-            "activityType": {"typeKey": "running"},
-            "duration": 2400,
-            "aerobicTrainingEffect": 3.8,
-            "activityTrainingLoad": 120.0,
-        },
+        CanonicalActivity(
+            activity_id="101", date="2026-08-05", type="other",
+            duration_min=30, duration_seconds=1800,
+            training_effect_aerobic=1.0, training_effect_anaerobic=0.0,
+            average_hr=None, training_load=10.0, intensity_tag="moderate/easy",
+        ),
+        CanonicalActivity(
+            activity_id="102", date="2026-08-05", type="running",
+            duration_min=40, duration_seconds=2400,
+            training_effect_aerobic=3.8, training_effect_anaerobic=0.0,
+            average_hr=None, training_load=120.0, intensity_tag="hard",
+        ),
     ]
+    canonical = CanonicalDailyMetrics(date="2026-08-06")
 
-    snapshot = map_garmin_payload_to_snapshot(
+    snapshot = build_snapshot_from_canonical(
         user_id="test_uid",
         target_date_iso="2026-08-06",
-        stats_today={},
-        stats_fallback=None,
-        sleep_today={},
-        sleep_fallback=None,
-        hrv_today={},
-        activities_window=activities,
+        canonical=canonical,
+        canonical_activities=activities,
         derived_metrics=derived,
     )
 
@@ -113,26 +93,22 @@ def test_deterministic_yesterday_activity_selection():
     assert y.totalDurationMin == 70  # (1800 + 2400) / 60
     assert y.hardActivityCount == 1
     assert y.primaryActivity is not None
-    assert y.primaryActivity.activityId == 102
+    assert y.primaryActivity.activityId == "102"  # higher activityTrainingLoad wins
     assert y.primaryActivity.type == "running"
     assert y.primaryActivity.intensityTag == "hard"
 
 
-def test_normalize_activity_maps_fields_and_intensity():
-    act = {
-        "activityId": 999,
-        "startTimeLocal": "2026-08-05T18:00:00",
-        "activityType": {"typeKey": "running"},
-        "duration": 2400,
-        "aerobicTrainingEffect": 3.8,
-        "anaerobicTrainingEffect": 1.2,
-        "averageHeartRate": 150,
-        "activityTrainingLoad": 120.0,
-    }
+def test_normalize_activity_maps_canonical_fields():
+    activity = CanonicalActivity(
+        activity_id="999", date="2026-08-05", type="running",
+        duration_min=40, duration_seconds=2400,
+        training_effect_aerobic=3.8, training_effect_anaerobic=1.2,
+        average_hr=150, training_load=120.0, intensity_tag="hard",
+    )
 
-    normalized = normalize_activity(act, sync_run_id="run-abc")
+    normalized = normalize_activity(activity, sync_run_id="run-abc")
 
-    assert normalized["activityId"] == 999
+    assert normalized["activityId"] == "999"
     assert normalized["date"] == "2026-08-05"
     assert normalized["type"] == "running"
     assert normalized["durationMin"] == 40

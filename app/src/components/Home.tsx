@@ -36,7 +36,7 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
         const objective = mapSnapshotToEngineInput(input.recoverySnapshot);
         const subjective = mapCheckinToSubjectiveInput(input.subjectiveCheckin);
         const context = mapContextFromGoalsAndConstraints(input.activeGoals, input.activeConstraints);
-        setRecommendation(evaluateTraining({ subjective, objective }, context));
+        setRecommendation(evaluateTraining({ subjective, objective }, context, input.date));
       } else {
         setRecommendation(null);
       }

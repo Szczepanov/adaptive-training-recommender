@@ -1,20 +1,36 @@
-import type { DailyReadiness, UserContext, Recommendation } from './models';
+import type { DailyReadiness, UserContext, Recommendation, SessionTemplate } from './models';
 import { TEMPLATES } from './templates';
 
-export function evaluateTraining(readiness: DailyReadiness, context: UserContext): Recommendation {
+/**
+ * Deterministically pick one template from a filtered set of same-category options,
+ * varying by date so users don't see the identical session every time a mode repeats,
+ * while still being idempotent for a given day (reloading today doesn't reshuffle it).
+ */
+function pickTemplate(options: SessionTemplate[], seedDate: string): SessionTemplate | undefined {
+    if (options.length === 0) return undefined;
+    if (options.length === 1) return options[0];
+
+    let hash = 0;
+    for (let i = 0; i < seedDate.length; i++) {
+        hash = (hash * 31 + seedDate.charCodeAt(i)) >>> 0;
+    }
+    return options[hash % options.length];
+}
+
+export function evaluateTraining(readiness: DailyReadiness, context: UserContext, date: string): Recommendation {
     const { subjective, objective } = readiness;
-    
+
     // 1. Subjective fatigue scoring (10 = worst fatigue)
     const invertedMotivation = 10 - subjective.motivation;
     const invertedSleepQual = 10 - subjective.sleepQuality;
     const invertedReadiness = 10 - subjective.readiness;
-    
+
     // Core subjective penalty calculation
     const overallFatigueScore = (subjective.fatigue + subjective.soreness + invertedReadiness + invertedSleepQual + invertedMotivation) / 5;
-    
+
     // 2. Objective penalty logic (analyzing deltas vs baselines)
     let objectivePenalty = 0;
-    
+
     // RHR Delta: Higher RHR is bad
     if (objective.rhr_delta !== null && objective.rhr_delta > 3) {
         objectivePenalty += 1; // +3 bpm over 7d is yellow flag
@@ -22,35 +38,43 @@ export function evaluateTraining(readiness: DailyReadiness, context: UserContext
     if (objective.rhr_delta !== null && objective.rhr_delta > 6) {
         objectivePenalty += 1; // +6 bpm over 7d is red flag
     }
-    
+
     // HRV Delta: Lower HRV is bad
     if (objective.hrv_delta !== null && objective.hrv_delta < -5) {
         objectivePenalty += 1; // Significant drop vs weekly average
     }
-    
+
     // Body Battery & Sleep Thresholds
     if (objective.body_battery_wake !== null && objective.body_battery_wake < 50) {
         objectivePenalty += 1; // Poor recovery overnight
     }
     if (objective.sleep_score !== null && objective.sleep_score < 60) {
-        objectivePenalty += 1; 
+        objectivePenalty += 1;
     }
 
     const extremeFatigue = subjective.fatigue > 8 || subjective.soreness > 8 || subjective.painFlag;
-    
+
     // 3. Determine Core Mode Hierarchy (Train vs Modify vs Recover)
     let mode: 'train' | 'modify' | 'recover' = 'train';
-    
+
     // Prevent overtraining if you've done too many hard sessions recently
     const recentHardSessions = objective.last_3_days_hard_sessions_count || 0;
     if (recentHardSessions >= 2) {
         objectivePenalty += 1; // 2+ hard sessions in 3 days warrants caution
     }
-    
+
     if (overallFatigueScore > 7 || extremeFatigue || objectivePenalty >= 3) {
         mode = 'recover';
     } else if (overallFatigueScore > 5 || subjective.soreness > 6 || objectivePenalty >= 1) {
         mode = 'modify'; // Demote to Zone 2 / easier sessions
+    }
+
+    // 3b. Already-trained-today override: takes precedence over everything above.
+    // A user-reported or Garmin-synced same-day session means no further training should
+    // be prescribed today, regardless of how fresh the readiness numbers otherwise look.
+    const alreadyTrainedOverride = subjective.alreadyTrainedToday === true || objective.today_training !== null;
+    if (alreadyTrainedOverride) {
+        mode = 'recover';
     }
 
     // 4. Time available override
@@ -59,7 +83,7 @@ export function evaluateTraining(readiness: DailyReadiness, context: UserContext
     // 5. Filter templates by constraints
     const availableTemplates = TEMPLATES.filter(t => {
         if (t.durationMin > availableTime) return false;
-        
+
         for (const req of t.requiredEquipment) {
             if (req === 'treadmill' && !context.constraints.hasTreadmill) return false;
             if (req === 'indoor_bike' && !context.constraints.hasIndoorBike) return false;
@@ -75,21 +99,29 @@ export function evaluateTraining(readiness: DailyReadiness, context: UserContext
 
     if (mode === 'recover') {
         const recoverOptions = availableTemplates.filter(t => t.category === 'Rest' || t.category === 'Mobility/Recovery');
-        if (recoverOptions.length > 0) selectedTemplate = recoverOptions[0];
-        
-        rationale = "Your overall fatigue markers are high today (combining subjective feel with drops in objective baselines). Pushing hard could be counter-productive; focus on active or passive recovery.";
-    
+        if (recoverOptions.length > 0) selectedTemplate = pickTemplate(recoverOptions, date) ?? recoverOptions[0];
+
+        if (alreadyTrainedOverride) {
+            const loggedSession = objective.today_training;
+            const sessionDescription = loggedSession
+                ? `Garmin shows you already completed a ${loggedSession.type} session today (~${loggedSession.duration_min} min).`
+                : "You've already logged a training session today.";
+            rationale = `${sessionDescription} Nice work -- no further training is needed. Focus on recovery (hydration, nutrition, sleep) for the rest of the day.`;
+        } else {
+            rationale = "Your overall fatigue markers are high today (combining subjective feel with drops in objective baselines). Pushing hard could be counter-productive; focus on active or passive recovery.";
+        }
+
     } else if (mode === 'modify') {
-        const modifyOptions = availableTemplates.filter(t => t.category === 'Easy Endurance' || t.category === 'Mobility/Recovery');
-        if (modifyOptions.length > 0) selectedTemplate = modifyOptions[0];
+        const modifyOptions = availableTemplates.filter(t => t.category === 'Easy Endurance' || t.category === 'Moderate Endurance' || t.category === 'Mobility/Recovery');
+        if (modifyOptions.length > 0) selectedTemplate = pickTemplate(modifyOptions, date) ?? modifyOptions[0];
         else selectedTemplate = TEMPLATES[0]; // Rest fallback
-        
+
         rationale = "You're showing moderate soreness or slight downward trends in Garmin baselines. We are capping intensity today to build base capacity without taxing the CNS.";
-    
+
     } else {
-        const trainOptions = availableTemplates.filter(t => t.category === 'Hard Endurance' || t.category === 'Full-body Strength');
-        if (trainOptions.length > 0) selectedTemplate = trainOptions[0];
-        
+        const trainOptions = availableTemplates.filter(t => t.category === 'Hard Endurance' || t.category === 'Full-body Strength' || t.category === 'Upper-body Strength' || t.category === 'Lower-body Strength');
+        if (trainOptions.length > 0) selectedTemplate = pickTemplate(trainOptions, date) ?? trainOptions[0];
+
         rationale = "Readiness is solid across both subjective feelings and Garmin baselines. Great day for a hard session aligned with your primary goals!";
     }
 

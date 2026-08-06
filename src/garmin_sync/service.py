@@ -4,13 +4,16 @@ import uuid
 from pathlib import Path
 from typing import Any
 from .archive import RawArchiveStore, create_archive_store
+from .canonical import CanonicalActivity, CanonicalDailyMetrics
 from .config import Settings
 from .dates import get_date_range, get_date_string, local_today, n_days_ago, parse_date_string
 from .firestore_repository import FirestoreRecoveryRepository
 from .garmin_client import GarminClientWrapper
-from .mapper import map_garmin_payload_to_snapshot, normalize_activity, normalize_current_metrics
+from .garmin_provider import GarminProviderAdapter, canonicalize_activities, canonicalize_from_raw
+from .mapper import build_snapshot_from_canonical, normalize_activity
 from .metrics import compute_derived_metrics
 from .models import DailyRecoverySnapshot
+from .provider import WearableProvider
 from .token_store import create_token_store
 
 logger = logging.getLogger(__name__)
@@ -27,6 +30,7 @@ class GarminSyncService:
         repository: FirestoreRecoveryRepository | None = None,
         garmin_client: Any | None = None,
         archive_store: RawArchiveStore | None = None,
+        provider: WearableProvider | None = None,
     ):
         self.settings = settings
         self.repository = repository or FirestoreRecoveryRepository(
@@ -36,6 +40,7 @@ class GarminSyncService:
             credentials_path=settings.firebase_credentials_path,
         )
         self.garmin_client = garmin_client
+        self.provider = provider
         self.token_store = create_token_store(
             store_type=settings.garmin_token_store,
             local_path=settings.garmin_token_path,
@@ -82,18 +87,24 @@ class GarminSyncService:
         self.garmin_client = wrapper
         return wrapper
 
+    def _init_provider(self) -> WearableProvider:
+        """GarminSyncService depends on WearableProvider, not any specific vendor's
+        client -- a fake/second provider can be injected via the constructor (see
+        tests). Defaults to wrapping the Garmin client for real runs."""
+        if self.provider is not None:
+            return self.provider
+        self.provider = GarminProviderAdapter(self._init_garmin_client())
+        return self.provider
+
     def _archive_raw(self, endpoint: str, logical_date: str, payload: Any, sync_run_id: str) -> None:
         """No-op when archiving is disabled (NullArchiveStore)."""
         self.archive_store.archive(endpoint, logical_date, payload, sync_run_id, self.garminconnect_version)
 
-    def _archive_activities(self, activities: list[dict[str, Any]], sync_run_id: str) -> None:
+    def _archive_activities(self, activities: list[dict[str, Any]], canonical_activities: list[CanonicalActivity], sync_run_id: str) -> None:
         """Write a normalized standalone record per activity to users/{userId}/activities/.
-        No-op cost-wise when there are no activities; safe to call unconditionally."""
-        for act in activities:
-            activity_id = act.get("activityId")
-            if activity_id is None:
-                continue
-            self.repository.upsert_activity(activity_id, normalize_activity(act, sync_run_id))
+        Safe to call unconditionally (no-op for an empty list)."""
+        for activity in canonical_activities:
+            self.repository.upsert_activity(activity.activity_id, normalize_activity(activity, sync_run_id))
 
     def _seed_prehistory(self, raw_memory_store: dict[str, dict[str, Any]], range_start: Any) -> None:
         """Seed raw_memory_store with up to 28 days of existing Firestore history before
@@ -110,17 +121,12 @@ class GarminSyncService:
     def _build_and_store_snapshot(
         self,
         target_iso: str,
-        yesterday_iso: str,
-        stats_today: dict[str, Any],
-        stats_fallback: dict[str, Any] | None,
-        sleep_today: dict[str, Any],
-        sleep_fallback: dict[str, Any] | None,
-        hrv_today: dict[str, Any],
-        activities_window: list[dict[str, Any]],
+        canonical: CanonicalDailyMetrics,
+        canonical_activities: list[CanonicalActivity],
         raw_memory_store: dict[str, dict[str, Any]],
     ) -> DailyRecoverySnapshot:
-        """Shared normalize -> derive -> map -> store pipeline. Single source of truth
-        for how a snapshot is assembled from a date's raw payloads, used by sync_daily,
+        """Shared derive -> map -> store pipeline. Single source of truth for how a
+        snapshot is assembled from a date's canonical metrics, used by sync_daily,
         backfill, and rebuild so they can never drift from each other (Fix A)."""
         target_date = parse_date_string(target_iso)
         w7_start = get_date_string(n_days_ago(target_date, 7))
@@ -130,34 +136,22 @@ class GarminSyncService:
         window_7d = [raw_memory_store[d] for d in sorted_history_dates if d >= w7_start]
         window_28d = [raw_memory_store[d] for d in sorted_history_dates if d >= w28_start]
 
-        norm_today, _ = normalize_current_metrics(
-            stats_today=stats_today,
-            stats_fallback=stats_fallback,
-            sleep_today=sleep_today,
-            sleep_fallback=sleep_fallback,
-            hrv_today=hrv_today,
-            target_date_iso=target_iso,
-            yesterday_iso=yesterday_iso,
-        )
         dummy_current = {
-            "sleepScore": norm_today["sleepScore"],
-            "restingHr": norm_today["restingHr"],
-            "hrvOvernightAvg": norm_today["hrvOvernightAvg"],
-            "respirationAvg": norm_today["respirationAvg"],
+            "sleepScore": canonical.sleep_score,
+            "restingHr": canonical.resting_heart_rate_bpm,
+            "hrvOvernightAvg": canonical.hrv_overnight_avg_ms,
+            "respirationAvg": canonical.respiration_rate_brpm,
         }
         derived = compute_derived_metrics(dummy_current, window_7d, window_28d)
 
-        snapshot = map_garmin_payload_to_snapshot(
+        snapshot = build_snapshot_from_canonical(
             user_id=self.settings.app_user_id,
             target_date_iso=target_iso,
-            stats_today=stats_today,
-            stats_fallback=stats_fallback,
-            sleep_today=sleep_today,
-            sleep_fallback=sleep_fallback,
-            hrv_today=hrv_today,
-            activities_window=activities_window,
+            canonical=canonical,
+            canonical_activities=canonical_activities,
             derived_metrics=derived,
             timezone_name=self.settings.app_timezone,
+            garminconnect_version=self.garminconnect_version,
         )
 
         raw_memory_store[target_iso] = snapshot.raw.to_dict()
@@ -178,33 +172,23 @@ class GarminSyncService:
             )
             return True
 
-        client = self._init_garmin_client()
+        provider = self._init_provider()
         sync_run_id = _new_sync_run_id(target_iso)
 
         yesterday_iso = get_date_string(n_days_ago(target_date, 1))
         three_days_ago_iso = get_date_string(n_days_ago(target_date, 3))
 
         logger.info(f"[{target_iso}] Fetching stats, sleep, and HRV...")
-        stats_today = client.get_stats(target_iso)
-        # Always fetch D-1 stats: totalSteps must reflect the previous completed day per the
-        # snapshot date contract, not just serve as an RHR fallback (see mapper.py steps semantics).
-        stats_yesterday = client.get_stats(yesterday_iso)
-        self._archive_raw("stats", target_iso, stats_today, sync_run_id)
-        self._archive_raw("stats", yesterday_iso, stats_yesterday, sync_run_id)
-
-        sleep_today = client.get_sleep_data(target_iso)
-        sleep_yesterday = client.get_sleep_data(yesterday_iso) if not sleep_today else None
-        self._archive_raw("sleep", target_iso, sleep_today, sync_run_id)
-        if sleep_yesterday is not None:
-            self._archive_raw("sleep", yesterday_iso, sleep_yesterday, sync_run_id)
-
-        hrv_today = client.get_hrv_data(target_iso)
-        self._archive_raw("hrv", target_iso, hrv_today, sync_run_id)
+        daily_result = provider.fetch_daily_metrics(target_iso, yesterday_iso)
+        for endpoint, payload in daily_result.raw_payloads.items():
+            logical_date = yesterday_iso if endpoint in ("stats_fallback", "sleep_fallback") else target_iso
+            archive_endpoint = "stats" if endpoint == "stats_fallback" else ("sleep" if endpoint == "sleep_fallback" else endpoint)
+            self._archive_raw(archive_endpoint, logical_date, payload, sync_run_id)
 
         logger.info(f"[{target_iso}] Fetching activities window ({three_days_ago_iso} -> {yesterday_iso})...")
-        activities_window = client.get_activities_window(three_days_ago_iso, yesterday_iso)
-        self._archive_raw("activities", target_iso, activities_window, sync_run_id)
-        self._archive_activities(activities_window, sync_run_id)
+        activities_result = provider.fetch_activities(three_days_ago_iso, yesterday_iso)
+        self._archive_raw("activities", target_iso, activities_result.raw_payload, sync_run_id)
+        self._archive_activities(activities_result.raw_payload, activities_result.canonical, sync_run_id)
 
         # Persist refreshed tokens after API calls
         self.token_store.persist(self.token_file_path)
@@ -217,13 +201,8 @@ class GarminSyncService:
 
         snapshot = self._build_and_store_snapshot(
             target_iso=target_iso,
-            yesterday_iso=yesterday_iso,
-            stats_today=stats_today,
-            stats_fallback=stats_yesterday,
-            sleep_today=sleep_today,
-            sleep_fallback=sleep_yesterday,
-            hrv_today=hrv_today,
-            activities_window=activities_window,
+            canonical=daily_result.canonical,
+            canonical_activities=activities_result.canonical,
             raw_memory_store=raw_memory_store,
         )
 
@@ -268,13 +247,15 @@ class GarminSyncService:
         batch_start_iso = get_date_string(n_days_ago(start_d, 3))
         batch_end_iso = get_date_string(end_d)
 
-        client = self._init_garmin_client()
+        provider = self._init_provider()
         run_id = _new_sync_run_id(f"backfill-{batch_start_iso}")
 
         logger.info(f"Window fetching all activities {batch_start_iso} -> {batch_end_iso}...")
-        all_activities = client.get_activities_window(batch_start_iso, batch_end_iso)
-        logger.info(f"Retrieved {len(all_activities)} activities in window.")
-        self._archive_activities(all_activities, run_id)
+        activities_result = provider.fetch_activities(batch_start_iso, batch_end_iso)
+        all_activities_raw = activities_result.raw_payload
+        all_activities_canonical = activities_result.canonical
+        logger.info(f"Retrieved {len(all_activities_raw)} activities in window.")
+        self._archive_activities(all_activities_raw, all_activities_canonical, run_id)
 
         # Process dates in chronological order
         raw_memory_store: dict[str, dict[str, Any]] = {}
@@ -295,37 +276,26 @@ class GarminSyncService:
 
             try:
                 yesterday_iso = get_date_string(n_days_ago(target_date, 1))
-                stats_today = client.get_stats(target_iso)
-                # Always fetch D-1 stats for correct totalSteps semantics (see sync_daily above).
-                stats_yesterday = client.get_stats(yesterday_iso)
-                sleep_today = client.get_sleep_data(target_iso)
-                sleep_yesterday = client.get_sleep_data(yesterday_iso) if not sleep_today else None
-                hrv_today = client.get_hrv_data(target_iso)
+                daily_result = provider.fetch_daily_metrics(target_iso, yesterday_iso)
 
-                self._archive_raw("stats", target_iso, stats_today, run_id)
-                self._archive_raw("stats", yesterday_iso, stats_yesterday, run_id)
-                self._archive_raw("sleep", target_iso, sleep_today, run_id)
-                if sleep_yesterday is not None:
-                    self._archive_raw("sleep", yesterday_iso, sleep_yesterday, run_id)
-                self._archive_raw("hrv", target_iso, hrv_today, run_id)
+                for endpoint, payload in daily_result.raw_payloads.items():
+                    logical_date = yesterday_iso if endpoint in ("stats_fallback", "sleep_fallback") else target_iso
+                    archive_endpoint = "stats" if endpoint == "stats_fallback" else ("sleep" if endpoint == "sleep_fallback" else endpoint)
+                    self._archive_raw(archive_endpoint, logical_date, payload, run_id)
+
                 # Archive the per-date-relevant activities slice (not the whole batch) so
                 # a single date can be rebuilt independently from its own archive entry.
                 three_days_ago_iso = get_date_string(n_days_ago(target_date, 3))
-                date_activities = [
-                    a for a in all_activities
+                date_activities_raw = [
+                    a for a in all_activities_raw
                     if three_days_ago_iso <= a.get("startTimeLocal", "")[:10] <= yesterday_iso
                 ]
-                self._archive_raw("activities", target_iso, date_activities, run_id)
+                self._archive_raw("activities", target_iso, date_activities_raw, run_id)
 
                 self._build_and_store_snapshot(
                     target_iso=target_iso,
-                    yesterday_iso=yesterday_iso,
-                    stats_today=stats_today,
-                    stats_fallback=stats_yesterday,
-                    sleep_today=sleep_today,
-                    sleep_fallback=sleep_yesterday,
-                    hrv_today=hrv_today,
-                    activities_window=all_activities,
+                    canonical=daily_result.canonical,
+                    canonical_activities=all_activities_canonical,
                     raw_memory_store=raw_memory_store,
                 )
                 logger.info(f"[{target_iso}] Backfill sync completed.")
@@ -345,9 +315,11 @@ class GarminSyncService:
 
     def rebuild(self, start_date_str: str, end_date_str: str) -> bool:
         """Recreate normalized Firestore snapshots from archived raw payloads, without
-        calling Garmin. Requires GARMIN_ARCHIVE_ENABLED history for the range; dates
-        missing any of the four required archived payloads (stats/sleep/hrv/activities)
-        are skipped and reported, never fetched from Garmin."""
+        calling Garmin (no WearableProvider needed -- purely archive-driven, using the
+        same canonicalize_from_raw/canonicalize_activities the live provider path uses,
+        so this can never drift from a live sync). Dates missing any of the four
+        required archived payloads (stats/sleep/hrv/activities) are skipped and
+        reported, never fetched from Garmin."""
         start_d = parse_date_string(start_date_str)
         end_d = parse_date_string(end_date_str)
         target_dates = get_date_range(start_d, end_d)
@@ -385,15 +357,21 @@ class GarminSyncService:
             sleep_fallback = self.archive_store.load("sleep", yesterday_iso) if not raw_sleep else None
 
             try:
-                self._build_and_store_snapshot(
-                    target_iso=target_iso,
-                    yesterday_iso=yesterday_iso,
+                canonical = canonicalize_from_raw(
                     stats_today=raw_stats,
                     stats_fallback=stats_fallback,
                     sleep_today=raw_sleep,
                     sleep_fallback=sleep_fallback,
                     hrv_today=raw_hrv,
-                    activities_window=raw_activities,
+                    target_date_iso=target_iso,
+                    yesterday_iso=yesterday_iso,
+                )
+                canonical_activities = canonicalize_activities(raw_activities)
+
+                self._build_and_store_snapshot(
+                    target_iso=target_iso,
+                    canonical=canonical,
+                    canonical_activities=canonical_activities,
                     raw_memory_store=raw_memory_store,
                 )
                 rebuilt_dates.append(target_iso)

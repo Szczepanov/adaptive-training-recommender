@@ -68,6 +68,7 @@ export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) 
             painOrInjury: false,
             illnessSymptoms: false,
             unusuallyLimitedTime: false,
+            alreadyTrainedToday: false,
             availability: {
               timeAvailableMin: 60,
               preferredModalityToday: null,
@@ -100,6 +101,7 @@ export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) 
           painOrInjury: false,
           illnessSymptoms: false,
           unusuallyLimitedTime: false,
+          alreadyTrainedToday: false,
           availability: {
             timeAvailableMin: 60,
             preferredModalityToday: null,
@@ -133,7 +135,7 @@ export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) 
     setCheckin({ ...checkin, [field]: value });
   };
 
-  const handleBooleanToggle = (field: 'painOrInjury' | 'illnessSymptoms' | 'unusuallyLimitedTime') => {
+  const handleBooleanToggle = (field: 'painOrInjury' | 'illnessSymptoms' | 'unusuallyLimitedTime' | 'alreadyTrainedToday') => {
     if (!checkin) return;
     setCheckin({ ...checkin, [field]: !checkin[field] });
   };
@@ -339,6 +341,20 @@ export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) 
               <div className="option-content">
                 <strong>Limited Time Today</strong>
                 <span>Have less time than usual for training</span>
+              </div>
+            </label>
+
+            <label className="boolean-option">
+              <input
+                type="checkbox"
+                id="alreadyTrainedToday"
+                checked={checkin.alreadyTrainedToday || false}
+                onChange={() => handleBooleanToggle('alreadyTrainedToday')}
+              />
+              <span className="checkmark"></span>
+              <div className="option-content">
+                <strong>Already Trained Today</strong>
+                <span>I already completed a session today -- recommend rest/recovery only</span>
               </div>
             </label>
           </div>

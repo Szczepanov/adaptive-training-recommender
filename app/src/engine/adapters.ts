@@ -2,42 +2,48 @@ import type {
     DailyRecoverySnapshot,
     DailySubjectiveCheckin,
     EngineObjectiveInput,
+    RawActivitySummary,
     SubjectiveInput,
+    TrainingRecord,
     UserConstraint,
     UserContext,
     UserGoal,
 } from './models';
 
+/** Normalizes a raw Garmin per-day activity summary (yesterday's or today's) into the
+ * engine's TrainingRecord shape, or null if no qualifying activity data is present. */
+function mapTrainingRecord(raw: RawActivitySummary | null | undefined): TrainingRecord | null {
+    if (!raw) return null;
+
+    if (raw.primaryActivity) {
+        return {
+            type: raw.primaryActivity.type,
+            duration_min: raw.primaryActivity.durationMin ?? 0,
+            training_effect: raw.primaryActivity.trainingEffect ?? 0,
+            intensity_tag: raw.primaryActivity.intensityTag ?? 'moderate/easy',
+        };
+    }
+    if (raw.type) {
+        return {
+            type: raw.type,
+            duration_min: raw.durationMin ?? 0,
+            training_effect: raw.trainingEffect ?? 0,
+            intensity_tag: raw.intensityTag ?? 'moderate/easy',
+        };
+    }
+    return null;
+}
+
 /**
- * Maps the Firestore canonical model (DailyRecoverySnapshot) to the internal engine 
+ * Maps the Firestore canonical model (DailyRecoverySnapshot) to the internal engine
  * input model (EngineObjectiveInput) expected by the rules engine.
  * This decouples the rules engine from the Firestore schema.
  */
 export function mapSnapshotToEngineInput(snapshot: DailyRecoverySnapshot): EngineObjectiveInput {
     // Determine the sleep_min: convert from seconds
-    const sleepDurationMin = snapshot.raw.sleepDurationSec 
-        ? Math.round(snapshot.raw.sleepDurationSec / 60) 
+    const sleepDurationMin = snapshot.raw.sleepDurationSec
+        ? Math.round(snapshot.raw.sleepDurationSec / 60)
         : null;
-
-    const rawY = snapshot.raw.yesterdayTraining;
-    let yesterdayTrainingObj = null;
-    if (rawY) {
-        if (rawY.primaryActivity) {
-            yesterdayTrainingObj = {
-                type: rawY.primaryActivity.type,
-                duration_min: rawY.primaryActivity.durationMin ?? 0,
-                training_effect: rawY.primaryActivity.trainingEffect ?? 0,
-                intensity_tag: rawY.primaryActivity.intensityTag ?? 'moderate/easy',
-            };
-        } else if (rawY.type) {
-            yesterdayTrainingObj = {
-                type: rawY.type,
-                duration_min: rawY.durationMin ?? 0,
-                training_effect: rawY.trainingEffect ?? 0,
-                intensity_tag: rawY.intensityTag ?? 'moderate/easy',
-            };
-        }
-    }
 
     return {
         total_steps: snapshot.raw.totalSteps,
@@ -52,7 +58,8 @@ export function mapSnapshotToEngineInput(snapshot: DailyRecoverySnapshot): Engin
         respiration: snapshot.raw.respirationAvg,
         body_battery_wake: snapshot.raw.bodyBatteryWake,
         last_3_days_hard_sessions_count: snapshot.raw.last3DaysHardSessionsCount,
-        yesterday_training: yesterdayTrainingObj,
+        yesterday_training: mapTrainingRecord(snapshot.raw.yesterdayTraining),
+        today_training: mapTrainingRecord(snapshot.raw.todayTraining),
     };
 }
 
@@ -78,6 +85,7 @@ export function mapCheckinToSubjectiveInput(checkin: DailySubjectiveCheckin | nu
             motivation: NEUTRAL_SCALE_VALUE,
             timeAvailable: DEFAULT_TIME_AVAILABLE_MIN,
             painFlag: false,
+            alreadyTrainedToday: false,
         };
     }
 
@@ -90,6 +98,7 @@ export function mapCheckinToSubjectiveInput(checkin: DailySubjectiveCheckin | nu
         motivation: checkin.motivation ?? NEUTRAL_SCALE_VALUE,
         timeAvailable: checkin.availability?.timeAvailableMin ?? DEFAULT_TIME_AVAILABLE_MIN,
         painFlag: checkin.painOrInjury || checkin.illnessSymptoms,
+        alreadyTrainedToday: checkin.alreadyTrainedToday ?? false,
     };
 }
 

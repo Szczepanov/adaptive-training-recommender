@@ -90,7 +90,7 @@ export function validateCheckin(raw: any): ValidationResult<DailySubjectiveCheck
     });
 
     // Boolean flags (default to false if not provided)
-    const booleanFlags = ['painOrInjury', 'illnessSymptoms', 'unusuallyLimitedTime'];
+    const booleanFlags = ['painOrInjury', 'illnessSymptoms', 'unusuallyLimitedTime', 'alreadyTrainedToday'];
     booleanFlags.forEach(field => {
         if (raw[field] !== undefined && typeof raw[field] !== 'boolean') {
             errors.push({ 
@@ -161,6 +161,7 @@ export function validateCheckin(raw: any): ValidationResult<DailySubjectiveCheck
         painOrInjury: raw.painOrInjury ?? false,
         illnessSymptoms: raw.illnessSymptoms ?? false,
         unusuallyLimitedTime: raw.unusuallyLimitedTime ?? false,
+        alreadyTrainedToday: raw.alreadyTrainedToday ?? false,
         availability: {
             timeAvailableMin: normalizeEmptyToNull(raw.availability?.timeAvailableMin),
             preferredModalityToday: normalizeEmptyToNull(raw.availability?.preferredModalityToday),

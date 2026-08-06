@@ -1,0 +1,40 @@
+"""Provider-neutral canonical metric vocabulary.
+
+Field names/units are deliberately provider-agnostic (snake_case, explicit units) so a
+future non-Garmin adapter can populate these same dataclasses. Today they're exactly
+the fields already extracted from Garmin -- nothing invented, nothing added that no
+provider actually supplies yet.
+"""
+from dataclasses import dataclass
+
+
+@dataclass
+class CanonicalDailyMetrics:
+    date: str
+    resting_heart_rate_bpm: float | None = None
+    resting_heart_rate_date: str | None = None
+    hrv_overnight_avg_ms: float | None = None
+    hrv_status: str | None = None
+    hrv_date: str | None = None
+    sleep_score: float | None = None
+    sleep_duration_seconds: int | None = None
+    sleep_date: str | None = None
+    respiration_rate_brpm: float | None = None
+    body_battery_wake: float | None = None
+    body_battery_wake_date: str | None = None
+    steps_count: int | None = None
+    steps_date: str | None = None
+
+
+@dataclass
+class CanonicalActivity:
+    activity_id: str
+    date: str
+    type: str
+    duration_min: int | None
+    duration_seconds: int
+    training_effect_aerobic: float
+    training_effect_anaerobic: float
+    average_hr: float | None
+    training_load: float | None
+    intensity_tag: str

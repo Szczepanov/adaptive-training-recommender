@@ -1,8 +1,41 @@
 from unittest.mock import MagicMock
 import pytest
 from garminconnect import GarminConnectTooManyRequestsError
+from garmin_sync.canonical import CanonicalDailyMetrics
 from garmin_sync.config import Settings
+from garmin_sync.provider import ProviderActivitiesResult, ProviderCapabilities, ProviderFetchResult
 from garmin_sync.service import GarminSyncService
+
+
+class FakeTestProvider:
+    """Minimal non-Garmin WearableProvider implementation, used to prove
+    GarminSyncService is genuinely provider-agnostic (doesn't just work by coincidence
+    because it's secretly Garmin-shaped)."""
+
+    capabilities = ProviderCapabilities(daily_summary=True, sleep=True, hrv=True, activities=True)
+
+    def __init__(self, sleep_score: float = 88.0, resting_hr: float = 48.0):
+        self.sleep_score = sleep_score
+        self.resting_hr = resting_hr
+        self.fetch_daily_metrics_calls: list[tuple[str, str]] = []
+
+    def fetch_daily_metrics(self, target_date_iso: str, yesterday_iso: str) -> ProviderFetchResult:
+        self.fetch_daily_metrics_calls.append((target_date_iso, yesterday_iso))
+        canonical = CanonicalDailyMetrics(
+            date=target_date_iso,
+            resting_heart_rate_bpm=self.resting_hr,
+            resting_heart_rate_date=target_date_iso,
+            sleep_score=self.sleep_score,
+            sleep_date=target_date_iso,
+            hrv_overnight_avg_ms=60.0,
+            hrv_date=target_date_iso,
+            steps_count=9000,
+            steps_date=yesterday_iso,
+        )
+        return ProviderFetchResult(canonical=canonical, raw_payloads={"stats": {"fake": True}})
+
+    def fetch_activities(self, start_date_iso: str, end_date_iso: str) -> ProviderActivitiesResult:
+        return ProviderActivitiesResult(canonical=[], raw_payload=[])
 
 def test_sync_service_skips_when_fresh():
     settings = Settings(app_user_id="test_uid_789")
@@ -135,3 +168,25 @@ def test_backfill_seeds_prehistory_from_firestore():
     assert saved_payload["dataQuality"]["baseline28dReady"] is True
     assert saved_payload["derived"]["restingHr7dAvg"] == 50.0
     assert saved_payload["derived"]["restingHr28dAvg"] == 50.0
+
+
+def test_sync_service_works_with_a_non_garmin_provider():
+    """GarminSyncService depends on WearableProvider, not GarminClientWrapper directly --
+    a fake second provider must be able to satisfy it with zero Garmin-specific code."""
+    settings = Settings(app_user_id="test_uid_789")
+    mock_repo = MagicMock()
+    mock_repo.is_fresh.return_value = False
+    mock_repo.get_historical_snapshots.return_value = {}
+
+    fake_provider = FakeTestProvider(sleep_score=91.0, resting_hr=47.0)
+    # garmin_client is intentionally never provided -- if the service tried to fall back
+    # to a real GarminClientWrapper it would raise (no credentials configured).
+    service = GarminSyncService(settings=settings, repository=mock_repo, provider=fake_provider)
+
+    result = service.sync_daily(target_date_str="2026-08-06", force=True)
+
+    assert result is True
+    assert fake_provider.fetch_daily_metrics_calls == [("2026-08-06", "2026-08-05")]
+    saved_payload = mock_repo.upsert_snapshot.call_args[0][1]
+    assert saved_payload["raw"]["sleepScore"] == 91.0
+    assert saved_payload["raw"]["restingHr"] == 47.0
