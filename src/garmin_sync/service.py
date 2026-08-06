@@ -189,6 +189,10 @@ class GarminSyncService:
             return True
 
         provider = self._init_provider()
+        # A service (and its lazily-created provider) can be reused across multiple
+        # sync_daily calls -- clear any per-date caching from a prior operation before
+        # this one starts fetching, so a repeated --force run can't serve stale data.
+        provider.clear_cache()
         sync_run_id = _new_sync_run_id(target_iso)
 
         yesterday_iso = get_date_string(n_days_ago(target_date, 1))
@@ -265,6 +269,10 @@ class GarminSyncService:
         batch_end_iso = get_date_string(end_d)
 
         provider = self._init_provider()
+        # See sync_daily: clear any per-date caching from a prior operation before this
+        # backfill starts. Caching is only safe *within* this run's chronological date
+        # loop, populated fresh below.
+        provider.clear_cache()
         run_id = _new_sync_run_id(f"backfill-{batch_start_iso}")
 
         logger.info(f"Window fetching all activities {batch_start_iso} -> {batch_end_iso}...")

@@ -37,6 +37,9 @@ class FakeTestProvider:
     def fetch_activities(self, start_date_iso: str, end_date_iso: str) -> ProviderActivitiesResult:
         return ProviderActivitiesResult(canonical=[], raw_payload=[])
 
+    def clear_cache(self) -> None:
+        pass  # this fake provider doesn't cache anything
+
 def test_sync_service_skips_when_fresh():
     settings = Settings(app_user_id="test_uid_789")
     mock_repo = MagicMock()
@@ -293,3 +296,37 @@ def test_sync_service_survives_a_failed_enrichment_fetch():
     # ...the one that failed degrades to absent, not a crash.
     assert saved_payload["raw"]["trainingStatus"] is None
     assert saved_payload["dataQuality"]["trainingStatusAvailable"] is False
+
+
+def test_sync_service_does_not_serve_stale_cache_across_repeated_force_runs():
+    """Regression test: GarminSyncService (and its lazily-created, reused provider)
+    must not serve a prior sync_daily(..., force=True) call's cached stats/sleep on a
+    second call for the same date -- each sync_daily invocation is a fresh operation
+    and must fetch current Garmin data."""
+    settings = Settings(app_user_id="test_uid_789")
+    mock_repo = MagicMock()
+    mock_repo.is_fresh.return_value = False
+    mock_repo.get_historical_snapshots.return_value = {}
+
+    mock_client = MagicMock()
+    mock_client.get_stats.side_effect = [
+        {"restingHeartRate": 50, "totalSteps": 9000},  # 1st call: target date
+        {"restingHeartRate": 49, "totalSteps": 8800},  # 1st call: D-1 fallback
+        {"restingHeartRate": 61, "totalSteps": 9500},  # 2nd call: target date (updated)
+        {"restingHeartRate": 60, "totalSteps": 9300},  # 2nd call: D-1 fallback
+    ]
+    mock_client.get_sleep_data.return_value = {"dailySleepDTO": {"sleepScores": {"overall": {"value": 80}}}}
+    mock_client.get_hrv_data.return_value = {"hrvSummary": {"lastNightAvg": 65}}
+    mock_client.get_activities_window.return_value = []
+
+    service = GarminSyncService(settings=settings, repository=mock_repo, garmin_client=mock_client)
+
+    service.sync_daily(target_date_str="2026-08-06", force=True)
+    first_payload = mock_repo.upsert_snapshot.call_args[0][1]
+    assert first_payload["raw"]["restingHr"] == 50
+
+    service.sync_daily(target_date_str="2026-08-06", force=True)
+    second_payload = mock_repo.upsert_snapshot.call_args[0][1]
+    assert second_payload["raw"]["restingHr"] == 61  # fresh fetch, not the 1st run's cache
+
+    assert mock_client.get_stats.call_count == 4  # 2 calls per run, not cached across runs

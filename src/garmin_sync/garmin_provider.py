@@ -226,6 +226,15 @@ class GarminProviderAdapter:
         self._stats_cache: dict[str, dict[str, Any]] = {}
         self._sleep_cache: dict[str, dict[str, Any]] = {}
 
+    def clear_cache(self) -> None:
+        """Called by GarminSyncService at the start of each sync_daily/backfill
+        operation -- see WearableProvider.clear_cache. Caching is only safe *within*
+        one such operation's chronological date loop; across separate operations
+        (e.g. two --force sync_daily calls reusing the same service/provider instance)
+        the cache must not leak stale data."""
+        self._stats_cache.clear()
+        self._sleep_cache.clear()
+
     def _get_stats(self, date_iso: str) -> dict[str, Any]:
         if date_iso not in self._stats_cache:
             self._stats_cache[date_iso] = self.client.get_stats(date_iso)

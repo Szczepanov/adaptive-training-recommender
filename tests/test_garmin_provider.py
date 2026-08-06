@@ -144,7 +144,10 @@ def test_provider_adapter_reuses_cached_stats_and_sleep_across_overlapping_dates
     D+1). The adapter must not re-fetch a date it already has cached."""
     mock_client = MagicMock()
     mock_client.get_stats.return_value = {"restingHeartRate": 50, "totalSteps": 9000}
-    mock_client.get_sleep_data.return_value = {"dailySleepDTO": {"sleepScores": {"overall": {"value": 80}}}}
+    # Empty (falsy) so fetch_daily_metrics takes the sleep_fallback branch and actually
+    # calls _get_sleep_data(yesterday_iso) too -- a truthy sleep_today would short-circuit
+    # that call and this test would never exercise sleep-cache reuse.
+    mock_client.get_sleep_data.return_value = {}
     mock_client.get_hrv_data.return_value = {"hrvSummary": {"lastNightAvg": 60}}
 
     adapter = GarminProviderAdapter(mock_client)
@@ -158,6 +161,12 @@ def test_provider_adapter_reuses_cached_stats_and_sleep_across_overlapping_dates
     # 08-06 is fetched once as "today" and again as the next call's "yesterday".
     assert mock_client.get_stats.call_count == 3
     assert {c.args[0] for c in mock_client.get_stats.call_args_list} == {"2026-08-05", "2026-08-06", "2026-08-07"}
+
+    # Same reasoning applies to sleep: get_sleep_data(target) always fires, and (since
+    # sleep_today is empty here) get_sleep_data(yesterday_iso) fires for the fallback too
+    # -- caching must dedup that fallback call the same way it dedups get_stats.
+    assert mock_client.get_sleep_data.call_count == 3
+    assert {c.args[0] for c in mock_client.get_sleep_data.call_args_list} == {"2026-08-05", "2026-08-06", "2026-08-07"}
 
 
 # --- Metric enrichment (item 4) ---------------------------------------------------
