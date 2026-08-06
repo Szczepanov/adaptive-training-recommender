@@ -81,7 +81,9 @@ class GarminClientWrapper:
                     logger.error(f"Garmin API call error: {e}")
                     raise
         logger.error(f"Exhausted {self.max_retries} retries on Garmin API call.")
-        return None
+        raise RuntimeError(
+            f"Garmin API call failed after {self.max_retries} retries due to rate limiting."
+        )
 
     def get_stats(self, date_iso: str) -> dict[str, Any]:
         return self._execute_with_backoff(self.api.get_stats, date_iso) or {}

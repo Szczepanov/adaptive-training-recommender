@@ -1,4 +1,5 @@
 from unittest.mock import MagicMock
+import pytest
 from garmin_sync.config import Settings
 from garmin_sync.service import GarminSyncService
 
@@ -31,3 +32,55 @@ def test_sync_service_forces_refresh():
     assert result is True
     mock_client.get_stats.assert_called()
     mock_repo.upsert_snapshot.assert_called_once()
+
+
+def test_sync_service_uses_d1_steps_even_when_todays_rhr_is_present():
+    """Regression test: totalSteps must always come from D-1's completed day, even when
+    today's RHR is already available (which used to skip the D-1 stats fetch entirely
+    and silently leak today's partial-morning step count into the snapshot)."""
+    settings = Settings(app_user_id="test_uid_789")
+    mock_repo = MagicMock()
+    mock_repo.is_fresh.return_value = False
+    mock_repo.get_historical_snapshots.return_value = {}
+
+    def stats_side_effect(date_iso):
+        if date_iso == "2026-08-06":
+            return {"restingHeartRate": 55, "totalSteps": 500}  # partial morning count for D
+        if date_iso == "2026-08-05":
+            return {"restingHeartRate": 54, "totalSteps": 11000}  # completed D-1 count
+        return {}
+
+    mock_client = MagicMock()
+    mock_client.get_stats.side_effect = stats_side_effect
+    mock_client.get_sleep_data.return_value = {}
+    mock_client.get_hrv_data.return_value = {}
+    mock_client.get_activities_batch.return_value = []
+
+    service = GarminSyncService(settings=settings, repository=mock_repo, garmin_client=mock_client)
+    result = service.sync_daily(target_date_str="2026-08-06", force=True)
+
+    assert result is True
+    assert mock_client.get_stats.call_count == 2
+    saved_payload = mock_repo.upsert_snapshot.call_args[0][1]
+    assert saved_payload["raw"]["totalSteps"] == 11000
+    assert saved_payload["source"]["metricDates"]["steps"] == "2026-08-05"
+
+
+def test_sync_service_propagates_rate_limit_exhaustion():
+    """A Garmin call that exhausts its retries must fail the run (non-zero exit at the
+    CLI layer), not be silently swallowed into an incomplete but 'successful' snapshot."""
+    settings = Settings(app_user_id="test_uid_789")
+    mock_repo = MagicMock()
+    mock_repo.is_fresh.return_value = False
+
+    mock_client = MagicMock()
+    mock_client.get_stats.side_effect = RuntimeError(
+        "Garmin API call failed after 4 retries due to rate limiting."
+    )
+
+    service = GarminSyncService(settings=settings, repository=mock_repo, garmin_client=mock_client)
+
+    with pytest.raises(RuntimeError):
+        service.sync_daily(target_date_str="2026-08-06", force=True)
+
+    mock_repo.upsert_snapshot.assert_not_called()

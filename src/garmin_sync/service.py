@@ -74,7 +74,9 @@ class GarminSyncService:
 
         logger.info(f"[{target_iso}] Fetching stats, sleep, and HRV...")
         stats_today = client.get_stats(target_iso)
-        stats_yesterday = client.get_stats(yesterday_iso) if stats_today.get("restingHeartRate") is None else None
+        # Always fetch D-1 stats: totalSteps must reflect the previous completed day per the
+        # snapshot date contract, not just serve as an RHR fallback (see mapper.py steps semantics).
+        stats_yesterday = client.get_stats(yesterday_iso)
 
         sleep_today = client.get_sleep_data(target_iso)
         sleep_yesterday = client.get_sleep_data(yesterday_iso) if not sleep_today else None
@@ -188,7 +190,8 @@ class GarminSyncService:
             try:
                 yesterday_iso = get_date_string(n_days_ago(target_date, 1))
                 stats_today = client.get_stats(target_iso)
-                stats_yesterday = client.get_stats(yesterday_iso) if stats_today.get("restingHeartRate") is None else None
+                # Always fetch D-1 stats for correct totalSteps semantics (see sync_daily above).
+                stats_yesterday = client.get_stats(yesterday_iso)
                 sleep_today = client.get_sleep_data(target_iso)
                 sleep_yesterday = client.get_sleep_data(yesterday_iso) if not sleep_today else None
                 hrv_today = client.get_hrv_data(target_iso)
