@@ -40,6 +40,66 @@ class FakeTestProvider:
     def clear_cache(self) -> None:
         pass  # this fake provider doesn't cache anything
 
+
+class DateAwareFakeProvider:
+    """Like FakeTestProvider, but returns a per-date restingHr so a test can tell which
+    date's fetch produced which stored value -- needed to prove the lookback resync's
+    correction for one date actually shows up in another date's snapshot."""
+
+    capabilities = ProviderCapabilities(daily_summary=True, sleep=True, hrv=True, activities=True)
+
+    def __init__(self, resting_hr_by_date: dict[str, float]):
+        self.resting_hr_by_date = resting_hr_by_date
+        self.fetch_daily_metrics_calls: list[str] = []
+
+    def fetch_daily_metrics(self, target_date_iso: str, yesterday_iso: str) -> ProviderFetchResult:
+        self.fetch_daily_metrics_calls.append(target_date_iso)
+        canonical = CanonicalDailyMetrics(
+            date=target_date_iso,
+            resting_heart_rate_bpm=self.resting_hr_by_date[target_date_iso],
+            resting_heart_rate_date=target_date_iso,
+            sleep_score=80.0,
+            sleep_date=target_date_iso,
+            hrv_overnight_avg_ms=60.0,
+            hrv_date=target_date_iso,
+            steps_count=9000,
+            steps_date=yesterday_iso,
+        )
+        return ProviderFetchResult(canonical=canonical, raw_payloads={"stats": {"fake": True}})
+
+    def fetch_activities(self, start_date_iso: str, end_date_iso: str) -> ProviderActivitiesResult:
+        return ProviderActivitiesResult(canonical=[], raw_payload=[])
+
+    def clear_cache(self) -> None:
+        pass
+
+
+class FakeStatefulRepository:
+    """Minimal in-memory FirestoreRecoveryRepository stand-in that actually persists
+    upserts and serves them back from get_historical_snapshots. A MagicMock's static
+    return value can't exercise cross-date ordering -- it never reflects an earlier
+    write in the same sync_daily call, which is exactly what the lookback-then-target
+    ordering regression test below needs to prove."""
+
+    def __init__(self) -> None:
+        self.snapshots: dict[str, dict] = {}
+
+    def is_fresh(self, date_iso: str, staleness_minutes: int) -> bool:
+        return False
+
+    def get_historical_snapshots(self, start_iso: str, end_iso: str) -> dict[str, dict]:
+        return {d: v for d, v in self.snapshots.items() if start_iso <= d <= end_iso}
+
+    def upsert_snapshot(self, date_iso: str, payload: dict) -> None:
+        self.snapshots[date_iso] = payload
+
+    def upsert_activity(self, activity_id: int, payload: dict) -> None:
+        pass  # not exercised by this test
+
+    def get_snapshot(self, date_iso: str) -> dict | None:
+        return self.snapshots.get(date_iso)
+
+
 def test_sync_service_skips_when_fresh():
     settings = Settings(app_user_id="test_uid_789")
     mock_repo = MagicMock()
@@ -349,14 +409,16 @@ def test_sync_service_resyncs_previous_day_by_default():
     result = service.sync_daily(target_date_str="2026-08-06", force=False)
 
     assert result is True
-    # Target date, then D-1 -- both actually fetched from the provider.
+    # D-1, then the target date -- both actually fetched from the provider. D-1 goes
+    # first (and is stored first) so the target date's own rolling baselines, built
+    # last, pick up whatever D-1 correction just landed; see sync_daily's docstring.
     assert fake_provider.fetch_daily_metrics_calls == [
-        ("2026-08-06", "2026-08-05"),
         ("2026-08-05", "2026-08-04"),
+        ("2026-08-06", "2026-08-05"),
     ]
     assert mock_repo.upsert_snapshot.call_count == 2
     stored_dates = [call.args[0] for call in mock_repo.upsert_snapshot.call_args_list]
-    assert stored_dates == ["2026-08-06", "2026-08-05"]
+    assert stored_dates == ["2026-08-05", "2026-08-06"]
 
 
 def test_sync_service_lookback_days_can_be_overridden():
@@ -373,11 +435,12 @@ def test_sync_service_lookback_days_can_be_overridden():
     result = service.sync_daily(target_date_str="2026-08-06", force=False, resync_lookback_days=3)
 
     assert result is True
+    # Oldest lookback date first, target date last.
     assert fake_provider.fetch_daily_metrics_calls == [
-        ("2026-08-06", "2026-08-05"),
-        ("2026-08-05", "2026-08-04"),
-        ("2026-08-04", "2026-08-03"),
         ("2026-08-03", "2026-08-02"),
+        ("2026-08-04", "2026-08-03"),
+        ("2026-08-05", "2026-08-04"),
+        ("2026-08-06", "2026-08-05"),
     ]
 
 
@@ -403,7 +466,8 @@ def test_sync_service_fresh_target_skips_lookback_resync_too():
 def test_sync_service_lookback_failure_does_not_hide_primary_success_but_reports_false():
     """If the D-1 lookback resync blows up (e.g. a transient Garmin error), the primary
     target-date sync must still have been saved -- but the overall call reports False so
-    the failure isn't silently swallowed."""
+    the failure isn't silently swallowed. D-1 is fetched first (see sync_daily), so it's
+    the first provider call that's made to fail here."""
     settings = Settings(app_user_id="test_uid_789")
     mock_repo = MagicMock()
     mock_repo.is_fresh.return_value = False
@@ -414,7 +478,7 @@ def test_sync_service_lookback_failure_does_not_hide_primary_success_but_reports
     class FlakyLookbackProvider(FakeTestProvider):
         def fetch_daily_metrics(self, target_date_iso: str, yesterday_iso: str):
             call_count["n"] += 1
-            if call_count["n"] == 2:
+            if call_count["n"] == 1:
                 raise RuntimeError("transient Garmin error on lookback date")
             return super().fetch_daily_metrics(target_date_iso, yesterday_iso)
 
@@ -424,3 +488,34 @@ def test_sync_service_lookback_failure_does_not_hide_primary_success_but_reports
     assert result is False
     mock_repo.upsert_snapshot.assert_called_once()
     assert mock_repo.upsert_snapshot.call_args[0][0] == "2026-08-06"
+
+
+def test_sync_service_builds_target_snapshot_after_lookback_dates_are_corrected():
+    """Regression test: target_iso's rolling 7d baseline must be built from D-1's
+    *corrected* raw value (the one the lookback resync just wrote), not the stale value
+    that was already in Firestore before this sync_daily call started. That only holds
+    if D-1 is resynced and stored before the target date's own snapshot is built --
+    a MagicMock repository can't exercise this because its return value is static
+    regardless of what was upserted moments earlier, hence FakeStatefulRepository."""
+    settings = Settings(app_user_id="test_uid_789")
+    repo = FakeStatefulRepository()
+    # Pre-existing (stale) history, as if an earlier/incomplete sync wrote it.
+    repo.snapshots["2026-08-05"] = {"raw": {"restingHr": 40.0}}  # D-1, about to be corrected
+    repo.snapshots["2026-08-04"] = {"raw": {"restingHr": 50.0}}
+    repo.snapshots["2026-08-03"] = {"raw": {"restingHr": 50.0}}
+    repo.snapshots["2026-08-02"] = {"raw": {"restingHr": 50.0}}
+
+    provider = DateAwareFakeProvider({
+        "2026-08-06": 70.0,  # target date's own value (excluded from its own baseline)
+        "2026-08-05": 60.0,  # D-1's corrected value, as returned by the lookback resync
+    })
+
+    service = GarminSyncService(settings=settings, repository=repo, provider=provider)
+    result = service.sync_daily(target_date_str="2026-08-06", force=False)
+
+    assert result is True
+    # D-1 was actually resynced and its stale value overwritten.
+    assert repo.snapshots["2026-08-05"]["raw"]["restingHr"] == 60.0
+    # Target's 7d baseline -- (60 + 50 + 50 + 50) / 4 -- used the corrected D-1 value
+    # because D-1 was rebuilt and stored before the target snapshot was.
+    assert repo.snapshots["2026-08-06"]["derived"]["restingHr7dAvg"] == 52.5

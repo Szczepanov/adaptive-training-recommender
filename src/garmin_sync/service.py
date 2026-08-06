@@ -244,10 +244,16 @@ class GarminSyncService:
         session logged in the evening, totalSteps finalized overnight, a sleep score
         recomputed the next morning -- none of which is guaranteed to be present yet
         when *that* day's own sync runs (see the todayTraining note in
-        _fetch_and_store_date). So after syncing target_iso, this also unconditionally
-        resyncs the preceding `resync_lookback_days` day(s) (default
-        settings.garmin_resync_lookback_days, normally 1): an extra session logged
-        today lands in Firestore once tomorrow's sync revisits today's snapshot.
+        _fetch_and_store_date). So this also unconditionally resyncs the preceding
+        `resync_lookback_days` day(s) (default settings.garmin_resync_lookback_days,
+        normally 1): an extra session logged today lands in Firestore once tomorrow's
+        sync revisits today's snapshot.
+
+        Lookback dates are resynced oldest-first, target date last. _fetch_and_store_date
+        rebuilds a date's 7d/28d rolling baselines from whatever is currently in
+        Firestore for the days before it -- so target_iso must be built only after any
+        corrected D-1..D-N values have already landed there, or its own baselines would
+        silently bake in the pre-resync (stale) history instead.
         """
         target_date = parse_date_string(target_date_str) if target_date_str else local_today(self.settings.app_timezone)
         target_iso = get_date_string(target_date)
@@ -261,12 +267,11 @@ class GarminSyncService:
             )
             return True
 
-        ok = self._fetch_and_store_date(target_date, target_iso)
-
         lookback_days = (
             self.settings.garmin_resync_lookback_days if resync_lookback_days is None else resync_lookback_days
         )
-        for i in range(1, max(lookback_days, 0) + 1):
+        ok = True
+        for i in range(max(lookback_days, 0), 0, -1):
             lookback_date = n_days_ago(target_date, i)
             lookback_iso = get_date_string(lookback_date)
             logger.info(f"Revisiting D-{i} ({lookback_iso}) to pick up any late-arriving Garmin data...")
@@ -276,6 +281,12 @@ class GarminSyncService:
             except Exception as e:
                 logger.error(f"[{lookback_iso}] Lookback resync failed: {e}")
                 ok = False
+
+        # Target date is built last, after any lookback corrections above are already
+        # persisted -- an exception here (unlike a lookback failure) propagates, as it
+        # always has: it's the primary date the caller asked for.
+        if not self._fetch_and_store_date(target_date, target_iso):
+            ok = False
 
         return ok
 
