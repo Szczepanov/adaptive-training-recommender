@@ -8,6 +8,20 @@ dependencies = [
     "firebase-admin",
     "garminconnect",
     "python-dotenv",
+    "tzdata",
 ]
 
-[tool.uv]
+[dependency-groups]
+dev = [
+    "pytest>=7.0.0",
+]
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+addopts = "-ra -q"
+testpaths = [
+    "tests",
+]
+pythonpath = [
+    "src",
+]

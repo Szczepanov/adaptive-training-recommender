@@ -1,0 +1,33 @@
+# CLAUDE.md — Claude Code Instructions
+
+Quick guide for building, testing, and working on `adaptive-training-recommender`.
+
+## Core Guidelines & Architectural Rules
+- **User Scoping**: Ingestion output path MUST be `users/{APP_USER_ID}/daily_recovery_snapshots/{YYYY-MM-DD}`. Never write `"default_user"` documents.
+- **Timezone**: Dates MUST be computed in `Europe/Warsaw` timezone (`local_today()` in Python, `getLocalDateString()` in TS). Avoid UTC `.toISOString().split('T')[0]` for calendar dates.
+- **Step Semantics**: `totalSteps` represents previous completed day (`D - 1`).
+- **Security**: Never commit credentials, `.garth` token directories, `.env` files, or raw health JSON logs.
+
+## Essential Development Commands
+
+### Python Environment
+- Install / Sync: `uv sync`
+- Run Tests: `uv run pytest`
+- Daily Sync CLI: `uv run python -m garmin_sync sync [--date YYYY-MM-DD] [--force]`
+- Backfill CLI: `uv run python -m garmin_sync backfill [--days N] [--force]`
+- Login Bootstrap: `uv run python garmin_login.py`
+
+### Frontend Application (`app/`)
+- Install: `cd app && npm ci`
+- Build: `cd app && npm run build`
+- Dev Server: `cd app && npm run dev`
+
+### Docker Container
+- Build: `docker build -t adaptive-training-garmin-sync .`
+
+## Key Code Locations
+- `src/garmin_sync/`: Core Python Garmin ingestion package.
+- `scripts/migrate_legacy_snapshots.py`: Firestore legacy data migration utility.
+- `app/src/utils/localDate.ts`: Frontend Warsaw date utility.
+- `app/src/services/recoverySnapshotService.ts`: User-scoped Firestore recovery reader.
+- `app/firestore.rules`: Security rules for user-owned paths.

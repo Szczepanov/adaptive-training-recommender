@@ -1,47 +1,60 @@
-"""
-Run this once to refresh your Garmin OAuth tokens.
-Running fetch_garmin.py or backfill_garmin.py after this should work without prompts.
-
-If you get 429 Too Many Requests, Garmin has rate-limited your IP.
-Wait at least 30-60 minutes before retrying.
-"""
+"""CLI script to refresh/bootstrap Garmin OAuth tokens safely."""
 import os
 import sys
-from dotenv import load_dotenv
-from garminconnect import Garmin
+from pathlib import Path
+from garmin_sync.config import load_settings
+from garmin_sync.garmin_client import GarminClientWrapper
+from garmin_sync.token_store import create_token_store
 
-load_dotenv()
-email = os.getenv("GARMIN_EMAIL")
-password = os.getenv("GARMIN_PASSWORD")
-tokenstore = os.getenv("GARMIN_TOKENS", ".garth")
-
-api = Garmin(email, password)
-
-# Try loading cached tokens first - avoids unnecessary login requests
-if os.path.isdir(tokenstore):
+def main():
     try:
-        api.login(tokenstore)
-        print(f"Loaded existing tokens from '{tokenstore}'. Testing connectivity...")
-        # Light validation: fetch user profile
-        profile = api.get_full_name()
-        print(f"Tokens valid! Logged in as: {profile}")
-        api.garth.dump(tokenstore)  # Refresh token if needed
-        sys.exit(0)
-    except Exception as e:
-        print(f"Cached tokens invalid or expired ({e}), performing full login...")
+        settings = load_settings()
+    except Exception:
+        # Fall back to env loading if APP_USER_ID is not set for bootstrapping
+        from dotenv import load_dotenv
+        load_dotenv()
+        email = os.getenv("GARMIN_EMAIL")
+        password = os.getenv("GARMIN_PASSWORD")
+        token_dir = os.getenv("GARMIN_TOKENS", ".garth")
+        store_type = os.getenv("GARMIN_TOKEN_STORE", "local")
+        bucket = os.getenv("GARMIN_TOKEN_BUCKET")
+        token_obj = os.getenv("GARMIN_TOKEN_OBJECT", "garmin_tokens.tar.gz")
+        user_id = os.getenv("APP_USER_ID", "bootstrap_user")
 
-# Full login (only when tokens are missing or expired)
-print("Performing full Garmin SSO login...")
-try:
-    api.login()
-except Exception as e:
-    print(f"\nLogin failed: {e}")
-    print("\n⚠️  If you see 429 Too Many Requests:")
-    print("   - Garmin has rate-limited your IP due to too many login attempts.")
-    print("   - Wait 30-60 minutes before trying again.")
-    print("   - Do NOT keep retrying - it extends the block period.")
-    sys.exit(1)
+        from garmin_sync.config import Settings
+        settings = Settings(
+            app_user_id=user_id,
+            garmin_email=email,
+            garmin_password=password,
+            garmin_tokens=token_dir,
+            garmin_token_store=store_type,
+            garmin_token_bucket=bucket,
+            garmin_token_object=token_obj,
+        )
 
-os.makedirs(tokenstore, exist_ok=True)
-api.garth.dump(tokenstore)
-print(f"Tokens saved to '{tokenstore}'. You can now run backfill_garmin.py or fetch_garmin.py.")
+    token_dir = Path(settings.garmin_tokens).expanduser().resolve()
+    store = create_token_store(
+        store_type=settings.garmin_token_store,
+        local_dir=settings.garmin_tokens,
+        bucket_name=settings.garmin_token_bucket,
+        object_name=settings.garmin_token_object,
+    )
+
+    print(f"Restoring tokens using store '{settings.garmin_token_store}'...")
+    store.restore(token_dir)
+
+    print("Authenticating with Garmin Connect...")
+    wrapper = GarminClientWrapper(
+        email=settings.garmin_email,
+        password=settings.garmin_password,
+    )
+    wrapper.login_with_tokens_or_credentials(token_dir)
+
+    print("Persisting refreshed tokens to token store...")
+    wrapper.dump_tokens(token_dir)
+    store.persist(token_dir)
+    print("Garmin login and token persistence completed successfully!")
+    return 0
+
+if __name__ == "__main__":
+    sys.exit(main())

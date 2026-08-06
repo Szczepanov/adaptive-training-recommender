@@ -76,6 +76,17 @@ export interface DailyRecoverySnapshot {
     source: {
         garminSyncedAt: string;
         sourceSchemaVersion: number;
+        timezone?: string;
+        metricDates?: {
+            sleep?: string | null;
+            hrv?: string | null;
+            restingHr?: string | null;
+            bodyBatteryWake?: string | null;
+            steps?: string | null;
+            activitiesThrough?: string | null;
+        };
+        migratedFromLegacy?: boolean;
+        legacyDocumentPath?: string;
     };
     raw: {
         sleepScore: number | null;

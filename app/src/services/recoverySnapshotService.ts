@@ -17,15 +17,6 @@ export class RecoverySnapshotService {
                 return scopedSnap.data() as DailyRecoverySnapshot;
             }
 
-            const legacyRef = doc(db, 'daily_recovery_snapshot', date);
-            const legacySnap = await getDoc(legacyRef);
-            if (legacySnap.exists()) {
-                const snapshot = legacySnap.data() as DailyRecoverySnapshot;
-                if (snapshot.userId === userId) {
-                    return snapshot;
-                }
-            }
-
             return null;
         } catch (error) {
             console.error('Error fetching recovery snapshot:', error);

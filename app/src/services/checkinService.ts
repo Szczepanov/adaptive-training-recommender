@@ -2,6 +2,7 @@ import { doc, getDoc, setDoc, deleteDoc, collection, query, where, orderBy, limi
 import { db } from '../firebase';
 import type { DailySubjectiveCheckin } from '../engine/models';
 import { validateCheckin } from '../engine/validation';
+import { getLocalDateString } from '../utils/localDate';
 
 export class CheckinService {
     private readonly collectionPath = 'daily_subjective_checkins';
@@ -30,7 +31,7 @@ export class CheckinService {
 
     // Canonical Phase 4 alias
     async upsertTodayCheckin(userId: string, checkinData: Partial<DailySubjectiveCheckin>): Promise<DailySubjectiveCheckin> {
-        const today = new Date().toISOString().split('T')[0];
+        const today = getLocalDateString();
         return this.upsertCheckin(userId, {
             ...checkinData,
             date: checkinData.date ?? today
@@ -46,7 +47,7 @@ export class CheckinService {
      * Get today's check-in for a user
      */
     async getTodayCheckin(userId: string): Promise<DailySubjectiveCheckin | null> {
-        const today = new Date().toISOString().split('T')[0];
+        const today = getLocalDateString();
         return this.getCheckin(userId, today);
     }
 
@@ -58,7 +59,7 @@ export class CheckinService {
             // Prepare data for validation
             const rawData = {
                 userId,
-                date: checkinData.date || new Date().toISOString().split('T')[0],
+                date: checkinData.date || getLocalDateString(),
                 ...checkinData
             };
 

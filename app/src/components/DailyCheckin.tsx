@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { checkinService } from '../services/checkinService';
 import { recoverySnapshotService } from '../services/recoverySnapshotService';
 import type { DailySubjectiveCheckin } from '../engine/models';
+import { getLocalDateString } from '../utils/localDate';
 import './DailyCheckin.css';
 
 interface DailyCheckinProps {
@@ -35,7 +36,7 @@ export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) 
     try {
       setLoading(true);
       setError(null);
-      const today = new Date().toISOString().split('T')[0];
+      const today = getLocalDateString();
       
       try {
         const existing = await checkinService.getCheckin(userId, today);
@@ -85,7 +86,7 @@ export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) 
       } catch (serviceError: any) {
         console.error('Service error loading check-in:', serviceError);
         // If service fails, still initialize with defaults so user can check in
-        const today = new Date().toISOString().split('T')[0];
+        const today = getLocalDateString();
         setCheckin({
           userId,
           date: today,

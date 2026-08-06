@@ -1,0 +1,20 @@
+[
+  {
+    "startTimeLocal": "2026-08-05T17:30:00.0",
+    "duration": 3600.0,
+    "aerobicTrainingEffect": 3.4,
+    "averageHeartRate": 152,
+    "activityType": {
+      "typeKey": "running"
+    }
+  },
+  {
+    "startTimeLocal": "2026-08-04T08:00:00.0",
+    "duration": 2700.0,
+    "aerobicTrainingEffect": 2.2,
+    "averageHeartRate": 130,
+    "activityType": {
+      "typeKey": "cycling"
+    }
+  }
+]

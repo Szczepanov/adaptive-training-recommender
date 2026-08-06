@@ -4,13 +4,14 @@ import { goalService } from '../services/goalService';
 import { constraintService } from '../services/constraintService';
 import { preferencesService } from '../services/preferencesService';
 import { recoverySnapshotService } from '../services/recoverySnapshotService';
+import { getLocalDateString } from '../utils/localDate';
 
 export class DecisionComposer {
     /**
      * Compose a complete DailyDecisionInput object from all data sources
      */
     async composeDailyDecisionInput(userId: string, date?: string): Promise<DailyDecisionInput> {
-        const targetDate = date || new Date().toISOString().split('T')[0];
+        const targetDate = date || getLocalDateString();
         
         try {
             // Use Promise.allSettled to handle individual service failures
@@ -98,7 +99,7 @@ export class DecisionComposer {
      * Get today's decision input with caching
      */
     async getTodaysDecisionInput(userId: string): Promise<DailyDecisionInput> {
-        const today = new Date().toISOString().split('T')[0];
+        const today = getLocalDateString();
         return this.composeDailyDecisionInput(userId, today);
     }
 
@@ -295,7 +296,7 @@ export const decisionComposer = new DecisionComposer();
 
 // Development helper - expose on window for debugging
 if (import.meta.env.DEV && typeof window !== 'undefined') {
-    (window as any).__DEBUG_DECISION_INPUT__ = async (userId?: string, date?: string) => {
+    (window as unknown as Record<string, unknown>).__DEBUG_DECISION_INPUT__ = async (userId?: string, date?: string) => {
         if (!userId) {
             console.error('User ID required. Usage: __DEBUG_DECISION_INPUT__(userId, date?)');
             return;
