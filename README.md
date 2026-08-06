@@ -14,8 +14,10 @@ Cloud Scheduler (06:15 Europe/Warsaw)
 Cloud Run Job
     ├── TokenStore (Downloads/Uploads encrypted garmin_tokens.json from/to GCS)
     ├── GarminSyncService (Fetches stats, sleep, HRV, activities)
+    ├── RawArchiveStore (optional: immutable raw JSON archive in GCS, for audit/rebuild)
     ├── Metrics & Baselines (7-day and 28-day historical averages & deltas)
-    └── FirestoreRepository (Writes to users/{firebaseUid}/daily_recovery_snapshots/{YYYY-MM-DD})
+    └── FirestoreRepository (Writes to users/{firebaseUid}/daily_recovery_snapshots/{YYYY-MM-DD}
+                              and users/{firebaseUid}/activities/{activityId})
             ↓
 React App (DecisionComposer)
     ↓
@@ -32,6 +34,7 @@ Adaptive Training Recommendation
 4. **D-1 Step Count & Completed Training**: Uses previous completed day (`D - 1`) for step counts and training history lookback window.
 5. **Schema Version 3 & Provenance**: Tracks exact source dates for sleep, HRV, resting HR, waking body battery, steps, and deterministic primary activity.
 6. **Graceful Migration Utility**: Includes `scripts/migrate_legacy_snapshots.py` to copy legacy root documents to user-scoped Firestore paths.
+7. **Raw Archive & Offline Rebuild** (opt-in via `GARMIN_ARCHIVE_ENABLED`): every raw Garmin payload is archived immutably (gzip-compressed, content-addressed/idempotent) so `garmin_sync rebuild` can recompute Firestore snapshots without calling Garmin again, and `garmin_sync audit` reports completeness. Activities also get a standalone normalized record at `users/{firebaseUid}/activities/{activityId}`, decoupled from any single day's 3-day lookback window.
 
 ---
 
@@ -52,6 +55,10 @@ Set the following environment variables (e.g. in `.env` locally or Secret Manage
 | `GARMIN_STALENESS_MINUTES` | No | `60` | Skip Garmin API fetch if snapshot updated within N mins |
 | `GARMIN_ALLOW_CREDENTIAL_LOGIN` | No | `false` | Cloud/automated runs set `false` (token-only); bootstrap sets `true` |
 | `FIREBASE_CREDENTIALS_PATH` | Local only | — | Path to local Firebase service account JSON |
+| `GARMIN_ARCHIVE_ENABLED` | No | `false` | Opt-in: archive raw Garmin JSON immutably for audit/rebuild |
+| `GARMIN_ARCHIVE_STORE` | No | `gcs` | Archive backend (`local` or `gcs`) |
+| `GARMIN_ARCHIVE_BUCKET` | For GCS | — | Private GCS bucket for raw archive; falls back to `GARMIN_TOKEN_BUCKET` |
+| `GARMIN_ARCHIVE_PREFIX` | No | `raw/garmin` | GCS/local object prefix for archived payloads |
 
 ---
 
@@ -74,6 +81,14 @@ uv run python -m garmin_sync sync
 
 # Run historical backfill (56 days)
 uv run python -m garmin_sync backfill --days 56
+
+# Report sync completeness over the last 90 days (requires GARMIN_ARCHIVE_ENABLED for
+# the archive-related stats; snapshot/availability stats work regardless)
+uv run python -m garmin_sync audit --days 90
+
+# Recompute snapshots from the raw archive, offline (no Garmin calls) -- requires
+# GARMIN_ARCHIVE_ENABLED history for the requested range
+uv run python -m garmin_sync rebuild --start-date 2026-06-01 --end-date 2026-08-06
 ```
 
 ### 2. Migration Tool Usage
@@ -111,14 +126,16 @@ docker push gcr.io/YOUR_GCP_PROJECT/garmin-sync:latest
 
 Create a Cloud Run Job executing `python -m garmin_sync sync`:
 * Tasks: 1
-* Service Account: Minimum Firestore Write + GCS Token Object Read/Write permissions
+* Service Account: Minimum Firestore Write + GCS Token/Archive Object Read/Write permissions
 * Environment variables:
   * `APP_USER_ID`: `<YOUR_FIREBASE_UID>`
   * `APP_TIMEZONE`: `Europe/Warsaw`
   * `GARMIN_TOKEN_STORE`: `gcs`
   * `GARMIN_TOKEN_BUCKET`: `<YOUR_PRIVATE_TOKEN_BUCKET>`
-  * `GARMIN_TOKEN_OBJECT`: `garmin_tokens.tar.gz`
-* Secret Manager injections for `GARMIN_EMAIL` and `GARMIN_PASSWORD`.
+  * `GARMIN_TOKEN_OBJECT`: `garmin/garmin_tokens.json`
+  * `GARMIN_ALLOW_CREDENTIAL_LOGIN`: `false` (token-only; Cloud Run can't complete interactive MFA)
+  * Optional: `GARMIN_ARCHIVE_ENABLED`: `true`, `GARMIN_ARCHIVE_STORE`: `gcs` (reuses `GARMIN_TOKEN_BUCKET` unless `GARMIN_ARCHIVE_BUCKET` is set)
+* Secret Manager injections for `GARMIN_EMAIL` and `GARMIN_PASSWORD` (used only for the local/interactive bootstrap flow, not required by the Cloud Run job itself when token-only).
 
 ### 3. Cloud Scheduler Setup
 

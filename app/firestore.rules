@@ -39,5 +39,11 @@ service cloud.firestore {
       allow read: if request.auth != null && request.auth.uid == userId;
       allow write: if false;
     }
+
+    // Normalized activities (user-owned, read-only for client app, written by admin backend)
+    match /users/{userId}/activities/{activityId} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      allow write: if false;
+    }
   }
 }

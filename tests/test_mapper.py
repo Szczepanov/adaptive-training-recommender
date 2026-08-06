@@ -1,6 +1,6 @@
 import json
 from pathlib import Path
-from garmin_sync.mapper import map_garmin_payload_to_snapshot, normalize_current_metrics
+from garmin_sync.mapper import map_garmin_payload_to_snapshot, normalize_activity, normalize_current_metrics
 from garmin_sync.models import DerivedMetrics
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
@@ -116,3 +116,30 @@ def test_deterministic_yesterday_activity_selection():
     assert y.primaryActivity.activityId == 102
     assert y.primaryActivity.type == "running"
     assert y.primaryActivity.intensityTag == "hard"
+
+
+def test_normalize_activity_maps_fields_and_intensity():
+    act = {
+        "activityId": 999,
+        "startTimeLocal": "2026-08-05T18:00:00",
+        "activityType": {"typeKey": "running"},
+        "duration": 2400,
+        "aerobicTrainingEffect": 3.8,
+        "anaerobicTrainingEffect": 1.2,
+        "averageHeartRate": 150,
+        "activityTrainingLoad": 120.0,
+    }
+
+    normalized = normalize_activity(act, sync_run_id="run-abc")
+
+    assert normalized["activityId"] == 999
+    assert normalized["date"] == "2026-08-05"
+    assert normalized["type"] == "running"
+    assert normalized["durationMin"] == 40
+    assert normalized["trainingEffectAerobic"] == 3.8
+    assert normalized["trainingEffectAnaerobic"] == 1.2
+    assert normalized["averageHr"] == 150
+    assert normalized["activityTrainingLoad"] == 120.0
+    assert normalized["intensityTag"] == "hard"
+    assert normalized["syncRunId"] == "run-abc"
+    assert "syncedAt" in normalized

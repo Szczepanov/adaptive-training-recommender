@@ -129,3 +129,36 @@ class FirestoreRecoveryRepository:
             date_key = data.get("date") or doc.id
             results[date_key] = data
         return results
+
+    def upsert_activity(self, activity_id: str | int, payload: dict[str, Any]) -> None:
+        """Upsert a normalized activity record at users/{userId}/activities/{activityId}.
+        Doc ID = activityId, so re-fetching the same activity across overlapping sync
+        windows (e.g. daily 3-day lookback, backfill) naturally dedups instead of
+        creating duplicate records."""
+        db = self._get_db()
+        doc_ref = (
+            db.collection("users")
+            .document(self.user_id)
+            .collection("activities")
+            .document(str(activity_id))
+        )
+        doc_ref.set(payload, merge=True)
+
+    def count_activities_in_range(self, start_date_iso: str, end_date_iso: str) -> int:
+        """Count normalized activity records with date in [start_date_iso, end_date_iso]."""
+        db = self._get_db()
+        query = (
+            db.collection("users")
+            .document(self.user_id)
+            .collection("activities")
+            .where(filter=FieldFilter("date", ">=", start_date_iso))
+            .where(filter=FieldFilter("date", "<=", end_date_iso))
+        )
+        try:
+            agg = query.count()
+            result = agg.get()
+            return int(result[0][0].value)
+        except Exception:
+            # Firestore aggregation queries may be unavailable in older emulators/mocks --
+            # fall back to a client-side count.
+            return sum(1 for _ in query.stream())

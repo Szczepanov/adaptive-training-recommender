@@ -24,6 +24,14 @@ class Settings:
     garmin_allow_credential_login: bool = False
     garmin_staleness_minutes: int = 60
     firebase_credentials_path: str | None = None
+    garmin_archive_enabled: bool = False
+    garmin_archive_store: str = "gcs"  # "local" or "gcs"
+    garmin_archive_bucket: str | None = None  # falls back to garmin_token_bucket if unset
+    garmin_archive_local_dir: str = ".garmin_archive"
+    garmin_archive_prefix: str = "raw/garmin"
+
+    def resolved_archive_bucket(self) -> str | None:
+        return self.garmin_archive_bucket or self.garmin_token_bucket
 
     def validate(self) -> None:
         if not self.app_user_id:
@@ -49,6 +57,13 @@ class Settings:
                     "Configuration error: GARMIN_TOKEN_BUCKET is required when GARMIN_TOKEN_STORE is 'gcs'."
                 )
 
+        if self.garmin_archive_enabled and self.garmin_archive_store.lower() == "gcs":
+            if not self.resolved_archive_bucket():
+                raise ValueError(
+                    "Configuration error: GARMIN_ARCHIVE_BUCKET (or GARMIN_TOKEN_BUCKET as a fallback) "
+                    "is required when GARMIN_ARCHIVE_ENABLED is true and GARMIN_ARCHIVE_STORE is 'gcs'."
+                )
+
 
 def load_settings(env_file: str | None = None) -> Settings:
     load_dotenv(dotenv_path=env_file)
@@ -70,6 +85,11 @@ def load_settings(env_file: str | None = None) -> Settings:
     allow_credential_login = os.getenv("GARMIN_ALLOW_CREDENTIAL_LOGIN", "false").lower() in ("true", "1", "yes")
     staleness = int(os.getenv("GARMIN_STALENESS_MINUTES", "60"))
     firebase_cred = os.getenv("FIREBASE_CREDENTIALS_PATH")
+    archive_enabled = os.getenv("GARMIN_ARCHIVE_ENABLED", "false").lower() in ("true", "1", "yes")
+    archive_store = os.getenv("GARMIN_ARCHIVE_STORE", "gcs").strip().lower()
+    archive_bucket = os.getenv("GARMIN_ARCHIVE_BUCKET")
+    archive_local_dir = os.getenv("GARMIN_ARCHIVE_LOCAL_DIR", ".garmin_archive").strip()
+    archive_prefix = os.getenv("GARMIN_ARCHIVE_PREFIX", "raw/garmin").strip()
 
     settings = Settings(
         app_user_id=user_id,
@@ -89,6 +109,11 @@ def load_settings(env_file: str | None = None) -> Settings:
         garmin_allow_credential_login=allow_credential_login,
         garmin_staleness_minutes=staleness,
         firebase_credentials_path=firebase_cred,
+        garmin_archive_enabled=archive_enabled,
+        garmin_archive_store=archive_store,
+        garmin_archive_bucket=archive_bucket,
+        garmin_archive_local_dir=archive_local_dir,
+        garmin_archive_prefix=archive_prefix,
     )
     settings.validate()
     return settings

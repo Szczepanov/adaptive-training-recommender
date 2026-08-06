@@ -19,6 +19,28 @@ from .models import (
 logger = logging.getLogger(__name__)
 
 
+def normalize_activity(act: dict[str, Any], sync_run_id: str) -> dict[str, Any]:
+    """Normalize a single raw Garmin activity into the standalone per-activity record
+    stored at users/{userId}/activities/{activityId} -- decoupled from any one day's
+    recovery snapshot so full activity history isn't lost/truncated by the 3-day window
+    used for yesterdayTraining/last3DaysHardSessionsCount."""
+    _, intensity_tag = classify_activity_intensity(act)
+    duration_sec = act.get("duration", 0)
+    return {
+        "activityId": act.get("activityId", "unknown"),
+        "date": act.get("startTimeLocal", "")[:10] or None,
+        "type": act.get("activityType", {}).get("typeKey", "unknown"),
+        "durationMin": round(duration_sec / 60) if duration_sec else None,
+        "trainingEffectAerobic": float(act.get("aerobicTrainingEffect", 0.0) or 0.0),
+        "trainingEffectAnaerobic": float(act.get("anaerobicTrainingEffect", 0.0) or 0.0),
+        "averageHr": act.get("averageHeartRate"),
+        "activityTrainingLoad": act.get("activityTrainingLoad"),
+        "intensityTag": intensity_tag,
+        "syncRunId": sync_run_id,
+        "syncedAt": datetime.now(timezone.utc).isoformat(),
+    }
+
+
 def extract_sleep_metrics(sleep_obj: dict[str, Any]) -> tuple[int | float | None, int | None, float | None]:
     """Extract (sleep_score, sleep_sec, avg_resp) from Garmin sleep response."""
     if not sleep_obj:

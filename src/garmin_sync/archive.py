@@ -1,0 +1,230 @@
+import gzip
+import hashlib
+import json
+import logging
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Protocol
+
+logger = logging.getLogger(__name__)
+
+
+def _payload_sha256(payload: Any) -> str:
+    body = json.dumps(payload, sort_keys=True, default=str).encode("utf-8")
+    return hashlib.sha256(body).hexdigest()
+
+
+def _object_dir(prefix: str, endpoint: str, logical_date: str) -> str:
+    year, month = logical_date[:4], logical_date[5:7]
+    return f"{prefix}/{endpoint}/{year}/{month}/{logical_date}"
+
+
+class RawArchiveStore(Protocol):
+    def archive(
+        self,
+        endpoint: str,
+        logical_date: str,
+        payload: Any,
+        sync_run_id: str,
+        garminconnect_version: str | None = None,
+    ) -> str | None:
+        """Archive a raw payload for (endpoint, logical_date). Returns the object path,
+        or None if skipped because an identical payload is already archived for that
+        date (content-addressed idempotency -- repeated same-day syncs don't duplicate)."""
+        ...
+
+    def load(self, endpoint: str, logical_date: str) -> Any | None:
+        """Load the most recently archived payload for (endpoint, logical_date), or None
+        if nothing is archived."""
+        ...
+
+    def list_archived_dates(self, endpoint: str, start_date: str, end_date: str) -> set[str]:
+        """Return the set of logical dates in [start_date, end_date] that have at least
+        one archived payload for this endpoint."""
+        ...
+
+
+class NullArchiveStore:
+    """No-op store used when archiving is disabled."""
+
+    def archive(self, endpoint, logical_date, payload, sync_run_id, garminconnect_version=None) -> None:
+        return None
+
+    def load(self, endpoint: str, logical_date: str) -> None:
+        return None
+
+    def list_archived_dates(self, endpoint: str, start_date: str, end_date: str) -> set[str]:
+        return set()
+
+
+class LocalRawArchiveStore:
+    """Filesystem mirror of the GCS raw archive layout, for local dev/tests."""
+
+    def __init__(self, base_dir: Path | str = ".garmin_archive", prefix: str = "raw/garmin"):
+        self.base_dir = Path(base_dir).expanduser().resolve()
+        self.prefix = prefix
+
+    def _dir(self, endpoint: str, logical_date: str) -> Path:
+        return self.base_dir / _object_dir(self.prefix, endpoint, logical_date)
+
+    def archive(
+        self,
+        endpoint: str,
+        logical_date: str,
+        payload: Any,
+        sync_run_id: str,
+        garminconnect_version: str | None = None,
+    ) -> str | None:
+        target_dir = self._dir(endpoint, logical_date)
+        payload_hash = _payload_sha256(payload)
+
+        if target_dir.exists():
+            for existing in target_dir.glob("*.meta.json"):
+                try:
+                    meta = json.loads(existing.read_text())
+                    if meta.get("payloadSha256") == payload_hash:
+                        logger.debug(f"Skipping archive for {endpoint}/{logical_date}: identical payload already archived.")
+                        return None
+                except Exception:
+                    continue
+
+        target_dir.mkdir(parents=True, exist_ok=True)
+        object_path = target_dir / f"{sync_run_id}.json.gz"
+        meta_path = target_dir / f"{sync_run_id}.meta.json"
+
+        with gzip.open(object_path, "wt", encoding="utf-8") as f:
+            json.dump(payload, f, default=str)
+
+        metadata = {
+            "provider": "garmin_connect_unofficial",
+            "endpoint": endpoint,
+            "logicalDate": logical_date,
+            "collectedAt": datetime.now(timezone.utc).isoformat(),
+            "garminconnectVersion": garminconnect_version,
+            "payloadSha256": payload_hash,
+            "syncRunId": sync_run_id,
+        }
+        meta_path.write_text(json.dumps(metadata, indent=2))
+        logger.info(f"Archived {endpoint}/{logical_date} -> {object_path}")
+        return str(object_path)
+
+    def load(self, endpoint: str, logical_date: str) -> Any | None:
+        target_dir = self._dir(endpoint, logical_date)
+        if not target_dir.exists():
+            return None
+        candidates = sorted(target_dir.glob("*.json.gz"))
+        if not candidates:
+            return None
+        with gzip.open(candidates[-1], "rt", encoding="utf-8") as f:
+            return json.load(f)
+
+    def list_archived_dates(self, endpoint: str, start_date: str, end_date: str) -> set[str]:
+        endpoint_dir = self.base_dir / self.prefix / endpoint
+        if not endpoint_dir.exists():
+            return set()
+        found: set[str] = set()
+        for date_dir in endpoint_dir.glob("*/*/*"):
+            if date_dir.is_dir() and start_date <= date_dir.name <= end_date and any(date_dir.glob("*.json.gz")):
+                found.add(date_dir.name)
+        return found
+
+
+class GcsRawArchiveStore:
+    """Manages immutable raw payload archiving in Google Cloud Storage."""
+
+    def __init__(self, bucket_name: str, prefix: str = "raw/garmin"):
+        self.bucket_name = bucket_name
+        self.prefix = prefix
+
+    def _client(self):
+        from google.cloud import storage
+        return storage.Client()
+
+    def archive(
+        self,
+        endpoint: str,
+        logical_date: str,
+        payload: Any,
+        sync_run_id: str,
+        garminconnect_version: str | None = None,
+    ) -> str | None:
+        try:
+            client = self._client()
+            bucket = client.bucket(self.bucket_name)
+            object_dir = _object_dir(self.prefix, endpoint, logical_date)
+            payload_hash = _payload_sha256(payload)
+
+            for existing_blob in client.list_blobs(bucket, prefix=f"{object_dir}/"):
+                if existing_blob.metadata and existing_blob.metadata.get("payloadSha256") == payload_hash:
+                    logger.debug(f"Skipping GCS archive for {endpoint}/{logical_date}: identical payload already archived.")
+                    return None
+
+            object_path = f"{object_dir}/{sync_run_id}.json.gz"
+            blob = bucket.blob(object_path)
+            blob.metadata = {
+                "provider": "garmin_connect_unofficial",
+                "endpoint": endpoint,
+                "logicalDate": logical_date,
+                "collectedAt": datetime.now(timezone.utc).isoformat(),
+                "garminconnectVersion": garminconnect_version or "",
+                "payloadSha256": payload_hash,
+                "syncRunId": sync_run_id,
+            }
+            body = json.dumps(payload, default=str).encode("utf-8")
+            compressed = gzip.compress(body)
+            blob.content_encoding = "gzip"
+            blob.upload_from_string(compressed, content_type="application/json")
+            logger.info(f"Archived {endpoint}/{logical_date} -> gs://{self.bucket_name}/{object_path}")
+            return object_path
+        except Exception as e:
+            logger.error(f"Failed to archive {endpoint}/{logical_date} to GCS: {e}")
+            return None
+
+    def load(self, endpoint: str, logical_date: str) -> Any | None:
+        try:
+            client = self._client()
+            bucket = client.bucket(self.bucket_name)
+            object_dir = _object_dir(self.prefix, endpoint, logical_date)
+            blobs = sorted(client.list_blobs(bucket, prefix=f"{object_dir}/"), key=lambda b: b.name)
+            blobs = [b for b in blobs if b.name.endswith(".json.gz")]
+            if not blobs:
+                return None
+            raw = blobs[-1].download_as_bytes()
+            try:
+                raw = gzip.decompress(raw)
+            except OSError:
+                pass  # not gzip-compressed (content_encoding auto-decompressed by GCS already)
+            return json.loads(raw.decode("utf-8"))
+        except Exception as e:
+            logger.warning(f"Failed to load archived {endpoint}/{logical_date} from GCS: {e}")
+            return None
+
+    def list_archived_dates(self, endpoint: str, start_date: str, end_date: str) -> set[str]:
+        try:
+            client = self._client()
+            bucket = client.bucket(self.bucket_name)
+            found: set[str] = set()
+            for blob in client.list_blobs(bucket, prefix=f"{self.prefix}/{endpoint}/"):
+                logical_date = (blob.metadata or {}).get("logicalDate")
+                if logical_date and start_date <= logical_date <= end_date:
+                    found.add(logical_date)
+            return found
+        except Exception as e:
+            logger.warning(f"Failed to list archived dates for {endpoint} from GCS: {e}")
+            return set()
+
+
+def create_archive_store(
+    enabled: bool,
+    store_type: str = "gcs",
+    local_dir: str = ".garmin_archive",
+    bucket_name: str | None = None,
+    prefix: str = "raw/garmin",
+) -> RawArchiveStore:
+    if not enabled:
+        return NullArchiveStore()
+    if store_type.lower() == "gcs":
+        if not bucket_name:
+            raise ValueError("GCS archive store requested but no bucket configured (GARMIN_ARCHIVE_BUCKET/GARMIN_TOKEN_BUCKET).")
+        return GcsRawArchiveStore(bucket_name=bucket_name, prefix=prefix)
+    return LocalRawArchiveStore(base_dir=local_dir, prefix=prefix)
