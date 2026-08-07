@@ -1,10 +1,18 @@
 import os
 import shutil
 import logging
+import tempfile
 from pathlib import Path
 from typing import Protocol
 
 logger = logging.getLogger(__name__)
+
+
+def _validate_gcs_object_name(object_name: str) -> str:
+    """Accept only a relative, non-traversing GCS object name."""
+    if not object_name or object_name.startswith("/") or any(part in {"", ".", ".."} for part in object_name.split("/")):
+        raise ValueError("GCS token object name must be a relative, non-traversing path.")
+    return object_name
 
 
 def _set_secure_permissions(file_path: Path) -> None:
@@ -69,7 +77,7 @@ class GcsTokenStore:
 
     def __init__(self, bucket_name: str, object_name: str = "garmin/garmin_tokens.json"):
         self.bucket_name = bucket_name
-        self.object_name = object_name
+        self.object_name = _validate_gcs_object_name(object_name)
 
     def restore(self, destination: Path) -> bool:
         dest_path = Path(destination).expanduser().resolve()
@@ -90,12 +98,20 @@ class GcsTokenStore:
                 logger.info(f"GCS token object 'gs://{self.bucket_name}/{self.object_name}' does not exist.")
                 return False
 
-            blob.download_to_filename(str(dest_path))
+            # A failed download must not leave a partial token at the active path.
+            with tempfile.NamedTemporaryFile(dir=dest_path.parent, prefix=".token-", delete=False) as temporary:
+                temporary_path = Path(temporary.name)
+            try:
+                blob.download_to_filename(str(temporary_path))
+                os.replace(temporary_path, dest_path)
+            finally:
+                if temporary_path.exists():
+                    temporary_path.unlink(missing_ok=True)
             _set_secure_permissions(dest_path)
             logger.info(f"Restored GCS token file to '{dest_path}'.")
             return True
-        except Exception as e:
-            logger.warning(f"Failed to restore token file from GCS: {e}")
+        except Exception:
+            logger.warning("Failed to restore token file from GCS.")
             return False
 
     def persist(self, source: Path) -> None:
@@ -117,8 +133,8 @@ class GcsTokenStore:
 
             blob.upload_from_filename(str(source_path))
             logger.info(f"Successfully persisted refreshed token file to gs://{self.bucket_name}/{self.object_name}.")
-        except Exception as e:
-            logger.error(f"Failed to upload token file to GCS: {e}")
+        except Exception:
+            logger.error("Failed to upload token file to GCS.")
 
 
 def create_token_store(
