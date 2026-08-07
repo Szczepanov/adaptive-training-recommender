@@ -33,6 +33,7 @@ export function generateWeeklyObjectives(
 
     // 2. Threshold exposure
     if (demand.thresholdPower >= 0.5 && !phaseWeights.taperActive) {
+        const allowedModalities = focusEvent ? modalitiesForEventCategory(focusEvent.category) : [];
         objectives.push({
             id: 'obj_threshold',
             key: 'threshold_quality',
@@ -40,6 +41,10 @@ export function generateWeeklyObjectives(
             targetExposures: 1,
             completedExposures: 0,
             targetStimulus: { thresholdDevelopment: 0.9 },
+            qualification: {
+                minimumStimulus: { thresholdDevelopment: 0.6 },
+                ...(allowedModalities.length > 0 ? { allowedModalities } : {}),
+            },
         });
     }
 

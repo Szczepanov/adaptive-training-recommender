@@ -183,3 +183,27 @@ describe('protected race-specific cycling objective', () => {
     expect(updated.objectives[0].completedExposures).toBe(1);
   });
 });
+
+describe('threshold qualification', () => {
+  const zeroStimulus: WorkoutStimulusProfile = {
+    aerobicCapacity: 0, thresholdDevelopment: 0, surgeRepeatability: 0, maxStrength: 0, hypertrophy: 0, mobilityRecovery: 0,
+  };
+  const cyclingThreshold: MicrocycleState = {
+    weekStartDate: '2026-08-03',
+    objectives: [{
+      id: 'threshold', key: 'threshold_quality', title: 'Threshold Development', targetExposures: 1, completedExposures: 0,
+      targetStimulus: { thresholdDevelopment: 0.9 },
+      qualification: { minimumStimulus: { thresholdDevelopment: 0.6 }, allowedModalities: ['Cycling'] },
+    }],
+  };
+
+  it('requires both meaningful threshold stimulus and the event-relevant modality', () => {
+    const nonCycling = creditObjectivesFromStimulus(cyclingThreshold, { ...zeroStimulus, thresholdDevelopment: 0.9 }, 'Strength');
+    const tooEasy = creditObjectivesFromStimulus(cyclingThreshold, { ...zeroStimulus, thresholdDevelopment: 0.5 }, 'Cycling');
+    const qualifying = creditObjectivesFromStimulus(cyclingThreshold, { ...zeroStimulus, thresholdDevelopment: 0.7 }, 'Cycling');
+
+    expect(nonCycling.objectives[0].completedExposures).toBe(0);
+    expect(tooEasy.objectives[0].completedExposures).toBe(0);
+    expect(qualifying.objectives[0].completedExposures).toBe(1);
+  });
+});
