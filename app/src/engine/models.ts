@@ -680,6 +680,49 @@ export interface DailyRecommendation {
     };
 }
 
+/** Backend-normalized Garmin activity stored at users/{uid}/activities/{activityId}. */
+export interface NormalizedGarminActivity {
+    activityId: string;
+    date: string;
+    type: string;
+    durationMin: number | null;
+    trainingEffectAerobic: number | null;
+    trainingEffectAnaerobic: number | null;
+    averageHr: number | null;
+    activityTrainingLoad: number | null;
+    intensityTag: string;
+    syncRunId?: string;
+    syncedAt?: string;
+}
+
+export type CompletedTrainingSource = 'garmin' | 'adherence' | 'manual';
+export type CompletedTrainingIntensity = 'easy' | 'moderate' | 'hard' | 'unknown';
+export type CompletedTrainingConfidence = 'high' | 'medium' | 'low';
+
+/**
+ * One real-world completed session after all available evidence is reconciled. It is an
+ * engine-domain model, derived from durable source records; it is not itself persisted
+ * in this first rollout phase.
+ */
+export interface CompletedTrainingEvent {
+    id: string;
+    date: string;
+    durationMin: number | null;
+    modality: SessionTemplate['modality'] | 'Unknown';
+    intensity: CompletedTrainingIntensity;
+    trainingEffect: number | null;
+    estimatedCost: WorkoutCostProfile;
+    estimatedStimulus: Partial<WorkoutStimulusProfile>;
+    sources: CompletedTrainingSource[];
+    confidence: CompletedTrainingConfidence;
+    linkedActivityId: string | null;
+    linkedRecommendationDate: string | null;
+    athleteFeedback: {
+        followed: boolean | null;
+        notes: string | null;
+    };
+}
+
 // --- Type Utilities ---
 
 export type GoalCategory = UserGoal['category'];
