@@ -2,7 +2,11 @@ from dataclasses import dataclass, field, asdict
 from typing import Any
 
 SCHEMA_VERSION = 3
-BASELINE_COMPUTATION_VERSION = 1
+# v2: added 28-day trailing population stdev per metric (hrv28dStdev,
+# restingHr28dStdev, sleepScore28dStdev), consumed by the engine's baseline-relative
+# strain scoring (see app/src/engine/rules.ts metricStrain). Older documents simply
+# lack these fields -- readers must treat them as optional/None, never assume presence.
+BASELINE_COMPUTATION_VERSION = 2
 
 
 @dataclass
@@ -170,6 +174,12 @@ class DerivedMetrics:
     hrv28dAvg: float | None = None
     respiration7dAvg: float | None = None
     respiration28dAvg: float | None = None
+    # Trailing 28-day population stdev per metric -- this user's own night-to-night
+    # variability, used to baseline-relative-normalize the engine's strain scoring
+    # instead of comparing everyone against the same fixed absolute threshold.
+    hrv28dStdev: float | None = None
+    restingHr28dStdev: float | None = None
+    sleepScore28dStdev: float | None = None
     deltas: DerivedDeltas = field(default_factory=DerivedDeltas)
 
     def to_dict(self) -> dict[str, Any]:
