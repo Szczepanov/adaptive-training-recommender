@@ -1,4 +1,4 @@
-import type { DailyDecisionInput, DailyRecoverySnapshot, DailySubjectiveCheckin } from './models';
+import type { DailyDecisionInput, DailyRecoverySnapshot, DailySubjectiveCheckin, UserGoal, UserPreferences } from './models';
 import type { DataState } from './dataState';
 import { checkinService } from '../services/checkinService';
 import { goalService } from '../services/goalService';
@@ -19,9 +19,9 @@ export class DecisionComposer {
             const results = await Promise.allSettled([
                 recoverySnapshotService.getRecoverySnapshotState(userId, targetDate),
                 checkinService.getCheckinState(userId, targetDate),
-                goalService.getActiveGoals(userId),
+                goalService.getActiveGoalsState(userId),
                 trainingSettingsService.getTrainingSettings(userId),
-                preferencesService.getPreferences(userId)
+                preferencesService.getPreferencesState(userId)
             ] as const);
 
             const unavailable = <T>(operation: string): DataState<T> => ({ status: 'UNAVAILABLE', operation, retryable: true });
@@ -33,18 +33,20 @@ export class DecisionComposer {
                 : unavailable<DailySubjectiveCheckin>('read subjective check-in');
             const recoverySnapshot = recoveryState.status === 'AVAILABLE' ? recoveryState.data : null;
             const subjectiveCheckin = checkinState.status === 'AVAILABLE' ? checkinState.data : null;
-            const activeGoals = results[2].status === 'fulfilled' ? results[2].value : [];
+            const goalsState = results[2].status === 'fulfilled' ? results[2].value : unavailable<UserGoal[]>('read active goals');
+            const activeGoals = goalsState.status === 'AVAILABLE' ? goalsState.data : [];
             if (results[3].status === 'rejected') throw results[3].reason;
             const trainingSettings = results[3].value;
-            const preferences = results[4].status === 'fulfilled' ? results[4].value : null;
+            const preferencesState = results[4].status === 'fulfilled' ? results[4].value : unavailable<UserPreferences>('read preferences');
+            const preferences = preferencesState.status === 'AVAILABLE' ? preferencesState.data : null;
             const sourceStates = {
                 recoverySnapshot: recoveryState.status === 'AVAILABLE' ? { status: 'AVAILABLE' as const, revision: recoveryState.revision } : recoveryState,
                 subjectiveCheckin: checkinState.status === 'AVAILABLE' ? { status: 'AVAILABLE' as const, revision: checkinState.revision } : checkinState,
-                activeGoals: results[2].status === 'fulfilled' ? { status: 'AVAILABLE' as const, revision: null } : unavailable('read active goals'),
+                activeGoals: goalsState.status === 'AVAILABLE' ? { status: 'AVAILABLE' as const, revision: goalsState.revision } : goalsState,
                 trainingSettings: { status: 'AVAILABLE' as const, revision: trainingSettings.updatedAt ?? null },
-                preferences: results[4].status === 'fulfilled'
-                    ? (preferences ? { status: 'AVAILABLE' as const, revision: preferences.updatedAt ?? null } : { status: 'MISSING' as const })
-                    : unavailable('read preferences'),
+                preferences: preferencesState.status === 'AVAILABLE'
+                    ? { status: 'AVAILABLE' as const, revision: preferencesState.revision }
+                    : preferencesState,
             };
 
             // Log permission errors for debugging

@@ -155,6 +155,17 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
           : 'Recovery data needs repair before generating a plan.');
         return;
       }
+      const decisionSourceFailure = input.sourceStates
+        && [input.sourceStates.activeGoals, input.sourceStates.preferences, input.sourceStates.trainingSettings]
+          .find(state => state.status === 'INVALID' || state.status === 'UNAVAILABLE');
+      if (decisionSourceFailure) {
+        setRecommendation(null);
+        setNextDayPlan(null);
+        setError(decisionSourceFailure.status === 'UNAVAILABLE'
+          ? 'Decision inputs are temporarily unavailable. Please retry before generating a plan.'
+          : 'Decision inputs need repair before generating a plan.');
+        return;
+      }
 
       const yesterday = getPreviousLocalDateString(input.date);
       const yesterdayRec = await recommendationService.getRecommendation(userId, yesterday).catch(err => {
