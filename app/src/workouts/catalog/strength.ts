@@ -7,7 +7,7 @@ export const STRENGTH_WORKOUTS: WorkoutDefinition[] = [
     name: 'Primary Full-body Strength Maintenance',
     description: 'Low-fatigue strength session preserving force, Olympic-lift speed and tissue capacity during cycling build.',
     modality: 'strength', category: 'full_body_strength', objectives: ['strength_maintenance', 'power_maintenance', 'tissue_capacity'],
-    duration: { defaultMin: 60, minimumMin: 35, maximumMin: 70 },
+    duration: { defaultMin: 60, minimumMin: 18, maximumMin: 70 },
     loadProfile: { cardiovascular: 2, muscular: 4, mechanical: 3, eccentric: 3, coordination: 4, recoveryHours: 48 },
     eligibility: { minimumReadiness: 6, maximumSoreness: 6, minimumDaysAfterHardLowerBody: 1, forbiddenPainFlags: ['knee_swelling', 'worsening_achilles_pain'] },
     equipment: ['barbell', 'rack', 'bench', 'pullup_bar', 'bodyweight'], contraindicationTags: ['knee_swelling'],
@@ -30,7 +30,7 @@ export const STRENGTH_WORKOUTS: WorkoutDefinition[] = [
     variants: [
       { id: 'full', targetDurationMin: 60, loadMultiplier: 1, rationale: 'Normal weekly force-maintenance dose.', stepOverrides: [] },
       { id: 'reduced', targetDurationMin: 45, loadMultiplier: 0.7, rationale: 'Reduce lower-body sets and preserve upper-body and tissue work.', stepOverrides: [{ stepId: 'front_squat', sets: 2 }, { stepId: 'rdl', sets: 2 }, { stepId: 'power_clean', sets: 3 }] },
-      { id: 'return_to_training', targetDurationMin: 35, loadMultiplier: 0.5, rationale: 'Use upper-dominant work and low-load tissue capacity.', stepOverrides: [{ stepId: 'power_clean', omit: true }, { stepId: 'front_squat', omit: true }, { stepId: 'rdl', sets: 2, target: { type: 'reps_in_reserve', min: 5, max: 6 } }, { stepId: 'bench', sets: 2 }, { stepId: 'pullup', sets: 2 }] }
+      { id: 'return_to_training', targetDurationMin: 18, loadMultiplier: 0.5, rationale: 'Use upper-dominant work and low-load tissue capacity.', stepOverrides: [{ stepId: 'power_clean', omit: true }, { stepId: 'front_squat', omit: true }, { stepId: 'rdl', sets: 2, target: { type: 'reps_in_reserve', min: 5, max: 6 } }, { stepId: 'bench', sets: 2 }, { stepId: 'pullup', sets: 2 }] }
     ],
     regressions: ['strength_compact_power_01'], progressions: [],
     substitutions: [{ exerciseId: 'front_squat', substituteExerciseId: 'rear_foot_elevated_split_squat', reason: 'Use a symptom-free unilateral alternative when equipment or squat tolerance requires it.' }],

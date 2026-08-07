@@ -2,11 +2,18 @@
 :root {
   --bg-color: #0f172a;
   --surface-color: rgba(30, 41, 59, 0.7);
+  --surface-card: #1e293b;
   --primary-color: #3b82f6;
   --primary-glow: rgba(59, 130, 246, 0.4);
   --text-primary: #f8fafc;
   --text-secondary: #94a3b8;
   --accent-color: #10b981;
+  --tier-green: #22c55e;
+  --tier-yellow: #eab308;
+  --tier-red: #ef4444;
+  --tier-green-bg: rgba(34, 197, 94, 0.15);
+  --tier-yellow-bg: rgba(234, 179, 8, 0.15);
+  --tier-red-bg: rgba(239, 68, 68, 0.15);
 }
 
 body {

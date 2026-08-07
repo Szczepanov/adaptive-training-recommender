@@ -299,44 +299,8 @@ export class PreferencesService {
         }
     }
 
-    /**
-     * Create default preferences for a new user
-     */
     async createDefaultPreferences(userId: string): Promise<UserPreferences> {
-        try {
-            const defaultPreferences: Omit<UserPreferences, 'userId' | 'createdAt' | 'updatedAt'> = {
-                // Recovery preferences
-                preferredRecoveryStyle: 'mixed',
-                
-                // Time preferences
-                defaultWeekdayTimeMin: 45,
-                defaultWeekendTimeMin: 60,
-                preferredTimeOfDay: 'flexible',
-                
-                // Modality preferences
-                preferredModalities: [],
-                deprioritizedModalities: [],
-                avoidedModalities: [],
-                
-                // UI/Explanation preferences
-                explanationStyle: 'detailed',
-                explanationVerbosity: 'detailed',
-                conservativeBias: false,
-                
-                // Metric preferences
-                preferredUnits: {
-                    distance: 'km',
-                    weight: 'kg',
-                    temperature: 'celsius'
-                },
-                schemaVersion: 1
-            };
-
-            return this.upsertPreferences(userId, defaultPreferences);
-        } catch (error) {
-            console.error('Error creating default preferences:', error);
-            throw error;
-        }
+        return this.initializeDefaultPreferences(userId);
     }
 }
 

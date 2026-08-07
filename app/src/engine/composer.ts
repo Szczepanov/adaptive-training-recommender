@@ -84,7 +84,7 @@ export class DecisionComposer {
             const end = new Date(endDate);
 
             for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-                const dateStr = d.toISOString().split('T')[0];
+                const dateStr = getLocalDateString(d);
                 const input = await this.composeDailyDecisionInput(userId, dateStr);
                 inputs.push(input);
             }

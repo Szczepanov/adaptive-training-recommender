@@ -6,18 +6,13 @@ import { localDataService } from './localDataService';
 export class RecoverySnapshotService {
     async getRecoverySnapshotByDate(userId: string, date: string): Promise<DailyRecoverySnapshot | null> {
         try {
-            const localSnapshot = await localDataService.getRecoverySnapshot(date, userId);
-            if (localSnapshot) {
-                return localSnapshot;
-            }
-
             const scopedRef = doc(db, 'users', userId, 'daily_recovery_snapshots', date);
             const scopedSnap = await getDoc(scopedRef);
             if (scopedSnap.exists()) {
                 return scopedSnap.data() as DailyRecoverySnapshot;
             }
 
-            return null;
+            return await localDataService.getRecoverySnapshot(date, userId);
         } catch (error) {
             console.error('Error fetching recovery snapshot:', error);
             return null;

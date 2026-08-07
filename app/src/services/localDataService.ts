@@ -66,18 +66,18 @@ export class LocalDataService {
                     sourceSchemaVersion: 3
                 },
                 raw: {
-                    sleepScore: rawData.sleepScore || null,
-                    sleepDurationSec: rawData.sleepDurationSec || null,
-                    restingHr: rawData.restingHr || null,
-                    hrvOvernightAvg: rawData.hrvOvernightAvg || null,
-                    hrvStatus: rawData.hrvStatus || null,
-                    respirationAvg: rawData.respirationAvg || null,
-                    bodyBatteryWake: rawData.bodyBatteryWake || null,
-                    bodyBatteryChange: rawData.bodyBatteryChange || null,
-                    totalSteps: rawData.totalSteps || null,
-                    last3DaysHardSessionsCount: rawData.last3DaysHardSessionsCount || 0,
-                    yesterdayTraining: rawData.yesterdayTraining || null,
-                    todayTraining: rawData.todayTraining || null
+                    sleepScore: rawData.sleepScore ?? null,
+                    sleepDurationSec: rawData.sleepDurationSec ?? null,
+                    restingHr: rawData.restingHr ?? null,
+                    hrvOvernightAvg: rawData.hrvOvernightAvg ?? null,
+                    hrvStatus: rawData.hrvStatus ?? null,
+                    respirationAvg: rawData.respirationAvg ?? null,
+                    bodyBatteryWake: rawData.bodyBatteryWake ?? null,
+                    bodyBatteryChange: rawData.bodyBatteryChange ?? null,
+                    totalSteps: rawData.totalSteps ?? null,
+                    last3DaysHardSessionsCount: rawData.last3DaysHardSessionsCount ?? 0,
+                    yesterdayTraining: rawData.yesterdayTraining ?? null,
+                    todayTraining: rawData.todayTraining ?? null
                 },
                 derived: {
                     baselineComputationVersion: 1,

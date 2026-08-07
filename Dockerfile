@@ -29,9 +29,6 @@ RUN useradd -m -u 1000 appuser && \
 # Copy virtualenv and source code from builder
 COPY --from=builder --chown=appuser:appuser /app/.venv /app/.venv
 COPY --chown=appuser:appuser src /app/src
-COPY --chown=appuser:appuser fetch_garmin.py /app/
-COPY --chown=appuser:appuser backfill_garmin.py /app/
-COPY --chown=appuser:appuser garmin_login.py /app/
 COPY --chown=appuser:appuser pyproject.toml /app/
 
 USER appuser

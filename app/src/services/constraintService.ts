@@ -25,15 +25,7 @@ export const PREDEFINED_CONSTRAINTS = {
         displayName: 'Cable Machine Available',
         description: 'Access to a cable machine for strength exercises'
     },
-    'no_cable_machine': {
-        key: 'no_cable_machine',
-        type: 'boolean' as const,
-        value: false,
-        severity: 'hard' as const,
-        category: 'equipment' as const,
-        displayName: 'No Cable Machine',
-        description: 'Cable machine is not available'
-    },
+
     'has_treadmill': {
         key: 'has_treadmill',
         type: 'boolean' as const,

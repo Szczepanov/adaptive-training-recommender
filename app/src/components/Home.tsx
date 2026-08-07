@@ -86,16 +86,21 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
     return Math.round((completed / items.length) * 100);
   };
 
-  const computeAdjustedRecommendation = useCallback((direction: 'easier' | 'harder' | null): Recommendation | null => {
-    if (!recommendation) return null;
-    if (!direction || !decisionInput || !decisionInput.recoverySnapshot) return recommendation;
-
+  const engineInputs = useMemo(() => {
+    if (!decisionInput || !decisionInput.recoverySnapshot) return null;
     const subjective = mapCheckinToSubjectiveInput(decisionInput.subjectiveCheckin);
     const objective = mapSnapshotToEngineInput(decisionInput.recoverySnapshot);
     const context = mapContextFromGoalsAndConstraints(decisionInput.activeGoals, decisionInput.activeConstraints, decisionInput.preferences);
+    return { subjective, objective, context };
+  }, [decisionInput]);
 
+  const computeAdjustedRecommendation = useCallback((direction: 'easier' | 'harder' | null): Recommendation | null => {
+    if (!recommendation) return null;
+    if (!direction || !engineInputs || !decisionInput) return recommendation;
+
+    const { subjective, objective, context } = engineInputs;
     return adjustSessionRecommendation(recommendation, direction, { subjective, objective }, context, decisionInput.date) || recommendation;
-  }, [recommendation, decisionInput]);
+  }, [recommendation, engineInputs, decisionInput]);
 
   const handleAdjustSession = useCallback((direction: 'easier' | 'harder' | null) => {
     setAdjustmentDirection(direction);

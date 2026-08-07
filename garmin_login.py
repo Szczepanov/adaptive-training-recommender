@@ -9,28 +9,13 @@ from garmin_sync.token_store import create_token_store
 def main():
     try:
         settings = load_settings()
-    except Exception:
-        # Fall back to env loading if APP_USER_ID is not set for bootstrapping
-        from dotenv import load_dotenv
-        load_dotenv()
-        email = os.getenv("GARMIN_EMAIL")
-        password = os.getenv("GARMIN_PASSWORD")
-        token_path = os.getenv("GARMIN_TOKEN_PATH", os.getenv("GARMIN_TOKENS", ".garmin_tokens/garmin_tokens.json")).strip()
-        store_type = os.getenv("GARMIN_TOKEN_STORE", "local").strip().lower()
-        bucket = os.getenv("GARMIN_TOKEN_BUCKET")
-        token_obj = os.getenv("GARMIN_TOKEN_OBJECT", "garmin/garmin_tokens.json")
-        user_id = os.getenv("APP_USER_ID", "bootstrap_user")
-
-        settings = Settings(
-            app_user_id=user_id,
-            garmin_email=email,
-            garmin_password=password,
-            garmin_token_path=token_path,
-            garmin_token_store=store_type,
-            garmin_token_bucket=bucket,
-            garmin_token_object=token_obj,
-            garmin_allow_credential_login=True,
-        )
+    except ValueError as e:
+        # Handle case where APP_USER_ID is missing during initial local bootstrapping
+        if "APP_USER_ID is required" in str(e):
+            os.environ["APP_USER_ID"] = "bootstrap_user"
+            settings = load_settings()
+        else:
+            raise
 
     token_file = Path(settings.garmin_token_path).expanduser().resolve()
     store = create_token_store(
