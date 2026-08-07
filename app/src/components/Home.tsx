@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { auth } from '../firebase';
 import { signOut } from 'firebase/auth';
 import { decisionComposer } from '../engine/composer';
@@ -92,35 +92,40 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
     return Math.round((completed / items.length) * 100);
   };
 
-  const handleAdjustSession = (direction: 'easier' | 'harder' | null) => {
-    setAdjustmentDirection(direction);
-    if (!recommendation || !decisionInput || !decisionInput.recoverySnapshot) return;
+  const computeAdjustedRecommendation = useCallback((direction: 'easier' | 'harder' | null): Recommendation | null => {
+    if (!recommendation) return null;
+    if (!direction || !decisionInput || !decisionInput.recoverySnapshot) return recommendation;
 
     const subjective = mapCheckinToSubjectiveInput(decisionInput.subjectiveCheckin);
     const objective = mapSnapshotToEngineInput(decisionInput.recoverySnapshot);
     const context = mapContextFromGoalsAndConstraints(decisionInput.activeGoals, decisionInput.activeConstraints, decisionInput.preferences);
 
-    const recToSave = direction
-      ? adjustSessionRecommendation(recommendation, direction, { subjective, objective }, context, decisionInput.date) || recommendation
-      : recommendation;
+    return adjustSessionRecommendation(recommendation, direction, { subjective, objective }, context, decisionInput.date) || recommendation;
+  }, [recommendation, decisionInput]);
 
-    recommendationService.saveRecommendation(userId, decisionInput.date, recToSave).catch(err =>
+  const handleAdjustSession = useCallback((direction: 'easier' | 'harder' | null) => {
+    setAdjustmentDirection(direction);
+    if (!recommendation || !decisionInput) return;
+
+    // Persist the engine's original baseline (templateId/category/modality/rationale)
+    // untouched -- only `adjustment` records what the athlete chose on top of it. This
+    // keeps `daily_recommendations/{date}` an immutable record of what the algorithm
+    // actually prescribed, which is what adherence stats and future model calibration
+    // compare against; overwriting those fields with the adjusted variant would silently
+    // lose the baseline every time a session is adjusted. See recommendationService.ts.
+    const adjusted = direction ? computeAdjustedRecommendation(direction) : null;
+    recommendationService.saveRecommendation(userId, decisionInput.date, {
+      ...recommendation,
+      adjustment: direction ? adjusted?.adjustment : undefined,
+    }).catch(err =>
       console.warn('Failed to persist adjusted recommendation:', err)
     );
-  };
+  }, [recommendation, decisionInput, computeAdjustedRecommendation, userId]);
 
-  const getActiveRecommendation = (): Recommendation | null => {
-    if (!recommendation) return null;
-    if (!adjustmentDirection || !decisionInput || !decisionInput.recoverySnapshot) return recommendation;
-
-    const subjective = mapCheckinToSubjectiveInput(decisionInput.subjectiveCheckin);
-    const objective = mapSnapshotToEngineInput(decisionInput.recoverySnapshot);
-    const context = mapContextFromGoalsAndConstraints(decisionInput.activeGoals, decisionInput.activeConstraints, decisionInput.preferences);
-
-    return adjustSessionRecommendation(recommendation, adjustmentDirection, { subjective, objective }, context, decisionInput.date) || recommendation;
-  };
-
-  const activeRec = getActiveRecommendation();
+  const activeRec = useMemo(
+    () => computeAdjustedRecommendation(adjustmentDirection),
+    [computeAdjustedRecommendation, adjustmentDirection]
+  );
 
   if (loading) {
     return (

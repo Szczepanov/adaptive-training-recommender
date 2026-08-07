@@ -643,5 +643,52 @@ describe('session adjustment engine', () => {
         expect(envelopes.safety.restrictedModalities).toContain('Running');
         expect(envelopes.plan.maxAllowableTier).toBe('Mobility');
     });
+
+    it('evaluateEnvelopes does not false-positive a running injury on unrelated substrings (e.g. "trunk")', () => {
+        // Plain .includes('run')/'leg' would also match "trunk"/"college" -- word-boundary
+        // matching keeps the running restriction tied to actual running-relevant injuries.
+        const readiness: DailyReadiness = { subjective: neutralSubjective(), objective: quietObjective() };
+        const context = baseContext();
+        context.constraints.injuries = ['sore trunk from travel'];
+
+        const envelopes = evaluateEnvelopes(readiness, context);
+        expect(envelopes.safety.clinicalFlagActive).toBe(false);
+        expect(envelopes.safety.restrictedModalities).not.toContain('Running');
+    });
+
+    it('Plan envelope (taper) blocks a Tier 1 harder dose whose projected cost exceeds the allowed ceiling', () => {
+        const readiness: DailyReadiness = { subjective: greenSubjective(), objective: quietObjective() };
+        const context = baseContext();
+        context.goals.shortTerm = 'Taper for race day';
+        const date = '2026-08-07';
+        const baseRec = evaluateTraining(readiness, context, date);
+
+        baseRec.template = {
+            id: 'end_hard_01',
+            category: 'Hard Endurance',
+            modality: 'Running',
+            durationMin: 30,
+            durationMax: 60,
+            title: 'Interval Speed Work',
+            description: 'Warm up, then 4x4 minute intervals near threshold.',
+            requiredEquipment: [],
+            systemicCost: 1.0,
+            objectiveTransferable: true,
+            harderDose: {
+                label: '5x4 min Intervals (50 min)',
+                durationMin: 40,
+                durationMax: 60,
+                doseRatio: 1.25,
+                prescriptionSummary: 'Increased to 5x4 minute VO2 intervals.'
+            }
+        };
+
+        // Taper caps maxAllowableTier at 'Moderate' (systemic-cost ceiling 0.8). The dose's
+        // projected cost (1.0 * 1.25 = 1.25) exceeds it, and every Tier 2-4 alternative in
+        // the same category/modality is at or above the base template's cost, so none fit
+        // under the ceiling either -- the request must be refused, not silently granted.
+        const adjusted = adjustSessionRecommendation(baseRec, 'harder', readiness, context, date);
+        expect(adjusted).toBeNull();
+    });
 });
 

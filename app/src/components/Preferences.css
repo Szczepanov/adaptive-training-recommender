@@ -7,7 +7,7 @@
 .preferences-header {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
   margin-bottom: 2rem;
 }
 
@@ -15,6 +15,13 @@
   font-size: 2rem;
   font-weight: 700;
   margin: 0;
+}
+
+.header-subtitle {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  margin-top: 0.25rem;
+  margin-bottom: 0;
 }
 
 .unsaved-indicator {
@@ -49,14 +56,190 @@
 .preference-section h2 {
   font-size: 1.25rem;
   font-weight: 600;
-  margin: 0 0 1rem 0;
+  margin: 0 0 0.5rem 0;
 }
 
 .preference-desc {
   font-size: 0.875rem;
   color: var(--text-secondary);
+  margin-top: 0.25rem;
+  margin-bottom: 1rem;
+  line-height: 1.4;
+}
+
+.preference-warning-note {
+  font-size: 0.825rem;
+  color: #fbbf24;
+  background: rgba(251, 191, 36, 0.08);
+  border-left: 3px solid #fbbf24;
+  padding: 0.5rem 0.75rem;
+  border-radius: 4px;
+  margin-bottom: 1rem;
+}
+
+/* Modality Dropdown & Custom Inputs */
+.modality-select-group {
+  margin-bottom: 1rem;
+}
+
+.modality-select-group select {
+  width: 100%;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 10px;
+  padding: 0.85rem 1rem;
+  color: white;
+  font-size: 0.95rem;
+  cursor: pointer;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.modality-select-group select:focus {
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 2px rgba(14, 165, 233, 0.2);
+}
+
+.modality-select-group select option {
+  background: #1e293b;
+  color: white;
+  padding: 0.5rem;
+}
+
+.add-modality-custom {
+  display: flex;
+  gap: 0.5rem;
   margin-top: 0.75rem;
-  margin-bottom: 0;
+}
+
+.add-modality-custom input {
+  flex: 1;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 0.65rem 0.85rem;
+  color: white;
+  font-size: 0.875rem;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.add-modality-custom input:focus {
+  border-color: var(--primary-color);
+}
+
+.add-modality-custom button {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-primary);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 0.65rem 1.25rem;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.add-modality-custom button:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+/* Modality Lists */
+.modality-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+  min-height: 32px;
+}
+
+.modality-chip {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: rgba(14, 165, 233, 0.2);
+  color: var(--primary-color);
+  padding: 0.5rem 0.75rem;
+  border-radius: 20px;
+  font-size: 0.875rem;
+  border: 1px solid rgba(14, 165, 233, 0.3);
+}
+
+.modality-chip.avoided {
+  background: rgba(239, 68, 68, 0.2);
+  color: #f87171;
+  border-color: rgba(239, 68, 68, 0.3);
+}
+
+.modality-chip button {
+  background: none;
+  border: none;
+  color: inherit;
+  font-size: 1.25rem;
+  cursor: pointer;
+  padding: 0;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.7;
+  transition: opacity 0.2s;
+}
+
+.modality-chip button:hover {
+  opacity: 1;
+}
+
+/* Toggle Switch (Conservative Bias) */
+.toggle-group {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+}
+
+.toggle-info {
+  flex: 1;
+}
+
+.toggle-title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  display: block;
+}
+
+.toggle-switch {
+  width: 52px;
+  height: 28px;
+  background: rgba(255, 255, 255, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 14px;
+  padding: 2px;
+  cursor: pointer;
+  transition: background 0.3s;
+  flex-shrink: 0;
+  position: relative;
+}
+
+.toggle-switch.active {
+  background: var(--primary-color);
+}
+
+.toggle-slider {
+  display: block;
+  width: 22px;
+  height: 22px;
+  background: white;
+  border-radius: 50%;
+  transition: transform 0.3s ease;
+  transform: translateX(0);
+}
+
+.toggle-switch.active .toggle-slider {
+  transform: translateX(24px);
 }
 
 /* Segmented Control */
@@ -66,6 +249,7 @@
   border-radius: 12px;
   padding: 0.25rem;
   gap: 0.25rem;
+  margin-top: 0.5rem;
 }
 
 .segment {
@@ -95,6 +279,7 @@
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 1rem;
+  margin-top: 0.5rem;
 }
 
 .time-input-group {
@@ -134,92 +319,12 @@
   font-size: 0.875rem;
 }
 
-/* Modality Lists */
-.modality-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  margin-bottom: 1rem;
-}
-
-.modality-chip {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  background: rgba(14, 165, 233, 0.2);
-  color: var(--primary-color);
-  padding: 0.5rem 0.75rem;
-  border-radius: 20px;
-  font-size: 0.875rem;
-}
-
-.modality-chip.avoided {
-  background: rgba(239, 68, 68, 0.2);
-  color: #f87171;
-}
-
-.modality-chip button {
-  background: none;
-  border: none;
-  color: inherit;
-  font-size: 1.25rem;
-  cursor: pointer;
-  padding: 0;
-  width: 20px;
-  height: 20px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  opacity: 0.7;
-  transition: opacity 0.2s;
-}
-
-.modality-chip button:hover {
-  opacity: 1;
-}
-
-.add-modality {
-  display: flex;
-  gap: 0.5rem;
-}
-
-.add-modality input {
-  flex: 1;
-  background: rgba(0, 0, 0, 0.3);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
-  padding: 0.75rem;
-  color: white;
-  font-size: 1rem;
-  outline: none;
-  transition: border-color 0.2s;
-}
-
-.add-modality input:focus {
-  border-color: var(--primary-color);
-}
-
-.add-modality button {
-  background: rgba(255, 255, 255, 0.1);
-  color: var(--text-primary);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  padding: 0.75rem 1.5rem;
-  border-radius: 8px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s;
-  white-space: nowrap;
-}
-
-.add-modality button:hover {
-  background: rgba(255, 255, 255, 0.15);
-}
-
 /* Units Grid */
 .units-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: 1rem;
+  margin-top: 0.5rem;
 }
 
 .unit-group {
@@ -250,15 +355,34 @@
   border-color: var(--primary-color);
 }
 
-/* Save Section */
+/* Save Section & Reset Buttons */
 .save-section {
   margin-top: 2rem;
   padding-top: 2rem;
   border-top: 1px solid rgba(255, 255, 255, 0.1);
+  display: flex;
+  gap: 1rem;
+}
+
+.reset-btn {
+  flex: 1;
+  padding: 1rem;
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 12px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.reset-btn:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.25);
 }
 
 .save-btn {
-  width: 100%;
+  flex: 2;
   padding: 1rem;
   background: rgba(255, 255, 255, 0.1);
   color: var(--text-primary);
@@ -351,3 +475,4 @@
     grid-template-columns: repeat(3, 1fr);
   }
 }
+
