@@ -36,6 +36,7 @@ export class RecommendationService {
                 modality: rec.template.modality,
                 mode: rec.mode,
                 rationale: rec.rationale,
+                ...(rec.adjustment ? { adjustment: rec.adjustment } : {}),
                 createdAt: existing?.createdAt,
             };
 

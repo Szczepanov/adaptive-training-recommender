@@ -10,7 +10,8 @@ export const TEMPLATES: SessionTemplate[] = [
         title: "Total Rest",
         description: "Focus on sleep, hydration, and completely shutting off physical stress.",
         requiredEquipment: [],
-        systemicCost: 0.0
+        systemicCost: 0.0,
+        objectiveTransferable: true
     },
     {
         id: "mob_01",
@@ -21,7 +22,22 @@ export const TEMPLATES: SessionTemplate[] = [
         title: "Active Recovery & Mobility",
         description: "Light stretching, foam rolling, and walking. Keep heart rate strictly low.",
         requiredEquipment: [],
-        systemicCost: 0.1
+        systemicCost: 0.1,
+        objectiveTransferable: true,
+        easierDose: {
+            label: "10 min Light Foam Rolling",
+            durationMin: 10,
+            durationMax: 15,
+            doseRatio: 0.6,
+            prescriptionSummary: "Gentle 10 min stretching and foam rolling."
+        },
+        harderDose: {
+            label: "35 min Mobility & Recovery Walk",
+            durationMin: 30,
+            durationMax: 40,
+            doseRatio: 1.4,
+            prescriptionSummary: "Extended 35 min mobility flow and easy leg flush walk."
+        }
     },
     {
         id: "mob_02",
@@ -32,7 +48,22 @@ export const TEMPLATES: SessionTemplate[] = [
         title: "Yoga & Breathwork Flow",
         description: "Slow flow focused on hip/shoulder mobility and diaphragmatic breathing to downshift the nervous system.",
         requiredEquipment: [],
-        systemicCost: 0.1
+        systemicCost: 0.1,
+        objectiveTransferable: true,
+        easierDose: {
+            label: "15 min Gentle Breathwork",
+            durationMin: 10,
+            durationMax: 20,
+            doseRatio: 0.6,
+            prescriptionSummary: "Short 15 min breathwork and passive stretching."
+        },
+        harderDose: {
+            label: "45 min Deep Mobility Flow",
+            durationMin: 40,
+            durationMax: 50,
+            doseRatio: 1.3,
+            prescriptionSummary: "Full 45 min deep mobility and hip flow."
+        }
     },
     {
         id: "end_easy_01",
@@ -43,7 +74,22 @@ export const TEMPLATES: SessionTemplate[] = [
         title: "Zone 2 Spin",
         description: "Easy conversational pace on the bike. Great for flushing legs and base building.",
         requiredEquipment: ["indoor_bike"],
-        systemicCost: 0.3
+        systemicCost: 0.3,
+        objectiveTransferable: true,
+        easierDose: {
+            label: "25 min Light Spin",
+            durationMin: 20,
+            durationMax: 30,
+            doseRatio: 0.6,
+            prescriptionSummary: "Light 25 min leg flush spin."
+        },
+        harderDose: {
+            label: "75 min Aerobic Base Ride",
+            durationMin: 60,
+            durationMax: 90,
+            doseRatio: 1.5,
+            prescriptionSummary: "Extended 75 min Zone 2 aerobic base ride."
+        }
     },
     {
         id: "end_easy_02",
@@ -54,7 +100,22 @@ export const TEMPLATES: SessionTemplate[] = [
         title: "Light Base Run",
         description: "Very easy jog. Stop and walk if HR drifts above Zone 2.",
         requiredEquipment: [],
-        systemicCost: 0.3
+        systemicCost: 0.3,
+        objectiveTransferable: true,
+        easierDose: {
+            label: "20 min Short Jog/Walk",
+            durationMin: 15,
+            durationMax: 25,
+            doseRatio: 0.67,
+            prescriptionSummary: "Short 20 min easy jog."
+        },
+        harderDose: {
+            label: "50 min Aerobic Base Run",
+            durationMin: 45,
+            durationMax: 60,
+            doseRatio: 1.4,
+            prescriptionSummary: "Extended 50 min Zone 2 base run."
+        }
     },
     {
         id: "end_easy_03",
@@ -65,7 +126,22 @@ export const TEMPLATES: SessionTemplate[] = [
         title: "Recovery Walk/Jog Intervals",
         description: "Alternate easy walking and very light jogging. Minimal impact, keeps blood flowing without adding fatigue.",
         requiredEquipment: [],
-        systemicCost: 0.25
+        systemicCost: 0.25,
+        objectiveTransferable: true,
+        easierDose: {
+            label: "20 min Recovery Walk Focus",
+            durationMin: 15,
+            durationMax: 25,
+            doseRatio: 0.7,
+            prescriptionSummary: "Easy walk focus with minimal light jog intervals."
+        },
+        harderDose: {
+            label: "40 min Active Walk/Jog Flow",
+            durationMin: 35,
+            durationMax: 45,
+            doseRatio: 1.3,
+            prescriptionSummary: "Longer 40 min active recovery walk/jog."
+        }
     },
     {
         id: "end_mod_01",
@@ -76,7 +152,22 @@ export const TEMPLATES: SessionTemplate[] = [
         title: "Steady-State Tempo Run",
         description: "Continuous run at a comfortably-hard, sustainable pace (Zone 3). Builds aerobic capacity without CNS strain of intervals.",
         requiredEquipment: [],
-        systemicCost: 0.7
+        systemicCost: 0.7,
+        objectiveTransferable: true,
+        easierDose: {
+            label: "25 min Short Tempo Run",
+            durationMin: 20,
+            durationMax: 35,
+            doseRatio: 0.75,
+            prescriptionSummary: "Shorter 25 min continuous Zone 3 tempo run."
+        },
+        harderDose: {
+            label: "50 min Extended Tempo Run",
+            durationMin: 45,
+            durationMax: 60,
+            doseRatio: 1.25,
+            prescriptionSummary: "Extended 50 min continuous Zone 3 tempo run."
+        }
     },
     {
         id: "end_mod_02",
@@ -87,7 +178,22 @@ export const TEMPLATES: SessionTemplate[] = [
         title: "Tempo Ride",
         description: "Steady Zone 3 effort on the bike with a couple of short surges. Solid middle-ground session between easy and hard days.",
         requiredEquipment: ["indoor_bike"],
-        systemicCost: 0.7
+        systemicCost: 0.7,
+        objectiveTransferable: true,
+        easierDose: {
+            label: "30 min Short Tempo Ride",
+            durationMin: 25,
+            durationMax: 40,
+            doseRatio: 0.75,
+            prescriptionSummary: "Shorter 30 min Zone 3 tempo ride."
+        },
+        harderDose: {
+            label: "75 min Extended Tempo Ride",
+            durationMin: 60,
+            durationMax: 90,
+            doseRatio: 1.35,
+            prescriptionSummary: "Extended 75 min Zone 3 tempo ride with surges."
+        }
     },
     {
         id: "str_upper_01",
@@ -98,10 +204,22 @@ export const TEMPLATES: SessionTemplate[] = [
         title: "Upper Body Push/Pull",
         description: "Bench/overhead press, rows, pull-ups, and accessory arm work. Chest, back, shoulders, and arms.",
         requiredEquipment: ["free_weights"],
-        // Deliberately low: upper-body strength is a muscle-local stimulus with modest
-        // systemic/autonomic cost, distinct from the leg-driven categories below -- see
-        // rules.ts MODIFY_MAX_SYSTEMIC_COST.
-        systemicCost: 0.3
+        systemicCost: 0.3,
+        objectiveTransferable: false,
+        easierDose: {
+            label: "3 Sets Upper Body (30 min)",
+            durationMin: 25,
+            durationMax: 35,
+            doseRatio: 0.75,
+            prescriptionSummary: "Reduced volume: 3 working sets per main push/pull movement."
+        },
+        harderDose: {
+            label: "4 Sets + Core Finisher (55 min)",
+            durationMin: 45,
+            durationMax: 60,
+            doseRatio: 1.25,
+            prescriptionSummary: "Increased volume: 4 working sets per movement plus core finisher."
+        }
     },
     {
         id: "str_upper_02",
@@ -112,7 +230,22 @@ export const TEMPLATES: SessionTemplate[] = [
         title: "Cable Upper Body Circuit",
         description: "Cable-based presses, pulldowns, and rows for controlled, joint-friendly upper body volume.",
         requiredEquipment: ["cable_machine"],
-        systemicCost: 0.3
+        systemicCost: 0.3,
+        objectiveTransferable: false,
+        easierDose: {
+            label: "2 Sets Cable Circuit (25 min)",
+            durationMin: 20,
+            durationMax: 30,
+            doseRatio: 0.7,
+            prescriptionSummary: "Reduced volume: 2 rounds of cable push/pull circuit."
+        },
+        harderDose: {
+            label: "4 Sets Cable Circuit (50 min)",
+            durationMin: 45,
+            durationMax: 55,
+            doseRatio: 1.3,
+            prescriptionSummary: "Increased volume: 4 rounds of cable push/pull circuit."
+        }
     },
     {
         id: "str_lower_01",
@@ -123,7 +256,22 @@ export const TEMPLATES: SessionTemplate[] = [
         title: "Lower Body Strength & Power",
         description: "Squats, deadlift variations, lunges, and calf/posterior chain accessory work.",
         requiredEquipment: ["free_weights"],
-        systemicCost: 0.6
+        systemicCost: 0.6,
+        objectiveTransferable: false,
+        easierDose: {
+            label: "3 Sets Moderate Load (30 min)",
+            durationMin: 25,
+            durationMax: 35,
+            doseRatio: 0.75,
+            prescriptionSummary: "Reduced volume: 3 sets per exercise with moderate load."
+        },
+        harderDose: {
+            label: "4 Sets + Plyo Finisher (60 min)",
+            durationMin: 50,
+            durationMax: 65,
+            doseRatio: 1.3,
+            prescriptionSummary: "Increased volume: 4 heavy sets plus plyometric finisher."
+        }
     },
     {
         id: "str_full_01",
@@ -134,7 +282,22 @@ export const TEMPLATES: SessionTemplate[] = [
         title: "Hybrid Full Body Push/Pull",
         description: "Compound movements: Squats, deadlift variations, rows, and presses.",
         requiredEquipment: ["free_weights"],
-        systemicCost: 0.6
+        systemicCost: 0.6,
+        objectiveTransferable: false,
+        easierDose: {
+            label: "3 Working Sets (35 min)",
+            durationMin: 30,
+            durationMax: 40,
+            doseRatio: 0.75,
+            prescriptionSummary: "Reduced volume: 3 working sets per compound lift."
+        },
+        harderDose: {
+            label: "4 Sets + Accessory Circuit (65 min)",
+            durationMin: 55,
+            durationMax: 70,
+            doseRatio: 1.3,
+            prescriptionSummary: "Increased volume: 4 working sets plus accessory circuit."
+        }
     },
     {
         id: "str_full_02",
@@ -145,9 +308,22 @@ export const TEMPLATES: SessionTemplate[] = [
         title: "Bodyweight Full Body Circuit",
         description: "Push-ups, squats, lunges, planks, and rows-via-table/bands. No equipment required, scalable by tempo and reps.",
         requiredEquipment: [],
-        // Still legs-inclusive (squats, lunges) despite no external load, so it stays
-        // above MODIFY_MAX_SYSTEMIC_COST alongside the other full-body/lower-body work.
-        systemicCost: 0.55
+        systemicCost: 0.55,
+        objectiveTransferable: false,
+        easierDose: {
+            label: "2 Circuit Rounds (20 min)",
+            durationMin: 15,
+            durationMax: 25,
+            doseRatio: 0.67,
+            prescriptionSummary: "Reduced volume: 2 rounds of bodyweight circuit."
+        },
+        harderDose: {
+            label: "4 Circuit Rounds (45 min)",
+            durationMin: 40,
+            durationMax: 50,
+            doseRatio: 1.33,
+            prescriptionSummary: "Increased volume: 4 high-tempo circuit rounds."
+        }
     },
     {
         id: "end_hard_01",
@@ -158,7 +334,22 @@ export const TEMPLATES: SessionTemplate[] = [
         title: "Interval Speed Work",
         description: "Warm up, then 4x4 minute intervals near threshold. Cool down.",
         requiredEquipment: [],
-        systemicCost: 1.0
+        systemicCost: 1.0,
+        objectiveTransferable: true,
+        easierDose: {
+            label: "3x4 min Intervals (30 min)",
+            durationMin: 25,
+            durationMax: 40,
+            doseRatio: 0.75,
+            prescriptionSummary: "Reduced to 3x4 minute VO2 intervals."
+        },
+        harderDose: {
+            label: "5x4 min Intervals (50 min)",
+            durationMin: 40,
+            durationMax: 60,
+            doseRatio: 1.25,
+            prescriptionSummary: "Increased to 5x4 minute VO2 intervals."
+        }
     },
     {
         id: "end_hard_02",
@@ -169,7 +360,22 @@ export const TEMPLATES: SessionTemplate[] = [
         title: "Bike VO2 Intervals",
         description: "Warm up, then 6x3 minute high-intensity efforts with equal recovery. Cool down.",
         requiredEquipment: ["indoor_bike"],
-        systemicCost: 1.0
+        systemicCost: 1.0,
+        objectiveTransferable: true,
+        easierDose: {
+            label: "4x3 min Intervals (35 min)",
+            durationMin: 25,
+            durationMax: 45,
+            doseRatio: 0.67,
+            prescriptionSummary: "Reduced to 4x3 minute VO2 intervals."
+        },
+        harderDose: {
+            label: "8x3 min Intervals (60 min)",
+            durationMin: 45,
+            durationMax: 65,
+            doseRatio: 1.33,
+            prescriptionSummary: "Increased to 8x3 minute VO2 intervals."
+        }
     },
     {
         id: "end_hard_03",
@@ -180,6 +386,21 @@ export const TEMPLATES: SessionTemplate[] = [
         title: "Hill Repeats",
         description: "Warm up, then 6-8x60-90 second hard hill efforts (outdoors, or treadmill incline) with walk-down recovery. Cool down.",
         requiredEquipment: [],
-        systemicCost: 1.0
+        systemicCost: 1.0,
+        objectiveTransferable: false,
+        easierDose: {
+            label: "4 Hill Repeats (30 min)",
+            durationMin: 25,
+            durationMax: 40,
+            doseRatio: 0.6,
+            prescriptionSummary: "Reduced to 4 hard hill repeats."
+        },
+        harderDose: {
+            label: "10 Hill Repeats (50 min)",
+            durationMin: 40,
+            durationMax: 60,
+            doseRatio: 1.35,
+            prescriptionSummary: "Increased to 10 hard hill repeats."
+        }
     }
 ];

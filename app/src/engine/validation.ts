@@ -620,6 +620,19 @@ export function validateRecommendation(raw: any): ValidationResult<DailyRecommen
     }
 
     const existingAdherence = raw.adherence ?? {};
+    let adjustment = undefined;
+    if (raw.adjustment && typeof raw.adjustment === 'object') {
+        adjustment = {
+            direction: raw.adjustment.direction,
+            tier: raw.adjustment.tier,
+            originalTemplateId: raw.adjustment.originalTemplateId,
+            originalTemplateTitle: raw.adjustment.originalTemplateTitle,
+            adjustedDoseLabel: raw.adjustment.adjustedDoseLabel,
+            athleteReason: raw.adjustment.athleteReason,
+            rationale: raw.adjustment.rationale
+        };
+    }
+
     const recommendation: DailyRecommendation = {
         userId: raw.userId,
         date: raw.date,
@@ -632,10 +645,7 @@ export function validateRecommendation(raw: any): ValidationResult<DailyRecommen
         schemaVersion: raw.schemaVersion ?? 1,
         createdAt: raw.createdAt || new Date().toISOString(),
         updatedAt: new Date().toISOString(),
-        // A save that only updates today's prescription (no adherence answer yet)
-        // preserves whatever adherence was already recorded, rather than clobbering it --
-        // relevant if a page reload regenerates and re-saves the same day's recommendation
-        // after the user already answered the prompt for it.
+        ...(adjustment ? { adjustment } : {}),
         adherence: {
             respondedAt: existingAdherence.respondedAt ?? null,
             followed: existingAdherence.followed ?? null,

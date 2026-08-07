@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { evaluateTraining, evaluateNextDayPlan } from './rules';
+import { evaluateTraining, evaluateNextDayPlan, adjustSessionRecommendation, evaluateEnvelopes } from './rules';
 import type { DailyReadiness, UserContext, EngineObjectiveInput, SubjectiveInput } from './models';
 
 // --- Fixtures --------------------------------------------------------------
@@ -477,6 +477,171 @@ describe('sequence trajectory & threshold oscillation simulation', () => {
 
         // Verify engine produces consistent classifications without random oscillation
         expect(modes).toEqual(['modify', 'modify', 'modify', 'modify', 'modify']);
+    });
+});
+
+// --- Session Adjustment Tests -----------------------------------------------
+
+describe('session adjustment engine', () => {
+    it('Tier 1: 4x4 VO2 run -> Easier produces a reduced 3x4 VO2 dose preserving training purpose', () => {
+        const readiness: DailyReadiness = { subjective: greenSubjective(), objective: quietObjective() };
+        const context = baseContext();
+        const date = '2026-08-07';
+        const baseRec = evaluateTraining(readiness, context, date);
+
+        // Force a 4x4 run recommendation
+        baseRec.template = {
+            id: 'end_hard_01',
+            category: 'Hard Endurance',
+            modality: 'Running',
+            durationMin: 30,
+            durationMax: 60,
+            title: 'Interval Speed Work',
+            description: 'Warm up, then 4x4 minute intervals near threshold. Cool down.',
+            requiredEquipment: [],
+            systemicCost: 1.0,
+            objectiveTransferable: true,
+            easierDose: {
+                label: '3x4 min Intervals (30 min)',
+                durationMin: 25,
+                durationMax: 40,
+                doseRatio: 0.75,
+                prescriptionSummary: 'Reduced to 3x4 minute VO2 intervals.'
+            }
+        };
+
+        const adjusted = adjustSessionRecommendation(baseRec, 'easier', readiness, context, date);
+        expect(adjusted).not.toBeNull();
+        expect(adjusted?.template.id).toBe('end_hard_01');
+        expect(adjusted?.activeDose?.label).toBe('3x4 min Intervals (30 min)');
+        expect(adjusted?.adjustment?.tier).toBe(1);
+        expect(adjusted?.adjustment?.direction).toBe('easier');
+        expect(adjusted?.adjustment?.originalTemplateId).toBe('end_hard_01');
+    });
+
+    it('Tier 1: 4x4 VO2 run -> Harder produces an increased 5x4 VO2 dose', () => {
+        const readiness: DailyReadiness = { subjective: greenSubjective(), objective: quietObjective() };
+        const context = baseContext();
+        const date = '2026-08-07';
+        const baseRec = evaluateTraining(readiness, context, date);
+
+        baseRec.template = {
+            id: 'end_hard_01',
+            category: 'Hard Endurance',
+            modality: 'Running',
+            durationMin: 30,
+            durationMax: 60,
+            title: 'Interval Speed Work',
+            description: 'Warm up, then 4x4 minute intervals near threshold.',
+            requiredEquipment: [],
+            systemicCost: 1.0,
+            objectiveTransferable: true,
+            harderDose: {
+                label: '5x4 min Intervals (50 min)',
+                durationMin: 40,
+                durationMax: 60,
+                doseRatio: 1.25,
+                prescriptionSummary: 'Increased to 5x4 minute VO2 intervals.'
+            }
+        };
+
+        const adjusted = adjustSessionRecommendation(baseRec, 'harder', readiness, context, date);
+        expect(adjusted).not.toBeNull();
+        expect(adjusted?.activeDose?.label).toBe('5x4 min Intervals (50 min)');
+        expect(adjusted?.adjustment?.tier).toBe(1);
+    });
+
+    it('Zone 2 continuous -> Harder scales duration without changing category', () => {
+        const readiness: DailyReadiness = { subjective: greenSubjective(), objective: quietObjective() };
+        const context = baseContext();
+        const date = '2026-08-07';
+        const baseRec = evaluateTraining(readiness, context, date);
+
+        baseRec.template = {
+            id: 'end_easy_01',
+            category: 'Easy Endurance',
+            modality: 'Cycling',
+            durationMin: 30,
+            durationMax: 60,
+            title: 'Zone 2 Spin',
+            description: 'Easy conversational pace on the bike.',
+            requiredEquipment: ['indoor_bike'],
+            systemicCost: 0.3,
+            objectiveTransferable: true,
+            harderDose: {
+                label: '75 min Aerobic Base Ride',
+                durationMin: 60,
+                durationMax: 90,
+                doseRatio: 1.5,
+                prescriptionSummary: 'Extended 75 min Zone 2 aerobic base ride.'
+            }
+        };
+
+        const adjusted = adjustSessionRecommendation(baseRec, 'harder', readiness, context, date);
+        expect(adjusted?.template.category).toBe('Easy Endurance');
+        expect(adjusted?.activeDose?.label).toBe('75 min Aerobic Base Ride');
+    });
+
+    it('Pain/Injury flag prevents upward adjustment (clinical safety floor)', () => {
+        const readiness: DailyReadiness = { subjective: neutralSubjective({ painFlag: true }), objective: quietObjective() };
+        const context = baseContext();
+        const date = '2026-08-07';
+        const baseRec = evaluateTraining(readiness, context, date);
+
+        const adjusted = adjustSessionRecommendation(baseRec, 'harder', readiness, context, date);
+        expect(adjusted).toBeNull();
+    });
+
+    it('Non-transferable objective (Hill Repeats) skips Tier 4 cross-modal substitution', () => {
+        const readiness: DailyReadiness = { subjective: greenSubjective(), objective: quietObjective() };
+        // Restrict running via injury so Tier 1-3 in running fail
+        const context = baseContext();
+        context.constraints.injuries = ['running knee pain'];
+
+        const date = '2026-08-07';
+        const baseRec = evaluateTraining(readiness, context, date);
+
+        baseRec.template = {
+            id: 'end_hard_03',
+            category: 'Hard Endurance',
+            modality: 'Running',
+            durationMin: 35,
+            durationMax: 55,
+            title: 'Hill Repeats',
+            description: 'Hard hill efforts.',
+            requiredEquipment: [],
+            systemicCost: 1.0,
+            objectiveTransferable: false // Non transferable neuromuscular goal
+        };
+
+        // Running is restricted by injury, and hill repeats objectiveTransferable is false -> should return null rather than arbitrary cross-modal workout
+        const adjusted = adjustSessionRecommendation(baseRec, 'harder', readiness, context, date);
+        expect(adjusted).toBeNull();
+    });
+
+    it('Immutable baseline recommendation: baseRec remains unchanged when adjusted', () => {
+        const readiness: DailyReadiness = { subjective: greenSubjective(), objective: quietObjective() };
+        const context = baseContext();
+        const date = '2026-08-07';
+        const baseRec = evaluateTraining(readiness, context, date);
+        const originalTitle = baseRec.template.title;
+
+        const adjusted = adjustSessionRecommendation(baseRec, 'easier', readiness, context, date);
+
+        expect(baseRec.template.title).toBe(originalTitle);
+        expect(baseRec.adjustment).toBeUndefined();
+        expect(adjusted?.adjustment).toBeDefined();
+    });
+
+    it('evaluateEnvelopes computes clinical safety and plan envelopes correctly', () => {
+        const readiness: DailyReadiness = { subjective: neutralSubjective({ painFlag: true }), objective: quietObjective() };
+        const context = baseContext();
+        context.constraints.injuries = ['knee pain'];
+
+        const envelopes = evaluateEnvelopes(readiness, context);
+        expect(envelopes.safety.clinicalFlagActive).toBe(true);
+        expect(envelopes.safety.restrictedModalities).toContain('Running');
+        expect(envelopes.plan.maxAllowableTier).toBe('Mobility');
     });
 });
 

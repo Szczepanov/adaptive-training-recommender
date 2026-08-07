@@ -1,4 +1,4 @@
-import type { DailyReadiness, UserContext, Recommendation, SessionTemplate, NextDayPotentialPlan, NextDayPlanBranch, DecisionScoreTelemetry } from './models';
+import type { DailyReadiness, UserContext, Recommendation, SessionTemplate, NextDayPotentialPlan, NextDayPlanBranch, DecisionScoreTelemetry, SafetyEnvelope, PlanEnvelope } from './models';
 import { TEMPLATES } from './templates';
 
 /**
@@ -437,12 +437,238 @@ export function evaluateTraining(
         totalDecisionScore: round2(objectiveStrain)
     };
 
+    const envelopes = evaluateEnvelopes({ subjective, objective }, context);
+
     return {
         template: selectedTemplate,
         rationale,
         mode,
+        envelopes,
         telemetry
     };
+}
+
+/**
+ * Evaluates clinical safety and periodization plan envelopes for a given readiness & user context.
+ */
+export function evaluateEnvelopes(
+    readiness: DailyReadiness,
+    context: UserContext
+): { safety: SafetyEnvelope; plan: PlanEnvelope } {
+    const isPain = readiness.subjective.painFlag;
+    const injuries = (context.constraints.injuries || []).map(i => i.toLowerCase());
+    // Word-boundary match, not substring -- a plain .includes('run')/'leg' also fires on
+    // unrelated text like "trunk" or "college" (both contain "run"/"leg" as substrings),
+    // which would wrongly flag a running-safety restriction from an unrelated injury note.
+    const RUNNING_INJURY_PATTERN = /\b(knee|achilles|ankle|leg|run)/;
+    const hasRunningInjury = injuries.some(i => RUNNING_INJURY_PATTERN.test(i));
+    const clinicalFlagActive = isPain || hasRunningInjury;
+    const clinicalReason = clinicalFlagActive ? "Active pain or injury flag reported." : null;
+
+    const restrictedModalities: SessionTemplate['modality'][] = [];
+    if (hasRunningInjury || (isPain && injuries.length > 0)) {
+        restrictedModalities.push('Running');
+    }
+
+    let maxAllowableTier: 'Rest' | 'Mobility' | 'Easy' | 'Moderate' | 'Hard' = 'Hard';
+    if (readiness.subjective.alreadyTrainedToday) {
+        maxAllowableTier = 'Rest';
+    } else if (isPain) {
+        maxAllowableTier = 'Mobility';
+    } else if (readiness.objective.body_battery_wake !== null && readiness.objective.body_battery_wake < 25) {
+        maxAllowableTier = 'Easy';
+    }
+
+    const goalText = (context.goals.shortTerm + ' ' + context.goals.midTerm + ' ' + context.goals.longTerm).toLowerCase();
+    const taperActive = goalText.includes('taper') || goalText.includes('pre-race') || goalText.includes('race in 3 days');
+    if (taperActive && maxAllowableTier === 'Hard') {
+        maxAllowableTier = 'Moderate';
+    }
+
+    return {
+        safety: {
+            clinicalFlagActive,
+            clinicalReason,
+            restrictedModalities
+        },
+        plan: {
+            maxAllowableTier,
+            taperActive,
+            reason: taperActive ? "Pre-event taper active." : null
+        }
+    };
+}
+
+/**
+ * Systemic-cost ceiling admitted by each plan-envelope tier, mirroring the same
+ * systemicCost idiom MODIFY_MAX_SYSTEMIC_COST already uses for mode-based capping above.
+ * Only consulted for 'harder' adjustments -- 'easier' always moves away from the ceiling,
+ * so it never needs gating here.
+ */
+const PLAN_TIER_SYSTEMIC_COST_CEILING: Record<PlanEnvelope['maxAllowableTier'], number> = {
+    Rest: 0,
+    Mobility: 0.15,
+    Easy: MODIFY_MAX_SYSTEMIC_COST,
+    Moderate: 0.8,
+    Hard: Infinity
+};
+
+function exceedsPlanCeiling(systemicCost: number, plan: PlanEnvelope): boolean {
+    return systemicCost > PLAN_TIER_SYSTEMIC_COST_CEILING[plan.maxAllowableTier];
+}
+
+/**
+ * Adjusts a recommended session based on an explicit user request ('easier' or 'harder'),
+ * following the 5-tier adaptation hierarchy and preserving envelopes & transferability bounds.
+ */
+export function adjustSessionRecommendation(
+    baseRec: Recommendation,
+    direction: 'easier' | 'harder',
+    readiness: DailyReadiness,
+    context: UserContext,
+    date: string
+): Recommendation | null {
+    const envelopes = evaluateEnvelopes(readiness, context);
+    const { safety, plan } = envelopes;
+
+    // Hard Clinical Flag check: Upward adjustments blocked by clinical floor
+    if (direction === 'harder' && safety.clinicalFlagActive) {
+        return null;
+    }
+
+    const baseTemplate = baseRec.template;
+
+    // Tier 1: Same Workout + Dose Modification
+    if (direction === 'easier' && baseTemplate.easierDose) {
+        return {
+            ...baseRec,
+            activeDose: baseTemplate.easierDose,
+            adjustment: {
+                direction: 'easier',
+                tier: 1,
+                originalTemplateId: baseTemplate.id,
+                originalTemplateTitle: baseTemplate.title,
+                adjustedDoseLabel: baseTemplate.easierDose.label,
+                rationale: `Session dose adjusted to easier variant (${baseTemplate.easierDose.label}) while preserving the core training purpose.`
+            },
+            envelopes
+        };
+    }
+
+    if (direction === 'harder' && baseTemplate.harderDose) {
+        // Gate on the actual projected load, not just "isn't Rest/Mobility" -- a taper
+        // (maxAllowableTier: 'Moderate') must still block a harder dose whose systemic
+        // cost would push it past what's allowed, even though 'Moderate' alone would
+        // pass a looser Rest/Mobility-only check.
+        const projectedCost = baseTemplate.systemicCost * baseTemplate.harderDose.doseRatio;
+        if (!exceedsPlanCeiling(projectedCost, plan)) {
+            return {
+                ...baseRec,
+                activeDose: baseTemplate.harderDose,
+                adjustment: {
+                    direction: 'harder',
+                    tier: 1,
+                    originalTemplateId: baseTemplate.id,
+                    originalTemplateTitle: baseTemplate.title,
+                    adjustedDoseLabel: baseTemplate.harderDose.label,
+                    rationale: `Session dose adjusted to harder variant (${baseTemplate.harderDose.label}) while preserving the core training purpose.`
+                },
+                envelopes
+            };
+        }
+    }
+
+    // Filter available candidate templates
+    const allowedModalities = (['Running', 'Cycling', 'Strength', 'Field', 'Mobility', 'Cross Training', 'None'] as const)
+        .filter(m => !context.preferences.avoidedModalities.map(a => a.toLowerCase()).includes(m.toLowerCase()))
+        .filter(m => !safety.restrictedModalities.includes(m));
+
+    const availableTemplates = TEMPLATES.filter(t => {
+        if (t.id === baseTemplate.id) return false;
+        if (!allowedModalities.includes(t.modality)) return false;
+        if (t.requiredEquipment.length > 0) {
+            const hasEq = t.requiredEquipment.every(eq => {
+                if (eq === 'free_weights') return context.constraints.hasFreeWeights;
+                if (eq === 'cable_machine') return context.constraints.hasCableMachine;
+                if (eq === 'treadmill') return context.constraints.hasTreadmill;
+                if (eq === 'indoor_bike') return context.constraints.hasIndoorBike;
+                return true;
+            });
+            if (!hasEq) return false;
+        }
+        return true;
+    });
+
+    // Tier 2: Same Training Objective, Alternate Prescription Layout (Same modality, same category)
+    const tier2Candidates = availableTemplates.filter(t =>
+        t.modality === baseTemplate.modality && t.category === baseTemplate.category
+    ).filter(t => direction === 'easier' || !exceedsPlanCeiling(t.systemicCost, plan));
+    if (tier2Candidates.length > 0) {
+        const picked = pickTemplate(tier2Candidates, date) || tier2Candidates[0];
+        return {
+            template: picked,
+            rationale: `Adjusted to alternate prescription layout (${picked.title}) in ${picked.modality}.`,
+            mode: baseRec.mode,
+            adjustment: {
+                direction,
+                tier: 2,
+                originalTemplateId: baseTemplate.id,
+                originalTemplateTitle: baseTemplate.title,
+                rationale: `Adjusted to alternate layout (${picked.title}) for same objective.`
+            },
+            envelopes
+        };
+    }
+
+    // Tier 3: Adjacent Compatible Stimulus (Same modality, adjacent intensity category)
+    const tier3Candidates = availableTemplates.filter(t => t.modality === baseTemplate.modality).filter(t => {
+        if (direction === 'easier') return t.systemicCost < baseTemplate.systemicCost;
+        return t.systemicCost > baseTemplate.systemicCost && !exceedsPlanCeiling(t.systemicCost, plan);
+    });
+    if (tier3Candidates.length > 0) {
+        const picked = pickTemplate(tier3Candidates, date) || tier3Candidates[0];
+        return {
+            template: picked,
+            rationale: `Adjusted to adjacent stimulus (${picked.title}) in ${picked.modality}.`,
+            mode: baseRec.mode,
+            adjustment: {
+                direction,
+                tier: 3,
+                originalTemplateId: baseTemplate.id,
+                originalTemplateTitle: baseTemplate.title,
+                rationale: `Adjusted to adjacent stimulus in ${picked.modality}.`
+            },
+            envelopes
+        };
+    }
+
+    // Tier 4: Transferable Cross-Modal Equivalent (Only if baseTemplate.objectiveTransferable !== false)
+    if (baseTemplate.objectiveTransferable !== false) {
+        const tier4Candidates = availableTemplates.filter(t => {
+            if (t.modality === baseTemplate.modality) return false;
+            if (direction === 'easier') return t.systemicCost < baseTemplate.systemicCost;
+            return t.systemicCost > baseTemplate.systemicCost && !exceedsPlanCeiling(t.systemicCost, plan);
+        });
+        if (tier4Candidates.length > 0) {
+            const picked = pickTemplate(tier4Candidates, date) || tier4Candidates[0];
+            return {
+                template: picked,
+                rationale: `Cross-modal adjustment to ${picked.title} (${picked.modality}).`,
+                mode: baseRec.mode,
+                adjustment: {
+                    direction,
+                    tier: 4,
+                    originalTemplateId: baseTemplate.id,
+                    originalTemplateTitle: baseTemplate.title,
+                    rationale: `Adjusted cross-modally to ${picked.title}.`
+                },
+                envelopes
+            };
+        }
+    }
+
+    // Fallback: No suitable alternative available today
+    return null;
 }
 
 /**

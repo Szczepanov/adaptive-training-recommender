@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { auth } from '../firebase';
 import { signOut } from 'firebase/auth';
 import { decisionComposer } from '../engine/composer';
-import { evaluateTraining, evaluateNextDayPlan } from '../engine/rules';
+import { evaluateTraining, evaluateNextDayPlan, adjustSessionRecommendation } from '../engine/rules';
 import { mapSnapshotToEngineInput, mapCheckinToSubjectiveInput, mapContextFromGoalsAndConstraints } from '../engine/adapters';
 import type { DailyDecisionInput, Recommendation, NextDayPotentialPlan, DailyRecommendation } from '../engine/models';
 import { recommendationService } from '../services/recommendationService';
@@ -19,13 +19,12 @@ interface HomeProps {
 export function Home({ userId, onNavigate, onViewData }: HomeProps) {
   const [decisionInput, setDecisionInput] = useState<DailyDecisionInput | null>(null);
   const [recommendation, setRecommendation] = useState<Recommendation | null>(null);
+  const [adjustmentDirection, setAdjustmentDirection] = useState<'easier' | 'harder' | null>(null);
   const [nextDayPlan, setNextDayPlan] = useState<NextDayPotentialPlan | null>(null);
   const [selectedBranch, setSelectedBranch] = useState<'green' | 'yellow' | 'red'>('green');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showRecoveryData, setShowRecoveryData] = useState(false);
-  // Yesterday's recommendation, only populated when it's still awaiting an adherence
-  // answer -- drives the "did you follow yesterday's plan?" prompt below.
   const [pendingAdherence, setPendingAdherence] = useState<{ date: string; recommendation: DailyRecommendation } | null>(null);
 
   const loadDashboardData = useCallback(async () => {
@@ -34,11 +33,6 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
       const input = await decisionComposer.composeDailyDecisionInput(userId);
       setDecisionInput(input);
 
-      // Fetched once, used two ways below: its `.mode` feeds evaluateTraining's
-      // hysteresis (see rules.ts postRecoverBufferApplied) regardless of whether it's
-      // been answered yet, and its `.adherence` decides whether to show the prompt --
-      // deliberately not the same condition, so an already-answered day still informs
-      // today's hysteresis.
       const yesterday = getPreviousLocalDateString(input.date);
       const yesterdayRec = await recommendationService.getRecommendation(userId, yesterday).catch(err => {
         console.warn('Failed to load yesterday\'s recommendation:', err);
@@ -50,12 +44,6 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
           : null
       );
 
-      // A recommendation needs at least today's Garmin recovery snapshot to be meaningful;
-      // the check-in, goals, and constraints all fall back to neutral/default values when
-      // *absent*. A check-in that exists but is only partially filled in is different --
-      // its alreadyTrainedToday (and other) fields silently default to false/neutral when
-      // unanswered, which could mask a genuine "already trained, recommend rest" signal.
-      // So an incomplete-but-present check-in blocks generation rather than being trusted.
       const checkinUsable = !input.subjectiveCheckin || input.dataQuality.subjectiveCheckinComplete;
       if (input.recoverySnapshot && checkinUsable) {
         const objective = mapSnapshotToEngineInput(input.recoverySnapshot);
@@ -67,9 +55,6 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
         const tomorrowPlan = evaluateNextDayPlan({ subjective, objective }, context, input.date, todayRec);
         setNextDayPlan(tomorrowPlan);
 
-        // Persist what was just computed so there's a durable record to compare actual
-        // adherence against later -- fire-and-forget, a save failure shouldn't block
-        // the dashboard from showing today's recommendation.
         recommendationService.saveRecommendation(userId, input.date, todayRec).catch(err =>
           console.warn('Failed to persist recommendation:', err)
         );
@@ -106,6 +91,36 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
     const completed = items.filter(Boolean).length;
     return Math.round((completed / items.length) * 100);
   };
+
+  const handleAdjustSession = (direction: 'easier' | 'harder' | null) => {
+    setAdjustmentDirection(direction);
+    if (!recommendation || !decisionInput || !decisionInput.recoverySnapshot) return;
+
+    const subjective = mapCheckinToSubjectiveInput(decisionInput.subjectiveCheckin);
+    const objective = mapSnapshotToEngineInput(decisionInput.recoverySnapshot);
+    const context = mapContextFromGoalsAndConstraints(decisionInput.activeGoals, decisionInput.activeConstraints, decisionInput.preferences);
+
+    const recToSave = direction
+      ? adjustSessionRecommendation(recommendation, direction, { subjective, objective }, context, decisionInput.date) || recommendation
+      : recommendation;
+
+    recommendationService.saveRecommendation(userId, decisionInput.date, recToSave).catch(err =>
+      console.warn('Failed to persist adjusted recommendation:', err)
+    );
+  };
+
+  const getActiveRecommendation = (): Recommendation | null => {
+    if (!recommendation) return null;
+    if (!adjustmentDirection || !decisionInput || !decisionInput.recoverySnapshot) return recommendation;
+
+    const subjective = mapCheckinToSubjectiveInput(decisionInput.subjectiveCheckin);
+    const objective = mapSnapshotToEngineInput(decisionInput.recoverySnapshot);
+    const context = mapContextFromGoalsAndConstraints(decisionInput.activeGoals, decisionInput.activeConstraints, decisionInput.preferences);
+
+    return adjustSessionRecommendation(recommendation, adjustmentDirection, { subjective, objective }, context, decisionInput.date) || recommendation;
+  };
+
+  const activeRec = getActiveRecommendation();
 
   if (loading) {
     return (
@@ -168,16 +183,78 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
       <div className="dashboard-card recommendation-card">
         <div className="card-header">
           <h3>Today's Recommendation</h3>
-          {recommendation && <span className="status-badge success">Ready</span>}
+          {activeRec && (
+            <span className={`status-badge ${activeRec.adjustment ? 'info' : 'success'}`}>
+              {activeRec.adjustment ? `Adjusted (${activeRec.adjustment.direction})` : 'Ready'}
+            </span>
+          )}
         </div>
-        {recommendation ? (
+        {activeRec ? (
           <div className="recommendation-content">
-            <h4 className="recommendation-title">{recommendation.template.title}</h4>
+            <h4 className="recommendation-title">
+              {activeRec.template.title}
+              {activeRec.activeDose && (
+                <span className="dose-badge">{activeRec.activeDose.label}</span>
+              )}
+            </h4>
             <p className="recommendation-meta">
-              {recommendation.template.category} · {recommendation.template.durationMin}-{recommendation.template.durationMax} min
+              {activeRec.template.category} · {activeRec.activeDose ? `${activeRec.activeDose.durationMin}-${activeRec.activeDose.durationMax}` : `${activeRec.template.durationMin}-${activeRec.template.durationMax}`} min
             </p>
-            <p className="recommendation-description">{recommendation.template.description}</p>
-            <p className="recommendation-rationale">{recommendation.rationale}</p>
+            <p className="recommendation-description">
+              {activeRec.activeDose ? activeRec.activeDose.prescriptionSummary : activeRec.template.description}
+            </p>
+            <p className="recommendation-rationale">{activeRec.rationale}</p>
+
+            {/* Session Adjustment Controls */}
+            <div className="adjustment-control-section">
+              <span className="adjustment-label">Adjust Today's Session Load:</span>
+              <div className="adjustment-button-group">
+                <button
+                  type="button"
+                  className={`adjustment-btn ${adjustmentDirection === 'easier' ? 'active' : ''}`}
+                  onClick={() => handleAdjustSession(adjustmentDirection === 'easier' ? null : 'easier')}
+                >
+                  Easier
+                </button>
+                <button
+                  type="button"
+                  className={`adjustment-btn ${adjustmentDirection === null ? 'active' : ''}`}
+                  onClick={() => handleAdjustSession(null)}
+                >
+                  As Recommended
+                </button>
+                <button
+                  type="button"
+                  className={`adjustment-btn ${adjustmentDirection === 'harder' ? 'active' : ''}`}
+                  disabled={recommendation?.envelopes?.safety.clinicalFlagActive}
+                  title={recommendation?.envelopes?.safety.clinicalFlagActive ? 'Harder option disabled due to active pain/injury flag.' : 'Increase session load'}
+                  onClick={() => handleAdjustSession(adjustmentDirection === 'harder' ? null : 'harder')}
+                >
+                  Harder
+                </button>
+              </div>
+
+              {recommendation?.envelopes?.safety.clinicalFlagActive && (
+                <p className="adjustment-notice safety-notice">
+                  ⚠️ Harder option is unavailable today because an active pain/injury flag restricts physical loading.
+                </p>
+              )}
+
+              {activeRec.adjustment && (
+                <div className="adjustment-summary-box">
+                  <p>
+                    <strong>Session Adjusted ({activeRec.adjustment.direction}):</strong> {activeRec.adjustment.rationale}
+                  </p>
+                  <button
+                    type="button"
+                    className="reset-adjustment-btn"
+                    onClick={() => handleAdjustSession(null)}
+                  >
+                    ↺ Reset to As Recommended
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         ) : (
           <p className="card-empty">

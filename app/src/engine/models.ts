@@ -96,6 +96,14 @@ export interface UserContext {
     };
 }
 
+export interface DoseVariation {
+    label: string;
+    durationMin: number;
+    durationMax: number;
+    doseRatio: number;
+    prescriptionSummary: string;
+}
+
 export interface SessionTemplate {
     id: string;
     category: 'Hard Endurance' | 'Moderate Endurance' | 'Easy Endurance' | 'Upper-body Strength' | 'Lower-body Strength' | 'Full-body Strength' | 'Power Maintenance' | 'Field Maintenance' | 'Mobility/Recovery' | 'Rest';
@@ -112,6 +120,11 @@ export interface SessionTemplate {
      *  softer HRV/RHR readings would otherwise rule out "training" broadly. See
      *  rules.ts MODIFY_MAX_SYSTEMIC_COST. */
     systemicCost: number;
+    /** Indicates if this session's primary training objective (e.g. Aerobic Base) is transferable
+     *  to other modalities, as opposed to sport-specific or neuromuscular goals (e.g. Sprinting). Defaults to true. */
+    objectiveTransferable?: boolean;
+    easierDose?: DoseVariation;
+    harderDose?: DoseVariation;
 }
 
 export interface MetricStrainTelemetry {
@@ -131,6 +144,28 @@ export interface DecisionScoreTelemetry {
     totalDecisionScore: number;
 }
 
+export interface SafetyEnvelope {
+    clinicalFlagActive: boolean;
+    clinicalReason?: string | null;
+    restrictedModalities: SessionTemplate['modality'][];
+}
+
+export interface PlanEnvelope {
+    maxAllowableTier: 'Rest' | 'Mobility' | 'Easy' | 'Moderate' | 'Hard';
+    taperActive: boolean;
+    reason?: string | null;
+}
+
+export interface SessionAdjustment {
+    direction: 'easier' | 'harder';
+    tier: 1 | 2 | 3 | 4;
+    originalTemplateId: string;
+    originalTemplateTitle: string;
+    adjustedDoseLabel?: string;
+    athleteReason?: 'feel_better' | 'feel_worse' | 'soreness' | 'time_constraint' | 'other';
+    rationale: string;
+}
+
 export interface Recommendation {
     template: SessionTemplate;
     rationale: string;
@@ -139,6 +174,12 @@ export interface Recommendation {
      *  exposed so callers (persistence, adherence analysis) don't have to re-derive it
      *  from the template category alone. */
     mode: 'train' | 'modify' | 'recover';
+    activeDose?: DoseVariation;
+    adjustment?: SessionAdjustment;
+    envelopes?: {
+        safety: SafetyEnvelope;
+        plan: PlanEnvelope;
+    };
     /** Structured strain & contextual telemetry exposing decision drivers and reconciling mathematically. */
     telemetry?: DecisionScoreTelemetry;
 }
@@ -428,6 +469,7 @@ export interface DailyRecommendation {
     schemaVersion: number;
     createdAt: string;
     updatedAt: string;
+    adjustment?: SessionAdjustment;
     adherence: {
         /** Null until the user responds to the adherence prompt for this day. */
         respondedAt: string | null;
