@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { evaluateNextDayPlan, evaluateTraining } from './rules';
-import { generateWeekAheadPlan, generateWeekAheadPlanWithIntent, prepareWeekAheadPlanSeed, resolveWeeklyAnchors } from './planner';
-import type { DailyReadiness, EngineObjectiveInput, SubjectiveInput, TrainingSettings, UserContext, UserEvent } from './models';
+import { generateWeekAheadPlan, generateWeekAheadPlanWithIntent, prepareWeekAheadPlanSeed, projectTrailingHistory, resolveWeeklyAnchors } from './planner';
+import type { DailyReadiness, EngineObjectiveInput, FatigueState, SubjectiveInput, TrainingSettings, UserContext, UserEvent, UserPreferences } from './models';
 import type { CompletedExposure, TrainingHistoryProvider } from './trainingHistory';
+import { rankCandidatesByUtility } from './optimizer';
+import { resolveAvailability } from './schedule';
+import { ENRICHED_TEMPLATES } from './templates';
 
 // --- Fixtures (mirrors rules.test.ts's pattern) -----------------------------
 
@@ -188,6 +191,47 @@ describe('generateWeekAheadPlan', () => {
         );
         expect(calls).toBe(1);
         expect(plan.days).toHaveLength(3);
+    });
+
+    it('projects completed history into the seed without inventing a modality', () => {
+        const context = baseContext();
+        const { readiness } = buildTodayAndTomorrow(context);
+        const history: CompletedExposure[] = [{
+            date: '2026-08-05',
+            costProfile: { systemic: 0.8, cardiovascular: 0.7, lowerBody: 0.6, upperBody: 0, impactTissue: 0.2, neuromuscular: 0.3 },
+            trainingRecordLike: { type: 'hard Cycling threshold', duration_min: 45, training_effect: 3, intensity_tag: 'hard' },
+        }];
+
+        expect(projectTrailingHistory(history)).toEqual([{ type: 'hard Cycling threshold', systemicCost: 0.8 }]);
+        expect(prepareWeekAheadPlanSeed(readiness, [], '2026-08-07', history).trailingHistory)
+            .toEqual([{ type: 'hard Cycling threshold', systemicCost: 0.8 }]);
+    });
+
+    it('suppresses a hard Cycling candidate at a fresh plan boundary when real trailing history has two hard Cycling days', () => {
+        const context = baseContext({ hasIndoorBike: true });
+        const availability = resolveAvailability('2026-08-08', null, [], context);
+        const bikeVo2 = ENRICHED_TEMPLATES.find(template => template.id === 'end_hard_02')!;
+        const fatigue: FatigueState = {
+            lastUpdatedDate: '2026-08-08',
+            externalLoadFatigue: { systemic: 0, cardiovascular: 0, lowerBody: 0, upperBody: 0, impactTissue: 0, neuromuscular: 0 },
+            internalResponseStrain: { systemic: 0, cardiovascular: 0, lowerBody: 0, upperBody: 0, impactTissue: 0, neuromuscular: 0 },
+            combinedFatigue: { systemic: 0, cardiovascular: 0, lowerBody: 0, upperBody: 0, impactTissue: 0, neuromuscular: 0 },
+        };
+        const preferences: UserPreferences = {
+            userId: '', preferredRecoveryStyle: 'mixed', defaultWeekdayTimeMin: 45, defaultWeekendTimeMin: 60,
+            preferredTimeOfDay: 'flexible', preferredModalities: [], deprioritizedModalities: [], avoidedModalities: [],
+            explanationVerbosity: 'detailed', conservativeBias: false,
+            preferredUnits: { distance: 'km', weight: 'kg', temperature: 'celsius' }, schemaVersion: 1, createdAt: '', updatedAt: '',
+        };
+        const noHistory = rankCandidatesByUtility([bikeVo2], [], fatigue, availability, [], preferences)[0].utilityScore;
+        const seededHistory = rankCandidatesByUtility([bikeVo2], [], fatigue, availability, [], preferences, {
+            recentHistory: [
+                { type: 'hard Cycling intervals', systemicCost: 0.8 },
+                { type: 'hard Cycling threshold', systemicCost: 0.8 },
+            ],
+        })[0].utilityScore;
+
+        expect(seededHistory).toBeLessThan(noHistory);
     });
 });
 

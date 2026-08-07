@@ -21,12 +21,18 @@ export interface RankedCandidate {
     rationale: string;
 }
 
+export interface RecentHistoryEntry {
+    modality?: string;
+    type?: string;
+    systemicCost?: number;
+}
+
 export interface OptimizationOptions {
     focusEvent?: UserEvent | null;
     /** `systemicCost` is optional so existing callers/tests that only track
      *  modality/type keep working -- omitting it just disables the intensity-stacking
      *  check below for that entry, never the modality-repetition checks. */
-    recentHistory?: { modality?: string; type?: string; systemicCost?: number }[];
+    recentHistory?: RecentHistoryEntry[];
     /** Set by planner.ts's weekly-architecture pre-pass (resolveWeeklyAnchors) when this
      *  candidate day was deliberately designated a "key session" day -- 'event-specific'
      *  for the weekend-style race-specific/race-simulation anchor, 'quality' for the
@@ -94,6 +100,9 @@ export function calculateStimulusBenefit(
     stimulusProfile: WorkoutStimulusProfile | undefined,
     unresolvedObjectives: WeeklyObjective[]
 ): number {
+    // When no objectives remain unresolved, candidates receive baseline maintenance
+    // benefit only. Objective-resolution policy -- what counts as "resolved" -- is
+    // owned by microcycle.ts.
     if (!stimulusProfile || unresolvedObjectives.length === 0) return 0.5;
 
     let benefit = 0;

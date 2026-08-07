@@ -17,7 +17,7 @@ const thresholdExposure: CompletedExposure = {
 
 describe('history-seeded training state', () => {
     it('credits completed history into the current microcycle objectives', () => {
-        const state = buildMicrocycleState(phase, '2026-08-01', [thresholdExposure]);
+        const state = buildMicrocycleState(phase, '2026-08-01', [thresholdExposure], null);
         expect(state.objectives.find(objective => objective.key === 'threshold_quality')?.completedExposures).toBe(1);
     });
 

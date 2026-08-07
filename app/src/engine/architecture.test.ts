@@ -223,7 +223,7 @@ describe('Architecture & Phased Engine Integration', () => {
     describe('Phase 3: Microcycle Objectives', () => {
         it('generates weekly objectives and marks them satisfied when matching sessions complete', () => {
             const phaseWeights = evaluatePeriodizationPhase([], '2026-08-07').phase;
-            const microcycle = generateWeeklyObjectives(phaseWeights, '2026-08-03');
+            const microcycle = generateWeeklyObjectives(phaseWeights, '2026-08-03', null);
 
             expect(microcycle.objectives.length).toBeGreaterThan(0);
 

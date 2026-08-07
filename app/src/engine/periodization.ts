@@ -3,6 +3,7 @@ import type {
     EventPriority,
     GoalCategory,
     TemplatePhaseEligibility,
+    SessionTemplate,
     UserEvent,
     UserGoal,
 } from './models';
@@ -28,6 +29,18 @@ export interface PeriodizationResult {
     staleEvents: UserEvent[];
     /** A DNF focus event gets the normal recovery window, but its load is uncertain. */
     partialEffort: boolean;
+}
+
+/** Modalities that constitute sport-specific exposure for a governing event. This is
+ * deliberately separate from optimizer.ts's ranking-priority mapping. */
+export function modalitiesForEventCategory(category: UserEvent['category']): SessionTemplate['modality'][] {
+    switch (category) {
+        case 'cycling_event': return ['Cycling'];
+        case 'running_race': return ['Running'];
+        case 'triathlon': return ['Cycling', 'Running'];
+        case 'strength_meet': return ['Strength'];
+        case 'general_target': return [];
+    }
 }
 
 export const DEFAULT_BASE_DEMAND: EventDemandProfile = {
