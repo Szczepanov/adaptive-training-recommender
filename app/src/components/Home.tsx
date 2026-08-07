@@ -26,6 +26,12 @@ const MODE_LABELS: Record<Recommendation['mode'], string> = {
   recover: 'Recovery day',
 };
 
+function formatEventTiming(daysToEvent: number | null): string {
+  if (daysToEvent === 0) return 'Today';
+  if (daysToEvent === null) return '';
+  return daysToEvent > 0 ? `In ${daysToEvent} days` : `${Math.abs(daysToEvent)} days ago`;
+}
+
 function DetailedTodayPlan({ prescription }: { prescription: WorkoutPrescription }) {
   const uniqueCues = [...new Set(
     prescription.displayBlocks.flatMap((block) => block.steps.flatMap((step) => step.cues))
@@ -273,7 +279,7 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
   }
 
   const completeness = getDataCompleteness();
-  const primaryEventGoal = decisionInput?.activeGoals.find((goal) => goal.eventCategory && goal.targetDate);
+  const periodizationToday = eventPeriodization?.today ?? null;
   const checkinValues = decisionInput?.subjectiveCheckin
     ? [
         decisionInput.subjectiveCheckin.readiness,
@@ -512,16 +518,16 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
             {/* Event context */}
             <div className="dashboard-card" onClick={() => onNavigate('goals')}>
               <div className="card-header">
-                <h3>{primaryEventGoal ? 'Target Event' : 'Active Goals'}</h3>
+                <h3>{periodizationToday?.focusEvent ? 'Focus Event' : 'Active Goals'}</h3>
               </div>
               
-              {primaryEventGoal ? (
+              {periodizationToday?.focusEvent ? (
                 <div className="goals-preview event-preview">
-                  <strong className="event-title">{primaryEventGoal.title}</strong>
+                  <strong className="event-title">{periodizationToday.focusEvent.title}</strong>
                   <span className="event-meta">
-                    {getDaysToEvent(primaryEventGoal.targetDate!, decisionInput!.date)} days · {eventPeriodization?.today.phase.phaseName ?? 'Training'} phase
+                    {formatEventTiming(periodizationToday.daysToEvent)} · {periodizationToday.phase.phaseName} phase
                   </span>
-                  <p className="card-action">View goals</p>
+                  <button type="button" className="card-action" onClick={() => onNavigate('goals')}>Manage goals</button>
                 </div>
               ) : decisionInput?.activeGoals.length ? (
                 <div className="goals-preview">
@@ -551,6 +557,17 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
                 </div>
               )}
             </div>
+
+            {periodizationToday?.staleEvents.length ? (
+              <div className="dashboard-card stale-event-card">
+                <div className="card-header"><h3>Past Events</h3></div>
+                <p>Update the outcome for these events:</p>
+                <ul>
+                  {periodizationToday.staleEvents.map(event => <li key={event.id}>{event.title}</li>)}
+                </ul>
+                <button type="button" className="card-action" onClick={() => onNavigate('goals')}>Review goals and events</button>
+              </div>
+            ) : null}
 
             {/* Training status */}
             <div className="dashboard-card" onClick={() => onNavigate('constraints')}>
