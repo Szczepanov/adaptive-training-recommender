@@ -55,7 +55,7 @@ describe('resolveWorkoutPrescription', () => {
   });
 
   it('covers every declared session-template category', () => {
-    const categories: SessionTemplate['category'][] = ['Hard Endurance', 'Moderate Endurance', 'Easy Endurance', 'Upper-body Strength', 'Lower-body Strength', 'Full-body Strength', 'Power Maintenance', 'Field Maintenance', 'Technical Skill', 'Mobility/Recovery', 'Rest'];
+    const categories: SessionTemplate['category'][] = ['Hard Endurance', 'Moderate Endurance', 'Easy Endurance', 'Race-Specific Endurance', 'Upper-body Strength', 'Lower-body Strength', 'Full-body Strength', 'Power Maintenance', 'Field Maintenance', 'Technical Skill', 'Mobility/Recovery', 'Rest'];
     for (const category of categories) expect(TEMPLATES.some((template) => template.category === category)).toBe(true);
   });
 

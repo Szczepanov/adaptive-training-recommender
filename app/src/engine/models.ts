@@ -201,9 +201,29 @@ export interface DoseVariation {
     prescriptionSummary: string;
 }
 
+/** Governs when a template becomes selectable relative to the athlete's governing event,
+ *  independent of the generic weekly-objective/fatigue ranking. Absent = eligible always
+ *  (all templates that existed before this field was added keep exactly that behavior).
+ *  Only consulted on Path B (the intent-aware optimizer, rules.ts's evaluateTrainingWithIntent
+ *  and planner.ts's projected loop) -- Path A's evaluateTraining has no PeriodizationResult
+ *  in scope at all, so a phase-gated template is structurally unreachable there, not merely
+ *  policy-excluded. See periodization.ts's isTemplatePhaseEligible. */
+export interface TemplatePhaseEligibility {
+    /** Never eligible in the eventless default (Base phase with no active event). */
+    requiresFocusEvent?: boolean;
+    /** Inclusive day-count ceiling relative to the focus event (e.g. 35 = "only within 35 days"). */
+    maxDaysToEvent?: number;
+    /** Inclusive day-count floor relative to the focus event. */
+    minDaysToEvent?: number;
+    /** Only eligible once the focus event's taper window is active. */
+    requiresTaper?: boolean;
+    /** Never eligible once the taper window is active (superseded by a taper-specific template). */
+    excludeTaper?: boolean;
+}
+
 export interface SessionTemplate {
     id: string;
-    category: 'Hard Endurance' | 'Moderate Endurance' | 'Easy Endurance' | 'Upper-body Strength' | 'Lower-body Strength' | 'Full-body Strength' | 'Power Maintenance' | 'Field Maintenance' | 'Technical Skill' | 'Mobility/Recovery' | 'Rest';
+    category: 'Hard Endurance' | 'Moderate Endurance' | 'Easy Endurance' | 'Race-Specific Endurance' | 'Upper-body Strength' | 'Lower-body Strength' | 'Full-body Strength' | 'Power Maintenance' | 'Field Maintenance' | 'Technical Skill' | 'Mobility/Recovery' | 'Rest';
     modality: 'Running' | 'Cycling' | 'Strength' | 'Field' | 'Mobility' | 'Cross Training' | 'None';
     durationMin: number;
     durationMax: number;
@@ -218,6 +238,7 @@ export interface SessionTemplate {
     harderDose?: DoseVariation;
     stimulusProfile?: WorkoutStimulusProfile;
     costProfile?: WorkoutCostProfile;
+    phaseEligibility?: TemplatePhaseEligibility;
 }
 
 export interface MetricStrainTelemetry {

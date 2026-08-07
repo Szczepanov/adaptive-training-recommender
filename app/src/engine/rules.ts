@@ -7,6 +7,7 @@ import { resolveAvailability } from './schedule';
 import { addDaysToLocalDateString } from '../utils/localDate';
 import type { TrainingHistoryProvider } from './trainingHistory';
 import { resolveExecutionDose } from './dose';
+import { isTemplatePhaseEligible } from './periodization';
 
 /**
  * Deterministically pick one template from a filtered set of same-category options,
@@ -314,6 +315,15 @@ export function evaluateTraining(
         // Avoided modalities are a hard exclude, same standing as an equipment gate --
         // unlike deprioritized (soft) or preferred (soft), see rankByModalityPreference.
         if (context.preferences.avoidedModalities.some(m => modalityMatches(t.modality, m))) return false;
+        // Phase-gated templates (phaseEligibility) are excluded from Path A entirely, not
+        // just from the 'train' category allowlist below: an explicit preferredModalityToday
+        // ask widens that allowlist to every constraint-eligible template of the asked
+        // modality (see applyModalityPreference), which would otherwise let e.g. a
+        // taper-only or event-proximity-gated session through with zero regard for how far
+        // away the event actually is -- evaluateTraining has no PeriodizationResult to check
+        // that against at all, so these must never reach `availableTemplates` in the first
+        // place, on any path, on any mode.
+        if (t.phaseEligibility) return false;
         return true;
     });
 
@@ -384,6 +394,8 @@ export function evaluateTraining(
         // 'Moderate Endurance' (Zone-3 tempo) belongs here, not in 'modify' -- it's
         // explicitly a comfortably-hard, full-intensity option, which would contradict
         // modify mode's "capping intensity" rationale above.
+        // 'Race-Specific Endurance' isn't in this allowlist -- phase-gated templates are
+        // already excluded from `availableTemplates` itself (step 4 above), so it's moot here.
         const trainOptions = availableTemplates.filter(t => t.category === 'Hard Endurance' || t.category === 'Moderate Endurance' || t.category === 'Full-body Strength' || t.category === 'Upper-body Strength' || t.category === 'Lower-body Strength' || t.category === 'Power Maintenance');
         // No ceiling to protect on a 'train' day -- an explicit ask for something gentler
         // (e.g. mobility) than train mode would normally offer is fine to honor, so the
@@ -477,7 +489,8 @@ export async function evaluateTrainingWithIntent(
         .filter(template => !base.envelopes!.safety.restrictedModalities.includes(template.modality))
         .filter(template => template.systemicCost <= maxCost)
         .filter(template => base.mode !== 'recover' || template.category === 'Rest' || template.category === 'Mobility/Recovery')
-        .filter(template => base.mode !== 'modify' || template.systemicCost <= MODIFY_MAX_SYSTEMIC_COST);
+        .filter(template => base.mode !== 'modify' || template.systemicCost <= MODIFY_MAX_SYSTEMIC_COST)
+        .filter(template => isTemplatePhaseEligible(template, intent.periodization));
     const ranked = rankCandidatesByUtility(
         candidates,
         intent.unresolvedObjectives,

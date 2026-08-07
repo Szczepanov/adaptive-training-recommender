@@ -10,7 +10,7 @@ export const TAPER_RACE_WORKOUTS: WorkoutDefinition[] = [
     duration: { defaultMin: 45, minimumMin: 30, maximumMin: 55 },
     loadProfile: { cardiovascular: 4, muscular: 3, mechanical: 1, eccentric: 1, coordination: 2, recoveryHours: 36 },
     eligibility: { minimumReadiness: 6, maximumSoreness: 5, minimumDaysAfterHardLowerBody: 1, forbiddenPainFlags: ['knee_swelling', 'acute_knee_pain'] },
-    equipment: ['bike'], contraindicationTags: ['acute_knee_pain'],
+    equipment: ['bike'], contraindicationTags: ['acute_knee_pain'], engineTemplateIds: ['end_taper_sharpen_01'],
     blocks: [
       { id: 'warmup', name: 'Warm-up', role: 'warmup', steps: [ timeStep('sharpen_warmup', 'bike_progressive_warmup', 'Progressive warm-up', 720, { target: { type: 'rpe', min: 1, max: 3 } }) ]},
       { id: 'main', name: 'Brief quality', role: 'main', steps: [
@@ -42,7 +42,7 @@ export const TAPER_RACE_WORKOUTS: WorkoutDefinition[] = [
     duration: { defaultMin: 30, minimumMin: 20, maximumMin: 40 },
     loadProfile: { cardiovascular: 2, muscular: 2, mechanical: 1, eccentric: 1, coordination: 2, recoveryHours: 12 },
     eligibility: { minimumReadiness: 5, maximumSoreness: 5, forbiddenPainFlags: ['knee_swelling', 'acute_knee_pain'] },
-    equipment: ['bike'], contraindicationTags: ['acute_knee_pain'],
+    equipment: ['bike'], contraindicationTags: ['acute_knee_pain'], engineTemplateIds: ['end_pre_race_openers_01'],
     blocks: [
       { id: 'warmup', name: 'Easy warm-up', role: 'warmup', steps: [ timeStep('openers_warmup', 'bike_easy_spin', 'Easy riding', 720, { target: { type: 'rpe', min: 1, max: 2 } }) ]},
       { id: 'activation', name: 'Openers', role: 'activation', steps: [

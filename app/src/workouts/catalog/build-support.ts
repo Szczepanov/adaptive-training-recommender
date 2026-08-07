@@ -10,7 +10,7 @@ export const BUILD_SUPPORT_WORKOUTS: WorkoutDefinition[] = [
     duration: { defaultMin: 90, minimumMin: 50, maximumMin: 150 },
     loadProfile: { cardiovascular: 4, muscular: 3, mechanical: 1, eccentric: 1, coordination: 3, recoveryHours: 48 },
     eligibility: { minimumReadiness: 6, maximumSoreness: 6, minimumDaysAfterHardLowerBody: 1, forbiddenPainFlags: ['knee_swelling', 'acute_knee_pain'] },
-    equipment: ['bike'], contraindicationTags: ['acute_knee_pain'],
+    equipment: ['bike'], contraindicationTags: ['acute_knee_pain'], engineTemplateIds: ['end_race_specific_01'],
     blocks: [
       { id: 'warmup', name: 'Progressive warm-up', role: 'warmup', steps: [
         timeStep('event_warmup', 'bike_progressive_warmup', 'Progressive warm-up', 900, { target: { type: 'rpe', min: 1, max: 3 } })

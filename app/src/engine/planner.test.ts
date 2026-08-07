@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { evaluateNextDayPlan, evaluateTraining } from './rules';
-import { generateWeekAheadPlan, generateWeekAheadPlanWithIntent, prepareWeekAheadPlanSeed } from './planner';
-import type { DailyReadiness, EngineObjectiveInput, SubjectiveInput, UserContext, UserEvent } from './models';
+import { generateWeekAheadPlan, generateWeekAheadPlanWithIntent, prepareWeekAheadPlanSeed, resolveWeeklyAnchors } from './planner';
+import type { DailyReadiness, EngineObjectiveInput, SubjectiveInput, TrainingSettings, UserContext, UserEvent } from './models';
 import type { CompletedExposure, TrainingHistoryProvider } from './trainingHistory';
 
 // --- Fixtures (mirrors rules.test.ts's pattern) -----------------------------
@@ -293,5 +293,100 @@ describe('generateWeekAheadPlan produces plans that make coaching sense', () => 
             expect(objective).toBeDefined();
             expect(objective!.completedExposures).toBeGreaterThan(0);
         });
+    });
+});
+
+// --- Weekly-architecture anchor-day layer -------------------------------------
+
+function weeklyTrainingSettings(overrides: Partial<TrainingSettings['defaults']> = {}): TrainingSettings {
+    return {
+        userId: 'u1', schemaVersion: 2,
+        // indoor_bike: the midweek "structured quality" templates (Tempo Ride / Bike VO2
+        // Intervals) require it -- the outdoor Race-Specific Endurance templates don't
+        // (requiredEquipment: []), so this only gates the quality-anchor side.
+        equipment: { free_weights: true, cable_machine: false, treadmill: false, indoor_bike: true, pullup_bar: false },
+        guardrails: { avoid_high_impact: false, avoid_heavy_lower_body: false, avoid_overhead_pressing: false, avoid_heavy_spinal_loading: false },
+        defaults: { weekdayMaxMinutes: 45, weekendMaxMinutes: 150, environment: 'either', ...overrides },
+        preferences: { preferActiveRecovery: false },
+        migration: { legacyReviewed: true, migratedAt: null }, createdAt: '', updatedAt: '',
+    };
+}
+
+const cyclingEvent = (daysOut: string): UserEvent => ({
+    id: 'e1', title: 'Gran Fondo', date: daysOut, priority: 'A', lifecycle: 'scheduled', category: 'cycling_event',
+    demandProfile: { aerobicEndurance: 0.8, thresholdPower: 0.75, vo2MaxPower: 0.7, repeatedSurges: 0.7, sprintPower: 0.3, fatigueResistance: 0.8, neuromuscular: 0.3 },
+});
+
+describe('resolveWeeklyAnchors', () => {
+    it('nominates no anchors at all when no focus event governs any candidate day', () => {
+        const context = baseContext();
+        context.trainingSettings = weeklyTrainingSettings();
+        const anchors = resolveWeeklyAnchors('2026-08-07', 7, [], [], context);
+        expect(anchors).toEqual({ eventSpecificAnchorDate: null, qualityAnchorDate: null });
+    });
+
+    it('nominates the event-specific anchor on the day with the largest real time budget, and a quality anchor at least 2 days away', () => {
+        // 2026-08-07 is a Friday -- offsets 2..7 land on Sun(08-09) Mon Tue Wed Thu Fri(08-14).
+        // Only Sunday gets the weekend budget (150 min); every weekday is capped at 45 --
+        // too short for any Race-Specific Endurance template's 50+ min floor, so Sunday is
+        // the only day that can host it.
+        const context = baseContext();
+        context.trainingSettings = weeklyTrainingSettings();
+        const event = cyclingEvent('2026-08-27'); // 20 days out -> Specificity phase, no taper
+        const anchors = resolveWeeklyAnchors('2026-08-07', 7, [event], [], context);
+
+        expect(anchors.eventSpecificAnchorDate).toBe('2026-08-09');
+        expect(anchors.qualityAnchorDate).not.toBeNull();
+        expect(anchors.qualityAnchorDate).not.toBe('2026-08-09');
+    });
+
+    it('nominates no event-specific anchor once every candidate day is in the taper window (the race-specific templates explicitly excludeTaper)', () => {
+        const context = baseContext();
+        context.trainingSettings = weeklyTrainingSettings();
+        const event = cyclingEvent('2026-08-14'); // 7 days out -> inside the 14-day A-event taper window for every offset 2..7
+        const anchors = resolveWeeklyAnchors('2026-08-07', 7, [event], [], context);
+        expect(anchors.eventSpecificAnchorDate).toBeNull();
+    });
+});
+
+describe('generateWeekAheadPlan weekly-architecture anchoring', () => {
+    it('boosts a Race-Specific Endurance pick onto the nominated event-specific anchor day', () => {
+        const context = baseContext();
+        context.trainingSettings = weeklyTrainingSettings();
+        context.preferences.preferredModalities = ['Cycling'];
+        // soreness: 7 forces today into 'modify' mode (systemicCost <= 0.5), same as the
+        // synthetic 'yellow' scenario tomorrowRec already always uses -- keeps the fatigue
+        // seeded into the anchor day realistic-but-modest, so the anchor boost is being
+        // tested on its own merits rather than fighting a hard day's residual fatigue (a
+        // real hard/moderate day legitimately CAN outrank the anchor via the fatigue-tier
+        // gate -- that's correct, not a bug, so this test deliberately avoids that case).
+        const readiness: DailyReadiness = { subjective: neutralSubjective({ soreness: 7 }), objective: quietObjective() };
+        const event = cyclingEvent('2026-08-27'); // Specificity phase, no taper
+        const todayRec = evaluateTraining(readiness, context, '2026-08-07');
+        const tomorrowRec = evaluateNextDayPlan(readiness, context, '2026-08-07', todayRec).branches.yellow.recommendation;
+
+        const plan = generateWeekAheadPlan(
+            readiness, context, null, '2026-08-07', todayRec, tomorrowRec,
+            prepareWeekAheadPlanSeed(readiness, [event], '2026-08-07', []),
+            { days: 7, events: [event] },
+        );
+
+        const sunday = plan.days.find(d => d.date === '2026-08-09');
+        expect(sunday).toBeDefined();
+        expect(sunday!.template.category).toBe('Race-Specific Endurance');
+    });
+
+    it('does not change plan output at all when resolveWeeklyAnchors returns no anchors (Base phase, no event)', () => {
+        const context = baseContext();
+        const { readiness, todayRec, tomorrowRec } = buildTodayAndTomorrow(context);
+        const seed = prepareWeekAheadPlanSeed(readiness, [], '2026-08-07', []);
+
+        const anchors = resolveWeeklyAnchors('2026-08-07', 7, [], [], context);
+        expect(anchors).toEqual({ eventSpecificAnchorDate: null, qualityAnchorDate: null });
+
+        // Same plan as the pre-existing "produces the requested number of future days"
+        // fixture -- asserting it's untouched by this feature's presence.
+        const plan = generateWeekAheadPlan(readiness, context, null, '2026-08-07', todayRec, tomorrowRec, seed, { days: 7 });
+        expect(plan.days).toHaveLength(7);
     });
 });

@@ -14,7 +14,7 @@ import type {
     WorkoutStimulusProfile,
 } from './models';
 import { resolveAvailability } from './schedule';
-import { evaluatePeriodizationPhase, type PhaseWeights } from './periodization';
+import { evaluatePeriodizationPhase, isTemplatePhaseEligible, type PhaseWeights } from './periodization';
 import { buildMicrocycleState, creditObjectivesFromStimulus, getUnresolvedObjectives, stimulusCoverage, STIMULUS_CREDIT_COVERAGE_THRESHOLD } from './microcycle';
 import { applyCompletedSessionLoad, buildFatigueStateFromHistory, computeInternalResponseStrain, decayFatigue } from './fatigue';
 import type { CompletedExposure, TrainingHistoryProvider } from './trainingHistory';
@@ -182,6 +182,93 @@ function combineMax(a: DimensionalFatigue, b: DimensionalFatigue): DimensionalFa
     };
 }
 
+function isAdjacentDate(date: string, anchorDate: string | null): boolean {
+    if (!anchorDate) return false;
+    return addDaysToLocalDateString(date, 1) === anchorDate || addDaysToLocalDateString(date, -1) === anchorDate;
+}
+
+export interface WeeklyAnchors {
+    /** The day nominated for the weekend-style race-specific/race-simulation session. */
+    eventSpecificAnchorDate: string | null;
+    /** The day nominated for the midweek structured threshold/over-under session. */
+    qualityAnchorDate: string | null;
+}
+
+const QUALITY_ANCHOR_MIN_GAP_DAYS = 2;
+
+/**
+ * Pure pre-pass, run once before the day-by-day fatigue loop: nominates up to two future
+ * days as deliberate "key session" anchors, rather than leaving which day gets which role
+ * entirely to independent greedy per-day ranking. Only ever nominates anchors when a real
+ * focus event governs at least one candidate day -- a Base-phase/no-event user gets
+ * `{ null, null }` and the rest of generateWeekAheadPlan behaves exactly as it did before
+ * this existed.
+ *
+ * Scans offsets 2..N only: offset 1 (tomorrow) reuses rules.ts's own evaluation, which has
+ * no anchor concept and isn't touched by this feature, so tomorrow can never be nominated.
+ *
+ * Both time budget (resolveAvailability) and phase eligibility (evaluatePeriodizationPhase)
+ * are independent of fatigue, so this can run ahead of the stateful loop that tracks it.
+ */
+export function resolveWeeklyAnchors(
+    todayDate: string,
+    totalDays: number,
+    events: UserEvent[],
+    fixedActivities: FixedActivity[],
+    context: UserContext,
+): WeeklyAnchors {
+    // Deliberately excludes the taper-family Race-Specific Endurance templates
+    // (end_taper_sharpen_01/end_pre_race_openers_01): those are short, freshness-preserving
+    // sessions by design and don't need -- or deserve -- a dedicated "big anchor day"
+    // designation the way the weekend event-specific ride / race simulation progression does.
+    const raceSpecificTemplates = ENRICHED_TEMPLATES.filter(t => t.category === 'Race-Specific Endurance' && !t.phaseEligibility?.requiresTaper);
+    const qualityTemplates = ENRICHED_TEMPLATES.filter(t => t.modality === 'Cycling' && (t.category === 'Moderate Endurance' || t.category === 'Hard Endurance'));
+
+    interface AnchorDayInfo {
+        date: string;
+        offset: number;
+        maxTimeMinutes: number;
+        periodization: ReturnType<typeof evaluatePeriodizationPhase>;
+    }
+    const dayInfo: AnchorDayInfo[] = [];
+    for (let offset = 2; offset <= totalDays; offset++) {
+        const date = addDaysToLocalDateString(todayDate, offset);
+        const periodization = evaluatePeriodizationPhase(events, date);
+        if (!periodization.focusEvent) continue;
+        const availability = resolveAvailability(date, null, fixedActivities, context);
+        dayInfo.push({ date, offset, maxTimeMinutes: availability.maxTimeMinutes, periodization });
+    }
+    if (dayInfo.length === 0) return { eventSpecificAnchorDate: null, qualityAnchorDate: null };
+
+    const largestByTime = (pool: typeof dayInfo) =>
+        pool.reduce((best, d) => (d.maxTimeMinutes > best.maxTimeMinutes ? d : best), pool[0]);
+
+    // Full hard-gate (duration + equipment + environment + guardrails), the same
+    // eligibleTemplates primitive the real loop uses -- an anchor is only nominated on a
+    // day where the real loop could actually deliver on it (e.g. an "indoor only"
+    // TrainingSettings default correctly rules out an outdoor-only race-specific ride,
+    // rather than nominating an anchor day the loop would immediately fall through on).
+    const eventSpecificPool = dayInfo.filter(d =>
+        eligibleTemplates(raceSpecificTemplates, context, d.maxTimeMinutes, d.date).some(t => isTemplatePhaseEligible(t, d.periodization))
+    );
+    const eventSpecificAnchor = eventSpecificPool.length > 0 ? largestByTime(eventSpecificPool) : null;
+
+    const remaining = dayInfo.filter(d => !eventSpecificAnchor || d.date !== eventSpecificAnchor.date);
+    const farEnough = (d: AnchorDayInfo, minGap: number) =>
+        !eventSpecificAnchor || Math.abs(d.offset - eventSpecificAnchor.offset) >= minGap;
+    const fitsQuality = (d: AnchorDayInfo) => eligibleTemplates(qualityTemplates, context, d.maxTimeMinutes, d.date).length > 0;
+
+    const qualityPoolFar = remaining.filter(d => farEnough(d, QUALITY_ANCHOR_MIN_GAP_DAYS) && fitsQuality(d));
+    const qualityPoolNear = remaining.filter(d => farEnough(d, 1) && fitsQuality(d));
+    const qualityPool = qualityPoolFar.length > 0 ? qualityPoolFar : qualityPoolNear;
+    const qualityAnchor = qualityPool.length > 0 ? largestByTime(qualityPool) : null;
+
+    return {
+        eventSpecificAnchorDate: eventSpecificAnchor?.date ?? null,
+        qualityAnchorDate: qualityAnchor?.date ?? null,
+    };
+}
+
 /**
  * Projects a rolling multi-day plan forward from tomorrow, chaining the 6-tier engine
  * (schedule -> periodization -> microcycle -> fatigue -> optimizer, see ADR-0007) day by
@@ -229,6 +316,11 @@ export function generateWeekAheadPlan(
     const internalStrainAsOf = todayDate;
 
     const resultDays: WeekAheadDay[] = [];
+
+    // Weekly-architecture pre-pass -- pure, fatigue-independent, computed once. See
+    // resolveWeeklyAnchors's own docstring: both anchors stay null (fully inert) unless a
+    // real focus event governs at least one future day.
+    const anchors = resolveWeeklyAnchors(todayDate, totalDays, events, fixedActivities, context);
 
     const applyPick = (date: string, template: SessionTemplate) => {
         microcycle = creditObjectivesFromStimulus(microcycle, enrichedStimulusProfile(template));
@@ -288,7 +380,8 @@ export function generateWeekAheadPlan(
         // never allow (banned modalities, wrong environment, equipment the athlete
         // doesn't own). See eligibility.ts -- this is the same gate rules.ts already
         // runs for today and tomorrow.
-        const eligible = eligibleTemplates(ENRICHED_TEMPLATES, context, availability.maxTimeMinutes, date);
+        const eligible = eligibleTemplates(ENRICHED_TEMPLATES, context, availability.maxTimeMinutes, date)
+            .filter(t => isTemplatePhaseEligible(t, periodization));
 
         // Then a hard fatigue-tier ceiling, mirroring rules.ts's readiness-driven mode
         // ceiling but keyed off projected fatigue (see PROJECTED_FATIGUE_*_THRESHOLD
@@ -305,6 +398,11 @@ export function generateWeekAheadPlan(
             return true;
         });
 
+        const anchorRole = date === anchors.eventSpecificAnchorDate ? 'event-specific'
+            : date === anchors.qualityAnchorDate ? 'quality' : null;
+        const adjacentToAnchor = isAdjacentDate(date, anchors.eventSpecificAnchorDate)
+            || isAdjacentDate(date, anchors.qualityAnchorDate);
+
         const ranked = rankCandidatesByUtility(
             fatigueGated,
             unresolved,
@@ -312,7 +410,7 @@ export function generateWeekAheadPlan(
             availability,
             injuries,
             effectivePreferences,
-            { focusEvent: periodization.focusEvent, recentHistory: projectedHistory }
+            { focusEvent: periodization.focusEvent, recentHistory: projectedHistory, anchorRole, adjacentToAnchor }
         );
         const pick = ranked[0];
 

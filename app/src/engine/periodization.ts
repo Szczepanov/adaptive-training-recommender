@@ -2,6 +2,7 @@ import type {
     EventDemandProfile,
     EventPriority,
     GoalCategory,
+    TemplatePhaseEligibility,
     UserEvent,
     UserGoal,
 } from './models';
@@ -188,6 +189,28 @@ export function evaluatePeriodizationPhase(
         staleEvents,
         partialEffort,
     };
+}
+
+/**
+ * Whether a template is selectable given how the athlete's governing event is unfolding.
+ * Pure and total: a template with no `phaseEligibility` is always eligible (existing
+ * templates are unaffected). A day-bound rule (`min`/`maxDaysToEvent`) is never satisfied
+ * when `daysToEvent` is null (no governing event) -- there is no "close to nothing" case.
+ */
+export function isTemplatePhaseEligible(
+    template: { phaseEligibility?: TemplatePhaseEligibility },
+    result: PeriodizationResult
+): boolean {
+    const rule = template.phaseEligibility;
+    if (!rule) return true;
+
+    if (rule.requiresFocusEvent && !result.focusEvent) return false;
+    if (rule.requiresTaper && !result.phase.taperActive) return false;
+    if (rule.excludeTaper && result.phase.taperActive) return false;
+    if (rule.maxDaysToEvent !== undefined && (result.daysToEvent === null || result.daysToEvent > rule.maxDaysToEvent)) return false;
+    if (rule.minDaysToEvent !== undefined && (result.daysToEvent === null || result.daysToEvent < rule.minDaysToEvent)) return false;
+
+    return true;
 }
 
 /** Days from `evaluationDate` to `eventDate` (negative once the date has passed). Pure,

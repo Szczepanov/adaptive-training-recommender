@@ -27,6 +27,17 @@ export interface OptimizationOptions {
      *  modality/type keep working -- omitting it just disables the intensity-stacking
      *  check below for that entry, never the modality-repetition checks. */
     recentHistory?: { modality?: string; type?: string; systemicCost?: number }[];
+    /** Set by planner.ts's weekly-architecture pre-pass (resolveWeeklyAnchors) when this
+     *  candidate day was deliberately designated a "key session" day -- 'event-specific'
+     *  for the weekend-style race-specific/race-simulation anchor, 'quality' for the
+     *  midweek structured threshold/over-under anchor. Undefined/null (the default) means
+     *  no anchor applies -- ranking behaves exactly as before this option existed. */
+    anchorRole?: 'event-specific' | 'quality' | null;
+    /** True when today sits immediately before or after either anchor day -- used to
+     *  protect the anchor's freshness from heavy lower-body loading, independent of
+     *  whatever was actually picked the day before (see Patch 1c above, which reacts to
+     *  realized history; this reacts to a day that hasn't been picked yet). */
+    adjacentToAnchor?: boolean;
 }
 
 /** Systemic-cost floor above which a template counts as a "hard" training day for
@@ -36,6 +47,19 @@ const INTENSITY_STACK_THRESHOLD = 0.5;
  *  modality pairing (e.g. a hard bike day into a hard lift day), which is a real but
  *  lesser overreach risk than repeating the identical session type. */
 const INTENSITY_STACK_PENALTY = 0.35;
+
+/** Same magnitude class as the existing event-priority boost (1.25/1.40) below -- a
+ *  deliberate nudge toward a day's designated weekly-architecture role, not a hard
+ *  restriction (equipment/fatigue/safety gates already ran upstream, so a genuinely
+ *  infeasible anchor day still falls through to the next-best real option). */
+const ANCHOR_ROLE_BOOST = 1.35;
+/** Protects an anchor's freshness by suppressing heavy lower-body/full-body strength on
+ *  the day immediately before or after it -- upper-body and power-maintenance work are
+ *  deliberately untouched (standard concurrent-training interference management: keep
+ *  meaningful lower-body loading away from the key cycling days, not a blanket strength
+ *  ban -- see docs on the weekly-architecture feature). */
+const ANCHOR_ADJACENCY_SUPPRESSION = 0.3;
+const HEAVY_LOWER_BODY_STRENGTH_CATEGORIES: SessionTemplate['category'][] = ['Lower-body Strength', 'Full-body Strength'];
 
 export function getConsecutiveModalityCount(
     history: { modality?: string; type?: string }[],
@@ -222,6 +246,24 @@ export function rankCandidatesByUtility(
             const isAerobicDefault = template.category === 'Easy Endurance' || template.title.toLowerCase().includes('zone 2');
             if (unresolvedObjectives.length === 0 && isAerobicDefault) {
                 prefMultiplier *= 1.25;
+            }
+
+            // Patch 4: Weekly-architecture anchor boost -- nudges ranking toward the
+            // deliberately-designated role for a day the pre-pass chose as an anchor,
+            // rather than leaving "which day gets the key session" entirely to reactive
+            // anti-stacking/benefit-maximizing. Scoped to Cycling since this is the same
+            // athlete/event-specific progression the anchor mechanism was built for.
+            if (options.anchorRole === 'event-specific' && template.modality === 'Cycling' && template.category === 'Race-Specific Endurance') {
+                prefMultiplier *= ANCHOR_ROLE_BOOST;
+            } else if (options.anchorRole === 'quality' && template.modality === 'Cycling' && (template.category === 'Moderate Endurance' || template.category === 'Hard Endurance')) {
+                prefMultiplier *= ANCHOR_ROLE_BOOST;
+            }
+
+            // Patch 5: Anchor-adjacency freshness protection -- suppress heavy lower-body/
+            // full-body strength the day immediately before or after an anchor, regardless
+            // of what actually gets picked on the anchor day itself.
+            if (options.adjacentToAnchor && HEAVY_LOWER_BODY_STRENGTH_CATEGORIES.includes(template.category) && template.systemicCost >= INTENSITY_STACK_THRESHOLD) {
+                prefMultiplier *= ANCHOR_ADJACENCY_SUPPRESSION;
             }
 
             const utility = (benefit / (1 + costPenalty)) * prefMultiplier;

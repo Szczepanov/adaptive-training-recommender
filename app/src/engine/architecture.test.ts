@@ -3,7 +3,7 @@ import { applyCompletedSessionLoad, createEmptyFatigue } from './fatigue';
 import { generateWeeklyObjectives, updateMicrocycleProgress } from './microcycle';
 import type { TrainingSettings, UserContext, UserEvent, UserGoal, UserPreferences } from './models';
 import { rankCandidatesByUtility } from './optimizer';
-import { deriveEventPriority, deriveGoalCategory, evaluatePeriodizationPhase, getDaysToEvent, goalToUserEvent } from './periodization';
+import { deriveEventPriority, deriveGoalCategory, evaluatePeriodizationPhase, getDaysToEvent, goalToUserEvent, isTemplatePhaseEligible } from './periodization';
 import { resolveAvailability } from './schedule';
 import { ENRICHED_TEMPLATES } from './templates';
 
@@ -414,6 +414,76 @@ describe('Architecture & Phased Engine Integration', () => {
             expect(cyclingPick).toBeDefined();
             expect(strengthPick).toBeDefined();
             expect(cyclingPick!.utilityScore).toBeGreaterThan(strengthPick!.utilityScore);
+        });
+    });
+
+    describe('Phase 6: Race-Specific Endurance phase-gating', () => {
+        const raceSpecificIds = ['end_race_specific_01', 'end_race_sim_01', 'end_taper_sharpen_01', 'end_pre_race_openers_01'];
+        const cyclingEvent = (date: string): UserEvent => ({
+            id: 'c1', title: 'Road Race', date, priority: 'A', lifecycle: 'scheduled',
+            category: 'cycling_event', demandProfile: { aerobicEndurance: 0.8, thresholdPower: 0.8, vo2MaxPower: 0.6, repeatedSurges: 0.5, sprintPower: 0.3, fatigueResistance: 0.7, neuromuscular: 0.4 },
+        });
+
+        it('excludes every Race-Specific Endurance template when no focus event governs the day', () => {
+            const noEvent = evaluatePeriodizationPhase([], '2026-08-07');
+            raceSpecificIds.forEach(id => {
+                const template = ENRICHED_TEMPLATES.find(t => t.id === id)!;
+                expect(isTemplatePhaseEligible(template, noEvent)).toBe(false);
+            });
+        });
+
+        it('progresses eligibility from event-specific endurance -> race simulation -> taper sharpening -> pre-race openers as the event approaches', () => {
+            const buildPhase = evaluatePeriodizationPhase([cyclingEvent('2026-09-16')], '2026-08-07'); // 40 days out: Build
+            const specificityPhase = evaluatePeriodizationPhase([cyclingEvent('2026-08-27')], '2026-08-07'); // 20 days out: Specificity
+            const taperPhase = evaluatePeriodizationPhase([cyclingEvent('2026-08-14')], '2026-08-07'); // 7 days out: A-event taper window
+            const finalDays = evaluatePeriodizationPhase([cyclingEvent('2026-08-09')], '2026-08-07'); // 2 days out: taper + within openers window
+
+            const eligible = (result: typeof buildPhase, id: string) => isTemplatePhaseEligible(ENRICHED_TEMPLATES.find(t => t.id === id)!, result);
+
+            // 40 days out: only the aerobic-dominant event-specific ride is on, nothing taper/sim-specific yet.
+            expect(eligible(buildPhase, 'end_race_specific_01')).toBe(true);
+            expect(eligible(buildPhase, 'end_race_sim_01')).toBe(false);
+            expect(eligible(buildPhase, 'end_taper_sharpen_01')).toBe(false);
+            expect(eligible(buildPhase, 'end_pre_race_openers_01')).toBe(false);
+
+            // 20 days out: race simulation joins (still pre-taper), taper-only sessions still don't.
+            expect(eligible(specificityPhase, 'end_race_specific_01')).toBe(true);
+            expect(eligible(specificityPhase, 'end_race_sim_01')).toBe(true);
+            expect(eligible(specificityPhase, 'end_taper_sharpen_01')).toBe(false);
+
+            // 7 days out (tapering): both pre-taper templates step aside, taper sharpening
+            // takes over, openers still too early (>3 days out).
+            expect(eligible(taperPhase, 'end_race_specific_01')).toBe(false);
+            expect(eligible(taperPhase, 'end_race_sim_01')).toBe(false);
+            expect(eligible(taperPhase, 'end_taper_sharpen_01')).toBe(true);
+            expect(eligible(taperPhase, 'end_pre_race_openers_01')).toBe(false);
+
+            // 2 days out: openers finally on.
+            expect(eligible(finalDays, 'end_pre_race_openers_01')).toBe(true);
+        });
+
+        it('Path B ranks a phase-eligible Race-Specific Endurance template with real (non-zero) utility', () => {
+            const fatigue = createEmptyFatigue('2026-08-07');
+            const availability = {
+                ...resolveAvailability('2026-08-07', null),
+                maxTimeMinutes: 120,
+                availableEquipment: [],
+            };
+            const prefs: UserPreferences = {
+                userId: '', preferredRecoveryStyle: 'mixed', defaultWeekdayTimeMin: 60, defaultWeekendTimeMin: 90,
+                preferredTimeOfDay: 'flexible', preferredModalities: [], deprioritizedModalities: [], avoidedModalities: [],
+                explanationVerbosity: 'brief', conservativeBias: false,
+                preferredUnits: { distance: 'km', weight: 'kg', temperature: 'celsius' }, schemaVersion: 1, createdAt: '', updatedAt: '',
+            };
+            const periodization = evaluatePeriodizationPhase([cyclingEvent('2026-08-27')], '2026-08-07'); // Specificity, both event-specific + race-sim on
+
+            const candidates = ENRICHED_TEMPLATES.filter(t => isTemplatePhaseEligible(t, periodization));
+            expect(candidates.some(t => t.category === 'Race-Specific Endurance')).toBe(true);
+
+            const ranked = rankCandidatesByUtility(candidates, [], fatigue, availability, [], prefs, { focusEvent: periodization.focusEvent });
+            const raceSpecificPick = ranked.find(r => r.template.category === 'Race-Specific Endurance');
+            expect(raceSpecificPick).toBeDefined();
+            expect(raceSpecificPick!.utilityScore).toBeGreaterThan(0);
         });
     });
 });

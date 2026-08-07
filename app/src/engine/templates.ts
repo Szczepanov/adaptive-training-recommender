@@ -486,6 +486,76 @@ export const TEMPLATES: SessionTemplate[] = [
             doseRatio: 1.35,
             prescriptionSummary: "Increased to 10 hard hill repeats."
         }
+    },
+    // --- Race-Specific Endurance: event-proximity-gated cycling progression. Wires the
+    // previously-orphaned build-support/cycling-race/taper-race catalogue workouts (see
+    // docs/workout-library-expansion-plan.md, which deliberately deferred this) into the
+    // day-by-day engine via engineTemplateIds. Only ever selectable on Path B (the intent
+    // optimizer) -- see phaseEligibility and rules.ts's evaluateTraining, which has no
+    // PeriodizationResult to evaluate these against at all.
+    {
+        id: "end_race_specific_01",
+        category: "Race-Specific Endurance",
+        modality: "Cycling",
+        durationMin: 50,
+        durationMax: 150,
+        title: "Event-Specific Endurance Ride",
+        description: "Outdoor endurance ride combining steady aerobic work, short accelerations, optional gap-closing efforts and a late controlled finish.",
+        requiredEquipment: [],
+        environment: 'outdoor', safetyTags: [],
+        systemicCost: 0.65,
+        objectiveTransferable: false,
+        stimulusProfile: { aerobicCapacity: 0.8, thresholdDevelopment: 0.4, surgeRepeatability: 0.6, maxStrength: 0, hypertrophy: 0, mobilityRecovery: 0 },
+        costProfile: { systemic: 0.55, cardiovascular: 0.6, lowerBody: 0.35, upperBody: 0.1, impactTissue: 0.15, neuromuscular: 0.3 },
+        phaseEligibility: { requiresFocusEvent: true, excludeTaper: true }
+    },
+    {
+        id: "end_race_sim_01",
+        category: "Race-Specific Endurance",
+        modality: "Cycling",
+        durationMin: 50,
+        durationMax: 95,
+        title: "Race Simulation",
+        description: "Peak-specific outdoor simulation with variable power, repeated surges, limited coasting and a hard late finish.",
+        requiredEquipment: [],
+        environment: 'outdoor', safetyTags: [],
+        systemicCost: 0.95,
+        objectiveTransferable: false,
+        stimulusProfile: { aerobicCapacity: 0.6, thresholdDevelopment: 0.7, surgeRepeatability: 1.0, maxStrength: 0, hypertrophy: 0, mobilityRecovery: 0 },
+        costProfile: { systemic: 0.9, cardiovascular: 0.95, lowerBody: 0.6, upperBody: 0.1, impactTissue: 0.2, neuromuscular: 0.75 },
+        phaseEligibility: { requiresFocusEvent: true, maxDaysToEvent: 35, excludeTaper: true }
+    },
+    {
+        id: "end_taper_sharpen_01",
+        category: "Race-Specific Endurance",
+        modality: "Cycling",
+        durationMin: 30,
+        durationMax: 55,
+        title: "Taper Sharpening Ride",
+        description: "Short outdoor quality session that retains event-specific intensity while sharply reducing total volume.",
+        requiredEquipment: [],
+        environment: 'outdoor', safetyTags: [],
+        systemicCost: 0.45,
+        objectiveTransferable: false,
+        stimulusProfile: { aerobicCapacity: 0.3, thresholdDevelopment: 0.6, surgeRepeatability: 0.5, maxStrength: 0, hypertrophy: 0, mobilityRecovery: 0.1 },
+        costProfile: { systemic: 0.4, cardiovascular: 0.5, lowerBody: 0.25, upperBody: 0.05, impactTissue: 0.1, neuromuscular: 0.35 },
+        phaseEligibility: { requiresFocusEvent: true, requiresTaper: true }
+    },
+    {
+        id: "end_pre_race_openers_01",
+        category: "Race-Specific Endurance",
+        modality: "Cycling",
+        durationMin: 20,
+        durationMax: 40,
+        title: "Pre-Race Openers",
+        description: "Very short outdoor activation ride used only when it improves freshness, confidence and leg speed immediately before the event.",
+        requiredEquipment: [],
+        environment: 'outdoor', safetyTags: [],
+        systemicCost: 0.2,
+        objectiveTransferable: false,
+        stimulusProfile: { aerobicCapacity: 0.2, thresholdDevelopment: 0.1, surgeRepeatability: 0.3, maxStrength: 0, hypertrophy: 0, mobilityRecovery: 0.3 },
+        costProfile: { systemic: 0.15, cardiovascular: 0.2, lowerBody: 0.1, upperBody: 0.05, impactTissue: 0.05, neuromuscular: 0.2 },
+        phaseEligibility: { requiresFocusEvent: true, requiresTaper: true, maxDaysToEvent: 3 }
     }
 ];
 
@@ -500,6 +570,7 @@ export const ENRICHED_TEMPLATES: SessionTemplate[] = TEMPLATES.map(t => {
         else if (t.category === 'Easy Endurance') stimulus = { aerobicCapacity: 0.8, thresholdDevelopment: 0.2, surgeRepeatability: 0, maxStrength: 0, hypertrophy: 0, mobilityRecovery: 0.2 };
         else if (t.category === 'Moderate Endurance') stimulus = { aerobicCapacity: 0.7, thresholdDevelopment: 0.8, surgeRepeatability: 0.3, maxStrength: 0, hypertrophy: 0, mobilityRecovery: 0 };
         else if (t.category === 'Hard Endurance') stimulus = { aerobicCapacity: 0.6, thresholdDevelopment: 0.8, surgeRepeatability: 1.0, maxStrength: 0, hypertrophy: 0, mobilityRecovery: 0 };
+        else if (t.category === 'Race-Specific Endurance') stimulus = { aerobicCapacity: 0.6, thresholdDevelopment: 0.6, surgeRepeatability: 0.8, maxStrength: 0, hypertrophy: 0, mobilityRecovery: 0 };
         else if (t.category === 'Technical Skill') stimulus = { aerobicCapacity: 0.1, thresholdDevelopment: 0, surgeRepeatability: 0.2, maxStrength: 0, hypertrophy: 0, mobilityRecovery: 0.1 };
         else if (t.category === 'Upper-body Strength') stimulus = { aerobicCapacity: 0, thresholdDevelopment: 0, surgeRepeatability: 0.2, maxStrength: 0.8, hypertrophy: 0.8, mobilityRecovery: 0.2 };
         else if (t.category === 'Lower-body Strength') stimulus = { aerobicCapacity: 0, thresholdDevelopment: 0, surgeRepeatability: 0.2, maxStrength: 0.9, hypertrophy: 0.8, mobilityRecovery: 0.2 };
@@ -517,6 +588,8 @@ export const ENRICHED_TEMPLATES: SessionTemplate[] = TEMPLATES.map(t => {
             cost = { systemic: 0.6, cardiovascular: 0.6, lowerBody: 0.5, upperBody: 0.1, impactTissue: t.modality === 'Running' ? 0.7 : 0.2, neuromuscular: 0.4 };
         } else if (t.category === 'Hard Endurance') {
             cost = { systemic: 1.0, cardiovascular: 1.0, lowerBody: 0.8, upperBody: 0.1, impactTissue: t.modality === 'Running' ? 0.9 : 0.3, neuromuscular: 0.8 };
+        } else if (t.category === 'Race-Specific Endurance') {
+            cost = { systemic: 0.85, cardiovascular: 0.9, lowerBody: 0.55, upperBody: 0.1, impactTissue: 0.2, neuromuscular: 0.7 };
         } else if (t.category === 'Technical Skill') {
             cost = t.modality === 'Field'
                 ? { systemic: t.systemicCost, cardiovascular: 0.2, lowerBody: 0.6, upperBody: 0.05, impactTissue: 0.7, neuromuscular: 0.9 }

@@ -289,6 +289,37 @@ describe('constraint filtering', () => {
         );
         expect(rec.template.durationMin).toBeLessThanOrEqual(10);
     });
+
+    it('never selects Race-Specific Endurance, since evaluateTraining has no PeriodizationResult to gate it against', () => {
+        // Regression guard for a phase-gated category (see engine/templates.ts's
+        // end_race_specific_01/end_race_sim_01/etc): Path A (evaluateTraining) takes no
+        // `events` argument at all, so a template whose phaseEligibility requires a focus
+        // event can never legitimately be selected here, on any input, on any day.
+        const context = baseContext({ preferredModalities: ['Cycling'] });
+        context.constraints.hasIndoorBike = true;
+        for (let i = 1; i <= 30; i++) {
+            const date = `2026-08-${String(i).padStart(2, '0')}`;
+            const rec = evaluateTraining({ subjective: greenSubjective(), objective: quietObjective() }, context, date);
+            expect(rec.template.category).not.toBe('Race-Specific Endurance');
+        }
+    });
+
+    it('an explicit "Cycling" ask cannot widen the search pool into Race-Specific Endurance either', () => {
+        // The 'train'-mode explicit-ask path deliberately searches every constraint-eligible
+        // template of the asked modality (see applyModalityPreference), not just the mode's
+        // usual category allowlist -- phase-gated templates must be excluded upstream of
+        // that widening (availableTemplates itself), or an explicit ask would bypass the
+        // category allowlist entirely and reach an event-proximity-gated session with no
+        // way to check how far away the event actually is.
+        const context = baseContext();
+        context.constraints.hasIndoorBike = true;
+        const rec = evaluateTraining(
+            { subjective: greenSubjective({ preferredModalityToday: 'Cycling' }), objective: quietObjective() },
+            context, '2026-08-01'
+        );
+        expect(rec.template.modality).toBe('Cycling');
+        expect(rec.template.category).not.toBe('Race-Specific Endurance');
+    });
 });
 
 // --- evaluateNextDayPlan -----------------------------------------------------

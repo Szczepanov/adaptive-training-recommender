@@ -10,7 +10,7 @@ export const CYCLING_RACE_WORKOUTS: WorkoutDefinition[] = [
     duration: { defaultMin: 75, minimumMin: 50, maximumMin: 95 },
     loadProfile: { cardiovascular: 5, muscular: 4, mechanical: 1, eccentric: 1, coordination: 4, recoveryHours: 72 },
     eligibility: { minimumReadiness: 8, maximumSoreness: 4, minimumDaysAfterHardLowerBody: 2, forbiddenPainFlags: ['knee_swelling', 'acute_knee_pain', 'worsening_achilles_pain'] },
-    equipment: ['bike'], contraindicationTags: ['acute_knee_pain'],
+    equipment: ['bike'], contraindicationTags: ['acute_knee_pain'], engineTemplateIds: ['end_race_sim_01'],
     blocks: [
       { id: 'warmup', name: 'Race warm-up', role: 'warmup', steps: [ timeStep('race_warmup', 'bike_progressive_warmup', 'Progressive warm-up', 900, { target: { type: 'rpe', min: 1, max: 4 } }) ]},
       { id: 'main', name: 'Variable race block', role: 'main', steps: [

@@ -12,6 +12,15 @@ interface DailyCheckinProps {
   onBack?: () => void;
 }
 
+const READINESS_FIELDS = [
+  { key: 'readiness', label: 'Overall Readiness', desc: 'How ready do you feel to train today?' },
+  { key: 'sleepQuality', label: 'Sleep Quality', desc: 'How well did you sleep last night?' },
+  { key: 'fatigue', label: 'Physical Fatigue', desc: 'How much physical fatigue do you feel?' },
+  { key: 'soreness', label: 'Muscle Soreness', desc: 'How sore are your muscles?' },
+  { key: 'mentalStress', label: 'Mental Stress', desc: 'What is your current stress level?' },
+  { key: 'motivation', label: 'Motivation', desc: 'How motivated are you to exercise?' }
+];
+
 export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) {
   const [checkin, setCheckin] = useState<Partial<DailySubjectiveCheckin> | null>(null);
   const [loading, setLoading] = useState(true);
@@ -20,15 +29,7 @@ export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) 
   const [currentStep, setCurrentStep] = useState(0);
   const [isEditing, setIsEditing] = useState(false);
   const [recoverySnapshot, setRecoverySnapshot] = useState<Awaited<ReturnType<typeof recoverySnapshotService.getRecoverySnapshotByDate>>>(null);
-
-  const readinessFields = [
-    { key: 'readiness', label: 'Overall Readiness', desc: 'How ready do you feel to train today?' },
-    { key: 'sleepQuality', label: 'Sleep Quality', desc: 'How well did you sleep last night?' },
-    { key: 'fatigue', label: 'Physical Fatigue', desc: 'How much physical fatigue do you feel?' },
-    { key: 'soreness', label: 'Muscle Soreness', desc: 'How sore are your muscles?' },
-    { key: 'mentalStress', label: 'Mental Stress', desc: 'What is your current stress level?' },
-    { key: 'motivation', label: 'Motivation', desc: 'How motivated are you to exercise?' }
-  ];
+  const readinessFields = READINESS_FIELDS;
 
   const loadTodayCheckin = useCallback(async () => {
     try {
@@ -173,8 +174,8 @@ export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) 
       const activeTag = document.activeElement?.tagName.toLowerCase();
       if (activeTag === 'input' || activeTag === 'textarea' || activeTag === 'select') return;
 
-      if (currentStep < readinessFields.length) {
-        const fieldKey = readinessFields[currentStep].key as keyof DailySubjectiveCheckin;
+      if (currentStep < READINESS_FIELDS.length) {
+        const fieldKey = READINESS_FIELDS[currentStep].key as keyof DailySubjectiveCheckin;
         const currentVal = (checkin[fieldKey] as number) || 5;
 
         if (e.key >= '1' && e.key <= '9') {
@@ -196,7 +197,7 @@ export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) 
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [currentStep, checkin, handleNext, readinessFields]);
+  }, [currentStep, checkin, handleNext]);
 
   const handleSubmit = async () => {
     if (!checkin) return;
