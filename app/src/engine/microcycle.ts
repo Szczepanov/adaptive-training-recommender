@@ -159,11 +159,10 @@ export function qualifiesForObjective(
  * generated picks (planner.ts's projected days) where a real SessionTemplate and its
  * profile are available.
  *
- * updateMicrocycleProgress's keyword matching below remains the crediting path for
- * externally-reported completions (Garmin-synced activities, adherence records) that
- * carry nothing but a loose type string and no structured stimulus data -- there is
- * nothing to compute coverage against for those, so the two crediting paths intentionally
- * coexist rather than one replacing the other.
+ * updateMicrocycleProgress's keyword matching below remains the conservative fallback
+ * for externally-reported completions that carry nothing but a loose type string. Exact
+ * followed recommendations and reconciled events retain their structured profile through
+ * CompletedExposure and must use this same qualification path.
  */
 export function creditObjectivesFromStimulus(
     microcycle: MicrocycleState,
@@ -189,8 +188,10 @@ export function buildMicrocycleState(
     history: CompletedExposure[],
     focusEvent: UserEvent | null,
 ): MicrocycleState {
-    return history.reduce(
-        (state, exposure) => updateMicrocycleProgress(state, exposure.trainingRecordLike),
-        generateWeeklyObjectives(phase, windowStartDate, focusEvent)
-    );
+    return history.reduce((state, exposure) => {
+        if (exposure.stimulusProfile && exposure.modality) {
+            return creditObjectivesFromStimulus(state, exposure.stimulusProfile, exposure.modality);
+        }
+        return updateMicrocycleProgress(state, exposure.trainingRecordLike);
+    }, generateWeeklyObjectives(phase, windowStartDate, focusEvent));
 }

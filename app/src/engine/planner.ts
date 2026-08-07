@@ -73,9 +73,22 @@ export interface WeekAheadDay {
 export interface WeekAheadPlan {
     startDate: string;
     days: WeekAheadDay[];
+    /** Every session that earned objective credit while constructing the plan, including
+     * today's confirmed selection and tomorrow's provisional preview. `days` begins
+     * tomorrow, so keeping this ledger separately avoids hiding those two sources. */
+    objectiveCredits: PlannedObjectiveCredit[];
     /** Rolling-window objective ledger as walked forward through the forecast chain --
      *  lets the UI show e.g. "Threshold: 1/1 planned" across the whole strip. */
     microcycleObjectives: WeeklyObjective[];
+}
+
+export interface PlannedObjectiveCredit {
+    date: string;
+    objectiveKey: WeeklyObjective['key'];
+    objectiveTitle: string;
+    templateId: string;
+    templateTitle: string;
+    modality: SessionTemplate['modality'];
 }
 
 /** Prepared, history-backed starting state for the otherwise pure projection core. */
@@ -353,13 +366,31 @@ export function generateWeekAheadPlan(
     const internalStrainAsOf = todayDate;
 
     const resultDays: WeekAheadDay[] = [];
+    const objectiveCredits: PlannedObjectiveCredit[] = [];
 
     // Weekly-architecture pre-pass -- pure, fatigue-independent, computed once. See
     // resolveWeeklyAnchors's own docstring: both anchors stay null (fully inert) unless a
     // real focus event governs at least one future day.
     const anchors = resolveWeeklyAnchors(todayDate, totalDays, events, fixedActivities, context);
 
+    const creditingObjectivesFor = (template: SessionTemplate): WeeklyObjective[] => {
+        const stimulus = enrichedStimulusProfile(template);
+        return getUnresolvedObjectives(microcycle).filter(objective =>
+            stimulusCoverage(stimulus, objective.targetStimulus) >= STIMULUS_CREDIT_COVERAGE_THRESHOLD
+            && qualifiesForObjective(stimulus, template.modality, objective.qualification),
+        );
+    };
     const applyPick = (date: string, template: SessionTemplate) => {
+        creditingObjectivesFor(template).forEach(objective => {
+            objectiveCredits.push({
+                date,
+                objectiveKey: objective.key,
+                objectiveTitle: objective.title,
+                templateId: template.id,
+                templateTitle: template.title,
+                modality: template.modality,
+            });
+        });
         microcycle = creditObjectivesFromStimulus(microcycle, enrichedStimulusProfile(template), template.modality);
         externalFatigue = applyCompletedSessionLoad(externalFatigue, date, enrichedCostProfile(template.id));
     };
@@ -380,7 +411,7 @@ export function generateWeekAheadPlan(
             template: tomorrowRec.template,
             mode: tomorrowRec.mode === 'recover' ? 'recover' : 'train',
             rationale: tomorrowRec.rationale,
-            addressesObjectives: [],
+            addressesObjectives: creditingObjectivesFor(tomorrowRec.template).map(objective => objective.title),
         });
         applyPick(tomorrowDate, tomorrowRec.template);
     }
@@ -482,14 +513,10 @@ export function generateWeekAheadPlan(
             continue;
         }
 
-        const pickStimulus = enrichedStimulusProfile(pick.template);
         const bestBenefit = ranked.reduce((best, candidate) =>
             candidate.benefitScore > best.benefitScore ? candidate : best,
         pick);
-        const addressed = unresolved
-            .filter(o => stimulusCoverage(pickStimulus, o.targetStimulus) >= STIMULUS_CREDIT_COVERAGE_THRESHOLD
-                && qualifiesForObjective(pickStimulus, pick.template.modality, o.qualification))
-            .map(o => o.title);
+        const addressed = creditingObjectivesFor(pick.template).map(objective => objective.title);
         applyPick(date, pick.template);
 
         resultDays.push({
@@ -517,6 +544,7 @@ export function generateWeekAheadPlan(
     return {
         startDate: addDaysToLocalDateString(todayDate, 1),
         days: resultDays,
+        objectiveCredits,
         microcycleObjectives: microcycle.objectives,
     };
 }

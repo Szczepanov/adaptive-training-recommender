@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { creditObjectivesFromStimulus, stimulusCoverage, updateMicrocycleProgress } from './microcycle.ts';
-import type { MicrocycleState, WorkoutStimulusProfile } from './models.ts';
+import { buildMicrocycleState, creditObjectivesFromStimulus, stimulusCoverage, updateMicrocycleProgress } from './microcycle.ts';
+import type { MicrocycleState, UserEvent, WorkoutStimulusProfile } from './models.ts';
+import type { CompletedExposure } from './trainingHistory.ts';
 
 describe('updateMicrocycleProgress', () => {
   it('credits controlled field work toward surge repeatability', () => {
@@ -123,5 +124,34 @@ describe('surge_repeatability qualification', () => {
       microcycle, { ...zeroStimulus, aerobicCapacity: 0.9, surgeRepeatability: 0.5 }, 'Strength',
     );
     expect(updated.objectives[0].completedExposures).toBe(1);
+  });
+});
+
+describe('structured completed-history credit', () => {
+  it('uses structured evidence rather than a loose activity title when rebuilding a microcycle', () => {
+    const phase = {
+      phaseName: 'Specificity' as const,
+      targetDemandVector: { aerobicEndurance: 0.6, thresholdPower: 0.6, vo2MaxPower: 0.8, repeatedSurges: 0.9, sprintPower: 0.2, fatigueResistance: 0.6, neuromuscular: 0.2 },
+      volumeScale: 1,
+      intensityScale: 1,
+      taperActive: false,
+    };
+    const event: UserEvent = {
+      id: 'criterion', title: 'Criterium', date: '2026-09-10', priority: 'A', lifecycle: 'scheduled', category: 'cycling_event',
+      demandProfile: phase.targetDemandVector,
+    };
+    const exposure: CompletedExposure = {
+      date: '2026-08-06',
+      costProfile: { systemic: 0.5, cardiovascular: 0.6, lowerBody: 0.4, upperBody: 0, impactTissue: 0.1, neuromuscular: 0.3 },
+      // This title would have matched the legacy keyword path, but its supplied profile
+      // does not meet the surge objective's required minimum of 0.6.
+      trainingRecordLike: { type: 'Cycling Race-Specific Endurance', duration_min: 60, training_effect: 0, intensity_tag: '' },
+      modality: 'Cycling',
+      stimulusProfile: { aerobicCapacity: 0.7, thresholdDevelopment: 0.5, surgeRepeatability: 0.5, maxStrength: 0, hypertrophy: 0, mobilityRecovery: 0 },
+    };
+
+    const microcycle = buildMicrocycleState(phase, '2026-08-03', [exposure], event);
+
+    expect(microcycle.objectives.find(objective => objective.key === 'surge_repeatability')?.completedExposures).toBe(0);
   });
 });

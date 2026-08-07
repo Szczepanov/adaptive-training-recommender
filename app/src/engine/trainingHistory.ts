@@ -1,4 +1,4 @@
-import type { DailyRecommendation, TrainingRecord, WorkoutCostProfile } from './models';
+import type { DailyRecommendation, SessionTemplate, TrainingRecord, WorkoutCostProfile, WorkoutStimulusProfile } from './models';
 import type { TrainingHistorySnapshot } from './trainingHistorySnapshot';
 import { ENRICHED_TEMPLATES } from './templates';
 
@@ -7,6 +7,11 @@ export interface CompletedExposure {
     date: string;
     costProfile: WorkoutCostProfile;
     trainingRecordLike: TrainingRecord;
+    /** Present only when the completed work is known to match a catalog template or
+     * reconciled evidence supplies an explicit stimulus vector. This prevents the
+     * microcycle ledger from re-inferring a precise objective from loose title text. */
+    stimulusProfile?: WorkoutStimulusProfile;
+    modality?: SessionTemplate['modality'];
 }
 
 /**
@@ -37,5 +42,15 @@ export function exposureFromRecommendation(date: string, rec: DailyRecommendatio
         training_effect: 0,
         intensity_tag: '',
     };
-    return { date, costProfile: template.costProfile ?? ZERO_COST, trainingRecordLike };
+    return {
+        date,
+        costProfile: template.costProfile ?? ZERO_COST,
+        trainingRecordLike,
+        // An athlete who confirms the prescribed session was followed supplies an exact
+        // catalog identity. A modified session does not, so it intentionally falls back
+        // to the conservative unstructured-history path.
+        ...(rec.adherence.followed && template.stimulusProfile
+            ? { stimulusProfile: template.stimulusProfile, modality: template.modality }
+            : {}),
+    };
 }

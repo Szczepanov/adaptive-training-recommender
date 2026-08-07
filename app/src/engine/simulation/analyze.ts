@@ -103,6 +103,8 @@ function toCompletedExposure(day: WeekAheadDay): CompletedExposure {
     return {
         date: day.date,
         costProfile: day.template.costProfile ?? ZERO_COST,
+        stimulusProfile: day.template.stimulusProfile,
+        modality: day.template.modality,
         trainingRecordLike: {
             type: `${day.template.modality} ${day.template.category}`,
             duration_min: day.template.durationMin,

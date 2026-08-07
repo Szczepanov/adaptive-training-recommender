@@ -14,7 +14,14 @@ import { ENRICHED_TEMPLATES } from './templates';
 type CompletedModality = SessionTemplate['modality'] | 'Unknown';
 
 const ZERO_COST: WorkoutCostProfile = { systemic: 0, cardiovascular: 0, lowerBody: 0, upperBody: 0, impactTissue: 0, neuromuscular: 0 };
-const ZERO_STIMULUS: Partial<WorkoutStimulusProfile> = {};
+const ZERO_STIMULUS: WorkoutStimulusProfile = {
+    aerobicCapacity: 0,
+    thresholdDevelopment: 0,
+    surgeRepeatability: 0,
+    maxStrength: 0,
+    hypertrophy: 0,
+    mobilityRecovery: 0,
+};
 const ADHERENCE_DURATION_TOLERANCE_MIN = 20;
 
 const DEFAULT_COST_BY_MODALITY: Record<CompletedModality, Record<CompletedTrainingIntensity, WorkoutCostProfile>> = {
@@ -211,5 +218,14 @@ export function completedEventToExposure(event: CompletedTrainingEvent): Complet
         training_effect: event.trainingEffect ?? 0,
         intensity_tag: event.intensity === 'unknown' ? '' : event.intensity,
     };
-    return { date: event.date, costProfile: event.estimatedCost, trainingRecordLike: record };
+    const modality = event.modality === 'Unknown' ? undefined : event.modality;
+    return {
+        date: event.date,
+        costProfile: event.estimatedCost,
+        trainingRecordLike: record,
+        ...(modality ? {
+            modality,
+            stimulusProfile: { ...ZERO_STIMULUS, ...event.estimatedStimulus },
+        } : {}),
+    };
 }

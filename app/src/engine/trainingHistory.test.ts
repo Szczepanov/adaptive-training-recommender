@@ -25,6 +25,10 @@ describe('training history boundary', () => {
         const exposure = exposureFromRecommendation('2026-08-06', recommendation());
         expect(exposure?.trainingRecordLike.type).toBe('Cycling Moderate Endurance');
         expect(exposure?.trainingRecordLike.duration_min).toBe(40);
+        expect(exposure).toMatchObject({
+            modality: 'Cycling',
+            stimulusProfile: { thresholdDevelopment: 0.8 },
+        });
     });
 
     it('gives modified sessions approximate modality and reported-duration credit', () => {
@@ -32,6 +36,7 @@ describe('training history boundary', () => {
             adherence: { respondedAt: 'x', followed: false, actualModality: 'Cycling', actualDurationMin: 27, skipped: false, notes: null },
         }));
         expect(exposure?.trainingRecordLike).toMatchObject({ type: 'Cycling training', duration_min: 27 });
+        expect(exposure?.stimulusProfile).toBeUndefined();
     });
 
     it('does not credit skipped or unanswered sessions', () => {
