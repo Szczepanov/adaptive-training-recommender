@@ -259,6 +259,8 @@ export interface SafetyEnvelope {
 
 export interface PlanEnvelope {
     maxAllowableTier: 'Rest' | 'Mobility' | 'Easy' | 'Moderate' | 'Hard';
+    /** Legacy compatibility only. Safety/readiness evaluation never derives taper from
+     * goal text; periodization owns taper state. */
     taperActive: boolean;
     reason?: string | null;
 }

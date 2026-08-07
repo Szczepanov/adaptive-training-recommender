@@ -56,7 +56,6 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
   const [recommendation, setRecommendation] = useState<Recommendation | null>(null);
   const [adjustmentDirection, setAdjustmentDirection] = useState<'easier' | 'harder' | null>(null);
   const [nextDayPlan, setNextDayPlan] = useState<NextDayPotentialPlan | null>(null);
-  const [selectedBranch, setSelectedBranch] = useState<'green' | 'yellow' | 'red'>('green');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showRecoveryData, setShowRecoveryData] = useState(false);
@@ -200,14 +199,14 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
     };
   }, [decisionInput]);
 
-  // Extends today's actual (possibly adjusted) recommendation and tomorrow's selected
+  // Extends today's actual (possibly adjusted) recommendation and tomorrow's green
   // preview branch into a rolling 7-day forecast (see planner.ts) -- recomputed on every
   // render from current goals/constraints/preferences/check-in, never persisted, so it
   // stays in lockstep with whatever's driving today's card above.
   const weekAheadPlan: WeekAheadPlan | null = useMemo(() => {
     if (!engineInputs || !decisionInput || !activeRec) return null;
     const { subjective, objective, context } = engineInputs;
-    const tomorrowRec = nextDayPlan ? nextDayPlan.branches[selectedBranch].recommendation : null;
+    const tomorrowRec = nextDayPlan ? nextDayPlan.branches.green.recommendation : null;
     return generateWeekAheadPlan(
       { subjective, objective },
       context,
@@ -217,7 +216,7 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
       tomorrowRec,
       { events: eventPeriodization?.events }
     );
-  }, [engineInputs, decisionInput, activeRec, nextDayPlan, selectedBranch, eventPeriodization]);
+  }, [engineInputs, decisionInput, activeRec, nextDayPlan, eventPeriodization]);
 
   if (loading) {
     return (
@@ -335,99 +334,6 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
               </p>
             )}
           </div>
-
-          {/* Tomorrow's Provisional Plan Card (Secondary Visual Prominence) */}
-          {nextDayPlan && (
-            <div className="dashboard-card next-day-card provisional-plan-card">
-              <div className="card-header">
-                <div className="header-title-group">
-                  <h3>Tomorrow — provisional</h3>
-                  <span className="provisional-tag">Subject to morning readiness</span>
-                </div>
-                <span className="status-badge info">{nextDayPlan.date}</span>
-              </div>
-
-              {nextDayPlan.isSinglePlan ? (
-                <div className="single-plan-container">
-                  <div className="single-plan-banner">
-                    <span className="banner-icon">📌</span>
-                    <div className="banner-text">
-                      <strong>Single Mandatory Plan:</strong>
-                      <p>{nextDayPlan.singlePlanReason}</p>
-                    </div>
-                  </div>
-
-                  <div className="recommendation-content">
-                    <h4 className="recommendation-title">
-                      {nextDayPlan.branches.green.recommendation.template.title}
-                    </h4>
-                    <p className="recommendation-meta">
-                      {nextDayPlan.branches.green.recommendation.template.category} · {nextDayPlan.branches.green.recommendation.template.durationMin}-{nextDayPlan.branches.green.recommendation.template.durationMax} min
-                    </p>
-                    <p className="recommendation-description">
-                      {nextDayPlan.branches.green.recommendation.template.description}
-                    </p>
-                    <p className="recommendation-rationale">
-                      {nextDayPlan.branches.green.recommendation.rationale}
-                    </p>
-                  </div>
-                </div>
-              ) : (
-                <div className="multi-branch-container">
-                  <p className="contingency-intro">
-                    Projected morning readiness options:
-                  </p>
-
-                  {/* Branch Selector Tabs */}
-                  <div className="branch-tabs">
-                    <button
-                      className={`branch-tab green ${selectedBranch === 'green' ? 'active' : ''}`}
-                      onClick={() => setSelectedBranch('green')}
-                    >
-                      <span className="tier-indicator">🟢</span>
-                      <span className="tab-label">Green (High)</span>
-                    </button>
-                    <button
-                      className={`branch-tab yellow ${selectedBranch === 'yellow' ? 'active' : ''}`}
-                      onClick={() => setSelectedBranch('yellow')}
-                    >
-                      <span className="tier-indicator">🟡</span>
-                      <span className="tab-label">Yellow (Mid)</span>
-                    </button>
-                    <button
-                      className={`branch-tab red ${selectedBranch === 'red' ? 'active' : ''}`}
-                      onClick={() => setSelectedBranch('red')}
-                    >
-                      <span className="tier-indicator">🔴</span>
-                      <span className="tab-label">Red (Low)</span>
-                    </button>
-                  </div>
-
-                  {/* Branch Details */}
-                  {(() => {
-                    const branch = nextDayPlan.branches[selectedBranch];
-                    return (
-                      <div className={`branch-details tier-${selectedBranch}`}>
-                        <div className="condition-box">
-                          <span className="condition-label">Condition:</span>
-                          <span className="condition-text">{branch.condition}</span>
-                        </div>
-
-                        <div className="recommendation-content">
-                          <h4 className="recommendation-title">{branch.recommendation.template.title}</h4>
-                          <p className="recommendation-meta">
-                            {branch.recommendation.template.category} · {branch.recommendation.template.durationMin}-{branch.recommendation.template.durationMax} min
-                          </p>
-                          <p className="recommendation-description">{branch.recommendation.template.description}</p>
-                          <p className="recommendation-rationale">{branch.recommendation.rationale}</p>
-                        </div>
-                      </div>
-                    );
-                  })()}
-                </div>
-              )}
-            </div>
-          )}
 
           {/* Rolling 7-Day Forecast */}
           <WeekAheadStrip plan={weekAheadPlan} />
