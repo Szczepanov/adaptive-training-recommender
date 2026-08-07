@@ -12,6 +12,7 @@ export interface CompletedExposure {
      * microcycle ledger from re-inferring a precise objective from loose title text. */
     stimulusProfile?: WorkoutStimulusProfile;
     modality?: SessionTemplate['modality'];
+    category?: SessionTemplate['category'];
 }
 
 /**
@@ -50,7 +51,7 @@ export function exposureFromRecommendation(date: string, rec: DailyRecommendatio
         // catalog identity. A modified session does not, so it intentionally falls back
         // to the conservative unstructured-history path.
         ...(rec.adherence.followed && template.stimulusProfile
-            ? { stimulusProfile: template.stimulusProfile, modality: template.modality }
+            ? { stimulusProfile: template.stimulusProfile, modality: template.modality, category: template.category }
             : {}),
     };
 }

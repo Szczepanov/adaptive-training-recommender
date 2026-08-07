@@ -139,7 +139,7 @@ export interface UserEvent {
 
 export interface WeeklyObjective {
     id: string;
-    key: 'threshold_quality' | 'surge_repeatability' | 'zone2_aerobic' | 'strength_maintenance' | 'vo2_max';
+    key: 'threshold_quality' | 'surge_repeatability' | 'zone2_aerobic' | 'strength_maintenance' | 'race_specific_endurance' | 'vo2_max';
     title: string;
     targetExposures: number;
     completedExposures: number;
@@ -169,6 +169,9 @@ export interface ObjectiveQualification {
     /** Restricts credit to these modalities when non-empty. An absent or empty list is
      * intentionally modality-agnostic. */
     allowedModalities?: SessionTemplate['modality'][];
+    /** Restricts credit to a catalog session category. This prevents a broadly similar
+     * interval from completing an objective that explicitly requires race-specific work. */
+    allowedCategories?: SessionTemplate['category'][];
 }
 
 export interface WorkoutCostProfile {

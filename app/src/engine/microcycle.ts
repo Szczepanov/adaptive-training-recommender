@@ -70,6 +70,28 @@ export function generateWeeklyObjectives(
         targetStimulus: { maxStrength: 0.7, hypertrophy: 0.5 },
     });
 
+    // 5. Protected cycling-specific work. This is intentionally guarded by both the
+    // event type and catalog support: a generic endurance session or an indoor interval
+    // cannot complete it, and sports without an equivalent catalog are not promised an
+    // unfulfillable objective.
+    if (focusEvent?.category === 'cycling_event'
+        && !phaseWeights.taperActive
+        && (demand.fatigueResistance >= 0.7 || demand.repeatedSurges >= 0.6)) {
+        objectives.push({
+            id: 'obj_cycling_race_specific',
+            key: 'race_specific_endurance',
+            title: 'Cycling Race-Specific Endurance',
+            targetExposures: 1,
+            completedExposures: 0,
+            targetStimulus: { aerobicCapacity: 0.6, surgeRepeatability: 0.6 },
+            qualification: {
+                minimumStimulus: { aerobicCapacity: 0.6 },
+                allowedModalities: ['Cycling'],
+                allowedCategories: ['Race-Specific Endurance'],
+            },
+        });
+    }
+
     return {
         weekStartDate,
         objectives,
@@ -143,9 +165,12 @@ export function qualifiesForObjective(
     stimulus: WorkoutStimulusProfile,
     modality: SessionTemplate['modality'],
     qualification: ObjectiveQualification | undefined,
+    category?: SessionTemplate['category'],
 ): boolean {
     const allowedModalities = qualification?.allowedModalities;
     if (allowedModalities && allowedModalities.length > 0 && !allowedModalities.includes(modality)) return false;
+    const allowedCategories = qualification?.allowedCategories;
+    if (allowedCategories && allowedCategories.length > 0 && (!category || !allowedCategories.includes(category))) return false;
 
     return Object.entries(qualification?.minimumStimulus ?? {}).every(([axis, minimum]) =>
         (stimulus[axis as keyof WorkoutStimulusProfile] ?? 0) >= minimum
@@ -168,13 +193,14 @@ export function creditObjectivesFromStimulus(
     microcycle: MicrocycleState,
     stimulus: WorkoutStimulusProfile,
     modality: SessionTemplate['modality'],
+    category?: SessionTemplate['category'],
 ): MicrocycleState {
     return {
         ...microcycle,
         objectives: microcycle.objectives.map(obj => {
             if (obj.completedExposures >= obj.targetExposures) return obj;
             if (stimulusCoverage(stimulus, obj.targetStimulus) < STIMULUS_CREDIT_COVERAGE_THRESHOLD) return obj;
-            if (!qualifiesForObjective(stimulus, modality, obj.qualification)) return obj;
+            if (!qualifiesForObjective(stimulus, modality, obj.qualification, category)) return obj;
             return { ...obj, completedExposures: obj.completedExposures + 1 };
         }),
     };
@@ -190,7 +216,7 @@ export function buildMicrocycleState(
 ): MicrocycleState {
     return history.reduce((state, exposure) => {
         if (exposure.stimulusProfile && exposure.modality) {
-            return creditObjectivesFromStimulus(state, exposure.stimulusProfile, exposure.modality);
+            return creditObjectivesFromStimulus(state, exposure.stimulusProfile, exposure.modality, exposure.category);
         }
         return updateMicrocycleProgress(state, exposure.trainingRecordLike);
     }, generateWeeklyObjectives(phase, windowStartDate, focusEvent));

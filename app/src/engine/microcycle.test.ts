@@ -155,3 +155,31 @@ describe('structured completed-history credit', () => {
     expect(microcycle.objectives.find(objective => objective.key === 'surge_repeatability')?.completedExposures).toBe(0);
   });
 });
+
+describe('protected race-specific cycling objective', () => {
+  const zeroStimulus: WorkoutStimulusProfile = {
+    aerobicCapacity: 0, thresholdDevelopment: 0, surgeRepeatability: 0, maxStrength: 0, hypertrophy: 0, mobilityRecovery: 0,
+  };
+  const objective: MicrocycleState = {
+    weekStartDate: '2026-08-03',
+    objectives: [{
+      id: 'race-specific', key: 'race_specific_endurance', title: 'Cycling Race-Specific Endurance', targetExposures: 1, completedExposures: 0,
+      targetStimulus: { aerobicCapacity: 0.6, surgeRepeatability: 0.6 },
+      qualification: { minimumStimulus: { aerobicCapacity: 0.6 }, allowedModalities: ['Cycling'], allowedCategories: ['Race-Specific Endurance'] },
+    }],
+  };
+
+  it('cannot be completed by a broadly similar cycling interval outside the required category', () => {
+    const updated = creditObjectivesFromStimulus(
+      objective, { ...zeroStimulus, aerobicCapacity: 0.7, surgeRepeatability: 1 }, 'Cycling', 'Hard Endurance',
+    );
+    expect(updated.objectives[0].completedExposures).toBe(0);
+  });
+
+  it('credits only a cycling Race-Specific Endurance session that clears the stimulus gate', () => {
+    const updated = creditObjectivesFromStimulus(
+      objective, { ...zeroStimulus, aerobicCapacity: 0.7, surgeRepeatability: 0.6 }, 'Cycling', 'Race-Specific Endurance',
+    );
+    expect(updated.objectives[0].completedExposures).toBe(1);
+  });
+});

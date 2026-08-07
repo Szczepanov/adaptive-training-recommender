@@ -377,7 +377,7 @@ export function generateWeekAheadPlan(
         const stimulus = enrichedStimulusProfile(template);
         return getUnresolvedObjectives(microcycle).filter(objective =>
             stimulusCoverage(stimulus, objective.targetStimulus) >= STIMULUS_CREDIT_COVERAGE_THRESHOLD
-            && qualifiesForObjective(stimulus, template.modality, objective.qualification),
+            && qualifiesForObjective(stimulus, template.modality, objective.qualification, template.category),
         );
     };
     const applyPick = (date: string, template: SessionTemplate) => {
@@ -391,7 +391,7 @@ export function generateWeekAheadPlan(
                 modality: template.modality,
             });
         });
-        microcycle = creditObjectivesFromStimulus(microcycle, enrichedStimulusProfile(template), template.modality);
+        microcycle = creditObjectivesFromStimulus(microcycle, enrichedStimulusProfile(template), template.modality, template.category);
         externalFatigue = applyCompletedSessionLoad(externalFatigue, date, enrichedCostProfile(template.id));
     };
 
