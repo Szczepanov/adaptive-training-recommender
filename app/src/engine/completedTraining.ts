@@ -229,3 +229,31 @@ export function completedEventToExposure(event: CompletedTrainingEvent): Complet
         } : {}),
     };
 }
+
+/**
+ * Derives V2 SessionPlanRelationship status between a daily recommendation and completed activity.
+ */
+export function deriveSessionPlanRelationship(
+    recommendation?: DailyRecommendation | null,
+    event?: CompletedTrainingEvent | null,
+): import('./models').SessionPlanRelationship {
+    if (!recommendation) return 'unplanned';
+    if (!event) {
+        if (recommendation.adherence.skipped) return 'missed';
+        return 'uncertain_match';
+    }
+
+    if (event.date === recommendation.date) {
+        if (event.modality === recommendation.modality) {
+            if (recommendation.adherence.followed !== false) return 'matched_as_planned';
+            return 'matched_modified';
+        }
+        return 'matched_modified';
+    }
+
+    if (event.modality === recommendation.modality) {
+        return 'rescheduled';
+    }
+
+    return 'unplanned';
+}

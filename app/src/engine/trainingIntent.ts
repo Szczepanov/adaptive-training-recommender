@@ -6,6 +6,15 @@ import type { TrainingHistorySnapshot } from './trainingHistorySnapshot';
 import { evaluatePeriodizationPhase, type PeriodizationResult } from './periodization';
 import { addDaysToLocalDateString } from '../utils/localDate';
 
+export type PlannedRecoveryReason = 
+  | 'scheduled_recovery'   // Prescribed microcycle rest day
+  | 'load_target_reached' // Weekly strain cap met
+  | 'key_session_shield'; // Protecting tomorrow's key anchor
+
+export type ExecutionModifier = 
+  | 'readiness_reduction' 
+  | 'safety_constraint';
+
 export interface TrainingIntent {
     periodization: PeriodizationResult;
     unresolvedObjectives: WeeklyObjective[];
@@ -16,6 +25,12 @@ export interface TrainingIntent {
     /** Null only for legacy fixture providers that implement reconstruct() alone. */
     historySnapshot: TrainingHistorySnapshot | null;
     microcycle: MicrocycleState;
+    sessionRole?: 'anchor' | 'supporting' | 'recovery';
+    recoveryIntent?: {
+        reason: PlannedRecoveryReason;
+        priority: number;
+    } | null;
+    executionModifier?: ExecutionModifier | null;
 }
 
 /** Fetch the bounded history once and reuse that immutable revision across every

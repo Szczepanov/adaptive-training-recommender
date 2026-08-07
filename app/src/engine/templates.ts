@@ -1,4 +1,4 @@
-import type { SessionTemplate } from './models';
+import type { SessionTemplate, WorkoutStimulusProfile } from './models';
 
 export const TEMPLATES: SessionTemplate[] = [
     {
@@ -559,6 +559,36 @@ export const TEMPLATES: SessionTemplate[] = [
     }
 ];
 
+/**
+ * Backfills the newer canonical V2 stimulus axes (aerobicEndurance, thresholdPower,
+ * vo2MaxPower, repeatedSurges, sprintPower, fatigueResistance) from the legacy axes no
+ * template author has been asked to fill in directly yet, and vice versa, so both names
+ * for a given axis always agree on one template.
+ *
+ * vo2MaxPower and fatigueResistance have no legacy 1:1 counterpart, so they're estimated
+ * from a related legacy axis (surgeRepeatability * 0.8, thresholdDevelopment * 0.7). Those
+ * multipliers are placeholder approximations, not measured coefficients -- nothing in the
+ * live scheduling path reads these two axes yet (only stimulus.ts's not-yet-wired
+ * deriveObjectiveCredit does), so treat them as low-confidence until templates.ts gains
+ * real per-template vo2MaxPower/fatigueResistance authoring.
+ */
+function canonicalizeStimulus(s: WorkoutStimulusProfile): WorkoutStimulusProfile {
+    return {
+        aerobicEndurance: s.aerobicEndurance ?? s.aerobicCapacity ?? 0,
+        thresholdPower: s.thresholdPower ?? s.thresholdDevelopment ?? 0,
+        vo2MaxPower: s.vo2MaxPower ?? (s.surgeRepeatability ? s.surgeRepeatability * 0.8 : 0),
+        repeatedSurges: s.repeatedSurges ?? s.surgeRepeatability ?? 0,
+        sprintPower: s.sprintPower ?? 0,
+        fatigueResistance: s.fatigueResistance ?? (s.thresholdDevelopment ? s.thresholdDevelopment * 0.7 : 0),
+        maxStrength: s.maxStrength ?? 0,
+        aerobicCapacity: s.aerobicCapacity ?? s.aerobicEndurance ?? 0,
+        thresholdDevelopment: s.thresholdDevelopment ?? s.thresholdPower ?? 0,
+        surgeRepeatability: s.surgeRepeatability ?? s.repeatedSurges ?? 0,
+        hypertrophy: s.hypertrophy ?? 0,
+        mobilityRecovery: s.mobilityRecovery ?? 0,
+    };
+}
+
 // Helper to ensure all templates have typed 6D stimulus & cost profiles
 export const ENRICHED_TEMPLATES: SessionTemplate[] = TEMPLATES.map(t => {
     let stimulus = t.stimulusProfile;
@@ -609,7 +639,7 @@ export const ENRICHED_TEMPLATES: SessionTemplate[] = TEMPLATES.map(t => {
 
     return {
         ...t,
-        stimulusProfile: stimulus,
+        stimulusProfile: canonicalizeStimulus(stimulus),
         costProfile: cost,
     };
 });

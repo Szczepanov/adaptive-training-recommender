@@ -67,6 +67,12 @@ const ANCHOR_ROLE_BOOST = 1.35;
 const ANCHOR_ADJACENCY_SUPPRESSION = 0.3;
 const HEAVY_LOWER_BODY_STRENGTH_CATEGORIES: SessionTemplate['category'][] = ['Lower-body Strength', 'Full-body Strength'];
 
+/** Utility-score gap within which two candidates are treated as interchangeable for
+ *  ranking purposes -- tight enough that it never overrides a genuine benefit/cost
+ *  difference, wide enough to catch the common case of two templates in the same
+ *  modality/category landing within float noise of each other. */
+const VARIETY_TIE_BREAK_GAP = 0.05;
+
 export function getConsecutiveModalityCount(
     history: { modality?: string; type?: string }[],
     targetModality: string
@@ -165,7 +171,7 @@ export function rankCandidatesByUtility(
 
     const isStrengthResolved = !unresolvedObjectives.some(o => o.key === 'strength_maintenance');
 
-    return candidates
+    const scored = candidates
         .filter(t => t.durationMin <= availability.maxTimeMinutes)
         .filter(t => {
             // Equipment check
@@ -294,7 +300,54 @@ export function rankCandidatesByUtility(
                 utilityScore: utility,
                 rationale,
             };
-        })
-        .sort((a, b) => b.utilityScore - a.utilityScore);
-}
+        });
 
+    const sorted = scored.sort((a, b) => b.utilityScore - a.utilityScore);
+    if (sorted.length <= 1) return sorted;
+
+    // Patch 6: Variety tie-break -- among candidates that land within
+    // VARIETY_TIE_BREAK_GAP of the top utility score AND share the winner's modality
+    // and category (so this never blends genuinely different session types), prefer
+    // whichever template was picked least recently. Without this, a stable sort leaves
+    // float-noise-level utility differences to decide the order, which in practice means
+    // the optimizer keeps re-recommending the same one or two templates in a tied
+    // category run after run instead of rotating the athlete through the catalog's
+    // equivalent variations.
+    const topCandidate = sorted[0];
+    const nearEquivalents = sorted.filter(c =>
+        c.template.modality === topCandidate.template.modality &&
+        c.template.category === topCandidate.template.category &&
+        (topCandidate.utilityScore - c.utilityScore) <= VARIETY_TIE_BREAK_GAP
+    );
+
+    if (nearEquivalents.length > 1) {
+        // Recentness is read off the free-text `type` field callers thread through
+        // recentHistory (planner.ts/rules.ts populate it from trainingRecordLike.type,
+        // not a structured template id) -- same substring-matching idiom already used
+        // elsewhere in this engine (e.g. microcycle.ts's keyword-based crediting
+        // fallback). `template.id` is checked first for callers/tests that do supply a
+        // structured identifier; `template.title` covers the common real-world case.
+        const getRecentIndex = (template: SessionTemplate) => {
+            for (let i = history.length - 1; i >= 0; i--) {
+                const entry = history[i];
+                if (!entry.type) continue;
+                if (entry.type.includes(template.id) || entry.type.includes(template.title)) {
+                    return history.length - i;
+                }
+            }
+            return 999; // Never seen in the trailing window -- most preferred for rotation
+        };
+
+        nearEquivalents.sort((a, b) => {
+            const recencyA = getRecentIndex(a.template);
+            const recencyB = getRecentIndex(b.template);
+            if (recencyA !== recencyB) return recencyB - recencyA; // Higher value = less recent = preferred
+            return b.utilityScore - a.utilityScore; // Preserve utility ranking if recency is identical
+        });
+
+        const remaining = sorted.slice(nearEquivalents.length);
+        return [...nearEquivalents, ...remaining];
+    }
+
+    return sorted;
+}

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { DailyRecommendation, NormalizedGarminActivity } from './models';
-import { completedEventToExposure, reconcileCompletedTrainingEvents } from './completedTraining';
+import type { CompletedTrainingEvent, DailyRecommendation, NormalizedGarminActivity } from './models';
+import { completedEventToExposure, deriveSessionPlanRelationship, reconcileCompletedTrainingEvents } from './completedTraining';
 
 function activity(overrides: Partial<NormalizedGarminActivity> = {}): NormalizedGarminActivity {
     return {
@@ -63,5 +63,65 @@ describe('completed training reconciliation', () => {
         ], [recommendation()]);
 
         expect(events.find(event => event.sources.includes('adherence'))?.linkedActivityId).toBe('garmin-close');
+    });
+});
+
+function completedEvent(overrides: Partial<CompletedTrainingEvent> = {}): CompletedTrainingEvent {
+    return {
+        id: 'evt-1', date: '2026-08-06', durationMin: 45, modality: 'Cycling', intensity: 'moderate',
+        trainingEffect: 3.0, estimatedCost: { systemic: 0.3, cardiovascular: 0.3, lowerBody: 0.2, upperBody: 0, impactTissue: 0.1, neuromuscular: 0 },
+        estimatedStimulus: {}, sources: ['garmin'], confidence: 'high',
+        linkedActivityId: 'garmin-1', linkedRecommendationDate: '2026-08-06',
+        athleteFeedback: { followed: true, notes: null },
+        ...overrides,
+    };
+}
+
+describe('deriveSessionPlanRelationship', () => {
+    it('is unplanned when there is no recommendation at all', () => {
+        expect(deriveSessionPlanRelationship(null, completedEvent())).toBe('unplanned');
+    });
+
+    it('is missed when there is a recommendation with no matching event and it was reported skipped', () => {
+        const rec = recommendation({ adherence: { respondedAt: '', followed: false, actualModality: null, actualDurationMin: null, skipped: true, notes: null } });
+        expect(deriveSessionPlanRelationship(rec, null)).toBe('missed');
+    });
+
+    it('is uncertain_match when there is a recommendation with no matching event and no skip was reported', () => {
+        const rec = recommendation({ adherence: { respondedAt: '', followed: null, actualModality: null, actualDurationMin: null, skipped: false, notes: null } });
+        expect(deriveSessionPlanRelationship(rec, null)).toBe('uncertain_match');
+    });
+
+    it('is matched_as_planned for a same-day, same-modality event with adherence not explicitly false', () => {
+        const rec = recommendation({ date: '2026-08-06', modality: 'Cycling' });
+        const event = completedEvent({ date: '2026-08-06', modality: 'Cycling' });
+        expect(deriveSessionPlanRelationship(rec, event)).toBe('matched_as_planned');
+    });
+
+    it('is matched_modified for a same-day, same-modality event explicitly marked not followed', () => {
+        const rec = recommendation({
+            date: '2026-08-06', modality: 'Cycling',
+            adherence: { respondedAt: '', followed: false, actualModality: null, actualDurationMin: null, skipped: false, notes: null },
+        });
+        const event = completedEvent({ date: '2026-08-06', modality: 'Cycling' });
+        expect(deriveSessionPlanRelationship(rec, event)).toBe('matched_modified');
+    });
+
+    it('is matched_modified for a same-day event whose modality differs from the recommendation', () => {
+        const rec = recommendation({ date: '2026-08-06', modality: 'Cycling' });
+        const event = completedEvent({ date: '2026-08-06', modality: 'Running' });
+        expect(deriveSessionPlanRelationship(rec, event)).toBe('matched_modified');
+    });
+
+    it('is rescheduled for a same-modality event completed on a different day', () => {
+        const rec = recommendation({ date: '2026-08-06', modality: 'Cycling' });
+        const event = completedEvent({ date: '2026-08-07', modality: 'Cycling' });
+        expect(deriveSessionPlanRelationship(rec, event)).toBe('rescheduled');
+    });
+
+    it('is unplanned for a different-modality event completed on a different day', () => {
+        const rec = recommendation({ date: '2026-08-06', modality: 'Cycling' });
+        const event = completedEvent({ date: '2026-08-07', modality: 'Running' });
+        expect(deriveSessionPlanRelationship(rec, event)).toBe('unplanned');
     });
 });

@@ -322,6 +322,8 @@ export async function runScenario(scenario: AthleteScenario): Promise<ScenarioRe
 export interface SimulationReport {
     commit: string;
     capturedAt: string;
+    engineVersion: string;
+    policyVersion: string;
     scenarios: ScenarioResult[];
     preferenceSensitivity: PreferenceSensitivityResult[];
     readinessSensitivity: ReadinessSensitivityResult[];
@@ -409,6 +411,8 @@ export async function runAllScenarios(scenarios: AthleteScenario[] = SCENARIOS, 
     return {
         commit,
         capturedAt: new Date().toISOString(),
+        engineVersion: 'v2',
+        policyVersion: '2026.08.x',
         scenarios: results,
         preferenceSensitivity: evaluatePreferenceSensitivity(results),
         readinessSensitivity: evaluateReadinessSensitivity(results),

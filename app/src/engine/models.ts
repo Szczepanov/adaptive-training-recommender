@@ -137,16 +137,37 @@ export interface UserEvent {
     demandProfile: EventDemandProfile;
 }
 
+export type ObjectiveKey = 
+  | 'threshold_quality' 
+  | 'surge_repeatability' 
+  | 'zone2_aerobic' 
+  | 'strength_maintenance' 
+  | 'race_specific_endurance' 
+  | 'vo2_max';
+
+export type ObjectivePriority = 'must_have' | 'should_have' | 'nice_to_have';
+
 export interface WeeklyObjective {
     id: string;
-    key: 'threshold_quality' | 'surge_repeatability' | 'zone2_aerobic' | 'strength_maintenance' | 'race_specific_endurance' | 'vo2_max';
+    key: ObjectiveKey;
     title: string;
+    requiredCredit?: number;
     targetExposures: number;
     completedExposures: number;
     targetStimulus: Record<string, number>;
+    priority?: ObjectivePriority;
     /** Optional stricter completion policy for objectives whose target stimulus alone
      * is too broad to identify the intended event-specific exposure. */
     qualification?: ObjectiveQualification;
+    windowStart?: string;
+    windowEnd?: string;
+}
+
+export interface ObjectiveProgress {
+    objectiveId: string;
+    projectedCredit: number;
+    completedCredit: number;
+    rawCompletedCredit: number;
 }
 
 export interface MicrocycleState {
@@ -155,12 +176,20 @@ export interface MicrocycleState {
 }
 
 export interface WorkoutStimulusProfile {
-    aerobicCapacity: number;     // 0.0 - 1.0
-    thresholdDevelopment: number;// 0.0 - 1.0
-    surgeRepeatability: number;  // 0.0 - 1.0
-    maxStrength: number;         // 0.0 - 1.0
-    hypertrophy: number;         // 0.0 - 1.0
-    mobilityRecovery: number;    // 0.0 - 1.0
+    aerobicEndurance?: number;     // 0.0 - 1.0 (canonical)
+    thresholdPower?: number;       // 0.0 - 1.0 (canonical)
+    vo2MaxPower?: number;          // 0.0 - 1.0 (canonical)
+    repeatedSurges?: number;       // 0.0 - 1.0 (canonical)
+    sprintPower?: number;          // 0.0 - 1.0 (canonical)
+    fatigueResistance?: number;    // 0.0 - 1.0 (canonical)
+    maxStrength?: number;          // 0.0 - 1.0 (canonical)
+
+    // Legacy backward-compatibility aliases
+    aerobicCapacity?: number;
+    thresholdDevelopment?: number;
+    surgeRepeatability?: number;
+    hypertrophy?: number;
+    mobilityRecovery?: number;
 }
 
 export interface ObjectiveQualification {
@@ -199,6 +228,24 @@ export interface FatigueState {
     combinedFatigue: DimensionalFatigue;
 }
 
+export interface SessionHistoryEntry {
+    date: string;
+    templateId: string;
+    category: SessionTemplate['category'];
+    modality: SessionTemplate['modality'];
+    sessionRole?: 'anchor' | 'supporting' | 'recovery';
+}
+
+export type SessionPlanRelationship = 
+  | 'matched_as_planned'
+  | 'matched_modified'
+  | 'rescheduled'
+  | 'missed'
+  | 'unplanned'
+  | 'uncertain_match';
+
+export type SessionAdherenceStatus = SessionPlanRelationship;
+
 export interface ExecutionRecord {
     id: string;
     date: string;
@@ -206,6 +253,16 @@ export interface ExecutionRecord {
     athleteAdjustedTemplateId?: string;
     completedActivity?: TrainingRecord;
     status: 'prescribed' | 'adjusted' | 'completed' | 'skipped';
+}
+
+export interface PlannerState {
+    completedExposures: CompletedTrainingEvent[];
+    projectedExposures: ExecutionRecord[];
+    weeklyObjectives: WeeklyObjective[];
+    fatigueState: FatigueState;
+    recentSessionHistory: SessionHistoryEntry[];
+    policyVersion: string;
+    engineVersion: 'v2';
 }
 
 export interface DoseVariation {

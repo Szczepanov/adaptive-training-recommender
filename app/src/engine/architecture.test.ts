@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { applyCompletedSessionLoad, createEmptyFatigue } from './fatigue';
 import { generateWeeklyObjectives, updateMicrocycleProgress } from './microcycle';
-import type { TrainingSettings, UserContext, UserEvent, UserGoal, UserPreferences } from './models';
+import type { SessionTemplate, TrainingSettings, UserContext, UserEvent, UserGoal, UserPreferences } from './models';
 import { rankCandidatesByUtility } from './optimizer';
 import { deriveEventPriority, deriveGoalCategory, evaluatePeriodizationPhase, getDaysToEvent, goalToUserEvent, isTemplatePhaseEligible } from './periodization';
 import { resolveAvailability } from './schedule';
@@ -382,6 +382,70 @@ describe('Architecture & Phased Engine Integration', () => {
             expect(hardStrengthAfterHard).toBeDefined();
             expect(hardStrengthAfterEasy).toBeDefined();
             expect(hardStrengthAfterHard!.utilityScore).toBeLessThan(hardStrengthAfterEasy!.utilityScore);
+        });
+
+        it('rotates between near-equivalent templates in the same modality/category rather than always returning the same one', () => {
+            const fatigue = createEmptyFatigue('2026-08-07');
+            const availability = resolveAvailability('2026-08-07', null, [], testContext());
+            const prefs: UserPreferences = {
+                userId: '', preferredRecoveryStyle: 'mixed', defaultWeekdayTimeMin: 60, defaultWeekendTimeMin: 60,
+                preferredTimeOfDay: 'flexible', preferredModalities: [], deprioritizedModalities: [], avoidedModalities: [],
+                explanationVerbosity: 'brief', conservativeBias: false,
+                preferredUnits: { distance: 'km', weight: 'kg', temperature: 'celsius' }, schemaVersion: 1, createdAt: '', updatedAt: '',
+            };
+
+            // Two templates deliberately built to be identical in everything the utility
+            // score depends on (same modality, category, duration, equipment, stimulus,
+            // cost) so they land at the exact same utility score -- only their id/title differ.
+            const sharedProfile = {
+                requiredEquipment: [] as SessionTemplate['requiredEquipment'],
+                environment: 'either' as const,
+                safetyTags: [] as SessionTemplate['safetyTags'],
+                systemicCost: 0.4,
+                stimulusProfile: { aerobicEndurance: 0.6, aerobicCapacity: 0.6 },
+                costProfile: { systemic: 0.2, cardiovascular: 0.3, lowerBody: 0.1, upperBody: 0, impactTissue: 0.1, neuromuscular: 0 },
+            };
+            const templateA = {
+                id: 'variety_test_a', category: 'Easy Endurance' as const, modality: 'Running' as const,
+                durationMin: 30, durationMax: 45, title: 'Variety Test Run A', description: '',
+                ...sharedProfile,
+            };
+            const templateB = {
+                id: 'variety_test_b', category: 'Easy Endurance' as const, modality: 'Running' as const,
+                durationMin: 30, durationMax: 45, title: 'Variety Test Run B', description: '',
+                ...sharedProfile,
+            };
+
+            // A was picked most recently (last entry in history) -- B should rotate ahead of it.
+            const rankedFavoringB = rankCandidatesByUtility(
+                [templateA, templateB], [], fatigue, availability, [], prefs,
+                { recentHistory: [{ type: 'Variety Test Run B' }, { type: 'Variety Test Run A' }] }
+            );
+            expect(rankedFavoringB[0].template.id).toBe('variety_test_b');
+            expect(rankedFavoringB[1].template.id).toBe('variety_test_a');
+
+            // Flip which one was picked most recently -- ranking should flip too.
+            const rankedFavoringA = rankCandidatesByUtility(
+                [templateA, templateB], [], fatigue, availability, [], prefs,
+                { recentHistory: [{ type: 'Variety Test Run A' }, { type: 'Variety Test Run B' }] }
+            );
+            expect(rankedFavoringA[0].template.id).toBe('variety_test_a');
+
+            // A template from a different category/modality with a slightly higher raw
+            // utility score must never be pulled into the tie-break rotation.
+            const differentCategory = {
+                id: 'variety_test_c', category: 'Moderate Endurance' as const, modality: 'Cycling' as const,
+                durationMin: 30, durationMax: 45, title: 'Variety Test Bike C', description: '',
+                ...sharedProfile,
+            };
+            const rankedAcrossCategories = rankCandidatesByUtility(
+                [templateA, templateB, differentCategory], [], fatigue, availability, [], prefs,
+                { recentHistory: [] }
+            );
+            expect(rankedAcrossCategories.map(r => r.template.id)).toEqual(
+                expect.arrayContaining(['variety_test_a', 'variety_test_b', 'variety_test_c'])
+            );
+            expect(rankedAcrossCategories.find(r => r.template.id === 'variety_test_c')).toBeDefined();
         });
 
         it('applies event-priority utility boost when an A-priority cycling event is active', () => {
