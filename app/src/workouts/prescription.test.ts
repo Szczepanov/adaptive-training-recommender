@@ -53,6 +53,11 @@ describe('resolveWorkoutPrescription', () => {
     expect(prescription?.targetDurationMin).toBe(40);
   });
 
+  it('uses the more conservative planned-dose variant when no manual adjustment is present', () => {
+    expect(resolveWorkoutPrescription(recommendation('end_easy_01'), 'u1', '2026-08-07', undefined, 0.65)?.variantId).toBe('reduced');
+    expect(resolveWorkoutPrescription(recommendation('end_easy_01'), 'u1', '2026-08-07', undefined, 0.35)?.variantId).toBe('return_to_training');
+  });
+
   it('keeps strength prescription relative when no 1RM is known and exposes tempo', () => {
     const prescription = resolveWorkoutPrescription(recommendation('str_full_01'), 'u1', '2026-08-07');
     const frontSquat = prescription?.displayBlocks.flatMap((block) => block.steps).find((step) => step.id === 'front_squat');
