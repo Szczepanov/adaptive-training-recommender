@@ -282,21 +282,8 @@ export async function runScenario(scenario: AthleteScenario): Promise<ScenarioRe
         });
 
         weeklyDays.push(plan.days);
-        const objectiveByTitle = new Map(plan.microcycleObjectives.map(objective => [objective.title, objective]));
-        plan.days.forEach(day => {
-            day.addressesObjectives.forEach(title => {
-                const objective = objectiveByTitle.get(title);
-                if (!objective) return;
-                objectiveCredits.push({
-                    weekIndex: week,
-                    date: day.date,
-                    objectiveKey: objective.key,
-                    objectiveTitle: title,
-                    templateId: day.template.id,
-                    templateTitle: day.template.title,
-                    modality: day.template.modality,
-                });
-            });
+        plan.objectiveCredits.forEach(credit => {
+            objectiveCredits.push({ weekIndex: week, ...credit });
         });
         plan.days.forEach(d => accumulatedHistory.push(toCompletedExposure(d)));
 

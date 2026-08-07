@@ -143,13 +143,17 @@ describe('field_sport_general_target -- no dedicated event category exists for f
 });
 
 describe('scenario quality diagnostics', () => {
-    it('records projected objective-credit sources and flags resolution that has no source in the current window', async () => {
+    it('records every objective-credit source, including today and tomorrow before the forecast strip', async () => {
         const result = await getResult('cycling_criterium_A');
         expect(result.objectiveCredits).toContainEqual(expect.objectContaining({
             objectiveKey: 'threshold_quality',
             modality: 'Cycling',
         }));
-        expect(result.qualityWarnings.some(warning => warning.includes('surge_repeatability'))).toBe(true);
+        expect(result.objectiveCredits).toContainEqual(expect.objectContaining({
+            objectiveKey: 'surge_repeatability',
+            modality: 'Cycling',
+        }));
+        expect(result.qualityWarnings.some(warning => warning.includes('without a projected credit source'))).toBe(false);
     });
 
     it('runs matched fresh and stressed readiness trajectories instead of relying on one deterministic chain', async () => {
