@@ -95,6 +95,31 @@ describe('resolveWorkoutPrescription', () => {
     expect(prescription?.targetDurationMin).toBe(40);
   });
 
+  it('scales set counts and target duration after a harder adjustment', () => {
+    const rec = recommendation('end_hard_01', {
+      activeDose: {
+        label: '5x4 min Intervals (50 min)',
+        durationMin: 50,
+        durationMax: 60,
+        doseRatio: 1.25,
+        prescriptionSummary: 'Increased to 5x4 minute VO2 intervals.'
+      },
+      adjustment: {
+        direction: 'harder',
+        tier: 1,
+        originalTemplateId: 'end_hard_01',
+        originalTemplateTitle: 'Interval Speed Work',
+        adjustedDoseLabel: '5x4 min Intervals (50 min)',
+        rationale: 'harder'
+      }
+    });
+
+    const prescription = resolveWorkoutPrescription(rec, 'u1', '2026-08-07');
+    expect(prescription?.targetDurationMin).toBe(50);
+    const mainStep = prescription?.displayBlocks.flatMap((b) => b.steps).find((s) => s.id === 'vo2_main');
+    expect(mainStep?.dose).toContain('5 ×');
+  });
+
   it('uses the more conservative planned-dose variant when no manual adjustment is present', () => {
     expect(resolveWorkoutPrescription(recommendation('end_easy_01'), 'u1', '2026-08-07', undefined, 0.71)?.variantId).toBe('full');
     expect(resolveWorkoutPrescription(recommendation('end_easy_01'), 'u1', '2026-08-07', undefined, 0.65)?.variantId).toBe('reduced');

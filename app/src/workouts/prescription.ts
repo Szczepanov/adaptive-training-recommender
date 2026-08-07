@@ -307,6 +307,74 @@ export function workoutForTemplate(templateId: string, workouts: WorkoutDefiniti
   return fallbackId ? workouts.find((workout) => workout.id === fallbackId && workout.status === 'active') : undefined;
 }
 
+function parseSetsFromLabel(label?: string, summary?: string): number | undefined {
+  const text = `${label ?? ''} ${summary ?? ''}`;
+  const match = text.match(/(\d+)\s*(?:x|sets|rounds|repeats)\b/i);
+  if (match) {
+    const val = parseInt(match[1], 10);
+    if (!isNaN(val) && val > 0 && val <= 20) return val;
+  }
+  return undefined;
+}
+
+function applyDoseScaling(
+  blocks: WorkoutBlock[],
+  targetDurationMin: number,
+  activeDose?: { label?: string; prescriptionSummary?: string; doseRatio?: number },
+  direction?: 'easier' | 'harder'
+): WorkoutBlock[] {
+  if (!activeDose && direction !== 'harder') return blocks;
+
+  const isHarder = direction === 'harder' || (activeDose?.doseRatio !== undefined && activeDose.doseRatio > 1.0);
+  if (!isHarder) return blocks;
+
+  const parsedSets = parseSetsFromLabel(activeDose?.label, activeDose?.prescriptionSummary);
+  const doseRatio = activeDose?.doseRatio ?? 1.25;
+
+  let nonMainSec = 0;
+  for (const block of blocks) {
+    if (block.role !== 'main') {
+      for (const step of block.steps) {
+        if (step.duration.type === 'time') {
+          nonMainSec += step.duration.seconds * (step.sets ?? 1);
+        }
+      }
+    }
+  }
+
+  const targetMainTotalSec = Math.max(0, targetDurationMin * 60 - nonMainSec);
+
+  return blocks.map((block) => {
+    if (block.role !== 'main') return block;
+
+    const mainSteps = block.steps;
+    return {
+      ...block,
+      steps: mainSteps.map((step) => {
+        let sets = step.sets;
+        let duration = step.duration;
+
+        if (sets !== undefined && sets > 1) {
+          sets = parsedSets ?? Math.max(sets + 1, Math.round(sets * doseRatio));
+        }
+
+        if (duration.type === 'time' && (step.sets === undefined || step.sets <= 1)) {
+          const scaledSec = targetMainTotalSec > 0
+            ? Math.max(duration.seconds, targetMainTotalSec)
+            : Math.round(duration.seconds * doseRatio);
+          duration = { type: 'time', seconds: scaledSec };
+        }
+
+        return {
+          ...step,
+          ...(sets !== undefined ? { sets } : {}),
+          duration
+        };
+      })
+    };
+  });
+}
+
 function applyVariant(workout: WorkoutDefinition, variantId: 'full' | 'reduced' | 'return_to_training'): WorkoutBlock[] {
   const variant = workout.variants.find((item) => item.id === variantId) ?? workout.variants[0];
   const overrides = new Map(variant.stepOverrides.map((override) => [override.stepId, override]));
@@ -356,7 +424,19 @@ export function resolveWorkoutPrescription(
 
   const variantId = variantFor(recommendation, executionDose);
   const variant = workout.variants.find((item) => item.id === variantId) ?? workout.variants[0];
-  const adjustedBlocks = applyVariant(workout, variantId);
+
+  const rawAdjustedBlocks = applyVariant(workout, variantId);
+
+  const activeDose = recommendation.activeDose;
+  const direction = recommendation.adjustment?.direction;
+  const targetDurationMin = activeDose?.durationMin ?? (
+    direction === 'harder' && variant.targetDurationMin < (recommendation.template.durationMax ?? variant.targetDurationMin)
+      ? Math.min(recommendation.template.durationMax, Math.round(variant.targetDurationMin * (activeDose?.doseRatio ?? 1.25)))
+      : variant.targetDurationMin
+  );
+
+  const adjustedBlocks = applyDoseScaling(rawAdjustedBlocks, targetDurationMin, activeDose, direction);
+
   const displayBlocks: PrescriptionBlock[] = adjustedBlocks.map((block) => ({
     id: block.id,
     name: block.name,
@@ -371,7 +451,7 @@ export function resolveWorkoutPrescription(
     workoutId: workout.id,
     workoutVersion: workout.version,
     variantId,
-    targetDurationMin: variant.targetDurationMin,
+    targetDurationMin,
     adjustedBlocks,
     displayBlocks,
     resolvedParameters: Object.fromEntries((workout.parameters ?? []).map((parameter) => [parameter.id, parameter.defaultValue])),
