@@ -16,8 +16,9 @@ import type {
 import type { DayOfWeekSchedule } from './models';
 import { DEFAULT_LOCATIONS, DEFAULT_WEEKLY_SCHEDULE, resolveAvailability } from './schedule';
 import { evaluatePeriodizationPhase, type PhaseWeights } from './periodization';
-import { generateWeeklyObjectives, getUnresolvedObjectives, updateMicrocycleProgress } from './microcycle';
-import { applyCompletedSessionLoad, computeInternalResponseStrain, createEmptyFatigue, decayFatigue } from './fatigue';
+import { buildMicrocycleState, getUnresolvedObjectives, updateMicrocycleProgress } from './microcycle';
+import { applyCompletedSessionLoad, buildFatigueStateFromHistory, computeInternalResponseStrain, decayFatigue } from './fatigue';
+import type { CompletedExposure } from './microcycleHistory';
 import { rankCandidatesByUtility } from './optimizer';
 import { ENRICHED_TEMPLATES } from './templates';
 import { addDaysToLocalDateString } from '../utils/localDate';
@@ -69,6 +70,8 @@ export interface WeekAheadOptions {
     /** Same gap as `events` -- no fixed-activity persistence yet. */
     fixedActivities?: FixedActivity[];
     weeklySchedule?: DayOfWeekSchedule[];
+    /** Completed adherence-backed sessions preceding `todayDate`, oldest-to-newest. */
+    history?: CompletedExposure[];
 }
 
 const ZERO_COST: WorkoutCostProfile = {
@@ -181,21 +184,22 @@ export function generateWeekAheadPlan(
     const weeklySchedule = options.weeklySchedule ?? DEFAULT_WEEKLY_SCHEDULE;
     const effectivePreferences = preferences ?? NEUTRAL_PREFERENCES;
     const injuries = context.constraints.injuries;
+    const history = options.history ?? [];
 
     const todayPeriodization = evaluatePeriodizationPhase(events, todayDate);
     const phaseWeights = todayPeriodization.phase;
     // Rolling window (not calendar Mon-Sun): objectives reset relative to *today* so the
     // strip never shows a seam where a later day suddenly looks unbalanced just because a
     // new calendar week started mid-strip.
-    let microcycle: MicrocycleState = generateWeeklyObjectives(phaseWeights, todayDate);
+    let microcycle: MicrocycleState = buildMicrocycleState(phaseWeights, todayDate, history);
 
     // External load (from completed/projected sessions) and internal strain (today's
     // actual subjective+objective reading) are tracked -- and decayed -- separately, then
     // combined for ranking. Only `internalStrain` is ever seeded from a real readiness
     // signal; nothing resets it, so its influence fades via decayFatigue as the strip
     // walks further from today rather than acting as a permanent ceiling.
-    let externalFatigue: FatigueState = createEmptyFatigue(todayDate);
     const internalStrain: DimensionalFatigue = computeInternalResponseStrain(todayReadiness);
+    let externalFatigue: FatigueState = buildFatigueStateFromHistory(history, internalStrain, todayDate);
     const internalStrainAsOf = todayDate;
 
     const resultDays: WeekAheadDay[] = [];

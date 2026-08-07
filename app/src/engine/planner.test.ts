@@ -3,6 +3,7 @@ import { evaluateNextDayPlan, evaluateTraining } from './rules';
 import { generateWeekAheadPlan } from './planner';
 import type { DailyReadiness, EngineObjectiveInput, SubjectiveInput, UserContext, UserEvent } from './models';
 import type { DayOfWeekSchedule } from './models';
+import type { CompletedExposure } from './microcycleHistory';
 
 // --- Fixtures (mirrors rules.test.ts's pattern) -----------------------------
 
@@ -128,6 +129,18 @@ describe('generateWeekAheadPlan', () => {
         expect(plan.microcycleObjectives.length).toBeGreaterThan(0);
         // A full week of picks should be enough to satisfy at least one weekly objective's target.
         expect(plan.microcycleObjectives.some(o => o.completedExposures >= 1)).toBe(true);
+    });
+
+    it('seeds the rolling objective ledger from completed adherence history', () => {
+        const context = baseContext();
+        const { readiness, todayRec, tomorrowRec } = buildTodayAndTomorrow(context);
+        const history: CompletedExposure[] = [{
+            date: '2026-08-05',
+            costProfile: { systemic: 0.7, cardiovascular: 0.8, lowerBody: 0.7, upperBody: 0, impactTissue: 0.3, neuromuscular: 0.4 },
+            trainingRecordLike: { type: 'Cycling Threshold', duration_min: 45, training_effect: 3, intensity_tag: 'hard' },
+        }];
+        const plan = generateWeekAheadPlan(readiness, context, null, '2026-08-07', todayRec, tomorrowRec, { days: 2, history });
+        expect(plan.microcycleObjectives.find(objective => objective.key === 'threshold_quality')?.completedExposures).toBe(1);
     });
 
     it('evaluates periodization separately for each displayed date across a taper boundary', () => {
