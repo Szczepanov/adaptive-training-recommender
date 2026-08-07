@@ -286,6 +286,8 @@ export interface Recommendation {
     activeDose?: DoseVariation;
     /** Normalized plan-side dose derived from periodization and remaining objectives. */
     plannedDose?: number;
+    /** Final dose after the plan target, safety ceiling, and athlete adjustment meet. */
+    executionDose?: number;
     adjustment?: SessionAdjustment;
     envelopes?: {
         safety: SafetyEnvelope;
@@ -302,6 +304,26 @@ export interface NextDayPlanBranch {
     label: string;
     condition: string;
     recommendation: Recommendation;
+}
+
+/** A hypothetical tomorrow input retained separately from its evaluated result so the
+ * synchronous and intent-aware evaluators always traverse the identical branches. */
+export interface NextDayScenario {
+    tier: 'green' | 'yellow' | 'red';
+    label: string;
+    condition: string;
+    readiness: DailyReadiness;
+}
+
+export interface NextDayScenarioSet {
+    date: string;
+    isSinglePlan: boolean;
+    singlePlanReason?: string;
+    scenarios: {
+        green: NextDayScenario;
+        yellow: NextDayScenario;
+        red: NextDayScenario;
+    };
 }
 
 export interface NextDayPotentialPlan {

@@ -18,10 +18,11 @@ import { DEFAULT_LOCATIONS, DEFAULT_WEEKLY_SCHEDULE, resolveAvailability } from 
 import { evaluatePeriodizationPhase, type PhaseWeights } from './periodization';
 import { buildMicrocycleState, getUnresolvedObjectives, updateMicrocycleProgress } from './microcycle';
 import { applyCompletedSessionLoad, buildFatigueStateFromHistory, computeInternalResponseStrain, decayFatigue } from './fatigue';
-import type { CompletedExposure } from './microcycleHistory';
+import type { CompletedExposure, TrainingHistoryProvider } from './trainingHistory';
 import { rankCandidatesByUtility } from './optimizer';
 import { ENRICHED_TEMPLATES } from './templates';
 import { addDaysToLocalDateString } from '../utils/localDate';
+import { resolveTrainingIntent } from './trainingIntent';
 
 /**
  * How much a projected day's session pick should be trusted, driven purely by how far
@@ -61,6 +62,12 @@ export interface WeekAheadPlan {
     microcycleObjectives: WeeklyObjective[];
 }
 
+/** Prepared, history-backed starting state for the otherwise pure projection core. */
+export interface WeekAheadPlanSeed {
+    microcycle: MicrocycleState;
+    fatigue: FatigueState;
+}
+
 export interface WeekAheadOptions {
     /** Total days in the strip, including today. Default 7. */
     days?: number;
@@ -70,8 +77,20 @@ export interface WeekAheadOptions {
     /** Same gap as `events` -- no fixed-activity persistence yet. */
     fixedActivities?: FixedActivity[];
     weeklySchedule?: DayOfWeekSchedule[];
-    /** Completed adherence-backed sessions preceding `todayDate`, oldest-to-newest. */
-    history?: CompletedExposure[];
+}
+
+/** Builds a deterministic seed for tests and other pure callers. */
+export function prepareWeekAheadPlanSeed(
+    todayReadiness: DailyReadiness,
+    events: UserEvent[],
+    todayDate: string,
+    history: CompletedExposure[],
+): WeekAheadPlanSeed {
+    const phase = evaluatePeriodizationPhase(events, todayDate).phase;
+    return {
+        microcycle: buildMicrocycleState(phase, addDaysToLocalDateString(todayDate, -7), history),
+        fatigue: buildFatigueStateFromHistory(history, computeInternalResponseStrain(todayReadiness), todayDate),
+    };
 }
 
 const ZERO_COST: WorkoutCostProfile = {
@@ -176,30 +195,30 @@ export function generateWeekAheadPlan(
     todayDate: string,
     todayRec: Recommendation,
     tomorrowRec: Recommendation | null,
+    seed: WeekAheadPlanSeed,
     options: WeekAheadOptions = {}
 ): WeekAheadPlan {
+    void todayReadiness;
     const totalDays = Math.max(1, options.days ?? 7);
     const events = options.events ?? [];
     const fixedActivities = options.fixedActivities ?? [];
     const weeklySchedule = options.weeklySchedule ?? DEFAULT_WEEKLY_SCHEDULE;
     const effectivePreferences = preferences ?? NEUTRAL_PREFERENCES;
     const injuries = context.constraints.injuries;
-    const history = options.history ?? [];
 
     const todayPeriodization = evaluatePeriodizationPhase(events, todayDate);
-    const phaseWeights = todayPeriodization.phase;
     // Rolling window (not calendar Mon-Sun): objectives reset relative to *today* so the
     // strip never shows a seam where a later day suddenly looks unbalanced just because a
     // new calendar week started mid-strip.
-    let microcycle: MicrocycleState = buildMicrocycleState(phaseWeights, todayDate, history);
+    let microcycle: MicrocycleState = seed.microcycle;
 
     // External load (from completed/projected sessions) and internal strain (today's
     // actual subjective+objective reading) are tracked -- and decayed -- separately, then
     // combined for ranking. Only `internalStrain` is ever seeded from a real readiness
     // signal; nothing resets it, so its influence fades via decayFatigue as the strip
     // walks further from today rather than acting as a permanent ceiling.
-    const internalStrain: DimensionalFatigue = computeInternalResponseStrain(todayReadiness);
-    let externalFatigue: FatigueState = buildFatigueStateFromHistory(history, internalStrain, todayDate);
+    const internalStrain: DimensionalFatigue = seed.fatigue.internalResponseStrain;
+    let externalFatigue: FatigueState = seed.fatigue;
     const internalStrainAsOf = todayDate;
 
     const resultDays: WeekAheadDay[] = [];
@@ -304,4 +323,33 @@ export function generateWeekAheadPlan(
         days: resultDays,
         microcycleObjectives: microcycle.objectives,
     };
+}
+
+/**
+ * Production entry point: retrieve rolling adherence once, turn it into a prepared
+ * seed, then delegate the entire projected-day chain to the pure planner core.
+ */
+export async function generateWeekAheadPlanWithIntent(
+    userId: string,
+    todayReadiness: DailyReadiness,
+    context: UserContext,
+    preferences: UserPreferences | null,
+    events: UserEvent[],
+    todayDate: string,
+    todayRec: Recommendation,
+    tomorrowRec: Recommendation | null,
+    options: WeekAheadOptions = {},
+    historyProvider?: TrainingHistoryProvider,
+): Promise<WeekAheadPlan> {
+    const intent = await resolveTrainingIntent(userId, events, todayDate, todayReadiness, 7, historyProvider);
+    return generateWeekAheadPlan(
+        todayReadiness,
+        context,
+        preferences,
+        todayDate,
+        todayRec,
+        tomorrowRec,
+        { microcycle: intent.microcycle, fatigue: intent.fatigue },
+        { ...options, events },
+    );
 }

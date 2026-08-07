@@ -1,7 +1,7 @@
-import type { DailyReadiness, FatigueState, UserEvent, WeeklyObjective } from './models';
+import type { DailyReadiness, FatigueState, MicrocycleState, UserEvent, WeeklyObjective } from './models';
 import { computeInternalResponseStrain, buildFatigueStateFromHistory } from './fatigue';
 import { buildMicrocycleState, getUnresolvedObjectives } from './microcycle';
-import { reconstructRecentHistory } from './microcycleHistory';
+import type { CompletedExposure, TrainingHistoryProvider } from './trainingHistory';
 import { evaluatePeriodizationPhase, type PeriodizationResult } from './periodization';
 import { addDaysToLocalDateString } from '../utils/localDate';
 
@@ -10,6 +10,9 @@ export interface TrainingIntent {
     unresolvedObjectives: WeeklyObjective[];
     plannedDose: number;
     fatigue: FatigueState;
+    /** Retained for the pure planner core after a single asynchronous read. */
+    history: CompletedExposure[];
+    microcycle: MicrocycleState;
 }
 
 /** Builds the shared plan-side state for today and future projections. Firestore is
@@ -20,10 +23,14 @@ export async function resolveTrainingIntent(
     events: UserEvent[],
     date: string,
     readiness: DailyReadiness,
-    windowDays: number = 7
+    windowDays: number = 7,
+    historyProvider?: TrainingHistoryProvider,
 ): Promise<TrainingIntent> {
     const periodization = evaluatePeriodizationPhase(events, date);
-    const history = await reconstructRecentHistory(userId, date, windowDays);
+    // The production provider is dynamically loaded only when necessary. This keeps
+    // Firebase configuration entirely outside deterministic engine-test imports.
+    const provider = historyProvider ?? (await import('./firestoreTrainingHistory')).firestoreTrainingHistoryProvider;
+    const history = await provider.reconstruct(userId, date, windowDays);
     const microcycle = buildMicrocycleState(
         periodization.phase,
         addDaysToLocalDateString(date, -windowDays),
@@ -35,5 +42,5 @@ export async function resolveTrainingIntent(
     // Phase volume is normalized from its 0.4..1.1 policy range and then softened
     // when the current rolling objectives have already been satisfied.
     const plannedDose = Math.max(0, Math.min(1, (periodization.phase.volumeScale / 1.1) * (0.7 + (0.3 * urgency))));
-    return { periodization, unresolvedObjectives, plannedDose, fatigue };
+    return { periodization, unresolvedObjectives, plannedDose, fatigue, history, microcycle };
 }
