@@ -6,6 +6,9 @@ on:
   pull_request:
     branches: [ main ]
 
+permissions:
+  contents: read
+
 jobs:
   python-tests:
     name: Python Test Suite
@@ -24,14 +27,20 @@ jobs:
           python-version: "3.12"
 
       - name: Install dependencies
-        run: uv sync
+        run: uv sync --frozen
 
       - name: Run pytest
         run: uv run pytest
 
   frontend-build:
-    name: Frontend Lint, Workout Validation & Build
+    name: Frontend Build & Firestore Rules
     runs-on: ubuntu-latest
+    env:
+      # Build/test-only configuration. Production configuration remains deployment-owned.
+      VITE_FIREBASE_API_KEY: AIzaSyDUMMYKEYDUMMYKEYDUMMYKEYDUMMYKEY
+      VITE_FIREBASE_AUTH_DOMAIN: example.firebaseapp.com
+      VITE_FIREBASE_PROJECT_ID: example-project
+      VITE_FIREBASE_APP_ID: 1:123456789:web:abcdef
     defaults:
       run:
         working-directory: app
@@ -45,6 +54,12 @@ jobs:
           cache: "npm"
           cache-dependency-path: app/package-lock.json
 
+      - name: Set up Java for Firestore Emulator
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
       - name: Install Node dependencies
         run: npm ci
 
@@ -56,6 +71,9 @@ jobs:
 
       - name: Run frontend test suite
         run: npm test
+
+      - name: Run Firestore security-rule emulator suite
+        run: npm run test:rules
 
       - name: Build frontend
         run: npm run build
