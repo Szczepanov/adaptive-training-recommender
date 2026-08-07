@@ -45,5 +45,13 @@ service cloud.firestore {
       allow read: if request.auth != null && request.auth.uid == userId;
       allow write: if false;
     }
+
+    // Daily recommendations (user-owned): the client app both writes these (persisting
+    // what the engine just computed for that day) and later patches the `adherence`
+    // sub-field once the user answers the "did you follow this?" prompt -- unlike
+    // recovery snapshots/activities, this isn't admin-backend-only.
+    match /users/{userId}/daily_recommendations/{date} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
   }
 }

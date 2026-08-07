@@ -10,6 +10,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import type {
     DailySubjectiveCheckin,
+    DailyRecommendation,
     UserGoal,
     UserConstraint,
     UserPreferences,
@@ -581,4 +582,108 @@ export function validatePreferences(raw: any): ValidationResult<UserPreferences>
     };
 
     return { isValid: true, data: preferences, errors: [] };
+}
+
+// --- Daily Recommendation Validation ---
+
+export function validateRecommendation(raw: any): ValidationResult<DailyRecommendation> {
+    const errors: ValidationError[] = [];
+
+    if (!raw.userId || typeof raw.userId !== 'string') {
+        errors.push({ field: 'userId', message: 'User ID is required' });
+    }
+    if (!raw.date || !isValidDate(raw.date)) {
+        errors.push({ field: 'date', message: 'Date must be a valid date (YYYY-MM-DD)' });
+    }
+    if (!raw.templateId || typeof raw.templateId !== 'string') {
+        errors.push({ field: 'templateId', message: 'Template ID is required' });
+    }
+    if (!raw.templateTitle || typeof raw.templateTitle !== 'string') {
+        errors.push({ field: 'templateTitle', message: 'Template title is required' });
+    }
+    if (!raw.category || typeof raw.category !== 'string') {
+        errors.push({ field: 'category', message: 'Category is required' });
+    }
+    if (!raw.modality || typeof raw.modality !== 'string') {
+        errors.push({ field: 'modality', message: 'Modality is required' });
+    }
+    const validModes = ['train', 'modify', 'recover'];
+    if (!raw.mode || !validModes.includes(raw.mode)) {
+        errors.push({ field: 'mode', message: `Mode must be one of: ${validModes.join(', ')}` });
+    }
+    if (typeof raw.rationale !== 'string') {
+        errors.push({ field: 'rationale', message: 'Rationale must be a string' });
+    }
+
+    if (errors.length > 0) {
+        return { isValid: false, errors };
+    }
+
+    const existingAdherence = raw.adherence ?? {};
+    const recommendation: DailyRecommendation = {
+        userId: raw.userId,
+        date: raw.date,
+        templateId: raw.templateId,
+        templateTitle: raw.templateTitle,
+        category: raw.category,
+        modality: raw.modality,
+        mode: raw.mode,
+        rationale: raw.rationale,
+        schemaVersion: raw.schemaVersion ?? 1,
+        createdAt: raw.createdAt || new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        // A save that only updates today's prescription (no adherence answer yet)
+        // preserves whatever adherence was already recorded, rather than clobbering it --
+        // relevant if a page reload regenerates and re-saves the same day's recommendation
+        // after the user already answered the prompt for it.
+        adherence: {
+            respondedAt: existingAdherence.respondedAt ?? null,
+            followed: existingAdherence.followed ?? null,
+            actualModality: normalizeEmptyToNull(existingAdherence.actualModality),
+            actualDurationMin: existingAdherence.actualDurationMin ?? null,
+            skipped: existingAdherence.skipped ?? false,
+            notes: normalizeEmptyToNull(existingAdherence.notes)
+        }
+    };
+
+    return { isValid: true, data: recommendation, errors: [] };
+}
+
+/** Validates just the adherence-answer payload (a merge-patch onto an existing
+ *  DailyRecommendation doc, not a full document). */
+export function validateAdherenceUpdate(raw: any): ValidationResult<DailyRecommendation['adherence']> {
+    const errors: ValidationError[] = [];
+
+    if (typeof raw.followed !== 'boolean') {
+        errors.push({ field: 'followed', message: 'followed must be a boolean' });
+    }
+    if (raw.skipped !== undefined && typeof raw.skipped !== 'boolean') {
+        errors.push({ field: 'skipped', message: 'skipped must be a boolean' });
+    }
+    if (raw.actualDurationMin !== undefined && raw.actualDurationMin !== null) {
+        if (typeof raw.actualDurationMin !== 'number' || raw.actualDurationMin < 0) {
+            errors.push({ field: 'actualDurationMin', message: 'actualDurationMin must be a non-negative number' });
+        }
+    }
+    if (raw.actualModality !== undefined && raw.actualModality !== null && typeof raw.actualModality !== 'string') {
+        errors.push({ field: 'actualModality', message: 'actualModality must be a string' });
+    }
+    if (raw.notes !== undefined && raw.notes !== null && typeof raw.notes !== 'string') {
+        errors.push({ field: 'notes', message: 'notes must be a string' });
+    }
+
+    if (errors.length > 0) {
+        return { isValid: false, errors };
+    }
+
+    const adherence: DailyRecommendation['adherence'] = {
+        respondedAt: new Date().toISOString(),
+        followed: raw.followed,
+        actualModality: normalizeEmptyToNull(raw.actualModality),
+        actualDurationMin: raw.actualDurationMin ?? null,
+        skipped: raw.skipped ?? false,
+        notes: normalizeEmptyToNull(raw.notes)
+    };
+
+    return { isValid: true, data: adherence, errors: [] };
 }

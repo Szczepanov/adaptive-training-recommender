@@ -1,0 +1,102 @@
+.adherence-prompt {
+  margin-bottom: 1.5rem;
+  cursor: default;
+  border: 1px solid rgba(251, 191, 36, 0.25);
+}
+
+.adherence-prompt:hover {
+  transform: none;
+}
+
+.adherence-recommended {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  margin: 0 0 1rem 0;
+}
+
+.adherence-error {
+  color: #f87171;
+  font-size: 0.85rem;
+  margin: 0 0 0.75rem 0;
+}
+
+.adherence-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.adherence-btn {
+  flex: 1 1 auto;
+  padding: 0.6rem 1rem;
+  border-radius: 10px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid var(--border-color);
+  background: var(--card-background);
+  color: var(--text-color);
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.adherence-btn:hover:not(:disabled) {
+  background: var(--hover-background);
+}
+
+.adherence-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.adherence-btn.followed {
+  border-color: rgba(34, 197, 94, 0.4);
+  color: #22c55e;
+}
+
+.adherence-btn.skipped {
+  border-color: rgba(148, 163, 184, 0.4);
+}
+
+.adherence-btn.modified {
+  border-color: rgba(56, 189, 248, 0.4);
+  color: #38bdf8;
+}
+
+.adherence-btn.secondary {
+  flex: 0 0 auto;
+}
+
+.adherence-details-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.adherence-details-form .form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.adherence-details-form label {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.adherence-details-form .select-input,
+.adherence-details-form .number-input,
+.adherence-details-form .text-input {
+  background: var(--card-background);
+  color: var(--text-color);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.9rem;
+}
+
+.adherence-details-actions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+}
