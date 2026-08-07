@@ -170,7 +170,7 @@ describe('modality preferences', () => {
         expect(rec.rationale).not.toContain("don't support it");
     });
 
-    it('narrows a modify-day Strength ask to the in-ceiling Upper-body variant, not Lower/Full-body', () => {
+    it('narrows a modify-day Strength ask to an in-ceiling strength variant, not Lower/Full-body', () => {
         const objective = quietObjective({ hrv_delta: -12, hrv_delta_28d: -12, rhr_delta: 5, rhr_delta_28d: 5 });
         for (let i = 1; i <= 14; i++) {
             const date = `2026-08-${String(i).padStart(2, '0')}`;
@@ -179,7 +179,7 @@ describe('modality preferences', () => {
                 baseContext(), date
             );
             expect(rec.mode).toBe('modify');
-            expect(rec.template.category).toBe('Upper-body Strength');
+            expect(['Upper-body Strength', 'Power Maintenance']).toContain(rec.template.category);
         }
     });
 

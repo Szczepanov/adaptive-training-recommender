@@ -27,5 +27,12 @@ export const RECOVERY_WORKOUTS: WorkoutDefinition[] = [
     garmin: { exportable: false },
     tags: ['yellow_light', 'mobility', 'calf_capacity'],
     sourceNotes: ['Macrocycle yellow-light options include ROM, isometrics and reduced planned movement; low-fatigue soleus and tibialis work are specifically supported.']
+  },
+  {
+    id: 'recovery_breathwork_01', version: 1, status: 'active', name: 'Yoga and Breathwork Flow', description: 'A slow mobility and diaphragmatic-breathing session to downshift the nervous system.',
+    modality: 'mobility', category: 'mobility_recovery', objectives: ['mobility', 'active_recovery'], duration: { defaultMin: 30, minimumMin: 15, maximumMin: 45 }, loadProfile: { cardiovascular: 1, muscular: 1, mechanical: 1, eccentric: 1, coordination: 1, recoveryHours: 4 }, eligibility: { maximumSoreness: 9 }, equipment: ['bodyweight'], contraindicationTags: [], engineTemplateIds: ['mob_02'],
+    blocks: [{ id: 'main', name: 'Downregulation flow', role: 'main', steps: [timeStep('breathwork', 'breathwork_downregulation', 'Breathwork downregulation', 720, { target: { type: 'rpe', min: 1, max: 2 } }), timeStep('yoga_mobility', 'mobility_flow', 'Gentle yoga mobility flow', 900, { target: { type: 'rpe', min: 1, max: 2 } })] }],
+    variants: [{ id: 'full', targetDurationMin: 30, loadMultiplier: 1, rationale: 'Normal downregulation and mobility flow.', stepOverrides: [] }, { id: 'reduced', targetDurationMin: 20, loadMultiplier: 0.65, rationale: 'Short breath-led recovery dose.', stepOverrides: [{ stepId: 'breathwork', durationSeconds: 600 }, { stepId: 'yoga_mobility', durationSeconds: 600 }] }, { id: 'return_to_training', targetDurationMin: 15, loadMultiplier: 0.5, rationale: 'Breathwork first, then only symptom-free mobility.', stepOverrides: [{ stepId: 'breathwork', durationSeconds: 600 }, { stepId: 'yoga_mobility', durationSeconds: 300 }] }],
+    regressions: ['rest_complete_01'], progressions: ['recovery_mobility_tissue_01'], substitutions: [], garmin: { exportable: false }, tags: ['mobility', 'breathwork', 'recovery'], sourceNotes: ['Breathwork-led recovery offers a lower-arousal alternative to tissue-capacity mobility work.']
   }
 ];

@@ -40,6 +40,17 @@ export function getConsecutiveModalityCount(
     return count;
 }
 
+export function getRollingModalityCount(
+    history: { modality?: string; type?: string }[],
+    targetModality: string
+): number {
+    const target = targetModality.toLowerCase();
+    return history.filter(item => {
+        const modality = (item.modality ?? item.type ?? '').toLowerCase();
+        return modality.includes(target);
+    }).length;
+}
+
 export function calculateStimulusBenefit(
     stimulusProfile: WorkoutStimulusProfile | undefined,
     unresolvedObjectives: WeeklyObjective[]
@@ -104,6 +115,8 @@ export function rankCandidatesByUtility(
     const focusEvent = options.focusEvent;
     const history = options.recentHistory ?? [];
 
+    const isStrengthResolved = !unresolvedObjectives.some(o => o.key === 'strength_maintenance');
+
     return candidates
         .filter(t => t.durationMin <= availability.maxTimeMinutes)
         .filter(t => {
@@ -134,15 +147,23 @@ export function rankCandidatesByUtility(
                 prefMultiplier = 1.3;
             }
 
-            // Patch 1: Anti-stacking for non-endurance modalities (e.g. Strength)
-            const consecutiveCount = getConsecutiveModalityCount(history, template.modality);
             const isNonEndurance = !['cycling', 'running'].includes(template.modality.toLowerCase());
-            if (consecutiveCount >= 2 && isNonEndurance) {
-                prefMultiplier *= 0.15; // Soft suppression of 3rd+ consecutive day of strength/hybrid
+
+            // Patch 1: Anti-stacking for non-endurance modalities (e.g. Strength)
+            // Checks both consecutive days AND rolling 7-day total exposures (across rest days)
+            const consecutiveCount = getConsecutiveModalityCount(history, template.modality);
+            const rollingCount = getRollingModalityCount(history, template.modality);
+            if ((consecutiveCount >= 2 || rollingCount >= 2) && isNonEndurance) {
+                prefMultiplier *= 0.15; // Soft suppression of 3rd+ day of strength/hybrid
             }
 
-            // Patch 2: Event-Priority Utility Multiplier for A-Priority Focus Events
-            if (focusEvent && focusEvent.priority === 'A') {
+            // Patch 1b: Soft penalty if strength objective is already fulfilled in current microcycle
+            if (isStrengthResolved && isNonEndurance) {
+                prefMultiplier *= 0.20; // De-prioritize additional gym sessions when strength objective is satisfied
+            }
+
+            // Patch 2: Event-Priority Utility Multiplier & Non-Event Modality Penalty
+            if (focusEvent && (focusEvent.priority === 'A' || focusEvent.priority === 'B')) {
                 const categoryLower = focusEvent.category.toLowerCase();
                 const templateModLower = template.modality.toLowerCase();
                 const matchesEvent =
@@ -150,7 +171,12 @@ export function rankCandidatesByUtility(
                     (categoryLower.includes('running') && templateModLower.includes('running')) ||
                     (categoryLower.includes('strength') && templateModLower.includes('strength'));
                 if (matchesEvent) {
-                    prefMultiplier *= 1.40;
+                    const boost = focusEvent.priority === 'A' ? 1.40 : 1.25;
+                    prefMultiplier *= boost;
+                } else if (!isPreferred(template)) {
+                    // Non-event modalities (e.g. Running during a Cycling event) receive a soft penalty
+                    // so they do not hijack event-specific threshold/aerobic preparation
+                    prefMultiplier *= 0.20;
                 }
             }
 

@@ -23,17 +23,10 @@ const FALLBACK_TEMPLATE_TO_WORKOUT: Record<string, string> = {
   end_easy_01: 'cycling_zone2_standard_01',
   end_easy_02: 'running_walk_run_01',
   end_easy_03: 'running_walk_run_01',
-  end_mod_01: 'running_walk_run_01',
-  end_mod_02: 'cycling_controlled_threshold_4x8_01',
   str_upper_01: 'strength_upper_body_trunk_01',
   str_upper_pull_01: 'strength_upper_body_trunk_01',
-  str_upper_02: 'strength_upper_body_trunk_01',
-  str_lower_01: 'strength_full_body_maintenance_01',
   str_full_01: 'strength_full_body_maintenance_01',
-  str_full_02: 'travel_strength_maintenance_01',
-  end_hard_01: 'running_walk_run_01',
-  end_hard_02: 'cycling_controlled_threshold_4x8_01',
-  end_hard_03: 'running_walk_run_01'
+  str_full_02: 'travel_strength_maintenance_01'
 };
 
 const strengthTempos: Record<string, string> = {
@@ -49,7 +42,6 @@ const strengthTempos: Record<string, string> = {
 };
 
 const exerciseById = new Map(EXERCISES.map((exercise) => [exercise.id, exercise]));
-const workoutById = new Map(WORKOUTS.map((workout) => [workout.id, workout]));
 
 function formatSeconds(seconds: number): string {
   const minutes = Math.floor(seconds / 60);
@@ -306,9 +298,13 @@ function toDisplayStep(
   };
 }
 
-function workoutForTemplate(templateId: string): WorkoutDefinition | undefined {
-  return WORKOUTS.find((workout) => !workout.manualOnly && workout.engineTemplateIds?.includes(templateId))
-    ?? (FALLBACK_TEMPLATE_TO_WORKOUT[templateId] ? workoutById.get(FALLBACK_TEMPLATE_TO_WORKOUT[templateId]) : undefined);
+export function workoutForTemplate(templateId: string, workouts: WorkoutDefinition[] = WORKOUTS): WorkoutDefinition | undefined {
+  const matching = workouts
+    .filter((workout) => workout.status === 'active' && !workout.manualOnly && workout.engineTemplateIds?.includes(templateId))
+    .sort((a, b) => (a.engineTemplatePriority ?? 1) - (b.engineTemplatePriority ?? 1));
+  if (matching.length > 0) return matching[0];
+  const fallbackId = FALLBACK_TEMPLATE_TO_WORKOUT[templateId];
+  return fallbackId ? workouts.find((workout) => workout.id === fallbackId && workout.status === 'active') : undefined;
 }
 
 function applyVariant(workout: WorkoutDefinition, variantId: 'full' | 'reduced' | 'return_to_training'): WorkoutBlock[] {

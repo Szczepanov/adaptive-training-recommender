@@ -337,6 +337,22 @@ export const TEMPLATES: SessionTemplate[] = [
         }
     },
     {
+        id: 'str_power_01', category: 'Power Maintenance', modality: 'Strength',
+        durationMin: 25, durationMax: 45, title: 'Compact Power Maintenance',
+        description: 'Low-fatigue power, upper-body strength, and tissue-capacity maintenance.',
+        requiredEquipment: ['free_weights'], environment: 'either', safetyTags: ['avoid_heavy_lower_body'], systemicCost: 0.35, objectiveTransferable: false,
+        stimulusProfile: { aerobicCapacity: 0, thresholdDevelopment: 0, surgeRepeatability: 0.6, maxStrength: 0.5, hypertrophy: 0.2, mobilityRecovery: 0.1 },
+        costProfile: { systemic: 0.35, cardiovascular: 0.2, lowerBody: 0.4, upperBody: 0.5, impactTissue: 0.3, neuromuscular: 0.7 }
+    },
+    {
+        id: 'field_maint_01', category: 'Field Maintenance', modality: 'Field',
+        durationMin: 25, durationMax: 50, title: 'Controlled Field & Football Maintenance',
+        description: 'Controlled acceleration, braking, cutting, and ball skill for athletes already tolerating field mechanics.',
+        requiredEquipment: [], environment: 'outdoor', safetyTags: ['avoid_high_impact', 'avoid_heavy_lower_body'], systemicCost: 0.6, objectiveTransferable: false,
+        stimulusProfile: { aerobicCapacity: 0.4, thresholdDevelopment: 0.2, surgeRepeatability: 0.7, maxStrength: 0.1, hypertrophy: 0, mobilityRecovery: 0 },
+        costProfile: { systemic: 0.6, cardiovascular: 0.5, lowerBody: 0.7, upperBody: 0.05, impactTissue: 0.8, neuromuscular: 0.8 }
+    },
+    {
         id: "str_full_01",
         category: "Full-body Strength",
         modality: "Strength",
@@ -487,6 +503,8 @@ export const ENRICHED_TEMPLATES: SessionTemplate[] = TEMPLATES.map(t => {
         else if (t.category === 'Technical Skill') stimulus = { aerobicCapacity: 0.1, thresholdDevelopment: 0, surgeRepeatability: 0.2, maxStrength: 0, hypertrophy: 0, mobilityRecovery: 0.1 };
         else if (t.category === 'Upper-body Strength') stimulus = { aerobicCapacity: 0, thresholdDevelopment: 0, surgeRepeatability: 0.2, maxStrength: 0.8, hypertrophy: 0.8, mobilityRecovery: 0.2 };
         else if (t.category === 'Lower-body Strength') stimulus = { aerobicCapacity: 0, thresholdDevelopment: 0, surgeRepeatability: 0.2, maxStrength: 0.9, hypertrophy: 0.8, mobilityRecovery: 0.2 };
+        else if (t.category === 'Power Maintenance') stimulus = { aerobicCapacity: 0, thresholdDevelopment: 0, surgeRepeatability: 0.6, maxStrength: 0.5, hypertrophy: 0.2, mobilityRecovery: 0.1 };
+        else if (t.category === 'Field Maintenance') stimulus = { aerobicCapacity: 0.4, thresholdDevelopment: 0.2, surgeRepeatability: 0.7, maxStrength: 0.1, hypertrophy: 0, mobilityRecovery: 0 };
         else stimulus = { aerobicCapacity: 0.2, thresholdDevelopment: 0.3, surgeRepeatability: 0.4, maxStrength: 0.8, hypertrophy: 0.7, mobilityRecovery: 0.2 };
     }
 
@@ -507,6 +525,10 @@ export const ENRICHED_TEMPLATES: SessionTemplate[] = TEMPLATES.map(t => {
             cost = { systemic: 0.4, cardiovascular: 0.2, lowerBody: 0.0, upperBody: 0.9, impactTissue: 0.1, neuromuscular: 0.5 };
         } else if (t.category === 'Lower-body Strength') {
             cost = { systemic: 0.8, cardiovascular: 0.3, lowerBody: 1.0, upperBody: 0.1, impactTissue: 0.4, neuromuscular: 0.9 };
+        } else if (t.category === 'Power Maintenance') {
+            cost = { systemic: 0.35, cardiovascular: 0.2, lowerBody: 0.4, upperBody: 0.5, impactTissue: 0.3, neuromuscular: 0.7 };
+        } else if (t.category === 'Field Maintenance') {
+            cost = { systemic: 0.6, cardiovascular: 0.5, lowerBody: 0.7, upperBody: 0.05, impactTissue: 0.8, neuromuscular: 0.8 };
         } else {
             cost = { systemic: 0.8, cardiovascular: 0.4, lowerBody: 0.8, upperBody: 0.8, impactTissue: 0.5, neuromuscular: 0.8 };
         }

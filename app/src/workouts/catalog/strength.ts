@@ -24,13 +24,15 @@ export const STRENGTH_WORKOUTS: WorkoutDefinition[] = [
       { id: 'accessory', name: 'Tissue capacity', role: 'accessory', steps: [
         timeStep('soleus_iso', 'seated_soleus_iso', 'Seated soleus isometric', 25, { sets: 3, restAfterSec: 35 }),
         repsStep('tibialis', 'tibialis_raise', 'Tibialis raise', 15, { sets: 2, restAfterSec: 45 }),
-        timeStep('copenhagen', 'copenhagen_plank', 'Copenhagen plank', 20, { sets: 2, restAfterSec: 40 })
+        timeStep('copenhagen', 'copenhagen_plank', 'Copenhagen plank', 20, { sets: 2, restAfterSec: 40 }),
+        repsStep('full_nordic', 'nordic_hamstring_curl', 'Nordic hamstring curl', 4, { sets: 2, restAfterSec: 75, optional: true }),
+        repsStep('full_heel_raise', 'eccentric_heel_raise', 'Eccentric heel raise', 8, { sets: 2, restAfterSec: 45, optional: true })
       ]}
     ],
     variants: [
       { id: 'full', targetDurationMin: 60, loadMultiplier: 1, rationale: 'Normal weekly force-maintenance dose.', stepOverrides: [] },
       { id: 'reduced', targetDurationMin: 45, loadMultiplier: 0.7, rationale: 'Reduce lower-body sets and preserve upper-body and tissue work.', stepOverrides: [{ stepId: 'front_squat', sets: 2 }, { stepId: 'rdl', sets: 2 }, { stepId: 'power_clean', sets: 3 }] },
-      { id: 'return_to_training', targetDurationMin: 18, loadMultiplier: 0.5, rationale: 'Use upper-dominant work and low-load tissue capacity.', stepOverrides: [{ stepId: 'power_clean', omit: true }, { stepId: 'front_squat', omit: true }, { stepId: 'rdl', sets: 2, target: { type: 'reps_in_reserve', min: 5, max: 6 } }, { stepId: 'bench', sets: 2 }, { stepId: 'pullup', sets: 2 }] }
+      { id: 'return_to_training', targetDurationMin: 18, loadMultiplier: 0.5, rationale: 'Use upper-dominant work and low-load tissue capacity.', stepOverrides: [{ stepId: 'power_clean', omit: true }, { stepId: 'front_squat', omit: true }, { stepId: 'rdl', sets: 2, target: { type: 'reps_in_reserve', min: 5, max: 6 } }, { stepId: 'bench', sets: 2 }, { stepId: 'pullup', sets: 2 }, { stepId: 'full_nordic', omit: true }, { stepId: 'full_heel_raise', omit: true }] }
     ],
     regressions: ['strength_compact_power_01'], progressions: [],
     substitutions: [{ exerciseId: 'front_squat', substituteExerciseId: 'rear_foot_elevated_split_squat', reason: 'Use a symptom-free unilateral alternative when equipment or squat tolerance requires it.' }],
@@ -46,7 +48,7 @@ export const STRENGTH_WORKOUTS: WorkoutDefinition[] = [
     duration: { defaultMin: 35, minimumMin: 20, maximumMin: 45 },
     loadProfile: { cardiovascular: 2, muscular: 3, mechanical: 2, eccentric: 2, coordination: 3, recoveryHours: 30 },
     eligibility: { minimumReadiness: 5, maximumSoreness: 7, forbiddenPainFlags: ['knee_swelling'] },
-    equipment: ['medicine_ball', 'barbell', 'rack', 'bench', 'pullup_bar', 'bodyweight'], contraindicationTags: [],
+    equipment: ['medicine_ball', 'barbell', 'rack', 'bench', 'pullup_bar', 'bodyweight'], contraindicationTags: [], engineTemplateIds: ['str_power_01'],
     blocks: [
       { id: 'activation', name: 'Power', role: 'activation', steps: [
         repsStep('slam', 'medicine_ball_slam', 'Medicine-ball slam', 5, { sets: 4, restAfterSec: 60, target: { type: 'technical_quality', cue: 'Explosive and crisp; stop before fatigue.' } })
@@ -69,5 +71,24 @@ export const STRENGTH_WORKOUTS: WorkoutDefinition[] = [
     garmin: { exportable: false },
     tags: ['compact', 'upper_body', 'power'],
     sourceNotes: ['Macrocycle compact session is optional, 25–45 minutes, and power work must leave the athlete sharper rather than tired.']
+  },
+  {
+    id: 'strength_reactive_power_01', version: 1, status: 'active',
+    name: 'Reactive Power Maintenance', description: 'Low-contact plyometric and hip-extension work to maintain reactive strength without fatigue accumulation.',
+    modality: 'strength', category: 'power_maintenance', objectives: ['power_maintenance', 'tissue_capacity'],
+    duration: { defaultMin: 35, minimumMin: 20, maximumMin: 45 }, loadProfile: { cardiovascular: 2, muscular: 3, mechanical: 3, eccentric: 4, coordination: 4, recoveryHours: 36 },
+    eligibility: { minimumReadiness: 6, maximumSoreness: 4, minimumDaysAfterHardLowerBody: 1, forbiddenPainFlags: ['worsening_achilles_pain', 'acute_hamstring_pain', 'knee_swelling', 'painful_deep_knee_flexion'] },
+    equipment: ['bodyweight', 'plyo_box', 'barbell', 'bench'], contraindicationTags: ['worsening_achilles_pain', 'acute_hamstring_pain', 'knee_swelling', 'painful_deep_knee_flexion'], engineTemplateIds: ['str_power_01'], engineTemplatePriority: 2,
+    blocks: [
+      { id: 'activation', name: 'Reactive preparation', role: 'activation', steps: [repsStep('reactive_pogo', 'pogo_hop', 'Pogo hop', 12, { sets: 3, restAfterSec: 45, target: { type: 'technical_quality', cue: 'Quiet, springy contacts; stop when stiffness or landing quality fades.' } })] },
+      { id: 'main', name: 'Reactive power', role: 'main', steps: [repsStep('reactive_cmj', 'countermovement_jump', 'Countermovement jump', 3, { sets: 4, restAfterSec: 75, target: { type: 'technical_quality', cue: 'Jump fresh and land quietly.' } }), repsStep('reactive_drop', 'drop_jump_low', 'Low drop jump', 3, { sets: 3, restAfterSec: 90, target: { type: 'technical_quality', cue: 'Use a low box and stop before landing quality changes.' } }), repsStep('reactive_hip_thrust', 'hip_thrust', 'Hip thrust', 6, { sets: 3, restAfterSec: 90, target: { type: 'reps_in_reserve', min: 3, max: 5 } })] },
+      { id: 'accessory', name: 'Posterior-chain capacity', role: 'accessory', steps: [repsStep('reactive_nordic', 'nordic_hamstring_curl', 'Nordic hamstring curl', 4, { sets: 2, restAfterSec: 75 }), repsStep('reactive_heel_raise', 'eccentric_heel_raise', 'Eccentric heel raise', 8, { sets: 2, restAfterSec: 45 })] }
+    ],
+    variants: [
+      { id: 'full', targetDurationMin: 35, loadMultiplier: 1, rationale: 'Keep total contacts below 60 with full recovery.', stepOverrides: [] },
+      { id: 'reduced', targetDurationMin: 27, loadMultiplier: 0.7, rationale: 'Reduce contacts before reducing recovery.', stepOverrides: [{ stepId: 'reactive_pogo', sets: 2 }, { stepId: 'reactive_cmj', sets: 3 }, { stepId: 'reactive_drop', sets: 2 }, { stepId: 'reactive_hip_thrust', sets: 2 }] },
+      { id: 'return_to_training', targetDurationMin: 20, loadMultiplier: 0.5, rationale: 'Use only low-contact, symptom-free preparation.', stepOverrides: [{ stepId: 'reactive_drop', omit: true }, { stepId: 'reactive_cmj', sets: 2 }, { stepId: 'reactive_hip_thrust', sets: 2 }, { stepId: 'reactive_nordic', omit: true }] }
+    ],
+    regressions: [], progressions: ['strength_full_body_maintenance_01'], substitutions: [], garmin: { exportable: false }, tags: ['power', 'plyometric', 'tissue_capacity'], sourceNotes: ['Reactive work is intentionally low-volume, fully recovered, and limited to athletes with normal tendon and landing tolerance.']
   }
 ];

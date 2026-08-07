@@ -4,6 +4,7 @@ import { CYCLING_QUALITY_WORKOUTS } from './catalog/cycling-quality.ts';
 import { CYCLING_RACE_WORKOUTS } from './catalog/cycling-race.ts';
 import { BUILD_SUPPORT_WORKOUTS } from './catalog/build-support.ts';
 import { STRENGTH_WORKOUTS } from './catalog/strength.ts';
+import { LOWER_BODY_STRENGTH_WORKOUTS } from './catalog/strength-lower.ts';
 import { SUPPORT_STRENGTH_WORKOUTS } from './catalog/support-strength.ts';
 import { TRAVEL_WORKOUTS } from './catalog/travel.ts';
 import { FIELD_WORKOUTS } from './catalog/field.ts';
@@ -19,6 +20,7 @@ export const WORKOUTS: WorkoutDefinition[] = [
   ...CYCLING_RACE_WORKOUTS,
   ...BUILD_SUPPORT_WORKOUTS,
   ...STRENGTH_WORKOUTS,
+  ...LOWER_BODY_STRENGTH_WORKOUTS,
   ...SUPPORT_STRENGTH_WORKOUTS,
   ...TRAVEL_WORKOUTS,
   ...FIELD_WORKOUTS,

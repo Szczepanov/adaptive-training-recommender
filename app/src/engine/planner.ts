@@ -265,7 +265,7 @@ export function generateWeekAheadPlan(
             combinedFatigue: combineMax(decayedExternal, decayedInternal),
         };
 
-        const availability = resolveAvailability(date, null, weeklySchedule, DEFAULT_LOCATIONS, fixedActivities);
+        const availability = resolveAvailability(date, null, weeklySchedule, DEFAULT_LOCATIONS, fixedActivities, undefined, context.constraints);
         const unresolved = getUnresolvedObjectives(microcycle);
         const projectedHistory = resultDays.map(d => ({ modality: d.template.modality, type: d.template.title }));
         const ranked = rankCandidatesByUtility(

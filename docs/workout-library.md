@@ -47,14 +47,15 @@ The catalogue is grounded in the active Sustained Multidirectional Field Macrocy
 - controlled threshold and over-under work;
 - short accelerations and longer gap-closing efforts;
 - outdoor event-specific endurance and peak race simulation;
-- one primary full-body strength session plus compact and upper-body alternatives;
+- primary full-body and lower-body strength sessions plus compact, reactive-power, upper-body, and cable alternatives;
 - controlled field exposure and optional walk-run;
 - travel aerobic and hotel-gym maintenance sessions;
 - taper sharpening, pre-race openers and race-week strength primer;
 - complete rest and race day.
 - sprint-mechanics foundation plus acceleration-and-braking progression;
 - cycling pedalling-economy practice and a manual-only traffic-free braking/cornering session;
-- matching tempo, VO2, and hill-repeat prescriptions for the engine's running and cycling quality templates.
+- matching tempo, VO2, hill-repeat, variable-intensity, and short-interval prescriptions for the engine's running and cycling quality templates;
+- breathwork-led recovery plus eccentric hamstring and calf-capacity accessories.
 
 The catalogue does not encode fixed personal watts. Power targets remain relative, device-specific, or RPE-led because different bikes and power systems may not agree.
 
@@ -72,6 +73,8 @@ The current technical progressions are deliberately conservative:
 - **Cycling cornering and braking skill**: a traffic-free-area practice session marked `manualOnly`. It is intentionally excluded from automatic recommendations until the planner captures rider skill, surface, traffic-free area, and supervision context.
 
 Technical templates are not placed in the default green-day hard-session pool. They are selected when the athlete explicitly requests the matching modality, preventing a coordination session from being substituted randomly for a primary endurance or strength objective.
+
+Field Maintenance is available through the intent-aware optimizer but is deliberately not in the readiness-only green-day pool. Its catalogue spacing rule (two days after hard lower-body work) cannot be represented by that path's template filter, so this avoids suggesting high-impact field work without its required spacing check.
 
 ## Generic session families
 
@@ -146,6 +149,7 @@ app/src/workouts/
     field-technique.ts     Sprint mechanics and acceleration/braking progressions
     cycling-technique.ts   Pedalling economy and manual-only handling practice
     quality-support.ts     Detailed tempo, VO2, and hill prescriptions
+    strength-lower.ts      Dedicated lower-body strength and tissue-capacity prescription
   parameter-bindings.ts    Explicit parameter execution contract
   event-plan.ts            September-event coverage contract
   validation.ts            Referential, semantic, and range validation

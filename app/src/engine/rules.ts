@@ -384,7 +384,7 @@ export function evaluateTraining(
         // 'Moderate Endurance' (Zone-3 tempo) belongs here, not in 'modify' -- it's
         // explicitly a comfortably-hard, full-intensity option, which would contradict
         // modify mode's "capping intensity" rationale above.
-        const trainOptions = availableTemplates.filter(t => t.category === 'Hard Endurance' || t.category === 'Moderate Endurance' || t.category === 'Full-body Strength' || t.category === 'Upper-body Strength' || t.category === 'Lower-body Strength');
+        const trainOptions = availableTemplates.filter(t => t.category === 'Hard Endurance' || t.category === 'Moderate Endurance' || t.category === 'Full-body Strength' || t.category === 'Upper-body Strength' || t.category === 'Lower-body Strength' || t.category === 'Power Maintenance');
         // No ceiling to protect on a 'train' day -- an explicit ask for something gentler
         // (e.g. mobility) than train mode would normally offer is fine to honor, so the
         // search pool is every constraint-eligible template, not just trainOptions.
@@ -482,7 +482,7 @@ export async function evaluateTrainingWithIntent(
         candidates,
         intent.unresolvedObjectives,
         intent.fatigue,
-        resolveAvailability(date, readiness.subjective),
+        resolveAvailability(date, readiness.subjective, undefined, undefined, undefined, undefined, context.constraints),
         context.constraints.injuries,
         {
             userId, preferredRecoveryStyle: 'mixed', defaultWeekdayTimeMin: 45, defaultWeekendTimeMin: 60,
@@ -490,6 +490,10 @@ export async function evaluateTrainingWithIntent(
             deprioritizedModalities: context.preferences.deprioritizedModalities, avoidedModalities: context.preferences.avoidedModalities,
             explanationVerbosity: 'detailed', conservativeBias: context.preferences.conservativeBias,
             preferredUnits: { distance: 'km', weight: 'kg', temperature: 'celsius' }, schemaVersion: 1, createdAt: '', updatedAt: '',
+        },
+        {
+            focusEvent: intent.periodization.focusEvent,
+            recentHistory: intent.history.map(item => ({ modality: item.trainingRecordLike.type, type: item.trainingRecordLike.type }))
         }
     );
     const pick = ranked[0];

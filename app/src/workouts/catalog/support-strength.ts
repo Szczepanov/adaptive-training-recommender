@@ -33,5 +33,13 @@ export const SUPPORT_STRENGTH_WORKOUTS: WorkoutDefinition[] = [
     garmin: { exportable: false },
     tags: ['upper_body', 'trunk', 'yellow_light', 'adjustable'],
     sourceNotes: ['Covers upper-body or trunk-only training when lower-body loading would interfere with cycling or tissue recovery.']
+  },
+  {
+    id: 'strength_cable_upper_01', version: 1, status: 'active', name: 'Cable Upper-body Circuit', description: 'Controlled cable pressing and rowing for joint-friendly upper-body volume.',
+    modality: 'strength', category: 'power_maintenance', objectives: ['strength_maintenance'], duration: { defaultMin: 35, minimumMin: 20, maximumMin: 50 }, loadProfile: { cardiovascular: 2, muscular: 3, mechanical: 1, eccentric: 2, coordination: 2, recoveryHours: 18 },
+    eligibility: { minimumReadiness: 4, maximumSoreness: 8, forbiddenPainFlags: [] }, equipment: ['cable_machine'], contraindicationTags: ['acute_shoulder_pain'], engineTemplateIds: ['str_upper_02'],
+    blocks: [{ id: 'main', name: 'Cable circuit', role: 'main', steps: [repsStep('cable_press', 'cable_chest_press', 'Cable chest press', 10, { sets: 3, restAfterSec: 60, target: { type: 'reps_in_reserve', min: 3, max: 5 } }), repsStep('cable_row', 'cable_row', 'Cable row', 10, { sets: 3, restAfterSec: 60, target: { type: 'reps_in_reserve', min: 3, max: 5 } })] }],
+    variants: [{ id: 'full', targetDurationMin: 35, loadMultiplier: 1, rationale: 'Three controlled circuit rounds.', stepOverrides: [] }, { id: 'reduced', targetDurationMin: 25, loadMultiplier: 0.7, rationale: 'Two circuit rounds.', stepOverrides: [{ stepId: 'cable_press', sets: 2 }, { stepId: 'cable_row', sets: 2 }] }, { id: 'return_to_training', targetDurationMin: 20, loadMultiplier: 0.5, rationale: 'Low-load symptom-free circuit.', stepOverrides: [{ stepId: 'cable_press', sets: 2, target: { type: 'reps_in_reserve', min: 5, max: 7 } }, { stepId: 'cable_row', sets: 2, target: { type: 'reps_in_reserve', min: 5, max: 7 } }] }],
+    regressions: ['strength_upper_body_trunk_01'], progressions: [], substitutions: [], garmin: { exportable: false }, tags: ['upper_body', 'cable'], sourceNotes: ['Cable work provides controlled upper-body volume without adding lower-body fatigue.']
   }
 ];

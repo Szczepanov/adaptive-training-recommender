@@ -4,6 +4,7 @@ import type {
     LocationContext,
     LocationProfile,
     SubjectiveInput,
+    UserContext,
 } from './models';
 
 export interface ResolvedAvailability {
@@ -68,7 +69,8 @@ export function resolveAvailability(
     weeklySchedule: DayOfWeekSchedule[] = DEFAULT_WEEKLY_SCHEDULE,
     locations: Record<LocationContext, LocationProfile> = DEFAULT_LOCATIONS,
     fixedActivities: FixedActivity[] = [],
-    currentLocationOverride?: LocationContext
+    currentLocationOverride?: LocationContext,
+    userConstraints?: UserContext['constraints'] | null
 ): ResolvedAvailability {
     const dateObj = new Date(dateStr + 'T00:00:00');
     const dayOfWeek = dateObj.getDay() as 0 | 1 | 2 | 3 | 4 | 5 | 6;
@@ -89,6 +91,14 @@ export function resolveAvailability(
     const locationKey = currentLocationOverride || daySchedule?.preferredLocation || 'home';
     const locationProfile = locations[locationKey] || locations['home'];
 
+    const equipmentSet = new Set<string>(locationProfile.availableEquipment);
+    if (userConstraints) {
+        if (userConstraints.hasIndoorBike) equipmentSet.add('indoor_bike');
+        if (userConstraints.hasFreeWeights) equipmentSet.add('free_weights');
+        if (userConstraints.hasTreadmill) equipmentSet.add('treadmill');
+        if (userConstraints.hasCableMachine) equipmentSet.add('cable_machine');
+    }
+
     // 4. Calculate Reserved Capacity (Future uncompleted fixed activities)
     const uncompletedFuture = daysFixed.filter(a => !a.isCompleted);
     const reservedCapacityCost = calculateReservedCapacity(uncompletedFuture);
@@ -97,7 +107,7 @@ export function resolveAvailability(
         date: dateStr,
         maxTimeMinutes: remainingTimeMin,
         location: locationKey,
-        availableEquipment: locationProfile.availableEquipment,
+        availableEquipment: Array.from(equipmentSet),
         fixedActivities: daysFixed,
         reservedCapacityCost,
     };

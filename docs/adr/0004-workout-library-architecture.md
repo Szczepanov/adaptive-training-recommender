@@ -34,7 +34,7 @@ We implemented a **multi-layered workout library architecture** in `app/src/work
    A declarative phase coverage contract (`event-plan.ts`) guarantees that every required workout family for build, peak, taper, and race phases exists and is active, validated via automated scripts (`npm run validate:workouts`).
 
 4. **Resolved Daily Snapshot and Candidate Routing**:
-   `prescription.ts` first resolves an active non-manual catalogue candidate through `WorkoutDefinition.engineTemplateIds`, then retains the legacy mapping as a compatibility fallback. It applies the selected full/reduced/return-to-training variant and creates a serializable `WorkoutPrescription`. The snapshot is persisted alongside the daily recommendation (schema version 2) and rendered as ordered warm-up, main, and cool-down instructions with dose, rest, targets, tempo, and cues. Tests require every selectable engine template to resolve to a detailed prescription.
+   `prescription.ts` first resolves an active non-manual catalogue candidate through `WorkoutDefinition.engineTemplateIds`, then retains the legacy mapping as a compatibility fallback. When several active workouts implement one template, `engineTemplatePriority` supplies the deterministic tiebreaker; catalogue assembly order has no routing meaning. It applies the selected full/reduced/return-to-training variant and creates a serializable `WorkoutPrescription`. The snapshot is persisted alongside the daily recommendation (schema version 2) and rendered as ordered warm-up, main, and cool-down instructions with dose, rest, targets, tempo, and cues. Tests require every selectable engine template to resolve to a detailed prescription.
 
 5. **Safe Target Personalization**:
    Personal performance measurements live in the user’s preferences profile, not the generic workout definition. FTP/critical power, threshold pace, LTHR, and exercise e1RM values are optional. Their absence leaves the prescription RPE/RIR-led; the resolver does not infer absolute watts, pace, HR, or lifting load from recovery data.
@@ -64,4 +64,5 @@ We implemented a **multi-layered workout library architecture** in `app/src/work
 ### Negative
 * Higher structural complexity than static text templates.
 * Engine templates must resolve to a non-manual detailed workout; regression tests enforce this contract.
+* A new alternate implementation for an existing template must declare an intentional `engineTemplatePriority` when it should not replace the canonical default.
 * Outdoor technical skill cannot be auto-prescribed merely because its cardiovascular cost is low; it needs safety context.

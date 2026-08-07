@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { TEMPLATES } from '../engine/templates.ts';
-import type { Recommendation, TrainingSettings } from '../engine/models.ts';
-import { resolveWorkoutPrescription, variantFor } from './prescription.ts';
+import type { Recommendation, SessionTemplate, TrainingSettings } from '../engine/models.ts';
+import { WORKOUTS } from './catalog.ts';
+import { resolveWorkoutPrescription, variantFor, workoutForTemplate } from './prescription.ts';
 
 function recommendation(templateId: string, overrides: Partial<Recommendation> = {}): Recommendation {
   const template = TEMPLATES.find((item) => item.id === templateId);
@@ -30,6 +31,32 @@ describe('resolveWorkoutPrescription', () => {
       expect(resolveWorkoutPrescription({ template, rationale: 'test', mode: 'train' }, 'u1', '2026-08-07'))
         .not.toBeNull();
     }
+  });
+
+  it('keeps resolved workout modality aligned with its engine template and never sends lower-body work to an upper-body session', () => {
+    for (const template of TEMPLATES) {
+      const workout = workoutForTemplate(template.id);
+      expect(workout).toBeDefined();
+      if (template.modality !== 'None') expect(workout?.modality).toBe(template.modality.toLowerCase());
+    }
+
+    const lowerBody = workoutForTemplate('str_lower_01');
+    const exerciseIds = lowerBody?.blocks.flatMap((block) => block.steps.map((step) => step.exerciseId));
+    expect(lowerBody?.id).toBe('strength_lower_body_01');
+    expect(exerciseIds).not.toContain('bench_press');
+    expect(exerciseIds).not.toContain('pull_up');
+  });
+
+  it('does not resolve a deprecated matching workout', () => {
+    const matching = WORKOUTS.find((workout) => workout.engineTemplateIds?.includes('str_lower_01'));
+    expect(matching).toBeDefined();
+    const deprecated = { ...matching!, status: 'deprecated' as const };
+    expect(workoutForTemplate('str_lower_01', [deprecated])).toBeUndefined();
+  });
+
+  it('covers every declared session-template category', () => {
+    const categories: SessionTemplate['category'][] = ['Hard Endurance', 'Moderate Endurance', 'Easy Endurance', 'Upper-body Strength', 'Lower-body Strength', 'Full-body Strength', 'Power Maintenance', 'Field Maintenance', 'Technical Skill', 'Mobility/Recovery', 'Rest'];
+    for (const category of categories) expect(TEMPLATES.some((template) => template.category === category)).toBe(true);
   });
 
   it('uses the detailed candidate matching the selected cycling tempo template', () => {

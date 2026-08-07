@@ -70,6 +70,8 @@ export type Equipment =
   | 'treadmill'
   | 'foam_roller'
   | 'bodyweight'
+  | 'plyo_box'
+  | 'cable_machine'
   | 'hotel_gym';
 
 export type LoadLevel = 1 | 2 | 3 | 4 | 5;
@@ -319,6 +321,8 @@ export interface WorkoutDefinition {
   technicalRequirements?: TechnicalRequirements;
   /** Links a detailed prescription to the coarse readiness-engine session family. */
   engineTemplateIds?: string[];
+  /** Deterministic tie-breaker when several detailed workouts implement one template. */
+  engineTemplatePriority?: number;
   /** Kept out of automatic recommendations until the athlete confirms the setting. */
   manualOnly?: boolean;
   blocks: WorkoutBlock[];
