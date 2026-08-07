@@ -4,7 +4,10 @@ import { signOut } from 'firebase/auth';
 import { decisionComposer } from '../engine/composer';
 import { evaluateTraining, evaluateNextDayPlan } from '../engine/rules';
 import { mapSnapshotToEngineInput, mapCheckinToSubjectiveInput, mapContextFromGoalsAndConstraints } from '../engine/adapters';
-import type { DailyDecisionInput, Recommendation, NextDayPotentialPlan } from '../engine/models';
+import type { DailyDecisionInput, Recommendation, NextDayPotentialPlan, DailyRecommendation } from '../engine/models';
+import { recommendationService } from '../services/recommendationService';
+import { getPreviousLocalDateString } from '../utils/localDate';
+import { AdherencePrompt } from './AdherencePrompt';
 import './Home.css';
 
 interface HomeProps {
@@ -21,6 +24,9 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showRecoveryData, setShowRecoveryData] = useState(false);
+  // Yesterday's recommendation, only populated when it's still awaiting an adherence
+  // answer -- drives the "did you follow yesterday's plan?" prompt below.
+  const [pendingAdherence, setPendingAdherence] = useState<{ date: string; recommendation: DailyRecommendation } | null>(null);
 
   useEffect(() => {
     loadDashboardData();
@@ -42,21 +48,46 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
       if (input.recoverySnapshot && checkinUsable) {
         const objective = mapSnapshotToEngineInput(input.recoverySnapshot);
         const subjective = mapCheckinToSubjectiveInput(input.subjectiveCheckin);
-        const context = mapContextFromGoalsAndConstraints(input.activeGoals, input.activeConstraints);
+        const context = mapContextFromGoalsAndConstraints(input.activeGoals, input.activeConstraints, input.preferences);
         const todayRec = evaluateTraining({ subjective, objective }, context, input.date);
         setRecommendation(todayRec);
-        
+
         const tomorrowPlan = evaluateNextDayPlan({ subjective, objective }, context, input.date, todayRec);
         setNextDayPlan(tomorrowPlan);
+
+        // Persist what was just computed so there's a durable record to compare actual
+        // adherence against later -- fire-and-forget, a save failure shouldn't block
+        // the dashboard from showing today's recommendation.
+        recommendationService.saveRecommendation(userId, input.date, todayRec).catch(err =>
+          console.warn('Failed to persist recommendation:', err)
+        );
       } else {
         setRecommendation(null);
         setNextDayPlan(null);
       }
+
+      await loadPendingAdherence(input.date);
     } catch (err) {
       console.error('Error loading dashboard data:', err);
       setError('Failed to load dashboard data');
     } finally {
       setLoading(false);
+    }
+  };
+
+  /** Looks up yesterday's recommendation (relative to `todayDate`) and shows the
+   *  adherence prompt only if it exists and hasn't been answered yet. */
+  const loadPendingAdherence = async (todayDate: string) => {
+    try {
+      const yesterday = getPreviousLocalDateString(todayDate);
+      const yesterdayRec = await recommendationService.getRecommendation(userId, yesterday);
+      if (yesterdayRec && yesterdayRec.adherence.respondedAt === null) {
+        setPendingAdherence({ date: yesterday, recommendation: yesterdayRec });
+      } else {
+        setPendingAdherence(null);
+      }
+    } catch (err) {
+      console.warn('Failed to load pending adherence:', err);
     }
   };
 
@@ -124,6 +155,16 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
           />
         </div>
       </div>
+
+      {/* Adherence Prompt (for yesterday's recommendation, if unanswered) */}
+      {pendingAdherence && (
+        <AdherencePrompt
+          userId={userId}
+          date={pendingAdherence.date}
+          recommendation={pendingAdherence.recommendation}
+          onResolved={() => setPendingAdherence(null)}
+        />
+      )}
 
       {/* Today's Recommendation */}
       <div className="dashboard-card recommendation-card">

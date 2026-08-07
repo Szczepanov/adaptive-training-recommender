@@ -99,6 +99,18 @@ export function DataView({ decisionInput, onBack }: DataViewProps) {
             <span className="data-label">HRV 28d Avg:</span>
             <span className="data-value">{decisionInput.recoverySnapshot?.derived.hrv28dAvg ?? 'N/A'}</span>
           </div>
+          <div className="data-item">
+            <span className="data-label">HRV 28d Stdev:</span>
+            <span className="data-value">{decisionInput.recoverySnapshot?.derived.hrv28dStdev ?? 'N/A'}</span>
+          </div>
+          <div className="data-item">
+            <span className="data-label">Resting HR 28d Stdev:</span>
+            <span className="data-value">{decisionInput.recoverySnapshot?.derived.restingHr28dStdev ?? 'N/A'}</span>
+          </div>
+          <div className="data-item">
+            <span className="data-label">Sleep Score 28d Stdev:</span>
+            <span className="data-value">{decisionInput.recoverySnapshot?.derived.sleepScore28dStdev ?? 'N/A'}</span>
+          </div>
         </div>
 
         <div className="data-group">
@@ -131,10 +143,28 @@ export function DataView({ decisionInput, onBack }: DataViewProps) {
             </span>
           </div>
           <div className="data-item">
+            <span className="data-label">Resting HR vs 28d:</span>
+            <span className="data-value">
+              {decisionInput.recoverySnapshot?.derived.deltas.restingHrVs28d !== null
+                ? `${decisionInput.recoverySnapshot!.derived.deltas.restingHrVs28d > 0 ? '+' : ''}${decisionInput.recoverySnapshot!.derived.deltas.restingHrVs28d}`
+                : 'N/A'
+              }
+            </span>
+          </div>
+          <div className="data-item">
             <span className="data-label">HRV vs 7d:</span>
             <span className="data-value">
               {decisionInput.recoverySnapshot?.derived.deltas.hrvVs7d !== null
                 ? `${decisionInput.recoverySnapshot!.derived.deltas.hrvVs7d > 0 ? '+' : ''}${decisionInput.recoverySnapshot!.derived.deltas.hrvVs7d}`
+                : 'N/A'
+              }
+            </span>
+          </div>
+          <div className="data-item">
+            <span className="data-label">HRV vs 28d:</span>
+            <span className="data-value">
+              {decisionInput.recoverySnapshot?.derived.deltas.hrvVs28d !== null
+                ? `${decisionInput.recoverySnapshot!.derived.deltas.hrvVs28d > 0 ? '+' : ''}${decisionInput.recoverySnapshot!.derived.deltas.hrvVs28d}`
                 : 'N/A'
               }
             </span>

@@ -8,6 +8,7 @@ import type {
     UserConstraint,
     UserContext,
     UserGoal,
+    UserPreferences,
 } from './models';
 
 /** Normalizes a raw Garmin per-day activity summary (yesterday's or today's) into the
@@ -60,6 +61,16 @@ export function mapSnapshotToEngineInput(snapshot: DailyRecoverySnapshot): Engin
         last_3_days_hard_sessions_count: snapshot.raw.last3DaysHardSessionsCount,
         yesterday_training: mapTrainingRecord(snapshot.raw.yesterdayTraining),
         today_training: mapTrainingRecord(snapshot.raw.todayTraining),
+
+        sleep_score_delta_7d: snapshot.derived.deltas.sleepScoreVs7d,
+        rhr_delta_28d: snapshot.derived.deltas.restingHrVs28d,
+        hrv_delta_28d: snapshot.derived.deltas.hrvVs28d,
+        sleep_score_delta_28d: snapshot.derived.deltas.sleepScoreVs28d,
+        // ?? null normalizes documents written before baselineComputationVersion 2,
+        // where these fields are absent (undefined) rather than explicitly null.
+        hrv_stdev_28d: snapshot.derived.hrv28dStdev ?? null,
+        rhr_stdev_28d: snapshot.derived.restingHr28dStdev ?? null,
+        sleep_score_stdev_28d: snapshot.derived.sleepScore28dStdev ?? null,
     };
 }
 
@@ -86,6 +97,7 @@ export function mapCheckinToSubjectiveInput(checkin: DailySubjectiveCheckin | nu
             timeAvailable: DEFAULT_TIME_AVAILABLE_MIN,
             painFlag: false,
             alreadyTrainedToday: false,
+            preferredModalityToday: null,
         };
     }
 
@@ -99,6 +111,7 @@ export function mapCheckinToSubjectiveInput(checkin: DailySubjectiveCheckin | nu
         timeAvailable: checkin.availability?.timeAvailableMin ?? DEFAULT_TIME_AVAILABLE_MIN,
         painFlag: checkin.painOrInjury || checkin.illnessSymptoms,
         alreadyTrainedToday: checkin.alreadyTrainedToday ?? false,
+        preferredModalityToday: checkin.availability?.preferredModalityToday ?? null,
     };
 }
 
@@ -111,8 +124,17 @@ const DEFAULT_MAX_TIME_MINUTES = 180;
  * constraints are looked up by their stable predefined `key` (see
  * services/constraintService.ts PREDEFINED_CONSTRAINTS); custom constraints outside
  * that key set don't currently have an engine-side effect.
+ *
+ * `preferences` was previously not threaded through to the engine at all -- its
+ * modality lists and conservativeBias existed only in Firestore/the Preferences screen.
+ * Null (no preferences record yet) maps to all-empty/false, matching
+ * preferencesService's own defaults.
  */
-export function mapContextFromGoalsAndConstraints(goals: UserGoal[], constraints: UserConstraint[]): UserContext {
+export function mapContextFromGoalsAndConstraints(
+    goals: UserGoal[],
+    constraints: UserConstraint[],
+    preferences: UserPreferences | null
+): UserContext {
     const topGoalTitle = (category: UserGoal['category']): string => {
         const inCategory = goals.filter(g => g.category === category);
         if (inCategory.length === 0) return '';
@@ -145,6 +167,12 @@ export function mapContextFromGoalsAndConstraints(goals: UserGoal[], constraints
             hasIndoorBike: isEnabled('has_stationary_bike'),
             injuries,
             maxTimeMinutes,
+        },
+        preferences: {
+            avoidedModalities: preferences?.avoidedModalities ?? [],
+            deprioritizedModalities: preferences?.deprioritizedModalities ?? preferences?.avoidedModalities ?? [],
+            preferredModalities: preferences?.preferredModalities ?? [],
+            conservativeBias: preferences?.conservativeBias ?? false,
         },
     };
 }

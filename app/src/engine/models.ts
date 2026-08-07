@@ -9,6 +9,12 @@ export interface SubjectiveInput {
     timeAvailable: number; // Minutes
     painFlag: boolean;     // Injury/Pain flag
     alreadyTrainedToday: boolean; // User-reported: a session was already completed today
+    /** Today's explicit modality ask from the check-in (e.g. 'Running', 'Strength',
+     *  'Mobility'), or null for no preference. Compared case-insensitively against
+     *  SessionTemplate.modality -- see rules.ts applyModalityPreference. A value with no
+     *  matching template in the catalog (e.g. 'Swimming') simply can't be honored; the
+     *  engine says so in the rationale rather than silently ignoring it. */
+    preferredModalityToday: string | null;
 }
 
 /** A completed training session summary, as reported for a specific day (yesterday or today). */
@@ -35,6 +41,26 @@ export interface EngineObjectiveInput {
     yesterday_training: TrainingRecord | null;
     /** Garmin-detected activity synced for *today's* date (requires a re-sync after training to appear). */
     today_training: TrainingRecord | null;
+
+    // --- Baseline-relative strain inputs (see rules.ts metricStrain) ---
+    /** Current sleep score vs its own trailing 7d baseline (current - avg7d). Unlike
+     *  rhr_delta/hrv_delta above, sleep score previously had no delta mapped at all --
+     *  the engine only ever saw the absolute value. */
+    sleep_score_delta_7d: number | null;
+    /** Current vs the person's trailing 28-day baseline. Combined with the *Vs7d delta
+     *  above, this reconstructs the 7d-vs-28d baseline drift (a slow, multi-day trend)
+     *  algebraically as (delta_28d - delta_7d), without needing the raw 7d/28d averages
+     *  themselves in the engine. */
+    rhr_delta_28d: number | null;
+    hrv_delta_28d: number | null;
+    sleep_score_delta_28d: number | null;
+    /** This person's own trailing 28-day population stdev per metric -- normalizes a
+     *  raw delta into "how unusual is this for *this* person" instead of comparing
+     *  everyone against the same fixed absolute number. Null until 14+ days of history
+     *  exist (see DerivedMetrics.hrv28dStdev on the Python side). */
+    hrv_stdev_28d: number | null;
+    rhr_stdev_28d: number | null;
+    sleep_score_stdev_28d: number | null;
 }
 
 export interface DailyReadiness {
@@ -55,7 +81,19 @@ export interface UserContext {
         hasIndoorBike: boolean;
         injuries: string[];
         maxTimeMinutes: number;
-    }
+    };
+    /** From UserPreferences -- previously collected in Firestore but never reaching the
+     *  engine at all. Compared case-insensitively against SessionTemplate.modality. */
+    preferences: {
+        /** Hard exclude: never select a template of these modalities (see rules.ts). */
+        avoidedModalities: string[];
+        /** Soft de-prioritize: only selected if no non-deprioritized option survives
+         *  today's mode/constraint filtering. */
+        deprioritizedModalities: string[];
+        preferredModalities: string[];
+        /** Nudges the strain score toward caution -- see rules.ts CONSERVATIVE_BIAS_STRAIN_OFFSET. */
+        conservativeBias: boolean;
+    };
 }
 
 export interface SessionTemplate {
@@ -67,11 +105,23 @@ export interface SessionTemplate {
     title: string;
     description: string;
     requiredEquipment: ('free_weights' | 'cable_machine' | 'treadmill' | 'indoor_bike')[];
+    /** Approximate whole-body/autonomic cost of this session, 0 (none) to 1 (maximal),
+     *  independent of duration. A 'modify' (moderate-readiness) day caps selection by
+     *  this cost rather than by a fixed category allow-list -- so a low-cost,
+     *  muscle-local session (e.g. upper-body strength) can still be offered even when
+     *  softer HRV/RHR readings would otherwise rule out "training" broadly. See
+     *  rules.ts MODIFY_MAX_SYSTEMIC_COST. */
+    systemicCost: number;
 }
 
 export interface Recommendation {
     template: SessionTemplate;
     rationale: string;
+    /** The engine's internal train/modify/recover classification that produced this
+     *  template -- previously computed and discarded inside evaluateTraining, now
+     *  exposed so callers (persistence, adherence analysis) don't have to re-derive it
+     *  from the template category alone. */
+    mode: 'train' | 'modify' | 'recover';
 }
 
 export interface NextDayPlanBranch {
@@ -158,6 +208,13 @@ export interface DailyRecoverySnapshot {
         hrv28dAvg: number | null;
         respiration7dAvg: number | null;
         respiration28dAvg: number | null;
+        /** Trailing 28-day population stdev per metric (this person's own night-to-night
+         *  variability). Absent (undefined) on documents written before
+         *  baselineComputationVersion 2 -- always read as possibly-missing, not just
+         *  possibly-null. */
+        hrv28dStdev?: number | null;
+        restingHr28dStdev?: number | null;
+        sleepScore28dStdev?: number | null;
         deltas: {
             sleepScoreVs7d: number | null;
             sleepScoreVs28d: number | null;
@@ -304,12 +361,42 @@ export interface DailyDecisionInput {
     };
 }
 
+/**
+ * A generated recommendation, persisted at
+ * users/{userId}/daily_recommendations/{date} so there's a durable record of what was
+ * actually prescribed each day -- previously the engine's output was computed on page
+ * load and discarded, which made "is the algorithm working?" unanswerable from data.
+ * `adherence` is filled in later (typically the next day, via a quick prompt) rather
+ * than at creation time -- see recommendationService.recordAdherence.
+ */
 export interface DailyRecommendation {
     userId: string;
     date: string;
     templateId: string;
+    templateTitle: string;
+    category: SessionTemplate['category'];
+    modality: SessionTemplate['modality'];
+    mode: 'train' | 'modify' | 'recover';
     rationale: string;
+    schemaVersion: number;
     createdAt: string;
+    updatedAt: string;
+    adherence: {
+        /** Null until the user responds to the adherence prompt for this day. */
+        respondedAt: string | null;
+        /** true = did the recommended session as prescribed; false = did something
+         *  different (see actual* fields) or nothing at all (see skipped). Null =
+         *  not yet answered. */
+        followed: boolean | null;
+        /** Set when followed === false and skipped === false: what was actually done
+         *  instead of the recommendation. */
+        actualModality: SessionTemplate['modality'] | null;
+        actualDurationMin: number | null;
+        /** true = did no session at all today (distinct from "did something
+         *  different" -- both are followed: false, but this narrows which). */
+        skipped: boolean;
+        notes: string | null;
+    };
 }
 
 // --- Type Utilities ---

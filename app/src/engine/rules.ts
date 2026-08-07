@@ -17,6 +17,169 @@ function pickTemplate(options: SessionTemplate[], seedDate: string): SessionTemp
     return options[hash % options.length];
 }
 
+function clamp(value: number, min: number, max: number): number {
+    return Math.max(min, Math.min(max, value));
+}
+
+function modalityMatches(templateModality: string, wanted: string): boolean {
+    return templateModality.toLowerCase() === wanted.trim().toLowerCase();
+}
+
+/**
+ * Ranks a candidate pool by long-term modality preference before the per-day hash pick
+ * runs: preferred-modality options first, then neutral options, then deprioritized
+ * options only if nothing else survives. Never excludes anything outright (that's what
+ * avoidedModalities -- a hard filter -- is for); this only reorders which tier
+ * pickTemplate draws from.
+ */
+function rankByModalityPreference(
+    options: SessionTemplate[],
+    preferredModalities: string[],
+    deprioritizedModalities: string[]
+): SessionTemplate[] {
+    const isDeprioritized = (t: SessionTemplate) => deprioritizedModalities.some(m => modalityMatches(t.modality, m));
+    const isPreferred = (t: SessionTemplate) => preferredModalities.some(m => modalityMatches(t.modality, m));
+
+    const preferred = options.filter(t => isPreferred(t) && !isDeprioritized(t));
+    if (preferred.length > 0) return preferred;
+
+    const neutral = options.filter(t => !isDeprioritized(t));
+    if (neutral.length > 0) return neutral;
+
+    return options; // everything left is deprioritized -- still better than nothing
+}
+
+/**
+ * Applies today's explicit modality ask (from the check-in, distinct from the
+ * longer-term preferences above) against `searchPool`, falling back to `fallbackPool`
+ * (the mode's normal candidate set) with an explanatory note when it can't be honored --
+ * silently ignoring an explicit ask would look like the engine didn't listen.
+ *
+ * `searchPool` and `fallbackPool` are deliberately separate: on a 'train' day there's no
+ * safety reason to refuse an explicit ask for something gentler than what train mode
+ * would normally offer (e.g. "just do mobility today even though I'm fresh"), so train's
+ * search pool is every constraint-eligible template, not just its usual hard/moderate/
+ * strength categories. On 'recover'/'modify' days the mode's systemic-cost ceiling *is*
+ * safety-motivated, so search and fallback pool are the same restricted set there --
+ * see call sites below.
+ */
+function applyModalityPreference(
+    searchPool: SessionTemplate[],
+    fallbackPool: SessionTemplate[],
+    preferredModalityToday: string | null
+): { options: SessionTemplate[]; note: string | null } {
+    if (!preferredModalityToday || !preferredModalityToday.trim()) {
+        return { options: fallbackPool, note: null };
+    }
+
+    const matchingToday = searchPool.filter(t => modalityMatches(t.modality, preferredModalityToday));
+    if (matchingToday.length > 0) {
+        return { options: matchingToday, note: null };
+    }
+
+    const existsAnywhereInCatalog = TEMPLATES.some(t => modalityMatches(t.modality, preferredModalityToday));
+    const note = existsAnywhereInCatalog
+        ? `You asked for ${preferredModalityToday} today, but today's readiness/constraints don't support it -- sticking with a safer option instead.`
+        : `You asked for ${preferredModalityToday} today, but we don't have a matching session type in the catalog yet.`;
+    return { options: fallbackPool, note };
+}
+
+// --- Objective "strain" scoring ---
+// Replaces an earlier binary penalty ladder (fixed +1 point for crossing a hardcoded
+// absolute threshold, e.g. "-5ms HRV") with a continuous, this-person's-own-stdev
+// normalized score. A fixed absolute threshold doesn't generalize: -5ms is deep in the
+// noise floor for someone with high night-to-night HRV variability, and a real signal
+// for someone whose readings are normally very stable. Two components are combined per
+// metric:
+//   - "acute" z: today vs the person's own trailing 7-day baseline (one rough night)
+//   - "chronic" z: the 7-day baseline's drift away from the 28-day baseline -- an
+//     accumulating multi-day trend, which is what actually predicts overreaching, not
+//     a single noisy reading. Weighted higher than acute for that reason.
+// Metric weights approximate each signal's reliability as a recovery marker: HRV is the
+// most direct autonomic-recovery read, sleep score is the noisiest (a proprietary
+// composite), RHR in between.
+const HRV_STRAIN_WEIGHT = 0.5;
+const RHR_STRAIN_WEIGHT = 0.3;
+const SLEEP_STRAIN_WEIGHT = 0.2;
+
+// Floors: if a metric has been unusually flat over its own trailing 28 days (or has no
+// computed stdev yet, e.g. early in a user's history), its z-score shouldn't blow up on
+// a routine day-to-day move. Values approximate realistic night-to-night noise.
+const HRV_STDEV_FLOOR_MS = 3;
+const RHR_STDEV_FLOOR_BPM = 1.5;
+const SLEEP_STDEV_FLOOR_PTS = 4;
+
+// Caps one metric's z-score contribution so a single outlier reading can't dominate the
+// whole strain score by itself.
+const STRAIN_Z_CAP = 2.0;
+// Chronic (multi-day) drift counts for more than a single day's acute reading.
+const CHRONIC_STRAIN_MULTIPLIER = 1.5;
+
+// A genuinely poor night matters even for someone whose baseline runs low (the z-score
+// above is baseline-relative and would otherwise under-react) -- a small flat floor
+// rather than the old hard "< 60" cutoff, which fired on essentially no real nights.
+const SLEEP_SCORE_ABSOLUTE_FLOOR = 50;
+const SLEEP_SCORE_ABSOLUTE_FLOOR_STRAIN = 0.5;
+
+// Body Battery: ramps smoothly from 0 strain at 50 up to full strain by 25, rather than
+// a step function at a single cutoff.
+const BODY_BATTERY_LOW_ANCHOR = 50;
+const BODY_BATTERY_LOW_FULL_STRAIN_AT = 25;
+const BODY_BATTERY_MAX_STRAIN = 0.3;
+
+const RECENT_HARD_SESSIONS_STRAIN = 1.0;
+
+// A user who's told us (via UserPreferences.conservativeBias) that they want a more
+// cautious coach gets a flat strain offset -- shifts the modify/recover boundaries in
+// their favor without restructuring the thresholds themselves.
+const CONSERVATIVE_BIAS_STRAIN_OFFSET = 0.4;
+
+// Calibrated against ~2 months of real HRV/RHR/sleep data so 'modify'/'recover' trigger
+// at roughly the frequency the old binary ladder did overall, but driven by genuine
+// multi-day fatigue patterns instead of single-night noise below the noise floor.
+const STRAIN_MODIFY_THRESHOLD = 1.0;
+const STRAIN_RECOVER_THRESHOLD = 2.2;
+
+/**
+ * One metric's contribution to the overall objective strain score.
+ * `sign` is +1 when a *negative* delta is the bad direction (HRV, sleep score), -1 when
+ * a *positive* delta is bad (RHR).
+ */
+function metricStrain(
+    deltaVs7d: number | null,
+    deltaVs28d: number | null,
+    stdev: number | null,
+    stdevFloor: number,
+    weight: number,
+    sign: 1 | -1
+): number {
+    if (deltaVs7d === null) return 0;
+    const sd = Math.max(stdev ?? stdevFloor, stdevFloor);
+
+    const zAcute = (sign * deltaVs7d) / sd;
+    const acuteStrain = clamp(-zAcute, 0, STRAIN_Z_CAP);
+
+    let chronicStrain = 0;
+    if (deltaVs28d !== null) {
+        // avg7d - avg28d, reconstructed algebraically as (deltaVs28d - deltaVs7d) so we
+        // don't need the raw 7d/28d averages themselves in the engine.
+        const zChronic = (sign * (deltaVs28d - deltaVs7d)) / sd;
+        chronicStrain = clamp(-zChronic, 0, STRAIN_Z_CAP);
+    }
+
+    return weight * (acuteStrain + CHRONIC_STRAIN_MULTIPLIER * chronicStrain);
+}
+
+/**
+ * A 'modify' (moderate-readiness) day caps template selection by systemic cost rather
+ * than by a fixed category allow-list. 0.5 admits Easy Endurance, Mobility/Recovery,
+ * and -- unlike the old allow-list -- Upper-body Strength (cost 0.3): a low-cost,
+ * muscle-local stimulus that softer HRV/RHR readings don't actually contraindicate.
+ * Moderate Endurance, Lower-body/Full-body Strength, and Hard Endurance (cost >= 0.55)
+ * stay excluded, same as before.
+ */
+const MODIFY_MAX_SYSTEMIC_COST = 0.5;
+
 export function evaluateTraining(readiness: DailyReadiness, context: UserContext, date: string): Recommendation {
     const { subjective, objective } = readiness;
 
@@ -28,28 +191,37 @@ export function evaluateTraining(readiness: DailyReadiness, context: UserContext
     // Core subjective penalty calculation
     const overallFatigueScore = (subjective.fatigue + subjective.soreness + invertedReadiness + invertedSleepQual + invertedMotivation) / 5;
 
-    // 2. Objective penalty logic (analyzing deltas vs baselines)
-    let objectivePenalty = 0;
+    // 2. Objective strain scoring (baseline-relative -- see metricStrain doc above)
+    let objectiveStrain = 0;
 
-    // RHR Delta: Higher RHR is bad
-    if (objective.rhr_delta !== null && objective.rhr_delta > 3) {
-        objectivePenalty += 1; // +3 bpm over 7d is yellow flag
-    }
-    if (objective.rhr_delta !== null && objective.rhr_delta > 6) {
-        objectivePenalty += 1; // +6 bpm over 7d is red flag
+    objectiveStrain += metricStrain(
+        objective.hrv_delta, objective.hrv_delta_28d, objective.hrv_stdev_28d,
+        HRV_STDEV_FLOOR_MS, HRV_STRAIN_WEIGHT, 1
+    );
+    objectiveStrain += metricStrain(
+        objective.rhr_delta, objective.rhr_delta_28d, objective.rhr_stdev_28d,
+        RHR_STDEV_FLOOR_BPM, RHR_STRAIN_WEIGHT, -1
+    );
+    objectiveStrain += metricStrain(
+        objective.sleep_score_delta_7d, objective.sleep_score_delta_28d, objective.sleep_score_stdev_28d,
+        SLEEP_STDEV_FLOOR_PTS, SLEEP_STRAIN_WEIGHT, 1
+    );
+
+    // Absolute safety net: a genuinely wrecked night still matters even if it doesn't
+    // read as unusual relative to this person's own (possibly already-low) baseline.
+    if (objective.sleep_score !== null && objective.sleep_score < SLEEP_SCORE_ABSOLUTE_FLOOR) {
+        objectiveStrain += SLEEP_SCORE_ABSOLUTE_FLOOR_STRAIN;
     }
 
-    // HRV Delta: Lower HRV is bad
-    if (objective.hrv_delta !== null && objective.hrv_delta < -5) {
-        objectivePenalty += 1; // Significant drop vs weekly average
+    // Body Battery: smooth ramp rather than a step function at 50.
+    if (objective.body_battery_wake !== null) {
+        const deficit = BODY_BATTERY_LOW_ANCHOR - objective.body_battery_wake;
+        const range = BODY_BATTERY_LOW_ANCHOR - BODY_BATTERY_LOW_FULL_STRAIN_AT;
+        objectiveStrain += clamp(deficit / range, 0, 1) * BODY_BATTERY_MAX_STRAIN;
     }
 
-    // Body Battery & Sleep Thresholds
-    if (objective.body_battery_wake !== null && objective.body_battery_wake < 50) {
-        objectivePenalty += 1; // Poor recovery overnight
-    }
-    if (objective.sleep_score !== null && objective.sleep_score < 60) {
-        objectivePenalty += 1;
+    if (context.preferences.conservativeBias) {
+        objectiveStrain += CONSERVATIVE_BIAS_STRAIN_OFFSET;
     }
 
     const extremeFatigue = subjective.fatigue > 8 || subjective.soreness > 8 || subjective.painFlag;
@@ -60,14 +232,14 @@ export function evaluateTraining(readiness: DailyReadiness, context: UserContext
     // Prevent overtraining if you've done too many hard sessions recently
     const recentHardSessions = objective.last_3_days_hard_sessions_count || 0;
     if (recentHardSessions >= 2) {
-        objectivePenalty += 1; // 2+ hard sessions in 3 days warrants caution
+        objectiveStrain += RECENT_HARD_SESSIONS_STRAIN; // 2+ hard sessions in 3 days warrants caution
     }
 
-    const fatigueTriggeredRecover = overallFatigueScore > 7 || extremeFatigue || objectivePenalty >= 3;
+    const fatigueTriggeredRecover = overallFatigueScore > 7 || extremeFatigue || objectiveStrain >= STRAIN_RECOVER_THRESHOLD;
     if (fatigueTriggeredRecover) {
         mode = 'recover';
-    } else if (overallFatigueScore > 5 || subjective.soreness > 6 || objectivePenalty >= 1) {
-        mode = 'modify'; // Demote to Zone 2 / easier sessions
+    } else if (overallFatigueScore > 5 || subjective.soreness > 6 || objectiveStrain >= STRAIN_MODIFY_THRESHOLD) {
+        mode = 'modify'; // Cap systemic load -- see MODIFY_MAX_SYSTEMIC_COST, not a flat demotion to endurance-only
     }
 
     // 3b. Already-trained-today override: takes precedence over everything above.
@@ -91,6 +263,9 @@ export function evaluateTraining(readiness: DailyReadiness, context: UserContext
             if (req === 'free_weights' && !context.constraints.hasFreeWeights) return false;
             if (req === 'cable_machine' && !context.constraints.hasCableMachine) return false;
         }
+        // Avoided modalities are a hard exclude, same standing as an equipment gate --
+        // unlike deprioritized (soft) or preferred (soft), see rankByModalityPreference.
+        if (context.preferences.avoidedModalities.some(m => modalityMatches(t.modality, m))) return false;
         return true;
     });
 
@@ -98,10 +273,19 @@ export function evaluateTraining(readiness: DailyReadiness, context: UserContext
     let selectedTemplate = availableTemplates.find(t => t.category === 'Rest') || TEMPLATES[1]; // fallback
     let rationale = "";
 
+    let modalityNote: string | null = null;
+
     if (mode === 'recover') {
         const recoverOptions = availableTemplates.filter(t => t.category === 'Rest' || t.category === 'Mobility/Recovery');
+        // Recover's ceiling is safety-motivated -- search and fallback pool are the same
+        // restricted set, so an explicit ask can't push above it.
+        const preferenceResult = applyModalityPreference(recoverOptions, recoverOptions, subjective.preferredModalityToday);
+        modalityNote = preferenceResult.note;
+        const rankedRecoverOptions = rankByModalityPreference(
+            preferenceResult.options, context.preferences.preferredModalities, context.preferences.deprioritizedModalities
+        );
         // pickTemplate only returns undefined for an empty array, already excluded by the guard.
-        if (recoverOptions.length > 0) selectedTemplate = pickTemplate(recoverOptions, date)!;
+        if (rankedRecoverOptions.length > 0) selectedTemplate = pickTemplate(rankedRecoverOptions, date)!;
 
         if (alreadyTrainedOverride) {
             const loggedSession = objective.today_training;
@@ -124,20 +308,52 @@ export function evaluateTraining(readiness: DailyReadiness, context: UserContext
         }
 
     } else if (mode === 'modify') {
-        const modifyOptions = availableTemplates.filter(t => t.category === 'Easy Endurance' || t.category === 'Mobility/Recovery');
-        if (modifyOptions.length > 0) selectedTemplate = pickTemplate(modifyOptions, date)!;
+        // Cap by systemic cost, not by category -- a low-cost, muscle-local session
+        // (upper-body strength) is a legitimate option here even though the broader
+        // category was excluded before. See MODIFY_MAX_SYSTEMIC_COST.
+        const modifyOptions = availableTemplates.filter(t => t.category !== 'Rest' && t.systemicCost <= MODIFY_MAX_SYSTEMIC_COST);
+        // Modify's cost ceiling is safety-motivated too -- same restricted set for both
+        // search and fallback (an ask for something above the ceiling isn't honored).
+        const preferenceResult = applyModalityPreference(modifyOptions, modifyOptions, subjective.preferredModalityToday);
+        modalityNote = preferenceResult.note;
+        const rankedModifyOptions = rankByModalityPreference(
+            preferenceResult.options, context.preferences.preferredModalities, context.preferences.deprioritizedModalities
+        );
+        if (rankedModifyOptions.length > 0) selectedTemplate = pickTemplate(rankedModifyOptions, date)!;
         else selectedTemplate = TEMPLATES[0]; // Rest fallback
 
-        rationale = "You're showing moderate soreness or slight downward trends in Garmin baselines. We are capping intensity today to build base capacity without taxing the CNS.";
+        rationale = "You're showing moderate soreness or slight downward trends in Garmin baselines. We're capping today's systemic/autonomic load rather than ruling out a whole modality.";
+        if (selectedTemplate.category === 'Upper-body Strength') {
+            rationale += " Upper-body strength is included: it's a low-systemic-load, muscle-local stimulus, so softer HRV/RHR readings are a better reason to skip legs or intervals than to skip push/pull work.";
+        }
 
     } else {
         // 'Moderate Endurance' (Zone-3 tempo) belongs here, not in 'modify' -- it's
         // explicitly a comfortably-hard, full-intensity option, which would contradict
         // modify mode's "capping intensity" rationale above.
         const trainOptions = availableTemplates.filter(t => t.category === 'Hard Endurance' || t.category === 'Moderate Endurance' || t.category === 'Full-body Strength' || t.category === 'Upper-body Strength' || t.category === 'Lower-body Strength');
-        if (trainOptions.length > 0) selectedTemplate = pickTemplate(trainOptions, date)!;
+        // No ceiling to protect on a 'train' day -- an explicit ask for something gentler
+        // (e.g. mobility) than train mode would normally offer is fine to honor, so the
+        // search pool is every constraint-eligible template, not just trainOptions.
+        const preferenceResult = applyModalityPreference(availableTemplates, trainOptions, subjective.preferredModalityToday);
+        modalityNote = preferenceResult.note;
+        const rankedTrainOptions = rankByModalityPreference(
+            preferenceResult.options, context.preferences.preferredModalities, context.preferences.deprioritizedModalities
+        );
+        if (rankedTrainOptions.length > 0) selectedTemplate = pickTemplate(rankedTrainOptions, date)!;
 
-        rationale = "Readiness is solid across both subjective feelings and Garmin baselines. Great day for a hard session aligned with your primary goals!";
+        // An honored preference can land outside train mode's usual categories (e.g. an
+        // explicit ask for mobility on an otherwise green-light day) -- say so rather
+        // than claiming a "hard session" rationale for what's actually an easy one.
+        if (!trainOptions.some(t => t.id === selectedTemplate!.id)) {
+            rationale = `Readiness is solid -- you'd be fine pushing harder -- but you asked for ${selectedTemplate.modality.toLowerCase()} today, so going with that instead.`;
+        } else {
+            rationale = "Readiness is solid across both subjective feelings and Garmin baselines. Great day for a hard session aligned with your primary goals!";
+        }
+    }
+
+    if (modalityNote) {
+        rationale += ` ${modalityNote}`;
     }
 
     // Add previous day context if available and relevant
@@ -153,7 +369,8 @@ export function evaluateTraining(readiness: DailyReadiness, context: UserContext
 
     return {
         template: selectedTemplate,
-        rationale
+        rationale,
+        mode
     };
 }
 
@@ -254,7 +471,10 @@ export function evaluateNextDayPlan(
             motivation: 9,
             timeAvailable: todayReadiness.subjective.timeAvailable,
             painFlag: false,
-            alreadyTrainedToday: false
+            alreadyTrainedToday: false,
+            // These are hypothetical "what if tomorrow looks like X" previews -- no
+            // specific modality ask is assumed for any of the three branches.
+            preferredModalityToday: null
         },
         objective: {
             ...todayReadiness.objective,
@@ -262,6 +482,13 @@ export function evaluateNextDayPlan(
             sleep_duration_min: 480,
             rhr_delta: 0,
             hrv_delta: 2,
+            // No chronic drift assumed for a hypothetical single-day preview -- 28d
+            // delta set equal to the 7d delta so the chronic strain term is neutral and
+            // only the acute (today-vs-7d) reading drives the branch.
+            rhr_delta_28d: 0,
+            hrv_delta_28d: 2,
+            sleep_score_delta_7d: 6,
+            sleep_score_delta_28d: 6,
             body_battery_wake: 88,
             last_3_days_hard_sessions_count: updatedHardCount,
             today_training: null
@@ -271,15 +498,16 @@ export function evaluateNextDayPlan(
     // Yellow Scenario: Moderate recovery or mild soreness
     const yellowReadiness: DailyReadiness = {
         subjective: {
-            readiness: 6,
-            sleepQuality: 6,
-            fatigue: 5,
-            soreness: 5,
+            readiness: 5,
+            sleepQuality: 5,
+            fatigue: 6,
+            soreness: 6,
             stress: 5,
-            motivation: 6,
+            motivation: 5,
             timeAvailable: todayReadiness.subjective.timeAvailable,
             painFlag: false,
-            alreadyTrainedToday: false
+            alreadyTrainedToday: false,
+            preferredModalityToday: null
         },
         objective: {
             ...todayReadiness.objective,
@@ -287,6 +515,10 @@ export function evaluateNextDayPlan(
             sleep_duration_min: 420,
             rhr_delta: 3,
             hrv_delta: -4,
+            rhr_delta_28d: 3,
+            hrv_delta_28d: -4,
+            sleep_score_delta_7d: -14,
+            sleep_score_delta_28d: -14,
             body_battery_wake: 62,
             last_3_days_hard_sessions_count: updatedHardCount,
             today_training: null
@@ -296,15 +528,16 @@ export function evaluateNextDayPlan(
     // Red Scenario: Low recovery, high fatigue, or HRV drop
     const redReadiness: DailyReadiness = {
         subjective: {
-            readiness: 3,
-            sleepQuality: 4,
-            fatigue: 8,
-            soreness: 7,
+            readiness: 2,
+            sleepQuality: 3,
+            fatigue: 9,
+            soreness: 8,
             stress: 7,
-            motivation: 4,
+            motivation: 3,
             timeAvailable: todayReadiness.subjective.timeAvailable,
             painFlag: false,
-            alreadyTrainedToday: false
+            alreadyTrainedToday: false,
+            preferredModalityToday: null
         },
         objective: {
             ...todayReadiness.objective,
@@ -312,6 +545,10 @@ export function evaluateNextDayPlan(
             sleep_duration_min: 360,
             rhr_delta: 6,
             hrv_delta: -8,
+            rhr_delta_28d: 6,
+            hrv_delta_28d: -8,
+            sleep_score_delta_7d: -20,
+            sleep_score_delta_28d: -20,
             body_battery_wake: 42,
             last_3_days_hard_sessions_count: updatedHardCount,
             today_training: null

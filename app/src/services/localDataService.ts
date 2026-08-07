@@ -89,6 +89,9 @@ export class LocalDataService {
                     hrv28dAvg: null, // Would need to be computed
                     respiration7dAvg: null, // Would need to be computed
                     respiration28dAvg: null, // Would need to be computed
+                    hrv28dStdev: null, // Would need to be computed
+                    restingHr28dStdev: null, // Would need to be computed
+                    sleepScore28dStdev: null, // Would need to be computed
                     deltas: {
                         sleepScoreVs7d: null,
                         sleepScoreVs28d: null,
