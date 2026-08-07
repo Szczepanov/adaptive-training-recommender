@@ -1,9 +1,8 @@
 .data-view-container {
-  padding: 20px;
-  max-width: 1200px;
+  padding: 0;
+  max-width: 1350px;
   margin: 0 auto;
-  background-color: var(--background-color);
-  min-height: 100vh;
+  padding-bottom: 2rem;
 }
 
 .data-view-header {

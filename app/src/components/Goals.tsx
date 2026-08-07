@@ -13,7 +13,7 @@ interface GoalsProps {
   onNavigate?: (screen: 'home' | 'checkin' | 'goals' | 'constraints' | 'preferences') => void;
 }
 
-export function Goals({ userId, onNavigate }: GoalsProps) {
+export function Goals({ userId }: GoalsProps) {
   const [goals, setGoals] = useState<UserGoalWithId[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -135,12 +135,11 @@ export function Goals({ userId, onNavigate }: GoalsProps) {
 
   return (
     <div className="goals-container">
-      <button className="goals-back-btn" onClick={() => onNavigate?.('home')}>
-        ← Back
-      </button>
-
       <div className="goals-header">
-        <h1>Goals</h1>
+        <div>
+          <h1>Goals</h1>
+          <p className="header-subtitle">Manage short-term targets, race milestones, and long-term athletic goals.</p>
+        </div>
         <button 
           className="add-btn"
           onClick={() => setShowAddModal(true)}

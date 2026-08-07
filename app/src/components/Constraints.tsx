@@ -13,7 +13,7 @@ interface ConstraintsProps {
   onNavigate?: (screen: 'home' | 'checkin' | 'goals' | 'constraints' | 'preferences') => void;
 }
 
-export function Constraints({ userId, onNavigate }: ConstraintsProps) {
+export function Constraints({ userId }: ConstraintsProps) {
   const [constraints, setConstraints] = useState<UserConstraint[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -104,12 +104,11 @@ export function Constraints({ userId, onNavigate }: ConstraintsProps) {
 
   return (
     <div className="constraints-container">
-      <button className="constraints-back-btn" onClick={() => onNavigate?.('home')}>
-        ← Back
-      </button>
-
       <div className="constraints-header">
-        <h1>Constraints</h1>
+        <div>
+          <h1>Constraints</h1>
+          <p className="header-subtitle">Set physical cautions, equipment access, and availability boundaries.</p>
+        </div>
         <button 
           className="add-btn"
           onClick={() => setShowCustomModal(true)}
@@ -146,23 +145,25 @@ export function Constraints({ userId, onNavigate }: ConstraintsProps) {
       )}
 
       <div className="constraints-content">
+        {/* Physical & Safety Cautions (Priority #1) */}
+        <div className="safety-section-wrapper">
+          <ConstraintSection
+            title="⚠️ Physical & Safety Cautions"
+            constraints={constraintsByCategory.physical_caution || []}
+            onToggle={handleToggleConstraint}
+          />
+        </div>
+
         {/* Equipment Constraints */}
         <ConstraintSection
-          title="Equipment"
+          title="Equipment & Access"
           constraints={constraintsByCategory.equipment || []}
-          onToggle={handleToggleConstraint}
-        />
-
-        {/* Physical Cautions */}
-        <ConstraintSection
-          title="Physical Cautions"
-          constraints={constraintsByCategory.physical_caution || []}
           onToggle={handleToggleConstraint}
         />
 
         {/* Schedule */}
         <ConstraintSection
-          title="Schedule"
+          title="Schedule & Availability"
           constraints={constraintsByCategory.schedule || []}
           onToggle={handleToggleConstraint}
         />
@@ -177,7 +178,7 @@ export function Constraints({ userId, onNavigate }: ConstraintsProps) {
         {/* Custom Constraints */}
         {customConstraints.length > 0 && (
           <div className="constraint-section">
-            <h2 className="section-title">Custom</h2>
+            <h2 className="section-title">Custom Constraints</h2>
             <div className="constraints-list">
               {customConstraints.map(constraint => (
                 <ConstraintItem

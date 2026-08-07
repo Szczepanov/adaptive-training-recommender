@@ -11,7 +11,7 @@ interface DataViewProps {
 
 type AdherenceStats = Awaited<ReturnType<typeof recommendationService.getAdherenceStats>>;
 
-export function DataView({ decisionInput, userId, onBack }: DataViewProps) {
+export function DataView({ decisionInput, userId }: DataViewProps) {
   const [activeTab, setActiveTab] = useState<'recovery' | 'checkin' | 'goals' | 'constraints' | 'preferences' | 'adherence'>('recovery');
   // null doubles as "not loaded yet" -- once getAdherenceStats resolves it's always a
   // real (possibly all-zero) stats object, so this alone distinguishes loading from an
@@ -31,8 +31,7 @@ export function DataView({ decisionInput, userId, onBack }: DataViewProps) {
     return (
       <div className="data-view-container">
         <div className="data-view-header">
-          <button className="back-btn" onClick={onBack}>← Back</button>
-          <h1>Data View</h1>
+          <h1>Detailed Data & Telemetry</h1>
         </div>
         <div className="no-data">
           <p>No data available</p>
@@ -531,8 +530,10 @@ export function DataView({ decisionInput, userId, onBack }: DataViewProps) {
   return (
     <div className="data-view-container">
       <div className="data-view-header">
-        <button className="back-btn" onClick={onBack}>← Back</button>
-        <h1>Data View</h1>
+        <div>
+          <h1>Detailed Data & Telemetry</h1>
+          <p className="header-subtitle">Inspect engine inputs, snapshot metrics, and 30-day adherence statistics.</p>
+        </div>
       </div>
 
       <div className="data-view-tabs">

@@ -26,6 +26,7 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [decisionInput, setDecisionInput] = useState<DailyDecisionInput | null>(null);
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
 
   // Initialize user data on first login
   const initializeUserData = async (userId: string) => {
@@ -83,9 +84,6 @@ function App() {
   //   setScreen('home');
   // };
 
-  const navigateTo = (newScreen: Screen) => {
-    setScreen(newScreen);
-  };
 
   const loadDecisionInput = useCallback(async () => {
     if (!userId) return;
@@ -154,17 +152,113 @@ function App() {
     );
   }
 
+
+
+  const handleLogout = async () => {
+    const { signOut } = await import('firebase/auth');
+    await signOut(auth);
+  };
+
+  const handleNavigate = (newScreen: Screen) => {
+    setScreen(newScreen);
+    setShowMoreMenu(false);
+  };
+
   // Main app with navigation
   return (
     <div className="app-container">
-      <div className="app-content">
+      {/* Global Top Navbar */}
+      <header className="global-navbar">
+        <div className="navbar-container">
+          <div className="navbar-left">
+            <button 
+              className="navbar-brand" 
+              onClick={() => handleNavigate('home')}
+              title="Go to Home Dashboard"
+            >
+              <span className="brand-icon">⚡</span>
+              <span className="brand-name">Adaptive Coach</span>
+            </button>
+          </div>
+
+          <nav className="navbar-desktop-menu">
+            <button 
+              className={`nav-link ${screen === 'home' ? 'active' : ''}`}
+              onClick={() => handleNavigate('home')}
+            >
+              Home
+            </button>
+            <button 
+              className={`nav-link ${screen === 'checkin' ? 'active' : ''}`}
+              onClick={() => handleNavigate('checkin')}
+            >
+              Check-in
+            </button>
+            <button 
+              className={`nav-link ${screen === 'goals' ? 'active' : ''}`}
+              onClick={() => handleNavigate('goals')}
+            >
+              Goals
+            </button>
+            <button 
+              className={`nav-link ${screen === 'data' ? 'active' : ''}`}
+              onClick={() => {
+                loadDecisionInput();
+                handleNavigate('data');
+              }}
+            >
+              Data
+            </button>
+            
+            <div className="more-menu-container">
+              <button 
+                className={`nav-link more-btn ${['constraints', 'preferences'].includes(screen) ? 'active' : ''}`}
+                onClick={() => setShowMoreMenu(!showMoreMenu)}
+              >
+                <span>More</span>
+                <span className="caret">▾</span>
+              </button>
+              
+              {showMoreMenu && (
+                <div className="dropdown-menu">
+                  <button 
+                    className={`dropdown-item ${screen === 'constraints' ? 'active' : ''}`}
+                    onClick={() => handleNavigate('constraints')}
+                  >
+                    <span className="item-icon">⚠️</span> Constraints
+                  </button>
+                  <button 
+                    className={`dropdown-item ${screen === 'preferences' ? 'active' : ''}`}
+                    onClick={() => handleNavigate('preferences')}
+                  >
+                    <span className="item-icon">⚙️</span> Preferences
+                  </button>
+                  <div className="dropdown-divider" />
+                  <button className="dropdown-item logout" onClick={handleLogout}>
+                    <span className="item-icon">🚪</span> Sign Out
+                  </button>
+                </div>
+              )}
+            </div>
+          </nav>
+
+          <div className="navbar-right">
+            <button onClick={handleLogout} className="navbar-logout-btn" title="Sign Out">
+              Sign Out
+            </button>
+          </div>
+        </div>
+      </header>
+
+      {/* Main Page Content */}
+      <main className="app-content">
         {screen === 'home' && (
           <Home 
             userId={userId!} 
-            onNavigate={navigateTo}
+            onNavigate={handleNavigate}
             onViewData={() => {
               loadDecisionInput();
-              navigateTo('data');
+              handleNavigate('data');
             }}
           />
         )}
@@ -173,36 +267,36 @@ function App() {
           <DataView
             decisionInput={decisionInput}
             userId={userId!}
-            onBack={() => navigateTo('home')}
+            onBack={() => handleNavigate('home')}
           />
         )}
         
         {screen === 'checkin' && (
           <DailyCheckin 
             userId={userId!} 
-            onNavigate={navigateTo}
-            onBack={() => navigateTo('home')}
+            onNavigate={handleNavigate}
+            onBack={() => handleNavigate('home')}
           />
         )}
         
         {screen === 'goals' && (
-          <Goals userId={userId!} onNavigate={navigateTo} />
+          <Goals userId={userId!} onNavigate={handleNavigate} />
         )}
         
         {screen === 'constraints' && (
-          <Constraints userId={userId!} onNavigate={navigateTo} />
+          <Constraints userId={userId!} onNavigate={handleNavigate} />
         )}
         
         {screen === 'preferences' && (
-          <Preferences userId={userId!} onNavigate={navigateTo} />
+          <Preferences userId={userId!} onNavigate={handleNavigate} />
         )}
-      </div>
-      
-      {/* Bottom Navigation */}
+      </main>
+
+      {/* Mobile Bottom Navigation */}
       <nav className="bottom-nav">
         <button 
           className={`nav-item ${screen === 'home' ? 'active' : ''}`}
-          onClick={() => navigateTo('home')}
+          onClick={() => handleNavigate('home')}
         >
           <span className="nav-icon">🏠</span>
           <span className="nav-label">Home</span>
@@ -210,7 +304,7 @@ function App() {
         
         <button 
           className={`nav-item ${screen === 'checkin' ? 'active' : ''}`}
-          onClick={() => navigateTo('checkin')}
+          onClick={() => handleNavigate('checkin')}
         >
           <span className="nav-icon">✓</span>
           <span className="nav-label">Check-in</span>
@@ -218,28 +312,78 @@ function App() {
         
         <button 
           className={`nav-item ${screen === 'goals' ? 'active' : ''}`}
-          onClick={() => navigateTo('goals')}
+          onClick={() => handleNavigate('goals')}
         >
           <span className="nav-icon">🎯</span>
           <span className="nav-label">Goals</span>
         </button>
         
         <button 
-          className={`nav-item ${screen === 'constraints' ? 'active' : ''}`}
-          onClick={() => navigateTo('constraints')}
+          className={`nav-item ${['constraints', 'preferences', 'data'].includes(screen) ? 'active' : ''}`}
+          onClick={() => setShowMoreMenu(!showMoreMenu)}
         >
-          <span className="nav-icon">⚠️</span>
-          <span className="nav-label">Constraints</span>
-        </button>
-        
-        <button 
-          className={`nav-item ${screen === 'preferences' ? 'active' : ''}`}
-          onClick={() => navigateTo('preferences')}
-        >
-          <span className="nav-icon">⚙️</span>
-          <span className="nav-label">Preferences</span>
+          <span className="nav-icon">⋯</span>
+          <span className="nav-label">More</span>
         </button>
       </nav>
+
+      {/* Mobile Overlay More Menu Drawer */}
+      {showMoreMenu && (
+        <div className="mobile-more-overlay" onClick={() => setShowMoreMenu(false)}>
+          <div className="mobile-more-drawer" onClick={(e) => e.stopPropagation()}>
+            <div className="drawer-header">
+              <h3>Navigation & Settings</h3>
+              <button className="close-drawer-btn" onClick={() => setShowMoreMenu(false)}>✕</button>
+            </div>
+            <div className="drawer-items">
+              <button 
+                className={`drawer-item ${screen === 'data' ? 'active' : ''}`}
+                onClick={() => {
+                  loadDecisionInput();
+                  handleNavigate('data');
+                }}
+              >
+                <span className="item-icon">📊</span>
+                <div className="item-text">
+                  <span className="item-title">Detailed Data</span>
+                  <span className="item-sub">View analytics and snapshot telemetry</span>
+                </div>
+              </button>
+
+              <button 
+                className={`drawer-item ${screen === 'constraints' ? 'active' : ''}`}
+                onClick={() => handleNavigate('constraints')}
+              >
+                <span className="item-icon">⚠️</span>
+                <div className="item-text">
+                  <span className="item-title">Constraints</span>
+                  <span className="item-sub">Manage physical cautions & equipment</span>
+                </div>
+              </button>
+
+              <button 
+                className={`drawer-item ${screen === 'preferences' ? 'active' : ''}`}
+                onClick={() => handleNavigate('preferences')}
+              >
+                <span className="item-icon">⚙️</span>
+                <div className="item-text">
+                  <span className="item-title">Preferences</span>
+                  <span className="item-sub">Configure modalities & strain caps</span>
+                </div>
+              </button>
+
+              <div className="drawer-divider" />
+
+              <button className="drawer-item logout" onClick={handleLogout}>
+                <span className="item-icon">🚪</span>
+                <div className="item-text">
+                  <span className="item-title">Sign Out</span>
+                </div>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

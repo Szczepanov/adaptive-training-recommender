@@ -455,24 +455,36 @@
 }
 
 /* Responsive Design */
-@media (min-width: 768px) {
-  .preferences-container {
-    max-width: 700px;
-    margin: 0 auto;
-    padding: 2rem;
-    padding-bottom: 2rem;
+.preferences-container {
+  max-width: 1350px;
+  margin: 0 auto;
+  padding-bottom: 2rem;
+}
+
+@media (min-width: 900px) {
+  .preferences-content {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1.5rem;
+    align-items: start;
   }
   
   .preference-section {
-    padding: 2rem;
+    padding: 1.75rem;
+    height: 100%;
+  }
+
+  .preference-section.full-width-card {
+    grid-column: 1 / -1;
   }
   
   .time-inputs {
-    gap: 2rem;
+    gap: 1.5rem;
   }
   
   .units-grid {
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(2, 1fr);
   }
 }
+
 

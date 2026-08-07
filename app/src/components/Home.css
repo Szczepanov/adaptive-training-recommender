@@ -443,52 +443,79 @@
   transform: translateY(-1px);
 }
 
-/* Responsive Design */
-@media (max-width: 768px) {
-  .home-container {
-    padding: 10px;
+.home-container {
+  max-width: 1350px;
+  margin: 0 auto;
+  padding-bottom: 2rem;
+}
+
+.home-dashboard-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.recommendation-description,
+.recommendation-rationale {
+  max-width: 70ch;
+  line-height: 1.55;
+}
+
+.provisional-plan-card {
+  border: 1px dashed rgba(255, 255, 255, 0.15) !important;
+  background: rgba(255, 255, 255, 0.015) !important;
+}
+
+.header-title-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.provisional-tag {
+  font-size: 0.725rem;
+  color: var(--text-secondary);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.completeness-card {
+  margin-bottom: 1rem;
+}
+
+.sidebar-primary-action {
+  margin-bottom: 1.25rem;
+}
+
+.full-width {
+  width: 100%;
+}
+
+.sidebar-status-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+/* Responsive Layout Grid */
+@media (min-width: 992px) {
+  .home-dashboard-layout {
+    display: grid;
+    grid-template-columns: 2.1fr 1fr; /* ~68% main, ~32% sidebar */
+    gap: 1.75rem;
+    align-items: start;
   }
-  
-  .dashboard-grid {
-    grid-template-columns: 1fr;
-    gap: 15px;
-  }
-  
-  .recovery-metrics {
-    flex-direction: row;
-    flex-wrap: wrap;
+}
+
+@media (max-width: 991px) {
+  .sidebar-status-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
     gap: 1rem;
   }
-  
-  .metric {
-    flex: 1;
-    min-width: 120px;
-  }
 }
 
-@media (min-width: 768px) {
-  .home-container {
-    max-width: 800px;
-    margin: 0 auto;
-    padding: 2rem;
-    padding-bottom: 2rem;
-  }
-  
-  .dashboard-grid {
-    grid-template-columns: repeat(2, 1fr);
-    gap: 1.5rem;
-  }
-  
-  .home-header h1 {
-    font-size: 2.5rem;
-  }
-}
-
-@media (min-width: 1024px) {
-  .dashboard-grid {
-    grid-template-columns: repeat(2, 1fr);
-  }
-}
 
 /* Next-Day Potential Plan Card Styles */
 .next-day-card {
