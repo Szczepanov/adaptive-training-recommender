@@ -34,10 +34,15 @@ def calculate_stdev(values: list[float | int | None], min_required: int) -> floa
     return None
 
 
-def classify_activity_intensity(training_effect: float, average_hr: float | None) -> tuple[bool, str]:
+def classify_activity_intensity(
+    training_effect: float,
+    average_hr: float | None,
+    zone4_floor: int | float | None = None,
+) -> tuple[bool, str]:
     """
     Classify activity intensity based on Training Effect or Average HR.
-    Rule: training_effect >= 3.0 OR average_hr >= 145 -> Hard
+    Rule: training_effect >= 3.0 OR average_hr >= threshold -> Hard
+    Where threshold is zone4_floor (if provided and > 0) or HARD_SESSION_MIN_AVERAGE_HR (145).
 
     Provider-neutral: takes plain extracted values, not a raw provider payload, so any
     adapter can call this shared domain rule after extracting its own training-effect
@@ -45,7 +50,12 @@ def classify_activity_intensity(training_effect: float, average_hr: float | None
     """
     te = training_effect or 0.0
     avg_hr = average_hr or 0
-    is_hard = (te >= HARD_SESSION_MIN_TRAINING_EFFECT or avg_hr >= HARD_SESSION_MIN_AVERAGE_HR)
+    hr_threshold = (
+        zone4_floor
+        if (zone4_floor is not None and zone4_floor > 0)
+        else HARD_SESSION_MIN_AVERAGE_HR
+    )
+    is_hard = (te >= HARD_SESSION_MIN_TRAINING_EFFECT or avg_hr >= hr_threshold)
     intensity_tag = "hard" if is_hard else "moderate/easy"
     return is_hard, intensity_tag
 

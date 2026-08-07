@@ -193,13 +193,16 @@ def canonicalize_from_raw(
     )
 
 
-def canonicalize_activities(raw_activities: list[dict[str, Any]]) -> list[CanonicalActivity]:
+def canonicalize_activities(
+    raw_activities: list[dict[str, Any]],
+    zone4_floor: int | None = None,
+) -> list[CanonicalActivity]:
     """Public so both GarminProviderAdapter.fetch_activities (live fetch) and
     service.rebuild() (archive replay) share the exact same activity canonicalization."""
-    return [_canonicalize_activity(act) for act in raw_activities]
+    return [_canonicalize_activity(act, zone4_floor=zone4_floor) for act in raw_activities]
 
 
-def _canonicalize_activity(act: dict[str, Any]) -> CanonicalActivity:
+def _canonicalize_activity(act: dict[str, Any], zone4_floor: int | None = None) -> CanonicalActivity:
     te_aero = float(act.get("aerobicTrainingEffect", 0.0) or 0.0)
     te_anaero = float(act.get("anaerobicTrainingEffect", 0.0) or 0.0)
     avg_hr = act.get("averageHeartRate")
@@ -208,7 +211,7 @@ def _canonicalize_activity(act: dict[str, Any]) -> CanonicalActivity:
     # only consulting aerobic TE (as the pre-canonical-layer code did) would silently
     # under-count those sessions as "hard" for last3DaysHardSessionsCount purposes. See
     # tests/test_garmin_provider.py for the discriminating case this covers.
-    _, intensity_tag = classify_activity_intensity(max(te_aero, te_anaero), avg_hr)
+    _, intensity_tag = classify_activity_intensity(max(te_aero, te_anaero), avg_hr, zone4_floor=zone4_floor)
     duration_sec = act.get("duration", 0)
 
     raw_activity_id = act.get("activityId")
@@ -336,6 +339,14 @@ class GarminProviderAdapter:
 
         return ProviderFetchResult(canonical=canonical, raw_payloads=raw_payloads)
 
-    def fetch_activities(self, start_date_iso: str, end_date_iso: str) -> ProviderActivitiesResult:
+    def fetch_activities(
+        self,
+        start_date_iso: str,
+        end_date_iso: str,
+        zone4_floor: int | None = None,
+    ) -> ProviderActivitiesResult:
         raw_activities = self.client.get_activities_window(start_date_iso, end_date_iso)
-        return ProviderActivitiesResult(canonical=canonicalize_activities(raw_activities), raw_payload=raw_activities)
+        return ProviderActivitiesResult(
+            canonical=canonicalize_activities(raw_activities, zone4_floor=zone4_floor),
+            raw_payload=raw_activities,
+        )

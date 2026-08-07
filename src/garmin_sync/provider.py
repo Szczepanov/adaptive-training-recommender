@@ -39,7 +39,12 @@ class WearableProvider(Protocol):
 
     def fetch_daily_metrics(self, target_date_iso: str, yesterday_iso: str) -> ProviderFetchResult: ...
 
-    def fetch_activities(self, start_date_iso: str, end_date_iso: str) -> ProviderActivitiesResult: ...
+    def fetch_activities(
+        self,
+        start_date_iso: str,
+        end_date_iso: str,
+        zone4_floor: int | None = None,
+    ) -> ProviderActivitiesResult: ...
 
     def clear_cache(self) -> None:
         """Clear any internal per-date caching. GarminSyncService calls this at the

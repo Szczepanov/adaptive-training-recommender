@@ -109,7 +109,7 @@ class TrainingStatusSummary:
 class HeartRateZonesSummary:
     """Garmin's own configured max-HR/zone values for this person -- see
     CanonicalHeartRateZones. Recorded for observation alongside the other metric
-    enrichment fields, not yet consumed by classify_activity_intensity."""
+    enrichment fields and consumed by classify_activity_intensity."""
     restingHrUsed: int | None = None
     maxHrUsed: int | None = None
     zone4Floor: int | None = None

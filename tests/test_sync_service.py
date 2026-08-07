@@ -34,7 +34,12 @@ class FakeTestProvider:
         )
         return ProviderFetchResult(canonical=canonical, raw_payloads={"stats": {"fake": True}})
 
-    def fetch_activities(self, start_date_iso: str, end_date_iso: str) -> ProviderActivitiesResult:
+    def fetch_activities(
+        self,
+        start_date_iso: str,
+        end_date_iso: str,
+        zone4_floor: int | None = None,
+    ) -> ProviderActivitiesResult:
         return ProviderActivitiesResult(canonical=[], raw_payload=[])
 
     def clear_cache(self) -> None:
@@ -67,7 +72,12 @@ class DateAwareFakeProvider:
         )
         return ProviderFetchResult(canonical=canonical, raw_payloads={"stats": {"fake": True}})
 
-    def fetch_activities(self, start_date_iso: str, end_date_iso: str) -> ProviderActivitiesResult:
+    def fetch_activities(
+        self,
+        start_date_iso: str,
+        end_date_iso: str,
+        zone4_floor: int | None = None,
+    ) -> ProviderActivitiesResult:
         return ProviderActivitiesResult(canonical=[], raw_payload=[])
 
     def clear_cache(self) -> None:

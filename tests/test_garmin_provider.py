@@ -120,6 +120,27 @@ def test_canonicalize_activities_uses_anaerobic_training_effect_for_hard_classif
     assert act.intensity_tag == "hard"
 
 
+def test_canonicalize_activities_uses_zone4_floor():
+    raw = [{
+        "activityId": 1001,
+        "startTimeLocal": "2026-08-05T18:00:00",
+        "activityType": {"typeKey": "running"},
+        "duration": 1800,
+        "aerobicTrainingEffect": 2.0,
+        "anaerobicTrainingEffect": 1.0,
+        "averageHeartRate": 148,
+        "activityTrainingLoad": 60.0,
+    }]
+
+    # Without zone4_floor (defaults to 145), avg_hr=148 is classified as hard
+    act_default = canonicalize_activities(raw)[0]
+    assert act_default.intensity_tag == "hard"
+
+    # With zone4_floor=152, avg_hr=148 is below zone4_floor, so classified as moderate/easy
+    act_custom = canonicalize_activities(raw, zone4_floor=152)[0]
+    assert act_custom.intensity_tag == "moderate/easy"
+
+
 def test_canonicalize_activities_handles_missing_activity_id():
     """A Garmin activity payload without an activityId (e.g. an in-progress/pending
     upload) must canonicalize to activity_id=None rather than a shared placeholder

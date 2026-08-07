@@ -201,8 +201,13 @@ class GarminSyncService:
         # runs still needs a re-sync to pick it up -- which is exactly what sync_daily's
         # D-1..D-N lookback resync provides the next day; see
         # DailySubjectiveCheckin.alreadyTrainedToday for the instant, sync-independent signal.
+        zone4_floor = (
+            daily_result.canonical.heart_rate_zones.zone4_floor
+            if daily_result.canonical.heart_rate_zones
+            else None
+        )
         logger.info(f"[{target_iso}] Fetching activities window ({three_days_ago_iso} -> {target_iso})...")
-        activities_result = provider.fetch_activities(three_days_ago_iso, target_iso)
+        activities_result = provider.fetch_activities(three_days_ago_iso, target_iso, zone4_floor=zone4_floor)
         self._archive_raw("activities", target_iso, activities_result.raw_payload, sync_run_id)
         self._archive_activities(activities_result.canonical, sync_run_id)
 
@@ -368,10 +373,19 @@ class GarminSyncService:
                 ]
                 self._archive_raw("activities", target_iso, date_activities_raw, run_id)
 
+                zone4_floor = (
+                    daily_result.canonical.heart_rate_zones.zone4_floor
+                    if daily_result.canonical.heart_rate_zones
+                    else None
+                )
+                date_canonical_activities = canonicalize_activities(
+                    date_activities_raw, zone4_floor=zone4_floor
+                )
+
                 self._build_and_store_snapshot(
                     target_iso=target_iso,
                     canonical=daily_result.canonical,
-                    canonical_activities=all_activities_canonical,
+                    canonical_activities=date_canonical_activities,
                     raw_memory_store=raw_memory_store,
                 )
                 logger.info(f"[{target_iso}] Backfill sync completed.")
@@ -457,7 +471,14 @@ class GarminSyncService:
                     training_status_today=training_status_today,
                     heart_rate_zones=heart_rate_zones,
                 )
-                canonical_activities = canonicalize_activities(raw_activities)
+                zone4_floor = (
+                    canonical.heart_rate_zones.zone4_floor
+                    if canonical.heart_rate_zones
+                    else None
+                )
+                canonical_activities = canonicalize_activities(
+                    raw_activities, zone4_floor=zone4_floor
+                )
 
                 self._build_and_store_snapshot(
                     target_iso=target_iso,
