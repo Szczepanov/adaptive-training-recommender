@@ -1,0 +1,27 @@
+{
+  "userId": "replay-user",
+  "date": "2026-08-07",
+  "templateId": "easy_01",
+  "templateTitle": "Easy Ride",
+  "category": "Easy Endurance",
+  "modality": "Cycling",
+  "mode": "train",
+  "rationale": "Stored separately from compact audit inputs.",
+  "schemaVersion": 3,
+  "createdAt": "2026-08-07T08:00:00Z",
+  "updatedAt": "2026-08-07T08:00:00Z",
+  "adherence": { "respondedAt": null, "followed": null, "actualModality": null, "actualDurationMin": null, "skipped": false, "notes": null },
+  "recommendationAudit": {
+    "policyVersion": "2026-08-decision-provenance-v1",
+    "evaluatedAt": "2026-08-07T08:00:00Z",
+    "decisionContextRevision": "history-v1:2026-08-07:7:none:none",
+    "safetyStatus": "complete",
+    "history": {
+      "completedEventCount": 0,
+      "unmatchedEventCount": 0,
+      "sourceStatuses": { "activities": "AVAILABLE", "recommendations": "AVAILABLE", "manualTraining": "MISSING" }
+    },
+    "envelope": { "safetyRestrictedModalityCount": 0, "planMaxAllowableTier": "Easy" },
+    "candidateScores": [{ "templateId": "easy_01", "utilityScore": 1, "excludedReasons": [] }]
+  }
+}
