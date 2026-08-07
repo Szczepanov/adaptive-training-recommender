@@ -190,3 +190,108 @@ describe('generateWeekAheadPlan', () => {
         expect(plan.days).toHaveLength(3);
     });
 });
+
+// --- "Does the plan actually make coaching sense" regression tests -----------
+// Locks in the fixes for the split-brain objective ledger, unreachable-rest utility
+// formula, fabricated location/equipment, and the endurance anti-stacking exemption --
+// all of which combined to produce e.g. "Tempo Ride" recommended 7 days straight with
+// its own claimed objectives never actually resolving.
+describe('generateWeekAheadPlan produces plans that make coaching sense', () => {
+    it('does not repeat the identical template on 3+ consecutive projected days', () => {
+        const context = baseContext();
+        const { readiness, todayRec, tomorrowRec } = buildTodayAndTomorrow(context);
+
+        const plan = generateWeekAheadPlan(readiness, context, null, '2026-08-07', todayRec, tomorrowRec, prepareWeekAheadPlanSeed(readiness, [], '2026-08-07', []), { days: 7 });
+
+        const projected = plan.days.filter(d => d.confidence === 'projected');
+        expect(projected.length).toBeGreaterThan(0);
+        let run = 1;
+        for (let i = 1; i < projected.length; i++) {
+            run = projected[i].template.id === projected[i - 1].template.id ? run + 1 : 1;
+            expect(run).toBeLessThan(3);
+        }
+    });
+
+    it('includes at least one rest or recovery day across a realistic 7-day forecast, not just an unbroken run of training', () => {
+        const context = baseContext();
+        const { readiness, todayRec, tomorrowRec } = buildTodayAndTomorrow(context);
+
+        const plan = generateWeekAheadPlan(readiness, context, null, '2026-08-07', todayRec, tomorrowRec, prepareWeekAheadPlanSeed(readiness, [], '2026-08-07', []), { days: 7 });
+
+        expect(plan.days.some(d => d.template.category === 'Rest' || d.template.category === 'Mobility/Recovery')).toBe(true);
+    });
+
+    it('forces the projected tail into rest/mobility once sustained heavy load pushes fatigue past the recover threshold', () => {
+        // Two prior max-cost days plus today's own rough readiness -- previously no
+        // fatigue level, including this one, could out-score Rest's floor utility, so
+        // the projected loop would keep prescribing training regardless.
+        const context = baseContext();
+        const readiness: DailyReadiness = {
+            subjective: neutralSubjective({ fatigue: 8, soreness: 8, readiness: 2 }),
+            objective: quietObjective({ hrv_delta: -10, sleep_score: 45 }),
+        };
+        const heavyHistory: CompletedExposure[] = ['2026-08-05', '2026-08-06'].map(date => ({
+            date,
+            costProfile: { systemic: 1.0, cardiovascular: 1.0, lowerBody: 1.0, upperBody: 0.8, impactTissue: 0.9, neuromuscular: 1.0 },
+            trainingRecordLike: { type: 'Hard Endurance', duration_min: 60, training_effect: 4, intensity_tag: 'hard' },
+        }));
+        const todayRec = evaluateTraining(readiness, context, '2026-08-07');
+        const tomorrowRec = evaluateNextDayPlan(readiness, context, '2026-08-07', todayRec).branches.yellow.recommendation;
+
+        const plan = generateWeekAheadPlan(readiness, context, null, '2026-08-07', todayRec, tomorrowRec, prepareWeekAheadPlanSeed(readiness, [], '2026-08-07', heavyHistory), { days: 7 });
+
+        const projected = plan.days.filter(d => d.confidence === 'projected');
+        expect(projected.some(d => d.template.category === 'Rest' || d.template.category === 'Mobility/Recovery')).toBe(true);
+    });
+
+    it('never picks a template requiring equipment the athlete does not own, anywhere in the projected week', () => {
+        const context = baseContext({ hasFreeWeights: false, hasIndoorBike: false, hasCableMachine: false, hasTreadmill: false });
+        const { readiness, todayRec, tomorrowRec } = buildTodayAndTomorrow(context);
+
+        const plan = generateWeekAheadPlan(readiness, context, null, '2026-08-07', todayRec, tomorrowRec, prepareWeekAheadPlanSeed(readiness, [], '2026-08-07', []), { days: 7 });
+
+        plan.days.filter(d => d.confidence === 'projected').forEach(d => {
+            expect(d.template.requiredEquipment).toEqual([]);
+        });
+    });
+
+    it('resolves the threshold objective under an A-priority cycling event instead of leaving it permanently unresolved', () => {
+        // Regression for the exact reported failure: Tempo Ride/Bike VO2 Intervals claim
+        // a high thresholdDevelopment stimulus and win ranking on that basis every day,
+        // but under the old keyword-matched ledger the objective they won on could never
+        // actually complete, so the plan kept "needing" threshold work forever.
+        const context = baseContext({ hasIndoorBike: true });
+        const { readiness, todayRec, tomorrowRec } = buildTodayAndTomorrow(context);
+        const event: UserEvent = {
+            id: 'e1', title: 'Gran Fondo', date: '2026-09-20', priority: 'A', lifecycle: 'scheduled', category: 'cycling_event',
+            demandProfile: { aerobicEndurance: 0.8, thresholdPower: 0.75, vo2MaxPower: 0.7, repeatedSurges: 0.7, sprintPower: 0.3, fatigueResistance: 0.8, neuromuscular: 0.3 },
+        };
+
+        const plan = generateWeekAheadPlan(readiness, context, null, '2026-08-07', todayRec, tomorrowRec, prepareWeekAheadPlanSeed(readiness, [event], '2026-08-07', []), { days: 7, events: [event] });
+
+        const threshold = plan.microcycleObjectives.find(o => o.key === 'threshold_quality');
+        expect(threshold).toBeDefined();
+        expect(threshold!.completedExposures).toBeGreaterThanOrEqual(1);
+    });
+
+    it('a "Works toward" objective claim on a displayed day is only made when that pick genuinely covers it', () => {
+        // addressesObjectives now comes from the same coverage threshold that actually
+        // credits the ledger (STIMULUS_CREDIT_COVERAGE_THRESHOLD) rather than a looser
+        // "touches the axis at all" check, so the UI never claims progress the ledger
+        // itself didn't grant.
+        const context = baseContext();
+        const { readiness, todayRec, tomorrowRec } = buildTodayAndTomorrow(context);
+
+        const plan = generateWeekAheadPlan(readiness, context, null, '2026-08-07', todayRec, tomorrowRec, prepareWeekAheadPlanSeed(readiness, [], '2026-08-07', []), { days: 7 });
+
+        // Every day that claims to address an objective must have actually moved that
+        // objective's completedExposures up by the time the ledger is walked forward --
+        // i.e. no day over-claims progress the final ledger doesn't reflect exceeding.
+        const claimedTitles = new Set(plan.days.flatMap(d => d.addressesObjectives));
+        claimedTitles.forEach(title => {
+            const objective = plan.microcycleObjectives.find(o => o.title === title);
+            expect(objective).toBeDefined();
+            expect(objective!.completedExposures).toBeGreaterThan(0);
+        });
+    });
+});
