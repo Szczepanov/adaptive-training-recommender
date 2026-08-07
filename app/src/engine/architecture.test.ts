@@ -415,6 +415,46 @@ describe('Architecture & Phased Engine Integration', () => {
             expect(strengthPick).toBeDefined();
             expect(cyclingPick!.utilityScore).toBeGreaterThan(strengthPick!.utilityScore);
         });
+
+        it('boosts BOTH Cycling and Running (not neither) for an A-priority triathlon event -- regression for the category-substring bug', () => {
+            // 'triathlon' doesn't substring-match 'cycling'/'running'/'strength', so this
+            // used to fall through to the non-event-modality PENALTY branch instead of the
+            // boost -- silently suppressing the two modalities that matter most for a
+            // triathlete, contradicting ADR-0007's own documented intent.
+            const fatigue = createEmptyFatigue('2026-08-07');
+            const availability = {
+                ...resolveAvailability('2026-08-07', null),
+                maxTimeMinutes: 90,
+                availableEquipment: ['indoor_bike', 'free_weights', 'cable_machine'],
+            };
+            const prefs: UserPreferences = {
+                userId: '', preferredRecoveryStyle: 'mixed', defaultWeekdayTimeMin: 60, defaultWeekendTimeMin: 60,
+                preferredTimeOfDay: 'flexible', preferredModalities: [], deprioritizedModalities: [], avoidedModalities: [],
+                explanationVerbosity: 'brief', conservativeBias: false,
+                preferredUnits: { distance: 'km', weight: 'kg', temperature: 'celsius' }, schemaVersion: 1, createdAt: '', updatedAt: '',
+            };
+
+            const triathlonFocusEvent: UserEvent = {
+                id: 't1', title: 'Olympic Triathlon', date: '2026-09-12', priority: 'A', lifecycle: 'scheduled',
+                category: 'triathlon', demandProfile: { aerobicEndurance: 0.75, thresholdPower: 0.8, vo2MaxPower: 0.45, repeatedSurges: 0.2, sprintPower: 0.1, fatigueResistance: 0.65, neuromuscular: 0.15 },
+            };
+
+            const withoutEvent = rankCandidatesByUtility(ENRICHED_TEMPLATES, [], fatigue, availability, [], prefs, {});
+            const withTriathlon = rankCandidatesByUtility(ENRICHED_TEMPLATES, [], fatigue, availability, [], prefs, { focusEvent: triathlonFocusEvent });
+
+            const cyclingBaseline = withoutEvent.find(r => r.template.modality === 'Cycling')!;
+            const runningBaseline = withoutEvent.find(r => r.template.modality === 'Running')!;
+            const cyclingWithEvent = withTriathlon.find(r => r.template.id === cyclingBaseline.template.id)!;
+            const runningWithEvent = withTriathlon.find(r => r.template.id === runningBaseline.template.id)!;
+
+            // Both must be BOOSTED (not penalized) relative to their no-event baseline.
+            expect(cyclingWithEvent.utilityScore).toBeGreaterThan(cyclingBaseline.utilityScore);
+            expect(runningWithEvent.utilityScore).toBeGreaterThan(runningBaseline.utilityScore);
+
+            const strengthWithEvent = withTriathlon.find(r => r.template.modality === 'Strength')!;
+            expect(cyclingWithEvent.utilityScore).toBeGreaterThan(strengthWithEvent.utilityScore);
+            expect(runningWithEvent.utilityScore).toBeGreaterThan(strengthWithEvent.utilityScore);
+        });
     });
 
     describe('Phase 6: Race-Specific Endurance phase-gating', () => {

@@ -50,6 +50,19 @@ export interface WeekAheadDay {
     rationale: string;
     /** Weekly objective titles this pick's stimulus profile contributes toward. */
     addressesObjectives: string[];
+    /** Internal ranking signal for a projected day, exposed so tooling (see
+     *  engine/simulation/) can analyze real decision quality over time instead of
+     *  reconstructing an approximation from the displayed pick alone -- e.g. "was this a
+     *  landslide or a coin flip" and "how much of the week was spent fatigue-capped."
+     *  Never populated for 'provisional'/'confirmed' days (those come from rules.ts's own
+     *  evaluation, which doesn't compute these values in a comparable shape). Not read by
+     *  any UI component -- purely a diagnostic, safe to ignore. */
+    diagnostics?: {
+        peakFatigue: number;
+        fatigueTier: 'train' | 'modify' | 'recover';
+        topUtilityScore: number;
+        runnerUpUtilityScore: number | null;
+    };
 }
 
 export interface WeekAheadPlan {
@@ -124,6 +137,12 @@ function maxFatigueDimension(fatigue: DimensionalFatigue): number {
         fatigue.systemic, fatigue.cardiovascular, fatigue.lowerBody,
         fatigue.upperBody, fatigue.impactTissue, fatigue.neuromuscular
     );
+}
+
+function fatigueTierFor(peakFatigue: number): 'train' | 'modify' | 'recover' {
+    if (peakFatigue >= PROJECTED_FATIGUE_RECOVER_THRESHOLD) return 'recover';
+    if (peakFatigue >= PROJECTED_FATIGUE_MODIFY_THRESHOLD) return 'modify';
+    return 'train';
 }
 
 /** Preference-neutral fallback matching adapters.ts's null-preferences convention
@@ -427,6 +446,7 @@ export function generateWeekAheadPlan(
                 mode: 'recover',
                 rationale: "No session fits this day's projected time/equipment window -- defaulting to rest.",
                 addressesObjectives: [],
+                diagnostics: { peakFatigue, fatigueTier: fatigueTierFor(peakFatigue), topUtilityScore: 0, runnerUpUtilityScore: null },
             });
             applyPick(date, restTemplate);
             continue;
@@ -447,6 +467,12 @@ export function generateWeekAheadPlan(
             mode: displayModeFromCategory(pick.template.category),
             rationale: pick.rationale,
             addressesObjectives: addressed,
+            diagnostics: {
+                peakFatigue,
+                fatigueTier: fatigueTierFor(peakFatigue),
+                topUtilityScore: pick.utilityScore,
+                runnerUpUtilityScore: ranked[1]?.utilityScore ?? null,
+            },
         });
     }
 
