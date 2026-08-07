@@ -678,7 +678,7 @@ describe('session adjustment engine', () => {
         expect(envelopes.safety.restrictedModalities).not.toContain('Running');
     });
 
-    it('Plan envelope (taper) blocks a Tier 1 harder dose whose projected cost exceeds the allowed ceiling', () => {
+    it('goal-title taper keywords no longer cap the safety envelope or block a harder dose', () => {
         const readiness: DailyReadiness = { subjective: greenSubjective(), objective: quietObjective() };
         const context = baseContext();
         context.goals.shortTerm = 'Taper for race day';
@@ -706,12 +706,11 @@ describe('session adjustment engine', () => {
             }
         };
 
-        // Taper caps maxAllowableTier at 'Moderate' (systemic-cost ceiling 0.8). The dose's
-        // projected cost (1.0 * 1.25 = 1.25) exceeds it, and every Tier 2-4 alternative in
-        // the same category/modality is at or above the base template's cost, so none fit
-        // under the ceiling either -- the request must be refused, not silently granted.
+        // Taper is periodization policy, not a safety limit inferred from a title. With
+        // fully green readiness, the existing harder-dose behavior remains available.
         const adjusted = adjustSessionRecommendation(baseRec, 'harder', readiness, context, date);
-        expect(adjusted).toBeNull();
+        expect(adjusted?.adjustment?.tier).toBe(1);
+        expect(adjusted?.activeDose?.label).toBe('5x4 min Intervals (50 min)');
     });
 });
 

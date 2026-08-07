@@ -444,9 +444,8 @@ export function evaluateTraining(
     };
 }
 
-/**
- * Evaluates clinical safety and periodization plan envelopes for a given readiness & user context.
- */
+/** Evaluates only clinical/readiness/constraint limits. Event periodization is a
+ * training-intent concern and must not be inferred from goal-title keywords here. */
 export function evaluateEnvelopes(
     readiness: DailyReadiness,
     context: UserContext
@@ -475,12 +474,6 @@ export function evaluateEnvelopes(
         maxAllowableTier = 'Easy';
     }
 
-    const goalText = (context.goals.shortTerm + ' ' + context.goals.midTerm + ' ' + context.goals.longTerm).toLowerCase();
-    const taperActive = goalText.includes('taper') || goalText.includes('pre-race') || goalText.includes('race in 3 days');
-    if (taperActive && maxAllowableTier === 'Hard') {
-        maxAllowableTier = 'Moderate';
-    }
-
     return {
         safety: {
             clinicalFlagActive,
@@ -489,8 +482,10 @@ export function evaluateEnvelopes(
         },
         plan: {
             maxAllowableTier,
-            taperActive,
-            reason: taperActive ? "Pre-event taper active." : null
+            // Retained for persisted-recommendation compatibility. Real taper state
+            // now comes from periodization/training intent, never from goal text.
+            taperActive: false,
+            reason: null
         }
     };
 }
