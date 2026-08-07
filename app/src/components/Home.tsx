@@ -205,8 +205,8 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
     };
   }, [decisionInput]);
 
-  // Extends today's actual (possibly adjusted) recommendation and tomorrow's green
-  // preview branch into a rolling 7-day forecast (see planner.ts) -- recomputed on every
+  // Uses today's actual (possibly adjusted) recommendation to seed tomorrow's green
+  // preview branch and the following six-day forecast (see planner.ts) -- recomputed on every
   // render from current goals/constraints/preferences/check-in, never persisted, so it
   // stays in lockstep with whatever's driving today's card above.
   const weekAheadPlan: WeekAheadPlan | null = useMemo(() => {

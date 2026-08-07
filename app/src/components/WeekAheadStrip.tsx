@@ -48,7 +48,7 @@ function weekdayLabel(dateStr: string): string {
  * the underlying plan is reflected immediately on the next render.
  */
 export function WeekAheadStrip({ plan }: WeekAheadStripProps) {
-  const [selectedIndex, setSelectedIndex] = useState(1);
+  const [selectedIndex, setSelectedIndex] = useState(0);
 
   if (!plan || plan.days.length === 0) return null;
 
@@ -75,7 +75,7 @@ export function WeekAheadStrip({ plan }: WeekAheadStripProps) {
             className={`week-ahead-tile confidence-${day.confidence} ${index === safeIndex ? 'selected' : ''}`}
             onClick={() => setSelectedIndex(index)}
           >
-            <span className="tile-weekday">{index === 0 ? 'Today' : weekdayLabel(day.date)}</span>
+            <span className="tile-weekday">{index === 0 ? 'Tomorrow' : weekdayLabel(day.date)}</span>
             <span className="tile-icon">{MODALITY_ICON[day.template.modality] ?? '❔'}</span>
             <span className="tile-category">{SHORT_MODALITY_LABEL[day.template.modality] ?? day.template.modality}</span>
             <span className="tile-duration">{day.template.durationMin}-{day.template.durationMax} m</span>

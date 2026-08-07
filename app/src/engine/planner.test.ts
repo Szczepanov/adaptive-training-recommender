@@ -56,26 +56,26 @@ function buildTodayAndTomorrow(context: UserContext, date = '2026-08-07') {
 // --- Tests -------------------------------------------------------------------
 
 describe('generateWeekAheadPlan', () => {
-    it('produces the requested number of days with the correct confidence tiers', () => {
+    it('produces the requested number of future days beginning tomorrow', () => {
         const context = baseContext();
         const { readiness, todayRec, tomorrowRec } = buildTodayAndTomorrow(context);
 
         const plan = generateWeekAheadPlan(readiness, context, null, '2026-08-07', todayRec, tomorrowRec, { days: 7 });
 
         expect(plan.days).toHaveLength(7);
-        expect(plan.days[0]).toMatchObject({ dayOffset: 0, confidence: 'confirmed', date: '2026-08-07' });
-        expect(plan.days[1]).toMatchObject({ dayOffset: 1, confidence: 'provisional', date: '2026-08-08' });
-        for (let i = 2; i < 7; i++) {
+        expect(plan.startDate).toBe('2026-08-08');
+        expect(plan.days[0]).toMatchObject({ dayOffset: 1, confidence: 'provisional', date: '2026-08-08' });
+        for (let i = 1; i < 7; i++) {
             expect(plan.days[i].confidence).toBe('projected');
-            expect(plan.days[i].dayOffset).toBe(i);
+            expect(plan.days[i].dayOffset).toBe(i + 1);
         }
         // Dates are consecutive local calendar days.
         expect(plan.days.map(d => d.date)).toEqual([
-            '2026-08-07', '2026-08-08', '2026-08-09', '2026-08-10', '2026-08-11', '2026-08-12', '2026-08-13',
+            '2026-08-08', '2026-08-09', '2026-08-10', '2026-08-11', '2026-08-12', '2026-08-13', '2026-08-14',
         ]);
     });
 
-    it('falls back to just today+tomorrow-provisional shape when no tomorrowRec is supplied and days=2', () => {
+    it('uses a projected pick for tomorrow when no tomorrow preview is supplied', () => {
         const context = baseContext();
         const { readiness, todayRec } = buildTodayAndTomorrow(context);
 
@@ -83,8 +83,8 @@ describe('generateWeekAheadPlan', () => {
 
         // With no tomorrowRec, offset 1 is filled by the projected optimizer path instead.
         expect(plan.days).toHaveLength(2);
-        expect(plan.days[0].confidence).toBe('confirmed');
-        expect(plan.days[1].confidence).toBe('projected');
+        expect(plan.days[0]).toMatchObject({ dayOffset: 1, confidence: 'projected', date: '2026-08-08' });
+        expect(plan.days[1]).toMatchObject({ dayOffset: 2, confidence: 'projected', date: '2026-08-09' });
     });
 
     it('never recommends a modality the user has an active hard injury constraint against', () => {
@@ -143,8 +143,8 @@ describe('generateWeekAheadPlan', () => {
             events: [event],
         });
 
-        expect(plan.days[0].phaseName).toBe('Specificity'); // 15 days out
-        expect(plan.days[1].phaseName).toBe('Peak/Taper'); // 14 days out
+        expect(plan.days[0].phaseName).toBe('Peak/Taper'); // 14 days out
+        expect(plan.days[1].phaseName).toBe('Peak/Taper');
         expect(plan.days[2].phaseName).toBe('Peak/Taper');
     });
 

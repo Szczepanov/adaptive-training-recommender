@@ -25,10 +25,9 @@ import { addDaysToLocalDateString } from '../utils/localDate';
 /**
  * How much a projected day's session pick should be trusted, driven purely by how far
  * it sits from real biometric data:
- * - 'confirmed': today -- the actual synced recovery snapshot + check-in.
  * - 'provisional': tomorrow -- schedule/location are known, but morning readiness isn't,
  *   so this mirrors the existing green/yellow/red preview branch (rules.ts evaluateNextDayPlan).
- * - 'projected': 2+ days out -- schedule/phase/objectives are known in advance, but
+ * - 'projected': the day after tomorrow onward -- schedule/phase/objectives are known in advance, but
  *   nothing about actual recovery is, so the pick assumes the chain of earlier
  *   *projected* days gets followed at an average recovery rate. Best read as "which kind
  *   of session", not a precise prescription.
@@ -37,12 +36,12 @@ export type PlanConfidence = 'confirmed' | 'provisional' | 'projected';
 
 export interface WeekAheadDay {
     date: string;
-    dayOffset: number; // 0 = today
+    dayOffset: number; // 1 = tomorrow
     confidence: PlanConfidence;
     phaseName: PhaseWeights['phaseName'];
     location: LocationContext;
     template: SessionTemplate;
-    /** Category-derived display mode for offset >= 2 days ('Rest'/'Mobility/Recovery' ->
+    /** Category-derived display mode for projected days ('Rest'/'Mobility/Recovery' ->
      *  recover, else train). This is NOT the readiness-driven mode rules.ts computes for
      *  today/tomorrow (see Recommendation.mode) -- there's no readiness signal this far
      *  out to compute that from, only a category-level pick. */
@@ -55,13 +54,13 @@ export interface WeekAheadDay {
 export interface WeekAheadPlan {
     startDate: string;
     days: WeekAheadDay[];
-    /** Rolling-window objective ledger as walked forward through the projected chain --
-     *  lets the UI show e.g. "Threshold: 1/1 planned" across the whole strip, not just today. */
+    /** Rolling-window objective ledger as walked forward through the forecast chain --
+     *  lets the UI show e.g. "Threshold: 1/1 planned" across the whole strip. */
     microcycleObjectives: WeeklyObjective[];
 }
 
 export interface WeekAheadOptions {
-    /** Total days in the strip, including today. Default 7. */
+    /** Total future days in the strip, starting tomorrow. Default 7. */
     days?: number;
     /** No Firestore-backed source exists yet for events (see docs/adr/0008) -- passing
      *  none simply keeps periodization at its default 'Base' phase. */
@@ -152,12 +151,12 @@ function combineMax(a: DimensionalFatigue, b: DimensionalFatigue): DimensionalFa
 }
 
 /**
- * Projects a rolling multi-day plan forward from today, chaining the 6-tier engine
+ * Projects a rolling multi-day plan forward from tomorrow, chaining the 6-tier engine
  * (schedule -> periodization -> microcycle -> fatigue -> optimizer, see ADR-0007) day by
- * day. Days 0-1 (today/tomorrow) reuse whatever the readiness-driven engine (rules.ts)
- * already produced rather than re-deciding them -- this function only extends the
- * horizon past tomorrow, since rules.ts has no multi-day mode and there's no real
- * readiness signal to feed it 2+ days out.
+ * day. Today's recommendation seeds the projected load but is not displayed. Tomorrow
+ * reuses whatever the readiness-driven engine (rules.ts) already produced rather than
+ * re-deciding it; this function then extends the horizon past tomorrow, since rules.ts
+ * has no multi-day mode and there's no real readiness signal to feed it 2+ days out.
  *
  * Nothing here is persisted: callers should recompute on every load and whenever goals,
  * constraints, preferences, or today's check-in change, so a mid-week goal edit
@@ -205,23 +204,12 @@ export function generateWeekAheadPlan(
         externalFatigue = applyCompletedSessionLoad(externalFatigue, date, enrichedCostProfile(template.id));
     };
 
-    // Day 0: today -- reuse the real recommendation as-is (Confirmed).
-    const todayLocation = resolveAvailability(todayDate, null, weeklySchedule, DEFAULT_LOCATIONS, fixedActivities).location;
-    resultDays.push({
-        date: todayDate,
-        dayOffset: 0,
-        confidence: 'confirmed',
-        phaseName: todayPeriodization.phase.phaseName,
-        location: todayLocation,
-        template: todayRec.template,
-        mode: todayRec.mode === 'recover' ? 'recover' : 'train',
-        rationale: todayRec.rationale,
-        addressesObjectives: [],
-    });
+    // Today's actual recommendation affects the future load/objective chain, but the
+    // forecast deliberately starts tomorrow so it never repeats today's dashboard card.
     applyPick(todayDate, todayRec.template);
 
     // Day 1: tomorrow -- reuse the existing (selected) green/yellow/red preview pick, if any (Provisional).
-    if (totalDays > 1 && tomorrowRec) {
+    if (tomorrowRec) {
         const tomorrowDate = addDaysToLocalDateString(todayDate, 1);
         const tomorrowPeriodization = evaluatePeriodizationPhase(events, tomorrowDate);
         const tomorrowLocation = resolveAvailability(tomorrowDate, null, weeklySchedule, DEFAULT_LOCATIONS, fixedActivities).location;
@@ -239,10 +227,10 @@ export function generateWeekAheadPlan(
         applyPick(tomorrowDate, tomorrowRec.template);
     }
 
-    // Days 2..N-1 (or 1..N-1 if no tomorrowRec was supplied): no real readiness signal --
+    // Days 2..N (or 1..N if no tomorrowRec was supplied): no real readiness signal --
     // walk the optimizer forward, assuming each projected pick gets followed at an
     // average recovery rate.
-    for (let offset = resultDays.length; offset < totalDays; offset++) {
+    for (let offset = resultDays.length + 1; offset <= totalDays; offset++) {
         const date = addDaysToLocalDateString(todayDate, offset);
         const periodization = evaluatePeriodizationPhase(events, date);
 
@@ -296,7 +284,7 @@ export function generateWeekAheadPlan(
     }
 
     return {
-        startDate: todayDate,
+        startDate: addDaysToLocalDateString(todayDate, 1),
         days: resultDays,
         microcycleObjectives: microcycle.objectives,
     };
