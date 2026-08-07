@@ -30,7 +30,8 @@ function fmtAnchors(result) {
   }
   const hits = result.anchorWeeks.filter((w) => w.eventSpecificAnchorHit).length;
   const nominated = result.anchorWeeks.filter((w) => w.eventSpecificAnchorDate).length;
-  return `event-specific anchor hit ${hits}/${nominated} nominated weeks` + (result.anchorScopeNote ? ' (see scope note)' : '');
+  const fulfilled = result.anchorWeeks.filter((w) => w.eventSpecificAnchorFulfilled).length;
+  return `event-specific anchor placement hit ${hits}/${nominated}; weekly event-specific fulfillment ${fulfilled}/${nominated}` + (result.anchorScopeNote ? ' (see scope note)' : '');
 }
 
 function fmtObjectiveCredits(credits) {

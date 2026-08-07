@@ -44,6 +44,12 @@ export interface AnchorWeekResult {
      *  role? A nomination can exist (phase-eligible + duration/equipment-feasible) but
      *  still lose the final ranking to something else -- this is what actually happened. */
     eventSpecificAnchorHit: boolean | null;
+    /** All race-specific exposures in this weekly planning pass, including today's
+     * confirmed recommendation. The anchor is a placement preference, not a reason to
+     * call the training objective missed when safe event-specific work already happened. */
+    eventSpecificExposureDates: string[];
+    /** Whether the week contains an event-specific exposure, on or off its nominated day. */
+    eventSpecificAnchorFulfilled: boolean | null;
     qualityAnchorHit: boolean | null;
 }
 
@@ -192,8 +198,12 @@ function computeMetrics(
     if (resolvedWithoutProjectedCredit.length > 0) {
         qualityWarnings.push(`Resolved objective(s) without a projected credit source in this window: ${resolvedWithoutProjectedCredit.map(o => o.key).join(', ')}. Verify whether completion was seeded from prior history.`);
     }
-    const missedAnchors = anchorWeeks.filter(w => w.eventSpecificAnchorDate && !w.eventSpecificAnchorHit).length;
+    const missedAnchors = anchorWeeks.filter(w => w.eventSpecificAnchorDate && !w.eventSpecificAnchorFulfilled).length;
     if (missedAnchors > 0) qualityWarnings.push(`Event-specific anchor missed in ${missedAnchors} nominated week(s).`);
+    const anchorPlacementDrift = anchorWeeks.filter(w => w.eventSpecificAnchorDate && !w.eventSpecificAnchorHit && w.eventSpecificAnchorFulfilled).length;
+    if (anchorPlacementDrift > 0) {
+        qualityWarnings.push(`Event-specific exposure occurred off the nominated anchor date in ${anchorPlacementDrift} week(s).`);
+    }
     if (trainTierRestOrRecoveryCount > 0) qualityWarnings.push(`Rest or mobility selected on ${trainTierRestOrRecoveryCount} projected train-tier day(s).`);
     if (maxConsecutiveSameTemplateStreakAcrossWeeks >= 4) {
         qualityWarnings.push(`Same-template streak reached ${maxConsecutiveSameTemplateStreakAcrossWeeks} days.`);
@@ -268,6 +278,10 @@ export async function runScenario(scenario: AthleteScenario): Promise<ScenarioRe
 
         const anchors = resolveWeeklyAnchors(currentDate, 7, events, [], scenario.context);
         const findPick = (date: string | null) => date ? plan.days.find(d => d.date === date) ?? null : null;
+        const eventSpecificExposureDates = [
+            ...(todayRec.template.category === 'Race-Specific Endurance' ? [currentDate] : []),
+            ...plan.days.filter(day => day.template.category === 'Race-Specific Endurance').map(day => day.date),
+        ];
         anchorWeeks.push({
             weekIndex: week,
             weekStartDate: currentDate,
@@ -275,6 +289,10 @@ export async function runScenario(scenario: AthleteScenario): Promise<ScenarioRe
             qualityAnchorDate: anchors.qualityAnchorDate,
             eventSpecificAnchorHit: anchors.eventSpecificAnchorDate
                 ? (findPick(anchors.eventSpecificAnchorDate)?.template.category === 'Race-Specific Endurance')
+                : null,
+            eventSpecificExposureDates,
+            eventSpecificAnchorFulfilled: anchors.eventSpecificAnchorDate
+                ? eventSpecificExposureDates.length > 0
                 : null,
             qualityAnchorHit: anchors.qualityAnchorDate
                 ? (['Moderate Endurance', 'Hard Endurance'].includes(findPick(anchors.qualityAnchorDate)?.template.category ?? ''))

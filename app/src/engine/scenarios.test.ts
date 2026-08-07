@@ -65,15 +65,17 @@ describe('cycling_criterium_A -- qualification and anchor stress test', () => {
         expect(surge).toMatchObject({ timesGenerated: 4, timesResolved: 4 });
     });
 
-    it('keeps the calibrated anchor result explicit rather than claiming the qualification gate alone guarantees an anchor win', async () => {
+    it('distinguishes a missed nominated date from a missed weekly event-specific exposure', async () => {
         // The gate prevents broad/non-cycling work from resolving surge_repeatability;
         // it deliberately does not change optimizer ranking policy. In the calibrated
         // scenario, Bike VO2 Intervals can still legitimately outrank the anchor.
         const result = await getResult('cycling_criterium_A');
         const nominated = result.anchorWeeks.filter(w => w.eventSpecificAnchorDate).length;
         const hits = result.anchorWeeks.filter(w => w.eventSpecificAnchorHit).length;
+        const fulfilled = result.anchorWeeks.filter(w => w.eventSpecificAnchorFulfilled).length;
         expect(nominated).toBe(4);
         expect(hits).toBe(0);
+        expect(fulfilled).toBe(4);
     });
 });
 
