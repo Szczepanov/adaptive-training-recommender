@@ -42,9 +42,8 @@ export class PreferencesService {
                 defaultWeekendTimeMin: existingPrefs?.defaultWeekendTimeMin ?? 60,
                 preferredTimeOfDay: existingPrefs?.preferredTimeOfDay ?? 'flexible',
                 preferredModalities: existingPrefs?.preferredModalities ?? [],
-                deprioritizedModalities: existingPrefs?.deprioritizedModalities ?? existingPrefs?.avoidedModalities ?? [],
+                deprioritizedModalities: existingPrefs?.deprioritizedModalities ?? [],
                 avoidedModalities: existingPrefs?.avoidedModalities ?? [],
-                explanationStyle: existingPrefs?.explanationStyle ?? existingPrefs?.explanationVerbosity ?? 'detailed',
                 explanationVerbosity: existingPrefs?.explanationVerbosity ?? 'detailed',
                 conservativeBias: existingPrefs?.conservativeBias ?? false,
                 preferredUnits: existingPrefs?.preferredUnits ?? {
@@ -91,7 +90,6 @@ export class PreferencesService {
             preferredModalities: ['Running', 'Cycling', 'Strength'],
             deprioritizedModalities: [],
             avoidedModalities: [],
-            explanationStyle: 'detailed',
             explanationVerbosity: 'detailed',
             conservativeBias: false,
             preferredUnits: {

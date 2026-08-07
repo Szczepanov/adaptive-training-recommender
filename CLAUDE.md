@@ -15,7 +15,7 @@ Quick guide for building, testing, and working on `adaptive-training-recommender
 - Run Tests: `uv run pytest`
 - Daily Sync CLI: `uv run python -m garmin_sync sync [--date YYYY-MM-DD] [--force]`
 - Backfill CLI: `uv run python -m garmin_sync backfill [--days N] [--force]`
-- Login Bootstrap: `uv run python garmin_login.py`
+- Login Bootstrap: `uv run python scripts/bootstrap_garmin_tokens.py`
 
 ### Frontend Application (`app/`)
 - Install: `cd app && npm ci`
@@ -29,7 +29,7 @@ Quick guide for building, testing, and working on `adaptive-training-recommender
 
 ## Key Code Locations
 - `src/garmin_sync/`: Core Python Garmin ingestion package.
-- `scripts/migrate_legacy_snapshots.py`: Firestore legacy data migration utility.
+- `scripts/bootstrap_garmin_tokens.py`: Garmin OAuth token bootstrap utility.
 - `app/src/engine/`: Core adaptive engine modules (`rules.ts`, `schedule.ts`, `periodization.ts`, `microcycle.ts`, `fatigue.ts`, `optimizer.ts`).
 - `app/src/utils/localDate.ts`: Frontend Warsaw date utility.
 - `app/src/services/recoverySnapshotService.ts`: User-scoped Firestore recovery reader.

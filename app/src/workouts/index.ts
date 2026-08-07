@@ -5,7 +5,6 @@ export {
   validateEventPlanCoverage
 } from './event-plan.ts';
 export { WORKOUT_PARAMETER_BINDINGS } from './parameter-bindings.ts';
-export { toLegacySessionTemplate } from './compatibility.ts';
 export { validateWorkoutLibrary } from './validation.ts';
 export type {
   Equipment,

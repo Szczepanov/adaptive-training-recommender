@@ -34,11 +34,10 @@ Adaptive Training Recommendation
 4. **D-1 Step Count & Completed Training**: Uses previous completed day (`D - 1`) for step counts and training history lookback window.
 5. **Lookback Resync**: Each daily sync also force-resyncs the preceding `GARMIN_RESYNC_LOOKBACK_DAYS` day(s) (default 1) so late-arriving Garmin data — e.g. a training session logged after that day's own sync already ran — is captured the next time sync runs.
 6. **Schema Version 3 & Provenance**: Tracks exact source dates for sleep, HRV, resting HR, waking body battery, steps, and deterministic primary activity.
-7. **Graceful Migration Utility**: Includes `scripts/migrate_legacy_snapshots.py` to copy legacy root documents to user-scoped Firestore paths.
-8. **Raw Archive & Offline Rebuild** (opt-in via `GARMIN_ARCHIVE_ENABLED`): every raw Garmin payload is archived immutably (gzip-compressed, content-addressed/idempotent) so `garmin_sync rebuild` can recompute Firestore snapshots without calling Garmin again, and `garmin_sync audit` reports completeness. Activities also get a standalone normalized record at `users/{firebaseUid}/activities/{activityId}`, decoupled from any single day's 3-day lookback window.
-9. **Metric Enrichment & Auxiliary Observability**: Waking Body Battery, HRV deltas, RHR deltas, and Sleep scores are actively wired into the recommendation engine's strain scoring (`rules.ts`). Auxiliary metrics (all-day stress level, Garmin native training readiness score, VO2max) are fetched best-effort, archived, and stored on `raw`/`dataQuality` for data auditing and future engine expansions.
-10. **Reconciled Strain Telemetry & Multi-Day Recovery Drift**: Decomposes objective strain into acute metric deviations (`acuteDeviation`), persistent 28d-vs-7d baseline drift (`multiDayDrift`), and contextual penalties (`recentHardSessions`, `bodyBatteryDeficit`, `sleepFloorPenalty`, `conservativeBias`). Reconciled telemetry is attached to returned recommendations, and decision-relevant multi-day baseline trends are automatically annotated in the user-facing rationale.
-11. **Adaptive Multi-Sport Engine & Optimization Pipeline**: Integrates multi-layered schedule availability (`schedule.ts`), structured event periodization (`periodization.ts`), weekly microcycle objectives (`microcycle.ts`), 6D fatigue state decay tracking (`fatigue.ts`), and utility optimization (`optimizer.ts`). Solves for optimal workout placement by balancing required weekly stimulus benefit against dimensional fatigue cost.
+7. **Raw Archive & Offline Rebuild** (opt-in via `GARMIN_ARCHIVE_ENABLED`): every raw Garmin payload is archived immutably (gzip-compressed, content-addressed/idempotent) so `garmin_sync rebuild` can recompute Firestore snapshots without calling Garmin again, and `garmin_sync audit` reports completeness. Activities also get a standalone normalized record at `users/{firebaseUid}/activities/{activityId}`, decoupled from any single day's 3-day lookback window.
+8. **Metric Enrichment & Auxiliary Observability**: Waking Body Battery, HRV deltas, RHR deltas, and Sleep scores are actively wired into the recommendation engine's strain scoring (`rules.ts`). Auxiliary metrics (all-day stress level, Garmin native training readiness score, VO2max) are fetched best-effort, archived, and stored on `raw`/`dataQuality` for data auditing and future engine expansions.
+9. **Reconciled Strain Telemetry & Multi-Day Recovery Drift**: Decomposes objective strain into acute metric deviations (`acuteDeviation`), persistent 28d-vs-7d baseline drift (`multiDayDrift`), and contextual penalties (`recentHardSessions`, `bodyBatteryDeficit`, `sleepFloorPenalty`, `conservativeBias`). Reconciled telemetry is attached to returned recommendations, and decision-relevant multi-day baseline trends are automatically annotated in the user-facing rationale.
+10. **Adaptive Multi-Sport Engine & Optimization Pipeline**: Integrates multi-layered schedule availability (`schedule.ts`), structured event periodization (`periodization.ts`), weekly microcycle objectives (`microcycle.ts`), 6D fatigue state decay tracking (`fatigue.ts`), and utility optimization (`optimizer.ts`). Solves for optimal workout placement by balancing required weekly stimulus benefit against dimensional fatigue cost.
 
 ---
 
@@ -79,7 +78,7 @@ uv sync
 uv run pytest
 
 # Authenticate Garmin account locally
-uv run python garmin_login.py
+uv run python scripts/bootstrap_garmin_tokens.py
 
 # Run daily sync locally (also force-resyncs the preceding GARMIN_RESYNC_LOOKBACK_DAYS
 # day(s), default 1, to pick up late-arriving Garmin data such as a training session
@@ -101,19 +100,7 @@ uv run python -m garmin_sync audit --days 90
 uv run python -m garmin_sync rebuild --start-date 2026-06-01 --end-date 2026-08-06
 ```
 
-### 2. Migration Tool Usage
-
-To migrate existing legacy records from `daily_recovery_snapshot/{date}` to `users/{UID}/daily_recovery_snapshots/{date}`:
-
-```bash
-# Dry run check (safe)
-uv run python scripts/migrate_legacy_snapshots.py --user-id YOUR_FIREBASE_UID --dry-run
-
-# Perform actual migration
-uv run python scripts/migrate_legacy_snapshots.py --user-id YOUR_FIREBASE_UID --no-dry-run
-```
-
-### 3. Frontend App Setup
+### 2. Frontend App Setup
 
 ```bash
 cd app

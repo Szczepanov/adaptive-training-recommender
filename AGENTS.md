@@ -5,7 +5,7 @@ This document outlines repository rules, code conventions, testing instructions,
 ## Repository Overview
 
 `adaptive-training-recommender` is a hybrid Python/TypeScript repository:
-* **Python Backend** (`src/garmin_sync/`, `fetch_garmin.py`, `backfill_garmin.py`): Ingests health & training metrics from Garmin Connect into user-scoped Firestore documents.
+* **Python Backend** (`src/garmin_sync/`): Ingests health & training metrics from Garmin Connect into user-scoped Firestore documents.
 * **Frontend App** (`app/`): React + TypeScript + Vite + Firebase application that reads user recovery snapshots and computes adaptive training recommendations.
 
 ---
@@ -26,7 +26,6 @@ This document outlines repository rules, code conventions, testing instructions,
 * `uv run pytest` — Run unit tests
 * `uv run python -m garmin_sync sync` — Run daily ingestion
 * `uv run python -m garmin_sync backfill --days 56` — Run historical backfill
-* `uv run python scripts/migrate_legacy_snapshots.py --user-id <UID> --dry-run` — Test migration
 
 ### Frontend App
 * `cd app && npm ci` — Install node dependencies

@@ -100,7 +100,6 @@ app/src/workouts/
   parameter-bindings.ts    Explicit parameter execution contract
   event-plan.ts            September-event coverage contract
   validation.ts            Referential, semantic, and range validation
-  compatibility.ts         Adapter to the current SessionTemplate model
   index.ts                 Public exports
 app/scripts/
   validate-workouts.ts

@@ -24,14 +24,6 @@ function mapTrainingRecord(raw: RawActivitySummary | null | undefined): Training
             intensity_tag: raw.primaryActivity.intensityTag ?? 'moderate/easy',
         };
     }
-    if (raw.type) {
-        return {
-            type: raw.type,
-            duration_min: raw.durationMin ?? 0,
-            training_effect: raw.trainingEffect ?? 0,
-            intensity_tag: raw.intensityTag ?? 'moderate/easy',
-        };
-    }
     return null;
 }
 

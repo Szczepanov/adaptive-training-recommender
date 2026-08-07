@@ -137,6 +137,8 @@ export type WorkoutParameterUnit =
   | 'rpe'
   | 'reps_in_reserve';
 
+
+
 export type WorkoutParameterProperty =
   | 'sets'
   | 'duration.seconds'
@@ -199,14 +201,14 @@ export interface WorkoutParameterResolverBinding {
   resolver: WorkoutParameterResolver;
 }
 
-export type WorkoutParameterLegacyBinding =
+export type WorkoutParameterSetBinding =
   | WorkoutParameterStepFieldBinding
   | WorkoutParameterResolverBinding;
 
 /** Explicitly describes how every adjustable parameter changes a prescription. */
 export interface WorkoutParameterBindingSet {
   workoutId: string;
-  bindings: WorkoutParameterLegacyBinding[];
+  bindings: WorkoutParameterSetBinding[];
 }
 
 export interface WorkoutDurationRange {

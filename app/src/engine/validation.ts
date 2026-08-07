@@ -512,13 +512,6 @@ export function validatePreferences(raw: any): ValidationResult<UserPreferences>
         });
     }
 
-    if (raw.explanationStyle !== undefined && !validVerbosity.includes(raw.explanationStyle)) {
-        errors.push({
-            field: 'explanationStyle',
-            message: `Explanation style must be one of: ${validVerbosity.join(', ')}`
-        });
-    }
-
     if (raw.conservativeBias !== undefined && typeof raw.conservativeBias !== 'boolean') {
         errors.push({
             field: 'conservativeBias',
@@ -570,9 +563,8 @@ export function validatePreferences(raw: any): ValidationResult<UserPreferences>
         defaultWeekendTimeMin: raw.defaultWeekendTimeMin,
         preferredTimeOfDay: raw.preferredTimeOfDay,
         preferredModalities: raw.preferredModalities,
-        deprioritizedModalities: raw.deprioritizedModalities ?? raw.avoidedModalities,
+        deprioritizedModalities: raw.deprioritizedModalities ?? [],
         avoidedModalities: raw.avoidedModalities,
-        explanationStyle: raw.explanationStyle ?? raw.explanationVerbosity,
         explanationVerbosity: raw.explanationVerbosity,
         conservativeBias: raw.conservativeBias ?? false,
         preferredUnits: raw.preferredUnits,

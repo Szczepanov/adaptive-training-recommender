@@ -131,7 +131,6 @@ describe('Architecture & Phased Engine Integration', () => {
                 preferredModalities: ['Strength'],
                 deprioritizedModalities: [],
                 avoidedModalities: ['Running'], // Soft penalty
-                explanationStyle: 'brief',
                 explanationVerbosity: 'brief',
                 conservativeBias: false,
                 preferredUnits: { distance: 'km', weight: 'kg', temperature: 'celsius' },

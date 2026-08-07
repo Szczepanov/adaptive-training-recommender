@@ -66,8 +66,5 @@ Because Cloud Run cannot handle interactive Garmin MFA or password logins (`GARM
 
 ```bash
 # Run local token bootstrap script
-uv run python garmin_login.py
-
-# Upload generated local token to GCS bucket manually or via gsutil:
-gsutil cp .garmin_tokens/garmin_tokens.json gs://<YOUR_PRIVATE_TOKEN_BUCKET>/garmin/garmin_tokens.json
+uv run python scripts/bootstrap_garmin_tokens.py --bucket <YOUR_PRIVATE_TOKEN_BUCKET>
 ```

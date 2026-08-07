@@ -6,7 +6,7 @@ import type {
   WorkoutModality,
   WorkoutParameter,
   WorkoutParameterBindingSet,
-  WorkoutParameterLegacyBinding,
+  WorkoutParameterSetBinding,
   WorkoutParameterStepField,
   WorkoutParameterUnit
 } from './models.ts';
@@ -64,7 +64,7 @@ function expectedUnits(field: WorkoutParameterStepField): WorkoutParameterUnit[]
 
 function validateBindingUnit(
   parameter: WorkoutParameter,
-  binding: WorkoutParameterLegacyBinding,
+  binding: WorkoutParameterSetBinding,
   path: string,
   errors: string[]
 ): void {

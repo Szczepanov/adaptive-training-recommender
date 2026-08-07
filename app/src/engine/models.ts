@@ -317,10 +317,6 @@ export interface RawActivitySummary {
         trainingEffect: number;
         intensityTag: string;
     } | null;
-    type?: string;
-    durationMin?: number | null;
-    trainingEffect?: number;
-    intensityTag?: string;
 }
 
 export interface DailyRecoverySnapshot {
@@ -342,8 +338,6 @@ export interface DailyRecoverySnapshot {
             trainingReadiness?: string | null;
             trainingStatus?: string | null;
         };
-        migratedFromLegacy?: boolean;
-        legacyDocumentPath?: string;
     };
     raw: {
         sleepScore: number | null;
@@ -511,7 +505,6 @@ export interface UserPreferences {
     deprioritizedModalities: string[]; // Canonical Phase 4 name
     avoidedModalities: string[]; // e.g., ['Running']
     // UI/Explanation preferences
-    explanationStyle: 'brief' | 'detailed' | 'technical';
     explanationVerbosity: 'brief' | 'detailed' | 'technical';
     conservativeBias: boolean;
     extraRecoveryMargin?: boolean;

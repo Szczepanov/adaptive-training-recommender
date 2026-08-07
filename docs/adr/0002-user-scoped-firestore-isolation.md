@@ -31,7 +31,6 @@ We decided to enforce **strict user-scoped Firestore path hierarchies** across a
    ```
 3. **Prohibition of Default Users**: Hard enforcement in code that rejects `userId == "default_user"` or empty user IDs in [`FirestoreRecoveryRepository`](../../src/garmin_sync/firestore_repository.py).
 4. **Schema Version 3 & Provenance**: Snapshots record schema version `3` along with explicit field-level source dates (`metricsDates`) tracking exact dates for sleep, HRV, resting HR, waking body battery, and step count.
-5. **Legacy Migration**: Retain a dedicated migration tool ([`scripts/migrate_legacy_snapshots.py`](../../scripts/migrate_legacy_snapshots.py)) to safely migrate any remaining legacy root documents to user subcollections.
 
 ---
 
@@ -39,7 +38,6 @@ We decided to enforce **strict user-scoped Firestore path hierarchies** across a
 
 * [`src/garmin_sync/firestore_repository.py`](../../src/garmin_sync/firestore_repository.py) — Enforces `userId` validation and constructs paths `users/{userId}/daily_recovery_snapshots/{date_iso}`.
 * [`src/garmin_sync/models.py`](../../src/garmin_sync/models.py) — Defines Domain Schema Version 3 models and `MetricsDates` provenance structure.
-* [`scripts/migrate_legacy_snapshots.py`](../../scripts/migrate_legacy_snapshots.py) — Migration utility script for legacy root snapshots.
 
 ---
 
