@@ -52,7 +52,7 @@ class TargetAwareFakeProvider(FakeTestProvider):
     def fetch_performance_targets(self) -> ProviderPerformanceTargetsResult:
         return ProviderPerformanceTargetsResult(
             canonical=CanonicalPerformanceTargets(cycling_ftp_watts=250, running_threshold_pace_sec_per_km=270, running_lthr_bpm=170),
-            raw_payloads={"cycling_ftp": {"functionalThresholdPower": 250}, "lactate_threshold": {"speed_and_heart_rate": {"speed": 3.7}}},
+            raw_payloads={"cycling_ftp": {"functionalThresholdPower": 250}, "lactate_threshold": {"speed_and_heart_rate": {"speed": 0.27}}},
         )
 
 

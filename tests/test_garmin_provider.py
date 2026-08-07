@@ -381,7 +381,7 @@ def test_canonicalize_performance_targets_maps_ftp_running_pace_and_lthr():
     targets = canonicalize_performance_targets(ftp, threshold, None)
 
     assert targets.cycling_ftp_watts == 254
-    assert targets.running_threshold_pace_sec_per_km == 267  # 1000 / 3.75 m/s
+    assert targets.running_threshold_pace_sec_per_km == 316  # 0.3166667 sec/m -> 5:16/km
     assert targets.running_lthr_bpm == 169
     assert targets.ftp_measured_at == "2026-08-01"
     assert targets.threshold_measured_at == "2026-08-02"
@@ -392,7 +392,7 @@ def test_canonicalize_performance_targets_falls_back_to_running_then_default_zon
 
     targets = canonicalize_performance_targets(
         None,
-        {"speed_and_heart_rate": {"speed": 4.0}},
+        {"speed_and_heart_rate": {"speed": 0.25}},
         [
             {"sport": "DEFAULT", "lactateThresholdHeartRateUsed": 160},
             {"sport": "RUNNING", "lactateThresholdHeartRateUsed": 166},
@@ -421,7 +421,7 @@ def test_fetch_performance_targets_uses_cached_hr_zones_and_archivable_raw_paylo
     mock_client = MagicMock()
     mock_client.get_heart_rate_zones.return_value = [{"sport": "RUNNING", "lactateThresholdHeartRateUsed": 165}]
     mock_client.get_cycling_ftp.return_value = {"functionalThresholdPower": 250}
-    mock_client.get_lactate_threshold.return_value = {"speed_and_heart_rate": {"speed": 4.0}}
+    mock_client.get_lactate_threshold.return_value = {"speed_and_heart_rate": {"speed": 0.25}}
     adapter = GarminProviderAdapter(mock_client)
     adapter._heart_rate_zones_cache = mock_client.get_heart_rate_zones()
 

@@ -152,10 +152,16 @@ def canonicalize_performance_targets(
 
     threshold_root = lactate_threshold if isinstance(lactate_threshold, dict) else {}
     threshold_data = _first_mapping(threshold_root.get("speed_and_heart_rate"))
-    speed = _first_positive_number(threshold_data.get("speed"))
-    # Garmin returns threshold speed in metres per second.  A pace outside a broad
-    # human-running range is almost certainly a response/unit regression, not a target.
-    pace = round(1000 / speed) if speed is not None and 75 <= 1000 / speed <= 1200 else None
+    threshold_pace_sec_per_metre = _first_positive_number(threshold_data.get("speed"))
+    # Despite the endpoint field name, Garmin's latestLactateThreshold value is pace
+    # in seconds per metre (e.g. 0.31666 = 5:16.7/km), not metres per second.  This is
+    # confirmed against Garmin Connect's displayed threshold pace; treating it as m/s
+    # would produce a 52:38/km value and reject the real target as implausible.
+    pace = (
+        int(1000 * threshold_pace_sec_per_metre)
+        if threshold_pace_sec_per_metre is not None and 75 <= 1000 * threshold_pace_sec_per_metre <= 1200
+        else None
+    )
     lthr = _first_positive_number(threshold_data.get("heartRate"))
 
     if lthr is None and isinstance(heart_rate_zones, list):
