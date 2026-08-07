@@ -76,8 +76,40 @@ describe('Architecture & Phased Engine Integration', () => {
 
             const phase = evaluatePeriodizationPhase(events, '2026-08-07');
             // Primary event is A-race (30 days out), C-race 3 days away does not trigger taper override
-            expect(phase.phaseName).toBe('Specificity');
-            expect(phase.taperActive).toBe(false);
+            expect(phase.phase.phaseName).toBe('Specificity');
+            expect(phase.phase.taperActive).toBe(false);
+        });
+
+        it('keeps passed scheduled events stale, while completed/DNF events alone unlock recovery', () => {
+            const event = (id: string, lifecycle: UserEvent['lifecycle']): UserEvent => ({
+                id,
+                title: id,
+                date: '2026-08-06',
+                priority: 'A',
+                lifecycle,
+                category: 'cycling_event',
+                demandProfile: { aerobicEndurance: 0.8, thresholdPower: 0.7, vo2MaxPower: 0.4, repeatedSurges: 0.5, sprintPower: 0.2, fatigueResistance: 0.8, neuromuscular: 0.3 },
+            });
+
+            const scheduled = evaluatePeriodizationPhase([event('awaiting-outcome', 'scheduled')], '2026-08-07');
+            expect(scheduled.phase.phaseName).toBe('Base');
+            expect(scheduled.focusEvent).toBeNull();
+            expect(scheduled.staleEvents.map(e => e.id)).toEqual(['awaiting-outcome']);
+
+            const completed = evaluatePeriodizationPhase([event('finished', 'completed')], '2026-08-07');
+            expect(completed.phase.phaseName).toBe('Post-Event Recovery');
+            expect(completed.focusEvent?.id).toBe('finished');
+            expect(completed.partialEffort).toBe(false);
+
+            const dnf = evaluatePeriodizationPhase([event('partial', 'DNF')], '2026-08-07');
+            expect(dnf.phase.phaseName).toBe('Post-Event Recovery');
+            expect(dnf.partialEffort).toBe(true);
+
+            for (const lifecycle of ['DNS', 'cancelled'] as const) {
+                const excluded = evaluatePeriodizationPhase([event(lifecycle, lifecycle)], '2026-08-07');
+                expect(excluded.focusEvent).toBeNull();
+                expect(excluded.staleEvents).toEqual([]);
+            }
         });
     });
 
@@ -111,6 +143,11 @@ describe('Architecture & Phased Engine Integration', () => {
         it('getDaysToEvent is a standalone helper independent of evaluatePeriodizationPhase', () => {
             expect(getDaysToEvent('2026-09-13', '2026-08-07')).toBe(37);
             expect(getDaysToEvent('2026-08-01', '2026-08-07')).toBe(-6); // already passed
+        });
+
+        it('counts calendar days correctly across Europe/Warsaw DST transitions', () => {
+            expect(getDaysToEvent('2026-10-26', '2026-10-25')).toBe(1);
+            expect(getDaysToEvent('2026-03-29', '2026-03-30')).toBe(-1);
         });
 
         it('goalToUserEvent returns null for a goal with no target date or no event category', () => {
@@ -148,16 +185,18 @@ describe('Architecture & Phased Engine Integration', () => {
         it('feeds naturally into evaluatePeriodizationPhase: an A-priority cycling goal ~37 days out is already in Build phase, well before any taper', () => {
             const event = goalToUserEvent({ ...baseGoal, targetDate: '2026-09-13', eventCategory: 'cycling_event', eventPreset: 'road_race' })!;
             const phase = evaluatePeriodizationPhase([event], '2026-08-07');
-            expect(phase.phaseName).toBe('Build');
-            expect(phase.taperActive).toBe(false);
+            expect(phase.phase.phaseName).toBe('Build');
+            expect(phase.phase.taperActive).toBe(false);
+            expect(phase.focusEvent).toMatchObject({ id: 'Road cycling event' });
+            expect(phase.daysToEvent).toBe(37);
             // Blended toward the cycling demand vector, not the flat default base demand
-            expect(phase.targetDemandVector.thresholdPower).toBeGreaterThan(0.5);
+            expect(phase.phase.targetDemandVector.thresholdPower).toBeGreaterThan(0.5);
         });
     });
 
     describe('Phase 3: Microcycle Objectives', () => {
         it('generates weekly objectives and marks them satisfied when matching sessions complete', () => {
-            const phaseWeights = evaluatePeriodizationPhase([], '2026-08-07');
+            const phaseWeights = evaluatePeriodizationPhase([], '2026-08-07').phase;
             const microcycle = generateWeeklyObjectives(phaseWeights, '2026-08-03');
 
             expect(microcycle.objectives.length).toBeGreaterThan(0);

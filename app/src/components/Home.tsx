@@ -1,12 +1,12 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { decisionComposer } from '../engine/composer';
 import { evaluateTraining, evaluateNextDayPlan, adjustSessionRecommendation } from '../engine/rules';
-import { mapSnapshotToEngineInput, mapCheckinToSubjectiveInput, mapContextFromGoalsAndConstraints } from '../engine/adapters';
+import { mapSnapshotToEngineInput, mapCheckinToSubjectiveInput, mapContextFromGoalsAndConstraints, mapGoalsToUserEvents } from '../engine/adapters';
 import { generateWeekAheadPlan, type WeekAheadPlan } from '../engine/planner';
-import { getDaysToEvent } from '../engine/periodization';
+import { evaluatePeriodizationPhase, getDaysToEvent } from '../engine/periodization';
 import type { DailyDecisionInput, Recommendation, NextDayPotentialPlan, DailyRecommendation } from '../engine/models';
 import { recommendationService } from '../services/recommendationService';
-import { getPreviousLocalDateString } from '../utils/localDate';
+import { addDaysToLocalDateString, getPreviousLocalDateString } from '../utils/localDate';
 import { getPrescriptionLegend, resolveWorkoutPrescription } from '../workouts';
 import type { WorkoutPrescription } from '../workouts';
 import { AdherencePrompt } from './AdherencePrompt';
@@ -172,6 +172,19 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
     [computeAdjustedRecommendation, adjustmentDirection]
   );
 
+  // Goal events are evaluated independently for today and tomorrow: readiness-based
+  // recommendation selection still changes in Phase 3, but the week-ahead pipeline and
+  // upcoming-event UI must already use date-correct lifecycle/phase semantics.
+  const eventPeriodization = useMemo(() => {
+    if (!decisionInput) return null;
+    const events = mapGoalsToUserEvents(decisionInput.activeGoals);
+    return {
+      events,
+      today: evaluatePeriodizationPhase(events, decisionInput.date),
+      tomorrow: evaluatePeriodizationPhase(events, addDaysToLocalDateString(decisionInput.date, 1)),
+    };
+  }, [decisionInput]);
+
   // Extends today's actual (possibly adjusted) recommendation and tomorrow's selected
   // preview branch into a rolling 7-day forecast (see planner.ts) -- recomputed on every
   // render from current goals/constraints/preferences/check-in, never persisted, so it
@@ -186,9 +199,10 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
       decisionInput.preferences,
       decisionInput.date,
       activeRec,
-      tomorrowRec
+      tomorrowRec,
+      { events: eventPeriodization?.events }
     );
-  }, [engineInputs, decisionInput, activeRec, nextDayPlan, selectedBranch]);
+  }, [engineInputs, decisionInput, activeRec, nextDayPlan, selectedBranch, eventPeriodization]);
 
   if (loading) {
     return (
@@ -551,7 +565,10 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
                         <span className="goal-title">
                           {goal.title}
                           {goal.eventCategory && goal.targetDate && (
-                            <span className="goal-event-days"> · 🏁 in {getDaysToEvent(goal.targetDate, decisionInput.date)}d</span>
+                            <span className="goal-event-days"> · 🏁 {(() => {
+                              const days = getDaysToEvent(goal.targetDate, decisionInput.date);
+                              return days >= 0 ? `in ${days}d` : `${Math.abs(days)}d ago`;
+                            })()}</span>
                           )}
                         </span>
                       </div>

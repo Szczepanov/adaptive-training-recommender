@@ -499,6 +499,7 @@ function GoalModal({ goal, onSave, onClose }: GoalModalProps) {
                   <label>Event type</label>
                   <select
                     value={formData.eventCategory}
+                    required={formData.isEvent}
                     onChange={(e) => {
                       const nextCategory = e.target.value as UserEvent['category'];
                       setFormData({...formData, eventCategory: nextCategory, eventPreset: EVENT_PRESETS[nextCategory][0].id});
@@ -516,6 +517,7 @@ function GoalModal({ goal, onSave, onClose }: GoalModalProps) {
                   <select
                     value={formData.eventPreset}
                     disabled={!formData.eventCategory}
+                    required={formData.isEvent}
                     onChange={(e) => setFormData({...formData, eventPreset: e.target.value})}
                   >
                     {presetsForCategory.map(preset => (

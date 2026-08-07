@@ -1,4 +1,4 @@
-import { doc, getDoc, setDoc, deleteDoc, collection, query, where, getDocs, addDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, deleteDoc, collection, query, where, getDocs, addDoc, deleteField, type DocumentData } from 'firebase/firestore';
 import { db } from '../firebase';
 import type { UserGoal, GoalCategory } from '../engine/models';
 import { deriveGoalCategory } from '../engine/periodization';
@@ -24,6 +24,31 @@ function stripDerivedCategoryForWrite(goal: UserGoal): UserGoal {
     const rest: Partial<UserGoal> = { ...goal };
     delete rest.category;
     return rest as UserGoal;
+}
+
+/** Builds a document payload containing only stored inputs. Event-specific inputs are
+ * absent for plain/open-ended goals, and category is absent for dated goals. */
+function storedGoalPayload(goal: UserGoal): DocumentData {
+    const payload: DocumentData = { ...stripDerivedCategoryForWrite(goal) };
+    if (!goal.targetDate || !goal.eventCategory) {
+        delete payload.eventCategory;
+        delete payload.eventPreset;
+        delete payload.eventLifecycle;
+    }
+    return payload;
+}
+
+/** Merge writes need explicit field deletions for values that existed on an earlier
+ * version of a goal (for example when "This is a race" is unchecked). */
+function updatedGoalPayload(goal: UserGoal): DocumentData {
+    const payload = storedGoalPayload(goal);
+    if (goal.targetDate) payload.category = deleteField();
+    if (!goal.targetDate || !goal.eventCategory) {
+        payload.eventCategory = deleteField();
+        payload.eventPreset = deleteField();
+        payload.eventLifecycle = deleteField();
+    }
+    return payload;
 }
 
 export class GoalService {
@@ -162,11 +187,11 @@ export class GoalService {
             // returned in-memory object still carries the correct, freshly-derived value
             // for immediate UI use.
             const collRef = collection(db, 'users', userId, this.collectionPath);
-            const docRef = await addDoc(collRef, stripDerivedCategoryForWrite(validatedGoal));
+            const docRef = await addDoc(collRef, storedGoalPayload(validatedGoal));
 
             // Update with the document ID
             const goalWithId = { ...validatedGoal, id: docRef.id };
-            await setDoc(docRef, stripDerivedCategoryForWrite(goalWithId), { merge: true });
+            await setDoc(docRef, storedGoalPayload(goalWithId), { merge: true });
 
             return goalWithId;
         } catch (error) {
@@ -202,17 +227,10 @@ export class GoalService {
 
             const validatedGoal = validation.data!;
 
-            // Save to Firestore. `merge: true` means a previously-stored `category` field
-            // (from before this feature, or from a goal that used to be open-ended) isn't
-            // automatically cleared by omitting it here -- explicitly null it out so a
-            // goal that gains a targetDate on this update doesn't leave a stale category
-            // sitting in Firestore that a future direct-read (bypassing goalService) could
-            // be misled by.
+            // Merge writes must remove fields that are no longer valid rather than leave
+            // a former event able to reappear after a reload or future date edit.
             const docRef = doc(db, 'users', userId, this.collectionPath, goalId);
-            const writePayload = validatedGoal.targetDate
-                ? { ...stripDerivedCategoryForWrite(validatedGoal), category: null }
-                : validatedGoal;
-            await setDoc(docRef, writePayload, { merge: true });
+            await setDoc(docRef, updatedGoalPayload(validatedGoal), { merge: true });
 
             return validatedGoal;
         } catch (error) {

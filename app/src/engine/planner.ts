@@ -163,9 +163,8 @@ function combineMax(a: DimensionalFatigue, b: DimensionalFatigue): DimensionalFa
  * constraints, preferences, or today's check-in change, so a mid-week goal edit
  * immediately reshapes the rest of the strip. See docs/adr/0008-week-ahead-planning.md.
  *
- * Known gap: `events`/`fixedActivities` have no Firestore-backed source yet, so
- * periodization defaults to a flat 'Base' phase and schedule defaults to the generic
- * weekly template until that persistence layer exists.
+ * Events are derived from persisted goal inputs by the caller. Fixed activities still
+ * have no Firestore-backed source, so schedule falls back to the generic weekly template.
  */
 export function generateWeekAheadPlan(
     todayReadiness: DailyReadiness,
@@ -183,7 +182,8 @@ export function generateWeekAheadPlan(
     const effectivePreferences = preferences ?? NEUTRAL_PREFERENCES;
     const injuries = context.constraints.injuries;
 
-    const phaseWeights = evaluatePeriodizationPhase(events, todayDate);
+    const todayPeriodization = evaluatePeriodizationPhase(events, todayDate);
+    const phaseWeights = todayPeriodization.phase;
     // Rolling window (not calendar Mon-Sun): objectives reset relative to *today* so the
     // strip never shows a seam where a later day suddenly looks unbalanced just because a
     // new calendar week started mid-strip.
@@ -211,7 +211,7 @@ export function generateWeekAheadPlan(
         date: todayDate,
         dayOffset: 0,
         confidence: 'confirmed',
-        phaseName: phaseWeights.phaseName,
+        phaseName: todayPeriodization.phase.phaseName,
         location: todayLocation,
         template: todayRec.template,
         mode: todayRec.mode === 'recover' ? 'recover' : 'train',
@@ -223,12 +223,13 @@ export function generateWeekAheadPlan(
     // Day 1: tomorrow -- reuse the existing (selected) green/yellow/red preview pick, if any (Provisional).
     if (totalDays > 1 && tomorrowRec) {
         const tomorrowDate = addDaysToLocalDateString(todayDate, 1);
+        const tomorrowPeriodization = evaluatePeriodizationPhase(events, tomorrowDate);
         const tomorrowLocation = resolveAvailability(tomorrowDate, null, weeklySchedule, DEFAULT_LOCATIONS, fixedActivities).location;
         resultDays.push({
             date: tomorrowDate,
             dayOffset: 1,
             confidence: 'provisional',
-            phaseName: phaseWeights.phaseName,
+            phaseName: tomorrowPeriodization.phase.phaseName,
             location: tomorrowLocation,
             template: tomorrowRec.template,
             mode: tomorrowRec.mode === 'recover' ? 'recover' : 'train',
@@ -243,6 +244,7 @@ export function generateWeekAheadPlan(
     // average recovery rate.
     for (let offset = resultDays.length; offset < totalDays; offset++) {
         const date = addDaysToLocalDateString(todayDate, offset);
+        const periodization = evaluatePeriodizationPhase(events, date);
 
         const decayedExternal = decayFatigue(externalFatigue.externalLoadFatigue, hoursBetween(externalFatigue.lastUpdatedDate, date));
         const decayedInternal = decayFatigue(internalStrain, hoursBetween(internalStrainAsOf, date));
@@ -266,7 +268,7 @@ export function generateWeekAheadPlan(
                 date,
                 dayOffset: offset,
                 confidence: 'projected',
-                phaseName: phaseWeights.phaseName,
+                phaseName: periodization.phase.phaseName,
                 location: availability.location,
                 template: restTemplate,
                 mode: 'recover',
@@ -284,7 +286,7 @@ export function generateWeekAheadPlan(
             date,
             dayOffset: offset,
             confidence: 'projected',
-            phaseName: phaseWeights.phaseName,
+            phaseName: periodization.phase.phaseName,
             location: availability.location,
             template: pick.template,
             mode: displayModeFromCategory(pick.template.category),

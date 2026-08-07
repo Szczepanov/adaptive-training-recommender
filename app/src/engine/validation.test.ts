@@ -78,6 +78,14 @@ describe('validateGoal', () => {
         expect(result.isValid).toBe(false);
         expect(result.errors.some(e => e.field === 'eventLifecycle')).toBe(true);
     });
+
+    it('rejects event lifecycle metadata without a dated event category', () => {
+        const result = validateGoal({
+            ...baseFields, category: 'long-term', eventLifecycle: 'completed',
+        });
+        expect(result.isValid).toBe(false);
+        expect(result.errors.some(e => e.field === 'eventLifecycle')).toBe(true);
+    });
 });
 
 describe('validateRecommendation', () => {

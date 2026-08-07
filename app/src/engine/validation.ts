@@ -321,6 +321,12 @@ export function validateGoal(raw: any): ValidationResult<UserGoal> {
             message: `Event status must be one of: ${validEventLifecycles.join(', ')}`
         });
     }
+    if (raw.eventLifecycle !== undefined && raw.eventLifecycle !== null && (!rawTargetDate || !rawEventCategory)) {
+        errors.push({
+            field: 'eventLifecycle',
+            message: 'Event status requires a dated event category'
+        });
+    }
 
     if (raw.targetOutcome !== undefined) {
         const outcome = normalizeEmptyToNull(raw.targetOutcome);

@@ -62,11 +62,11 @@ projects a rolling plan forward from today:
    accumulates and decays the cost of each day's *picked* session (real or projected),
    consistent with how `fatigue.ts` already models completed sessions.
 
-5. **Known gap, deliberately not solved here**: `UserEvent` and `FixedActivity` (ADR-0007)
-   have no Firestore-backed persistence or UI yet, so `generateWeekAheadPlan` defaults to
-   an empty event list and the generic weekly schedule. Periodization therefore stays in
-   a flat `Base` phase until that persistence layer exists -- a caller can already pass
-   `events`/`fixedActivities` through `WeekAheadOptions` once it does.
+5. **Event source added in Phase 2**: dated active `UserGoal`s with an event category are
+   adapted into `UserEvent`s at read time and supplied to `generateWeekAheadPlan`.
+   Periodization is evaluated separately for each date in the strip, including lifecycle
+   semantics for stale, completed, and DNF events. `FixedActivity` still has no
+   Firestore-backed source, so the generic weekly schedule remains the fallback there.
 
 ---
 
@@ -92,6 +92,5 @@ projects a rolling plan forward from today:
 ### Negative
 * Days 2+ are read as "session type", not exact duration/intensity -- the UI must keep
   surfacing that caveat, or the projection will be over-trusted.
-* Periodization for the projected tail stays flat (`Base` phase) until event/fixed-activity
-  persistence exists (see gap above); the projected days will feel less "aware" of an
-  upcoming race than day 0/1 are today.
+* Fixed activities are still absent from the projection, so the generic weekly schedule
+  can be optimistic on days that already contain an unrecorded commitment.
