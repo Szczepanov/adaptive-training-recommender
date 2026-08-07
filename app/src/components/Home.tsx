@@ -38,6 +38,22 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
       const input = await decisionComposer.composeDailyDecisionInput(userId);
       setDecisionInput(input);
 
+      // Fetched once, used two ways below: its `.mode` feeds evaluateTraining's
+      // hysteresis (see rules.ts postRecoverBufferApplied) regardless of whether it's
+      // been answered yet, and its `.adherence` decides whether to show the prompt --
+      // deliberately not the same condition, so an already-answered day still informs
+      // today's hysteresis.
+      const yesterday = getPreviousLocalDateString(input.date);
+      const yesterdayRec = await recommendationService.getRecommendation(userId, yesterday).catch(err => {
+        console.warn('Failed to load yesterday\'s recommendation:', err);
+        return null;
+      });
+      setPendingAdherence(
+        yesterdayRec && yesterdayRec.adherence.respondedAt === null
+          ? { date: yesterday, recommendation: yesterdayRec }
+          : null
+      );
+
       // A recommendation needs at least today's Garmin recovery snapshot to be meaningful;
       // the check-in, goals, and constraints all fall back to neutral/default values when
       // *absent*. A check-in that exists but is only partially filled in is different --
@@ -49,7 +65,7 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
         const objective = mapSnapshotToEngineInput(input.recoverySnapshot);
         const subjective = mapCheckinToSubjectiveInput(input.subjectiveCheckin);
         const context = mapContextFromGoalsAndConstraints(input.activeGoals, input.activeConstraints, input.preferences);
-        const todayRec = evaluateTraining({ subjective, objective }, context, input.date);
+        const todayRec = evaluateTraining({ subjective, objective }, context, input.date, yesterdayRec?.mode);
         setRecommendation(todayRec);
 
         const tomorrowPlan = evaluateNextDayPlan({ subjective, objective }, context, input.date, todayRec);
@@ -65,29 +81,11 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
         setRecommendation(null);
         setNextDayPlan(null);
       }
-
-      await loadPendingAdherence(input.date);
     } catch (err) {
       console.error('Error loading dashboard data:', err);
       setError('Failed to load dashboard data');
     } finally {
       setLoading(false);
-    }
-  };
-
-  /** Looks up yesterday's recommendation (relative to `todayDate`) and shows the
-   *  adherence prompt only if it exists and hasn't been answered yet. */
-  const loadPendingAdherence = async (todayDate: string) => {
-    try {
-      const yesterday = getPreviousLocalDateString(todayDate);
-      const yesterdayRec = await recommendationService.getRecommendation(userId, yesterday);
-      if (yesterdayRec && yesterdayRec.adherence.respondedAt === null) {
-        setPendingAdherence({ date: yesterday, recommendation: yesterdayRec });
-      } else {
-        setPendingAdherence(null);
-      }
-    } catch (err) {
-      console.warn('Failed to load pending adherence:', err);
     }
   };
 

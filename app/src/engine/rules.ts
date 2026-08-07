@@ -180,7 +180,18 @@ function metricStrain(
  */
 const MODIFY_MAX_SYSTEMIC_COST = 0.5;
 
-export function evaluateTraining(readiness: DailyReadiness, context: UserContext, date: string): Recommendation {
+export function evaluateTraining(
+    readiness: DailyReadiness,
+    context: UserContext,
+    date: string,
+    /** Yesterday's *final* mode (post-hysteresis), if known -- e.g. from the previous
+     *  day's persisted DailyRecommendation.mode. Optional and stateless by default: a
+     *  caller with no history (or evaluating a hypothetical scenario, see
+     *  evaluateNextDayPlan's single-plan-override branch) simply omits it and gets the
+     *  same behavior as before hysteresis existed. See POST_RECOVER_BUFFER below for
+     *  the one rule that uses it. */
+    previousMode?: 'train' | 'modify' | 'recover'
+): Recommendation {
     const { subjective, objective } = readiness;
 
     // 1. Subjective fatigue scoring (10 = worst fatigue)
@@ -240,6 +251,19 @@ export function evaluateTraining(readiness: DailyReadiness, context: UserContext
         mode = 'recover';
     } else if (overallFatigueScore > 5 || subjective.soreness > 6 || objectiveStrain >= STRAIN_MODIFY_THRESHOLD) {
         mode = 'modify'; // Cap systemic load -- see MODIFY_MAX_SYSTEMIC_COST, not a flat demotion to endurance-only
+    }
+
+    // 3a-hysteresis. Post-recover buffer: a single morning's numbers looking fully
+    // green the day right after a mandated recovery day doesn't mean tissues are fully
+    // back -- standard coaching practice eases back in rather than jumping straight
+    // from rest to a hard day. Only softens a fresh 'train' read down one notch to
+    // 'modify'; never overrides today's own fatigue/pain signal (fatigueTriggeredRecover
+    // already stands on its own above) and never applies without real history (an
+    // omitted previousMode -- e.g. a stateless hypothetical preview -- leaves this
+    // inert, matching pre-hysteresis behavior).
+    const postRecoverBufferApplied = mode === 'train' && previousMode === 'recover';
+    if (postRecoverBufferApplied) {
+        mode = 'modify';
     }
 
     // 3b. Already-trained-today override: takes precedence over everything above.
@@ -356,6 +380,10 @@ export function evaluateTraining(readiness: DailyReadiness, context: UserContext
         rationale += ` ${modalityNote}`;
     }
 
+    if (postRecoverBufferApplied) {
+        rationale += " Yesterday was a mandated recovery day, so easing back in today (rather than going straight to a hard session) even though this morning's numbers look fully green.";
+    }
+
     // Add previous day context if available and relevant
     if (objective.yesterday_training && objective.yesterday_training.duration_min && mode === 'modify') {
         rationale += ` Giving your body a break after yesterday's ${objective.yesterday_training.type} session.`;
@@ -437,7 +465,7 @@ export function evaluateNextDayPlan(
             }
         };
 
-        const singleRec = evaluateTraining(syntheticRecoveryReadiness, context, tomorrowDate);
+        const singleRec = evaluateTraining(syntheticRecoveryReadiness, context, tomorrowDate, todayRec.mode);
         const singleBranch: NextDayPlanBranch = {
             tier: 'green',
             label: 'Mandatory Plan',
@@ -555,9 +583,12 @@ export function evaluateNextDayPlan(
         }
     };
 
-    const greenRec = evaluateTraining(greenReadiness, context, tomorrowDate);
-    const yellowRec = evaluateTraining(yellowReadiness, context, tomorrowDate);
-    const redRec = evaluateTraining(redReadiness, context, tomorrowDate);
+    // Tomorrow's hysteresis reference point is today's actual (post-hysteresis) mode --
+    // e.g. if today was itself a mandated recovery day, even the "Green/Optimal" preview
+    // for tomorrow correctly eases in rather than promising a hard session outright.
+    const greenRec = evaluateTraining(greenReadiness, context, tomorrowDate, todayRec.mode);
+    const yellowRec = evaluateTraining(yellowReadiness, context, tomorrowDate, todayRec.mode);
+    const redRec = evaluateTraining(redReadiness, context, tomorrowDate, todayRec.mode);
 
     return {
         date: tomorrowDate,
