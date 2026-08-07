@@ -12,6 +12,7 @@
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "validate:workouts": "node --experimental-strip-types scripts/validate-workouts.ts",
+    "simulate:scenarios": "node scripts/simulate-scenarios.mjs",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",

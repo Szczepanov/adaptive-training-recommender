@@ -231,7 +231,12 @@ export function rankCandidatesByUtility(
                 const matchesEvent =
                     (categoryLower.includes('cycling') && templateModLower.includes('cycling')) ||
                     (categoryLower.includes('running') && templateModLower.includes('running')) ||
-                    (categoryLower.includes('strength') && templateModLower.includes('strength'));
+                    (categoryLower.includes('strength') && templateModLower.includes('strength')) ||
+                    // Triathlon is documented (ADR-0007) to boost BOTH Cycling and Running --
+                    // 'triathlon' doesn't substring-match any of the three checks above, so
+                    // without this it fell through to the non-event penalty branch below and
+                    // actively suppressed the two modalities that matter most for the event.
+                    (categoryLower === 'triathlon' && (templateModLower.includes('cycling') || templateModLower.includes('running')));
                 if (matchesEvent) {
                     const boost = focusEvent.priority === 'A' ? 1.40 : 1.25;
                     prefMultiplier *= boost;
