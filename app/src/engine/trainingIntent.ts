@@ -2,6 +2,7 @@ import type { DailyReadiness, FatigueState, MicrocycleState, UserEvent, WeeklyOb
 import { computeInternalResponseStrain, buildFatigueStateFromHistory } from './fatigue';
 import { buildMicrocycleState, getUnresolvedObjectives } from './microcycle';
 import type { CompletedExposure, TrainingHistoryProvider } from './trainingHistory';
+import type { TrainingHistorySnapshot } from './trainingHistorySnapshot';
 import { evaluatePeriodizationPhase, type PeriodizationResult } from './periodization';
 import { addDaysToLocalDateString } from '../utils/localDate';
 
@@ -12,6 +13,8 @@ export interface TrainingIntent {
     fatigue: FatigueState;
     /** Retained for the pure planner core after a single asynchronous read. */
     history: CompletedExposure[];
+    /** Null only for legacy fixture providers that implement reconstruct() alone. */
+    historySnapshot: TrainingHistorySnapshot | null;
     microcycle: MicrocycleState;
 }
 
@@ -30,7 +33,10 @@ export async function resolveTrainingIntent(
     // The production provider is dynamically loaded only when necessary. This keeps
     // Firebase configuration entirely outside deterministic engine-test imports.
     const provider = historyProvider ?? (await import('./firestoreTrainingHistory')).firestoreTrainingHistoryProvider;
-    const history = await provider.reconstruct(userId, date, windowDays);
+    const historySnapshot = provider.getSnapshot
+        ? await provider.getSnapshot(userId, date, windowDays)
+        : null;
+    const history = historySnapshot?.exposures ?? await provider.reconstruct(userId, date, windowDays);
     const microcycle = buildMicrocycleState(
         periodization.phase,
         addDaysToLocalDateString(date, -windowDays),
@@ -42,5 +48,5 @@ export async function resolveTrainingIntent(
     // Phase volume is normalized from its 0.4..1.1 policy range and then softened
     // when the current rolling objectives have already been satisfied.
     const plannedDose = Math.max(0, Math.min(1, (periodization.phase.volumeScale / 1.1) * (0.7 + (0.3 * urgency))));
-    return { periodization, unresolvedObjectives, plannedDose, fatigue, history, microcycle };
+    return { periodization, unresolvedObjectives, plannedDose, fatigue, history, historySnapshot, microcycle };
 }

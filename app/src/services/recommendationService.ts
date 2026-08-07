@@ -2,6 +2,8 @@ import { doc, getDoc, setDoc, collection, query, where, orderBy, limit, getDocs 
 import { db } from '../firebase';
 import type { DailyRecommendation, Recommendation } from '../engine/models';
 import { validateRecommendation, validateAdherenceUpdate } from '../engine/validation';
+import type { DataIssue, DataState } from '../engine/dataState';
+import { parseDailyRecommendation } from '../persistence/parsers/trainingHistory';
 import { isPermissionDeniedError } from '../utils/errors';
 
 /**
@@ -128,6 +130,47 @@ export class RecommendationService {
             }
             console.error('Error fetching recent recommendations:', error);
             return [];
+        }
+    }
+
+    /** Retrieves a bounded history window in one query. This differs intentionally from
+     * the legacy single-document getter: invalid or failed reads retain their state so
+     * history consumers cannot treat them as an empty training week. */
+    async getRecommendationsInRange(
+        userId: string,
+        startDateInclusive: string,
+        throughDateExclusive: string,
+    ): Promise<DataState<DailyRecommendation[]>> {
+        try {
+            const collRef = collection(db, 'users', userId, this.collectionPath);
+            const rangeQuery = query(
+                collRef,
+                where('date', '>=', startDateInclusive),
+                where('date', '<', throughDateExclusive),
+                orderBy('date', 'asc'),
+            );
+            const querySnapshot = await getDocs(rangeQuery);
+            const recommendations: DailyRecommendation[] = [];
+            const issues: DataIssue[] = [];
+            const revisions: string[] = [];
+            for (const recommendationDocument of querySnapshot.docs) {
+                const path = `users/${userId}/${this.collectionPath}/${recommendationDocument.id}`;
+                const parsed = parseDailyRecommendation(recommendationDocument.data(), path);
+                if (parsed.status === 'AVAILABLE') {
+                    recommendations.push(parsed.data);
+                    if (parsed.revision) revisions.push(`${recommendationDocument.id}:${parsed.revision}`);
+                } else if (parsed.status === 'INVALID') {
+                    issues.push(...parsed.issues);
+                }
+            }
+            if (issues.length > 0) return { status: 'INVALID', issues };
+            return { status: 'AVAILABLE', data: recommendations, revision: revisions.sort().join('|') || null };
+        } catch (error: unknown) {
+            return {
+                status: 'UNAVAILABLE',
+                operation: 'read recommendation history',
+                retryable: !isPermissionDeniedError(error),
+            };
         }
     }
 

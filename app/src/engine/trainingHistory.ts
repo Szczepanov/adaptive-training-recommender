@@ -1,4 +1,5 @@
 import type { DailyRecommendation, TrainingRecord, WorkoutCostProfile } from './models';
+import type { TrainingHistorySnapshot } from './trainingHistorySnapshot';
 import { ENRICHED_TEMPLATES } from './templates';
 
 /** A completed, adherence-backed exposure reconstructed for the rolling engine. */
@@ -14,6 +15,9 @@ export interface CompletedExposure {
  */
 export interface TrainingHistoryProvider {
     reconstruct(userId: string, throughDateExclusive: string, windowDays: number): Promise<CompletedExposure[]>;
+    /** New providers expose the exact bounded source revision used for reconstruction.
+     * Kept optional while deterministic test fixtures use the legacy contract. */
+    getSnapshot?(userId: string, throughDateExclusive: string, windowDays: number): Promise<TrainingHistorySnapshot>;
 }
 
 const ZERO_COST: WorkoutCostProfile = { systemic: 0, cardiovascular: 0, lowerBody: 0, upperBody: 0, impactTissue: 0, neuromuscular: 0 };
