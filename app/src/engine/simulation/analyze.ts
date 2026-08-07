@@ -38,19 +38,14 @@ export interface ScenarioResult {
     modalityDistribution: Partial<Record<SessionTemplate['modality'], number>>;
     restOrRecoveryDayCount: number;
     restOrRecoveryDayPct: number;
-    /** Longest same-template streak found *within a single week-strip generation call* --
-     *  this is what anti-stacking (optimizer.ts's recentHistory-based checks) actually
-     *  guarantees, since `recentHistory` is rebuilt fresh from that call's own projected
-     *  days every time `generateWeekAheadPlan` runs. */
+    /** Longest same-template streak found *within a single week-strip generation call*.
+     *  This remains a diagnostic rather than a hard cap: anti-stacking applies soft
+     *  modality and intensity penalties, not a template-level exclusion. */
     maxConsecutiveSameTemplateStreakWithinCall: number;
     /** Longest same-template streak across the WHOLE chained horizon, including the
-     *  boundary between one week's call and the next. Real finding from this harness:
-     *  this can exceed the within-call guarantee, because anti-stacking has no visibility
-     *  into real recent history when a fresh week-strip call starts -- `recentHistory` is
-     *  seeded empty, not from what the athlete actually did in the days just before
-     *  "today". Not fixed as part of this task; flagged here so it's visible rather than
-     *  silently masked by only ever testing a single isolated call (as the pre-existing
-     *  planner.test.ts suite does). */
+     *  boundary between one week's call and the next. Real completed history is now
+     *  seeded into each fresh planner call, so its anti-stacking policy sees the boundary;
+     *  the metric remains diagnostic because that policy is deliberately soft. */
     maxConsecutiveSameTemplateStreakAcrossWeeks: number;
     objectiveResolution: ObjectiveTally[];
     anchorWeeks: AnchorWeekResult[];

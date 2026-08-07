@@ -28,7 +28,7 @@ describe('creditObjectivesFromStimulus (regression: the split-brain ledger bug)'
     const microcycle = microcycleWith({ thresholdDevelopment: 0.9 });
     const tempoRideStimulus: WorkoutStimulusProfile = { ...zeroStimulus, aerobicCapacity: 0.7, thresholdDevelopment: 0.8 };
 
-    const updated = creditObjectivesFromStimulus(microcycle, tempoRideStimulus);
+    const updated = creditObjectivesFromStimulus(microcycle, tempoRideStimulus, 'Cycling');
 
     expect(updated.objectives[0].completedExposures).toBe(1);
   });
@@ -41,7 +41,7 @@ describe('creditObjectivesFromStimulus (regression: the split-brain ledger bug)'
     const microcycle = microcycleWith({ aerobicCapacity: 0.8 });
     const technicalDrillStimulus: WorkoutStimulusProfile = { ...zeroStimulus, aerobicCapacity: 0.1, surgeRepeatability: 0.2 };
 
-    const updated = creditObjectivesFromStimulus(microcycle, technicalDrillStimulus);
+    const updated = creditObjectivesFromStimulus(microcycle, technicalDrillStimulus, 'Cycling');
 
     expect(updated.objectives[0].completedExposures).toBe(0);
   });
@@ -51,7 +51,7 @@ describe('creditObjectivesFromStimulus (regression: the split-brain ledger bug)'
       weekStartDate: '2026-08-03',
       objectives: [{ id: 'obj', key: 'threshold_quality', title: 'Threshold Development', targetExposures: 1, completedExposures: 1, targetStimulus: { thresholdDevelopment: 0.9 } }],
     };
-    const updated = creditObjectivesFromStimulus(microcycle, { ...zeroStimulus, thresholdDevelopment: 1.0 });
+    const updated = creditObjectivesFromStimulus(microcycle, { ...zeroStimulus, thresholdDevelopment: 1.0 }, 'Cycling');
     expect(updated.objectives[0].completedExposures).toBe(1);
   });
 
@@ -68,5 +68,60 @@ describe('creditObjectivesFromStimulus (regression: the split-brain ledger bug)'
     const mixedStimulus: WorkoutStimulusProfile = { ...zeroStimulus, thresholdDevelopment: 0.9, aerobicCapacity: 0.1 };
     const mixedTarget = { thresholdDevelopment: 0.9, aerobicCapacity: 0.1 }; // threshold dominates the weighting
     expect(stimulusCoverage(mixedStimulus, mixedTarget)).toBeGreaterThan(0.8);
+  });
+});
+
+describe('surge_repeatability qualification', () => {
+  const zeroStimulus: WorkoutStimulusProfile = {
+    aerobicCapacity: 0, thresholdDevelopment: 0, surgeRepeatability: 0, maxStrength: 0, hypertrophy: 0, mobilityRecovery: 0,
+  };
+  const cyclingSurgeObjective = (): MicrocycleState => ({
+    weekStartDate: '2026-08-03',
+    objectives: [{
+      id: 'obj-surges', key: 'surge_repeatability', title: 'Surges', targetExposures: 1, completedExposures: 0,
+      targetStimulus: { surgeRepeatability: 0.9, aerobicCapacity: 0.5 },
+      qualification: { minimumStimulus: { surgeRepeatability: 0.6 }, allowedModalities: ['Cycling'] },
+    }],
+  });
+
+  it('rejects a broad Cycling tempo stimulus that passes weighted coverage but misses the surge minimum', () => {
+    const updated = creditObjectivesFromStimulus(
+      cyclingSurgeObjective(), { ...zeroStimulus, aerobicCapacity: 0.9, surgeRepeatability: 0.5 }, 'Cycling',
+    );
+    expect(updated.objectives[0].completedExposures).toBe(0);
+  });
+
+  it('rejects a high-surge Strength candidate for a cycling-scoped objective', () => {
+    const updated = creditObjectivesFromStimulus(
+      cyclingSurgeObjective(), { ...zeroStimulus, aerobicCapacity: 0.7, surgeRepeatability: 0.8 }, 'Strength',
+    );
+    expect(updated.objectives[0].completedExposures).toBe(0);
+  });
+
+  it('credits a Cycling candidate that clears both the coverage and strict surge gates', () => {
+    const updated = creditObjectivesFromStimulus(
+      cyclingSurgeObjective(), { ...zeroStimulus, aerobicCapacity: 0.7, surgeRepeatability: 0.8 }, 'Cycling',
+    );
+    expect(updated.objectives[0].completedExposures).toBe(1);
+  });
+
+  it('allows a qualifying non-Cycling candidate when the objective is intentionally unscoped', () => {
+    const microcycle = cyclingSurgeObjective();
+    microcycle.objectives[0].qualification = { minimumStimulus: { surgeRepeatability: 0.6 } };
+    const updated = creditObjectivesFromStimulus(
+      microcycle, { ...zeroStimulus, aerobicCapacity: 0.7, surgeRepeatability: 0.8 }, 'Field',
+    );
+    expect(updated.objectives[0].completedExposures).toBe(1);
+  });
+
+  it('preserves legacy weighted-average behavior for an objective without qualification', () => {
+    const microcycle: MicrocycleState = {
+      weekStartDate: '2026-08-03',
+      objectives: [{ id: 'obj', key: 'surge_repeatability', title: 'Surges', targetExposures: 1, completedExposures: 0, targetStimulus: { surgeRepeatability: 0.9, aerobicCapacity: 0.5 } }],
+    };
+    const updated = creditObjectivesFromStimulus(
+      microcycle, { ...zeroStimulus, aerobicCapacity: 0.9, surgeRepeatability: 0.5 }, 'Strength',
+    );
+    expect(updated.objectives[0].completedExposures).toBe(1);
   });
 });

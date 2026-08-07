@@ -1,16 +1,20 @@
 import type {
     FixedActivity,
     MicrocycleState,
+    ObjectiveQualification,
+    SessionTemplate,
     TrainingRecord,
+    UserEvent,
     WeeklyObjective,
     WorkoutStimulusProfile,
 } from './models';
 import type { CompletedExposure } from './microcycleHistory';
-import type { PhaseWeights } from './periodization';
+import { modalitiesForEventCategory, type PhaseWeights } from './periodization';
 
 export function generateWeeklyObjectives(
     phaseWeights: PhaseWeights,
-    weekStartDate: string
+    weekStartDate: string,
+    focusEvent: UserEvent | null
 ): MicrocycleState {
     const demand = phaseWeights.targetDemandVector;
     const objectives: WeeklyObjective[] = [];
@@ -41,6 +45,7 @@ export function generateWeeklyObjectives(
 
     // 3. Surge / VO2 exposure
     if ((demand.vo2MaxPower >= 0.6 || demand.repeatedSurges >= 0.6) && phaseWeights.phaseName !== 'Post-Event Recovery') {
+        const allowedModalities = focusEvent ? modalitiesForEventCategory(focusEvent.category) : [];
         objectives.push({
             id: 'obj_surges',
             key: 'surge_repeatability',
@@ -48,6 +53,10 @@ export function generateWeeklyObjectives(
             targetExposures: 1,
             completedExposures: 0,
             targetStimulus: { surgeRepeatability: 0.9, aerobicCapacity: 0.5 },
+            qualification: {
+                minimumStimulus: { surgeRepeatability: 0.6 },
+                ...(allowedModalities.length > 0 ? { allowedModalities } : {}),
+            },
         });
     }
 
@@ -128,6 +137,21 @@ export function stimulusCoverage(
  *  drill with a token 0.1 aerobicCapacity) from silently resolving it. */
 export const STIMULUS_CREDIT_COVERAGE_THRESHOLD = 0.6;
 
+/** Applies an objective's optional strict qualification policy. Objectives without one
+ * retain the legacy stimulus-coverage-only completion behavior. */
+export function qualifiesForObjective(
+    stimulus: WorkoutStimulusProfile,
+    modality: SessionTemplate['modality'],
+    qualification: ObjectiveQualification | undefined,
+): boolean {
+    const allowedModalities = qualification?.allowedModalities;
+    if (allowedModalities && allowedModalities.length > 0 && !allowedModalities.includes(modality)) return false;
+
+    return Object.entries(qualification?.minimumStimulus ?? {}).every(([axis, minimum]) =>
+        (stimulus[axis as keyof WorkoutStimulusProfile] ?? 0) >= minimum
+    );
+}
+
 /**
  * Credits weekly objectives from a workout's own numeric stimulus profile -- the same
  * vector calculateStimulusBenefit (optimizer.ts) scores candidates against -- instead of
@@ -143,13 +167,15 @@ export const STIMULUS_CREDIT_COVERAGE_THRESHOLD = 0.6;
  */
 export function creditObjectivesFromStimulus(
     microcycle: MicrocycleState,
-    stimulus: WorkoutStimulusProfile
+    stimulus: WorkoutStimulusProfile,
+    modality: SessionTemplate['modality'],
 ): MicrocycleState {
     return {
         ...microcycle,
         objectives: microcycle.objectives.map(obj => {
             if (obj.completedExposures >= obj.targetExposures) return obj;
             if (stimulusCoverage(stimulus, obj.targetStimulus) < STIMULUS_CREDIT_COVERAGE_THRESHOLD) return obj;
+            if (!qualifiesForObjective(stimulus, modality, obj.qualification)) return obj;
             return { ...obj, completedExposures: obj.completedExposures + 1 };
         }),
     };
@@ -160,10 +186,11 @@ export function creditObjectivesFromStimulus(
 export function buildMicrocycleState(
     phase: PhaseWeights,
     windowStartDate: string,
-    history: CompletedExposure[]
+    history: CompletedExposure[],
+    focusEvent: UserEvent | null,
 ): MicrocycleState {
     return history.reduce(
         (state, exposure) => updateMicrocycleProgress(state, exposure.trainingRecordLike),
-        generateWeeklyObjectives(phase, windowStartDate)
+        generateWeeklyObjectives(phase, windowStartDate, focusEvent)
     );
 }

@@ -15,10 +15,10 @@ import type {
 } from './models';
 import { resolveAvailability } from './schedule';
 import { evaluatePeriodizationPhase, isTemplatePhaseEligible, type PhaseWeights } from './periodization';
-import { buildMicrocycleState, creditObjectivesFromStimulus, getUnresolvedObjectives, stimulusCoverage, STIMULUS_CREDIT_COVERAGE_THRESHOLD } from './microcycle';
+import { buildMicrocycleState, creditObjectivesFromStimulus, getUnresolvedObjectives, qualifiesForObjective, stimulusCoverage, STIMULUS_CREDIT_COVERAGE_THRESHOLD } from './microcycle';
 import { applyCompletedSessionLoad, buildFatigueStateFromHistory, computeInternalResponseStrain, decayFatigue } from './fatigue';
 import type { CompletedExposure, TrainingHistoryProvider } from './trainingHistory';
-import { rankCandidatesByUtility } from './optimizer';
+import { rankCandidatesByUtility, type RecentHistoryEntry } from './optimizer';
 import { eligibleTemplates } from './eligibility';
 import { ENRICHED_TEMPLATES } from './templates';
 import { addDaysToLocalDateString } from '../utils/localDate';
@@ -77,6 +77,9 @@ export interface WeekAheadPlan {
 export interface WeekAheadPlanSeed {
     microcycle: MicrocycleState;
     fatigue: FatigueState;
+    /** Real completed exposures immediately preceding this projection, for ranking
+     * anti-stacking across separate 7-day planner calls. */
+    trailingHistory?: RecentHistoryEntry[];
 }
 
 export interface WeekAheadOptions {
@@ -96,11 +99,21 @@ export function prepareWeekAheadPlanSeed(
     todayDate: string,
     history: CompletedExposure[],
 ): WeekAheadPlanSeed {
-    const phase = evaluatePeriodizationPhase(events, todayDate).phase;
+    const periodization = evaluatePeriodizationPhase(events, todayDate);
     return {
-        microcycle: buildMicrocycleState(phase, addDaysToLocalDateString(todayDate, -7), history),
+        microcycle: buildMicrocycleState(periodization.phase, addDaysToLocalDateString(todayDate, -7), history, periodization.focusEvent),
         fatigue: buildFatigueStateFromHistory(history, computeInternalResponseStrain(todayReadiness), todayDate),
+        trailingHistory: projectTrailingHistory(history),
     };
+}
+
+/** Projects completed exposures into the deliberately small shape optimizer.ts needs.
+ * History stays oldest-to-newest so backward consecutive-modality scans remain valid. */
+export function projectTrailingHistory(history: CompletedExposure[]): RecentHistoryEntry[] {
+    return history.map(h => ({
+        type: h.trainingRecordLike.type,
+        systemicCost: h.costProfile.systemic,
+    }));
 }
 
 const ZERO_COST: WorkoutCostProfile = {
@@ -342,7 +355,7 @@ export function generateWeekAheadPlan(
     const anchors = resolveWeeklyAnchors(todayDate, totalDays, events, fixedActivities, context);
 
     const applyPick = (date: string, template: SessionTemplate) => {
-        microcycle = creditObjectivesFromStimulus(microcycle, enrichedStimulusProfile(template));
+        microcycle = creditObjectivesFromStimulus(microcycle, enrichedStimulusProfile(template), template.modality);
         externalFatigue = applyCompletedSessionLoad(externalFatigue, date, enrichedCostProfile(template.id));
     };
 
@@ -385,11 +398,14 @@ export function generateWeekAheadPlan(
 
         const availability = resolveAvailability(date, null, fixedActivities, context);
         const unresolved = getUnresolvedObjectives(microcycle);
-        const projectedHistory = resultDays.map(d => ({
-            modality: d.template.modality,
-            type: d.template.title,
-            systemicCost: d.template.systemicCost,
-        }));
+        const projectedHistory: RecentHistoryEntry[] = [
+            ...(seed.trailingHistory ?? []),
+            ...resultDays.map(d => ({
+                modality: d.template.modality,
+                type: d.template.title,
+                systemicCost: d.template.systemicCost,
+            })),
+        ];
 
         // Real hard-gate feasibility first (equipment actually owned, guardrails,
         // indoor/outdoor boundary, weekday/weekend time budget) -- this used to be
@@ -454,7 +470,8 @@ export function generateWeekAheadPlan(
 
         const pickStimulus = enrichedStimulusProfile(pick.template);
         const addressed = unresolved
-            .filter(o => stimulusCoverage(pickStimulus, o.targetStimulus) >= STIMULUS_CREDIT_COVERAGE_THRESHOLD)
+            .filter(o => stimulusCoverage(pickStimulus, o.targetStimulus) >= STIMULUS_CREDIT_COVERAGE_THRESHOLD
+                && qualifiesForObjective(pickStimulus, pick.template.modality, o.qualification))
             .map(o => o.title);
         applyPick(date, pick.template);
 
@@ -507,7 +524,11 @@ export async function generateWeekAheadPlanWithIntent(
         todayDate,
         todayRec,
         tomorrowRec,
-        { microcycle: intent.microcycle, fatigue: intent.fatigue },
+        {
+            microcycle: intent.microcycle,
+            fatigue: intent.fatigue,
+            trailingHistory: projectTrailingHistory(intent.history),
+        },
         { ...options, events },
     );
 }

@@ -34,7 +34,8 @@ export async function resolveTrainingIntent(
     const microcycle = buildMicrocycleState(
         periodization.phase,
         addDaysToLocalDateString(date, -windowDays),
-        history
+        history,
+        periodization.focusEvent,
     );
     const unresolvedObjectives = getUnresolvedObjectives(microcycle);
     const fatigue = buildFatigueStateFromHistory(history, computeInternalResponseStrain(readiness), date);

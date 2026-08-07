@@ -143,6 +143,9 @@ export interface WeeklyObjective {
     targetExposures: number;
     completedExposures: number;
     targetStimulus: Record<string, number>;
+    /** Optional stricter completion policy for objectives whose target stimulus alone
+     * is too broad to identify the intended event-specific exposure. */
+    qualification?: ObjectiveQualification;
 }
 
 export interface MicrocycleState {
@@ -157,6 +160,14 @@ export interface WorkoutStimulusProfile {
     maxStrength: number;         // 0.0 - 1.0
     hypertrophy: number;         // 0.0 - 1.0
     mobilityRecovery: number;    // 0.0 - 1.0
+}
+
+export interface ObjectiveQualification {
+    /** Every specified axis in a candidate's own stimulus profile must clear its minimum. */
+    minimumStimulus?: Partial<Record<keyof WorkoutStimulusProfile, number>>;
+    /** Restricts credit to these modalities when non-empty. An absent or empty list is
+     * intentionally modality-agnostic. */
+    allowedModalities?: SessionTemplate['modality'][];
 }
 
 export interface WorkoutCostProfile {
