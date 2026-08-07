@@ -33,10 +33,6 @@ function formatEventTiming(daysToEvent: number | null): string {
 }
 
 function DetailedTodayPlan({ prescription }: { prescription: WorkoutPrescription }) {
-  const uniqueCues = [...new Set(
-    prescription.displayBlocks.flatMap((block) => block.steps.flatMap((step) => step.cues))
-  )];
-
   return (
     <section className="detailed-plan" aria-label="Detailed training plan">
       <div className="detailed-plan-header">
@@ -45,6 +41,7 @@ function DetailedTodayPlan({ prescription }: { prescription: WorkoutPrescription
       </div>
       {prescription.displayBlocks.map((block) => (
         <section className={`plan-block plan-block-${block.role}`} key={block.id}>
+          <h6 className="plan-block-role">{block.name}</h6>
           {block.steps.map((step) => (
             <article className="plan-step" key={step.id}>
               <div className="plan-step-heading">
@@ -52,13 +49,46 @@ function DetailedTodayPlan({ prescription }: { prescription: WorkoutPrescription
                 {step.optional && <span className="optional-step">Optional</span>}
               </div>
               <p className="plan-dose">{step.dose}{step.rest ? ` · ${step.rest}` : ''}</p>
+
+              {/* Step Targets */}
+              {step.structuredTargets && step.structuredTargets.length > 0 ? (
+                <ul className="step-target-list">
+                  {step.structuredTargets.map((t, idx) => (
+                    <li key={idx} className={`target-item role-${t.role}`}>
+                      <span className={`target-role-badge role-${t.role}`}>{t.label}</span>
+                      <span className="target-value">{t.valueText}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : step.targets && step.targets.length > 0 ? (
+                <ul className="plan-targets">
+                  {step.targets.map((target, idx) => (
+                    <li key={idx}>{target}</li>
+                  ))}
+                </ul>
+              ) : null}
+
+              {/* Step Cues */}
+              {step.cues && step.cues.length > 0 && (
+                <div className="step-cues-list">
+                  {step.cues.map((cue, idx) => (
+                    <p key={idx} className="step-cue">💡 {cue}</p>
+                  ))}
+                </div>
+              )}
+
+              {/* Step Stop Conditions */}
+              {step.stopConditions && step.stopConditions.length > 0 && (
+                <div className="step-stop-conditions">
+                  {step.stopConditions.map((cond, idx) => (
+                    <p key={idx} className="step-stop-condition">⚠️ <strong>Stop if:</strong> {cond}</p>
+                  ))}
+                </div>
+              )}
             </article>
           ))}
         </section>
       ))}
-      {uniqueCues.length > 0 && (
-        <p className="plan-cues"><strong>Key cues:</strong> {uniqueCues.join(' ')}</p>
-      )}
       <p className="plan-legend">{getPrescriptionLegend()}</p>
     </section>
   );
@@ -121,7 +151,7 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
         if (!isCurrent()) return;
         const todayRec = {
           ...baseRecommendation,
-          prescription: resolveWorkoutPrescription(baseRecommendation, userId, input.date, input.preferences?.performanceProfile, baseRecommendation.executionDose) ?? undefined
+          prescription: resolveWorkoutPrescription(baseRecommendation, userId, input.date, input.preferences?.performanceProfile, baseRecommendation.executionDose, input.trainingSettings) ?? undefined
         };
         setRecommendation(todayRec);
 
@@ -185,7 +215,7 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
     const adjustedWithExecution = { ...adjusted, plannedDose, executionDose };
     return {
       ...adjustedWithExecution,
-      prescription: resolveWorkoutPrescription(adjustedWithExecution, userId, decisionInput.date, decisionInput.preferences?.performanceProfile, executionDose) ?? undefined
+      prescription: resolveWorkoutPrescription(adjustedWithExecution, userId, decisionInput.date, decisionInput.preferences?.performanceProfile, executionDose, decisionInput.trainingSettings) ?? undefined
     };
   }, [recommendation, engineInputs, decisionInput, userId]);
 

@@ -110,6 +110,43 @@ export type IntensityTarget =
       stopConditions?: string[];
     };
 
+export type TargetRole = 'primary' | 'secondary' | 'cap' | 'technique' | 'fallback';
+
+export type MetricRequirement = 'power_meter' | 'heart_rate_monitor' | 'cadence_data';
+
+export type TargetValue =
+  | { min: number; max: number }
+  | { minRpm: number; maxRpm: number }
+  | { zone: number; minBpm?: number; maxBpm?: number }
+  | { minBpm: number; maxBpm: number }
+  | { minSecPerKm?: number; maxSecPerKm?: number; relativeToThresholdPercent?: { min: number; max: number } }
+  | { cue: string; successCriteria?: string[]; commonFaults?: string[]; stopConditions?: string[] };
+
+export interface StepTarget {
+  role: TargetRole;
+  metric:
+    | 'rpe'
+    | 'ftp_percent'
+    | 'heart_rate_zone'
+    | 'heart_rate_bpm'
+    | 'cadence'
+    | 'pace'
+    | 'reps_in_reserve'
+    | 'estimated_1rm_percent'
+    | 'technical_quality';
+  value: TargetValue;
+  requires?: MetricRequirement;
+}
+
+export interface DisplayTarget {
+  role: TargetRole;
+  label: string;
+  metric: string;
+  valueText: string;
+  rawWatts?: { min: number; max: number };
+  staleTag?: boolean;
+}
+
 export type WorkoutEnvironment = 'trainer' | 'field' | 'closed_road' | 'low_traffic_road';
 
 export interface TechnicalRequirements {
@@ -125,6 +162,7 @@ export interface WorkoutStep {
   name: string;
   duration: StepDuration;
   target?: IntensityTarget;
+  targets?: StepTarget[];
   sets?: number;
   restAfterSec?: number;
   notes?: string[];
@@ -144,6 +182,7 @@ export interface WorkoutVariantStepOverride {
   durationSeconds?: number;
   restAfterSec?: number;
   target?: IntensityTarget;
+  targets?: StepTarget[];
   omit?: boolean;
 }
 
@@ -338,28 +377,67 @@ export interface PrescriptionStep {
   dose: string;
   rest?: string;
   targets: string[];
+  structuredTargets?: DisplayTarget[];
   cues: string[];
+  stopConditions?: string[];
   optional?: boolean;
 }
 
+export interface SportCyclingProfile {
+  ftpWatts?: number | null;
+  powerZoneSystem?: 'garmin_7_zone_ftp' | 'custom';
+  powerZones?: Record<number, { minPercentFtp: number; maxPercentFtp?: number }>;
+  lthrBpm?: number | null;
+  heartRateZones?: Record<number, { minBpm: number; maxBpm?: number }>;
+  measuredAt?: string | null;
+}
+
+export interface SportRunningProfile {
+  thresholdPaceSecPerKm?: number | null;
+  lthrBpm?: number | null;
+  heartRateZones?: Record<number, { minBpm: number; maxBpm?: number }>;
+  measuredAt?: string | null;
+}
+
+export interface SportStrengthProfile {
+  estimated1RmKg?: Record<string, number>;
+  measuredAt?: string | null;
+}
+
+export interface DeviceCapabilities {
+  powerMeter?: boolean;
+  heartRateMonitor?: boolean;
+  cadenceData?: boolean;
+}
+
 export interface AthletePerformanceProfile {
+  // Legacy top-level fields for backwards compatibility with v2 readers
   ftpWatts?: number | null;
   thresholdPaceSecPerKm?: number | null;
   lthrBpm?: number | null;
+  estimated1RmKg?: Record<string, number>;
   /** Field-level ownership prevents a Garmin refresh from replacing a coach target. */
-  targetSources?: Partial<Record<'ftpWatts' | 'thresholdPaceSecPerKm' | 'lthrBpm', 'garmin' | 'manual'>>;
+  targetSources?: Partial<Record<'ftpWatts' | 'thresholdPaceSecPerKm' | 'lthrBpm' | 'cyclingLthr' | 'runningLthr', 'garmin' | 'manual' | 'coach'>>;
   /** Most recent provider import, retained even when the effective target is manual. */
   garmin?: {
     ftpWatts?: number | null;
     thresholdPaceSecPerKm?: number | null;
     lthrBpm?: number | null;
+    cyclingLthrBpm?: number | null;
+    runningLthrBpm?: number | null;
     fetchedAt: string;
     ftpMeasuredAt?: string | null;
     thresholdMeasuredAt?: string | null;
     lthrMeasuredAt?: string | null;
   };
-  /** Exercise id -> estimated 1RM in kilograms. Optional by design: RIR remains
-   * the safe load prescription when a tested or recent estimate is unavailable. */
-  estimated1RmKg?: Record<string, number>;
+
+  // V3 Sport-scoped profiles
+  cycling?: SportCyclingProfile;
+  running?: SportRunningProfile;
+  strength?: SportStrengthProfile;
+
+  // Device capabilities (default hardware context)
+  capabilities?: DeviceCapabilities;
+
   measuredAt?: string | null;
 }

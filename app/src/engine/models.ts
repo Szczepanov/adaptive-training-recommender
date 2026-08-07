@@ -556,9 +556,14 @@ export type GuardrailKey = 'avoid_high_impact' | 'avoid_heavy_lower_body' | 'avo
 
 export interface TrainingSettings {
     userId: string;
-    schemaVersion: 2;
+    schemaVersion: 2 | 3;
     equipment: Record<EquipmentKey, boolean>;
     guardrails: Record<GuardrailKey, boolean>;
+    capabilities?: {
+        powerMeter?: boolean;
+        heartRateMonitor?: boolean;
+        cadenceData?: boolean;
+    };
     defaults: {
         weekdayMaxMinutes: number | null;
         weekendMaxMinutes: number | null;

@@ -1,12 +1,27 @@
 import { describe, expect, it } from 'vitest';
 import { TEMPLATES } from '../engine/templates.ts';
-import type { Recommendation } from '../engine/models.ts';
+import type { Recommendation, TrainingSettings } from '../engine/models.ts';
 import { resolveWorkoutPrescription, variantFor } from './prescription.ts';
 
 function recommendation(templateId: string, overrides: Partial<Recommendation> = {}): Recommendation {
   const template = TEMPLATES.find((item) => item.id === templateId);
   if (!template) throw new Error(`Missing template ${templateId}`);
   return { template, rationale: 'test', mode: 'train', ...overrides };
+}
+
+function makeSettings(overrides: Partial<TrainingSettings['capabilities']> = {}): TrainingSettings {
+  return {
+    userId: 'u1',
+    schemaVersion: 3,
+    equipment: { free_weights: true, cable_machine: false, treadmill: false, indoor_bike: true, pullup_bar: false },
+    guardrails: { avoid_high_impact: false, avoid_heavy_lower_body: false, avoid_overhead_pressing: false, avoid_heavy_spinal_loading: false },
+    defaults: { environment: 'either', weekdayMaxMinutes: null, weekendMaxMinutes: null },
+    capabilities: { powerMeter: true, heartRateMonitor: true, cadenceData: true, ...overrides },
+    preferences: { preferActiveRecovery: true },
+    migration: { legacyReviewed: true, migratedAt: '2026-08-07T00:00:00Z' },
+    createdAt: '2026-08-07T00:00:00Z',
+    updatedAt: '2026-08-07T00:00:00Z'
+  };
 }
 
 describe('resolveWorkoutPrescription', () => {
@@ -73,5 +88,56 @@ describe('resolveWorkoutPrescription', () => {
     expect(frontSquat?.targets.some((target) => target.includes('reps in reserve'))).toBe(true);
     expect(frontSquat?.targets).toContain('Tempo 31X1 (lower / pause / lift / pause)');
     expect(frontSquat?.targets.some((target) => target.includes('kg'))).toBe(false);
+  });
+
+  it('calculates Zone 2 cycling target watts from FTP and exposes structured step targets', () => {
+    const prescription = resolveWorkoutPrescription(
+      recommendation('end_easy_01'),
+      'u1',
+      '2026-08-07',
+      { cycling: { ftpWatts: 200, lthrBpm: 155, measuredAt: '2026-08-01T00:00:00Z' } },
+      1,
+      makeSettings({ powerMeter: true, heartRateMonitor: true, cadenceData: true })
+    );
+
+    const mainStep = prescription?.displayBlocks.find((b) => b.role === 'main')?.steps[0];
+    expect(mainStep?.structuredTargets).toBeDefined();
+    const primaryPower = mainStep?.structuredTargets?.find((t) => t.metric === 'power');
+    expect(primaryPower?.valueText).toBe('Primary target: FTP-based Zone 2, 56–75% FTP (112–150 W) [Power Zone 2 — FTP-based 5-zone system]');
+    expect(primaryPower?.role).toBe('primary');
+  });
+
+  it('falls back to RPE when power meter is disabled in trainingSettings capabilities', () => {
+    const prescription = resolveWorkoutPrescription(
+      recommendation('end_easy_01'),
+      'u1',
+      '2026-08-07',
+      { cycling: { ftpWatts: 200, lthrBpm: 155, measuredAt: '2026-08-01T00:00:00Z' } },
+      1,
+      makeSettings({ powerMeter: false, heartRateMonitor: true, cadenceData: true })
+    );
+
+    const mainStep = prescription?.displayBlocks.find((b) => b.role === 'main')?.steps[0];
+    const powerTarget = mainStep?.structuredTargets?.find((t) => t.metric === 'power');
+    expect(powerTarget).toBeUndefined();
+    const rpeTarget = mainStep?.structuredTargets?.find((t) => t.metric === 'rpe');
+    expect(rpeTarget?.role).toBe('fallback');
+  });
+
+  it('marks benchmark targets older than 56 days with a review needed tag', () => {
+    const oldDate = new Date(Date.now() - 60 * 86400 * 1000).toISOString();
+    const prescription = resolveWorkoutPrescription(
+      recommendation('end_easy_01'),
+      'u1',
+      '2026-08-07',
+      { cycling: { ftpWatts: 200, measuredAt: oldDate } },
+      1,
+      makeSettings({ powerMeter: true })
+    );
+
+    const mainStep = prescription?.displayBlocks.find((b) => b.role === 'main')?.steps[0];
+    const powerTarget = mainStep?.structuredTargets?.find((t) => t.metric === 'power');
+    expect(powerTarget?.staleTag).toBe(true);
+    expect(powerTarget?.valueText).toContain('Review needed');
   });
 });

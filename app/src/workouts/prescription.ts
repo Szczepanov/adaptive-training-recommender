@@ -1,11 +1,13 @@
-import type { Recommendation } from '../engine/models.ts';
+import type { Recommendation, TrainingSettings } from '../engine/models.ts';
 import { EXERCISES } from './exercises.ts';
 import { WORKOUTS } from './catalog.ts';
 import type {
   AthletePerformanceProfile,
-  IntensityTarget,
+  DisplayTarget,
   PrescriptionBlock,
   PrescriptionStep,
+  StepTarget,
+  TargetRole,
   WorkoutBlock,
   WorkoutDefinition,
   WorkoutPrescription,
@@ -67,66 +69,239 @@ function formatDose(step: WorkoutStep): string {
   return step.sets ? `${step.sets} × ${unit}` : unit;
 }
 
-function formatTarget(target: IntensityTarget, profile?: AthletePerformanceProfile): string {
+const ROLE_LABELS: Record<TargetRole, string> = {
+  primary: 'Primary',
+  fallback: 'Effort check',
+  technique: 'Technique',
+  secondary: 'Secondary',
+  cap: 'Do not exceed'
+};
+
+const STALENESS_THRESHOLD_MS = 56 * 24 * 60 * 60 * 1000; // 56 days
+
+function isStale(measuredAt?: string | null): boolean {
+  if (!measuredAt) return false;
+  const time = new Date(measuredAt).getTime();
+  return !isNaN(time) && Date.now() - time > STALENESS_THRESHOLD_MS;
+}
+
+/** Compatibility adapter: Normalizes legacy step.target into canonical targets array */
+export function normalizeStepTargets(step: WorkoutStep): StepTarget[] {
+  if (step.targets && step.targets.length > 0) return step.targets;
+  if (!step.target) return [];
+
+  const target = step.target;
   switch (target.type) {
-    case 'rpe': return `RPE ${target.min}–${target.max}/10`;
-    case 'heart_rate_zone': return `Heart-rate zone ${target.zone}`;
-    case 'power_zone': return `Power zone ${target.zone}`;
-    case 'cadence': return `${target.minRpm}–${target.maxRpm} rpm`;
-    case 'reps_in_reserve': return `${target.min}–${target.max} reps in reserve`;
-    case 'technical_quality': return target.cue;
-    case 'ftp_percent': {
-      const relative = `${target.min}–${target.max}% FTP`;
-      if (!profile?.ftpWatts || profile.ftpWatts <= 0) return relative;
-      return `${relative} (${Math.round(profile.ftpWatts * target.min / 100)}–${Math.round(profile.ftpWatts * target.max / 100)} W)`;
-    }
+    case 'rpe':
+      return [{ role: 'primary', metric: 'rpe', value: { min: target.min, max: target.max } }];
+    case 'ftp_percent':
+      return [
+        { role: 'primary', metric: 'ftp_percent', value: { min: target.min, max: target.max }, requires: 'power_meter' },
+        { role: 'fallback', metric: 'rpe', value: { min: target.min <= 60 ? 1 : target.min <= 75 ? 2 : 4, max: target.max <= 75 ? 3 : 6 } }
+      ];
+    case 'cadence':
+      return [{ role: 'technique', metric: 'cadence', value: { minRpm: target.minRpm, maxRpm: target.maxRpm }, requires: 'cadence_data' }];
+    case 'heart_rate_zone':
+      return [{ role: 'secondary', metric: 'heart_rate_zone', value: { zone: target.zone }, requires: 'heart_rate_monitor' }];
+    case 'reps_in_reserve':
+      return [{ role: 'primary', metric: 'reps_in_reserve', value: { min: target.min, max: target.max } }];
+    case 'technical_quality':
+      return [{ role: 'technique', metric: 'technical_quality', value: target }];
+    case 'power_zone':
+      return [
+        { role: 'primary', metric: 'ftp_percent', value: { min: 56, max: 75 }, requires: 'power_meter' },
+        { role: 'fallback', metric: 'rpe', value: { min: 2, max: 3 } }
+      ];
   }
 }
 
-function additionalTargets(step: WorkoutStep, workout: WorkoutDefinition, profile?: AthletePerformanceProfile): string[] {
-  const targets: string[] = [];
-  if (step.target) targets.push(formatTarget(step.target, profile));
+function resolveStructuredTargets(
+  step: WorkoutStep,
+  workout: WorkoutDefinition,
+  profile?: AthletePerformanceProfile,
+  trainingSettings?: TrainingSettings
+): { structured: DisplayTarget[]; stringTargets: string[]; stepStopConditions: string[] } {
+  const rawTargets = normalizeStepTargets(step);
+  const structured: DisplayTarget[] = [];
+  const stringTargets: string[] = [];
+  const stepStopConditions: string[] = [];
 
-  if (workout.modality === 'cycling' && !step.target?.type.includes('ftp')) {
-    targets.push(profile?.ftpWatts ? 'Power: use RPE target; no fixed watts for this step' : 'Power: set FTP in Preferences to unlock watts where applicable');
+  // Determine tri-state device capabilities
+  const powerMeterAvailable = trainingSettings?.capabilities?.powerMeter ?? profile?.capabilities?.powerMeter;
+  const hrMonitorAvailable = trainingSettings?.capabilities?.heartRateMonitor ?? profile?.capabilities?.heartRateMonitor;
+  const cadenceAvailable = trainingSettings?.capabilities?.cadenceData ?? profile?.capabilities?.cadenceData;
+
+  const cyclingFtp = profile?.cycling?.ftpWatts ?? profile?.ftpWatts;
+  const cyclingFtpStale = isStale(profile?.cycling?.measuredAt ?? profile?.measuredAt);
+
+  const cyclingLthr = profile?.cycling?.lthrBpm ?? profile?.lthrBpm;
+  const runningLthr = profile?.running?.lthrBpm ?? profile?.lthrBpm;
+  const runningPace = profile?.running?.thresholdPaceSecPerKm ?? profile?.thresholdPaceSecPerKm;
+  const runningPaceStale = isStale(profile?.running?.measuredAt ?? profile?.measuredAt);
+
+  for (const target of rawTargets) {
+    if (target.requires === 'power_meter' && powerMeterAvailable === false) continue;
+    if (target.requires === 'heart_rate_monitor' && hrMonitorAvailable === false) continue;
+    if (target.requires === 'cadence_data' && cadenceAvailable === false) continue;
+
+    switch (target.metric) {
+      case 'rpe': {
+        if ('min' in target.value && 'max' in target.value) {
+          const val = target.value as { min: number; max: number };
+          const text = `RPE ${val.min}–${val.max}/10`;
+          structured.push({ role: target.role, label: ROLE_LABELS[target.role], metric: 'rpe', valueText: text });
+          stringTargets.push(text);
+        }
+        break;
+      }
+      case 'ftp_percent': {
+        if (workout.modality !== 'cycling') break; // Never show cycling FTP watts on generic non-cycling sessions
+        if ('min' in target.value && 'max' in target.value) {
+          const val = target.value as { min: number; max: number };
+          const isZone2 = val.min === 56 && val.max === 75;
+          const zoneSystemLabel = profile?.cycling?.powerZoneSystem === 'custom'
+            ? 'Power Zone 2 — custom FTP zones'
+            : 'Power Zone 2 — FTP-based 5-zone system';
+
+          if (cyclingFtp && cyclingFtp > 0 && powerMeterAvailable !== false) {
+            const minW = Math.round(cyclingFtp * val.min / 100);
+            const maxW = Math.round(cyclingFtp * val.max / 100);
+            const valueText = isZone2
+              ? `Primary target: FTP-based Zone 2, 56–75% FTP (${minW}–${maxW} W) [${zoneSystemLabel}]`
+              : `Power: ${val.min}–${val.max}% FTP (${minW}–${maxW} W)`;
+            
+            structured.push({
+              role: target.role,
+              label: ROLE_LABELS[target.role],
+              metric: 'power',
+              valueText: cyclingFtpStale ? `${valueText} (Review needed: FTP measured >56d ago)` : valueText,
+              rawWatts: { min: minW, max: maxW },
+              staleTag: cyclingFtpStale
+            });
+            stringTargets.push(valueText);
+          } else {
+            // Power missing or unconfigured: omit watts and rely on RPE fallback
+            const relativeText = `${val.min}–${val.max}% FTP (set FTP & power meter in Preferences for W)`;
+            if (target.role !== 'primary') {
+              stringTargets.push(relativeText);
+            }
+          }
+        }
+        break;
+      }
+      case 'cadence': {
+        if ('minRpm' in target.value && 'maxRpm' in target.value) {
+          const val = target.value as { minRpm: number; maxRpm: number };
+          const text = `Cadence: ${val.minRpm}–${val.maxRpm} rpm`;
+          structured.push({ role: target.role, label: ROLE_LABELS[target.role], metric: 'cadence', valueText: text });
+          stringTargets.push(text);
+        }
+        break;
+      }
+      case 'heart_rate_zone':
+      case 'heart_rate_bpm': {
+        if (workout.modality === 'cycling') {
+          // Cycling HR v1 policy: show only when explicit cycling LTHR/zones exist
+          if (cyclingLthr && cyclingLthr > 0) {
+            const text = `Cycling HR guardrail: stay within endurance range (below LTHR ${cyclingLthr} bpm)`;
+            structured.push({ role: target.role, label: ROLE_LABELS[target.role], metric: 'heart_rate', valueText: text });
+            stringTargets.push(text);
+          }
+        } else if (workout.modality === 'running') {
+          if (runningLthr && runningLthr > 0) {
+            const text = `Running HR guardrail: stay below LTHR ${runningLthr} bpm`;
+            structured.push({ role: target.role, label: ROLE_LABELS[target.role], metric: 'heart_rate', valueText: text });
+            stringTargets.push(text);
+          }
+        }
+        break;
+      }
+      case 'pace': {
+        if (workout.modality === 'running' && runningPace) {
+          const text = `Threshold pace reference: ${formatPace(runningPace)}`;
+          structured.push({
+            role: target.role,
+            label: ROLE_LABELS[target.role],
+            metric: 'pace',
+            valueText: runningPaceStale ? `${text} (Review needed: threshold pace measured >56d ago)` : text,
+            staleTag: runningPaceStale
+          });
+          stringTargets.push(text);
+        }
+        break;
+      }
+      case 'reps_in_reserve': {
+        if ('min' in target.value && 'max' in target.value) {
+          const val = target.value as { min: number; max: number };
+          const text = `Target RIR: ${val.min}–${val.max} reps in reserve`;
+          structured.push({ role: target.role, label: ROLE_LABELS[target.role], metric: 'reps_in_reserve', valueText: text });
+          stringTargets.push(text);
+        }
+        break;
+      }
+      case 'technical_quality': {
+        if ('cue' in target.value) {
+          const val = target.value as { cue: string; successCriteria?: string[]; commonFaults?: string[]; stopConditions?: string[] };
+          structured.push({ role: target.role, label: ROLE_LABELS[target.role], metric: 'technique', valueText: val.cue });
+          stringTargets.push(val.cue);
+          if (val.stopConditions) stepStopConditions.push(...val.stopConditions);
+        }
+        break;
+      }
+    }
   }
-  if (workout.modality === 'running') {
-    targets.push(profile?.thresholdPaceSecPerKm
-      ? `Threshold reference: ${formatPace(profile.thresholdPaceSecPerKm)}; let the RPE target set today’s pace`
-      : 'Pace: use RPE; add threshold pace in Preferences to show min/km guidance');
-  }
-  if ((workout.modality === 'cycling' || workout.modality === 'running') && profile?.lthrBpm) {
-    targets.push(`HR guardrail: stay below LTHR ${profile.lthrBpm} bpm unless the interval target says otherwise`);
-  }
+
+  // Modality-specific contextual fallbacks
   if (workout.modality === 'strength') {
-    const estimated1Rm = profile?.estimated1RmKg?.[step.exerciseId];
+    const estimated1Rm = profile?.strength?.estimated1RmKg?.[step.exerciseId] ?? profile?.estimated1RmKg?.[step.exerciseId];
     if (estimated1Rm) {
       const repetitions = step.duration.type === 'repetitions' ? step.duration.repetitions : undefined;
       const percentage = repetitions && repetitions <= 5 ? [0.70, 0.80] : repetitions && repetitions <= 8 ? [0.60, 0.75] : [0.45, 0.65];
-      targets.push(`Starting load: ${Math.round(estimated1Rm * percentage[0] / 2.5) * 2.5}–${Math.round(estimated1Rm * percentage[1] / 2.5) * 2.5} kg (about ${percentage[0] * 100}–${percentage[1] * 100}% e1RM); RIR takes precedence`);
+      const minKg = Math.round(estimated1Rm * percentage[0] / 2.5) * 2.5;
+      const maxKg = Math.round(estimated1Rm * percentage[1] / 2.5) * 2.5;
+      const text = `Starting load: ${minKg}–${maxKg} kg (~${Math.round(percentage[0] * 100)}–${Math.round(percentage[1] * 100)}% e1RM); RIR takes precedence`;
+      structured.push({ role: 'secondary', label: ROLE_LABELS.secondary, metric: 'load', valueText: text });
+      stringTargets.push(text);
     }
     const tempo = strengthTempos[step.exerciseId];
-    if (tempo) targets.push(`Tempo ${tempo} (lower / pause / lift / pause)`);
+    if (tempo) {
+      const text = `Tempo ${tempo} (lower / pause / lift / pause)`;
+      structured.push({ role: 'technique', label: ROLE_LABELS.technique, metric: 'tempo', valueText: text });
+      stringTargets.push(text);
+    }
   }
-  return targets;
+
+  return { structured, stringTargets, stepStopConditions };
 }
 
-function toDisplayStep(step: WorkoutStep, workout: WorkoutDefinition, profile?: AthletePerformanceProfile): PrescriptionStep {
+function toDisplayStep(
+  step: WorkoutStep,
+  workout: WorkoutDefinition,
+  profile?: AthletePerformanceProfile,
+  trainingSettings?: TrainingSettings
+): PrescriptionStep {
   const exercise = exerciseById.get(step.exerciseId);
-  const technicalDetails = step.target?.type === 'technical_quality'
+  const { structured, stringTargets, stepStopConditions } = resolveStructuredTargets(step, workout, profile, trainingSettings);
+
+  const legacyTechnical = step.target?.type === 'technical_quality'
     ? [
       ...(step.target.successCriteria ?? []).map((criterion) => `Quality: ${criterion}`),
       ...(step.target.commonFaults ?? []).map((fault) => `Avoid: ${fault}`),
       ...(step.target.stopConditions ?? []).map((condition) => `Stop: ${condition}`)
     ]
     : [];
+
+  const allStopConditions = [...stepStopConditions, ...(step.target?.type === 'technical_quality' ? step.target.stopConditions ?? [] : [])];
+
   return {
     id: step.id,
     name: step.name,
     dose: formatDose(step),
     ...(step.restAfterSec !== undefined ? { rest: `${formatSeconds(step.restAfterSec)} recovery` } : {}),
-    targets: additionalTargets(step, workout, profile),
-    cues: [exercise?.instruction, ...technicalDetails, ...(step.notes ?? [])].filter((cue): cue is string => Boolean(cue)),
+    targets: stringTargets,
+    structuredTargets: structured,
+    cues: [exercise?.instruction, ...legacyTechnical, ...(step.notes ?? [])].filter((cue): cue is string => Boolean(cue)),
+    ...(allStopConditions.length > 0 ? { stopConditions: allStopConditions } : {}),
     ...(step.optional ? { optional: true } : {})
   };
 }
@@ -147,7 +322,14 @@ function applyVariant(workout: WorkoutDefinition, variantId: 'full' | 'reduced' 
       const duration = override?.durationSeconds !== undefined && step.duration.type === 'time'
         ? { type: 'time' as const, seconds: override.durationSeconds }
         : step.duration;
-      return [{ ...step, duration, ...(override?.sets !== undefined ? { sets: override.sets } : {}), ...(override?.restAfterSec !== undefined ? { restAfterSec: override.restAfterSec } : {}), ...(override?.target ? { target: override.target } : {}) }];
+      return [{
+        ...step,
+        duration,
+        ...(override?.sets !== undefined ? { sets: override.sets } : {}),
+        ...(override?.restAfterSec !== undefined ? { restAfterSec: override.restAfterSec } : {}),
+        ...(override?.target ? { target: override.target } : {}),
+        ...(override?.targets ? { targets: override.targets } : {})
+      }];
     })
   }));
 }
@@ -170,7 +352,8 @@ export function resolveWorkoutPrescription(
   userId: string,
   date: string,
   profile?: AthletePerformanceProfile,
-  executionDose?: number
+  executionDose?: number,
+  trainingSettings?: TrainingSettings
 ): WorkoutPrescription | null {
   const workout = workoutForTemplate(recommendation.template.id);
   if (!workout) return null;
@@ -182,7 +365,7 @@ export function resolveWorkoutPrescription(
     id: block.id,
     name: block.name,
     role: block.role,
-    steps: block.steps.map((step) => toDisplayStep(step, workout, profile))
+    steps: block.steps.map((step) => toDisplayStep(step, workout, profile, trainingSettings))
   }));
 
   return {

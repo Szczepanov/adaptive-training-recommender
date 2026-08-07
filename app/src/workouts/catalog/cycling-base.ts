@@ -12,13 +12,13 @@ export const CYCLING_BASE_WORKOUTS: WorkoutDefinition[] = [
     eligibility: { maximumSoreness: 8, forbiddenPainFlags: ['knee_swelling', 'worsening_achilles_pain'] },
     equipment: ['bike'], contraindicationTags: ['knee_swelling'],
     blocks: [
-      { id: 'main', name: 'Easy continuous spin', role: 'main', steps: [ timeStep('easy_spin', 'bike_easy_spin', 'Easy spin', 1200, { target: { type: 'rpe', min: 1, max: 2 }, notes: ['Smooth cadence', 'No low-cadence grinding'] }) ]},
-      { id: 'cooldown', name: 'Downshift', role: 'cooldown', steps: [ timeStep('downshift', 'bike_easy_spin', 'Very easy finish', 600, { target: { type: 'rpe', min: 1, max: 1 } }) ]}
+      { id: 'main', name: 'Easy continuous spin', role: 'main', steps: [ timeStep('easy_spin', 'bike_easy_spin', 'Easy spin', 1200, { targets: [{ role: 'fallback', metric: 'rpe', value: { min: 1, max: 2 } }, { role: 'technique', metric: 'cadence', value: { minRpm: 85, maxRpm: 95 }, requires: 'cadence_data' }], notes: ['Smooth cadence', 'No low-cadence grinding'] }) ]},
+      { id: 'cooldown', name: 'Downshift', role: 'cooldown', steps: [ timeStep('downshift', 'bike_easy_spin', 'Very easy finish', 600, { targets: [{ role: 'fallback', metric: 'rpe', value: { min: 1, max: 1 } }] }) ]}
     ],
     variants: [
       { id: 'full', targetDurationMin: 30, loadMultiplier: 1, rationale: 'Normal recovery dose.', stepOverrides: [] },
       { id: 'reduced', targetDurationMin: 20, loadMultiplier: 0.7, rationale: 'Shorten when recovery capacity or time is limited.', stepOverrides: [{ stepId: 'easy_spin', durationSeconds: 900 }, { stepId: 'downshift', durationSeconds: 300 }] },
-      { id: 'return_to_training', targetDurationMin: 20, loadMultiplier: 0.6, rationale: 'Use only if symptoms remain quiet during movement.', stepOverrides: [{ stepId: 'easy_spin', durationSeconds: 900, target: { type: 'rpe', min: 1, max: 2 } }, { stepId: 'downshift', durationSeconds: 300 }] }
+      { id: 'return_to_training', targetDurationMin: 20, loadMultiplier: 0.6, rationale: 'Use only if symptoms remain quiet during movement.', stepOverrides: [{ stepId: 'easy_spin', durationSeconds: 900, targets: [{ role: 'fallback', metric: 'rpe', value: { min: 1, max: 2 } }] }, { stepId: 'downshift', durationSeconds: 300 }] }
     ],
     parameters: [{ id: 'easy_duration', label: 'Easy riding duration', unit: 'minutes', defaultValue: 20, minimum: 15, maximum: 35, step: 5, appliesToStepIds: ['easy_spin'], bindings: [{ stepId: 'easy_spin', property: 'duration.seconds' }], description: 'Adjust recovery volume without raising intensity.' }],
     regressions: ['rest_complete_01'], progressions: ['cycling_zone2_standard_01'], substitutions: [],
@@ -36,9 +36,9 @@ export const CYCLING_BASE_WORKOUTS: WorkoutDefinition[] = [
     eligibility: { maximumSoreness: 7, forbiddenPainFlags: ['knee_swelling', 'worsening_achilles_pain'] },
     equipment: ['bike'], contraindicationTags: ['acute_knee_pain'],
     blocks: [
-      { id: 'warmup', name: 'Progressive warm-up', role: 'warmup', steps: [ timeStep('warmup_easy', 'bike_progressive_warmup', 'Progressive easy riding', 600, { target: { type: 'rpe', min: 1, max: 2 } }) ]},
-      { id: 'main', name: 'Zone 2 base', role: 'main', steps: [ timeStep('zone2_main', 'bike_easy_spin', 'Steady Zone 2', 2400, { target: { type: 'rpe', min: 2, max: 3 }, notes: ['Conversational breathing', 'Usually 85–95 rpm', 'Power and heart rate should remain stable'] }) ]},
-      { id: 'cooldown', name: 'Cool-down', role: 'cooldown', steps: [ timeStep('cooldown_easy', 'bike_easy_spin', 'Easy finish', 600, { target: { type: 'rpe', min: 1, max: 2 } }) ]}
+      { id: 'warmup', name: 'Progressive warm-up', role: 'warmup', steps: [ timeStep('warmup_easy', 'bike_progressive_warmup', 'Progressive easy riding', 600, { targets: [{ role: 'fallback', metric: 'rpe', value: { min: 1, max: 2 } }, { role: 'technique', metric: 'cadence', value: { minRpm: 80, maxRpm: 90 }, requires: 'cadence_data' }], notes: ['Gradually raise temperature and breathing; no grinding'] }) ]},
+      { id: 'main', name: 'Zone 2 base', role: 'main', steps: [ timeStep('zone2_main', 'bike_easy_spin', 'Steady Zone 2', 2400, { targets: [{ role: 'primary', metric: 'ftp_percent', value: { min: 56, max: 75 }, requires: 'power_meter' }, { role: 'fallback', metric: 'rpe', value: { min: 2, max: 3 } }, { role: 'technique', metric: 'cadence', value: { minRpm: 85, maxRpm: 95 }, requires: 'cadence_data' }, { role: 'secondary', metric: 'heart_rate_zone', value: { zone: 2 }, requires: 'heart_rate_monitor' }], notes: ['Conversational breathing; use light enough gearing to avoid grinding', 'Stable power and HR; back off if perceived effort rises unusually'] }) ]},
+      { id: 'cooldown', name: 'Cool-down', role: 'cooldown', steps: [ timeStep('cooldown_easy', 'bike_easy_spin', 'Easy finish', 600, { targets: [{ role: 'fallback', metric: 'rpe', value: { min: 1, max: 2 } }], notes: ['Let breathing and leg tension settle'] }) ]}
     ],
     variants: [
       { id: 'full', targetDurationMin: 60, loadMultiplier: 1, rationale: 'Standard aerobic volume.', stepOverrides: [] },
