@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import './App.css';
 import './index.css';
 import { auth } from './firebase';
-import { onAuthStateChanged } from 'firebase/auth';
+import { onAuthStateChanged, signInWithEmailAndPassword } from 'firebase/auth';
 import { Home } from './components/Home';
 import { DailyCheckin } from './components/DailyCheckin';
 import { Goals } from './components/Goals';
@@ -69,8 +69,6 @@ function App() {
     setErrorMsg("");
     
     try {
-      // Import signInWithEmailAndPassword only when needed
-      const { signInWithEmailAndPassword } = await import('firebase/auth');
       await signInWithEmailAndPassword(auth, email, password);
     } catch (e: unknown) {
       console.error(e);
