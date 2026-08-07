@@ -8,6 +8,7 @@ from .canonical import (
     CanonicalActivity,
     CanonicalBodyBattery,
     CanonicalDailyMetrics,
+    CanonicalHeartRateZones,
     CanonicalStress,
     CanonicalTrainingReadiness,
     CanonicalTrainingStatus,
@@ -95,6 +96,27 @@ def _canonicalize_training_status(training_status_today: dict[str, Any] | None) 
     )
 
 
+def _canonicalize_heart_rate_zones(zones_list: list[dict[str, Any]] | None) -> CanonicalHeartRateZones | None:
+    """get_heart_rate_zones() returns one entry per sport profile (DEFAULT, RUNNING,
+    CYCLING, ...); DEFAULT is used as the single representative value -- extracted
+    defensively (never assume the shape/type Garmin actually returned), matching
+    _canonicalize_training_status's degrade-to-None-fields precedent."""
+    if not isinstance(zones_list, list) or not zones_list:
+        return None
+
+    default_entry = next((z for z in zones_list if isinstance(z, dict) and z.get("sport") == "DEFAULT"), None)
+    entry = default_entry or (zones_list[0] if isinstance(zones_list[0], dict) else None)
+    if entry is None:
+        return None
+
+    return CanonicalHeartRateZones(
+        resting_hr_used=entry.get("restingHeartRateUsed"),
+        max_hr_used=entry.get("maxHeartRateUsed"),
+        zone4_floor=entry.get("zone4Floor"),
+        sport=entry.get("sport"),
+    )
+
+
 def canonicalize_from_raw(
     stats_today: dict[str, Any],
     stats_fallback: dict[str, Any] | None,
@@ -107,6 +129,7 @@ def canonicalize_from_raw(
     body_battery_today: list[dict[str, Any]] | None = None,
     training_readiness_today: list[dict[str, Any]] | None = None,
     training_status_today: dict[str, Any] | None = None,
+    heart_rate_zones: list[dict[str, Any]] | None = None,
 ) -> CanonicalDailyMetrics:
     """Pure Garmin-shape parsing + fallback logic, producing a provider-neutral
     CanonicalDailyMetrics. Shared by GarminProviderAdapter.fetch_daily_metrics (live
@@ -166,6 +189,7 @@ def canonicalize_from_raw(
         body_battery=_canonicalize_body_battery(body_battery_today),
         training_readiness=_canonicalize_training_readiness(training_readiness_today),
         training_status=_canonicalize_training_status(training_status_today),
+        heart_rate_zones=_canonicalize_heart_rate_zones(heart_rate_zones),
     )
 
 
@@ -271,6 +295,10 @@ class GarminProviderAdapter:
         body_battery_today = self._fetch_enrichment("body_battery", lambda: self.client.get_body_battery(target_date_iso))
         training_readiness_today = self._fetch_enrichment("training_readiness", lambda: self.client.get_training_readiness(target_date_iso))
         training_status_today = self._fetch_enrichment("training_status", lambda: self.client.get_training_status(target_date_iso))
+        # Not actually date-scoped (a profile setting, not per-day telemetry) but fetched
+        # on the same daily cadence as the other enrichment endpoints for simplicity --
+        # see GarminClientWrapper.get_heart_rate_zones.
+        heart_rate_zones = self._fetch_enrichment("heart_rate_zones", lambda: self.client.get_heart_rate_zones())
 
         canonical = canonicalize_from_raw(
             stats_today=stats_today,
@@ -284,6 +312,7 @@ class GarminProviderAdapter:
             body_battery_today=body_battery_today,
             training_readiness_today=training_readiness_today,
             training_status_today=training_status_today,
+            heart_rate_zones=heart_rate_zones,
         )
 
         raw_payloads: dict[str, Any] = {
@@ -302,6 +331,8 @@ class GarminProviderAdapter:
             raw_payloads["training_readiness"] = training_readiness_today
         if training_status_today is not None:
             raw_payloads["training_status"] = training_status_today
+        if heart_rate_zones is not None:
+            raw_payloads["heart_rate_zones"] = heart_rate_zones
 
         return ProviderFetchResult(canonical=canonical, raw_payloads=raw_payloads)
 

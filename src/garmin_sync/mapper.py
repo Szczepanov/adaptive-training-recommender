@@ -10,6 +10,7 @@ from .models import (
     DailyRecoverySnapshot,
     DataQuality,
     DerivedMetrics,
+    HeartRateZonesSummary,
     MetricDates,
     PrimaryActivity,
     RawMetrics,
@@ -154,6 +155,15 @@ def build_snapshot_from_canonical(
         )
         if canonical.training_status is not None else None
     )
+    heart_rate_zones_summary = (
+        HeartRateZonesSummary(
+            restingHrUsed=canonical.heart_rate_zones.resting_hr_used,
+            maxHrUsed=canonical.heart_rate_zones.max_hr_used,
+            zone4Floor=canonical.heart_rate_zones.zone4_floor,
+            sport=canonical.heart_rate_zones.sport,
+        )
+        if canonical.heart_rate_zones is not None else None
+    )
 
     now_iso = synced_at_iso or datetime.now(timezone.utc).isoformat()
 
@@ -183,6 +193,7 @@ def build_snapshot_from_canonical(
         stress=stress_summary,
         trainingReadiness=training_readiness_summary,
         trainingStatus=training_status_summary,
+        heartRateZones=heart_rate_zones_summary,
     )
 
     data_quality = DataQuality(
@@ -195,6 +206,7 @@ def build_snapshot_from_canonical(
         bodyBatteryDetailAvailable=canonical.body_battery is not None and canonical.body_battery.change is not None,
         trainingReadinessAvailable=canonical.training_readiness is not None and canonical.training_readiness.score is not None,
         trainingStatusAvailable=canonical.training_status is not None and canonical.training_status.status_phrase is not None,
+        heartRateZonesAvailable=canonical.heart_rate_zones is not None and canonical.heart_rate_zones.max_hr_used is not None,
     )
 
     return DailyRecoverySnapshot(

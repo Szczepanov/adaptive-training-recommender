@@ -261,3 +261,87 @@ def test_canonicalize_training_status_handles_missing_device_data_gracefully():
 
     assert _canonicalize_training_status({}) is None
     assert _canonicalize_training_status(None) is None
+
+
+# --- Heart rate zones -----------------------------------------------------------
+
+def test_canonicalize_from_raw_populates_heart_rate_zones_from_default_sport():
+    with open(FIXTURES_DIR / "stats.json") as f:
+        stats = json.load(f)
+    with open(FIXTURES_DIR / "sleep.json") as f:
+        sleep = json.load(f)
+    with open(FIXTURES_DIR / "hrv.json") as f:
+        hrv = json.load(f)
+    with open(FIXTURES_DIR / "heart_rate_zones.json") as f:
+        zones = json.load(f)
+
+    canonical = canonicalize_from_raw(
+        stats_today=stats, stats_fallback=None, sleep_today=sleep, sleep_fallback=None, hrv_today=hrv,
+        target_date_iso="2026-08-06", yesterday_iso="2026-08-05",
+        heart_rate_zones=zones,
+    )
+
+    assert canonical.heart_rate_zones is not None
+    # Fixture's DEFAULT entry, not the RUNNING entry that follows it -- proves the
+    # sport-picking logic isn't just "take the first item".
+    assert canonical.heart_rate_zones.resting_hr_used == 52
+    assert canonical.heart_rate_zones.max_hr_used == 188
+    assert canonical.heart_rate_zones.zone4_floor == 152
+    assert canonical.heart_rate_zones.sport == "DEFAULT"
+
+
+def test_canonicalize_heart_rate_zones_falls_back_to_first_entry_without_default():
+    from garmin_sync.garmin_provider import _canonicalize_heart_rate_zones
+
+    result = _canonicalize_heart_rate_zones([
+        {"sport": "RUNNING", "restingHeartRateUsed": 50, "maxHeartRateUsed": 190, "zone4Floor": 150},
+    ])
+    assert result is not None
+    assert result.sport == "RUNNING"
+    assert result.max_hr_used == 190
+
+
+def test_canonicalize_heart_rate_zones_handles_missing_or_malformed_input_gracefully():
+    from garmin_sync.garmin_provider import _canonicalize_heart_rate_zones
+
+    assert _canonicalize_heart_rate_zones(None) is None
+    assert _canonicalize_heart_rate_zones([]) is None
+    # A non-list (e.g. an unconfigured Mock return value in a test double, or a
+    # malformed API response) must degrade to None, never raise.
+    assert _canonicalize_heart_rate_zones("not a list") is None  # type: ignore[arg-type]
+    assert _canonicalize_heart_rate_zones([{"unexpected": "shape"}]) is not None  # degrades to all-None fields, not an error
+    degraded = _canonicalize_heart_rate_zones([{"unexpected": "shape"}])
+    assert degraded.max_hr_used is None
+
+
+def test_canonicalize_from_raw_heart_rate_zones_absent_when_not_provided():
+    with open(FIXTURES_DIR / "stats.json") as f:
+        stats = json.load(f)
+
+    canonical = canonicalize_from_raw(
+        stats_today=stats, stats_fallback=None, sleep_today={}, sleep_fallback=None, hrv_today={},
+        target_date_iso="2026-08-06", yesterday_iso="2026-08-05",
+    )
+    assert canonical.heart_rate_zones is None
+
+
+def test_fetch_daily_metrics_survives_unconfigured_heart_rate_zones_mock():
+    """A bare MagicMock() (as used by other provider tests that don't care about
+    enrichment) returns a MagicMock -- not a list -- from an unconfigured
+    get_heart_rate_zones(). fetch_daily_metrics must not raise TypeError trying to
+    iterate it; it should degrade to heart_rate_zones=None like any other malformed
+    payload."""
+    mock_client = MagicMock()
+    mock_client.get_stats.return_value = {"restingHeartRate": 50, "totalSteps": 9000}
+    mock_client.get_sleep_data.return_value = {"dailySleepDTO": {"sleepScores": {"overall": {"value": 80}}}}
+    mock_client.get_hrv_data.return_value = {"hrvSummary": {"lastNightAvg": 60}}
+
+    adapter = GarminProviderAdapter(mock_client)
+    result = adapter.fetch_daily_metrics("2026-08-06", "2026-08-05")
+
+    # The unconfigured mock's return value isn't a real API failure, so _fetch_enrichment
+    # doesn't catch anything and the (bogus) value still lands in raw_payloads for
+    # archiving -- same as it would for any other enrichment endpoint given a malformed
+    # response. What matters is that canonicalization degrades safely rather than
+    # raising when handed that non-list value.
+    assert result.canonical.heart_rate_zones is None

@@ -106,6 +106,20 @@ class TrainingStatusSummary:
 
 
 @dataclass
+class HeartRateZonesSummary:
+    """Garmin's own configured max-HR/zone values for this person -- see
+    CanonicalHeartRateZones. Recorded for observation alongside the other metric
+    enrichment fields, not yet consumed by classify_activity_intensity."""
+    restingHrUsed: int | None = None
+    maxHrUsed: int | None = None
+    zone4Floor: int | None = None
+    sport: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
 class RawMetrics:
     sleepScore: int | float | None = None
     sleepDurationSec: int | None = None
@@ -132,6 +146,7 @@ class RawMetrics:
     stress: StressSummary | None = None
     trainingReadiness: TrainingReadinessSummary | None = None
     trainingStatus: TrainingStatusSummary | None = None
+    heartRateZones: HeartRateZonesSummary | None = None
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
@@ -145,6 +160,8 @@ class RawMetrics:
             d["trainingReadiness"] = self.trainingReadiness.to_dict()
         if self.trainingStatus:
             d["trainingStatus"] = self.trainingStatus.to_dict()
+        if self.heartRateZones:
+            d["heartRateZones"] = self.heartRateZones.to_dict()
         return d
 
 
@@ -201,6 +218,7 @@ class DataQuality:
     bodyBatteryDetailAvailable: bool = False
     trainingReadinessAvailable: bool = False
     trainingStatusAvailable: bool = False
+    heartRateZonesAvailable: bool = False
 
     def to_dict(self) -> dict[str, bool]:
         return asdict(self)

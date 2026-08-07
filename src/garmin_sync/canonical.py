@@ -40,6 +40,20 @@ class CanonicalTrainingStatus:
 
 
 @dataclass
+class CanonicalHeartRateZones:
+    """The DEFAULT sport profile's configured HR zones -- resting_hr_used/max_hr_used
+    are Garmin's own computed values (not guessed from an age formula), so this is a
+    real personalization input rather than an estimate. zone4_floor is Garmin's own
+    threshold/hard boundary for this person, a direct, better-founded replacement
+    candidate for metrics.HARD_SESSION_MIN_AVERAGE_HR -- see that constant's docstring
+    for why it isn't wired in yet."""
+    resting_hr_used: int | None = None
+    max_hr_used: int | None = None
+    zone4_floor: int | None = None
+    sport: str | None = None
+
+
+@dataclass
 class CanonicalDailyMetrics:
     date: str
     resting_heart_rate_bpm: float | None = None
@@ -62,6 +76,7 @@ class CanonicalDailyMetrics:
     body_battery: CanonicalBodyBattery | None = None
     training_readiness: CanonicalTrainingReadiness | None = None
     training_status: CanonicalTrainingStatus | None = None
+    heart_rate_zones: CanonicalHeartRateZones | None = None
 
 
 @dataclass

@@ -1,0 +1,30 @@
+[
+  {
+    "trainingMethod": "HR_MAX",
+    "restingHeartRateUsed": 52,
+    "lactateThresholdHeartRateUsed": 160,
+    "zone1Floor": 100,
+    "zone2Floor": 118,
+    "zone3Floor": 136,
+    "zone4Floor": 152,
+    "zone5Floor": 170,
+    "maxHeartRateUsed": 188,
+    "restingHrAutoUpdateUsed": true,
+    "sport": "DEFAULT",
+    "changeState": "UNCHANGED"
+  },
+  {
+    "trainingMethod": "HR_MAX",
+    "restingHeartRateUsed": 52,
+    "lactateThresholdHeartRateUsed": 164,
+    "zone1Floor": 98,
+    "zone2Floor": 116,
+    "zone3Floor": 133,
+    "zone4Floor": 150,
+    "zone5Floor": 168,
+    "maxHeartRateUsed": 185,
+    "restingHrAutoUpdateUsed": false,
+    "sport": "RUNNING",
+    "changeState": "UNCHANGED"
+  }
+]

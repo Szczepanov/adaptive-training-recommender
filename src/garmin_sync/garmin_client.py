@@ -20,6 +20,7 @@ class GarminDataClient(Protocol):
     def get_body_battery(self, date_iso: str) -> list[dict[str, Any]]: ...
     def get_training_readiness(self, date_iso: str) -> list[dict[str, Any]]: ...
     def get_training_status(self, date_iso: str) -> dict[str, Any]: ...
+    def get_heart_rate_zones(self) -> list[dict[str, Any]]: ...
 
 
 class GarminClientWrapper:
@@ -126,6 +127,14 @@ class GarminClientWrapper:
         if not self.api:
             raise RuntimeError("Garmin client is not authenticated. Call login first.")
         return self.api.get_training_status(date_iso) or {}
+
+    def get_heart_rate_zones(self) -> list[dict[str, Any]]:
+        """Configured HR zones per sport profile -- not date-scoped, this is a profile
+        setting Garmin recomputes on demand (from either a measured/estimated max HR or
+        a manually entered one), not per-day telemetry."""
+        if not self.api:
+            raise RuntimeError("Garmin client is not authenticated. Call login first.")
+        return self.api.get_heart_rate_zones() or []
 
     def get_activities_window(self, start_date_iso: str, end_date_iso: str) -> list[dict[str, Any]]:
         """Paginate get_activities (newest first) to retrieve activities in [start_date_iso, end_date_iso]."""
