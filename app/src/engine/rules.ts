@@ -6,6 +6,8 @@ import { rankCandidatesByUtility } from './optimizer';
 import { resolveAvailability } from './schedule';
 import { addDaysToLocalDateString } from '../utils/localDate';
 import type { TrainingHistoryProvider } from './trainingHistory';
+import type { TrainingHistorySnapshot } from './trainingHistorySnapshot';
+import { resolveTrainingIntent } from './trainingIntent';
 import { resolveExecutionDose } from './dose';
 import { isTemplatePhaseEligible } from './periodization';
 
@@ -478,12 +480,12 @@ export async function evaluateTrainingWithIntent(
     date: string,
     previousMode?: 'train' | 'modify' | 'recover',
     historyProvider?: TrainingHistoryProvider,
+    preparedHistorySnapshot?: TrainingHistorySnapshot | null,
 ): Promise<Recommendation> {
     const base = evaluateTraining(readiness, context, date, previousMode);
-    // Keep the synchronous rules module usable in pure unit tests; history access is
-    // loaded only by the asynchronous day-0 path that has a configured Firebase app.
-    const { resolveTrainingIntent } = await import('./trainingIntent');
-    const intent = await resolveTrainingIntent(userId, events, date, readiness, 7, historyProvider);
+    // The resolver retains Firebase behind its production-provider boundary; fixture
+    // providers keep this asynchronous path deterministic in engine unit tests.
+    const intent = await resolveTrainingIntent(userId, events, date, readiness, 7, historyProvider, preparedHistorySnapshot);
     const maxCost = PLAN_TIER_SYSTEMIC_COST_CEILING[base.envelopes!.plan.maxAllowableTier];
     const candidates = eligibleTemplates(ENRICHED_TEMPLATES, context, readiness.subjective.timeAvailable, date)
         .filter(template => !base.envelopes!.safety.restrictedModalities.includes(template.modality))
@@ -963,11 +965,12 @@ export async function evaluateNextDayPlanWithIntent(
     todayDate: string,
     todayRec: Recommendation,
     historyProvider?: TrainingHistoryProvider,
+    preparedHistorySnapshot?: TrainingHistorySnapshot | null,
 ): Promise<NextDayPotentialPlan> {
     const scenarios = buildNextDayScenarios(todayReadiness, context, todayDate, todayRec);
     const evaluate = async (scenario: NextDayScenario) => evaluatedBranch(
         scenario,
-        await evaluateTrainingWithIntent(userId, scenario.readiness, context, events, scenarios.date, todayRec.mode, historyProvider),
+        await evaluateTrainingWithIntent(userId, scenario.readiness, context, events, scenarios.date, todayRec.mode, historyProvider, preparedHistorySnapshot),
     );
     const [green, yellow, red] = await Promise.all([
         evaluate(scenarios.scenarios.green),

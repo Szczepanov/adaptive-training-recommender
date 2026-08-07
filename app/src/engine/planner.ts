@@ -18,6 +18,7 @@ import { evaluatePeriodizationPhase, isTemplatePhaseEligible, type PhaseWeights 
 import { buildMicrocycleState, creditObjectivesFromStimulus, getUnresolvedObjectives, stimulusCoverage, STIMULUS_CREDIT_COVERAGE_THRESHOLD } from './microcycle';
 import { applyCompletedSessionLoad, buildFatigueStateFromHistory, computeInternalResponseStrain, decayFatigue } from './fatigue';
 import type { CompletedExposure, TrainingHistoryProvider } from './trainingHistory';
+import type { TrainingHistorySnapshot } from './trainingHistorySnapshot';
 import { rankCandidatesByUtility } from './optimizer';
 import { eligibleTemplates } from './eligibility';
 import { ENRICHED_TEMPLATES } from './templates';
@@ -498,8 +499,9 @@ export async function generateWeekAheadPlanWithIntent(
     tomorrowRec: Recommendation | null,
     options: WeekAheadOptions = {},
     historyProvider?: TrainingHistoryProvider,
+    preparedHistorySnapshot?: TrainingHistorySnapshot | null,
 ): Promise<WeekAheadPlan> {
-    const intent = await resolveTrainingIntent(userId, events, todayDate, todayReadiness, 7, historyProvider);
+    const intent = await resolveTrainingIntent(userId, events, todayDate, todayReadiness, 7, historyProvider, preparedHistorySnapshot);
     return generateWeekAheadPlan(
         todayReadiness,
         context,

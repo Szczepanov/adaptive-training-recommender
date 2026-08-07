@@ -3,6 +3,7 @@ import type { DailyReadiness, DailyRecommendation, UserEvent } from './models';
 import { buildFatigueStateFromHistory } from './fatigue';
 import { resolveTrainingIntent } from './trainingIntent';
 import { exposureFromRecommendation, type CompletedExposure, type TrainingHistoryProvider } from './trainingHistory';
+import { buildTrainingHistorySnapshot } from './trainingHistorySnapshot';
 
 function recommendation(overrides: Partial<DailyRecommendation> = {}): DailyRecommendation {
     return {
@@ -49,5 +50,27 @@ describe('training history boundary', () => {
         const withOldLoad = buildFatigueStateFromHistory([exposures[0]], intent.fatigue.internalResponseStrain, '2026-08-07');
         expect(withOldLoad.externalLoadFatigue.lowerBody).toBeGreaterThan(0);
         expect(withOldLoad.externalLoadFatigue.lowerBody).toBeLessThan(exposures[0].costProfile.lowerBody);
+    });
+
+    it('uses a supplied immutable snapshot without reading history again', async () => {
+        const snapshot = buildTrainingHistorySnapshot(
+            '2026-08-07',
+            7,
+            { status: 'AVAILABLE', revision: 'activities-r1', data: [] },
+            { status: 'AVAILABLE', revision: 'recommendations-r1', data: [] },
+            '2026-08-07T08:00:00Z',
+        );
+        let snapshotReads = 0;
+        const provider: TrainingHistoryProvider = {
+            reconstruct: async () => { throw new Error('reconstruct should not run'); },
+            getSnapshot: async () => {
+                snapshotReads += 1;
+                return snapshot;
+            },
+        };
+
+        const intent = await resolveTrainingIntent('u1', [], '2026-08-07', readiness, 7, provider, snapshot);
+        expect(snapshotReads).toBe(0);
+        expect(intent.historySnapshot?.revision).toBe(snapshot.revision);
     });
 });

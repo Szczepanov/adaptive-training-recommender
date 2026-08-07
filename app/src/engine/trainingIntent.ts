@@ -18,6 +18,20 @@ export interface TrainingIntent {
     microcycle: MicrocycleState;
 }
 
+/** Fetch the bounded history once and reuse that immutable revision across every
+ * decision horizon in a dashboard refresh. Legacy fixture providers can omit it. */
+export async function prepareTrainingHistorySnapshot(
+    userId: string,
+    throughDateExclusive: string,
+    windowDays: number = 7,
+    historyProvider?: TrainingHistoryProvider,
+): Promise<TrainingHistorySnapshot | null> {
+    const provider = historyProvider ?? (await import('./firestoreTrainingHistory')).firestoreTrainingHistoryProvider;
+    return provider.getSnapshot
+        ? provider.getSnapshot(userId, throughDateExclusive, windowDays)
+        : null;
+}
+
 /** Builds the shared plan-side state for today and future projections. Firestore is
  * intentionally read-only here: the durable inputs are adherence records; objectives,
  * dose and fatigue are freshly derived on every evaluation. */
@@ -28,14 +42,14 @@ export async function resolveTrainingIntent(
     readiness: DailyReadiness,
     windowDays: number = 7,
     historyProvider?: TrainingHistoryProvider,
+    preparedHistorySnapshot?: TrainingHistorySnapshot | null,
 ): Promise<TrainingIntent> {
     const periodization = evaluatePeriodizationPhase(events, date);
     // The production provider is dynamically loaded only when necessary. This keeps
     // Firebase configuration entirely outside deterministic engine-test imports.
+    const historySnapshot = preparedHistorySnapshot
+        ?? await prepareTrainingHistorySnapshot(userId, date, windowDays, historyProvider);
     const provider = historyProvider ?? (await import('./firestoreTrainingHistory')).firestoreTrainingHistoryProvider;
-    const historySnapshot = provider.getSnapshot
-        ? await provider.getSnapshot(userId, date, windowDays)
-        : null;
     const history = historySnapshot?.exposures ?? await provider.reconstruct(userId, date, windowDays);
     const microcycle = buildMicrocycleState(
         periodization.phase,

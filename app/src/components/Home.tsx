@@ -3,6 +3,8 @@ import { decisionComposer } from '../engine/composer';
 import { evaluateTrainingWithIntent, evaluateNextDayPlanWithIntent, adjustSessionRecommendation } from '../engine/rules';
 import { mapSnapshotToEngineInput, mapCheckinToSubjectiveInput, mapContextFromGoalsAndTrainingSettings, mapGoalsToUserEvents } from '../engine/adapters';
 import { generateWeekAheadPlanWithIntent, type WeekAheadPlan } from '../engine/planner';
+import { prepareTrainingHistorySnapshot } from '../engine/trainingIntent';
+import type { TrainingHistorySnapshot } from '../engine/trainingHistorySnapshot';
 import { evaluatePeriodizationPhase, getDaysToEvent } from '../engine/periodization';
 import { resolveExecutionDose } from '../engine/dose';
 import type { DailyDecisionInput, Recommendation, NextDayPotentialPlan, DailyRecommendation } from '../engine/models';
@@ -109,6 +111,7 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
   const [error, setError] = useState<string | null>(null);
   const [showWorkoutDetails, setShowWorkoutDetails] = useState(false);
   const [pendingAdherence, setPendingAdherence] = useState<{ date: string; recommendation: DailyRecommendation } | null>(null);
+  const [historySnapshot, setHistorySnapshot] = useState<TrainingHistorySnapshot | null>(null);
   const dashboardRequest = useRef(0);
   const activeSettings = useMemo(() => {
     if (!decisionInput) return [];
@@ -136,6 +139,7 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
     const isCurrent = () => requestId === dashboardRequest.current;
     try {
       setLoading(true);
+      setHistorySnapshot(null);
       const input = await decisionComposer.composeDailyDecisionInput(userId);
       if (!isCurrent()) return;
       setDecisionInput(input);
@@ -158,7 +162,12 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
         const subjective = mapCheckinToSubjectiveInput(input.subjectiveCheckin);
         const context = mapContextFromGoalsAndTrainingSettings(input.activeGoals, input.trainingSettings, input.preferences);
         const events = mapGoalsToUserEvents(input.activeGoals);
-        const baseRecommendation = await evaluateTrainingWithIntent(userId, { subjective, objective }, context, events, input.date, yesterdayRec?.mode);
+        const preparedSnapshot = await prepareTrainingHistorySnapshot(userId, input.date);
+        if (!isCurrent()) return;
+        setHistorySnapshot(preparedSnapshot);
+        const baseRecommendation = await evaluateTrainingWithIntent(
+          userId, { subjective, objective }, context, events, input.date, yesterdayRec?.mode, undefined, preparedSnapshot,
+        );
         if (!isCurrent()) return;
         const todayRec = {
           ...baseRecommendation,
@@ -166,7 +175,9 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
         };
         setRecommendation(todayRec);
 
-        const tomorrowPlan = await evaluateNextDayPlanWithIntent(userId, events, { subjective, objective }, context, input.date, todayRec);
+        const tomorrowPlan = await evaluateNextDayPlanWithIntent(
+          userId, events, { subjective, objective }, context, input.date, todayRec, undefined, preparedSnapshot,
+        );
         if (!isCurrent()) return;
         setNextDayPlan(tomorrowPlan);
 
@@ -180,9 +191,11 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
         setRecommendation(createProvisionalSafetyRecommendation(safetyStatus));
         setAdjustmentDirection(null);
         setNextDayPlan(null);
+        setHistorySnapshot(null);
       } else {
         setRecommendation(null);
         setNextDayPlan(null);
+        setHistorySnapshot(null);
       }
     } catch (err) {
       if (!isCurrent()) return;
@@ -281,7 +294,7 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
   const [weekAheadPlan, setWeekAheadPlan] = useState<WeekAheadPlan | null>(null);
   useEffect(() => {
     let cancelled = false;
-    if (!engineInputs || !decisionInput || !activeRec || !canGenerateNormalPlan) {
+    if (!engineInputs || !decisionInput || !activeRec || !canGenerateNormalPlan || !historySnapshot) {
       setWeekAheadPlan(null);
       return () => { cancelled = true; };
     }
@@ -296,6 +309,9 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
       decisionInput.date,
       activeRec,
       tomorrowRec,
+      {},
+      undefined,
+      historySnapshot,
     ).then(plan => {
       if (!cancelled) setWeekAheadPlan(plan);
     }).catch(err => {
@@ -305,7 +321,7 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
       }
     });
     return () => { cancelled = true; };
-  }, [userId, engineInputs, decisionInput, activeRec, canGenerateNormalPlan, nextDayPlan, eventPeriodization]);
+  }, [userId, engineInputs, decisionInput, activeRec, canGenerateNormalPlan, nextDayPlan, eventPeriodization, historySnapshot]);
 
   if (loading) {
     return (
