@@ -1,16 +1,178 @@
-.training-settings { max-width: 900px; margin: 0 auto; padding: 1.5rem; color: #19202a; }
-.training-settings header > p, .section-intro, .setting-row small { color: #5b6674; }
-.training-settings section { margin-top: 1.5rem; padding: 1.25rem; border: 1px solid #d7dee7; border-radius: 12px; background: #fff; }
-.training-settings h1, .training-settings h2 { margin-top: 0; }
-.settings-list { display: grid; gap: .75rem; }
-.setting-row { display: flex; align-items: flex-start; gap: .75rem; padding: .5rem 0; cursor: pointer; }
-.setting-row input { margin-top: .2rem; width: 1.1rem; height: 1.1rem; }
-.setting-row span { display: grid; gap: .2rem; }
-.setting-row small { font-size: .9rem; }
-.time-inputs { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; }
-.time-inputs label { display: grid; gap: .4rem; font-weight: 600; }
-.time-inputs input { padding: .5rem; }
-.training-settings fieldset { display: grid; gap: .5rem; margin-top: 1rem; }
-.training-settings fieldset label { display: flex; gap: .5rem; }
-.settings-review { border-color: #c98d00 !important; background: #fff9e9 !important; }
-.settings-error { color: #a61b1b; font-weight: 600; }
+.training-settings {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 1.5rem;
+  color: var(--text-primary);
+}
+
+.training-settings header > p,
+.section-intro,
+.setting-row small {
+  color: var(--text-secondary);
+}
+
+.training-settings section {
+  margin-top: 1.5rem;
+  padding: 1.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.training-settings h1 {
+  font-size: 2rem;
+  font-weight: 700;
+  margin-top: 0;
+  margin-bottom: 0.5rem;
+  color: var(--text-primary);
+}
+
+.training-settings h2 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin-top: 0;
+  margin-bottom: 0.5rem;
+  color: var(--text-primary);
+}
+
+.settings-list {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.setting-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.65rem 0.85rem;
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.setting-row:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.setting-row input[type="checkbox"],
+.setting-row input[type="radio"],
+fieldset input[type="radio"] {
+  accent-color: var(--primary-color);
+  margin-top: 0.2rem;
+  width: 1.1rem;
+  height: 1.1rem;
+  cursor: pointer;
+}
+
+.setting-row span {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.setting-row strong {
+  color: var(--text-primary);
+}
+
+.setting-row small {
+  font-size: 0.85rem;
+}
+
+.time-inputs {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.time-inputs label {
+  display: grid;
+  gap: 0.4rem;
+  font-weight: 500;
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
+.time-inputs input[type="number"] {
+  padding: 0.75rem;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  color: white;
+  font-size: 1rem;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.time-inputs input[type="number"]:focus {
+  border-color: var(--primary-color);
+}
+
+.training-settings fieldset {
+  display: grid;
+  gap: 0.65rem;
+  margin-top: 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 1rem;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.training-settings fieldset legend {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  padding: 0 0.4rem;
+}
+
+.training-settings fieldset label {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.9rem;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.settings-review {
+  border-color: rgba(251, 191, 36, 0.4) !important;
+  background: rgba(251, 191, 36, 0.08) !important;
+  color: #fef08a !important;
+}
+
+.settings-review h2 {
+  color: #fbbf24 !important;
+}
+
+.settings-review p {
+  color: #fef08a !important;
+}
+
+.settings-review button {
+  background: rgba(251, 191, 36, 0.2);
+  color: #fbbf24;
+  border: 1px solid rgba(251, 191, 36, 0.4);
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 600;
+  margin-top: 0.5rem;
+  transition: background 0.2s;
+}
+
+.settings-review button:hover {
+  background: rgba(251, 191, 36, 0.3);
+}
+
+.settings-error {
+  color: #f87171;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+

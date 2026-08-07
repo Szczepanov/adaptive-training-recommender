@@ -16,6 +16,16 @@ const MODALITY_ICON: Record<string, string> = {
   None: '💤',
 };
 
+const SHORT_MODALITY_LABEL: Record<string, string> = {
+  Running: 'Run',
+  Cycling: 'Bike',
+  Strength: 'Lift',
+  Field: 'Field',
+  Mobility: 'Mobility',
+  'Cross Training': 'Cross',
+  None: 'Rest',
+};
+
 const CONFIDENCE_LABEL: Record<WeekAheadDay['confidence'], string> = {
   confirmed: 'Confirmed',
   provisional: 'Provisional',
@@ -67,8 +77,8 @@ export function WeekAheadStrip({ plan }: WeekAheadStripProps) {
           >
             <span className="tile-weekday">{index === 0 ? 'Today' : weekdayLabel(day.date)}</span>
             <span className="tile-icon">{MODALITY_ICON[day.template.modality] ?? '❔'}</span>
-            <span className="tile-category">{day.template.category}</span>
-            <span className="tile-duration">{day.template.durationMin}-{day.template.durationMax} min</span>
+            <span className="tile-category">{SHORT_MODALITY_LABEL[day.template.modality] ?? day.template.modality}</span>
+            <span className="tile-duration">{day.template.durationMin}-{day.template.durationMax} m</span>
             <span className={`tile-mode-dot mode-${day.mode}`} title={day.mode === 'recover' ? 'Recovery' : 'Train'} />
           </button>
         ))}
