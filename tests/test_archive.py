@@ -1,3 +1,5 @@
+import pytest
+
 from garmin_sync.archive import LocalRawArchiveStore, NullArchiveStore, create_archive_store
 
 
@@ -56,6 +58,16 @@ def test_null_archive_store_is_always_a_noop(tmp_path):
     assert store.archive("stats", "2026-08-06", {"x": 1}, "run-1") is None
     assert store.load("stats", "2026-08-06") is None
     assert store.list_archived_dates("stats", "2026-08-01", "2026-08-31") == set()
+
+
+def test_archive_rejects_path_traversal_identifiers(tmp_path):
+    store = LocalRawArchiveStore(base_dir=tmp_path)
+    with pytest.raises(ValueError, match="endpoint"):
+        store.archive("../tokens", "2026-08-06", {"x": 1}, "run-1")
+    with pytest.raises(ValueError, match="logical date"):
+        store.archive("stats", "2026-02-30", {"x": 1}, "run-1")
+    with pytest.raises(ValueError, match="sync run ID"):
+        store.archive("stats", "2026-08-06", {"x": 1}, "../run")
 
 
 def test_create_archive_store_disabled_returns_null_store():
