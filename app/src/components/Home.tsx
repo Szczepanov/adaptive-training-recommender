@@ -19,7 +19,17 @@ interface HomeProps {
   onViewData?: () => void;
 }
 
+const MODE_LABELS: Record<Recommendation['mode'], string> = {
+  train: 'Normal load',
+  modify: 'Reduced load',
+  recover: 'Recovery day',
+};
+
 function DetailedTodayPlan({ prescription }: { prescription: WorkoutPrescription }) {
+  const uniqueCues = [...new Set(
+    prescription.displayBlocks.flatMap((block) => block.steps.flatMap((step) => step.cues))
+  )];
+
   return (
     <section className="detailed-plan" aria-label="Detailed training plan">
       <div className="detailed-plan-header">
@@ -28,7 +38,6 @@ function DetailedTodayPlan({ prescription }: { prescription: WorkoutPrescription
       </div>
       {prescription.displayBlocks.map((block) => (
         <section className={`plan-block plan-block-${block.role}`} key={block.id}>
-          <h6>{block.name}</h6>
           {block.steps.map((step) => (
             <article className="plan-step" key={step.id}>
               <div className="plan-step-heading">
@@ -36,16 +45,13 @@ function DetailedTodayPlan({ prescription }: { prescription: WorkoutPrescription
                 {step.optional && <span className="optional-step">Optional</span>}
               </div>
               <p className="plan-dose">{step.dose}{step.rest ? ` · ${step.rest}` : ''}</p>
-              {step.targets.length > 0 && (
-                <ul className="plan-targets">{step.targets.map((target) => <li key={target}>{target}</li>)}</ul>
-              )}
-              {step.cues.length > 0 && (
-                <p className="plan-cues"><strong>Cues:</strong> {step.cues.join(' ')}</p>
-              )}
             </article>
           ))}
         </section>
       ))}
+      {uniqueCues.length > 0 && (
+        <p className="plan-cues"><strong>Key cues:</strong> {uniqueCues.join(' ')}</p>
+      )}
       <p className="plan-legend">{getPrescriptionLegend()}</p>
     </section>
   );
@@ -58,7 +64,7 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
   const [nextDayPlan, setNextDayPlan] = useState<NextDayPotentialPlan | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [showRecoveryData, setShowRecoveryData] = useState(false);
+  const [showWorkoutDetails, setShowWorkoutDetails] = useState(false);
   const [pendingAdherence, setPendingAdherence] = useState<{ date: string; recommendation: DailyRecommendation } | null>(null);
   const activeSettings = useMemo(() => {
     if (!decisionInput) return [];
@@ -240,6 +246,23 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
   }
 
   const completeness = getDataCompleteness();
+  const primaryEventGoal = decisionInput?.activeGoals.find((goal) => goal.eventCategory && goal.targetDate);
+  const checkinValues = decisionInput?.subjectiveCheckin
+    ? [
+        decisionInput.subjectiveCheckin.readiness,
+        decisionInput.subjectiveCheckin.sleepQuality,
+        decisionInput.subjectiveCheckin.fatigue,
+        decisionInput.subjectiveCheckin.soreness,
+        decisionInput.subjectiveCheckin.mentalStress,
+        decisionInput.subjectiveCheckin.motivation,
+      ].filter((value): value is number => value !== null)
+    : [];
+  const readinessScore = checkinValues.length > 0
+    ? Math.round(checkinValues.reduce((sum, value) => sum + value, 0) / checkinValues.length)
+    : null;
+  const readinessLabel = readinessScore === null
+    ? null
+    : readinessScore >= 8 ? 'High' : readinessScore >= 5 ? 'Moderate' : 'Low';
 
   return (
     <div className="home-container">
@@ -251,8 +274,8 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
             <div className="card-header">
               <h3>Today's Recommendation</h3>
               {activeRec && (
-                <span className={`status-badge ${activeRec.adjustment ? 'info' : 'success'}`}>
-                  {activeRec.adjustment ? `Adjusted (${activeRec.adjustment.direction})` : 'Ready'}
+                <span className={`status-badge mode-${activeRec.mode}`}>
+                  {MODE_LABELS[activeRec.mode]}
                 </span>
               )}
             </div>
@@ -270,8 +293,23 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
                 <p className="recommendation-description">
                   {activeRec.activeDose ? activeRec.activeDose.prescriptionSummary : activeRec.template.description}
                 </p>
-                <p className="recommendation-rationale">{activeRec.rationale}</p>
-                {activeRec.prescription && <DetailedTodayPlan prescription={activeRec.prescription} />}
+                <section className="recommendation-why" aria-label="Why this recommendation">
+                  <h5>Why this today?</h5>
+                  <p>{activeRec.rationale}</p>
+                </section>
+                {activeRec.prescription && (
+                  <>
+                    <button
+                      type="button"
+                      className="view-workout-btn"
+                      onClick={() => setShowWorkoutDetails((isOpen) => !isOpen)}
+                      aria-expanded={showWorkoutDetails}
+                    >
+                      {showWorkoutDetails ? 'Hide workout' : 'View workout'}
+                    </button>
+                    {showWorkoutDetails && <DetailedTodayPlan prescription={activeRec.prescription} />}
+                  </>
+                )}
 
                 {/* Session Adjustment Controls */}
                 <div className="adjustment-control-section">
@@ -342,18 +380,20 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
         {/* Sidebar Context & Status Column (~30%-32%) */}
         <div className="home-sidebar-col">
           {/* Profile Completeness Bar */}
-          <div className="completeness-card dashboard-card">
-            <div className="completeness-header">
-              <span>Profile Completeness</span>
-              <span>{completeness}%</span>
+          {completeness < 100 && (
+            <div className="completeness-card dashboard-card">
+              <div className="completeness-header">
+                <span>Profile Completeness</span>
+                <span>{completeness}%</span>
+              </div>
+              <div className="completeness-bar">
+                <div
+                  className="completeness-fill"
+                  style={{ width: `${completeness}%` }}
+                />
+              </div>
             </div>
-            <div className="completeness-bar">
-              <div 
-                className="completeness-fill" 
-                style={{ width: `${completeness}%` }}
-              />
-            </div>
-          </div>
+          )}
 
           {/* Adherence Prompt (for yesterday's recommendation, if unanswered) */}
           {pendingAdherence && (
@@ -365,36 +405,24 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
             />
           )}
 
-          {/* Quick Action Start/Edit Checkin */}
-          <div className="sidebar-primary-action">
-            <button 
-              className="quick-action-btn primary full-width"
-              onClick={() => onNavigate('checkin')}
-            >
-              {decisionInput?.subjectiveCheckin?.dataQuality.isComplete ? 'Edit Daily Check-in' : 'Start Daily Check-in'}
-            </button>
-          </div>
-
           {/* Actionable Status Cards */}
           <div className="sidebar-status-cards">
             {/* Today's Recovery Card */}
-            <div 
-              className={`dashboard-card ${decisionInput?.recoverySnapshot ? 'clickable' : ''}`} 
-              onClick={() => decisionInput?.recoverySnapshot && setShowRecoveryData(!showRecoveryData)}
-            >
+            <div className="dashboard-card">
               <div className="card-header">
                 <h3>Today's Recovery</h3>
                 {decisionInput?.recoverySnapshot ? (
-                  <span className="status-badge success">Available</span>
+                  <span className={`status-badge mode-${activeRec?.mode ?? 'train'}`}>
+                    {activeRec?.mode === 'recover' ? 'Needs recovery' : activeRec?.mode === 'modify' ? 'Cautious' : 'Good'}
+                  </span>
                 ) : (
                   <span className="status-badge warning">No Data</span>
                 )}
               </div>
               
               {decisionInput?.recoverySnapshot ? (
-                <div className={`recovery-metrics ${showRecoveryData ? 'revealed' : 'blurred'}`}>
-                  {showRecoveryData ? (
-                    <>
+                <div className="recovery-metrics revealed">
+                  <>
                       <div className="metric">
                         <span className="metric-label">Sleep Score</span>
                         <span className="metric-value">
@@ -419,12 +447,7 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
                           {decisionInput.recoverySnapshot.raw.bodyBatteryWake ?? '--'}
                         </span>
                       </div>
-                    </>
-                  ) : (
-                    <div className="metric-placeholder">
-                      <p>Click to reveal metrics</p>
-                    </div>
-                  )}
+                  </>
                 </div>
               ) : (
                 <p className="card-empty">No Garmin data synced today</p>
@@ -446,37 +469,34 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
                 <div className="checkin-summary">
                   <div className="readiness-score">
                     <span className="score-label">Readiness</span>
-                    <span className="score-value">
-                      {(() => {
-                        const { readiness, sleepQuality, fatigue, soreness, mentalStress, motivation } = decisionInput.subjectiveCheckin;
-                        const values = [readiness, sleepQuality, fatigue, soreness, mentalStress, motivation]
-                          .filter(v => v !== null) as number[];
-                        return values.length > 0 
-                          ? Math.round(values.reduce((a, b) => a + b, 0) / values.length)
-                          : '--';
-                      })()}
-                    </span>
+                    <span className="score-value">{readinessScore ?? '--'}{readinessScore !== null && <small>/10</small>}</span>
+                    {readinessLabel && <span className="readiness-label">{readinessLabel}</span>}
                   </div>
-                  <p className="card-action">Tap to edit</p>
+                  <p className="card-action">Edit check-in</p>
                 </div>
               ) : (
                 <div className="card-empty">
                   <p>No check-in today</p>
-                  <p className="card-action">Tap to start</p>
+                  <p className="card-action">Start check-in</p>
                 </div>
               )}
             </div>
 
-            {/* Active Goals Card */}
+            {/* Event context */}
             <div className="dashboard-card" onClick={() => onNavigate('goals')}>
               <div className="card-header">
-                <h3>Active Goals</h3>
-                <span className="card-count">
-                  {decisionInput?.activeGoals.length || 0}
-                </span>
+                <h3>{primaryEventGoal ? 'Target Event' : 'Active Goals'}</h3>
               </div>
               
-              {decisionInput?.activeGoals.length ? (
+              {primaryEventGoal ? (
+                <div className="goals-preview event-preview">
+                  <strong className="event-title">{primaryEventGoal.title}</strong>
+                  <span className="event-meta">
+                    {getDaysToEvent(primaryEventGoal.targetDate!, decisionInput!.date)} days · {eventPeriodization?.today.phase.phaseName ?? 'Training'} phase
+                  </span>
+                  <p className="card-action">View goals</p>
+                </div>
+              ) : decisionInput?.activeGoals.length ? (
                 <div className="goals-preview">
                   {['short-term', 'mid-term', 'long-term'].map(category => {
                     const goal = decisionInput.activeGoals.find(g => g.category === category);
@@ -505,18 +525,15 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
               )}
             </div>
 
-            {/* Training settings card */}
+            {/* Training status */}
             <div className="dashboard-card" onClick={() => onNavigate('constraints')}>
               <div className="card-header">
-                <h3>Training Settings</h3>
-                <span className="card-count">
-                  {activeSettings.length}
-                </span>
+                <h3>Training Status</h3>
               </div>
               
-              {activeSettings.length ? (
+              {activeSettings.some((setting) => setting.kind === 'guardrail') ? (
                 <div className="constraints-preview">
-                  {activeSettings.slice(0, 3).map(setting => (
+                  {activeSettings.filter((setting) => setting.kind === 'guardrail').slice(0, 3).map(setting => (
                     <div key={setting.label} className="constraint-item">
                       <span className="constraint-name">{setting.label}</span>
                       <span className={`constraint-severity ${setting.kind}`}>
@@ -524,17 +541,17 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
                       </span>
                     </div>
                   ))}
-                  {activeSettings.length > 3 && (
+                  {activeSettings.filter((setting) => setting.kind === 'guardrail').length > 3 && (
                     <p className="more-items">
-                      +{activeSettings.length - 3} more
+                      +{activeSettings.filter((setting) => setting.kind === 'guardrail').length - 3} more
                     </p>
                   )}
                   <p className="card-action">Tap to manage</p>
                 </div>
               ) : (
                 <div className="card-empty">
-                  <p>No training settings configured</p>
-                  <p className="card-action">Tap to configure</p>
+                  <p>No active restrictions</p>
+                  <p className="card-action">View training setup</p>
                 </div>
               )}
             </div>

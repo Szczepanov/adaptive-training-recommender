@@ -38,7 +38,7 @@ function weekdayLabel(dateStr: string): string {
  * the underlying plan is reflected immediately on the next render.
  */
 export function WeekAheadStrip({ plan }: WeekAheadStripProps) {
-  const [selectedIndex, setSelectedIndex] = useState(0);
+  const [selectedIndex, setSelectedIndex] = useState(1);
 
   if (!plan || plan.days.length === 0) return null;
 
@@ -68,6 +68,7 @@ export function WeekAheadStrip({ plan }: WeekAheadStripProps) {
             <span className="tile-weekday">{index === 0 ? 'Today' : weekdayLabel(day.date)}</span>
             <span className="tile-icon">{MODALITY_ICON[day.template.modality] ?? '❔'}</span>
             <span className="tile-category">{day.template.category}</span>
+            <span className="tile-duration">{day.template.durationMin}-{day.template.durationMax} min</span>
             <span className={`tile-mode-dot mode-${day.mode}`} title={day.mode === 'recover' ? 'Recovery' : 'Train'} />
           </button>
         ))}

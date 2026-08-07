@@ -486,6 +486,10 @@
     display: none; /* Desktop uses global navbar */
   }
 
+  .mobile-more-overlay {
+    display: none;
+  }
+
   .app-container {
     padding: 0;
   }

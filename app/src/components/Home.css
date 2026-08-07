@@ -122,6 +122,21 @@
   color: #38bdf8;
 }
 
+.status-badge.mode-train {
+  background: rgba(34, 197, 94, 0.15);
+  color: #86efac;
+}
+
+.status-badge.mode-modify {
+  background: rgba(245, 158, 11, 0.16);
+  color: #fcd34d;
+}
+
+.status-badge.mode-recover {
+  background: rgba(56, 189, 248, 0.15);
+  color: #7dd3fc;
+}
+
 .card-count {
   background: rgba(255, 255, 255, 0.1);
   color: var(--text-secondary);
@@ -210,6 +225,18 @@
   color: var(--primary-color);
 }
 
+.score-value small {
+  font-size: 1rem;
+  margin-left: 0.15rem;
+  color: var(--text-secondary);
+}
+
+.readiness-label {
+  display: block;
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+}
+
 /* Goals Preview */
 .goals-preview {
   display: flex;
@@ -244,6 +271,19 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.event-preview {
+  gap: 0.35rem;
+}
+
+.event-title {
+  font-size: 1rem;
+}
+
+.event-meta {
+  color: var(--text-secondary);
+  font-size: 0.875rem;
 }
 
 /* Constraints Preview */
@@ -340,6 +380,47 @@
   margin: 0;
 }
 
+.recommendation-why {
+  margin-top: 1rem;
+  padding: 0.9rem 1rem;
+  border-left: 3px solid rgba(56, 189, 248, 0.7);
+  background: rgba(15, 23, 42, 0.22);
+  border-radius: 0 8px 8px 0;
+}
+
+.recommendation-why h5,
+.recommendation-why p {
+  margin: 0;
+}
+
+.recommendation-why h5 {
+  font-size: 0.8rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.recommendation-why p {
+  margin-top: 0.35rem;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.view-workout-btn {
+  margin-top: 1rem;
+  padding: 0.7rem 1rem;
+  border: 1px solid rgba(56, 189, 248, 0.45);
+  border-radius: 8px;
+  background: rgba(56, 189, 248, 0.13);
+  color: #e0f2fe;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.view-workout-btn:hover {
+  background: rgba(56, 189, 248, 0.22);
+}
+
 .detailed-plan {
   margin-top: 1.25rem;
   padding-top: 1rem;
@@ -365,9 +446,9 @@
 .detailed-plan-header h5 { font-size: 1rem; }
 .detailed-plan-header span,
 .optional-step { color: var(--text-secondary); font-size: 0.78rem; }
-.plan-block { margin-top: 1rem; }
+.plan-block { margin-top: 0.55rem; }
 .plan-block h6 { color: var(--primary-color); font-size: 0.82rem; letter-spacing: 0.06em; text-transform: uppercase; }
-.plan-step { margin-top: 0.55rem; padding: 0.75rem; border-radius: 8px; background: rgba(15, 23, 42, 0.3); }
+.plan-step { margin-top: 0.35rem; padding: 0.6rem 0.75rem; border-radius: 8px; background: rgba(15, 23, 42, 0.3); }
 .plan-dose { margin-top: 0.2rem; font-weight: 600; }
 .plan-targets { margin: 0.45rem 0 0; padding-left: 1.1rem; color: var(--text-secondary); font-size: 0.86rem; }
 .plan-targets li + li { margin-top: 0.2rem; }
