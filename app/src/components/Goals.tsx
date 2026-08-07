@@ -396,11 +396,11 @@ interface GoalModalProps {
 
 function GoalModal({ goal, onSave, onClose }: GoalModalProps) {
   const today = getLocalDateString();
+  const modalRef = React.useRef<HTMLDivElement>(null);
+
   const [formData, setFormData] = useState({
     title: goal?.title || '',
     description: goal?.description || '',
-    // Open-ended (no exact date) vs. dated is the primary fork this form makes -- a new
-    // goal defaults to open-ended, matching the old form's "target date is optional" UX.
     isOpenEnded: !goal?.targetDate,
     category: goal?.category || 'short-term' as GoalCategory,
     targetDate: goal?.targetDate || '',
@@ -417,10 +417,39 @@ function GoalModal({ goal, onSave, onClose }: GoalModalProps) {
     targetUnit: goal?.targetUnit || ''
   });
 
-  // Live preview of what validateGoal will actually store -- category is disabled and
-  // shown as this computed value whenever a target date is set (see models.ts
-  // UserGoal.category / periodization.ts deriveGoalCategory). Only meaningful as direct
-  // user input when the goal is open-ended.
+  useEffect(() => {
+    document.body.style.overflow = 'hidden';
+    const titleInput = modalRef.current?.querySelector<HTMLInputElement>('input[type="text"]');
+    titleInput?.focus();
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+      if (e.key === 'Tab' && modalRef.current) {
+        const focusables = Array.from(
+          modalRef.current.querySelectorAll<HTMLElement>('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')
+        );
+        if (focusables.length === 0) return;
+        const first = focusables[0];
+        const last = focusables[focusables.length - 1];
+        if (e.shiftKey && document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.body.style.overflow = '';
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [onClose]);
+
   const derivedCategory = !formData.isOpenEnded && formData.targetDate
     ? deriveGoalCategory(formData.targetDate, today)
     : null;
@@ -437,7 +466,7 @@ function GoalModal({ goal, onSave, onClose }: GoalModalProps) {
       description: formData.description || null,
       category: formData.isOpenEnded
         ? formData.category
-        : deriveGoalCategory(formData.targetDate, today), // ignored server-side too when targetDate is set (validateGoal), kept consistent here for the in-memory return value
+        : deriveGoalCategory(formData.targetDate, today),
       domain: formData.domain,
       priority: formData.priority,
       status: formData.status,
@@ -455,11 +484,18 @@ function GoalModal({ goal, onSave, onClose }: GoalModalProps) {
   };
 
   return (
-    <div className="modal-overlay">
-      <div className="modal-content">
+    <div className="modal-overlay" onClick={onClose}>
+      <div 
+        ref={modalRef}
+        className="modal-content" 
+        role="dialog" 
+        aria-modal="true" 
+        aria-labelledby="goal-modal-title"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="modal-header">
-          <h2>{goal ? 'Edit Goal' : 'Add New Goal'}</h2>
-          <button onClick={onClose} className="close-btn">×</button>
+          <h2 id="goal-modal-title">{goal ? 'Edit Goal' : 'Add New Goal'}</h2>
+          <button onClick={onClose} className="close-btn" aria-label="Close goal dialog">×</button>
         </div>
 
         <form onSubmit={handleSubmit} className="goal-form">

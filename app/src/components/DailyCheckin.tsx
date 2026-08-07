@@ -150,12 +150,12 @@ export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) 
     setCheckin({ ...checkin, notes: value || null });
   };
 
-  const handleNext = () => {
+  const handleNext = useCallback(() => {
     const finalStepIndex = readinessFields.length + 1;
     if (currentStep < finalStepIndex) {
-      setCurrentStep(currentStep + 1);
+      setCurrentStep(prev => prev + 1);
     }
-  };
+  }, [currentStep, readinessFields.length]);
 
   const handleBack = () => {
     if (currentStep > 0) {
@@ -164,6 +164,39 @@ export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) 
       onBack();
     }
   };
+
+  // Keyboard navigation for rapid 5-second check-ins
+  useEffect(() => {
+    if (!checkin) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const activeTag = document.activeElement?.tagName.toLowerCase();
+      if (activeTag === 'input' || activeTag === 'textarea' || activeTag === 'select') return;
+
+      if (currentStep < readinessFields.length) {
+        const fieldKey = readinessFields[currentStep].key as keyof DailySubjectiveCheckin;
+        const currentVal = (checkin[fieldKey] as number) || 5;
+
+        if (e.key >= '1' && e.key <= '9') {
+          setCheckin(prev => prev ? { ...prev, [fieldKey]: Number(e.key) } : prev);
+        } else if (e.key === '0') {
+          setCheckin(prev => prev ? { ...prev, [fieldKey]: 10 } : prev);
+        } else if (e.key === 'ArrowRight' || e.key === 'ArrowUp') {
+          e.preventDefault();
+          setCheckin(prev => prev ? { ...prev, [fieldKey]: Math.min(10, currentVal + 1) } : prev);
+        } else if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') {
+          e.preventDefault();
+          setCheckin(prev => prev ? { ...prev, [fieldKey]: Math.max(1, currentVal - 1) } : prev);
+        } else if (e.key === 'Enter') {
+          e.preventDefault();
+          handleNext();
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [currentStep, checkin, handleNext, readinessFields]);
 
   const handleSubmit = async () => {
     if (!checkin) return;

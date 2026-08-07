@@ -61,3 +61,12 @@ test('captures navigation interaction states', async ({ page }) => {
     await capture(page, scenario, 'settings-menu-open', ['Desktop Settings opens an anchored menu without activating the mobile drawer.']);
   }
 });
+
+test('captures goal modal state', async ({ page }) => {
+  const scenario = VISUAL_SCENARIOS.find(s => s.id === 'goals-event') ?? VISUAL_SCENARIOS[0];
+  await visitScenario(page, scenario);
+
+  await page.getByRole('button', { name: '+ Add Goal' }).click();
+  await expect(page.getByRole('dialog', { name: 'Add New Goal' })).toBeVisible();
+  await capture(page, scenario, 'add-modal-open', ['Goal creation form inputs are spaced clearly without visual overlap.']);
+});

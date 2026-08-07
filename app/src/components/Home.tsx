@@ -557,7 +557,7 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
                   <span className="event-meta">
                     {formatEventTiming(periodizationToday.daysToEvent)} · {periodizationToday.phase.phaseName} phase
                   </span>
-                  <button type="button" className="card-action" onClick={() => onNavigate('goals')}>Manage goals</button>
+                  <button type="button" className="card-action" onClick={(e) => { e.stopPropagation(); onNavigate('goals'); }}>Manage goals →</button>
                 </div>
               ) : decisionInput?.activeGoals.length ? (
                 <div className="goals-preview">
