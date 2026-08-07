@@ -42,6 +42,50 @@ Adaptive Training Recommendation
 
 ---
 
+## Training Settings and Recommendation Safety
+
+The app stores athlete-controlled training settings in the user-scoped Firestore document
+`users/{firebaseUid}/trainingSettings/profile` (schema version 2). The settings model is
+intentionally divided into four concepts so the recommendation engine never mistakes an
+available resource for a safety restriction:
+
+| Group | Examples | Engine behavior |
+|---|---|---|
+| Equipment | Pull-up bar, treadmill, free weights | A capability gate: a session requiring unavailable equipment is excluded. |
+| Safety limits | Block high impact, heavy lower-body work, overhead pressing, spinal loading | A hard gate: matching templates are excluded from every recommendation and dose adjustment. |
+| Time and location | Weekday/weekend duration limit, indoor-only/outdoor-only | A hard feasibility gate evaluated together with today's check-in availability. |
+| Preferences | Prefer active recovery | A soft ranking signal only; it cannot bypass a hard gate. |
+
+The engine uses a single eligibility resolver before it ranks templates. If no training
+template remains feasible, it returns the safe rest fallback with an explicit rationale.
+The same resolver is applied to the initial recommendation and the `Harder`/`Easier`
+adjustment flow.
+
+### Settings data migration
+
+Older data in `users/{firebaseUid}/constraints/*` is read only once, when a v2 training
+settings profile does not exist. The migration is conservative: it copies unambiguous time
+and recovery-preference settings, but does **not** infer equipment access or injury limits
+from old boolean records because the prior UI and engine read different fields. Migrated
+profiles therefore require an athlete review before those settings are relied upon. Legacy
+constraint records are not modified or deleted by the client.
+
+### Adding a setting
+
+Do not add a UI control until all of the following exist in the same change:
+
+1. A typed field in `TrainingSettings`.
+2. A documented policy effect: capability gate, hard guardrail, or soft preference.
+3. Template/exercise metadata that lets the engine enforce the effect.
+4. Resolver and adjustment-path coverage.
+5. Unit tests proving the setting cannot be silently ignored.
+
+Training settings are general wellness controls, not medical diagnosis or treatment.
+Athletes reporting current pain or illness should use the daily check-in and seek appropriate
+professional advice when symptoms persist.
+
+---
+
 ## Configuration Reference
 
 Set the following environment variables (e.g. in `.env` locally or Secret Manager / Cloud Run):

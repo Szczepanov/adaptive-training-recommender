@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { evaluateTraining, evaluateNextDayPlan, adjustSessionRecommendation, evaluateEnvelopes } from './rules';
 import type { DailyReadiness, UserContext, EngineObjectiveInput, SubjectiveInput } from './models';
+import { TEMPLATES } from './templates';
 
 // --- Fixtures --------------------------------------------------------------
 
@@ -483,6 +484,22 @@ describe('sequence trajectory & threshold oscillation simulation', () => {
 // --- Session Adjustment Tests -----------------------------------------------
 
 describe('session adjustment engine', () => {
+    it('never makes a stale running recommendation harder after a high-impact safety limit is enabled', () => {
+        const readiness: DailyReadiness = { subjective: greenSubjective(), objective: quietObjective() };
+        const context = baseContext();
+        context.trainingSettings = {
+            userId: 'athlete', schemaVersion: 2,
+            equipment: { free_weights: true, cable_machine: false, treadmill: false, indoor_bike: false, pullup_bar: false },
+            guardrails: { avoid_high_impact: true, avoid_heavy_lower_body: false, avoid_overhead_pressing: false, avoid_heavy_spinal_loading: false },
+            defaults: { weekdayMaxMinutes: null, weekendMaxMinutes: null, environment: 'either' },
+            preferences: { preferActiveRecovery: false }, migration: { legacyReviewed: true, migratedAt: null },
+            createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z',
+        };
+        const baseRec = evaluateTraining(readiness, baseContext(), '2026-08-07');
+        baseRec.template = TEMPLATES.find(template => template.id === 'end_hard_01')!;
+        expect(adjustSessionRecommendation(baseRec, 'harder', readiness, context, '2026-08-07')).toBeNull();
+    });
+
     it('Tier 1: 4x4 VO2 run -> Easier produces a reduced 3x4 VO2 dose preserving training purpose', () => {
         const readiness: DailyReadiness = { subjective: greenSubjective(), objective: quietObjective() };
         const context = baseContext();
@@ -499,6 +516,7 @@ describe('session adjustment engine', () => {
             title: 'Interval Speed Work',
             description: 'Warm up, then 4x4 minute intervals near threshold. Cool down.',
             requiredEquipment: [],
+            environment: 'outdoor', safetyTags: ['avoid_high_impact'],
             systemicCost: 1.0,
             objectiveTransferable: true,
             easierDose: {
@@ -534,6 +552,7 @@ describe('session adjustment engine', () => {
             title: 'Interval Speed Work',
             description: 'Warm up, then 4x4 minute intervals near threshold.',
             requiredEquipment: [],
+            environment: 'outdoor', safetyTags: ['avoid_high_impact'],
             systemicCost: 1.0,
             objectiveTransferable: true,
             harderDose: {
@@ -554,6 +573,7 @@ describe('session adjustment engine', () => {
     it('Zone 2 continuous -> Harder scales duration without changing category', () => {
         const readiness: DailyReadiness = { subjective: greenSubjective(), objective: quietObjective() };
         const context = baseContext();
+        context.constraints.hasIndoorBike = true;
         const date = '2026-08-07';
         const baseRec = evaluateTraining(readiness, context, date);
 
@@ -566,6 +586,7 @@ describe('session adjustment engine', () => {
             title: 'Zone 2 Spin',
             description: 'Easy conversational pace on the bike.',
             requiredEquipment: ['indoor_bike'],
+            environment: 'indoor', safetyTags: [],
             systemicCost: 0.3,
             objectiveTransferable: true,
             harderDose: {
@@ -610,6 +631,7 @@ describe('session adjustment engine', () => {
             title: 'Hill Repeats',
             description: 'Hard hill efforts.',
             requiredEquipment: [],
+            environment: 'outdoor', safetyTags: ['avoid_high_impact'],
             systemicCost: 1.0,
             objectiveTransferable: false // Non transferable neuromuscular goal
         };
@@ -672,6 +694,7 @@ describe('session adjustment engine', () => {
             title: 'Interval Speed Work',
             description: 'Warm up, then 4x4 minute intervals near threshold.',
             requiredEquipment: [],
+            environment: 'outdoor', safetyTags: ['avoid_high_impact'],
             systemicCost: 1.0,
             objectiveTransferable: true,
             harderDose: {

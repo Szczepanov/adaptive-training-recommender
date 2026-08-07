@@ -10,6 +10,7 @@ export const TEMPLATES: SessionTemplate[] = [
         title: "Cycling Pedalling Economy",
         description: "Low-fatigue cadence and position practice. Smoothness—not watts or peak cadence—is the goal.",
         requiredEquipment: ["indoor_bike"],
+        environment: 'indoor', safetyTags: [],
         systemicCost: 0.25,
         objectiveTransferable: false
     },
@@ -22,6 +23,7 @@ export const TEMPLATES: SessionTemplate[] = [
         title: "Sprint Mechanics Foundation",
         description: "Low-volume posture, projection and acceleration mechanics with full recovery between repetitions.",
         requiredEquipment: [],
+        environment: 'outdoor', safetyTags: ['avoid_high_impact', 'avoid_heavy_lower_body'],
         systemicCost: 0.45,
         objectiveTransferable: false
     },
@@ -34,6 +36,7 @@ export const TEMPLATES: SessionTemplate[] = [
         title: "Acceleration & Braking Skill",
         description: "Quality-controlled acceleration and braking practice for athletes already tolerating sprint mechanics.",
         requiredEquipment: [],
+        environment: 'outdoor', safetyTags: ['avoid_high_impact', 'avoid_heavy_lower_body'],
         systemicCost: 0.6,
         objectiveTransferable: false
     },
@@ -46,6 +49,7 @@ export const TEMPLATES: SessionTemplate[] = [
         title: "Total Rest",
         description: "Focus on sleep, hydration, and completely shutting off physical stress.",
         requiredEquipment: [],
+        environment: 'either', safetyTags: [],
         systemicCost: 0.0,
         objectiveTransferable: true
     },
@@ -58,6 +62,7 @@ export const TEMPLATES: SessionTemplate[] = [
         title: "Active Recovery & Mobility",
         description: "Light stretching, foam rolling, and walking. Keep heart rate strictly low.",
         requiredEquipment: [],
+        environment: 'either', safetyTags: [],
         systemicCost: 0.1,
         objectiveTransferable: true,
         easierDose: {
@@ -84,6 +89,7 @@ export const TEMPLATES: SessionTemplate[] = [
         title: "Yoga & Breathwork Flow",
         description: "Slow flow focused on hip/shoulder mobility and diaphragmatic breathing to downshift the nervous system.",
         requiredEquipment: [],
+        environment: 'either', safetyTags: [],
         systemicCost: 0.1,
         objectiveTransferable: true,
         easierDose: {
@@ -110,6 +116,7 @@ export const TEMPLATES: SessionTemplate[] = [
         title: "Zone 2 Spin",
         description: "Easy conversational pace on the bike. Great for flushing legs and base building.",
         requiredEquipment: ["indoor_bike"],
+        environment: 'indoor', safetyTags: [],
         systemicCost: 0.3,
         objectiveTransferable: true,
         easierDose: {
@@ -136,6 +143,7 @@ export const TEMPLATES: SessionTemplate[] = [
         title: "Light Base Run",
         description: "Very easy jog. Stop and walk if HR drifts above Zone 2.",
         requiredEquipment: [],
+        environment: 'outdoor', safetyTags: ['avoid_high_impact', 'avoid_heavy_lower_body'],
         systemicCost: 0.3,
         objectiveTransferable: true,
         easierDose: {
@@ -162,6 +170,7 @@ export const TEMPLATES: SessionTemplate[] = [
         title: "Recovery Walk/Jog Intervals",
         description: "Alternate easy walking and very light jogging. Minimal impact, keeps blood flowing without adding fatigue.",
         requiredEquipment: [],
+        environment: 'outdoor', safetyTags: ['avoid_high_impact', 'avoid_heavy_lower_body'],
         systemicCost: 0.25,
         objectiveTransferable: true,
         easierDose: {
@@ -188,6 +197,7 @@ export const TEMPLATES: SessionTemplate[] = [
         title: "Steady-State Tempo Run",
         description: "Continuous run at a comfortably-hard, sustainable pace (Zone 3). Builds aerobic capacity without CNS strain of intervals.",
         requiredEquipment: [],
+        environment: 'outdoor', safetyTags: ['avoid_high_impact', 'avoid_heavy_lower_body'],
         systemicCost: 0.7,
         objectiveTransferable: true,
         easierDose: {
@@ -214,6 +224,7 @@ export const TEMPLATES: SessionTemplate[] = [
         title: "Tempo Ride",
         description: "Steady Zone 3 effort on the bike with a couple of short surges. Solid middle-ground session between easy and hard days.",
         requiredEquipment: ["indoor_bike"],
+        environment: 'indoor', safetyTags: [],
         systemicCost: 0.7,
         objectiveTransferable: true,
         easierDose: {
@@ -238,8 +249,9 @@ export const TEMPLATES: SessionTemplate[] = [
         durationMin: 35,
         durationMax: 50,
         title: "Upper Body Push/Pull",
-        description: "Bench/overhead press, rows, pull-ups, and accessory arm work. Chest, back, shoulders, and arms.",
+        description: "Bench press, rows, and accessory arm work. Chest, back, shoulders, and arms.",
         requiredEquipment: ["free_weights"],
+        environment: 'either', safetyTags: ['avoid_overhead_pressing'],
         systemicCost: 0.3,
         objectiveTransferable: false,
         easierDose: {
@@ -258,6 +270,19 @@ export const TEMPLATES: SessionTemplate[] = [
         }
     },
     {
+        id: "str_upper_pull_01",
+        category: "Upper-body Strength",
+        modality: "Strength",
+        durationMin: 25,
+        durationMax: 40,
+        title: "Pull-up Strength Practice",
+        description: "Controlled pull-ups with scalable sets and accessory hanging or rowing work.",
+        requiredEquipment: ["pullup_bar"],
+        environment: 'either', safetyTags: [],
+        systemicCost: 0.25,
+        objectiveTransferable: false,
+    },
+    {
         id: "str_upper_02",
         category: "Upper-body Strength",
         modality: "Strength",
@@ -266,6 +291,7 @@ export const TEMPLATES: SessionTemplate[] = [
         title: "Cable Upper Body Circuit",
         description: "Cable-based presses, pulldowns, and rows for controlled, joint-friendly upper body volume.",
         requiredEquipment: ["cable_machine"],
+        environment: 'indoor', safetyTags: ['avoid_overhead_pressing'],
         systemicCost: 0.3,
         objectiveTransferable: false,
         easierDose: {
@@ -292,6 +318,7 @@ export const TEMPLATES: SessionTemplate[] = [
         title: "Lower Body Strength & Power",
         description: "Squats, deadlift variations, lunges, and calf/posterior chain accessory work.",
         requiredEquipment: ["free_weights"],
+        environment: 'either', safetyTags: ['avoid_heavy_lower_body', 'avoid_heavy_spinal_loading', 'avoid_overhead_pressing'],
         systemicCost: 0.6,
         objectiveTransferable: false,
         easierDose: {
@@ -318,6 +345,7 @@ export const TEMPLATES: SessionTemplate[] = [
         title: "Hybrid Full Body Push/Pull",
         description: "Compound movements: Squats, deadlift variations, rows, and presses.",
         requiredEquipment: ["free_weights"],
+        environment: 'either', safetyTags: ['avoid_heavy_lower_body', 'avoid_heavy_spinal_loading'],
         systemicCost: 0.6,
         objectiveTransferable: false,
         easierDose: {
@@ -344,6 +372,7 @@ export const TEMPLATES: SessionTemplate[] = [
         title: "Bodyweight Full Body Circuit",
         description: "Push-ups, squats, lunges, planks, and rows-via-table/bands. No equipment required, scalable by tempo and reps.",
         requiredEquipment: [],
+        environment: 'either', safetyTags: ['avoid_high_impact', 'avoid_heavy_lower_body'],
         systemicCost: 0.55,
         objectiveTransferable: false,
         easierDose: {
@@ -370,6 +399,7 @@ export const TEMPLATES: SessionTemplate[] = [
         title: "Interval Speed Work",
         description: "Warm up, then 4x4 minute intervals near threshold. Cool down.",
         requiredEquipment: [],
+        environment: 'outdoor', safetyTags: ['avoid_high_impact', 'avoid_heavy_lower_body'],
         systemicCost: 1.0,
         objectiveTransferable: true,
         easierDose: {
@@ -396,6 +426,7 @@ export const TEMPLATES: SessionTemplate[] = [
         title: "Bike VO2 Intervals",
         description: "Warm up, then 6x3 minute high-intensity efforts with equal recovery. Cool down.",
         requiredEquipment: ["indoor_bike"],
+        environment: 'indoor', safetyTags: [],
         systemicCost: 1.0,
         objectiveTransferable: true,
         easierDose: {
@@ -422,6 +453,7 @@ export const TEMPLATES: SessionTemplate[] = [
         title: "Hill Repeats",
         description: "Warm up, then 6-8x60-90 second hard hill efforts (outdoors, or treadmill incline) with walk-down recovery. Cool down.",
         requiredEquipment: [],
+        environment: 'outdoor', safetyTags: ['avoid_high_impact', 'avoid_heavy_lower_body'],
         systemicCost: 1.0,
         objectiveTransferable: false,
         easierDose: {

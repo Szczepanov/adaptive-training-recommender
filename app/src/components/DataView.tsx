@@ -352,42 +352,21 @@ export function DataView({ decisionInput, userId }: DataViewProps) {
 
   const renderConstraintsData = () => (
     <div className="data-section">
-      <h3>Active Constraints</h3>
-      {decisionInput.activeConstraints.length > 0 ? (
-        <div className="constraints-list">
-          {decisionInput.activeConstraints.map(constraint => (
-            <div key={constraint.key} className="constraint-detail">
-              <h4>{constraint.displayName}</h4>
-              <div className="data-item">
-                <span className="data-label">Category:</span>
-                <span className="data-value">{constraint.category}</span>
-              </div>
-              <div className="data-item">
-                <span className="data-label">Type:</span>
-                <span className="data-value">{constraint.type}</span>
-              </div>
-              <div className="data-item">
-                <span className="data-label">Value:</span>
-                <span className="data-value">
-                  {constraint.type === 'boolean' ? (constraint.value ? 'Yes' : 'No') : constraint.value}
-                </span>
-              </div>
-              <div className="data-item">
-                <span className="data-label">Severity:</span>
-                <span className="data-value">{constraint.severity}</span>
-              </div>
-              {constraint.description && (
-                <div className="data-item">
-                  <span className="data-label">Description:</span>
-                  <span className="data-value">{constraint.description}</span>
-                </div>
-              )}
-            </div>
-          ))}
+      <h3>Training Settings</h3>
+      <div className="constraints-list">
+        <div className="constraint-detail">
+          <h4>Available equipment</h4>
+          <span className="data-value">{Object.entries(decisionInput.trainingSettings.equipment).filter(([, enabled]) => enabled).map(([name]) => name.replaceAll('_', ' ')).join(', ') || 'None configured'}</span>
         </div>
-      ) : (
-        <p>No active constraints</p>
-      )}
+        <div className="constraint-detail">
+          <h4>Safety limits</h4>
+          <span className="data-value">{Object.entries(decisionInput.trainingSettings.guardrails).filter(([, enabled]) => enabled).map(([name]) => name.replace('avoid_', 'Block ').replaceAll('_', ' ')).join(', ') || 'None configured'}</span>
+        </div>
+        <div className="constraint-detail">
+          <h4>Time & location</h4>
+          <span className="data-value">Weekdays: {decisionInput.trainingSettings.defaults.weekdayMaxMinutes ?? 'No limit'} min; weekends: {decisionInput.trainingSettings.defaults.weekendMaxMinutes ?? 'No limit'} min; {decisionInput.trainingSettings.defaults.environment}</span>
+        </div>
+      </div>
     </div>
   );
 
@@ -559,7 +538,7 @@ export function DataView({ decisionInput, userId }: DataViewProps) {
           className={activeTab === 'constraints' ? 'active' : ''}
           onClick={() => setActiveTab('constraints')}
         >
-          Constraints
+          Training Settings
         </button>
         <button
           className={activeTab === 'preferences' ? 'active' : ''}

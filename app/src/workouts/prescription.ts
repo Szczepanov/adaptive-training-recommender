@@ -24,6 +24,7 @@ const FALLBACK_TEMPLATE_TO_WORKOUT: Record<string, string> = {
   end_mod_01: 'running_walk_run_01',
   end_mod_02: 'cycling_controlled_threshold_4x8_01',
   str_upper_01: 'strength_upper_body_trunk_01',
+  str_upper_pull_01: 'strength_upper_body_trunk_01',
   str_upper_02: 'strength_upper_body_trunk_01',
   str_lower_01: 'strength_full_body_maintenance_01',
   str_full_01: 'strength_full_body_maintenance_01',

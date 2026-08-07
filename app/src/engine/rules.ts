@@ -1,5 +1,6 @@
 import type { DailyReadiness, UserContext, Recommendation, SessionTemplate, NextDayPotentialPlan, NextDayPlanBranch, DecisionScoreTelemetry, SafetyEnvelope, PlanEnvelope } from './models';
 import { TEMPLATES } from './templates';
+import { eligibleTemplates, evaluateTemplateEligibility, resolveMaximumSessionMinutes } from './eligibility';
 
 /**
  * Deterministically pick one template from a filtered set of same-category options,
@@ -296,26 +297,16 @@ export function evaluateTraining(
         mode = 'recover';
     }
 
-    // 4. Time available override
-    const availableTime = Math.min(context.constraints.maxTimeMinutes, subjective.timeAvailable);
-
-    // 5. Filter templates by constraints
-    const availableTemplates = TEMPLATES.filter(t => {
-        if (t.durationMin > availableTime) return false;
-
-        for (const req of t.requiredEquipment) {
-            if (req === 'treadmill' && !context.constraints.hasTreadmill) return false;
-            if (req === 'indoor_bike' && !context.constraints.hasIndoorBike) return false;
-            if (req === 'free_weights' && !context.constraints.hasFreeWeights) return false;
-            if (req === 'cable_machine' && !context.constraints.hasCableMachine) return false;
-        }
+    // 4. Filter templates through the single hard-gate resolver. Preferences rank
+    // the remaining feasible options; they never bypass a safety or access rule.
+    const availableTemplates = eligibleTemplates(TEMPLATES, context, subjective.timeAvailable, date).filter(t => {
         // Avoided modalities are a hard exclude, same standing as an equipment gate --
         // unlike deprioritized (soft) or preferred (soft), see rankByModalityPreference.
         if (context.preferences.avoidedModalities.some(m => modalityMatches(t.modality, m))) return false;
         return true;
     });
 
-    // 6. Select Template Based on Mode & Constraints
+    // 5. Select Template Based on Mode & Constraints
     let selectedTemplate = availableTemplates.find(t => t.category === 'Rest') || TEMPLATES[1]; // fallback
     let rationale = "";
 
@@ -327,9 +318,14 @@ export function evaluateTraining(
         // restricted set, so an explicit ask can't push above it.
         const preferenceResult = applyModalityPreference(recoverOptions, recoverOptions, subjective.preferredModalityToday);
         modalityNote = preferenceResult.note;
-        const rankedRecoverOptions = rankByModalityPreference(
+        let rankedRecoverOptions = rankByModalityPreference(
             preferenceResult.options, context.preferences.preferredModalities, context.preferences.deprioritizedModalities
         );
+        if (context.trainingSettings?.preferences.preferActiveRecovery) {
+            rankedRecoverOptions = [...rankedRecoverOptions].sort((a, b) =>
+                Number(b.category === 'Mobility/Recovery') - Number(a.category === 'Mobility/Recovery')
+            );
+        }
         // pickTemplate only returns undefined for an empty array, already excluded by the guard.
         if (rankedRecoverOptions.length > 0) selectedTemplate = pickTemplate(rankedRecoverOptions, date)!;
 
@@ -537,9 +533,15 @@ export function adjustSessionRecommendation(
     }
 
     const baseTemplate = baseRec.template;
+    // Settings can change after the initial recommendation. Do not let a stale base
+    // session receive a higher dose once a newly selected hard gate excludes it.
+    const baseTemplateEligible = evaluateTemplateEligibility(baseTemplate, context, readiness.subjective.timeAvailable, date).eligible;
+    if (direction === 'harder' && !baseTemplateEligible) {
+        return null;
+    }
 
     // Tier 1: Same Workout + Dose Modification
-    if (direction === 'easier' && baseTemplate.easierDose) {
+    if (direction === 'easier' && baseTemplateEligible && baseTemplate.easierDose) {
         return {
             ...baseRec,
             activeDose: baseTemplate.easierDose,
@@ -561,7 +563,8 @@ export function adjustSessionRecommendation(
         // cost would push it past what's allowed, even though 'Moderate' alone would
         // pass a looser Rest/Mobility-only check.
         const projectedCost = baseTemplate.systemicCost * baseTemplate.harderDose.doseRatio;
-        if (!exceedsPlanCeiling(projectedCost, plan)) {
+        const availableTime = resolveMaximumSessionMinutes(context, readiness.subjective.timeAvailable, date);
+        if (!exceedsPlanCeiling(projectedCost, plan) && baseTemplate.harderDose.durationMin <= availableTime) {
             return {
                 ...baseRec,
                 activeDose: baseTemplate.harderDose,
@@ -583,21 +586,8 @@ export function adjustSessionRecommendation(
         .filter(m => !context.preferences.avoidedModalities.map(a => a.toLowerCase()).includes(m.toLowerCase()))
         .filter(m => !safety.restrictedModalities.includes(m));
 
-    const availableTemplates = TEMPLATES.filter(t => {
-        if (t.id === baseTemplate.id) return false;
-        if (!allowedModalities.includes(t.modality)) return false;
-        if (t.requiredEquipment.length > 0) {
-            const hasEq = t.requiredEquipment.every(eq => {
-                if (eq === 'free_weights') return context.constraints.hasFreeWeights;
-                if (eq === 'cable_machine') return context.constraints.hasCableMachine;
-                if (eq === 'treadmill') return context.constraints.hasTreadmill;
-                if (eq === 'indoor_bike') return context.constraints.hasIndoorBike;
-                return true;
-            });
-            if (!hasEq) return false;
-        }
-        return true;
-    });
+    const availableTemplates = eligibleTemplates(TEMPLATES, context, readiness.subjective.timeAvailable, date)
+        .filter(t => t.id !== baseTemplate.id && allowedModalities.includes(t.modality));
 
     // Tier 2: Same Training Objective, Alternate Prescription Layout (Same modality, same category)
     const tier2Candidates = availableTemplates.filter(t =>

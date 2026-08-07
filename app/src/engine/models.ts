@@ -98,6 +98,8 @@ export interface UserContext {
         /** Renamed semantic preferred field: tunes borderline decision boundaries. */
         extraRecoveryMargin?: boolean;
     };
+    /** Optional only for legacy engine callers; composed recommendations always provide it. */
+    trainingSettings?: TrainingSettings;
 }
 
 export type LocationContext = 'home' | 'gym' | 'travel';
@@ -221,7 +223,9 @@ export interface SessionTemplate {
     durationMax: number;
     title: string;
     description: string;
-    requiredEquipment: ('free_weights' | 'cable_machine' | 'treadmill' | 'indoor_bike')[];
+    requiredEquipment: EquipmentKey[];
+    environment: TrainingEnvironment;
+    safetyTags: GuardrailKey[];
     systemicCost: number;
     objectiveTransferable?: boolean;
     easierDose?: DoseVariation;
@@ -496,6 +500,33 @@ export interface UserConstraint {
     updatedAt: string;
 }
 
+/** Athlete-controlled feasibility settings. Equipment is capability, while
+ * guardrails are non-negotiable safety boundaries. They must not be conflated. */
+export type EquipmentKey = 'free_weights' | 'cable_machine' | 'treadmill' | 'indoor_bike' | 'pullup_bar';
+export type TrainingEnvironment = 'indoor' | 'outdoor' | 'either';
+export type GuardrailKey = 'avoid_high_impact' | 'avoid_heavy_lower_body' | 'avoid_overhead_pressing' | 'avoid_heavy_spinal_loading';
+
+export interface TrainingSettings {
+    userId: string;
+    schemaVersion: 2;
+    equipment: Record<EquipmentKey, boolean>;
+    guardrails: Record<GuardrailKey, boolean>;
+    defaults: {
+        weekdayMaxMinutes: number | null;
+        weekendMaxMinutes: number | null;
+        environment: TrainingEnvironment;
+    };
+    preferences: {
+        preferActiveRecovery: boolean;
+    };
+    migration: {
+        legacyReviewed: boolean;
+        migratedAt: string | null;
+    };
+    createdAt: string;
+    updatedAt: string;
+}
+
 export interface UserPreferences {
     userId: string;
     // Recovery preferences
@@ -533,7 +564,7 @@ export interface DailyDecisionInput {
     recoverySnapshot: DailyRecoverySnapshot | null;
     subjectiveCheckin: DailySubjectiveCheckin | null;
     activeGoals: UserGoal[]; // Only goals with status === 'active'
-    activeConstraints: UserConstraint[]; // Only constraints where isActive === true
+    trainingSettings: TrainingSettings;
     preferences: UserPreferences | null;
     // Data quality flags
     dataQuality: {

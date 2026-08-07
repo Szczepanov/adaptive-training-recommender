@@ -1,7 +1,7 @@
 import type { DailyDecisionInput } from './models';
 import { checkinService } from '../services/checkinService';
 import { goalService } from '../services/goalService';
-import { constraintService } from '../services/constraintService';
+import { trainingSettingsService } from '../services/trainingSettingsService';
 import { preferencesService } from '../services/preferencesService';
 import { recoverySnapshotService } from '../services/recoverySnapshotService';
 import { getLocalDateString } from '../utils/localDate';
@@ -19,7 +19,7 @@ export class DecisionComposer {
                 recoverySnapshotService.getRecoverySnapshotByDate(userId, targetDate),
                 checkinService.getCheckin(userId, targetDate),
                 goalService.getActiveGoals(userId),
-                constraintService.getActiveConstraints(userId),
+                trainingSettingsService.getTrainingSettings(userId),
                 preferencesService.getPreferences(userId)
             ]);
 
@@ -27,13 +27,14 @@ export class DecisionComposer {
             const recoverySnapshot = results[0].status === 'fulfilled' ? results[0].value : null;
             const subjectiveCheckin = results[1].status === 'fulfilled' ? results[1].value : null;
             const activeGoals = results[2].status === 'fulfilled' ? results[2].value : [];
-            const activeConstraints = results[3].status === 'fulfilled' ? results[3].value : [];
+            if (results[3].status === 'rejected') throw results[3].reason;
+            const trainingSettings = results[3].value;
             const preferences = results[4].status === 'fulfilled' ? results[4].value : null;
 
             // Log permission errors for debugging
             results.forEach((result, index) => {
                 if (result.status === 'rejected') {
-                    const serviceNames = ['recoverySnapshot', 'checkinService', 'goalService', 'constraintService', 'preferencesService'];
+                    const serviceNames = ['recoverySnapshot', 'checkinService', 'goalService', 'trainingSettingsService', 'preferencesService'];
                     console.warn(`${serviceNames[index]} failed:`, result.reason);
                     
                     // If it's a permission error, provide a helpful message
@@ -58,7 +59,7 @@ export class DecisionComposer {
                 recoverySnapshot,
                 subjectiveCheckin,
                 activeGoals,
-                activeConstraints,
+                trainingSettings,
                 preferences,
                 dataQuality
             };
@@ -151,7 +152,7 @@ export class DecisionComposer {
             subjectiveCheckin: boolean;
             preferences: boolean;
             goals: boolean;
-            constraints: boolean;
+            trainingSettings: boolean;
         };
     }> {
         try {
@@ -162,7 +163,7 @@ export class DecisionComposer {
                 subjectiveCheckin: input.dataQuality.hasSubjectiveCheckin,
                 preferences: input.dataQuality.profileReady,
                 goals: input.activeGoals.length > 0,
-                constraints: input.activeConstraints.length > 0
+                trainingSettings: input.trainingSettings.userId === input.userId
             };
 
             const trueCount = Object.values(details).filter(v => v).length;
@@ -231,15 +232,8 @@ export class DecisionComposer {
             }
         });
 
-        // Constraint validation
-        input.activeConstraints.forEach(constraint => {
-            if (constraint.userId !== input.userId) {
-                errors.push(`Constraint ${constraint.displayName} userId mismatch`);
-            }
-            if (!constraint.isActive) {
-                errors.push(`Constraint ${constraint.displayName} is not active`);
-            }
-        });
+        if (input.trainingSettings.userId !== input.userId) errors.push('Training settings userId mismatch');
+        if (input.trainingSettings.schemaVersion !== 2) errors.push('Unsupported training settings schema');
 
         return {
             isValid: errors.length === 0,
@@ -255,8 +249,8 @@ export class DecisionComposer {
         readinessScore?: number;
         timeAvailable?: number;
         activeGoalsCount: number;
-        activeConstraintsCount: number;
-        hardConstraintsCount: number;
+        configuredEquipmentCount: number;
+        activeGuardrailsCount: number;
         preferredModalities: string[];
         dataQuality: DailyDecisionInput['dataQuality'];
     }> {
@@ -274,16 +268,16 @@ export class DecisionComposer {
                 }
             }
 
-            // Count hard constraints
-            const hardConstraintsCount = input.activeConstraints.filter(c => c.severity === 'hard').length;
+            const configuredEquipmentCount = Object.values(input.trainingSettings.equipment).filter(Boolean).length;
+            const activeGuardrailsCount = Object.values(input.trainingSettings.guardrails).filter(Boolean).length;
 
             return {
                 hasData: input.dataQuality.hasRecoverySnapshot || input.dataQuality.hasSubjectiveCheckin,
                 readinessScore,
                 timeAvailable: input.subjectiveCheckin?.availability.timeAvailableMin ?? undefined,
                 activeGoalsCount: input.activeGoals.length,
-                activeConstraintsCount: input.activeConstraints.length,
-                hardConstraintsCount,
+                configuredEquipmentCount,
+                activeGuardrailsCount,
                 preferredModalities: input.preferences?.preferredModalities ?? [],
                 dataQuality: input.dataQuality
             };

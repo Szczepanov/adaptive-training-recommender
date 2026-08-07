@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { decisionComposer } from '../engine/composer';
 import { evaluateTraining, evaluateNextDayPlan, adjustSessionRecommendation } from '../engine/rules';
-import { mapSnapshotToEngineInput, mapCheckinToSubjectiveInput, mapContextFromGoalsAndConstraints } from '../engine/adapters';
+import { mapSnapshotToEngineInput, mapCheckinToSubjectiveInput, mapContextFromGoalsAndTrainingSettings } from '../engine/adapters';
 import { generateWeekAheadPlan, type WeekAheadPlan } from '../engine/planner';
 import type { DailyDecisionInput, Recommendation, NextDayPotentialPlan, DailyRecommendation } from '../engine/models';
 import { recommendationService } from '../services/recommendationService';
@@ -60,6 +60,21 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
   const [error, setError] = useState<string | null>(null);
   const [showRecoveryData, setShowRecoveryData] = useState(false);
   const [pendingAdherence, setPendingAdherence] = useState<{ date: string; recommendation: DailyRecommendation } | null>(null);
+  const activeSettings = useMemo(() => {
+    if (!decisionInput) return [];
+    const { equipment, guardrails, defaults } = decisionInput.trainingSettings;
+    const equipmentLabels: Record<keyof typeof equipment, string> = {
+      free_weights: 'Free weights available', cable_machine: 'Cable machine available', treadmill: 'Treadmill available', indoor_bike: 'Stationary bike available', pullup_bar: 'Pull-up bar available'
+    };
+    const guardrailLabels: Record<keyof typeof guardrails, string> = {
+      avoid_high_impact: 'Block high-impact training', avoid_heavy_lower_body: 'Block heavy lower-body work', avoid_overhead_pressing: 'Block overhead pressing', avoid_heavy_spinal_loading: 'Block heavy spinal loading'
+    };
+    return [
+      ...Object.entries(equipment).filter(([, enabled]) => enabled).map(([key]) => ({ label: equipmentLabels[key as keyof typeof equipment], kind: 'capability' })),
+      ...Object.entries(guardrails).filter(([, enabled]) => enabled).map(([key]) => ({ label: guardrailLabels[key as keyof typeof guardrails], kind: 'guardrail' })),
+      ...(defaults.environment === 'either' ? [] : [{ label: `${defaults.environment === 'indoor' ? 'Indoor' : 'Outdoor'} training only`, kind: 'guardrail' }]),
+    ];
+  }, [decisionInput]);
 
   const loadDashboardData = useCallback(async () => {
     try {
@@ -82,7 +97,7 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
       if (input.recoverySnapshot && checkinUsable) {
         const objective = mapSnapshotToEngineInput(input.recoverySnapshot);
         const subjective = mapCheckinToSubjectiveInput(input.subjectiveCheckin);
-        const context = mapContextFromGoalsAndConstraints(input.activeGoals, input.activeConstraints, input.preferences);
+        const context = mapContextFromGoalsAndTrainingSettings(input.activeGoals, input.trainingSettings, input.preferences);
         const baseRecommendation = evaluateTraining({ subjective, objective }, context, input.date, yesterdayRec?.mode);
         const todayRec = {
           ...baseRecommendation,
@@ -130,7 +145,7 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
     if (!decisionInput || !decisionInput.recoverySnapshot) return null;
     const subjective = mapCheckinToSubjectiveInput(decisionInput.subjectiveCheckin);
     const objective = mapSnapshotToEngineInput(decisionInput.recoverySnapshot);
-    const context = mapContextFromGoalsAndConstraints(decisionInput.activeGoals, decisionInput.activeConstraints, decisionInput.preferences);
+    const context = mapContextFromGoalsAndTrainingSettings(decisionInput.activeGoals, decisionInput.trainingSettings, decisionInput.preferences);
     return { subjective, objective, context };
   }, [decisionInput]);
 
@@ -561,35 +576,35 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
               )}
             </div>
 
-            {/* Active Constraints Card */}
+            {/* Training settings card */}
             <div className="dashboard-card" onClick={() => onNavigate('constraints')}>
               <div className="card-header">
-                <h3>Active Constraints</h3>
+                <h3>Training Settings</h3>
                 <span className="card-count">
-                  {decisionInput?.activeConstraints.length || 0}
+                  {activeSettings.length}
                 </span>
               </div>
               
-              {decisionInput?.activeConstraints.length ? (
+              {activeSettings.length ? (
                 <div className="constraints-preview">
-                  {decisionInput.activeConstraints.slice(0, 3).map(constraint => (
-                    <div key={constraint.key} className="constraint-item">
-                      <span className="constraint-name">{constraint.displayName}</span>
-                      <span className={`constraint-severity ${constraint.severity}`}>
-                        {constraint.severity}
+                  {activeSettings.slice(0, 3).map(setting => (
+                    <div key={setting.label} className="constraint-item">
+                      <span className="constraint-name">{setting.label}</span>
+                      <span className={`constraint-severity ${setting.kind}`}>
+                        {setting.kind === 'guardrail' ? 'required' : 'available'}
                       </span>
                     </div>
                   ))}
-                  {decisionInput.activeConstraints.length > 3 && (
+                  {activeSettings.length > 3 && (
                     <p className="more-items">
-                      +{decisionInput.activeConstraints.length - 3} more
+                      +{activeSettings.length - 3} more
                     </p>
                   )}
                   <p className="card-action">Tap to manage</p>
                 </div>
               ) : (
                 <div className="card-empty">
-                  <p>No active constraints</p>
+                  <p>No training settings configured</p>
                   <p className="card-action">Tap to configure</p>
                 </div>
               )}

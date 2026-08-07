@@ -6,10 +6,10 @@ import { onAuthStateChanged } from 'firebase/auth';
 import { Home } from './components/Home';
 import { DailyCheckin } from './components/DailyCheckin';
 import { Goals } from './components/Goals';
-import { Constraints } from './components/Constraints';
+import { TrainingSettings } from './components/TrainingSettings';
 import { Preferences } from './components/Preferences';
 import { DataView } from './components/DataView';
-import { constraintService } from './services/constraintService';
+import { trainingSettingsService } from './services/trainingSettingsService';
 import { preferencesService } from './services/preferencesService';
 import { decisionComposer } from './engine/composer';
 import type { DailyDecisionInput } from './engine/models';
@@ -38,9 +38,8 @@ function App() {
         console.log('Created default preferences for user');
       }
       
-      // Initialize predefined constraints (they'll be created as inactive)
-      await constraintService.initializePredefinedConstraints(userId);
-      console.log('Initialized predefined constraints for user');
+      // Creates the typed profile for new users or safely migrates legacy constraints.
+      await trainingSettingsService.getTrainingSettings(userId);
       
     } catch (error) {
       console.error('Error initializing user data:', error);
@@ -225,7 +224,7 @@ function App() {
                     className={`dropdown-item ${screen === 'constraints' ? 'active' : ''}`}
                     onClick={() => handleNavigate('constraints')}
                   >
-                    <span className="item-icon">⚠️</span> Constraints
+                    <span className="item-icon">⚙️</span> Training Settings
                   </button>
                   <button 
                     className={`dropdown-item ${screen === 'preferences' ? 'active' : ''}`}
@@ -284,7 +283,7 @@ function App() {
         )}
         
         {screen === 'constraints' && (
-          <Constraints userId={userId!} onNavigate={handleNavigate} />
+          <TrainingSettings userId={userId!} />
         )}
         
         {screen === 'preferences' && (
@@ -356,7 +355,7 @@ function App() {
               >
                 <span className="item-icon">⚠️</span>
                 <div className="item-text">
-                  <span className="item-title">Constraints</span>
+                  <span className="item-title">Training Settings</span>
                   <span className="item-sub">Manage physical cautions & equipment</span>
                 </div>
               </button>

@@ -5,10 +5,10 @@ import type {
     RawActivitySummary,
     SubjectiveInput,
     TrainingRecord,
-    UserConstraint,
     UserContext,
     UserGoal,
     UserPreferences,
+    TrainingSettings,
 } from './models';
 
 /** Normalizes a raw Garmin per-day activity summary (yesterday's or today's) into the
@@ -111,20 +111,16 @@ export function mapCheckinToSubjectiveInput(checkin: DailySubjectiveCheckin | nu
 const DEFAULT_MAX_TIME_MINUTES = 180;
 
 /**
- * Maps active goals and constraints (Firestore canonical models) to the internal
+ * Maps active goals and typed training settings (Firestore canonical models) to the internal
  * UserContext expected by the rules engine. Equipment/schedule/physical-caution
- * constraints are looked up by their stable predefined `key` (see
- * services/constraintService.ts PREDEFINED_CONSTRAINTS); custom constraints outside
- * that key set don't currently have an engine-side effect.
- *
  * `preferences` was previously not threaded through to the engine at all -- its
  * modality lists and conservativeBias existed only in Firestore/the Preferences screen.
  * Null (no preferences record yet) maps to all-empty/false, matching
  * preferencesService's own defaults.
  */
-export function mapContextFromGoalsAndConstraints(
+export function mapContextFromGoalsAndTrainingSettings(
     goals: UserGoal[],
-    constraints: UserConstraint[],
+    trainingSettings: TrainingSettings,
     preferences: UserPreferences | null
 ): UserContext {
     const topGoalTitle = (category: UserGoal['category']): string => {
@@ -133,19 +129,6 @@ export function mapContextFromGoalsAndConstraints(
         return inCategory.reduce((best, g) => (g.priority > best.priority ? g : best)).title;
     };
 
-    const findConstraint = (key: string): UserConstraint | undefined => constraints.find(c => c.key === key);
-    const isEnabled = (key: string): boolean => {
-        const c = findConstraint(key);
-        return c ? c.value === true : false;
-    };
-
-    const maxTimeConstraint = findConstraint('max_time_minutes');
-    const maxTimeMinutes = typeof maxTimeConstraint?.value === 'number' ? maxTimeConstraint.value : DEFAULT_MAX_TIME_MINUTES;
-
-    const injuries = constraints
-        .filter(c => c.category === 'physical_caution' && c.value === true)
-        .map(c => c.displayName);
-
     return {
         goals: {
             shortTerm: topGoalTitle('short-term'),
@@ -153,12 +136,12 @@ export function mapContextFromGoalsAndConstraints(
             longTerm: topGoalTitle('long-term'),
         },
         constraints: {
-            hasCableMachine: isEnabled('has_cable_machine'),
-            hasFreeWeights: isEnabled('has_free_weights'),
-            hasTreadmill: isEnabled('has_treadmill'),
-            hasIndoorBike: isEnabled('has_stationary_bike'),
-            injuries,
-            maxTimeMinutes,
+            hasCableMachine: trainingSettings.equipment.cable_machine,
+            hasFreeWeights: trainingSettings.equipment.free_weights,
+            hasTreadmill: trainingSettings.equipment.treadmill,
+            hasIndoorBike: trainingSettings.equipment.indoor_bike,
+            injuries: [],
+            maxTimeMinutes: trainingSettings.defaults.weekdayMaxMinutes ?? trainingSettings.defaults.weekendMaxMinutes ?? DEFAULT_MAX_TIME_MINUTES,
         },
         preferences: {
             avoidedModalities: preferences?.avoidedModalities ?? [],
@@ -166,5 +149,6 @@ export function mapContextFromGoalsAndConstraints(
             preferredModalities: preferences?.preferredModalities ?? [],
             conservativeBias: preferences?.conservativeBias ?? false,
         },
+        trainingSettings,
     };
 }
