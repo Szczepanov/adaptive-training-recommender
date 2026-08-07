@@ -125,6 +125,32 @@ export const SCENARIOS: AthleteScenario[] = [
         readinessForWeek: () => stableReadiness(),
     },
     {
+        id: 'cycling_criterium_fresh_A',
+        label: 'Cycling A-event (criterium, fresh trajectory)',
+        description: 'Same athlete and event as the normal criterium scenario, but consistently strong sleep, HRV and subjective readiness. This makes the harness reveal whether higher capacity creates more specific work rather than merely changing a readiness label.',
+        context: context({ indoor_bike: true, free_weights: true }, ['Cycling']),
+        event: eventOn('e-criterium-fresh', 40, 'cycling_event', 'criterium', 'A'),
+        startDate: START_DATE,
+        weeks: 4,
+        readinessForWeek: () => stableReadiness(
+            { readiness: 8, sleepQuality: 8, fatigue: 2, soreness: 2, stress: 2, motivation: 8 },
+            { sleep_score: 92, sleep_duration_min: 500, rhr: 46, rhr_7d_avg: 50, rhr_delta: -4, hrv_last_night: 65, hrv_weekly_avg: 50, hrv_delta: 15, body_battery_wake: 95 },
+        ),
+    },
+    {
+        id: 'cycling_criterium_stressed_A',
+        label: 'Cycling A-event (criterium, stressed trajectory)',
+        description: 'Same athlete and event as the normal criterium scenario, with poor sleep, elevated resting heart rate, lower HRV and high soreness. It must reduce risky work without hiding objective misses or converting unsafe capacity into a nominally successful plan.',
+        context: context({ indoor_bike: true, free_weights: true }, ['Cycling']),
+        event: eventOn('e-criterium-stressed', 40, 'cycling_event', 'criterium', 'A'),
+        startDate: START_DATE,
+        weeks: 4,
+        readinessForWeek: () => stableReadiness(
+            { readiness: 3, sleepQuality: 3, fatigue: 8, soreness: 8, stress: 8, motivation: 3 },
+            { sleep_score: 55, sleep_duration_min: 330, rhr: 58, rhr_7d_avg: 50, rhr_delta: 8, hrv_last_night: 32, hrv_weekly_avg: 50, hrv_delta: -18, body_battery_wake: 35 },
+        ),
+    },
+    {
         id: 'running_marathon_A',
         label: 'Running A-event (marathon, 40 days out)',
         description: 'No indoor bike -- verifies the plan never leans on Cycling equipment the athlete does not own, and that running-relevant templates dominate a running-focused build.',

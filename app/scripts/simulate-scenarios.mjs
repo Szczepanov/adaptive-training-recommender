@@ -33,6 +33,18 @@ function fmtAnchors(result) {
   return `event-specific anchor hit ${hits}/${nominated} nominated weeks` + (result.anchorScopeNote ? ' (see scope note)' : '');
 }
 
+function fmtObjectiveCredits(credits) {
+  const byObjective = new Map();
+  for (const credit of credits) {
+    const current = byObjective.get(credit.objectiveKey) ?? [];
+    current.push(credit.templateTitle);
+    byObjective.set(credit.objectiveKey, current);
+  }
+  return Array.from(byObjective.entries())
+    .map(([key, templates]) => `${key}: ${templates.join(', ')}`)
+    .join('; ') || '(none)';
+}
+
 function scenarioSection(result) {
   const lines = [];
   lines.push(`### ${result.label}`);
@@ -46,9 +58,12 @@ function scenarioSection(result) {
   lines.push(`- **Fatigue tier days:** train ${result.fatigueTierDayCounts.train}, modify ${result.fatigueTierDayCounts.modify}, recover ${result.fatigueTierDayCounts.recover}`);
   lines.push(`- **Longest same-template streak:** ${result.maxConsecutiveSameTemplateStreakWithinCall} within a single week-strip call, ${result.maxConsecutiveSameTemplateStreakAcrossWeeks} across chained weeks`);
   lines.push(`- **Objective resolution:** ${result.objectiveResolution.map((o) => `${o.key} ${o.timesResolved}/${o.timesGenerated}`).join(', ') || '(none generated)'}`);
+  lines.push(`- **Objective-credit sources:** ${fmtObjectiveCredits(result.objectiveCredits)}`);
+  lines.push(`- **Optimizer diagnostics:** fragile top-two selections ${result.utilityDiagnostics.fragileSelectionCount}; lower-benefit choice selected ${result.utilityDiagnostics.lowerBenefitSelectionCount}; train-tier Rest/Mobility selections ${result.utilityDiagnostics.trainTierRestOrRecoveryCount}`);
   lines.push(`- **Anchor days:** ${fmtAnchors(result)}`);
   if (result.anchorScopeNote) lines.push(`  - *Scope note: ${result.anchorScopeNote}*`);
   lines.push(`- **Constraint violations:** ${result.constraintViolations.length === 0 ? 'none' : result.constraintViolations.join('; ')}`);
+  lines.push(`- **Quality warnings:** ${result.qualityWarnings.length === 0 ? 'none' : result.qualityWarnings.join(' ')}`);
   lines.push('');
   return lines.join('\n');
 }
@@ -82,6 +97,8 @@ const md = [
   `- Captured: ${report.capturedAt}`,
   `- Scenarios: ${report.scenarios.length}`,
   `- Total constraint violations across all scenarios: ${violationCount}${violationCount === 0 ? ' (clean)' : ' -- SEE BELOW, this should always be 0'}`,
+  `- Preference sensitivity: ${report.preferenceSensitivity.map((result) => result.summary).join(' ') || '(no matched comparisons)'}`,
+  `- Readiness sensitivity: ${report.readinessSensitivity.map((result) => result.summary).join(' ') || '(no matched comparisons)'}`,
   '',
   'Regenerate with `npm run simulate:scenarios`. Scenario definitions live in',
   '`src/engine/simulation/scenarios.ts` -- the same list `src/engine/scenarios.test.ts`',

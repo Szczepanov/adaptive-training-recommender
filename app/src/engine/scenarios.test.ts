@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { SCENARIOS } from './simulation/scenarios';
-import { runScenario, type ScenarioResult } from './simulation/analyze';
+import { runAllScenarios, runScenario, type ScenarioResult } from './simulation/analyze';
 
 /**
  * Regression coverage for the recommendation engine across sport/event types, built on
@@ -131,6 +131,38 @@ describe('field_sport_general_target -- no dedicated event category exists for f
     it('Field Maintenance is at least reachable over a 4-week horizon on preference alone', async () => {
         const result = await getResult('field_sport_general_target');
         expect(result.modalityDistribution.Field ?? 0).toBeGreaterThan(0);
+    });
+
+    it('reports when the Field preference has no observable effect against the matched Base baseline', async () => {
+        const report = await runAllScenarios();
+        expect(report.preferenceSensitivity).toContainEqual(expect.objectContaining({
+            preferredModality: 'Field',
+            changedPlannedDays: 0,
+        }));
+    });
+});
+
+describe('scenario quality diagnostics', () => {
+    it('records projected objective-credit sources and flags resolution that has no source in the current window', async () => {
+        const result = await getResult('cycling_criterium_A');
+        expect(result.objectiveCredits).toContainEqual(expect.objectContaining({
+            objectiveKey: 'threshold_quality',
+            modality: 'Cycling',
+        }));
+        expect(result.qualityWarnings.some(warning => warning.includes('surge_repeatability'))).toBe(true);
+    });
+
+    it('runs matched fresh and stressed readiness trajectories instead of relying on one deterministic chain', async () => {
+        const report = await runAllScenarios();
+        expect(report.readinessSensitivity).toHaveLength(2);
+        expect(report.readinessSensitivity.map(result => result.trajectory)).toEqual(['fresh', 'stressed']);
+    });
+
+    it('surfaces coach-quality failures separately from hard constraint violations', async () => {
+        const result = await getResult('triathlon_olympic_A');
+        expect(result.constraintViolations).toEqual([]);
+        expect(result.qualityWarnings).toContain('Triathlon capability is partial: the engine has no Swimming modality or swim objective/catalog support.');
+        expect(result.qualityWarnings).toContain('Event-specific anchor missed in 4 nominated week(s).');
     });
 });
 

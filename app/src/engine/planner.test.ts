@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { evaluateNextDayPlan, evaluateTraining } from './rules';
 import { generateWeekAheadPlan, generateWeekAheadPlanWithIntent, prepareWeekAheadPlanSeed, projectTrailingHistory, resolveWeeklyAnchors } from './planner';
-import type { DailyReadiness, EngineObjectiveInput, FatigueState, SubjectiveInput, TrainingSettings, UserContext, UserEvent, UserPreferences } from './models';
+import type { DailyReadiness, EngineObjectiveInput, FatigueState, FixedActivity, SubjectiveInput, TrainingSettings, UserContext, UserEvent, UserPreferences } from './models';
 import type { CompletedExposure, TrainingHistoryProvider } from './trainingHistory';
 import { rankCandidatesByUtility } from './optimizer';
 import { resolveAvailability } from './schedule';
@@ -382,6 +382,22 @@ describe('resolveWeeklyAnchors', () => {
         expect(anchors.eventSpecificAnchorDate).toBe('2026-08-09');
         expect(anchors.qualityAnchorDate).not.toBeNull();
         expect(anchors.qualityAnchorDate).not.toBe('2026-08-09');
+    });
+
+    it('migrates an event-specific anchor to the next feasible day when its preferred day is fully reserved', () => {
+        const context = baseContext();
+        // A 60-minute weekday can host the shortest race-specific template. With Sunday
+        // fully reserved, Monday is the nearest viable fallback instead of silently
+        // treating the protected objective as completed or dropping it without a signal.
+        context.trainingSettings = weeklyTrainingSettings({ weekdayMaxMinutes: 60 });
+        const event = cyclingEvent('2026-08-27');
+        const reservedSunday: FixedActivity = {
+            id: 'family-event', title: 'Fixed commitment', date: '2026-08-09', durationMin: 150, isCompleted: false,
+        };
+
+        const anchors = resolveWeeklyAnchors('2026-08-07', 7, [event], [reservedSunday], context);
+
+        expect(anchors.eventSpecificAnchorDate).toBe('2026-08-10');
     });
 
     it('nominates no event-specific anchor once every candidate day is in the taper window (the race-specific templates explicitly excludeTaper)', () => {

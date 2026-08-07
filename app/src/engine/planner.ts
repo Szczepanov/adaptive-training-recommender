@@ -63,6 +63,10 @@ export interface WeekAheadDay {
         fatigueTier: 'train' | 'modify' | 'recover';
         topUtilityScore: number;
         runnerUpUtilityScore: number | null;
+        selectedBenefitScore: number;
+        selectedCostPenalty: number;
+        bestBenefitTemplateId: string;
+        bestBenefitScore: number;
     };
 }
 
@@ -463,13 +467,25 @@ export function generateWeekAheadPlan(
                 mode: 'recover',
                 rationale: "No session fits this day's projected time/equipment window -- defaulting to rest.",
                 addressesObjectives: [],
-                diagnostics: { peakFatigue, fatigueTier: fatigueTierFor(peakFatigue), topUtilityScore: 0, runnerUpUtilityScore: null },
+                diagnostics: {
+                    peakFatigue,
+                    fatigueTier: fatigueTierFor(peakFatigue),
+                    topUtilityScore: 0,
+                    runnerUpUtilityScore: null,
+                    selectedBenefitScore: 0,
+                    selectedCostPenalty: 0,
+                    bestBenefitTemplateId: restTemplate.id,
+                    bestBenefitScore: 0,
+                },
             });
             applyPick(date, restTemplate);
             continue;
         }
 
         const pickStimulus = enrichedStimulusProfile(pick.template);
+        const bestBenefit = ranked.reduce((best, candidate) =>
+            candidate.benefitScore > best.benefitScore ? candidate : best,
+        pick);
         const addressed = unresolved
             .filter(o => stimulusCoverage(pickStimulus, o.targetStimulus) >= STIMULUS_CREDIT_COVERAGE_THRESHOLD
                 && qualifiesForObjective(pickStimulus, pick.template.modality, o.qualification))
@@ -490,6 +506,10 @@ export function generateWeekAheadPlan(
                 fatigueTier: fatigueTierFor(peakFatigue),
                 topUtilityScore: pick.utilityScore,
                 runnerUpUtilityScore: ranked[1]?.utilityScore ?? null,
+                selectedBenefitScore: pick.benefitScore,
+                selectedCostPenalty: pick.costPenalty,
+                bestBenefitTemplateId: bestBenefit.template.id,
+                bestBenefitScore: bestBenefit.benefitScore,
             },
         });
     }
