@@ -2,11 +2,31 @@ import gzip
 import hashlib
 import json
 import logging
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Protocol
 
 logger = logging.getLogger(__name__)
+
+_SAFE_ARCHIVE_SEGMENT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
+_ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def _validate_archive_identifier(value: str, name: str) -> str:
+    if not _SAFE_ARCHIVE_SEGMENT.fullmatch(value) or value in {".", ".."}:
+        raise ValueError(f"Invalid archive {name}; only safe object-name segments are allowed.")
+    return value
+
+
+def _validate_logical_date(logical_date: str) -> str:
+    if not _ISO_DATE.fullmatch(logical_date):
+        raise ValueError("Invalid archive logical date; expected YYYY-MM-DD.")
+    try:
+        datetime.strptime(logical_date, "%Y-%m-%d")
+    except ValueError as error:
+        raise ValueError("Invalid archive logical date; expected a real calendar date.") from error
+    return logical_date
 
 
 def _payload_sha256(payload: Any) -> str:
@@ -15,6 +35,8 @@ def _payload_sha256(payload: Any) -> str:
 
 
 def _object_dir(prefix: str, endpoint: str, logical_date: str) -> str:
+    _validate_archive_identifier(endpoint, "endpoint")
+    _validate_logical_date(logical_date)
     year, month = logical_date[:4], logical_date[5:7]
     return f"{prefix}/{endpoint}/{year}/{month}/{logical_date}"
 
@@ -75,6 +97,7 @@ class LocalRawArchiveStore:
         sync_run_id: str,
         garminconnect_version: str | None = None,
     ) -> str | None:
+        _validate_archive_identifier(sync_run_id, "sync run ID")
         target_dir = self._dir(endpoint, logical_date)
         payload_hash = _payload_sha256(payload)
 
@@ -149,6 +172,7 @@ class GcsRawArchiveStore:
         garminconnect_version: str | None = None,
     ) -> str | None:
         try:
+            _validate_archive_identifier(sync_run_id, "sync run ID")
             client = self._client()
             bucket = client.bucket(self.bucket_name)
             object_dir = _object_dir(self.prefix, endpoint, logical_date)
