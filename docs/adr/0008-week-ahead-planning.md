@@ -31,8 +31,12 @@ Two open design questions:
 
 ## Decision Outcome
 
-A new pure engine function, [`generateWeekAheadPlan`](../../app/src/engine/planner.ts),
-projects a rolling plan forward from today:
+The pure [`generateWeekAheadPlan`](../../app/src/engine/planner.ts) core receives a
+prepared microcycle/fatigue seed and projects a rolling plan forward from today.
+`generateWeekAheadPlanWithIntent` is the asynchronous production wrapper: it resolves
+adherence-backed intent once, creates that seed, and delegates the projected-day chain
+to the pure core. Tests use `prepareWeekAheadPlanSeed` with fixture history instead of
+Firestore.
 
 1. **Three confidence tiers, not one flat forecast**:
    * **Confirmed** (day 0): today's actual recommendation, unchanged, from `rules.ts`.

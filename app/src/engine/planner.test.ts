@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { evaluateNextDayPlan, evaluateTraining } from './rules';
-import { generateWeekAheadPlan } from './planner';
+import { generateWeekAheadPlan, generateWeekAheadPlanWithIntent, prepareWeekAheadPlanSeed } from './planner';
 import type { DailyReadiness, EngineObjectiveInput, SubjectiveInput, UserContext, UserEvent } from './models';
 import type { DayOfWeekSchedule } from './models';
+import type { CompletedExposure, TrainingHistoryProvider } from './trainingHistory';
 
 // --- Fixtures (mirrors rules.test.ts's pattern) -----------------------------
 
@@ -50,7 +51,12 @@ function buildTodayAndTomorrow(context: UserContext, date = '2026-08-07') {
     const readiness: DailyReadiness = { subjective: neutralSubjective(), objective: quietObjective() };
     const todayRec = evaluateTraining(readiness, context, date);
     const nextDayPlan = evaluateNextDayPlan(readiness, context, date, todayRec);
-    return { readiness, todayRec, tomorrowRec: nextDayPlan.branches.yellow.recommendation };
+    return {
+        readiness,
+        todayRec,
+        tomorrowRec: nextDayPlan.branches.yellow.recommendation,
+        seed: prepareWeekAheadPlanSeed(readiness, [], date, []),
+    };
 }
 
 // --- Tests -------------------------------------------------------------------
@@ -60,7 +66,7 @@ describe('generateWeekAheadPlan', () => {
         const context = baseContext();
         const { readiness, todayRec, tomorrowRec } = buildTodayAndTomorrow(context);
 
-        const plan = generateWeekAheadPlan(readiness, context, null, '2026-08-07', todayRec, tomorrowRec, { days: 7 });
+        const plan = generateWeekAheadPlan(readiness, context, null, '2026-08-07', todayRec, tomorrowRec, prepareWeekAheadPlanSeed(readiness, [], '2026-08-07', []), { days: 7 });
 
         expect(plan.days).toHaveLength(7);
         expect(plan.startDate).toBe('2026-08-08');
@@ -79,7 +85,7 @@ describe('generateWeekAheadPlan', () => {
         const context = baseContext();
         const { readiness, todayRec } = buildTodayAndTomorrow(context);
 
-        const plan = generateWeekAheadPlan(readiness, context, null, '2026-08-07', todayRec, null, { days: 2 });
+        const plan = generateWeekAheadPlan(readiness, context, null, '2026-08-07', todayRec, null, prepareWeekAheadPlanSeed(readiness, [], '2026-08-07', []), { days: 2 });
 
         // With no tomorrowRec, offset 1 is filled by the projected optimizer path instead.
         expect(plan.days).toHaveLength(2);
@@ -91,7 +97,7 @@ describe('generateWeekAheadPlan', () => {
         const context = baseContext({ injuries: ['Running'] });
         const { readiness, todayRec, tomorrowRec } = buildTodayAndTomorrow(context);
 
-        const plan = generateWeekAheadPlan(readiness, context, null, '2026-08-07', todayRec, tomorrowRec, { days: 7 });
+        const plan = generateWeekAheadPlan(readiness, context, null, '2026-08-07', todayRec, tomorrowRec, prepareWeekAheadPlanSeed(readiness, [], '2026-08-07', []), { days: 7 });
 
         // Only check the projected tail (offsets 2+), which is entirely optimizer-driven
         // and therefore where the safety gate threaded through rankCandidatesByUtility applies.
@@ -109,7 +115,7 @@ describe('generateWeekAheadPlan', () => {
             preferredLocation: 'home',
         }));
 
-        const plan = generateWeekAheadPlan(readiness, context, null, '2026-08-07', todayRec, tomorrowRec, {
+        const plan = generateWeekAheadPlan(readiness, context, null, '2026-08-07', todayRec, tomorrowRec, prepareWeekAheadPlanSeed(readiness, [], '2026-08-07', []), {
             days: 7,
             weeklySchedule: zeroTimeSchedule,
         });
@@ -123,11 +129,23 @@ describe('generateWeekAheadPlan', () => {
         const context = baseContext();
         const { readiness, todayRec, tomorrowRec } = buildTodayAndTomorrow(context);
 
-        const plan = generateWeekAheadPlan(readiness, context, null, '2026-08-07', todayRec, tomorrowRec, { days: 7 });
+        const plan = generateWeekAheadPlan(readiness, context, null, '2026-08-07', todayRec, tomorrowRec, prepareWeekAheadPlanSeed(readiness, [], '2026-08-07', []), { days: 7 });
 
         expect(plan.microcycleObjectives.length).toBeGreaterThan(0);
         // A full week of picks should be enough to satisfy at least one weekly objective's target.
         expect(plan.microcycleObjectives.some(o => o.completedExposures >= 1)).toBe(true);
+    });
+
+    it('seeds the rolling objective ledger from completed adherence history', () => {
+        const context = baseContext();
+        const { readiness, todayRec, tomorrowRec } = buildTodayAndTomorrow(context);
+        const history: CompletedExposure[] = [{
+            date: '2026-08-05',
+            costProfile: { systemic: 0.7, cardiovascular: 0.8, lowerBody: 0.7, upperBody: 0, impactTissue: 0.3, neuromuscular: 0.4 },
+            trainingRecordLike: { type: 'Cycling Threshold', duration_min: 45, training_effect: 3, intensity_tag: 'hard' },
+        }];
+        const plan = generateWeekAheadPlan(readiness, context, null, '2026-08-07', todayRec, tomorrowRec, prepareWeekAheadPlanSeed(readiness, [], '2026-08-07', history), { days: 2 });
+        expect(plan.microcycleObjectives.find(objective => objective.key === 'threshold_quality')?.completedExposures).toBe(1);
     });
 
     it('evaluates periodization separately for each displayed date across a taper boundary', () => {
@@ -138,7 +156,7 @@ describe('generateWeekAheadPlan', () => {
             demandProfile: { aerobicEndurance: 0.8, thresholdPower: 0.75, vo2MaxPower: 0.4, repeatedSurges: 0.6, sprintPower: 0.3, fatigueResistance: 0.8, neuromuscular: 0.3 },
         };
 
-        const plan = generateWeekAheadPlan(readiness, context, null, '2026-08-07', todayRec, tomorrowRec, {
+        const plan = generateWeekAheadPlan(readiness, context, null, '2026-08-07', todayRec, tomorrowRec, prepareWeekAheadPlanSeed(readiness, [event], '2026-08-07', []), {
             days: 3,
             events: [event],
         });
@@ -152,9 +170,27 @@ describe('generateWeekAheadPlan', () => {
         const context = baseContext();
         const { readiness, todayRec, tomorrowRec } = buildTodayAndTomorrow(context);
 
-        const planA = generateWeekAheadPlan(readiness, context, null, '2026-08-07', todayRec, tomorrowRec, { days: 5 });
-        const planB = generateWeekAheadPlan(readiness, context, null, '2026-08-07', todayRec, tomorrowRec, { days: 5 });
+        const seed = prepareWeekAheadPlanSeed(readiness, [], '2026-08-07', []);
+        const planA = generateWeekAheadPlan(readiness, context, null, '2026-08-07', todayRec, tomorrowRec, seed, { days: 5 });
+        const planB = generateWeekAheadPlan(readiness, context, null, '2026-08-07', todayRec, tomorrowRec, seed, { days: 5 });
 
         expect(planA.days.map(d => d.template.id)).toEqual(planB.days.map(d => d.template.id));
+    });
+
+    it('loads adherence history once in the async wrapper before delegating to the pure chain', async () => {
+        const context = baseContext();
+        const { readiness, todayRec, tomorrowRec } = buildTodayAndTomorrow(context);
+        let calls = 0;
+        const provider: TrainingHistoryProvider = {
+            reconstruct: async () => {
+                calls += 1;
+                return [];
+            },
+        };
+        const plan = await generateWeekAheadPlanWithIntent(
+            'u1', readiness, context, null, [], '2026-08-07', todayRec, tomorrowRec, { days: 3 }, provider,
+        );
+        expect(calls).toBe(1);
+        expect(plan.days).toHaveLength(3);
     });
 });

@@ -1,12 +1,13 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { decisionComposer } from '../engine/composer';
-import { evaluateTraining, evaluateNextDayPlan, adjustSessionRecommendation } from '../engine/rules';
+import { evaluateTrainingWithIntent, evaluateNextDayPlanWithIntent, adjustSessionRecommendation } from '../engine/rules';
 import { mapSnapshotToEngineInput, mapCheckinToSubjectiveInput, mapContextFromGoalsAndTrainingSettings, mapGoalsToUserEvents } from '../engine/adapters';
-import { generateWeekAheadPlan, type WeekAheadPlan } from '../engine/planner';
+import { generateWeekAheadPlanWithIntent, type WeekAheadPlan } from '../engine/planner';
 import { evaluatePeriodizationPhase, getDaysToEvent } from '../engine/periodization';
+import { resolveExecutionDose } from '../engine/dose';
 import type { DailyDecisionInput, Recommendation, NextDayPotentialPlan, DailyRecommendation } from '../engine/models';
 import { recommendationService } from '../services/recommendationService';
-import { addDaysToLocalDateString, getPreviousLocalDateString } from '../utils/localDate';
+import { getPreviousLocalDateString } from '../utils/localDate';
 import { getPrescriptionLegend, resolveWorkoutPrescription } from '../workouts';
 import type { WorkoutPrescription } from '../workouts';
 import { AdherencePrompt } from './AdherencePrompt';
@@ -66,6 +67,7 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
   const [error, setError] = useState<string | null>(null);
   const [showWorkoutDetails, setShowWorkoutDetails] = useState(false);
   const [pendingAdherence, setPendingAdherence] = useState<{ date: string; recommendation: DailyRecommendation } | null>(null);
+  const dashboardRequest = useRef(0);
   const activeSettings = useMemo(() => {
     if (!decisionInput) return [];
     const { equipment, guardrails, defaults } = decisionInput.trainingSettings;
@@ -83,9 +85,12 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
   }, [decisionInput]);
 
   const loadDashboardData = useCallback(async () => {
+    const requestId = ++dashboardRequest.current;
+    const isCurrent = () => requestId === dashboardRequest.current;
     try {
       setLoading(true);
       const input = await decisionComposer.composeDailyDecisionInput(userId);
+      if (!isCurrent()) return;
       setDecisionInput(input);
 
       const yesterday = getPreviousLocalDateString(input.date);
@@ -93,6 +98,7 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
         console.warn('Failed to load yesterday\'s recommendation:', err);
         return null;
       });
+      if (!isCurrent()) return;
       setPendingAdherence(
         yesterdayRec && yesterdayRec.adherence.respondedAt === null
           ? { date: yesterday, recommendation: yesterdayRec }
@@ -104,14 +110,17 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
         const objective = mapSnapshotToEngineInput(input.recoverySnapshot);
         const subjective = mapCheckinToSubjectiveInput(input.subjectiveCheckin);
         const context = mapContextFromGoalsAndTrainingSettings(input.activeGoals, input.trainingSettings, input.preferences);
-        const baseRecommendation = evaluateTraining({ subjective, objective }, context, input.date, yesterdayRec?.mode);
+        const events = mapGoalsToUserEvents(input.activeGoals);
+        const baseRecommendation = await evaluateTrainingWithIntent(userId, { subjective, objective }, context, events, input.date, yesterdayRec?.mode);
+        if (!isCurrent()) return;
         const todayRec = {
           ...baseRecommendation,
-          prescription: resolveWorkoutPrescription(baseRecommendation, userId, input.date, input.preferences?.performanceProfile) ?? undefined
+          prescription: resolveWorkoutPrescription(baseRecommendation, userId, input.date, input.preferences?.performanceProfile, baseRecommendation.executionDose) ?? undefined
         };
         setRecommendation(todayRec);
 
-        const tomorrowPlan = evaluateNextDayPlan({ subjective, objective }, context, input.date, todayRec);
+        const tomorrowPlan = await evaluateNextDayPlanWithIntent(userId, events, { subjective, objective }, context, input.date, todayRec);
+        if (!isCurrent()) return;
         setNextDayPlan(tomorrowPlan);
 
         recommendationService.saveRecommendation(userId, input.date, todayRec).catch(err =>
@@ -122,10 +131,11 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
         setNextDayPlan(null);
       }
     } catch (err) {
+      if (!isCurrent()) return;
       console.error('Error loading dashboard data:', err);
       setError('Failed to load dashboard data');
     } finally {
-      setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
   }, [userId]);
 
@@ -162,9 +172,14 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
     const { subjective, objective, context } = engineInputs;
     const adjusted = adjustSessionRecommendation(recommendation, direction, { subjective, objective }, context, decisionInput.date);
     if (!adjusted) return recommendation;
+    const plannedDose = adjusted.plannedDose ?? recommendation.plannedDose;
+    const executionDose = plannedDose === undefined || !adjusted.envelopes
+      ? recommendation.executionDose
+      : resolveExecutionDose(plannedDose, adjusted.envelopes.plan, direction);
+    const adjustedWithExecution = { ...adjusted, plannedDose, executionDose };
     return {
-      ...adjusted,
-      prescription: resolveWorkoutPrescription(adjusted, userId, decisionInput.date, decisionInput.preferences?.performanceProfile) ?? undefined
+      ...adjustedWithExecution,
+      prescription: resolveWorkoutPrescription(adjustedWithExecution, userId, decisionInput.date, decisionInput.preferences?.performanceProfile, executionDose) ?? undefined
     };
   }, [recommendation, engineInputs, decisionInput, userId]);
 
@@ -201,28 +216,40 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
     return {
       events,
       today: evaluatePeriodizationPhase(events, decisionInput.date),
-      tomorrow: evaluatePeriodizationPhase(events, addDaysToLocalDateString(decisionInput.date, 1)),
     };
   }, [decisionInput]);
 
-  // Uses today's actual (possibly adjusted) recommendation to seed tomorrow's green
-  // preview branch and the following six-day forecast (see planner.ts) -- recomputed on every
-  // render from current goals/constraints/preferences/check-in, never persisted, so it
-  // stays in lockstep with whatever's driving today's card above.
-  const weekAheadPlan: WeekAheadPlan | null = useMemo(() => {
-    if (!engineInputs || !decisionInput || !activeRec) return null;
+  // The production planner reads adherence history once, so it must run outside render.
+  // Cancellation ensures a prior user/date/goals/check-in/settings state cannot replace
+  // the forecast after a newer dashboard snapshot has been composed.
+  const [weekAheadPlan, setWeekAheadPlan] = useState<WeekAheadPlan | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    if (!engineInputs || !decisionInput || !activeRec) {
+      setWeekAheadPlan(null);
+      return () => { cancelled = true; };
+    }
     const { subjective, objective, context } = engineInputs;
     const tomorrowRec = nextDayPlan ? nextDayPlan.branches.green.recommendation : null;
-    return generateWeekAheadPlan(
+    void generateWeekAheadPlanWithIntent(
+      userId,
       { subjective, objective },
       context,
       decisionInput.preferences,
+      eventPeriodization?.events ?? [],
       decisionInput.date,
       activeRec,
       tomorrowRec,
-      { events: eventPeriodization?.events }
-    );
-  }, [engineInputs, decisionInput, activeRec, nextDayPlan, eventPeriodization]);
+    ).then(plan => {
+      if (!cancelled) setWeekAheadPlan(plan);
+    }).catch(err => {
+      if (!cancelled) {
+        console.warn('Failed to generate week-ahead plan:', err);
+        setWeekAheadPlan(null);
+      }
+    });
+    return () => { cancelled = true; };
+  }, [userId, engineInputs, decisionInput, activeRec, nextDayPlan, eventPeriodization]);
 
   if (loading) {
     return (

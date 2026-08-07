@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { evaluateTraining, evaluateNextDayPlan, adjustSessionRecommendation, evaluateEnvelopes } from './rules';
+import { buildNextDayScenarios, evaluateTraining, evaluateNextDayPlan, evaluateNextDayPlanWithIntent, adjustSessionRecommendation, evaluateEnvelopes } from './rules';
+import type { TrainingHistoryProvider } from './trainingHistory';
 import type { DailyReadiness, UserContext, EngineObjectiveInput, SubjectiveInput } from './models';
 import { TEMPLATES } from './templates';
 
@@ -293,6 +294,27 @@ describe('constraint filtering', () => {
 // --- evaluateNextDayPlan -----------------------------------------------------
 
 describe('evaluateNextDayPlan', () => {
+    it('retains independently evaluable synthetic inputs for each scenario', () => {
+        const todayReadiness: DailyReadiness = { subjective: greenSubjective(), objective: quietObjective() };
+        const context = baseContext();
+        const todayRec = evaluateTraining(todayReadiness, context, '2026-08-01');
+        const scenarios = buildNextDayScenarios(todayReadiness, context, '2026-08-01', todayRec);
+        expect(scenarios.scenarios.green).toMatchObject({ tier: 'green', label: 'Optimal Readiness' });
+        expect(scenarios.scenarios.yellow.readiness.subjective.fatigue).toBeGreaterThan(scenarios.scenarios.green.readiness.subjective.fatigue);
+        expect(scenarios.scenarios.red.readiness.subjective.fatigue).toBeGreaterThan(scenarios.scenarios.yellow.readiness.subjective.fatigue);
+    });
+
+    it('keeps green, yellow, and red distinct through intent-aware evaluation', async () => {
+        const todayReadiness: DailyReadiness = { subjective: greenSubjective(), objective: quietObjective() };
+        const context = baseContext();
+        const todayRec = evaluateTraining(todayReadiness, context, '2026-08-01');
+        const provider: TrainingHistoryProvider = { reconstruct: async () => [] };
+        const plan = await evaluateNextDayPlanWithIntent('u1', [], todayReadiness, context, '2026-08-01', todayRec, provider);
+        expect(plan.branches.green.recommendation.mode).toBe('train');
+        expect(plan.branches.yellow.recommendation.mode).toBe('modify');
+        expect(plan.branches.red.recommendation.mode).toBe('recover');
+    });
+
     it('produces a single mandatory recovery plan when pain/injury is flagged today', () => {
         const todayReadiness: DailyReadiness = { subjective: greenSubjective({ painFlag: true }), objective: quietObjective() };
         const context = baseContext();

@@ -152,22 +152,30 @@ function applyVariant(workout: WorkoutDefinition, variantId: 'full' | 'reduced' 
   }));
 }
 
-function variantFor(rec: Recommendation): 'full' | 'reduced' | 'return_to_training' {
-  if (rec.adjustment?.direction === 'easier') return 'reduced';
+export function variantFor(rec: Recommendation, executionDose?: number): 'full' | 'reduced' | 'return_to_training' {
   if (rec.mode === 'recover' && rec.template.category !== 'Rest') return 'return_to_training';
-  return 'full';
+  const manualVariant = rec.adjustment?.direction === 'easier' ? 'reduced' : 'full';
+  const dose = executionDose ?? rec.executionDose ?? rec.plannedDose;
+  const doseVariant = dose !== undefined && dose <= 0.4
+    ? 'return_to_training'
+    : dose !== undefined && dose <= 0.7
+      ? 'reduced'
+      : 'full';
+  const conservatism = { full: 0, reduced: 1, return_to_training: 2 } as const;
+  return conservatism[manualVariant] >= conservatism[doseVariant] ? manualVariant : doseVariant;
 }
 
 export function resolveWorkoutPrescription(
   recommendation: Recommendation,
   userId: string,
   date: string,
-  profile?: AthletePerformanceProfile
+  profile?: AthletePerformanceProfile,
+  executionDose?: number
 ): WorkoutPrescription | null {
   const workout = workoutForTemplate(recommendation.template.id);
   if (!workout) return null;
 
-  const variantId = variantFor(recommendation);
+  const variantId = variantFor(recommendation, executionDose);
   const variant = workout.variants.find((item) => item.id === variantId) ?? workout.variants[0];
   const adjustedBlocks = applyVariant(workout, variantId);
   const displayBlocks: PrescriptionBlock[] = adjustedBlocks.map((block) => ({

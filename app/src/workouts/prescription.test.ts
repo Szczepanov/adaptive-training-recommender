@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { TEMPLATES } from '../engine/templates.ts';
 import type { Recommendation } from '../engine/models.ts';
-import { resolveWorkoutPrescription } from './prescription.ts';
+import { resolveWorkoutPrescription, variantFor } from './prescription.ts';
 
 function recommendation(templateId: string, overrides: Partial<Recommendation> = {}): Recommendation {
   const template = TEMPLATES.find((item) => item.id === templateId);
@@ -51,6 +51,19 @@ describe('resolveWorkoutPrescription', () => {
 
     expect(prescription?.variantId).toBe('reduced');
     expect(prescription?.targetDurationMin).toBe(40);
+  });
+
+  it('uses the more conservative planned-dose variant when no manual adjustment is present', () => {
+    expect(resolveWorkoutPrescription(recommendation('end_easy_01'), 'u1', '2026-08-07', undefined, 0.71)?.variantId).toBe('full');
+    expect(resolveWorkoutPrescription(recommendation('end_easy_01'), 'u1', '2026-08-07', undefined, 0.65)?.variantId).toBe('reduced');
+    expect(resolveWorkoutPrescription(recommendation('end_easy_01'), 'u1', '2026-08-07', undefined, 0.35)?.variantId).toBe('return_to_training');
+  });
+
+  it('uses the more conservative result when manual direction and execution dose disagree', () => {
+    const easier = recommendation('end_easy_01', { adjustment: { direction: 'easier', tier: 1, originalTemplateId: 'end_easy_01', originalTemplateTitle: 'Zone 2 Spin', rationale: 'easier' } });
+    const harder = recommendation('end_easy_01', { adjustment: { direction: 'harder', tier: 1, originalTemplateId: 'end_easy_01', originalTemplateTitle: 'Zone 2 Spin', rationale: 'harder' } });
+    expect(variantFor(easier, 0.35)).toBe('return_to_training');
+    expect(variantFor(harder, 0.65)).toBe('reduced');
   });
 
   it('keeps strength prescription relative when no 1RM is known and exposes tempo', () => {

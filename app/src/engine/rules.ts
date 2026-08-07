@@ -1,6 +1,12 @@
-import type { DailyReadiness, UserContext, Recommendation, SessionTemplate, NextDayPotentialPlan, NextDayPlanBranch, DecisionScoreTelemetry, SafetyEnvelope, PlanEnvelope } from './models';
+import type { DailyReadiness, UserContext, Recommendation, SessionTemplate, NextDayPotentialPlan, NextDayPlanBranch, NextDayScenario, NextDayScenarioSet, DecisionScoreTelemetry, SafetyEnvelope, PlanEnvelope, UserEvent } from './models';
 import { TEMPLATES } from './templates';
 import { eligibleTemplates, evaluateTemplateEligibility, resolveMaximumSessionMinutes } from './eligibility';
+import { ENRICHED_TEMPLATES } from './templates';
+import { rankCandidatesByUtility } from './optimizer';
+import { resolveAvailability } from './schedule';
+import { addDaysToLocalDateString } from '../utils/localDate';
+import type { TrainingHistoryProvider } from './trainingHistory';
+import { resolveExecutionDose } from './dose';
 
 /**
  * Deterministically pick one template from a filtered set of same-category options,
@@ -127,6 +133,9 @@ const SLEEP_SCORE_ABSOLUTE_FLOOR_STRAIN = 0.5;
 const BODY_BATTERY_LOW_ANCHOR = 50;
 const BODY_BATTERY_LOW_FULL_STRAIN_AT = 25;
 const BODY_BATTERY_MAX_STRAIN = 0.3;
+// An extremely low wake value is a direct readiness stop signal, not merely a small
+// contributor to a composite score that an event optimizer could outweigh.
+const BODY_BATTERY_RECOVER_THRESHOLD = 20;
 
 const RECENT_HARD_SESSIONS_STRAIN = 1.0;
 
@@ -262,7 +271,9 @@ export function evaluateTraining(
     // 3. Determine Core Mode Hierarchy (Train vs Modify vs Recover)
     let mode: 'train' | 'modify' | 'recover' = 'train';
 
-    const fatigueTriggeredRecover = overallFatigueScore > 7 || extremeFatigue || objectiveStrain >= STRAIN_RECOVER_THRESHOLD;
+    const lowBodyBatteryRecovery = objective.body_battery_wake !== null
+        && objective.body_battery_wake <= BODY_BATTERY_RECOVER_THRESHOLD;
+    const fatigueTriggeredRecover = overallFatigueScore > 7 || extremeFatigue || lowBodyBatteryRecovery || objectiveStrain >= STRAIN_RECOVER_THRESHOLD;
     if (fatigueTriggeredRecover) {
         mode = 'recover';
     } else if (overallFatigueScore > 5 || subjective.soreness > 6 || objectiveStrain >= STRAIN_MODIFY_THRESHOLD) {
@@ -441,6 +452,57 @@ export function evaluateTraining(
         mode,
         envelopes,
         telemetry
+    };
+}
+
+/** Intent-aware day-0 selection. Readiness still decides the clinical envelope and
+ * train/modify/recover mode; only the safe candidate ranking is replaced with the same
+ * objective/fatigue optimizer used by the projected planner. */
+export async function evaluateTrainingWithIntent(
+    userId: string,
+    readiness: DailyReadiness,
+    context: UserContext,
+    events: UserEvent[],
+    date: string,
+    previousMode?: 'train' | 'modify' | 'recover',
+    historyProvider?: TrainingHistoryProvider,
+): Promise<Recommendation> {
+    const base = evaluateTraining(readiness, context, date, previousMode);
+    // Keep the synchronous rules module usable in pure unit tests; history access is
+    // loaded only by the asynchronous day-0 path that has a configured Firebase app.
+    const { resolveTrainingIntent } = await import('./trainingIntent');
+    const intent = await resolveTrainingIntent(userId, events, date, readiness, 7, historyProvider);
+    const maxCost = PLAN_TIER_SYSTEMIC_COST_CEILING[base.envelopes!.plan.maxAllowableTier];
+    const candidates = eligibleTemplates(ENRICHED_TEMPLATES, context, readiness.subjective.timeAvailable, date)
+        .filter(template => !base.envelopes!.safety.restrictedModalities.includes(template.modality))
+        .filter(template => template.systemicCost <= maxCost)
+        .filter(template => base.mode !== 'recover' || template.category === 'Rest' || template.category === 'Mobility/Recovery')
+        .filter(template => base.mode !== 'modify' || template.systemicCost <= MODIFY_MAX_SYSTEMIC_COST);
+    const ranked = rankCandidatesByUtility(
+        candidates,
+        intent.unresolvedObjectives,
+        intent.fatigue,
+        resolveAvailability(date, readiness.subjective),
+        context.constraints.injuries,
+        {
+            userId, preferredRecoveryStyle: 'mixed', defaultWeekdayTimeMin: 45, defaultWeekendTimeMin: 60,
+            preferredTimeOfDay: 'flexible', preferredModalities: context.preferences.preferredModalities,
+            deprioritizedModalities: context.preferences.deprioritizedModalities, avoidedModalities: context.preferences.avoidedModalities,
+            explanationVerbosity: 'detailed', conservativeBias: context.preferences.conservativeBias,
+            preferredUnits: { distance: 'km', weight: 'kg', temperature: 'celsius' }, schemaVersion: 1, createdAt: '', updatedAt: '',
+        }
+    );
+    const pick = ranked[0];
+    if (!pick) return base;
+    const phaseContext = intent.periodization.focusEvent
+        ? `${intent.periodization.daysToEvent} days out from ${intent.periodization.focusEvent.title}, ${intent.periodization.phase.phaseName} phase.`
+        : `${intent.periodization.phase.phaseName} phase.`;
+    return {
+        ...base,
+        template: pick.template,
+        plannedDose: intent.plannedDose,
+        executionDose: resolveExecutionDose(intent.plannedDose, base.envelopes!.plan, null),
+        rationale: `${base.rationale} ${phaseContext} ${pick.rationale}`,
     };
 }
 
@@ -656,28 +718,19 @@ export function adjustSessionRecommendation(
     return null;
 }
 
-/**
- * Calculates tomorrow's YYYY-MM-DD date string based on a given date.
- */
-function getTomorrowDateString(dateStr: string): string {
-    const d = new Date(dateStr + 'T00:00:00');
-    d.setDate(d.getDate() + 1);
-    const year = d.getFullYear();
-    const month = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-}
-
-/**
- * Evaluates next-day potential training plans (Green / Yellow / Red contingencies or a Single Plan override).
- */
-export function evaluateNextDayPlan(
+/** Builds the one authoritative green/yellow/red (or mandatory recovery) scenario
+ * set. Evaluation is intentionally separate so sync and intent-aware callers cannot
+ * drift into independently maintained decision branches. */
+export function buildNextDayScenarios(
     todayReadiness: DailyReadiness,
     context: UserContext,
     todayDate: string,
     todayRec: Recommendation
-): NextDayPotentialPlan {
-    const tomorrowDate = getTomorrowDateString(todayDate);
+): NextDayScenarioSet {
+    // Context is deliberately part of the stable scenario-builder contract even
+    // though the synthetic inputs themselves only inherit today's available time.
+    void context;
+    const tomorrowDate = addDaysToLocalDateString(todayDate, 1);
 
     // 1. Single Plan Override Check
     const isPainOrInjury = todayReadiness.subjective.painFlag;
@@ -689,21 +742,15 @@ export function evaluateNextDayPlan(
     const recentHardSessions = todayReadiness.objective.last_3_days_hard_sessions_count || 0;
     const isCumulativeOverload = recentHardSessions >= 2 && isTodayHardSession;
 
-    // Check goals for explicit taper / pre-big-day preparation
-    const goalText = (context.goals.shortTerm + ' ' + context.goals.midTerm + ' ' + context.goals.longTerm).toLowerCase();
-    const isPreKeyDayTaper = goalText.includes('taper') || goalText.includes('pre-race') || goalText.includes('recovery prior to big');
-
     let singlePlanReason: string | undefined = undefined;
     if (isPainOrInjury) {
         singlePlanReason = "Active pain/injury reported today. Tomorrow requires dedicated recovery regardless of morning metrics.";
     } else if (isCumulativeOverload) {
         singlePlanReason = "High cumulative load (multiple hard sessions back-to-back). Tomorrow is locked to active recovery to prevent overtraining.";
-    } else if (isPreKeyDayTaper) {
-        singlePlanReason = "Pre-key event taper protocol: mandatory recovery day to preserve fresh legs for your upcoming big event/workout.";
     }
 
     if (singlePlanReason) {
-        // Generate a single recovery/primer recommendation
+        // Generate a single recovery/primer synthetic input.
         const syntheticRecoveryReadiness: DailyReadiness = {
             subjective: {
                 ...todayReadiness.subjective,
@@ -719,22 +766,14 @@ export function evaluateNextDayPlan(
             }
         };
 
-        const singleRec = evaluateTraining(syntheticRecoveryReadiness, context, tomorrowDate, todayRec.mode);
-        const singleBranch: NextDayPlanBranch = {
-            tier: 'green',
-            label: 'Mandatory Plan',
-            condition: singlePlanReason,
-            recommendation: singleRec
-        };
-
         return {
             date: tomorrowDate,
             isSinglePlan: true,
             singlePlanReason,
-            branches: {
-                green: { ...singleBranch, tier: 'green', label: 'Mandatory Recovery Plan' },
-                yellow: { ...singleBranch, tier: 'yellow', label: 'Mandatory Recovery Plan' },
-                red: { ...singleBranch, tier: 'red', label: 'Mandatory Recovery Plan' }
+            scenarios: {
+                green: { tier: 'green', label: 'Mandatory Recovery Plan', condition: singlePlanReason, readiness: syntheticRecoveryReadiness },
+                yellow: { tier: 'yellow', label: 'Mandatory Recovery Plan', condition: singlePlanReason, readiness: { ...syntheticRecoveryReadiness, subjective: { ...syntheticRecoveryReadiness.subjective }, objective: { ...syntheticRecoveryReadiness.objective } } },
+                red: { tier: 'red', label: 'Mandatory Recovery Plan', condition: singlePlanReason, readiness: { ...syntheticRecoveryReadiness, subjective: { ...syntheticRecoveryReadiness.subjective }, objective: { ...syntheticRecoveryReadiness.objective } } }
             }
         };
     }
@@ -837,36 +876,92 @@ export function evaluateNextDayPlan(
         }
     };
 
-    // Tomorrow's hysteresis reference point is today's actual (post-hysteresis) mode --
-    // e.g. if today was itself a mandated recovery day, even the "Green/Optimal" preview
-    // for tomorrow correctly eases in rather than promising a hard session outright.
-    const greenRec = evaluateTraining(greenReadiness, context, tomorrowDate, todayRec.mode);
-    const yellowRec = evaluateTraining(yellowReadiness, context, tomorrowDate, todayRec.mode);
-    const redRec = evaluateTraining(redReadiness, context, tomorrowDate, todayRec.mode);
-
     return {
         date: tomorrowDate,
         isSinglePlan: false,
-        branches: {
+        scenarios: {
             green: {
                 tier: 'green',
                 label: 'Optimal Readiness',
                 condition: 'If tomorrow morning HRV is baseline/elevated, sleep score > 80, and fatigue is low.',
-                recommendation: greenRec
+                readiness: greenReadiness
             },
             yellow: {
                 tier: 'yellow',
                 label: 'Moderate Readiness',
                 condition: 'If tomorrow sleep quality is average (60-75), HRV shows mild dip, or moderate soreness is present.',
-                recommendation: yellowRec
+                readiness: yellowReadiness
             },
             red: {
                 tier: 'red',
                 label: 'Low Readiness / High Fatigue',
                 condition: 'If tomorrow sleep score drops (< 60), HRV drops significantly, or elevated fatigue/soreness is reported.',
-                recommendation: redRec
+                readiness: redReadiness
             }
         }
+    };
+}
+
+function evaluatedBranch(scenario: NextDayScenario, recommendation: Recommendation): NextDayPlanBranch {
+    return {
+        tier: scenario.tier,
+        label: scenario.label,
+        condition: scenario.condition,
+        recommendation,
+    };
+}
+
+/** Synchronous compatibility API over the shared scenario set. */
+export function evaluateNextDayPlan(
+    todayReadiness: DailyReadiness,
+    context: UserContext,
+    todayDate: string,
+    todayRec: Recommendation,
+): NextDayPotentialPlan {
+    const scenarios = buildNextDayScenarios(todayReadiness, context, todayDate, todayRec);
+    const evaluate = (scenario: NextDayScenario) => evaluatedBranch(
+        scenario,
+        evaluateTraining(scenario.readiness, context, scenarios.date, todayRec.mode),
+    );
+    return {
+        date: scenarios.date,
+        isSinglePlan: scenarios.isSinglePlan,
+        ...(scenarios.singlePlanReason ? { singlePlanReason: scenarios.singlePlanReason } : {}),
+        branches: {
+            green: evaluate(scenarios.scenarios.green),
+            yellow: evaluate(scenarios.scenarios.yellow),
+            red: evaluate(scenarios.scenarios.red),
+        },
+    };
+}
+
+/** Intent-aware next-day API. It evaluates each retained scenario separately so the
+ * preview remains a true three-outcome contingency rather than one recommendation
+ * copied into green/yellow/red. */
+export async function evaluateNextDayPlanWithIntent(
+    userId: string,
+    events: UserEvent[],
+    todayReadiness: DailyReadiness,
+    context: UserContext,
+    todayDate: string,
+    todayRec: Recommendation,
+    historyProvider?: TrainingHistoryProvider,
+): Promise<NextDayPotentialPlan> {
+    const scenarios = buildNextDayScenarios(todayReadiness, context, todayDate, todayRec);
+    const evaluate = async (scenario: NextDayScenario) => evaluatedBranch(
+        scenario,
+        await evaluateTrainingWithIntent(userId, scenario.readiness, context, events, scenarios.date, todayRec.mode, historyProvider),
+    );
+    const [green, yellow, red] = await Promise.all([
+        evaluate(scenarios.scenarios.green),
+        evaluate(scenarios.scenarios.yellow),
+        evaluate(scenarios.scenarios.red),
+    ]);
+    return {
+        date: scenarios.date,
+        isSinglePlan: scenarios.isSinglePlan,
+        ...(scenarios.singlePlanReason ? { singlePlanReason: scenarios.singlePlanReason } : {}),
+        branches: { green, yellow, red },
     };
 }
 
