@@ -52,6 +52,12 @@ src/garmin_sync/
   mapper.py            # Payload transformation with metric dates
   service.py           # Daily sync and backfill orchestrator
   cli.py               # Argument parsing and entry points
+
+app/src/engine/
+  models.ts            # Domain models, recommendation interfaces & strain telemetry
+  rules.ts             # Adaptive rules engine (acute/drift strain, mode hierarchy & rationale)
+  templates.ts         # Session template catalog & systemic load caps
+  validation.ts        # Input schema validators & sanitizers
 ```
 
 ---
