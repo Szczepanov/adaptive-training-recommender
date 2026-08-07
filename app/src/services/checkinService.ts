@@ -1,9 +1,11 @@
 import { doc, getDoc, setDoc, deleteDoc, collection, query, where, orderBy, limit, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
 import type { DailySubjectiveCheckin } from '../engine/models';
+import type { DataState } from '../engine/dataState';
 import { validateCheckin } from '../engine/validation';
 import { getLocalDateString } from '../utils/localDate';
 import { isPermissionDeniedError } from '../utils/errors';
+import { parseSubjectiveCheckin } from '../persistence/parsers/decisionInputs';
 
 export class CheckinService {
     private readonly collectionPath = 'daily_subjective_checkins';
@@ -11,23 +13,24 @@ export class CheckinService {
     /**
      * Get a specific daily check-in for a user
      */
-    async getCheckin(userId: string, date: string): Promise<DailySubjectiveCheckin | null> {
+    async getCheckinState(userId: string, date: string): Promise<DataState<DailySubjectiveCheckin>> {
         try {
             const docRef = doc(db, 'users', userId, this.collectionPath, date);
             const docSnap = await getDoc(docRef);
-            
-            if (docSnap.exists()) {
-                return docSnap.data() as DailySubjectiveCheckin;
-            }
-            return null;
+            if (!docSnap.exists()) return { status: 'MISSING' };
+            return parseSubjectiveCheckin(docSnap.data(), `users/${userId}/${this.collectionPath}/${date}`, userId, date);
         } catch (error: unknown) {
-            if (isPermissionDeniedError(error)) {
-                console.warn('Permission denied accessing check-ins. User may need to complete first check-in.');
-                return null;
-            }
-            console.error('Error fetching check-in:', error);
-            throw error;
+            return {
+                status: 'UNAVAILABLE',
+                operation: 'read subjective check-in',
+                retryable: !isPermissionDeniedError(error),
+            };
         }
+    }
+
+    async getCheckin(userId: string, date: string): Promise<DailySubjectiveCheckin | null> {
+        const state = await this.getCheckinState(userId, date);
+        return state.status === 'AVAILABLE' ? state.data : null;
     }
 
     // Canonical Phase 4 alias

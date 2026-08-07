@@ -1,4 +1,5 @@
-import type { DailyDecisionInput } from './models';
+import type { DailyDecisionInput, DailyRecoverySnapshot, DailySubjectiveCheckin } from './models';
+import type { DataState } from './dataState';
 import { checkinService } from '../services/checkinService';
 import { goalService } from '../services/goalService';
 import { trainingSettingsService } from '../services/trainingSettingsService';
@@ -16,20 +17,35 @@ export class DecisionComposer {
         try {
             // Use Promise.allSettled to handle individual service failures
             const results = await Promise.allSettled([
-                recoverySnapshotService.getRecoverySnapshotByDate(userId, targetDate),
-                checkinService.getCheckin(userId, targetDate),
+                recoverySnapshotService.getRecoverySnapshotState(userId, targetDate),
+                checkinService.getCheckinState(userId, targetDate),
                 goalService.getActiveGoals(userId),
                 trainingSettingsService.getTrainingSettings(userId),
                 preferencesService.getPreferences(userId)
-            ]);
+            ] as const);
 
-            // Extract results or provide fallbacks
-            const recoverySnapshot = results[0].status === 'fulfilled' ? results[0].value : null;
-            const subjectiveCheckin = results[1].status === 'fulfilled' ? results[1].value : null;
+            const unavailable = <T>(operation: string): DataState<T> => ({ status: 'UNAVAILABLE', operation, retryable: true });
+            const recoveryState: DataState<DailyRecoverySnapshot> = results[0].status === 'fulfilled'
+                ? results[0].value
+                : unavailable<DailyRecoverySnapshot>('read recovery snapshot');
+            const checkinState: DataState<DailySubjectiveCheckin> = results[1].status === 'fulfilled'
+                ? results[1].value
+                : unavailable<DailySubjectiveCheckin>('read subjective check-in');
+            const recoverySnapshot = recoveryState.status === 'AVAILABLE' ? recoveryState.data : null;
+            const subjectiveCheckin = checkinState.status === 'AVAILABLE' ? checkinState.data : null;
             const activeGoals = results[2].status === 'fulfilled' ? results[2].value : [];
             if (results[3].status === 'rejected') throw results[3].reason;
             const trainingSettings = results[3].value;
             const preferences = results[4].status === 'fulfilled' ? results[4].value : null;
+            const sourceStates = {
+                recoverySnapshot: recoveryState.status === 'AVAILABLE' ? { status: 'AVAILABLE' as const, revision: recoveryState.revision } : recoveryState,
+                subjectiveCheckin: checkinState.status === 'AVAILABLE' ? { status: 'AVAILABLE' as const, revision: checkinState.revision } : checkinState,
+                activeGoals: results[2].status === 'fulfilled' ? { status: 'AVAILABLE' as const, revision: null } : unavailable('read active goals'),
+                trainingSettings: { status: 'AVAILABLE' as const, revision: trainingSettings.updatedAt ?? null },
+                preferences: results[4].status === 'fulfilled'
+                    ? (preferences ? { status: 'AVAILABLE' as const, revision: preferences.updatedAt ?? null } : { status: 'MISSING' as const })
+                    : unavailable('read preferences'),
+            };
 
             // Log permission errors for debugging
             results.forEach((result, index) => {
@@ -61,6 +77,7 @@ export class DecisionComposer {
                 activeGoals,
                 trainingSettings,
                 preferences,
+                sourceStates,
                 dataQuality
             };
 

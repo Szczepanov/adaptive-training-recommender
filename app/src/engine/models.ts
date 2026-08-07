@@ -1,4 +1,5 @@
 import type { AthletePerformanceProfile, WorkoutPrescription } from '../workouts/models.ts';
+import type { DataStateSummary } from './dataState';
 
 // --- Engine Input Models ---
 export interface SubjectiveInput {
@@ -648,6 +649,14 @@ export interface DailyDecisionInput {
     activeGoals: UserGoal[]; // Only goals with status === 'active'
     trainingSettings: TrainingSettings;
     preferences: UserPreferences | null;
+    /** Statuses keep unavailable/corrupt data distinct from a genuinely absent record. */
+    sourceStates?: {
+        recoverySnapshot: DataStateSummary;
+        subjectiveCheckin: DataStateSummary;
+        activeGoals: DataStateSummary;
+        trainingSettings: DataStateSummary;
+        preferences: DataStateSummary;
+    };
     // Data quality flags
     dataQuality: {
         hasRecoverySnapshot: boolean;
