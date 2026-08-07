@@ -69,8 +69,17 @@ Firestore.
 5. **Event source added in Phase 2**: dated active `UserGoal`s with an event category are
    adapted into `UserEvent`s at read time and supplied to `generateWeekAheadPlan`.
    Periodization is evaluated separately for each date in the strip, including lifecycle
-   semantics for stale, completed, and DNF events. `FixedActivity` still has no
-   Firestore-backed source, so the generic weekly schedule remains the fallback there.
+   semantics for stale, completed, and DNF events. Each projected-day optimizer call
+   receives that date's focus event and phase rather than reusing today's context.
+   `FixedActivity` still has no Firestore-backed source, so the generic weekly schedule
+   remains the fallback there.
+
+6. **Projected picks become sequence context**: adherence-derived recent sessions seed
+   the chain, and each selected today/tomorrow/projected template is appended using its
+   local `YYYY-MM-DD` date. The optimizer can therefore apply a narrowly scoped
+   third-consecutive-Strength penalty without treating sessions separated by a calendar
+   gap as consecutive. The supplied tomorrow preview remains selected by its separate
+   intent-aware scenario evaluation; the planner does not re-rank it.
 
 ---
 
@@ -92,9 +101,14 @@ Firestore.
   days 6+ out.
 * A goal/constraint/preference edit reshapes the whole strip on the next load, with no
   stale cached state to invalidate.
+* Forecast selection can favour an A-event's modality in Build/Specificity while still
+  letting existing readiness, injury, availability, and recovery gates determine what is
+  eligible.
 
 ### Negative
 * Days 2+ are read as "session type", not exact duration/intensity -- the UI must keep
   surfacing that caveat, or the projection will be over-trusted.
 * Fixed activities are still absent from the projection, so the generic weekly schedule
   can be optimistic on days that already contain an unrecorded commitment.
+* The sequence policy is intentionally limited to Strength; it does not prescribe a
+  universal consecutive-day rule for endurance work.

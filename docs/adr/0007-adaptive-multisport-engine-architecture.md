@@ -13,6 +13,7 @@ A recommendation engine based solely on daily readiness metrics functions as a "
 2. **Coarse Fatigue Tracking**: A single global hard-session counter cannot distinguish lower-body DOMS from cardiovascular strain, preventing safe multi-sport training (e.g. upper-body strength after a heavy leg day).
 3. **Crude Schedule Isolation**: Inheriting today's availability into tomorrow's plan preview produces inaccurate previews when tomorrow has an independent schedule window.
 4. **Muddled Authority Boundaries**: Treating user modality dislikes as hard exclusions risks safety regressions if a user unchecks an avoided modality previously treated as an injury restriction.
+5. **Context-Free Candidate Ranking**: A fatigue-aware local optimum can repeatedly select low-cost strength work after leg-heavy endurance sessions because the optimizer previously had no recent-session sequence or focus-event modality context.
 
 ---
 
@@ -38,6 +39,10 @@ We introduced a 6-tier adaptive multi-sport engine architecture:
 5. **Utility Optimization Engine ([`app/src/engine/optimizer.ts`](../../app/src/engine/optimizer.ts))**:
    * Evaluates candidate workouts using utility scoring:
      $$\text{Utility} = \frac{\text{Benefit (Alignment with Unresolved Weekly Objectives)}}{1 + \text{Fatigue Cost Penalty}} \times \text{Preference Multiplier}$$
+   * Accepts explicit, optional ranking context: dated recent sessions plus the evaluated focus event and periodization phase. It never infers a goal from a workout title.
+   * Applies named, auditable soft modifiers after candidate safety/availability filtering: a third-consecutive-Strength penalty, an A-event modality preference during Build and Specificity, and an `Easy Endurance` preference once rolling objectives are complete.
+   * Maps event categories to catalog modalities deliberately (`cycling_event` -> Cycling, `running_race` -> Running, `strength_meet` -> Strength, triathlon -> Cycling/Running); generic targets get no modality bonus.
+   * Emits applied ranking modifiers in the candidate rationale and uses a stable tie-breaker so equivalent candidates do not flicker between evaluations.
 
 6. **Safety Authority vs. Preference Authority**:
    * Physical pain/injury constraints (`UserConstraint`) are hard safety gates.
@@ -64,6 +69,8 @@ We introduced a 6-tier adaptive multi-sport engine architecture:
 * Enables intelligent hybrid athlete recommendations (e.g. upper-body strength or mobility after leg-heavy work).
 * Previews tomorrow's plan against tomorrow's actual schedule and location context.
 * Dynamically adapts to completed workouts and fixed activities while upholding strict medical safety boundaries.
+* Makes the optimizer's event focus and short sequencing policy explainable in the recommendation rationale.
 
 ### Negative
 * Requires maintaining cost and stimulus profile annotations across workout catalog templates.
+* Strength anti-stacking is modality-level only; upper/lower-body-specific spacing needs richer catalog metadata and is not implied by this decision.

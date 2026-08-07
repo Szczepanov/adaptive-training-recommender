@@ -277,5 +277,65 @@ describe('Architecture & Phased Engine Integration', () => {
                 expect(runningOption.rationale).toContain('Soft penalty applied');
             }
         });
+
+        it('penalizes non-endurance modalities on 3rd+ consecutive day (anti-stacking)', () => {
+            const fatigue = createEmptyFatigue('2026-08-07');
+            const availability = resolveAvailability('2026-08-07', null);
+            const prefs: UserPreferences = {
+                userId: '', preferredRecoveryStyle: 'mixed', defaultWeekdayTimeMin: 60, defaultWeekendTimeMin: 60,
+                preferredTimeOfDay: 'flexible', preferredModalities: [], deprioritizedModalities: [], avoidedModalities: [],
+                explanationVerbosity: 'brief', conservativeBias: false,
+                preferredUnits: { distance: 'km', weight: 'kg', temperature: 'celsius' }, schemaVersion: 1, createdAt: '', updatedAt: '',
+            };
+
+            const unstackedRanked = rankCandidatesByUtility(
+                ENRICHED_TEMPLATES, [], fatigue, availability, [], prefs,
+                { recentHistory: [] }
+            );
+
+            const stackedRanked = rankCandidatesByUtility(
+                ENRICHED_TEMPLATES, [], fatigue, availability, [], prefs,
+                { recentHistory: [{ modality: 'Strength' }, { modality: 'Strength' }] }
+            );
+
+            const unstackedStrength = unstackedRanked.find(r => r.template.modality === 'Strength');
+            const stackedStrength = stackedRanked.find(r => r.template.modality === 'Strength');
+
+            expect(unstackedStrength).toBeDefined();
+            expect(stackedStrength).toBeDefined();
+            expect(stackedStrength!.utilityScore).toBeLessThan(unstackedStrength!.utilityScore * 0.2);
+        });
+
+        it('applies event-priority utility boost when an A-priority cycling event is active', () => {
+            const fatigue = createEmptyFatigue('2026-08-07');
+            const availability = {
+                ...resolveAvailability('2026-08-07', null),
+                maxTimeMinutes: 90,
+                availableEquipment: ['indoor_bike', 'free_weights', 'cable_machine'],
+            };
+            const prefs: UserPreferences = {
+                userId: '', preferredRecoveryStyle: 'mixed', defaultWeekdayTimeMin: 60, defaultWeekendTimeMin: 60,
+                preferredTimeOfDay: 'flexible', preferredModalities: [], deprioritizedModalities: [], avoidedModalities: [],
+                explanationVerbosity: 'brief', conservativeBias: false,
+                preferredUnits: { distance: 'km', weight: 'kg', temperature: 'celsius' }, schemaVersion: 1, createdAt: '', updatedAt: '',
+            };
+
+            const cyclingFocusEvent: UserEvent = {
+                id: 'c1', title: 'Road Race', date: '2026-09-12', priority: 'A', lifecycle: 'scheduled',
+                category: 'cycling_event', demandProfile: { aerobicEndurance: 0.8, thresholdPower: 0.8, vo2MaxPower: 0.6, repeatedSurges: 0.5, sprintPower: 0.3, fatigueResistance: 0.7, neuromuscular: 0.4 }
+            };
+
+            const rankedWithEvent = rankCandidatesByUtility(
+                ENRICHED_TEMPLATES, [], fatigue, availability, [], prefs,
+                { focusEvent: cyclingFocusEvent }
+            );
+
+            const cyclingPick = rankedWithEvent.find(r => r.template.modality === 'Cycling');
+            const strengthPick = rankedWithEvent.find(r => r.template.modality === 'Strength');
+
+            expect(cyclingPick).toBeDefined();
+            expect(strengthPick).toBeDefined();
+            expect(cyclingPick!.utilityScore).toBeGreaterThan(strengthPick!.utilityScore);
+        });
     });
 });

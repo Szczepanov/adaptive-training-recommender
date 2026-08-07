@@ -1,6 +1,7 @@
 import type {
     FatigueState,
     SessionTemplate,
+    UserEvent,
     UserPreferences,
     WeeklyObjective,
     WorkoutCostProfile,
@@ -14,6 +15,29 @@ export interface RankedCandidate {
     costPenalty: number;
     utilityScore: number;
     rationale: string;
+}
+
+export interface OptimizationOptions {
+    focusEvent?: UserEvent | null;
+    recentHistory?: { modality?: string; type?: string }[];
+}
+
+export function getConsecutiveModalityCount(
+    history: { modality?: string; type?: string }[],
+    targetModality: string
+): number {
+    let count = 0;
+    const target = targetModality.toLowerCase();
+    for (let i = history.length - 1; i >= 0; i--) {
+        const item = history[i];
+        const modality = (item.modality ?? item.type ?? '').toLowerCase();
+        if (modality.includes(target)) {
+            count++;
+        } else {
+            break;
+        }
+    }
+    return count;
 }
 
 export function calculateStimulusBenefit(
@@ -70,12 +94,15 @@ export function rankCandidatesByUtility(
     fatigueState: FatigueState,
     availability: ResolvedAvailability,
     injuryConstraints: string[],
-    preferences: UserPreferences
+    preferences: UserPreferences,
+    options: OptimizationOptions = {}
 ): RankedCandidate[] {
     const isDisliked = (t: SessionTemplate) => preferences.avoidedModalities.some(m => m.toLowerCase() === t.modality.toLowerCase());
     const isPreferred = (t: SessionTemplate) => preferences.preferredModalities.some(m => m.toLowerCase() === t.modality.toLowerCase());
 
     const extraMargin = preferences.extraRecoveryMargin ?? preferences.conservativeBias ?? false;
+    const focusEvent = options.focusEvent;
+    const history = options.recentHistory ?? [];
 
     return candidates
         .filter(t => t.durationMin <= availability.maxTimeMinutes)
@@ -107,6 +134,32 @@ export function rankCandidatesByUtility(
                 prefMultiplier = 1.3;
             }
 
+            // Patch 1: Anti-stacking for non-endurance modalities (e.g. Strength)
+            const consecutiveCount = getConsecutiveModalityCount(history, template.modality);
+            const isNonEndurance = !['cycling', 'running'].includes(template.modality.toLowerCase());
+            if (consecutiveCount >= 2 && isNonEndurance) {
+                prefMultiplier *= 0.15; // Soft suppression of 3rd+ consecutive day of strength/hybrid
+            }
+
+            // Patch 2: Event-Priority Utility Multiplier for A-Priority Focus Events
+            if (focusEvent && focusEvent.priority === 'A') {
+                const categoryLower = focusEvent.category.toLowerCase();
+                const templateModLower = template.modality.toLowerCase();
+                const matchesEvent =
+                    (categoryLower.includes('cycling') && templateModLower.includes('cycling')) ||
+                    (categoryLower.includes('running') && templateModLower.includes('running')) ||
+                    (categoryLower.includes('strength') && templateModLower.includes('strength'));
+                if (matchesEvent) {
+                    prefMultiplier *= 1.40;
+                }
+            }
+
+            // Patch 3: Post-Objective Aerobic Default Filler
+            const isAerobicDefault = template.category === 'Easy Endurance' || template.title.toLowerCase().includes('zone 2');
+            if (unresolvedObjectives.length === 0 && isAerobicDefault) {
+                prefMultiplier *= 1.25;
+            }
+
             const utility = (benefit / (1 + costPenalty)) * prefMultiplier;
 
             let rationale = `Benefit score: ${benefit.toFixed(2)}, Fatigue cost penalty: ${costPenalty.toFixed(2)}.`;
@@ -124,3 +177,4 @@ export function rankCandidatesByUtility(
         })
         .sort((a, b) => b.utilityScore - a.utilityScore);
 }
+

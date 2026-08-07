@@ -17,6 +17,14 @@ engine tests inject deterministic fixture providers. This keeps Firebase initial
 out of recommendation, periodization, fatigue, and planner tests while preserving the
 same oldest-to-newest exposure semantics in production.
 
+The same completed exposures also provide optional recent-session context for candidate
+ranking. A pure adapter derives only recognized catalog modalities from adherence
+records and retains their Warsaw-local `YYYY-MM-DD` dates. Unknown modality text is not
+guessed. This context is passed with the current evaluation's focus event and phase to
+the intent-aware daily and next-day paths; the planner extends it with its selected
+future templates as it walks the forecast forward. It is derived at evaluation time and
+is never persisted as a separate training-state document.
+
 ## Consequences
 
 The intent resolver is asynchronous, unlike the original pure week-ahead planner in
@@ -25,3 +33,7 @@ uses cancellation guards so stale user/date/goals/check-in/settings results cann
 replace newer state. Unanswered or skipped adherence receives no credit; modified
 sessions are matched approximately by recorded modality and duration until per-session
 load logging exists.
+
+Historical sequence data is advisory ranking context, not a safety authority. Injury,
+clinical recovery, schedule, equipment, and plan-tier eligibility are resolved before
+any anti-stacking, event-modality, or post-objective preference modifier is considered.

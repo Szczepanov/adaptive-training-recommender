@@ -267,7 +267,16 @@ export function generateWeekAheadPlan(
 
         const availability = resolveAvailability(date, null, weeklySchedule, DEFAULT_LOCATIONS, fixedActivities);
         const unresolved = getUnresolvedObjectives(microcycle);
-        const ranked = rankCandidatesByUtility(ENRICHED_TEMPLATES, unresolved, rankingFatigue, availability, injuries, effectivePreferences);
+        const projectedHistory = resultDays.map(d => ({ modality: d.template.modality, type: d.template.title }));
+        const ranked = rankCandidatesByUtility(
+            ENRICHED_TEMPLATES,
+            unresolved,
+            rankingFatigue,
+            availability,
+            injuries,
+            effectivePreferences,
+            { focusEvent: periodization.focusEvent, recentHistory: projectedHistory }
+        );
         const pick = ranked[0];
 
         if (!pick) {
