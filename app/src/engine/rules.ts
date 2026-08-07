@@ -736,17 +736,11 @@ export function evaluateNextDayPlan(
     const recentHardSessions = todayReadiness.objective.last_3_days_hard_sessions_count || 0;
     const isCumulativeOverload = recentHardSessions >= 2 && isTodayHardSession;
 
-    // Check goals for explicit taper / pre-big-day preparation
-    const goalText = (context.goals.shortTerm + ' ' + context.goals.midTerm + ' ' + context.goals.longTerm).toLowerCase();
-    const isPreKeyDayTaper = goalText.includes('taper') || goalText.includes('pre-race') || goalText.includes('recovery prior to big');
-
     let singlePlanReason: string | undefined = undefined;
     if (isPainOrInjury) {
         singlePlanReason = "Active pain/injury reported today. Tomorrow requires dedicated recovery regardless of morning metrics.";
     } else if (isCumulativeOverload) {
         singlePlanReason = "High cumulative load (multiple hard sessions back-to-back). Tomorrow is locked to active recovery to prevent overtraining.";
-    } else if (isPreKeyDayTaper) {
-        singlePlanReason = "Pre-key event taper protocol: mandatory recovery day to preserve fresh legs for your upcoming big event/workout.";
     }
 
     if (singlePlanReason) {
