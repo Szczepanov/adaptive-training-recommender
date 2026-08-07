@@ -3,6 +3,7 @@ import type {
     MicrocycleState,
     TrainingRecord,
     WeeklyObjective,
+    WorkoutStimulusProfile,
 } from './models';
 import type { CompletedExposure } from './microcycleHistory';
 import type { PhaseWeights } from './periodization';
@@ -104,6 +105,54 @@ export function updateMicrocycleProgress(
 
 export function getUnresolvedObjectives(microcycle: MicrocycleState): WeeklyObjective[] {
     return microcycle.objectives.filter(o => o.completedExposures < o.targetExposures);
+}
+
+/** Fraction (0-1) of an objective's target stimulus vector a workout's own stimulus
+ *  profile actually satisfies, weighted by how strongly the objective demands each axis. */
+export function stimulusCoverage(
+    stimulus: WorkoutStimulusProfile,
+    targetStimulus: WeeklyObjective['targetStimulus']
+): number {
+    let weightedSum = 0;
+    let weightTotal = 0;
+    (Object.entries(targetStimulus) as [keyof WorkoutStimulusProfile, number][]).forEach(([key, target]) => {
+        if (!target) return;
+        weightTotal += target;
+        weightedSum += target * (stimulus[key] ?? 0);
+    });
+    return weightTotal === 0 ? 0 : weightedSum / weightTotal;
+}
+
+/** A pick must cover at least this much of an objective's target stimulus vector to
+ *  earn credit -- keeps a session that merely touches an axis (e.g. a technical skill
+ *  drill with a token 0.1 aerobicCapacity) from silently resolving it. */
+export const STIMULUS_CREDIT_COVERAGE_THRESHOLD = 0.6;
+
+/**
+ * Credits weekly objectives from a workout's own numeric stimulus profile -- the same
+ * vector calculateStimulusBenefit (optimizer.ts) scores candidates against -- instead of
+ * pattern-matching a free-text description. This is the crediting path for internally
+ * generated picks (planner.ts's projected days) where a real SessionTemplate and its
+ * profile are available.
+ *
+ * updateMicrocycleProgress's keyword matching below remains the crediting path for
+ * externally-reported completions (Garmin-synced activities, adherence records) that
+ * carry nothing but a loose type string and no structured stimulus data -- there is
+ * nothing to compute coverage against for those, so the two crediting paths intentionally
+ * coexist rather than one replacing the other.
+ */
+export function creditObjectivesFromStimulus(
+    microcycle: MicrocycleState,
+    stimulus: WorkoutStimulusProfile
+): MicrocycleState {
+    return {
+        ...microcycle,
+        objectives: microcycle.objectives.map(obj => {
+            if (obj.completedExposures >= obj.targetExposures) return obj;
+            if (stimulusCoverage(stimulus, obj.targetStimulus) < STIMULUS_CREDIT_COVERAGE_THRESHOLD) return obj;
+            return { ...obj, completedExposures: obj.completedExposures + 1 };
+        }),
+    };
 }
 
 /** Seeds the rolling microcycle from completed, ordered exposures before projecting

@@ -482,7 +482,7 @@ export async function evaluateTrainingWithIntent(
         candidates,
         intent.unresolvedObjectives,
         intent.fatigue,
-        resolveAvailability(date, readiness.subjective, undefined, undefined, undefined, undefined, context.constraints),
+        resolveAvailability(date, readiness.subjective, [], context),
         context.constraints.injuries,
         {
             userId, preferredRecoveryStyle: 'mixed', defaultWeekdayTimeMin: 45, defaultWeekendTimeMin: 60,

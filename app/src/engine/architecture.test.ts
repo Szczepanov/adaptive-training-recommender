@@ -1,35 +1,50 @@
 import { describe, expect, it } from 'vitest';
 import { applyCompletedSessionLoad, createEmptyFatigue } from './fatigue';
 import { generateWeeklyObjectives, updateMicrocycleProgress } from './microcycle';
-import type { UserEvent, UserGoal, UserPreferences } from './models';
+import type { TrainingSettings, UserContext, UserEvent, UserGoal, UserPreferences } from './models';
 import { rankCandidatesByUtility } from './optimizer';
 import { deriveEventPriority, deriveGoalCategory, evaluatePeriodizationPhase, getDaysToEvent, goalToUserEvent } from './periodization';
 import { resolveAvailability } from './schedule';
 import { ENRICHED_TEMPLATES } from './templates';
 
+function testTrainingSettings(overrides: Partial<TrainingSettings> = {}): TrainingSettings {
+    return {
+        userId: 'athlete', schemaVersion: 2,
+        equipment: { free_weights: true, cable_machine: false, treadmill: false, indoor_bike: true, pullup_bar: false },
+        guardrails: { avoid_high_impact: false, avoid_heavy_lower_body: false, avoid_overhead_pressing: false, avoid_heavy_spinal_loading: false },
+        defaults: { weekdayMaxMinutes: 45, weekendMaxMinutes: 120, environment: 'either' },
+        preferences: { preferActiveRecovery: false },
+        migration: { legacyReviewed: true, migratedAt: null }, createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z',
+        ...overrides,
+    };
+}
+
+function testContext(overrides: Partial<UserContext['constraints']> = {}, trainingSettings = testTrainingSettings()): UserContext {
+    return {
+        goals: { shortTerm: '', midTerm: '', longTerm: '' },
+        constraints: { hasCableMachine: false, hasFreeWeights: true, hasTreadmill: false, hasIndoorBike: true, injuries: [], maxTimeMinutes: 90, ...overrides },
+        preferences: { avoidedModalities: [], deprioritizedModalities: [], preferredModalities: [], conservativeBias: false },
+        trainingSettings,
+    };
+}
+
 describe('Architecture & Phased Engine Integration', () => {
-    describe('Phase 1: Schedule & Location Availability', () => {
-        it('resolves day-of-week schedule time and isolates tomorrow from today check-in', () => {
+    describe('Phase 1: Schedule & Availability', () => {
+        it("uses the athlete's own weekday/weekend budget from TrainingSettings, not a fabricated day-of-week table", () => {
+            // Saturday (2026-08-08) -> weekend default; Monday (2026-08-10) -> weekday default.
+            expect(resolveAvailability('2026-08-08', null, [], testContext()).maxTimeMinutes).toBe(120);
+            expect(resolveAvailability('2026-08-10', null, [], testContext()).maxTimeMinutes).toBe(45);
+        });
+
+        it("caps (rather than blindly overrides) today's check-in time with the athlete's own profile limit", () => {
             const todayCheckin = {
-                readiness: 5,
-                sleepQuality: 5,
-                fatigue: 5,
-                soreness: 5,
-                stress: 5,
-                motivation: 5,
-                timeAvailable: 30, // Today explicitly limited to 30 min
-                painFlag: false,
-                alreadyTrainedToday: false,
-                preferredModalityToday: null,
+                readiness: 5, sleepQuality: 5, fatigue: 5, soreness: 5, stress: 5, motivation: 5,
+                timeAvailable: 200, // Claims 200 min available
+                painFlag: false, alreadyTrainedToday: false, preferredModalityToday: null,
             };
-
-            // Resolving Saturday (2026-08-08) should use weekend default (120 min), not today's 30 min
-            const tomorrowAvailability = resolveAvailability('2026-08-08', null);
-            expect(tomorrowAvailability.maxTimeMinutes).toBe(120);
-
-            // Today (Friday 2026-08-07) with check-in uses 30 min
-            const todayAvailability = resolveAvailability('2026-08-07', todayCheckin);
-            expect(todayAvailability.maxTimeMinutes).toBe(30);
+            // Friday (weekday) profile limit is 45 -- wins over the 200 min claim.
+            const availability = resolveAvailability('2026-08-07', todayCheckin, [], testContext());
+            expect(availability.maxTimeMinutes).toBe(45);
         });
 
         it('deducts fixed activity duration and reserves capacity for future scheduled activities', () => {
@@ -44,10 +59,21 @@ describe('Architecture & Phased Engine Integration', () => {
                 },
             ];
 
-            const availability = resolveAvailability('2026-08-12', null, undefined, undefined, fixedActivities);
-            // Default Wednesday is 45 min, subtracted 90 min fixed activity -> max remaining time is 0
+            const availability = resolveAvailability('2026-08-12', null, fixedActivities, testContext());
+            // Wednesday weekday budget is 45 min, minus 90 min fixed activity -> floored at 0
             expect(availability.maxTimeMinutes).toBe(0);
             expect(availability.reservedCapacityCost).toBe(0.8);
+        });
+
+        it('grants equipment strictly from the athlete\'s own constraints -- never fabricates a "gym day" bundle', () => {
+            const noKit = testContext({ hasFreeWeights: false, hasIndoorBike: false, hasCableMachine: false, hasTreadmill: false });
+            for (const date of ['2026-08-09', '2026-08-10', '2026-08-11', '2026-08-12', '2026-08-13']) {
+                expect(resolveAvailability(date, null, [], noKit).availableEquipment).toEqual([]);
+            }
+            const withBike = testContext({ hasIndoorBike: true });
+            // Equipment access doesn't depend on which day of the week it is.
+            expect(resolveAvailability('2026-08-10', null, [], withBike).availableEquipment).toContain('indoor_bike');
+            expect(resolveAvailability('2026-08-11', null, [], withBike).availableEquipment).toContain('indoor_bike');
         });
     });
 
@@ -234,7 +260,7 @@ describe('Architecture & Phased Engine Integration', () => {
             const fatigue = createEmptyFatigue('2026-08-07');
             fatigue.combinedFatigue.lowerBody = 0.9; // Legs wrecked
 
-            const availability = resolveAvailability('2026-08-07', null);
+            const availability = resolveAvailability('2026-08-07', null, [], testContext());
             const preferences: UserPreferences = {
                 userId: 'test_user',
                 preferredRecoveryStyle: 'active',
@@ -278,7 +304,7 @@ describe('Architecture & Phased Engine Integration', () => {
             }
         });
 
-        it('penalizes non-endurance modalities on 3rd+ consecutive day (anti-stacking)', () => {
+        it('penalizes repeated modality stacking on 3rd+ consecutive day, for EVERY modality including endurance (anti-stacking)', () => {
             const fatigue = createEmptyFatigue('2026-08-07');
             const availability = resolveAvailability('2026-08-07', null);
             const prefs: UserPreferences = {
@@ -304,6 +330,58 @@ describe('Architecture & Phased Engine Integration', () => {
             expect(unstackedStrength).toBeDefined();
             expect(stackedStrength).toBeDefined();
             expect(stackedStrength!.utilityScore).toBeLessThan(unstackedStrength!.utilityScore * 0.2);
+
+            // Cycling/Running used to be explicitly exempted from this same check --
+            // exactly the gap that let the optimizer chain the identical endurance
+            // template every day of a 7-day forecast (see docs/adr/0008 incident notes).
+            const cyclingAvailability = { ...availability, availableEquipment: ['indoor_bike'] };
+            const unstackedCyclingRanked = rankCandidatesByUtility(
+                ENRICHED_TEMPLATES, [], fatigue, cyclingAvailability, [], prefs,
+                { recentHistory: [] }
+            );
+            const stackedCyclingRanked = rankCandidatesByUtility(
+                ENRICHED_TEMPLATES, [], fatigue, cyclingAvailability, [], prefs,
+                { recentHistory: [{ modality: 'Cycling' }, { modality: 'Cycling' }] }
+            );
+            const unstackedCycling = unstackedCyclingRanked.find(r => r.template.modality === 'Cycling');
+            const stackedCycling = stackedCyclingRanked.find(r => r.template.modality === 'Cycling');
+
+            expect(unstackedCycling).toBeDefined();
+            expect(stackedCycling).toBeDefined();
+            expect(stackedCycling!.utilityScore).toBeLessThan(unstackedCycling!.utilityScore * 0.2);
+        });
+
+        it('suppresses a second consecutive Moderate/Hard day across DIFFERENT modalities (intensity-stacking cap)', () => {
+            const fatigue = createEmptyFatigue('2026-08-07');
+            const availability = {
+                ...resolveAvailability('2026-08-07', null),
+                availableEquipment: ['indoor_bike', 'free_weights'],
+            };
+            const prefs: UserPreferences = {
+                userId: '', preferredRecoveryStyle: 'mixed', defaultWeekdayTimeMin: 60, defaultWeekendTimeMin: 60,
+                preferredTimeOfDay: 'flexible', preferredModalities: [], deprioritizedModalities: [], avoidedModalities: [],
+                explanationVerbosity: 'brief', conservativeBias: false,
+                preferredUnits: { distance: 'km', weight: 'kg', temperature: 'celsius' }, schemaVersion: 1, createdAt: '', updatedAt: '',
+            };
+
+            // Yesterday: a hard cycling day. Today's candidate: a hard STRENGTH session --
+            // different modality, so the same-modality anti-stacking check above never
+            // fires, yet back-to-back hard days is still the thing to avoid.
+            const afterHardBike = rankCandidatesByUtility(
+                ENRICHED_TEMPLATES, [], fatigue, availability, [], prefs,
+                { recentHistory: [{ modality: 'Cycling', type: 'Bike VO2 Intervals', systemicCost: 1.0 }] }
+            );
+            const afterEasyBike = rankCandidatesByUtility(
+                ENRICHED_TEMPLATES, [], fatigue, availability, [], prefs,
+                { recentHistory: [{ modality: 'Cycling', type: 'Zone 2 Spin', systemicCost: 0.3 }] }
+            );
+
+            const hardStrengthAfterHard = afterHardBike.find(r => r.template.category === 'Full-body Strength');
+            const hardStrengthAfterEasy = afterEasyBike.find(r => r.template.category === 'Full-body Strength');
+
+            expect(hardStrengthAfterHard).toBeDefined();
+            expect(hardStrengthAfterEasy).toBeDefined();
+            expect(hardStrengthAfterHard!.utilityScore).toBeLessThan(hardStrengthAfterEasy!.utilityScore);
         });
 
         it('applies event-priority utility boost when an A-priority cycling event is active', () => {

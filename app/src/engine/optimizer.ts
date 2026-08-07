@@ -9,6 +9,10 @@ import type {
 } from './models';
 import type { ResolvedAvailability } from './schedule';
 
+const STRENGTH_CATEGORIES: SessionTemplate['category'][] = [
+    'Upper-body Strength', 'Lower-body Strength', 'Full-body Strength', 'Power Maintenance',
+];
+
 export interface RankedCandidate {
     template: SessionTemplate;
     benefitScore: number;
@@ -19,8 +23,19 @@ export interface RankedCandidate {
 
 export interface OptimizationOptions {
     focusEvent?: UserEvent | null;
-    recentHistory?: { modality?: string; type?: string }[];
+    /** `systemicCost` is optional so existing callers/tests that only track
+     *  modality/type keep working -- omitting it just disables the intensity-stacking
+     *  check below for that entry, never the modality-repetition checks. */
+    recentHistory?: { modality?: string; type?: string; systemicCost?: number }[];
 }
+
+/** Systemic-cost floor above which a template counts as a "hard" training day for
+ *  same-day-tier stacking checks -- mirrors rules.ts's MODIFY_MAX_SYSTEMIC_COST idiom. */
+const INTENSITY_STACK_THRESHOLD = 0.5;
+/** Softer than the same-modality suppression below (0.15): this fires across *any*
+ *  modality pairing (e.g. a hard bike day into a hard lift day), which is a real but
+ *  lesser overreach risk than repeating the identical session type. */
+const INTENSITY_STACK_PENALTY = 0.35;
 
 export function getConsecutiveModalityCount(
     history: { modality?: string; type?: string }[],
@@ -147,19 +162,42 @@ export function rankCandidatesByUtility(
                 prefMultiplier = 1.3;
             }
 
-            const isNonEndurance = !['cycling', 'running'].includes(template.modality.toLowerCase());
-
-            // Patch 1: Anti-stacking for non-endurance modalities (e.g. Strength)
-            // Checks both consecutive days AND rolling 7-day total exposures (across rest days)
+            // Patch 1: Anti-stacking, checking both consecutive days AND rolling 7-day
+            // total exposures (across rest days). Applies to every modality uniformly --
+            // cycling/running used to be exempted here on the theory that endurance
+            // "doesn't stack" the way strength does, which let the optimizer chain the
+            // same high-benefit endurance template (e.g. Tempo Ride) every single day
+            // once nothing else suppressed it. There is no modality for which repeating
+            // the identical session 3+ days running is actually the right prescription.
             const consecutiveCount = getConsecutiveModalityCount(history, template.modality);
             const rollingCount = getRollingModalityCount(history, template.modality);
-            if ((consecutiveCount >= 2 || rollingCount >= 2) && isNonEndurance) {
-                prefMultiplier *= 0.15; // Soft suppression of 3rd+ day of strength/hybrid
+            if (consecutiveCount >= 2 || rollingCount >= 2) {
+                prefMultiplier *= 0.15; // Soft suppression of 3rd+ exposure to the same modality
             }
 
-            // Patch 1b: Soft penalty if strength objective is already fulfilled in current microcycle
-            if (isStrengthResolved && isNonEndurance) {
+            // Patch 1b: Soft penalty on additional strength-family sessions once the
+            // strength objective is already fulfilled this microcycle. Scoped to actual
+            // strength categories (not "everything except cycling/running", which used
+            // to also catch Field/Technical-Skill sessions that have nothing to do with
+            // the strength objective being resolved).
+            const isStrengthCategory = STRENGTH_CATEGORIES.includes(template.category);
+            if (isStrengthResolved && isStrengthCategory) {
                 prefMultiplier *= 0.20; // De-prioritize additional gym sessions when strength objective is satisfied
+            }
+
+            // Patch 1c: Intensity-stacking cap -- a Moderate/Hard day (systemicCost >= 0.5)
+            // immediately following another Moderate/Hard day, in ANY modality, gets
+            // suppressed. This is what actually stops the "tempo trap": Patch 1 above only
+            // fires once the same modality has repeated twice, so a benefit-maximizing
+            // optimizer could otherwise stack Tempo Ride on day 1 and day 2 back-to-back
+            // before same-modality anti-stacking ever engages. Standard periodization
+            // treats hard/moderate-day-into-hard/moderate-day as the thing to avoid,
+            // independent of whether the two days share a modality.
+            const lastEntry = history[history.length - 1];
+            const lastWasHighIntensity = (lastEntry?.systemicCost ?? 0) >= INTENSITY_STACK_THRESHOLD;
+            const candidateIsHighIntensity = template.systemicCost >= INTENSITY_STACK_THRESHOLD;
+            if (lastWasHighIntensity && candidateIsHighIntensity) {
+                prefMultiplier *= INTENSITY_STACK_PENALTY;
             }
 
             // Patch 2: Event-Priority Utility Multiplier & Non-Event Modality Penalty

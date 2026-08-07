@@ -3,7 +3,6 @@ import type {
     DimensionalFatigue,
     FatigueState,
     FixedActivity,
-    LocationContext,
     MicrocycleState,
     Recommendation,
     SessionTemplate,
@@ -12,14 +11,15 @@ import type {
     UserPreferences,
     WeeklyObjective,
     WorkoutCostProfile,
+    WorkoutStimulusProfile,
 } from './models';
-import type { DayOfWeekSchedule } from './models';
-import { DEFAULT_LOCATIONS, DEFAULT_WEEKLY_SCHEDULE, resolveAvailability } from './schedule';
+import { resolveAvailability } from './schedule';
 import { evaluatePeriodizationPhase, type PhaseWeights } from './periodization';
-import { buildMicrocycleState, getUnresolvedObjectives, updateMicrocycleProgress } from './microcycle';
+import { buildMicrocycleState, creditObjectivesFromStimulus, getUnresolvedObjectives, stimulusCoverage, STIMULUS_CREDIT_COVERAGE_THRESHOLD } from './microcycle';
 import { applyCompletedSessionLoad, buildFatigueStateFromHistory, computeInternalResponseStrain, decayFatigue } from './fatigue';
 import type { CompletedExposure, TrainingHistoryProvider } from './trainingHistory';
 import { rankCandidatesByUtility } from './optimizer';
+import { eligibleTemplates } from './eligibility';
 import { ENRICHED_TEMPLATES } from './templates';
 import { addDaysToLocalDateString } from '../utils/localDate';
 import { resolveTrainingIntent } from './trainingIntent';
@@ -41,7 +41,6 @@ export interface WeekAheadDay {
     dayOffset: number; // 1 = tomorrow
     confidence: PlanConfidence;
     phaseName: PhaseWeights['phaseName'];
-    location: LocationContext;
     template: SessionTemplate;
     /** Category-derived display mode for projected days ('Rest'/'Mobility/Recovery' ->
      *  recover, else train). This is NOT the readiness-driven mode rules.ts computes for
@@ -75,7 +74,6 @@ export interface WeekAheadOptions {
     events?: UserEvent[];
     /** Same gap as `events` -- no fixed-activity persistence yet. */
     fixedActivities?: FixedActivity[];
-    weeklySchedule?: DayOfWeekSchedule[];
 }
 
 /** Builds a deterministic seed for tests and other pure callers. */
@@ -100,6 +98,33 @@ const ZERO_COST: WorkoutCostProfile = {
     impactTissue: 0,
     neuromuscular: 0,
 };
+
+const ZERO_STIMULUS: WorkoutStimulusProfile = {
+    aerobicCapacity: 0,
+    thresholdDevelopment: 0,
+    surgeRepeatability: 0,
+    maxStrength: 0,
+    hypertrophy: 0,
+    mobilityRecovery: 0,
+};
+
+/** Mirrors rules.ts's mode-driven systemic-cost ceilings (MODIFY_MAX_SYSTEMIC_COST /
+ *  PLAN_TIER_SYSTEMIC_COST_CEILING) but keyed off projected *fatigue* rather than a real
+ *  morning check-in, since no readiness signal exists this far out. Without a hard
+ *  ceiling here, utility = benefit/(1+cost) is asymptotic: rising cost can push a
+ *  candidate's score arbitrarily close to zero but never below Rest's floor score, so
+ *  the projected loop had no fatigue level -- including 100% across every dimension --
+ *  at which it would actually recommend rest. */
+export const PROJECTED_FATIGUE_RECOVER_THRESHOLD = 0.8;
+export const PROJECTED_FATIGUE_MODIFY_THRESHOLD = 0.6;
+const PROJECTED_MODIFY_MAX_SYSTEMIC_COST = 0.5;
+
+function maxFatigueDimension(fatigue: DimensionalFatigue): number {
+    return Math.max(
+        fatigue.systemic, fatigue.cardiovascular, fatigue.lowerBody,
+        fatigue.upperBody, fatigue.impactTissue, fatigue.neuromuscular
+    );
+}
 
 /** Preference-neutral fallback matching adapters.ts's null-preferences convention
  *  (all-empty/false) rather than preferencesService's pre-filled create-time defaults --
@@ -132,27 +157,12 @@ function enrichedCostProfile(templateId: string): WorkoutCostProfile {
     return ENRICHED_TEMPLATES.find(t => t.id === templateId)?.costProfile ?? ZERO_COST;
 }
 
-/** Adapts a picked template into the shape microcycle.ts's keyword matcher expects
- *  (it reads `'type' in activity ? activity.type : activity.title`) so a projected
- *  day's pick credits the same weekly objective a real completed session of that
- *  category/modality would. */
-function toTrainingRecordLike(template: SessionTemplate) {
-    return {
-        type: `${template.modality} ${template.category}`,
-        duration_min: template.durationMin,
-        training_effect: 0,
-        intensity_tag: '',
-    };
-}
-
-function stimulusOverlaps(template: SessionTemplate, objective: WeeklyObjective): boolean {
-    const stimulus = template.stimulusProfile ?? ENRICHED_TEMPLATES.find(t => t.id === template.id)?.stimulusProfile;
-    if (!stimulus) return false;
-    return Object.entries(objective.targetStimulus).some(([key, target]) => {
-        if (!target) return false;
-        const value = (stimulus as unknown as Record<string, number>)[key];
-        return typeof value === 'number' && value > 0;
-    });
+/** Same enrichment fallback as enrichedCostProfile, for the stimulus side -- used to
+ *  credit objectives directly from a pick's own numeric profile (see
+ *  microcycle.ts's creditObjectivesFromStimulus) instead of round-tripping through a
+ *  free-text description and keyword-matching it back apart. */
+function enrichedStimulusProfile(template: SessionTemplate): WorkoutStimulusProfile {
+    return template.stimulusProfile ?? ENRICHED_TEMPLATES.find(t => t.id === template.id)?.stimulusProfile ?? ZERO_STIMULUS;
 }
 
 function hoursBetween(dateStr1: string, dateStr2: string): number {
@@ -201,7 +211,6 @@ export function generateWeekAheadPlan(
     const totalDays = Math.max(1, options.days ?? 7);
     const events = options.events ?? [];
     const fixedActivities = options.fixedActivities ?? [];
-    const weeklySchedule = options.weeklySchedule ?? DEFAULT_WEEKLY_SCHEDULE;
     const effectivePreferences = preferences ?? NEUTRAL_PREFERENCES;
     const injuries = context.constraints.injuries;
 
@@ -222,7 +231,7 @@ export function generateWeekAheadPlan(
     const resultDays: WeekAheadDay[] = [];
 
     const applyPick = (date: string, template: SessionTemplate) => {
-        microcycle = updateMicrocycleProgress(microcycle, toTrainingRecordLike(template));
+        microcycle = creditObjectivesFromStimulus(microcycle, enrichedStimulusProfile(template));
         externalFatigue = applyCompletedSessionLoad(externalFatigue, date, enrichedCostProfile(template.id));
     };
 
@@ -234,13 +243,11 @@ export function generateWeekAheadPlan(
     if (tomorrowRec) {
         const tomorrowDate = addDaysToLocalDateString(todayDate, 1);
         const tomorrowPeriodization = evaluatePeriodizationPhase(events, tomorrowDate);
-        const tomorrowLocation = resolveAvailability(tomorrowDate, null, weeklySchedule, DEFAULT_LOCATIONS, fixedActivities).location;
         resultDays.push({
             date: tomorrowDate,
             dayOffset: 1,
             confidence: 'provisional',
             phaseName: tomorrowPeriodization.phase.phaseName,
-            location: tomorrowLocation,
             template: tomorrowRec.template,
             mode: tomorrowRec.mode === 'recover' ? 'recover' : 'train',
             rationale: tomorrowRec.rationale,
@@ -265,11 +272,41 @@ export function generateWeekAheadPlan(
             combinedFatigue: combineMax(decayedExternal, decayedInternal),
         };
 
-        const availability = resolveAvailability(date, null, weeklySchedule, DEFAULT_LOCATIONS, fixedActivities, undefined, context.constraints);
+        const availability = resolveAvailability(date, null, fixedActivities, context);
         const unresolved = getUnresolvedObjectives(microcycle);
-        const projectedHistory = resultDays.map(d => ({ modality: d.template.modality, type: d.template.title }));
+        const projectedHistory = resultDays.map(d => ({
+            modality: d.template.modality,
+            type: d.template.title,
+            systemicCost: d.template.systemicCost,
+        }));
+
+        // Real hard-gate feasibility first (equipment actually owned, guardrails,
+        // indoor/outdoor boundary, weekday/weekend time budget) -- this used to be
+        // skipped entirely for projected days: the raw catalog went straight into
+        // ranking with only a location-fabricated equipment set and duration filter,
+        // so the 7-day strip could recommend sessions today's own dashboard would
+        // never allow (banned modalities, wrong environment, equipment the athlete
+        // doesn't own). See eligibility.ts -- this is the same gate rules.ts already
+        // runs for today and tomorrow.
+        const eligible = eligibleTemplates(ENRICHED_TEMPLATES, context, availability.maxTimeMinutes, date);
+
+        // Then a hard fatigue-tier ceiling, mirroring rules.ts's readiness-driven mode
+        // ceiling but keyed off projected fatigue (see PROJECTED_FATIGUE_*_THRESHOLD
+        // above) -- makes rest/easy days actually reachable instead of relying on a
+        // utility formula that can only approach zero, never lose to Rest's floor score.
+        const peakFatigue = maxFatigueDimension(rankingFatigue.combinedFatigue);
+        const fatigueGated = eligible.filter(t => {
+            if (peakFatigue >= PROJECTED_FATIGUE_RECOVER_THRESHOLD) {
+                return t.category === 'Rest' || t.category === 'Mobility/Recovery';
+            }
+            if (peakFatigue >= PROJECTED_FATIGUE_MODIFY_THRESHOLD) {
+                return t.systemicCost <= PROJECTED_MODIFY_MAX_SYSTEMIC_COST;
+            }
+            return true;
+        });
+
         const ranked = rankCandidatesByUtility(
-            ENRICHED_TEMPLATES,
+            fatigueGated,
             unresolved,
             rankingFatigue,
             availability,
@@ -288,7 +325,6 @@ export function generateWeekAheadPlan(
                 dayOffset: offset,
                 confidence: 'projected',
                 phaseName: periodization.phase.phaseName,
-                location: availability.location,
                 template: restTemplate,
                 mode: 'recover',
                 rationale: "No session fits this day's projected time/equipment window -- defaulting to rest.",
@@ -298,7 +334,10 @@ export function generateWeekAheadPlan(
             continue;
         }
 
-        const addressed = unresolved.filter(o => stimulusOverlaps(pick.template, o)).map(o => o.title);
+        const pickStimulus = enrichedStimulusProfile(pick.template);
+        const addressed = unresolved
+            .filter(o => stimulusCoverage(pickStimulus, o.targetStimulus) >= STIMULUS_CREDIT_COVERAGE_THRESHOLD)
+            .map(o => o.title);
         applyPick(date, pick.template);
 
         resultDays.push({
@@ -306,7 +345,6 @@ export function generateWeekAheadPlan(
             dayOffset: offset,
             confidence: 'projected',
             phaseName: periodization.phase.phaseName,
-            location: availability.location,
             template: pick.template,
             mode: displayModeFromCategory(pick.template.category),
             rationale: pick.rationale,

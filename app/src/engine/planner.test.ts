@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import { evaluateNextDayPlan, evaluateTraining } from './rules';
 import { generateWeekAheadPlan, generateWeekAheadPlanWithIntent, prepareWeekAheadPlanSeed } from './planner';
 import type { DailyReadiness, EngineObjectiveInput, SubjectiveInput, UserContext, UserEvent } from './models';
-import type { DayOfWeekSchedule } from './models';
 import type { CompletedExposure, TrainingHistoryProvider } from './trainingHistory';
 
 // --- Fixtures (mirrors rules.test.ts's pattern) -----------------------------
@@ -107,17 +106,14 @@ describe('generateWeekAheadPlan', () => {
     });
 
     it('falls back to rest for a projected day with zero available time rather than dropping it', () => {
-        const context = baseContext();
+        // Zero time comes from the athlete's own maxTimeMinutes constraint now (there's
+        // no separate weeklySchedule override to force this through anymore -- time
+        // budget is sourced from real constraints/TrainingSettings only).
+        const context = baseContext({ maxTimeMinutes: 0 });
         const { readiness, todayRec, tomorrowRec } = buildTodayAndTomorrow(context);
-        const zeroTimeSchedule: DayOfWeekSchedule[] = [0, 1, 2, 3, 4, 5, 6].map(dayOfWeek => ({
-            dayOfWeek: dayOfWeek as DayOfWeekSchedule['dayOfWeek'],
-            defaultMaxTimeMin: 0,
-            preferredLocation: 'home',
-        }));
 
         const plan = generateWeekAheadPlan(readiness, context, null, '2026-08-07', todayRec, tomorrowRec, prepareWeekAheadPlanSeed(readiness, [], '2026-08-07', []), {
             days: 7,
-            weeklySchedule: zeroTimeSchedule,
         });
 
         plan.days.filter(d => d.confidence === 'projected').forEach(d => {

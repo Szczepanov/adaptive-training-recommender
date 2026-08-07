@@ -102,20 +102,6 @@ export interface UserContext {
     trainingSettings?: TrainingSettings;
 }
 
-export type LocationContext = 'home' | 'gym' | 'travel';
-
-export interface LocationProfile {
-    id: LocationContext;
-    displayName: string;
-    availableEquipment: string[];
-}
-
-export interface DayOfWeekSchedule {
-    dayOfWeek: 0 | 1 | 2 | 3 | 4 | 5 | 6; // 0 = Sun, 1 = Mon...
-    defaultMaxTimeMin: number;
-    preferredLocation: LocationContext;
-}
-
 export interface FixedActivity {
     id: string;
     title: string;
