@@ -174,19 +174,12 @@ class GarminSyncService:
         self.repository.upsert_snapshot(target_iso, snapshot.to_dict())
         return snapshot
 
-    def sync_daily(self, target_date_str: str | None = None, force: bool = False) -> bool:
-        """Run daily sync for target date (default local_today in Europe/Warsaw)."""
-        target_date = parse_date_string(target_date_str) if target_date_str else local_today(self.settings.app_timezone)
-        target_iso = get_date_string(target_date)
-
+    def _fetch_and_store_date(self, target_date: Any, target_iso: str) -> bool:
+        """Unconditional fetch -> canonicalize -> derive -> store pipeline for one date
+        (no staleness check -- callers decide whether a date is worth fetching).
+        Shared by sync_daily's primary target-date sync and its D-1..D-N lookback
+        resync (see sync_daily) so they can never drift apart."""
         logger.info(f"Starting daily Garmin sync for user=<UID-redacted> date={target_iso} (tz={self.settings.app_timezone})...")
-
-        # Staleness check
-        if not force and self.repository.is_fresh(target_iso, self.settings.garmin_staleness_minutes):
-            logger.info(
-                f"Snapshot for {target_iso} is fresh (< {self.settings.garmin_staleness_minutes}m). Skipping Garmin fetch."
-            )
-            return True
 
         provider = self._init_provider()
         # A service (and its lazily-created provider) can be reused across multiple
@@ -204,7 +197,9 @@ class GarminSyncService:
 
         # Upper bound includes target_iso (not just yesterday) so a same-day activity --
         # already uploaded to Garmin by the time this sync runs -- is captured as
-        # raw.todayTraining. Requires a re-sync after training to pick it up; see
+        # raw.todayTraining. A same-day activity uploaded to Garmin *after* this sync
+        # runs still needs a re-sync to pick it up -- which is exactly what sync_daily's
+        # D-1..D-N lookback resync provides the next day; see
         # DailySubjectiveCheckin.alreadyTrainedToday for the instant, sync-independent signal.
         logger.info(f"[{target_iso}] Fetching activities window ({three_days_ago_iso} -> {target_iso})...")
         activities_result = provider.fetch_activities(three_days_ago_iso, target_iso)
@@ -236,6 +231,64 @@ class GarminSyncService:
             f"baseline_28d_ready={snapshot.dataQuality.baseline28dReady}"
         )
         return True
+
+    def sync_daily(
+        self,
+        target_date_str: str | None = None,
+        force: bool = False,
+        resync_lookback_days: int | None = None,
+    ) -> bool:
+        """Run daily sync for target date (default local_today in Europe/Warsaw).
+
+        Garmin keeps revising a day's data well after that day ends -- a training
+        session logged in the evening, totalSteps finalized overnight, a sleep score
+        recomputed the next morning -- none of which is guaranteed to be present yet
+        when *that* day's own sync runs (see the todayTraining note in
+        _fetch_and_store_date). So this also unconditionally resyncs the preceding
+        `resync_lookback_days` day(s) (default settings.garmin_resync_lookback_days,
+        normally 1): an extra session logged today lands in Firestore once tomorrow's
+        sync revisits today's snapshot.
+
+        Lookback dates are resynced oldest-first, target date last. _fetch_and_store_date
+        rebuilds a date's 7d/28d rolling baselines from whatever is currently in
+        Firestore for the days before it -- so target_iso must be built only after any
+        corrected D-1..D-N values have already landed there, or its own baselines would
+        silently bake in the pre-resync (stale) history instead.
+        """
+        target_date = parse_date_string(target_date_str) if target_date_str else local_today(self.settings.app_timezone)
+        target_iso = get_date_string(target_date)
+
+        # Staleness check gates the whole operation (target date + lookback resync) --
+        # a retriggered run within the staleness window is a no-op, not a chance to
+        # re-hit the lookback dates too.
+        if not force and self.repository.is_fresh(target_iso, self.settings.garmin_staleness_minutes):
+            logger.info(
+                f"Snapshot for {target_iso} is fresh (< {self.settings.garmin_staleness_minutes}m). Skipping Garmin fetch."
+            )
+            return True
+
+        lookback_days = (
+            self.settings.garmin_resync_lookback_days if resync_lookback_days is None else resync_lookback_days
+        )
+        ok = True
+        for i in range(max(lookback_days, 0), 0, -1):
+            lookback_date = n_days_ago(target_date, i)
+            lookback_iso = get_date_string(lookback_date)
+            logger.info(f"Revisiting D-{i} ({lookback_iso}) to pick up any late-arriving Garmin data...")
+            try:
+                if not self._fetch_and_store_date(lookback_date, lookback_iso):
+                    ok = False
+            except Exception as e:
+                logger.error(f"[{lookback_iso}] Lookback resync failed: {e}")
+                ok = False
+
+        # Target date is built last, after any lookback corrections above are already
+        # persisted -- an exception here (unlike a lookback failure) propagates, as it
+        # always has: it's the primary date the caller asked for.
+        if not self._fetch_and_store_date(target_date, target_iso):
+            ok = False
+
+        return ok
 
     def backfill(
         self,
