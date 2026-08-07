@@ -11,7 +11,13 @@ import { getPreviousLocalDateString } from '../utils/localDate';
 import { getPrescriptionLegend, resolveWorkoutPrescription } from '../workouts';
 import type { WorkoutPrescription } from '../workouts';
 import { AdherencePrompt } from './AdherencePrompt';
+import { MinimumSafetyCheckin } from './MinimumSafetyCheckin';
 import { WeekAheadStrip } from './WeekAheadStrip';
+import {
+  canGenerateNormalRecommendation,
+  createProvisionalSafetyRecommendation,
+  getMinimumSafetyCheckinStatus,
+} from '../engine/safetyCheckin';
 import './Home.css';
 
 interface HomeProps {
@@ -119,6 +125,11 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
       ...(defaults.environment === 'either' ? [] : [{ label: `${defaults.environment === 'indoor' ? 'Indoor' : 'Outdoor'} training only`, kind: 'guardrail' }]),
     ];
   }, [decisionInput]);
+  const minimumSafetyStatus = useMemo(
+    () => getMinimumSafetyCheckinStatus(decisionInput?.subjectiveCheckin),
+    [decisionInput?.subjectiveCheckin],
+  );
+  const canGenerateNormalPlan = canGenerateNormalRecommendation(minimumSafetyStatus);
 
   const loadDashboardData = useCallback(async () => {
     const requestId = ++dashboardRequest.current;
@@ -141,8 +152,8 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
           : null
       );
 
-      const checkinUsable = !input.subjectiveCheckin || input.dataQuality.subjectiveCheckinComplete;
-      if (input.recoverySnapshot && checkinUsable) {
+      const safetyStatus = getMinimumSafetyCheckinStatus(input.subjectiveCheckin);
+      if (input.recoverySnapshot && canGenerateNormalRecommendation(safetyStatus)) {
         const objective = mapSnapshotToEngineInput(input.recoverySnapshot);
         const subjective = mapCheckinToSubjectiveInput(input.subjectiveCheckin);
         const context = mapContextFromGoalsAndTrainingSettings(input.activeGoals, input.trainingSettings, input.preferences);
@@ -162,6 +173,13 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
         recommendationService.saveRecommendation(userId, input.date, todayRec).catch(err =>
           console.warn('Failed to persist recommendation:', err)
         );
+      } else if (input.recoverySnapshot && safetyStatus !== 'complete') {
+        // Unknown subjective safety state must not be converted to neutral values and
+        // passed through the ordinary optimizer. This fallback is never persisted as a
+        // normal training recommendation.
+        setRecommendation(createProvisionalSafetyRecommendation(safetyStatus));
+        setAdjustmentDirection(null);
+        setNextDayPlan(null);
       } else {
         setRecommendation(null);
         setNextDayPlan(null);
@@ -203,6 +221,7 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
 
   const computeAdjustedRecommendation = useCallback((direction: 'easier' | 'harder' | null): Recommendation | null => {
     if (!recommendation) return null;
+    if (!canGenerateNormalPlan) return recommendation;
     if (!direction || !engineInputs || !decisionInput) return recommendation;
 
     const { subjective, objective, context } = engineInputs;
@@ -217,9 +236,10 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
       ...adjustedWithExecution,
       prescription: resolveWorkoutPrescription(adjustedWithExecution, userId, decisionInput.date, decisionInput.preferences?.performanceProfile, executionDose, decisionInput.trainingSettings) ?? undefined
     };
-  }, [recommendation, engineInputs, decisionInput, userId]);
+  }, [recommendation, canGenerateNormalPlan, engineInputs, decisionInput, userId]);
 
   const handleAdjustSession = useCallback((direction: 'easier' | 'harder' | null) => {
+    if (!canGenerateNormalPlan) return;
     setAdjustmentDirection(direction);
     if (!recommendation || !decisionInput) return;
 
@@ -236,7 +256,7 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
     }).catch(err =>
       console.warn('Failed to persist adjusted recommendation:', err)
     );
-  }, [recommendation, decisionInput, computeAdjustedRecommendation, userId]);
+  }, [recommendation, canGenerateNormalPlan, decisionInput, computeAdjustedRecommendation, userId]);
 
   const activeRec = useMemo(
     () => computeAdjustedRecommendation(adjustmentDirection),
@@ -261,7 +281,7 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
   const [weekAheadPlan, setWeekAheadPlan] = useState<WeekAheadPlan | null>(null);
   useEffect(() => {
     let cancelled = false;
-    if (!engineInputs || !decisionInput || !activeRec) {
+    if (!engineInputs || !decisionInput || !activeRec || !canGenerateNormalPlan) {
       setWeekAheadPlan(null);
       return () => { cancelled = true; };
     }
@@ -285,7 +305,7 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
       }
     });
     return () => { cancelled = true; };
-  }, [userId, engineInputs, decisionInput, activeRec, nextDayPlan, eventPeriodization]);
+  }, [userId, engineInputs, decisionInput, activeRec, canGenerateNormalPlan, nextDayPlan, eventPeriodization]);
 
   if (loading) {
     return (
@@ -360,6 +380,13 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
                   <h5>Why this today?</h5>
                   <p>{activeRec.rationale}</p>
                 </section>
+                {!canGenerateNormalPlan && (
+                  <MinimumSafetyCheckin
+                    userId={userId}
+                    existingCheckin={decisionInput?.subjectiveCheckin ?? null}
+                    onCompleted={loadDashboardData}
+                  />
+                )}
                 {activeRec.prescription && (
                   <>
                     <button
@@ -375,7 +402,7 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
                 )}
 
                 {/* Session Adjustment Controls */}
-                <div className="adjustment-control-section">
+                {canGenerateNormalPlan && <div className="adjustment-control-section">
                   <span className="adjustment-label">Adjust Today's Session Load:</span>
                   <div className="adjustment-button-group">
                     <button
@@ -423,7 +450,7 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
                       </button>
                     </div>
                   )}
-                </div>
+                </div>}
               </div>
             ) : (
               <p className="card-empty">
@@ -521,10 +548,10 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
             <div className="dashboard-card" onClick={() => onNavigate('checkin')}>
               <div className="card-header">
                 <h3>Today's Check-in</h3>
-                {decisionInput?.subjectiveCheckin?.dataQuality.isComplete ? (
+                {canGenerateNormalPlan ? (
                   <span className="status-badge success">Complete ✓</span>
                 ) : (
-                  <span className="status-badge pending">Incomplete</span>
+                  <span className="status-badge pending">Safety check needed</span>
                 )}
               </div>
               

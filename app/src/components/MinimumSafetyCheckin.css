@@ -1,0 +1,15 @@
+.minimum-safety-checkin {
+  margin-top: 1rem;
+  padding: 1rem;
+  border: 1px solid var(--warning-border, #c58c29);
+  border-radius: 0.75rem;
+  background: var(--warning-surface, rgba(197, 140, 41, 0.12));
+}
+.minimum-safety-checkin h5, .minimum-safety-checkin p { margin: 0 0 0.5rem; }
+.minimum-safety-question { display: flex; gap: 0.75rem; align-items: center; margin: 0.75rem 0; padding: 0; border: 0; }
+.minimum-safety-question legend { width: 100%; margin-bottom: 0.35rem; font-weight: 600; }
+.minimum-safety-question label { display: inline-flex; gap: 0.3rem; align-items: center; }
+.minimum-safety-fatigue { display: grid; gap: 0.35rem; font-weight: 600; }
+.minimum-safety-fatigue input { width: 100%; }
+.minimum-safety-save { margin-top: 0.75rem; }
+.minimum-safety-error { color: var(--error-color, #b42318); font-weight: 600; }

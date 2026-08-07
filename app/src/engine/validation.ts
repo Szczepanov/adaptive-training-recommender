@@ -45,11 +45,14 @@ export interface ValidationResult<T = any> {
 
 // --- Helper Functions ---
 
-function isValidDate(date: string): boolean {
+export function isValidDate(date: string): boolean {
     const regex = /^\d{4}-\d{2}-\d{2}$/;
     if (!regex.test(date)) return false;
-    const d = new Date(date);
-    return d instanceof Date && !isNaN(d.getTime());
+    const [year, month, day] = date.split('-').map(Number);
+    const parsed = new Date(Date.UTC(year, month - 1, day));
+    return parsed.getUTCFullYear() === year
+        && parsed.getUTCMonth() === month - 1
+        && parsed.getUTCDate() === day;
 }
 
 function isInRange(value: number, min: number, max: number): boolean {

@@ -1,5 +1,17 @@
 import { describe, it, expect } from 'vitest';
-import { validateRecommendation, validateAdherenceUpdate, validateGoal } from './validation';
+import { isValidDate, validateRecommendation, validateAdherenceUpdate, validateGoal } from './validation';
+
+describe('isValidDate', () => {
+    it('rejects impossible calendar dates rather than normalizing them', () => {
+        expect(isValidDate('2026-02-30')).toBe(false);
+        expect(isValidDate('2026-13-01')).toBe(false);
+    });
+
+    it('handles leap years exactly', () => {
+        expect(isValidDate('2024-02-29')).toBe(true);
+        expect(isValidDate('2025-02-29')).toBe(false);
+    });
+});
 
 describe('validateGoal', () => {
     const baseFields = {
