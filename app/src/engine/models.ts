@@ -462,11 +462,15 @@ export interface DailySubjectiveCheckin {
 
 export interface UserGoal {
     userId: string;
+    /** Time-horizon bucket. For a goal with a `targetDate`, this is DERIVED (see
+     *  periodization.ts deriveGoalCategory) and never persisted -- goalService fills it
+     *  in on every read so it's always current relative to today, with nothing to go
+     *  stale. Only meaningful as user input for open-ended goals (no `targetDate`). */
     category: 'short-term' | 'mid-term' | 'long-term';
     domain: 'endurance' | 'strength' | 'mobility' | 'weight_loss' | 'general_fitness' | 'other';
     title: string;
     description?: string | null;
-    priority: number; // 1-5, 5 = highest
+    priority: number; // 1-5, 5 = highest. Also the input to deriveEventPriority (A/B/C) for event goals -- no separate persisted priority field.
     status: 'active' | 'paused' | 'completed' | 'archived';
     // Optional target tracking
     targetMetric?: string | null; // e.g., '5k_time', 'bench_press_weight', 'weekly_sessions'
@@ -474,6 +478,20 @@ export interface UserGoal {
     targetUnit?: string | null; // e.g., 'minutes', 'kg', 'sessions'
     // Optional dates
     targetDate?: string | null; // YYYY-MM-DD
+    /** Free-text description of what "success" looks like, e.g. "sub-5h finish". */
+    targetOutcome?: string | null;
+    // Event fields: only meaningful when `targetDate` is set. A goal with these set is
+    // adapted into a `UserEvent` (see periodization.ts goalToUserEvent) and feeds the
+    // periodization/taper engine; a goal without them is a plain aspirational target and
+    // only ever contributes display text, same as before this feature existed.
+    eventCategory?: UserEvent['category'] | null;
+    /** One of EVENT_PRESETS[eventCategory]'s ids (engine/eventPresets.ts). Resolves to a
+     *  demand profile at read/engine time -- never persist the profile itself, so
+     *  recalibrating a preset's numbers doesn't require touching old goal docs. */
+    eventPreset?: string | null;
+    /** No 'rescheduled' state here by design -- rescheduling a goal is just editing
+     *  targetDate while it stays 'scheduled'. Defaults to 'scheduled' when eventCategory is set. */
+    eventLifecycle?: 'scheduled' | 'completed' | 'DNS' | 'DNF' | 'cancelled';
     schemaVersion: number;
     createdAt: string;
     updatedAt: string;

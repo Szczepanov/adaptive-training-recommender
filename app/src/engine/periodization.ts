@@ -1,7 +1,11 @@
 import type {
     EventDemandProfile,
+    EventPriority,
+    GoalCategory,
     UserEvent,
+    UserGoal,
 } from './models';
+import { resolveDemandProfile } from './eventPresets';
 
 export interface PhaseWeights {
     phaseName: 'Base' | 'Build' | 'Specificity' | 'Peak/Taper' | 'Post-Event Recovery';
@@ -142,5 +146,56 @@ export function evaluatePeriodizationPhase(
         volumeScale: 1.0,
         intensityScale: 0.8,
         taperActive: false,
+    };
+}
+
+/** Days from `evaluationDate` to `eventDate` (negative once the date has passed). Pure,
+ *  standalone from `evaluatePeriodizationPhase` on purpose -- a goal/event list can show
+ *  several events' day-counts at once (e.g. an Active Goals card), and only the single
+ *  *governing* event's day-count comes from evaluatePeriodizationPhase's own result. */
+export function getDaysToEvent(eventDate: string, evaluationDate: string): number {
+    return getDaysBetween(evaluationDate, eventDate);
+}
+
+/**
+ * Time-horizon bucket for a *dated* goal, purely a function of how far away that date
+ * is -- recomputed on every read (see goalService), never persisted, so it can't go
+ * stale as the date approaches. Thresholds are coarser than evaluatePeriodizationPhase's
+ * own phase boundaries on purpose: this is a simple, user-facing label ("how far off is
+ * this"), not a training-policy decision.
+ */
+export function deriveGoalCategory(targetDate: string, todayStr: string): GoalCategory {
+    const daysAway = getDaysBetween(todayStr, targetDate);
+    if (daysAway <= 56) return 'short-term';
+    if (daysAway <= 182) return 'mid-term';
+    return 'long-term';
+}
+
+/** Maps the existing 1-5 star "priority" control onto taper aggressiveness (A/B/C) so
+ *  goal-setting doesn't need to teach a second, unrelated priority vocabulary. */
+export function deriveEventPriority(starPriority: number): EventPriority {
+    if (starPriority >= 5) return 'A';
+    if (starPriority >= 3) return 'B';
+    return 'C';
+}
+
+/**
+ * Adapts a goal into the engine-internal `UserEvent` shape `evaluatePeriodizationPhase`
+ * consumes. Returns `null` for anything that isn't a currently-active, dated, categorized
+ * event goal -- callers should `.filter((e): e is UserEvent => e != null)` over
+ * `activeGoals.map(goalToUserEvent)`. No lifecycle filtering happens here
+ * (e.g. excluding 'cancelled'/'DNS') -- that's evaluatePeriodizationPhase's job, since it
+ * needs to see the full lifecycle to resolve stale/post-event cases correctly.
+ */
+export function goalToUserEvent(goal: UserGoal & { id?: string }): UserEvent | null {
+    if (goal.status !== 'active' || !goal.targetDate || !goal.eventCategory) return null;
+    return {
+        id: goal.id ?? goal.title, // prefer the Firestore doc id when the caller has one; title is a reasonable fallback for bare UserGoal fixtures (tests, etc.)
+        title: goal.title,
+        date: goal.targetDate,
+        priority: deriveEventPriority(goal.priority),
+        lifecycle: goal.eventLifecycle ?? 'scheduled',
+        category: goal.eventCategory,
+        demandProfile: resolveDemandProfile(goal.eventCategory, goal.eventPreset),
     };
 }

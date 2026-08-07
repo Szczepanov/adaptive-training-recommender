@@ -3,6 +3,7 @@ import { decisionComposer } from '../engine/composer';
 import { evaluateTraining, evaluateNextDayPlan, adjustSessionRecommendation } from '../engine/rules';
 import { mapSnapshotToEngineInput, mapCheckinToSubjectiveInput, mapContextFromGoalsAndConstraints } from '../engine/adapters';
 import { generateWeekAheadPlan, type WeekAheadPlan } from '../engine/planner';
+import { getDaysToEvent } from '../engine/periodization';
 import type { DailyDecisionInput, Recommendation, NextDayPotentialPlan, DailyRecommendation } from '../engine/models';
 import { recommendationService } from '../services/recommendationService';
 import { getPreviousLocalDateString } from '../utils/localDate';
@@ -547,7 +548,12 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
                     return goal ? (
                       <div key={category} className="goal-item">
                         <span className="goal-category">{category}</span>
-                        <span className="goal-title">{goal.title}</span>
+                        <span className="goal-title">
+                          {goal.title}
+                          {goal.eventCategory && goal.targetDate && (
+                            <span className="goal-event-days"> · 🏁 in {getDaysToEvent(goal.targetDate, decisionInput.date)}d</span>
+                          )}
+                        </span>
                       </div>
                     ) : null;
                   })}

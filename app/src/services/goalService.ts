@@ -1,10 +1,30 @@
-import { doc, getDoc, setDoc, deleteDoc, collection, query, where, orderBy, getDocs, addDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, deleteDoc, collection, query, where, getDocs, addDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import type { UserGoal, GoalCategory } from '../engine/models';
+import { deriveGoalCategory } from '../engine/periodization';
+import { getLocalDateString } from '../utils/localDate';
 
 type UserGoalWithId = UserGoal & { id: string };
 import { validateGoal } from '../engine/validation';
 import { getErrorCode, getErrorMessage } from '../utils/errors';
+
+/** category is never trusted as read directly from Firestore for a DATED goal -- it's
+ *  recomputed here on every read, relative to *today*, so it can never drift as the
+ *  target date approaches (see models.ts UserGoal.category and validation.ts
+ *  validateGoal). Open-ended goals (no targetDate) keep whatever category was stored. */
+function withResolvedCategory<T extends UserGoal>(goal: T): T {
+    if (!goal.targetDate) return goal;
+    return { ...goal, category: deriveGoalCategory(goal.targetDate, getLocalDateString()) };
+}
+
+/** Firestore never stores `category` for a dated goal in the first place (see
+ *  createGoal/updateGoal below) -- nothing to keep in sync, nothing to go stale. */
+function stripDerivedCategoryForWrite(goal: UserGoal): UserGoal {
+    if (!goal.targetDate) return goal;
+    const rest: Partial<UserGoal> = { ...goal };
+    delete rest.category;
+    return rest as UserGoal;
+}
 
 export class GoalService {
     private readonly collectionPath = 'goals';
@@ -15,19 +35,26 @@ export class GoalService {
     async listGoals(userId: string): Promise<UserGoalWithId[]> {
         try {
             const collRef = collection(db, 'users', userId, this.collectionPath);
+            // No orderBy('category', ...) here -- category is no longer stored for dated
+            // goals (see stripDerivedCategoryForWrite), so it can't be sorted server-side.
+            // Grouping/sorting by category happens client-side after resolving it below.
             const q = query(
                 collRef,
                 where('userId', '==', userId),
-                orderBy('category', 'asc'),
-                orderBy('priority', 'desc'),
-                orderBy('createdAt', 'desc')
             );
-            
+
             const querySnapshot = await getDocs(q);
-            return querySnapshot.docs.map(doc => ({
+            const goals = querySnapshot.docs.map(doc => withResolvedCategory({
                 ...doc.data(),
                 id: doc.id
             } as UserGoal & { id: string }));
+
+            return goals.sort((a, b) => {
+                const categoryCompare = a.category.localeCompare(b.category);
+                if (categoryCompare !== 0) return categoryCompare;
+                if (b.priority !== a.priority) return b.priority - a.priority;
+                return (b.createdAt ?? '').localeCompare(a.createdAt ?? '');
+            });
         } catch (error) {
             console.error('Error listing goals:', error);
             throw error;
@@ -44,9 +71,9 @@ export class GoalService {
                 collRef,
                 where('status', '==', 'active')
             );
-            
+
             const querySnapshot = await getDocs(q);
-            const goals = querySnapshot.docs.map(doc => ({
+            const goals = querySnapshot.docs.map(doc => withResolvedCategory({
                 ...doc.data(),
                 id: doc.id
             } as UserGoal & { id: string }));
@@ -70,24 +97,19 @@ export class GoalService {
     }
 
     /**
-     * Get goals by category
+     * Get goals by category. Category is derived for dated goals, so this can no longer
+     * be a Firestore-side `where('category', '==', ...)` query -- fetch and filter
+     * client-side against the resolved value instead.
      */
     async getGoalsByCategory(userId: string, category: GoalCategory): Promise<UserGoalWithId[]> {
         try {
-            const collRef = collection(db, 'users', userId, this.collectionPath);
-            const q = query(
-                collRef,
-                where('userId', '==', userId),
-                where('category', '==', category),
-                orderBy('priority', 'desc'),
-                orderBy('createdAt', 'desc')
-            );
-            
-            const querySnapshot = await getDocs(q);
-            return querySnapshot.docs.map(doc => ({
-                ...doc.data(),
-                id: doc.id
-            } as UserGoalWithId));
+            const goals = await this.listGoals(userId);
+            return goals
+                .filter(g => g.category === category)
+                .sort((a, b) => {
+                    if (b.priority !== a.priority) return b.priority - a.priority;
+                    return (b.createdAt ?? '').localeCompare(a.createdAt ?? '');
+                });
         } catch (error) {
             console.error('Error fetching goals by category:', error);
             throw error;
@@ -101,12 +123,12 @@ export class GoalService {
         try {
             const docRef = doc(db, 'users', userId, this.collectionPath, goalId);
             const docSnap = await getDoc(docRef);
-            
+
             if (docSnap.exists()) {
-                return {
+                return withResolvedCategory({
                     ...docSnap.data(),
                     id: docSnap.id
-                } as UserGoalWithId;
+                } as UserGoalWithId);
             }
             return null;
         } catch (error) {
@@ -134,14 +156,17 @@ export class GoalService {
             }
 
             const validatedGoal = validation.data!;
-            
-            // Create new document
+
+            // Create new document. `category` is intentionally left out of what's
+            // persisted for a dated goal (see stripDerivedCategoryForWrite) -- the
+            // returned in-memory object still carries the correct, freshly-derived value
+            // for immediate UI use.
             const collRef = collection(db, 'users', userId, this.collectionPath);
-            const docRef = await addDoc(collRef, validatedGoal);
-            
+            const docRef = await addDoc(collRef, stripDerivedCategoryForWrite(validatedGoal));
+
             // Update with the document ID
             const goalWithId = { ...validatedGoal, id: docRef.id };
-            await setDoc(docRef, goalWithId, { merge: true });
+            await setDoc(docRef, stripDerivedCategoryForWrite(goalWithId), { merge: true });
 
             return goalWithId;
         } catch (error) {
@@ -176,10 +201,18 @@ export class GoalService {
             }
 
             const validatedGoal = validation.data!;
-            
-            // Save to Firestore
+
+            // Save to Firestore. `merge: true` means a previously-stored `category` field
+            // (from before this feature, or from a goal that used to be open-ended) isn't
+            // automatically cleared by omitting it here -- explicitly null it out so a
+            // goal that gains a targetDate on this update doesn't leave a stale category
+            // sitting in Firestore that a future direct-read (bypassing goalService) could
+            // be misled by.
             const docRef = doc(db, 'users', userId, this.collectionPath, goalId);
-            await setDoc(docRef, validatedGoal, { merge: true });
+            const writePayload = validatedGoal.targetDate
+                ? { ...stripDerivedCategoryForWrite(validatedGoal), category: null }
+                : validatedGoal;
+            await setDoc(docRef, writePayload, { merge: true });
 
             return validatedGoal;
         } catch (error) {
