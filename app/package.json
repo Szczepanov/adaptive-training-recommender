@@ -15,7 +15,10 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "visual:install": "playwright install chromium",
+    "visual:serve": "vite --mode visual --host 127.0.0.1 --port 4174",
+    "visual:refresh": "node scripts/prepare-visual-review.mjs && playwright test --project=visual-desktop --project=visual-mobile && node scripts/finalize-visual-review.mjs"
   },
   "dependencies": {
     "firebase": "^12.11.0",
@@ -24,6 +27,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
+    "@playwright/test": "^1.62.1",
     "@types/node": "^24.12.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
