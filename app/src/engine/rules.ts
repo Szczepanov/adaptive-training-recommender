@@ -1,6 +1,9 @@
-import type { DailyReadiness, UserContext, Recommendation, SessionTemplate, NextDayPotentialPlan, NextDayPlanBranch, DecisionScoreTelemetry, SafetyEnvelope, PlanEnvelope } from './models';
+import type { DailyReadiness, UserContext, Recommendation, SessionTemplate, NextDayPotentialPlan, NextDayPlanBranch, DecisionScoreTelemetry, SafetyEnvelope, PlanEnvelope, UserEvent } from './models';
 import { TEMPLATES } from './templates';
 import { eligibleTemplates, evaluateTemplateEligibility, resolveMaximumSessionMinutes } from './eligibility';
+import { ENRICHED_TEMPLATES } from './templates';
+import { rankCandidatesByUtility } from './optimizer';
+import { resolveAvailability } from './schedule';
 
 /**
  * Deterministically pick one template from a filtered set of same-category options,
@@ -442,6 +445,50 @@ export function evaluateTraining(
         envelopes,
         telemetry
     };
+}
+
+/** Intent-aware day-0 selection. Readiness still decides the clinical envelope and
+ * train/modify/recover mode; only the safe candidate ranking is replaced with the same
+ * objective/fatigue optimizer used by the projected planner. */
+export async function evaluateTrainingWithIntent(
+    userId: string,
+    readiness: DailyReadiness,
+    context: UserContext,
+    events: UserEvent[],
+    date: string,
+    previousMode?: 'train' | 'modify' | 'recover'
+): Promise<Recommendation> {
+    const base = evaluateTraining(readiness, context, date, previousMode);
+    // Keep the synchronous rules module usable in pure unit tests; history access is
+    // loaded only by the asynchronous day-0 path that has a configured Firebase app.
+    const { resolveTrainingIntent } = await import('./trainingIntent');
+    const intent = await resolveTrainingIntent(userId, events, date, readiness);
+    const maxCost = PLAN_TIER_SYSTEMIC_COST_CEILING[base.envelopes!.plan.maxAllowableTier];
+    const candidates = eligibleTemplates(ENRICHED_TEMPLATES, context, readiness.subjective.timeAvailable, date)
+        .filter(template => !base.envelopes!.safety.restrictedModalities.includes(template.modality))
+        .filter(template => template.systemicCost <= maxCost)
+        .filter(template => base.mode !== 'recover' || template.category === 'Rest' || template.category === 'Mobility/Recovery')
+        .filter(template => base.mode !== 'modify' || template.systemicCost <= MODIFY_MAX_SYSTEMIC_COST);
+    const ranked = rankCandidatesByUtility(
+        candidates,
+        intent.unresolvedObjectives,
+        intent.fatigue,
+        resolveAvailability(date, readiness.subjective),
+        context.constraints.injuries,
+        {
+            userId, preferredRecoveryStyle: 'mixed', defaultWeekdayTimeMin: 45, defaultWeekendTimeMin: 60,
+            preferredTimeOfDay: 'flexible', preferredModalities: context.preferences.preferredModalities,
+            deprioritizedModalities: context.preferences.deprioritizedModalities, avoidedModalities: context.preferences.avoidedModalities,
+            explanationVerbosity: 'detailed', conservativeBias: context.preferences.conservativeBias,
+            preferredUnits: { distance: 'km', weight: 'kg', temperature: 'celsius' }, schemaVersion: 1, createdAt: '', updatedAt: '',
+        }
+    );
+    const pick = ranked[0];
+    if (!pick) return base;
+    const phaseContext = intent.periodization.focusEvent
+        ? `${intent.periodization.daysToEvent} days out from ${intent.periodization.focusEvent.title}, ${intent.periodization.phase.phaseName} phase.`
+        : `${intent.periodization.phase.phaseName} phase.`;
+    return { ...base, template: pick.template, rationale: `${base.rationale} ${phaseContext} ${pick.rationale}` };
 }
 
 /** Evaluates only clinical/readiness/constraint limits. Event periodization is a

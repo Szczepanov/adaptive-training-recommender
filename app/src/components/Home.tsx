@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { decisionComposer } from '../engine/composer';
-import { evaluateTraining, evaluateNextDayPlan, adjustSessionRecommendation } from '../engine/rules';
+import { evaluateTrainingWithIntent, evaluateNextDayPlan, adjustSessionRecommendation } from '../engine/rules';
 import { mapSnapshotToEngineInput, mapCheckinToSubjectiveInput, mapContextFromGoalsAndTrainingSettings, mapGoalsToUserEvents } from '../engine/adapters';
 import { generateWeekAheadPlan, type WeekAheadPlan } from '../engine/planner';
 import { evaluatePeriodizationPhase, getDaysToEvent } from '../engine/periodization';
@@ -98,7 +98,8 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
         const objective = mapSnapshotToEngineInput(input.recoverySnapshot);
         const subjective = mapCheckinToSubjectiveInput(input.subjectiveCheckin);
         const context = mapContextFromGoalsAndTrainingSettings(input.activeGoals, input.trainingSettings, input.preferences);
-        const baseRecommendation = evaluateTraining({ subjective, objective }, context, input.date, yesterdayRec?.mode);
+        const events = mapGoalsToUserEvents(input.activeGoals);
+        const baseRecommendation = await evaluateTrainingWithIntent(userId, { subjective, objective }, context, events, input.date, yesterdayRec?.mode);
         const todayRec = {
           ...baseRecommendation,
           prescription: resolveWorkoutPrescription(baseRecommendation, userId, input.date, input.preferences?.performanceProfile) ?? undefined
