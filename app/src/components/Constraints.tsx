@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { constraintService, PREDEFINED_CONSTRAINTS } from '../services/constraintService';
 import type { UserConstraint, ConstraintCategory, ConstraintType, ConstraintSeverity } from '../engine/models';
 import { getErrorMessage } from '../utils/errors';
@@ -19,11 +19,7 @@ export function Constraints({ userId, onNavigate }: ConstraintsProps) {
   const [error, setError] = useState<string | null>(null);
   const [showCustomModal, setShowCustomModal] = useState(false);
 
-  useEffect(() => {
-    loadConstraints();
-  }, [userId]);
-
-  const loadConstraints = async () => {
+  const loadConstraints = useCallback(async () => {
     try {
       setLoading(true);
       const allConstraints = await constraintService.listConstraints(userId);
@@ -47,7 +43,11 @@ export function Constraints({ userId, onNavigate }: ConstraintsProps) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [userId]);
+
+  useEffect(() => {
+    loadConstraints();
+  }, [loadConstraints]);
 
   const handleToggleConstraint = async (key: string, isActive: boolean) => {
     try {

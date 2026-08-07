@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { checkinService } from '../services/checkinService';
 import { recoverySnapshotService } from '../services/recoverySnapshotService';
 import type { DailySubjectiveCheckin } from '../engine/models';
@@ -29,11 +29,7 @@ export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) 
     { key: 'motivation', label: 'Motivation', desc: 'How motivated are you to exercise?' }
   ];
 
-  useEffect(() => {
-    loadTodayCheckin();
-  }, [userId]);
-
-  const loadTodayCheckin = async () => {
+  const loadTodayCheckin = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
@@ -127,7 +123,11 @@ export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) 
     } finally {
       setLoading(false);
     }
-  };
+  }, [userId]);
+
+  useEffect(() => {
+    loadTodayCheckin();
+  }, [loadTodayCheckin]);
 
   const handleSliderChange = (value: number) => {
     if (!checkin) return;

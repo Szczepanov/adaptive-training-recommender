@@ -4,13 +4,18 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "check": "npm run typecheck && npm run lint && npm run test && npm run validate:workouts",
+    "predev": "npm run check",
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "npm run check && vite build",
+    "typecheck": "tsc -b",
     "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
     "validate:workouts": "node --experimental-strip-types scripts/validate-workouts.ts",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
     "firebase": "^12.11.0",

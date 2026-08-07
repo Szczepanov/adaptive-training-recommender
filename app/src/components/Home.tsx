@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { auth } from '../firebase';
 import { signOut } from 'firebase/auth';
 import { decisionComposer } from '../engine/composer';
@@ -28,11 +28,7 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
   // answer -- drives the "did you follow yesterday's plan?" prompt below.
   const [pendingAdherence, setPendingAdherence] = useState<{ date: string; recommendation: DailyRecommendation } | null>(null);
 
-  useEffect(() => {
-    loadDashboardData();
-  }, [userId]);
-
-  const loadDashboardData = async () => {
+  const loadDashboardData = useCallback(async () => {
     try {
       setLoading(true);
       const input = await decisionComposer.composeDailyDecisionInput(userId);
@@ -87,7 +83,11 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [userId]);
+
+  useEffect(() => {
+    loadDashboardData();
+  }, [loadDashboardData]);
 
   const handleLogout = async () => {
     await signOut(auth);

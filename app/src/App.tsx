@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import './App.css';
 import './index.css';
 import { auth } from './firebase';
@@ -87,7 +87,7 @@ function App() {
     setScreen(newScreen);
   };
 
-  const loadDecisionInput = async () => {
+  const loadDecisionInput = useCallback(async () => {
     if (!userId) return;
     try {
       const input = await decisionComposer.composeDailyDecisionInput(userId);
@@ -95,14 +95,14 @@ function App() {
     } catch (error) {
       console.error('Error loading decision input:', error);
     }
-  };
+  }, [userId]);
 
   // Load decision input when authenticated
   useEffect(() => {
     if (userId && authPhase === 'AUTHENTICATED') {
       loadDecisionInput();
     }
-  }, [userId, authPhase]);
+  }, [userId, authPhase, loadDecisionInput]);
 
   // Auth screen
   if (authPhase === 'CHECKING') {

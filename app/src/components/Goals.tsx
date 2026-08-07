@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { goalService } from '../services/goalService';
 import type { UserGoal, GoalCategory, GoalDomain, GoalStatus } from '../engine/models';
 import { getErrorMessage } from '../utils/errors';
@@ -21,11 +21,7 @@ export function Goals({ userId, onNavigate }: GoalsProps) {
   const [editingGoal, setEditingGoal] = useState<UserGoalWithId | null>(null);
   const [filter, setFilter] = useState<'all' | 'active' | 'archived'>('active');
 
-  useEffect(() => {
-    loadGoals();
-  }, [userId]);
-
-  const loadGoals = async () => {
+  const loadGoals = useCallback(async () => {
     try {
       setLoading(true);
       const allGoals = await goalService.listGoals(userId);
@@ -36,7 +32,11 @@ export function Goals({ userId, onNavigate }: GoalsProps) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [userId]);
+
+  useEffect(() => {
+    loadGoals();
+  }, [loadGoals]);
 
   const handlePauseGoal = async (goalId: string) => {
     try {

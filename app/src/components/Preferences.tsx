@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { preferencesService } from '../services/preferencesService';
 import type { UserPreferences, RecoveryStyle, TimeOfDay, ExplanationVerbosity } from '../engine/models';
 import { getErrorMessage } from '../utils/errors';
@@ -16,11 +16,7 @@ export function Preferences({ userId }: PreferencesProps) {
   const [error, setError] = useState<string | null>(null);
   const [hasChanges, setHasChanges] = useState(false);
 
-  useEffect(() => {
-    loadPreferences();
-  }, [userId]);
-
-  const loadPreferences = async () => {
+  const loadPreferences = useCallback(async () => {
     try {
       setLoading(true);
       const prefs = await preferencesService.getPreferences(userId);
@@ -38,7 +34,11 @@ export function Preferences({ userId }: PreferencesProps) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [userId]);
+
+  useEffect(() => {
+    loadPreferences();
+  }, [loadPreferences]);
 
   const handleSave = async () => {
     if (!preferences) return;
