@@ -230,6 +230,11 @@
   letter-spacing: 0.5px;
 }
 
+.goal-event-days {
+  color: #fbbf24;
+  font-weight: 400;
+}
+
 .goal-title {
   font-size: 0.875rem;
   font-weight: 500;

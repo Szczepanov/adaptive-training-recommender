@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { evaluateNextDayPlan, evaluateTraining } from './rules';
 import { generateWeekAheadPlan } from './planner';
-import type { DailyReadiness, EngineObjectiveInput, SubjectiveInput, UserContext } from './models';
+import type { DailyReadiness, EngineObjectiveInput, SubjectiveInput, UserContext, UserEvent } from './models';
 import type { DayOfWeekSchedule } from './models';
 
 // --- Fixtures (mirrors rules.test.ts's pattern) -----------------------------
@@ -128,6 +128,24 @@ describe('generateWeekAheadPlan', () => {
         expect(plan.microcycleObjectives.length).toBeGreaterThan(0);
         // A full week of picks should be enough to satisfy at least one weekly objective's target.
         expect(plan.microcycleObjectives.some(o => o.completedExposures >= 1)).toBe(true);
+    });
+
+    it('evaluates periodization separately for each displayed date across a taper boundary', () => {
+        const context = baseContext();
+        const { readiness, todayRec, tomorrowRec } = buildTodayAndTomorrow(context);
+        const event: UserEvent = {
+            id: 'a-event', title: 'A event', date: '2026-08-22', priority: 'A', lifecycle: 'scheduled', category: 'cycling_event',
+            demandProfile: { aerobicEndurance: 0.8, thresholdPower: 0.75, vo2MaxPower: 0.4, repeatedSurges: 0.6, sprintPower: 0.3, fatigueResistance: 0.8, neuromuscular: 0.3 },
+        };
+
+        const plan = generateWeekAheadPlan(readiness, context, null, '2026-08-07', todayRec, tomorrowRec, {
+            days: 3,
+            events: [event],
+        });
+
+        expect(plan.days[0].phaseName).toBe('Specificity'); // 15 days out
+        expect(plan.days[1].phaseName).toBe('Peak/Taper'); // 14 days out
+        expect(plan.days[2].phaseName).toBe('Peak/Taper');
     });
 
     it('is a pure function of its inputs -- same inputs produce the same plan', () => {

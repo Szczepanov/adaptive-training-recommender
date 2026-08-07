@@ -6,10 +6,12 @@ import type {
     SubjectiveInput,
     TrainingRecord,
     UserContext,
+    UserEvent,
     UserGoal,
     UserPreferences,
     TrainingSettings,
 } from './models';
+import { goalToUserEvent } from './periodization';
 
 /** Normalizes a raw Garmin per-day activity summary (yesterday's or today's) into the
  * engine's TrainingRecord shape, or null if no qualifying activity data is present. */
@@ -70,6 +72,15 @@ export function mapSnapshotToEngineInput(snapshot: DailyRecoverySnapshot): Engin
 const NEUTRAL_SCALE_VALUE = 5;
 /** Fallback session length (minutes) when today's check-in didn't specify availability. */
 const DEFAULT_TIME_AVAILABLE_MIN = 45;
+
+/** Converts persisted goals into the event inputs consumed by periodization. Lifecycle
+ * eligibility deliberately stays in evaluatePeriodizationPhase so stale/completed/DNF
+ * events remain visible to its result rather than being silently discarded here. */
+export function mapGoalsToUserEvents(goals: UserGoal[]): UserEvent[] {
+    return goals
+        .map(goalToUserEvent)
+        .filter((event): event is UserEvent => event !== null);
+}
 
 /**
  * Maps the Firestore canonical model (DailySubjectiveCheckin) to the internal engine

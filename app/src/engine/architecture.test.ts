@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { applyCompletedSessionLoad, createEmptyFatigue } from './fatigue';
 import { generateWeeklyObjectives, updateMicrocycleProgress } from './microcycle';
-import type { UserEvent, UserPreferences } from './models';
+import type { UserEvent, UserGoal, UserPreferences } from './models';
 import { rankCandidatesByUtility } from './optimizer';
-import { evaluatePeriodizationPhase } from './periodization';
+import { deriveEventPriority, deriveGoalCategory, evaluatePeriodizationPhase, getDaysToEvent, goalToUserEvent } from './periodization';
 import { resolveAvailability } from './schedule';
 import { ENRICHED_TEMPLATES } from './templates';
 
@@ -76,14 +76,127 @@ describe('Architecture & Phased Engine Integration', () => {
 
             const phase = evaluatePeriodizationPhase(events, '2026-08-07');
             // Primary event is A-race (30 days out), C-race 3 days away does not trigger taper override
-            expect(phase.phaseName).toBe('Specificity');
-            expect(phase.taperActive).toBe(false);
+            expect(phase.phase.phaseName).toBe('Specificity');
+            expect(phase.phase.taperActive).toBe(false);
+        });
+
+        it('keeps passed scheduled events stale, while completed/DNF events alone unlock recovery', () => {
+            const event = (id: string, lifecycle: UserEvent['lifecycle']): UserEvent => ({
+                id,
+                title: id,
+                date: '2026-08-06',
+                priority: 'A',
+                lifecycle,
+                category: 'cycling_event',
+                demandProfile: { aerobicEndurance: 0.8, thresholdPower: 0.7, vo2MaxPower: 0.4, repeatedSurges: 0.5, sprintPower: 0.2, fatigueResistance: 0.8, neuromuscular: 0.3 },
+            });
+
+            const scheduled = evaluatePeriodizationPhase([event('awaiting-outcome', 'scheduled')], '2026-08-07');
+            expect(scheduled.phase.phaseName).toBe('Base');
+            expect(scheduled.focusEvent).toBeNull();
+            expect(scheduled.staleEvents.map(e => e.id)).toEqual(['awaiting-outcome']);
+
+            const completed = evaluatePeriodizationPhase([event('finished', 'completed')], '2026-08-07');
+            expect(completed.phase.phaseName).toBe('Post-Event Recovery');
+            expect(completed.focusEvent?.id).toBe('finished');
+            expect(completed.partialEffort).toBe(false);
+
+            const dnf = evaluatePeriodizationPhase([event('partial', 'DNF')], '2026-08-07');
+            expect(dnf.phase.phaseName).toBe('Post-Event Recovery');
+            expect(dnf.partialEffort).toBe(true);
+
+            for (const lifecycle of ['DNS', 'cancelled'] as const) {
+                const excluded = evaluatePeriodizationPhase([event(lifecycle, lifecycle)], '2026-08-07');
+                expect(excluded.focusEvent).toBeNull();
+                expect(excluded.staleEvents).toEqual([]);
+            }
+        });
+    });
+
+    describe('Phase 2b: Goal -> Event derivation', () => {
+        const baseGoal: UserGoal = {
+            userId: 'u1',
+            category: 'long-term',
+            domain: 'endurance',
+            title: 'Road cycling event',
+            priority: 5,
+            status: 'active',
+            schemaVersion: 1,
+            createdAt: '2026-08-01T00:00:00.000Z',
+            updatedAt: '2026-08-01T00:00:00.000Z',
+        };
+
+        it('deriveGoalCategory buckets by days-until-date, independent of any stored category', () => {
+            expect(deriveGoalCategory('2026-08-20', '2026-08-07')).toBe('short-term'); // 13 days
+            expect(deriveGoalCategory('2026-11-01', '2026-08-07')).toBe('mid-term'); // ~86 days
+            expect(deriveGoalCategory('2027-06-01', '2026-08-07')).toBe('long-term'); // ~10 months
+        });
+
+        it('deriveEventPriority maps the 5-star priority control onto A/B/C taper class', () => {
+            expect(deriveEventPriority(5)).toBe('A');
+            expect(deriveEventPriority(4)).toBe('B');
+            expect(deriveEventPriority(3)).toBe('B');
+            expect(deriveEventPriority(2)).toBe('C');
+            expect(deriveEventPriority(1)).toBe('C');
+        });
+
+        it('getDaysToEvent is a standalone helper independent of evaluatePeriodizationPhase', () => {
+            expect(getDaysToEvent('2026-09-13', '2026-08-07')).toBe(37);
+            expect(getDaysToEvent('2026-08-01', '2026-08-07')).toBe(-6); // already passed
+        });
+
+        it('counts calendar days correctly across Europe/Warsaw DST transitions', () => {
+            expect(getDaysToEvent('2026-10-26', '2026-10-25')).toBe(1);
+            expect(getDaysToEvent('2026-03-29', '2026-03-30')).toBe(-1);
+        });
+
+        it('goalToUserEvent returns null for a goal with no target date or no event category', () => {
+            expect(goalToUserEvent({ ...baseGoal, targetDate: null, eventCategory: null })).toBeNull();
+            expect(goalToUserEvent({ ...baseGoal, targetDate: '2026-09-13', eventCategory: null })).toBeNull();
+            expect(goalToUserEvent({ ...baseGoal, targetDate: null, eventCategory: 'cycling_event' })).toBeNull();
+        });
+
+        it('goalToUserEvent returns null for a paused/archived/completed goal even if dated and categorized', () => {
+            expect(goalToUserEvent({ ...baseGoal, status: 'paused', targetDate: '2026-09-13', eventCategory: 'cycling_event' })).toBeNull();
+        });
+
+        it('goalToUserEvent adapts a dated, categorized, active goal into a UserEvent with a demand profile from its preset', () => {
+            const event = goalToUserEvent({
+                ...baseGoal,
+                id: 'goal123',
+                targetDate: '2026-09-13',
+                eventCategory: 'cycling_event',
+                eventPreset: 'road_race',
+            });
+
+            expect(event).not.toBeNull();
+            expect(event!.id).toBe('goal123');
+            expect(event!.priority).toBe('A'); // 5-star -> A
+            expect(event!.lifecycle).toBe('scheduled'); // defaulted, not required on the goal
+            expect(event!.category).toBe('cycling_event');
+            expect(event!.demandProfile.thresholdPower).toBeGreaterThan(0);
+        });
+
+        it('goalToUserEvent falls back to the goal title as an id when no Firestore doc id is available', () => {
+            const event = goalToUserEvent({ ...baseGoal, targetDate: '2026-09-13', eventCategory: 'cycling_event' });
+            expect(event!.id).toBe('Road cycling event');
+        });
+
+        it('feeds naturally into evaluatePeriodizationPhase: an A-priority cycling goal ~37 days out is already in Build phase, well before any taper', () => {
+            const event = goalToUserEvent({ ...baseGoal, targetDate: '2026-09-13', eventCategory: 'cycling_event', eventPreset: 'road_race' })!;
+            const phase = evaluatePeriodizationPhase([event], '2026-08-07');
+            expect(phase.phase.phaseName).toBe('Build');
+            expect(phase.phase.taperActive).toBe(false);
+            expect(phase.focusEvent).toMatchObject({ id: 'Road cycling event' });
+            expect(phase.daysToEvent).toBe(37);
+            // Blended toward the cycling demand vector, not the flat default base demand
+            expect(phase.phase.targetDemandVector.thresholdPower).toBeGreaterThan(0.5);
         });
     });
 
     describe('Phase 3: Microcycle Objectives', () => {
         it('generates weekly objectives and marks them satisfied when matching sessions complete', () => {
-            const phaseWeights = evaluatePeriodizationPhase([], '2026-08-07');
+            const phaseWeights = evaluatePeriodizationPhase([], '2026-08-07').phase;
             const microcycle = generateWeeklyObjectives(phaseWeights, '2026-08-03');
 
             expect(microcycle.objectives.length).toBeGreaterThan(0);

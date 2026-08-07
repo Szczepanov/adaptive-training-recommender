@@ -1,7 +1,26 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { goalService } from '../services/goalService';
-import type { UserGoal, GoalCategory, GoalDomain, GoalStatus } from '../engine/models';
+import type { UserGoal, GoalCategory, GoalDomain, GoalStatus, UserEvent } from '../engine/models';
+import { deriveGoalCategory, deriveEventPriority, getDaysToEvent } from '../engine/periodization';
+import { EVENT_PRESETS } from '../engine/eventPresets';
+import { getLocalDateString } from '../utils/localDate';
 import { getErrorMessage } from '../utils/errors';
+
+const EVENT_CATEGORY_LABELS: Record<UserEvent['category'], string> = {
+  cycling_event: 'Cycling event',
+  running_race: 'Running race',
+  triathlon: 'Triathlon',
+  strength_meet: 'Strength meet',
+  general_target: 'General target',
+};
+
+const EVENT_LIFECYCLE_LABELS: Record<NonNullable<UserGoal['eventLifecycle']>, string> = {
+  scheduled: 'Scheduled',
+  completed: 'Completed',
+  DNS: 'Did not start (DNS)',
+  DNF: 'Did not finish (DNF)',
+  cancelled: 'Cancelled',
+};
 
 type UserGoalWithId = UserGoal & { id: string };
 /** Fields the add/edit goal form collects; matches goalService.createGoal's input. */
@@ -187,7 +206,17 @@ export function Goals({ userId }: GoalsProps) {
               {categoryGoals.map(goal => (
                 <div key={goal.id} className={`goal-card ${goal.status}`}>
                   <div className="goal-header">
-                    <h3>{goal.title}</h3>
+                    <h3>
+                      {goal.title}
+                      {goal.eventCategory && goal.targetDate && (
+                        <span className="event-badge">
+                          🏁 {EVENT_CATEGORY_LABELS[goal.eventCategory]} · {(() => {
+                            const days = getDaysToEvent(goal.targetDate, getLocalDateString());
+                            return days >= 0 ? `in ${days}d` : `${Math.abs(days)}d ago`;
+                          })()}
+                        </span>
+                      )}
+                    </h3>
                     <div className="goal-actions">
                       <button 
                         onClick={() => setEditingGoal(goal)}
@@ -243,12 +272,22 @@ export function Goals({ userId }: GoalsProps) {
                   <div className="goal-meta">
                     <div className="goal-priority">
                       Priority: {renderStars(goal.priority)}
+                      {goal.eventCategory && (
+                        <span className="taper-class-badge" title="Taper aggressiveness, derived from priority">
+                          Taper class {deriveEventPriority(goal.priority)}
+                        </span>
+                      )}
                     </div>
                     <div className="goal-domain">
                       {goal.domain}
                     </div>
+                    {goal.eventCategory && goal.eventLifecycle && goal.eventLifecycle !== 'scheduled' && (
+                      <div className="goal-event-status">
+                        {EVENT_LIFECYCLE_LABELS[goal.eventLifecycle]}
+                      </div>
+                    )}
                   </div>
-                  
+
                   {goal.targetMetric && (
                     <div className="goal-target">
                       Target: {goal.targetValue} {goal.targetUnit}
@@ -308,35 +347,62 @@ interface GoalModalProps {
 }
 
 function GoalModal({ goal, onSave, onClose }: GoalModalProps) {
+  const today = getLocalDateString();
   const [formData, setFormData] = useState({
     title: goal?.title || '',
     description: goal?.description || '',
+    // Open-ended (no exact date) vs. dated is the primary fork this form makes -- a new
+    // goal defaults to open-ended, matching the old form's "target date is optional" UX.
+    isOpenEnded: !goal?.targetDate,
     category: goal?.category || 'short-term' as GoalCategory,
+    targetDate: goal?.targetDate || '',
     domain: goal?.domain || 'general_fitness' as GoalDomain,
     priority: goal?.priority || 3,
     status: goal?.status || 'active' as GoalStatus,
+    isEvent: !!goal?.eventCategory,
+    eventCategory: goal?.eventCategory || '' as UserEvent['category'] | '',
+    eventPreset: goal?.eventPreset || '',
+    eventLifecycle: goal?.eventLifecycle || 'scheduled' as NonNullable<UserGoal['eventLifecycle']>,
+    targetOutcome: goal?.targetOutcome || '',
     targetMetric: goal?.targetMetric || '',
     targetValue: goal?.targetValue || '',
-    targetUnit: goal?.targetUnit || '',
-    targetDate: goal?.targetDate || ''
+    targetUnit: goal?.targetUnit || ''
   });
+
+  // Live preview of what validateGoal will actually store -- category is disabled and
+  // shown as this computed value whenever a target date is set (see models.ts
+  // UserGoal.category / periodization.ts deriveGoalCategory). Only meaningful as direct
+  // user input when the goal is open-ended.
+  const derivedCategory = !formData.isOpenEnded && formData.targetDate
+    ? deriveGoalCategory(formData.targetDate, today)
+    : null;
+
+  const presetsForCategory = formData.eventCategory ? EVENT_PRESETS[formData.eventCategory] : [];
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    
+
+    const isDatedEvent = !formData.isOpenEnded && formData.isEvent && formData.eventCategory;
+
     const data = {
       title: formData.title,
       description: formData.description || null,
-      category: formData.category,
+      category: formData.isOpenEnded
+        ? formData.category
+        : deriveGoalCategory(formData.targetDate, today), // ignored server-side too when targetDate is set (validateGoal), kept consistent here for the in-memory return value
       domain: formData.domain,
       priority: formData.priority,
       status: formData.status,
       targetMetric: formData.targetMetric || null,
       targetValue: formData.targetValue ? Number(formData.targetValue) : null,
       targetUnit: formData.targetUnit || null,
-      targetDate: formData.targetDate || null
+      targetDate: formData.isOpenEnded ? null : (formData.targetDate || null),
+      targetOutcome: formData.targetOutcome || null,
+      eventCategory: isDatedEvent ? (formData.eventCategory as UserEvent['category']) : null,
+      eventPreset: isDatedEvent ? (formData.eventPreset || null) : null,
+      eventLifecycle: isDatedEvent ? formData.eventLifecycle : undefined,
     };
-    
+
     onSave(data);
   };
 
@@ -347,7 +413,7 @@ function GoalModal({ goal, onSave, onClose }: GoalModalProps) {
           <h2>{goal ? 'Edit Goal' : 'Add New Goal'}</h2>
           <button onClick={onClose} className="close-btn">×</button>
         </div>
-        
+
         <form onSubmit={handleSubmit} className="goal-form">
           <div className="form-group">
             <label>Title *</label>
@@ -358,7 +424,7 @@ function GoalModal({ goal, onSave, onClose }: GoalModalProps) {
               required
             />
           </div>
-          
+
           <div className="form-group">
             <label>Description</label>
             <textarea
@@ -367,36 +433,147 @@ function GoalModal({ goal, onSave, onClose }: GoalModalProps) {
               rows={3}
             />
           </div>
-          
+
+          <div className="form-group checkbox-group">
+            <label>
+              <input
+                type="checkbox"
+                checked={formData.isOpenEnded}
+                onChange={(e) => setFormData({...formData, isOpenEnded: e.target.checked, isEvent: e.target.checked ? false : formData.isEvent})}
+              />
+              {' '}Open-ended goal (no exact date)
+            </label>
+          </div>
+
           <div className="form-row">
             <div className="form-group">
-              <label>Category</label>
-              <select
-                value={formData.category}
-                onChange={(e) => setFormData({...formData, category: e.target.value as GoalCategory})}
-              >
-                <option value="short-term">Short-term</option>
-                <option value="mid-term">Mid-term</option>
-                <option value="long-term">Long-term</option>
-              </select>
+              <label>Target Date</label>
+              <input
+                type="date"
+                value={formData.targetDate}
+                disabled={formData.isOpenEnded}
+                onChange={(e) => setFormData({...formData, targetDate: e.target.value})}
+                required={!formData.isOpenEnded}
+              />
             </div>
-            
+
             <div className="form-group">
-              <label>Domain</label>
-              <select
-                value={formData.domain}
-                onChange={(e) => setFormData({...formData, domain: e.target.value as GoalDomain})}
-              >
-                <option value="endurance">Endurance</option>
-                <option value="strength">Strength</option>
-                <option value="mobility">Mobility</option>
-                <option value="weight_loss">Weight Loss</option>
-                <option value="general_fitness">General Fitness</option>
-                <option value="other">Other</option>
-              </select>
+              <label>Category</label>
+              {formData.isOpenEnded ? (
+                <select
+                  value={formData.category}
+                  onChange={(e) => setFormData({...formData, category: e.target.value as GoalCategory})}
+                >
+                  <option value="short-term">Short-term</option>
+                  <option value="mid-term">Mid-term</option>
+                  <option value="long-term">Long-term</option>
+                </select>
+              ) : (
+                <input
+                  type="text"
+                  value={derivedCategory ? derivedCategory.replace('-', ' ') : '—'}
+                  disabled
+                  title="Derived from the target date -- can't be edited directly"
+                />
+              )}
             </div>
           </div>
-          
+
+          {!formData.isOpenEnded && formData.targetDate && (
+            <div className="form-group checkbox-group">
+              <label>
+                <input
+                  type="checkbox"
+                  checked={formData.isEvent}
+                  onChange={(e) => setFormData({...formData, isEvent: e.target.checked})}
+                />
+                {' '}This is a race / key event
+              </label>
+            </div>
+          )}
+
+          {!formData.isOpenEnded && formData.isEvent && (
+            <div className="form-section event-section">
+              <div className="form-row">
+                <div className="form-group">
+                  <label>Event type</label>
+                  <select
+                    value={formData.eventCategory}
+                    required={formData.isEvent}
+                    onChange={(e) => {
+                      const nextCategory = e.target.value as UserEvent['category'];
+                      setFormData({...formData, eventCategory: nextCategory, eventPreset: EVENT_PRESETS[nextCategory][0].id});
+                    }}
+                  >
+                    <option value="" disabled>Select event type…</option>
+                    {(Object.keys(EVENT_CATEGORY_LABELS) as UserEvent['category'][]).map(cat => (
+                      <option key={cat} value={cat}>{EVENT_CATEGORY_LABELS[cat]}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="form-group">
+                  <label>Event style</label>
+                  <select
+                    value={formData.eventPreset}
+                    disabled={!formData.eventCategory}
+                    required={formData.isEvent}
+                    onChange={(e) => setFormData({...formData, eventPreset: e.target.value})}
+                  >
+                    {presetsForCategory.map(preset => (
+                      <option key={preset.id} value={preset.id}>{preset.label}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <p className="taper-class-preview">
+                Taper class: <strong>{deriveEventPriority(formData.priority)}</strong>
+                {' '}(from priority, below — 5★ = A, 3-4★ = B, 1-2★ = C)
+              </p>
+
+              {goal && (
+                <div className="form-group">
+                  <label>Event status</label>
+                  <select
+                    value={formData.eventLifecycle}
+                    onChange={(e) => setFormData({...formData, eventLifecycle: e.target.value as NonNullable<UserGoal['eventLifecycle']>})}
+                  >
+                    {(Object.keys(EVENT_LIFECYCLE_LABELS) as NonNullable<UserGoal['eventLifecycle']>[]).map(lc => (
+                      <option key={lc} value={lc}>{EVENT_LIFECYCLE_LABELS[lc]}</option>
+                    ))}
+                  </select>
+                  <p className="field-hint">Rescheduling? Just change the target date above -- it stays "Scheduled".</p>
+                </div>
+              )}
+
+              <div className="form-group">
+                <label>Target outcome (optional)</label>
+                <input
+                  type="text"
+                  value={formData.targetOutcome}
+                  onChange={(e) => setFormData({...formData, targetOutcome: e.target.value})}
+                  placeholder="e.g., sub-5h finish"
+                />
+              </div>
+            </div>
+          )}
+
+          <div className="form-group">
+            <label>Domain</label>
+            <select
+              value={formData.domain}
+              onChange={(e) => setFormData({...formData, domain: e.target.value as GoalDomain})}
+            >
+              <option value="endurance">Endurance</option>
+              <option value="strength">Strength</option>
+              <option value="mobility">Mobility</option>
+              <option value="weight_loss">Weight Loss</option>
+              <option value="general_fitness">General Fitness</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+
           <div className="form-group">
             <label>Priority</label>
             <div className="priority-selector">
@@ -412,7 +589,7 @@ function GoalModal({ goal, onSave, onClose }: GoalModalProps) {
               ))}
             </div>
           </div>
-          
+
           {goal && (
             <div className="form-group">
               <label>Status</label>
@@ -427,7 +604,7 @@ function GoalModal({ goal, onSave, onClose }: GoalModalProps) {
               </select>
             </div>
           )}
-          
+
           <div className="form-section">
             <h3>Optional Target</h3>
             <div className="form-row">
@@ -440,7 +617,7 @@ function GoalModal({ goal, onSave, onClose }: GoalModalProps) {
                   placeholder="e.g., 5k time"
                 />
               </div>
-              
+
               <div className="form-group">
                 <label>Value</label>
                 <input
@@ -450,7 +627,7 @@ function GoalModal({ goal, onSave, onClose }: GoalModalProps) {
                   placeholder="e.g., 25"
                 />
               </div>
-              
+
               <div className="form-group">
                 <label>Unit</label>
                 <input
@@ -461,17 +638,8 @@ function GoalModal({ goal, onSave, onClose }: GoalModalProps) {
                 />
               </div>
             </div>
-            
-            <div className="form-group">
-              <label>Target Date</label>
-              <input
-                type="date"
-                value={formData.targetDate}
-                onChange={(e) => setFormData({...formData, targetDate: e.target.value})}
-              />
-            </div>
           </div>
-          
+
           <div className="form-actions">
             <button type="button" onClick={onClose} className="cancel-btn">
               Cancel

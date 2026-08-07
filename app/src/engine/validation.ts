@@ -17,6 +17,7 @@ import type {
     GoalCategory,
     GoalDomain,
     GoalStatus,
+    UserEvent,
     ConstraintType,
     ConstraintSeverity,
     ConstraintCategory,
@@ -24,6 +25,9 @@ import type {
     TimeOfDay,
     ExplanationVerbosity
 } from './models';
+import { deriveGoalCategory } from './periodization';
+import { EVENT_PRESETS } from './eventPresets';
+import { getLocalDateString } from '../utils/localDate';
 
 // --- Validation Result Types ---
 
@@ -224,12 +228,16 @@ export function validateGoal(raw: any): ValidationResult<UserGoal> {
         errors.push({ field: 'title', message: 'Title is required' });
     }
 
-    // Category validation
+    // Category: only ever taken from the caller for an OPEN-ENDED goal (no targetDate).
+    // A dated goal's category is derived below from targetDate, regardless of what raw
+    // sends -- see deriveGoalCategory. This is what keeps category from ever going stale:
+    // it's never trusted as stored input for a dated goal, only ever recomputed.
+    const rawTargetDate = normalizeEmptyToNull(raw.targetDate);
     const validCategories: GoalCategory[] = ['short-term', 'mid-term', 'long-term'];
-    if (!raw.category || !validCategories.includes(raw.category)) {
-        errors.push({ 
-            field: 'category', 
-            message: `Category must be one of: ${validCategories.join(', ')}` 
+    if (!rawTargetDate && (!raw.category || !validCategories.includes(raw.category))) {
+        errors.push({
+            field: 'category',
+            message: `Category must be one of: ${validCategories.join(', ')} (required for an open-ended goal with no target date)`
         });
     }
 
@@ -270,13 +278,60 @@ export function validateGoal(raw: any): ValidationResult<UserGoal> {
         }
     }
 
-    if (raw.targetDate !== undefined) {
-        const date = normalizeEmptyToNull(raw.targetDate);
-        if (date !== null && !isValidDate(date)) {
+    if (rawTargetDate !== null && !isValidDate(rawTargetDate)) {
+        errors.push({
+            field: 'targetDate',
+            message: 'Target date must be a valid date (YYYY-MM-DD) or empty'
+        });
+    }
+
+    // Event fields: only meaningful alongside a target date (a race needs a date).
+    const validEventCategories: UserEvent['category'][] = ['running_race', 'cycling_event', 'triathlon', 'strength_meet', 'general_target'];
+    const rawEventCategory = normalizeEmptyToNull(raw.eventCategory);
+    if (rawEventCategory !== null) {
+        if (!validEventCategories.includes(rawEventCategory)) {
             errors.push({
-                field: 'targetDate',
-                message: 'Target date must be a valid date (YYYY-MM-DD) or empty'
+                field: 'eventCategory',
+                message: `Event category must be one of: ${validEventCategories.join(', ')}`
             });
+        }
+        if (!rawTargetDate) {
+            errors.push({
+                field: 'eventCategory',
+                message: 'An event needs a target date'
+            });
+        }
+    }
+
+    const rawEventPreset = normalizeEmptyToNull(raw.eventPreset);
+    if (rawEventPreset !== null) {
+        const presetIds = validEventCategories.includes(rawEventCategory) ? EVENT_PRESETS[rawEventCategory as UserEvent['category']].map(p => p.id) : [];
+        if (!rawEventCategory || !presetIds.includes(rawEventPreset)) {
+            errors.push({
+                field: 'eventPreset',
+                message: 'Event preset must be a valid style for the selected event category'
+            });
+        }
+    }
+
+    const validEventLifecycles: NonNullable<UserGoal['eventLifecycle']>[] = ['scheduled', 'completed', 'DNS', 'DNF', 'cancelled'];
+    if (raw.eventLifecycle !== undefined && raw.eventLifecycle !== null && !validEventLifecycles.includes(raw.eventLifecycle)) {
+        errors.push({
+            field: 'eventLifecycle',
+            message: `Event status must be one of: ${validEventLifecycles.join(', ')}`
+        });
+    }
+    if (raw.eventLifecycle !== undefined && raw.eventLifecycle !== null && (!rawTargetDate || !rawEventCategory)) {
+        errors.push({
+            field: 'eventLifecycle',
+            message: 'Event status requires a dated event category'
+        });
+    }
+
+    if (raw.targetOutcome !== undefined) {
+        const outcome = normalizeEmptyToNull(raw.targetOutcome);
+        if (outcome !== null && typeof outcome !== 'string') {
+            errors.push({ field: 'targetOutcome', message: 'Target outcome must be a string or empty' });
         }
     }
 
@@ -286,7 +341,9 @@ export function validateGoal(raw: any): ValidationResult<UserGoal> {
 
     const goal: UserGoal = {
         userId: raw.userId,
-        category: raw.category,
+        // Derived, never trusted from raw, whenever a target date exists -- see the
+        // module doc comment on UserGoal.category in models.ts.
+        category: rawTargetDate ? deriveGoalCategory(rawTargetDate, getLocalDateString()) : raw.category,
         domain: raw.domain,
         title: raw.title.trim(),
         description: normalizeEmptyToNull(raw.description),
@@ -295,7 +352,11 @@ export function validateGoal(raw: any): ValidationResult<UserGoal> {
         targetMetric: normalizeEmptyToNull(raw.targetMetric),
         targetValue: normalizeEmptyToNull(raw.targetValue),
         targetUnit: normalizeEmptyToNull(raw.targetUnit),
-        targetDate: normalizeEmptyToNull(raw.targetDate),
+        targetDate: rawTargetDate,
+        targetOutcome: normalizeEmptyToNull(raw.targetOutcome),
+        ...(rawEventCategory ? { eventCategory: rawEventCategory as UserEvent['category'] } : {}),
+        ...(rawEventPreset ? { eventPreset: rawEventPreset } : {}),
+        ...(raw.eventLifecycle ? { eventLifecycle: raw.eventLifecycle } : {}),
         schemaVersion: raw.schemaVersion ?? 1,
         createdAt: raw.createdAt || new Date().toISOString(),
         updatedAt: new Date().toISOString()
