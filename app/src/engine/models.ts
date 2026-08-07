@@ -284,6 +284,8 @@ export interface Recommendation {
      *  from the template category alone. */
     mode: 'train' | 'modify' | 'recover';
     activeDose?: DoseVariation;
+    /** Normalized plan-side dose derived from periodization and remaining objectives. */
+    plannedDose?: number;
     adjustment?: SessionAdjustment;
     envelopes?: {
         safety: SafetyEnvelope;

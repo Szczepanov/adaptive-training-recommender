@@ -488,7 +488,7 @@ export async function evaluateTrainingWithIntent(
     const phaseContext = intent.periodization.focusEvent
         ? `${intent.periodization.daysToEvent} days out from ${intent.periodization.focusEvent.title}, ${intent.periodization.phase.phaseName} phase.`
         : `${intent.periodization.phase.phaseName} phase.`;
-    return { ...base, template: pick.template, rationale: `${base.rationale} ${phaseContext} ${pick.rationale}` };
+    return { ...base, template: pick.template, plannedDose: intent.plannedDose, rationale: `${base.rationale} ${phaseContext} ${pick.rationale}` };
 }
 
 /** Evaluates only clinical/readiness/constraint limits. Event periodization is a

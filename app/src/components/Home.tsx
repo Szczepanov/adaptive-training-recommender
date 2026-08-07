@@ -102,7 +102,7 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
         const baseRecommendation = await evaluateTrainingWithIntent(userId, { subjective, objective }, context, events, input.date, yesterdayRec?.mode);
         const todayRec = {
           ...baseRecommendation,
-          prescription: resolveWorkoutPrescription(baseRecommendation, userId, input.date, input.preferences?.performanceProfile) ?? undefined
+          prescription: resolveWorkoutPrescription(baseRecommendation, userId, input.date, input.preferences?.performanceProfile, baseRecommendation.plannedDose) ?? undefined
         };
         setRecommendation(todayRec);
 
@@ -159,7 +159,7 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
     if (!adjusted) return recommendation;
     return {
       ...adjusted,
-      prescription: resolveWorkoutPrescription(adjusted, userId, decisionInput.date, decisionInput.preferences?.performanceProfile) ?? undefined
+      prescription: resolveWorkoutPrescription(adjusted, userId, decisionInput.date, decisionInput.preferences?.performanceProfile, adjusted.plannedDose) ?? undefined
     };
   }, [recommendation, engineInputs, decisionInput, userId]);
 
@@ -365,6 +365,20 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
               onResolved={() => setPendingAdherence(null)}
             />
           )}
+
+          {eventPeriodization?.today.focusEvent && (
+            <div className="dashboard-card upcoming-event-card">
+              <div className="card-header"><h3>Upcoming Event</h3></div>
+              <p><strong>{eventPeriodization.today.focusEvent.title}</strong></p>
+              <p>{eventPeriodization.today.daysToEvent === 0 ? 'Today' : `In ${eventPeriodization.today.daysToEvent} days`} · {eventPeriodization.today.phase.phaseName}</p>
+            </div>
+          )}
+          {eventPeriodization?.today.staleEvents.length ? (
+            <div className="dashboard-card stale-event-card">
+              <p>Did {eventPeriodization.today.staleEvents[0].title} happen? Update its status.</p>
+              <button type="button" onClick={() => onNavigate('goals')}>Review event</button>
+            </div>
+          ) : null}
 
           {/* Quick Action Start/Edit Checkin */}
           <div className="sidebar-primary-action">

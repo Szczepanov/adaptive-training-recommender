@@ -152,9 +152,12 @@ function applyVariant(workout: WorkoutDefinition, variantId: 'full' | 'reduced' 
   }));
 }
 
-function variantFor(rec: Recommendation): 'full' | 'reduced' | 'return_to_training' {
+export function variantFor(rec: Recommendation, plannedDose?: number): 'full' | 'reduced' | 'return_to_training' {
   if (rec.adjustment?.direction === 'easier') return 'reduced';
   if (rec.mode === 'recover' && rec.template.category !== 'Rest') return 'return_to_training';
+  const dose = plannedDose ?? rec.plannedDose;
+  if (dose !== undefined && dose <= 0.4) return 'return_to_training';
+  if (dose !== undefined && dose <= 0.7) return 'reduced';
   return 'full';
 }
 
@@ -162,12 +165,13 @@ export function resolveWorkoutPrescription(
   recommendation: Recommendation,
   userId: string,
   date: string,
-  profile?: AthletePerformanceProfile
+  profile?: AthletePerformanceProfile,
+  plannedDose?: number
 ): WorkoutPrescription | null {
   const workout = workoutForTemplate(recommendation.template.id);
   if (!workout) return null;
 
-  const variantId = variantFor(recommendation);
+  const variantId = variantFor(recommendation, plannedDose);
   const variant = workout.variants.find((item) => item.id === variantId) ?? workout.variants[0];
   const adjustedBlocks = applyVariant(workout, variantId);
   const displayBlocks: PrescriptionBlock[] = adjustedBlocks.map((block) => ({
