@@ -2,61 +2,143 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Legacy recovery snapshot collection (disabled after migration)
-    match /daily_recovery_snapshot/{date} {
-      allow read, write: if false;
+    function isOwner(userId) {
+      return request.auth != null && request.auth.uid == userId;
     }
-    
-    // Legacy flat check-in collection (disabled after migration)
-    match /daily_subjective_checkin/{document=**} {
-      allow read, write: if false;
+
+    function hasOwnedUserId(userId) {
+      return isOwner(userId) && request.resource.data.userId == userId;
     }
-    
-    // User-owned collections with explicit scoping
-    
-    // Daily subjective check-ins (user-owned)
+
+    function keepsOwnership(userId) {
+      return hasOwnedUserId(userId)
+        && resource.data.userId == userId
+        && request.resource.data.userId == resource.data.userId;
+    }
+
+    function isDateDocument(date) {
+      return request.resource.data.date == date
+        && date.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$');
+    }
+
+    function hasValidAdherence(adherence) {
+      return adherence is map
+        && adherence.keys().hasOnly(['respondedAt', 'followed', 'actualModality', 'actualDurationMin', 'skipped', 'notes'])
+        && adherence.keys().hasAll(['respondedAt', 'followed', 'actualModality', 'actualDurationMin', 'skipped', 'notes'])
+        && (adherence.respondedAt == null || adherence.respondedAt is string)
+        && (adherence.followed == null || adherence.followed is bool)
+        && (adherence.actualModality == null || adherence.actualModality is string)
+        && (adherence.actualDurationMin == null || (adherence.actualDurationMin is number && adherence.actualDurationMin >= 0))
+        && adherence.skipped is bool
+        && (adherence.notes == null || adherence.notes is string);
+    }
+
+    function hasValidRecommendationAudit(audit) {
+      return audit is map
+        && audit.keys().hasOnly(['policyVersion', 'evaluatedAt', 'decisionContextRevision', 'safetyStatus', 'history', 'envelope', 'candidateScores'])
+        && audit.keys().hasAll(['policyVersion', 'evaluatedAt', 'decisionContextRevision', 'safetyStatus', 'history', 'envelope', 'candidateScores'])
+        && audit.policyVersion is string
+        && audit.evaluatedAt is string
+        && audit.decisionContextRevision is string
+        && audit.safetyStatus == 'complete'
+        && audit.history is map
+        && audit.history.keys().hasOnly(['completedEventCount', 'unmatchedEventCount', 'sourceStatuses'])
+        && audit.history.keys().hasAll(['completedEventCount', 'unmatchedEventCount', 'sourceStatuses'])
+        && audit.history.completedEventCount is int && audit.history.completedEventCount >= 0
+        && audit.history.unmatchedEventCount is int && audit.history.unmatchedEventCount >= 0
+        && audit.history.sourceStatuses is map
+        && audit.history.sourceStatuses.keys().hasOnly(['activities', 'recommendations', 'manualTraining'])
+        && audit.history.sourceStatuses.keys().hasAll(['activities', 'recommendations', 'manualTraining'])
+        && audit.history.sourceStatuses.activities in ['AVAILABLE', 'MISSING', 'INVALID', 'UNAVAILABLE']
+        && audit.history.sourceStatuses.recommendations in ['AVAILABLE', 'MISSING', 'INVALID', 'UNAVAILABLE']
+        && audit.history.sourceStatuses.manualTraining in ['AVAILABLE', 'MISSING', 'INVALID', 'UNAVAILABLE']
+        && audit.envelope is map
+        && audit.envelope.keys().hasOnly(['safetyRestrictedModalityCount', 'planMaxAllowableTier'])
+        && audit.envelope.keys().hasAll(['safetyRestrictedModalityCount', 'planMaxAllowableTier'])
+        && audit.envelope.safetyRestrictedModalityCount is int && audit.envelope.safetyRestrictedModalityCount >= 0
+        && audit.envelope.planMaxAllowableTier in ['Rest', 'Mobility', 'Easy', 'Moderate', 'Hard']
+        && audit.candidateScores is list && audit.candidateScores.size() <= 64;
+    }
+
+    function hasValidRecommendation(userId, date) {
+      return hasOwnedUserId(userId)
+        && isDateDocument(date)
+        && request.resource.data.keys().hasOnly(['userId', 'date', 'templateId', 'templateTitle', 'category', 'modality', 'mode', 'rationale', 'schemaVersion', 'createdAt', 'updatedAt', 'adjustment', 'prescription', 'adherence', 'recommendationAudit'])
+        && request.resource.data.keys().hasAll(['userId', 'date', 'templateId', 'templateTitle', 'category', 'modality', 'mode', 'rationale', 'schemaVersion', 'createdAt', 'updatedAt', 'adherence'])
+        && request.resource.data.templateId is string
+        && request.resource.data.templateTitle is string
+        && request.resource.data.category is string
+        && request.resource.data.modality is string
+        && request.resource.data.mode in ['train', 'modify', 'recover']
+        && request.resource.data.rationale is string
+        && request.resource.data.createdAt is string
+        && request.resource.data.updatedAt is string
+        && request.resource.data.schemaVersion in [1, 2, 3]
+        && hasValidAdherence(request.resource.data.adherence)
+        && (request.resource.data.schemaVersion != 3
+          || ('recommendationAudit' in request.resource.data && hasValidRecommendationAudit(request.resource.data.recommendationAudit)));
+    }
+
+    // Legacy collections are permanently disabled after the user-scoped migration.
+    match /daily_recovery_snapshot/{date} { allow read, write: if false; }
+    match /daily_subjective_checkin/{document=**} { allow read, write: if false; }
+
     match /users/{userId}/daily_subjective_checkins/{date} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read: if isOwner(userId);
+      allow create: if hasOwnedUserId(userId) && isDateDocument(date);
+      allow update: if keepsOwnership(userId) && isDateDocument(date) && request.resource.data.createdAt == resource.data.createdAt;
+      allow delete: if isOwner(userId);
     }
-    
-    // Goals (user-owned)
+
     match /users/{userId}/goals/{goalId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read: if isOwner(userId);
+      allow create: if hasOwnedUserId(userId);
+      allow update: if keepsOwnership(userId) && request.resource.data.createdAt == resource.data.createdAt;
+      allow delete: if isOwner(userId);
     }
-    
-    // Constraints (user-owned)
+
+    // Legacy constraints are retained solely for one-time migration reads.
     match /users/{userId}/constraints/{constraintId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
-    }
-    
-    // Preferences (singleton, user-owned)
-    match /users/{userId}/preferences/{docId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read: if isOwner(userId);
+      allow write: if false;
     }
 
-    // Training settings profile (singleton, user-owned)
-    match /users/{userId}/trainingSettings/{docId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+    match /users/{userId}/preferences/profile {
+      allow read: if isOwner(userId);
+      allow create: if hasOwnedUserId(userId);
+      allow update: if keepsOwnership(userId) && request.resource.data.createdAt == resource.data.createdAt;
+      allow delete: if false;
     }
 
-    // Daily recovery snapshots (user-owned, read-only for client app, written by admin backend)
+    match /users/{userId}/trainingSettings/profile {
+      allow read: if isOwner(userId);
+      allow create: if hasOwnedUserId(userId) && request.resource.data.schemaVersion in [2, 3];
+      allow update: if keepsOwnership(userId)
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.schemaVersion in [2, 3];
+      allow delete: if false;
+    }
+
+    // Admin backend only: the browser may read but can never forge wearable facts.
     match /users/{userId}/daily_recovery_snapshots/{date} {
-      allow read: if request.auth != null && request.auth.uid == userId;
+      allow read: if isOwner(userId);
       allow write: if false;
     }
 
-    // Normalized activities (user-owned, read-only for client app, written by admin backend)
     match /users/{userId}/activities/{activityId} {
-      allow read: if request.auth != null && request.auth.uid == userId;
+      allow read: if isOwner(userId);
       allow write: if false;
     }
 
-    // Daily recommendations (user-owned): the client app both writes these (persisting
-    // what the engine just computed for that day) and later patches the `adherence`
-    // sub-field once the user answers the "did you follow this?" prompt -- unlike
-    // recovery snapshots/activities, this isn't admin-backend-only.
     match /users/{userId}/daily_recommendations/{date} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read: if isOwner(userId);
+      allow create: if hasValidRecommendation(userId, date);
+      allow update: if hasValidRecommendation(userId, date)
+        && keepsOwnership(userId)
+        && request.resource.data.createdAt == resource.data.createdAt;
+      // Recommendations are audit evidence and intentionally immutable as documents;
+      // adherence remains a validated update on the same document.
+      allow delete: if false;
     }
   }
 }
