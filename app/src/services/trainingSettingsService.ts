@@ -1,7 +1,9 @@
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import type { TrainingSettings, UserConstraint } from '../engine/models';
+import type { DataState } from '../engine/dataState';
 import { constraintService } from './constraintService';
+import { getErrorCode } from '../utils/errors';
 
 export type TrainingSettingsUpdate = {
     equipment?: Partial<TrainingSettings['equipment']>;
@@ -99,18 +101,37 @@ export class TrainingSettingsService {
         return doc(db, 'users', userId, COLLECTION, DOCUMENT);
     }
 
-    async getTrainingSettings(userId: string): Promise<TrainingSettings> {
-        const snapshot = await getDoc(this.ref(userId));
-        if (snapshot.exists()) {
-            const parsed = parseTrainingSettings(snapshot.data(), userId);
-            if (!parsed) throw new Error('Training settings are invalid. Please review and save them again.');
-            return parsed;
-        }
+    async getTrainingSettingsState(userId: string): Promise<DataState<TrainingSettings>> {
+        try {
+            const snapshot = await getDoc(this.ref(userId));
+            if (snapshot.exists()) {
+                const parsed = parseTrainingSettings(snapshot.data(), userId);
+                if (!parsed) {
+                    return { status: 'INVALID', issues: [{ code: 'schema-validation-failed', documentPath: `users/${userId}/${COLLECTION}/${DOCUMENT}` }] };
+                }
+                return { status: 'AVAILABLE', data: parsed, revision: parsed.updatedAt };
+            }
 
-        const legacy = await constraintService.listConstraints(userId);
-        const migrated = migrateLegacyConstraints(userId, legacy);
-        await setDoc(this.ref(userId), migrated);
-        return migrated;
+            // A missing settings profile is the documented first-run migration path,
+            // not an unavailable source. Its write is still subject to Firestore rules.
+            const legacy = await constraintService.listConstraints(userId);
+            const migrated = migrateLegacyConstraints(userId, legacy);
+            await setDoc(this.ref(userId), migrated);
+            return { status: 'AVAILABLE', data: migrated, revision: migrated.updatedAt };
+        } catch (error: unknown) {
+            return {
+                status: 'UNAVAILABLE',
+                operation: 'read training settings',
+                retryable: getErrorCode(error) !== 'permission-denied',
+            };
+        }
+    }
+
+    async getTrainingSettings(userId: string): Promise<TrainingSettings> {
+        const state = await this.getTrainingSettingsState(userId);
+        if (state.status === 'AVAILABLE') return state.data;
+        if (state.status === 'INVALID') throw new Error('Training settings are invalid. Please review and save them again.');
+        throw new Error('Training settings are temporarily unavailable. Please retry.');
     }
 
     async updateTrainingSettings(userId: string, update: TrainingSettingsUpdate): Promise<TrainingSettings> {

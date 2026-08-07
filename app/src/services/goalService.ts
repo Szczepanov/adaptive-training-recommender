@@ -1,6 +1,7 @@
 import { doc, getDoc, setDoc, deleteDoc, collection, query, where, getDocs, addDoc, deleteField, type DocumentData } from 'firebase/firestore';
 import { db } from '../firebase';
 import type { UserGoal, GoalCategory } from '../engine/models';
+import type { DataIssue, DataState } from '../engine/dataState';
 import { deriveGoalCategory } from '../engine/periodization';
 import { getLocalDateString } from '../utils/localDate';
 
@@ -89,6 +90,29 @@ export class GoalService {
     /**
      * Get active goals only
      */
+    async getActiveGoalsState(userId: string): Promise<DataState<UserGoalWithId[]>> {
+        try {
+            const collRef = collection(db, 'users', userId, this.collectionPath);
+            const querySnapshot = await getDocs(query(collRef, where('status', '==', 'active')));
+            const goals: UserGoalWithId[] = [];
+            const issues: DataIssue[] = [];
+            const revisions: string[] = [];
+            for (const goalDocument of querySnapshot.docs) {
+                const validation = validateGoal(goalDocument.data());
+                if (!validation.isValid || !validation.data || validation.data.userId !== userId) {
+                    issues.push({ code: 'schema-validation-failed', documentPath: `users/${userId}/${this.collectionPath}/${goalDocument.id}` });
+                    continue;
+                }
+                goals.push({ ...withResolvedCategory(validation.data), id: goalDocument.id });
+                if (typeof goalDocument.data().updatedAt === 'string') revisions.push(`${goalDocument.id}:${goalDocument.data().updatedAt}`);
+            }
+            if (issues.length > 0) return { status: 'INVALID', issues };
+            return { status: 'AVAILABLE', data: goals, revision: revisions.sort().join('|') || null };
+        } catch (error: unknown) {
+            return { status: 'UNAVAILABLE', operation: 'read active goals', retryable: getErrorCode(error) !== 'permission-denied' };
+        }
+    }
+
     async getActiveGoals(userId: string): Promise<UserGoalWithId[]> {
         try {
             const collRef = collection(db, 'users', userId, this.collectionPath);

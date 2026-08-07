@@ -140,10 +140,32 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
     const isCurrent = () => requestId === dashboardRequest.current;
     try {
       setLoading(true);
+      setError(null);
       setHistorySnapshot(null);
       const input = await decisionComposer.composeDailyDecisionInput(userId);
       if (!isCurrent()) return;
       setDecisionInput(input);
+
+      const recoveryState = input.sourceStates?.recoverySnapshot;
+      if (recoveryState && recoveryState.status !== 'AVAILABLE' && recoveryState.status !== 'MISSING') {
+        setRecommendation(null);
+        setNextDayPlan(null);
+        setError(recoveryState.status === 'UNAVAILABLE'
+          ? 'Recovery data is temporarily unavailable. Please retry before generating a plan.'
+          : 'Recovery data needs repair before generating a plan.');
+        return;
+      }
+      const decisionSourceFailure = input.sourceStates
+        && [input.sourceStates.activeGoals, input.sourceStates.preferences, input.sourceStates.trainingSettings]
+          .find(state => state.status === 'INVALID' || state.status === 'UNAVAILABLE');
+      if (decisionSourceFailure) {
+        setRecommendation(null);
+        setNextDayPlan(null);
+        setError(decisionSourceFailure.status === 'UNAVAILABLE'
+          ? 'Decision inputs are temporarily unavailable. Please retry before generating a plan.'
+          : 'Decision inputs need repair before generating a plan.');
+        return;
+      }
 
       const yesterday = getPreviousLocalDateString(input.date);
       const yesterdayRec = await recommendationService.getRecommendation(userId, yesterday).catch(err => {

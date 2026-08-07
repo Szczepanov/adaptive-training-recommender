@@ -11,6 +11,12 @@ interface DataViewProps {
 
 type AdherenceStats = Awaited<ReturnType<typeof recommendationService.getAdherenceStats>>;
 
+function describeSourceState(status: 'MISSING' | 'INVALID' | 'UNAVAILABLE'): string {
+  if (status === 'MISSING') return 'No record exists for this date yet.';
+  if (status === 'INVALID') return 'The stored record is malformed and needs repair.';
+  return 'The data source is temporarily unavailable. Retry the dashboard refresh.';
+}
+
 export function DataView({ decisionInput, userId }: DataViewProps) {
   const [activeTab, setActiveTab] = useState<'recovery' | 'checkin' | 'goals' | 'constraints' | 'preferences' | 'adherence'>('recovery');
   // null doubles as "not loaded yet" -- once getAdherenceStats resolves it's always a
@@ -43,6 +49,10 @@ export function DataView({ decisionInput, userId }: DataViewProps) {
   const renderRecoveryData = () => (
     <div className="data-section">
       <h3>Recovery Snapshot</h3>
+      {decisionInput.sourceStates?.recoverySnapshot.status !== undefined
+        && decisionInput.sourceStates.recoverySnapshot.status !== 'AVAILABLE' && (
+          <p className="data-state-notice">{describeSourceState(decisionInput.sourceStates.recoverySnapshot.status)}</p>
+        )}
       <div className="data-grid">
         <div className="data-group">
           <h4>Raw Metrics</h4>
@@ -217,6 +227,10 @@ export function DataView({ decisionInput, userId }: DataViewProps) {
   const renderCheckinData = () => (
     <div className="data-section">
       <h3>Daily Check-in</h3>
+      {decisionInput.sourceStates?.subjectiveCheckin.status !== undefined
+        && decisionInput.sourceStates.subjectiveCheckin.status !== 'AVAILABLE' && (
+          <p className="data-state-notice">{describeSourceState(decisionInput.sourceStates.subjectiveCheckin.status)}</p>
+        )}
       {decisionInput.subjectiveCheckin ? (
         <div className="data-grid">
           <div className="data-group">

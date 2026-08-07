@@ -1,6 +1,7 @@
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import type { UserPreferences } from '../engine/models';
+import type { DataState } from '../engine/dataState';
 import { validatePreferences } from '../engine/validation';
 
 export class PreferencesService {
@@ -10,6 +11,21 @@ export class PreferencesService {
     /**
      * Get user preferences
      */
+    async getPreferencesState(userId: string): Promise<DataState<UserPreferences>> {
+        try {
+            const docRef = doc(db, 'users', userId, this.collectionPath, this.singletonDocId);
+            const docSnap = await getDoc(docRef);
+            if (!docSnap.exists()) return { status: 'MISSING' };
+            const validation = validatePreferences(docSnap.data());
+            if (!validation.isValid || !validation.data || validation.data.userId !== userId) {
+                return { status: 'INVALID', issues: [{ code: 'schema-validation-failed', documentPath: `users/${userId}/${this.collectionPath}/${this.singletonDocId}` }] };
+            }
+            return { status: 'AVAILABLE', data: validation.data, revision: validation.data.updatedAt || null };
+        } catch {
+            return { status: 'UNAVAILABLE', operation: 'read preferences', retryable: true };
+        }
+    }
+
     async getPreferences(userId: string): Promise<UserPreferences | null> {
         try {
             const docRef = doc(db, 'users', userId, this.collectionPath, this.singletonDocId);
