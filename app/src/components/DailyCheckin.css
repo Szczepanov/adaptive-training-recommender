@@ -311,10 +311,119 @@
   cursor: pointer;
 }
 
+/* Post-Submission Comparison Card */
+.post-submission-card {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 20px;
+  padding: 2rem;
+  animation: slideUp 0.3s ease;
+}
+
+.post-submission-header {
+  margin-bottom: 1.5rem;
+}
+
+.post-submission-header h2 {
+  font-size: 1.6rem;
+  font-weight: 700;
+  margin: 0 0 0.4rem 0;
+  color: var(--text-primary);
+}
+
+.post-submission-header p {
+  color: var(--text-secondary);
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.post-submission-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 1.5rem;
+  margin-bottom: 2rem;
+}
+
+.comparison-column {
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 14px;
+  padding: 1.25rem;
+}
+
+.comparison-column h3 {
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #38bdf8;
+  margin: 0 0 1rem 0;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.comparison-column.wearable h3 {
+  color: #818cf8;
+}
+
+.summary-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.5rem 0;
+  border-bottom: 1px dashed rgba(255, 255, 255, 0.06);
+}
+
+.summary-item:last-child {
+  border-bottom: none;
+}
+
+.summary-label {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
+.summary-val {
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: var(--text-primary);
+}
+
+.summary-delta {
+  font-size: 0.775rem;
+  color: var(--text-secondary);
+  margin-left: 0.35rem;
+}
+
+.wearable-fallback-note {
+  background: rgba(56, 189, 248, 0.08);
+  border: 1px solid rgba(56, 189, 248, 0.2);
+  border-radius: 10px;
+  padding: 1rem;
+  color: #93c5fd;
+  font-size: 0.875rem;
+  line-height: 1.45;
+  margin-bottom: 1.5rem;
+}
+
+.post-submission-actions {
+  display: flex;
+  gap: 1rem;
+}
+
+.post-submission-actions .btn-primary {
+  flex: 2;
+  margin-top: 0;
+}
+
+.post-submission-actions .btn-secondary {
+  flex: 1;
+}
+
 /* Responsive Design */
 @media (min-width: 768px) {
   .checkin-container {
-    max-width: 600px;
+    max-width: 720px;
     margin: 0 auto;
     padding: 2rem;
     padding-bottom: 2rem;
@@ -328,3 +437,4 @@
     font-size: 4rem;
   }
 }
+

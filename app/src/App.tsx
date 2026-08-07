@@ -103,6 +103,23 @@ function App() {
     }
   }, [userId, authPhase, loadDecisionInput]);
 
+  const mobileMoreBtnRef = useRef<HTMLButtonElement>(null);
+  const mobileDrawerRef = useRef<HTMLDivElement>(null);
+
+  // Lock body scroll and trap focus when mobileMoreOpen is active
+  useEffect(() => {
+    if (mobileMoreOpen) {
+      document.body.style.overflow = 'hidden';
+      const closeBtn = mobileDrawerRef.current?.querySelector<HTMLButtonElement>('.close-drawer-btn');
+      closeBtn?.focus();
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [mobileMoreOpen]);
+
   useEffect(() => {
     const handlePointerDown = (event: MouseEvent) => {
       if (!desktopSettingsRef.current?.contains(event.target as Node)) {
@@ -111,8 +128,26 @@ function App() {
     };
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
-        setDesktopSettingsOpen(false);
-        setMobileMoreOpen(false);
+        if (desktopSettingsOpen) setDesktopSettingsOpen(false);
+        if (mobileMoreOpen) {
+          setMobileMoreOpen(false);
+          mobileMoreBtnRef.current?.focus();
+        }
+      }
+      if (mobileMoreOpen && event.key === 'Tab' && mobileDrawerRef.current) {
+        const focusables = Array.from(
+          mobileDrawerRef.current.querySelectorAll<HTMLElement>('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')
+        );
+        if (focusables.length === 0) return;
+        const first = focusables[0];
+        const last = focusables[focusables.length - 1];
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault();
+          last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first.focus();
+        }
       }
     };
 
@@ -122,7 +157,7 @@ function App() {
       document.removeEventListener('mousedown', handlePointerDown);
       document.removeEventListener('keydown', handleKeyDown);
     };
-  }, []);
+  }, [desktopSettingsOpen, mobileMoreOpen]);
 
   // Auth screen
   if (authPhase === 'CHECKING') {
@@ -341,6 +376,7 @@ function App() {
         </button>
         
         <button 
+          ref={mobileMoreBtnRef}
           className={`nav-item ${['constraints', 'preferences', 'data'].includes(screen) ? 'active' : ''}`}
           onClick={() => setMobileMoreOpen((isOpen) => !isOpen)}
           aria-expanded={mobileMoreOpen}
@@ -354,7 +390,7 @@ function App() {
       {/* Mobile Overlay More Menu Drawer */}
       {mobileMoreOpen && (
         <div className="mobile-more-overlay" onClick={() => setMobileMoreOpen(false)}>
-          <div className="mobile-more-drawer" role="dialog" aria-modal="true" aria-labelledby="mobile-more-title" onClick={(e) => e.stopPropagation()}>
+          <div ref={mobileDrawerRef} className="mobile-more-drawer" role="dialog" aria-modal="true" aria-labelledby="mobile-more-title" onClick={(e) => e.stopPropagation()}>
             <div className="drawer-header">
               <h3 id="mobile-more-title">Navigation & Settings</h3>
               <button className="close-drawer-btn" onClick={() => setMobileMoreOpen(false)} aria-label="Close navigation and settings">✕</button>

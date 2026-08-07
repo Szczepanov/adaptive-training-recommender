@@ -174,6 +174,8 @@ export function validateCheckin(raw: any): ValidationResult<DailySubjectiveCheck
         },
         notes: notes,
         submittedAt: raw.submittedAt || new Date().toISOString(),
+        ...(raw.initialSubmittedAt ? { initialSubmittedAt: raw.initialSubmittedAt } : {}),
+        ...(typeof raw.editedAfterWearableReveal === 'boolean' ? { editedAfterWearableReveal: raw.editedAfterWearableReveal } : {}),
         dataQuality: computeDataQuality(raw),
         schemaVersion: raw.schemaVersion ?? 1,
         createdAt: raw.createdAt || new Date().toISOString(),

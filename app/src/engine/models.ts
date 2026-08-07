@@ -480,6 +480,10 @@ export interface DailySubjectiveCheckin {
     // Optional free text
     notes: string | null;
     submittedAt: string;
+    /** Historical tracking: timestamp of the first unbiased submission (before seeing Garmin data). */
+    initialSubmittedAt?: string;
+    /** Historical tracking: true if saved after viewing Garmin wearable context, preserving initial data value. */
+    editedAfterWearableReveal?: boolean;
     // Data quality metadata
     dataQuality: {
         isComplete: boolean;

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { goalService } from '../services/goalService';
 import type { UserGoal, GoalCategory, GoalDomain, GoalStatus, UserEvent } from '../engine/models';
-import { deriveGoalCategory, deriveEventPriority, getDaysToEvent } from '../engine/periodization';
+import { deriveGoalCategory, deriveEventPriority, getDaysToEvent, goalToUserEvent, evaluatePeriodizationPhase } from '../engine/periodization';
 import { EVENT_PRESETS } from '../engine/eventPresets';
 import { getLocalDateString } from '../utils/localDate';
 import { getErrorMessage } from '../utils/errors';
@@ -121,6 +121,17 @@ export function Goals({ userId }: GoalsProps) {
     }
   };
 
+  // Derive Periodization State directly from canonical engine output
+  const activeUserEvents = goals
+    .filter(g => g.status === 'active')
+    .map(goalToUserEvent)
+    .filter((e): e is UserEvent => e !== null);
+
+  const periodizationResult = evaluatePeriodizationPhase(activeUserEvents, getLocalDateString());
+  const focusEvent = periodizationResult.focusEvent;
+  const daysToFocusEvent = periodizationResult.daysToEvent;
+  const currentPhaseName = periodizationResult.phase.phaseName;
+
   const filteredGoals = goals.filter(goal => {
     if (filter === 'all') return true;
     if (filter === 'active') return goal.status === 'active';
@@ -194,7 +205,8 @@ export function Goals({ userId }: GoalsProps) {
         </div>
       )}
 
-      <div className="goals-content">
+      <div className={`goals-layout-grid ${focusEvent ? 'has-event-panel' : ''}`}>
+        <div className="goals-content">
         {Object.entries(goalsByCategory).map(([category, categoryGoals]) => (
           <div key={category} className="category-section">
             <h2 className="category-title">
@@ -320,6 +332,42 @@ export function Goals({ userId }: GoalsProps) {
             </button>
           </div>
         )}
+      </div>
+
+      {focusEvent && (
+        <aside className="event-prep-sidebar">
+          <div className="event-prep-card">
+            <div className="event-prep-header">
+              <h3>EVENT PREPARATION</h3>
+              <span className="event-prep-badge">
+                {currentPhaseName}
+              </span>
+            </div>
+
+            <h4 className="event-prep-title">{focusEvent.title}</h4>
+            <div className="event-prep-countdown">
+              🏁 {daysToFocusEvent !== null && daysToFocusEvent >= 0 ? `In ${daysToFocusEvent} days` : 'Today'} · {focusEvent.date}
+            </div>
+
+            <div className="event-prep-item">
+              <span className="prep-label">Governing Phase:</span>
+              <span className="prep-value">{currentPhaseName}</span>
+            </div>
+
+            <div className="event-prep-item">
+              <span className="prep-label">Event Importance:</span>
+              <span className="prep-value">
+                Priority {focusEvent.priority} {focusEvent.priority === 'A' ? '(Top Priority)' : focusEvent.priority === 'B' ? '(Mid Priority)' : '(Train Through)'}
+              </span>
+            </div>
+
+            <div className="event-prep-item">
+              <span className="prep-label">Event Category:</span>
+              <span className="prep-value">{EVENT_CATEGORY_LABELS[focusEvent.category]}</span>
+            </div>
+          </div>
+        </aside>
+      )}
       </div>
 
       {/* Add/Edit Modal */}
