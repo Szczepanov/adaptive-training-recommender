@@ -304,6 +304,17 @@ export interface Recommendation {
     telemetry?: DecisionScoreTelemetry;
     /** Concrete, dated session instructions resolved from the selected template. */
     prescription?: WorkoutPrescription;
+    /** Assigned at the composition boundary immediately before persistence. */
+    recommendationAudit?: RecommendationAudit;
+    /** Engine trace retained only long enough to create the compact persisted audit. */
+    decisionTrace?: {
+        policyVersion: string;
+        candidateScores: Array<{
+            templateId: string;
+            utilityScore: number;
+            excludedReasons: string[];
+        }>;
+    };
 }
 
 export interface NextDayPlanBranch {
@@ -662,6 +673,8 @@ export interface DailyRecommendation {
     updatedAt: string;
     adjustment?: SessionAdjustment;
     prescription?: WorkoutPrescription;
+    /** Compact, replay-oriented metadata. It deliberately omits raw health values and notes. */
+    recommendationAudit?: RecommendationAudit;
     adherence: {
         /** Null until the user responds to the adherence prompt for this day. */
         respondedAt: string | null;
@@ -721,6 +734,27 @@ export interface CompletedTrainingEvent {
         followed: boolean | null;
         notes: string | null;
     };
+}
+
+export interface RecommendationAudit {
+    policyVersion: string;
+    evaluatedAt: string;
+    decisionContextRevision: string;
+    safetyStatus: 'complete';
+    history: {
+        completedEventCount: number;
+        unmatchedEventCount: number;
+        sourceStatuses: Record<'activities' | 'recommendations' | 'manualTraining', 'AVAILABLE' | 'MISSING' | 'INVALID' | 'UNAVAILABLE'>;
+    };
+    envelope: {
+        safetyRestrictedModalityCount: number;
+        planMaxAllowableTier: PlanEnvelope['maxAllowableTier'];
+    };
+    candidateScores: Array<{
+        templateId: string;
+        utilityScore: number;
+        excludedReasons: string[];
+    }>;
 }
 
 // --- Type Utilities ---

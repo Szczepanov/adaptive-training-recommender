@@ -5,6 +5,7 @@ import { mapSnapshotToEngineInput, mapCheckinToSubjectiveInput, mapContextFromGo
 import { generateWeekAheadPlanWithIntent, type WeekAheadPlan } from '../engine/planner';
 import { prepareTrainingHistorySnapshot } from '../engine/trainingIntent';
 import type { TrainingHistorySnapshot } from '../engine/trainingHistorySnapshot';
+import { buildRecommendationAudit } from '../engine/provenance';
 import { evaluatePeriodizationPhase, getDaysToEvent } from '../engine/periodization';
 import { resolveExecutionDose } from '../engine/dose';
 import type { DailyDecisionInput, Recommendation, NextDayPotentialPlan, DailyRecommendation } from '../engine/models';
@@ -164,14 +165,21 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
         const events = mapGoalsToUserEvents(input.activeGoals);
         const preparedSnapshot = await prepareTrainingHistorySnapshot(userId, input.date);
         if (!isCurrent()) return;
+        if (!preparedSnapshot) {
+          throw new Error('A revisioned training history snapshot is required for a normal recommendation.');
+        }
         setHistorySnapshot(preparedSnapshot);
         const baseRecommendation = await evaluateTrainingWithIntent(
           userId, { subjective, objective }, context, events, input.date, yesterdayRec?.mode, undefined, preparedSnapshot,
         );
         if (!isCurrent()) return;
-        const todayRec = {
+        const recommendationWithPrescription = {
           ...baseRecommendation,
           prescription: resolveWorkoutPrescription(baseRecommendation, userId, input.date, input.preferences?.performanceProfile, baseRecommendation.executionDose, input.trainingSettings) ?? undefined
+        };
+        const todayRec = {
+          ...recommendationWithPrescription,
+          recommendationAudit: buildRecommendationAudit(recommendationWithPrescription, preparedSnapshot) ?? undefined,
         };
         setRecommendation(todayRec);
 

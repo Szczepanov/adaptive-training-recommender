@@ -67,12 +67,12 @@ export function parseNormalizedGarminActivity(
     };
 }
 
-/** v1/v2 persisted recommendations are accepted through the existing strict validator;
+/** v1/v2/v3 persisted recommendations are accepted through the existing strict validator;
  * newer schemas must not silently enter the engine before an explicit migration exists. */
 export function parseDailyRecommendation(raw: unknown, documentPath: string): DataState<DailyRecommendation> {
     if (!isObject(raw)) return invalid(documentPath, 'not-an-object');
     const schemaVersion = raw.schemaVersion;
-    if (schemaVersion !== undefined && schemaVersion !== 1 && schemaVersion !== 2) {
+    if (schemaVersion !== undefined && schemaVersion !== 1 && schemaVersion !== 2 && schemaVersion !== 3) {
         return invalid(documentPath, 'unsupported-schema-version', 'schemaVersion', typeof schemaVersion === 'number' ? schemaVersion : undefined);
     }
     const result = validateRecommendation(raw);

@@ -8,6 +8,7 @@ import { addDaysToLocalDateString } from '../utils/localDate';
 import type { TrainingHistoryProvider } from './trainingHistory';
 import type { TrainingHistorySnapshot } from './trainingHistorySnapshot';
 import { resolveTrainingIntent } from './trainingIntent';
+import { POLICY_VERSION } from './policy';
 import { resolveExecutionDose } from './dose';
 import { isTemplatePhaseEligible } from './periodization';
 
@@ -522,6 +523,14 @@ export async function evaluateTrainingWithIntent(
         plannedDose: intent.plannedDose,
         executionDose: resolveExecutionDose(intent.plannedDose, base.envelopes!.plan, null),
         rationale: `${base.rationale} ${phaseContext} ${pick.rationale}`,
+        decisionTrace: {
+            policyVersion: POLICY_VERSION,
+            candidateScores: ranked.map(candidate => ({
+                templateId: candidate.template.id,
+                utilityScore: candidate.utilityScore,
+                excludedReasons: [],
+            })),
+        },
     };
 }
 

@@ -716,6 +716,38 @@ export function validateRecommendation(raw: any): ValidationResult<DailyRecommen
         }
     }
 
+    let recommendationAudit: DailyRecommendation['recommendationAudit'] | undefined;
+    if (raw.recommendationAudit !== undefined) {
+        const audit = raw.recommendationAudit;
+        const validStatuses = ['AVAILABLE', 'MISSING', 'INVALID', 'UNAVAILABLE'];
+        const validTiers = ['Rest', 'Mobility', 'Easy', 'Moderate', 'Hard'];
+        const validAudit = audit && typeof audit === 'object'
+            && typeof audit.policyVersion === 'string'
+            && typeof audit.evaluatedAt === 'string'
+            && typeof audit.decisionContextRevision === 'string'
+            && audit.safetyStatus === 'complete'
+            && audit.history && typeof audit.history === 'object'
+            && Number.isInteger(audit.history.completedEventCount) && audit.history.completedEventCount >= 0
+            && Number.isInteger(audit.history.unmatchedEventCount) && audit.history.unmatchedEventCount >= 0
+            && audit.history.sourceStatuses && typeof audit.history.sourceStatuses === 'object'
+            && ['activities', 'recommendations', 'manualTraining'].every(key => validStatuses.includes(audit.history.sourceStatuses[key]))
+            && audit.envelope && typeof audit.envelope === 'object'
+            && Number.isInteger(audit.envelope.safetyRestrictedModalityCount) && audit.envelope.safetyRestrictedModalityCount >= 0
+            && validTiers.includes(audit.envelope.planMaxAllowableTier)
+            && Array.isArray(audit.candidateScores)
+            && audit.candidateScores.every((candidate: any) => candidate && typeof candidate.templateId === 'string'
+                && typeof candidate.utilityScore === 'number' && Number.isFinite(candidate.utilityScore)
+                && Array.isArray(candidate.excludedReasons) && candidate.excludedReasons.every((reason: any) => typeof reason === 'string'));
+        if (!validAudit) {
+            errors.push({ field: 'recommendationAudit', message: 'Recommendation audit has an invalid shape' });
+        } else {
+            recommendationAudit = audit as DailyRecommendation['recommendationAudit'];
+        }
+    }
+    if (raw.schemaVersion === 3 && !recommendationAudit) {
+        errors.push({ field: 'recommendationAudit', message: 'Schema version 3 requires a recommendation audit' });
+    }
+
     if (errors.length > 0) {
         return { isValid: false, errors };
     }
@@ -743,11 +775,12 @@ export function validateRecommendation(raw: any): ValidationResult<DailyRecommen
         modality: raw.modality,
         mode: raw.mode,
         rationale: raw.rationale,
-        schemaVersion: raw.schemaVersion ?? (raw.prescription ? 2 : 1),
+        schemaVersion: raw.schemaVersion ?? (recommendationAudit ? 3 : (raw.prescription ? 2 : 1)),
         createdAt: raw.createdAt || new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         ...(raw.prescription ? { prescription: raw.prescription } : {}),
         ...(adjustment ? { adjustment } : {}),
+        ...(recommendationAudit ? { recommendationAudit } : {}),
         adherence: {
             respondedAt: existingAdherence.respondedAt ?? null,
             followed: existingAdherence.followed ?? null,

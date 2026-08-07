@@ -40,7 +40,10 @@ export class RecommendationService {
                 rationale: rec.rationale,
                 ...(rec.prescription ? { prescription: rec.prescription } : {}),
                 ...(rec.adjustment ? { adjustment: rec.adjustment } : {}),
-                schemaVersion: rec.prescription ? Math.max(existing?.schemaVersion ?? 1, 2) : (existing?.schemaVersion ?? 1),
+                ...(rec.recommendationAudit ? { recommendationAudit: rec.recommendationAudit } : {}),
+                schemaVersion: rec.recommendationAudit
+                    ? Math.max(existing?.schemaVersion ?? 1, 3)
+                    : (rec.prescription ? Math.max(existing?.schemaVersion ?? 1, 2) : (existing?.schemaVersion ?? 1)),
                 createdAt: existing?.createdAt,
             };
 
