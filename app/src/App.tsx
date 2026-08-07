@@ -170,8 +170,9 @@ function App() {
         )}
         
         {screen === 'data' && (
-          <DataView 
+          <DataView
             decisionInput={decisionInput}
+            userId={userId!}
             onBack={() => navigateTo('home')}
           />
         )}

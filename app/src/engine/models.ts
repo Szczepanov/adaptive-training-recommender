@@ -176,6 +176,10 @@ export interface DailyRecoverySnapshot {
             bodyBatteryWake?: string | null;
             steps?: string | null;
             activitiesThrough?: string | null;
+            stress?: string | null;
+            bodyBattery?: string | null;
+            trainingReadiness?: string | null;
+            trainingStatus?: string | null;
         };
         migratedFromLegacy?: boolean;
         legacyDocumentPath?: string;
@@ -189,6 +193,8 @@ export interface DailyRecoverySnapshot {
         respirationAvg: number | null;
         bodyBatteryWake: number | null;
         bodyBatteryChange: number | null;
+        bodyBatteryCharged?: number | null;
+        bodyBatteryDrained?: number | null;
         totalSteps: number | null;
         last3DaysHardSessionsCount: number;
         yesterdayTraining: RawActivitySummary | null;
@@ -197,6 +203,24 @@ export interface DailyRecoverySnapshot {
          * just "not yet synced today". Prefer the check-in's `alreadyTrainedToday` flag
          * when you need a reliable same-day signal. */
         todayTraining?: RawActivitySummary | null;
+        stress?: {
+            avg?: number | null;
+            max?: number | null;
+        } | null;
+        trainingReadiness?: {
+            score?: number | null;
+            level?: string | null;
+            feedback?: string | null;
+        } | null;
+        trainingStatus?: {
+            statusPhrase?: string | null;
+            acuteTrainingLoad?: number | null;
+            acwrStatus?: string | null;
+            vo2MaxRunning?: number | null;
+            vo2MaxRunningDate?: string | null;
+            vo2MaxCycling?: number | null;
+            vo2MaxCyclingDate?: string | null;
+        } | null;
     };
     derived: {
         baselineComputationVersion: number;
@@ -232,6 +256,10 @@ export interface DailyRecoverySnapshot {
         hrvAvailable: boolean;
         baseline7dReady: boolean;
         baseline28dReady: boolean;
+        stressAvailable?: boolean;
+        bodyBatteryDetailAvailable?: boolean;
+        trainingReadinessAvailable?: boolean;
+        trainingStatusAvailable?: boolean;
     };
     createdAt?: string;
     updatedAt?: string;

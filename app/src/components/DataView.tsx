@@ -1,14 +1,31 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import type { DailyDecisionInput } from '../engine/models';
+import { recommendationService } from '../services/recommendationService';
 import './DataView.css';
 
 interface DataViewProps {
   decisionInput: DailyDecisionInput | null;
+  userId: string;
   onBack: () => void;
 }
 
-export function DataView({ decisionInput, onBack }: DataViewProps) {
-  const [activeTab, setActiveTab] = useState<'recovery' | 'checkin' | 'goals' | 'constraints' | 'preferences'>('recovery');
+type AdherenceStats = Awaited<ReturnType<typeof recommendationService.getAdherenceStats>>;
+
+export function DataView({ decisionInput, userId, onBack }: DataViewProps) {
+  const [activeTab, setActiveTab] = useState<'recovery' | 'checkin' | 'goals' | 'constraints' | 'preferences' | 'adherence'>('recovery');
+  // null doubles as "not loaded yet" -- once getAdherenceStats resolves it's always a
+  // real (possibly all-zero) stats object, so this alone distinguishes loading from an
+  // answer of "nothing recorded yet" without a separate loading flag.
+  const [adherenceStats, setAdherenceStats] = useState<AdherenceStats | null>(null);
+
+  useEffect(() => {
+    if (activeTab !== 'adherence' || adherenceStats) return;
+    let cancelled = false;
+    recommendationService.getAdherenceStats(userId, 30).then(stats => {
+      if (!cancelled) setAdherenceStats(stats);
+    });
+    return () => { cancelled = true; };
+  }, [activeTab, userId, adherenceStats]);
 
   if (!decisionInput) {
     return (
@@ -456,6 +473,61 @@ export function DataView({ decisionInput, onBack }: DataViewProps) {
     </div>
   );
 
+  const renderAdherenceData = () => (
+    <div className="data-section">
+      <h3>Adherence (last 30 days)</h3>
+      {adherenceStats === null ? (
+        <p>Loading...</p>
+      ) : adherenceStats.totalRecommendations > 0 ? (
+        <div className="data-grid">
+          <div className="data-group">
+            <h4>Overall</h4>
+            <div className="data-item">
+              <span className="data-label">Recommendations Generated:</span>
+              <span className="data-value">{adherenceStats.totalRecommendations}</span>
+            </div>
+            <div className="data-item">
+              <span className="data-label">Answered:</span>
+              <span className="data-value">{adherenceStats.answered}</span>
+            </div>
+            <div className="data-item">
+              <span className="data-label">Awaiting Response:</span>
+              <span className="data-value">{adherenceStats.awaitingResponse}</span>
+            </div>
+            <div className="data-item">
+              <span className="data-label">Followed Rate:</span>
+              <span className="data-value">
+                {adherenceStats.answered > 0 ? `${adherenceStats.followedRate}%` : 'N/A (no answers yet)'}
+              </span>
+            </div>
+            <div className="data-item">
+              <span className="data-label">Followed / Modified / Skipped:</span>
+              <span className="data-value">
+                {adherenceStats.followedCount} / {adherenceStats.modifiedCount} / {adherenceStats.skippedCount}
+              </span>
+            </div>
+          </div>
+
+          <div className="data-group">
+            <h4>Followed Rate by Mode</h4>
+            {(['train', 'modify', 'recover'] as const).map(mode => (
+              <div className="data-item" key={mode}>
+                <span className="data-label">{mode.charAt(0).toUpperCase() + mode.slice(1)}:</span>
+                <span className="data-value">
+                  {adherenceStats.byMode[mode].total > 0
+                    ? `${adherenceStats.byMode[mode].followedRate}% (n=${adherenceStats.byMode[mode].total})`
+                    : 'N/A'}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <p>No recommendations recorded yet -- this fills in as the dashboard generates and you answer the daily "did you follow this?" prompt.</p>
+      )}
+    </div>
+  );
+
   return (
     <div className="data-view-container">
       <div className="data-view-header">
@@ -488,11 +560,17 @@ export function DataView({ decisionInput, onBack }: DataViewProps) {
         >
           Constraints
         </button>
-        <button 
+        <button
           className={activeTab === 'preferences' ? 'active' : ''}
           onClick={() => setActiveTab('preferences')}
         >
           Preferences
+        </button>
+        <button
+          className={activeTab === 'adherence' ? 'active' : ''}
+          onClick={() => setActiveTab('adherence')}
+        >
+          Adherence
         </button>
       </div>
 
@@ -501,6 +579,7 @@ export function DataView({ decisionInput, onBack }: DataViewProps) {
         {activeTab === 'checkin' && renderCheckinData()}
         {activeTab === 'goals' && renderGoalsData()}
         {activeTab === 'constraints' && renderConstraintsData()}
+        {activeTab === 'adherence' && renderAdherenceData()}
         {activeTab === 'preferences' && renderPreferencesData()}
       </div>
     </div>
