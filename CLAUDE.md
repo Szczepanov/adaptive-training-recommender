@@ -19,8 +19,10 @@ Quick guide for building, testing, and working on `adaptive-training-recommender
 
 ### Frontend Application (`app/`)
 - Install: `cd app && npm ci`
+- Full Check: `cd app && npm run check` (TypeScript, ESLint, Vitest, workout catalog)
+- Run Tests: `cd app && npm test`
 - Build: `cd app && npm run build`
-- Dev Server: `cd app && npm run dev`
+- Dev Server: `cd app && npm run dev` (automatically runs `npm run check` first via `predev`)
 
 ### Docker Container
 - Build: `docker build -t adaptive-training-garmin-sync .`
@@ -28,6 +30,7 @@ Quick guide for building, testing, and working on `adaptive-training-recommender
 ## Key Code Locations
 - `src/garmin_sync/`: Core Python Garmin ingestion package.
 - `scripts/migrate_legacy_snapshots.py`: Firestore legacy data migration utility.
+- `app/src/engine/`: Core adaptive rules engine, strain telemetry, next-day evaluation, and templates.
 - `app/src/utils/localDate.ts`: Frontend Warsaw date utility.
 - `app/src/services/recoverySnapshotService.ts`: User-scoped Firestore recovery reader.
 - `app/firestore.rules`: Security rules for user-owned paths.

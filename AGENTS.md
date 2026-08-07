@@ -30,8 +30,10 @@ This document outlines repository rules, code conventions, testing instructions,
 
 ### Frontend App
 * `cd app && npm ci` — Install node dependencies
-* `cd app && npm run build` — Build production bundle (`tsc -b && vite build`)
-* `cd app && npm run dev` — Start Vite dev server
+* `cd app && npm run check` — Run full validation suite (TypeScript, ESLint, Vitest, workout catalog)
+* `cd app && npm test` — Run engine unit test suite (`vitest run`)
+* `cd app && npm run build` — Build production bundle (`npm run check && vite build`)
+* `cd app && npm run dev` — Start Vite dev server (automatically executes `npm run check` pre-flight)
 
 ### Docker
 * `docker build -t adaptive-training-garmin-sync .` — Build container image

@@ -117,6 +117,14 @@ uv run python scripts/migrate_legacy_snapshots.py --user-id YOUR_FIREBASE_UID --
 ```bash
 cd app
 npm ci
+
+# Run pre-flight checks manually (TypeScript typecheck, ESLint, Vitest, workout catalog validation)
+npm run check
+
+# Run engine unit tests only
+npm test
+
+# Start Vite dev server (automatically runs `npm run check` first via npm `predev` hook)
 npm run dev
 ```
 
