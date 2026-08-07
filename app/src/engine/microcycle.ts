@@ -4,6 +4,7 @@ import type {
     TrainingRecord,
     WeeklyObjective,
 } from './models';
+import type { CompletedExposure } from './microcycleHistory';
 import type { PhaseWeights } from './periodization';
 
 export function generateWeeklyObjectives(
@@ -103,4 +104,17 @@ export function updateMicrocycleProgress(
 
 export function getUnresolvedObjectives(microcycle: MicrocycleState): WeeklyObjective[] {
     return microcycle.objectives.filter(o => o.completedExposures < o.targetExposures);
+}
+
+/** Seeds the rolling microcycle from completed, ordered exposures before projecting
+ * the next recommendation. */
+export function buildMicrocycleState(
+    phase: PhaseWeights,
+    windowStartDate: string,
+    history: CompletedExposure[]
+): MicrocycleState {
+    return history.reduce(
+        (state, exposure) => updateMicrocycleProgress(state, exposure.trainingRecordLike),
+        generateWeeklyObjectives(phase, windowStartDate)
+    );
 }

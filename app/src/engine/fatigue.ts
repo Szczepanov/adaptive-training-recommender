@@ -4,6 +4,7 @@ import type {
     FatigueState,
     WorkoutCostProfile,
 } from './models';
+import type { CompletedExposure } from './microcycleHistory';
 
 export const DECAY_HALF_LIVES_HOURS: Record<keyof DimensionalFatigue, number> = {
     systemic: 36,
@@ -125,4 +126,29 @@ export function applyCompletedSessionLoad(
         internalResponseStrain: currentState.internalResponseStrain,
         combinedFatigue: combined,
     };
+}
+
+/** Replays completed external load, then combines it with today's real internal
+ * readiness response. Historic external work must not disappear just because today's
+ * HRV/check-in happens to be favourable. */
+export function buildFatigueStateFromHistory(
+    history: CompletedExposure[],
+    internalStrain: DimensionalFatigue,
+    asOfDate: string
+): FatigueState {
+    const emptyCost: WorkoutCostProfile = { systemic: 0, cardiovascular: 0, lowerBody: 0, upperBody: 0, impactTissue: 0, neuromuscular: 0 };
+    const replayed = history.reduce(
+        (state, exposure) => applyCompletedSessionLoad(state, exposure.date, exposure.costProfile),
+        createEmptyFatigue(history[0]?.date ?? asOfDate)
+    );
+    const decayed = applyCompletedSessionLoad(replayed, asOfDate, emptyCost);
+    const combined: DimensionalFatigue = {
+        systemic: Math.max(decayed.externalLoadFatigue.systemic, internalStrain.systemic),
+        cardiovascular: Math.max(decayed.externalLoadFatigue.cardiovascular, internalStrain.cardiovascular),
+        lowerBody: Math.max(decayed.externalLoadFatigue.lowerBody, internalStrain.lowerBody),
+        upperBody: Math.max(decayed.externalLoadFatigue.upperBody, internalStrain.upperBody),
+        impactTissue: Math.max(decayed.externalLoadFatigue.impactTissue, internalStrain.impactTissue),
+        neuromuscular: Math.max(decayed.externalLoadFatigue.neuromuscular, internalStrain.neuromuscular),
+    };
+    return { ...decayed, lastUpdatedDate: asOfDate, internalResponseStrain: internalStrain, combinedFatigue: combined };
 }
