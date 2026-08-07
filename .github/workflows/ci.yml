@@ -54,6 +54,9 @@ jobs:
       - name: Validate workout library
         run: npm run validate:workouts
 
+      - name: Run frontend test suite
+        run: npm test
+
       - name: Build frontend
         run: npm run build
 
