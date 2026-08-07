@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import './App.css';
 import './index.css';
 import { auth } from './firebase';
@@ -26,7 +26,9 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [decisionInput, setDecisionInput] = useState<DailyDecisionInput | null>(null);
-  const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const [desktopSettingsOpen, setDesktopSettingsOpen] = useState(false);
+  const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
+  const desktopSettingsRef = useRef<HTMLDivElement>(null);
 
   // Initialize user data on first login
   const initializeUserData = async (userId: string) => {
@@ -101,6 +103,27 @@ function App() {
     }
   }, [userId, authPhase, loadDecisionInput]);
 
+  useEffect(() => {
+    const handlePointerDown = (event: MouseEvent) => {
+      if (!desktopSettingsRef.current?.contains(event.target as Node)) {
+        setDesktopSettingsOpen(false);
+      }
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setDesktopSettingsOpen(false);
+        setMobileMoreOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, []);
+
   // Auth screen
   if (authPhase === 'CHECKING') {
     return (
@@ -160,7 +183,8 @@ function App() {
 
   const handleNavigate = (newScreen: Screen) => {
     setScreen(newScreen);
-    setShowMoreMenu(false);
+    setDesktopSettingsOpen(false);
+    setMobileMoreOpen(false);
   };
 
   // Main app with navigation
@@ -209,31 +233,35 @@ function App() {
               Data
             </button>
             
-            <div className="more-menu-container">
+            <div className="more-menu-container" ref={desktopSettingsRef}>
               <button 
                 className={`nav-link more-btn ${['constraints', 'preferences'].includes(screen) ? 'active' : ''}`}
-                onClick={() => setShowMoreMenu(!showMoreMenu)}
+                onClick={() => setDesktopSettingsOpen((isOpen) => !isOpen)}
+                aria-expanded={desktopSettingsOpen}
+                aria-haspopup="menu"
               >
-                <span>More</span>
+                <span>Settings</span>
                 <span className="caret">▾</span>
               </button>
               
-              {showMoreMenu && (
-                <div className="dropdown-menu">
+              {desktopSettingsOpen && (
+                <div className="dropdown-menu" role="menu" aria-label="Settings">
                   <button 
                     className={`dropdown-item ${screen === 'constraints' ? 'active' : ''}`}
                     onClick={() => handleNavigate('constraints')}
+                    role="menuitem"
                   >
-                    <span className="item-icon">⚙️</span> Training Settings
+                    <span className="item-icon">⚙️</span> Training Setup
                   </button>
                   <button 
                     className={`dropdown-item ${screen === 'preferences' ? 'active' : ''}`}
                     onClick={() => handleNavigate('preferences')}
+                    role="menuitem"
                   >
-                    <span className="item-icon">⚙️</span> Preferences
+                    <span className="item-icon">⚙️</span> Coach Preferences
                   </button>
                   <div className="dropdown-divider" />
-                  <button className="dropdown-item logout" onClick={handleLogout}>
+                  <button className="dropdown-item logout" onClick={handleLogout} role="menuitem">
                     <span className="item-icon">🚪</span> Sign Out
                   </button>
                 </div>
@@ -241,11 +269,6 @@ function App() {
             </div>
           </nav>
 
-          <div className="navbar-right">
-            <button onClick={handleLogout} className="navbar-logout-btn" title="Sign Out">
-              Sign Out
-            </button>
-          </div>
         </div>
       </header>
 
@@ -319,7 +342,9 @@ function App() {
         
         <button 
           className={`nav-item ${['constraints', 'preferences', 'data'].includes(screen) ? 'active' : ''}`}
-          onClick={() => setShowMoreMenu(!showMoreMenu)}
+          onClick={() => setMobileMoreOpen((isOpen) => !isOpen)}
+          aria-expanded={mobileMoreOpen}
+          aria-haspopup="dialog"
         >
           <span className="nav-icon">⋯</span>
           <span className="nav-label">More</span>
@@ -327,12 +352,12 @@ function App() {
       </nav>
 
       {/* Mobile Overlay More Menu Drawer */}
-      {showMoreMenu && (
-        <div className="mobile-more-overlay" onClick={() => setShowMoreMenu(false)}>
-          <div className="mobile-more-drawer" onClick={(e) => e.stopPropagation()}>
+      {mobileMoreOpen && (
+        <div className="mobile-more-overlay" onClick={() => setMobileMoreOpen(false)}>
+          <div className="mobile-more-drawer" role="dialog" aria-modal="true" aria-labelledby="mobile-more-title" onClick={(e) => e.stopPropagation()}>
             <div className="drawer-header">
-              <h3>Navigation & Settings</h3>
-              <button className="close-drawer-btn" onClick={() => setShowMoreMenu(false)}>✕</button>
+              <h3 id="mobile-more-title">Navigation & Settings</h3>
+              <button className="close-drawer-btn" onClick={() => setMobileMoreOpen(false)} aria-label="Close navigation and settings">✕</button>
             </div>
             <div className="drawer-items">
               <button 
@@ -355,7 +380,7 @@ function App() {
               >
                 <span className="item-icon">⚠️</span>
                 <div className="item-text">
-                  <span className="item-title">Training Settings</span>
+                  <span className="item-title">Training Setup</span>
                   <span className="item-sub">Manage physical cautions & equipment</span>
                 </div>
               </button>
@@ -366,7 +391,7 @@ function App() {
               >
                 <span className="item-icon">⚙️</span>
                 <div className="item-text">
-                  <span className="item-title">Preferences</span>
+                  <span className="item-title">Coach Preferences</span>
                   <span className="item-sub">Configure modalities & strain caps</span>
                 </div>
               </button>

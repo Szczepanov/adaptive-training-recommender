@@ -21,10 +21,8 @@ body {
   font-family: 'Inter', system-ui, Avenir, Helvetica, Arial, sans-serif;
   background-color: var(--bg-color);
   color: var(--text-primary);
+  min-width: 320px;
   min-height: 100vh;
-  display: flex;
-  justify-content: center;
-  align-items: center;
   background-image: 
     radial-gradient(at 0% 0%, hsla(253,16%,7%,1) 0, transparent 50%), 
     radial-gradient(at 50% 0%, hsla(225,39%,30%,0.2) 0, transparent 50%), 
@@ -34,8 +32,7 @@ body {
 
 #root {
   width: 100%;
-  max-width: 600px;
-  padding: 2rem;
+  min-height: 100vh;
   box-sizing: border-box;
 }
 

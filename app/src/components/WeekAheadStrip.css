@@ -74,6 +74,12 @@
   line-height: 1.2;
 }
 
+.tile-duration {
+  font-size: 0.68rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
 .tile-mode-dot {
   width: 6px;
   height: 6px;
