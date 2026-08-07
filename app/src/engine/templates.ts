@@ -2,6 +2,42 @@ import type { SessionTemplate } from './models';
 
 export const TEMPLATES: SessionTemplate[] = [
     {
+        id: "cycling_technical_01",
+        category: "Technical Skill",
+        modality: "Cycling",
+        durationMin: 30,
+        durationMax: 55,
+        title: "Cycling Pedalling Economy",
+        description: "Low-fatigue cadence and position practice. Smoothness—not watts or peak cadence—is the goal.",
+        requiredEquipment: ["indoor_bike"],
+        systemicCost: 0.25,
+        objectiveTransferable: false
+    },
+    {
+        id: "field_technical_01",
+        category: "Technical Skill",
+        modality: "Field",
+        durationMin: 20,
+        durationMax: 40,
+        title: "Sprint Mechanics Foundation",
+        description: "Low-volume posture, projection and acceleration mechanics with full recovery between repetitions.",
+        requiredEquipment: [],
+        systemicCost: 0.45,
+        objectiveTransferable: false
+    },
+    {
+        id: "field_technical_02",
+        category: "Technical Skill",
+        modality: "Field",
+        durationMin: 25,
+        durationMax: 45,
+        title: "Acceleration & Braking Skill",
+        description: "Quality-controlled acceleration and braking practice for athletes already tolerating sprint mechanics.",
+        requiredEquipment: [],
+        systemicCost: 0.6,
+        objectiveTransferable: false
+    },
+    {
         id: "rest_01",
         category: "Rest",
         modality: "None",
@@ -416,6 +452,7 @@ export const ENRICHED_TEMPLATES: SessionTemplate[] = TEMPLATES.map(t => {
         else if (t.category === 'Easy Endurance') stimulus = { aerobicCapacity: 0.8, thresholdDevelopment: 0.2, surgeRepeatability: 0, maxStrength: 0, hypertrophy: 0, mobilityRecovery: 0.2 };
         else if (t.category === 'Moderate Endurance') stimulus = { aerobicCapacity: 0.7, thresholdDevelopment: 0.8, surgeRepeatability: 0.3, maxStrength: 0, hypertrophy: 0, mobilityRecovery: 0 };
         else if (t.category === 'Hard Endurance') stimulus = { aerobicCapacity: 0.6, thresholdDevelopment: 0.8, surgeRepeatability: 1.0, maxStrength: 0, hypertrophy: 0, mobilityRecovery: 0 };
+        else if (t.category === 'Technical Skill') stimulus = { aerobicCapacity: 0.1, thresholdDevelopment: 0, surgeRepeatability: 0.2, maxStrength: 0, hypertrophy: 0, mobilityRecovery: 0.1 };
         else if (t.category === 'Upper-body Strength') stimulus = { aerobicCapacity: 0, thresholdDevelopment: 0, surgeRepeatability: 0.2, maxStrength: 0.8, hypertrophy: 0.8, mobilityRecovery: 0.2 };
         else if (t.category === 'Lower-body Strength') stimulus = { aerobicCapacity: 0, thresholdDevelopment: 0, surgeRepeatability: 0.2, maxStrength: 0.9, hypertrophy: 0.8, mobilityRecovery: 0.2 };
         else stimulus = { aerobicCapacity: 0.2, thresholdDevelopment: 0.3, surgeRepeatability: 0.4, maxStrength: 0.8, hypertrophy: 0.7, mobilityRecovery: 0.2 };
@@ -430,6 +467,10 @@ export const ENRICHED_TEMPLATES: SessionTemplate[] = TEMPLATES.map(t => {
             cost = { systemic: 0.6, cardiovascular: 0.6, lowerBody: 0.5, upperBody: 0.1, impactTissue: t.modality === 'Running' ? 0.7 : 0.2, neuromuscular: 0.4 };
         } else if (t.category === 'Hard Endurance') {
             cost = { systemic: 1.0, cardiovascular: 1.0, lowerBody: 0.8, upperBody: 0.1, impactTissue: t.modality === 'Running' ? 0.9 : 0.3, neuromuscular: 0.8 };
+        } else if (t.category === 'Technical Skill') {
+            cost = t.modality === 'Field'
+                ? { systemic: t.systemicCost, cardiovascular: 0.2, lowerBody: 0.6, upperBody: 0.05, impactTissue: 0.7, neuromuscular: 0.9 }
+                : { systemic: t.systemicCost, cardiovascular: 0.2, lowerBody: 0.15, upperBody: 0.05, impactTissue: 0.05, neuromuscular: 0.45 };
         } else if (t.category === 'Upper-body Strength') {
             cost = { systemic: 0.4, cardiovascular: 0.2, lowerBody: 0.0, upperBody: 0.9, impactTissue: 0.1, neuromuscular: 0.5 };
         } else if (t.category === 'Lower-body Strength') {
@@ -445,4 +486,3 @@ export const ENRICHED_TEMPLATES: SessionTemplate[] = TEMPLATES.map(t => {
         costProfile: cost,
     };
 });
-

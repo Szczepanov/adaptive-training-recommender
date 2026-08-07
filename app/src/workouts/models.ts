@@ -17,6 +17,7 @@ export type WorkoutCategory =
   | 'full_body_strength'
   | 'power_maintenance'
   | 'field_maintenance'
+  | 'technical_skill'
   | 'mobility_recovery';
 
 export type TrainingObjective =
@@ -33,6 +34,13 @@ export type TrainingObjective =
   | 'braking'
   | 'change_of_direction'
   | 'football_skill'
+  | 'sprint_mechanics'
+  | 'acceleration_mechanics'
+  | 'max_velocity_mechanics'
+  | 'deceleration_mechanics'
+  | 'cycling_pedalling_economy'
+  | 'cycling_handling'
+  | 'cycling_group_riding'
   | 'mobility'
   | 'travel_maintenance'
   | 'running_exposure'
@@ -56,6 +64,9 @@ export type Equipment =
   | 'hurdles'
   | 'cones'
   | 'field'
+  | 'football'
+  | 'mini_hurdles'
+  | 'safe_riding_area'
   | 'treadmill'
   | 'foam_roller'
   | 'bodyweight'
@@ -91,7 +102,22 @@ export type IntensityTarget =
   | { type: 'ftp_percent'; min: number; max: number }
   | { type: 'cadence'; minRpm: number; maxRpm: number }
   | { type: 'reps_in_reserve'; min: number; max: number }
-  | { type: 'technical_quality'; cue: string };
+  | {
+      type: 'technical_quality';
+      cue: string;
+      successCriteria?: string[];
+      commonFaults?: string[];
+      stopConditions?: string[];
+    };
+
+export type WorkoutEnvironment = 'trainer' | 'field' | 'closed_road' | 'low_traffic_road';
+
+export interface TechnicalRequirements {
+  environment: WorkoutEnvironment[];
+  supervision: 'none' | 'recommended' | 'required';
+  prerequisiteSkills?: string[];
+  stopConditions: string[];
+}
 
 export interface WorkoutStep {
   id: string;
@@ -250,6 +276,12 @@ export interface WorkoutDefinition {
   };
   equipment: Equipment[];
   contraindicationTags: string[];
+  /** Technical sessions carry execution and environment constraints in addition to load. */
+  technicalRequirements?: TechnicalRequirements;
+  /** Links a detailed prescription to the coarse readiness-engine session family. */
+  engineTemplateIds?: string[];
+  /** Kept out of automatic recommendations until the athlete confirms the setting. */
+  manualOnly?: boolean;
   blocks: WorkoutBlock[];
   variants: WorkoutVariant[];
   parameters?: WorkoutParameter[];

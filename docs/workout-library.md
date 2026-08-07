@@ -13,7 +13,9 @@ The workout library separates reusable training knowledge from a dated recommend
 
 ## Daily prescription flow
 
-The readiness engine still selects a high-level session template. `prescription.ts` maps that template to a workout family, chooses the appropriate variant, applies step overrides, and produces a serializable `WorkoutPrescription` snapshot.
+The readiness engine selects a high-level session template. `prescription.ts` first looks for an active, non-manual workout whose `engineTemplateIds` includes that template, then uses the legacy mapping only where no catalogue candidate has been declared. It chooses the appropriate variant, applies step overrides, and produces a serializable `WorkoutPrescription` snapshot.
+
+This makes the detailed catalogue the preferred source of routing truth. A regression test resolves every selectable engine template so an engine-template edit cannot silently fall back to an unrelated workout family.
 
 The snapshot contains presentation-ready blocks and steps for Today’s Plan:
 
@@ -21,7 +23,8 @@ The snapshot contains presentation-ready blocks and steps for Today’s Plan:
 - sets, repetitions, durations, and between-set recovery;
 - RPE or repetitions-in-reserve targets;
 - four-part strength tempo, for example `31X1` (lower / pause / lift / pause; `X` means accelerate under control);
-- exercise instructions and step-specific cues.
+- exercise instructions and step-specific cues;
+- technical success criteria, common faults, and stop conditions when a step uses a `technical_quality` target.
 
 The snapshot is written with the daily recommendation at `users/{userId}/daily_recommendations/{date}`. It is not rebuilt from a later catalogue version when historical recommendations are read.
 
@@ -49,8 +52,26 @@ The catalogue is grounded in the active Sustained Multidirectional Field Macrocy
 - travel aerobic and hotel-gym maintenance sessions;
 - taper sharpening, pre-race openers and race-week strength primer;
 - complete rest and race day.
+- sprint-mechanics foundation plus acceleration-and-braking progression;
+- cycling pedalling-economy practice and a manual-only traffic-free braking/cornering session;
+- matching tempo, VO2, and hill-repeat prescriptions for the engine's running and cycling quality templates.
 
 The catalogue does not encode fixed personal watts. Power targets remain relative, device-specific, or RPE-led because different bikes and power systems may not agree.
+
+## Technical skill sessions and safety
+
+`technical_skill` is a distinct workout category. It models a coordination-focused session rather than treating low-RPE skills as generic recovery or treating sprint drills as endurance intervals. Technical workouts declare a technical objective, an environment, the required level of supervision, and stop conditions.
+
+Technical steps can include a `technical_quality` target with a coaching cue plus optional success criteria, common faults, and step-level stop conditions. The prescription renderer surfaces those details as cues, so the athlete has an explicit quality standard rather than only a duration or RPE target.
+
+The current technical progressions are deliberately conservative:
+
+- **Sprint mechanics foundation**: wall drives, A-march, and submaximal falling starts with full recovery.
+- **Acceleration and braking skill**: a later progression with greater mechanical and eccentric cost, gated by readiness, soreness, lower-body spacing, and symptom flags.
+- **Cycling pedalling economy**: cadence ladders, controlled spin-ups, and seated-to-standing transitions at easy aerobic cost; it is available through the `Cycling` technical template and requires an indoor bike in the engine.
+- **Cycling cornering and braking skill**: a traffic-free-area practice session marked `manualOnly`. It is intentionally excluded from automatic recommendations until the planner captures rider skill, surface, traffic-free area, and supervision context.
+
+Technical templates are not placed in the default green-day hard-session pool. They are selected when the athlete explicitly requests the matching modality, preventing a coordination session from being substituted randomly for a primary endurance or strength objective.
 
 ## Generic session families
 
@@ -122,6 +143,9 @@ app/src/workouts/
   exercises.ts             Atomic exercise definitions
   catalog.ts               Catalogue assembly
   catalog/                 Modality and phase-specific workout modules
+    field-technique.ts     Sprint mechanics and acceleration/braking progressions
+    cycling-technique.ts   Pedalling economy and manual-only handling practice
+    quality-support.ts     Detailed tempo, VO2, and hill prescriptions
   parameter-bindings.ts    Explicit parameter execution contract
   event-plan.ts            September-event coverage contract
   validation.ts            Referential, semantic, and range validation
@@ -151,9 +175,11 @@ Validation checks include:
 - complete explicit binding coverage for every adjustable parameter;
 - valid substitution sources, targets, and reasons;
 - valid variant overrides and Garmin export compatibility;
+- technical-workout safety metadata, technical objectives, and technical-quality targets;
+- manual-only workout safety metadata;
 - required full, reduced and return-to-training variants;
 - complete September-event phase coverage and phase restrictions.
 
 ## Current scope
 
-This implementation does not replace the existing recommendation-selection rules, publish workouts to Garmin, store custom workouts, or provide a standalone workout-library UI. Composite parameter execution, richer running pace targets, and a measurement-freshness policy are the next extensions.
+This implementation does not publish workouts to Garmin, store custom workouts, or provide a standalone workout-library UI. Outdoor group-riding skills remain manual-only until environmental access, rider skill, and supervision can be captured by the planner. Composite parameter execution, richer running pace targets, and a measurement-freshness policy are the next extensions.

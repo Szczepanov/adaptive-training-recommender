@@ -215,7 +215,7 @@ export interface DoseVariation {
 
 export interface SessionTemplate {
     id: string;
-    category: 'Hard Endurance' | 'Moderate Endurance' | 'Easy Endurance' | 'Upper-body Strength' | 'Lower-body Strength' | 'Full-body Strength' | 'Power Maintenance' | 'Field Maintenance' | 'Mobility/Recovery' | 'Rest';
+    category: 'Hard Endurance' | 'Moderate Endurance' | 'Easy Endurance' | 'Upper-body Strength' | 'Lower-body Strength' | 'Full-body Strength' | 'Power Maintenance' | 'Field Maintenance' | 'Technical Skill' | 'Mobility/Recovery' | 'Rest';
     modality: 'Running' | 'Cycling' | 'Strength' | 'Field' | 'Mobility' | 'Cross Training' | 'None';
     durationMin: number;
     durationMax: number;

@@ -10,7 +10,7 @@ export const FIELD_WORKOUTS: WorkoutDefinition[] = [
     duration: { defaultMin: 40, minimumMin: 22, maximumMin: 50 },
     loadProfile: { cardiovascular: 3, muscular: 3, mechanical: 4, eccentric: 4, coordination: 5, recoveryHours: 48 },
     eligibility: { minimumReadiness: 7, maximumSoreness: 4, minimumDaysAfterHardLowerBody: 2, forbiddenPainFlags: ['knee_swelling', 'instability', 'worsening_achilles_pain', 'painful_braking'] },
-    equipment: ['field', 'cones'], contraindicationTags: ['knee_swelling', 'worsening_achilles_pain'],
+    equipment: ['field', 'cones', 'football'], contraindicationTags: ['knee_swelling', 'worsening_achilles_pain'],
     blocks: [
       { id: 'warmup', name: 'Field warm-up', role: 'warmup', steps: [
         timeStep('field_warmup', 'field_dynamic_warmup', 'Dynamic warm-up', 720, { target: { type: 'rpe', min: 2, max: 4 } })

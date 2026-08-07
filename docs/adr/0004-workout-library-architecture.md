@@ -33,11 +33,14 @@ We implemented a **multi-layered workout library architecture** in `app/src/work
 3. **September Event Plan Coverage Contract**:
    A declarative phase coverage contract (`event-plan.ts`) guarantees that every required workout family for build, peak, taper, and race phases exists and is active, validated via automated scripts (`npm run validate:workouts`).
 
-4. **Resolved Daily Snapshot**:
-   `prescription.ts` maps the high-level recommendation template to a workout family, applies the selected full/reduced/return-to-training variant, and creates a serializable `WorkoutPrescription`. The snapshot is persisted alongside the daily recommendation (schema version 2) and rendered as ordered warm-up, main, and cool-down instructions with dose, rest, targets, tempo, and cues.
+4. **Resolved Daily Snapshot and Candidate Routing**:
+   `prescription.ts` first resolves an active non-manual catalogue candidate through `WorkoutDefinition.engineTemplateIds`, then retains the legacy mapping as a compatibility fallback. It applies the selected full/reduced/return-to-training variant and creates a serializable `WorkoutPrescription`. The snapshot is persisted alongside the daily recommendation (schema version 2) and rendered as ordered warm-up, main, and cool-down instructions with dose, rest, targets, tempo, and cues. Tests require every selectable engine template to resolve to a detailed prescription.
 
 5. **Safe Target Personalization**:
    Personal performance measurements live in the user’s preferences profile, not the generic workout definition. FTP/critical power, threshold pace, LTHR, and exercise e1RM values are optional. Their absence leaves the prescription RPE/RIR-led; the resolver does not infer absolute watts, pace, HR, or lifting load from recovery data.
+
+6. **Technical Skill Safety Contract**:
+   `technical_skill` sessions must provide technical objectives, environment/supervision metadata, and explicit stop conditions. Technical targets may include success criteria and common faults in addition to the coaching cue. High-context outdoor handling work is marked `manualOnly` until the planner can establish a suitable area, athlete competence, and supervision.
 
 ---
 
@@ -60,4 +63,5 @@ We implemented a **multi-layered workout library architecture** in `app/src/work
 
 ### Negative
 * Higher structural complexity than static text templates.
-* Template-to-workout mappings must be reviewed when either catalogue changes.
+* Engine templates must resolve to a non-manual detailed workout; regression tests enforce this contract.
+* Outdoor technical skill cannot be auto-prescribed merely because its cardiovascular cost is low; it needs safety context.

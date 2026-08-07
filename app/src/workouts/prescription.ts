@@ -14,7 +14,7 @@ import type {
 
 /** The readiness engine chooses session families; this table makes the detailed
  * execution contract explicit rather than inferring it from a display title. */
-const TEMPLATE_TO_WORKOUT: Record<string, string> = {
+const FALLBACK_TEMPLATE_TO_WORKOUT: Record<string, string> = {
   rest_01: 'rest_complete_01',
   mob_01: 'recovery_mobility_tissue_01',
   mob_02: 'recovery_mobility_tissue_01',
@@ -112,15 +112,27 @@ function additionalTargets(step: WorkoutStep, workout: WorkoutDefinition, profil
 
 function toDisplayStep(step: WorkoutStep, workout: WorkoutDefinition, profile?: AthletePerformanceProfile): PrescriptionStep {
   const exercise = exerciseById.get(step.exerciseId);
+  const technicalDetails = step.target?.type === 'technical_quality'
+    ? [
+      ...(step.target.successCriteria ?? []).map((criterion) => `Quality: ${criterion}`),
+      ...(step.target.commonFaults ?? []).map((fault) => `Avoid: ${fault}`),
+      ...(step.target.stopConditions ?? []).map((condition) => `Stop: ${condition}`)
+    ]
+    : [];
   return {
     id: step.id,
     name: step.name,
     dose: formatDose(step),
     ...(step.restAfterSec !== undefined ? { rest: `${formatSeconds(step.restAfterSec)} recovery` } : {}),
     targets: additionalTargets(step, workout, profile),
-    cues: [exercise?.instruction, ...(step.notes ?? [])].filter((cue): cue is string => Boolean(cue)),
+    cues: [exercise?.instruction, ...technicalDetails, ...(step.notes ?? [])].filter((cue): cue is string => Boolean(cue)),
     ...(step.optional ? { optional: true } : {})
   };
+}
+
+function workoutForTemplate(templateId: string): WorkoutDefinition | undefined {
+  return WORKOUTS.find((workout) => !workout.manualOnly && workout.engineTemplateIds?.includes(templateId))
+    ?? (FALLBACK_TEMPLATE_TO_WORKOUT[templateId] ? workoutById.get(FALLBACK_TEMPLATE_TO_WORKOUT[templateId]) : undefined);
 }
 
 function applyVariant(workout: WorkoutDefinition, variantId: 'full' | 'reduced' | 'return_to_training'): WorkoutBlock[] {
@@ -151,8 +163,7 @@ export function resolveWorkoutPrescription(
   date: string,
   profile?: AthletePerformanceProfile
 ): WorkoutPrescription | null {
-  const workoutId = TEMPLATE_TO_WORKOUT[recommendation.template.id];
-  const workout = workoutId ? workoutById.get(workoutId) : undefined;
+  const workout = workoutForTemplate(recommendation.template.id);
   if (!workout) return null;
 
   const variantId = variantFor(recommendation);

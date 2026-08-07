@@ -38,6 +38,7 @@ function validateTarget(target: IntensityTarget, path: string, errors: string[])
   if (target.type === 'ftp_percent' && (target.min <= 0 || target.max > 200 || target.min > target.max)) errors.push(`${path}: invalid FTP percentage range ${target.min}-${target.max}`);
   if (target.type === 'cadence' && (target.minRpm <= 0 || target.maxRpm > 250 || target.minRpm > target.maxRpm)) errors.push(`${path}: invalid cadence range ${target.minRpm}-${target.maxRpm}`);
   if (target.type === 'reps_in_reserve' && (target.min < 0 || target.max > 10 || target.min > target.max)) errors.push(`${path}: invalid repetitions-in-reserve range ${target.min}-${target.max}`);
+  if (target.type === 'technical_quality' && !target.cue.trim()) errors.push(`${path}: technical-quality cue is required`);
 }
 
 function isReachable(value: number, minimum: number, step: number): boolean {
@@ -210,6 +211,18 @@ export function validateWorkoutLibrary(
     if (workout.blocks.length === 0) errors.push(`${prefix}: at least one workout block is required`);
     if (workout.objectives.length === 0) errors.push(`${prefix}: at least one objective is required`);
     if (workout.sourceNotes.length === 0) warnings.push(`${prefix}: add sourceNotes for coaching provenance`);
+    if (workout.category === 'technical_skill') {
+      if (!workout.technicalRequirements) {
+        errors.push(`${prefix}: technical workouts require technicalRequirements`);
+      } else {
+        if (workout.technicalRequirements.environment.length === 0) errors.push(`${prefix}: technical workout requires at least one environment`);
+        if (workout.technicalRequirements.stopConditions.length === 0) errors.push(`${prefix}: technical workout requires stop conditions`);
+      }
+      if (workout.objectives.every((objective) => !objective.includes('mechanics') && !objective.startsWith('cycling_'))) {
+        errors.push(`${prefix}: technical workout requires a technical objective`);
+      }
+    }
+    if (workout.manualOnly && !workout.technicalRequirements) errors.push(`${prefix}: manual-only workout requires technical safety metadata`);
 
     const variantIds = new Set(workout.variants.map((variant) => variant.id));
     for (const expectedId of expectedVariantIds) if (!variantIds.has(expectedId as 'full' | 'reduced' | 'return_to_training')) errors.push(`${prefix}: missing ${expectedId} variant`);
@@ -228,6 +241,7 @@ export function validateWorkoutLibrary(
     if (reducedVariant && returnVariant && returnVariant.targetDurationMin > reducedVariant.targetDurationMin) errors.push(`${prefix}: return-to-training duration cannot exceed reduced duration`);
 
     const stepIds = new Set<string>();
+    let hasTechnicalTarget = false;
     for (const block of workout.blocks) {
       if (block.steps.length === 0) errors.push(`${prefix}/${block.id}: block must contain at least one step`);
       for (const step of block.steps) {
@@ -247,9 +261,13 @@ export function validateWorkoutLibrary(
         if (step.duration.type === 'time' && step.duration.seconds <= 0) errors.push(`${stepPath}: time duration must be positive`);
         if (step.duration.type === 'distance' && step.duration.meters <= 0) errors.push(`${stepPath}: distance must be positive`);
         if (step.duration.type === 'repetitions' && step.duration.repetitions <= 0) errors.push(`${stepPath}: repetitions must be positive`);
-        if (step.target) validateTarget(step.target, stepPath, errors);
+        if (step.target) {
+          validateTarget(step.target, stepPath, errors);
+          if (step.target.type === 'technical_quality') hasTechnicalTarget = true;
+        }
       }
     }
+    if (workout.category === 'technical_skill' && !hasTechnicalTarget) errors.push(`${prefix}: technical workout requires a technical-quality target`);
 
     for (const variant of workout.variants) {
       if (variant.targetDurationMin < 0 || (!isCompleteRest && variant.targetDurationMin === 0)) errors.push(`${prefix}/${variant.id}: targetDurationMin must be positive unless this is complete rest`);

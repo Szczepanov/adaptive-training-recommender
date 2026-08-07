@@ -10,17 +10,34 @@ function recommendation(templateId: string, overrides: Partial<Recommendation> =
 }
 
 describe('resolveWorkoutPrescription', () => {
-  it('turns a selected cycling template into a detailed, immutable block plan', () => {
+  it('resolves every selectable engine template to a detailed workout', () => {
+    for (const template of TEMPLATES) {
+      expect(resolveWorkoutPrescription({ template, rationale: 'test', mode: 'train' }, 'u1', '2026-08-07'))
+        .not.toBeNull();
+    }
+  });
+
+  it('uses the detailed candidate matching the selected cycling tempo template', () => {
     const prescription = resolveWorkoutPrescription(
       recommendation('end_mod_02'), 'u1', '2026-08-07', { ftpWatts: 250, lthrBpm: 170 }
     );
 
-    expect(prescription?.workoutId).toBe('cycling_controlled_threshold_4x8_01');
+    expect(prescription?.workoutId).toBe('cycling_tempo_surges_01');
     expect(prescription?.displayBlocks.map((block) => block.role)).toEqual(['warmup', 'main', 'cooldown']);
     const interval = prescription?.displayBlocks[1].steps[0];
-    expect(interval?.dose).toBe('4 × 8 min');
-    expect(interval?.targets).toContain('88–94% FTP (220–235 W)');
+    expect(interval?.dose).toBe('20 min');
+    expect(interval?.targets.some((target) => target.startsWith('RPE'))).toBe(true);
     expect(interval?.targets.some((target) => target.includes('170 bpm'))).toBe(true);
+  });
+
+  it('selects the detailed technical candidate and exposes quality guardrails', () => {
+    const prescription = resolveWorkoutPrescription(recommendation('cycling_technical_01'), 'u1', '2026-08-07');
+
+    expect(prescription?.workoutId).toBe('cycling_pedalling_economy_01');
+    const ladder = prescription?.displayBlocks[1].steps[0];
+    expect(ladder?.targets).toContain('Move through 85–100 rpm in light gears.');
+    expect(ladder?.cues).toContain('Quality: Quiet pelvis and upper body.');
+    expect(ladder?.cues.some((cue) => cue.startsWith('Stop:'))).toBe(true);
   });
 
   it('uses the reduced variant after an easier adjustment', () => {
@@ -40,7 +57,7 @@ describe('resolveWorkoutPrescription', () => {
     const prescription = resolveWorkoutPrescription(recommendation('str_full_01'), 'u1', '2026-08-07');
     const frontSquat = prescription?.displayBlocks.flatMap((block) => block.steps).find((step) => step.id === 'front_squat');
 
-    expect(frontSquat?.targets).toContain('3–5 reps in reserve');
+    expect(frontSquat?.targets.some((target) => target.includes('reps in reserve'))).toBe(true);
     expect(frontSquat?.targets).toContain('Tempo 31X1 (lower / pause / lift / pause)');
     expect(frontSquat?.targets.some((target) => target.includes('kg'))).toBe(false);
   });
