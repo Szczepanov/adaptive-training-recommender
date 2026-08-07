@@ -56,6 +56,14 @@ describe('cycling_gran_fondo_A -- baseline, already-covered sport', () => {
         const result = await getResult('cycling_gran_fondo_A');
         expect(result.objectiveResolution.map(o => o.key)).not.toContain('surge_repeatability');
     });
+
+    it('derives and completes a protected cycling race-specific objective from high durability demand', async () => {
+        const result = await getResult('cycling_gran_fondo_A');
+        expect(result.objectiveResolution).toContainEqual(expect.objectContaining({
+            key: 'race_specific_endurance', timesGenerated: 4, timesResolved: 4,
+        }));
+        expect(result.objectiveCredits.filter(credit => credit.objectiveKey === 'race_specific_endurance')).toHaveLength(4);
+    });
 });
 
 describe('cycling_criterium_A -- qualification and anchor stress test', () => {

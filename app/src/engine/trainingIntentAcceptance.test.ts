@@ -33,8 +33,9 @@ describe('day-0 event-intent acceptance', () => {
         const eventDriven = await evaluateTrainingWithIntent('u1', input, context(), [roadRace], '2026-08-07', undefined, fixtureHistory);
         const intent = await resolveTrainingIntent('u1', [roadRace], '2026-08-07', input, 7, fixtureHistory);
         expect(eventDriven.template.id).not.toBe(baseline.template.id);
-        expect(eventDriven.template.category).toBe('Hard Endurance');
+        expect(eventDriven.template.category).toBe('Race-Specific Endurance');
         expect(intent.unresolvedObjectives.map(objective => objective.key)).toContain('surge_repeatability');
+        expect(intent.unresolvedObjectives.map(objective => objective.key)).toContain('race_specific_endurance');
         expect(eventDriven.rationale).toContain('Build phase');
     });
 
