@@ -1,4 +1,4 @@
-import type { DailyDecisionInput, DailyRecoverySnapshot, DailySubjectiveCheckin, UserGoal, UserPreferences } from './models';
+import type { DailyDecisionInput, DailyRecoverySnapshot, DailySubjectiveCheckin, TrainingSettings, UserGoal, UserPreferences } from './models';
 import type { DataState } from './dataState';
 import { checkinService } from '../services/checkinService';
 import { goalService } from '../services/goalService';
@@ -20,7 +20,7 @@ export class DecisionComposer {
                 recoverySnapshotService.getRecoverySnapshotState(userId, targetDate),
                 checkinService.getCheckinState(userId, targetDate),
                 goalService.getActiveGoalsState(userId),
-                trainingSettingsService.getTrainingSettings(userId),
+                trainingSettingsService.getTrainingSettingsState(userId),
                 preferencesService.getPreferencesState(userId)
             ] as const);
 
@@ -35,15 +35,22 @@ export class DecisionComposer {
             const subjectiveCheckin = checkinState.status === 'AVAILABLE' ? checkinState.data : null;
             const goalsState = results[2].status === 'fulfilled' ? results[2].value : unavailable<UserGoal[]>('read active goals');
             const activeGoals = goalsState.status === 'AVAILABLE' ? goalsState.data : [];
-            if (results[3].status === 'rejected') throw results[3].reason;
-            const trainingSettings = results[3].value;
+            const trainingSettingsState = results[3].status === 'fulfilled'
+                ? results[3].value
+                : unavailable<TrainingSettings>('read training settings');
+            if (trainingSettingsState.status !== 'AVAILABLE') {
+                throw new Error(trainingSettingsState.status === 'INVALID'
+                    ? 'Training settings are invalid. Please review and save them again.'
+                    : 'Training settings are temporarily unavailable. Please retry.');
+            }
+            const trainingSettings = trainingSettingsState.data;
             const preferencesState = results[4].status === 'fulfilled' ? results[4].value : unavailable<UserPreferences>('read preferences');
             const preferences = preferencesState.status === 'AVAILABLE' ? preferencesState.data : null;
             const sourceStates = {
                 recoverySnapshot: recoveryState.status === 'AVAILABLE' ? { status: 'AVAILABLE' as const, revision: recoveryState.revision } : recoveryState,
                 subjectiveCheckin: checkinState.status === 'AVAILABLE' ? { status: 'AVAILABLE' as const, revision: checkinState.revision } : checkinState,
                 activeGoals: goalsState.status === 'AVAILABLE' ? { status: 'AVAILABLE' as const, revision: goalsState.revision } : goalsState,
-                trainingSettings: { status: 'AVAILABLE' as const, revision: trainingSettings.updatedAt ?? null },
+                trainingSettings: { status: 'AVAILABLE' as const, revision: trainingSettingsState.revision },
                 preferences: preferencesState.status === 'AVAILABLE'
                     ? { status: 'AVAILABLE' as const, revision: preferencesState.revision }
                     : preferencesState,
