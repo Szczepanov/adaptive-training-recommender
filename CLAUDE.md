@@ -30,7 +30,7 @@ Quick guide for building, testing, and working on `adaptive-training-recommender
 ## Key Code Locations
 - `src/garmin_sync/`: Core Python Garmin ingestion package.
 - `scripts/migrate_legacy_snapshots.py`: Firestore legacy data migration utility.
-- `app/src/engine/`: Core adaptive rules engine, strain telemetry, next-day evaluation, and templates.
+- `app/src/engine/`: Core adaptive engine modules (`rules.ts`, `schedule.ts`, `periodization.ts`, `microcycle.ts`, `fatigue.ts`, `optimizer.ts`).
 - `app/src/utils/localDate.ts`: Frontend Warsaw date utility.
 - `app/src/services/recoverySnapshotService.ts`: User-scoped Firestore recovery reader.
 - `app/firestore.rules`: Security rules for user-owned paths.

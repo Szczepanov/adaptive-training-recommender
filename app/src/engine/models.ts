@@ -85,7 +85,7 @@ export interface UserContext {
     /** From UserPreferences -- previously collected in Firestore but never reaching the
      *  engine at all. Compared case-insensitively against SessionTemplate.modality. */
     preferences: {
-        /** Hard exclude: never select a template of these modalities (see rules.ts). */
+        /** Soft de-prioritize / dislike: avoided modalities apply ranking penalties (see rules.ts). */
         avoidedModalities: string[];
         /** Soft de-prioritize: only selected if no non-deprioritized option survives
          *  today's mode/constraint filtering. */
@@ -93,7 +93,114 @@ export interface UserContext {
         preferredModalities: string[];
         /** Nudges the strain score toward caution -- see rules.ts CONSERVATIVE_BIAS_STRAIN_OFFSET. */
         conservativeBias: boolean;
+        /** Renamed semantic preferred field: tunes borderline decision boundaries. */
+        extraRecoveryMargin?: boolean;
     };
+}
+
+export type LocationContext = 'home' | 'gym' | 'travel';
+
+export interface LocationProfile {
+    id: LocationContext;
+    displayName: string;
+    availableEquipment: string[];
+}
+
+export interface DayOfWeekSchedule {
+    dayOfWeek: 0 | 1 | 2 | 3 | 4 | 5 | 6; // 0 = Sun, 1 = Mon...
+    defaultMaxTimeMin: number;
+    preferredLocation: LocationContext;
+}
+
+export interface FixedActivity {
+    id: string;
+    title: string;
+    date: string; // YYYY-MM-DD
+    startTime?: string;
+    durationMin: number;
+    expectedStimulus?: Record<string, number>;
+    expectedCost?: Record<string, number>;
+    isCompleted: boolean;
+}
+
+export type EventPriority = 'A' | 'B' | 'C';
+export type EventLifecycle = 'scheduled' | 'completed' | 'cancelled' | 'DNS' | 'DNF' | 'rescheduled';
+
+export interface EventDemandProfile {
+    aerobicEndurance: number;   // 0.0 - 1.0
+    thresholdPower: number;     // 0.0 - 1.0
+    vo2MaxPower: number;        // 0.0 - 1.0
+    repeatedSurges: number;     // 0.0 - 1.0
+    sprintPower: number;        // 0.0 - 1.0
+    fatigueResistance: number;  // 0.0 - 1.0
+    neuromuscular: number;      // 0.0 - 1.0
+}
+
+export interface UserEvent {
+    id: string;
+    title: string;
+    date: string; // YYYY-MM-DD
+    priority: EventPriority;
+    lifecycle: EventLifecycle;
+    category: 'running_race' | 'cycling_event' | 'triathlon' | 'strength_meet' | 'general_target';
+    demandProfile: EventDemandProfile;
+}
+
+export interface WeeklyObjective {
+    id: string;
+    key: 'threshold_quality' | 'surge_repeatability' | 'zone2_aerobic' | 'strength_maintenance' | 'vo2_max';
+    title: string;
+    targetExposures: number;
+    completedExposures: number;
+    targetStimulus: Record<string, number>;
+}
+
+export interface MicrocycleState {
+    weekStartDate: string; // YYYY-MM-DD (Monday)
+    objectives: WeeklyObjective[];
+}
+
+export interface WorkoutStimulusProfile {
+    aerobicCapacity: number;     // 0.0 - 1.0
+    thresholdDevelopment: number;// 0.0 - 1.0
+    surgeRepeatability: number;  // 0.0 - 1.0
+    maxStrength: number;         // 0.0 - 1.0
+    hypertrophy: number;         // 0.0 - 1.0
+    mobilityRecovery: number;    // 0.0 - 1.0
+}
+
+export interface WorkoutCostProfile {
+    systemic: number;        // Autonomic / HRV impact
+    cardiovascular: number;  // Heart rate & aerobic strain
+    lowerBody: number;       // Leg muscle strain & DOMS
+    upperBody: number;       // Push/Pull muscle strain
+    impactTissue: number;    // Joint / connective tissue / eccentric cost
+    neuromuscular: number;   // Explosive / CNS fatigue
+}
+
+export interface DimensionalFatigue {
+    systemic: number;        // 0.0 - 1.0
+    cardiovascular: number;  // 0.0 - 1.0
+    lowerBody: number;       // 0.0 - 1.0
+    upperBody: number;       // 0.0 - 1.0
+    impactTissue: number;    // 0.0 - 1.0
+    neuromuscular: number;   // 0.0 - 1.0
+}
+
+export interface FatigueState {
+    lastUpdatedDate: string;
+    externalLoadFatigue: DimensionalFatigue;
+    internalResponseStrain: DimensionalFatigue;
+    combinedFatigue: DimensionalFatigue;
+}
+
+export interface ExecutionRecord {
+    id: string;
+    date: string;
+    prescribedTemplateId: string;
+    athleteAdjustedTemplateId?: string;
+    completedActivity?: TrainingRecord;
+    status: 'prescribed' | 'adjusted' | 'completed' | 'skipped';
 }
 
 export interface DoseVariation {
@@ -113,18 +220,12 @@ export interface SessionTemplate {
     title: string;
     description: string;
     requiredEquipment: ('free_weights' | 'cable_machine' | 'treadmill' | 'indoor_bike')[];
-    /** Approximate whole-body/autonomic cost of this session, 0 (none) to 1 (maximal),
-     *  independent of duration. A 'modify' (moderate-readiness) day caps selection by
-     *  this cost rather than by a fixed category allow-list -- so a low-cost,
-     *  muscle-local session (e.g. upper-body strength) can still be offered even when
-     *  softer HRV/RHR readings would otherwise rule out "training" broadly. See
-     *  rules.ts MODIFY_MAX_SYSTEMIC_COST. */
     systemicCost: number;
-    /** Indicates if this session's primary training objective (e.g. Aerobic Base) is transferable
-     *  to other modalities, as opposed to sport-specific or neuromuscular goals (e.g. Sprinting). Defaults to true. */
     objectiveTransferable?: boolean;
     easierDose?: DoseVariation;
     harderDose?: DoseVariation;
+    stimulusProfile?: WorkoutStimulusProfile;
+    costProfile?: WorkoutCostProfile;
 }
 
 export interface MetricStrainTelemetry {
@@ -413,6 +514,7 @@ export interface UserPreferences {
     explanationStyle: 'brief' | 'detailed' | 'technical';
     explanationVerbosity: 'brief' | 'detailed' | 'technical';
     conservativeBias: boolean;
+    extraRecoveryMargin?: boolean;
     // Metric preferences
     preferredUnits: {
         distance: 'km' | 'miles';

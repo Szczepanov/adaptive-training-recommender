@@ -15,6 +15,7 @@ Architectural choices, system invariants, and technical trade-offs are documente
 * [**ADR-0004: Decoupled Workout Library & Prescriptions**](./adr/0004-workout-library-architecture.md) — Layered exercise catalog, adjustable parameters, parameter bindings, and prescription semantics.
 * [**ADR-0005: Raw Ingestion Archive & Offline Rebuild Pipeline**](./adr/0005-raw-archive-store-and-rebuild-pipeline.md) — Opt-in immutable GCS/local raw payload archiving and offline snapshot recalculation.
 * [**ADR-0006: Reconciled Strain Telemetry & Baseline Drift Scoring**](./adr/0006-reconciled-strain-telemetry.md) — Acute metric deviation vs 28-day baseline drift strain decomposition.
+* [**ADR-0007: Adaptive Multi-Sport Engine Architecture & Utility Optimization Pipeline**](./adr/0007-adaptive-multisport-engine-architecture.md) — 6-tier adaptive engine, schedule availability, event periodization, microcycle objectives, 6D fatigue decay, and utility optimization.
 
 ---
 

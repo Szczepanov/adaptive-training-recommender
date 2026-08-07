@@ -404,3 +404,45 @@ export const TEMPLATES: SessionTemplate[] = [
         }
     }
 ];
+
+// Helper to ensure all templates have typed 6D stimulus & cost profiles
+export const ENRICHED_TEMPLATES: SessionTemplate[] = TEMPLATES.map(t => {
+    let stimulus = t.stimulusProfile;
+    let cost = t.costProfile;
+
+    if (!stimulus) {
+        if (t.category === 'Rest') stimulus = { aerobicCapacity: 0, thresholdDevelopment: 0, surgeRepeatability: 0, maxStrength: 0, hypertrophy: 0, mobilityRecovery: 1.0 };
+        else if (t.category === 'Mobility/Recovery') stimulus = { aerobicCapacity: 0.1, thresholdDevelopment: 0, surgeRepeatability: 0, maxStrength: 0, hypertrophy: 0, mobilityRecovery: 1.0 };
+        else if (t.category === 'Easy Endurance') stimulus = { aerobicCapacity: 0.8, thresholdDevelopment: 0.2, surgeRepeatability: 0, maxStrength: 0, hypertrophy: 0, mobilityRecovery: 0.2 };
+        else if (t.category === 'Moderate Endurance') stimulus = { aerobicCapacity: 0.7, thresholdDevelopment: 0.8, surgeRepeatability: 0.3, maxStrength: 0, hypertrophy: 0, mobilityRecovery: 0 };
+        else if (t.category === 'Hard Endurance') stimulus = { aerobicCapacity: 0.6, thresholdDevelopment: 0.8, surgeRepeatability: 1.0, maxStrength: 0, hypertrophy: 0, mobilityRecovery: 0 };
+        else if (t.category === 'Upper-body Strength') stimulus = { aerobicCapacity: 0, thresholdDevelopment: 0, surgeRepeatability: 0.2, maxStrength: 0.8, hypertrophy: 0.8, mobilityRecovery: 0.2 };
+        else if (t.category === 'Lower-body Strength') stimulus = { aerobicCapacity: 0, thresholdDevelopment: 0, surgeRepeatability: 0.2, maxStrength: 0.9, hypertrophy: 0.8, mobilityRecovery: 0.2 };
+        else stimulus = { aerobicCapacity: 0.2, thresholdDevelopment: 0.3, surgeRepeatability: 0.4, maxStrength: 0.8, hypertrophy: 0.7, mobilityRecovery: 0.2 };
+    }
+
+    if (!cost) {
+        if (t.category === 'Rest') cost = { systemic: 0, cardiovascular: 0, lowerBody: 0, upperBody: 0, impactTissue: 0, neuromuscular: 0 };
+        else if (t.category === 'Mobility/Recovery') cost = { systemic: 0.1, cardiovascular: 0.1, lowerBody: 0.1, upperBody: 0.1, impactTissue: 0.1, neuromuscular: 0.1 };
+        else if (t.category === 'Easy Endurance') {
+            cost = { systemic: 0.3, cardiovascular: 0.3, lowerBody: 0.3, upperBody: 0.05, impactTissue: t.modality === 'Running' ? 0.5 : 0.1, neuromuscular: 0.1 };
+        } else if (t.category === 'Moderate Endurance') {
+            cost = { systemic: 0.6, cardiovascular: 0.6, lowerBody: 0.5, upperBody: 0.1, impactTissue: t.modality === 'Running' ? 0.7 : 0.2, neuromuscular: 0.4 };
+        } else if (t.category === 'Hard Endurance') {
+            cost = { systemic: 1.0, cardiovascular: 1.0, lowerBody: 0.8, upperBody: 0.1, impactTissue: t.modality === 'Running' ? 0.9 : 0.3, neuromuscular: 0.8 };
+        } else if (t.category === 'Upper-body Strength') {
+            cost = { systemic: 0.4, cardiovascular: 0.2, lowerBody: 0.0, upperBody: 0.9, impactTissue: 0.1, neuromuscular: 0.5 };
+        } else if (t.category === 'Lower-body Strength') {
+            cost = { systemic: 0.8, cardiovascular: 0.3, lowerBody: 1.0, upperBody: 0.1, impactTissue: 0.4, neuromuscular: 0.9 };
+        } else {
+            cost = { systemic: 0.8, cardiovascular: 0.4, lowerBody: 0.8, upperBody: 0.8, impactTissue: 0.5, neuromuscular: 0.8 };
+        }
+    }
+
+    return {
+        ...t,
+        stimulusProfile: stimulus,
+        costProfile: cost,
+    };
+});
+

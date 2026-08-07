@@ -56,10 +56,15 @@ src/garmin_sync/
   cli.py               # Argument parsing and entry points
 
 app/src/engine/
-  models.ts            # Domain models, recommendation interfaces & strain telemetry
+  models.ts            # Domain models, event schemas, microcycle & strain telemetry
   rules.ts             # Adaptive rules engine (acute/drift strain, mode hierarchy & rationale)
-  templates.ts         # Session template catalog & systemic load caps
+  templates.ts         # Session template catalog & systemic load caps with dual profiles
   validation.ts        # Input schema validators & sanitizers
+  schedule.ts          # Multi-layered schedule availability & location context resolution
+  periodization.ts     # Structured event demand profiles & continuous phase weighting
+  microcycle.ts        # Weekly training objectives & exposure progress tracker
+  fatigue.ts           # 6-dimensional fatigue state, exponential decay & internal response
+  optimizer.ts         # Benefit vs cost utility optimization candidate selector
 ```
 
 ---
