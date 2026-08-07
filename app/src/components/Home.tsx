@@ -2,10 +2,12 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { decisionComposer } from '../engine/composer';
 import { evaluateTraining, evaluateNextDayPlan, adjustSessionRecommendation } from '../engine/rules';
 import { mapSnapshotToEngineInput, mapCheckinToSubjectiveInput, mapContextFromGoalsAndConstraints } from '../engine/adapters';
+import { generateWeekAheadPlan, type WeekAheadPlan } from '../engine/planner';
 import type { DailyDecisionInput, Recommendation, NextDayPotentialPlan, DailyRecommendation } from '../engine/models';
 import { recommendationService } from '../services/recommendationService';
 import { getPreviousLocalDateString } from '../utils/localDate';
 import { AdherencePrompt } from './AdherencePrompt';
+import { WeekAheadStrip } from './WeekAheadStrip';
 import './Home.css';
 
 interface HomeProps {
@@ -125,6 +127,24 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
     () => computeAdjustedRecommendation(adjustmentDirection),
     [computeAdjustedRecommendation, adjustmentDirection]
   );
+
+  // Extends today's actual (possibly adjusted) recommendation and tomorrow's selected
+  // preview branch into a rolling 7-day forecast (see planner.ts) -- recomputed on every
+  // render from current goals/constraints/preferences/check-in, never persisted, so it
+  // stays in lockstep with whatever's driving today's card above.
+  const weekAheadPlan: WeekAheadPlan | null = useMemo(() => {
+    if (!engineInputs || !decisionInput || !activeRec) return null;
+    const { subjective, objective, context } = engineInputs;
+    const tomorrowRec = nextDayPlan ? nextDayPlan.branches[selectedBranch].recommendation : null;
+    return generateWeekAheadPlan(
+      { subjective, objective },
+      context,
+      decisionInput.preferences,
+      decisionInput.date,
+      activeRec,
+      tomorrowRec
+    );
+  }, [engineInputs, decisionInput, activeRec, nextDayPlan, selectedBranch]);
 
   if (loading) {
     return (
@@ -334,6 +354,9 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
               )}
             </div>
           )}
+
+          {/* Rolling 7-Day Forecast */}
+          <WeekAheadStrip plan={weekAheadPlan} />
         </div>
 
         {/* Sidebar Context & Status Column (~30%-32%) */}

@@ -22,16 +22,25 @@ export function getLocalDateString(dateInput: Date = new Date(), timezone: strin
 }
 
 /**
+ * Calendar-day arithmetic on an already-local YYYY-MM-DD string -- pure date-string
+ * arithmetic, no timezone instant involved, so it can't reintroduce a UTC-boundary bug
+ * for a date that's already a correct local calendar date. `days` may be negative.
+ */
+export function addDaysToLocalDateString(dateStr: string, days: number): string {
+    const d = new Date(dateStr + 'T00:00:00');
+    d.setDate(d.getDate() + days);
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
+/**
  * Calendar-day subtraction on an already-local YYYY-MM-DD string, matching the pattern
  * rules.ts's getTomorrowDateString uses -- pure date-string arithmetic, no timezone
  * instant involved, so it can't reintroduce a UTC-boundary bug for a date that's
  * already a correct local calendar date.
  */
 export function getPreviousLocalDateString(dateStr: string): string {
-    const d = new Date(dateStr + 'T00:00:00');
-    d.setDate(d.getDate() - 1);
-    const year = d.getFullYear();
-    const month = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
+    return addDaysToLocalDateString(dateStr, -1);
 }

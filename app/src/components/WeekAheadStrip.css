@@ -1,0 +1,159 @@
+.week-ahead-card {
+  cursor: default;
+  margin-bottom: 2rem;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.week-ahead-card:hover {
+  transform: none;
+}
+
+.week-ahead-strip {
+  display: flex;
+  gap: 0.5rem;
+  overflow-x: auto;
+  padding-bottom: 0.25rem;
+  margin-bottom: 1rem;
+}
+
+.week-ahead-tile {
+  flex: 1 0 84px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.65rem 0.5rem;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.week-ahead-tile:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.week-ahead-tile.selected {
+  border-color: var(--primary-color);
+  background: rgba(59, 130, 246, 0.12);
+}
+
+/* Confidence fades further out -- honestly signals "less certain" without needing text. */
+.week-ahead-tile.confidence-provisional {
+  opacity: 0.85;
+}
+
+.week-ahead-tile.confidence-projected {
+  opacity: 0.65;
+}
+
+.week-ahead-tile.confidence-projected.selected {
+  opacity: 1;
+}
+
+.tile-weekday {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-secondary);
+}
+
+.tile-icon {
+  font-size: 1.4rem;
+  line-height: 1;
+}
+
+.tile-category {
+  font-size: 0.65rem;
+  text-align: center;
+  color: var(--text-secondary);
+  line-height: 1.2;
+}
+
+.tile-mode-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+.tile-mode-dot.mode-train {
+  background: #38bdf8;
+}
+
+.tile-mode-dot.mode-recover {
+  background: #22c55e;
+}
+
+.week-ahead-detail {
+  border-radius: 12px;
+  padding: 1rem 1.1rem;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.week-ahead-detail.confidence-projected {
+  border-style: dashed;
+}
+
+.detail-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.75rem;
+  margin-bottom: 0.35rem;
+}
+
+.detail-title-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.detail-title-group h4 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.detail-date {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.detail-meta {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  margin: 0 0 0.5rem;
+}
+
+.detail-rationale {
+  font-size: 0.875rem;
+  line-height: 1.5;
+  margin: 0 0 0.5rem;
+}
+
+.detail-objectives {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  margin: 0 0 0.5rem;
+}
+
+.detail-caveat {
+  font-size: 0.8rem;
+  line-height: 1.45;
+  color: #fbbf24;
+  background: rgba(251, 191, 36, 0.08);
+  border-radius: 8px;
+  padding: 0.5rem 0.65rem;
+  margin: 0;
+}
+
+@media (max-width: 480px) {
+  .week-ahead-tile {
+    flex-basis: 68px;
+  }
+}
