@@ -552,6 +552,24 @@ export function validatePreferences(raw: any): ValidationResult<UserPreferences>
         }
     }
 
+    if (raw.performanceProfile !== undefined) {
+        if (typeof raw.performanceProfile !== 'object' || raw.performanceProfile === null) {
+            errors.push({ field: 'performanceProfile', message: 'Performance profile must be an object' });
+        } else {
+            for (const key of ['ftpWatts', 'thresholdPaceSecPerKm', 'lthrBpm'] as const) {
+                const value = raw.performanceProfile[key];
+                if (value !== undefined && value !== null && (!Number.isFinite(value) || value <= 0)) {
+                    errors.push({ field: `performanceProfile.${key}`, message: 'Must be a positive number when supplied' });
+                }
+            }
+            if (raw.performanceProfile.estimated1RmKg !== undefined &&
+                (typeof raw.performanceProfile.estimated1RmKg !== 'object' ||
+                 !Object.values(raw.performanceProfile.estimated1RmKg).every((value) => typeof value === 'number' && Number.isFinite(value) && value > 0))) {
+                errors.push({ field: 'performanceProfile.estimated1RmKg', message: 'All estimated 1RM values must be positive numbers' });
+            }
+        }
+    }
+
     if (errors.length > 0) {
         return { isValid: false, errors };
     }
@@ -568,6 +586,7 @@ export function validatePreferences(raw: any): ValidationResult<UserPreferences>
         explanationVerbosity: raw.explanationVerbosity,
         conservativeBias: raw.conservativeBias ?? false,
         preferredUnits: raw.preferredUnits,
+        ...(raw.performanceProfile ? { performanceProfile: raw.performanceProfile } : {}),
         schemaVersion: raw.schemaVersion ?? 1,
         createdAt: raw.createdAt || new Date().toISOString(),
         updatedAt: new Date().toISOString()
@@ -606,6 +625,11 @@ export function validateRecommendation(raw: any): ValidationResult<DailyRecommen
     if (typeof raw.rationale !== 'string') {
         errors.push({ field: 'rationale', message: 'Rationale must be a string' });
     }
+    if (raw.prescription !== undefined) {
+        if (typeof raw.prescription !== 'object' || !raw.prescription.workoutId || !Array.isArray(raw.prescription.displayBlocks)) {
+            errors.push({ field: 'prescription', message: 'Prescription must include a workout id and display blocks' });
+        }
+    }
 
     if (errors.length > 0) {
         return { isValid: false, errors };
@@ -634,9 +658,10 @@ export function validateRecommendation(raw: any): ValidationResult<DailyRecommen
         modality: raw.modality,
         mode: raw.mode,
         rationale: raw.rationale,
-        schemaVersion: raw.schemaVersion ?? 1,
+        schemaVersion: raw.schemaVersion ?? (raw.prescription ? 2 : 1),
         createdAt: raw.createdAt || new Date().toISOString(),
         updatedAt: new Date().toISOString(),
+        ...(raw.prescription ? { prescription: raw.prescription } : {}),
         ...(adjustment ? { adjustment } : {}),
         adherence: {
             respondedAt: existingAdherence.respondedAt ?? null,

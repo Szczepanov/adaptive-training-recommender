@@ -9,7 +9,32 @@ The workout library separates reusable training knowledge from a dated recommend
 3. **Variants** describe full, reduced, and return-to-training adjustments without mutating the canonical workout.
 4. **Adjustable parameters** expose safe ranges for duration, repetitions, sets, recovery, and RPE.
 5. **Parameter bindings** explicitly describe how each adjustable value changes step fields or invokes a named resolver strategy.
-6. **Workout prescriptions** are dated, user-specific instances produced by the recommendation engine.
+6. **Workout prescriptions** are dated, user-specific instances produced by the recommendation engine and rendered on the dashboard as an executable plan.
+
+## Daily prescription flow
+
+The readiness engine still selects a high-level session template. `prescription.ts` maps that template to a workout family, chooses the appropriate variant, applies step overrides, and produces a serializable `WorkoutPrescription` snapshot.
+
+The snapshot contains presentation-ready blocks and steps for Today’s Plan:
+
+- warm-up, activation, main, accessory, and cool-down blocks;
+- sets, repetitions, durations, and between-set recovery;
+- RPE or repetitions-in-reserve targets;
+- four-part strength tempo, for example `31X1` (lower / pause / lift / pause; `X` means accelerate under control);
+- exercise instructions and step-specific cues.
+
+The snapshot is written with the daily recommendation at `users/{userId}/daily_recommendations/{date}`. It is not rebuilt from a later catalogue version when historical recommendations are read.
+
+## Athlete-specific targets
+
+Definitions remain generic. Optional `UserPreferences.performanceProfile` values allow the resolver to show safe absolute targets when the athlete has supplied a current reference:
+
+- FTP or critical power for watts on FTP-percentage cycling steps;
+- threshold pace for a running pace reference in min/km;
+- LTHR for a heart-rate guardrail;
+- exercise-specific estimated 1RM values for a starting lifting-load range.
+
+When a reference is absent, the displayed plan stays relative: RPE/RIR takes precedence and no watt, pace, heart-rate, or weight value is invented. The Preferences screen provides fields for FTP/critical power, threshold pace, LTHR, and common lifting e1RMs. Profile updates record `measuredAt` so a future freshness policy can warn about stale measurements.
 
 ## Source of the catalogue
 
@@ -58,7 +83,7 @@ stepField(
 )
 ```
 
-Simple parameters bind to typed fields such as sets, time, repetitions, recovery, RPE, or repetitions in reserve. Composite behavior uses named resolver strategies, for example embedded race surges or walk-run distribution. A future prescription resolver will implement those strategies without guessing from parameter names.
+Simple parameters bind to typed fields such as sets, time, repetitions, recovery, RPE, or repetitions in reserve. Composite behavior uses named resolver strategies, for example embedded race surges or walk-run distribution. The current resolver snapshots the selected canonical variant and its overrides; parameter bindings remain the contract for future athlete- or coach-selected parameter values.
 
 The canonical definition stays unchanged. A `WorkoutPrescription` stores resolved values for one user and date.
 
@@ -100,6 +125,7 @@ app/src/workouts/
   parameter-bindings.ts    Explicit parameter execution contract
   event-plan.ts            September-event coverage contract
   validation.ts            Referential, semantic, and range validation
+  prescription.ts          Template-to-workout resolution and presentation snapshot creation
   index.ts                 Public exports
 app/scripts/
   validate-workouts.ts
@@ -130,14 +156,4 @@ Validation checks include:
 
 ## Current scope
 
-This foundation intentionally does not yet:
-
-- replace the existing recommendation-selection rules;
-- resolve generic parameter ranges into a daily prescription;
-- implement composite parameter resolver strategies;
-- publish workouts to Garmin;
-- store custom workouts in Firestore;
-- provide a workout-library UI;
-- personalize watts, heart-rate zones or strength loads.
-
-Those should be added through separate pull requests after the catalogue contract is reviewed.
+This implementation does not replace the existing recommendation-selection rules, publish workouts to Garmin, store custom workouts, or provide a standalone workout-library UI. Composite parameter execution, richer running pace targets, and a measurement-freshness policy are the next extensions.

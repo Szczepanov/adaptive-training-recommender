@@ -277,6 +277,9 @@ export interface WorkoutPrescription {
   variantId: WorkoutVariant['id'];
   targetDurationMin: number;
   adjustedBlocks: WorkoutBlock[];
+  /** Presentation-ready steps. This is deliberately a snapshot so a later catalogue
+   * edit cannot rewrite what was prescribed on an earlier date. */
+  displayBlocks: PrescriptionBlock[];
   resolvedParameters?: Record<string, number>;
   rationale: string[];
   adjustmentReasons: string[];
@@ -286,4 +289,33 @@ export interface WorkoutPrescription {
     checkinDate?: string;
   };
   status: 'recommended' | 'accepted' | 'scheduled' | 'completed' | 'skipped' | 'replaced';
+}
+
+export interface PrescriptionBlock {
+  id: string;
+  name: string;
+  role: WorkoutBlock['role'];
+  steps: PrescriptionStep[];
+}
+
+/** A UI-safe representation of one concrete instruction. Targets remain relative
+ * unless a dated athlete measurement makes an absolute value defensible. */
+export interface PrescriptionStep {
+  id: string;
+  name: string;
+  dose: string;
+  rest?: string;
+  targets: string[];
+  cues: string[];
+  optional?: boolean;
+}
+
+export interface AthletePerformanceProfile {
+  ftpWatts?: number | null;
+  thresholdPaceSecPerKm?: number | null;
+  lthrBpm?: number | null;
+  /** Exercise id -> estimated 1RM in kilograms. Optional by design: RIR remains
+   * the safe load prescription when a tested or recent estimate is unavailable. */
+  estimated1RmKg?: Record<string, number>;
+  measuredAt?: string | null;
 }

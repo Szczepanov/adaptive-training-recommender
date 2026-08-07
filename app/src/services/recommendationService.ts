@@ -36,7 +36,9 @@ export class RecommendationService {
                 modality: rec.template.modality,
                 mode: rec.mode,
                 rationale: rec.rationale,
+                ...(rec.prescription ? { prescription: rec.prescription } : {}),
                 ...(rec.adjustment ? { adjustment: rec.adjustment } : {}),
+                schemaVersion: rec.prescription ? Math.max(existing?.schemaVersion ?? 1, 2) : (existing?.schemaVersion ?? 1),
                 createdAt: existing?.createdAt,
             };
 

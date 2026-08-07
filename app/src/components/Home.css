@@ -335,6 +335,40 @@
   margin: 0;
 }
 
+.detailed-plan {
+  margin-top: 1.25rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(148, 163, 184, 0.25);
+}
+
+.detailed-plan-header,
+.plan-step-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.75rem;
+}
+
+.detailed-plan-header h5,
+.plan-block h6,
+.plan-dose,
+.plan-cues,
+.plan-legend {
+  margin: 0;
+}
+
+.detailed-plan-header h5 { font-size: 1rem; }
+.detailed-plan-header span,
+.optional-step { color: var(--text-secondary); font-size: 0.78rem; }
+.plan-block { margin-top: 1rem; }
+.plan-block h6 { color: var(--primary-color); font-size: 0.82rem; letter-spacing: 0.06em; text-transform: uppercase; }
+.plan-step { margin-top: 0.55rem; padding: 0.75rem; border-radius: 8px; background: rgba(15, 23, 42, 0.3); }
+.plan-dose { margin-top: 0.2rem; font-weight: 600; }
+.plan-targets { margin: 0.45rem 0 0; padding-left: 1.1rem; color: var(--text-secondary); font-size: 0.86rem; }
+.plan-targets li + li { margin-top: 0.2rem; }
+.plan-cues { margin-top: 0.45rem; color: var(--text-secondary); font-size: 0.86rem; line-height: 1.45; }
+.plan-legend { margin-top: 0.9rem; color: var(--text-secondary); font-size: 0.76rem; line-height: 1.4; }
+
 /* Quick Actions */
 .quick-actions {
   display: flex;

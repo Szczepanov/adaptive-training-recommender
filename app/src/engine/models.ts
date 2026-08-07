@@ -1,3 +1,5 @@
+import type { AthletePerformanceProfile, WorkoutPrescription } from '../workouts/models.ts';
+
 // --- Engine Input Models ---
 export interface SubjectiveInput {
     readiness: number; // 1-10
@@ -283,6 +285,8 @@ export interface Recommendation {
     };
     /** Structured strain & contextual telemetry exposing decision drivers and reconciling mathematically. */
     telemetry?: DecisionScoreTelemetry;
+    /** Concrete, dated session instructions resolved from the selected template. */
+    prescription?: WorkoutPrescription;
 }
 
 export interface NextDayPlanBranch {
@@ -514,6 +518,7 @@ export interface UserPreferences {
         weight: 'kg' | 'lbs';
         temperature: 'celsius' | 'fahrenheit';
     };
+    performanceProfile?: AthletePerformanceProfile;
     schemaVersion: number;
     createdAt: string;
     updatedAt: string;
@@ -565,6 +570,7 @@ export interface DailyRecommendation {
     createdAt: string;
     updatedAt: string;
     adjustment?: SessionAdjustment;
+    prescription?: WorkoutPrescription;
     adherence: {
         /** Null until the user responds to the adherence prompt for this day. */
         respondedAt: string | null;

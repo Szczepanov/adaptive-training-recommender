@@ -51,6 +51,7 @@ export class PreferencesService {
                     weight: 'kg',
                     temperature: 'celsius'
                 },
+                performanceProfile: existingPrefs?.performanceProfile,
                 schemaVersion: existingPrefs?.schemaVersion ?? 1,
                 // Override with provided updates
                 ...prefsData,

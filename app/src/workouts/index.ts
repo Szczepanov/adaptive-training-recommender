@@ -6,6 +6,7 @@ export {
 } from './event-plan.ts';
 export { WORKOUT_PARAMETER_BINDINGS } from './parameter-bindings.ts';
 export { validateWorkoutLibrary } from './validation.ts';
+export { getPrescriptionLegend, resolveWorkoutPrescription } from './prescription.ts';
 export type {
   Equipment,
   ExerciseDefinition,
@@ -28,6 +29,9 @@ export type {
   WorkoutParameterTransform,
   WorkoutParameterUnit,
   WorkoutParameterZeroBehavior,
+  AthletePerformanceProfile,
+  PrescriptionBlock,
+  PrescriptionStep,
   WorkoutPrescription,
   WorkoutStep,
   WorkoutVariant

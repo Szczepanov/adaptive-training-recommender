@@ -6,6 +6,8 @@ import { generateWeekAheadPlan, type WeekAheadPlan } from '../engine/planner';
 import type { DailyDecisionInput, Recommendation, NextDayPotentialPlan, DailyRecommendation } from '../engine/models';
 import { recommendationService } from '../services/recommendationService';
 import { getPreviousLocalDateString } from '../utils/localDate';
+import { getPrescriptionLegend, resolveWorkoutPrescription } from '../workouts';
+import type { WorkoutPrescription } from '../workouts';
 import { AdherencePrompt } from './AdherencePrompt';
 import { WeekAheadStrip } from './WeekAheadStrip';
 import './Home.css';
@@ -14,6 +16,38 @@ interface HomeProps {
   userId: string;
   onNavigate: (screen: 'home' | 'checkin' | 'goals' | 'constraints' | 'preferences') => void;
   onViewData?: () => void;
+}
+
+function DetailedTodayPlan({ prescription }: { prescription: WorkoutPrescription }) {
+  return (
+    <section className="detailed-plan" aria-label="Detailed training plan">
+      <div className="detailed-plan-header">
+        <h5>Today&apos;s Plan</h5>
+        <span>{prescription.targetDurationMin} min target</span>
+      </div>
+      {prescription.displayBlocks.map((block) => (
+        <section className={`plan-block plan-block-${block.role}`} key={block.id}>
+          <h6>{block.name}</h6>
+          {block.steps.map((step) => (
+            <article className="plan-step" key={step.id}>
+              <div className="plan-step-heading">
+                <strong>{step.name}</strong>
+                {step.optional && <span className="optional-step">Optional</span>}
+              </div>
+              <p className="plan-dose">{step.dose}{step.rest ? ` · ${step.rest}` : ''}</p>
+              {step.targets.length > 0 && (
+                <ul className="plan-targets">{step.targets.map((target) => <li key={target}>{target}</li>)}</ul>
+              )}
+              {step.cues.length > 0 && (
+                <p className="plan-cues"><strong>Cues:</strong> {step.cues.join(' ')}</p>
+              )}
+            </article>
+          ))}
+        </section>
+      ))}
+      <p className="plan-legend">{getPrescriptionLegend()}</p>
+    </section>
+  );
 }
 
 export function Home({ userId, onNavigate, onViewData }: HomeProps) {
@@ -49,7 +83,11 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
         const objective = mapSnapshotToEngineInput(input.recoverySnapshot);
         const subjective = mapCheckinToSubjectiveInput(input.subjectiveCheckin);
         const context = mapContextFromGoalsAndConstraints(input.activeGoals, input.activeConstraints, input.preferences);
-        const todayRec = evaluateTraining({ subjective, objective }, context, input.date, yesterdayRec?.mode);
+        const baseRecommendation = evaluateTraining({ subjective, objective }, context, input.date, yesterdayRec?.mode);
+        const todayRec = {
+          ...baseRecommendation,
+          prescription: resolveWorkoutPrescription(baseRecommendation, userId, input.date, input.preferences?.performanceProfile) ?? undefined
+        };
         setRecommendation(todayRec);
 
         const tomorrowPlan = evaluateNextDayPlan({ subjective, objective }, context, input.date, todayRec);
@@ -101,8 +139,13 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
     if (!direction || !engineInputs || !decisionInput) return recommendation;
 
     const { subjective, objective, context } = engineInputs;
-    return adjustSessionRecommendation(recommendation, direction, { subjective, objective }, context, decisionInput.date) || recommendation;
-  }, [recommendation, engineInputs, decisionInput]);
+    const adjusted = adjustSessionRecommendation(recommendation, direction, { subjective, objective }, context, decisionInput.date);
+    if (!adjusted) return recommendation;
+    return {
+      ...adjusted,
+      prescription: resolveWorkoutPrescription(adjusted, userId, decisionInput.date, decisionInput.preferences?.performanceProfile) ?? undefined
+    };
+  }, [recommendation, engineInputs, decisionInput, userId]);
 
   const handleAdjustSession = useCallback((direction: 'easier' | 'harder' | null) => {
     setAdjustmentDirection(direction);
@@ -199,6 +242,7 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
                   {activeRec.activeDose ? activeRec.activeDose.prescriptionSummary : activeRec.template.description}
                 </p>
                 <p className="recommendation-rationale">{activeRec.rationale}</p>
+                {activeRec.prescription && <DetailedTodayPlan prescription={activeRec.prescription} />}
 
                 {/* Session Adjustment Controls */}
                 <div className="adjustment-control-section">

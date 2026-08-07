@@ -85,6 +85,39 @@ export function Preferences({ userId }: PreferencesProps) {
     setHasChanges(true);
   };
 
+  const updatePerformanceProfile = (
+    key: 'ftpWatts' | 'thresholdPaceSecPerKm' | 'lthrBpm',
+    value: string
+  ) => {
+    if (!preferences) return;
+    const numericValue = value.trim() === '' ? null : Number(value);
+    setPreferences({
+      ...preferences,
+      performanceProfile: {
+        ...preferences.performanceProfile,
+        [key]: numericValue,
+        measuredAt: new Date().toISOString()
+      }
+    });
+    setHasChanges(true);
+  };
+
+  const updateEstimated1Rm = (exerciseId: string, value: string) => {
+    if (!preferences) return;
+    const estimated1RmKg = { ...(preferences.performanceProfile?.estimated1RmKg ?? {}) };
+    if (value.trim() === '') delete estimated1RmKg[exerciseId];
+    else estimated1RmKg[exerciseId] = Number(value);
+    setPreferences({
+      ...preferences,
+      performanceProfile: {
+        ...preferences.performanceProfile,
+        estimated1RmKg,
+        measuredAt: new Date().toISOString()
+      }
+    });
+    setHasChanges(true);
+  };
+
   const addPreferredModality = (modality: string) => {
     if (!preferences || !modality.trim()) return;
     const trimmed = modality.trim();
@@ -479,6 +512,40 @@ export function Preferences({ userId }: PreferencesProps) {
             </div>
           </div>
         </div>
+
+        <div className="preference-section">
+          <h2>Training Targets</h2>
+          <p className="preference-desc">
+            Optional, current values unlock individualized watts, pace references, and heart-rate guardrails. Leave a field blank when it is unknown.
+          </p>
+          <div className="units-grid">
+            <div className="unit-group">
+              <label htmlFor="ftp-watts">FTP / critical power (watts)</label>
+              <input id="ftp-watts" type="number" min="1" step="1" value={preferences.performanceProfile?.ftpWatts ?? ''} onChange={(e) => updatePerformanceProfile('ftpWatts', e.target.value)} />
+            </div>
+            <div className="unit-group">
+              <label htmlFor="threshold-pace">Threshold pace (seconds per km)</label>
+              <input id="threshold-pace" type="number" min="1" step="1" value={preferences.performanceProfile?.thresholdPaceSecPerKm ?? ''} onChange={(e) => updatePerformanceProfile('thresholdPaceSecPerKm', e.target.value)} />
+            </div>
+            <div className="unit-group">
+              <label htmlFor="lthr">Lactate-threshold HR (bpm)</label>
+              <input id="lthr" type="number" min="1" step="1" value={preferences.performanceProfile?.lthrBpm ?? ''} onChange={(e) => updatePerformanceProfile('lthrBpm', e.target.value)} />
+            </div>
+          </div>
+          <p className="preference-desc">Estimated 1RM (kg) is optional. It provides a starting load only; the prescribed RIR always takes precedence.</p>
+          <div className="units-grid">
+            {[
+              ['front_squat', 'Front squat'],
+              ['romanian_deadlift', 'Romanian deadlift'],
+              ['bench_press', 'Bench press']
+            ].map(([exerciseId, label]) => (
+              <div className="unit-group" key={exerciseId}>
+                <label htmlFor={`e1rm-${exerciseId}`}>{label} e1RM (kg)</label>
+                <input id={`e1rm-${exerciseId}`} type="number" min="1" step="2.5" value={preferences.performanceProfile?.estimated1RmKg?.[exerciseId] ?? ''} onChange={(e) => updateEstimated1Rm(exerciseId, e.target.value)} />
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
 
       {/* Save & Reset Actions */}
@@ -505,4 +572,3 @@ export function Preferences({ userId }: PreferencesProps) {
     </div>
   );
 }
-

@@ -39,6 +39,16 @@ describe('validateRecommendation', () => {
         expect(result.data?.adherence.followed).toBe(true);
         expect(result.data?.adherence.respondedAt).toBe('2026-08-08T07:00:00Z');
     });
+
+    it('preserves a resolved detailed prescription snapshot', () => {
+        const prescription = { workoutId: 'cycling_zone2_standard_01', displayBlocks: [] };
+        const result = validateRecommendation({
+            userId: 'u1', date: '2026-08-07', templateId: 'end_easy_01', templateTitle: 'Zone 2 Spin',
+            category: 'Easy Endurance', modality: 'Cycling', mode: 'train', rationale: 'test rationale', prescription,
+        });
+        expect(result.data?.prescription).toEqual(prescription);
+        expect(result.data?.schemaVersion).toBe(2);
+    });
 });
 
 describe('validateAdherenceUpdate', () => {
