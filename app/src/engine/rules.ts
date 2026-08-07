@@ -1,4 +1,4 @@
-import type { DailyReadiness, UserContext, Recommendation, SessionTemplate, NextDayPotentialPlan, NextDayPlanBranch } from './models';
+import type { DailyReadiness, UserContext, Recommendation, SessionTemplate, NextDayPotentialPlan, NextDayPlanBranch, DecisionScoreTelemetry } from './models';
 import { TEMPLATES } from './templates';
 
 /**
@@ -152,8 +152,8 @@ function metricStrain(
     stdevFloor: number,
     weight: number,
     sign: 1 | -1
-): number {
-    if (deltaVs7d === null) return 0;
+): { acuteDeviation: number; multiDayDrift: number; total: number } {
+    if (deltaVs7d === null) return { acuteDeviation: 0, multiDayDrift: 0, total: 0 };
     const sd = Math.max(stdev ?? stdevFloor, stdevFloor);
 
     const zAcute = (sign * deltaVs7d) / sd;
@@ -167,7 +167,14 @@ function metricStrain(
         chronicStrain = clamp(-zChronic, 0, STRAIN_Z_CAP);
     }
 
-    return weight * (acuteStrain + CHRONIC_STRAIN_MULTIPLIER * chronicStrain);
+    const acuteDeviation = weight * acuteStrain;
+    const multiDayDrift = weight * CHRONIC_STRAIN_MULTIPLIER * chronicStrain;
+
+    return {
+        acuteDeviation,
+        multiDayDrift,
+        total: acuteDeviation + multiDayDrift
+    };
 }
 
 /**
@@ -202,49 +209,57 @@ export function evaluateTraining(
     // Core subjective penalty calculation
     const overallFatigueScore = (subjective.fatigue + subjective.soreness + invertedReadiness + invertedSleepQual + invertedMotivation) / 5;
 
-    // 2. Objective strain scoring (baseline-relative -- see metricStrain doc above)
-    let objectiveStrain = 0;
-
-    objectiveStrain += metricStrain(
+    // 2. Objective strain scoring & telemetry decomposition (baseline-relative)
+    const hrvStrain = metricStrain(
         objective.hrv_delta, objective.hrv_delta_28d, objective.hrv_stdev_28d,
         HRV_STDEV_FLOOR_MS, HRV_STRAIN_WEIGHT, 1
     );
-    objectiveStrain += metricStrain(
+    const rhrStrain = metricStrain(
         objective.rhr_delta, objective.rhr_delta_28d, objective.rhr_stdev_28d,
         RHR_STDEV_FLOOR_BPM, RHR_STRAIN_WEIGHT, -1
     );
-    objectiveStrain += metricStrain(
+    const sleepStrain = metricStrain(
         objective.sleep_score_delta_7d, objective.sleep_score_delta_28d, objective.sleep_score_stdev_28d,
         SLEEP_STDEV_FLOOR_PTS, SLEEP_STRAIN_WEIGHT, 1
     );
 
+    const totalAcuteDeviation = hrvStrain.acuteDeviation + rhrStrain.acuteDeviation + sleepStrain.acuteDeviation;
+    const totalMultiDayDrift = hrvStrain.multiDayDrift + rhrStrain.multiDayDrift + sleepStrain.multiDayDrift;
+    const totalMetricStrain = totalAcuteDeviation + totalMultiDayDrift;
+
     // Absolute safety net: a genuinely wrecked night still matters even if it doesn't
     // read as unusual relative to this person's own (possibly already-low) baseline.
+    let sleepFloorPenalty = 0;
     if (objective.sleep_score !== null && objective.sleep_score < SLEEP_SCORE_ABSOLUTE_FLOOR) {
-        objectiveStrain += SLEEP_SCORE_ABSOLUTE_FLOOR_STRAIN;
+        sleepFloorPenalty = SLEEP_SCORE_ABSOLUTE_FLOOR_STRAIN;
     }
 
     // Body Battery: smooth ramp rather than a step function at 50.
+    let bodyBatteryDeficit = 0;
     if (objective.body_battery_wake !== null) {
         const deficit = BODY_BATTERY_LOW_ANCHOR - objective.body_battery_wake;
         const range = BODY_BATTERY_LOW_ANCHOR - BODY_BATTERY_LOW_FULL_STRAIN_AT;
-        objectiveStrain += clamp(deficit / range, 0, 1) * BODY_BATTERY_MAX_STRAIN;
+        bodyBatteryDeficit = clamp(deficit / range, 0, 1) * BODY_BATTERY_MAX_STRAIN;
     }
 
+    let conservativeBias = 0;
     if (context.preferences.conservativeBias) {
-        objectiveStrain += CONSERVATIVE_BIAS_STRAIN_OFFSET;
+        conservativeBias = CONSERVATIVE_BIAS_STRAIN_OFFSET;
     }
 
     const extremeFatigue = subjective.fatigue > 8 || subjective.soreness > 8 || subjective.painFlag;
 
+    // Prevent overtraining if you've done too many hard sessions recently
+    const recentHardSessionsCount = objective.last_3_days_hard_sessions_count || 0;
+    let recentHardSessionsPenalty = 0;
+    if (recentHardSessionsCount >= 2) {
+        recentHardSessionsPenalty = RECENT_HARD_SESSIONS_STRAIN; // 2+ hard sessions in 3 days warrants caution
+    }
+
+    const objectiveStrain = totalMetricStrain + sleepFloorPenalty + bodyBatteryDeficit + conservativeBias + recentHardSessionsPenalty;
+
     // 3. Determine Core Mode Hierarchy (Train vs Modify vs Recover)
     let mode: 'train' | 'modify' | 'recover' = 'train';
-
-    // Prevent overtraining if you've done too many hard sessions recently
-    const recentHardSessions = objective.last_3_days_hard_sessions_count || 0;
-    if (recentHardSessions >= 2) {
-        objectiveStrain += RECENT_HARD_SESSIONS_STRAIN; // 2+ hard sessions in 3 days warrants caution
-    }
 
     const fatigueTriggeredRecover = overallFatigueScore > 7 || extremeFatigue || objectiveStrain >= STRAIN_RECOVER_THRESHOLD;
     if (fatigueTriggeredRecover) {
@@ -252,6 +267,13 @@ export function evaluateTraining(
     } else if (overallFatigueScore > 5 || subjective.soreness > 6 || objectiveStrain >= STRAIN_MODIFY_THRESHOLD) {
         mode = 'modify'; // Cap systemic load -- see MODIFY_MAX_SYSTEMIC_COST, not a flat demotion to endurance-only
     }
+
+    // Causal decision-relevance check: did multiDayDrift alter the final mode outcome?
+    const strainWithoutDrift = objectiveStrain - totalMultiDayDrift;
+    const counterfactualRecover = overallFatigueScore > 7 || extremeFatigue || strainWithoutDrift >= STRAIN_RECOVER_THRESHOLD;
+    const counterfactualModify = counterfactualRecover || overallFatigueScore > 5 || subjective.soreness > 6 || strainWithoutDrift >= STRAIN_MODIFY_THRESHOLD;
+    const counterfactualModeWithoutDrift = counterfactualRecover ? 'recover' : (counterfactualModify ? 'modify' : 'train');
+    const multiDayDriftIsDecisionRelevant = (mode !== 'train') && (mode !== counterfactualModeWithoutDrift);
 
     // 3a-hysteresis. Post-recover buffer: a single morning's numbers looking fully
     // green the day right after a mandated recovery day doesn't mean tissues are fully
@@ -380,6 +402,10 @@ export function evaluateTraining(
         rationale += ` ${modalityNote}`;
     }
 
+    if (multiDayDriftIsDecisionRelevant) {
+        rationale += " Your recovery metrics have been trending away from baseline over several days, capping today's training load.";
+    }
+
     if (postRecoverBufferApplied) {
         rationale += " Yesterday was a mandated recovery day, so easing back in today (rather than going straight to a hard session) even though this morning's numbers look fully green.";
     }
@@ -395,10 +421,27 @@ export function evaluateTraining(
         rationale += " (Defaulted to Rest/Mobility due to severe time/equipment constraints).";
     }
 
+    const round2 = (val: number) => Math.round(val * 100) / 100;
+    const telemetry: DecisionScoreTelemetry = {
+        metricStrain: {
+            acuteDeviation: round2(totalAcuteDeviation),
+            multiDayDrift: round2(totalMultiDayDrift),
+            totalMetricStrain: round2(totalMetricStrain)
+        },
+        contextPenalties: {
+            recentHardSessions: round2(recentHardSessionsPenalty),
+            bodyBatteryDeficit: round2(bodyBatteryDeficit),
+            sleepFloorPenalty: round2(sleepFloorPenalty),
+            conservativeBias: round2(conservativeBias)
+        },
+        totalDecisionScore: round2(objectiveStrain)
+    };
+
     return {
         template: selectedTemplate,
         rationale,
-        mode
+        mode,
+        telemetry
     };
 }
 

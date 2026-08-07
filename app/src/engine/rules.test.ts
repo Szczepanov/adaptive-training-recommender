@@ -340,3 +340,143 @@ describe('evaluateNextDayPlan', () => {
         }
     });
 });
+
+// --- Telemetry Reconciliation & Decision Relevance --------------------------
+
+describe('telemetry reconciliation & decision relevance', () => {
+    it('returns telemetry where metric strain and context penalties sum to totalDecisionScore', () => {
+        const readiness: DailyReadiness = {
+            subjective: greenSubjective(),
+            objective: quietObjective({
+                hrv_delta: -5,
+                hrv_delta_28d: -8,
+                hrv_stdev_28d: 10,
+                rhr_delta: 4,
+                rhr_delta_28d: 6,
+                rhr_stdev_28d: 4,
+                sleep_score: 45, // Absolute sleep floor penalty applies
+                body_battery_wake: 40, // Body battery deficit applies
+                last_3_days_hard_sessions_count: 2 // Hard sessions penalty applies
+            })
+        };
+        const context = baseContext();
+        context.preferences.conservativeBias = true; // Conservative bias applies
+
+        const rec = evaluateTraining(readiness, context, '2026-08-01');
+        expect(rec.telemetry).toBeDefined();
+
+        const t = rec.telemetry!;
+        // Check metric strain sum
+        const expectedMetricTotal = Math.round((t.metricStrain.acuteDeviation + t.metricStrain.multiDayDrift) * 100) / 100;
+        expect(t.metricStrain.totalMetricStrain).toBeCloseTo(expectedMetricTotal, 2);
+
+        // Check context penalties
+        const contextSum = t.contextPenalties.recentHardSessions +
+            t.contextPenalties.bodyBatteryDeficit +
+            t.contextPenalties.sleepFloorPenalty +
+            t.contextPenalties.conservativeBias;
+
+        const expectedTotalScore = Math.round((t.metricStrain.totalMetricStrain + contextSum) * 100) / 100;
+        expect(t.totalDecisionScore).toBeCloseTo(expectedTotalScore, 2);
+    });
+
+    it('annotates rationale when multiDayDrift alters the mode outcome (decision-relevant)', () => {
+        // Construct readiness where acute delta alone is manageable, but multi-day baseline drift pushes score > STRAIN_MODIFY_THRESHOLD (1.0)
+        const readiness: DailyReadiness = {
+            subjective: greenSubjective(),
+            objective: quietObjective({
+                hrv_delta: -3,       // Mild acute drop
+                hrv_delta_28d: -15,  // Significant 28d baseline drop (multi-day drift)
+                hrv_stdev_28d: 10
+            })
+        };
+        const rec = evaluateTraining(readiness, baseContext(), '2026-08-01');
+        expect(rec.mode).toBe('modify');
+        expect(rec.rationale).toContain("Your recovery metrics have been trending away from baseline over several days");
+    });
+
+    it('does not add multiDayDrift rationale when drift did not alter the mode outcome', () => {
+        // Fully optimal day -- mode remains 'train' with or without drift
+        const readiness: DailyReadiness = {
+            subjective: greenSubjective(),
+            objective: quietObjective({
+                hrv_delta: 0,
+                hrv_delta_28d: 0,
+                hrv_stdev_28d: 10
+            })
+        };
+        const rec = evaluateTraining(readiness, baseContext(), '2026-08-01');
+        expect(rec.mode).toBe('train');
+        expect(rec.rationale).not.toContain("trending away from baseline");
+    });
+
+    it('preserves immediate safety downgrades regardless of multi-day trends', () => {
+        // Positive 28-day drift (improving trend) but acute pain reported today
+        const readiness: DailyReadiness = {
+            subjective: greenSubjective({ painFlag: true }),
+            objective: quietObjective({
+                hrv_delta: 5,
+                hrv_delta_28d: 10,
+                hrv_stdev_28d: 10
+            })
+        };
+        const rec = evaluateTraining(readiness, baseContext(), '2026-08-01');
+        expect(rec.mode).toBe('recover');
+    });
+});
+
+// --- Sequence & Threshold Oscillation Simulation ----------------------------
+
+describe('sequence trajectory & threshold oscillation simulation', () => {
+    it('handles a multi-day gradual deterioration sequence smoothly', () => {
+        const baseObj = quietObjective({ hrv_stdev_28d: 5, rhr_stdev_28d: 3 });
+        const context = baseContext();
+
+        // Day 1: Fresh & optimal
+        const d1 = evaluateTraining({ subjective: greenSubjective(), objective: { ...baseObj, hrv_delta: 0, hrv_delta_28d: 0 } }, context, '2026-08-01');
+        expect(d1.mode).toBe('train');
+
+        // Day 2: Mild multi-day drift starting -> pushes score over 1.0 threshold into modify (strain ~1.3)
+        const d2 = evaluateTraining({ subjective: greenSubjective(), objective: { ...baseObj, hrv_delta: -4, hrv_delta_28d: -10 } }, context, '2026-08-02', d1.mode);
+        expect(d2.mode).toBe('modify');
+
+        // Day 3: Continued drift + high soreness -> stays modify
+        const d3 = evaluateTraining({ subjective: greenSubjective({ soreness: 7 }), objective: { ...baseObj, hrv_delta: -4, hrv_delta_28d: -10 } }, context, '2026-08-03', d2.mode);
+        expect(d3.mode).toBe('modify');
+
+        // Day 4: Acute safety crash -> immediate recover
+        const d4 = evaluateTraining({ subjective: greenSubjective({ fatigue: 9 }), objective: { ...baseObj, hrv_delta: -15, hrv_delta_28d: -25 } }, context, '2026-08-04', d3.mode);
+        expect(d4.mode).toBe('recover');
+
+        // Day 5: Morning after recovery day -> post-recover buffer eases back in to modify
+        const d5 = evaluateTraining({ subjective: greenSubjective(), objective: { ...baseObj, hrv_delta: 0, hrv_delta_28d: -2 } }, context, '2026-08-05', d4.mode);
+        expect(d5.mode).toBe('modify');
+    });
+
+    it('evaluates near-threshold oscillation behavior cleanly', () => {
+        const context = baseContext();
+        // Hovering consistently in the modify threshold range (~1.3 strain)
+        const nearThresholdDeltas = [-4, -5, -4, -5, -4];
+        const modes: string[] = [];
+
+        let prevMode: 'train' | 'modify' | 'recover' | undefined = undefined;
+        for (let i = 0; i < nearThresholdDeltas.length; i++) {
+            const hrv_delta = nearThresholdDeltas[i];
+            const readiness: DailyReadiness = {
+                subjective: greenSubjective(),
+                objective: quietObjective({
+                    hrv_delta,
+                    hrv_delta_28d: hrv_delta - 6,
+                    hrv_stdev_28d: 5
+                })
+            };
+            const rec = evaluateTraining(readiness, context, `2026-08-0${i + 1}`, prevMode);
+            modes.push(rec.mode);
+            prevMode = rec.mode;
+        }
+
+        // Verify engine produces consistent classifications without random oscillation
+        expect(modes).toEqual(['modify', 'modify', 'modify', 'modify', 'modify']);
+    });
+});
+

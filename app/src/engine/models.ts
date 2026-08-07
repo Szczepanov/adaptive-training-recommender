@@ -114,6 +114,23 @@ export interface SessionTemplate {
     systemicCost: number;
 }
 
+export interface MetricStrainTelemetry {
+    acuteDeviation: number;
+    multiDayDrift: number;
+    totalMetricStrain: number;
+}
+
+export interface DecisionScoreTelemetry {
+    metricStrain: MetricStrainTelemetry;
+    contextPenalties: {
+        recentHardSessions: number;
+        bodyBatteryDeficit: number;
+        sleepFloorPenalty: number;
+        conservativeBias: number;
+    };
+    totalDecisionScore: number;
+}
+
 export interface Recommendation {
     template: SessionTemplate;
     rationale: string;
@@ -122,6 +139,8 @@ export interface Recommendation {
      *  exposed so callers (persistence, adherence analysis) don't have to re-derive it
      *  from the template category alone. */
     mode: 'train' | 'modify' | 'recover';
+    /** Structured strain & contextual telemetry exposing decision drivers and reconciling mathematically. */
+    telemetry?: DecisionScoreTelemetry;
 }
 
 export interface NextDayPlanBranch {
