@@ -346,6 +346,18 @@ export interface AthletePerformanceProfile {
   ftpWatts?: number | null;
   thresholdPaceSecPerKm?: number | null;
   lthrBpm?: number | null;
+  /** Field-level ownership prevents a Garmin refresh from replacing a coach target. */
+  targetSources?: Partial<Record<'ftpWatts' | 'thresholdPaceSecPerKm' | 'lthrBpm', 'garmin' | 'manual'>>;
+  /** Most recent provider import, retained even when the effective target is manual. */
+  garmin?: {
+    ftpWatts?: number | null;
+    thresholdPaceSecPerKm?: number | null;
+    lthrBpm?: number | null;
+    fetchedAt: string;
+    ftpMeasuredAt?: string | null;
+    thresholdMeasuredAt?: string | null;
+    lthrMeasuredAt?: string | null;
+  };
   /** Exercise id -> estimated 1RM in kilograms. Optional by design: RIR remains
    * the safe load prescription when a tested or recent estimate is unavailable. */
   estimated1RmKg?: Record<string, number>;

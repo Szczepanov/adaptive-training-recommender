@@ -144,6 +144,93 @@ class FirestoreRecoveryRepository:
         )
         doc_ref.set(payload, merge=True)
 
+    def upsert_garmin_performance_targets(self, targets: Any) -> None:
+        """Merge Garmin's current targets into the user's preference profile.
+
+        Active targets are intentionally field-level owned: importing a new Garmin
+        value never replaces a target the coach/user marked ``manual``.  Existing
+        target values without provenance predate this feature and are conservatively
+        treated as manual on their first import.
+        """
+        db = self._get_db()
+        doc_ref = db.collection("users").document(self.user_id).collection("preferences").document("profile")
+        now_iso = datetime.now(timezone.utc).isoformat()
+        incoming = {
+            "ftpWatts": targets.cycling_ftp_watts,
+            "thresholdPaceSecPerKm": targets.running_threshold_pace_sec_per_km,
+            "lthrBpm": targets.running_lthr_bpm,
+        }
+        measured_at = {
+            "ftpMeasuredAt": targets.ftp_measured_at,
+            "thresholdMeasuredAt": targets.threshold_measured_at,
+            "lthrMeasuredAt": targets.lthr_measured_at,
+        }
+
+        @firestore.transactional
+        def merge_targets(transaction: Any) -> None:
+            snapshot = doc_ref.get(transaction=transaction)
+            existing = snapshot.to_dict() if snapshot.exists else {}
+            profile = existing.get("performanceProfile") if isinstance(existing.get("performanceProfile"), dict) else {}
+            profile = dict(profile)
+            sources = profile.get("targetSources") if isinstance(profile.get("targetSources"), dict) else {}
+            sources = dict(sources)
+
+            garmin = profile.get("garmin") if isinstance(profile.get("garmin"), dict) else {}
+            garmin = dict(garmin)
+            # A partial Garmin response must not erase a previously successful import
+            # for another target (for example, cycling FTP can be available while
+            # running lactate threshold is not configured on the account).
+            garmin.update({key: value for key, value in incoming.items() if value is not None})
+            garmin.update({key: value for key, value in measured_at.items() if value is not None})
+            garmin["fetchedAt"] = now_iso
+            profile["garmin"] = garmin
+
+            for key, value in incoming.items():
+                if value is None:
+                    continue
+                source = sources.get(key)
+                existing_value = profile.get(key)
+                if source == "manual":
+                    continue
+                if source == "garmin" or existing_value is None:
+                    profile[key] = value
+                    sources[key] = "garmin"
+                else:
+                    # Old documents have active values but no ownership metadata.  The
+                    # safe migration is manual; an explicit UI action can adopt Garmin.
+                    sources[key] = "manual"
+
+            if sources:
+                profile["targetSources"] = sources
+
+            payload = {
+                "userId": self.user_id,
+                "performanceProfile": profile,
+                "updatedAt": now_iso,
+            }
+            # A scheduled Garmin sync can run before the client has opened the app and
+            # created preferences.  Do not leave that first-run document partial: the
+            # frontend treats an existing preferences record as complete.
+            if not snapshot.exists:
+                payload.update({
+                    "preferredRecoveryStyle": "mixed",
+                    "defaultWeekdayTimeMin": 45,
+                    "defaultWeekendTimeMin": 60,
+                    "preferredTimeOfDay": "flexible",
+                    "preferredModalities": ["Running", "Cycling", "Strength"],
+                    "deprioritizedModalities": [],
+                    "avoidedModalities": [],
+                    "explanationVerbosity": "detailed",
+                    "conservativeBias": False,
+                    "preferredUnits": {"distance": "km", "weight": "kg", "temperature": "celsius"},
+                    "schemaVersion": 1,
+                    "createdAt": now_iso,
+                })
+            transaction.set(doc_ref, payload, merge=True)
+
+        merge_targets(db.transaction())
+        logger.info("Updated Garmin performance targets in user-scoped preferences for user=<UID-redacted>.")
+
     def count_activities_in_range(self, start_date_iso: str, end_date_iso: str) -> int:
         """Count normalized activity records with date in [start_date_iso, end_date_iso]."""
         db = self._get_db()

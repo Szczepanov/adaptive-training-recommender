@@ -366,3 +366,68 @@ def test_fetch_daily_metrics_survives_unconfigured_heart_rate_zones_mock():
     # response. What matters is that canonicalization degrades safely rather than
     # raising when handed that non-list value.
     assert result.canonical.heart_rate_zones is None
+
+
+# --- Current performance targets -------------------------------------------------
+
+def test_canonicalize_performance_targets_maps_ftp_running_pace_and_lthr():
+    from garmin_sync.garmin_provider import canonicalize_performance_targets
+
+    with open(FIXTURES_DIR / "cycling_ftp.json") as f:
+        ftp = json.load(f)
+    with open(FIXTURES_DIR / "lactate_threshold.json") as f:
+        threshold = json.load(f)
+
+    targets = canonicalize_performance_targets(ftp, threshold, None)
+
+    assert targets.cycling_ftp_watts == 254
+    assert targets.running_threshold_pace_sec_per_km == 267  # 1000 / 3.75 m/s
+    assert targets.running_lthr_bpm == 169
+    assert targets.ftp_measured_at == "2026-08-01"
+    assert targets.threshold_measured_at == "2026-08-02"
+
+
+def test_canonicalize_performance_targets_falls_back_to_running_then_default_zone_lthr():
+    from garmin_sync.garmin_provider import canonicalize_performance_targets
+
+    targets = canonicalize_performance_targets(
+        None,
+        {"speed_and_heart_rate": {"speed": 4.0}},
+        [
+            {"sport": "DEFAULT", "lactateThresholdHeartRateUsed": 160},
+            {"sport": "RUNNING", "lactateThresholdHeartRateUsed": 166},
+        ],
+    )
+
+    assert targets.running_threshold_pace_sec_per_km == 250
+    assert targets.running_lthr_bpm == 166
+
+
+def test_canonicalize_performance_targets_rejects_invalid_values():
+    from garmin_sync.garmin_provider import canonicalize_performance_targets
+
+    targets = canonicalize_performance_targets(
+        {"functionalThresholdPower": 0},
+        {"speed_and_heart_rate": {"speed": 0, "heartRate": -1}},
+        None,
+    )
+
+    assert targets.cycling_ftp_watts is None
+    assert targets.running_threshold_pace_sec_per_km is None
+    assert targets.running_lthr_bpm is None
+
+
+def test_fetch_performance_targets_uses_cached_hr_zones_and_archivable_raw_payloads():
+    mock_client = MagicMock()
+    mock_client.get_heart_rate_zones.return_value = [{"sport": "RUNNING", "lactateThresholdHeartRateUsed": 165}]
+    mock_client.get_cycling_ftp.return_value = {"functionalThresholdPower": 250}
+    mock_client.get_lactate_threshold.return_value = {"speed_and_heart_rate": {"speed": 4.0}}
+    adapter = GarminProviderAdapter(mock_client)
+    adapter._heart_rate_zones_cache = mock_client.get_heart_rate_zones()
+
+    result = adapter.fetch_performance_targets()
+
+    assert result.canonical.cycling_ftp_watts == 250
+    assert result.canonical.running_lthr_bpm == 165
+    assert result.raw_payloads["cycling_ftp"] == {"functionalThresholdPower": 250}
+    mock_client.get_heart_rate_zones.assert_called_once()

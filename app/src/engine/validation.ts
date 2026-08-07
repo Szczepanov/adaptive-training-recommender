@@ -623,6 +623,25 @@ export function validatePreferences(raw: any): ValidationResult<UserPreferences>
                     errors.push({ field: `performanceProfile.${key}`, message: 'Must be a positive number when supplied' });
                 }
             }
+            if (raw.performanceProfile.targetSources !== undefined &&
+                (typeof raw.performanceProfile.targetSources !== 'object' || raw.performanceProfile.targetSources === null ||
+                 !Object.entries(raw.performanceProfile.targetSources).every(([key, value]) =>
+                    ['ftpWatts', 'thresholdPaceSecPerKm', 'lthrBpm'].includes(key) && (value === 'garmin' || value === 'manual')))) {
+                errors.push({ field: 'performanceProfile.targetSources', message: 'Target sources must be manual or garmin for a supported target' });
+            }
+            if (raw.performanceProfile.garmin !== undefined) {
+                const garmin = raw.performanceProfile.garmin;
+                if (typeof garmin !== 'object' || garmin === null || typeof garmin.fetchedAt !== 'string') {
+                    errors.push({ field: 'performanceProfile.garmin', message: 'Garmin profile must include a fetchedAt timestamp' });
+                } else {
+                    for (const key of ['ftpWatts', 'thresholdPaceSecPerKm', 'lthrBpm'] as const) {
+                        const value = garmin[key];
+                        if (value !== undefined && value !== null && (!Number.isFinite(value) || value <= 0)) {
+                            errors.push({ field: `performanceProfile.garmin.${key}`, message: 'Must be a positive number when supplied' });
+                        }
+                    }
+                }
+            }
             if (raw.performanceProfile.estimated1RmKg !== undefined &&
                 (typeof raw.performanceProfile.estimated1RmKg !== 'object' ||
                  !Object.values(raw.performanceProfile.estimated1RmKg).every((value) => typeof value === 'number' && Number.isFinite(value) && value > 0))) {

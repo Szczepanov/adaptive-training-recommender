@@ -237,6 +237,33 @@ class GarminSyncService:
         )
         return True
 
+    def _sync_current_performance_targets(self, target_iso: str) -> None:
+        """Best-effort current-profile import, deliberately outside the daily snapshot.
+
+        Backfills and rebuilds never call this because profile targets are current
+        configuration, not historical telemetry.  Non-Garmin providers/repositories
+        can omit the optional capability without making recovery sync fail.
+        """
+        provider = self._init_provider()
+        fetch_targets = getattr(provider, "fetch_performance_targets", None)
+        persist_targets = getattr(self.repository, "upsert_garmin_performance_targets", None)
+        if not callable(fetch_targets) or not callable(persist_targets):
+            return
+        try:
+            result = fetch_targets()
+            sync_run_id = _new_sync_run_id(f"targets-{target_iso}")
+            for endpoint, payload in result.raw_payloads.items():
+                if payload is not None:
+                    self._archive_raw(endpoint, target_iso, payload, sync_run_id)
+            persist_targets(result.canonical)
+            # Profile endpoints are authenticated Garmin calls too; persist a refreshed
+            # token just as the core daily metrics path does.
+            self.token_store.persist(self.token_file_path)
+        except Exception as e:
+            # Performance targets enrich prescription but are never allowed to make a
+            # recovery snapshot fail after its core data was safely persisted.
+            logger.warning(f"[{target_iso}] Garmin performance-target import failed, continuing: {e}")
+
     def sync_daily(
         self,
         target_date_str: str | None = None,
@@ -292,6 +319,8 @@ class GarminSyncService:
         # always has: it's the primary date the caller asked for.
         if not self._fetch_and_store_date(target_date, target_iso):
             ok = False
+        else:
+            self._sync_current_performance_targets(target_iso)
 
         return ok
 

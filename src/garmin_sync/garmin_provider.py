@@ -9,13 +9,14 @@ from .canonical import (
     CanonicalBodyBattery,
     CanonicalDailyMetrics,
     CanonicalHeartRateZones,
+    CanonicalPerformanceTargets,
     CanonicalStress,
     CanonicalTrainingReadiness,
     CanonicalTrainingStatus,
 )
 from .garmin_client import GarminClientWrapper
 from .metrics import classify_activity_intensity
-from .provider import ProviderActivitiesResult, ProviderCapabilities, ProviderFetchResult
+from .provider import ProviderActivitiesResult, ProviderCapabilities, ProviderFetchResult, ProviderPerformanceTargetsResult
 
 logger = logging.getLogger(__name__)
 
@@ -114,6 +115,63 @@ def _canonicalize_heart_rate_zones(zones_list: list[dict[str, Any]] | None) -> C
         max_hr_used=entry.get("maxHeartRateUsed"),
         zone4_floor=entry.get("zone4Floor"),
         sport=entry.get("sport"),
+    )
+
+
+def _first_positive_number(value: Any) -> float | None:
+    """Return a finite positive numeric value without accepting booleans or strings."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return float(value) if value > 0 else None
+
+
+def _first_mapping(payload: Any) -> dict[str, Any]:
+    if isinstance(payload, dict):
+        return payload
+    if isinstance(payload, list):
+        return next((entry for entry in payload if isinstance(entry, dict)), {})
+    return {}
+
+
+def canonicalize_performance_targets(
+    cycling_ftp: dict[str, Any] | list[dict[str, Any]] | None,
+    lactate_threshold: dict[str, Any] | None,
+    heart_rate_zones: list[dict[str, Any]] | None,
+) -> CanonicalPerformanceTargets:
+    """Normalize Garmin's current FTP/running-lactate-threshold endpoints.
+
+    Garmin's unofficial responses have varied between direct values and small wrapper
+    objects, so extraction accepts the documented current keys plus known simple
+    variants.  Missing or malformed values remain absent; no activity-derived estimate
+    is substituted.
+    """
+    ftp_data = _first_mapping(cycling_ftp)
+    ftp = next((_first_positive_number(ftp_data.get(key)) for key in (
+        "functionalThresholdPower", "ftp", "value", "power",
+    ) if _first_positive_number(ftp_data.get(key)) is not None), None)
+
+    threshold_root = lactate_threshold if isinstance(lactate_threshold, dict) else {}
+    threshold_data = _first_mapping(threshold_root.get("speed_and_heart_rate"))
+    speed = _first_positive_number(threshold_data.get("speed"))
+    # Garmin returns threshold speed in metres per second.  A pace outside a broad
+    # human-running range is almost certainly a response/unit regression, not a target.
+    pace = round(1000 / speed) if speed is not None and 75 <= 1000 / speed <= 1200 else None
+    lthr = _first_positive_number(threshold_data.get("heartRate"))
+
+    if lthr is None and isinstance(heart_rate_zones, list):
+        running = next((zone for zone in heart_rate_zones if isinstance(zone, dict) and zone.get("sport") == "RUNNING"), None)
+        default = next((zone for zone in heart_rate_zones if isinstance(zone, dict) and zone.get("sport") == "DEFAULT"), None)
+        fallback = running or default
+        if fallback:
+            lthr = _first_positive_number(fallback.get("lactateThresholdHeartRateUsed"))
+
+    return CanonicalPerformanceTargets(
+        cycling_ftp_watts=round(ftp) if ftp is not None else None,
+        running_threshold_pace_sec_per_km=pace,
+        running_lthr_bpm=round(lthr) if lthr is not None else None,
+        ftp_measured_at=ftp_data.get("calendarDate") if isinstance(ftp_data.get("calendarDate"), str) else None,
+        threshold_measured_at=threshold_data.get("calendarDate") if isinstance(threshold_data.get("calendarDate"), str) else None,
+        lthr_measured_at=threshold_data.get("calendarDate") if isinstance(threshold_data.get("calendarDate"), str) else None,
     )
 
 
@@ -252,6 +310,7 @@ class GarminProviderAdapter:
         # instead of re-fetching the same date twice.
         self._stats_cache: dict[str, dict[str, Any]] = {}
         self._sleep_cache: dict[str, dict[str, Any]] = {}
+        self._heart_rate_zones_cache: list[dict[str, Any]] | None = None
 
     def clear_cache(self) -> None:
         """Called by GarminSyncService at the start of each sync_daily/backfill
@@ -261,6 +320,7 @@ class GarminProviderAdapter:
         the cache must not leak stale data."""
         self._stats_cache.clear()
         self._sleep_cache.clear()
+        self._heart_rate_zones_cache = None
 
     def _get_stats(self, date_iso: str) -> dict[str, Any]:
         if date_iso not in self._stats_cache:
@@ -302,6 +362,8 @@ class GarminProviderAdapter:
         # on the same daily cadence as the other enrichment endpoints for simplicity --
         # see GarminClientWrapper.get_heart_rate_zones.
         heart_rate_zones = self._fetch_enrichment("heart_rate_zones", lambda: self.client.get_heart_rate_zones())
+        if isinstance(heart_rate_zones, list):
+            self._heart_rate_zones_cache = heart_rate_zones
 
         canonical = canonicalize_from_raw(
             stats_today=stats_today,
@@ -338,6 +400,24 @@ class GarminProviderAdapter:
             raw_payloads["heart_rate_zones"] = heart_rate_zones
 
         return ProviderFetchResult(canonical=canonical, raw_payloads=raw_payloads)
+
+    def fetch_performance_targets(self) -> ProviderPerformanceTargetsResult:
+        """Fetch current Garmin profile targets once per live daily sync.
+
+        This is intentionally separate from fetch_daily_metrics: these values describe
+        the athlete *now*, so the service never calls it during backfills/rebuilds.
+        """
+        cycling_ftp = self._fetch_enrichment("cycling_ftp", self.client.get_cycling_ftp)
+        lactate_threshold = self._fetch_enrichment("lactate_threshold", self.client.get_lactate_threshold)
+        zones = self._heart_rate_zones_cache
+        if zones is None:
+            fetched = self._fetch_enrichment("heart_rate_zones", self.client.get_heart_rate_zones)
+            zones = fetched if isinstance(fetched, list) else None
+            self._heart_rate_zones_cache = zones
+        return ProviderPerformanceTargetsResult(
+            canonical=canonicalize_performance_targets(cycling_ftp, lactate_threshold, zones),
+            raw_payloads={"cycling_ftp": cycling_ftp, "lactate_threshold": lactate_threshold},
+        )
 
     def fetch_activities(
         self,

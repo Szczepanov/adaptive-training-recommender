@@ -2,6 +2,8 @@ from unittest.mock import MagicMock
 import pytest
 from garminconnect import GarminConnectTooManyRequestsError
 from garmin_sync.canonical import CanonicalDailyMetrics
+from garmin_sync.canonical import CanonicalPerformanceTargets
+from garmin_sync.provider import ProviderPerformanceTargetsResult
 from garmin_sync.config import Settings
 from garmin_sync.provider import ProviderActivitiesResult, ProviderCapabilities, ProviderFetchResult
 from garmin_sync.service import GarminSyncService
@@ -44,6 +46,14 @@ class FakeTestProvider:
 
     def clear_cache(self) -> None:
         pass  # this fake provider doesn't cache anything
+
+
+class TargetAwareFakeProvider(FakeTestProvider):
+    def fetch_performance_targets(self) -> ProviderPerformanceTargetsResult:
+        return ProviderPerformanceTargetsResult(
+            canonical=CanonicalPerformanceTargets(cycling_ftp_watts=250, running_threshold_pace_sec_per_km=270, running_lthr_bpm=170),
+            raw_payloads={"cycling_ftp": {"functionalThresholdPower": 250}, "lactate_threshold": {"speed_and_heart_rate": {"speed": 3.7}}},
+        )
 
 
 class DateAwareFakeProvider:
@@ -108,6 +118,20 @@ class FakeStatefulRepository:
 
     def get_snapshot(self, date_iso: str) -> dict | None:
         return self.snapshots.get(date_iso)
+
+
+def test_live_sync_imports_current_targets_but_non_garmin_providers_need_not_support_them():
+    settings = Settings(app_user_id="test_uid_789")
+    repo = MagicMock()
+    repo.is_fresh.return_value = False
+    repo.get_historical_snapshots.return_value = {}
+    service = GarminSyncService(settings=settings, repository=repo, provider=TargetAwareFakeProvider())
+
+    assert service.sync_daily(target_date_str="2026-08-06", force=True, resync_lookback_days=0) is True
+
+    imported = repo.upsert_garmin_performance_targets.call_args.args[0]
+    assert imported.cycling_ftp_watts == 250
+    assert imported.running_lthr_bpm == 170
 
 
 def test_sync_service_skips_when_fresh():

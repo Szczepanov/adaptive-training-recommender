@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { preferencesService } from '../services/preferencesService';
 import type { UserPreferences, RecoveryStyle, TimeOfDay, ExplanationVerbosity } from '../engine/models';
+import type { AthletePerformanceProfile } from '../workouts/models';
 import { CANONICAL_MODALITIES } from '../utils/modalities';
 import { getErrorMessage } from '../utils/errors';
 import './Preferences.css';
@@ -90,16 +91,59 @@ export function Preferences({ userId }: PreferencesProps) {
     value: string
   ) => {
     if (!preferences) return;
-    const numericValue = value.trim() === '' ? null : Number(value);
+    const profile = preferences.performanceProfile ?? {};
+    const numericValue = value.trim() === '' ? (profile.garmin?.[key] ?? null) : Number(value);
+    const targetSources = { ...profile.targetSources };
+    if (value.trim() === '') {
+      if (numericValue !== null) targetSources[key] = 'garmin';
+      else delete targetSources[key];
+    } else {
+      targetSources[key] = 'manual';
+    }
     setPreferences({
       ...preferences,
       performanceProfile: {
-        ...preferences.performanceProfile,
+        ...profile,
         [key]: numericValue,
+        targetSources,
         measuredAt: new Date().toISOString()
       }
     });
     setHasChanges(true);
+  };
+
+  const applyGarminTarget = (key: 'ftpWatts' | 'thresholdPaceSecPerKm' | 'lthrBpm') => {
+    if (!preferences) return;
+    const profile = preferences.performanceProfile;
+    const value = profile?.garmin?.[key];
+    if (value === undefined || value === null || value <= 0) return;
+    setPreferences({
+      ...preferences,
+      performanceProfile: {
+        ...profile,
+        [key]: value,
+        targetSources: { ...profile?.targetSources, [key]: 'garmin' },
+        measuredAt: new Date().toISOString()
+      }
+    });
+    setHasChanges(true);
+  };
+
+  const targetSource = (key: 'ftpWatts' | 'thresholdPaceSecPerKm' | 'lthrBpm') =>
+    preferences?.performanceProfile?.targetSources?.[key] ??
+    (preferences?.performanceProfile?.[key] ? 'manual' : undefined);
+
+  const targetMeta = (key: 'ftpWatts' | 'thresholdPaceSecPerKm' | 'lthrBpm') => {
+    const profile = preferences?.performanceProfile;
+    const imported = profile?.garmin?.[key];
+    if (!imported) return null;
+    const dateKey: Record<typeof key, keyof NonNullable<AthletePerformanceProfile['garmin']>> = {
+      ftpWatts: 'ftpMeasuredAt',
+      thresholdPaceSecPerKm: 'thresholdMeasuredAt',
+      lthrBpm: 'lthrMeasuredAt'
+    };
+    const measuredAt = profile?.garmin?.[dateKey[key]] ?? profile?.garmin?.fetchedAt;
+    return `Garmin: ${imported}${key === 'ftpWatts' ? ' W' : key === 'lthrBpm' ? ' bpm' : ' sec/km'}${measuredAt ? ` (${new Date(measuredAt).toLocaleDateString()})` : ''}`;
   };
 
   const updateEstimated1Rm = (exerciseId: string, value: string) => {
@@ -516,20 +560,26 @@ export function Preferences({ userId }: PreferencesProps) {
         <div className="preference-section">
           <h2>Training Targets</h2>
           <p className="preference-desc">
-            Optional, current values unlock individualized watts, pace references, and heart-rate guardrails. Leave a field blank when it is unknown.
+            Garmin imports current cycling FTP and running threshold targets after a daily sync. Editing a value makes it a manual coach override; clearing it returns to Garmin when an import is available.
           </p>
           <div className="units-grid">
             <div className="unit-group">
-              <label htmlFor="ftp-watts">FTP / critical power (watts)</label>
+              <label htmlFor="ftp-watts">Cycling FTP / critical power (watts)</label>
               <input id="ftp-watts" type="number" min="1" step="1" value={preferences.performanceProfile?.ftpWatts ?? ''} onChange={(e) => updatePerformanceProfile('ftpWatts', e.target.value)} />
+              <small className="target-source">{targetSource('ftpWatts') === 'manual' ? 'Manual override' : targetSource('ftpWatts') === 'garmin' ? 'Using Garmin' : 'No target set'}</small>
+              {targetMeta('ftpWatts') && <><small className="target-import">{targetMeta('ftpWatts')}</small>{targetSource('ftpWatts') === 'manual' && <button type="button" className="target-action" onClick={() => applyGarminTarget('ftpWatts')}>Use Garmin value</button>}</>}
             </div>
             <div className="unit-group">
-              <label htmlFor="threshold-pace">Threshold pace (seconds per km)</label>
+              <label htmlFor="threshold-pace">Running threshold pace (seconds per km)</label>
               <input id="threshold-pace" type="number" min="1" step="1" value={preferences.performanceProfile?.thresholdPaceSecPerKm ?? ''} onChange={(e) => updatePerformanceProfile('thresholdPaceSecPerKm', e.target.value)} />
+              <small className="target-source">{targetSource('thresholdPaceSecPerKm') === 'manual' ? 'Manual override' : targetSource('thresholdPaceSecPerKm') === 'garmin' ? 'Using Garmin' : 'No target set'}</small>
+              {targetMeta('thresholdPaceSecPerKm') && <><small className="target-import">{targetMeta('thresholdPaceSecPerKm')}</small>{targetSource('thresholdPaceSecPerKm') === 'manual' && <button type="button" className="target-action" onClick={() => applyGarminTarget('thresholdPaceSecPerKm')}>Use Garmin value</button>}</>}
             </div>
             <div className="unit-group">
-              <label htmlFor="lthr">Lactate-threshold HR (bpm)</label>
+              <label htmlFor="lthr">Running lactate-threshold HR (bpm)</label>
               <input id="lthr" type="number" min="1" step="1" value={preferences.performanceProfile?.lthrBpm ?? ''} onChange={(e) => updatePerformanceProfile('lthrBpm', e.target.value)} />
+              <small className="target-source">{targetSource('lthrBpm') === 'manual' ? 'Manual override' : targetSource('lthrBpm') === 'garmin' ? 'Using Garmin' : 'No target set'}</small>
+              {targetMeta('lthrBpm') && <><small className="target-import">{targetMeta('lthrBpm')}</small>{targetSource('lthrBpm') === 'manual' && <button type="button" className="target-action" onClick={() => applyGarminTarget('lthrBpm')}>Use Garmin value</button>}</>}
             </div>
           </div>
           <p className="preference-desc">Estimated 1RM (kg) is optional. It provides a starting load only; the prescribed RIR always takes precedence.</p>

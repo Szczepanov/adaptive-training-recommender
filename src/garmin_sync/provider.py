@@ -3,7 +3,7 @@ eventually the recommendation engine) depends on instead of any single vendor's 
 A second provider (real or fake-for-tests) only needs to satisfy WearableProvider."""
 from dataclasses import dataclass
 from typing import Any, Protocol
-from .canonical import CanonicalActivity, CanonicalDailyMetrics
+from .canonical import CanonicalActivity, CanonicalDailyMetrics, CanonicalPerformanceTargets
 
 
 @dataclass(frozen=True)
@@ -32,6 +32,13 @@ class ProviderFetchResult:
 class ProviderActivitiesResult:
     canonical: list[CanonicalActivity]
     raw_payload: list[dict[str, Any]]
+
+
+@dataclass
+class ProviderPerformanceTargetsResult:
+    """Current, profile-level targets and their untouched provider payloads."""
+    canonical: CanonicalPerformanceTargets
+    raw_payloads: dict[str, Any]
 
 
 class WearableProvider(Protocol):

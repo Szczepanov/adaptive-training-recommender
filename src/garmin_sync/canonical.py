@@ -53,6 +53,22 @@ class CanonicalHeartRateZones:
 
 
 @dataclass
+class CanonicalPerformanceTargets:
+    """Current sport-specific performance targets reported by a wearable.
+
+    These are profile settings rather than daily recovery metrics.  They deliberately
+    travel separately from ``CanonicalDailyMetrics`` so historical rebuilds cannot
+    mistake today's configured FTP/threshold for a past-day observation.
+    """
+    cycling_ftp_watts: int | None = None
+    running_threshold_pace_sec_per_km: int | None = None
+    running_lthr_bpm: int | None = None
+    ftp_measured_at: str | None = None
+    threshold_measured_at: str | None = None
+    lthr_measured_at: str | None = None
+
+
+@dataclass
 class CanonicalDailyMetrics:
     date: str
     resting_heart_rate_bpm: float | None = None
