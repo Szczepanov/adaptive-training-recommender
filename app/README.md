@@ -10,6 +10,10 @@ React + TypeScript + Vite + Firebase application computing adaptive training rec
 # Install dependencies
 npm ci
 
+# (Optional for Firebase production data; test & simulation suite runs out of the box without .env)
+# Copy template if connecting to a real Firebase instance:
+cp .env.example .env
+
 # Run pre-flight check (typecheck, lint, unit tests, workout catalog validation)
 npm run check
 
@@ -56,6 +60,7 @@ All scripts defined in `package.json` are organized below by feature domain:
 | Command | Action | Description |
 |---|---|---|
 | `npm run simulate:scenarios` | Multi-week simulation | Evaluates adaptive engine scenarios defined in `src/engine/simulation/scenarios.ts` over multi-week spans. Uses Vite SSR loader to analyze periodization, objective fulfillment, fatigue decay, anchor placement, and constraint compliance. |
+| `npm run simulate:diff` | Simulation semantic diff | Compares current simulation run against committed `docs/analysis/simulation-baseline.json` baseline and outputs scenario-by-scenario semantic changes in distributions, objectives, and fatigue tiers. |
 | `npm run replay:recommendation -- <path>` | Decision replay audit | Replays a historical recommendation audit JSON object (e.g. `npm run replay:recommendation -- artifacts/audit-sample.json`) via `src/engine/replay.ts` to verify reproducibility and inspect engine rationale. |
 
 #### `simulate:scenarios` Artifacts

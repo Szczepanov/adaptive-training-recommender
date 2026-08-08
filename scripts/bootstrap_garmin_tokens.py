@@ -4,9 +4,11 @@ Helper utility to authenticate Garmin credentials locally and upload initial tok
 import argparse
 import sys
 from pathlib import Path
+
 from garmin_sync.config import load_settings
 from garmin_sync.garmin_client import GarminClientWrapper
 from garmin_sync.token_store import GcsTokenStore
+
 
 def bootstrap(bucket_name: str | None = None, object_name: str = "garmin/garmin_tokens.json"):
     settings = load_settings()

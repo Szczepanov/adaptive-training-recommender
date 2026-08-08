@@ -90,7 +90,45 @@ if (!existsSync(outputDir)) mkdirSync(outputDir, { recursive: true });
 
 writeFileSync(resolve(outputDir, 'report.json'), `${JSON.stringify(report, null, 2)}\n`);
 
+// Aggregate Bounds Gate (Task 0.1)
+// Assert properties that must hold across planner changes
+const totalSimulatedDays = report.scenarios.reduce((sum, s) => sum + s.totalDays, 0);
+const totalRestDays = report.scenarios.reduce((sum, s) => sum + s.restOrRecoveryDayCount, 0);
+const overallRestPct = totalSimulatedDays > 0 ? (totalRestDays / totalSimulatedDays) * 100 : 0;
+
+const unresolvedObjectivesMap = new Map();
+report.scenarios.forEach((s) => {
+  s.objectiveResolution.forEach((o) => {
+    const cur = unresolvedObjectivesMap.get(o.key) ?? { gen: 0, res: 0 };
+    cur.gen += o.timesGenerated;
+    cur.res += o.timesResolved;
+    unresolvedObjectivesMap.set(o.key, cur);
+  });
+});
+const objectivesNeverResolvedCount = Array.from(unresolvedObjectivesMap.values())
+  .filter((o) => o.gen > 0 && o.res === 0).length;
+
+const aggregateViolations = [];
 const violationCount = report.scenarios.reduce((sum, s) => sum + s.constraintViolations.length, 0);
+if (violationCount > 0) {
+  aggregateViolations.push(`${violationCount} hard constraint violation(s) found across scenarios`);
+}
+if (overallRestPct < 5.0 || overallRestPct > 40.0) {
+  aggregateViolations.push(`Overall rest/recovery day share ${overallRestPct.toFixed(1)}% outside allowed [5%, 40%] bound`);
+}
+if (objectivesNeverResolvedCount > 1) {
+  aggregateViolations.push(`${objectivesNeverResolvedCount} generated objective(s) were never resolved in any scenario (max allowed: 1)`);
+}
+
+// Save normalized baseline snapshot to docs/analysis/simulation-baseline.json
+const baselinePath = resolve('../docs/analysis/simulation-baseline.json');
+const normalizedBaseline = {
+  ...report,
+  commit: 'baseline',
+  capturedAt: 'baseline',
+};
+writeFileSync(baselinePath, `${JSON.stringify(normalizedBaseline, null, 2)}\n`);
+
 const md = [
   '# Recommendation engine scenario simulation report',
   '',
@@ -112,7 +150,11 @@ const md = [
 writeFileSync(resolve(outputDir, 'report.md'), md);
 
 console.log(`Simulated ${report.scenarios.length} scenarios. Report written to ${outputDir}`);
-if (violationCount > 0) {
-  console.error(`${violationCount} constraint violation(s) found -- see report.md`);
+console.log(`Baseline snapshot updated at ${baselinePath}`);
+
+if (aggregateViolations.length > 0) {
+  console.error('Aggregate bounds gate FAILED:');
+  aggregateViolations.forEach((v) => console.error(`  - ${v}`));
   process.exitCode = 1;
 }
+

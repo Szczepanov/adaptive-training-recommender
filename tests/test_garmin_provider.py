@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 from unittest.mock import MagicMock
+
 from garmin_sync.garmin_provider import (
     GarminProviderAdapter,
     canonicalize_activities,

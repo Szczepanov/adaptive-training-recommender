@@ -1,6 +1,6 @@
 import logging
 from dataclasses import dataclass
-from typing import Any
+
 from .archive import RawArchiveStore
 from .config import Settings
 from .dates import get_date_range, get_date_string, local_today, n_days_ago, parse_date_string

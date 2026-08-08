@@ -29,8 +29,18 @@ jobs:
       - name: Install dependencies
         run: uv sync --frozen
 
+      - name: Lint Python with ruff
+        run: uv run ruff check .
+
+      - name: Type check Python with mypy
+        run: uv run mypy src/garmin_sync
+
       - name: Run pytest
         run: uv run pytest
+
+      - name: Python dependency audit
+        run: uvx pip-audit
+        continue-on-error: true
 
   frontend-build:
     name: Frontend Build & Firestore Rules
@@ -46,6 +56,8 @@ jobs:
         working-directory: app
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -69,14 +81,28 @@ jobs:
       - name: Validate workout library
         run: npm run validate:workouts
 
+      - name: Check engine policy version drift
+        run: node scripts/check-policy-drift.mjs ${{ github.event.pull_request.base.sha || github.event.before }}
+
       - name: Run frontend test suite
         run: npm test
 
       - name: Run Firestore security-rule emulator suite
         run: npm run test:rules
 
+      - name: Run simulation scenarios & aggregate bounds gate
+        run: npm run simulate:scenarios
+
+      - name: Report simulation semantic diff
+        run: npm run simulate:diff
+        continue-on-error: true
+
       - name: Build frontend
         run: npm run build
+
+      - name: Node dependency audit
+        run: npm audit --audit-level=high
+        continue-on-error: true
 
   docker-build:
     name: Docker Image Build

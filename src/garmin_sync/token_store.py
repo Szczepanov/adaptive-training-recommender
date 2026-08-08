@@ -1,6 +1,6 @@
+import logging
 import os
 import shutil
-import logging
 import tempfile
 from pathlib import Path
 from typing import Protocol
@@ -84,7 +84,7 @@ class GcsTokenStore:
         dest_path.parent.mkdir(parents=True, exist_ok=True)
 
         try:
-            from google.cloud import storage
+            from google.cloud import storage  # type: ignore[attr-defined]
         except ImportError:
             logger.error("google-cloud-storage is required for GcsTokenStore.")
             return False
@@ -121,7 +121,7 @@ class GcsTokenStore:
             return
 
         try:
-            from google.cloud import storage
+            from google.cloud import storage  # type: ignore[attr-defined]
         except ImportError:
             logger.error("google-cloud-storage is required for GcsTokenStore.")
             return

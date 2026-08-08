@@ -1,6 +1,7 @@
 import logging
 from pathlib import Path
 from typing import Any, Callable, Protocol
+
 from garminconnect import (
     Garmin,
     GarminConnectAuthenticationError,

@@ -4,9 +4,11 @@ lives in garmin_provider.py (or a future provider's own adapter module)."""
 import logging
 from datetime import datetime, timezone
 from typing import Any
+
 from .canonical import CanonicalActivity, CanonicalDailyMetrics
-from .dates import parse_date_string, n_days_ago, get_date_string
+from .dates import get_date_string, n_days_ago, parse_date_string
 from .models import (
+    SCHEMA_VERSION,
     DailyRecoverySnapshot,
     DataQuality,
     DerivedMetrics,
@@ -14,7 +16,6 @@ from .models import (
     MetricDates,
     PrimaryActivity,
     RawMetrics,
-    SCHEMA_VERSION,
     SourceMetadata,
     StressSummary,
     TrainingReadinessSummary,

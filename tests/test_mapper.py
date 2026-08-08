@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+
 from garmin_sync.canonical import CanonicalActivity, CanonicalDailyMetrics
 from garmin_sync.garmin_provider import canonicalize_activities, canonicalize_from_raw
 from garmin_sync.mapper import build_snapshot_from_canonical, normalize_activity

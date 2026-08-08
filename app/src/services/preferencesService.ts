@@ -1,5 +1,5 @@
 import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { db } from '../firebase';
+import { getDb } from '../firebase';
 import type { UserPreferences } from '../engine/models';
 import type { DataState } from '../engine/dataState';
 import { validatePreferences } from '../engine/validation';
@@ -13,7 +13,7 @@ export class PreferencesService {
      */
     async getPreferencesState(userId: string): Promise<DataState<UserPreferences>> {
         try {
-            const docRef = doc(db, 'users', userId, this.collectionPath, this.singletonDocId);
+            const docRef = doc(getDb(), 'users', userId, this.collectionPath, this.singletonDocId);
             const docSnap = await getDoc(docRef);
             if (!docSnap.exists()) return { status: 'MISSING' };
             const validation = validatePreferences(docSnap.data());
@@ -28,7 +28,7 @@ export class PreferencesService {
 
     async getPreferences(userId: string): Promise<UserPreferences | null> {
         try {
-            const docRef = doc(db, 'users', userId, this.collectionPath, this.singletonDocId);
+            const docRef = doc(getDb(), 'users', userId, this.collectionPath, this.singletonDocId);
             const docSnap = await getDoc(docRef);
             
             if (docSnap.exists()) {
@@ -85,7 +85,7 @@ export class PreferencesService {
             const validatedPrefs = validation.data!;
             
             // Save to Firestore
-            const docRef = doc(db, 'users', userId, this.collectionPath, this.singletonDocId);
+            const docRef = doc(getDb(), 'users', userId, this.collectionPath, this.singletonDocId);
             await setDoc(docRef, validatedPrefs, { merge: true });
 
             return validatedPrefs;

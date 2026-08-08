@@ -1,5 +1,5 @@
 import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { db } from '../firebase';
+import { getDb } from '../firebase';
 import type { TrainingSettings, UserConstraint } from '../engine/models';
 import type { DataState } from '../engine/dataState';
 import { constraintService } from './constraintService';
@@ -98,7 +98,7 @@ function mergeSettings(current: TrainingSettings, update: TrainingSettingsUpdate
 
 export class TrainingSettingsService {
     private ref(userId: string) {
-        return doc(db, 'users', userId, COLLECTION, DOCUMENT);
+        return doc(getDb(), 'users', userId, COLLECTION, DOCUMENT);
     }
 
     async getTrainingSettingsState(userId: string): Promise<DataState<TrainingSettings>> {

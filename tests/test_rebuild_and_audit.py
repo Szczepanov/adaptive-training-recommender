@@ -1,4 +1,5 @@
 from unittest.mock import MagicMock
+
 from garmin_sync.archive import LocalRawArchiveStore
 from garmin_sync.audit import run_audit
 from garmin_sync.config import Settings

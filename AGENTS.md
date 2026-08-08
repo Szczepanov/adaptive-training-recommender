@@ -24,6 +24,8 @@ This document outlines repository rules, code conventions, testing instructions,
 ### Python Backend
 * `uv sync` — Restore dependencies
 * `uv run pytest` — Run unit tests
+* `uv run ruff check .` — Run ruff linter & import sorter
+* `uv run mypy src/garmin_sync` — Run static type checking on backend source
 * `uv run python -m garmin_sync sync` — Run daily ingestion
 * `uv run python -m garmin_sync backfill --days 56` — Run historical backfill
 * `uv run python -m garmin_sync audit --days 90` — Report sync/archive completeness
@@ -38,6 +40,8 @@ This document outlines repository rules, code conventions, testing instructions,
 * `cd app && npm run dev` — Start Vite dev server (automatically executes `npm run check` pre-flight)
 * `cd app && npm run validate:workouts` — Validate workout catalog definitions and prescription contracts
 * `cd app && npm run simulate:scenarios` — Run multi-week engine simulations; reports land in `artifacts/simulation-reports/latest/`
+* `cd app && npm run simulate:diff` — Generate non-blocking semantic diff against committed baseline snapshot (`docs/analysis/simulation-baseline.json`)
+* `cd app && node scripts/check-policy-drift.mjs <base-sha>` — Verify POLICY_VERSION increment when engine decision logic changes
 * `cd app && npm run replay:recommendation -- <audit.json>` — Replay a persisted decision against its own audit to verify reproducibility
 * `cd app && npm run visual:install` — Install Playwright Chromium binary for visual review tests
 * `cd app && npm run visual:refresh` — Capture desktop/mobile visual review screenshots in `artifacts/visual-review/latest/`

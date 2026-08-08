@@ -69,7 +69,14 @@ class RawArchiveStore(Protocol):
 class NullArchiveStore:
     """No-op store used when archiving is disabled."""
 
-    def archive(self, endpoint, logical_date, payload, sync_run_id, garminconnect_version=None) -> None:
+    def archive(
+        self,
+        endpoint: str,
+        logical_date: str,
+        payload: Any,
+        sync_run_id: str,
+        garminconnect_version: str | None = None,
+    ) -> None:
         return None
 
     def load(self, endpoint: str, logical_date: str) -> None:
@@ -159,8 +166,8 @@ class GcsRawArchiveStore:
         self.bucket_name = bucket_name
         self.prefix = prefix
 
-    def _client(self):
-        from google.cloud import storage
+    def _client(self) -> Any:
+        from google.cloud import storage  # type: ignore[attr-defined]
         return storage.Client()
 
     def archive(

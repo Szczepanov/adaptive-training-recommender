@@ -4,7 +4,7 @@ FROM python:3.12-slim AS builder
 WORKDIR /app
 
 # Install uv for fast dependency restoration
-RUN pip install --no-cache-dir uv
+RUN pip install --no-cache-dir uv==0.6.5
 
 # Copy project definition and lock file. README.md is required here even though it is
 # not source: pyproject.toml declares `readme = "README.md"`, and hatchling validates

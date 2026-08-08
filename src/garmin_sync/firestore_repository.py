@@ -1,7 +1,8 @@
 import logging
 import os
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, cast
+
 import firebase_admin
 from firebase_admin import credentials, firestore
 from google.cloud.firestore_v1.base_query import FieldFilter
@@ -169,14 +170,14 @@ class FirestoreRecoveryRepository:
         @firestore.transactional
         def merge_targets(transaction: Any) -> None:
             snapshot = doc_ref.get(transaction=transaction)
-            existing = snapshot.to_dict() if snapshot.exists else {}
-            profile = existing.get("performanceProfile") if isinstance(existing.get("performanceProfile"), dict) else {}
-            profile = dict(profile)
-            sources = profile.get("targetSources") if isinstance(profile.get("targetSources"), dict) else {}
-            sources = dict(sources)
+            existing: dict[str, Any] = cast(dict[str, Any], snapshot.to_dict() if snapshot.exists else {})
+            raw_profile = existing.get("performanceProfile")
+            profile: dict[str, Any] = cast(dict[str, Any], raw_profile) if isinstance(raw_profile, dict) else {}
+            raw_sources = profile.get("targetSources")
+            sources: dict[str, Any] = cast(dict[str, Any], raw_sources) if isinstance(raw_sources, dict) else {}
 
-            garmin = profile.get("garmin") if isinstance(profile.get("garmin"), dict) else {}
-            garmin = dict(garmin)
+            raw_garmin = profile.get("garmin")
+            garmin: dict[str, Any] = cast(dict[str, Any], raw_garmin) if isinstance(raw_garmin, dict) else {}
             # A partial Garmin response must not erase a previously successful import
             # for another target (for example, cycling FTP can be available while
             # running lactate threshold is not configured on the account).
@@ -203,7 +204,7 @@ class FirestoreRecoveryRepository:
             if sources:
                 profile["targetSources"] = sources
 
-            payload = {
+            payload: dict[str, Any] = {
                 "userId": self.user_id,
                 "performanceProfile": profile,
                 "updatedAt": now_iso,

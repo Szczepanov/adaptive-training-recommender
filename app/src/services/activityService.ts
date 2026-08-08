@@ -1,5 +1,5 @@
 import { collection, getDocs, orderBy, query, where } from 'firebase/firestore';
-import { db } from '../firebase';
+import { getDb } from '../firebase';
 import type { DataIssue, DataState } from '../engine/dataState';
 import type { NormalizedGarminActivity } from '../engine/models';
 import { parseNormalizedGarminActivity } from '../persistence/parsers/trainingHistory';
@@ -16,7 +16,7 @@ export class ActivityService {
         throughDateExclusive: string,
     ): Promise<DataState<NormalizedGarminActivity[]>> {
         try {
-            const ref = collection(db, 'users', userId, this.collectionPath);
+            const ref = collection(getDb(), 'users', userId, this.collectionPath);
             const activityQuery = query(
                 ref,
                 where('date', '>=', startDateInclusive),

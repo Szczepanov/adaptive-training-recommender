@@ -1,7 +1,7 @@
 import os
-import sys
 from dataclasses import dataclass
 from zoneinfo import ZoneInfo
+
 from dotenv import load_dotenv
 
 

@@ -1,6 +1,7 @@
 import argparse
-import sys
 import logging
+import sys
+
 from .audit import format_report, run_audit
 from .config import load_settings
 from .service import GarminSyncService

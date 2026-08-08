@@ -3,6 +3,7 @@ import logging
 import uuid
 from pathlib import Path
 from typing import Any
+
 from .archive import RawArchiveStore, create_archive_store
 from .canonical import CanonicalActivity, CanonicalDailyMetrics
 from .config import Settings
