@@ -532,5 +532,7 @@ on its own — it is the only phase that fixes incorrect user-facing output.
 ## 10. Documentation follow-up
 
 - Update `docs/workout-library.md` §Source of the catalogue and §File layout.
-- Consider ADR-0010 for D4 (workout-per-template vs parameter-variant) if §4.1 resolves
+- Consider a dedicated ADR for D4 (workout-per-template vs parameter-variant) if §4.1 resolves.
+  (Originally written as "ADR-0010"; that number is now taken by decision provenance.
+  Reserve the next free number at the time it is written.)
   toward a resolver change — that is an architectural decision, not a content one.

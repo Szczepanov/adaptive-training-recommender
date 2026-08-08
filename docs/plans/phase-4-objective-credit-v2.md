@@ -1,7 +1,7 @@
 # Phase 4 — Objective credit V2, and honest load
 
 * **Status:** Ready — derivation-constant decision taken 2026-08-08 (see 4.2)
-* **Depends on:** Phase 0 (hard), Phase 2 (ADR-0010 fixes the credit contract)
+* **Depends on:** Phase 0 (hard), Phase 2 (ADR-0012 fixes the credit contract)
 * **Unlocks:** Phase 5
 * **Addresses:** F7, F8, F12
 * **Rough effort:** 4–5 days
@@ -190,7 +190,7 @@ Sequence search (Phase 5). The evidence hierarchy for interpreting unplanned out
 
 ## Docs to update
 
-* **ADR-0011** (new) — objective credit V2 semantics and the fatigue fusion decision, with
+* **ADR-0014** (new) — objective credit V2 semantics and the fatigue fusion decision, with
   the harness comparison attached
 * **ADR-0006** — amend: strain telemetry interacts with the new credit model
 * `docs/architecture/recommendation-engine.md` — the credit and fatigue sections

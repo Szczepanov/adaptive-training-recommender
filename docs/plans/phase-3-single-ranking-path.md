@@ -2,7 +2,7 @@
 
 * **Status:** Ready — F5 resolution decided 2026-08-08 (see 3.4)
 * **Depends on:** Phase 0 (**hard** — this phase changes ranking behaviour and is
-  unmeasurable without the invariant suite), ADR-0010 from Phase 2
+  unmeasurable without the invariant suite), ADR-0012 from Phase 2
 * **Unlocks:** Phase 5 (sequence search needs a coherent scoring layer to sit on)
 * **Addresses:** F3, F4, F5
 * **Rough effort:** 3–4 days
@@ -184,4 +184,4 @@ and correctly informed; it does not yet optimise the week as a unit.
 
 * **ADR-0008** — amend §6: the date-less history is fixed; state the real constraint model
 * **ADR-0007** — amend §5/§6: anti-stacking is superseded
-* **ADR-0010** — record the lexicographic priority model as accepted
+* **ADR-0012** — record the lexicographic priority model as accepted

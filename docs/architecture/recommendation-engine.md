@@ -1,63 +1,205 @@
 # Recommendation Engine Architecture
 
-The frontend application (`app/src/engine/`) implements an adaptive training decision engine in TypeScript. It evaluates daily recovery snapshots, computes objective strain scores, selects training modes, and constructs structured workout prescriptions.
+How `app/src/engine/` turns a morning's data into a prescribed session.
+
+> **Accuracy note.** Rewritten 2026-08-08 against the engine as it actually is. The
+> previous version described a `REST / RECOVERY / AEROBIC_BASE / QUALITY_STRENGTH` mode
+> hierarchy with fixed thresholds ("HRV drop > 10%", "sleep score < 65") that the code has
+> not used for some time, and omitted every module added by ADR-0006 through ADR-0011.
+> Keep this file updated with the code — a confidently wrong architecture doc is worse
+> than none (finding F13).
 
 ---
 
-## 🧩 Architectural Layers
+## Two selection paths
+
+A template can reach the athlete through **two independent paths with different filtering
+rules**. Any change here must be evaluated against both.
+
+### Path A — readiness only (`evaluateTraining`)
 
 ```text
-Firestore / Daily Recovery Snapshot
-                 │
-                 ▼
-     ┌───────────────────────┐
-     │     validation.ts     │ (Schema validation & sanitization)
-     └───────────┬───────────┘
-                 │
-                 ▼
-     ┌───────────────────────┐
-     │       rules.ts        │ (Strain scoring & mode hierarchy rules)
-     └───────────┬───────────┘
-                 │
-                 ▼
-     ┌───────────────────────┐
-     │     templates.ts      │ (Session template catalog & systemic load caps)
-     └───────────┬───────────┘
-                 │
-                 ▼
-Adaptive Recommendation + Strain Telemetry + Human Rationale
+readiness → mode (train | modify | recover) → category allow-list → date-hash pick
 ```
 
+Pure and synchronous. No history, no events, no periodization. Still reachable directly
+via `evaluateNextDayPlan`, and it computes the mode and safety envelopes that Path B
+depends on.
+
+Phase-gated templates (`phaseEligibility`) are excluded from Path A entirely — it holds no
+`PeriodizationResult`, so it cannot evaluate them at all.
+
+### Path B — intent-aware (`evaluateTrainingWithIntent`, `generateWeekAheadPlan`)
+
+```text
+ENRICHED_TEMPLATES → eligibility → envelope + mode ceilings → phase eligibility
+                   → rankCandidatesByUtility → top pick
+```
+
+Asynchronous; resolves training intent from adherence history first. **Path B runs Path A
+internally** to obtain `mode` and `envelopes`, then discards Path A's template choice and
+re-selects via the optimizer.
+
+> That overlap is deliberate-but-transitional (finding F9). The intended end state is one
+> `evaluateReadinessAndSafetyEnvelope` feeding a single selection path — see
+> [`docs/plans/phase-3-single-ranking-path.md`](../plans/phase-3-single-ranking-path.md).
+
 ---
 
-## 📁 Source Code Organization
+## Module map
 
-* [`app/src/engine/models.ts`](../../app/src/engine/models.ts) — Core interfaces: `DailyRecoverySnapshot`, `RecommendationResult`, `StrainTelemetry`, `StrainBreakdown`, `DecisionRationale`.
-* [`app/src/engine/rules.ts`](../../app/src/engine/rules.ts) — Decision logic calculating acute metric deviations, multi-day baseline drift, mode overrides, and rationale text.
-* [`app/src/engine/templates.ts`](../../app/src/engine/templates.ts) — Session template definitions, systemic load boundaries, and duration bounds.
-* [`app/src/engine/validation.ts`](../../app/src/engine/validation.ts) — Schema sanitization ensuring input types and numeric boundaries are safe.
+```text
+                    DailyRecoverySnapshot + DailySubjectiveCheckin
+                                      │
+                    adapters.ts  ─────┴─────  validation.ts
+                                      │
+                                 DailyReadiness
+                                      │
+        ┌─────────────────────────────┼─────────────────────────────┐
+        ▼                             ▼                             ▼
+   rules.ts                    trainingIntent.ts              eligibility.ts
+   mode + envelopes            resolves plan-side intent      hard gates
+   + strain telemetry                 │                       (time, equipment,
+        │                    ┌────────┼────────┐               environment,
+        │                    ▼        ▼        ▼               guardrails)
+        │            periodization  microcycle  fatigue
+        │            phase/focus    objectives  6D decay
+        │                    └────────┼────────┘
+        │                             ▼
+        │                       optimizer.ts
+        │                    benefit / (1 + cost) × modifiers
+        └─────────────────────────────┼─────────────────────────────┐
+                                      ▼                             ▼
+                                   dose.ts                     planner.ts
+                             execution dose ceiling        7-day projection
+                                      │                             │
+                                      ▼                             │
+                            workouts/prescription.ts ◄──────────────┘
+                                      │
+                              provenance.ts → RecommendationAudit
+```
+
+| Module | Responsibility |
+|---|---|
+| `adapters.ts` | Firestore canonical models → engine inputs |
+| `validation.ts` | Schema validation and sanitisation at the persistence boundary |
+| `eligibility.ts` | The single hard-gate resolver: time, equipment, environment, guardrails |
+| `rules.ts` | Strain scoring, `train`/`modify`/`recover` mode, safety & plan envelopes, adjustment tiers |
+| `periodization.ts` | Event lifecycle, focus-event resolution, continuous phase weights |
+| `microcycle.ts` | Weekly objectives and exposure crediting |
+| `fatigue.ts` | Six-dimensional fatigue with exponential decay |
+| `optimizer.ts` | Candidate ranking: benefit vs cost, plus named modifiers |
+| `trainingIntent.ts` | Composes periodization + objectives + fatigue + planned dose |
+| `dose.ts` | Intersects planned dose with the clinical ceiling and athlete adjustment |
+| `planner.ts` | Rolling 7-day projection and the weekly anchor pre-pass |
+| `provenance.ts` / `replay.ts` | Audit construction and verification |
 
 ---
 
-## ⚙️ Decision Logic & Mode Hierarchy
+## Mode selection (`rules.ts`)
 
-The engine evaluates training modes in a strict risk hierarchy:
+Three modes, not four: **`train`**, **`modify`**, **`recover`**.
 
-1. **REST Mode (Override)**: Triggered when severe acute strain, sleep floor violations, or extreme HRV drops are present.
-2. **RECOVERY Mode**: Recommended when moderate fatigue or baseline drift indicates high cumulative strain.
-3. **AEROBIC_BASE Mode**: Default target mode when recovery metrics are balanced and stable.
-4. **QUALITY_STRENGTH / THRESHOLD Mode**: Enabled when recovery scores demonstrate high readiness, low acute strain, and no drift penalties.
+Objective strain is a continuous, **self-normalised** score — not fixed absolute
+thresholds. Each of HRV, RHR and sleep score contributes two z-scored terms:
+
+* **acute** — today vs this person's own trailing 7-day baseline
+* **chronic** — the 7-day baseline's drift from the 28-day baseline, weighted ×1.5,
+  because a multi-day trend predicts overreaching better than one noisy night
+
+Normalisation uses the athlete's own trailing 28-day stdev, floored (HRV 3 ms, RHR
+1.5 bpm, sleep 4 pts) so a flat metric cannot produce an explosive z-score. Each metric's
+contribution is capped at ±2.0 so one outlier cannot dominate.
+
+```text
+strain = Σ metric(acute + 1.5 × chronic) × weight     HRV 0.5, RHR 0.3, sleep 0.2
+       + sleepFloorPenalty          sleep score < 50           → +0.5
+       + bodyBatteryDeficit         ramps 50 → 25              → up to +0.3
+       + recentHardSessions         ≥2 hard in 3 days          → +1.0
+       + conservativeBias           athlete preference         → +0.4
+```
+
+| Mode | Trigger | Candidate ceiling |
+|---|---|---|
+| `recover` | strain ≥ 2.2, fatigue score > 7, pain, body battery ≤ 20, or already trained today | `Rest` / `Mobility/Recovery` |
+| `modify` | strain ≥ 1.0, fatigue score > 5, or soreness > 6 | `systemicCost <= 0.5` |
+| `train` | otherwise | category allow-list (Path A) or plan-tier ceiling (Path B) |
+
+`modify` caps by **systemic cost**, not by category — so upper-body strength (cost 0.3)
+remains available on a day when legs and intervals are not.
+
+Two overrides sit on top: a **post-recover buffer** softens a fresh `train` to `modify` the
+day after a mandated recovery day, and an **already-trained-today** override forces
+`recover` regardless of how green the numbers look.
 
 ---
 
-## 📈 Strain Telemetry Decomposition
+## Candidate ranking (`optimizer.ts`)
 
-Objective strain is calculated as:
+```text
+utility = benefit / (1 + fatigueCost) × preferenceMultiplier
+```
 
-$$\text{Total Strain} = \text{Acute Deviation} + \text{Multi-Day Drift} + \text{Contextual Penalties}$$
+**Benefit** scores a template's stimulus profile against currently unresolved weekly
+objectives. **Cost** is the dot product of the template's six-dimensional cost profile
+with current dimensional fatigue, weighted (lower body ×2.5 for DOMS interference,
+systemic ×2.0, impact ×2.0, neuromuscular ×1.8, cardiovascular and upper body ×1.5).
 
-### Metric Weights & Penalties
-* **HRV Drop**: Deviation below 7d or 28d baseline ($>10\%$ drop adds acute strain).
-* **Resting Heart Rate Elevation**: $RHR > RHR_{baseline} + 3\text{ bpm}$ adds acute strain.
-* **Sleep Deficit**: Sleep score $< 65$ or duration $< 6.5\text{ hours}$ triggers sleep floor penalties.
-* **Step Overload**: Previous-day step count ($D-1$) exceeding target thresholds increases non-exercise fatigue load.
+The multiplier then accumulates named modifiers: anti-stacking, post-objective strength
+suppression, intensity stacking, event-modality preference, aerobic filler, anchor role
+boost, anchor adjacency suppression, and a variety tie-break — see
+[ADR-0011](../adr/0011-weekly-architecture-anchors.md), including its Negative section on
+why this composition is a known problem.
+
+---
+
+## Authority ordering
+
+The engine's real hierarchy, in the order it is applied:
+
+```text
+clinical / safety gates     hard exclusion — never overridable
+        ↓
+feasibility                 time, equipment, environment, guardrails
+        ↓
+readiness mode ceiling      train / modify / recover cost caps
+        ↓
+phase eligibility           event-relative template gating (Path B only)
+        ↓
+objective benefit           unresolved weekly exposures
+        ↓
+fatigue cost                dimensional interference
+        ↓
+preference                  soft multipliers only
+```
+
+Preferences rank; they never unlock. An avoided modality is a hard exclude on Path A and a
+0.2× soft penalty on Path B — a deliberate distinction, since taste must never behave like
+a safety constraint ([ADR-0007](../adr/0007-adaptive-multisport-engine-architecture.md) §6).
+
+---
+
+## Multi-day projection
+
+`planner.ts` chains the same pipeline forward with three confidence tiers — `confirmed`
+(today), `provisional` (tomorrow's readiness-branch preview), `projected` (day 2+) — and
+a hard fatigue-tier ceiling, because `benefit / (1 + cost)` is asymptotic and would
+otherwise never actually select rest. Nothing beyond today is persisted. See
+[ADR-0008](../adr/0008-week-ahead-planning.md).
+
+---
+
+## Related decisions
+
+| ADR | Covers |
+|---|---|
+| [0006](../adr/0006-reconciled-strain-telemetry.md) | Acute vs multi-day-drift strain decomposition |
+| [0007](../adr/0007-adaptive-multisport-engine-architecture.md) | Six-tier engine, dual profiles, safety vs preference authority |
+| [0008](../adr/0008-week-ahead-planning.md) | Rolling 7-day projection and confidence tiers |
+| [0009](../adr/0009-training-intent-history.md) | History-seeded intent; the `TrainingHistoryProvider` boundary |
+| [0010](../adr/0010-decision-provenance-and-audit-replay.md) | `DataState`, audit records, replay, `POLICY_VERSION` |
+| [0011](../adr/0011-weekly-architecture-anchors.md) | Weekly anchors and ranking modifiers |
+
+Known divergences between these decisions and the code are tracked in
+[the 2026-08-08 review](../analysis/2026-08-08-architecture-review.md); remediation is
+sequenced in [`docs/plans/`](../plans/).

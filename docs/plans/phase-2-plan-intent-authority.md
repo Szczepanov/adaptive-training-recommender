@@ -5,7 +5,7 @@
 * **Unlocks:** Phases 3, 4, 5
 * **Addresses:** F16, F17, F9
 * **Rough effort:** 2 days for the ADR, 4–6 days for the `PlanDefinition` model
-* **Primary artifact:** **ADR-0010**
+* **Primary artifact:** **ADR-0012**
 
 ---
 
@@ -27,7 +27,7 @@ exist with no mapping between them.
 
 ---
 
-## 2.1 — ADR-0010: Plan Intent and Sequence Planning are the training authorities
+## 2.1 — ADR-0012: Plan Intent and Sequence Planning are the training authorities
 
 Write this first; it is the gate for everything after. It must define:
 
@@ -193,7 +193,7 @@ there is one path.
 
 ## Acceptance criteria
 
-- [ ] ADR-0010 accepted, recording D1 (canonical phase vocabulary) and D2 (`intensityScale` consumer)
+- [ ] ADR-0012 accepted, recording D1 (canonical phase vocabulary) and D2 (`intensityScale` consumer)
 - [ ] `PlanDefinition` exists; `generateWeeklyObjectives` consumes it when present
 - [ ] `event-plan.ts` has at least one engine-path consumer
 - [ ] `intensityScale` has a named, scheduled consumer (`PlannedDose.intensity`, Phase 4.4)
@@ -216,7 +216,7 @@ Sequence search (Phase 5). Objective credit mechanics (Phase 4). This phase esta
 
 ## Docs to update
 
-* **ADR-0010** (new, the main artifact)
+* **ADR-0012** (new, the main artifact)
 * **ADR-0007** — amend: periodization is the fallback, not the authority
 * **ADR-0004** — amend §3: `event-plan.ts` is a planning input, not only a coverage contract
 * `docs/architecture/recommendation-engine.md` — rewrite against the new layering

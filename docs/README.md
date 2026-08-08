@@ -18,6 +18,11 @@ Architectural choices, system invariants, and technical trade-offs are documente
 * [**ADR-0007: Adaptive Multi-Sport Engine Architecture & Utility Optimization Pipeline**](./adr/0007-adaptive-multisport-engine-architecture.md) — 6-tier adaptive engine, schedule availability, event periodization, microcycle objectives, 6D fatigue decay, and utility optimization.
 * [**ADR-0008: Rolling 7-Day Week-Ahead Planning**](./adr/0008-week-ahead-planning.md) — Confidence-tiered multi-day forecast, rolling microcycle window, and never-persisted recomputation.
 * [**ADR-0009: Training Intent Is History-Seeded**](./adr/0009-training-intent-history.md) — Evaluation-time intent resolution, the `TrainingHistoryProvider` boundary, and advisory-only sequence context.
+* [**ADR-0010: Decision Provenance, Audit Records & Replay**](./adr/0010-decision-provenance-and-audit-replay.md) — `DataState` read semantics, immutable history revisions, persisted audits, `POLICY_VERSION`, and replay verification.
+* [**ADR-0011: Weekly Architecture — Session Anchors & Ranking Modifiers**](./adr/0011-weekly-architecture-anchors.md) — The anchor pre-pass and optimizer Patches 4–6, including why this composition should not be extended.
+
+Reserved for work sequenced in [`docs/plans/`](./plans/), written with their phase:
+**0012** plan intent · **0013** structured injury constraints · **0014** objective credit V2 · **0015** sequence planning.
 
 ---
 
@@ -33,7 +38,7 @@ How agreed changes get made. Mutable, status-tracked, and expected to go stale �
 
 * [**Phase 0: Instrumentation & developer baseline**](./plans/phase-0-instrumentation.md) — Coaching invariants as the CI gate; clean-clone runnability.
 * [**Phase 1: Live defects**](./plans/phase-1-live-defects.md) — Injury gate, Garmin objective credit, recommendation immutability.
-* [**Phase 2: Plan intent is the planning authority**](./plans/phase-2-plan-intent-authority.md) — ADR-0010, `PlanDefinition`, collapsing the two selection paths.
+* [**Phase 2: Plan intent is the planning authority**](./plans/phase-2-plan-intent-authority.md) — ADR-0012, `PlanDefinition`, collapsing the two selection paths.
 * [**Phase 3: One ranking path**](./plans/phase-3-single-ranking-path.md) — Lexicographic priorities replacing modality anti-stacking.
 * [**Phase 4: Objective credit V2**](./plans/phase-4-objective-credit-v2.md) — One credit model, finished stimulus vocabulary, honest load.
 * [**Phase 5: Sequence planning**](./plans/phase-5-sequence-planning.md) — Bounded search, fixed activities, tissue state, evidence hierarchy.
@@ -44,7 +49,7 @@ How agreed changes get made. Mutable, status-tracked, and expected to go stale �
 In-depth technical design documents covering system subsystems:
 
 * [**Ingestion Pipeline Architecture**](./architecture/ingestion-pipeline.md) — Python Garmin API client, token persistence, baseline metrics calculation, and Firestore repository.
-* [**Recommendation Engine**](./architecture/recommendation-engine.md) — TypeScript rule engine (`rules.ts`), strain scoring breakdown, mode hierarchy, and decision rationale generation.
+* [**Recommendation Engine**](./architecture/recommendation-engine.md) — The two selection paths, module map, self-normalised strain scoring, `train`/`modify`/`recover` modes, candidate ranking, and the authority ordering.
 * [**Workout Library Architecture**](./workout-library.md) — Multi-layered workout definitions, variants, and September race event plan contract.
 
 ---

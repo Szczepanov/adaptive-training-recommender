@@ -213,6 +213,6 @@ event-specific freshness* rather than arriving as an emergent side effect.
 
 ## Docs to update
 
-* **ADR-0012** (new) — sequence planning and the session-role model
+* **ADR-0015** (new) — sequence planning and the session-role model
 * **ADR-0008** — superseded in part: the greedy projected loop is replaced
 * `docs/architecture/recommendation-engine.md` — the planner section

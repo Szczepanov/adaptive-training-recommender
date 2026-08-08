@@ -529,7 +529,7 @@ Small, mechanical, unblocks everything else.
 
 ### Phase 3 — Retire the scaffolding (~4-5 days)
 
-11. **F7/F8 — Pick one credit model and one vocabulary.** Write **ADR-0010: Dose-sensitive
+11. **F7/F8 — Pick one credit model and one vocabulary.** Write **ADR-0014: Dose-sensitive
     objective credit** stating the target model, then either complete the V2 migration or
     delete `stimulus.ts` and the unused V2 types. Do not leave it at `HEAD`'s state.
     Simultaneously: make canonical axes **required** on `WorkoutStimulusProfile`, drop the
@@ -557,9 +557,12 @@ Small, mechanical, unblocks everything else.
 
 14. **Rewrite `docs/architecture/recommendation-engine.md` from scratch** against the
     current engine. It is worse than having no document.
-15. **Backfill missing ADRs**: 0010 decision provenance & audit replay (retroactive),
-    0011 weekly architecture & anchors, 0012 objective credit V2. Add a
-    "Superseded/Amended by" line to ADR-0007 §6 and ADR-0008 §1/§6 once F1/F3/F5 land.
+15. **Backfill missing ADRs.** Retroactive ones are written: **ADR-0010** (decision
+    provenance & audit replay) and **ADR-0011** (weekly architecture & anchors). Forward
+    numbers are reserved and written with their phase: **0012** plan intent,
+    **0013** structured injury constraints, **0014** objective credit V2,
+    **0015** sequence planning. Add a "Superseded/Amended by" line to ADR-0007 §6 and
+    ADR-0008 §1/§6 once F1/F3/F5 land.
 16. **Fix `AGENTS.md`'s schema version and module lists**, and
     the stale line references in `docs/plans/0000-workout-library-expansion.md` (or mark the file
     archived and move the two-path explanation into an ADR).
