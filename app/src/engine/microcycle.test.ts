@@ -8,7 +8,11 @@ import { evaluatePeriodizationPhase } from './periodization.ts';
 describe('updateMicrocycleProgress', () => {
   it('credits controlled field work toward surge repeatability', () => {
     const microcycle = { windowStartDate: '2026-08-03', objectives: [{ id: 'surges', key: 'surge_repeatability' as const, title: 'Surges', targetExposures: 1, completedExposures: 0, targetStimulus: { repeatedSurges: 0.9 } }] };
-    const updated = updateMicrocycleProgress(microcycle, { id: 'field-1', title: 'Field Field Maintenance', date: '2026-08-07', durationMin: 40, isCompleted: true });
+    const updated = updateMicrocycleProgress(microcycle, {
+      id: 'field-1', userId: 'athlete-1', title: 'Field Field Maintenance', date: '2026-08-07', durationMin: 40,
+      isCompleted: true, fixed: true, environment: 'outdoor', equipment: [],
+      createdAt: '2026-08-01T00:00:00Z', updatedAt: '2026-08-01T00:00:00Z',
+    });
     expect(updated.objectives.find((objective) => objective.key === 'surge_repeatability')?.completedExposures).toBe(1);
   });
 });
