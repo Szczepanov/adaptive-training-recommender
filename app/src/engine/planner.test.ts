@@ -469,7 +469,9 @@ describe('resolveWeeklyAnchors', () => {
         context.trainingSettings = weeklyTrainingSettings({ weekdayMaxMinutes: 60 });
         const event = cyclingEvent('2026-08-27');
         const reservedSunday: FixedActivity = {
-            id: 'family-event', title: 'Fixed commitment', date: '2026-08-09', durationMin: 150, isCompleted: false,
+            id: 'family-event', userId: 'athlete-1', title: 'Fixed commitment', date: '2026-08-09', durationMin: 150,
+            isCompleted: false, fixed: true, environment: 'either', equipment: [],
+            createdAt: '2026-08-01T00:00:00Z', updatedAt: '2026-08-01T00:00:00Z',
         };
 
         const anchors = resolveWeeklyAnchors('2026-08-07', 7, [event], [reservedSunday], context);

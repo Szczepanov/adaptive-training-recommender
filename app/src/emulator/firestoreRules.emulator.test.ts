@@ -2,7 +2,7 @@
 import { readFileSync } from 'node:fs';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { assertFails, assertSucceeds, initializeTestEnvironment, type RulesTestEnvironment } from '@firebase/rules-unit-testing';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, deleteDoc } from 'firebase/firestore';
 
 const emulatorDescribe = process.env.FIRESTORE_EMULATOR_HOST ? describe : describe.skip;
 let testEnvironment: RulesTestEnvironment;
@@ -10,6 +10,24 @@ let testEnvironment: RulesTestEnvironment;
 const ownerId = 'athlete-a';
 const otherUserId = 'athlete-b';
 const recommendationPath = `users/${ownerId}/daily_recommendations/2026-08-07`;
+const fixedActivityPath = `users/${ownerId}/fixed_activities/activity-1`;
+
+function validFixedActivity() {
+    return {
+        userId: ownerId,
+        title: 'Evening Football',
+        date: '2026-08-12',
+        durationMin: 90,
+        fixed: true,
+        environment: 'outdoor',
+        equipment: ['cleats'],
+        expectedStimulus: { aerobicEndurance: 0.6, repeatedSurges: 0.4 },
+        expectedCost: { systemic: 0.8, lowerBody: 0.5 },
+        isCompleted: false,
+        createdAt: '2026-08-01T00:00:00Z',
+        updatedAt: '2026-08-01T00:00:00Z',
+    };
+}
 
 function validRecommendation(auditEvaluatedAt = '2026-08-07T08:00:00Z') {
     return {
@@ -237,6 +255,84 @@ emulatorDescribe('Firestore security rules', () => {
         await expect(assertSucceeds(
             setDoc(doc(ownerDb, recommendationPath), { ...original, revision: 1 }, { merge: true }),
         )).resolves.toBeUndefined();
+    });
+
+    it('allows an owner to create and read a valid fixed activity', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await expect(assertSucceeds(setDoc(doc(ownerDb, fixedActivityPath), validFixedActivity()))).resolves.toBeUndefined();
+        await expect(assertSucceeds(getDoc(doc(ownerDb, fixedActivityPath)))).resolves.toBeDefined();
+    });
+
+    it('rejects unauthenticated fixed activity access', async () => {
+        const anonDb = testEnvironment.unauthenticatedContext().firestore();
+        await assertFails(setDoc(doc(anonDb, fixedActivityPath), validFixedActivity()));
+        await testEnvironment.withSecurityRulesDisabled(async context => {
+            await setDoc(doc(context.firestore(), fixedActivityPath), validFixedActivity());
+        });
+        await assertFails(getDoc(doc(anonDb, fixedActivityPath)));
+    });
+
+    it('rejects cross-user fixed activity reads and writes', async () => {
+        await testEnvironment.withSecurityRulesDisabled(async context => {
+            await setDoc(doc(context.firestore(), fixedActivityPath), validFixedActivity());
+        });
+        const otherDb = testEnvironment.authenticatedContext(otherUserId).firestore();
+        await assertFails(getDoc(doc(otherDb, fixedActivityPath)));
+        // Writing to the owner's document path as a different authenticated user.
+        await assertFails(setDoc(doc(otherDb, fixedActivityPath), validFixedActivity()));
+        // Writing under otherUserId's own path but forging userId to the real owner's id.
+        await assertFails(setDoc(doc(otherDb, `users/${otherUserId}/fixed_activities/activity-2`), { ...validFixedActivity(), userId: ownerId }));
+    });
+
+    it('rejects a fixed activity with an out-of-range durationMin', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertFails(setDoc(doc(ownerDb, fixedActivityPath), { ...validFixedActivity(), durationMin: 0 }));
+        await assertFails(setDoc(doc(ownerDb, fixedActivityPath), { ...validFixedActivity(), durationMin: 1500 }));
+    });
+
+    it('rejects a fixed activity with an expectedCost value above 1', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertFails(setDoc(doc(ownerDb, fixedActivityPath), { ...validFixedActivity(), expectedCost: { systemic: 1.5 } }));
+    });
+
+    it('rejects a fixed activity with an unknown environment', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertFails(setDoc(doc(ownerDb, fixedActivityPath), { ...validFixedActivity(), environment: 'space' }));
+    });
+
+    it('rejects a fixed activity with an oversized equipment list', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertFails(setDoc(doc(ownerDb, fixedActivityPath), { ...validFixedActivity(), equipment: Array.from({ length: 21 }, (_, i) => `item-${i}`) }));
+    });
+
+    it('rejects a fixed activity with a malformed date', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertFails(setDoc(doc(ownerDb, fixedActivityPath), { ...validFixedActivity(), date: '08/12/2026' }));
+    });
+
+    it('rejects a fixed activity missing the required fixed field', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        const withoutFixed: Record<string, unknown> = validFixedActivity();
+        delete withoutFixed.fixed;
+        await assertFails(setDoc(doc(ownerDb, fixedActivityPath), withoutFixed));
+    });
+
+    it('rejects updating a fixed activity that forges a different owner or createdAt', async () => {
+        await testEnvironment.withSecurityRulesDisabled(async context => {
+            await setDoc(doc(context.firestore(), fixedActivityPath), validFixedActivity());
+        });
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertFails(setDoc(doc(ownerDb, fixedActivityPath), { ...validFixedActivity(), userId: otherUserId }, { merge: true }));
+        await assertFails(setDoc(doc(ownerDb, fixedActivityPath), { ...validFixedActivity(), createdAt: '2099-01-01T00:00:00Z' }, { merge: true }));
+    });
+
+    it('allows an owner to update and delete their own fixed activity', async () => {
+        await testEnvironment.withSecurityRulesDisabled(async context => {
+            await setDoc(doc(context.firestore(), fixedActivityPath), validFixedActivity());
+        });
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await expect(assertSucceeds(setDoc(doc(ownerDb, fixedActivityPath), { ...validFixedActivity(), isCompleted: true }, { merge: true }))).resolves.toBeUndefined();
+        await expect(assertSucceeds(deleteDoc(doc(ownerDb, fixedActivityPath)))).resolves.toBeUndefined();
     });
 
     it('rejects re-saving the same decision with a different audit than what is stored', async () => {

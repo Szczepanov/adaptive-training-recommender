@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isValidDate, validateRecommendation, validateAdherenceUpdate, validateGoal } from './validation';
+import { isValidDate, validateRecommendation, validateAdherenceUpdate, validateGoal, validateFixedActivity } from './validation';
 
 describe('isValidDate', () => {
     it('rejects impossible calendar dates rather than normalizing them', () => {
@@ -220,6 +220,90 @@ describe('validateAdherenceUpdate', () => {
         const result = validateAdherenceUpdate({ followed: false, actualModality: '' });
         expect(result.isValid).toBe(true);
         expect(result.data?.actualModality).toBeNull();
+    });
+});
+
+describe('validateFixedActivity', () => {
+    const baseFields = {
+        userId: 'u1',
+        title: 'Evening Football',
+        date: '2026-08-12',
+        durationMin: 90,
+        fixed: true,
+        environment: 'outdoor',
+        isCompleted: false,
+    };
+
+    it('accepts a minimal valid fixed activity', () => {
+        const result = validateFixedActivity({ ...baseFields });
+        expect(result.isValid).toBe(true);
+        expect(result.data?.durationMin).toBe(90);
+        expect(result.data?.fixed).toBe(true);
+    });
+
+    it('accepts expectedStimulus/expectedCost maps within [0, 1]', () => {
+        const result = validateFixedActivity({
+            ...baseFields,
+            expectedStimulus: { aerobicEndurance: 0.6, repeatedSurges: 0.4 },
+            expectedCost: { systemic: 0.8, lowerBody: 0.5 },
+        });
+        expect(result.isValid).toBe(true);
+        expect(result.data?.expectedStimulus).toEqual({ aerobicEndurance: 0.6, repeatedSurges: 0.4 });
+    });
+
+    it('rejects an expectedCost value above 1', () => {
+        const result = validateFixedActivity({ ...baseFields, expectedCost: { systemic: 1.5 } });
+        expect(result.isValid).toBe(false);
+        expect(result.errors.some(e => e.field === 'expectedCost')).toBe(true);
+    });
+
+    it('rejects an expectedStimulus map with an unrecognized axis key', () => {
+        const result = validateFixedActivity({ ...baseFields, expectedStimulus: { notAnAxis: 0.5 } });
+        expect(result.isValid).toBe(false);
+        expect(result.errors.some(e => e.field === 'expectedStimulus')).toBe(true);
+    });
+
+    it('rejects durationMin out of [1, 1440]', () => {
+        expect(validateFixedActivity({ ...baseFields, durationMin: 0 }).isValid).toBe(false);
+        expect(validateFixedActivity({ ...baseFields, durationMin: 1500 }).isValid).toBe(false);
+    });
+
+    it('requires the fixed field (movable vs immovable)', () => {
+        const withoutFixed: Record<string, unknown> = { ...baseFields };
+        delete withoutFixed.fixed;
+        const result = validateFixedActivity(withoutFixed);
+        expect(result.isValid).toBe(false);
+        expect(result.errors.some(e => e.field === 'fixed')).toBe(true);
+    });
+
+    it('rejects an unknown environment', () => {
+        const result = validateFixedActivity({ ...baseFields, environment: 'space' });
+        expect(result.isValid).toBe(false);
+        expect(result.errors.some(e => e.field === 'environment')).toBe(true);
+    });
+
+    it('rejects an oversized equipment list', () => {
+        const result = validateFixedActivity({ ...baseFields, equipment: Array.from({ length: 21 }, (_, i) => `item-${i}`) });
+        expect(result.isValid).toBe(false);
+        expect(result.errors.some(e => e.field === 'equipment')).toBe(true);
+    });
+
+    it('rejects an equipment item that is too long', () => {
+        const result = validateFixedActivity({ ...baseFields, equipment: ['x'.repeat(51)] });
+        expect(result.isValid).toBe(false);
+        expect(result.errors.some(e => e.field === 'equipment')).toBe(true);
+    });
+
+    it('rejects a malformed date', () => {
+        const result = validateFixedActivity({ ...baseFields, date: '08/12/2026' });
+        expect(result.isValid).toBe(false);
+        expect(result.errors.some(e => e.field === 'date')).toBe(true);
+    });
+
+    it('accepts availabilityOverride within [0, 1440] and rejects out-of-range', () => {
+        expect(validateFixedActivity({ ...baseFields, availabilityOverride: 60 }).isValid).toBe(true);
+        expect(validateFixedActivity({ ...baseFields, availabilityOverride: -1 }).isValid).toBe(false);
+        expect(validateFixedActivity({ ...baseFields, availabilityOverride: 1500 }).isValid).toBe(false);
     });
 });
 

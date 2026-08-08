@@ -248,6 +248,22 @@ Forecast recommendations never mutate completed credit. They accumulate in
 The planner's `objectiveCredits` display is derived from the same V2 objective-credit
 function used by the live ledger, not the old `stimulusCoverage >= 0.6` model.
 
+### Fixed activities (Phase 5.3)
+
+`FixedActivity` (external commitments -- a booked class, a match, travel) is persisted at
+`users/{userId}/fixed_activities/{activityId}` via `fixedActivityService.ts`, the same
+user-owned/validated-at-the-rule pattern as `goals` (ADR-0002). `Home.tsx` reads the
+current week's activities and passes them into `WeekAheadOptions.fixedActivities`, which
+`resolveWeeklyAnchors`/`resolveAvailability` (`schedule.ts`) already consumed -- the gap
+this closed was the absent Firestore source, not the consuming logic. An
+`availabilityOverride` on an activity caps that day's whole training budget (e.g. a travel
+day) before the activity's own `durationMin` is deducted; several overrides on the same
+day take the most restrictive. `fixed` (movable vs immovable) is captured now but not yet
+consumed -- it becomes load-bearing once sequence search (5.1/5.2) can reason about
+shifting a movable placeholder. See
+[docs/plans/phase-5-sequence-planning.md](../plans/phase-5-sequence-planning.md) 5.3 for
+the full storage/validation contract.
+
 ---
 
 ## Verification & audit tooling

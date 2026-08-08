@@ -70,8 +70,9 @@ Firestore.
    Periodization is evaluated separately for each date in the strip, including lifecycle
    semantics for stale, completed, and DNF events. Each projected-day optimizer call
    receives that date's focus event and phase rather than reusing today's context.
-   `FixedActivity` still has no Firestore-backed source, so the generic weekly schedule
-   remains the fallback there.
+   `FixedActivity` had no Firestore-backed source at the time this ADR was written; Phase
+   5.3 (docs/plans/phase-5-sequence-planning.md) closed that gap -- see the "Fixed
+   activities" subsection of `docs/architecture/recommendation-engine.md`.
 
 6. **Projected picks become sequence context**: adherence-derived recent sessions seed
    the chain, and each selected today/tomorrow/projected template is appended using its
@@ -107,7 +108,9 @@ Firestore.
 ### Negative
 * Days 2+ are read as "session type", not exact duration/intensity -- the UI must keep
   surfacing that caveat, or the projection will be over-trusted.
-* Fixed activities are still absent from the projection, so the generic weekly schedule
-  can be optimistic on days that already contain an unrecorded commitment.
+* ~~Fixed activities are still absent from the projection, so the generic weekly schedule
+  can be optimistic on days that already contain an unrecorded commitment.~~ Closed by
+  Phase 5.3: `FixedActivity` now persists at `users/{userId}/fixed_activities` and feeds
+  the projection.
 * The sequence policy is intentionally limited to Strength; it does not prescribe a
   universal consecutive-day rule for endurance work.

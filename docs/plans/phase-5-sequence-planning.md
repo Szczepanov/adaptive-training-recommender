@@ -16,7 +16,7 @@ Ordered by the increment sequence below, **not** by section number.
 
 | Order | Task | Status | Summary | Primary files |
 |:--:|---|:--:|---|---|
-| 1 | 5.3 | `[ ]` | Persist `FixedActivity` under a user-owned path with rules + emulator tests | `app/firestore.rules`, new `fixedActivityService.ts`, `app/src/engine/schedule.ts`, `planner.ts` |
+| 1 | 5.3 | `[x]` | Persist `FixedActivity` under a user-owned path with rules + emulator tests | `app/firestore.rules`, new `fixedActivityService.ts`, `app/src/engine/schedule.ts`, `planner.ts` |
 | 2 | 5.4 | `[ ]` | Per-region tissue state; may only tighten a Phase-1 injury constraint | `app/src/engine/models.ts`, `components/DailyCheckin.tsx`, `injuryPolicy.ts` |
 | 3 | 5.5 | `[ ]` | Evidence hierarchy for completed training, carrying `stimulusConfidence` | `app/src/engine/completedTraining.ts` |
 | 4 | 5.7 | `[ ]` | Taper as an explicit plan contract rather than an emergent side effect | `app/src/workouts/event-plan.ts`, `app/src/engine/periodization.ts` |
@@ -125,7 +125,7 @@ interface PlanningCandidate {
 
 Prescription generation stays downstream and unchanged.
 
-## `[ ]` 5.3 — Persist fixed activities
+## `[x]` 5.3 — Persist fixed activities
 
 `FixedActivity` exists in the domain and `WeekAheadOptions.fixedActivities` accepts it,
 but there is no Firestore-backed source (ADR-0008 §5 admits this). For a multi-sport

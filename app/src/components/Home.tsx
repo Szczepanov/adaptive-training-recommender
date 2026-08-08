@@ -8,9 +8,10 @@ import type { TrainingHistorySnapshot } from '../engine/trainingHistorySnapshot'
 import { buildRecommendationAudit } from '../engine/provenance';
 import { evaluatePeriodizationPhase, getDaysToEvent } from '../engine/periodization';
 import { resolveExecutionDose } from '../engine/dose';
-import type { DailyDecisionInput, Recommendation, NextDayPotentialPlan, DailyRecommendation } from '../engine/models';
+import type { DailyDecisionInput, Recommendation, NextDayPotentialPlan, DailyRecommendation, FixedActivity } from '../engine/models';
 import { recommendationService } from '../services/recommendationService';
-import { getPreviousLocalDateString } from '../utils/localDate';
+import { fixedActivityService } from '../services/fixedActivityService';
+import { getPreviousLocalDateString, addDaysToLocalDateString } from '../utils/localDate';
 import { getPrescriptionLegend, resolveWorkoutPrescription } from '../workouts';
 import type { WorkoutPrescription } from '../workouts';
 import { AdherencePrompt } from './AdherencePrompt';
@@ -318,6 +319,29 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
     };
   }, [decisionInput]);
 
+  // Matches generateWeekAheadPlan's own WeekAheadOptions.days default (planner.ts) -- the
+  // fixed-activity read below must cover the same horizon the planner actually walks.
+  const WEEK_AHEAD_DAYS = 7;
+
+  // Fixed activities (Phase 5.3) persisted at users/{userId}/fixed_activities -- read
+  // once per user/date, same lifecycle as the other week-ahead inputs below.
+  const [fixedActivities, setFixedActivities] = useState<FixedActivity[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    if (!decisionInput) {
+      setFixedActivities([]);
+      return () => { cancelled = true; };
+    }
+    const endDate = addDaysToLocalDateString(decisionInput.date, WEEK_AHEAD_DAYS);
+    fixedActivityService.getActivitiesInRange(userId, decisionInput.date, endDate)
+      .then(activities => { if (!cancelled) setFixedActivities(activities); })
+      .catch(err => {
+        console.warn('Failed to load fixed activities:', err);
+        if (!cancelled) setFixedActivities([]);
+      });
+    return () => { cancelled = true; };
+  }, [userId, decisionInput]);
+
   // The production planner reads adherence history once, so it must run outside render.
   // Cancellation ensures a prior user/date/goals/check-in/settings state cannot replace
   // the forecast after a newer dashboard snapshot has been composed.
@@ -342,7 +366,7 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
       decisionInput.date,
       activeRec,
       tomorrowRec,
-      {},
+      { days: WEEK_AHEAD_DAYS, fixedActivities },
       undefined,
       historySnapshot,
     ).then(plan => {
@@ -354,7 +378,7 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
       }
     });
     return () => { cancelled = true; };
-  }, [userId, engineInputs, decisionInput, activeRec, canGenerateNormalPlan, nextDayPlan, selectedNextDayTier, eventPeriodization, historySnapshot]);
+  }, [userId, engineInputs, decisionInput, activeRec, canGenerateNormalPlan, nextDayPlan, selectedNextDayTier, eventPeriodization, historySnapshot, fixedActivities]);
 
   if (loading) {
     return (

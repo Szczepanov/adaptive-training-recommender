@@ -84,8 +84,17 @@ export function resolveAvailability(
 
     // 3. Process Fixed Activities on Target Date
     const daysFixed = fixedActivities.filter(a => a.date === dateStr);
+    // An availabilityOverride caps the whole day's budget outright (e.g. a travel day
+    // where the normal weekday/weekend profile default no longer applies) *before* any
+    // individual activity's own duration is deducted below. Several overrides on the same
+    // day take the most restrictive (min) -- optimistic combination would understate how
+    // constrained the day actually is.
+    const overrides = daysFixed
+        .map(a => a.availabilityOverride)
+        .filter((value): value is number => typeof value === 'number');
+    const overriddenBaseTime = overrides.length > 0 ? Math.min(baseTime, ...overrides) : baseTime;
     const fixedDurationSum = daysFixed.reduce((sum, a) => sum + a.durationMin, 0);
-    const remainingTimeMin = Math.max(0, baseTime - fixedDurationSum);
+    const remainingTimeMin = Math.max(0, overriddenBaseTime - fixedDurationSum);
 
     // 4. Resolve Available Equipment
     const equipmentSet = new Set<string>(resolveOwnedEquipment(userContext?.constraints));

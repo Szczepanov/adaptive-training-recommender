@@ -61,13 +61,48 @@ describe('Architecture & Phased Engine Integration', () => {
         it('deducts fixed activity duration and reserves capacity for future scheduled activities', () => {
             const fixedActivities = [
                 {
-                    id: 'fixed_1', title: 'Evening Football', date: '2026-08-12', durationMin: 90,
-                    isCompleted: false, expectedCost: { systemic: 0.8 },
+                    id: 'fixed_1', userId: 'athlete-1', title: 'Evening Football', date: '2026-08-12', durationMin: 90,
+                    isCompleted: false, expectedCost: { systemic: 0.8 }, fixed: true, environment: 'outdoor' as const,
+                    equipment: [], createdAt: '2026-08-01T00:00:00Z', updatedAt: '2026-08-01T00:00:00Z',
                 },
             ];
             const availability = resolveAvailability('2026-08-12', null, fixedActivities, testContext());
             expect(availability.maxTimeMinutes).toBe(0);
             expect(availability.reservedCapacityCost).toBe(0.8);
+        });
+
+        it('caps the whole day budget with availabilityOverride before deducting fixed-activity duration', () => {
+            // 2026-08-08 is a Saturday -- the athlete's normal weekend budget is 120 min
+            // (see testTrainingSettings above), but a travel day shrinks that outright.
+            const fixedActivities = [
+                {
+                    id: 'travel', userId: 'athlete-1', title: 'Travel day', date: '2026-08-08', durationMin: 30,
+                    isCompleted: false, fixed: true, environment: 'either' as const, equipment: [],
+                    availabilityOverride: 60,
+                    createdAt: '2026-08-01T00:00:00Z', updatedAt: '2026-08-01T00:00:00Z',
+                },
+            ];
+            const availability = resolveAvailability('2026-08-08', null, fixedActivities, testContext());
+            expect(availability.maxTimeMinutes).toBe(30); // min(120, 60) override - 30 min activity
+        });
+
+        it('takes the most restrictive availabilityOverride when several activities disagree', () => {
+            const fixedActivities = [
+                {
+                    id: 'a', userId: 'athlete-1', title: 'A', date: '2026-08-08', durationMin: 0,
+                    isCompleted: false, fixed: true, environment: 'either' as const, equipment: [],
+                    availabilityOverride: 90,
+                    createdAt: '2026-08-01T00:00:00Z', updatedAt: '2026-08-01T00:00:00Z',
+                },
+                {
+                    id: 'b', userId: 'athlete-1', title: 'B', date: '2026-08-08', durationMin: 0,
+                    isCompleted: false, fixed: true, environment: 'either' as const, equipment: [],
+                    availabilityOverride: 20,
+                    createdAt: '2026-08-01T00:00:00Z', updatedAt: '2026-08-01T00:00:00Z',
+                },
+            ];
+            const availability = resolveAvailability('2026-08-08', null, fixedActivities, testContext());
+            expect(availability.maxTimeMinutes).toBe(20);
         });
 
         it('grants equipment strictly from the athlete\'s own constraints -- never fabricates a "gym day" bundle', () => {

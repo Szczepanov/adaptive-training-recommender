@@ -105,15 +105,36 @@ export interface UserContext {
     trainingSettings?: TrainingSettings;
 }
 
+/** Persisted at `users/{userId}/fixed_activities/{activityId}` (ADR-0002 user-owned
+ *  path, Phase 5.3) -- see docs/plans/phase-5-sequence-planning.md 5.3 for the storage
+ *  contract and firestore.rules validation table this type must stay aligned with. */
 export interface FixedActivity {
     id: string;
+    userId: string;
     title: string;
-    date: string; // YYYY-MM-DD
+    date: string; // YYYY-MM-DD, Warsaw-local (ADR-0003)
     startTime?: string;
     durationMin: number;
-    expectedStimulus?: Record<string, number>;
-    expectedCost?: Record<string, number>;
+    /** Keys are the canonical WorkoutStimulusProfile axes; each value 0..1. */
+    expectedStimulus?: Partial<Record<keyof WorkoutStimulusProfile, number>>;
+    /** Keys are the six WorkoutCostProfile dimensions; each value 0..1. */
+    expectedCost?: Partial<Record<keyof WorkoutCostProfile, number>>;
+    /** Immovable (booked class, match kickoff) vs a movable placeholder the athlete could
+     *  reschedule around. Load-bearing for the planner/search -- see 5.3's storage table. */
+    fixed: boolean;
+    environment: TrainingEnvironment;
+    /** Equipment available *at* this activity, not the athlete's general profile
+     *  equipment (e.g. away-game gear, a hotel gym's limited rack). Size/type bounds are
+     *  enforced in validation.ts and the FixedActivity form -- firestore.rules can only
+     *  bound the list's length, not iterate to check each item (see 5.3). */
+    equipment: string[];
+    /** Overrides the day's total available training minutes outright (e.g. a travel day:
+     *  the whole day's budget shrinks, not just this activity's own duration). Absent =
+     *  the normal weekday/weekend profile budget applies, reduced only by durationMin. */
+    availabilityOverride?: number;
     isCompleted: boolean;
+    createdAt: string;
+    updatedAt: string;
 }
 
 export type EventPriority = 'A' | 'B' | 'C';
