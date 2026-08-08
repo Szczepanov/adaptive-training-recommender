@@ -5,7 +5,7 @@ How `app/src/engine/` turns a morning's data into a prescribed session.
 > **Accuracy note.** Rewritten 2026-08-08 against the engine as it actually is. The
 > previous version described a `REST / RECOVERY / AEROBIC_BASE / QUALITY_STRENGTH` mode
 > hierarchy with fixed thresholds ("HRV drop > 10%", "sleep score < 65") that the code has
-> not used for some time, and omitted every module added by ADR-0006 through ADR-0011.
+> not used for some time, and omitted every module added by ADR-0006 onward.
 > Keep this file updated with the code — a confidently wrong architecture doc is worse
 > than none (finding F13).
 
@@ -34,10 +34,10 @@ Phase-gated templates (`phaseEligibility`) are excluded from Path A entirely —
 
 ```text
 ENRICHED_TEMPLATES → eligibility → envelope + mode ceilings → phase eligibility
-                   → rankCandidatesByUtility → top pick
+                   → rankCandidates → top pick
 ```
 
-Asynchronous; resolves training intent from adherence history first. Path B consumes `evaluateReadinessAndSafetyEnvelope` to obtain `mode`, `envelopes`, and `telemetry` directly, sharing the exact readiness calculation with Path A without running a discarded template selection (F9 resolved under ADR-0012).
+Asynchronous; resolves training intent from completed/adherence history first. Path B consumes `evaluateReadinessAndSafetyEnvelope` to obtain `mode`, `envelopes`, and `telemetry` directly, sharing the exact readiness calculation with Path A without running a discarded template selection (F9 resolved under ADR-0012).
 
 ---
 
@@ -81,13 +81,14 @@ Asynchronous; resolves training intent from adherence history first. Path B cons
 | `eligibility.ts` | The single hard-gate resolver: time, equipment, environment, guardrails |
 | `rules.ts` | Strain scoring, `train`/`modify`/`recover` mode, safety & plan envelopes, adjustment tiers |
 | `periodization.ts` | Event lifecycle, focus-event resolution, continuous phase weights |
-| `microcycle.ts` | Weekly objectives and exposure crediting |
-| `fatigue.ts` | Six-dimensional fatigue with exponential decay |
-| `optimizer.ts` | Candidate ranking: benefit vs cost, plus named modifiers |
+| `microcycle.ts` | Weekly objectives and the authoritative fractional objective-credit ledger |
+| `stimulus.ts` | Stimulus-boundary validation and objective-specific credit derivation |
+| `fatigue.ts` | Six-dimensional fatigue with exponential decay and unsaturated external-load depth |
+| `optimizer.ts` | Candidate ranking: objective benefit vs cost, plus named timing/preference modifiers |
 | `trainingIntent.ts` | Composes periodization + objectives + fatigue + planned dose |
-| `dose.ts` | Intersects planned dose with the clinical ceiling and athlete adjustment |
-| `planner.ts` | Rolling 7-day projection and the weekly anchor pre-pass |
-| `provenance.ts` / `replay.ts` | Audit construction and verification |
+| `dose.ts` | Validates and intersects planned dose with the clinical ceiling and athlete adjustment |
+| `planner.ts` | Rolling 7-day projection, projected-credit ledger and weekly anchor pre-pass |
+| `provenance.ts` / `replay.ts` | Audit construction and current-policy verification; historical policies are audit-only |
 
 ---
 
@@ -129,13 +130,58 @@ day after a mandated recovery day, and an **already-trained-today** override for
 
 ---
 
+## Objective credit and stimulus authority (`stimulus.ts`, `microcycle.ts`)
+
+Phase 4 uses one fractional objective-credit model. `deriveObjectiveCredit` validates an
+untrusted/persisted stimulus profile once at the boundary, while internal fan-out uses
+`deriveObjectiveCreditFromProfile` on already canonical profiles. The canonical profile has
+eight `0..1` axes; legacy `aerobicCapacity`, `thresholdDevelopment`, and
+`surgeRepeatability` are accepted only as persistence-boundary renames. A supplied
+non-finite or out-of-range known axis makes the record `DataState.INVALID`.
+
+`WeeklyObjective.completedCredit` is completed-evidence authority. For endurance/power
+objectives, credit is scaled by measured completed/planned duration when both are available,
+and an independently supplied completion ratio scales separately. Strength maintenance does
+not treat elapsed duration as a proxy for useful sets/load.
+
+`completedExposures` is compatibility display state only. Both completed and projected
+paths derive it through the same `0.5 credit/exposure` compatibility projection; it does
+not resolve objectives when fractional credit says they are still outstanding.
+
+Keyword matching remains a last-resort compatibility path for old/external records without
+structured stimulus. A match contributes `0.5` credit to the **same** ledger rather than a
+parallel counter, making mixed structured/legacy replay order-independent.
+
+---
+
+## Planned and execution dose authority (`trainingIntent.ts`, `dose.ts`)
+
+`PlannedDose` has independent `{ volume, intensity }` components. The persisted audit
+contract is finite `volume ∈ [0,1]`, `intensity ∈ [0,1.2]`.
+
+* **Explicit-plan mode:** the active authored `PlanBlock` owns both dimensions, bounded only
+  by that persisted contract. Generic days-to-event phase scaling cannot overwrite an
+  authored travel/taper dose.
+* **Generic mode:** objective urgency shapes volume while periodization supplies intensity.
+* **Optimizer:** a hard candidate is inadmissible below planned intensity `0.8`; intensity
+  is not a disguised duration multiplier.
+* **Execution:** `resolveExecutionDose` fails closed on invalid/out-of-contract planned
+  dose, applies an athlete easier/harder adjustment to volume, and intersects volume with
+  the independent clinical/readiness ceiling.
+
+Recommendation provenance persists both planned and execution dose when available.
+
+---
+
 ## Candidate ranking (`optimizer.ts`)
 
-Phase 3 introduces a single, unified ranking path (`rankCandidates`) driven by shared context (`buildOptimizationContext`). Candidates are evaluated via strict **Lexicographic Ordering**:
+Phase 3 introduced a single, unified ranking path (`rankCandidates`) driven by shared context (`buildOptimizationContext`). Candidates are evaluated via strict **Lexicographic Ordering**:
 
-1. **Hard Eligibility Gates** (Level 1–3): Time budget, required equipment, injury constraints, safety envelopes, phase eligibility, and dated role-aware recovery constraints (`QUALITY_SPACING_VIOLATION`, `HARD_LOWER_BODY_SPACING_VIOLATION`, `ROLLING_HARD_CAP_EXCEEDED`, `ANCHOR_PROTECTION_VIOLATION`). Filtered candidates carry explicit `excludedReasons`.
-2. **Objective Benefit** (Level 4): Scores a template's stimulus profile against currently unresolved weekly objectives (`calculateStimulusBenefit`). Higher objective satisfaction strictly outranks non-objective candidates regardless of preference multipliers.
+1. **Hard Eligibility Gates** (Level 1–3): Time budget, required equipment, injury constraints, safety envelopes, phase eligibility, planned-intensity admissibility, and dated role-aware recovery constraints (`QUALITY_SPACING_VIOLATION`, `HARD_LOWER_BODY_SPACING_VIOLATION`, `ROLLING_HARD_CAP_EXCEEDED`, `ANCHOR_PROTECTION_VIOLATION`). Filtered candidates carry explicit `excludedReasons`.
+2. **Objective Benefit** (Level 4): Scores a template's stimulus profile against currently unresolved weekly objectives (`calculateStimulusBenefit`). Higher objective satisfaction strictly outranks non-objective candidates regardless of preference multipliers. Weekly-anchor timing and missing supported triathlon-modality coverage are also Level-4 architecture signals.
 3. **Utility Score** (Level 5 & 6): `utility = (benefit / (1 + fatigueCost)) × preferenceMultiplier`. Used to sort candidates of comparable objective benefit (within `0.05` benefit score).
+
+Strength-maintenance benefit takes the stronger of `maxStrength` and `hypertrophy` target/evidence rather than allowing field order to choose which axis counts.
 
 ---
 
@@ -157,16 +203,34 @@ readiness mode ceiling      train / modify / recover cost caps
         ↓
 phase eligibility           event-relative template gating (Path B only)
         ↓
-dated recovery constraints   quality spacing, rolling hard caps, anchor protection (F3)
+planned intensity gate      hard-class candidates require adequate plan intensity
         ↓
-lexicographic priority      objective benefit outranks preference (Level 4)
+dated recovery constraints  quality spacing, rolling hard caps, anchor protection
         ↓
-utility score & cost        dimensional interference & preference multipliers (Level 5-6)
+lexicographic priority      objective/timing benefit outranks preference
+        ↓
+utility score & cost        dimensional interference & preference multipliers
 ```
 
 Preferences rank; they never unlock. An avoided modality is a hard exclude on Path A and a
 0.2× soft penalty on Path B — a deliberate distinction, since taste must never behave like
 a safety constraint ([ADR-0007](../adr/0007-adaptive-multisport-engine-architecture.md) §6).
+
+---
+
+## Completed load and fatigue (`completedTraining.ts`, `fatigue.ts`)
+
+Completed-session cost starts from the existing six-dimensional cost vector. When a
+comparable planned/catalog duration exists, abbreviated work scales the vector down; a
+recorded session longer than the intended reference is capped at a fully delivered `1.0`
+duration scale rather than manufacturing unbounded fatigue. An independently measured
+completion ratio can scale it further.
+
+External replay retains an unsaturated `rawExternalLoadFatigue` state so accumulated load
+is not lost at the ranking clamp. Ranking sees the clamped projection. External and internal
+fatigue are currently fused with `max()`. ADR-0014's harness comparison found the tested
+capped-addition candidate worse; that is why `max()` is retained. It is **not** declared
+safe or calibrated, and the aggregate scenario recovery-share gate remains release authority.
 
 ---
 
@@ -178,15 +242,21 @@ a hard fatigue-tier ceiling, because `benefit / (1 + cost)` is asymptotic and wo
 otherwise never actually select rest. Nothing beyond today is persisted. See
 [ADR-0008](../adr/0008-week-ahead-planning.md).
 
+Forecast recommendations never mutate completed credit. They accumulate in
+`WeeklyObjective.projectedCredit`; forecast unresolved state uses
+`completedCredit + projectedCredit`, while live unresolved state ignores projected credit.
+The planner's `objectiveCredits` display is derived from the same V2 objective-credit
+function used by the live ledger, not the old `stimulusCoverage >= 0.6` model.
+
 ---
 
 ## Verification & audit tooling
 
 ### Multi-week scenario simulation (`simulate:scenarios`)
-Executed via `cd app && npm run simulate:scenarios`. Runs synthetic athlete scenarios across multi-week spans to audit engine periodization, microcycle objective fulfillment, fatigue decay curves, anchor placements, and constraint safety. Outputs `report.json` and `report.md` to `app/artifacts/simulation-reports/latest/`.
+Executed via `cd app && npm run simulate:scenarios`. Runs synthetic athlete scenarios across multi-week spans to audit engine periodization, fractional objective fulfillment, fatigue decay curves, anchor placements, modality coverage, and constraint safety. Outputs `report.json` and `report.md` to `app/artifacts/simulation-reports/latest/`.
 
 ### Recommendation decision replay (`replay:recommendation`)
-Executed via `cd app && npm run replay:recommendation -- <audit.json>`. Accepts a JSON snapshot of a historical recommendation and passes it into `replayRecommendationAudit()` ([`app/src/engine/replay.ts`](../../app/src/engine/replay.ts)) to verify deterministic decision reproducibility and log rationale differences.
+Executed via `cd app && npm run replay:recommendation -- <audit.json>`. Accepts a JSON snapshot of a historical recommendation and passes it into `replayRecommendationAudit()` ([`app/src/engine/replay.ts`](../../app/src/engine/replay.ts)). The current policy version can be verified for reproducibility. Known historical policy versions remain auditable but are explicitly rejected as executable replay unless that historical decision function is bundled in a future build.
 
 ---
 
@@ -194,12 +264,14 @@ Executed via `cd app && npm run replay:recommendation -- <audit.json>`. Accepts 
 
 | ADR | Covers |
 |---|---|
-| [0006](../adr/0006-reconciled-strain-telemetry.md) | Acute vs multi-day-drift strain decomposition |
+| [0006](../adr/0006-reconciled-strain-telemetry.md) | Acute vs multi-day-drift strain decomposition; completed-load replay amendment |
 | [0007](../adr/0007-adaptive-multisport-engine-architecture.md) | Six-tier engine, dual profiles, safety vs preference authority |
 | [0008](../adr/0008-week-ahead-planning.md) | Rolling 7-day projection and confidence tiers |
 | [0009](../adr/0009-training-intent-history.md) | History-seeded intent; the `TrainingHistoryProvider` boundary |
 | [0010](../adr/0010-decision-provenance-and-audit-replay.md) | `DataState`, audit records, replay, `POLICY_VERSION` |
 | [0011](../adr/0011-weekly-architecture-anchors.md) | Weekly anchors and ranking modifiers |
+| [0012](../adr/0012-plan-intent-authority.md) | Explicit plan authority and plan-side intent ownership |
+| [0014](../adr/0014-objective-credit-v2-and-honest-load.md) | Fractional credit V2, honest load, projected credit and fusion evidence |
 
 Known divergences between these decisions and the code are tracked in
 [the 2026-08-08 review](../analysis/2026-08-08-architecture-review.md); remediation is
