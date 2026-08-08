@@ -6,6 +6,8 @@ import { rankCandidatesByUtility } from './optimizer';
 import { deriveEventPriority, deriveGoalCategory, evaluatePeriodizationPhase, getDaysToEvent, goalToUserEvent, isTemplatePhaseEligible } from './periodization';
 import { resolveAvailability } from './schedule';
 import { ENRICHED_TEMPLATES } from './templates';
+import { resolveInjuryRestrictions } from './injuryPolicy';
+import { eligibleTemplates } from './eligibility';
 
 function testTrainingSettings(overrides: Partial<TrainingSettings> = {}): TrainingSettings {
     return {
@@ -22,7 +24,7 @@ function testTrainingSettings(overrides: Partial<TrainingSettings> = {}): Traini
 function testContext(overrides: Partial<UserContext['constraints']> = {}, trainingSettings = testTrainingSettings()): UserContext {
     return {
         goals: { shortTerm: '', midTerm: '', longTerm: '' },
-        constraints: { hasCableMachine: false, hasFreeWeights: true, hasTreadmill: false, hasIndoorBike: true, injuries: [], maxTimeMinutes: 90, ...overrides },
+        constraints: { hasCableMachine: false, hasFreeWeights: true, hasTreadmill: false, hasIndoorBike: true, restrictedModalities: [], maxTimeMinutes: 90, ...overrides },
         preferences: { avoidedModalities: [], deprioritizedModalities: [], preferredModalities: [], conservativeBias: false },
         trainingSettings,
     };
@@ -302,6 +304,23 @@ describe('Architecture & Phased Engine Integration', () => {
             if (runningOption) {
                 expect(runningOption.rationale).toContain('Soft penalty applied');
             }
+        });
+
+        it('a limit hamstring injury excludes heavy lower-body work from the intent path', () => {
+            const settings: TrainingSettings = testTrainingSettings({
+                injuries: [{ region: 'hamstring', severity: 'limit' }],
+            });
+            const resolved = resolveInjuryRestrictions(settings.injuries, '2026-08-07');
+            const context = testContext({
+                impliedGuardrails: resolved.impliedGuardrails,
+                restrictedCategories: resolved.restrictedCategories,
+                restrictedModalities: resolved.restrictedModalities,
+            }, settings);
+
+            const availability = resolveAvailability('2026-08-07', null, [], context);
+            const eligible = eligibleTemplates(ENRICHED_TEMPLATES, context, availability.maxTimeMinutes, '2026-08-07');
+
+            expect(eligible.some(t => t.safetyTags.includes('avoid_heavy_lower_body'))).toBe(false);
         });
 
         it('penalizes repeated modality stacking on 3rd+ consecutive day, for EVERY modality including endurance (anti-stacking)', () => {

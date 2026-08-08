@@ -17,9 +17,9 @@ Update the marker on the work-item heading **and** this table in the same commit
 
 | Task | Status | Blocked by | Summary | Primary files |
 |---|:--:|---|---|---|
-| 1.1 | `[ ]` | — | Structured `InjuryConstraint[]` replaces the dead free-text injury channel (F1) | `app/src/engine/models.ts`, `injuryPolicy.ts` (new), `adapters.ts`, `rules.ts`, `eligibility.ts`, `optimizer.ts`, `services/trainingSettingsService.ts`, `components/TrainingSettings.tsx`, `app/firestore.rules` |
-| 1.2 | `[ ]` | **Phase 0** | Recognised Garmin sessions earn objective credit from an inferred stimulus vector (F2) | `app/src/engine/completedTraining.ts`, `microcycle.ts`, `trainingHistory.ts` |
-| 1.3 | `[ ]` | — | Append-only recommendation revisions; decision fields immutable per revision (F6) | `app/firestore.rules`, `app/src/services/recommendationService.ts`, `app/src/components/Home.tsx`, `app/src/emulator/firestoreRules.emulator.test.ts` |
+| 1.1 | `[x]` | — | Structured `InjuryConstraint[]` replaces the dead free-text injury channel (F1) | `app/src/engine/models.ts`, `injuryPolicy.ts` (new), `adapters.ts`, `rules.ts`, `eligibility.ts`, `optimizer.ts`, `services/trainingSettingsService.ts`, `components/TrainingSettings.tsx`, `app/firestore.rules` |
+| 1.2 | `[x]` | **Phase 0** | Recognised Garmin sessions earn objective credit from an inferred stimulus vector (F2) | `app/src/engine/completedTraining.ts`, `microcycle.ts`, `trainingHistory.ts` |
+| 1.3 | `[x]` | — | Append-only recommendation revisions; decision fields immutable per revision (F6) | `app/firestore.rules`, `app/src/services/recommendationService.ts`, `app/src/components/Home.tsx`, `app/src/emulator/firestoreRules.emulator.test.ts` |
 
 1.1 and 1.3 are independent of each other and of Phase 0 — either can start today.
 **1.2 must not start before Phase 0**: it changes objective crediting for every existing
@@ -41,7 +41,7 @@ harder to see, because they will then be spread across a larger surface.
 
 ---
 
-## `[ ]` 1.1 — F1: give injury constraints a real data path
+## `[x]` 1.1 — F1: give injury constraints a real data path
 
 ### Current state
 
@@ -219,7 +219,7 @@ object.
 
 ---
 
-## `[ ]` 1.2 — F2: Garmin-measured training must earn objective credit
+## `[x]` 1.2 — F2: Garmin-measured training must earn objective credit
 
 > **Blocked by Phase 0.** This item introduces inferred-stimulus constants and changes
 > objective crediting for every existing user. It cannot be validated without the
@@ -372,7 +372,7 @@ Fix (b) makes Garmin rides start resolving objectives. That lowers `urgency` in
 
 ---
 
-## `[ ]` 1.3 — F6: make recommendation records actually immutable
+## `[x]` 1.3 — F6: make recommendation records actually immutable
 
 ### Current state
 

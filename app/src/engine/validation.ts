@@ -748,6 +748,12 @@ export function validateRecommendation(raw: any): ValidationResult<DailyRecommen
         errors.push({ field: 'recommendationAudit', message: 'Schema version 3 requires a recommendation audit' });
     }
 
+    if (raw.revision !== undefined) {
+        if (!Number.isInteger(raw.revision) || raw.revision < 1) {
+            errors.push({ field: 'revision', message: 'Revision must be a positive integer' });
+        }
+    }
+
     if (errors.length > 0) {
         return { isValid: false, errors };
     }
@@ -776,6 +782,7 @@ export function validateRecommendation(raw: any): ValidationResult<DailyRecommen
         mode: raw.mode,
         rationale: raw.rationale,
         schemaVersion: raw.schemaVersion ?? (recommendationAudit ? 3 : (raw.prescription ? 2 : 1)),
+        ...(raw.revision !== undefined ? { revision: raw.revision } : {}),
         createdAt: raw.createdAt || new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         ...(raw.prescription ? { prescription: raw.prescription } : {}),

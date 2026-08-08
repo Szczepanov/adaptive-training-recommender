@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { CompletedTrainingEvent, DailyRecommendation, NormalizedGarminActivity } from './models';
-import { completedEventToExposure, deriveSessionPlanRelationship, reconcileCompletedTrainingEvents } from './completedTraining';
+import { completedEventToExposure, DEFAULT_STIMULUS_BY_MODALITY, deriveSessionPlanRelationship, reconcileCompletedTrainingEvents } from './completedTraining';
 
 function activity(overrides: Partial<NormalizedGarminActivity> = {}): NormalizedGarminActivity {
     return {
@@ -42,6 +42,24 @@ describe('completed training reconciliation', () => {
         expect(events[0]).toMatchObject({ sources: ['adherence'], linkedActivityId: null, modality: 'Cycling' });
     });
 
+    it('classifies a standalone adherence-confirmed, catalog-matched session as exact confidence', () => {
+        // No corroborating Garmin activity at all -- the athlete self-confirmed following a
+        // real catalog template. Per docs/plans/phase-1-live-defects.md Task 1.2(c): "exact
+        // for adherence-confirmed catalog templates" -- this must not fall back to 'inferred'
+        // just because there's no Garmin measurement backing it.
+        const [event] = reconcileCompletedTrainingEvents([], [recommendation()]);
+        expect(event.exactTemplateMatch).toBe(true);
+        const exposure = completedEventToExposure(event);
+        expect(exposure.stimulusConfidence).toBe('exact');
+    });
+
+    it('classifies a Garmin-only session (no adherence answer) as inferred, not exact', () => {
+        const [event] = reconcileCompletedTrainingEvents([activity()], []);
+        expect(event.exactTemplateMatch).toBe(false);
+        const exposure = completedEventToExposure(event);
+        expect(exposure.stimulusConfidence).toBe('inferred');
+    });
+
     it('does not count skipped or unanswered recommendations as completed training', () => {
         const skipped = recommendation({ adherence: { respondedAt: 'x', followed: false, actualModality: null, actualDurationMin: null, skipped: true, notes: null } });
         const unanswered = recommendation({ adherence: { respondedAt: null, followed: null, actualModality: null, actualDurationMin: null, skipped: false, notes: null } });
@@ -64,13 +82,42 @@ describe('completed training reconciliation', () => {
 
         expect(events.find(event => event.sources.includes('adherence'))?.linkedActivityId).toBe('garmin-close');
     });
+
+    it('attaches inferred stimulus profile to recognized Garmin cycling session', () => {
+        const [event] = reconcileCompletedTrainingEvents([activity({ type: 'cycling', intensityTag: 'moderate', trainingEffectAerobic: 2.5 })], []);
+        const exposure = completedEventToExposure(event);
+        expect(exposure.stimulusConfidence).toBe('inferred');
+        expect(exposure.stimulusProfile?.aerobicCapacity).toBeGreaterThan(0.5);
+        expect(exposure.modality).toBe('Cycling');
+    });
+
+    it('withholds stimulus profile and sets unknown confidence for unknown modality', () => {
+        const [event] = reconcileCompletedTrainingEvents([activity({ type: 'unknown_sport' })], []);
+        const exposure = completedEventToExposure(event);
+        expect(exposure.stimulusConfidence).toBe('unknown');
+        expect(exposure.stimulusProfile).toBeUndefined();
+    });
+
+    it('asserts DEFAULT_STIMULUS_BY_MODALITY table totality for all recognized modalities and intensities', () => {
+        const modalities = ['Cycling', 'Running', 'Strength', 'Field', 'Mobility', 'Cross Training'];
+        const intensities = ['easy', 'moderate', 'hard', 'unknown'];
+
+        for (const mod of modalities) {
+            for (const int of intensities) {
+                const vector = DEFAULT_STIMULUS_BY_MODALITY[mod as keyof typeof DEFAULT_STIMULUS_BY_MODALITY][int as import('./models').CompletedTrainingIntensity];
+                expect(vector).toBeDefined();
+                const sum = (Object.values(vector) as number[]).reduce((a, b) => a + b, 0);
+                expect(sum).toBeGreaterThan(0);
+            }
+        }
+    });
 });
 
 function completedEvent(overrides: Partial<CompletedTrainingEvent> = {}): CompletedTrainingEvent {
     return {
         id: 'evt-1', date: '2026-08-06', durationMin: 45, modality: 'Cycling', intensity: 'moderate',
         trainingEffect: 3.0, estimatedCost: { systemic: 0.3, cardiovascular: 0.3, lowerBody: 0.2, upperBody: 0, impactTissue: 0.1, neuromuscular: 0 },
-        estimatedStimulus: {}, sources: ['garmin'], confidence: 'high',
+        estimatedStimulus: {}, exactTemplateMatch: false, sources: ['garmin'], confidence: 'high',
         linkedActivityId: 'garmin-1', linkedRecommendationDate: '2026-08-06',
         athleteFeedback: { followed: true, notes: null },
         ...overrides,

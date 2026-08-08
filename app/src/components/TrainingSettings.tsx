@@ -1,6 +1,8 @@
-import { useCallback, useEffect, useState } from 'react';
-import type { GuardrailKey, TrainingSettings as TrainingSettingsModel } from '../engine/models';
+import { type FormEvent, useCallback, useEffect, useState } from 'react';
+import type { BodyRegion, GuardrailKey, InjuryConstraint, SessionTemplate, TrainingSettings as TrainingSettingsModel } from '../engine/models';
+import { resolveInjuryRestrictions } from '../engine/injuryPolicy';
 import { trainingSettingsService, type TrainingSettingsUpdate } from '../services/trainingSettingsService';
+import { getLocalDateString } from '../utils/localDate';
 import './TrainingSettings.css';
 
 interface TrainingSettingsProps {
@@ -22,9 +24,20 @@ const guardrailDetails: Record<GuardrailKey, { label: string; effect: string }> 
   avoid_heavy_spinal_loading: { label: 'Block heavy spinal loading', effect: 'Templates containing heavy spinal loading will not be recommended.' },
 };
 
+const injuryRegions: Array<{ value: BodyRegion; label: string }> = [
+  { value: 'knee', label: 'Knee' }, { value: 'achilles', label: 'Achilles' }, { value: 'ankle', label: 'Ankle' },
+  { value: 'calf', label: 'Calf' }, { value: 'hamstring', label: 'Hamstring' }, { value: 'quadriceps', label: 'Quadriceps' },
+  { value: 'adductor_groin', label: 'Adductor / groin' }, { value: 'hip', label: 'Hip' }, { value: 'lower_back', label: 'Lower back' },
+  { value: 'shoulder', label: 'Shoulder' }, { value: 'elbow', label: 'Elbow' }, { value: 'wrist', label: 'Wrist' },
+];
+const injuryModalities: SessionTemplate['modality'][] = ['Running', 'Cycling', 'Strength', 'Field', 'Mobility', 'Cross Training'];
+const emptyInjuryDraft = { region: '', severity: 'limit' as InjuryConstraint['severity'], restrictedModalities: [] as SessionTemplate['modality'][], reviewBy: '', note: '' };
+
 export function TrainingSettings({ userId }: TrainingSettingsProps) {
   const [settings, setSettings] = useState<TrainingSettingsModel | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [injuryDraft, setInjuryDraft] = useState(emptyInjuryDraft);
+  const [editingInjuryIndex, setEditingInjuryIndex] = useState<number | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -43,10 +56,42 @@ export function TrainingSettings({ userId }: TrainingSettingsProps) {
       const updated = await trainingSettingsService.updateTrainingSettings(userId, update);
       setSettings(updated);
       setError(null);
+      return updated;
     } catch (cause) {
       console.error('Unable to save training settings', cause);
       setError('Unable to save that setting. Please try again.');
+      return null;
     }
+  };
+
+  const saveInjury = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!settings) return;
+    const injury: InjuryConstraint = {
+      severity: injuryDraft.severity,
+      ...(injuryDraft.region ? { region: injuryDraft.region as BodyRegion } : {}),
+      ...(injuryDraft.restrictedModalities.length > 0 ? { restrictedModalities: injuryDraft.restrictedModalities } : {}),
+      ...(injuryDraft.reviewBy ? { reviewBy: injuryDraft.reviewBy } : {}),
+      ...(injuryDraft.note.trim() ? { note: injuryDraft.note.trim() } : {}),
+    };
+    const nextInjuries = [...(settings.injuries ?? [])];
+    if (editingInjuryIndex === null) nextInjuries.push(injury);
+    else nextInjuries[editingInjuryIndex] = injury;
+    if (await save({ injuries: nextInjuries })) {
+      setInjuryDraft(emptyInjuryDraft);
+      setEditingInjuryIndex(null);
+    }
+  };
+
+  const editInjury = (injury: InjuryConstraint, index: number) => {
+    setEditingInjuryIndex(index);
+    setInjuryDraft({
+      region: injury.region ?? '',
+      severity: injury.severity,
+      restrictedModalities: injury.restrictedModalities ?? [],
+      reviewBy: injury.reviewBy ?? '',
+      note: injury.note ?? '',
+    });
   };
 
   if (!settings) return <main className="training-settings"><p>{error ?? 'Loading training settings…'}</p></main>;
@@ -107,6 +152,81 @@ export function TrainingSettings({ userId }: TrainingSettingsProps) {
       <section aria-labelledby="preferences-title">
         <h2 id="preferences-title">Recovery preferences</h2>
         <label className="setting-row"><input type="checkbox" checked={settings.preferences.preferActiveRecovery} onChange={(event) => void save({ preferences: { preferActiveRecovery: event.target.checked } })} /><span><strong>Prefer active recovery</strong><small>When recovery is needed, mobility is ranked ahead of total rest when both are suitable.</small></span></label>
+      </section>
+
+      <section aria-labelledby="injuries-title">
+        <h2 id="injuries-title">Active Injury Constraints</h2>
+        <p className="section-intro">Structured injuries dynamically derive guardrails, restricted modalities, and restricted categories. Expired review dates are automatically ignored.</p>
+
+        <form onSubmit={saveInjury} className="injury-form">
+          <h3>{editingInjuryIndex === null ? 'Add injury constraint' : 'Edit injury constraint'}</h3>
+          <label>Body region
+            <select value={injuryDraft.region} onChange={(event) => setInjuryDraft(current => ({ ...current, region: event.target.value }))}>
+              <option value="">No specific region</option>
+              {injuryRegions.map(region => <option key={region.value} value={region.value}>{region.label}</option>)}
+            </select>
+          </label>
+          <label>Severity
+            <select value={injuryDraft.severity} onChange={(event) => setInjuryDraft(current => ({ ...current, severity: event.target.value as InjuryConstraint['severity'] }))}>
+              <option value="monitor">Monitor</option>
+              <option value="limit">Limit</option>
+              <option value="exclude">Exclude</option>
+            </select>
+          </label>
+          <fieldset>
+            <legend>Explicitly restricted modalities (optional)</legend>
+            {injuryModalities.map(modality => <label key={modality}>
+              <input type="checkbox" checked={injuryDraft.restrictedModalities.includes(modality)} onChange={(event) => setInjuryDraft(current => ({
+                ...current,
+                restrictedModalities: event.target.checked
+                  ? [...current.restrictedModalities, modality]
+                  : current.restrictedModalities.filter(item => item !== modality),
+              }))} /> {modality}
+            </label>)}
+          </fieldset>
+          <label>Review by (optional)<input type="date" value={injuryDraft.reviewBy} onChange={(event) => setInjuryDraft(current => ({ ...current, reviewBy: event.target.value }))} /></label>
+          <label>Note (optional)<textarea value={injuryDraft.note} onChange={(event) => setInjuryDraft(current => ({ ...current, note: event.target.value }))} /></label>
+          <button type="submit">{editingInjuryIndex === null ? 'Add injury constraint' : 'Save injury constraint'}</button>
+          {editingInjuryIndex !== null && <button type="button" onClick={() => { setInjuryDraft(emptyInjuryDraft); setEditingInjuryIndex(null); }}>Cancel editing</button>}
+        </form>
+
+        {settings.injuries && settings.injuries.length > 0 ? (
+          <div className="injuries-list">
+            {settings.injuries.map((inj, index) => (
+              <div key={index} className="setting-row injury-item" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '8px 0', padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}>
+                <div>
+                  <strong>{inj.region ? inj.region.toUpperCase().replace('_', ' ') : 'General Activity'}</strong> ({inj.severity})
+                  {inj.reviewBy && <small style={{ display: 'block' }}>Review by: {inj.reviewBy}</small>}
+                  {inj.note && <small style={{ display: 'block' }}>Note: {inj.note}</small>}
+                </div>
+                <div>
+                  <button type="button" onClick={() => editInjury(inj, index)}>Edit</button>
+                  <button type="button" onClick={() => {
+                    const nextInjuries = (settings.injuries ?? []).filter((_, i) => i !== index);
+                    if (editingInjuryIndex === index) { setInjuryDraft(emptyInjuryDraft); setEditingInjuryIndex(null); }
+                    void save({ injuries: nextInjuries });
+                  }}>Remove</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p><small>No active injuries recorded.</small></p>
+        )}
+
+        {(() => {
+          const derived = resolveInjuryRestrictions(settings.injuries, getLocalDateString());
+          const hasDerived = derived.restrictedModalities.length > 0 || derived.impliedGuardrails.length > 0 || derived.restrictedCategories.length > 0;
+          if (!hasDerived) return null;
+          return (
+            <div className="derived-restrictions" style={{ marginTop: '12px', padding: '8px 12px', background: '#f5f5f5', borderRadius: '4px' }}>
+              <h4>Derived Restrictions (Read-only)</h4>
+              {derived.restrictedModalities.length > 0 && <p><small><strong>Restricted Modalities:</strong> {derived.restrictedModalities.join(', ')}</small></p>}
+              {derived.impliedGuardrails.length > 0 && <p><small><strong>Implied Guardrails:</strong> {derived.impliedGuardrails.join(', ')}</small></p>}
+              {derived.restrictedCategories.length > 0 && <p><small><strong>Restricted Categories:</strong> {derived.restrictedCategories.join(', ')}</small></p>}
+            </div>
+          );
+        })()}
       </section>
     </main>
   );

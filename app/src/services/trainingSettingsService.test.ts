@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { migrateLegacyConstraints } from './trainingSettingsService';
+import { createDefaultTrainingSettings, migrateLegacyConstraints, parseTrainingSettings } from './trainingSettingsService';
 import type { UserConstraint } from '../engine/models';
 
 function legacy(key: string, value: UserConstraint['value'], isActive = true): UserConstraint {
@@ -18,5 +18,30 @@ describe('legacy settings migration', () => {
     it('chooses the safer smaller legacy weekday limit', () => {
         const migrated = migrateLegacyConstraints('athlete', [legacy('max_45_min_weekday', false), legacy('max_time_minutes', 60)], '2026-08-07T10:00:00.000Z');
         expect(migrated.defaults.weekdayMaxMinutes).toBe(45);
+    });
+});
+
+describe('training settings storage parsing', () => {
+    it('rejects malformed injury constraint fields', () => {
+        const base = createDefaultTrainingSettings('athlete', '2026-08-07T10:00:00.000Z');
+        const malformedInjuries = [
+            { severity: 'limit', reviewBy: '2026-02-30' },
+            { severity: 'limit', note: 42 },
+            { severity: 'limit', restrictedModalities: 'Running' },
+            { severity: 'limit', restrictedModalities: ['Swimming'] },
+        ];
+
+        for (const injury of malformedInjuries) {
+            expect(parseTrainingSettings({ ...base, injuries: [injury] }, 'athlete')).toBeNull();
+        }
+    });
+
+    it('accepts a fully valid injury constraint', () => {
+        const base = createDefaultTrainingSettings('athlete', '2026-08-07T10:00:00.000Z');
+        const parsed = parseTrainingSettings({
+            ...base,
+            injuries: [{ region: 'knee', severity: 'limit', reviewBy: '2026-08-31', note: 'Avoid hills', restrictedModalities: ['Running'] }],
+        }, 'athlete');
+        expect(parsed?.injuries).toHaveLength(1);
     });
 });

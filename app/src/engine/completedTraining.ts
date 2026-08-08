@@ -24,7 +24,7 @@ const ZERO_STIMULUS: WorkoutStimulusProfile = {
 };
 const ADHERENCE_DURATION_TOLERANCE_MIN = 20;
 
-const DEFAULT_COST_BY_MODALITY: Record<CompletedModality, Record<CompletedTrainingIntensity, WorkoutCostProfile>> = {
+export const DEFAULT_COST_BY_MODALITY: Record<CompletedModality, Record<CompletedTrainingIntensity, WorkoutCostProfile>> = {
     Cycling: {
         easy: { systemic: 0.2, cardiovascular: 0.25, lowerBody: 0.2, upperBody: 0, impactTissue: 0.05, neuromuscular: 0.1 },
         moderate: { systemic: 0.45, cardiovascular: 0.55, lowerBody: 0.45, upperBody: 0, impactTissue: 0.1, neuromuscular: 0.25 },
@@ -108,6 +108,47 @@ function comparableDurationDifference(left: number | null, right: number | null)
     return Math.abs(left - right);
 }
 
+export const DEFAULT_STIMULUS_BY_MODALITY: Record<CompletedModality, Record<CompletedTrainingIntensity, WorkoutStimulusProfile>> = {
+    Cycling: {
+        easy: { aerobicCapacity: 0.55, thresholdDevelopment: 0.10, surgeRepeatability: 0.05, maxStrength: 0, hypertrophy: 0, mobilityRecovery: 0.10 },
+        moderate: { aerobicCapacity: 0.70, thresholdDevelopment: 0.20, surgeRepeatability: 0.10, maxStrength: 0, hypertrophy: 0, mobilityRecovery: 0 },
+        hard: { aerobicCapacity: 0.45, thresholdDevelopment: 0.70, surgeRepeatability: 0.65, maxStrength: 0, hypertrophy: 0, mobilityRecovery: 0 },
+        unknown: { aerobicCapacity: 0.55, thresholdDevelopment: 0.15, surgeRepeatability: 0.10, maxStrength: 0, hypertrophy: 0, mobilityRecovery: 0 },
+    },
+    Running: {
+        easy: { aerobicCapacity: 0.55, thresholdDevelopment: 0.10, surgeRepeatability: 0.05, maxStrength: 0, hypertrophy: 0, mobilityRecovery: 0.10 },
+        moderate: { aerobicCapacity: 0.70, thresholdDevelopment: 0.20, surgeRepeatability: 0.10, maxStrength: 0, hypertrophy: 0, mobilityRecovery: 0 },
+        hard: { aerobicCapacity: 0.45, thresholdDevelopment: 0.70, surgeRepeatability: 0.65, maxStrength: 0, hypertrophy: 0, mobilityRecovery: 0 },
+        unknown: { aerobicCapacity: 0.55, thresholdDevelopment: 0.15, surgeRepeatability: 0.10, maxStrength: 0, hypertrophy: 0, mobilityRecovery: 0 },
+    },
+    Strength: {
+        easy: { aerobicCapacity: 0.10, thresholdDevelopment: 0.05, surgeRepeatability: 0.05, maxStrength: 0.40, hypertrophy: 0.30, mobilityRecovery: 0.20 },
+        moderate: { aerobicCapacity: 0.15, thresholdDevelopment: 0.10, surgeRepeatability: 0.10, maxStrength: 0.70, hypertrophy: 0.60, mobilityRecovery: 0.10 },
+        hard: { aerobicCapacity: 0.20, thresholdDevelopment: 0.20, surgeRepeatability: 0.20, maxStrength: 0.85, hypertrophy: 0.75, mobilityRecovery: 0 },
+        unknown: { aerobicCapacity: 0.15, thresholdDevelopment: 0.10, surgeRepeatability: 0.10, maxStrength: 0.55, hypertrophy: 0.45, mobilityRecovery: 0.10 },
+    },
+    Field: {
+        easy: { aerobicCapacity: 0.40, thresholdDevelopment: 0.20, surgeRepeatability: 0.25, maxStrength: 0.10, hypertrophy: 0.10, mobilityRecovery: 0.10 },
+        moderate: { aerobicCapacity: 0.60, thresholdDevelopment: 0.45, surgeRepeatability: 0.50, maxStrength: 0.20, hypertrophy: 0.20, mobilityRecovery: 0.05 },
+        hard: { aerobicCapacity: 0.50, thresholdDevelopment: 0.70, surgeRepeatability: 0.75, maxStrength: 0.30, hypertrophy: 0.30, mobilityRecovery: 0 },
+        unknown: { aerobicCapacity: 0.50, thresholdDevelopment: 0.40, surgeRepeatability: 0.45, maxStrength: 0.20, hypertrophy: 0.20, mobilityRecovery: 0.05 },
+    },
+    Mobility: {
+        easy: { aerobicCapacity: 0.10, thresholdDevelopment: 0.05, surgeRepeatability: 0.05, maxStrength: 0.05, hypertrophy: 0.05, mobilityRecovery: 0.80 },
+        moderate: { aerobicCapacity: 0.15, thresholdDevelopment: 0.05, surgeRepeatability: 0.05, maxStrength: 0.10, hypertrophy: 0.10, mobilityRecovery: 0.70 },
+        hard: { aerobicCapacity: 0.20, thresholdDevelopment: 0.10, surgeRepeatability: 0.10, maxStrength: 0.15, hypertrophy: 0.15, mobilityRecovery: 0.50 },
+        unknown: { aerobicCapacity: 0.15, thresholdDevelopment: 0.05, surgeRepeatability: 0.05, maxStrength: 0.10, hypertrophy: 0.10, mobilityRecovery: 0.70 },
+    },
+    'Cross Training': {
+        easy: { aerobicCapacity: 0.55, thresholdDevelopment: 0.10, surgeRepeatability: 0.05, maxStrength: 0.10, hypertrophy: 0.10, mobilityRecovery: 0.10 },
+        moderate: { aerobicCapacity: 0.70, thresholdDevelopment: 0.20, surgeRepeatability: 0.10, maxStrength: 0.15, hypertrophy: 0.15, mobilityRecovery: 0.05 },
+        hard: { aerobicCapacity: 0.50, thresholdDevelopment: 0.65, surgeRepeatability: 0.60, maxStrength: 0.20, hypertrophy: 0.20, mobilityRecovery: 0 },
+        unknown: { aerobicCapacity: 0.60, thresholdDevelopment: 0.20, surgeRepeatability: 0.15, maxStrength: 0.15, hypertrophy: 0.15, mobilityRecovery: 0.05 },
+    },
+    None: { easy: ZERO_STIMULUS, moderate: ZERO_STIMULUS, hard: ZERO_STIMULUS, unknown: ZERO_STIMULUS },
+    Unknown: { easy: ZERO_STIMULUS, moderate: ZERO_STIMULUS, hard: ZERO_STIMULUS, unknown: ZERO_STIMULUS },
+};
+
 function candidateEventFromGarmin(activity: NormalizedGarminActivity): CompletedTrainingEvent {
     const modality = modalityFromActivityType(activity.type);
     const intensity = intensityFromGarmin(activity);
@@ -119,7 +160,8 @@ function candidateEventFromGarmin(activity: NormalizedGarminActivity): Completed
         intensity,
         trainingEffect: Math.max(activity.trainingEffectAerobic ?? 0, activity.trainingEffectAnaerobic ?? 0) || null,
         estimatedCost: DEFAULT_COST_BY_MODALITY[modality][intensity],
-        estimatedStimulus: ZERO_STIMULUS,
+        estimatedStimulus: DEFAULT_STIMULUS_BY_MODALITY[modality][intensity],
+        exactTemplateMatch: false,
         sources: ['garmin'],
         confidence: modality === 'Unknown' ? 'medium' : 'high',
         linkedActivityId: activity.activityId,
@@ -138,7 +180,8 @@ function candidateEventFromAdherence(recommendation: DailyRecommendation, candid
         intensity,
         trainingEffect: null,
         estimatedCost: candidate.template?.costProfile ?? DEFAULT_COST_BY_MODALITY[candidate.modality][intensity],
-        estimatedStimulus: candidate.template?.stimulusProfile ?? ZERO_STIMULUS,
+        estimatedStimulus: candidate.template?.stimulusProfile ?? DEFAULT_STIMULUS_BY_MODALITY[candidate.modality][intensity],
+        exactTemplateMatch: !!candidate.template?.stimulusProfile,
         sources: ['adherence'],
         confidence: candidate.template ? 'medium' : 'low',
         linkedActivityId: null,
@@ -166,6 +209,7 @@ function mergeAdherenceIntoGarmin(
         estimatedStimulus: recommendation.adherence.followed && candidate.template?.stimulusProfile
             ? candidate.template.stimulusProfile
             : event.estimatedStimulus,
+        exactTemplateMatch: !!(recommendation.adherence.followed && candidate.template?.stimulusProfile),
         athleteFeedback: { followed: recommendation.adherence.followed, notes: recommendation.adherence.notes },
     };
 }
@@ -219,13 +263,22 @@ export function completedEventToExposure(event: CompletedTrainingEvent): Complet
         intensity_tag: event.intensity === 'unknown' ? '' : event.intensity,
     };
     const modality = event.modality === 'Unknown' ? undefined : event.modality;
+    const hasStimulus = Object.values(event.estimatedStimulus ?? {}).some(v => (v ?? 0) > 0);
+    const confidence: 'exact' | 'inferred' | 'unknown' =
+        event.exactTemplateMatch
+            ? 'exact'
+            : (hasStimulus && modality ? 'inferred' : 'unknown');
+
     return {
         date: event.date,
         costProfile: event.estimatedCost,
         trainingRecordLike: record,
-        ...(modality ? {
+        stimulusConfidence: confidence,
+        ...(modality && hasStimulus ? {
             modality,
             stimulusProfile: { ...ZERO_STIMULUS, ...event.estimatedStimulus },
+        } : modality ? {
+            modality,
         } : {}),
     };
 }

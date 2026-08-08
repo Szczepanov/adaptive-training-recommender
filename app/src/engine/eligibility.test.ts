@@ -18,7 +18,7 @@ function settings(overrides: Partial<TrainingSettings> = {}): TrainingSettings {
 function context(trainingSettings: TrainingSettings): UserContext {
     return {
         goals: { shortTerm: '', midTerm: '', longTerm: '' },
-        constraints: { hasCableMachine: true, hasFreeWeights: true, hasTreadmill: false, hasIndoorBike: true, injuries: [], maxTimeMinutes: 180 },
+        constraints: { hasCableMachine: true, hasFreeWeights: true, hasTreadmill: false, hasIndoorBike: true, restrictedModalities: [], maxTimeMinutes: 180 },
         preferences: { avoidedModalities: [], deprioritizedModalities: [], preferredModalities: [], conservativeBias: false },
         trainingSettings,
     };
@@ -36,6 +36,17 @@ describe('training-settings eligibility', () => {
         expect(eligibleTemplates(TEMPLATES, context(profile), 60, '2026-08-07').some(t => t.modality === 'Running' || t.modality === 'Field')).toBe(false);
     });
 
+    it('filters explicitly restricted modalities as a hard gate', () => {
+        const profile = settings();
+        const ctx = context(profile);
+        ctx.constraints.restrictedModalities = ['Cycling'];
+
+        const result = evaluateTemplateEligibility(TEMPLATES.find(t => t.id === 'cycling_technical_01')!, ctx, 60, '2026-08-07');
+        expect(result.eligible).toBe(false);
+        expect(result.reasons).toContain('restricted_modality');
+        expect(eligibleTemplates(TEMPLATES, ctx, 60, '2026-08-07').some(t => t.modality === 'Cycling')).toBe(false);
+    });
+
     it('enforces an indoor-only boundary and keeps either-location recovery available', () => {
         const profile = settings({ defaults: { weekdayMaxMinutes: 45, weekendMaxMinutes: 90, environment: 'indoor' } });
         const templates = eligibleTemplates(TEMPLATES, context(profile), 60, '2026-08-07');
@@ -47,5 +58,24 @@ describe('training-settings eligibility', () => {
         const profile = settings();
         expect(resolveMaximumSessionMinutes(context(profile), 60, '2026-08-07')).toBe(45);
         expect(resolveMaximumSessionMinutes(context(profile), 30, '2026-08-08')).toBe(30);
+    });
+
+    it('excludes a whole restricted category even when the template carries no matching safetyTag', () => {
+        // str_upper_pull_01 ("Pull-up Strength Practice") is Upper-body Strength with
+        // safetyTags: [] -- an excluded-elbow injury's avoid_overhead_pressing guardrail
+        // alone would never catch it. restrictedCategories exists precisely for this case
+        // (see injuryPolicy.ts: exclude severity on shoulder/elbow/wrist restricts the whole
+        // Upper-body Strength category, not just overhead-press-tagged templates), and it
+        // must be enforced by eligibleTemplates() itself so every caller -- planner.ts's
+        // 7-day forecast included, not just rules.ts's today/tomorrow path -- gets it for free.
+        const profile = settings({ equipment: { free_weights: true, cable_machine: true, treadmill: false, indoor_bike: true, pullup_bar: true } });
+        const ctx = context(profile);
+        ctx.constraints.restrictedCategories = ['Upper-body Strength'];
+
+        const result = evaluateTemplateEligibility(TEMPLATES.find(t => t.id === 'str_upper_pull_01')!, ctx, 60, '2026-08-07');
+        expect(result.eligible).toBe(false);
+        expect(result.reasons).toContain('restricted_category');
+
+        expect(eligibleTemplates(TEMPLATES, ctx, 60, '2026-08-07').some(t => t.category === 'Upper-body Strength')).toBe(false);
     });
 });

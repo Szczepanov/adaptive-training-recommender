@@ -68,7 +68,7 @@ started.
 
 ## 2. Tier 1 — Decisions that do not currently hold
 
-### F1. The documented hard injury gate has no data source at all
+### F1. The documented hard injury gate has no data source at all (**Resolved in Phase 1 Task 1.1**)
 
 `adapters.ts` — `mapContextFromGoalsAndTrainingSettings`, the sole production constructor of `UserContext` — hardcodes:
 
@@ -102,7 +102,7 @@ should prevent it is not participating in the decision at all.
 
 This is the single most important finding in this document.
 
-### F2. Garmin-measured training earns zero microcycle credit
+### F2. Garmin-measured training earns zero microcycle credit (**Resolved in Phase 1 Task 1.2**)
 
 **Precise claim:** a *recognised* Garmin-only completion that has no matched structured or
 adherence-confirmed stimulus earns **zero** objective credit, because its all-zero profile
@@ -211,7 +211,7 @@ the green branch's cost into the chained fatigue/objective ledger, **every** pro
 day inherits a best-case tomorrow. The three-branch evaluation is pure waste until a
 selector exists.
 
-### F6. Firestore rules do not enforce the immutability they document
+### F6. Firestore rules do not enforce the immutability they document (**Resolved in Phase 1 Task 1.3**)
 
 `app/firestore.rules`, `daily_recommendations`:
 

@@ -82,7 +82,9 @@ export interface UserContext {
         hasFreeWeights: boolean;
         hasTreadmill: boolean;
         hasIndoorBike: boolean;
-        injuries: string[];
+        restrictedModalities?: SessionTemplate['modality'][];
+        impliedGuardrails?: GuardrailKey[];
+        restrictedCategories?: SessionTemplate['category'][];
         maxTimeMinutes: number;
     };
     /** From UserPreferences -- previously collected in Firestore but never reaching the
@@ -644,11 +646,25 @@ export type EquipmentKey = 'free_weights' | 'cable_machine' | 'treadmill' | 'ind
 export type TrainingEnvironment = 'indoor' | 'outdoor' | 'either';
 export type GuardrailKey = 'avoid_high_impact' | 'avoid_heavy_lower_body' | 'avoid_overhead_pressing' | 'avoid_heavy_spinal_loading';
 
+export type BodyRegion =
+  | 'knee' | 'achilles' | 'ankle' | 'calf' | 'hamstring' | 'quadriceps'
+  | 'adductor_groin' | 'hip' | 'lower_back' | 'shoulder' | 'elbow' | 'wrist';
+
+export interface InjuryConstraint {
+  region?: BodyRegion;
+  severity: 'monitor' | 'limit' | 'exclude';
+  /** ISO date; absent = indefinite. Expired entries are ignored, not deleted. */
+  reviewBy?: string;
+  note?: string;
+  restrictedModalities?: SessionTemplate['modality'][];
+}
+
 export interface TrainingSettings {
     userId: string;
     schemaVersion: 2 | 3;
     equipment: Record<EquipmentKey, boolean>;
     guardrails: Record<GuardrailKey, boolean>;
+    injuries?: InjuryConstraint[];
     capabilities?: {
         powerMeter?: boolean;
         heartRateMonitor?: boolean;
@@ -749,6 +765,7 @@ export interface DailyRecommendation {
     mode: 'train' | 'modify' | 'recover';
     rationale: string;
     schemaVersion: number;
+    revision?: number;
     createdAt: string;
     updatedAt: string;
     adjustment?: SessionAdjustment;
@@ -806,6 +823,12 @@ export interface CompletedTrainingEvent {
     trainingEffect: number | null;
     estimatedCost: WorkoutCostProfile;
     estimatedStimulus: Partial<WorkoutStimulusProfile>;
+    /** True exactly when estimatedStimulus came from a real catalog template's own
+     *  stimulusProfile (an adherence-confirmed session matched to a known template) rather
+     *  than a coarse modality/intensity default. Drives CompletedExposure.stimulusConfidence
+     *  ('exact') independent of `confidence`, which instead reflects how well-evidenced the
+     *  *modality/duration match* itself is and conflates that with stimulus provenance. */
+    exactTemplateMatch: boolean;
     sources: CompletedTrainingSource[];
     confidence: CompletedTrainingConfidence;
     linkedActivityId: string | null;

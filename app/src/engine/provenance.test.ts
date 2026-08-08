@@ -45,4 +45,31 @@ describe('recommendation provenance', () => {
         });
         expect(JSON.stringify(audit)).not.toContain('This should never');
     });
+
+    it('produces non-zero safetyRestrictedModalityCount in audit when an injury is active', () => {
+        const template = TEMPLATES.find(item => item.category === 'Easy Endurance');
+        if (!template) throw new Error('Test fixture requires an easy template');
+        const recommendation: Recommendation = {
+            template,
+            mode: 'train',
+            rationale: 'Injury active test',
+            envelopes: {
+                safety: { clinicalFlagActive: true, restrictedModalities: ['Running'] },
+                plan: { maxAllowableTier: 'Easy', taperActive: false },
+            },
+            decisionTrace: {
+                policyVersion: POLICY_VERSION,
+                candidateScores: [{ templateId: template.id, utilityScore: 1.25, excludedReasons: [] }],
+            },
+        };
+        const snapshot = buildTrainingHistorySnapshot(
+            '2026-08-07', 7,
+            { status: 'AVAILABLE', revision: 'activities-r1', data: [] },
+            { status: 'AVAILABLE', revision: 'recommendations-r1', data: [] },
+            '2026-08-07T08:00:00Z',
+        );
+
+        const audit = buildRecommendationAudit(recommendation, snapshot, '2026-08-07T09:00:00Z');
+        expect(audit?.envelope.safetyRestrictedModalityCount).toBe(1);
+    });
 });

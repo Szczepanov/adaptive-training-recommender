@@ -349,7 +349,7 @@ export function generateWeekAheadPlan(
     const events = options.events ?? [];
     const fixedActivities = options.fixedActivities ?? [];
     const effectivePreferences = preferences ?? NEUTRAL_PREFERENCES;
-    const injuries = context.constraints.injuries;
+    const injuries = context.constraints.restrictedModalities ?? [];
 
     // Rolling window (not calendar Mon-Sun): objectives reset relative to *today* so the
     // strip never shows a seam where a later day suddenly looks unbalanced just because a
