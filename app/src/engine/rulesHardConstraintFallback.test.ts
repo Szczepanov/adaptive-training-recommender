@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { EngineObjectiveInput, SubjectiveInput, UserContext } from './models';
+import type { TrainingHistoryProvider } from './trainingHistory';
 
 vi.mock('./optimizer', async () => {
     const actual = await vi.importActual<typeof import('./optimizer')>('./optimizer');
@@ -82,6 +83,10 @@ function objective(): EngineObjectiveInput {
     };
 }
 
+const emptyHistoryProvider: TrainingHistoryProvider = {
+    reconstruct: async () => [],
+};
+
 describe('evaluateTrainingWithIntent hard-constraint fallback', () => {
     it('fails closed to recovery when every ranked candidate is rejected by a hard recovery constraint', async () => {
         const recommendation = await evaluateTrainingWithIntent(
@@ -90,6 +95,8 @@ describe('evaluateTrainingWithIntent hard-constraint fallback', () => {
             context(),
             [],
             '2026-03-02',
+            undefined,
+            emptyHistoryProvider,
         );
 
         expect(recommendation.mode).toBe('recover');
