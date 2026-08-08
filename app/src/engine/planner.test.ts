@@ -378,7 +378,7 @@ describe('generateWeekAheadPlan produces plans that make coaching sense', () => 
 
     it('resolves the threshold objective under an A-priority cycling event instead of leaving it permanently unresolved', () => {
         // Regression for the exact reported failure: Tempo Ride/Bike VO2 Intervals claim
-        // a high thresholdDevelopment stimulus and win ranking on that basis every day,
+        // a high thresholdPower stimulus and win ranking on that basis every day,
         // but under the old keyword-matched ledger the objective they won on could never
         // actually complete, so the plan kept "needing" threshold work forever.
         const context = baseContext({ hasIndoorBike: true });

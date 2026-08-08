@@ -84,7 +84,7 @@ export function readStimulusProfile(raw: unknown): WorkoutStimulusProfile {
  */
 export function deriveObjectiveCredit(
     objective: WeeklyObjective,
-    rawStimulus: WorkoutStimulusProfile,
+    rawStimulus: unknown,
     dose: DeliveredDose = {},
     context?: CreditContext
 ): ObjectiveCredit {

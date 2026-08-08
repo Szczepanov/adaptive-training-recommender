@@ -553,16 +553,21 @@ export const TEMPLATES: SessionTemplate[] = [
     }
 ];
 
-function canonicalizeStimulus(s: Partial<WorkoutStimulusProfile> & Record<string, number>): WorkoutStimulusProfile {
+function canonicalizeStimulus(s: Partial<WorkoutStimulusProfile> | Record<string, unknown>): WorkoutStimulusProfile {
+    const raw = s as Record<string, unknown>;
+    const numberOrZero = (...values: unknown[]): number => {
+        const value = values.find(candidate => typeof candidate === 'number' && Number.isFinite(candidate));
+        return typeof value === 'number' ? value : 0;
+    };
     return {
-        aerobicEndurance: s.aerobicEndurance ?? s.aerobicCapacity ?? 0,
-        thresholdPower: s.thresholdPower ?? s.thresholdDevelopment ?? 0,
-        vo2MaxPower: s.vo2MaxPower ?? 0,
-        repeatedSurges: s.repeatedSurges ?? s.surgeRepeatability ?? 0,
-        sprintPower: s.sprintPower ?? 0,
-        fatigueResistance: s.fatigueResistance ?? 0,
-        maxStrength: s.maxStrength ?? 0,
-        hypertrophy: s.hypertrophy ?? 0,
+        aerobicEndurance: numberOrZero(s.aerobicEndurance, raw.aerobicCapacity),
+        thresholdPower: numberOrZero(s.thresholdPower, raw.thresholdDevelopment),
+        vo2MaxPower: numberOrZero(s.vo2MaxPower),
+        repeatedSurges: numberOrZero(s.repeatedSurges, raw.surgeRepeatability),
+        sprintPower: numberOrZero(s.sprintPower),
+        fatigueResistance: numberOrZero(s.fatigueResistance),
+        maxStrength: numberOrZero(s.maxStrength),
+        hypertrophy: numberOrZero(s.hypertrophy),
     };
 }
 

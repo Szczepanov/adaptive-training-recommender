@@ -10,18 +10,18 @@ describe('deriveObjectiveCredit', () => {
         requiredCredit: 1.0,
         targetExposures: 1,
         completedExposures: 0,
-        targetStimulus: { aerobicCapacity: 0.8 },
+        targetStimulus: { aerobicEndurance: 0.8 },
     };
 
     const sampleStimulus: WorkoutStimulusProfile = {
         aerobicEndurance: 0.8,
-        aerobicCapacity: 0.8,
         thresholdPower: 0.2,
         vo2MaxPower: 0,
         repeatedSurges: 0,
         sprintPower: 0,
         fatigueResistance: 0,
         maxStrength: 0,
+        hypertrophy: 0,
     };
 
     it('derives full fractional credit when fully completed', () => {
@@ -111,7 +111,7 @@ describe('deriveObjectiveCredit', () => {
     });
 
     it('falls back to legacy stimulus field names when canonical axes are absent', () => {
-        const legacyOnlyStimulus: WorkoutStimulusProfile = {
+        const legacyOnlyStimulus = {
             aerobicCapacity: 0.8,
             thresholdDevelopment: 0.6,
             surgeRepeatability: 0.4,

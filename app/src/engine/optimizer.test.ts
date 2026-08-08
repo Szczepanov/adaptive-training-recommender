@@ -36,7 +36,7 @@ const DEFAULT_PREFERENCES: UserPreferences = {
     updatedAt: '',
 };
 
-describe('optimizer — dated, role-aware recovery constraints (F3 / 3.1)', () => {
+describe('optimizer â€” dated, role-aware recovery constraints (F3 / 3.1)', () => {
     it('allows three cycling sessions across 7 days with >= 48h spacing without repetition penalty', () => {
         const thresholdRide = ENRICHED_TEMPLATES.find(t => t.category === 'Hard Endurance' && t.modality === 'Cycling')!;
         const history: RecentHistoryEntry[] = [
@@ -83,7 +83,7 @@ describe('optimizer — dated, role-aware recovery constraints (F3 / 3.1)', () =
     });
 });
 
-describe('optimizer — lexicographic ordering (3.2)', () => {
+describe('optimizer â€” lexicographic ordering (3.2)', () => {
     it('ensures preference multiplier cannot promote a zero-objective candidate over an objective-satisfying candidate', () => {
         const thresholdObj: WeeklyObjective = {
             id: 'obj_1',
@@ -91,7 +91,7 @@ describe('optimizer — lexicographic ordering (3.2)', () => {
             title: 'Threshold Development',
             targetExposures: 1,
             completedExposures: 0,
-            targetStimulus: { thresholdDevelopment: 0.8 },
+            targetStimulus: { thresholdPower: 0.8 },
         };
 
         const thresholdCandidate = ENRICHED_TEMPLATES.find(t => t.category === 'Hard Endurance' && t.modality === 'Cycling')!;
@@ -151,7 +151,7 @@ describe('optimizer — lexicographic ordering (3.2)', () => {
     });
 });
 
-describe('optimizer — one optimizer invocation context (F4 / 3.3)', () => {
+describe('optimizer â€” one optimizer invocation context (F4 / 3.3)', () => {
     it('buildOptimizationContext produces equivalent context from intent and context inputs', () => {
         const intent = {
             unresolvedObjectives: [],

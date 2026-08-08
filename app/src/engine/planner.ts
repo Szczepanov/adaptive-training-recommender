@@ -282,7 +282,16 @@ export function prepareWeekAheadPlanSeed(
         const typeStr = 'type' in h && typeof h.type === 'string' ? h.type : undefined;
         const modality = (h.modality ?? typeStr ?? 'None') as SessionTemplate['modality'];
         const category = h.category;
-        microcycle = creditObjectivesFromStimulus(microcycle, { thresholdDevelopment: 0.8, aerobicCapacity: 0.5, surgeRepeatability: 0.5, maxStrength: 0.5, hypertrophy: 0.5, mobilityRecovery: 0.5 }, modality, category);
+        microcycle = creditObjectivesFromStimulus(microcycle, {
+            thresholdPower: 0.8,
+            aerobicEndurance: 0.5,
+            repeatedSurges: 0.5,
+            vo2MaxPower: 0,
+            sprintPower: 0,
+            fatigueResistance: 0.5,
+            maxStrength: 0.5,
+            hypertrophy: 0.5,
+        }, modality, category);
     });
     const fatigue = createEmptyFatigue(todayDate);
     return {

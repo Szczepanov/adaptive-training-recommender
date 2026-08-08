@@ -448,7 +448,11 @@ describe('Architecture & Phased Engine Integration', () => {
                 environment: 'either' as const,
                 safetyTags: [] as SessionTemplate['safetyTags'],
                 systemicCost: 0.4,
-                stimulusProfile: { aerobicEndurance: 0.6, aerobicCapacity: 0.6 },
+                stimulusProfile: {
+                    aerobicEndurance: 0.6, thresholdPower: 0, vo2MaxPower: 0,
+                    repeatedSurges: 0, sprintPower: 0, fatigueResistance: 0,
+                    maxStrength: 0, hypertrophy: 0,
+                },
                 costProfile: { systemic: 0.2, cardiovascular: 0.3, lowerBody: 0.1, upperBody: 0, impactTissue: 0.1, neuromuscular: 0 },
             };
             const templateA = {
