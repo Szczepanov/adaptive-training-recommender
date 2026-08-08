@@ -430,7 +430,11 @@ rule-test count so a silently-shrinking suite is caught.
 - [ ] `safetyRestrictedModalityCount` is non-zero in a persisted audit when an injury is active
 - [ ] `RUNNING_INJURY_PATTERN` deleted
 - [ ] three Garmin-only sessions resolve at least two weekly objectives
-- [ ] recognised and unrecognised activity types both earn credit (no inversion)
+- [ ] the inversion is gone: a *recognised* Garmin session earns credit from its inferred
+      structured stimulus (`stimulusConfidence: 'inferred'`), and an *unrecognised* one
+      produces no structured profile (`'unknown'`) while retaining whatever legacy
+      fallback credit it earns today. "No structured profile" must not be read as "no
+      credit" — the two outcomes are asserted by separate tests
 - [ ] emulator suite covers field tampering, schema downgrade, audit removal, and the
       three legal-update cases
 - [ ] simulation baseline regenerated and the delta reviewed in the PR description
