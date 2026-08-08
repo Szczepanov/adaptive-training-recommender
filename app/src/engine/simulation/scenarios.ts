@@ -49,6 +49,7 @@ function context(
     equipmentOverrides: Partial<TrainingSettings['equipment']>,
     preferredModalities: string[] = [],
     injuries: string[] = [],
+    defaultsOverrides: Partial<TrainingSettings['defaults']> = {},
 ): UserContext {
     return {
         goals: { shortTerm: '', midTerm: '', longTerm: '' },
@@ -61,7 +62,7 @@ function context(
             maxTimeMinutes: 90,
         },
         preferences: { avoidedModalities: [], deprioritizedModalities: [], preferredModalities, conservativeBias: false },
-        trainingSettings: trainingSettings(equipmentOverrides),
+        trainingSettings: trainingSettings(equipmentOverrides, defaultsOverrides),
     };
 }
 
@@ -208,6 +209,24 @@ export const SCENARIOS: AthleteScenario[] = [
         event: null,
         startDate: START_DATE,
         weeks: 4,
+        readinessForWeek: () => stableReadiness(),
+    },
+    {
+        id: 'cycling_a_event_build_week',
+        label: 'Cycling A-event (Build phase, fixed 2026-03-02)',
+        description: 'Golden coaching-contract scenario. 60 days to A-event (Build phase), 1 week strip. Tests key cycling quality spacing, anchor protection, event modality frequency, objective resolution, and rest day presence.',
+        context: context({ indoor_bike: true, free_weights: true }, [], [], { weekdayMaxMinutes: 60, weekendMaxMinutes: 150 }),
+        event: {
+            id: 'e-cycling-build-golden',
+            title: 'cycling_event (road_race)',
+            date: '2026-05-01',
+            priority: 'A',
+            lifecycle: 'scheduled',
+            category: 'cycling_event',
+            demandProfile: resolveDemandProfile('cycling_event', 'road_race'),
+        },
+        startDate: '2026-03-02',
+        weeks: 1,
         readinessForWeek: () => stableReadiness(),
     },
 ];

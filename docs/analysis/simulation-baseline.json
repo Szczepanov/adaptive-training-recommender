@@ -1629,6 +1629,111 @@
         "recover": 0
       },
       "constraintViolations": []
+    },
+    {
+      "scenarioId": "cycling_a_event_build_week",
+      "label": "Cycling A-event (Build phase, fixed 2026-03-02)",
+      "description": "Golden coaching-contract scenario. 60 days to A-event (Build phase), 1 week strip. Tests key cycling quality spacing, anchor protection, event modality frequency, objective resolution, and rest day presence.",
+      "weeksSimulated": 1,
+      "totalDays": 7,
+      "categoryDistribution": {
+        "Easy Endurance": 3,
+        "Technical Skill": 1,
+        "Upper-body Strength": 1,
+        "Rest": 2
+      },
+      "modalityDistribution": {
+        "Cycling": 4,
+        "Strength": 1,
+        "None": 2
+      },
+      "restOrRecoveryDayCount": 2,
+      "restOrRecoveryDayPct": 28.6,
+      "maxConsecutiveSameTemplateStreakWithinCall": 2,
+      "maxConsecutiveSameTemplateStreakAcrossWeeks": 2,
+      "objectiveResolution": [
+        {
+          "key": "zone2_aerobic",
+          "timesGenerated": 1,
+          "timesResolved": 1
+        },
+        {
+          "key": "threshold_quality",
+          "timesGenerated": 1,
+          "timesResolved": 1
+        },
+        {
+          "key": "strength_maintenance",
+          "timesGenerated": 1,
+          "timesResolved": 1
+        }
+      ],
+      "objectiveCredits": [
+        {
+          "weekIndex": 0,
+          "date": "2026-03-02",
+          "objectiveKey": "zone2_aerobic",
+          "objectiveTitle": "Aerobic Base (Zone 2)",
+          "templateId": "end_mod_02",
+          "templateTitle": "Tempo Ride",
+          "modality": "Cycling"
+        },
+        {
+          "weekIndex": 0,
+          "date": "2026-03-02",
+          "objectiveKey": "threshold_quality",
+          "objectiveTitle": "Threshold Development",
+          "templateId": "end_mod_02",
+          "templateTitle": "Tempo Ride",
+          "modality": "Cycling"
+        },
+        {
+          "weekIndex": 0,
+          "date": "2026-03-03",
+          "objectiveKey": "zone2_aerobic",
+          "objectiveTitle": "Aerobic Base (Zone 2)",
+          "templateId": "end_easy_01",
+          "templateTitle": "Zone 2 Spin",
+          "modality": "Cycling"
+        },
+        {
+          "weekIndex": 0,
+          "date": "2026-03-05",
+          "objectiveKey": "strength_maintenance",
+          "objectiveTitle": "Strength & Neuromuscular Maintenance",
+          "templateId": "str_upper_01",
+          "templateTitle": "Upper Body Push/Pull",
+          "modality": "Strength"
+        }
+      ],
+      "utilityDiagnostics": {
+        "fragileSelectionCount": 1,
+        "lowerBenefitSelectionCount": 2,
+        "trainTierRestOrRecoveryCount": 1
+      },
+      "qualityWarnings": [
+        "Event-specific anchor missed in 1 nominated week(s).",
+        "Rest or mobility selected on 1 projected train-tier day(s)."
+      ],
+      "anchorWeeks": [
+        {
+          "weekIndex": 0,
+          "weekStartDate": "2026-03-02",
+          "eventSpecificAnchorDate": "2026-03-07",
+          "qualityAnchorDate": "2026-03-04",
+          "eventSpecificAnchorHit": false,
+          "eventSpecificExposureDates": [],
+          "eventSpecificAnchorFulfilled": false,
+          "qualityAnchorHit": false
+        }
+      ],
+      "anchorScopeNote": null,
+      "fatigueTierDayCounts": {
+        "train": 5,
+        "modify": 1,
+        "recover": 0
+      },
+      "constraintViolations": []
     }
   ],
   "preferenceSensitivity": [

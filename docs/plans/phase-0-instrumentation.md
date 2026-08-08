@@ -16,8 +16,8 @@ Update the marker on the work-item heading **and** this table in the same commit
 | Task | Status | Summary | Primary files |
 |---|:--:|---|---|
 | 0.1 | `[x]` | Coaching invariants + aggregate bounds gate CI; snapshot becomes a non-blocking semantic diff | `app/scripts/simulate-scenarios.mjs`, `app/package.json`, `.github/workflows/ci.yml`, `docs/analysis/simulation-baseline.json` |
-| 0.2 | `[ ]` | Golden coaching-contract scenario with fixed dates; one assertion lands expected-failing | `app/src/engine/simulation/scenarios.ts`, `app/src/engine/goldenWeek.test.ts` |
-| 0.3 | `[ ]` | Lazy Firebase init so the suite runs from a clean clone | `app/src/firebase.ts`, `app/src/services/*.ts`, `app/.env.example`, `app/README.md` |
+| 0.2 | `[x]` | Golden coaching-contract scenario with fixed dates; one assertion lands expected-failing | `app/src/engine/simulation/scenarios.ts`, `app/src/engine/goldenWeek.test.ts` |
+| 0.3 | `[-]` | Lazy Firebase init so the suite runs from a clean clone | `app/src/firebase.ts`, `app/src/services/*.ts`, `app/.env.example`, `app/README.md` |
 | 0.4 | `[ ]` | `POLICY_VERSION` bump + CI drift guard using the CI base SHA | `app/src/engine/policy.ts`, `.github/workflows/ci.yml`, new guard script |
 | 0.5 | `[ ]` | `ruff` + `mypy` in `pyproject.toml` and CI | `pyproject.toml`, `.github/workflows/ci.yml` |
 | 0.6 | `[ ]` | Delete `garmin_login.py`; pin `uv`; add dependency audits | `garmin_login.py`, `Dockerfile`, `.github/workflows/ci.yml` |
@@ -88,7 +88,7 @@ so it should be stable — verify rather than assume. If it is not stable, the s
 worthless as a diagnostic; fix the nondeterminism or drop the snapshot and keep only the
 invariants.
 
-### `[ ]` 0.2 — Golden coaching-contract scenario
+### `[x]` 0.2 — Golden coaching-contract scenario
 
 The existing scenario assertions in `app/src/engine/scenarios.test.ts` check engine
 semantics (no constraint violations, no absurd streaks). They do not assert that the
