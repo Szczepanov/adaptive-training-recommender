@@ -51,10 +51,17 @@ export function getPreviousLocalDateString(dateStr: string): string {
  * do not cause rounding errors in day calculation.
  */
 export function getDayDiff(dateStrA: string, dateStrB: string): number {
-    const da = new Date(dateStrA + 'T00:00:00');
-    const db = new Date(dateStrB + 'T00:00:00');
-    const utcA = Date.UTC(da.getFullYear(), da.getMonth(), da.getDate());
-    const utcB = Date.UTC(db.getFullYear(), db.getMonth(), db.getDate());
+    // Parse the YYYY-MM-DD components directly rather than through `new Date(dateStr +
+    // 'T00:00:00')` (which parses in the runtime's local timezone) -- Date.UTC on the
+    // literal components is exact and has no host-timezone or DST dependency at all,
+    // rather than merely "correct because we happen to read the same local components
+    // back out".
+    const toUtcMidnight = (dateStr: string): number => {
+        const [year, month, day] = dateStr.split('-').map(Number);
+        return Date.UTC(year, month - 1, day);
+    };
+    const utcA = toUtcMidnight(dateStrA);
+    const utcB = toUtcMidnight(dateStrB);
     return Math.round((utcA - utcB) / (24 * 60 * 60 * 1000));
 }
 

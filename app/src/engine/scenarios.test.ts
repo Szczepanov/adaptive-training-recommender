@@ -138,9 +138,23 @@ describe('strength_meet_powerlifting_B -- documents a known, unfixed limitation'
 });
 
 describe('field_sport_general_target -- no dedicated event category exists for field sports', () => {
-    it('Field Maintenance is at least reachable over a 4-week horizon on preference alone', async () => {
+    it('documents that Field Maintenance is NOT currently reachable on preference alone under strict lexicographic ordering', async () => {
+        // NOT an assertion of ideal behavior -- the opposite of what this test asserted
+        // before the Phase 3 review fix pass. Preference is Level 6 (soft nudge) in
+        // rankCandidates' lexicographic ordering; it can only decide among candidates
+        // that are ALREADY tied on Level 1 (objective benefit, within BENEFIT_TIE_BAND).
+        // Field's own stimulus profile only weakly overlaps the generic objectives this
+        // no-event scenario generates, so its benefit score sits far below a genuinely
+        // matching Endurance/Strength candidate's on almost every day -- preference alone
+        // can never close that gap, no matter how large the multiplier. It used to
+        // "work" only as a side effect of a benefit-floor bug (see calculateStimulusBenefit's
+        // Level 4 fix in the Phase 3 review) that occasionally let a weak match's score
+        // collapse to the exact same value as a non-matching candidate's, letting cost/
+        // preference decide a tie that shouldn't have been a fair fight. Recorded here so
+        // a real fix (e.g. a per-modality minimum-exposure floor) has to touch this test
+        // on purpose, not silently regress further.
         const result = await getResult('field_sport_general_target');
-        expect(result.modalityDistribution.Field ?? 0).toBeGreaterThan(0);
+        expect(result.modalityDistribution.Field ?? 0).toBe(0);
     });
 
     it('reports when the Field preference has no observable effect against the matched Base baseline', async () => {

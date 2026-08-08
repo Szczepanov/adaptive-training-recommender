@@ -168,12 +168,15 @@ anchor context that `rules.ts` does not. Split it:
 3. Each call site populates every field the builder requires — including anchor context
    where applicable — so a future omission is a test failure, not silent divergence.
 
-### `[ ]` 3.4 — F5: stop assuming tomorrow is green
+### `[x]` 3.4 — F5: stop assuming tomorrow is green
 
-`Home.tsx` hardcodes `nextDayPlan.branches.green.recommendation` in the `generateWeekAheadPlanWithIntent` effect. ADR-0008 §1
+~~`Home.tsx` hardcodes `nextDayPlan.branches.green.recommendation` in the `generateWeekAheadPlanWithIntent` effect. ADR-0008 §1
 specifies the user-selected branch; no selector exists, so yellow and red are computed
 (three full `evaluateTrainingWithIntent` passes) and discarded, and every projected day
-is seeded from a best-case tomorrow.
+is seeded from a best-case tomorrow.~~ **Implemented**: `Home.tsx` now tracks
+`selectedNextDayTier` and threads the corresponding `nextDayPlan.branches[tier]`
+recommendation into `generateWeekAheadPlanWithIntent`; `WeekAheadStrip`'s Tomorrow
+Readiness Tier Selector (🟢/🟡/🔴) drives the selection.
 
 > **Decision (2026-08-08): build the selector.** Add tier selection to the next-day card
 > and thread it into `generateWeekAheadPlanWithIntent`.
