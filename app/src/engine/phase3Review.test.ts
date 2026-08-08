@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import type { FatigueState, SessionTemplate, UserPreferences } from './models';
+import type { DailyReadiness, FatigueState, SessionTemplate, UserPreferences } from './models';
 import type { ResolvedAvailability } from './schedule';
+import type { CompletedExposure } from './trainingHistory';
 import { rankCandidates, type RecentHistoryEntry } from './optimizer';
-import { projectFatigueForRankingDate, realizedSessionRole } from './planner';
+import { prepareWeekAheadPlanSeed, projectFatigueForRankingDate, realizedSessionRole } from './planner';
 import { ENRICHED_TEMPLATES } from './templates';
 
 const ZERO_DIMS = {
@@ -44,6 +45,44 @@ const PREFERENCES: UserPreferences = {
     schemaVersion: 1,
     createdAt: '',
     updatedAt: '',
+};
+
+const FRESH_READINESS: DailyReadiness = {
+    subjective: {
+        readiness: 9,
+        sleepQuality: 9,
+        fatigue: 2,
+        soreness: 2,
+        stress: 2,
+        motivation: 9,
+        timeAvailable: 90,
+        painFlag: false,
+        alreadyTrainedToday: false,
+        preferredModalityToday: null,
+    },
+    objective: {
+        total_steps: 8000,
+        sleep_score: 90,
+        sleep_duration_min: 480,
+        rhr: 50,
+        rhr_7d_avg: 50,
+        rhr_delta: 0,
+        hrv_weekly_avg: 50,
+        hrv_last_night: 50,
+        hrv_delta: 0,
+        respiration: 14,
+        body_battery_wake: 90,
+        last_3_days_hard_sessions_count: 0,
+        yesterday_training: null,
+        today_training: null,
+        sleep_score_delta_7d: 0,
+        rhr_delta_28d: 0,
+        hrv_delta_28d: 0,
+        sleep_score_delta_28d: 0,
+        hrv_stdev_28d: 8.5,
+        rhr_stdev_28d: 3.5,
+        sleep_score_stdev_28d: 7.8,
+    },
 };
 
 describe('Phase 3 review regressions', () => {
@@ -150,5 +189,56 @@ describe('Phase 3 review regressions', () => {
         expect(realizedSessionRole('2026-03-05', rest, anchors)).toBe('supporting');
         expect(realizedSessionRole('2026-03-05', raceSpecific, anchors)).toBe('anchor');
         expect(realizedSessionRole('2026-03-03', quality, anchors)).toBe('anchor');
+    });
+
+    it('preserves completed external load and exact objective credit when history is mixed', () => {
+        const completedStrength: CompletedExposure = {
+            date: '2026-03-01',
+            modality: 'Strength',
+            category: 'Full-body Strength',
+            costProfile: {
+                systemic: 0.8,
+                cardiovascular: 0.2,
+                lowerBody: 0.8,
+                upperBody: 0.7,
+                impactTissue: 0.1,
+                neuromuscular: 0.8,
+            },
+            stimulusProfile: {
+                aerobicCapacity: 0,
+                thresholdDevelopment: 0,
+                surgeRepeatability: 0,
+                maxStrength: 1,
+                hypertrophy: 0.8,
+                mobilityRecovery: 0,
+            },
+            trainingRecordLike: {
+                type: 'Strength Full-body Strength',
+                duration_min: 60,
+                training_effect: 3,
+                intensity_tag: 'hard',
+            },
+        };
+        const lightweightCycling: RecentHistoryEntry = {
+            date: '2026-02-28',
+            modality: 'Cycling',
+            category: 'Hard Endurance',
+            systemicCost: 0.7,
+            lowerBodyCost: 0.5,
+        };
+
+        const seed = prepareWeekAheadPlanSeed(
+            FRESH_READINESS,
+            [],
+            '2026-03-02',
+            [completedStrength, lightweightCycling],
+        );
+        const strengthObjective = seed.microcycle.objectives.find(objective => objective.key === 'strength_maintenance');
+
+        expect(seed.trailingHistory).toHaveLength(2);
+        expect(seed.fatigue.externalLoadFatigue.systemic).toBeGreaterThan(0);
+        expect(seed.fatigue.externalLoadFatigue.lowerBody).toBeGreaterThan(0);
+        expect(strengthObjective).toBeDefined();
+        expect(strengthObjective!.completedExposures).toBeGreaterThanOrEqual(strengthObjective!.targetExposures);
     });
 });
