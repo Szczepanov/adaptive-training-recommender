@@ -4,8 +4,8 @@ import type {
     FatigueState,
     FixedActivity,
     MicrocycleState,
-    PlannedObjectiveCredit,
     Recommendation,
+    SessionHistoryEntry,
     SessionRole,
     SessionTemplate,
     UserContext,
@@ -15,11 +15,19 @@ import type {
     WorkoutCostProfile,
     WorkoutStimulusProfile,
 } from './models';
-import type { ResolvedAvailability } from './schedule';
+
+export interface PlannedObjectiveCredit {
+    date: string;
+    objectiveKey: string;
+    objectiveTitle: string;
+    templateId: string;
+    templateTitle: string;
+    modality: SessionTemplate['modality'];
+}
 import { resolveAvailability } from './schedule';
 import { isTemplatePhaseEligible, evaluatePeriodizationPhase } from './periodization';
 import { eligibleTemplates } from './eligibility';
-import { addDaysToLocalDateString, getLocalDateString } from '../utils/localDate';
+import { addDaysToLocalDateString } from '../utils/localDate';
 import { createEmptyFatigue, applyCompletedSessionLoad } from './fatigue';
 import {
     creditObjectivesFromStimulus,
@@ -30,9 +38,7 @@ import {
 import {
     type RecentHistoryEntry,
     buildOptimizationContext,
-    rankCandidatesByUtility,
     rankCandidates,
-    getConsecutiveModalityCount,
 } from './optimizer';
 import { ENRICHED_TEMPLATES } from './templates';
 import { resolveTrainingIntent } from './trainingIntent';
@@ -227,13 +233,18 @@ export function projectTrailingHistory(
     history: (RecentHistoryEntry | SessionHistoryEntry)[]
 ): (RecentHistoryEntry | SessionHistoryEntry)[] {
     return history.map(e => {
-        const item: any = {
-            systemicCost: e.systemicCost ?? 0,
-            type: e.type ?? e.modality,
+        const completedDate = 'completedDate' in e && typeof e.completedDate === 'string' ? e.completedDate : undefined;
+        const rec = e as Record<string, unknown>;
+        const recordType = rec.trainingRecordLike && typeof rec.trainingRecordLike === 'object' && 'type' in (rec.trainingRecordLike as object) ? (rec.trainingRecordLike as { type?: string }).type : undefined;
+        const costProf = rec.costProfile && typeof rec.costProfile === 'object' ? rec.costProfile as Record<string, number> : undefined;
+        const systemic = costProf?.systemic;
+
+        const item: RecentHistoryEntry = {
+            type: recordType ?? ('type' in e ? e.type : undefined) ?? e.modality,
+            systemicCost: e.systemicCost ?? systemic ?? 0,
         };
-        if ('date' in e || 'completedDate' in e) {
-            item.date = ('completedDate' in e ? (e as any).completedDate : e.date) ?? getLocalDateString();
-        }
+        const dt = completedDate ?? ('date' in e ? e.date : undefined);
+        if (dt) item.date = dt;
         if ('category' in e && e.category) item.category = e.category;
         if ('modality' in e && e.modality) item.modality = e.modality;
         if ('role' in e && e.role) item.role = e.role;
@@ -261,7 +272,8 @@ export function prepareWeekAheadPlanSeed(
     const periodization = evaluatePeriodizationPhase(events, todayDate);
     let microcycle = generateWeeklyObjectives(periodization.phase, todayDate, periodization.focusEvent);
     history.forEach(h => {
-        const modality = (h.modality ?? h.type ?? 'None') as SessionTemplate['modality'];
+        const typeStr = 'type' in h && typeof h.type === 'string' ? h.type : undefined;
+        const modality = (h.modality ?? typeStr ?? 'None') as SessionTemplate['modality'];
         const category = h.category;
         microcycle = creditObjectivesFromStimulus(microcycle, { thresholdDevelopment: 0.8, aerobicCapacity: 0.5, surgeRepeatability: 0.5, maxStrength: 0.5, hypertrophy: 0.5, mobilityRecovery: 0.5 }, modality, category);
     });
@@ -288,7 +300,6 @@ export function generateWeekAheadPlan(
     const events = options.events ?? [];
     const fixedActivities = options.fixedActivities ?? [];
     const effectivePreferences = preferences ?? NEUTRAL_PREFERENCES;
-    const injuries = context.constraints.restrictedModalities ?? [];
 
     const periodizationToday = evaluatePeriodizationPhase(events, todayDate);
     let microcycle: MicrocycleState = seed.microcycle ?? generateWeeklyObjectives(periodizationToday.phase, todayDate, periodizationToday.focusEvent);
@@ -375,12 +386,22 @@ export function generateWeekAheadPlan(
 
         const projectedHistory: (RecentHistoryEntry | SessionHistoryEntry)[] = [
             ...(seed.trailingHistory ?? []),
+            {
+                date: todayDate,
+                templateId: todayRec.template.id,
+                category: todayRec.template.category,
+                modality: todayRec.template.modality,
+                role: (['Hard Endurance', 'Moderate Endurance', 'Race-Specific Endurance', 'Full-body Strength'].includes(todayRec.template.category) ? 'anchor' : 'supporting') as SessionRole,
+                systemicCost: todayRec.template.systemicCost,
+                lowerBodyCost: todayRec.template.costProfile?.lowerBody ?? 0,
+                type: todayRec.template.title,
+            },
             ...resultDays.map(d => ({
                 date: d.date,
                 templateId: d.template.id,
                 category: d.template.category,
                 modality: d.template.modality,
-                role: d.dayOffset === 1 && anchorRole ? 'anchor' : (['Hard Endurance', 'Race-Specific Endurance', 'Full-body Strength'].includes(d.template.category) ? 'anchor' : 'supporting'),
+                role: (d.date === anchors.eventSpecificAnchorDate || d.date === anchors.qualityAnchorDate || ['Hard Endurance', 'Moderate Endurance', 'Race-Specific Endurance', 'Full-body Strength'].includes(d.template.category) ? 'anchor' : 'supporting') as SessionRole,
                 systemicCost: d.template.systemicCost,
                 lowerBodyCost: d.template.costProfile?.lowerBody ?? 0,
                 type: d.template.title,
@@ -395,7 +416,7 @@ export function generateWeekAheadPlan(
             { anchorRole, adjacentToAnchor }
         );
 
-        const ranked = rankCandidatesByUtility(
+        const rankingResult = rankCandidates(
             fatigueGated,
             optContext.unresolvedObjectives,
             optContext.fatigueState,
@@ -404,11 +425,12 @@ export function generateWeekAheadPlan(
             optContext.preferences,
             optContext.options
         );
+        const ranked = rankingResult.accepted;
 
         const restFallback: SessionTemplate = ENRICHED_TEMPLATES.find(t => t.category === 'Rest') ?? {
             id: 'rest_01',
             category: 'Rest',
-            modality: 'Rest',
+            modality: 'None',
             durationMin: 0,
             durationMax: 0,
             title: 'Rest Day',
@@ -487,7 +509,7 @@ export async function generateWeekAheadPlanWithIntent(
             microcycle: intent.microcycle,
             fatigue: intent.fatigue,
             trailingHistory: intent.history.map(e => ({
-                date: e.completedDate,
+                date: ('completedDate' in e && typeof e.completedDate === 'string' ? e.completedDate : 'date' in e && typeof e.date === 'string' ? e.date : todayDate),
                 modality: e.modality,
                 category: e.category,
                 systemicCost: e.costProfile?.systemic ?? 0,

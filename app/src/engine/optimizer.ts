@@ -8,7 +8,6 @@ import type {
     UserPreferences,
     WeeklyObjective,
     WorkoutCostProfile,
-    WorkoutStimulusProfile,
 } from './models';
 import type { ResolvedAvailability } from './schedule';
 import { resolveAvailability } from './schedule';
@@ -60,6 +59,23 @@ export interface OptimizationContext {
     preferences: UserPreferences;
     options: OptimizationOptions;
 }
+
+const DEFAULT_PREFERENCES: UserPreferences = {
+    userId: '',
+    preferredRecoveryStyle: 'mixed',
+    defaultWeekdayTimeMin: 45,
+    defaultWeekendTimeMin: 60,
+    preferredTimeOfDay: 'flexible',
+    preferredModalities: [],
+    deprioritizedModalities: [],
+    avoidedModalities: [],
+    explanationVerbosity: 'detailed',
+    conservativeBias: false,
+    preferredUnits: { distance: 'km', weight: 'kg', temperature: 'celsius' },
+    schemaVersion: 1,
+    createdAt: '',
+    updatedAt: '',
+};
 
 const INTENSITY_STACK_THRESHOLD = 0.5;
 const INTENSITY_STACK_PENALTY = 0.35;
@@ -114,7 +130,7 @@ export function normalizeHistory(
         let role: SessionRole = 'supporting';
         if ('role' in entry && entry.role) {
             role = entry.role;
-        } else if (('category' in entry && entry.category && ['Hard Endurance', 'Race-Specific Endurance', 'Full-body Strength'].includes(entry.category)) || systemicCost >= 0.7) {
+        } else if (('category' in entry && entry.category && ['Hard Endurance', 'Moderate Endurance', 'Race-Specific Endurance', 'Full-body Strength'].includes(entry.category)) || systemicCost >= 0.7) {
             role = 'anchor';
         }
 
@@ -228,7 +244,10 @@ export function calculateStimulusBenefit(
 
     const stimulusProfile = template.stimulusProfile;
     if (!stimulusProfile || unresolvedObjectives.length === 0) {
-        return template.category === 'Mobility/Recovery' ? 0.2 : 0.5;
+        if (template.category === 'Mobility/Recovery') return 0.2;
+        if (template.category === 'Technical Skill') return 0.3;
+        const totalStim = stimulusProfile ? (stimulusProfile.aerobicCapacity ?? 0) + (stimulusProfile.thresholdDevelopment ?? 0) : 0;
+        return Math.min(0.75, 0.45 + totalStim * 0.2);
     }
 
     let benefit = 0;
@@ -244,6 +263,7 @@ export function calculateStimulusBenefit(
                     return;
                 }
             }
+
         }
 
         const target = obj.targetStimulus;
@@ -268,7 +288,7 @@ export function calculateStimulusBenefit(
         const strengthTarget = target.maxStrength ?? target.hypertrophy ?? 0;
         const strengthStim = stimulusProfile.maxStrength ?? stimulusProfile.hypertrophy ?? 0;
         if (strengthTarget && strengthStim) {
-            benefit += strengthTarget * strengthStim * 1.2;
+            benefit += strengthTarget * strengthStim * 1.6;
         }
 
         const fatigueTarget = target.fatigueResistance ?? 0;
@@ -307,14 +327,21 @@ export function buildOptimizationContext(
         unresolvedObjectives: WeeklyObjective[];
         fatigue: FatigueState;
         periodization?: { focusEvent?: UserEvent | null } | null;
-        history?: (RecentHistoryEntry | SessionHistoryEntry | any)[];
+        history?: (RecentHistoryEntry | SessionHistoryEntry)[];
     },
     context: UserContext,
-    preferences: UserPreferences | null,
+    preferences: Partial<UserPreferences> | null,
     date: string,
     options: Partial<OptimizationOptions> = {}
 ): OptimizationContext {
-    const basePrefs = preferences ?? DEFAULT_PREFERENCES;
+    const contextPrefs = context.preferences ? {
+        ...DEFAULT_PREFERENCES,
+        preferredModalities: context.preferences.preferredModalities ?? [],
+        deprioritizedModalities: context.preferences.deprioritizedModalities ?? [],
+        avoidedModalities: context.preferences.avoidedModalities ?? [],
+        conservativeBias: context.preferences.conservativeBias ?? false,
+    } : DEFAULT_PREFERENCES;
+    const basePrefs = preferences ? { ...DEFAULT_PREFERENCES, ...preferences } : contextPrefs;
     const userId = (context.trainingSettings?.userId && context.trainingSettings.userId !== '')
         ? context.trainingSettings.userId
         : (basePrefs.userId ?? '');
@@ -326,18 +353,28 @@ export function buildOptimizationContext(
     const availability = resolveAvailability(date, null, [], context);
     const injuryConstraints = context.constraints?.restrictedModalities ?? [];
 
-    const rawHistory = options.recentHistory ?? (intent.history ?? []).map(e => ({
-        date: ('completedDate' in e ? (e as any).completedDate : e.date) ?? date,
-        templateId: e.templateId,
-        category: e.category,
-        modality: e.modality ?? ('trainingRecordLike' in e ? (e as any).trainingRecordLike?.type : e.type),
-        role: e.role,
-        systemicCost: e.systemicCost ?? ('costProfile' in e ? (e as any).costProfile?.systemic : 0) ?? 0,
-        lowerBodyCost: ('lowerBodyCost' in e && typeof e.lowerBodyCost === 'number')
-            ? e.lowerBodyCost
-            : ('costProfile' in e ? (e as any).costProfile?.lowerBody : 0) ?? 0,
-        type: e.type ?? ('trainingRecordLike' in e ? (e as any).trainingRecordLike?.type : undefined),
-    }));
+    const rawHistory: (RecentHistoryEntry | SessionHistoryEntry)[] = options.recentHistory ?? (intent.history ?? []).map(e => {
+        const completedDate = 'completedDate' in e && typeof e.completedDate === 'string' ? e.completedDate : undefined;
+        const rec = e as Record<string, unknown>;
+        const recType = rec.trainingRecordLike && typeof rec.trainingRecordLike === 'object' && 'type' in (rec.trainingRecordLike as object) ? (rec.trainingRecordLike as { type?: string }).type : undefined;
+        const costProf = rec.costProfile && typeof rec.costProfile === 'object' ? rec.costProfile as Record<string, number> : undefined;
+        const systemic = costProf?.systemic;
+        const lowerBody = costProf?.lowerBody;
+        const entryType = 'type' in e && typeof e.type === 'string' ? e.type : undefined;
+
+        return {
+            date: completedDate ?? e.date ?? date,
+            templateId: e.templateId,
+            category: e.category,
+            modality: e.modality ?? recType ?? entryType,
+            role: e.role,
+            systemicCost: e.systemicCost ?? systemic ?? 0,
+            lowerBodyCost: ('lowerBodyCost' in e && typeof e.lowerBodyCost === 'number')
+                ? e.lowerBodyCost
+                : (lowerBody ?? 0),
+            type: entryType ?? recType,
+        };
+    });
 
     const optimizationOptions: OptimizationOptions = {
         date,
@@ -357,13 +394,6 @@ export function buildOptimizationContext(
     };
 }
 
-/**
- * Single, lexicographically ordered candidate ranking path.
- * 1. Hard filters (Safety, Feasibility, Recovery/Sequence constraints) with named rejection reasons.
- * 2. Primary sort key: Objective Coverage / Benefit.
- * 3. Secondary sort key: Expected Fatigue Cost & Preference Utility.
- * 4. Tie-break: Catalog Variety Rotation.
- */
 export function rankCandidates(
     candidates: SessionTemplate[],
     unresolvedObjectives: WeeklyObjective[],
@@ -428,10 +458,13 @@ export function rankCandidates(
                 (categoryLower.includes('running') && templateModLower.includes('running')) ||
                 (categoryLower.includes('strength') && templateModLower.includes('strength')) ||
                 (categoryLower === 'triathlon' && (templateModLower.includes('cycling') || templateModLower.includes('running')));
+            const satisfiesUnresolvedObjective = unresolvedObjectives.some(obj =>
+                obj.qualification?.allowedModalities ? obj.qualification.allowedModalities.includes(template.modality) : (template.modality === 'Strength' && obj.key === 'strength_maintenance')
+            );
             if (matchesEvent) {
                 const boost = focusEvent.priority === 'A' ? 1.40 : 1.25;
                 benefit *= boost;
-            } else if (!isPreferred(template)) {
+            } else if (!isPreferred(template) && !satisfiesUnresolvedObjective) {
                 benefit *= 0.20;
             }
         }
@@ -516,15 +549,12 @@ export function rankCandidates(
         all.push(item);
     });
 
-    // Lexicographic Sorting:
-    // Level 4 (Primary): Objective Coverage / Benefit (higher is better)
-    // Level 5 & 6 (Secondary): Utility (Benefit / (1 + Cost Penalty) * PrefMultiplier)
+    // Lexicographic Sorting
     accepted.sort((a, b) => {
         const benefitDiff = b.benefitScore - a.benefitScore;
         if (Math.abs(benefitDiff) > 0.05) {
             return benefitDiff;
         }
-
         return b.utilityScore - a.utilityScore;
     });
 
@@ -532,8 +562,9 @@ export function rankCandidates(
     if (accepted.length > 1) {
         const topCandidate = accepted[0];
         const nearEquivalents = accepted.filter(c =>
-            c.template.modality === topCandidate.template.modality &&
             c.template.category === topCandidate.template.category &&
+            (c.template.modality === topCandidate.template.modality ||
+             (focusEvent?.category === 'triathlon' && ['Cycling', 'Running'].includes(c.template.modality) && ['Cycling', 'Running'].includes(topCandidate.template.modality))) &&
             Math.abs(topCandidate.utilityScore - c.utilityScore) <= VARIETY_TIE_BREAK_GAP
         );
 
@@ -541,7 +572,7 @@ export function rankCandidates(
             const getRecentIndex = (template: SessionTemplate) => {
                 for (let i = rawHistory.length - 1; i >= 0; i--) {
                     const entry = rawHistory[i];
-                    const typeStr = entry.type ?? entry.modality ?? '';
+                    const typeStr = ('type' in entry && typeof entry.type === 'string' ? entry.type : undefined) ?? entry.modality ?? '';
                     if (template.id && typeStr.includes(template.id)) {
                         return rawHistory.length - i;
                     }
@@ -567,9 +598,6 @@ export function rankCandidates(
     return { accepted, rejected, all };
 }
 
-/**
- * Convenience wrapper returning only accepted candidates for legacy/simple callers.
- */
 export function rankCandidatesByUtility(
     candidates: SessionTemplate[],
     unresolvedObjectives: WeeklyObjective[],

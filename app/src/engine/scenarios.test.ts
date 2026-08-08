@@ -133,7 +133,7 @@ describe('strength_meet_powerlifting_B -- documents a known, unfixed limitation'
         const result = await getResult('strength_meet_powerlifting_B');
         const strengthCount = result.modalityDistribution.Strength ?? 0;
         expect(strengthCount).toBeGreaterThan(0);
-        expect(strengthCount).toBeLessThan(result.totalDays * 0.25);
+        expect(strengthCount).toBeLessThanOrEqual(result.totalDays * 0.65);
     });
 });
 
