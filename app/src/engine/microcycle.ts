@@ -28,13 +28,6 @@ export function generateWeeklyObjectives(
     if (planDefinition && planDefinition.objectives.length > 0) {
         const objectives: WeeklyObjective[] = [];
         const blockMap = new Map(planDefinition.blocks.map((b) => [b.id, b]));
-        // Scope to the block(s) actually active on asOfDate -- a PlanDefinition spans the
-        // whole macrocycle (build/travel/peak/taper/race/recovery), and without this an
-        // athlete in the build block would see peak- and taper-block objectives (e.g. a
-        // race-specific-endurance session two months out) as already "unresolved" from
-        // day one. Multiple blocks can be active simultaneously only if the caller passed
-        // an invalid overlapping schedule (buildPlanDefinition rejects that), so this is
-        // normally at most one block.
         const activeBlockIds = new Set(
             planDefinition.blocks
                 .filter((b) => b.startDate <= asOfDate && asOfDate <= b.endDate)
@@ -92,8 +85,6 @@ export function generateWeeklyObjectives(
                     targetStimulus = { vo2MaxPower: 0.9, aerobicEndurance: 0.5 };
                     break;
                 default: {
-                    // Exhaustiveness guard: a future ObjectiveKey addition must add a case
-                    // above, not silently fall through to the 'Plan Objective' placeholder.
                     const _exhaustive: never = objDef.key;
                     void _exhaustive;
                 }
@@ -114,36 +105,26 @@ export function generateWeeklyObjectives(
             });
         });
 
-        return {
-            windowStartDate,
-            objectives,
-        };
+        return { windowStartDate, objectives };
     }
 
     const demand = phaseWeights.targetDemandVector;
     const objectives: WeeklyObjective[] = [];
 
-    // 1. Aerobic Base / Z2 exposure
     if (demand.aerobicEndurance >= 0.4) {
         objectives.push({
-            id: 'obj_z2_aerobic',
-            key: 'zone2_aerobic',
-            title: 'Aerobic Base (Zone 2)',
+            id: 'obj_z2_aerobic', key: 'zone2_aerobic', title: 'Aerobic Base (Zone 2)',
             targetExposures: demand.aerobicEndurance >= 0.7 ? 2 : 1,
             completedExposures: 0,
             targetStimulus: { aerobicEndurance: 0.8 },
         });
     }
 
-    // 2. Threshold exposure
     if (demand.thresholdPower >= 0.5 && !phaseWeights.taperActive) {
         const allowedModalities = focusEvent ? modalitiesForEventCategory(focusEvent.category) : [];
         objectives.push({
-            id: 'obj_threshold',
-            key: 'threshold_quality',
-            title: 'Threshold Development',
-            targetExposures: 1,
-            completedExposures: 0,
+            id: 'obj_threshold', key: 'threshold_quality', title: 'Threshold Development',
+            targetExposures: 1, completedExposures: 0,
             targetStimulus: { thresholdPower: 0.9 },
             qualification: {
                 minimumStimulus: { thresholdPower: 0.6 },
@@ -152,15 +133,11 @@ export function generateWeeklyObjectives(
         });
     }
 
-    // 3. Surge / VO2 exposure
     if ((demand.vo2MaxPower >= 0.6 || demand.repeatedSurges >= 0.6) && phaseWeights.phaseName !== 'Post-Event Recovery') {
         const allowedModalities = focusEvent ? modalitiesForEventCategory(focusEvent.category) : [];
         objectives.push({
-            id: 'obj_surges',
-            key: 'surge_repeatability',
-            title: 'Surge & High-Intensity Repeatability',
-            targetExposures: 1,
-            completedExposures: 0,
+            id: 'obj_surges', key: 'surge_repeatability', title: 'Surge & High-Intensity Repeatability',
+            targetExposures: 1, completedExposures: 0,
             targetStimulus: { repeatedSurges: 0.9, aerobicEndurance: 0.5 },
             qualification: {
                 minimumStimulus: { repeatedSurges: 0.6 },
@@ -169,29 +146,18 @@ export function generateWeeklyObjectives(
         });
     }
 
-    // 4. Strength maintenance
     objectives.push({
-        id: 'obj_strength',
-        key: 'strength_maintenance',
-        title: 'Strength & Neuromuscular Maintenance',
-        targetExposures: 1,
-        completedExposures: 0,
+        id: 'obj_strength', key: 'strength_maintenance', title: 'Strength & Neuromuscular Maintenance',
+        targetExposures: 1, completedExposures: 0,
         targetStimulus: { maxStrength: 0.7, hypertrophy: 0.5 },
     });
 
-    // 5. Protected cycling-specific work. This is intentionally guarded by both the
-    // event type and catalog support: a generic endurance session or an indoor interval
-    // cannot complete it, and sports without an equivalent catalog are not promised an
-    // unfulfillable objective.
     if (focusEvent?.category === 'cycling_event'
         && !phaseWeights.taperActive
         && (demand.fatigueResistance >= 0.7 || demand.repeatedSurges >= 0.6)) {
         objectives.push({
-            id: 'obj_cycling_race_specific',
-            key: 'race_specific_endurance',
-            title: 'Cycling Race-Specific Endurance',
-            targetExposures: 1,
-            completedExposures: 0,
+            id: 'obj_cycling_race_specific', key: 'race_specific_endurance', title: 'Cycling Race-Specific Endurance',
+            targetExposures: 1, completedExposures: 0,
             targetStimulus: { aerobicEndurance: 0.6, repeatedSurges: 0.6 },
             qualification: {
                 minimumStimulus: { aerobicEndurance: 0.6 },
@@ -201,19 +167,24 @@ export function generateWeeklyObjectives(
         });
     }
 
-    return {
-        windowStartDate,
-        objectives,
-    };
+    return { windowStartDate, objectives };
 }
 
-import { deriveObjectiveCredit } from './stimulus';
+import { deriveObjectiveCreditFromProfile, readStimulusProfile } from './stimulus';
 
 /** Keyword-only evidence is deliberately worth less than a structured measured exposure.
  * It remains useful for old/external records, but cannot resolve a one-credit objective by
  * itself. Most importantly, it updates the SAME authoritative ledger as V2 structured
  * evidence, making structured->legacy and legacy->structured replay order-independent. */
 export const LEGACY_KEYWORD_COMPATIBILITY_CREDIT = 0.5;
+export const COMPATIBILITY_CREDIT_PER_EXPOSURE = LEGACY_KEYWORD_COMPATIBILITY_CREDIT;
+
+/** One compatibility projection for both completed and forecast ledgers. Fractional V2
+ * credit remains authoritative; this only preserves the legacy exposure display shape. */
+export function projectCompatibilityExposures(credit: number, targetExposures: number): number {
+    if (!Number.isFinite(credit) || credit <= 0 || targetExposures <= 0) return 0;
+    return Math.min(targetExposures, Math.floor(credit / COMPATIBILITY_CREDIT_PER_EXPOSURE));
+}
 
 /**
  * DEPRECATED: Keyword matching on free text descriptions.
@@ -244,28 +215,19 @@ export function updateMicrocycleProgress(
             return {
                 ...obj,
                 completedCredit: nextCredit,
-                completedExposures: Math.min(obj.targetExposures, Math.floor(nextCredit / LEGACY_KEYWORD_COMPATIBILITY_CREDIT)),
+                completedExposures: projectCompatibilityExposures(nextCredit, obj.targetExposures),
             };
         }
         return obj;
     });
 
-    return {
-        ...currentMicrocycle,
-        objectives: updatedObjectives,
-    };
+    return { ...currentMicrocycle, objectives: updatedObjectives };
 }
 
 export function getUnresolvedObjectives(
     microcycle: MicrocycleState,
     includeProjectedCredit: boolean = false,
 ): WeeklyObjective[] {
-    // Defensive only: every typed production call site (generateWeeklyObjectives,
-    // buildMicrocycleState, resolveTrainingIntent's intent.microcycle) always produces a
-    // well-formed { windowStartDate, objectives } object, so this branch is not known to
-    // be reachable today. Kept as a guard against a caller that bypasses the type system
-    // (an untyped fixture, a cast, or a future refactor) rather than throwing on it --
-    // revisit if a real caller turns out to need this.
     if (!microcycle || !microcycle.objectives) return [];
     return microcycle.objectives.filter(objective => {
         const requiredCredit = objective.requiredCredit ?? objective.targetExposures;
@@ -291,13 +253,8 @@ export function stimulusCoverage(
     return weightTotal === 0 ? 0 : weightedSum / weightTotal;
 }
 
-/** A pick must cover at least this much of an objective's target stimulus vector to
- *  earn credit -- retained only for compatibility tests/readers of the former V1 model.
- *  V2 live/planner credit is derived by deriveObjectiveCredit. */
 export const STIMULUS_CREDIT_COVERAGE_THRESHOLD = 0.6;
 
-/** Applies an objective's optional strict qualification policy. Retained for compatibility
- * with callers/tests that inspect the former V1 qualification path. */
 export function qualifiesForObjective(
     stimulus: WorkoutStimulusProfile,
     modality: SessionTemplate['modality'],
@@ -315,34 +272,35 @@ export function qualifiesForObjective(
 }
 
 /**
- * Credits weekly objectives from a workout's own numeric stimulus profile via deriveObjectiveCredit
- * -- the authoritative dose-sensitive credit model.
+ * Credits weekly objectives from a workout's numeric stimulus profile. The profile is
+ * validated/canonicalized once at the exposure boundary, then reused for every objective;
+ * this avoids duplicate migration warnings for the same persisted record.
  */
 export function creditObjectivesFromStimulus(
     microcycle: MicrocycleState,
-    stimulus: WorkoutStimulusProfile,
+    rawStimulus: WorkoutStimulusProfile,
     modality: SessionTemplate['modality'],
     category?: SessionTemplate['category'],
     dose: DeliveredDose = {},
 ): MicrocycleState {
-    // Defensive only -- see getUnresolvedObjectives' identical guard above for why.
     if (!microcycle || !microcycle.objectives) return microcycle;
+    const stimulusState = readStimulusProfile(rawStimulus);
+    if (stimulusState.status !== 'AVAILABLE') return microcycle;
+    const stimulus = stimulusState.data;
+
     return {
         ...microcycle,
         objectives: microcycle.objectives.map(obj => {
             const requiredCredit = obj.requiredCredit ?? obj.targetExposures;
             const completedCredit = obj.completedCredit ?? obj.completedExposures;
             if (completedCredit >= requiredCredit) return obj;
-            const credit = deriveObjectiveCredit(obj, stimulus, dose, { modality, category });
+            const credit = deriveObjectiveCreditFromProfile(obj, stimulus, dose, { modality, category });
             if (!credit.qualifies || credit.earnedCredit <= 0) return obj;
             const nextCredit = Math.min(requiredCredit, completedCredit + credit.earnedCredit);
             return {
                 ...obj,
                 completedCredit: nextCredit,
-                // Preserve a compatibility projection for callers that still display
-                // exposures. Resolution authority is completedCredit above; a token
-                // contribution below the historic 0.5 coverage floor stays at zero.
-                completedExposures: Math.min(obj.targetExposures, Math.floor(nextCredit / 0.5)),
+                completedExposures: projectCompatibilityExposures(nextCredit, obj.targetExposures),
             };
         }),
     };
@@ -356,9 +314,6 @@ export function buildMicrocycleState(
     history: CompletedExposure[],
     focusEvent: UserEvent | null,
     planDefinition?: PlanDefinition | null,
-    /** See generateWeeklyObjectives's asOfDate -- pass today's date here (not
-     *  windowStartDate, which is a lookback boundary) so a plan-derived microcycle scopes
-     *  to the block actually active today. */
     asOfDate?: string
 ): MicrocycleState {
     return history.reduce((state, exposure) => {
