@@ -171,14 +171,15 @@ export interface ProjectedObjectiveCreditAllocation {
 }
 
 /**
- * Forecast-only ledger mutation. Completed evidence is immutable during planning; future
- * recommendations accumulate in projectedCredit, and subsequent projected days treat
- * completed + projected credit as the outstanding-objective authority.
+ * Forecast-only ledger mutation. Existing completed evidence is normalized into
+ * completedCredit once when a legacy-only seed still carries only completedExposures;
+ * future recommendations themselves accumulate exclusively in projectedCredit.
+ * Subsequent projected days treat completed + projected credit as the outstanding-objective
+ * authority.
  *
- * `completedExposures` is retained as a legacy/non-authoritative display projection for
- * existing forecast UI/tests. It may reflect that a projected session contributes to an
- * objective, but it never participates in the V2 resolution calculation when
- * completedCredit/projectedCredit are present.
+ * `completedExposures` remains a legacy/non-authoritative display projection for existing
+ * forecast UI/tests. It may reflect that a projected session contributes to an objective,
+ * but it is never used as projected evidence after completedCredit has been normalized.
  */
 export function applyProjectedObjectiveCredits(
     microcycle: MicrocycleState,
@@ -190,9 +191,11 @@ export function applyProjectedObjectiveCredits(
         const proposed = proposedById.get(objective.id) ?? 0;
         if (!Number.isFinite(proposed) || proposed <= 0) return objective;
 
-        const requiredCredit = objective.requiredCredit ?? objective.targetExposures;
+        // If this is a legacy-only seed, materialize its already-completed evidence before
+        // any forecast mutation. This value is then held constant across future picks.
         const completedCredit = objective.completedCredit ?? objective.completedExposures;
         const projectedCredit = objective.projectedCredit ?? 0;
+        const requiredCredit = objective.requiredCredit ?? objective.targetExposures;
         const remaining = Math.max(0, requiredCredit - completedCredit - projectedCredit);
         const allocated = Math.min(remaining, proposed);
         if (allocated <= 0) return objective;
@@ -208,6 +211,7 @@ export function applyProjectedObjectiveCredits(
         );
         return {
             ...objective,
+            completedCredit,
             projectedCredit: nextProjectedCredit,
             completedExposures: compatibilityExposureProjection,
         };
