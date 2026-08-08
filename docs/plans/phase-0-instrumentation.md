@@ -1,7 +1,7 @@
 # Phase 0 — Instrumentation & developer baseline
 
 * **Status:** Ready
-* **Depends on:** nothing
+* **Blocked by:** nothing
 * **Unlocks:** Phases 3, 4, 5 (none of them can be evaluated without this)
 * **Addresses:** F11, F14, F15, part of F10
 * **Rough effort:** 1–1.5 days
@@ -132,10 +132,26 @@ through `HEAD`'s new ranking tie-break. A frozen string makes `replay.ts`'s
 `policyMatchesCurrent` check meaningless.
 
 1. Bump it now to reflect the tie-break already shipped.
-2. Add a check to `npm run check` that fails when any of `rules.ts`, `optimizer.ts`,
-   `microcycle.ts`, `periodization.ts`, `fatigue.ts`, `planner.ts` or `dose.ts` differ
-   from the merge base without `policy.ts` also changing. A short script comparing
-   `git diff --name-only origin/main...HEAD` is sufficient; it does not need to be clever.
+2. Add a check that fails when any of `rules.ts`, `optimizer.ts`, `microcycle.ts`,
+   `periodization.ts`, `fatigue.ts`, `planner.ts` or `dose.ts` differ from the base
+   without `policy.ts` also changing.
+
+   **Supply the base explicitly — do not rely on ambient refs.** `.github/workflows/ci.yml`
+   uses `actions/checkout@v4` with no `fetch-depth`, so the checkout is shallow
+   (depth 1) and `origin/main` / the merge base is not guaranteed to exist in a PR job.
+   `git diff --name-only origin/main...HEAD` would fail or silently compare the wrong
+   range, producing an intermittent guard — worse than no guard, because it would be
+   trusted.
+
+   Pick one and state it in the workflow:
+   * set `fetch-depth: 0` on the checkout step (simplest), **or**
+   * `git fetch --depth=1 origin ${{ github.event.pull_request.base.sha }}` and diff
+     against that SHA, **or**
+   * have the script take the base as an argument: `${{ github.event.pull_request.base.sha }}`
+     on `pull_request`, and `${{ github.event.before }}` on push-to-main.
+
+   This check belongs in CI rather than `npm run check`, since it needs the base ref;
+   keep `npm run check` local-only.
 
 ### 0.5 — Python lint and type checking
 

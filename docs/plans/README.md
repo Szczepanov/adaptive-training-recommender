@@ -19,17 +19,28 @@ docs/architecture/  living reference     "how it works now"      updated with th
 
 ## Status lifecycle
 
+Status answers **"is the design agreed?"** — separately from **"can work start now?"**,
+which is what `Blocked by` answers. Conflating the two made the table unusable: an earlier
+revision marked all six phases `Ready` while four of them depended on phases that had not
+landed.
+
 | Status | Meaning |
 |---|---|
-| `Draft` | Being written; not agreed. |
-| `Ready` | Agreed and actionable. Preconditions listed are met. |
+| `Draft` | Being written; design not agreed. |
+| `Approved` | Design agreed and decisions taken. **May still be blocked** — check `Blocked by`. |
+| `Ready` | Approved **and** every dependency has landed. Work can start today. |
 | `In progress` | Work started. |
 | `Implemented` | Delivered. Retained for the reasoning, not as instructions. |
 | `Superseded` | Replaced by a later plan (link it). |
 | `Archived` | No longer pursued. Say why. |
 
-Every plan carries `Status`, `Depends on`, and `Unlocks` in its header so the ordering is
-readable without opening all of them.
+`Approved → Ready` is a mechanical transition: it happens when the last blocker lands, and
+requires no new decision.
+
+Every plan carries `Status`, `Blocked by`, and `Unlocks` in its header. **Dependencies are
+declared per work item, not only per phase** — a phase can be part-startable, and saying
+"depends on nothing" at the header while an individual item requires the Phase-0 harness is
+how a plan stops being executable.
 
 ---
 
@@ -39,22 +50,29 @@ These implement the way forward in
 [`docs/analysis/2026-08-08-architecture-review.md`](../analysis/2026-08-08-architecture-review.md)
 §7.5. Finding IDs (`F1`, `F16`, …) refer to that document.
 
-All six are **`Ready`** as of 2026-08-08 — every open choice has been decided and recorded
-in the register below.
+All six are **design-approved** as of 2026-08-08 — every open choice is decided and
+recorded in the register below. Only two can be *started* today.
 
-| # | Plan | Status | Addresses |
-|---|---|---|---|
-| 0 | [Instrumentation & developer baseline](./phase-0-instrumentation.md) | Ready | F11, F14, F15, part of F10 |
-| 1 | [Live defects](./phase-1-live-defects.md) | Ready | F1, F2, F6 |
-| 2 | [Plan intent is the planning authority](./phase-2-plan-intent-authority.md) | Ready | F16, F17, F9 |
-| 3 | [One ranking path](./phase-3-single-ranking-path.md) | Ready | F3, F4, F5 |
-| 4 | [Objective credit V2](./phase-4-objective-credit-v2.md) | Ready | F7, F8, F12 |
-| 5 | [Sequence planning](./phase-5-sequence-planning.md) | Ready | the cutover proper |
+| # | Plan | Status | Blocked by | Addresses |
+|---|---|---|---|---|
+| 0 | [Instrumentation & developer baseline](./phase-0-instrumentation.md) | **Ready** | — | F11, F14, F15, part of F10 |
+| 1 | [Live defects](./phase-1-live-defects.md) | **Ready** (1.1, 1.3) / Approved (1.2) | 1.2 needs Phase 0 | F1, F2, F6 |
+| 2 | [Plan intent is the planning authority](./phase-2-plan-intent-authority.md) | Approved | Phase 1 | F16, F17, F9 |
+| 3 | [One ranking path](./phase-3-single-ranking-path.md) | Approved | Phase 0, ADR-0012 (Phase 2) | F3, F4, F5 |
+| 4 | [Objective credit V2](./phase-4-objective-credit-v2.md) | Approved | Phase 0, Phase 2 | F7, F8, F12 |
+| 5 | [Sequence planning](./phase-5-sequence-planning.md) | Approved | Phases 0–4 | the cutover proper |
 
-**Phase 0 must land before Phases 3–5.** It builds the only instrument that can tell
-whether a heuristic change improved or degraded the plan. Phase 1 is independent of the
-rest and should not wait for architectural agreement. Phase 5 is `Ready` as a *sequenced
-destination* — see its increment order; it is not the next thing to build.
+**Start here: Phase 0, and Phase 1 items 1.1 and 1.3.** Those three are unblocked today.
+
+**Phase 0 gates Phases 3–5 and Phase 1.2.** It builds the only instrument that can tell
+whether a heuristic change improved or degraded the plan — so any item that changes
+decision behaviour needs it first. Phase 1.2 changes objective crediting for every
+existing user, which is exactly that category, despite the rest of Phase 1 being
+independent.
+
+Phase 5 is approved as a *sequenced destination* (see its increment order), not as the
+next thing to build — and 5.1 specifically is approved to be **measured**, not shipped
+unconditionally.
 
 ---
 

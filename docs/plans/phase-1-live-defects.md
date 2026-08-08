@@ -1,7 +1,9 @@
 # Phase 1 — Live defects
 
-* **Status:** Ready
-* **Depends on:** nothing (Phase 0 is helpful but not blocking)
+* **Status:** **Ready** for 1.1 and 1.3 · **Approved (blocked)** for 1.2
+* **Blocked by:** *per work item* —
+  **1.1 (F1 injuries)** nothing · **1.3 (F6 rules ratchet)** nothing ·
+  **1.2 (F2 objective credit)** requires Phase 0's invariant + credit-regression harness
 * **Unlocks:** a correct foundation for the Phase 2–5 cutover
 * **Addresses:** F1, F2, F6
 * **Rough effort:** 3–4 days
@@ -162,6 +164,12 @@ Phase 5's tissue tracking.
 
 ## 1.2 — F2: Garmin-measured training must earn objective credit
 
+> **Blocked by Phase 0.** This item introduces inferred-stimulus constants and changes
+> objective crediting for every existing user. It cannot be validated without the
+> invariant suite and the credit-regression harness, and the constants must not be chosen
+> before that harness exists — see "Constants are illustrative" below for why that is not
+> a formality.
+
 ### Current state
 
 Verified empirically: three Garmin activities in the rolling window (120 min hard ride,
@@ -222,26 +230,46 @@ alongside the existing `DEFAULT_COST_BY_MODALITY`, and use it in
 With (b) in place, (a) rarely fires for recognised modalities — which is the point. (a) is
 a correctness guard, not a routing mechanism.
 
-Values must be deliberately conservative — the aim is "materially better than treating
-real training as adaptation-neutral", not physiological precision. **Adopted starting
-values** for `Cycling`; the other modalities follow the same shape:
+### Constants are illustrative — the test comes first
+
+An earlier revision of this plan published a table as "adopted starting values" while
+simultaneously requiring implementation to verify it later. **The published table failed
+that verification.** Worked through against today's credit function:
+
+`stimulusCoverage` is `Σ(target × stimulus) / Σ(target)`, so for a single-axis objective
+it reduces to the candidate's own value on that axis.
+
+| Objective | `targetStimulus` | Proposed `moderate` value | Coverage | ≥ 0.6? |
+|---|---|---|---|---|
+| `zone2_aerobic` | `{ aerobicCapacity: 0.8 }` | 0.70 | 0.70 | **yes** |
+| `threshold_quality` | `{ thresholdDevelopment: 0.9 }`, min 0.6 | 0.60 | 0.60 | **yes** (and clears qualification exactly) |
+
+One moderate ride would therefore have resolved **both** objectives — precisely the
+double-credit failure this plan says must not happen, and the same failure mode the
+keyword matcher produces. Publishing constants and deferring their validation is the
+practice F11 exists to criticise; doing it inside the fix for F2 was worse.
+
+**Therefore: no constants are adopted here.** The numbers below are *illustrative shape
+only* — conservative, aerobic-weighted, rising threshold and surge with intensity:
 
 | Intensity | `aerobicCapacity` | `thresholdDevelopment` | `surgeRepeatability` |
 |---|---|---|---|
-| easy | 0.75 | 0.15 | 0.0 |
-| moderate | 0.70 | 0.60 | 0.25 |
-| hard | 0.55 | 0.75 | 0.65 |
+| easy | ~0.75 | low | ~0 |
+| moderate | ~0.70 | **below the 0.6 credit floor** | low |
+| hard | ~0.55 | high | high |
 
-**Required verification step, not optional.** The `moderate` row must not clear
-`STIMULUS_CREDIT_COVERAGE_THRESHOLD` (0.6) for both Z2 *and* threshold simultaneously
-under any objective's target vector. Check the numbers against `generateWeeklyObjectives`'s
-actual `targetStimulus` values during implementation and tune until a single ride cannot
-resolve two contradictory objectives — this is the same double-credit failure the keyword
-matcher produces, and re-introducing it through the inference table would defeat the whole
-fix. The regression test below is what enforces it.
+**First implementation task, before any constant is chosen:** a table-driven test over
+every `modality × intensity × objective` combination asserting, for each cell, exactly
+which objectives it credits. Choose the constants to satisfy that table. The load-bearing
+assertion is that no single inferred exposure resolves two objectives that represent
+different training intentions — `zone2_aerobic` and `threshold_quality` in particular.
 
-Mark the constants provisional in a comment citing this plan; Phase 4 replaces them with
-the evidence hierarchy.
+This is the concrete reason 1.2 is blocked on Phase 0: the credit-regression harness is
+what makes the table checkable, and without it the constants would again be chosen by
+assertion.
+
+Mark whatever is chosen as provisional in a comment citing this plan; Phase 4 replaces it
+with the evidence hierarchy.
 
 **(c) Carry confidence.** Add `stimulusConfidence: 'exact' | 'inferred' | 'unknown'` to
 `CompletedExposure`. `exact` for adherence-confirmed catalog templates, `inferred` for
