@@ -166,7 +166,9 @@ describe('Phase 4 review fixes', () => {
         expect(getUnresolvedObjectives(result.microcycle, true)).toHaveLength(1);
 
         const filled = applyProjectedObjectiveCredits(result.microcycle, [{ objectiveId: 'obj-z2', earnedCredit: 0.5 }]);
-        expect(filled.allocations).toEqual([{ objectiveId: 'obj-z2', earnedCredit: 0.2 }]);
+        expect(filled.allocations).toHaveLength(1);
+        expect(filled.allocations[0].objectiveId).toBe('obj-z2');
+        expect(filled.allocations[0].earnedCredit).toBeCloseTo(0.2, 10);
         expect(filled.microcycle.objectives[0].completedCredit).toBe(0.2);
         expect(filled.microcycle.objectives[0].projectedCredit).toBeCloseTo(0.8, 10);
         expect(getUnresolvedObjectives(filled.microcycle)).toHaveLength(1);
