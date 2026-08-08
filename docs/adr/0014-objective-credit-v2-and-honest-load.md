@@ -35,8 +35,12 @@ immutable recommendation audit stores both planned and execution doses.
 
 Training-history ingestion sorts chronological input before replay. Fatigue retains a raw,
 unsaturated external-load state and exposes a clamped projection for ranking. The current
-external/internal fusion remains `max()`: no replacement is selected until the Phase 0
-harness compares candidates against coaching invariants.
+external/internal fusion remains `max()`. The Phase 0 scenario harness compared it with
+the monotonic capped-addition candidate, `min(1, external + internal)`: `max()` produced
+58.9% rest/recovery days (169/287), while capped addition produced 70.4% (202/287).
+Capped addition therefore worsens the aggregate-bound failure and double-counts partially
+correlated internal response and external load without a calibration source. `max()` is
+retained until new measured-response evidence justifies another candidate.
 
 ## Consequences
 

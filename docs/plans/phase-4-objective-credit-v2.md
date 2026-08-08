@@ -22,7 +22,7 @@ Update the marker on the work-item heading **and** this table in the same commit
 | 4.1 | `[x]` | One credit model: fix and promote `deriveObjectiveCredit`; shadow-run V1 vs V2 first (F7) | `app/src/engine/stimulus.ts`, `microcycle.ts`, `trainingIntent.ts` |
 | 4.2 | `[x]` | Canonical stimulus axes required; legacy aliases and derived fallbacks deleted (F8) | `app/src/engine/models.ts`, `templates.ts`, `optimizer.ts`, `microcycle.ts`, `completedTraining.ts`, fixtures |
 | 4.3a | `[x]` | Sort/assert history and retain unsaturated external load (F12) | `app/src/engine/fatigue.ts`, `trainingHistorySnapshot.ts` |
-| 4.3b | `[-]` | Compare fatigue-fusion functions before choosing (F12) | Phase 0 harness, ADR-0014 |
+| 4.3b | `[x]` | Compare fatigue-fusion functions before choosing (F12) | Phase 0 harness, ADR-0014 |
 | 4.5 | `[x]` | `PlannedDose { volume, intensity }` Ă˘â‚¬â€ť gives `intensityScale` its consumer (D2 / F17) | `app/src/engine/trainingIntent.ts`, `dose.ts`, `models.ts`, `optimizer.ts` |
 | 4.4 | `[x]` | Cost responds to delivered duration and completion ratio | `app/src/engine/completedTraining.ts`, `fatigue.ts` |
 
@@ -221,7 +221,7 @@ error, not bad data Ă˘â‚¬â€ť but the caller still degrades to the esta
 (ADR-0010's `INVALID` path) rather than crashing. Add a recommendation-path test for
 malformed ordering, not just a unit test on the function.
 
-### `[-]` (b) Modelling — awaiting scenario comparison
+### `[x]` (b) Modelling — comparison complete
 
 Two real questions:
 
@@ -242,9 +242,12 @@ this phase is the first opportunity to actually follow it.
 
 **4.3a completed 2026-08-08:** the ingestion boundary sorts history, replay defends its
 chronological invariant, and `rawExternalLoadFatigue` retains unsaturated depth. **4.3b is
-not complete:** ADR-0014 records that `max()` remains in force until the harness comparison
-exists. The failed 58.9% recovery-share aggregate bound is release evidence, not a basis to
-select a fusion formula.
+complete:** the Phase 0 harness compared current `max()` fusion with the monotonic
+`min(1, external + internal)` alternative. `max()` produced 58.9% rest/recovery days
+(169/287); capped addition produced 70.4% (202/287). Capped addition therefore worsens the
+existing release-gate failure and adds the uncalibrated double-counting risk described above.
+ADR-0014 records the decision to retain `max()`. The failed 58.9% recovery-share aggregate
+bound remains release evidence, not a reason to select a formula that merely forces it green.
 
 ### Harness boundary analysis (2026-08-08)
 
