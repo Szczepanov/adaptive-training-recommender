@@ -174,6 +174,11 @@ export interface ProjectedObjectiveCreditAllocation {
  * Forecast-only ledger mutation. Completed evidence is immutable during planning; future
  * recommendations accumulate in projectedCredit, and subsequent projected days treat
  * completed + projected credit as the outstanding-objective authority.
+ *
+ * `completedExposures` is retained as a legacy/non-authoritative display projection for
+ * existing forecast UI/tests. It may reflect that a projected session contributes to an
+ * objective, but it never participates in the V2 resolution calculation when
+ * completedCredit/projectedCredit are present.
  */
 export function applyProjectedObjectiveCredits(
     microcycle: MicrocycleState,
@@ -193,9 +198,18 @@ export function applyProjectedObjectiveCredits(
         if (allocated <= 0) return objective;
 
         allocations.push({ objectiveId: objective.id, earnedCredit: allocated });
+        const nextProjectedCredit = projectedCredit + allocated;
+        const compatibilityExposureProjection = Math.min(
+            objective.targetExposures,
+            Math.max(
+                objective.completedExposures,
+                Math.ceil(completedCredit + nextProjectedCredit),
+            ),
+        );
         return {
             ...objective,
-            projectedCredit: projectedCredit + allocated,
+            projectedCredit: nextProjectedCredit,
+            completedExposures: compatibilityExposureProjection,
         };
     });
 
