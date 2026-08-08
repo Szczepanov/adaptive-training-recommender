@@ -486,12 +486,10 @@ export function rankCandidates(
         let benefit = calculateStimulusBenefit(template, unresolvedObjectives);
         const fulfilsNominatedAnchor = candidateMatchesAnchorRole(template, options.anchorRole);
 
-        // Event priority is a Level-4 objective/timing signal, not a permanent modality
-        // monopoly. Only boost an A/B event modality while the candidate is serving a
-        // still-unresolved event-qualified objective (or the day's explicit anchor role).
-        // This matters after lexicographic ordering: an unconditional benefit boost would
-        // otherwise outrank the Level-6 "strength objective already resolved" nudge and
-        // prescribe low-cost Strength every day of a strength-meet build.
+        // Endurance/multisport event relevance remains a standing Level-4 signal. A
+        // strength meet is different: once its generic weekly strength objective is
+        // resolved, an unconditional event boost would make low-cost Strength outrank the
+        // Level-6 "strength already resolved" nudge and monopolize the rest of the week.
         if (focusEvent && (focusEvent.priority === 'A' || focusEvent.priority === 'B')) {
             const categoryLower = focusEvent.category.toLowerCase();
             const templateModLower = (template.modality ?? '').toLowerCase();
@@ -505,7 +503,9 @@ export function rankCandidates(
                     ? obj.qualification.allowedModalities.includes(template.modality)
                     : (template.modality === 'Strength' && obj.key === 'strength_maintenance')
             );
-            const eventPriorityApplies = satisfiesUnresolvedObjective || fulfilsNominatedAnchor;
+            const eventPriorityApplies = !categoryLower.includes('strength')
+                || satisfiesUnresolvedObjective
+                || fulfilsNominatedAnchor;
             if (matchesEvent && eventPriorityApplies) {
                 const boost = focusEvent.priority === 'A' ? 1.40 : 1.25;
                 benefit *= boost;
