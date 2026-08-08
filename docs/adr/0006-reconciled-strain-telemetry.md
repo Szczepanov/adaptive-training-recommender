@@ -37,14 +37,21 @@ We introduced a **reconciled strain telemetry model** in the recommendation engi
 
 ## Consequences
 
-### Amendment (2026-08-08): completed-load replay
+### Amendment (2026-08-08): completed-load replay and fusion evidence
 
 External fatigue replay now consumes the six-dimensional cost after
 `completedTraining.ts` `scaleCostByDeliveredDose` applies measured duration and any
 independent completion ratio. `fatigue.ts` retains unsaturated raw external load while
-ranking consumes its clamped projection. The fusion with today’s internal response remains
-`max()` pending the ADR-0014 harness comparison; this amendment does not choose a new
-fusion formula.
+ranking consumes its clamped projection.
+
+ADR-0014 completed the planned harness comparison between the current
+`max(external, internal)` fusion and the tested capped-addition candidate
+`min(1, external + internal)`. Capped addition produced a materially higher recovery share
+than `max()` and was therefore the worse candidate in that comparison. The engine **retains
+`max()` for now because the tested alternative performed worse**; this is not evidence that
+`max()` is safe, calibrated, or validated. The aggregate scenario recovery-share gate
+remains the release authority for subsequent policy changes, and any new fusion model
+requires new measured-response evidence plus a recorded comparison.
 
 ### Positive
 * Transparent, debuggable strain metrics provided alongside every workout recommendation.
