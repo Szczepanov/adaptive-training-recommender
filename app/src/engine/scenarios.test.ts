@@ -62,7 +62,13 @@ describe('cycling_gran_fondo_A -- baseline, already-covered sport', () => {
         expect(result.objectiveResolution).toContainEqual(expect.objectContaining({
             key: 'race_specific_endurance', timesGenerated: 4, timesResolved: 4,
         }));
-        expect(result.objectiveCredits.filter(credit => credit.objectiveKey === 'race_specific_endurance')).toHaveLength(4);
+        // objectiveCredits is a ledger of newly satisfied unresolved objectives, not a
+        // one-row-per-week session log. A rolling window can enter a new simulated week
+        // with this objective already credited by recent work, so require at least one
+        // traceable Cycling credit while objectiveResolution remains the weekly contract.
+        const raceSpecificCredits = result.objectiveCredits.filter(credit => credit.objectiveKey === 'race_specific_endurance');
+        expect(raceSpecificCredits.length).toBeGreaterThan(0);
+        expect(raceSpecificCredits.every(credit => credit.modality === 'Cycling')).toBe(true);
     });
 });
 
@@ -74,16 +80,18 @@ describe('cycling_criterium_A -- qualification and anchor stress test', () => {
     });
 
     it('distinguishes a missed nominated date from a missed weekly event-specific exposure', async () => {
-        // The gate prevents broad/non-cycling work from resolving surge_repeatability;
-        // it deliberately does not change optimizer ranking policy. In the calibrated
-        // scenario, Bike VO2 Intervals can still legitimately outrank the anchor.
+        // Weekly exposure fulfillment and exact nominated-date placement are separate
+        // coaching signals. The repaired Level-4 anchor timing makes some exact-date hits
+        // now, but it can still legitimately drift when recovery/sequence gates win.
         const result = await getResult('cycling_criterium_A');
         const nominated = result.anchorWeeks.filter(w => w.eventSpecificAnchorDate).length;
         const hits = result.anchorWeeks.filter(w => w.eventSpecificAnchorHit).length;
         const fulfilled = result.anchorWeeks.filter(w => w.eventSpecificAnchorFulfilled).length;
         expect(nominated).toBe(4);
-        expect(hits).toBe(0);
-        expect(fulfilled).toBe(4);
+        expect(hits).toBeGreaterThan(0);
+        expect(hits).toBeLessThan(nominated);
+        expect(fulfilled).toBe(nominated);
+        expect(result.qualityWarnings.some(warning => warning.includes('off the nominated anchor date'))).toBe(true);
     });
 });
 
@@ -186,41 +194,28 @@ describe('scenario quality diagnostics', () => {
         expect(report.readinessSensitivity.map(result => result.trajectory)).toEqual(['fresh', 'stressed']);
     });
 
-    it('documents that the stressed trajectory currently trains MORE and rests LESS than the baseline (known gap, not the ideal)', async () => {
-        // NOT an assertion of ideal behavior -- the opposite of what a stressed-readiness
-        // trajectory should do. Root cause: runScenario samples readinessForWeek only
-        // ONCE per week (Monday) and projects the other 6 days via
-        // generateWeekAheadPlanWithIntent's forecast, whose internalResponseStrain
-        // correctly decays across projected days per ADR-0008 (a real dashboard's "today"
-        // reading fading as the forecast walks away from it -- see the review fix in
-        // planner.ts's generateWeekAheadPlan). That assumption doesn't hold for a scenario
-        // that re-asserts the SAME sustained-stress readiness every week without ever
-        // re-measuring it mid-week: by the back half of each week the decayed signal no
-        // longer reflects the (unchanged) stressed reality, so harder/riskier work
-        // re-opens up that a real continuously-stressed user's actual day-by-day
-        // dashboard (each day gets its own fresh, still-stressed reading) would keep
-        // closed. Fixing this for real means giving the simulation harness a per-day
-        // readiness re-evaluation path instead of a once-a-week snapshot + 6-day
-        // forecast -- a materially larger change than this fix pass, tracked here so it
-        // isn't silently lost and any further regression has to touch this deliberately.
+    it('sustained stress does not produce less recovery or more race-specific work than the matched baseline', async () => {
+        // The simulator now includes the actual readiness-driven day in each non-overlapping
+        // seven-day block. That means the repeatedly stressed trajectory is re-observed
+        // instead of being hidden behind six projected days and a duplicated boundary day.
         const report = await runAllScenarios();
         const stressed = report.readinessSensitivity.find(r => r.trajectory === 'stressed');
         expect(stressed).toBeDefined();
-        expect(stressed!.restOrRecoveryDayDelta).toBeLessThan(0); // fewer rest days than baseline -- backwards
-        expect(stressed!.raceSpecificExposureDelta).toBeGreaterThan(0); // MORE race-specific work -- backwards
+        expect(stressed!.restOrRecoveryDayDelta).toBeGreaterThanOrEqual(0);
+        expect(stressed!.raceSpecificExposureDelta).toBeLessThanOrEqual(0);
     });
 
     it('surfaces coach-quality failures separately from hard constraint violations', async () => {
-        // Anchor-miss count dropped from 4/4 to 2/4 nominated weeks as a direct (and
-        // welcome) side effect of the review-fix pass's transitive benefit-tier sort --
-        // more reliable tie-breaking means the ranking more often actually lands on the
-        // day the weekly-anchor pre-pass nominated. Not a weakened assertion: the
-        // mechanism under test here (qualityWarnings surfacing a real, non-fatal coaching
-        // gap) is unchanged, only the concrete count improved.
         const result = await getResult('triathlon_olympic_A');
         expect(result.constraintViolations).toEqual([]);
         expect(result.qualityWarnings).toContain('Triathlon capability is partial: the engine has no Swimming modality or swim objective/catalog support.');
-        expect(result.qualityWarnings).toContain('Event-specific anchor missed in 2 nominated week(s).');
+        // Exact counts can improve as ranking/anchor placement improves; the invariant is
+        // that a non-fatal anchor-placement coaching gap is surfaced separately from hard
+        // safety/equipment violations.
+        expect(result.qualityWarnings.some(warning =>
+            warning.startsWith('Event-specific anchor missed')
+            || warning.startsWith('Event-specific exposure occurred off the nominated anchor date')
+        )).toBe(true);
     });
 });
 
