@@ -9,13 +9,90 @@ import type {
     WorkoutStimulusProfile,
 } from './models';
 import type { CompletedExposure } from './microcycleHistory';
+import type { PlanDefinition } from './planSchedule';
 import { modalitiesForEventCategory, type PhaseWeights } from './periodization';
 
 export function generateWeeklyObjectives(
     phaseWeights: PhaseWeights,
-    weekStartDate: string,
-    focusEvent: UserEvent | null
+    windowStartDate: string,
+    focusEvent: UserEvent | null,
+    planDefinition?: PlanDefinition | null
 ): MicrocycleState {
+    if (planDefinition && planDefinition.objectives.length > 0) {
+        const objectives: WeeklyObjective[] = [];
+        const blockMap = new Map(planDefinition.blocks.map((b) => [b.id, b]));
+
+        planDefinition.objectives.forEach((objDef, idx) => {
+            const block = blockMap.get(objDef.blockId);
+            const windowStart = block?.startDate;
+            const windowEnd = block?.endDate;
+
+            let title = 'Plan Objective';
+            let targetStimulus: Record<string, number> = { aerobicCapacity: 0.5 };
+            let qualification: WeeklyObjective['qualification'] = undefined;
+            const allowedModalities = focusEvent ? modalitiesForEventCategory(focusEvent.category) : [];
+
+            switch (objDef.key) {
+                case 'zone2_aerobic':
+                    title = 'Aerobic Base (Zone 2)';
+                    targetStimulus = { aerobicCapacity: 0.8 };
+                    break;
+                case 'threshold_quality':
+                    title = 'Threshold Development';
+                    targetStimulus = { thresholdDevelopment: 0.9 };
+                    qualification = {
+                        minimumStimulus: { thresholdDevelopment: 0.6 },
+                        ...(allowedModalities.length > 0 ? { allowedModalities } : {}),
+                    };
+                    break;
+                case 'surge_repeatability':
+                    title = 'Surge & High-Intensity Repeatability';
+                    targetStimulus = { surgeRepeatability: 0.9, aerobicCapacity: 0.5 };
+                    qualification = {
+                        minimumStimulus: { surgeRepeatability: 0.6 },
+                        ...(allowedModalities.length > 0 ? { allowedModalities } : {}),
+                    };
+                    break;
+                case 'strength_maintenance':
+                    title = 'Strength & Neuromuscular Maintenance';
+                    targetStimulus = { maxStrength: 0.7, hypertrophy: 0.5 };
+                    break;
+                case 'race_specific_endurance':
+                    title = 'Cycling Race-Specific Endurance';
+                    targetStimulus = { aerobicCapacity: 0.6, surgeRepeatability: 0.6 };
+                    qualification = {
+                        minimumStimulus: { aerobicCapacity: 0.6 },
+                        allowedModalities: ['Cycling'],
+                        allowedCategories: ['Race-Specific Endurance'],
+                    };
+                    break;
+                case 'vo2_max':
+                    title = 'VO2 Max Intervals';
+                    targetStimulus = { vo2MaxPower: 0.9, aerobicCapacity: 0.5 };
+                    break;
+            }
+
+            objectives.push({
+                id: `obj_plan_${objDef.key}_${idx}`,
+                key: objDef.key,
+                title,
+                requiredCredit: objDef.requiredCredit,
+                targetExposures: objDef.requiredCredit || 1,
+                completedExposures: 0,
+                targetStimulus,
+                priority: objDef.priority,
+                qualification,
+                windowStart,
+                windowEnd,
+            });
+        });
+
+        return {
+            windowStartDate,
+            objectives,
+        };
+    }
+
     const demand = phaseWeights.targetDemandVector;
     const objectives: WeeklyObjective[] = [];
 
@@ -98,7 +175,7 @@ export function generateWeeklyObjectives(
     }
 
     return {
-        weekStartDate,
+        windowStartDate,
         objectives,
     };
 }
@@ -165,7 +242,7 @@ export function stimulusCoverage(
 export const STIMULUS_CREDIT_COVERAGE_THRESHOLD = 0.6;
 
 /** Applies an objective's optional strict qualification policy. Objectives without one
- * retain the legacy stimulus-coverage-only completion behavior. */
+ *  retain the legacy stimulus-coverage-only completion behavior. */
 export function qualifiesForObjective(
     stimulus: WorkoutStimulusProfile,
     modality: SessionTemplate['modality'],
@@ -218,11 +295,12 @@ export function buildMicrocycleState(
     windowStartDate: string,
     history: CompletedExposure[],
     focusEvent: UserEvent | null,
+    planDefinition?: PlanDefinition | null
 ): MicrocycleState {
     return history.reduce((state, exposure) => {
         if (exposure.stimulusProfile && exposure.modality) {
             return creditObjectivesFromStimulus(state, exposure.stimulusProfile, exposure.modality, exposure.category);
         }
         return updateMicrocycleProgress(state, exposure.trainingRecordLike);
-    }, generateWeeklyObjectives(phase, windowStartDate, focusEvent));
+    }, generateWeeklyObjectives(phase, windowStartDate, focusEvent, planDefinition));
 }

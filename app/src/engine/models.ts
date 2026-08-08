@@ -173,7 +173,7 @@ export interface ObjectiveProgress {
 }
 
 export interface MicrocycleState {
-    weekStartDate: string; // YYYY-MM-DD (Monday)
+    windowStartDate: string; // YYYY-MM-DD (Warsaw-local start date)
     objectives: WeeklyObjective[];
 }
 
