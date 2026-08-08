@@ -23,6 +23,7 @@ export interface PlannedObjectiveCredit {
     templateId: string;
     templateTitle: string;
     modality: SessionTemplate['modality'];
+    earnedCredit: number;
 }
 import { resolveAvailability } from './schedule';
 import { isTemplatePhaseEligible, evaluatePeriodizationPhase } from './periodization';
@@ -40,9 +41,6 @@ import {
     creditObjectivesFromStimulus,
     generateWeeklyObjectives,
     getUnresolvedObjectives,
-    qualifiesForObjective,
-    stimulusCoverage,
-    STIMULUS_CREDIT_COVERAGE_THRESHOLD,
 } from './microcycle';
 import {
     type RecentHistoryEntry,
@@ -52,7 +50,9 @@ import {
     rankCandidates,
 } from './optimizer';
 import { ENRICHED_TEMPLATES } from './templates';
-import { resolveTrainingIntent } from './trainingIntent';
+import { resolvePlannedDoseForDate, resolveTrainingIntent } from './trainingIntent';
+import { resolvePlanDefinitionForEvent } from './planSchedule';
+import { deriveObjectiveCredit } from './stimulus';
 import type { CompletedExposure, TrainingHistoryProvider } from './trainingHistory';
 import type { TrainingHistorySnapshot } from './trainingHistorySnapshot';
 
@@ -101,7 +101,14 @@ const ZERO_COST: WorkoutCostProfile = {
 };
 
 const ZERO_STIMULUS: WorkoutStimulusProfile = {
-    aerobicCapacity: 0, thresholdDevelopment: 0, surgeRepeatability: 0, maxStrength: 0, hypertrophy: 0, mobilityRecovery: 0,
+    aerobicEndurance: 0,
+    thresholdPower: 0,
+    vo2MaxPower: 0,
+    repeatedSurges: 0,
+    sprintPower: 0,
+    fatigueResistance: 0,
+    maxStrength: 0,
+    hypertrophy: 0,
 };
 
 function combineMax(a: DimensionalFatigue, b: DimensionalFatigue): DimensionalFatigue {
@@ -186,6 +193,69 @@ function enrichedCostProfile(templateId: string): WorkoutCostProfile {
 
 function enrichedStimulusProfile(template: SessionTemplate): WorkoutStimulusProfile {
     return template.stimulusProfile ?? ENRICHED_TEMPLATES.find(t => t.id === template.id)?.stimulusProfile ?? ZERO_STIMULUS;
+}
+
+export interface ProjectedObjectiveCreditInput {
+    objectiveId: string;
+    earnedCredit: number;
+}
+
+export interface ProjectedObjectiveCreditAllocation {
+    objectiveId: string;
+    earnedCredit: number;
+}
+
+/**
+ * Forecast-only ledger mutation. Existing completed evidence is normalized into
+ * completedCredit once when a legacy-only seed still carries only completedExposures;
+ * future recommendations themselves accumulate exclusively in projectedCredit.
+ * Subsequent projected days treat completed + projected credit as the outstanding-objective
+ * authority.
+ *
+ * `completedExposures` remains a legacy/non-authoritative display projection for existing
+ * forecast UI/tests. It may reflect that a projected session contributes to an objective,
+ * but it is never used as projected evidence after completedCredit has been normalized.
+ */
+export function applyProjectedObjectiveCredits(
+    microcycle: MicrocycleState,
+    credits: readonly ProjectedObjectiveCreditInput[],
+): { microcycle: MicrocycleState; allocations: ProjectedObjectiveCreditAllocation[] } {
+    const proposedById = new Map(credits.map(credit => [credit.objectiveId, credit.earnedCredit]));
+    const allocations: ProjectedObjectiveCreditAllocation[] = [];
+    const objectives = microcycle.objectives.map(objective => {
+        const proposed = proposedById.get(objective.id) ?? 0;
+        if (!Number.isFinite(proposed) || proposed <= 0) return objective;
+
+        // If this is a legacy-only seed, materialize its already-completed evidence before
+        // any forecast mutation. This value is then held constant across future picks.
+        const completedCredit = objective.completedCredit ?? objective.completedExposures;
+        const projectedCredit = objective.projectedCredit ?? 0;
+        const requiredCredit = objective.requiredCredit ?? objective.targetExposures;
+        const remaining = Math.max(0, requiredCredit - completedCredit - projectedCredit);
+        const allocated = Math.min(remaining, proposed);
+        if (allocated <= 0) return objective;
+
+        allocations.push({ objectiveId: objective.id, earnedCredit: allocated });
+        const nextProjectedCredit = projectedCredit + allocated;
+        const compatibilityExposureProjection = Math.min(
+            objective.targetExposures,
+            Math.max(
+                objective.completedExposures,
+                Math.ceil(completedCredit + nextProjectedCredit),
+            ),
+        );
+        return {
+            ...objective,
+            completedCredit,
+            projectedCredit: nextProjectedCredit,
+            completedExposures: compatibilityExposureProjection,
+        };
+    });
+
+    return {
+        microcycle: { ...microcycle, objectives },
+        allocations,
+    };
 }
 
 function isAdjacentDate(date: string, anchorDate: string | null): boolean {
@@ -324,6 +394,17 @@ function isCompletedExposure(entry: RecentHistoryEntry | SessionHistoryEntry): e
         && !!record.trainingRecordLike && typeof record.trainingRecordLike === 'object';
 }
 
+const LIGHTWEIGHT_HISTORY_STIMULUS: WorkoutStimulusProfile = {
+    thresholdPower: 0.8,
+    aerobicEndurance: 0.5,
+    repeatedSurges: 0.5,
+    vo2MaxPower: 0,
+    sprintPower: 0,
+    fatigueResistance: 0.5,
+    maxStrength: 0.5,
+    hypertrophy: 0.5,
+};
+
 export function prepareWeekAheadPlanSeed(
     readinessOrMicrocycle: DailyReadiness | MicrocycleState,
     eventsOrFatigue: UserEvent[] | FatigueState,
@@ -360,7 +441,7 @@ export function prepareWeekAheadPlanSeed(
             const modality = (h.modality ?? typeStr ?? 'None') as SessionTemplate['modality'];
             microcycle = creditObjectivesFromStimulus(
                 microcycle,
-                { thresholdDevelopment: 0.8, aerobicCapacity: 0.5, surgeRepeatability: 0.5, maxStrength: 0.5, hypertrophy: 0.5, mobilityRecovery: 0.5 },
+                LIGHTWEIGHT_HISTORY_STIMULUS,
                 modality,
                 h.category,
             );
@@ -384,7 +465,7 @@ export function prepareWeekAheadPlanSeed(
         const typeStr = 'type' in h && typeof h.type === 'string' ? h.type : undefined;
         const modality = (h.modality ?? typeStr ?? 'None') as SessionTemplate['modality'];
         const category = h.category;
-        microcycle = creditObjectivesFromStimulus(microcycle, { thresholdDevelopment: 0.8, aerobicCapacity: 0.5, surgeRepeatability: 0.5, maxStrength: 0.5, hypertrophy: 0.5, mobilityRecovery: 0.5 }, modality, category);
+        microcycle = creditObjectivesFromStimulus(microcycle, LIGHTWEIGHT_HISTORY_STIMULUS, modality, category);
     });
     const fatigue = buildFatigueStateFromHistory([], computeInternalResponseStrain(readiness), todayDate);
     return {
@@ -421,16 +502,40 @@ export function generateWeekAheadPlan(
 
     const anchors = resolveWeeklyAnchors(todayDate, totalDays, events, fixedActivities, context, tomorrowRec?.template.category, tomorrowRec?.template.modality);
 
-    const creditingObjectivesFor = (template: SessionTemplate): WeeklyObjective[] => {
-        const stimulus = enrichedStimulusProfile(template);
-        return getUnresolvedObjectives(microcycle).filter(objective =>
-            stimulusCoverage(stimulus, objective.targetStimulus) >= STIMULUS_CREDIT_COVERAGE_THRESHOLD
-            && qualifiesForObjective(stimulus, template.modality, objective.qualification, template.category)
-        );
+    type DerivedPlanningCredit = {
+        objective: WeeklyObjective;
+        earnedCredit: number;
     };
 
-    const applyPick = (date: string, template: SessionTemplate) => {
-        creditingObjectivesFor(template).forEach(objective => {
+    // Planner display and planner state use the same V2 derivation as the live ledger.
+    // There is no V1 0.6 coverage gate here: partial qualifying stimulus is reported as
+    // partial credit exactly as deriveObjectiveCredit defines it.
+    const creditingObjectivesFor = (template: SessionTemplate): DerivedPlanningCredit[] => {
+        const stimulus = enrichedStimulusProfile(template);
+        return getUnresolvedObjectives(microcycle, true).flatMap(objective => {
+            const credit = deriveObjectiveCredit(objective, stimulus, {}, {
+                modality: template.modality,
+                category: template.category,
+            });
+            return credit.qualifies && credit.earnedCredit > 0
+                ? [{ objective, earnedCredit: credit.earnedCredit }]
+                : [];
+        });
+    };
+
+    const applyPick = (
+        date: string,
+        template: SessionTemplate,
+        derivedCredits: DerivedPlanningCredit[] = creditingObjectivesFor(template),
+    ) => {
+        const projected = applyProjectedObjectiveCredits(
+            microcycle,
+            derivedCredits.map(item => ({ objectiveId: item.objective.id, earnedCredit: item.earnedCredit })),
+        );
+        const allocationById = new Map(projected.allocations.map(item => [item.objectiveId, item.earnedCredit]));
+        derivedCredits.forEach(({ objective }) => {
+            const allocated = allocationById.get(objective.id) ?? 0;
+            if (allocated <= 0) return;
             objectiveCredits.push({
                 date,
                 objectiveKey: objective.key,
@@ -438,9 +543,10 @@ export function generateWeekAheadPlan(
                 templateId: template.id,
                 templateTitle: template.title,
                 modality: template.modality,
+                earnedCredit: allocated,
             });
         });
-        microcycle = creditObjectivesFromStimulus(microcycle, enrichedStimulusProfile(template), template.modality, template.category);
+        microcycle = projected.microcycle;
         externalFatigue = applyCompletedSessionLoad(externalFatigue, date, enrichedCostProfile(template.id));
     };
 
@@ -449,6 +555,7 @@ export function generateWeekAheadPlan(
     if (tomorrowRec) {
         const tomorrowDate = addDaysToLocalDateString(todayDate, 1);
         const tomorrowPeriodization = evaluatePeriodizationPhase(events, tomorrowDate);
+        const tomorrowCredits = creditingObjectivesFor(tomorrowRec.template);
         resultDays.push({
             date: tomorrowDate,
             dayOffset: 1,
@@ -457,9 +564,9 @@ export function generateWeekAheadPlan(
             template: tomorrowRec.template,
             mode: tomorrowRec.mode === 'recover' ? 'recover' : 'train',
             rationale: tomorrowRec.rationale,
-            addressesObjectives: creditingObjectivesFor(tomorrowRec.template).map(objective => objective.title),
+            addressesObjectives: tomorrowCredits.map(item => item.objective.title),
         });
-        applyPick(tomorrowDate, tomorrowRec.template);
+        applyPick(tomorrowDate, tomorrowRec.template, tomorrowCredits);
     }
 
     for (let offset = resultDays.length + 1; offset <= totalDays; offset++) {
@@ -474,7 +581,7 @@ export function generateWeekAheadPlan(
             date,
         );
 
-        const unresolved = getUnresolvedObjectives(microcycle);
+        const unresolved = getUnresolvedObjectives(microcycle, true);
 
         const eligible = eligibleTemplates(ENRICHED_TEMPLATES, context, availability.maxTimeMinutes, date)
             .filter(t => isTemplatePhaseEligible(t, periodization));
@@ -519,8 +626,21 @@ export function generateWeekAheadPlan(
             })),
         ];
 
+        const planDefinition = resolvePlanDefinitionForEvent(periodization.focusEvent);
         const optContext = buildOptimizationContext(
-            { unresolvedObjectives: unresolved, fatigue: rankingFatigue, periodization, history: projectedHistory },
+            {
+                unresolvedObjectives: unresolved,
+                fatigue: rankingFatigue,
+                periodization,
+                history: projectedHistory,
+                plannedDose: resolvePlannedDoseForDate(
+                    periodization.phase,
+                    microcycle.objectives,
+                    unresolved,
+                    planDefinition,
+                    date,
+                ),
+            },
             context,
             effectivePreferences,
             date,
@@ -562,8 +682,9 @@ export function generateWeekAheadPlan(
 
         const bestBenefit = [...(ranked.length > 0 ? ranked : [{ template: restFallback, benefitScore: 0 }])].sort((a, b) => b.benefitScore - a.benefitScore)[0];
 
-        const addressed = creditingObjectivesFor(pick.template).map(objective => objective.title);
-        applyPick(date, pick.template);
+        const pickCredits = creditingObjectivesFor(pick.template);
+        const addressed = pickCredits.map(item => item.objective.title);
+        applyPick(date, pick.template, pickCredits);
 
         resultDays.push({
             date,
