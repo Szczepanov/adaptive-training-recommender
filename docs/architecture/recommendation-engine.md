@@ -152,6 +152,36 @@ Keyword matching remains a last-resort compatibility path for old/external recor
 structured stimulus. A match contributes `0.5` credit to the **same** ledger rather than a
 parallel counter, making mixed structured/legacy replay order-independent.
 
+### Evidence hierarchy for completed training (Phase 5.5, `completedTraining.ts`)
+
+Generalises the coarse modality x intensity inference above into a named, ordered
+`EvidenceTier` (strongest to weakest): `exactPrescribedMatch` (adherence confirms a
+catalog template with an authored `stimulusProfile`) → `completedStructuredWorkout` /
+`measuredEffort` (Garmin `activityTrainingLoad` alongside Training Effect -- the closest
+currently-ingested proxy for "completedStructuredWorkout" and per-interval
+power/HR/cadence structure, which nothing ingests yet) → `garminTrainingEffect` →
+`durationIntensity` (an intensity tag alone) → `athleteClassification` (modality guessed
+from free text) → `genericModalityFallback` (nothing known at all).
+`classifyGarminTier`/`stimulusConfidenceForTier` produce `CompletedExposure`'s existing
+`stimulusConfidence` ('exact' | 'inferred' | 'unknown') from this ladder, replacing what
+used to be an ad hoc `exactTemplateMatch`/`hasStimulus`/`modality` check.
+
+`stimulus.ts`'s `CONFIDENCE_CREDIT_WEIGHT` (exact 1.0, inferred 0.75, unknown 0.4) then
+discounts `deriveObjectiveCreditFromProfile`'s earned credit by that confidence -- every
+caller that doesn't pass a confidence defaults to `'exact'` (unchanged full-credit
+behavior, e.g. `planner.ts` scoring an authored candidate template). This closes the
+asymmetry the plan named: `DEFAULT_STIMULUS_BY_MODALITY.Unknown` used to be all-zero even
+though `DEFAULT_COST_BY_MODALITY.Unknown` was not, so an unplanned, unclassifiable session
+was charged fatigue but credited no adaptation at all. It now carries a real, deliberately
+conservative generic profile, discounted rather than zeroed.
+
+A stimulus profile no longer requires a *known* modality to be creditable --
+`genericModalityFallback` still credits a modality-agnostic objective. This is safe only
+because `deriveObjectiveCreditFromProfile` now **fails closed**: a modality- or
+category-scoped objective is rejected (not silently skipped) when the evidence's
+modality/category is unknown, rather than the previous behavior where an absent
+`context.modality`/`context.category` bypassed the restriction entirely.
+
 ---
 
 ## Planned and execution dose authority (`trainingIntent.ts`, `dose.ts`)

@@ -158,6 +158,64 @@ describe('structured completed-history credit', () => {
   });
 });
 
+describe('evidence hierarchy confidence weighting (Phase 5.5)', () => {
+  const zeroStimulus: WorkoutStimulusProfile = {
+    aerobicEndurance: 0, thresholdPower: 0, vo2MaxPower: 0, repeatedSurges: 0, sprintPower: 0, fatigueResistance: 0, maxStrength: 0, hypertrophy: 0,
+  };
+  const zone2Microcycle = (): MicrocycleState => ({
+    windowStartDate: '2026-08-03',
+    objectives: [{ id: 'obj', key: 'zone2_aerobic', title: 'Aerobic Base', targetExposures: 1, completedExposures: 0, requiredCredit: 0.8, completedCredit: 0, targetStimulus: { aerobicEndurance: 0.8 } }],
+  });
+
+  it('credits full weight with the default confidence (unchanged from before this parameter existed)', () => {
+    const updated = creditObjectivesFromStimulus(zone2Microcycle(), { ...zeroStimulus, aerobicEndurance: 0.8 }, 'Cycling');
+    expect(updated.objectives[0].completedCredit).toBe(0.8);
+  });
+
+  it('discounts credit for inferred confidence', () => {
+    const updated = creditObjectivesFromStimulus(zone2Microcycle(), { ...zeroStimulus, aerobicEndurance: 0.8 }, 'Cycling', undefined, {}, 'inferred');
+    expect(updated.objectives[0].completedCredit).toBe(0.6); // 0.8 * 0.75, matches CONFIDENCE_CREDIT_WEIGHT.inferred
+  });
+
+  it('still credits a modality-agnostic objective from an exposure with no known modality at all', () => {
+    // Phase 5.5: a generic-fallback exposure (unknown sport, real measured evidence) can
+    // satisfy an objective that doesn't require a specific modality.
+    const updated = creditObjectivesFromStimulus(zone2Microcycle(), { ...zeroStimulus, aerobicEndurance: 0.8 }, undefined, undefined, {}, 'unknown');
+    expect(updated.objectives[0].completedCredit).toBeGreaterThan(0);
+    expect(updated.objectives[0].completedCredit).toBe(0.32); // 0.8 * 0.4, matches CONFIDENCE_CREDIT_WEIGHT.unknown
+  });
+
+  it('buildMicrocycleState credits an exposure that has a stimulusProfile but no modality (Phase 5.5 relaxed gate)', () => {
+    const exposure: CompletedExposure = {
+      date: '2026-08-06',
+      costProfile: { systemic: 0.3, cardiovascular: 0.3, lowerBody: 0.2, upperBody: 0, impactTissue: 0.1, neuromuscular: 0.2 },
+      trainingRecordLike: { type: 'Unknown unknown', duration_min: 40, training_effect: 0, intensity_tag: '' },
+      stimulusProfile: { ...zeroStimulus, aerobicEndurance: 0.5 },
+      stimulusConfidence: 'unknown',
+      // modality intentionally absent -- see completedTraining.ts genericModalityFallback
+    };
+    const phase = evaluatePeriodizationPhase([], '2026-08-03').phase;
+    const microcycle = buildMicrocycleState(phase, '2026-08-03', [exposure], null);
+    const z2 = microcycle.objectives.find(o => o.key === 'zone2_aerobic');
+    expect(z2?.completedCredit).toBeGreaterThan(0);
+  });
+
+  it('buildMicrocycleState defaults an exposure with no stimulusConfidence field to exact (legacy compatibility)', () => {
+    const exposure: CompletedExposure = {
+      date: '2026-08-06',
+      costProfile: { systemic: 0.3, cardiovascular: 0.3, lowerBody: 0.2, upperBody: 0, impactTissue: 0.1, neuromuscular: 0.2 },
+      trainingRecordLike: { type: 'Cycling moderate', duration_min: 40, training_effect: 0, intensity_tag: '' },
+      modality: 'Cycling',
+      stimulusProfile: { ...zeroStimulus, aerobicEndurance: 0.8 },
+      // stimulusConfidence intentionally absent
+    };
+    const phase = evaluatePeriodizationPhase([], '2026-08-03').phase;
+    const microcycle = buildMicrocycleState(phase, '2026-08-03', [exposure], null);
+    const z2 = microcycle.objectives.find(o => o.key === 'zone2_aerobic');
+    expect(z2?.completedCredit).toBe(0.8); // full credit, same as pre-5.5 behavior
+  });
+});
+
 describe('protected race-specific cycling objective', () => {
   const zeroStimulus: WorkoutStimulusProfile = {
     aerobicEndurance: 0, thresholdPower: 0, vo2MaxPower: 0, repeatedSurges: 0, sprintPower: 0, fatigueResistance: 0, maxStrength: 0, hypertrophy: 0,

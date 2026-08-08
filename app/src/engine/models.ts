@@ -923,6 +923,23 @@ export type CompletedTrainingSource = 'garmin' | 'adherence' | 'manual';
 export type CompletedTrainingIntensity = 'easy' | 'moderate' | 'hard' | 'unknown';
 export type CompletedTrainingConfidence = 'high' | 'medium' | 'low';
 
+/** The evidence hierarchy for inferring completed-training stimulus (Phase 5.5) -- see
+ *  docs/plans/phase-5-sequence-planning.md 5.5 and completedTraining.ts's
+ *  classifyGarminTier/stimulusConfidenceForTier. Strongest to weakest evidence.
+ *  `completedStructuredWorkout` and `measuredEffort` are named for completeness against
+ *  the plan's full ladder but are not currently reachable -- no ingested source yet
+ *  carries a structured completed-workout record independent of the prescribed template
+ *  (the former) or per-interval power/cadence structure (the latter); Garmin's aggregate
+ *  Training Load stands in for the closest available approximation of the latter. */
+export type EvidenceTier =
+    | 'exactPrescribedMatch'
+    | 'completedStructuredWorkout'
+    | 'measuredEffort'
+    | 'garminTrainingEffect'
+    | 'durationIntensity'
+    | 'athleteClassification'
+    | 'genericModalityFallback';
+
 /**
  * One real-world completed session after all available evidence is reconciled. It is an
  * engine-domain model, derived from durable source records; it is not itself persisted
@@ -946,6 +963,9 @@ export interface CompletedTrainingEvent {
     exactTemplateMatch: boolean;
     sources: CompletedTrainingSource[];
     confidence: CompletedTrainingConfidence;
+    /** Which rung of the Phase 5.5 evidence hierarchy this event's stimulus was derived
+     *  from. Optional only for legacy construction paths that predate this field. */
+    evidenceTier?: EvidenceTier;
     linkedActivityId: string | null;
     linkedRecommendationDate: string | null;
     athleteFeedback: {

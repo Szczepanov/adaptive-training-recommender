@@ -170,7 +170,7 @@ export function generateWeeklyObjectives(
     return { windowStartDate, objectives };
 }
 
-import { deriveObjectiveCreditFromProfile, readStimulusProfile } from './stimulus';
+import { deriveObjectiveCreditFromProfile, readStimulusProfile, type StimulusConfidence } from './stimulus';
 
 /** Keyword-only evidence is deliberately worth less than a structured measured exposure.
  * It remains useful for old/external records, but cannot resolve a one-credit objective by
@@ -275,13 +275,24 @@ export function qualifiesForObjective(
  * Credits weekly objectives from a workout's numeric stimulus profile. The profile is
  * validated/canonicalized once at the exposure boundary, then reused for every objective;
  * this avoids duplicate migration warnings for the same persisted record.
+ *
+ * `modality` is now optional (Phase 5.5): a generic/unclassified exposure can still
+ * carry a genuine stimulus profile (see completedTraining.ts's genericModalityFallback
+ * tier) and credit a modality-agnostic objective, while deriveObjectiveCreditFromProfile
+ * fails closed on any objective that actually requires a known modality.
+ *
+ * `confidence` (Phase 5.5) discounts earned credit for anything short of an exact match
+ * -- see stimulus.ts CONFIDENCE_CREDIT_WEIGHT. Defaults to 'exact' so a caller supplying
+ * only authored/hypothetical data (e.g. planner.ts scoring a candidate template) is
+ * unaffected.
  */
 export function creditObjectivesFromStimulus(
     microcycle: MicrocycleState,
     rawStimulus: WorkoutStimulusProfile,
-    modality: SessionTemplate['modality'],
+    modality: SessionTemplate['modality'] | undefined,
     category?: SessionTemplate['category'],
     dose: DeliveredDose = {},
+    confidence: StimulusConfidence = 'exact',
 ): MicrocycleState {
     if (!microcycle || !microcycle.objectives) return microcycle;
     const stimulusState = readStimulusProfile(rawStimulus);
@@ -294,7 +305,7 @@ export function creditObjectivesFromStimulus(
             const requiredCredit = obj.requiredCredit ?? obj.targetExposures;
             const completedCredit = obj.completedCredit ?? obj.completedExposures;
             if (completedCredit >= requiredCredit) return obj;
-            const credit = deriveObjectiveCreditFromProfile(obj, stimulus, dose, { modality, category });
+            const credit = deriveObjectiveCreditFromProfile(obj, stimulus, dose, { modality, category }, confidence);
             if (!credit.qualifies || credit.earnedCredit <= 0) return obj;
             const nextCredit = Math.min(requiredCredit, completedCredit + credit.earnedCredit);
             return {
@@ -317,13 +328,18 @@ export function buildMicrocycleState(
     asOfDate?: string
 ): MicrocycleState {
     return history.reduce((state, exposure) => {
-        if (exposure.stimulusProfile && exposure.modality) {
+        // Phase 5.5: a stimulus profile no longer requires a known modality to be
+        // creditable -- see creditObjectivesFromStimulus's doc comment. An exposure with
+        // neither (e.g. legacy free-text-only evidence) still falls back to the
+        // deprecated keyword matcher below.
+        if (exposure.stimulusProfile) {
             return creditObjectivesFromStimulus(
                 state,
                 exposure.stimulusProfile,
                 exposure.modality,
                 exposure.category,
                 exposure.deliveredDose,
+                exposure.stimulusConfidence ?? 'exact',
             );
         }
         return updateMicrocycleProgress(state, exposure.trainingRecordLike);
