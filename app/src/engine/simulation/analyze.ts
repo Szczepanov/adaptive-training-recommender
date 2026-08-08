@@ -236,7 +236,12 @@ export async function runScenario(scenario: AthleteScenario): Promise<ScenarioRe
     const events = scenario.event ? [scenario.event] : [];
     const accumulatedHistory: CompletedExposure[] = [];
     const historyProvider: TrainingHistoryProvider = {
-        reconstruct: async () => accumulatedHistory,
+        reconstruct: async (_userId, throughDateExclusive, windowDays) => {
+            const windowStart = addDaysToLocalDateString(throughDateExclusive, -windowDays);
+            return accumulatedHistory.filter(exposure =>
+                exposure.date >= windowStart && exposure.date < throughDateExclusive
+            );
+        },
     };
 
     const weeklyDays: WeekAheadDay[][] = [];
