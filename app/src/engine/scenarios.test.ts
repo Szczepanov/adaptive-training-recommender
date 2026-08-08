@@ -29,9 +29,13 @@ async function getResult(scenarioId: string): Promise<ScenarioResult> {
 }
 
 function objectiveCreditTotal(result: ScenarioResult, objectiveKey: string): number {
-    return result.objectiveCredits
+    // Individual credits are already rounded to 2 decimals (see deriveObjectiveCreditFromProfile);
+    // round the sum too so IEEE754 summation order (which day earned which fraction) can't flip a
+    // mathematically-equal total across a floating-point boundary (e.g. 0.85+0.15*3 vs 0.7+0.3*2).
+    const raw = result.objectiveCredits
         .filter(credit => credit.objectiveKey === objectiveKey)
         .reduce((sum, credit) => sum + ((credit as typeof credit & { earnedCredit?: number }).earnedCredit ?? 0), 0);
+    return Math.round(raw * 100) / 100;
 }
 
 describe.each(SCENARIOS)('cross-scenario invariants: $label', (scenario) => {
@@ -82,11 +86,14 @@ describe('cycling_criterium_A -- qualification and anchor stress test', () => {
     });
 
     it('distinguishes rolling objective fulfillment from exact calendar-block exposure', async () => {
-        // Phase 4 objective credit is a rolling ledger, not a reset-at-Monday counter. A
-        // pair of fractional race-specific sessions late in one simulated seven-day block
-        // can fully satisfy the next block's rolling window even when that artificial block
-        // contains no new event-specific session. Exact anchor-date placement remains a
-        // separate coaching diagnostic and is intentionally still surfaced as a warning.
+        // Phase 4 objective credit is a rolling ledger, not a reset-at-Monday counter. Since
+        // calculateStimulusBenefit (optimizer.ts) was fixed to enforce qualification.minimumStimulus,
+        // a Race-Specific Endurance candidate can no longer win the exact nominated anchor day by
+        // stimulus credit toward an objective it doesn't actually qualify for (e.g. threshold_quality
+        // below its minimum) -- so a genuinely stronger candidate wins the anchor day instead, and
+        // the race-specific exposure lands on a different day within the same rolling window. The
+        // objective still resolves in every simulated week; it just never lands on the nominated
+        // date itself, which is exactly the "exact calendar-block exposure" this test documents.
         const result = await getResult('cycling_criterium_A');
         const nominated = result.anchorWeeks.filter(w => w.eventSpecificAnchorDate).length;
         const hits = result.anchorWeeks.filter(w => w.eventSpecificAnchorHit).length;
@@ -94,12 +101,10 @@ describe('cycling_criterium_A -- qualification and anchor stress test', () => {
         const raceSpecificObjective = result.objectiveResolution.find(o => o.key === 'race_specific_endurance');
 
         expect(nominated).toBe(4);
-        expect(hits).toBeGreaterThan(0);
-        expect(hits).toBeLessThan(nominated);
-        expect(calendarBlockFulfilled).toBeGreaterThan(0);
-        expect(calendarBlockFulfilled).toBeLessThan(nominated);
+        expect(hits).toBe(0);
+        expect(calendarBlockFulfilled).toBe(nominated);
         expect(raceSpecificObjective).toMatchObject({ timesGenerated: 4, timesResolved: 4 });
-        expect(result.qualityWarnings.some(warning => warning.startsWith('Event-specific anchor missed'))).toBe(true);
+        expect(result.qualityWarnings.some(warning => warning.startsWith('Event-specific exposure occurred off the nominated anchor date'))).toBe(true);
     });
 });
 

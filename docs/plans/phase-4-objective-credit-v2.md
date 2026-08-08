@@ -189,8 +189,8 @@ The deterministic boundary analysis found:
 | Root cause found and fixed | **32.4%** (93/287) | see below -- inside the [5%, 40%] bound without retuning it |
 
 Do not retune the 5–40% bound or choose a fusion formula merely to force the metric green.
-The latest measured aggregate failure remains a release blocker until a subsequent CI run
-proves otherwise.
+The pre-fix aggregate failure was resolved by correcting the recovery threshold; the fixed
+boundary measures 32.4% and satisfies the existing gate.
 
 **Root cause (found, not retuned around).** `PROJECTED_FATIGUE_RECOVER_THRESHOLD`
 (`planner.ts`) gates every projected day to Rest/Mobility-only once

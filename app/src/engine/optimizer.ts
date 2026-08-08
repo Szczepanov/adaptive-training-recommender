@@ -14,6 +14,7 @@ import type {
 import type { ResolvedAvailability } from './schedule';
 import { resolveAvailability } from './schedule';
 import { addDaysToLocalDateString, getDayDiff, getLocalDateString } from '../utils/localDate';
+import { qualifiesForObjective } from './microcycle';
 
 const STRENGTH_CATEGORIES: SessionTemplate['category'][] = [
     'Upper-body Strength', 'Lower-body Strength', 'Full-body Strength', 'Power Maintenance',
@@ -310,12 +311,10 @@ export function calculateStimulusBenefit(
 
     let benefit = 0;
     unresolvedObjectives.forEach(obj => {
-        if (obj.qualification) {
-            if (obj.qualification.allowedCategories && obj.qualification.allowedCategories.length > 0
-                && !obj.qualification.allowedCategories.includes(template.category)) return;
-            if (obj.qualification.allowedModalities && obj.qualification.allowedModalities.length > 0
-                && !obj.qualification.allowedModalities.includes(template.modality)) return;
-        }
+        // Mirrors microcycle.ts's qualifiesForObjective/deriveObjectiveCreditFromProfile gate:
+        // a candidate that cannot actually resolve an objective (wrong category/modality, or
+        // below its minimumStimulus floor) must not rank as if it could.
+        if (!qualifiesForObjective(stimulusProfile, template.modality, obj.qualification, template.category)) return;
 
         const target = obj.targetStimulus;
         const threshTarget = target.thresholdPower ?? 0;
@@ -325,6 +324,10 @@ export function calculateStimulusBenefit(
         const surgeTarget = target.repeatedSurges ?? 0;
         const surgeStim = stimulusProfile.repeatedSurges;
         if (surgeTarget && surgeStim) benefit += surgeTarget * surgeStim * 1.5;
+
+        const vo2Target = target.vo2MaxPower ?? 0;
+        const vo2Stim = stimulusProfile.vo2MaxPower;
+        if (vo2Target && vo2Stim) benefit += vo2Target * vo2Stim * 1.5;
 
         const aeroTarget = target.aerobicEndurance ?? 0;
         const aeroStim = stimulusProfile.aerobicEndurance;

@@ -207,6 +207,56 @@ describe('optimizer — lexicographic ordering (3.2)', () => {
         expect(calculateStimulusBenefit(candidate, [strengthObjective])).toBeCloseTo(0.9 * 0.9 * 1.6 + 0.5);
     });
 
+    it('scores the vo2MaxPower axis so a vo2_max objective can prioritize its matching templates', () => {
+        const vo2Objective: WeeklyObjective = {
+            id: 'obj_vo2_max', key: 'vo2_max', title: 'VO2 max development',
+            targetExposures: 1, completedExposures: 0,
+            targetStimulus: { vo2MaxPower: 0.9, aerobicEndurance: 0.5 },
+        };
+        const candidate: SessionTemplate = {
+            id: 'vo2_intervals', category: 'Hard Endurance', modality: 'Running',
+            durationMin: 40, durationMax: 55, title: 'VO2 Intervals', description: '',
+            requiredEquipment: [], environment: 'either', safetyTags: [], systemicCost: 0.6,
+            stimulusProfile: { ...ZERO_CANONICAL_STIMULUS, vo2MaxPower: 0.9 },
+            costProfile: { systemic: 0.5, cardiovascular: 0.6, lowerBody: 0.4, upperBody: 0, impactTissue: 0.4, neuromuscular: 0.2 },
+        };
+        const nonMatching: SessionTemplate = {
+            ...candidate, id: 'easy_no_vo2', category: 'Easy Endurance',
+            stimulusProfile: { ...ZERO_CANONICAL_STIMULUS, aerobicEndurance: 0.5 },
+        };
+
+        expect(calculateStimulusBenefit(candidate, [vo2Objective])).toBeCloseTo(0.9 * 0.9 * 1.5 + 0.5);
+        // A candidate carrying no vo2MaxPower stimulus still earns credit for the objective's
+        // secondary aerobicEndurance target, but none of the vo2MaxPower contribution.
+        expect(calculateStimulusBenefit(nonMatching, [vo2Objective])).toBeCloseTo(0.5 * 0.5 * 1.2 + 0.5);
+    });
+
+    it('enforces qualification.minimumStimulus so a candidate that cannot resolve an objective earns no benefit from it', () => {
+        const gatedObjective: WeeklyObjective = {
+            id: 'obj_gated_threshold', key: 'threshold_quality', title: 'Threshold Development',
+            targetExposures: 1, completedExposures: 0,
+            targetStimulus: { thresholdPower: 0.9 },
+            qualification: { minimumStimulus: { thresholdPower: 0.6 } },
+        };
+        const belowMinimum: SessionTemplate = {
+            id: 'weak_threshold', category: 'Moderate Endurance', modality: 'Running',
+            durationMin: 30, durationMax: 45, title: 'Weak Threshold', description: '',
+            requiredEquipment: [], environment: 'either', safetyTags: [], systemicCost: 0.4,
+            // thresholdPower is present but below the objective's minimumStimulus floor.
+            stimulusProfile: { ...ZERO_CANONICAL_STIMULUS, thresholdPower: 0.3 },
+            costProfile: { systemic: 0.3, cardiovascular: 0.3, lowerBody: 0.3, upperBody: 0, impactTissue: 0.3, neuromuscular: 0.1 },
+        };
+        const meetsMinimum: SessionTemplate = {
+            ...belowMinimum, id: 'strong_threshold',
+            stimulusProfile: { ...ZERO_CANONICAL_STIMULUS, thresholdPower: 0.7 },
+        };
+
+        // Below the qualification floor: the objective contributes nothing, only the baseline.
+        expect(calculateStimulusBenefit(belowMinimum, [gatedObjective])).toBeCloseTo(0.5);
+        // At/above the floor: the objective's threshold-power axis scores normally.
+        expect(calculateStimulusBenefit(meetsMinimum, [gatedObjective])).toBeCloseTo(0.9 * 0.7 * 1.5 + 0.5);
+    });
+
     it('ensures preference multiplier cannot promote a zero-objective candidate over an objective-satisfying candidate', () => {
         const thresholdObj: WeeklyObjective = {
             id: 'obj_1', key: 'threshold_quality', title: 'Threshold Development',
