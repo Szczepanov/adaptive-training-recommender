@@ -208,7 +208,8 @@ run surfaces, or record explicit per-module ignores with a reason.
       marked as expected-failing with a citation to F3
 - [ ] `npm test` passes from a clean clone with no `.env`
 - [ ] `app/.env.example` exists; `app/README.md` is project-specific
-- [ ] `POLICY_VERSION` bumped; drift guard in `npm run check`
+- [ ] `POLICY_VERSION` bumped; the drift guard runs **in CI** against an explicit base SHA
+      (not in `npm run check`, which stays local-only and has no base ref)
 - [ ] `ruff` and `mypy` run in CI
 - [ ] `garmin_login.py` removed
 

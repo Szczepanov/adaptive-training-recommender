@@ -82,6 +82,16 @@ what the golden-week assertion should test — including the boundary cases `day
 (violation) and `dayDiff === 2` (allowed). Do not write "48 h" in the implementation and
 compare dates.
 
+**Compute `dayDiff` with the shared Warsaw utility — `app/src/utils/localDate.ts` — and
+nowhere else.** Do not parse dates or do date arithmetic inline in `optimizer.ts` or
+`planner.ts`. This is the project's hardest invariant (ADR-0003, `CLAUDE.md`), and a
+recovery rule is precisely where breaking it does damage: a local `new Date(a) -
+new Date(b)` reads the strings as UTC midnight, so across a Warsaw DST boundary the
+difference is 47 or 49 hours and integer-dividing by 24 silently yields the wrong
+`dayDiff` — turning a violation into a pass on exactly two days a year, in the code that
+decides whether an athlete gets back-to-back hard sessions. If `localDate.ts` lacks a
+`dayDiff` helper, add one there rather than reimplementing it at the call site.
+
 **Key-cycling predicate.** `SessionRole` alone cannot distinguish a key ride from a
 supporting one. Define it explicitly beside the constraint:
 `modality === 'Cycling' && role === 'anchor'`. If that proves too coarse, add an explicit

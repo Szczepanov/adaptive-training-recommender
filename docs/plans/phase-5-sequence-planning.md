@@ -138,12 +138,41 @@ environment/location, available equipment, and availability override.
 **Storage contract — user-owned, like every other athlete record (ADR-0002).** Path
 `users/{userId}/fixed_activities/{activityId}`, with a `userId` field matching the path
 segment. Extend `app/firestore.rules` following the existing `goals` pattern: read/create
-for the owner, update preserving ownership and `createdAt`, plus document-shape validation
-(bounded string lengths, `date` matching `^[0-9]{4}-[0-9]{2}-[0-9]{2}$`, numeric duration
-≥ 0). Add emulator tests for owner read/write allowed, unauthenticated denied, and
-cross-user denied — the same three cases the recommendation rules already cover. This is high
-practical value for modest effort and does not depend on the search work — **it can land
-before 5.1.**
+for the owner, update preserving ownership and `createdAt`. Add emulator tests for owner
+read/write allowed, unauthenticated denied, and cross-user denied — the same three cases
+the recommendation rules already cover. This is high practical value for modest effort and
+does not depend on the search work — **it can land before 5.1.**
+
+**Validate every field, not just the two easy ones.** Ownership rules stop another
+athlete writing this document; they do nothing about the *owner's own client* writing a
+malformed one, and every field below feeds the planner. An unbounded `expectedCost`
+dimension is a denial-of-service on the athlete's own schedule — one activity that
+saturates the fatigue model empties the week. Validate the whole shape at the rule
+boundary:
+
+| Field | Type | Constraint |
+|---|---|---|
+| `userId` | string | `== userId` path segment |
+| `date` | string | matches `^[0-9]{4}-[0-9]{2}-[0-9]{2}$` (Warsaw-local, ADR-0003) |
+| `durationMin` | number | integer, `> 0` and `<= 1440` |
+| `title` | string | `size() <= 200` |
+| `fixed` | bool | required — movable vs immovable is load-bearing for the search |
+| `expectedStimulus` | map | keys ⊆ the canonical axis set; each value a number in `[0, 1]`; `size() <= 8` |
+| `expectedCost` | map | keys ⊆ the six cost dimensions; each value a number in `[0, 1]`; `size() <= 6` |
+| `environment` | string | member of the `TrainingEnvironment` union |
+| `equipment` | list | `size() <= 20`; every item a string of `size() <= 50` |
+| `availabilityOverride` | map (optional) | numeric minutes in `[0, 1440]` |
+
+Firestore rules cannot iterate a list to type-check its items, so bound `equipment` by
+size and length and enforce item types in the client validator and in
+`validation.ts` on read — say so explicitly rather than leaving a reader to assume the
+rule covers it. Enum membership is checked against a literal list in the rules file; when
+a union gains a member, both change together.
+
+Emulator cases beyond the three ownership ones: out-of-range `durationMin`, an
+`expectedCost` value above 1, an unknown `environment`, an oversized `equipment` list,
+and a malformed `date`. Each must be **denied** — these are the cases a buggy or
+tampered client actually produces.
 
 ## `[ ]` 5.4 — Local tissue state
 
@@ -203,6 +232,36 @@ supply race-specific exposure without capturing the macrocycle.
 
 Explicit objectives and session roles express this far more naturally than one blended
 demand vector, which is why it sits after Phase 2.
+
+**Both halves need a total order, or this is less deterministic than what it replaces.**
+Today's single-governing-event rule is at least decidable. "One authority, multiple
+contributors" is not, until three things are stated — and an undecided tie here means two
+runs of the planner taper to different dates.
+
+*Taper authority.* Sort candidate events by, in order: (1) priority — `A` before `B`
+before `C`; (2) proximity — fewer days to `planningDate` first; (3) `planningDate`
+ascending; (4) event `id` lexicographically. The last is not a real criterion, it is a
+determinism backstop, and it should be commented as such. Take the first. Two A-events on
+the same day is a planning error, not something to blend — surface it, do not average it.
+Only the taper authority sets `volumeScale`/`intensityScale`; contributors never do.
+
+*Demand aggregation.* A contributor supplies race-specific **objectives**, not a blended
+demand vector — that is the point of doing this after Phase 2. Union the objectives of all
+events within their contribution windows, keyed by `ObjectiveKey`. Where two events
+contribute the same key, take `max(requiredCredit)`; do not sum, or two similar B-events
+would demand double the work of one. An objective from the taper authority outranks a
+contributor's objective of the same key on any other field.
+
+*Conflicts.* If a contributor's objective is inadmissible under the taper authority's
+current block — a `threshold_quality` requirement landing inside race week — the taper
+authority wins and the contributor objective is **dropped with a recorded reason** in the
+audit, not silently reweighted. An athlete who can see "your B-event's threshold session
+was dropped because it fell in A-event race week" can act on it; a quietly reweighted plan
+teaches them nothing.
+
+Tests before 5.6 is executable: priority tie broken by proximity; proximity tie broken by
+date then id; two contributors sharing an objective key resolving to `max`, not sum; a
+contributor objective inside race week dropped with its reason present in the audit.
 
 ## `[ ]` 5.7 — Taper as an explicit contract
 

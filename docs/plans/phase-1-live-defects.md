@@ -148,6 +148,31 @@ would let this change *remove* an existing running restriction. Every token the 
 pattern matched must map to at least the same restriction before the pattern is deleted —
 verify that as a migration checklist item, not by inspection.
 
+**Two of those tokens have no body region, and silently dropping them is the failure mode
+this paragraph exists to prevent.** `knee`, `achilles` and `ankle` map to `BodyRegion`
+members directly. `leg` and `run` do not, and never will — `leg` names no specific tissue
+and `run` names an activity, not a body part. Do not invent regions for them. Map them at
+the *restriction* level instead:
+
+| Legacy token | Migrates to | Rationale |
+|---|---|---|
+| `knee`, `achilles`, `ankle` | `{ region: <same>, severity: 'limit' }` | Direct region match |
+| `leg` | `{ region: 'hamstring', severity: 'limit' }` **plus** modality restriction on `Running` | Unlocalised lower-limb complaint; the only restriction the old pattern actually produced was the running block, so preserve that explicitly rather than guessing a tissue |
+| `run` | modality restriction on `Running` only, no region | Names the aggravating activity, not an injury site |
+
+`InjuryConstraint` therefore needs `region` to be **optional** when an explicit
+`restrictedModalities` list is present — a legacy `run` entry is a real restriction with
+no known site, and forcing a fabricated region would be worse than modelling the gap.
+
+Migration is one-way and lossy in the safe direction (it can over-restrict, never
+under-restrict). Flag `leg`/`run` migrations in the UI so the athlete can replace them
+with a precise region.
+
+**Migration tests are required for both tokens**, asserting that a settings document
+carrying legacy `injuries: ['leg']` and one carrying `injuries: ['run']` each still
+produce a running restriction after migration. Without these two cases the migration can
+pass every other test while quietly unblocking running for an injured athlete.
+
 **One canonical representation, one derived form.** `UserContext.constraints.injuries`
 must not become a second source of truth alongside structured injuries: a settings update
 or migration could refresh one and leave the other stale, in the safety layer. So:
@@ -261,6 +286,17 @@ alongside the existing `DEFAULT_COST_BY_MODALITY`, and use it in
 
 With (b) in place, (a) rarely fires for recognised modalities — which is the point. (a) is
 a correctness guard, not a routing mechanism.
+
+**"Recognised modality, but no stimulus available" must not be a reachable state.** The
+type is a total `Record<CompletedModality, Record<CompletedTrainingIntensity, …>>`, so
+every recognised modality/intensity pair has an entry and TypeScript rejects the table if
+one is missing. That is deliberate: were the state reachable, a known `"Cycling hard"`
+event would fall through to the keyword matcher and pick up exactly the double credit
+D-KWD exists to prevent. **Do not** widen the type to `Partial<Record<…>>` or add a
+lookup fallback — the totality of this table is the guarantee. Add a test asserting the
+table is total (every `CompletedModality` × `CompletedTrainingIntensity` cell present and
+non-zero) so the guarantee fails loudly at test time rather than at credit time if a
+future modality is added to the union without a stimulus row.
 
 ### Constants are illustrative — the test comes first
 

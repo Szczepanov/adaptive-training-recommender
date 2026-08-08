@@ -51,18 +51,24 @@ These implement the way forward in
 §7.5. Finding IDs (`F1`, `F16`, …) refer to that document.
 
 All six are **design-approved** as of 2026-08-08 — every open choice is decided and
-recorded in the register below. Only two can be *started* today.
+recorded in the register below.
 
-| # | Plan | Status | Blocked by | Addresses |
-|---|---|---|---|---|
-| 0 | [Instrumentation & developer baseline](./phase-0-instrumentation.md) | **Ready** | — | F11, F14, F15, part of F10 |
-| 1 | [Live defects](./phase-1-live-defects.md) | **Ready** (1.1, 1.3) / Approved (1.2) | 1.2 needs Phase 0 | F1, F2, F6 |
-| 2 | [Plan intent is the planning authority](./phase-2-plan-intent-authority.md) | Approved | Phase 1 | F16, F17, F9 |
-| 3 | [One ranking path](./phase-3-single-ranking-path.md) | Approved | Phase 0, ADR-0012 (Phase 2) | F3, F4, F5 |
-| 4 | [Objective credit V2](./phase-4-objective-credit-v2.md) | Approved | Phase 0, Phase 2 | F7, F8, F12 |
-| 5 | [Sequence planning](./phase-5-sequence-planning.md) | Approved | Phases 0–4 | the cutover proper |
+`Status` is a single plan-level lifecycle value from the table above. Because a plan can
+be part-startable, **which work items are unblocked is a separate column** — `Ready` at
+the plan level would otherwise have to mean "some of it", which is how the earlier
+all-`Ready` table became unusable.
 
-**Start here: Phase 0, and Phase 1 items 1.1 and 1.3.** Those three are unblocked today.
+| # | Plan | Status | Startable items | Blocked by | Addresses |
+|---|---|---|---|---|---|
+| 0 | [Instrumentation & developer baseline](./phase-0-instrumentation.md) | **Ready** | all | — | F11, F14, F15, part of F10 |
+| 1 | [Live defects](./phase-1-live-defects.md) | Approved | **1.1, 1.3** | 1.2 needs Phase 0 | F1, F2, F6 |
+| 2 | [Plan intent is the planning authority](./phase-2-plan-intent-authority.md) | Approved | none | Phase 1 | F16, F17, F9 |
+| 3 | [One ranking path](./phase-3-single-ranking-path.md) | Approved | none | Phase 0; ADR-0012, which Phase 2 task 2.1 writes — it does not exist yet | F3, F4, F5 |
+| 4 | [Objective credit V2](./phase-4-objective-credit-v2.md) | Approved | none | Phase 0, Phase 2 | F7, F8, F12 |
+| 5 | [Sequence planning](./phase-5-sequence-planning.md) | Approved | none | Phases 0–4 | the cutover proper |
+
+**Start here: two plans and three work items** — all of Phase 0, plus Phase 1 items 1.1
+and 1.3. Nothing else is unblocked today.
 
 **Phase 0 gates Phases 3–5 and Phase 1.2.** It builds the only instrument that can tell
 whether a heuristic change improved or degraded the plan — so any item that changes

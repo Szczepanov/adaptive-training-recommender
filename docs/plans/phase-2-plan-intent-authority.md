@@ -148,23 +148,18 @@ export interface PlanDefinition {
 }
 
 export interface PlanBlock {
-  phase: EventPlanPhase;
-  startDate: string;
-  endDate: string;
-  volumeScale: number;
-  intensityScale: number;
-}
-
-export interface PlanBlock {
   id: string;                          // objectives reference this, not the phase
   phase: EventPlanPhase;
-  /* ...dates and scales as above... */
+  startDate: string;                   // YYYY-MM-DD, Warsaw-local, inclusive
+  endDate: string;                     // YYYY-MM-DD, Warsaw-local, inclusive
+  volumeScale: number;
+  intensityScale: number;
 }
 
 export interface PlanObjectiveDefinition {
   key: ObjectiveKey;
   coverageKey: EventPlanCoverageKey;   // ties back to event-plan.ts
-  blockIds: string[];                  // NOT `phases` — see below
+  blockId: string;                     // exactly one — NOT `phases`, and not a list
   requiredCredit: number;
   priority: ObjectivePriority;         // already declared in models.ts, unused
   minGapHoursFrom?: ObjectiveKey[];
@@ -175,10 +170,23 @@ export interface PlanObjectiveDefinition {
 macrocycle (two build blocks either side of a travel week is the normal case), so
 `phases: EventPlanPhase[]` cannot tell `generateWeeklyObjectives` which dated window an
 objective belongs to — it would have to guess, which is the inference this phase exists to
-remove. `blockIds` makes `windowStart`/`windowEnd` derivable deterministically.
+remove. `blockId` makes `windowStart`/`windowEnd` derivable deterministically:
+`windowStart = block.startDate`, `windowEnd = block.endDate`.
 
-```ts
-```
+**One block per objective, not a list.** An earlier draft had `blockIds: string[]`, which
+leaves two questions unanswered and therefore answered differently by each implementer:
+an empty list has no window at all, and two non-contiguous blocks give either one window
+spanning the gap or two disjoint windows — with no rule for how `requiredCredit` divides
+between them. Neither has a defensible default. An objective that genuinely spans two
+build blocks either side of a travel week is **two objectives**, each with its own
+`requiredCredit`, which is also the honest model: credit earned before a travel week does
+not carry across it.
+
+Validate at plan-build time, not at use time: `buildPlanDefinition` rejects the whole
+`PlanDefinition` (`DataState.INVALID`, per ADR-0010) if any `blockId` does not resolve to
+a declared block, if block IDs are not unique, or if two blocks overlap in date range.
+A dangling `blockId` must never produce an objective with an undefined window — that is
+the silently-never-resolving objective this phase exists to eliminate.
 
 `WeeklyObjective` already declares `requiredCredit`, `priority`, `windowStart` and
 `windowEnd` and uses none of them (F17). This is where they get used — objective windows
@@ -238,6 +246,19 @@ rather than hiding it.
 `[earliestDate, latestDate]`. Without these, taper can anchor before the event is even
 possible, or after it has happened. Validate at the parse boundary (`DataState.INVALID`,
 consistent with ADR-0010) rather than defensively inside the planner.
+
+**Ordering alone is not enough: confirmation must move the anchor.** Every constraint
+above is satisfied by `{ earliestDate: '2026-09-05', latestDate: '2026-09-20',
+planningDate: '2026-09-05', confirmedDate: '2026-09-19' }` — a confirmed event that
+tapers to a date two weeks before it happens. Because `planningDate` starts at
+`earliestDate` and the confirmation flow writes `confirmedDate`, this is not a corner
+case; it is what happens if the confirmation handler forgets one field.
+
+So add the invariant: **`confirmedDate` present ⇒ `planningDate === confirmedDate`.**
+Once the date is known there is no legitimate reason to plan to a different one, and
+making it a validation error means a half-finished confirmation fails loudly at the parse
+boundary instead of producing a silently mistimed taper. The confirmation flow sets both
+fields in one write. Test the exact case above.
 
 ## `[ ]` 2.4 — Collapse Path A / Path B (F9)
 

@@ -125,6 +125,32 @@ populated.
    `CompletedTrainingEvent`s. Deleting aliases without migrating all of them either fails
    to compile or, worse, compiles and silently scores zero coverage. Include a
    compatibility read for persisted profiles written under the old vocabulary.
+
+   **Specify that compatibility read before deleting anything.** Persisted
+   `estimatedStimulus` on stored `CompletedTrainingEvent`s is the one input this change
+   cannot codemod, and records exist in three states — canonical-only, legacy-only, and
+   both (everything `canonicalizeStimulus` has written to date, since it fills both
+   sides). Define one `readStimulusProfile(raw): WorkoutStimulusProfile` at the read
+   boundary and route every consumer through it:
+
+   | Persisted record | Behaviour |
+   |---|---|
+   | Canonical fields present | Use them. **Canonical wins**, unconditionally. |
+   | Legacy only | Convert via the canonical mapping below; do not consult legacy again downstream. |
+   | Both present and disagreeing | Canonical wins, and the divergence is **logged** — it means a writer was missed, and silently preferring one would hide that. |
+   | Neither | `DataState.INVALID`, not a zero profile. A zero profile is indistinguishable from "genuinely no stimulus" and scores zero coverage forever. |
+
+   The canonical mapping is the *identity for the five renamed axes* — this is a rename,
+   not a remodelling — with one exception: the two derived fallbacks
+   (`vo2MaxPower ← surgeRepeatability * 0.8`, `fatigueResistance ← thresholdDevelopment
+   * 0.7`) are **not** part of the mapping, because item 3 deletes them as unjustified. A
+   legacy-only record therefore converts with `vo2MaxPower` and `fatigueResistance`
+   absent, which is honest: those values were never measured, only invented.
+
+   Tests required before the aliases are removed: legacy-only converts correctly;
+   canonical-only passes through; conflicting record resolves canonical **and** logs;
+   empty record yields `INVALID`. Remove the alias fields only once every producer and
+   every consumer named above reads through `readStimulusProfile`.
 2. Type `WeeklyObjective.targetStimulus` as
    `Partial<Record<keyof WorkoutStimulusProfile, number>>` instead of
    `Record<string, number>`, so a typo'd axis is a compile error rather than a silent
@@ -217,9 +243,32 @@ base session cost × delivered dose × measured-response adjustment
 
 Keep the six dimensions — they are a good abstraction. This does **not** require adopting
 TSS/CTL/ATL as ground truth; it requires the existing vectors to respond to duration,
-completion ratio and measured training effect. `DeliveredDose` in `stimulus.ts` already
-has the right shape (`plannedDurationMin`, `completedDurationMin`, `completionRatio`) and
-is unused.
+completion ratio and measured training effect.
+
+**Two of the three factors have an input today; the third does not.** `DeliveredDose` in
+`stimulus.ts` carries `plannedDurationMin`, `completedDurationMin` and `completionRatio`
+— enough for `base × delivered dose`, and nothing at all for the measured-response
+adjustment. Writing the three-factor formula against a two-factor contract is how a term
+ends up quietly evaluating to 1.0 forever, which is the `intensityScale` failure (F17)
+repeated.
+
+So split the work, and do not let the second half block the first:
+
+1. **Duration and completion — now.** Extend the cost function to consume `DeliveredDose`
+   as it stands. This alone fixes the stated defect: a 40-minute and a 3-hour hard ride
+   stop scoring alike.
+2. **Measured response — only once it has a source.** The signal exists upstream
+   (`intensityFromGarmin` already reads Garmin training effect, and 4.3 introduces
+   internal response), but it is not on `DeliveredDose`. Adding the term requires adding
+   the field *and* populating it at every construction site, with `DataState` handling for
+   the sessions that have no measurement — an untracked activity has no training effect,
+   and defaulting it to a neutral value silently reintroduces the dead term.
+
+**Acceptance covers step 1 only**: cost responds monotonically to
+`completedDurationMin` and to `completionRatio`, asserted on the Phase-0 harness. The
+measured-response term is not in this phase's acceptance criteria and must not be written
+into the formula until its input contract exists. The six-dimensional cost vector is
+unchanged throughout.
 
 ---
 
