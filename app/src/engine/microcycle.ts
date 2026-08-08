@@ -243,6 +243,7 @@ export function updateMicrocycleProgress(
 }
 
 export function getUnresolvedObjectives(microcycle: MicrocycleState): WeeklyObjective[] {
+    if (!microcycle || !microcycle.objectives) return [];
     return microcycle.objectives.filter(o => o.completedExposures < o.targetExposures);
 }
 
@@ -303,6 +304,7 @@ export function creditObjectivesFromStimulus(
     modality: SessionTemplate['modality'],
     category?: SessionTemplate['category'],
 ): MicrocycleState {
+    if (!microcycle || !microcycle.objectives) return microcycle;
     return {
         ...microcycle,
         objectives: microcycle.objectives.map(obj => {
