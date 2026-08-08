@@ -131,12 +131,31 @@ describe('generateWeekAheadPlan', () => {
         plan.days.forEach(d => expect(d.template.modality).not.toBe('Running'));
     });
 
-    it('omits category-restricted templates from projected days', () => {
+    it('omits category-restricted templates from projected days for a quadriceps exclude injury', () => {
         const settings: TrainingSettings = {
             userId: 'user1', schemaVersion: 3,
             equipment: { free_weights: true, cable_machine: true, treadmill: true, indoor_bike: true, pullup_bar: true },
             guardrails: { avoid_high_impact: false, avoid_heavy_lower_body: false, avoid_overhead_pressing: false, avoid_heavy_spinal_loading: false },
             injuries: [{ region: 'quadriceps', severity: 'exclude' }],
+            defaults: { weekdayMaxMinutes: 60, weekendMaxMinutes: 60, environment: 'either' },
+            preferences: { preferActiveRecovery: false }, migration: { legacyReviewed: true, migratedAt: null },
+            createdAt: '2026-08-08T00:00:00Z', updatedAt: '2026-08-08T00:00:00Z',
+        };
+        const context = mapContextFromGoalsAndTrainingSettings([], settings, null, '2026-08-07');
+        const { readiness, todayRec, tomorrowRec } = buildTodayAndTomorrow(context);
+        const plan = generateWeekAheadPlan(readiness, context, null, '2026-08-07', todayRec, tomorrowRec, prepareWeekAheadPlanSeed(readiness, [], '2026-08-07', []), { days: 7 });
+
+        plan.days.filter(day => day.confidence === 'projected').forEach(day => {
+            expect(['Lower-body Strength', 'Full-body Strength']).not.toContain(day.template.category);
+        });
+    });
+
+    it('omits category-restricted templates from projected days for a hamstring exclude injury', () => {
+        const settings: TrainingSettings = {
+            userId: 'user1', schemaVersion: 3,
+            equipment: { free_weights: true, cable_machine: true, treadmill: true, indoor_bike: true, pullup_bar: true },
+            guardrails: { avoid_high_impact: false, avoid_heavy_lower_body: false, avoid_overhead_pressing: false, avoid_heavy_spinal_loading: false },
+            injuries: [{ region: 'hamstring', severity: 'exclude' }],
             defaults: { weekdayMaxMinutes: 60, weekendMaxMinutes: 60, environment: 'either' },
             preferences: { preferActiveRecovery: false }, migration: { legacyReviewed: true, migratedAt: null },
             createdAt: '2026-08-08T00:00:00Z', updatedAt: '2026-08-08T00:00:00Z',
