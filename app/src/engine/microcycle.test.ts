@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { buildMicrocycleState, creditObjectivesFromStimulus, stimulusCoverage, updateMicrocycleProgress } from './microcycle.ts';
 import type { MicrocycleState, UserEvent, WorkoutStimulusProfile } from './models.ts';
 import type { CompletedExposure } from './trainingHistory.ts';
+import { completedEventToExposure, DEFAULT_COST_BY_MODALITY, DEFAULT_STIMULUS_BY_MODALITY } from './completedTraining.ts';
+import { evaluatePeriodizationPhase } from './periodization.ts';
 
 describe('updateMicrocycleProgress', () => {
   it('credits controlled field work toward surge repeatability', () => {
@@ -205,5 +207,77 @@ describe('threshold qualification', () => {
     expect(nonCycling.objectives[0].completedExposures).toBe(0);
     expect(tooEasy.objectives[0].completedExposures).toBe(0);
     expect(qualifying.objectives[0].completedExposures).toBe(1);
+  });
+});
+
+describe('Task 1.2 / F2 Garmin objective crediting', () => {
+  it('credits zone2_aerobic and strength_maintenance from 3 Garmin-measured sessions', () => {
+    const phase = evaluatePeriodizationPhase([], '2026-08-03').phase;
+    const history: CompletedExposure[] = [
+      completedEventToExposure({
+        id: 'garmin:1', date: '2026-08-04', durationMin: 60, modality: 'Cycling', intensity: 'moderate',
+        trainingEffect: 2.5, estimatedCost: DEFAULT_COST_BY_MODALITY['Cycling']['moderate'],
+        estimatedStimulus: DEFAULT_STIMULUS_BY_MODALITY['Cycling']['moderate'],
+        sources: ['garmin'], confidence: 'high', linkedActivityId: '1', linkedRecommendationDate: null,
+        athleteFeedback: { followed: null, notes: null },
+      }),
+      completedEventToExposure({
+        id: 'garmin:2', date: '2026-08-05', durationMin: 60, modality: 'Cycling', intensity: 'moderate',
+        trainingEffect: 2.7, estimatedCost: DEFAULT_COST_BY_MODALITY['Cycling']['moderate'],
+        estimatedStimulus: DEFAULT_STIMULUS_BY_MODALITY['Cycling']['moderate'],
+        sources: ['garmin'], confidence: 'high', linkedActivityId: '2', linkedRecommendationDate: null,
+        athleteFeedback: { followed: null, notes: null },
+      }),
+      completedEventToExposure({
+        id: 'garmin:3', date: '2026-08-06', durationMin: 45, modality: 'Strength', intensity: 'moderate',
+        trainingEffect: 2.0, estimatedCost: DEFAULT_COST_BY_MODALITY['Strength']['moderate'],
+        estimatedStimulus: DEFAULT_STIMULUS_BY_MODALITY['Strength']['moderate'],
+        sources: ['garmin'], confidence: 'high', linkedActivityId: '3', linkedRecommendationDate: null,
+        athleteFeedback: { followed: null, notes: null },
+      }),
+    ];
+
+    const state = buildMicrocycleState(phase, '2026-08-03', history, null);
+    const z2 = state.objectives.find(o => o.key === 'zone2_aerobic');
+    const str = state.objectives.find(o => o.key === 'strength_maintenance');
+
+    expect(z2?.completedExposures).toBe(2);
+    expect(str?.completedExposures).toBe(1);
+  });
+
+  it('prevents a hard cycling session from false-positive double-crediting zone2_aerobic', () => {
+    const phase = evaluatePeriodizationPhase([], '2026-08-03').phase;
+    const history: CompletedExposure[] = [
+      completedEventToExposure({
+        id: 'garmin:hard-ride', date: '2026-08-04', durationMin: 60, modality: 'Cycling', intensity: 'hard',
+        trainingEffect: 3.8, estimatedCost: DEFAULT_COST_BY_MODALITY['Cycling']['hard'],
+        estimatedStimulus: DEFAULT_STIMULUS_BY_MODALITY['Cycling']['hard'],
+        sources: ['garmin'], confidence: 'high', linkedActivityId: 'hard-ride', linkedRecommendationDate: null,
+        athleteFeedback: { followed: null, notes: null },
+      }),
+    ];
+
+    const state = buildMicrocycleState(phase, '2026-08-03', history, null);
+    const z2 = state.objectives.find(o => o.key === 'zone2_aerobic');
+    const thresh = state.objectives.find(o => o.key === 'threshold_quality');
+
+    expect(z2?.completedExposures).toBe(0);
+    expect(thresh?.completedExposures).toBe(1);
+  });
+
+  it('prefers the exact template stimulus profile for adherence-followed exposures', () => {
+    const exposure: CompletedExposure = {
+      date: '2026-08-04',
+      costProfile: { systemic: 0.5, cardiovascular: 0.5, lowerBody: 0.5, upperBody: 0, impactTissue: 0, neuromuscular: 0.2 },
+      trainingRecordLike: { type: 'Cycling Zone 2 Base', duration_min: 60, training_effect: 0, intensity_tag: '' },
+      modality: 'Cycling',
+      stimulusConfidence: 'exact',
+      stimulusProfile: { aerobicCapacity: 0.9, thresholdDevelopment: 0.1, surgeRepeatability: 0, maxStrength: 0, hypertrophy: 0, mobilityRecovery: 0 },
+    };
+
+    const phase = evaluatePeriodizationPhase([], '2026-08-03').phase;
+    const state = buildMicrocycleState(phase, '2026-08-03', [exposure], null);
+    const z2 = state.objectives.find(o => o.key === 'zone2_aerobic');
+    expect(z2?.completedExposures).toBe(1);
   });
 });

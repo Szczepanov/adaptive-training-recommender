@@ -11,6 +11,7 @@ export interface CompletedExposure {
      * reconciled evidence supplies an explicit stimulus vector. This prevents the
      * microcycle ledger from re-inferring a precise objective from loose title text. */
     stimulusProfile?: WorkoutStimulusProfile;
+    stimulusConfidence?: 'exact' | 'inferred' | 'unknown';
     modality?: SessionTemplate['modality'];
     category?: SessionTemplate['category'];
 }
@@ -47,6 +48,7 @@ export function exposureFromRecommendation(date: string, rec: DailyRecommendatio
         date,
         costProfile: template.costProfile ?? ZERO_COST,
         trainingRecordLike,
+        stimulusConfidence: rec.adherence.followed ? 'exact' : 'unknown',
         // An athlete who confirms the prescribed session was followed supplies an exact
         // catalog identity. A modified session does not, so it intentionally falls back
         // to the conservative unstructured-history path.

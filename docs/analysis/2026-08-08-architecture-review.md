@@ -102,7 +102,7 @@ should prevent it is not participating in the decision at all.
 
 This is the single most important finding in this document.
 
-### F2. Garmin-measured training earns zero microcycle credit
+### F2. Garmin-measured training earns zero microcycle credit (**Resolved in Phase 1 Task 1.2**)
 
 **Precise claim:** a *recognised* Garmin-only completion that has no matched structured or
 adherence-confirmed stimulus earns **zero** objective credit, because its all-zero profile

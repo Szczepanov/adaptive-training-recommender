@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { CompletedTrainingEvent, DailyRecommendation, NormalizedGarminActivity } from './models';
-import { completedEventToExposure, deriveSessionPlanRelationship, reconcileCompletedTrainingEvents } from './completedTraining';
+import { completedEventToExposure, DEFAULT_STIMULUS_BY_MODALITY, deriveSessionPlanRelationship, reconcileCompletedTrainingEvents } from './completedTraining';
 
 function activity(overrides: Partial<NormalizedGarminActivity> = {}): NormalizedGarminActivity {
     return {
@@ -63,6 +63,35 @@ describe('completed training reconciliation', () => {
         ], [recommendation()]);
 
         expect(events.find(event => event.sources.includes('adherence'))?.linkedActivityId).toBe('garmin-close');
+    });
+
+    it('attaches inferred stimulus profile to recognized Garmin cycling session', () => {
+        const [event] = reconcileCompletedTrainingEvents([activity({ type: 'cycling', intensityTag: 'moderate', trainingEffectAerobic: 2.5 })], []);
+        const exposure = completedEventToExposure(event);
+        expect(exposure.stimulusConfidence).toBe('inferred');
+        expect(exposure.stimulusProfile?.aerobicCapacity).toBeGreaterThan(0.5);
+        expect(exposure.modality).toBe('Cycling');
+    });
+
+    it('withholds stimulus profile and sets unknown confidence for unknown modality', () => {
+        const [event] = reconcileCompletedTrainingEvents([activity({ type: 'unknown_sport' })], []);
+        const exposure = completedEventToExposure(event);
+        expect(exposure.stimulusConfidence).toBe('unknown');
+        expect(exposure.stimulusProfile).toBeUndefined();
+    });
+
+    it('asserts DEFAULT_STIMULUS_BY_MODALITY table totality for all recognized modalities and intensities', () => {
+        const modalities = ['Cycling', 'Running', 'Strength', 'Field', 'Mobility', 'Cross Training'];
+        const intensities = ['easy', 'moderate', 'hard', 'unknown'];
+
+        for (const mod of modalities) {
+            for (const int of intensities) {
+                const vector = DEFAULT_STIMULUS_BY_MODALITY[mod as keyof typeof DEFAULT_STIMULUS_BY_MODALITY][int as import('./models').CompletedTrainingIntensity];
+                expect(vector).toBeDefined();
+                const sum = (Object.values(vector) as number[]).reduce((a, b) => a + b, 0);
+                expect(sum).toBeGreaterThan(0);
+            }
+        }
     });
 });
 
