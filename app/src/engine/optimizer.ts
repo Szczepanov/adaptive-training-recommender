@@ -99,6 +99,23 @@ export const ANCHOR_HISTORY_CATEGORIES: SessionTemplate['category'][] = [
     'Hard Endurance', 'Race-Specific Endurance', 'Full-body Strength',
 ];
 
+/** A weekly anchor nomination describes what the day is trying to host; it is not a
+ * property of every candidate evaluated on that date. A candidate only inherits the
+ * nominated anchor role when its realized modality/category actually fulfils that role. */
+export function candidateMatchesAnchorRole(
+    template: SessionTemplate,
+    anchorRole: OptimizationOptions['anchorRole']
+): boolean {
+    if (anchorRole === 'event-specific') {
+        return template.modality === 'Cycling' && template.category === 'Race-Specific Endurance';
+    }
+    if (anchorRole === 'quality') {
+        return template.modality === 'Cycling'
+            && (template.category === 'Hard Endurance' || template.category === 'Moderate Endurance');
+    }
+    return false;
+}
+
 export function getConsecutiveModalityCount(
     history: { modality?: string; type?: string }[],
     targetModality: string
@@ -174,10 +191,12 @@ export function evaluateRecoveryConstraints(
 ): string[] {
     const reasons: string[] = [];
 
-    // Constraint 1: Quality spacing -- >= 1 clear day (dayDiff >= 2) between two anchor-role sessions
-    const isCandidateAnchor = options.anchorRole === 'event-specific' ||
-        options.anchorRole === 'quality' ||
-        ANCHOR_HISTORY_CATEGORIES.includes(template.category);
+    // Constraint 1: Quality spacing -- >= 1 clear day (dayDiff >= 2) between two anchor-role sessions.
+    // When the planner nominated this date, only a candidate that actually fulfils the
+    // nominated role is an anchor; Rest/Mobility/supporting work must remain available.
+    const isCandidateAnchor = options.anchorRole
+        ? candidateMatchesAnchorRole(template, options.anchorRole)
+        : ANCHOR_HISTORY_CATEGORIES.includes(template.category);
 
     if (isCandidateAnchor) {
         const priorAnchor = history.find(h => {
@@ -218,8 +237,9 @@ export function evaluateRecoveryConstraints(
     // Constraint 4: Anchor protection -- no heavy lower-body strength within 1 day of a key cycling session
     const isHeavyLowerBodyStrength = HEAVY_LOWER_BODY_STRENGTH_CATEGORIES.includes(template.category) ||
         (template.modality === 'Strength' && (template.costProfile?.lowerBody ?? 0) >= 0.6);
-    const isKeyCyclingSession = template.modality === 'Cycling' &&
-        (options.anchorRole === 'event-specific' || options.anchorRole === 'quality' || template.category === 'Race-Specific Endurance' || template.category === 'Hard Endurance');
+    const isKeyCyclingSession = candidateMatchesAnchorRole(template, options.anchorRole)
+        || (template.modality === 'Cycling'
+            && (template.category === 'Race-Specific Endurance' || template.category === 'Hard Endurance'));
 
     if (isHeavyLowerBodyStrength) {
         // Hard exclusion is scoped to a *realized* prior key cycling session (found in
@@ -552,8 +572,13 @@ export function rankCandidates(
             prefMultiplier *= INTENSITY_STACK_PENALTY;
         }
 
-        // Soft penalty for repeating exact same template on consecutive days
-        const usedYesterday = history.some(h => getDayDiff(targetDate, h.date) === 1 && (h.templateId === template.id || (h.category && h.category === template.category)));
+        // Variety must not act like another category/modality anti-stacking policy. The
+        // only pre-ranking repetition nudge here is for the exact same template on the
+        // immediately preceding day; broader variety is handled below as a tie-break
+        // among already-equivalent candidates.
+        const usedYesterday = history.some(h =>
+            getDayDiff(targetDate, h.date) === 1 && h.templateId === template.id
+        );
         if (usedYesterday) {
             prefMultiplier *= 0.2;
         }
