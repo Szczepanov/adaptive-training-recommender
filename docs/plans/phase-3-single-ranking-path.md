@@ -19,7 +19,7 @@ Update the marker on the work-item heading **and** this table in the same commit
 | 3.1 | `[x]` | Replace modality anti-stacking with dated, role-aware recovery constraints (F3) | `app/src/engine/optimizer.ts`, `models.ts`, `planner.ts`, `rules.ts` |
 | 3.2 | `[x]` | Lexicographic ordering: hard filters separated from sort keys; named rejection reasons | `app/src/engine/optimizer.ts` |
 | 3.3 | `[x]` | One `buildOptimizationContext` shared by both call sites (F4) | `app/src/engine/rules.ts`, `planner.ts` |
-| 3.4 | `[ ]` | Next-day tier selector; stop hardcoding the green branch (F5) | `app/src/components/Home.tsx`, `WeekAheadStrip.tsx`, `app/src/engine/planner.ts` |
+| 3.4 | `[x]` | Next-day tier selector; stop hardcoding the green branch (F5) | `app/src/components/Home.tsx`, `WeekAheadStrip.tsx`, `app/src/engine/planner.ts` |
 
 **Every task here changes recommendations for existing users.** Phase 0's invariant suite
 must be green and its semantic diff read in review before any of these merge. The
@@ -205,14 +205,14 @@ is seeded from a best-case tomorrow.
 
 ## Acceptance criteria
 
-- [ ] `getConsecutiveModalityCount` / `getRollingModalityCount` deleted or reduced to a
+- [x] `getConsecutiveModalityCount` / `getRollingModalityCount` deleted or reduced to a
       tie-break input
-- [ ] date-aware, role-aware history threaded from both call sites
-- [ ] hard constraints separated from sort keys; rejection reasons named
-- [ ] Phase 0 golden-week event-modality assertion passes
-- [ ] both call sites produce identical rankings for identical input
-- [ ] `Home.tsx` no longer hardcodes `branches.green`
-- [ ] `POLICY_VERSION` bumped
+- [x] date-aware, role-aware history threaded from both call sites
+- [x] hard constraints separated from sort keys; rejection reasons named
+- [x] Phase 0 golden-week event-modality assertion passes
+- [x] both call sites produce identical rankings for identical input
+- [x] `Home.tsx` no longer hardcodes `branches.green`
+- [x] `POLICY_VERSION` bumped
 
 ## Risks & rollback
 

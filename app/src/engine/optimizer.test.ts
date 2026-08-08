@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { buildOptimizationContext, rankCandidates, rankCandidatesByUtility } from './optimizer';
+import { buildOptimizationContext, rankCandidates, rankCandidatesByUtility, type RecentHistoryEntry } from './optimizer';
 import { ENRICHED_TEMPLATES } from './templates';
-import type { FatigueState, SessionTemplate, UserPreferences, WeeklyObjective } from './models';
+import type { FatigueState, UserContext, UserPreferences, WeeklyObjective } from './models';
 import type { ResolvedAvailability } from './schedule';
 
 const DEFAULT_FATIGUE: FatigueState = {
@@ -12,10 +12,11 @@ const DEFAULT_FATIGUE: FatigueState = {
 };
 
 const DEFAULT_AVAILABILITY: ResolvedAvailability = {
+    date: '2026-03-01',
     maxTimeMinutes: 120,
     availableEquipment: ['free_weights', 'indoor_bike', 'treadmill', 'cable_machine'],
-    locationContext: 'home',
-    environment: 'indoor',
+    fixedActivities: [],
+    reservedCapacityCost: 0,
 };
 
 const DEFAULT_PREFERENCES: UserPreferences = {
@@ -38,7 +39,7 @@ const DEFAULT_PREFERENCES: UserPreferences = {
 describe('optimizer — dated, role-aware recovery constraints (F3 / 3.1)', () => {
     it('allows three cycling sessions across 7 days with >= 48h spacing without repetition penalty', () => {
         const thresholdRide = ENRICHED_TEMPLATES.find(t => t.category === 'Hard Endurance' && t.modality === 'Cycling')!;
-        const history = [
+        const history: RecentHistoryEntry[] = [
             { date: '2026-03-01', modality: 'Cycling', category: 'Hard Endurance', role: 'anchor', systemicCost: 0.8, lowerBodyCost: 0.5, type: 'Cycling' },
             { date: '2026-03-02', modality: 'Rest', category: 'Rest', role: 'recovery', systemicCost: 0, lowerBodyCost: 0, type: 'Rest' },
             { date: '2026-03-03', modality: 'Cycling', category: 'Moderate Endurance', role: 'supporting', systemicCost: 0.5, lowerBodyCost: 0.3, type: 'Cycling' },
@@ -52,7 +53,7 @@ describe('optimizer — dated, role-aware recovery constraints (F3 / 3.1)', () =
             DEFAULT_AVAILABILITY,
             [],
             DEFAULT_PREFERENCES,
-            { date: '2026-03-05', recentHistory: history as any }
+            { date: '2026-03-05', recentHistory: history }
         );
 
         expect(result.accepted).toHaveLength(1);
@@ -62,7 +63,7 @@ describe('optimizer — dated, role-aware recovery constraints (F3 / 3.1)', () =
 
     it('rejects two hard lower-body sessions on consecutive days with HARD_LOWER_BODY_SPACING_VIOLATION', () => {
         const heavySquat = ENRICHED_TEMPLATES.find(t => t.category === 'Lower-body Strength') ?? ENRICHED_TEMPLATES.find(t => t.modality === 'Strength')!;
-        const history = [
+        const history: RecentHistoryEntry[] = [
             { date: '2026-03-04', modality: 'Strength', category: 'Lower-body Strength', role: 'anchor', systemicCost: 0.7, lowerBodyCost: 0.8, type: 'Lower-body Strength' }
         ];
 
@@ -74,7 +75,7 @@ describe('optimizer — dated, role-aware recovery constraints (F3 / 3.1)', () =
             DEFAULT_AVAILABILITY,
             [],
             DEFAULT_PREFERENCES,
-            { date: '2026-03-05', recentHistory: history as any }
+            { date: '2026-03-05', recentHistory: history }
         );
 
         expect(result.rejected).toHaveLength(1);
@@ -156,15 +157,15 @@ describe('optimizer — one optimizer invocation context (F4 / 3.3)', () => {
             unresolvedObjectives: [],
             fatigue: DEFAULT_FATIGUE,
             periodization: { focusEvent: null },
-            history: [{ date: '2026-03-01', modality: 'Cycling', category: 'Hard Endurance', systemicCost: 0.8, lowerBodyCost: 0.5 }],
+            history: [{ date: '2026-03-01', modality: 'Cycling', category: 'Hard Endurance' as const, systemicCost: 0.8, lowerBodyCost: 0.5 }],
         };
-        const context = {
+        const testContext = {
             trainingSettings: { userId: 'user_1', defaults: { weekdayMaxMinutes: 60, weekendMaxMinutes: 90 } },
             constraints: { restrictedModalities: ['Running'] },
             preferences: DEFAULT_PREFERENCES,
-        } as any;
+        } as unknown as UserContext;
 
-        const optContext = buildOptimizationContext(intent, context, DEFAULT_PREFERENCES, '2026-03-05');
+        const optContext = buildOptimizationContext(intent, testContext, DEFAULT_PREFERENCES, '2026-03-05');
 
         expect(optContext.injuryConstraints).toEqual(['Running']);
         expect(optContext.preferences.userId).toBe('user_1');
@@ -180,14 +181,14 @@ describe('optimizer — one optimizer invocation context (F4 / 3.3)', () => {
             periodization: { focusEvent: null },
             history: [],
         };
-        const context = {
+        const testContext = {
             trainingSettings: { userId: 'user_1', defaults: { weekdayMaxMinutes: 60, weekendMaxMinutes: 90 } },
             constraints: { restrictedModalities: [] },
             preferences: DEFAULT_PREFERENCES,
-        } as any;
+        } as unknown as UserContext;
 
-        const optCtx1 = buildOptimizationContext(intent, context, DEFAULT_PREFERENCES, '2026-03-05');
-        const optCtx2 = buildOptimizationContext(intent, context, DEFAULT_PREFERENCES, '2026-03-05');
+        const optCtx1 = buildOptimizationContext(intent, testContext, DEFAULT_PREFERENCES, '2026-03-05');
+        const optCtx2 = buildOptimizationContext(intent, testContext, DEFAULT_PREFERENCES, '2026-03-05');
 
         const res1 = rankCandidates([template], optCtx1.unresolvedObjectives, optCtx1.fatigueState, optCtx1.availability, optCtx1.injuryConstraints, optCtx1.preferences, optCtx1.options);
         const res2 = rankCandidates([template], optCtx2.unresolvedObjectives, optCtx2.fatigueState, optCtx2.availability, optCtx2.injuryConstraints, optCtx2.preferences, optCtx2.options);

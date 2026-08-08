@@ -2,8 +2,7 @@ import type { DailyReadiness, UserContext, Recommendation, SessionTemplate, Next
 import { TEMPLATES } from './templates';
 import { eligibleTemplates, evaluateTemplateEligibility, resolveMaximumSessionMinutes } from './eligibility';
 import { ENRICHED_TEMPLATES } from './templates';
-import { buildOptimizationContext, rankCandidates, rankCandidatesByUtility } from './optimizer';
-import { resolveAvailability } from './schedule';
+import { buildOptimizationContext, rankCandidates } from './optimizer';
 import { addDaysToLocalDateString } from '../utils/localDate';
 import type { TrainingHistoryProvider } from './trainingHistory';
 import type { TrainingHistorySnapshot } from './trainingHistorySnapshot';
@@ -473,7 +472,7 @@ export async function evaluateTrainingWithIntent(
         .filter(template => mode !== 'recover' || template.category === 'Rest' || template.category === 'Mobility/Recovery')
         .filter(template => mode !== 'modify' || template.systemicCost <= MODIFY_MAX_SYSTEMIC_COST)
         .filter(template => isTemplatePhaseEligible(template, intent.periodization));
-    const optContext = buildOptimizationContext(intent, context, context.preferences as any, date);
+    const optContext = buildOptimizationContext(intent, context, context.preferences, date);
     const rankingResult = rankCandidates(
         candidates,
         optContext.unresolvedObjectives,

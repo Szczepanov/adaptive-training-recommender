@@ -363,12 +363,12 @@ describe('Architecture & Phased Engine Integration', () => {
             const strengthAvailability = { ...availability, availableEquipment: ['free_weights', 'indoor_bike'] };
             const unstackedRanked = rankCandidatesByUtility(
                 ENRICHED_TEMPLATES, [], fatigue, strengthAvailability, [], prefs,
-                { recentHistory: [] }
+                { date: '2026-08-07', recentHistory: [] }
             );
 
             const stackedRanked = rankCandidates(
                 ENRICHED_TEMPLATES, [], fatigue, strengthAvailability, [], prefs,
-                { recentHistory: [{ date: '2026-08-06', modality: 'Strength', category: 'Lower-body Strength', systemicCost: 0.8, lowerBodyCost: 0.8 }] }
+                { date: '2026-08-07', recentHistory: [{ date: '2026-08-06', modality: 'Strength', category: 'Lower-body Strength', systemicCost: 0.8, lowerBodyCost: 0.8 }] }
             );
 
             const unstackedStrength = unstackedRanked.find(r => r.template.category === 'Lower-body Strength');
@@ -383,11 +383,11 @@ describe('Architecture & Phased Engine Integration', () => {
             const cyclingAvailability = { ...availability, availableEquipment: ['indoor_bike'] };
             const unstackedCyclingRanked = rankCandidatesByUtility(
                 ENRICHED_TEMPLATES, [], fatigue, cyclingAvailability, [], prefs,
-                { recentHistory: [] }
+                { date: '2026-08-07', recentHistory: [] }
             );
             const stackedCyclingRanked = rankCandidates(
                 ENRICHED_TEMPLATES, [], fatigue, cyclingAvailability, [], prefs,
-                { recentHistory: [{ date: '2026-08-06', modality: 'Cycling', category: 'Hard Endurance', role: 'anchor', systemicCost: 0.8 }] }
+                { date: '2026-08-07', recentHistory: [{ date: '2026-08-06', modality: 'Cycling', category: 'Hard Endurance', role: 'anchor', systemicCost: 0.8 }] }
             );
             const unstackedCycling = unstackedCyclingRanked.find(r => r.template.modality === 'Cycling');
             const stackedCycling = stackedCyclingRanked.rejected.find(r => r.template.modality === 'Cycling');

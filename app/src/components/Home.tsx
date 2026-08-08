@@ -321,6 +321,7 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
   // The production planner reads adherence history once, so it must run outside render.
   // Cancellation ensures a prior user/date/goals/check-in/settings state cannot replace
   // the forecast after a newer dashboard snapshot has been composed.
+  const [selectedNextDayTier, setSelectedNextDayTier] = useState<'green' | 'yellow' | 'red'>('green');
   const [weekAheadPlan, setWeekAheadPlan] = useState<WeekAheadPlan | null>(null);
   useEffect(() => {
     let cancelled = false;
@@ -329,7 +330,9 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
       return () => { cancelled = true; };
     }
     const { subjective, objective, context } = engineInputs;
-    const tomorrowRec = nextDayPlan ? nextDayPlan.branches.green.recommendation : null;
+    const tomorrowRec = nextDayPlan
+      ? (nextDayPlan.branches[selectedNextDayTier]?.recommendation ?? nextDayPlan.branches.green.recommendation)
+      : null;
     void generateWeekAheadPlanWithIntent(
       userId,
       { subjective, objective },
@@ -351,7 +354,7 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
       }
     });
     return () => { cancelled = true; };
-  }, [userId, engineInputs, decisionInput, activeRec, canGenerateNormalPlan, nextDayPlan, eventPeriodization, historySnapshot]);
+  }, [userId, engineInputs, decisionInput, activeRec, canGenerateNormalPlan, nextDayPlan, selectedNextDayTier, eventPeriodization, historySnapshot]);
 
   if (loading) {
     return (
@@ -510,7 +513,12 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
           </div>
 
           {/* Rolling 7-Day Forecast */}
-          <WeekAheadStrip plan={weekAheadPlan} />
+          <WeekAheadStrip
+            plan={weekAheadPlan}
+            nextDayPlan={nextDayPlan}
+            selectedTier={selectedNextDayTier}
+            onSelectTier={setSelectedNextDayTier}
+          />
         </div>
 
         {/* Sidebar Context & Status Column (~30%-32%) */}

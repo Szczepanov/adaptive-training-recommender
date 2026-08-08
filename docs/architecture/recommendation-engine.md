@@ -131,20 +131,11 @@ day after a mandated recovery day, and an **already-trained-today** override for
 
 ## Candidate ranking (`optimizer.ts`)
 
-```text
-utility = benefit / (1 + fatigueCost) × preferenceMultiplier
-```
+Phase 3 introduces a single, unified ranking path (`rankCandidates`) driven by shared context (`buildOptimizationContext`). Candidates are evaluated via strict **Lexicographic Ordering**:
 
-**Benefit** scores a template's stimulus profile against currently unresolved weekly
-objectives. **Cost** is the dot product of the template's six-dimensional cost profile
-with current dimensional fatigue, weighted (lower body ×2.5 for DOMS interference,
-systemic ×2.0, impact ×2.0, neuromuscular ×1.8, cardiovascular and upper body ×1.5).
-
-The multiplier then accumulates named modifiers: anti-stacking, post-objective strength
-suppression, intensity stacking, event-modality preference, aerobic filler, anchor role
-boost, anchor adjacency suppression, and a variety tie-break — see
-[ADR-0011](../adr/0011-weekly-architecture-anchors.md), including its Negative section on
-why this composition is a known problem.
+1. **Hard Eligibility Gates** (Level 1–3): Time budget, required equipment, injury constraints, safety envelopes, phase eligibility, and dated role-aware recovery constraints (`QUALITY_SPACING_VIOLATION`, `HARD_LOWER_BODY_SPACING_VIOLATION`, `ROLLING_HARD_CAP_EXCEEDED`, `ANCHOR_PROTECTION_VIOLATION`). Filtered candidates carry explicit `excludedReasons`.
+2. **Objective Benefit** (Level 4): Scores a template's stimulus profile against currently unresolved weekly objectives (`calculateStimulusBenefit`). Higher objective satisfaction strictly outranks non-objective candidates regardless of preference multipliers.
+3. **Utility Score** (Level 5 & 6): `utility = (benefit / (1 + fatigueCost)) × preferenceMultiplier`. Used to sort candidates of comparable objective benefit (within `0.05` benefit score).
 
 ---
 
@@ -157,15 +148,15 @@ clinical / safety gates     hard exclusion — never overridable
         ↓
 feasibility                 time, equipment, environment, guardrails
         ↓
+dated recovery constraints   quality spacing, rolling hard caps, anchor protection (F3)
+        ↓
 readiness mode ceiling      train / modify / recover cost caps
         ↓
 phase eligibility           event-relative template gating (Path B only)
         ↓
-objective benefit           unresolved weekly exposures
+lexicographic priority      objective benefit outranks preference (Level 4)
         ↓
-fatigue cost                dimensional interference
-        ↓
-preference                  soft multipliers only
+utility score & cost        dimensional interference & preference multipliers (Level 5-6)
 ```
 
 Preferences rank; they never unlock. An avoided modality is a hard exclude on Path A and a

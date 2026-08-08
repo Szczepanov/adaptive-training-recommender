@@ -40,8 +40,7 @@ Firestore.
 
 1. **Three confidence tiers, not one flat forecast**:
    * **Confirmed** (day 0): today's actual recommendation, unchanged, from `rules.ts`.
-   * **Provisional** (day 1): tomorrow's already-computed green/yellow/red preview branch
-     (whichever the user has selected), reused as-is.
+   * **Provisional** (day 1): tomorrow's readiness branch preview, dynamically selected via the Tomorrow Readiness Tier Selector (`🟢 Optimal`, `🟡 Moderate`, `🔴 Low`). The selected branch recommendation is passed as `tomorrowRec` to `generateWeekAheadPlanWithIntent`.
    * **Projected** (days 2+): no real readiness signal exists this far out, so the pick
      comes from chaining the ADR-0007 optimizer forward -- assuming each earlier
      projected day's pick gets followed at an average recovery rate. This tier is
