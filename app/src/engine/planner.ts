@@ -342,20 +342,31 @@ export function prepareWeekAheadPlanSeed(
     const events = (Array.isArray(eventsOrFatigue) ? eventsOrFatigue : []) as UserEvent[];
     const periodization = evaluatePeriodizationPhase(events, todayDate);
     const completedHistory = history.filter(isCompletedExposure) as CompletedExposure[];
+    const lightweightHistory = history.filter(entry => !isCompletedExposure(entry));
 
-    // Preserve main's history-backed seed semantics for the legacy/pure caller shape:
-    // completed work must influence both the rolling objective ledger and external
-    // fatigue, and today's readiness must seed internal response strain. A previous
-    // Phase-3 refactor replaced this with createEmptyFatigue(), making prior heavy load
-    // invisible to projected recovery decisions.
-    if (completedHistory.length === history.length) {
+    // Completed exposures retain their exact objective credit and external load even when
+    // the caller mixes them with lightweight RecentHistoryEntry fixtures. Apply the
+    // compatibility credit path only to the lightweight remainder instead of letting one
+    // such entry discard the completed-history seed entirely.
+    if (completedHistory.length > 0) {
+        let microcycle = buildMicrocycleState(
+            periodization.phase,
+            addDaysToLocalDateString(todayDate, -7),
+            completedHistory,
+            periodization.focusEvent,
+        );
+        lightweightHistory.forEach(h => {
+            const typeStr = 'type' in h && typeof h.type === 'string' ? h.type : undefined;
+            const modality = (h.modality ?? typeStr ?? 'None') as SessionTemplate['modality'];
+            microcycle = creditObjectivesFromStimulus(
+                microcycle,
+                { thresholdDevelopment: 0.8, aerobicCapacity: 0.5, surgeRepeatability: 0.5, maxStrength: 0.5, hypertrophy: 0.5, mobilityRecovery: 0.5 },
+                modality,
+                h.category,
+            );
+        });
         return {
-            microcycle: buildMicrocycleState(
-                periodization.phase,
-                addDaysToLocalDateString(todayDate, -7),
-                completedHistory,
-                periodization.focusEvent,
-            ),
+            microcycle,
             fatigue: buildFatigueStateFromHistory(
                 completedHistory,
                 computeInternalResponseStrain(readiness),
@@ -369,7 +380,7 @@ export function prepareWeekAheadPlanSeed(
     // CompletedExposure's costProfile/trainingRecordLike shape. Keep their historical
     // objective-credit behavior, but never throw away today's real readiness strain.
     let microcycle = generateWeeklyObjectives(periodization.phase, todayDate, periodization.focusEvent);
-    history.forEach(h => {
+    lightweightHistory.forEach(h => {
         const typeStr = 'type' in h && typeof h.type === 'string' ? h.type : undefined;
         const modality = (h.modality ?? typeStr ?? 'None') as SessionTemplate['modality'];
         const category = h.category;
