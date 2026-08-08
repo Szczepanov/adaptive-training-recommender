@@ -32,6 +32,7 @@ We implemented a **multi-layered workout library architecture** in `app/src/work
 
 3. **September Event Plan Coverage Contract**:
    A declarative phase coverage contract (`event-plan.ts`) guarantees that every required workout family for build, peak, taper, and race phases exists and is active, validated via automated scripts (`npm run validate:workouts`).
+   * **Amendment ([ADR-0012](./0012-plan-intent-authority.md)):** `event-plan.ts` session coverage is combined with dated block schedules (`PlanBlock`) into executable `PlanDefinition` objects consumed directly by the recommendation engine, making the event plan a live planning input rather than solely a pre-flight coverage contract.
 
 4. **Resolved Daily Snapshot and Candidate Routing**:
    `prescription.ts` first resolves an active non-manual catalogue candidate through `WorkoutDefinition.engineTemplateIds`, then retains the legacy mapping as a compatibility fallback. When several active workouts implement one template, `engineTemplatePriority` supplies the deterministic tiebreaker; catalogue assembly order has no routing meaning. It applies the selected full/reduced/return-to-training variant and creates a serializable `WorkoutPrescription`. The snapshot is persisted alongside the daily recommendation (schema version 2) and rendered as ordered warm-up, main, and cool-down instructions with dose, rest, targets, tempo, and cues. Tests require every selectable engine template to resolve to a detailed prescription.
