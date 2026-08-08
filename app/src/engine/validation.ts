@@ -18,6 +18,7 @@ import type {
     GoalDomain,
     GoalStatus,
     UserEvent,
+    EventTiming,
     ConstraintType,
     ConstraintSeverity,
     ConstraintCategory,
@@ -25,6 +26,7 @@ import type {
     TimeOfDay,
     ExplanationVerbosity
 } from './models';
+import { validateEventTiming } from './models';
 import { deriveGoalCategory } from './periodization';
 import { EVENT_PRESETS } from './eventPresets';
 import { getLocalDateString } from '../utils/localDate';
@@ -333,6 +335,33 @@ export function validateGoal(raw: any): ValidationResult<UserGoal> {
         });
     }
 
+    // Race-date uncertainty (ADR-0012 Task 2.3): only meaningful alongside a dated event.
+    // Structural checks happen here (validation's job is guarding untyped raw input);
+    // validateEventTiming's own ordering/confirmation invariants run once the shape is
+    // already known to be a real EventTiming.
+    const rawTiming: EventTiming | null = raw.timing !== undefined && raw.timing !== null ? raw.timing : null;
+    if (rawTiming !== null) {
+        if (!rawTargetDate || !rawEventCategory) {
+            errors.push({ field: 'timing', message: 'Event timing requires a dated event category' });
+        } else if (
+            typeof rawTiming.earliestDate !== 'string' || !isValidDate(rawTiming.earliestDate) ||
+            typeof rawTiming.latestDate !== 'string' || !isValidDate(rawTiming.latestDate) ||
+            typeof rawTiming.planningDate !== 'string' || !isValidDate(rawTiming.planningDate) ||
+            (rawTiming.confirmedDate !== undefined && rawTiming.confirmedDate !== null
+                && (typeof rawTiming.confirmedDate !== 'string' || !isValidDate(rawTiming.confirmedDate)))
+        ) {
+            errors.push({ field: 'timing', message: 'Event timing dates must be valid dates (YYYY-MM-DD)' });
+        } else {
+            const timingResult = validateEventTiming(rawTiming, `goal/${raw.userId ?? 'unknown'}`);
+            if (timingResult.status === 'INVALID') {
+                errors.push({
+                    field: 'timing',
+                    message: `Event timing is inconsistent: ${timingResult.issues.map(i => i.code).join(', ')}`
+                });
+            }
+        }
+    }
+
     if (raw.targetOutcome !== undefined) {
         const outcome = normalizeEmptyToNull(raw.targetOutcome);
         if (outcome !== null && typeof outcome !== 'string') {
@@ -362,6 +391,17 @@ export function validateGoal(raw: any): ValidationResult<UserGoal> {
         ...(rawEventCategory ? { eventCategory: rawEventCategory as UserEvent['category'] } : {}),
         ...(rawEventPreset ? { eventPreset: rawEventPreset } : {}),
         ...(raw.eventLifecycle ? { eventLifecycle: raw.eventLifecycle } : {}),
+        // Rebuilt from only the recognized sub-fields (not a raw pass-through), same as
+        // every other field above -- already known valid at this point (errors.length
+        // guard returned above otherwise).
+        ...(rawTiming ? {
+            timing: {
+                earliestDate: rawTiming.earliestDate,
+                latestDate: rawTiming.latestDate,
+                planningDate: rawTiming.planningDate,
+                ...(rawTiming.confirmedDate ? { confirmedDate: rawTiming.confirmedDate } : {}),
+            }
+        } : {}),
         schemaVersion: raw.schemaVersion ?? 1,
         createdAt: raw.createdAt || new Date().toISOString(),
         updatedAt: new Date().toISOString()

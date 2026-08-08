@@ -1,6 +1,6 @@
 import type { WorkoutDefinition } from './models.ts';
 
-export type EventPlanPhase = 'build' | 'travel' | 'peak' | 'taper' | 'race';
+export type EventPlanPhase = 'build' | 'travel' | 'peak' | 'taper' | 'race' | 'recovery';
 export type EventPlanRequirement = 'required' | 'optional' | 'conditional';
 
 export type EventPlanCoverageKey =
@@ -32,7 +32,7 @@ export interface EventPlanSessionCoverage {
 }
 
 export const SEPTEMBER_CYCLING_EVENT_SESSION_COVERAGE: EventPlanSessionCoverage[] = [
-  { key: 'easy_aerobic', label: 'Easy Zone 2 or recovery cycling', phases: ['build', 'travel', 'peak', 'taper'], requirement: 'required', workoutIds: ['cycling_zone2_standard_01', 'cycling_recovery_spin_01'], notes: 'Adjust duration from short recovery riding to longer aerobic volume.' },
+  { key: 'easy_aerobic', label: 'Easy Zone 2 or recovery cycling', phases: ['build', 'travel', 'peak', 'taper', 'recovery'], requirement: 'required', workoutIds: ['cycling_zone2_standard_01', 'cycling_recovery_spin_01'], notes: 'Adjust duration from short recovery riding to longer aerobic volume.' },
   { key: 'sustained_quality', label: 'Controlled threshold or over-under work', phases: ['build', 'peak'], requirement: 'required', workoutIds: ['cycling_controlled_threshold_4x8_01', 'cycling_over_under_3x12_01', 'cycling_vo2_variable_01', 'cycling_vo2_short_30_15_01'], notes: 'Choose interval count, duration and recovery from the generic parameter ranges.' },
   { key: 'short_surges', label: 'Repeated short accelerations', phases: ['build', 'peak'], requirement: 'required', workoutIds: ['cycling_short_surges_10x20_01', 'cycling_event_specific_endurance_01'], notes: 'Covers wheel-holding and position changes without requiring maximal sprint testing.' },
   { key: 'gap_closing', label: 'Longer gap-closing efforts', phases: ['build', 'peak'], requirement: 'required', workoutIds: ['cycling_gap_closing_01', 'cycling_race_simulation_50_01'], notes: 'Adjust efforts within the event-relevant 30-second to 3-minute range.' },
@@ -42,7 +42,7 @@ export const SEPTEMBER_CYCLING_EVENT_SESSION_COVERAGE: EventPlanSessionCoverage[
   { key: 'upper_body_trunk', label: 'Upper-body and trunk-only maintenance', phases: ['build', 'travel', 'peak'], requirement: 'conditional', workoutIds: ['strength_upper_body_trunk_01'], notes: 'Yellow-light alternative when lower-body loading is inappropriate.' },
   { key: 'field_maintenance', label: 'Controlled football and field exposure', phases: ['build', 'peak'], requirement: 'optional', workoutIds: ['field_controlled_maintenance_01'], notes: 'Remove in the final 7–10 days before the event.' },
   { key: 'walk_run', label: 'Optional easy walk-run', phases: ['build', 'travel'], requirement: 'optional', workoutIds: ['running_walk_run_01'], notes: 'Use only when calf, Achilles and knee response remain normal.' },
-  { key: 'recovery_or_rest', label: 'Mobility, easy recovery or complete rest', phases: ['build', 'travel', 'peak', 'taper'], requirement: 'required', workoutIds: ['recovery_mobility_tissue_01', 'cycling_recovery_spin_01', 'rest_complete_01'], notes: 'Provides active and passive recovery choices for normal, yellow-light and race-week days.' },
+  { key: 'recovery_or_rest', label: 'Mobility, easy recovery or complete rest', phases: ['build', 'travel', 'peak', 'taper', 'recovery'], requirement: 'required', workoutIds: ['recovery_mobility_tissue_01', 'cycling_recovery_spin_01', 'rest_complete_01'], notes: 'Provides active and passive recovery choices for normal, yellow-light and race-week days.' },
   { key: 'travel_aerobic', label: 'Travel aerobic maintenance', phases: ['travel'], requirement: 'required', workoutIds: ['travel_aerobic_maintenance_01'], notes: 'Works with any available hotel aerobic machine and uses RPE rather than transferred watts.' },
   { key: 'travel_strength', label: 'Hotel-gym strength maintenance', phases: ['travel'], requirement: 'required', workoutIds: ['travel_strength_maintenance_01'], notes: 'Adjustable circuit using basic dumbbells or bodyweight.' },
   { key: 'taper_sharpening', label: 'Short race-specific sharpening ride', phases: ['taper'], requirement: 'required', workoutIds: ['cycling_taper_sharpening_01'], notes: 'Retains intensity while substantially reducing total volume.' },
@@ -91,7 +91,7 @@ export function validateEventPlanCoverage(
 
     const restrictedPhases = phaseRestrictedCoverage[item.key];
     if (restrictedPhases && !samePhases(item.phases, restrictedPhases)) errors.push(`${item.key}: must be restricted to ${restrictedPhases.join(', ')}`);
-    if (item.key === 'field_maintenance' && item.phases.some((phase) => phase === 'taper' || phase === 'race')) errors.push('field_maintenance: cannot be scheduled in taper or race phases');
+    if (item.key === 'field_maintenance' && item.phases.some((phase) => phase === 'taper' || phase === 'race' || phase === 'recovery')) errors.push('field_maintenance: cannot be scheduled in taper or race phases');
 
     for (const workoutId of item.workoutIds) {
       const workout = workoutById.get(workoutId);
@@ -102,7 +102,7 @@ export function validateEventPlanCoverage(
 
   for (const requiredKey of requiredCoverageKeys) if (!coverageKeys.has(requiredKey)) errors.push(`Missing required event-plan coverage key: ${requiredKey}`);
 
-  for (const phase of ['build', 'travel', 'peak', 'taper', 'race'] as EventPlanPhase[]) {
+  for (const phase of ['build', 'travel', 'peak', 'taper', 'race', 'recovery'] as EventPlanPhase[]) {
     const phaseCoverage = coverage.filter((item) => item.phases.includes(phase));
     if (phaseCoverage.length === 0) errors.push(`No workout coverage declared for phase: ${phase}`);
     if (!phaseCoverage.some((item) => item.requirement === 'required')) errors.push(`No required workout coverage declared for phase: ${phase}`);

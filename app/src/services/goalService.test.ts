@@ -78,4 +78,70 @@ describe('GoalService persistence shape', () => {
         expect(payload.eventCategory).toBe('cycling_event');
         expect(payload.eventPreset).toBe('road_race');
     });
+
+    // ADR-0012 Task 2.3 (EventTiming) -- timing follows the same event-only-field rules
+    // as eventCategory/eventPreset/eventLifecycle above.
+    it('persists a valid timing object on a newly created dated event goal', async () => {
+        const service = new GoalService();
+        const timing = { earliestDate: '2026-09-05', latestDate: '2026-09-20', planningDate: '2026-09-05' };
+        await service.createGoal('u1', { ...eventGoal, timing });
+
+        const payload = firestore.addDoc.mock.calls[0][1] as Record<string, unknown>;
+        expect(payload.timing).toEqual(timing);
+    });
+
+    it('removes timing when a dated event becomes a plain dated goal', async () => {
+        const service = new GoalService();
+        const timing = { earliestDate: '2026-09-05', latestDate: '2026-09-20', planningDate: '2026-09-05' };
+        firestore.getDoc.mockResolvedValue({
+            exists: () => true,
+            data: () => ({ ...eventGoal, timing }),
+            id: eventGoal.id,
+        });
+
+        // A caller clearing event status must also clear timing explicitly, same as
+        // eventCategory/eventPreset/eventLifecycle -- validateGoal rejects a merge that
+        // would otherwise leave timing dangling with no dated event category (see
+        // 'rejects timing without a dated event category' in validation.test.ts).
+        await service.updateGoal('u1', eventGoal.id, {
+            eventCategory: null,
+            eventPreset: null,
+            eventLifecycle: undefined,
+            timing: null,
+        });
+
+        const payload = firestore.setDoc.mock.calls[0][1] as Record<string, unknown>;
+        expect(payload.timing).toBe(firestore.deleteMarker);
+    });
+
+    it('rejects an update that clears eventCategory while leaving a stale timing object behind', async () => {
+        const service = new GoalService();
+        const timing = { earliestDate: '2026-09-05', latestDate: '2026-09-20', planningDate: '2026-09-05' };
+        firestore.getDoc.mockResolvedValue({
+            exists: () => true,
+            data: () => ({ ...eventGoal, timing }),
+            id: eventGoal.id,
+        });
+
+        await expect(service.updateGoal('u1', eventGoal.id, {
+            eventCategory: null,
+            eventPreset: null,
+            eventLifecycle: undefined,
+        })).rejects.toThrow(/timing/);
+    });
+
+    it('clears timing on an update when explicitly unset while the goal stays a dated event', async () => {
+        const service = new GoalService();
+        const timing = { earliestDate: '2026-09-05', latestDate: '2026-09-20', planningDate: '2026-09-05' };
+        firestore.getDoc.mockResolvedValue({
+            exists: () => true,
+            data: () => ({ ...eventGoal, timing }),
+            id: eventGoal.id,
+        });
+
+        await service.updateGoal('u1', eventGoal.id, { timing: null });
+
+        const payload = firestore.setDoc.mock.calls[0][1] as Record<string, unknown>;
+        expect(payload.timing).toBe(firestore.deleteMarker);
+    });
 });

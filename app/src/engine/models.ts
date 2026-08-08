@@ -1,5 +1,5 @@
 import type { AthletePerformanceProfile, WorkoutPrescription } from '../workouts/models.ts';
-import type { DataStateSummary } from './dataState';
+import type { DataIssue, DataState, DataStateSummary } from './dataState';
 
 // --- Engine Input Models ---
 export interface SubjectiveInput {
@@ -129,6 +129,41 @@ export interface EventDemandProfile {
     neuromuscular: number;      // 0.0 - 1.0
 }
 
+export interface EventTiming {
+    earliestDate: string; // YYYY-MM-DD
+    latestDate: string;   // YYYY-MM-DD
+    planningDate: string; // = earliestDate until confirmed
+    confirmedDate?: string; // YYYY-MM-DD
+}
+
+export function validateEventTiming(
+    timing: EventTiming,
+    documentPath: string = 'user_event'
+): DataState<EventTiming> {
+    const issues: DataIssue[] = [];
+
+    if (timing.earliestDate > timing.planningDate) {
+        issues.push({ code: 'EARLIEST_AFTER_PLANNING', field: 'earliestDate', documentPath });
+    }
+    if (timing.planningDate > timing.latestDate) {
+        issues.push({ code: 'PLANNING_AFTER_LATEST', field: 'planningDate', documentPath });
+    }
+    if (timing.confirmedDate !== undefined && timing.confirmedDate !== null) {
+        if (timing.confirmedDate < timing.earliestDate || timing.confirmedDate > timing.latestDate) {
+            issues.push({ code: 'CONFIRMED_OUT_OF_RANGE', field: 'confirmedDate', documentPath });
+        }
+        if (timing.planningDate !== timing.confirmedDate) {
+            issues.push({ code: 'PLANNING_NOT_CONFIRMED', field: 'planningDate', documentPath });
+        }
+    }
+
+    if (issues.length > 0) {
+        return { status: 'INVALID', issues };
+    }
+
+    return { status: 'AVAILABLE', data: timing, revision: null };
+}
+
 export interface UserEvent {
     id: string;
     title: string;
@@ -137,6 +172,7 @@ export interface UserEvent {
     lifecycle: EventLifecycle;
     category: 'running_race' | 'cycling_event' | 'triathlon' | 'strength_meet' | 'general_target';
     demandProfile: EventDemandProfile;
+    timing?: EventTiming;
 }
 
 export type ObjectiveKey = 
@@ -173,7 +209,7 @@ export interface ObjectiveProgress {
 }
 
 export interface MicrocycleState {
-    weekStartDate: string; // YYYY-MM-DD (Monday)
+    windowStartDate: string; // YYYY-MM-DD (Warsaw-local start date)
     objectives: WeeklyObjective[];
 }
 
@@ -618,6 +654,12 @@ export interface UserGoal {
     /** No 'rescheduled' state here by design -- rescheduling a goal is just editing
      *  targetDate while it stays 'scheduled'. Defaults to 'scheduled' when eventCategory is set. */
     eventLifecycle?: 'scheduled' | 'completed' | 'DNS' | 'DNF' | 'cancelled';
+    /** Race-date uncertainty (ADR-0012 Task 2.3). Only meaningful alongside targetDate +
+     *  eventCategory -- validated by validateGoal (see validation.ts) and carried through
+     *  goalToUserEvent (periodization.ts) into UserEvent.timing unchanged. Confirming a
+     *  date is a single write that sets both confirmedDate and planningDate together --
+     *  see validateEventTiming's invariant above. */
+    timing?: EventTiming | null;
     schemaVersion: number;
     createdAt: string;
     updatedAt: string;

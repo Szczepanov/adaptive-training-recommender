@@ -4,6 +4,7 @@ import { buildMicrocycleState, getUnresolvedObjectives } from './microcycle';
 import type { CompletedExposure, TrainingHistoryProvider } from './trainingHistory';
 import type { TrainingHistorySnapshot } from './trainingHistorySnapshot';
 import { evaluatePeriodizationPhase, type PeriodizationResult } from './periodization';
+import { resolvePlanDefinitionForEvent } from './planSchedule';
 import { addDaysToLocalDateString } from '../utils/localDate';
 
 export type PlannedRecoveryReason = 
@@ -66,11 +67,17 @@ export async function resolveTrainingIntent(
         ?? await prepareTrainingHistorySnapshot(userId, date, windowDays, historyProvider);
     const provider = historyProvider ?? (await import('./firestoreTrainingHistory')).firestoreTrainingHistoryProvider;
     const history = historySnapshot?.exposures ?? await provider.reconstruct(userId, date, windowDays);
+    // ADR-0012 "Explicit Mode": when the focus event has an authored PlanDefinition,
+    // its dated block calendar is the planning authority instead of the generic
+    // daysToEvent fallback -- see resolvePlanDefinitionForEvent's narrow matching rule.
+    const planDefinition = resolvePlanDefinitionForEvent(periodization.focusEvent);
     const microcycle = buildMicrocycleState(
         periodization.phase,
         addDaysToLocalDateString(date, -windowDays),
         history,
         periodization.focusEvent,
+        planDefinition,
+        date,
     );
     const unresolvedObjectives = getUnresolvedObjectives(microcycle);
     const fatigue = buildFatigueStateFromHistory(history, computeInternalResponseStrain(readiness), date);

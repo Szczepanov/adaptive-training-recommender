@@ -99,10 +99,13 @@ export function evaluatePeriodizationPhase(
         taperActive: false,
     };
 
-    const datedEvents = events.map(event => ({
-        event,
-        daysToEvent: getDaysBetween(currentDateStr, event.date),
-    }));
+    const datedEvents = events.map(event => {
+        const targetDate = event.timing?.planningDate ?? event.date;
+        return {
+            event,
+            daysToEvent: getDaysBetween(currentDateStr, targetDate),
+        };
+    });
 
     // A scheduled event that has passed is intentionally not treated as a completed
     // race. It needs an explicit outcome before granting post-event recovery.
@@ -274,5 +277,9 @@ export function goalToUserEvent(goal: UserGoal & { id?: string }): UserEvent | n
         lifecycle: goal.eventLifecycle ?? 'scheduled',
         category: goal.eventCategory,
         demandProfile: resolveDemandProfile(goal.eventCategory, goal.eventPreset),
+        // goal.timing already passed validateGoal's validateEventTiming check on write
+        // (see validation.ts) -- not re-validated here, same trust boundary as every
+        // other already-typed UserGoal field this function reads.
+        ...(goal.timing ? { timing: goal.timing } : {}),
     };
 }

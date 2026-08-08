@@ -28,6 +28,7 @@ We introduced a 6-tier adaptive multi-sport engine architecture:
 2. **Structured Event Timeline & Demand Profiles ([`app/src/engine/periodization.ts`](../../app/src/engine/periodization.ts))**:
    * Decouples events from generic goals using `UserEvent` objects with `EventPriority` (`A`/`B`/`C`), `EventLifecycle` (`scheduled`, `completed`, `cancelled`, `DNS`, `DNF`), and `EventDemandProfile` vectors.
    * Computes continuous phase weights (`Base` $\rightarrow$ `Build` $\rightarrow$ `Specificity` $\rightarrow$ `Peak/Taper` $\rightarrow$ `Post-Event Recovery`) and ensures C-events train through without hijacking A-event tapers.
+   * **Amendment ([ADR-0012](./0012-plan-intent-authority.md)):** Periodization phase arithmetic serves as a generic fallback when no explicit `PlanDefinition` exists. An explicit `PlanDefinition` block calendar is the primary planning authority.
 
 3. **Microcycle Weekly Training Objectives ([`app/src/engine/microcycle.ts`](../../app/src/engine/microcycle.ts))**:
    * Tracks unresolved weekly required exposures (Threshold, Surges, Zone 2, Strength) and credits completed sessions/fixed activities.

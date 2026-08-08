@@ -7,7 +7,7 @@ import { evaluatePeriodizationPhase } from './periodization.ts';
 
 describe('updateMicrocycleProgress', () => {
   it('credits controlled field work toward surge repeatability', () => {
-    const microcycle = { weekStartDate: '2026-08-03', objectives: [{ id: 'surges', key: 'surge_repeatability' as const, title: 'Surges', targetExposures: 1, completedExposures: 0, targetStimulus: { surgeRepeatability: 0.9 } }] };
+    const microcycle = { windowStartDate: '2026-08-03', objectives: [{ id: 'surges', key: 'surge_repeatability' as const, title: 'Surges', targetExposures: 1, completedExposures: 0, targetStimulus: { surgeRepeatability: 0.9 } }] };
     const updated = updateMicrocycleProgress(microcycle, { id: 'field-1', title: 'Field Field Maintenance', date: '2026-08-07', durationMin: 40, isCompleted: true });
     expect(updated.objectives.find((objective) => objective.key === 'surge_repeatability')?.completedExposures).toBe(1);
   });
@@ -18,7 +18,7 @@ describe('creditObjectivesFromStimulus (regression: the split-brain ledger bug)'
     aerobicCapacity: 0, thresholdDevelopment: 0, surgeRepeatability: 0, maxStrength: 0, hypertrophy: 0, mobilityRecovery: 0,
   };
   const microcycleWith = (targetStimulus: Record<string, number>): MicrocycleState => ({
-    weekStartDate: '2026-08-03',
+    windowStartDate: '2026-08-03',
     objectives: [{ id: 'obj', key: 'threshold_quality', title: 'Threshold Development', targetExposures: 1, completedExposures: 0, targetStimulus }],
   });
 
@@ -51,7 +51,7 @@ describe('creditObjectivesFromStimulus (regression: the split-brain ledger bug)'
 
   it('never exceeds targetExposures and leaves already-resolved objectives untouched', () => {
     const microcycle: MicrocycleState = {
-      weekStartDate: '2026-08-03',
+      windowStartDate: '2026-08-03',
       objectives: [{ id: 'obj', key: 'threshold_quality', title: 'Threshold Development', targetExposures: 1, completedExposures: 1, targetStimulus: { thresholdDevelopment: 0.9 } }],
     };
     const updated = creditObjectivesFromStimulus(microcycle, { ...zeroStimulus, thresholdDevelopment: 1.0 }, 'Cycling');
@@ -79,7 +79,7 @@ describe('surge_repeatability qualification', () => {
     aerobicCapacity: 0, thresholdDevelopment: 0, surgeRepeatability: 0, maxStrength: 0, hypertrophy: 0, mobilityRecovery: 0,
   };
   const cyclingSurgeObjective = (): MicrocycleState => ({
-    weekStartDate: '2026-08-03',
+    windowStartDate: '2026-08-03',
     objectives: [{
       id: 'obj-surges', key: 'surge_repeatability', title: 'Surges', targetExposures: 1, completedExposures: 0,
       targetStimulus: { surgeRepeatability: 0.9, aerobicCapacity: 0.5 },
@@ -119,7 +119,7 @@ describe('surge_repeatability qualification', () => {
 
   it('preserves legacy weighted-average behavior for an objective without qualification', () => {
     const microcycle: MicrocycleState = {
-      weekStartDate: '2026-08-03',
+      windowStartDate: '2026-08-03',
       objectives: [{ id: 'obj', key: 'surge_repeatability', title: 'Surges', targetExposures: 1, completedExposures: 0, targetStimulus: { surgeRepeatability: 0.9, aerobicCapacity: 0.5 } }],
     };
     const updated = creditObjectivesFromStimulus(
@@ -163,7 +163,7 @@ describe('protected race-specific cycling objective', () => {
     aerobicCapacity: 0, thresholdDevelopment: 0, surgeRepeatability: 0, maxStrength: 0, hypertrophy: 0, mobilityRecovery: 0,
   };
   const objective: MicrocycleState = {
-    weekStartDate: '2026-08-03',
+    windowStartDate: '2026-08-03',
     objectives: [{
       id: 'race-specific', key: 'race_specific_endurance', title: 'Cycling Race-Specific Endurance', targetExposures: 1, completedExposures: 0,
       targetStimulus: { aerobicCapacity: 0.6, surgeRepeatability: 0.6 },
@@ -191,7 +191,7 @@ describe('threshold qualification', () => {
     aerobicCapacity: 0, thresholdDevelopment: 0, surgeRepeatability: 0, maxStrength: 0, hypertrophy: 0, mobilityRecovery: 0,
   };
   const cyclingThreshold: MicrocycleState = {
-    weekStartDate: '2026-08-03',
+    windowStartDate: '2026-08-03',
     objectives: [{
       id: 'threshold', key: 'threshold_quality', title: 'Threshold Development', targetExposures: 1, completedExposures: 0,
       targetStimulus: { thresholdDevelopment: 0.9 },
@@ -281,3 +281,120 @@ describe('Task 1.2 / F2 Garmin objective crediting', () => {
     expect(z2?.completedExposures).toBe(1);
   });
 });
+
+describe('Task 2.2 PlanDefinition & PlanSchedule', () => {
+  const septemberEvent: UserEvent = {
+    id: 'sep-event-1', title: 'September Cycling Event', date: '2026-09-20', priority: 'A', lifecycle: 'scheduled', category: 'cycling_event',
+    demandProfile: { aerobicEndurance: 0.8, thresholdPower: 0.8, vo2MaxPower: 0.7, repeatedSurges: 0.7, sprintPower: 0.3, fatigueResistance: 0.8, neuromuscular: 0.3 },
+  };
+
+  it('generates plan-derived objectives with dated block windows, scoped to the block active on asOfDate', async () => {
+    const { buildSeptemberCyclingEventPlan } = await import('./planSchedule.ts');
+    const { generateWeeklyObjectives } = await import('./microcycle.ts');
+
+    const planState = buildSeptemberCyclingEventPlan(septemberEvent);
+    expect(planState.status).toBe('AVAILABLE');
+    if (planState.status !== 'AVAILABLE') return;
+
+    const phase = evaluatePeriodizationPhase([septemberEvent], '2026-08-03').phase;
+    // asOfDate ('2026-08-03') falls inside block_build (2026-08-01..2026-08-23) only --
+    // the microcycle must not also surface block_peak/block_taper objectives two months
+    // out (that was the Phase 2 review's date-window-scoping finding).
+    const microcycle = generateWeeklyObjectives(phase, '2026-08-03', septemberEvent, planState.data);
+
+    expect(microcycle.windowStartDate).toBe('2026-08-03');
+    const buildObjectiveCount = planState.data.objectives.filter(o => o.blockId === 'block_build').length;
+    expect(microcycle.objectives.length).toBe(buildObjectiveCount);
+    expect(microcycle.objectives.every(o => o.windowStart === '2026-08-01' && o.windowEnd === '2026-08-23')).toBe(true);
+
+    const z2BuildObj = microcycle.objectives.find(o => o.key === 'zone2_aerobic');
+    expect(z2BuildObj).toBeDefined();
+    expect(z2BuildObj?.windowStart).toBe('2026-08-01');
+    expect(z2BuildObj?.windowEnd).toBe('2026-08-23');
+  });
+
+  it('scopes to a different block when asOfDate falls in the peak window instead', async () => {
+    const { buildSeptemberCyclingEventPlan } = await import('./planSchedule.ts');
+    const { generateWeeklyObjectives } = await import('./microcycle.ts');
+
+    const planState = buildSeptemberCyclingEventPlan(septemberEvent);
+    if (planState.status !== 'AVAILABLE') throw new Error('expected AVAILABLE plan');
+
+    const phase = evaluatePeriodizationPhase([septemberEvent], '2026-09-01').phase;
+    // windowStartDate (lookback boundary) and asOfDate (today) diverge here on purpose --
+    // asOfDate drives block selection, not windowStartDate.
+    const microcycle = generateWeeklyObjectives(phase, '2026-08-25', septemberEvent, planState.data, '2026-09-01');
+
+    const peakObjectiveCount = planState.data.objectives.filter(o => o.blockId === 'block_peak').length;
+    expect(microcycle.objectives.length).toBe(peakObjectiveCount);
+    expect(microcycle.objectives.every(o => o.windowStart === '2026-08-31' && o.windowEnd === '2026-09-06')).toBe(true);
+    expect(microcycle.objectives.some(o => o.key === 'race_specific_endurance')).toBe(true);
+  });
+
+  it('returns no plan-derived objectives when asOfDate falls outside every block', async () => {
+    const { buildSeptemberCyclingEventPlan } = await import('./planSchedule.ts');
+    const { generateWeeklyObjectives } = await import('./microcycle.ts');
+
+    const planState = buildSeptemberCyclingEventPlan(septemberEvent);
+    if (planState.status !== 'AVAILABLE') throw new Error('expected AVAILABLE plan');
+
+    const phase = evaluatePeriodizationPhase([septemberEvent], '2026-07-01').phase;
+    const microcycle = generateWeeklyObjectives(phase, '2026-07-01', septemberEvent, planState.data, '2026-07-01');
+
+    expect(microcycle.objectives).toEqual([]);
+  });
+
+  it('rejects invalid plan definitions with overlapping blocks', async () => {
+    const { buildPlanDefinition } = await import('./planSchedule.ts');
+    const { SEPTEMBER_CYCLING_EVENT_SESSION_COVERAGE } = await import('../workouts/event-plan.ts');
+    const event: UserEvent = {
+      id: 'event-overlap', title: 'Test Event', date: '2026-09-20', priority: 'A', lifecycle: 'scheduled', category: 'cycling_event',
+      demandProfile: { aerobicEndurance: 0.8, thresholdPower: 0.8, vo2MaxPower: 0.7, repeatedSurges: 0.7, sprintPower: 0.3, fatigueResistance: 0.8, neuromuscular: 0.3 },
+    };
+
+    const invalidBlocks = [
+      { id: 'b1', phase: 'build' as const, startDate: '2026-08-01', endDate: '2026-08-15', volumeScale: 1.0, intensityScale: 1.0 },
+      { id: 'b2', phase: 'peak' as const, startDate: '2026-08-10', endDate: '2026-08-25', volumeScale: 1.0, intensityScale: 1.0 },
+    ];
+
+    const result = buildPlanDefinition(SEPTEMBER_CYCLING_EVENT_SESSION_COVERAGE, invalidBlocks, event);
+    expect(result.status).toBe('INVALID');
+  });
+
+  it('rejects an objective whose coverage is unavailable in its block phase', async () => {
+    const { buildPlanDefinition } = await import('./planSchedule.ts');
+    const { SEPTEMBER_CYCLING_EVENT_SESSION_COVERAGE } = await import('../workouts/event-plan.ts');
+    const blocks = [
+      { id: 'travel', phase: 'travel' as const, startDate: '2026-08-24', endDate: '2026-08-30', volumeScale: 0.6, intensityScale: 0.8 },
+    ];
+
+    const result = buildPlanDefinition(
+      SEPTEMBER_CYCLING_EVENT_SESSION_COVERAGE,
+      blocks,
+      septemberEvent,
+      [{ key: 'race_specific_endurance', coverageKey: 'outdoor_event_specific', blockId: 'travel', requiredCredit: 1, priority: 'must_have' }],
+    );
+
+    expect(result.status).toBe('INVALID');
+    if (result.status === 'INVALID') {
+      expect(result.issues.some(issue => issue.code === 'COVERAGE_UNAVAILABLE_IN_BLOCK_PHASE')).toBe(true);
+    }
+  });
+
+  describe('resolvePlanDefinitionForEvent', () => {
+    it('resolves the authored plan for the specific September cycling event', async () => {
+      const { resolvePlanDefinitionForEvent } = await import('./planSchedule.ts');
+      const resolved = resolvePlanDefinitionForEvent(septemberEvent);
+      expect(resolved).not.toBeNull();
+      expect(resolved?.eventId).toBe(septemberEvent.id);
+    });
+
+    it('returns null for events it was not authored for (narrow, non-generic matching)', async () => {
+      const { resolvePlanDefinitionForEvent } = await import('./planSchedule.ts');
+      expect(resolvePlanDefinitionForEvent(null)).toBeNull();
+      expect(resolvePlanDefinitionForEvent({ ...septemberEvent, category: 'running_race' })).toBeNull();
+      expect(resolvePlanDefinitionForEvent({ ...septemberEvent, date: '2027-09-20' })).toBeNull();
+    });
+  });
+});
+

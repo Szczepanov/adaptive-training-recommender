@@ -1,6 +1,6 @@
 # Phase 2 — Plan intent is the planning authority
 
-* **Status:** Ready — domain-model decisions D1/D2 taken 2026-08-08 (see below)
+* **Status:** Finished (ADR-0012, PlanDefinition, EventTiming, envelope extraction implemented and verified 2026-08-08; production wiring for both PlanDefinition and EventTiming, plus date-window scoping, added in PR review the same day — see ADR-0012 §7)
 * **Depends on:** Phase 1 (do not migrate onto an unwired safety gate)
 * **Unlocks:** Phases 3, 4, 5
 * **Addresses:** F16, F17, F9
@@ -16,10 +16,10 @@ Update the marker on the work-item heading **and** this table in the same commit
 
 | Task | Status | Summary | Primary files |
 |---|:--:|---|---|
-| 2.1 | `[ ]` | Write and accept **ADR-0012**, recording D1 (canonical phase vocabulary), D2 (`intensityScale` consumer) and the lexicographic priority model | `docs/adr/0012-*.md` (new) |
-| 2.2 | `[ ]` | `PlanDefinition` / `PlanBlock` / `PlanObjectiveDefinition`; coverage and dated block schedule combined by `buildPlanDefinition` | `app/src/workouts/event-plan.ts`, `app/src/engine/models.ts`, `microcycle.ts`, new plan-schedule module |
-| 2.3 | `[ ]` | `EventTiming` with validated date ordering for unconfirmed events | `app/src/engine/models.ts`, `periodization.ts`, `persistence/parsers/*` |
-| 2.4 | `[ ]` | Extract `evaluateReadinessAndSafetyEnvelope`; collapse Path A / Path B (F9) | `app/src/engine/rules.ts`, `planner.ts` |
+| 2.1 | `[x]` | Write and accept **ADR-0012**, recording D1 (canonical phase vocabulary), D2 (`intensityScale` consumer) and the lexicographic priority model | `docs/adr/0012-*.md` (new) |
+| 2.2 | `[x]` | `PlanDefinition` / `PlanBlock` / `PlanObjectiveDefinition`; coverage and dated block schedule combined by `buildPlanDefinition` | `app/src/workouts/event-plan.ts`, `app/src/engine/models.ts`, `microcycle.ts`, new plan-schedule module |
+| 2.3 | `[x]` | `EventTiming` with validated date ordering for unconfirmed events | `app/src/engine/models.ts`, `periodization.ts`, `persistence/parsers/*` |
+| 2.4 | `[x]` | Extract `evaluateReadinessAndSafetyEnvelope`; collapse Path A / Path B (F9) | `app/src/engine/rules.ts`, `planner.ts` |
 
 **2.1 gates the rest.** Do not start 2.2 before the ADR is accepted — the domain objects
 are the ADR's output, and building them first inverts the dependency this phase exists to
@@ -43,9 +43,21 @@ phase from `daysToEvent`, producing a `PhaseWeights` whose `intensityScale` is r
 nobody and whose `volumeScale` feeds a single multiplier (F17). Two phase vocabularies
 exist with no mapping between them.
 
+## Acceptance criteria
+
+- [x] ADR-0012 accepted, recording D1 (canonical phase vocabulary) and D2 (`intensityScale` consumer)
+- [x] `PlanDefinition` exists; `generateWeeklyObjectives` consumes it when present
+- [x] `event-plan.ts` has at least one *production* engine-path consumer — `resolveTrainingIntent` resolves a `PlanDefinition` via `resolvePlanDefinitionForEvent` (narrow single-event match, see ADR-0012 §7) and threads it into `buildMicrocycleState`, not just the two new unit tests calling `generateWeeklyObjectives` directly
+- [x] `intensityScale` has a named, scheduled consumer (`PlannedDose.intensity`, Phase 4.4)
+- [x] `MicrocycleState.weekStartDate` renamed to `windowStartDate`
+- [x] one readiness/safety envelope function; no discarded template selection
+- [x] Phase 0 invariants still pass; semantic diff explained in the PR authorities
+- [x] `EventTiming` has a real write/read path — `UserGoal.timing` validated by `validateGoal`, persisted/cleared by `goalService.ts`, carried onto `UserEvent.timing` by `goalToUserEvent` — not just validated in isolation by `validateEventTiming`'s own unit tests
+- [x] plan-derived objectives are scoped to the `PlanBlock` active on the current date, not every block in the whole macrocycle at once
+
 ---
 
-## `[ ]` 2.1 — ADR-0012: Plan Intent and Sequence Planning are the training authorities
+## `[x]` 2.1 — ADR-0012: Plan Intent and Sequence Planning are the training authorities
 
 Write this first; it is the gate for everything after. It must define:
 
@@ -224,7 +236,7 @@ else for it to come from.
 3. `validateEventPlanCoverage` keeps running — the catalog-completeness check is still
    worth having; it is just no longer the file's *only* purpose.
 
-## `[ ]` 2.3 — Race-date uncertainty
+## `[x]` 2.3 — Race-date uncertainty
 
 Real events are not always one known date. Add:
 
@@ -260,7 +272,7 @@ making it a validation error means a half-finished confirmation fails loudly at 
 boundary instead of producing a silently mistimed taper. The confirmation flow sets both
 fields in one write. Test the exact case above.
 
-## `[ ]` 2.4 — Collapse Path A / Path B (F9)
+## `[x]` 2.4 — Collapse Path A / Path B (F9)
 
 `evaluateTrainingWithIntent` currently calls `evaluateTraining` (`evaluateTrainingWithIntent`'s call to `evaluateTraining`) to obtain
 `mode` and `envelopes`, then discards its template pick and re-selects. Extract the part
@@ -283,13 +295,15 @@ there is one path.
 
 ## Acceptance criteria
 
-- [ ] ADR-0012 accepted, recording D1 (canonical phase vocabulary) and D2 (`intensityScale` consumer)
-- [ ] `PlanDefinition` exists; `generateWeeklyObjectives` consumes it when present
-- [ ] `event-plan.ts` has at least one engine-path consumer
-- [ ] `intensityScale` has a named, scheduled consumer (`PlannedDose.intensity`, Phase 4.4)
-- [ ] `MicrocycleState.weekStartDate` renamed to `windowStartDate`
-- [ ] one readiness/safety envelope function; no discarded template selection
-- [ ] Phase 0 invariants still pass; semantic diff explained in the PR
+- [x] ADR-0012 accepted, recording D1 (canonical phase vocabulary) and D2 (`intensityScale` consumer)
+- [x] `PlanDefinition` exists; `generateWeeklyObjectives` consumes it when present
+- [x] `event-plan.ts` has at least one *production* engine-path consumer (see the identical note in the acceptance criteria above)
+- [x] `intensityScale` has a named, scheduled consumer (`PlannedDose.intensity`, Phase 4.4)
+- [x] `MicrocycleState.weekStartDate` renamed to `windowStartDate`
+- [x] one readiness/safety envelope function; no discarded template selection
+- [x] Phase 0 invariants still pass; semantic diff explained in the PR
+- [x] `EventTiming` has a real write/read path, not just isolated validation (see above)
+- [x] plan-derived objectives are date-window scoped (see above)
 
 ## Risks & rollback
 
