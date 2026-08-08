@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { runScenario } from './simulation/analyze';
 import { SCENARIOS } from './simulation/scenarios';
+import { TEMPLATES } from './templates';
+import type { SessionTemplate } from './models';
 
 /**
  * Golden coaching-contract test suite asserting standard coaching principles over a
@@ -8,6 +10,15 @@ import { SCENARIOS } from './simulation/scenarios';
  *
  * See docs/plans/phase-0-instrumentation.md (Task 0.2).
  */
+
+// ObjectiveCredit only carries `templateId`/`templateTitle`/`objectiveTitle` (the latter is
+// the *objective's* title, e.g. "Threshold Development" -- not a session category). Resolve
+// the actual template category via this lookup so category-based assertions below check what
+// they claim to check.
+const categoryByTemplateId = new Map<string, SessionTemplate['category']>(
+    TEMPLATES.map((t) => [t.id, t.category]),
+);
+
 describe('goldenWeek coaching contract: cycling_a_event_build_week', () => {
     async function getBuildWeekResult() {
         const scenario = SCENARIOS.find((s) => s.id === 'cycling_a_event_build_week');
@@ -18,11 +29,11 @@ describe('goldenWeek coaching contract: cycling_a_event_build_week', () => {
     it('key cycling quality sessions are spaced by >= 48 hours', async () => {
         const result = await getBuildWeekResult();
         const keyCategories = new Set(['Hard Endurance', 'Moderate Endurance', 'Race-Specific Endurance']);
-        
+
         // Find distinct dates of key cycling quality sessions across the scenario
         const keyCyclingDates = Array.from(new Set(
             result.objectiveCredits
-                .filter((credit) => credit.modality === 'Cycling' && keyCategories.has(credit.objectiveTitle))
+                .filter((credit) => credit.modality === 'Cycling' && keyCategories.has(categoryByTemplateId.get(credit.templateId) ?? ''))
                 .map((credit) => credit.date),
         )).sort();
 
@@ -46,7 +57,7 @@ describe('goldenWeek coaching contract: cycling_a_event_build_week', () => {
 
         // Assert no heavy strength day is placed on day before or after key cycling day
         result.objectiveCredits.forEach((c) => {
-            if (heavyStrengthCategories.has(c.objectiveTitle)) {
+            if (heavyStrengthCategories.has(categoryByTemplateId.get(c.templateId) ?? '')) {
                 const strengthTime = new Date(c.date + 'T00:00:00').getTime();
                 keyCyclingDates.forEach((cycleDate) => {
                     const cycleTime = new Date(cycleDate + 'T00:00:00').getTime();

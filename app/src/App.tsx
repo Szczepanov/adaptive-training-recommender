@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import './App.css';
 import './index.css';
-import { auth } from './firebase';
+import { getAuthInstance } from './firebase';
 import { onAuthStateChanged, signInWithEmailAndPassword } from 'firebase/auth';
 import { Home } from './components/Home';
 import { DailyCheckin } from './components/DailyCheckin';
@@ -49,7 +49,7 @@ function App() {
   };
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+    const unsubscribe = onAuthStateChanged(getAuthInstance(), async (user) => {
       if (user) {
         setUserId(user.uid);
         setAuthPhase('AUTHENTICATED');
@@ -69,7 +69,7 @@ function App() {
     setErrorMsg("");
     
     try {
-      await signInWithEmailAndPassword(auth, email, password);
+      await signInWithEmailAndPassword(getAuthInstance(), email, password);
     } catch (e: unknown) {
       console.error(e);
       setErrorMsg(getErrorMessage(e) || "Failed to log in.");
@@ -79,7 +79,7 @@ function App() {
   };
 
   // const handleLogout = async () => {
-  //   await signOut(auth);
+  //   await signOut(getAuthInstance());
   //   setScreen('home');
   // };
 
@@ -211,7 +211,7 @@ function App() {
 
   const handleLogout = async () => {
     const { signOut } = await import('firebase/auth');
-    await signOut(auth);
+    await signOut(getAuthInstance());
   };
 
   const handleNavigate = (newScreen: Screen) => {

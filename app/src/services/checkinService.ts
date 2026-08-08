@@ -1,5 +1,5 @@
 import { doc, getDoc, setDoc, deleteDoc, collection, query, where, orderBy, limit, getDocs } from 'firebase/firestore';
-import { db } from '../firebase';
+import { getDb } from '../firebase';
 import type { DailySubjectiveCheckin } from '../engine/models';
 import type { DataState } from '../engine/dataState';
 import { validateCheckin } from '../engine/validation';
@@ -15,7 +15,7 @@ export class CheckinService {
      */
     async getCheckinState(userId: string, date: string): Promise<DataState<DailySubjectiveCheckin>> {
         try {
-            const docRef = doc(db, 'users', userId, this.collectionPath, date);
+            const docRef = doc(getDb(), 'users', userId, this.collectionPath, date);
             const docSnap = await getDoc(docRef);
             if (!docSnap.exists()) return { status: 'MISSING' };
             return parseSubjectiveCheckin(docSnap.data(), `users/${userId}/${this.collectionPath}/${date}`, userId, date);
@@ -77,7 +77,7 @@ export class CheckinService {
             const validatedCheckin = validation.data!;
             
             // Save to Firestore
-            const docRef = doc(db, 'users', userId, this.collectionPath, validatedCheckin.date);
+            const docRef = doc(getDb(), 'users', userId, this.collectionPath, validatedCheckin.date);
             await setDoc(docRef, validatedCheckin, { merge: true });
 
             return validatedCheckin;
@@ -92,7 +92,7 @@ export class CheckinService {
      */
     async deleteCheckin(userId: string, date: string): Promise<void> {
         try {
-            const docRef = doc(db, 'users', userId, this.collectionPath, date);
+            const docRef = doc(getDb(), 'users', userId, this.collectionPath, date);
             await deleteDoc(docRef);
         } catch (error) {
             console.error('Error deleting check-in:', error);
@@ -105,7 +105,7 @@ export class CheckinService {
      */
     async getRecentCheckins(userId: string, days: number = 30): Promise<DailySubjectiveCheckin[]> {
         try {
-            const collRef = collection(db, 'users', userId, this.collectionPath);
+            const collRef = collection(getDb(), 'users', userId, this.collectionPath);
             const q = query(
                 collRef,
                 where('userId', '==', userId),
@@ -130,7 +130,7 @@ export class CheckinService {
         endDate: string
     ): Promise<DailySubjectiveCheckin[]> {
         try {
-            const collRef = collection(db, 'users', userId, this.collectionPath);
+            const collRef = collection(getDb(), 'users', userId, this.collectionPath);
             const q = query(
                 collRef,
                 where('userId', '==', userId),
@@ -152,7 +152,7 @@ export class CheckinService {
      */
     async checkinExists(userId: string, date: string): Promise<boolean> {
         try {
-            const docRef = doc(db, 'users', userId, this.collectionPath, date);
+            const docRef = doc(getDb(), 'users', userId, this.collectionPath, date);
             const docSnap = await getDoc(docRef);
             return docSnap.exists();
         } catch (error) {

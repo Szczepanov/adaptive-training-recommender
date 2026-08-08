@@ -26,16 +26,3 @@ let _auth: Auth | undefined;
 export function getAuthInstance(): Auth {
   return (_auth ??= getAuth(getApp()));
 }
-
-// Deprecated lazy proxies for legacy imports
-export const db: Firestore = new Proxy({} as Firestore, {
-  get(_target, prop, receiver) {
-    return Reflect.get(getDb(), prop, receiver);
-  }
-});
-
-export const auth: Auth = new Proxy({} as Auth, {
-  get(_target, prop, receiver) {
-    return Reflect.get(getAuthInstance(), prop, receiver);
-  }
-});

@@ -1,5 +1,5 @@
 import { collection, getDocs } from 'firebase/firestore';
-import { db } from '../firebase';
+import { getDb } from '../firebase';
 import type { UserConstraint } from '../engine/models';
 
 /**
@@ -9,7 +9,7 @@ import type { UserConstraint } from '../engine/models';
  */
 export class LegacyConstraintService {
     async listConstraints(userId: string): Promise<UserConstraint[]> {
-        const snapshot = await getDocs(collection(db, 'users', userId, 'constraints'));
+        const snapshot = await getDocs(collection(getDb(), 'users', userId, 'constraints'));
         return snapshot.docs
             .map(item => item.data() as UserConstraint)
             .filter(item => item.userId === userId);

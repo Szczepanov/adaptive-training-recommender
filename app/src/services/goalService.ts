@@ -1,5 +1,5 @@
 import { doc, getDoc, setDoc, deleteDoc, collection, query, where, getDocs, addDoc, deleteField, type DocumentData } from 'firebase/firestore';
-import { db } from '../firebase';
+import { getDb } from '../firebase';
 import type { UserGoal, GoalCategory } from '../engine/models';
 import type { DataIssue, DataState } from '../engine/dataState';
 import { deriveGoalCategory } from '../engine/periodization';
@@ -60,7 +60,7 @@ export class GoalService {
      */
     async listGoals(userId: string): Promise<UserGoalWithId[]> {
         try {
-            const collRef = collection(db, 'users', userId, this.collectionPath);
+            const collRef = collection(getDb(), 'users', userId, this.collectionPath);
             // No orderBy('category', ...) here -- category is no longer stored for dated
             // goals (see stripDerivedCategoryForWrite), so it can't be sorted server-side.
             // Grouping/sorting by category happens client-side after resolving it below.
@@ -92,7 +92,7 @@ export class GoalService {
      */
     async getActiveGoalsState(userId: string): Promise<DataState<UserGoalWithId[]>> {
         try {
-            const collRef = collection(db, 'users', userId, this.collectionPath);
+            const collRef = collection(getDb(), 'users', userId, this.collectionPath);
             const querySnapshot = await getDocs(query(collRef, where('status', '==', 'active')));
             const goals: UserGoalWithId[] = [];
             const issues: DataIssue[] = [];
@@ -115,7 +115,7 @@ export class GoalService {
 
     async getActiveGoals(userId: string): Promise<UserGoalWithId[]> {
         try {
-            const collRef = collection(db, 'users', userId, this.collectionPath);
+            const collRef = collection(getDb(), 'users', userId, this.collectionPath);
             const q = query(
                 collRef,
                 where('status', '==', 'active')
@@ -170,7 +170,7 @@ export class GoalService {
      */
     async getGoal(userId: string, goalId: string): Promise<UserGoalWithId | null> {
         try {
-            const docRef = doc(db, 'users', userId, this.collectionPath, goalId);
+            const docRef = doc(getDb(), 'users', userId, this.collectionPath, goalId);
             const docSnap = await getDoc(docRef);
 
             if (docSnap.exists()) {
@@ -210,7 +210,7 @@ export class GoalService {
             // persisted for a dated goal (see stripDerivedCategoryForWrite) -- the
             // returned in-memory object still carries the correct, freshly-derived value
             // for immediate UI use.
-            const collRef = collection(db, 'users', userId, this.collectionPath);
+            const collRef = collection(getDb(), 'users', userId, this.collectionPath);
             const docRef = await addDoc(collRef, storedGoalPayload(validatedGoal));
 
             // Update with the document ID
@@ -253,7 +253,7 @@ export class GoalService {
 
             // Merge writes must remove fields that are no longer valid rather than leave
             // a former event able to reappear after a reload or future date edit.
-            const docRef = doc(db, 'users', userId, this.collectionPath, goalId);
+            const docRef = doc(getDb(), 'users', userId, this.collectionPath, goalId);
             await setDoc(docRef, updatedGoalPayload(validatedGoal), { merge: true });
 
             return validatedGoal;
@@ -296,7 +296,7 @@ export class GoalService {
      */
     async deleteGoal(userId: string, goalId: string): Promise<void> {
         try {
-            const docRef = doc(db, 'users', userId, this.collectionPath, goalId);
+            const docRef = doc(getDb(), 'users', userId, this.collectionPath, goalId);
             await deleteDoc(docRef);
         } catch (error) {
             console.error('Error deleting goal:', error);

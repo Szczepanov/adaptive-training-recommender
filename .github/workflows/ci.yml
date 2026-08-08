@@ -39,7 +39,7 @@ jobs:
         run: uv run pytest
 
       - name: Python dependency audit
-        run: npx pip-audit || uv pip audit || true
+        run: uvx pip-audit
         continue-on-error: true
 
   frontend-build:

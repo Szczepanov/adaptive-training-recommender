@@ -1,5 +1,5 @@
 import { doc, getDoc } from 'firebase/firestore';
-import { db } from '../firebase';
+import { getDb } from '../firebase';
 import type { DailyRecoverySnapshot } from '../engine/models';
 import type { DataState } from '../engine/dataState';
 import { localDataService } from './localDataService';
@@ -9,7 +9,7 @@ export class RecoverySnapshotService {
     async getRecoverySnapshotState(userId: string, date: string): Promise<DataState<DailyRecoverySnapshot>> {
         const documentPath = `users/${userId}/daily_recovery_snapshots/${date}`;
         try {
-            const scopedRef = doc(db, 'users', userId, 'daily_recovery_snapshots', date);
+            const scopedRef = doc(getDb(), 'users', userId, 'daily_recovery_snapshots', date);
             const scopedSnap = await getDoc(scopedRef);
             if (scopedSnap.exists()) {
                 return parseRecoverySnapshot(scopedSnap.data(), documentPath, userId, date);

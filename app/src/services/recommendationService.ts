@@ -1,5 +1,5 @@
 import { doc, getDoc, setDoc, collection, query, where, orderBy, limit, getDocs } from 'firebase/firestore';
-import { db } from '../firebase';
+import { getDb } from '../firebase';
 import type { DailyRecommendation, Recommendation } from '../engine/models';
 import { validateRecommendation, validateAdherenceUpdate } from '../engine/validation';
 import type { DataIssue, DataState } from '../engine/dataState';
@@ -24,7 +24,7 @@ export class RecommendationService {
      */
     async saveRecommendation(userId: string, date: string, rec: Recommendation): Promise<DailyRecommendation | null> {
         try {
-            const docRef = doc(db, 'users', userId, this.collectionPath, date);
+            const docRef = doc(getDb(), 'users', userId, this.collectionPath, date);
             const existingSnap = await getDoc(docRef);
             const existing = existingSnap.exists() ? existingSnap.data() : undefined;
 
@@ -70,7 +70,7 @@ export class RecommendationService {
 
     async getRecommendation(userId: string, date: string): Promise<DailyRecommendation | null> {
         try {
-            const docRef = doc(db, 'users', userId, this.collectionPath, date);
+            const docRef = doc(getDb(), 'users', userId, this.collectionPath, date);
             const docSnap = await getDoc(docRef);
             if (docSnap.exists()) {
                 return docSnap.data() as DailyRecommendation;
@@ -96,7 +96,7 @@ export class RecommendationService {
         answer: { followed: boolean; skipped?: boolean; actualModality?: string | null; actualDurationMin?: number | null; notes?: string | null }
     ): Promise<DailyRecommendation | null> {
         try {
-            const docRef = doc(db, 'users', userId, this.collectionPath, date);
+            const docRef = doc(getDb(), 'users', userId, this.collectionPath, date);
             const existingSnap = await getDoc(docRef);
             if (!existingSnap.exists()) {
                 console.warn(`No recommendation recorded for ${date} -- nothing to attach adherence to.`);
@@ -123,7 +123,7 @@ export class RecommendationService {
 
     async getRecentRecommendations(userId: string, days: number = 30): Promise<DailyRecommendation[]> {
         try {
-            const collRef = collection(db, 'users', userId, this.collectionPath);
+            const collRef = collection(getDb(), 'users', userId, this.collectionPath);
             const q = query(collRef, where('userId', '==', userId), orderBy('date', 'desc'), limit(days));
             const querySnapshot = await getDocs(q);
             return querySnapshot.docs.map(d => d.data() as DailyRecommendation);
@@ -145,7 +145,7 @@ export class RecommendationService {
         throughDateExclusive: string,
     ): Promise<DataState<DailyRecommendation[]>> {
         try {
-            const collRef = collection(db, 'users', userId, this.collectionPath);
+            const collRef = collection(getDb(), 'users', userId, this.collectionPath);
             const rangeQuery = query(
                 collRef,
                 where('date', '>=', startDateInclusive),
