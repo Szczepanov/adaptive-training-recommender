@@ -13,6 +13,8 @@ describe('recommendation provenance', () => {
             template,
             mode: 'train',
             rationale: 'This should never be copied into the audit.',
+            plannedDose: { volume: 0.6, intensity: 1 },
+            executionDose: { volume: 0.5, intensity: 1 },
             envelopes: {
                 safety: { clinicalFlagActive: false, restrictedModalities: [] },
                 plan: { maxAllowableTier: 'Easy', taperActive: false },
@@ -41,6 +43,8 @@ describe('recommendation provenance', () => {
                 sourceStatuses: { activities: 'AVAILABLE', recommendations: 'AVAILABLE', manualTraining: 'MISSING' },
             },
             envelope: { safetyRestrictedModalityCount: 0, planMaxAllowableTier: 'Easy' },
+            plannedDose: { volume: 0.6, intensity: 1 },
+            executionDose: { volume: 0.5, intensity: 1 },
             candidateScores: [{ templateId: template.id, utilityScore: 1.25, excludedReasons: [] }],
         });
         expect(JSON.stringify(audit)).not.toContain('This should never');

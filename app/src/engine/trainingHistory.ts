@@ -1,4 +1,4 @@
-import type { DailyRecommendation, SessionTemplate, TrainingRecord, WorkoutCostProfile, WorkoutStimulusProfile } from './models';
+import type { DailyRecommendation, DeliveredDose, SessionTemplate, TrainingRecord, WorkoutCostProfile, WorkoutStimulusProfile } from './models';
 import type { TrainingHistorySnapshot } from './trainingHistorySnapshot';
 import { ENRICHED_TEMPLATES } from './templates';
 
@@ -7,6 +7,7 @@ export interface CompletedExposure {
     date: string;
     costProfile: WorkoutCostProfile;
     trainingRecordLike: TrainingRecord;
+    deliveredDose?: DeliveredDose;
     /** Present only when the completed work is known to match a catalog template or
      * reconciled evidence supplies an explicit stimulus vector. This prevents the
      * microcycle ledger from re-inferring a precise objective from loose title text. */

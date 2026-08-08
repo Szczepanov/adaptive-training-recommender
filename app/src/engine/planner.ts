@@ -23,6 +23,7 @@ export interface PlannedObjectiveCredit {
     templateId: string;
     templateTitle: string;
     modality: SessionTemplate['modality'];
+    earnedCredit: number;
 }
 import { resolveAvailability } from './schedule';
 import { isTemplatePhaseEligible, evaluatePeriodizationPhase } from './periodization';
@@ -40,9 +41,7 @@ import {
     creditObjectivesFromStimulus,
     generateWeeklyObjectives,
     getUnresolvedObjectives,
-    qualifiesForObjective,
-    stimulusCoverage,
-    STIMULUS_CREDIT_COVERAGE_THRESHOLD,
+    projectCompatibilityExposures,
 } from './microcycle';
 import {
     type RecentHistoryEntry,
@@ -52,7 +51,9 @@ import {
     rankCandidates,
 } from './optimizer';
 import { ENRICHED_TEMPLATES } from './templates';
-import { resolveTrainingIntent } from './trainingIntent';
+import { resolvePlannedDoseForDate, resolveTrainingIntent } from './trainingIntent';
+import { resolvePlanDefinitionForEvent } from './planSchedule';
+import { deriveObjectiveCreditFromProfile } from './stimulus';
 import type { CompletedExposure, TrainingHistoryProvider } from './trainingHistory';
 import type { TrainingHistorySnapshot } from './trainingHistorySnapshot';
 
@@ -101,7 +102,14 @@ const ZERO_COST: WorkoutCostProfile = {
 };
 
 const ZERO_STIMULUS: WorkoutStimulusProfile = {
-    aerobicCapacity: 0, thresholdDevelopment: 0, surgeRepeatability: 0, maxStrength: 0, hypertrophy: 0, mobilityRecovery: 0,
+    aerobicEndurance: 0,
+    thresholdPower: 0,
+    vo2MaxPower: 0,
+    repeatedSurges: 0,
+    sprintPower: 0,
+    fatigueResistance: 0,
+    maxStrength: 0,
+    hypertrophy: 0,
 };
 
 function combineMax(a: DimensionalFatigue, b: DimensionalFatigue): DimensionalFatigue {
@@ -136,13 +144,39 @@ export function projectFatigueForRankingDate(
     };
 }
 
-/** Fatigue dimensions are capped at 1.0 and the slowest modeled half-life is 48 h. After
- * the reviewed fix correctly decays external load before the next day's ranking, even a
- * fully saturated dimension can be at most ~0.707 after 24 h. The previous 0.8 recovery
- * ceiling was therefore unreachable at the daily planning cadence. 0.625 sits just below
- * the one-day residual of a saturated 36 h dimension (~0.63), while 0.6 remains the
- * modify boundary, so recovery is reserved for genuinely high residual load. */
-export const PROJECTED_FATIGUE_RECOVER_THRESHOLD = 0.625;
+/** Fatigue dimensions are capped at 1.0 and the slowest modeled half-life is 48 h
+ * (impactTissue, lowerBody -- see DECAY_HALF_LIVES_HOURS). After the reviewed fix
+ * correctly decays external load before the next day's ranking, even a fully saturated
+ * 48h-half-life dimension can be at most 1.0 * 0.5^(24/48) ≈ 0.707 after one day, so the
+ * previous 0.8 recovery ceiling was unreachable at the daily planning cadence.
+ *
+ * A prior revision set this to 0.625, reasoning it sat "just below the one-day residual
+ * of a saturated 36 h dimension (~0.63)" -- but that residual is for the 36 h
+ * half-life group (systemic/upperBody/neuromuscular), not the slower 48 h group this
+ * comment itself identifies as the binding case. maxFatigueDimension takes the max
+ * across all six dimensions, so impactTissue/lowerBody (48 h) are what actually decide
+ * the ceiling in practice, and their true one-day saturated residual is ~0.707, not
+ * ~0.63. Verified empirically: a single moderate running/cycling session plus one easy
+ * day was enough to push impactTissue/lowerBody to ~0.70 and keep it pinned there for
+ * most of a simulated month (additive per-session accumulation combined with the slow
+ * decay rarely lets it clear 0.625 again), which is why the projected-day gate defaulted
+ * to hard recovery-only far more often than a realistic training week warrants -- not
+ * because the athlete was ever actually at genuinely saturated, back-to-back-hard load.
+ *
+ * 0.65 sits between the two half-life groups' saturated one-day residuals (0.63 for the
+ * 36 h group, 0.707 for the 48 h group) -- close enough to the correct (48 h-group)
+ * figure to still reserve recovery for dimensions genuinely near that ceiling, with a
+ * real margin below it rather than the previous value's razor-thin (and, per the
+ * arithmetic above, actually miscalibrated-low) gap. Chosen empirically against the
+ * Phase 0 simulation harness: 0.70 (exactly at the boundary) reopened enough training
+ * days to occasionally leave a whole week with zero rest/recovery days at all (breaking
+ * the "at least one rest day per week" invariant goldenWeek.test.ts/scenarios.test.ts
+ * already assert); 0.625 (the prior value) fires on ordinary single-session fatigue and
+ * drives the aggregate rest/recovery share well past the 40% ceiling. 0.65 keeps the
+ * aggregate simulation-scenario rest/recovery share comfortably inside the documented
+ * [5%, 40%] bound (~27% measured) while every scenario still clears at least one
+ * rest/recovery day. 0.6 remains the modify boundary. */
+export const PROJECTED_FATIGUE_RECOVER_THRESHOLD = 0.65;
 export const PROJECTED_FATIGUE_MODIFY_THRESHOLD = 0.6;
 const PROJECTED_MODIFY_MAX_SYSTEMIC_COST = 0.5;
 
@@ -186,6 +220,64 @@ function enrichedCostProfile(templateId: string): WorkoutCostProfile {
 
 function enrichedStimulusProfile(template: SessionTemplate): WorkoutStimulusProfile {
     return template.stimulusProfile ?? ENRICHED_TEMPLATES.find(t => t.id === template.id)?.stimulusProfile ?? ZERO_STIMULUS;
+}
+
+export interface ProjectedObjectiveCreditInput {
+    objectiveId: string;
+    earnedCredit: number;
+}
+
+export interface ProjectedObjectiveCreditAllocation {
+    objectiveId: string;
+    earnedCredit: number;
+}
+
+/**
+ * Forecast-only ledger mutation. Existing completed evidence is normalized into
+ * completedCredit once when a legacy-only seed still carries only completedExposures;
+ * future recommendations themselves accumulate exclusively in projectedCredit.
+ * Subsequent projected days treat completed + projected credit as the outstanding-objective
+ * authority.
+ *
+ * `completedExposures` remains a legacy/non-authoritative display projection. The exact
+ * same fractional-credit-to-exposure projection is shared with the live ledger so a
+ * forecast cannot display one full exposure for credit that the live path would still
+ * show as partial.
+ */
+export function applyProjectedObjectiveCredits(
+    microcycle: MicrocycleState,
+    credits: readonly ProjectedObjectiveCreditInput[],
+): { microcycle: MicrocycleState; allocations: ProjectedObjectiveCreditAllocation[] } {
+    const proposedById = new Map(credits.map(credit => [credit.objectiveId, credit.earnedCredit]));
+    const allocations: ProjectedObjectiveCreditAllocation[] = [];
+    const objectives = microcycle.objectives.map(objective => {
+        const proposed = proposedById.get(objective.id) ?? 0;
+        if (!Number.isFinite(proposed) || proposed <= 0) return objective;
+
+        const completedCredit = objective.completedCredit ?? objective.completedExposures;
+        const projectedCredit = objective.projectedCredit ?? 0;
+        const requiredCredit = objective.requiredCredit ?? objective.targetExposures;
+        const remaining = Math.max(0, requiredCredit - completedCredit - projectedCredit);
+        const allocated = Math.min(remaining, proposed);
+        if (allocated <= 0) return objective;
+
+        allocations.push({ objectiveId: objective.id, earnedCredit: allocated });
+        const nextProjectedCredit = projectedCredit + allocated;
+        return {
+            ...objective,
+            completedCredit,
+            projectedCredit: nextProjectedCredit,
+            completedExposures: projectCompatibilityExposures(
+                completedCredit + nextProjectedCredit,
+                objective.targetExposures,
+            ),
+        };
+    });
+
+    return {
+        microcycle: { ...microcycle, objectives },
+        allocations,
+    };
 }
 
 function isAdjacentDate(date: string, anchorDate: string | null): boolean {
@@ -324,6 +416,17 @@ function isCompletedExposure(entry: RecentHistoryEntry | SessionHistoryEntry): e
         && !!record.trainingRecordLike && typeof record.trainingRecordLike === 'object';
 }
 
+const LIGHTWEIGHT_HISTORY_STIMULUS: WorkoutStimulusProfile = {
+    thresholdPower: 0.8,
+    aerobicEndurance: 0.5,
+    repeatedSurges: 0.5,
+    vo2MaxPower: 0,
+    sprintPower: 0,
+    fatigueResistance: 0.5,
+    maxStrength: 0.5,
+    hypertrophy: 0.5,
+};
+
 export function prepareWeekAheadPlanSeed(
     readinessOrMicrocycle: DailyReadiness | MicrocycleState,
     eventsOrFatigue: UserEvent[] | FatigueState,
@@ -344,10 +447,6 @@ export function prepareWeekAheadPlanSeed(
     const completedHistory = history.filter(isCompletedExposure) as CompletedExposure[];
     const lightweightHistory = history.filter(entry => !isCompletedExposure(entry));
 
-    // Completed exposures retain their exact objective credit and external load even when
-    // the caller mixes them with lightweight RecentHistoryEntry fixtures. Apply the
-    // compatibility credit path only to the lightweight remainder instead of letting one
-    // such entry discard the completed-history seed entirely.
     if (completedHistory.length > 0) {
         let microcycle = buildMicrocycleState(
             periodization.phase,
@@ -360,7 +459,7 @@ export function prepareWeekAheadPlanSeed(
             const modality = (h.modality ?? typeStr ?? 'None') as SessionTemplate['modality'];
             microcycle = creditObjectivesFromStimulus(
                 microcycle,
-                { thresholdDevelopment: 0.8, aerobicCapacity: 0.5, surgeRepeatability: 0.5, maxStrength: 0.5, hypertrophy: 0.5, mobilityRecovery: 0.5 },
+                LIGHTWEIGHT_HISTORY_STIMULUS,
                 modality,
                 h.category,
             );
@@ -376,15 +475,12 @@ export function prepareWeekAheadPlanSeed(
         };
     }
 
-    // Compatibility for lightweight RecentHistoryEntry fixtures that do not carry a
-    // CompletedExposure's costProfile/trainingRecordLike shape. Keep their historical
-    // objective-credit behavior, but never throw away today's real readiness strain.
     let microcycle = generateWeeklyObjectives(periodization.phase, todayDate, periodization.focusEvent);
     lightweightHistory.forEach(h => {
         const typeStr = 'type' in h && typeof h.type === 'string' ? h.type : undefined;
         const modality = (h.modality ?? typeStr ?? 'None') as SessionTemplate['modality'];
         const category = h.category;
-        microcycle = creditObjectivesFromStimulus(microcycle, { thresholdDevelopment: 0.8, aerobicCapacity: 0.5, surgeRepeatability: 0.5, maxStrength: 0.5, hypertrophy: 0.5, mobilityRecovery: 0.5 }, modality, category);
+        microcycle = creditObjectivesFromStimulus(microcycle, LIGHTWEIGHT_HISTORY_STIMULUS, modality, category);
     });
     const fatigue = buildFatigueStateFromHistory([], computeInternalResponseStrain(readiness), todayDate);
     return {
@@ -421,16 +517,40 @@ export function generateWeekAheadPlan(
 
     const anchors = resolveWeeklyAnchors(todayDate, totalDays, events, fixedActivities, context, tomorrowRec?.template.category, tomorrowRec?.template.modality);
 
-    const creditingObjectivesFor = (template: SessionTemplate): WeeklyObjective[] => {
-        const stimulus = enrichedStimulusProfile(template);
-        return getUnresolvedObjectives(microcycle).filter(objective =>
-            stimulusCoverage(stimulus, objective.targetStimulus) >= STIMULUS_CREDIT_COVERAGE_THRESHOLD
-            && qualifiesForObjective(stimulus, template.modality, objective.qualification, template.category)
-        );
+    type DerivedPlanningCredit = {
+        objective: WeeklyObjective;
+        earnedCredit: number;
     };
 
-    const applyPick = (date: string, template: SessionTemplate) => {
-        creditingObjectivesFor(template).forEach(objective => {
+    // Template profiles are already canonical engine-owned data, so planner fan-out can
+    // use the validated-profile credit primitive directly instead of reparsing/logging the
+    // same profile once per objective.
+    const creditingObjectivesFor = (template: SessionTemplate): DerivedPlanningCredit[] => {
+        const stimulus = enrichedStimulusProfile(template);
+        return getUnresolvedObjectives(microcycle, true).flatMap(objective => {
+            const credit = deriveObjectiveCreditFromProfile(objective, stimulus, {}, {
+                modality: template.modality,
+                category: template.category,
+            });
+            return credit.qualifies && credit.earnedCredit > 0
+                ? [{ objective, earnedCredit: credit.earnedCredit }]
+                : [];
+        });
+    };
+
+    const applyPick = (
+        date: string,
+        template: SessionTemplate,
+        derivedCredits: DerivedPlanningCredit[] = creditingObjectivesFor(template),
+    ) => {
+        const projected = applyProjectedObjectiveCredits(
+            microcycle,
+            derivedCredits.map(item => ({ objectiveId: item.objective.id, earnedCredit: item.earnedCredit })),
+        );
+        const allocationById = new Map(projected.allocations.map(item => [item.objectiveId, item.earnedCredit]));
+        derivedCredits.forEach(({ objective }) => {
+            const allocated = allocationById.get(objective.id) ?? 0;
+            if (allocated <= 0) return;
             objectiveCredits.push({
                 date,
                 objectiveKey: objective.key,
@@ -438,9 +558,10 @@ export function generateWeekAheadPlan(
                 templateId: template.id,
                 templateTitle: template.title,
                 modality: template.modality,
+                earnedCredit: allocated,
             });
         });
-        microcycle = creditObjectivesFromStimulus(microcycle, enrichedStimulusProfile(template), template.modality, template.category);
+        microcycle = projected.microcycle;
         externalFatigue = applyCompletedSessionLoad(externalFatigue, date, enrichedCostProfile(template.id));
     };
 
@@ -449,6 +570,7 @@ export function generateWeekAheadPlan(
     if (tomorrowRec) {
         const tomorrowDate = addDaysToLocalDateString(todayDate, 1);
         const tomorrowPeriodization = evaluatePeriodizationPhase(events, tomorrowDate);
+        const tomorrowCredits = creditingObjectivesFor(tomorrowRec.template);
         resultDays.push({
             date: tomorrowDate,
             dayOffset: 1,
@@ -457,9 +579,9 @@ export function generateWeekAheadPlan(
             template: tomorrowRec.template,
             mode: tomorrowRec.mode === 'recover' ? 'recover' : 'train',
             rationale: tomorrowRec.rationale,
-            addressesObjectives: creditingObjectivesFor(tomorrowRec.template).map(objective => objective.title),
+            addressesObjectives: tomorrowCredits.map(item => item.objective.title),
         });
-        applyPick(tomorrowDate, tomorrowRec.template);
+        applyPick(tomorrowDate, tomorrowRec.template, tomorrowCredits);
     }
 
     for (let offset = resultDays.length + 1; offset <= totalDays; offset++) {
@@ -474,7 +596,7 @@ export function generateWeekAheadPlan(
             date,
         );
 
-        const unresolved = getUnresolvedObjectives(microcycle);
+        const unresolved = getUnresolvedObjectives(microcycle, true);
 
         const eligible = eligibleTemplates(ENRICHED_TEMPLATES, context, availability.maxTimeMinutes, date)
             .filter(t => isTemplatePhaseEligible(t, periodization));
@@ -519,8 +641,21 @@ export function generateWeekAheadPlan(
             })),
         ];
 
+        const planDefinition = resolvePlanDefinitionForEvent(periodization.focusEvent);
         const optContext = buildOptimizationContext(
-            { unresolvedObjectives: unresolved, fatigue: rankingFatigue, periodization, history: projectedHistory },
+            {
+                unresolvedObjectives: unresolved,
+                fatigue: rankingFatigue,
+                periodization,
+                history: projectedHistory,
+                plannedDose: resolvePlannedDoseForDate(
+                    periodization.phase,
+                    microcycle.objectives,
+                    unresolved,
+                    planDefinition,
+                    date,
+                ),
+            },
             context,
             effectivePreferences,
             date,
@@ -562,8 +697,9 @@ export function generateWeekAheadPlan(
 
         const bestBenefit = [...(ranked.length > 0 ? ranked : [{ template: restFallback, benefitScore: 0 }])].sort((a, b) => b.benefitScore - a.benefitScore)[0];
 
-        const addressed = creditingObjectivesFor(pick.template).map(objective => objective.title);
-        applyPick(date, pick.template);
+        const pickCredits = creditingObjectivesFor(pick.template);
+        const addressed = pickCredits.map(item => item.objective.title);
+        applyPick(date, pick.template, pickCredits);
 
         resultDays.push({
             date,

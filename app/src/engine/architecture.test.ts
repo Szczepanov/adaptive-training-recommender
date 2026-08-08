@@ -30,10 +30,20 @@ function testContext(overrides: Partial<UserContext['constraints']> = {}, traini
     };
 }
 
+const ZERO_CANONICAL_STIMULUS = {
+    aerobicEndurance: 0,
+    thresholdPower: 0,
+    vo2MaxPower: 0,
+    repeatedSurges: 0,
+    sprintPower: 0,
+    fatigueResistance: 0,
+    maxStrength: 0,
+    hypertrophy: 0,
+};
+
 describe('Architecture & Phased Engine Integration', () => {
     describe('Phase 1: Schedule & Availability', () => {
         it("uses the athlete's own weekday/weekend budget from TrainingSettings, not a fabricated day-of-week table", () => {
-            // Saturday (2026-08-08) -> weekend default; Monday (2026-08-10) -> weekday default.
             expect(resolveAvailability('2026-08-08', null, [], testContext()).maxTimeMinutes).toBe(120);
             expect(resolveAvailability('2026-08-10', null, [], testContext()).maxTimeMinutes).toBe(45);
         });
@@ -41,10 +51,9 @@ describe('Architecture & Phased Engine Integration', () => {
         it("caps (rather than blindly overrides) today's check-in time with the athlete's own profile limit", () => {
             const todayCheckin = {
                 readiness: 5, sleepQuality: 5, fatigue: 5, soreness: 5, stress: 5, motivation: 5,
-                timeAvailable: 200, // Claims 200 min available
+                timeAvailable: 200,
                 painFlag: false, alreadyTrainedToday: false, preferredModalityToday: null,
             };
-            // Friday (weekday) profile limit is 45 -- wins over the 200 min claim.
             const availability = resolveAvailability('2026-08-07', todayCheckin, [], testContext());
             expect(availability.maxTimeMinutes).toBe(45);
         });
@@ -52,17 +61,11 @@ describe('Architecture & Phased Engine Integration', () => {
         it('deducts fixed activity duration and reserves capacity for future scheduled activities', () => {
             const fixedActivities = [
                 {
-                    id: 'fixed_1',
-                    title: 'Evening Football',
-                    date: '2026-08-12',
-                    durationMin: 90,
-                    isCompleted: false,
-                    expectedCost: { systemic: 0.8 },
+                    id: 'fixed_1', title: 'Evening Football', date: '2026-08-12', durationMin: 90,
+                    isCompleted: false, expectedCost: { systemic: 0.8 },
                 },
             ];
-
             const availability = resolveAvailability('2026-08-12', null, fixedActivities, testContext());
-            // Wednesday weekday budget is 45 min, minus 90 min fixed activity -> floored at 0
             expect(availability.maxTimeMinutes).toBe(0);
             expect(availability.reservedCapacityCost).toBe(0.8);
         });
@@ -73,7 +76,6 @@ describe('Architecture & Phased Engine Integration', () => {
                 expect(resolveAvailability(date, null, [], noKit).availableEquipment).toEqual([]);
             }
             const withBike = testContext({ hasIndoorBike: true });
-            // Equipment access doesn't depend on which day of the week it is.
             expect(resolveAvailability('2026-08-10', null, [], withBike).availableEquipment).toContain('indoor_bike');
             expect(resolveAvailability('2026-08-11', null, [], withBike).availableEquipment).toContain('indoor_bike');
         });
@@ -83,42 +85,24 @@ describe('Architecture & Phased Engine Integration', () => {
         it('evaluates A-event tapers and prevents C-events from hijacking taper phase', () => {
             const events: UserEvent[] = [
                 {
-                    id: 'c_race',
-                    title: 'Practice 5K',
-                    date: '2026-08-10', // 3 days away
-                    priority: 'C',
-                    lifecycle: 'scheduled',
-                    category: 'running_race',
+                    id: 'c_race', title: 'Practice 5K', date: '2026-08-10', priority: 'C', lifecycle: 'scheduled', category: 'running_race',
                     demandProfile: { aerobicEndurance: 0.8, thresholdPower: 0.9, vo2MaxPower: 0.9, repeatedSurges: 0.5, sprintPower: 0.5, fatigueResistance: 0.5, neuromuscular: 0.5 },
                 },
                 {
-                    id: 'a_race',
-                    title: 'Championship Marathon',
-                    date: '2026-09-06', // 30 days away (Specificity Phase)
-                    priority: 'A',
-                    lifecycle: 'scheduled',
-                    category: 'running_race',
+                    id: 'a_race', title: 'Championship Marathon', date: '2026-09-06', priority: 'A', lifecycle: 'scheduled', category: 'running_race',
                     demandProfile: { aerobicEndurance: 1.0, thresholdPower: 0.8, vo2MaxPower: 0.5, repeatedSurges: 0.3, sprintPower: 0.2, fatigueResistance: 0.9, neuromuscular: 0.3 },
                 },
             ];
-
             const phase = evaluatePeriodizationPhase(events, '2026-08-07');
-            // Primary event is A-race (30 days out), C-race 3 days away does not trigger taper override
             expect(phase.phase.phaseName).toBe('Specificity');
             expect(phase.phase.taperActive).toBe(false);
         });
 
         it('keeps passed scheduled events stale, while completed/DNF events alone unlock recovery', () => {
             const event = (id: string, lifecycle: UserEvent['lifecycle']): UserEvent => ({
-                id,
-                title: id,
-                date: '2026-08-06',
-                priority: 'A',
-                lifecycle,
-                category: 'cycling_event',
+                id, title: id, date: '2026-08-06', priority: 'A', lifecycle, category: 'cycling_event',
                 demandProfile: { aerobicEndurance: 0.8, thresholdPower: 0.7, vo2MaxPower: 0.4, repeatedSurges: 0.5, sprintPower: 0.2, fatigueResistance: 0.8, neuromuscular: 0.3 },
             });
-
             const scheduled = evaluatePeriodizationPhase([event('awaiting-outcome', 'scheduled')], '2026-08-07');
             expect(scheduled.phase.phaseName).toBe('Base');
             expect(scheduled.focusEvent).toBeNull();
@@ -143,21 +127,14 @@ describe('Architecture & Phased Engine Integration', () => {
 
     describe('Phase 2b: Goal -> Event derivation', () => {
         const baseGoal: UserGoal = {
-            userId: 'u1',
-            category: 'long-term',
-            domain: 'endurance',
-            title: 'Road cycling event',
-            priority: 5,
-            status: 'active',
-            schemaVersion: 1,
-            createdAt: '2026-08-01T00:00:00.000Z',
-            updatedAt: '2026-08-01T00:00:00.000Z',
+            userId: 'u1', category: 'long-term', domain: 'endurance', title: 'Road cycling event', priority: 5, status: 'active',
+            schemaVersion: 1, createdAt: '2026-08-01T00:00:00.000Z', updatedAt: '2026-08-01T00:00:00.000Z',
         };
 
         it('deriveGoalCategory buckets by days-until-date, independent of any stored category', () => {
-            expect(deriveGoalCategory('2026-08-20', '2026-08-07')).toBe('short-term'); // 13 days
-            expect(deriveGoalCategory('2026-11-01', '2026-08-07')).toBe('mid-term'); // ~86 days
-            expect(deriveGoalCategory('2027-06-01', '2026-08-07')).toBe('long-term'); // ~10 months
+            expect(deriveGoalCategory('2026-08-20', '2026-08-07')).toBe('short-term');
+            expect(deriveGoalCategory('2026-11-01', '2026-08-07')).toBe('mid-term');
+            expect(deriveGoalCategory('2027-06-01', '2026-08-07')).toBe('long-term');
         });
 
         it('deriveEventPriority maps the 5-star priority control onto A/B/C taper class', () => {
@@ -170,7 +147,7 @@ describe('Architecture & Phased Engine Integration', () => {
 
         it('getDaysToEvent is a standalone helper independent of evaluatePeriodizationPhase', () => {
             expect(getDaysToEvent('2026-09-13', '2026-08-07')).toBe(37);
-            expect(getDaysToEvent('2026-08-01', '2026-08-07')).toBe(-6); // already passed
+            expect(getDaysToEvent('2026-08-01', '2026-08-07')).toBe(-6);
         });
 
         it('counts calendar days correctly across Europe/Warsaw DST transitions', () => {
@@ -189,18 +166,11 @@ describe('Architecture & Phased Engine Integration', () => {
         });
 
         it('goalToUserEvent adapts a dated, categorized, active goal into a UserEvent with a demand profile from its preset', () => {
-            const event = goalToUserEvent({
-                ...baseGoal,
-                id: 'goal123',
-                targetDate: '2026-09-13',
-                eventCategory: 'cycling_event',
-                eventPreset: 'road_race',
-            });
-
+            const event = goalToUserEvent({ ...baseGoal, id: 'goal123', targetDate: '2026-09-13', eventCategory: 'cycling_event', eventPreset: 'road_race' });
             expect(event).not.toBeNull();
             expect(event!.id).toBe('goal123');
-            expect(event!.priority).toBe('A'); // 5-star -> A
-            expect(event!.lifecycle).toBe('scheduled'); // defaulted, not required on the goal
+            expect(event!.priority).toBe('A');
+            expect(event!.lifecycle).toBe('scheduled');
             expect(event!.category).toBe('cycling_event');
             expect(event!.demandProfile.thresholdPower).toBeGreaterThan(0);
         });
@@ -217,17 +187,12 @@ describe('Architecture & Phased Engine Integration', () => {
             expect(phase.phase.taperActive).toBe(false);
             expect(phase.focusEvent).toMatchObject({ id: 'Road cycling event' });
             expect(phase.daysToEvent).toBe(37);
-            // Blended toward the cycling demand vector, not the flat default base demand
             expect(phase.phase.targetDemandVector.thresholdPower).toBeGreaterThan(0.5);
         });
 
-        // ADR-0012 Task 2.3 (EventTiming) -- goalToUserEvent is the only real production
-        // constructor of UserEvent, so timing must survive that hop unchanged.
         it('goalToUserEvent carries timing through onto UserEvent when present', () => {
             const timing = { earliestDate: '2026-09-05', latestDate: '2026-09-20', planningDate: '2026-09-05' };
-            const event = goalToUserEvent({
-                ...baseGoal, targetDate: '2026-09-05', eventCategory: 'cycling_event', timing,
-            });
+            const event = goalToUserEvent({ ...baseGoal, targetDate: '2026-09-05', eventCategory: 'cycling_event', timing });
             expect(event!.timing).toEqual(timing);
         });
 
@@ -237,9 +202,6 @@ describe('Architecture & Phased Engine Integration', () => {
         });
 
         it('evaluatePeriodizationPhase anchors on an unconfirmed timing.planningDate rather than the fallback targetDate', () => {
-            // planningDate (earliest possible date) is materially closer than the fallback
-            // targetDate -- if periodization.ts ignored timing, daysToEvent would read 37,
-            // not 10, and the taper/build phase read below would be wrong.
             const event = goalToUserEvent({
                 ...baseGoal, targetDate: '2026-09-13', eventCategory: 'cycling_event',
                 timing: { earliestDate: '2026-08-17', latestDate: '2026-09-13', planningDate: '2026-08-17' },
@@ -253,20 +215,12 @@ describe('Architecture & Phased Engine Integration', () => {
         it('generates weekly objectives and marks them satisfied when matching sessions complete', () => {
             const phaseWeights = evaluatePeriodizationPhase([], '2026-08-07').phase;
             const microcycle = generateWeeklyObjectives(phaseWeights, '2026-08-03', null);
-
             expect(microcycle.objectives.length).toBeGreaterThan(0);
-
             const updated = updateMicrocycleProgress(microcycle, {
-                type: 'Threshold Running',
-                duration_min: 45,
-                training_effect: 3.5,
-                intensity_tag: 'hard',
+                type: 'Threshold Running', duration_min: 45, training_effect: 3.5, intensity_tag: 'hard',
             });
-
             const thresholdObj = updated.objectives.find(o => o.key === 'threshold_quality');
-            if (thresholdObj) {
-                expect(thresholdObj.completedExposures).toBe(1);
-            }
+            if (thresholdObj) expect(thresholdObj.completedExposures).toBe(1);
         });
     });
 
@@ -274,11 +228,8 @@ describe('Architecture & Phased Engine Integration', () => {
         it('applies exponential decay over elapsed hours and accumulates completed session load', () => {
             const initial = createEmptyFatigue('2026-08-07');
             const costProfile = { systemic: 0.8, cardiovascular: 0.9, lowerBody: 1.0, upperBody: 0.0, impactTissue: 0.8, neuromuscular: 0.9 };
-
             const loaded = applyCompletedSessionLoad(initial, '2026-08-07', costProfile);
             expect(loaded.externalLoadFatigue.lowerBody).toBe(1.0);
-
-            // After 48 hours, lowerBody fatigue (halflife 48h) should decay to ~0.5
             const after48h = applyCompletedSessionLoad(loaded, '2026-08-09', { systemic: 0, cardiovascular: 0, lowerBody: 0, upperBody: 0, impactTissue: 0, neuromuscular: 0 });
             expect(after48h.externalLoadFatigue.lowerBody).toBeCloseTo(0.5, 1);
         });
@@ -287,66 +238,31 @@ describe('Architecture & Phased Engine Integration', () => {
     describe('Phase 5: Utility Optimization & Safety Gating', () => {
         it('allows upper-body strength while lower-body fatigue is elevated, and applies soft penalty to avoided modalities', () => {
             const fatigue = createEmptyFatigue('2026-08-07');
-            fatigue.combinedFatigue.lowerBody = 0.9; // Legs wrecked
-
+            fatigue.combinedFatigue.lowerBody = 0.9;
             const availability = resolveAvailability('2026-08-07', null, [], testContext());
             const preferences: UserPreferences = {
-                userId: 'test_user',
-                preferredRecoveryStyle: 'active',
-                defaultWeekdayTimeMin: 60,
-                defaultWeekendTimeMin: 120,
-                preferredTimeOfDay: 'morning',
-                preferredModalities: ['Strength'],
-                deprioritizedModalities: [],
-                avoidedModalities: ['Running'], // Soft penalty
-                explanationVerbosity: 'brief',
-                conservativeBias: false,
-                preferredUnits: { distance: 'km', weight: 'kg', temperature: 'celsius' },
-                schemaVersion: 1,
-                createdAt: '',
-                updatedAt: '',
+                userId: 'test_user', preferredRecoveryStyle: 'active', defaultWeekdayTimeMin: 60, defaultWeekendTimeMin: 120,
+                preferredTimeOfDay: 'morning', preferredModalities: ['Strength'], deprioritizedModalities: [], avoidedModalities: ['Running'],
+                explanationVerbosity: 'brief', conservativeBias: false,
+                preferredUnits: { distance: 'km', weight: 'kg', temperature: 'celsius' }, schemaVersion: 1, createdAt: '', updatedAt: '',
             };
-
-            const ranked = rankCandidatesByUtility(
-                ENRICHED_TEMPLATES,
-                [],
-                fatigue,
-                availability,
-                [], // No injury hard gates
-                preferences
-            );
-
+            const ranked = rankCandidatesByUtility(ENRICHED_TEMPLATES, [], fatigue, availability, [], preferences);
             expect(ranked.length).toBeGreaterThan(0);
-
-            // Upper-body strength should rank high because lower-body cost penalty is 0 for upper-body exercises
             const upperBodyOption = ranked.find(r => r.template.category === 'Upper-body Strength');
             const lowerBodyOption = ranked.find(r => r.template.category === 'Lower-body Strength');
-
             expect(upperBodyOption).toBeDefined();
             expect(lowerBodyOption).toBeDefined();
             expect(upperBodyOption!.utilityScore).toBeGreaterThan(lowerBodyOption!.utilityScore);
-
-            // Running options should receive soft penalty note without crashing
             const runningOption = ranked.find(r => r.template.modality === 'Running');
-            if (runningOption) {
-                expect(runningOption.rationale).toContain('Soft penalty applied');
-            }
+            if (runningOption) expect(runningOption.rationale).toContain('Soft penalty applied');
         });
 
         it('a limit hamstring injury excludes heavy lower-body work from the intent path', () => {
-            const settings: TrainingSettings = testTrainingSettings({
-                injuries: [{ region: 'hamstring', severity: 'limit' }],
-            });
+            const settings: TrainingSettings = testTrainingSettings({ injuries: [{ region: 'hamstring', severity: 'limit' }] });
             const resolved = resolveInjuryRestrictions(settings.injuries, '2026-08-07');
-            const context = testContext({
-                impliedGuardrails: resolved.impliedGuardrails,
-                restrictedCategories: resolved.restrictedCategories,
-                restrictedModalities: resolved.restrictedModalities,
-            }, settings);
-
+            const context = testContext({ impliedGuardrails: resolved.impliedGuardrails, restrictedCategories: resolved.restrictedCategories, restrictedModalities: resolved.restrictedModalities }, settings);
             const availability = resolveAvailability('2026-08-07', null, [], context);
             const eligible = eligibleTemplates(ENRICHED_TEMPLATES, context, availability.maxTimeMinutes, '2026-08-07');
-
             expect(eligible.some(t => t.safetyTags.includes('avoid_heavy_lower_body'))).toBe(false);
         });
 
@@ -359,43 +275,20 @@ describe('Architecture & Phased Engine Integration', () => {
                 explanationVerbosity: 'brief', conservativeBias: false,
                 preferredUnits: { distance: 'km', weight: 'kg', temperature: 'celsius' }, schemaVersion: 1, createdAt: '', updatedAt: '',
             };
-
             const strengthAvailability = { ...availability, availableEquipment: ['free_weights', 'indoor_bike'] };
-            const unstackedRanked = rankCandidatesByUtility(
-                ENRICHED_TEMPLATES, [], fatigue, strengthAvailability, [], prefs,
-                { date: '2026-08-07', recentHistory: [] }
-            );
-
-            const stackedRanked = rankCandidates(
-                ENRICHED_TEMPLATES, [], fatigue, strengthAvailability, [], prefs,
-                { date: '2026-08-07', recentHistory: [{ date: '2026-08-06', modality: 'Strength', category: 'Lower-body Strength', systemicCost: 0.8, lowerBodyCost: 0.8 }] }
-            );
-
+            const unstackedRanked = rankCandidatesByUtility(ENRICHED_TEMPLATES, [], fatigue, strengthAvailability, [], prefs, { date: '2026-08-07', recentHistory: [] });
+            const stackedRanked = rankCandidates(ENRICHED_TEMPLATES, [], fatigue, strengthAvailability, [], prefs, { date: '2026-08-07', recentHistory: [{ date: '2026-08-06', modality: 'Strength', category: 'Lower-body Strength', systemicCost: 0.8, lowerBodyCost: 0.8 }] });
             const unstackedStrength = unstackedRanked.find(r => r.template.category === 'Lower-body Strength');
             const stackedStrength = stackedRanked.rejected.find(r => r.template.category === 'Lower-body Strength');
-
             expect(unstackedStrength).toBeDefined();
             expect(stackedStrength).toBeDefined();
             expect(stackedStrength!.excludedReasons).toContain('HARD_LOWER_BODY_SPACING_VIOLATION');
 
-            // Phase 3 (F3): Dated, role-aware recovery constraints replace indiscriminate modality 0.15x penalty.
-            // Consecutive-day anchor quality sessions are gated by Quality Spacing.
             const cyclingAvailability = { ...availability, availableEquipment: ['indoor_bike'] };
-            const unstackedCyclingRanked = rankCandidatesByUtility(
-                ENRICHED_TEMPLATES, [], fatigue, cyclingAvailability, [], prefs,
-                { date: '2026-08-07', recentHistory: [] }
-            );
-            const stackedCyclingRanked = rankCandidates(
-                ENRICHED_TEMPLATES, [], fatigue, cyclingAvailability, [], prefs,
-                { date: '2026-08-07', recentHistory: [{ date: '2026-08-06', modality: 'Cycling', category: 'Hard Endurance', role: 'anchor', systemicCost: 0.8 }] }
-            );
+            const unstackedCyclingRanked = rankCandidatesByUtility(ENRICHED_TEMPLATES, [], fatigue, cyclingAvailability, [], prefs, { date: '2026-08-07', recentHistory: [] });
+            const stackedCyclingRanked = rankCandidates(ENRICHED_TEMPLATES, [], fatigue, cyclingAvailability, [], prefs, { date: '2026-08-07', recentHistory: [{ date: '2026-08-06', modality: 'Cycling', category: 'Hard Endurance', role: 'anchor', systemicCost: 0.8 }] });
             const unstackedCycling = unstackedCyclingRanked.find(r => r.template.modality === 'Cycling');
-            // Rejection order follows ENRICHED_TEMPLATES order, and a Cycling template can
-            // be rejected for MISSING_REQUIRED_EQUIPMENT or TIME_BUDGET_EXCEEDED instead of
-            // quality spacing -- filter by the anchor category too (matching the lower-body
-            // case above) so this checks the behavior under test, not an unrelated rejection.
             const stackedCycling = stackedCyclingRanked.rejected.find(r => r.template.modality === 'Cycling' && r.template.category === 'Hard Endurance');
-
             expect(unstackedCycling).toBeDefined();
             expect(stackedCycling).toBeDefined();
             expect(stackedCycling!.excludedReasons).toContain('QUALITY_SPACING_VIOLATION');
@@ -403,47 +296,21 @@ describe('Architecture & Phased Engine Integration', () => {
 
         it('suppresses a second consecutive Moderate/Hard day across DIFFERENT modalities (intensity-stacking cap)', () => {
             const fatigue = createEmptyFatigue('2026-08-07');
-            const availability = {
-                ...resolveAvailability('2026-08-07', null),
-                availableEquipment: ['indoor_bike', 'free_weights'],
-            };
+            const availability = { ...resolveAvailability('2026-08-07', null), availableEquipment: ['indoor_bike', 'free_weights'] };
             const prefs: UserPreferences = {
                 userId: '', preferredRecoveryStyle: 'mixed', defaultWeekdayTimeMin: 60, defaultWeekendTimeMin: 60,
                 preferredTimeOfDay: 'flexible', preferredModalities: [], deprioritizedModalities: [], avoidedModalities: [],
                 explanationVerbosity: 'brief', conservativeBias: false,
                 preferredUnits: { distance: 'km', weight: 'kg', temperature: 'celsius' }, schemaVersion: 1, createdAt: '', updatedAt: '',
             };
-
-            // Yesterday: a hard cycling day. Today's candidate: a hard STRENGTH session --
-            // different modality, so the same-modality anti-stacking check above never
-            // fires, yet back-to-back hard days is still the thing to avoid. Read both
-            // sides from the SAME collection (accepted) -- comparing .all (which includes
-            // rejected candidates carrying a flat utilityScore of 0) against an
-            // accepted-only collection would make a hard exclusion masquerade as "lower
-            // utility because of the soft intensity-stacking penalty", which is a
-            // different mechanism this test isn't targeting.
-            const afterHardBike = rankCandidates(
-                ENRICHED_TEMPLATES, [], fatigue, availability, [], prefs,
-                { recentHistory: [{ date: '2026-08-06', modality: 'Cycling', category: 'Hard Endurance', type: 'Bike VO2 Intervals', systemicCost: 1.0 }] }
-            );
-            const afterEasyBike = rankCandidates(
-                ENRICHED_TEMPLATES, [], fatigue, availability, [], prefs,
-                { recentHistory: [{ date: '2026-08-06', modality: 'Cycling', type: 'Zone 2 Spin', systemicCost: 0.3 }] }
-            );
-
+            const afterHardBike = rankCandidates(ENRICHED_TEMPLATES, [], fatigue, availability, [], prefs, { recentHistory: [{ date: '2026-08-06', modality: 'Cycling', category: 'Hard Endurance', type: 'Bike VO2 Intervals', systemicCost: 1.0 }] });
+            const afterEasyBike = rankCandidates(ENRICHED_TEMPLATES, [], fatigue, availability, [], prefs, { recentHistory: [{ date: '2026-08-06', modality: 'Cycling', type: 'Zone 2 Spin', systemicCost: 0.3 }] });
             const hardStrengthAfterHard = afterHardBike.accepted.find(r => r.template.category === 'Full-body Strength');
             const hardStrengthAfterEasy = afterEasyBike.accepted.find(r => r.template.category === 'Full-body Strength');
-
             expect(hardStrengthAfterEasy).toBeDefined();
             if (hardStrengthAfterHard) {
-                // Still accepted, just soft-penalized (intensity-stacking cap): lower utility.
                 expect(hardStrengthAfterHard.utilityScore).toBeLessThan(hardStrengthAfterEasy!.utilityScore);
             } else {
-                // Hard-excluded outright instead (e.g. ANCHOR_PROTECTION_VIOLATION, since
-                // Full-body Strength is a heavy-lower-body category within a day of a key
-                // Cycling session) -- a *stronger* guarantee than the soft penalty this
-                // test originally checked, so assert that explicitly rather than silently
-                // passing on a candidate that's simply gone.
                 const rejected = afterHardBike.rejected.find(r => r.template.category === 'Full-body Strength');
                 expect(rejected).toBeDefined();
                 expect(rejected!.excludedReasons.length).toBeGreaterThan(0);
@@ -459,128 +326,69 @@ describe('Architecture & Phased Engine Integration', () => {
                 explanationVerbosity: 'brief', conservativeBias: false,
                 preferredUnits: { distance: 'km', weight: 'kg', temperature: 'celsius' }, schemaVersion: 1, createdAt: '', updatedAt: '',
             };
-
-            // Two templates deliberately built to be identical in everything the utility
-            // score depends on (same modality, category, duration, equipment, stimulus,
-            // cost) so they land at the exact same utility score -- only their id/title differ.
             const sharedProfile = {
                 requiredEquipment: [] as SessionTemplate['requiredEquipment'],
                 environment: 'either' as const,
                 safetyTags: [] as SessionTemplate['safetyTags'],
                 systemicCost: 0.4,
-                stimulusProfile: { aerobicEndurance: 0.6, aerobicCapacity: 0.6 },
+                stimulusProfile: { ...ZERO_CANONICAL_STIMULUS, aerobicEndurance: 0.6 },
                 costProfile: { systemic: 0.2, cardiovascular: 0.3, lowerBody: 0.1, upperBody: 0, impactTissue: 0.1, neuromuscular: 0 },
             };
-            const templateA = {
-                id: 'variety_test_a', category: 'Easy Endurance' as const, modality: 'Running' as const,
-                durationMin: 30, durationMax: 45, title: 'Variety Test Run A', description: '',
-                ...sharedProfile,
-            };
-            const templateB = {
-                id: 'variety_test_b', category: 'Easy Endurance' as const, modality: 'Running' as const,
-                durationMin: 30, durationMax: 45, title: 'Variety Test Run B', description: '',
-                ...sharedProfile,
-            };
-
-            // A was picked most recently (last entry in history) -- B should rotate ahead of it.
-            const rankedFavoringB = rankCandidatesByUtility(
-                [templateA, templateB], [], fatigue, availability, [], prefs,
-                { recentHistory: [{ type: 'Variety Test Run B' }, { type: 'Variety Test Run A' }] }
-            );
+            const templateA: SessionTemplate = { id: 'variety_test_a', category: 'Easy Endurance', modality: 'Running', durationMin: 30, durationMax: 45, title: 'Variety Test Run A', description: '', ...sharedProfile };
+            const templateB: SessionTemplate = { id: 'variety_test_b', category: 'Easy Endurance', modality: 'Running', durationMin: 30, durationMax: 45, title: 'Variety Test Run B', description: '', ...sharedProfile };
+            const rankedFavoringB = rankCandidatesByUtility([templateA, templateB], [], fatigue, availability, [], prefs, { recentHistory: [{ type: 'Variety Test Run B' }, { type: 'Variety Test Run A' }] });
             expect(rankedFavoringB[0].template.id).toBe('variety_test_b');
             expect(rankedFavoringB[1].template.id).toBe('variety_test_a');
-
-            // Flip which one was picked most recently -- ranking should flip too.
-            const rankedFavoringA = rankCandidatesByUtility(
-                [templateA, templateB], [], fatigue, availability, [], prefs,
-                { recentHistory: [{ type: 'Variety Test Run A' }, { type: 'Variety Test Run B' }] }
-            );
+            const rankedFavoringA = rankCandidatesByUtility([templateA, templateB], [], fatigue, availability, [], prefs, { recentHistory: [{ type: 'Variety Test Run A' }, { type: 'Variety Test Run B' }] });
             expect(rankedFavoringA[0].template.id).toBe('variety_test_a');
-
-            // A template from a different category/modality with a slightly higher raw
-            // utility score must never be pulled into the tie-break rotation.
-            const differentCategory = {
-                id: 'variety_test_c', category: 'Moderate Endurance' as const, modality: 'Cycling' as const,
-                durationMin: 30, durationMax: 45, title: 'Variety Test Bike C', description: '',
-                ...sharedProfile,
-            };
-            const rankedAcrossCategories = rankCandidatesByUtility(
-                [templateA, templateB, differentCategory], [], fatigue, availability, [], prefs,
-                { recentHistory: [] }
-            );
-            expect(rankedAcrossCategories.map(r => r.template.id)).toEqual(
-                expect.arrayContaining(['variety_test_a', 'variety_test_b', 'variety_test_c'])
-            );
+            const differentCategory: SessionTemplate = { id: 'variety_test_c', category: 'Moderate Endurance', modality: 'Cycling', durationMin: 30, durationMax: 45, title: 'Variety Test Bike C', description: '', ...sharedProfile };
+            const rankedAcrossCategories = rankCandidatesByUtility([templateA, templateB, differentCategory], [], fatigue, availability, [], prefs, { recentHistory: [] });
+            expect(rankedAcrossCategories.map(r => r.template.id)).toEqual(expect.arrayContaining(['variety_test_a', 'variety_test_b', 'variety_test_c']));
             expect(rankedAcrossCategories.find(r => r.template.id === 'variety_test_c')).toBeDefined();
         });
 
         it('applies event-priority utility boost when an A-priority cycling event is active', () => {
             const fatigue = createEmptyFatigue('2026-08-07');
-            const availability = {
-                ...resolveAvailability('2026-08-07', null),
-                maxTimeMinutes: 90,
-                availableEquipment: ['indoor_bike', 'free_weights', 'cable_machine'],
-            };
+            const availability = { ...resolveAvailability('2026-08-07', null), maxTimeMinutes: 90, availableEquipment: ['indoor_bike', 'free_weights', 'cable_machine'] };
             const prefs: UserPreferences = {
                 userId: '', preferredRecoveryStyle: 'mixed', defaultWeekdayTimeMin: 60, defaultWeekendTimeMin: 60,
                 preferredTimeOfDay: 'flexible', preferredModalities: [], deprioritizedModalities: [], avoidedModalities: [],
                 explanationVerbosity: 'brief', conservativeBias: false,
                 preferredUnits: { distance: 'km', weight: 'kg', temperature: 'celsius' }, schemaVersion: 1, createdAt: '', updatedAt: '',
             };
-
             const cyclingFocusEvent: UserEvent = {
-                id: 'c1', title: 'Road Race', date: '2026-09-12', priority: 'A', lifecycle: 'scheduled',
-                category: 'cycling_event', demandProfile: { aerobicEndurance: 0.8, thresholdPower: 0.8, vo2MaxPower: 0.6, repeatedSurges: 0.5, sprintPower: 0.3, fatigueResistance: 0.7, neuromuscular: 0.4 }
+                id: 'c1', title: 'Road Race', date: '2026-09-12', priority: 'A', lifecycle: 'scheduled', category: 'cycling_event',
+                demandProfile: { aerobicEndurance: 0.8, thresholdPower: 0.8, vo2MaxPower: 0.6, repeatedSurges: 0.5, sprintPower: 0.3, fatigueResistance: 0.7, neuromuscular: 0.4 }
             };
-
-            const rankedWithEvent = rankCandidatesByUtility(
-                ENRICHED_TEMPLATES, [], fatigue, availability, [], prefs,
-                { focusEvent: cyclingFocusEvent }
-            );
-
+            const rankedWithEvent = rankCandidatesByUtility(ENRICHED_TEMPLATES, [], fatigue, availability, [], prefs, { focusEvent: cyclingFocusEvent });
             const cyclingPick = rankedWithEvent.find(r => r.template.modality === 'Cycling');
             const strengthPick = rankedWithEvent.find(r => r.template.modality === 'Strength');
-
             expect(cyclingPick).toBeDefined();
             expect(strengthPick).toBeDefined();
             expect(cyclingPick!.utilityScore).toBeGreaterThan(strengthPick!.utilityScore);
         });
 
         it('boosts BOTH Cycling and Running (not neither) for an A-priority triathlon event -- regression for the category-substring bug', () => {
-            // 'triathlon' doesn't substring-match 'cycling'/'running'/'strength', so this
-            // used to fall through to the non-event-modality PENALTY branch instead of the
-            // boost -- silently suppressing the two modalities that matter most for a
-            // triathlete, contradicting ADR-0007's own documented intent.
             const fatigue = createEmptyFatigue('2026-08-07');
-            const availability = {
-                ...resolveAvailability('2026-08-07', null),
-                maxTimeMinutes: 90,
-                availableEquipment: ['indoor_bike', 'free_weights', 'cable_machine'],
-            };
+            const availability = { ...resolveAvailability('2026-08-07', null), maxTimeMinutes: 90, availableEquipment: ['indoor_bike', 'free_weights', 'cable_machine'] };
             const prefs: UserPreferences = {
                 userId: '', preferredRecoveryStyle: 'mixed', defaultWeekdayTimeMin: 60, defaultWeekendTimeMin: 60,
                 preferredTimeOfDay: 'flexible', preferredModalities: [], deprioritizedModalities: [], avoidedModalities: [],
                 explanationVerbosity: 'brief', conservativeBias: false,
                 preferredUnits: { distance: 'km', weight: 'kg', temperature: 'celsius' }, schemaVersion: 1, createdAt: '', updatedAt: '',
             };
-
             const triathlonFocusEvent: UserEvent = {
-                id: 't1', title: 'Olympic Triathlon', date: '2026-09-12', priority: 'A', lifecycle: 'scheduled',
-                category: 'triathlon', demandProfile: { aerobicEndurance: 0.75, thresholdPower: 0.8, vo2MaxPower: 0.45, repeatedSurges: 0.2, sprintPower: 0.1, fatigueResistance: 0.65, neuromuscular: 0.15 },
+                id: 't1', title: 'Olympic Triathlon', date: '2026-09-12', priority: 'A', lifecycle: 'scheduled', category: 'triathlon',
+                demandProfile: { aerobicEndurance: 0.75, thresholdPower: 0.8, vo2MaxPower: 0.45, repeatedSurges: 0.2, sprintPower: 0.1, fatigueResistance: 0.65, neuromuscular: 0.15 },
             };
-
             const withoutEvent = rankCandidatesByUtility(ENRICHED_TEMPLATES, [], fatigue, availability, [], prefs, {});
             const withTriathlon = rankCandidatesByUtility(ENRICHED_TEMPLATES, [], fatigue, availability, [], prefs, { focusEvent: triathlonFocusEvent });
-
             const cyclingBaseline = withoutEvent.find(r => r.template.modality === 'Cycling')!;
             const runningBaseline = withoutEvent.find(r => r.template.modality === 'Running')!;
             const cyclingWithEvent = withTriathlon.find(r => r.template.id === cyclingBaseline.template.id)!;
             const runningWithEvent = withTriathlon.find(r => r.template.id === runningBaseline.template.id)!;
-
-            // Both must be BOOSTED (not penalized) relative to their no-event baseline.
             expect(cyclingWithEvent.utilityScore).toBeGreaterThan(cyclingBaseline.utilityScore);
             expect(runningWithEvent.utilityScore).toBeGreaterThan(runningBaseline.utilityScore);
-
             const strengthWithEvent = withTriathlon.find(r => r.template.modality === 'Strength')!;
             expect(cyclingWithEvent.utilityScore).toBeGreaterThan(strengthWithEvent.utilityScore);
             expect(runningWithEvent.utilityScore).toBeGreaterThan(strengthWithEvent.utilityScore);
@@ -590,66 +398,47 @@ describe('Architecture & Phased Engine Integration', () => {
     describe('Phase 6: Race-Specific Endurance phase-gating', () => {
         const raceSpecificIds = ['end_race_specific_01', 'end_race_sim_01', 'end_taper_sharpen_01', 'end_pre_race_openers_01'];
         const cyclingEvent = (date: string): UserEvent => ({
-            id: 'c1', title: 'Road Race', date, priority: 'A', lifecycle: 'scheduled',
-            category: 'cycling_event', demandProfile: { aerobicEndurance: 0.8, thresholdPower: 0.8, vo2MaxPower: 0.6, repeatedSurges: 0.5, sprintPower: 0.3, fatigueResistance: 0.7, neuromuscular: 0.4 },
+            id: 'c1', title: 'Road Race', date, priority: 'A', lifecycle: 'scheduled', category: 'cycling_event',
+            demandProfile: { aerobicEndurance: 0.8, thresholdPower: 0.8, vo2MaxPower: 0.6, repeatedSurges: 0.5, sprintPower: 0.3, fatigueResistance: 0.7, neuromuscular: 0.4 },
         });
 
         it('excludes every Race-Specific Endurance template when no focus event governs the day', () => {
             const noEvent = evaluatePeriodizationPhase([], '2026-08-07');
-            raceSpecificIds.forEach(id => {
-                const template = ENRICHED_TEMPLATES.find(t => t.id === id)!;
-                expect(isTemplatePhaseEligible(template, noEvent)).toBe(false);
-            });
+            raceSpecificIds.forEach(id => expect(isTemplatePhaseEligible(ENRICHED_TEMPLATES.find(t => t.id === id)!, noEvent)).toBe(false));
         });
 
         it('progresses eligibility from event-specific endurance -> race simulation -> taper sharpening -> pre-race openers as the event approaches', () => {
-            const buildPhase = evaluatePeriodizationPhase([cyclingEvent('2026-09-16')], '2026-08-07'); // 40 days out: Build
-            const specificityPhase = evaluatePeriodizationPhase([cyclingEvent('2026-08-27')], '2026-08-07'); // 20 days out: Specificity
-            const taperPhase = evaluatePeriodizationPhase([cyclingEvent('2026-08-14')], '2026-08-07'); // 7 days out: A-event taper window
-            const finalDays = evaluatePeriodizationPhase([cyclingEvent('2026-08-09')], '2026-08-07'); // 2 days out: taper + within openers window
-
+            const buildPhase = evaluatePeriodizationPhase([cyclingEvent('2026-09-16')], '2026-08-07');
+            const specificityPhase = evaluatePeriodizationPhase([cyclingEvent('2026-08-27')], '2026-08-07');
+            const taperPhase = evaluatePeriodizationPhase([cyclingEvent('2026-08-14')], '2026-08-07');
+            const finalDays = evaluatePeriodizationPhase([cyclingEvent('2026-08-09')], '2026-08-07');
             const eligible = (result: typeof buildPhase, id: string) => isTemplatePhaseEligible(ENRICHED_TEMPLATES.find(t => t.id === id)!, result);
-
-            // 40 days out: only the aerobic-dominant event-specific ride is on, nothing taper/sim-specific yet.
             expect(eligible(buildPhase, 'end_race_specific_01')).toBe(true);
             expect(eligible(buildPhase, 'end_race_sim_01')).toBe(false);
             expect(eligible(buildPhase, 'end_taper_sharpen_01')).toBe(false);
             expect(eligible(buildPhase, 'end_pre_race_openers_01')).toBe(false);
-
-            // 20 days out: race simulation joins (still pre-taper), taper-only sessions still don't.
             expect(eligible(specificityPhase, 'end_race_specific_01')).toBe(true);
             expect(eligible(specificityPhase, 'end_race_sim_01')).toBe(true);
             expect(eligible(specificityPhase, 'end_taper_sharpen_01')).toBe(false);
-
-            // 7 days out (tapering): both pre-taper templates step aside, taper sharpening
-            // takes over, openers still too early (>3 days out).
             expect(eligible(taperPhase, 'end_race_specific_01')).toBe(false);
             expect(eligible(taperPhase, 'end_race_sim_01')).toBe(false);
             expect(eligible(taperPhase, 'end_taper_sharpen_01')).toBe(true);
             expect(eligible(taperPhase, 'end_pre_race_openers_01')).toBe(false);
-
-            // 2 days out: openers finally on.
             expect(eligible(finalDays, 'end_pre_race_openers_01')).toBe(true);
         });
 
         it('Path B ranks a phase-eligible Race-Specific Endurance template with real (non-zero) utility', () => {
             const fatigue = createEmptyFatigue('2026-08-07');
-            const availability = {
-                ...resolveAvailability('2026-08-07', null),
-                maxTimeMinutes: 120,
-                availableEquipment: [],
-            };
+            const availability = { ...resolveAvailability('2026-08-07', null), maxTimeMinutes: 120, availableEquipment: [] };
             const prefs: UserPreferences = {
                 userId: '', preferredRecoveryStyle: 'mixed', defaultWeekdayTimeMin: 60, defaultWeekendTimeMin: 90,
                 preferredTimeOfDay: 'flexible', preferredModalities: [], deprioritizedModalities: [], avoidedModalities: [],
                 explanationVerbosity: 'brief', conservativeBias: false,
                 preferredUnits: { distance: 'km', weight: 'kg', temperature: 'celsius' }, schemaVersion: 1, createdAt: '', updatedAt: '',
             };
-            const periodization = evaluatePeriodizationPhase([cyclingEvent('2026-08-27')], '2026-08-07'); // Specificity, both event-specific + race-sim on
-
+            const periodization = evaluatePeriodizationPhase([cyclingEvent('2026-08-27')], '2026-08-07');
             const candidates = ENRICHED_TEMPLATES.filter(t => isTemplatePhaseEligible(t, periodization));
             expect(candidates.some(t => t.category === 'Race-Specific Endurance')).toBe(true);
-
             const ranked = rankCandidatesByUtility(candidates, [], fatigue, availability, [], prefs, { focusEvent: periodization.focusEvent });
             const raceSpecificPick = ranked.find(r => r.template.category === 'Race-Specific Endurance');
             expect(raceSpecificPick).toBeDefined();

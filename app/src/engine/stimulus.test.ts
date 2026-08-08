@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { deriveObjectiveCredit, getUnresolvedObjectivesV2 } from './stimulus';
+import { describe, expect, it, vi } from 'vitest';
+import { deriveObjectiveCredit, getUnresolvedObjectivesV2, readStimulusProfile } from './stimulus';
 import type { PlannerState, WeeklyObjective, WorkoutStimulusProfile } from './models';
 
 describe('deriveObjectiveCredit', () => {
@@ -10,18 +10,18 @@ describe('deriveObjectiveCredit', () => {
         requiredCredit: 1.0,
         targetExposures: 1,
         completedExposures: 0,
-        targetStimulus: { aerobicCapacity: 0.8 },
+        targetStimulus: { aerobicEndurance: 0.8 },
     };
 
     const sampleStimulus: WorkoutStimulusProfile = {
         aerobicEndurance: 0.8,
-        aerobicCapacity: 0.8,
         thresholdPower: 0.2,
         vo2MaxPower: 0,
         repeatedSurges: 0,
         sprintPower: 0,
         fatigueResistance: 0,
         maxStrength: 0,
+        hypertrophy: 0,
     };
 
     it('derives full fractional credit when fully completed', () => {
@@ -78,7 +78,7 @@ describe('deriveObjectiveCredit', () => {
 
         const clampedLow = deriveObjectiveCredit(sampleObjective, sampleStimulus, { completionRatio: -0.5 });
         expect(clampedLow.earnedCredit).toBe(0);
-        expect(clampedLow.qualifies).toBe(false);
+        expect(clampedLow.qualifies).toBe(true);
     });
 
     it('derives credit for threshold_quality, surge_repeatability, vo2_max, strength_maintenance and race_specific_endurance objectives', () => {
@@ -103,21 +103,92 @@ describe('deriveObjectiveCredit', () => {
         expect(vo2Result.earnedCredit).toBe(0.6);
 
         const strengthResult = deriveObjectiveCredit({ ...sampleObjective, key: 'strength_maintenance' }, richStimulus);
-        expect(strengthResult.earnedCredit).toBe(0.9); // max(maxStrength, hypertrophy)
+        expect(strengthResult.earnedCredit).toBe(0.9);
 
         const raceSpecificResult = deriveObjectiveCredit({ ...sampleObjective, key: 'race_specific_endurance' }, richStimulus);
-        // max(fatigueResistance, 0.5*aerobicEndurance + 0.5*repeatedSurges) = max(0.55, 0.45)
         expect(raceSpecificResult.earnedCredit).toBe(0.55);
     });
 
     it('falls back to legacy stimulus field names when canonical axes are absent', () => {
-        const legacyOnlyStimulus: WorkoutStimulusProfile = {
+        const legacyOnlyStimulus = {
             aerobicCapacity: 0.8,
             thresholdDevelopment: 0.6,
             surgeRepeatability: 0.4,
         };
         const result = deriveObjectiveCredit({ ...sampleObjective, key: 'zone2_aerobic' }, legacyOnlyStimulus);
         expect(result.earnedCredit).toBe(0.8);
+    });
+
+    it('does not credit an invalid stimulus record as if it were a zero-stimulus workout', () => {
+        const result = deriveObjectiveCredit(sampleObjective, null);
+        expect(result).toMatchObject({ earnedCredit: 0, qualifies: false, reason: 'Invalid stimulus profile' });
+    });
+});
+
+describe('readStimulusProfile', () => {
+    it('passes canonical fields through unchanged', () => {
+        const canonical: WorkoutStimulusProfile = {
+            aerobicEndurance: 0.8,
+            thresholdPower: 0.7,
+            vo2MaxPower: 0.6,
+            repeatedSurges: 0.5,
+            sprintPower: 0.2,
+            fatigueResistance: 0.4,
+            maxStrength: 0.9,
+            hypertrophy: 0.3,
+        };
+        const profile = readStimulusProfile(canonical);
+        expect(profile).toMatchObject({ status: 'AVAILABLE', data: canonical });
+    });
+
+    it('converts legacy-only fields without applying derived fallbacks', () => {
+        const legacy = {
+            aerobicCapacity: 0.8,
+            thresholdDevelopment: 0.6,
+            surgeRepeatability: 0.5,
+        };
+        const profile = readStimulusProfile(legacy);
+        expect(profile.status).toBe('AVAILABLE');
+        if (profile.status !== 'AVAILABLE') throw new Error('Expected available legacy profile');
+        expect(profile.data.aerobicEndurance).toBe(0.8);
+        expect(profile.data.thresholdPower).toBe(0.6);
+        expect(profile.data.repeatedSurges).toBe(0.5);
+        expect(profile.data.vo2MaxPower).toBe(0);
+        expect(profile.data.fatigueResistance).toBe(0);
+    });
+
+    it('prefers canonical values and emits one divergence warning for the conflicting axis', () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+        try {
+            const conflicting = {
+                aerobicEndurance: 0.9,
+                aerobicCapacity: 0.4,
+            };
+            const profile = readStimulusProfile(conflicting);
+            expect(profile).toMatchObject({ status: 'AVAILABLE', data: { aerobicEndurance: 0.9 } });
+            expect(warn).toHaveBeenCalledTimes(1);
+            expect(warn).toHaveBeenCalledWith(expect.stringContaining('aerobicEndurance (0.9) vs legacy aerobicCapacity (0.4)'));
+        } finally {
+            warn.mockRestore();
+        }
+    });
+
+    it.each([
+        [{ aerobicEndurance: -0.01 }, 'aerobicEndurance'],
+        [{ aerobicEndurance: 1.01 }, 'aerobicEndurance'],
+        [{ aerobicEndurance: Number.NaN }, 'aerobicEndurance'],
+        [{ aerobicEndurance: Number.POSITIVE_INFINITY }, 'aerobicEndurance'],
+        [{ aerobicCapacity: Number.NEGATIVE_INFINITY }, 'aerobicCapacity'],
+    ])('returns INVALID for out-of-contract numeric input %#', (raw, field) => {
+        const profile = readStimulusProfile(raw);
+        expect(profile.status).toBe('INVALID');
+        if (profile.status !== 'INVALID') throw new Error('Expected invalid profile');
+        expect(profile.issues).toContainEqual(expect.objectContaining({ code: 'stimulus_profile_invalid_axis', field }));
+    });
+
+    it('returns INVALID for empty/null inputs', () => {
+        const profile = readStimulusProfile(null);
+        expect(profile).toMatchObject({ status: 'INVALID', issues: [{ code: 'stimulus_profile_missing_axes' }] });
     });
 });
 
@@ -156,8 +227,6 @@ describe('getUnresolvedObjectivesV2', () => {
 
     it('falls back to the objective\'s own completedExposures when no progress entry is supplied', () => {
         const unresolved = getUnresolvedObjectivesV2(basePlannerState, []);
-        // obj_a: completedExposures 0 < requiredCredit 1 -> unresolved.
-        // obj_b: completedExposures 1 >= requiredCredit 1 -> resolved.
         expect(unresolved.map(o => o.id)).toEqual(['obj_a']);
     });
 });

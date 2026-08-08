@@ -97,17 +97,29 @@ export function applyCompletedSessionLoad(
     const d2 = new Date(completedDateStr + 'T00:00:00');
     const elapsedHours = Math.max(0, (d2.getTime() - d1.getTime()) / (1000 * 60 * 60));
 
-    // 2. Decay previous external load
+    // 2. Decay previous external load (both saturated and raw latent)
     const decayedExternal = decayFatigue(currentState.externalLoadFatigue, elapsedHours);
+    const decayedRawExternal = currentState.rawExternalLoadFatigue
+        ? decayFatigue(currentState.rawExternalLoadFatigue, elapsedHours)
+        : decayedExternal;
 
-    // 3. Add new session cost to external load
+    // 3. Add new session cost to unsaturated raw external load, then clamp for externalLoadFatigue
+    const rawExternal: DimensionalFatigue = {
+        systemic: decayedRawExternal.systemic + costProfile.systemic,
+        cardiovascular: decayedRawExternal.cardiovascular + costProfile.cardiovascular,
+        lowerBody: decayedRawExternal.lowerBody + costProfile.lowerBody,
+        upperBody: decayedRawExternal.upperBody + costProfile.upperBody,
+        impactTissue: decayedRawExternal.impactTissue + costProfile.impactTissue,
+        neuromuscular: decayedRawExternal.neuromuscular + costProfile.neuromuscular,
+    };
+
     const newExternal: DimensionalFatigue = {
-        systemic: Math.min(1, decayedExternal.systemic + costProfile.systemic),
-        cardiovascular: Math.min(1, decayedExternal.cardiovascular + costProfile.cardiovascular),
-        lowerBody: Math.min(1, decayedExternal.lowerBody + costProfile.lowerBody),
-        upperBody: Math.min(1, decayedExternal.upperBody + costProfile.upperBody),
-        impactTissue: Math.min(1, decayedExternal.impactTissue + costProfile.impactTissue),
-        neuromuscular: Math.min(1, decayedExternal.neuromuscular + costProfile.neuromuscular),
+        systemic: Math.min(1, rawExternal.systemic),
+        cardiovascular: Math.min(1, rawExternal.cardiovascular),
+        lowerBody: Math.min(1, rawExternal.lowerBody),
+        upperBody: Math.min(1, rawExternal.upperBody),
+        impactTissue: Math.min(1, rawExternal.impactTissue),
+        neuromuscular: Math.min(1, rawExternal.neuromuscular),
     };
 
     // 4. Combined fatigue = max(externalLoad, internalResponse)
@@ -123,6 +135,7 @@ export function applyCompletedSessionLoad(
     return {
         lastUpdatedDate: completedDateStr,
         externalLoadFatigue: newExternal,
+        rawExternalLoadFatigue: rawExternal,
         internalResponseStrain: currentState.internalResponseStrain,
         combinedFatigue: combined,
     };
@@ -136,10 +149,20 @@ export function buildFatigueStateFromHistory(
     internalStrain: DimensionalFatigue,
     asOfDate: string
 ): FatigueState {
+    let sortedHistory = history;
+    // Assert chronological ordering invariant; sort if out of order to prevent silent mis-decay
+    for (let i = 1; i < history.length; i++) {
+        if (history[i].date < history[i - 1].date) {
+            console.warn(`[buildFatigueStateFromHistory] Chronological ordering invariant violated: item at ${i} (${history[i].date}) is before ${history[i - 1].date}. Sorting history.`);
+            sortedHistory = [...history].sort((a, b) => a.date.localeCompare(b.date));
+            break;
+        }
+    }
+
     const emptyCost: WorkoutCostProfile = { systemic: 0, cardiovascular: 0, lowerBody: 0, upperBody: 0, impactTissue: 0, neuromuscular: 0 };
-    const replayed = history.reduce(
+    const replayed = sortedHistory.reduce(
         (state, exposure) => applyCompletedSessionLoad(state, exposure.date, exposure.costProfile),
-        createEmptyFatigue(history[0]?.date ?? asOfDate)
+        createEmptyFatigue(sortedHistory[0]?.date ?? asOfDate)
     );
     const decayed = applyCompletedSessionLoad(replayed, asOfDate, emptyCost);
     const combined: DimensionalFatigue = {

@@ -40,7 +40,12 @@ describe('day-0 event-intent acceptance', () => {
         const eventDriven = await evaluateTrainingWithIntent('u1', input, context(), [roadRace], '2026-08-07', undefined, fixtureHistory);
         const intent = await resolveTrainingIntent('u1', [roadRace], '2026-08-07', input, 7, fixtureHistory);
         expect(eventDriven.template.id).not.toBe(baseline.template.id);
-        expect(eventDriven.template.category).toBe('Race-Specific Endurance');
+        // Race-Specific Endurance's only day-0-eligible candidate (37 days out excludes the
+        // <=35-day race-sim template) has thresholdPower stimulus below threshold_quality's
+        // qualification.minimumStimulus, so since calculateStimulusBenefit (optimizer.ts) enforces
+        // that gate it correctly earns no benefit toward that objective. Hard Endurance genuinely
+        // qualifies for both threshold_quality and surge_repeatability and wins on real merit.
+        expect(eventDriven.template.category).toBe('Hard Endurance');
         expect(intent.unresolvedObjectives.map(objective => objective.key)).toContain('surge_repeatability');
         expect(intent.unresolvedObjectives.map(objective => objective.key)).toContain('race_specific_endurance');
         expect(eventDriven.rationale).toContain('Build phase');
@@ -79,5 +84,15 @@ describe('ADR-0012 explicit PlanDefinition wiring (Phase 2 review fix)', () => {
     it('does not apply the September plan to a different cycling event it was not authored for', async () => {
         const intent = await resolveTrainingIntent('u1', [roadRace], '2026-08-10', readiness(), 7, fixtureHistory);
         expect(intent.microcycle.objectives.some(o => o.id.startsWith('obj_plan_'))).toBe(false);
+    });
+
+    it('uses the authored active PlanBlock as exact PlannedDose authority', async () => {
+        const build = await resolveTrainingIntent('u1', [septemberCyclingEvent], '2026-08-10', readiness(), 7, fixtureHistory);
+        const travel = await resolveTrainingIntent('u1', [septemberCyclingEvent], '2026-08-26', readiness(), 7, fixtureHistory);
+        const taper = await resolveTrainingIntent('u1', [septemberCyclingEvent], '2026-09-10', readiness(), 7, fixtureHistory);
+
+        expect(build.plannedDose).toEqual({ volume: 1.0, intensity: 1.0 });
+        expect(travel.plannedDose).toEqual({ volume: 0.6, intensity: 0.8 });
+        expect(taper.plannedDose).toEqual({ volume: 0.5, intensity: 1.0 });
     });
 });

@@ -27,7 +27,7 @@ describe('training history boundary', () => {
         expect(exposure?.trainingRecordLike.duration_min).toBe(40);
         expect(exposure).toMatchObject({
             modality: 'Cycling',
-            stimulusProfile: { thresholdDevelopment: 0.8 },
+            stimulusProfile: { thresholdPower: 0.8 },
         });
     });
 

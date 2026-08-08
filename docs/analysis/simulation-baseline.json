@@ -11,23 +11,22 @@
       "weeksSimulated": 4,
       "totalDays": 28,
       "categoryDistribution": {
-        "Easy Endurance": 13,
-        "Upper-body Strength": 1,
-        "Mobility/Recovery": 10,
-        "Rest": 1,
-        "Moderate Endurance": 1,
-        "Technical Skill": 2
+        "Race-Specific Endurance": 5,
+        "Easy Endurance": 7,
+        "Upper-body Strength": 5,
+        "Technical Skill": 4,
+        "Moderate Endurance": 3,
+        "Mobility/Recovery": 4
       },
       "modalityDistribution": {
-        "Cycling": 16,
-        "Strength": 1,
-        "Mobility": 10,
-        "None": 1
+        "Cycling": 19,
+        "Strength": 5,
+        "Mobility": 4
       },
-      "restOrRecoveryDayCount": 11,
-      "restOrRecoveryDayPct": 39.3,
-      "maxConsecutiveSameTemplateStreakWithinCall": 4,
-      "maxConsecutiveSameTemplateStreakAcrossWeeks": 5,
+      "restOrRecoveryDayCount": 4,
+      "restOrRecoveryDayPct": 14.3,
+      "maxConsecutiveSameTemplateStreakWithinCall": 2,
+      "maxConsecutiveSameTemplateStreakAcrossWeeks": 2,
       "objectiveResolution": [
         {
           "key": "zone2_aerobic",
@@ -58,7 +57,8 @@
           "objectiveTitle": "Aerobic Base (Zone 2)",
           "templateId": "end_race_specific_01",
           "templateTitle": "Event-Specific Endurance Ride",
-          "modality": "Cycling"
+          "modality": "Cycling",
+          "earnedCredit": 0.8
         },
         {
           "weekIndex": 0,
@@ -67,7 +67,8 @@
           "objectiveTitle": "Cycling Race-Specific Endurance",
           "templateId": "end_race_specific_01",
           "templateTitle": "Event-Specific Endurance Ride",
-          "modality": "Cycling"
+          "modality": "Cycling",
+          "earnedCredit": 0.7
         },
         {
           "weekIndex": 0,
@@ -76,43 +77,108 @@
           "objectiveTitle": "Aerobic Base (Zone 2)",
           "templateId": "end_easy_01",
           "templateTitle": "Zone 2 Spin",
-          "modality": "Cycling"
+          "modality": "Cycling",
+          "earnedCredit": 0.8
         },
         {
           "weekIndex": 0,
           "date": "2026-08-09",
+          "objectiveKey": "zone2_aerobic",
+          "objectiveTitle": "Aerobic Base (Zone 2)",
+          "templateId": "end_race_specific_01",
+          "templateTitle": "Event-Specific Endurance Ride",
+          "modality": "Cycling",
+          "earnedCredit": 0.3999999999999999
+        },
+        {
+          "weekIndex": 0,
+          "date": "2026-08-09",
+          "objectiveKey": "race_specific_endurance",
+          "objectiveTitle": "Cycling Race-Specific Endurance",
+          "templateId": "end_race_specific_01",
+          "templateTitle": "Event-Specific Endurance Ride",
+          "modality": "Cycling",
+          "earnedCredit": 0.30000000000000004
+        },
+        {
+          "weekIndex": 0,
+          "date": "2026-08-10",
           "objectiveKey": "strength_maintenance",
           "objectiveTitle": "Strength & Neuromuscular Maintenance",
           "templateId": "str_upper_01",
           "templateTitle": "Upper Body Push/Pull",
-          "modality": "Strength"
+          "modality": "Strength",
+          "earnedCredit": 0.8
+        },
+        {
+          "weekIndex": 0,
+          "date": "2026-08-11",
+          "objectiveKey": "strength_maintenance",
+          "objectiveTitle": "Strength & Neuromuscular Maintenance",
+          "templateId": "str_upper_01",
+          "templateTitle": "Upper Body Push/Pull",
+          "modality": "Strength",
+          "earnedCredit": 0.19999999999999996
         },
         {
           "weekIndex": 1,
           "date": "2026-08-14",
           "objectiveKey": "threshold_quality",
           "objectiveTitle": "Threshold Development",
-          "templateId": "end_race_sim_01",
-          "templateTitle": "Race Simulation",
-          "modality": "Cycling"
+          "templateId": "end_mod_02",
+          "templateTitle": "Tempo Ride",
+          "modality": "Cycling",
+          "earnedCredit": 0.8
         },
         {
           "weekIndex": 1,
-          "date": "2026-08-14",
-          "objectiveKey": "race_specific_endurance",
-          "objectiveTitle": "Cycling Race-Specific Endurance",
-          "templateId": "end_race_sim_01",
-          "templateTitle": "Race Simulation",
-          "modality": "Cycling"
+          "date": "2026-08-18",
+          "objectiveKey": "threshold_quality",
+          "objectiveTitle": "Threshold Development",
+          "templateId": "end_mod_02",
+          "templateTitle": "Tempo Ride",
+          "modality": "Cycling",
+          "earnedCredit": 0.19999999999999996
         },
         {
           "weekIndex": 2,
           "date": "2026-08-21",
+          "objectiveKey": "strength_maintenance",
+          "objectiveTitle": "Strength & Neuromuscular Maintenance",
+          "templateId": "str_upper_01",
+          "templateTitle": "Upper Body Push/Pull",
+          "modality": "Strength",
+          "earnedCredit": 0.8
+        },
+        {
+          "weekIndex": 2,
+          "date": "2026-08-22",
+          "objectiveKey": "strength_maintenance",
+          "objectiveTitle": "Strength & Neuromuscular Maintenance",
+          "templateId": "str_upper_01",
+          "templateTitle": "Upper Body Push/Pull",
+          "modality": "Strength",
+          "earnedCredit": 0.19999999999999996
+        },
+        {
+          "weekIndex": 2,
+          "date": "2026-08-25",
           "objectiveKey": "race_specific_endurance",
           "objectiveTitle": "Cycling Race-Specific Endurance",
           "templateId": "end_race_sim_01",
           "templateTitle": "Race Simulation",
-          "modality": "Cycling"
+          "modality": "Cycling",
+          "earnedCredit": 0.30000000000000004
+        },
+        {
+          "weekIndex": 3,
+          "date": "2026-08-28",
+          "objectiveKey": "threshold_quality",
+          "objectiveTitle": "Threshold Development",
+          "templateId": "end_race_sim_01",
+          "templateTitle": "Race Simulation",
+          "modality": "Cycling",
+          "earnedCredit": 0.30000000000000004
         },
         {
           "weekIndex": 3,
@@ -121,18 +187,18 @@
           "objectiveTitle": "Cycling Race-Specific Endurance",
           "templateId": "end_race_sim_01",
           "templateTitle": "Race Simulation",
-          "modality": "Cycling"
+          "modality": "Cycling",
+          "earnedCredit": 0.15000000000000002
         }
       ],
       "utilityDiagnostics": {
-        "fragileSelectionCount": 15,
+        "fragileSelectionCount": 8,
         "lowerBenefitSelectionCount": 1,
         "trainTierRestOrRecoveryCount": 0
       },
       "qualityWarnings": [
         "Unresolved weekly objectives: threshold_quality 3/4.",
-        "Event-specific exposure occurred off the nominated anchor date in 4 week(s).",
-        "Same-template streak reached 5 days."
+        "Event-specific exposure occurred off the nominated anchor date in 3 week(s)."
       ],
       "anchorWeeks": [
         {
@@ -140,9 +206,10 @@
           "weekStartDate": "2026-08-07",
           "eventSpecificAnchorDate": "2026-08-09",
           "qualityAnchorDate": "2026-08-11",
-          "eventSpecificAnchorHit": false,
+          "eventSpecificAnchorHit": true,
           "eventSpecificExposureDates": [
-            "2026-08-07"
+            "2026-08-07",
+            "2026-08-09"
           ],
           "eventSpecificAnchorFulfilled": true,
           "qualityAnchorHit": false
@@ -154,7 +221,7 @@
           "qualityAnchorDate": "2026-08-18",
           "eventSpecificAnchorHit": false,
           "eventSpecificExposureDates": [
-            "2026-08-14"
+            "2026-08-20"
           ],
           "eventSpecificAnchorFulfilled": true,
           "qualityAnchorHit": true
@@ -166,7 +233,7 @@
           "qualityAnchorDate": "2026-08-25",
           "eventSpecificAnchorHit": false,
           "eventSpecificExposureDates": [
-            "2026-08-21"
+            "2026-08-25"
           ],
           "eventSpecificAnchorFulfilled": true,
           "qualityAnchorHit": false
@@ -186,9 +253,9 @@
       ],
       "anchorScopeNote": null,
       "fatigueTierDayCounts": {
-        "train": 1,
-        "modify": 12,
-        "recover": 11
+        "train": 5,
+        "modify": 11,
+        "recover": 4
       },
       "constraintViolations": []
     },
@@ -199,22 +266,23 @@
       "weeksSimulated": 4,
       "totalDays": 28,
       "categoryDistribution": {
-        "Easy Endurance": 11,
-        "Upper-body Strength": 1,
-        "Mobility/Recovery": 10,
-        "Rest": 3,
-        "Moderate Endurance": 3
+        "Hard Endurance": 1,
+        "Easy Endurance": 9,
+        "Upper-body Strength": 4,
+        "Technical Skill": 4,
+        "Race-Specific Endurance": 5,
+        "Mobility/Recovery": 4,
+        "Moderate Endurance": 1
       },
       "modalityDistribution": {
-        "Cycling": 14,
-        "Strength": 1,
-        "Mobility": 10,
-        "None": 3
+        "Cycling": 20,
+        "Strength": 4,
+        "Mobility": 4
       },
-      "restOrRecoveryDayCount": 13,
-      "restOrRecoveryDayPct": 46.4,
+      "restOrRecoveryDayCount": 4,
+      "restOrRecoveryDayPct": 14.3,
       "maxConsecutiveSameTemplateStreakWithinCall": 4,
-      "maxConsecutiveSameTemplateStreakAcrossWeeks": 5,
+      "maxConsecutiveSameTemplateStreakAcrossWeeks": 4,
       "objectiveResolution": [
         {
           "key": "zone2_aerobic",
@@ -224,7 +292,7 @@
         {
           "key": "threshold_quality",
           "timesGenerated": 4,
-          "timesResolved": 3
+          "timesResolved": 4
         },
         {
           "key": "surge_repeatability",
@@ -248,27 +316,40 @@
           "date": "2026-08-07",
           "objectiveKey": "zone2_aerobic",
           "objectiveTitle": "Aerobic Base (Zone 2)",
-          "templateId": "end_race_specific_01",
-          "templateTitle": "Event-Specific Endurance Ride",
-          "modality": "Cycling"
+          "templateId": "end_hard_02",
+          "templateTitle": "Bike VO2 Intervals",
+          "modality": "Cycling",
+          "earnedCredit": 0.6
+        },
+        {
+          "weekIndex": 0,
+          "date": "2026-08-07",
+          "objectiveKey": "threshold_quality",
+          "objectiveTitle": "Threshold Development",
+          "templateId": "end_hard_02",
+          "templateTitle": "Bike VO2 Intervals",
+          "modality": "Cycling",
+          "earnedCredit": 0.8
         },
         {
           "weekIndex": 0,
           "date": "2026-08-07",
           "objectiveKey": "surge_repeatability",
           "objectiveTitle": "Surge & High-Intensity Repeatability",
-          "templateId": "end_race_specific_01",
-          "templateTitle": "Event-Specific Endurance Ride",
-          "modality": "Cycling"
+          "templateId": "end_hard_02",
+          "templateTitle": "Bike VO2 Intervals",
+          "modality": "Cycling",
+          "earnedCredit": 1
         },
         {
           "weekIndex": 0,
-          "date": "2026-08-07",
-          "objectiveKey": "race_specific_endurance",
-          "objectiveTitle": "Cycling Race-Specific Endurance",
-          "templateId": "end_race_specific_01",
-          "templateTitle": "Event-Specific Endurance Ride",
-          "modality": "Cycling"
+          "date": "2026-08-08",
+          "objectiveKey": "zone2_aerobic",
+          "objectiveTitle": "Aerobic Base (Zone 2)",
+          "templateId": "end_easy_01",
+          "templateTitle": "Zone 2 Spin",
+          "modality": "Cycling",
+          "earnedCredit": 0.4
         },
         {
           "weekIndex": 0,
@@ -277,43 +358,58 @@
           "objectiveTitle": "Strength & Neuromuscular Maintenance",
           "templateId": "str_upper_01",
           "templateTitle": "Upper Body Push/Pull",
-          "modality": "Strength"
+          "modality": "Strength",
+          "earnedCredit": 0.8
         },
         {
-          "weekIndex": 1,
-          "date": "2026-08-14",
+          "weekIndex": 0,
+          "date": "2026-08-10",
+          "objectiveKey": "strength_maintenance",
+          "objectiveTitle": "Strength & Neuromuscular Maintenance",
+          "templateId": "str_upper_01",
+          "templateTitle": "Upper Body Push/Pull",
+          "modality": "Strength",
+          "earnedCredit": 0.19999999999999996
+        },
+        {
+          "weekIndex": 0,
+          "date": "2026-08-13",
           "objectiveKey": "threshold_quality",
           "objectiveTitle": "Threshold Development",
           "templateId": "end_race_sim_01",
           "templateTitle": "Race Simulation",
-          "modality": "Cycling"
+          "modality": "Cycling",
+          "earnedCredit": 0.19999999999999996
         },
         {
-          "weekIndex": 1,
-          "date": "2026-08-14",
-          "objectiveKey": "surge_repeatability",
-          "objectiveTitle": "Surge & High-Intensity Repeatability",
-          "templateId": "end_race_sim_01",
-          "templateTitle": "Race Simulation",
-          "modality": "Cycling"
-        },
-        {
-          "weekIndex": 1,
-          "date": "2026-08-14",
+          "weekIndex": 0,
+          "date": "2026-08-13",
           "objectiveKey": "race_specific_endurance",
           "objectiveTitle": "Cycling Race-Specific Endurance",
           "templateId": "end_race_sim_01",
           "templateTitle": "Race Simulation",
-          "modality": "Cycling"
+          "modality": "Cycling",
+          "earnedCredit": 0.85
+        },
+        {
+          "weekIndex": 1,
+          "date": "2026-08-18",
+          "objectiveKey": "race_specific_endurance",
+          "objectiveTitle": "Cycling Race-Specific Endurance",
+          "templateId": "end_race_sim_01",
+          "templateTitle": "Race Simulation",
+          "modality": "Cycling",
+          "earnedCredit": 0.15000000000000002
         },
         {
           "weekIndex": 2,
           "date": "2026-08-21",
-          "objectiveKey": "surge_repeatability",
-          "objectiveTitle": "Surge & High-Intensity Repeatability",
+          "objectiveKey": "threshold_quality",
+          "objectiveTitle": "Threshold Development",
           "templateId": "end_race_sim_01",
           "templateTitle": "Race Simulation",
-          "modality": "Cycling"
+          "modality": "Cycling",
+          "earnedCredit": 0.30000000000000004
         },
         {
           "weekIndex": 2,
@@ -322,16 +418,38 @@
           "objectiveTitle": "Cycling Race-Specific Endurance",
           "templateId": "end_race_sim_01",
           "templateTitle": "Race Simulation",
-          "modality": "Cycling"
+          "modality": "Cycling",
+          "earnedCredit": 0.15000000000000002
+        },
+        {
+          "weekIndex": 2,
+          "date": "2026-08-22",
+          "objectiveKey": "strength_maintenance",
+          "objectiveTitle": "Strength & Neuromuscular Maintenance",
+          "templateId": "str_upper_01",
+          "templateTitle": "Upper Body Push/Pull",
+          "modality": "Strength",
+          "earnedCredit": 0.8
+        },
+        {
+          "weekIndex": 2,
+          "date": "2026-08-23",
+          "objectiveKey": "strength_maintenance",
+          "objectiveTitle": "Strength & Neuromuscular Maintenance",
+          "templateId": "str_upper_01",
+          "templateTitle": "Upper Body Push/Pull",
+          "modality": "Strength",
+          "earnedCredit": 0.19999999999999996
         },
         {
           "weekIndex": 3,
           "date": "2026-08-28",
-          "objectiveKey": "surge_repeatability",
-          "objectiveTitle": "Surge & High-Intensity Repeatability",
+          "objectiveKey": "threshold_quality",
+          "objectiveTitle": "Threshold Development",
           "templateId": "end_race_sim_01",
           "templateTitle": "Race Simulation",
-          "modality": "Cycling"
+          "modality": "Cycling",
+          "earnedCredit": 0.30000000000000004
         },
         {
           "weekIndex": 3,
@@ -340,18 +458,18 @@
           "objectiveTitle": "Cycling Race-Specific Endurance",
           "templateId": "end_race_sim_01",
           "templateTitle": "Race Simulation",
-          "modality": "Cycling"
+          "modality": "Cycling",
+          "earnedCredit": 0.15000000000000002
         }
       ],
       "utilityDiagnostics": {
-        "fragileSelectionCount": 13,
-        "lowerBenefitSelectionCount": 3,
+        "fragileSelectionCount": 10,
+        "lowerBenefitSelectionCount": 1,
         "trainTierRestOrRecoveryCount": 0
       },
       "qualityWarnings": [
-        "Unresolved weekly objectives: threshold_quality 3/4.",
         "Event-specific exposure occurred off the nominated anchor date in 4 week(s).",
-        "Same-template streak reached 5 days."
+        "Same-template streak reached 4 days."
       ],
       "anchorWeeks": [
         {
@@ -361,7 +479,7 @@
           "qualityAnchorDate": "2026-08-11",
           "eventSpecificAnchorHit": false,
           "eventSpecificExposureDates": [
-            "2026-08-07"
+            "2026-08-13"
           ],
           "eventSpecificAnchorFulfilled": true,
           "qualityAnchorHit": false
@@ -373,10 +491,10 @@
           "qualityAnchorDate": "2026-08-18",
           "eventSpecificAnchorHit": false,
           "eventSpecificExposureDates": [
-            "2026-08-14"
+            "2026-08-18"
           ],
           "eventSpecificAnchorFulfilled": true,
-          "qualityAnchorHit": true
+          "qualityAnchorHit": false
         },
         {
           "weekIndex": 2,
@@ -388,7 +506,7 @@
             "2026-08-21"
           ],
           "eventSpecificAnchorFulfilled": true,
-          "qualityAnchorHit": true
+          "qualityAnchorHit": false
         },
         {
           "weekIndex": 3,
@@ -397,17 +515,18 @@
           "qualityAnchorDate": "2026-09-01",
           "eventSpecificAnchorHit": false,
           "eventSpecificExposureDates": [
-            "2026-08-28"
+            "2026-08-28",
+            "2026-08-31"
           ],
           "eventSpecificAnchorFulfilled": true,
-          "qualityAnchorHit": true
+          "qualityAnchorHit": false
         }
       ],
       "anchorScopeNote": null,
       "fatigueTierDayCounts": {
-        "train": 3,
-        "modify": 8,
-        "recover": 13
+        "train": 4,
+        "modify": 12,
+        "recover": 4
       },
       "constraintViolations": []
     },
@@ -418,23 +537,22 @@
       "weeksSimulated": 4,
       "totalDays": 28,
       "categoryDistribution": {
-        "Easy Endurance": 11,
-        "Race-Specific Endurance": 1,
-        "Mobility/Recovery": 11,
-        "Upper-body Strength": 1,
-        "Rest": 2,
-        "Moderate Endurance": 2
+        "Easy Endurance": 9,
+        "Race-Specific Endurance": 5,
+        "Moderate Endurance": 2,
+        "Mobility/Recovery": 5,
+        "Upper-body Strength": 5,
+        "Technical Skill": 2
       },
       "modalityDistribution": {
-        "Cycling": 14,
-        "Mobility": 11,
-        "Strength": 1,
-        "None": 2
+        "Cycling": 18,
+        "Mobility": 5,
+        "Strength": 5
       },
-      "restOrRecoveryDayCount": 13,
-      "restOrRecoveryDayPct": 46.4,
+      "restOrRecoveryDayCount": 5,
+      "restOrRecoveryDayPct": 17.9,
       "maxConsecutiveSameTemplateStreakWithinCall": 2,
-      "maxConsecutiveSameTemplateStreakAcrossWeeks": 3,
+      "maxConsecutiveSameTemplateStreakAcrossWeeks": 2,
       "objectiveResolution": [
         {
           "key": "zone2_aerobic",
@@ -444,7 +562,7 @@
         {
           "key": "threshold_quality",
           "timesGenerated": 4,
-          "timesResolved": 3
+          "timesResolved": 4
         },
         {
           "key": "surge_repeatability",
@@ -454,7 +572,7 @@
         {
           "key": "strength_maintenance",
           "timesGenerated": 4,
-          "timesResolved": 4
+          "timesResolved": 3
         },
         {
           "key": "race_specific_endurance",
@@ -470,7 +588,18 @@
           "objectiveTitle": "Aerobic Base (Zone 2)",
           "templateId": "end_easy_01",
           "templateTitle": "Zone 2 Spin",
-          "modality": "Cycling"
+          "modality": "Cycling",
+          "earnedCredit": 0.8
+        },
+        {
+          "weekIndex": 0,
+          "date": "2026-08-08",
+          "objectiveKey": "zone2_aerobic",
+          "objectiveTitle": "Aerobic Base (Zone 2)",
+          "templateId": "end_easy_01",
+          "templateTitle": "Zone 2 Spin",
+          "modality": "Cycling",
+          "earnedCredit": 0.19999999999999996
         },
         {
           "weekIndex": 0,
@@ -479,7 +608,8 @@
           "objectiveTitle": "Surge & High-Intensity Repeatability",
           "templateId": "end_race_specific_01",
           "templateTitle": "Event-Specific Endurance Ride",
-          "modality": "Cycling"
+          "modality": "Cycling",
+          "earnedCredit": 0.6
         },
         {
           "weekIndex": 0,
@@ -488,35 +618,138 @@
           "objectiveTitle": "Cycling Race-Specific Endurance",
           "templateId": "end_race_specific_01",
           "templateTitle": "Event-Specific Endurance Ride",
-          "modality": "Cycling"
+          "modality": "Cycling",
+          "earnedCredit": 0.7
         },
         {
           "weekIndex": 0,
-          "date": "2026-08-11",
-          "objectiveKey": "strength_maintenance",
-          "objectiveTitle": "Strength & Neuromuscular Maintenance",
-          "templateId": "str_upper_01",
-          "templateTitle": "Upper Body Push/Pull",
-          "modality": "Strength"
-        },
-        {
-          "weekIndex": 1,
-          "date": "2026-08-18",
+          "date": "2026-08-10",
           "objectiveKey": "threshold_quality",
           "objectiveTitle": "Threshold Development",
           "templateId": "end_mod_02",
           "templateTitle": "Tempo Ride",
-          "modality": "Cycling"
+          "modality": "Cycling",
+          "earnedCredit": 0.8
+        },
+        {
+          "weekIndex": 0,
+          "date": "2026-08-12",
+          "objectiveKey": "threshold_quality",
+          "objectiveTitle": "Threshold Development",
+          "templateId": "end_race_sim_01",
+          "templateTitle": "Race Simulation",
+          "modality": "Cycling",
+          "earnedCredit": 0.19999999999999996
+        },
+        {
+          "weekIndex": 0,
+          "date": "2026-08-12",
+          "objectiveKey": "surge_repeatability",
+          "objectiveTitle": "Surge & High-Intensity Repeatability",
+          "templateId": "end_race_sim_01",
+          "templateTitle": "Race Simulation",
+          "modality": "Cycling",
+          "earnedCredit": 0.4
+        },
+        {
+          "weekIndex": 0,
+          "date": "2026-08-12",
+          "objectiveKey": "race_specific_endurance",
+          "objectiveTitle": "Cycling Race-Specific Endurance",
+          "templateId": "end_race_sim_01",
+          "templateTitle": "Race Simulation",
+          "modality": "Cycling",
+          "earnedCredit": 0.30000000000000004
+        },
+        {
+          "weekIndex": 1,
+          "date": "2026-08-14",
+          "objectiveKey": "strength_maintenance",
+          "objectiveTitle": "Strength & Neuromuscular Maintenance",
+          "templateId": "str_upper_01",
+          "templateTitle": "Upper Body Push/Pull",
+          "modality": "Strength",
+          "earnedCredit": 0.8
+        },
+        {
+          "weekIndex": 1,
+          "date": "2026-08-15",
+          "objectiveKey": "strength_maintenance",
+          "objectiveTitle": "Strength & Neuromuscular Maintenance",
+          "templateId": "str_upper_01",
+          "templateTitle": "Upper Body Push/Pull",
+          "modality": "Strength",
+          "earnedCredit": 0.19999999999999996
+        },
+        {
+          "weekIndex": 2,
+          "date": "2026-08-24",
+          "objectiveKey": "threshold_quality",
+          "objectiveTitle": "Threshold Development",
+          "templateId": "end_race_sim_01",
+          "templateTitle": "Race Simulation",
+          "modality": "Cycling",
+          "earnedCredit": 0.19999999999999996
+        },
+        {
+          "weekIndex": 2,
+          "date": "2026-08-24",
+          "objectiveKey": "surge_repeatability",
+          "objectiveTitle": "Surge & High-Intensity Repeatability",
+          "templateId": "end_race_sim_01",
+          "templateTitle": "Race Simulation",
+          "modality": "Cycling",
+          "earnedCredit": 0.4
+        },
+        {
+          "weekIndex": 2,
+          "date": "2026-08-24",
+          "objectiveKey": "race_specific_endurance",
+          "objectiveTitle": "Cycling Race-Specific Endurance",
+          "templateId": "end_race_sim_01",
+          "templateTitle": "Race Simulation",
+          "modality": "Cycling",
+          "earnedCredit": 0.30000000000000004
+        },
+        {
+          "weekIndex": 3,
+          "date": "2026-08-28",
+          "objectiveKey": "strength_maintenance",
+          "objectiveTitle": "Strength & Neuromuscular Maintenance",
+          "templateId": "str_upper_01",
+          "templateTitle": "Upper Body Push/Pull",
+          "modality": "Strength",
+          "earnedCredit": 0.19999999999999996
+        },
+        {
+          "weekIndex": 3,
+          "date": "2026-09-01",
+          "objectiveKey": "threshold_quality",
+          "objectiveTitle": "Threshold Development",
+          "templateId": "end_race_sim_01",
+          "templateTitle": "Race Simulation",
+          "modality": "Cycling",
+          "earnedCredit": 0.30000000000000004
+        },
+        {
+          "weekIndex": 3,
+          "date": "2026-09-01",
+          "objectiveKey": "race_specific_endurance",
+          "objectiveTitle": "Cycling Race-Specific Endurance",
+          "templateId": "end_race_sim_01",
+          "templateTitle": "Race Simulation",
+          "modality": "Cycling",
+          "earnedCredit": 0.15000000000000002
         }
       ],
       "utilityDiagnostics": {
-        "fragileSelectionCount": 13,
-        "lowerBenefitSelectionCount": 2,
+        "fragileSelectionCount": 10,
+        "lowerBenefitSelectionCount": 1,
         "trainTierRestOrRecoveryCount": 0
       },
       "qualityWarnings": [
-        "Unresolved weekly objectives: threshold_quality 3/4.",
-        "Event-specific anchor missed in 3 nominated week(s)."
+        "Unresolved weekly objectives: strength_maintenance 3/4.",
+        "Event-specific exposure occurred off the nominated anchor date in 3 week(s)."
       ],
       "anchorWeeks": [
         {
@@ -526,7 +759,8 @@
           "qualityAnchorDate": "2026-08-11",
           "eventSpecificAnchorHit": true,
           "eventSpecificExposureDates": [
-            "2026-08-09"
+            "2026-08-09",
+            "2026-08-12"
           ],
           "eventSpecificAnchorFulfilled": true,
           "qualityAnchorHit": false
@@ -537,8 +771,10 @@
           "eventSpecificAnchorDate": "2026-08-16",
           "qualityAnchorDate": "2026-08-18",
           "eventSpecificAnchorHit": false,
-          "eventSpecificExposureDates": [],
-          "eventSpecificAnchorFulfilled": false,
+          "eventSpecificExposureDates": [
+            "2026-08-20"
+          ],
+          "eventSpecificAnchorFulfilled": true,
           "qualityAnchorHit": true
         },
         {
@@ -547,8 +783,10 @@
           "eventSpecificAnchorDate": "2026-08-23",
           "qualityAnchorDate": "2026-08-25",
           "eventSpecificAnchorHit": false,
-          "eventSpecificExposureDates": [],
-          "eventSpecificAnchorFulfilled": false,
+          "eventSpecificExposureDates": [
+            "2026-08-24"
+          ],
+          "eventSpecificAnchorFulfilled": true,
           "qualityAnchorHit": false
         },
         {
@@ -557,16 +795,18 @@
           "eventSpecificAnchorDate": "2026-08-30",
           "qualityAnchorDate": "2026-09-01",
           "eventSpecificAnchorHit": false,
-          "eventSpecificExposureDates": [],
-          "eventSpecificAnchorFulfilled": false,
-          "qualityAnchorHit": true
+          "eventSpecificExposureDates": [
+            "2026-09-01"
+          ],
+          "eventSpecificAnchorFulfilled": true,
+          "qualityAnchorHit": false
         }
       ],
       "anchorScopeNote": null,
       "fatigueTierDayCounts": {
-        "train": 3,
+        "train": 7,
         "modify": 8,
-        "recover": 13
+        "recover": 5
       },
       "constraintViolations": []
     },
@@ -577,20 +817,22 @@
       "weeksSimulated": 4,
       "totalDays": 28,
       "categoryDistribution": {
-        "Easy Endurance": 16,
-        "Race-Specific Endurance": 2,
-        "Upper-body Strength": 1,
-        "Mobility/Recovery": 9
+        "Mobility/Recovery": 8,
+        "Easy Endurance": 7,
+        "Race-Specific Endurance": 4,
+        "Moderate Endurance": 2,
+        "Upper-body Strength": 4,
+        "Technical Skill": 3
       },
       "modalityDistribution": {
-        "Cycling": 18,
-        "Strength": 1,
-        "Mobility": 9
+        "Mobility": 8,
+        "Cycling": 16,
+        "Strength": 4
       },
-      "restOrRecoveryDayCount": 9,
-      "restOrRecoveryDayPct": 32.1,
-      "maxConsecutiveSameTemplateStreakWithinCall": 3,
-      "maxConsecutiveSameTemplateStreakAcrossWeeks": 4,
+      "restOrRecoveryDayCount": 8,
+      "restOrRecoveryDayPct": 28.6,
+      "maxConsecutiveSameTemplateStreakWithinCall": 2,
+      "maxConsecutiveSameTemplateStreakAcrossWeeks": 2,
       "objectiveResolution": [
         {
           "key": "zone2_aerobic",
@@ -600,7 +842,7 @@
         {
           "key": "threshold_quality",
           "timesGenerated": 4,
-          "timesResolved": 1
+          "timesResolved": 4
         },
         {
           "key": "surge_repeatability",
@@ -610,7 +852,7 @@
         {
           "key": "strength_maintenance",
           "timesGenerated": 4,
-          "timesResolved": 4
+          "timesResolved": 3
         },
         {
           "key": "race_specific_endurance",
@@ -621,12 +863,33 @@
       "objectiveCredits": [
         {
           "weekIndex": 0,
+          "date": "2026-08-07",
+          "objectiveKey": "zone2_aerobic",
+          "objectiveTitle": "Aerobic Base (Zone 2)",
+          "templateId": "mob_01",
+          "templateTitle": "Active Recovery & Mobility",
+          "modality": "Mobility",
+          "earnedCredit": 0.1
+        },
+        {
+          "weekIndex": 0,
           "date": "2026-08-08",
           "objectiveKey": "zone2_aerobic",
           "objectiveTitle": "Aerobic Base (Zone 2)",
           "templateId": "end_easy_01",
           "templateTitle": "Zone 2 Spin",
-          "modality": "Cycling"
+          "modality": "Cycling",
+          "earnedCredit": 0.8
+        },
+        {
+          "weekIndex": 0,
+          "date": "2026-08-09",
+          "objectiveKey": "zone2_aerobic",
+          "objectiveTitle": "Aerobic Base (Zone 2)",
+          "templateId": "end_race_specific_01",
+          "templateTitle": "Event-Specific Endurance Ride",
+          "modality": "Cycling",
+          "earnedCredit": 0.09999999999999998
         },
         {
           "weekIndex": 0,
@@ -635,7 +898,8 @@
           "objectiveTitle": "Surge & High-Intensity Repeatability",
           "templateId": "end_race_specific_01",
           "templateTitle": "Event-Specific Endurance Ride",
-          "modality": "Cycling"
+          "modality": "Cycling",
+          "earnedCredit": 0.6
         },
         {
           "weekIndex": 0,
@@ -644,37 +908,139 @@
           "objectiveTitle": "Cycling Race-Specific Endurance",
           "templateId": "end_race_specific_01",
           "templateTitle": "Event-Specific Endurance Ride",
-          "modality": "Cycling"
+          "modality": "Cycling",
+          "earnedCredit": 0.7
         },
         {
           "weekIndex": 0,
           "date": "2026-08-10",
+          "objectiveKey": "threshold_quality",
+          "objectiveTitle": "Threshold Development",
+          "templateId": "end_mod_02",
+          "templateTitle": "Tempo Ride",
+          "modality": "Cycling",
+          "earnedCredit": 0.8
+        },
+        {
+          "weekIndex": 0,
+          "date": "2026-08-12",
+          "objectiveKey": "threshold_quality",
+          "objectiveTitle": "Threshold Development",
+          "templateId": "end_race_sim_01",
+          "templateTitle": "Race Simulation",
+          "modality": "Cycling",
+          "earnedCredit": 0.19999999999999996
+        },
+        {
+          "weekIndex": 0,
+          "date": "2026-08-12",
+          "objectiveKey": "surge_repeatability",
+          "objectiveTitle": "Surge & High-Intensity Repeatability",
+          "templateId": "end_race_sim_01",
+          "templateTitle": "Race Simulation",
+          "modality": "Cycling",
+          "earnedCredit": 0.4
+        },
+        {
+          "weekIndex": 0,
+          "date": "2026-08-12",
+          "objectiveKey": "race_specific_endurance",
+          "objectiveTitle": "Cycling Race-Specific Endurance",
+          "templateId": "end_race_sim_01",
+          "templateTitle": "Race Simulation",
+          "modality": "Cycling",
+          "earnedCredit": 0.30000000000000004
+        },
+        {
+          "weekIndex": 1,
+          "date": "2026-08-15",
           "objectiveKey": "strength_maintenance",
           "objectiveTitle": "Strength & Neuromuscular Maintenance",
           "templateId": "str_upper_01",
           "templateTitle": "Upper Body Push/Pull",
-          "modality": "Strength"
+          "modality": "Strength",
+          "earnedCredit": 0.8
+        },
+        {
+          "weekIndex": 1,
+          "date": "2026-08-16",
+          "objectiveKey": "strength_maintenance",
+          "objectiveTitle": "Strength & Neuromuscular Maintenance",
+          "templateId": "str_upper_01",
+          "templateTitle": "Upper Body Push/Pull",
+          "modality": "Strength",
+          "earnedCredit": 0.19999999999999996
+        },
+        {
+          "weekIndex": 2,
+          "date": "2026-08-23",
+          "objectiveKey": "threshold_quality",
+          "objectiveTitle": "Threshold Development",
+          "templateId": "end_race_sim_01",
+          "templateTitle": "Race Simulation",
+          "modality": "Cycling",
+          "earnedCredit": 0.7
+        },
+        {
+          "weekIndex": 2,
+          "date": "2026-08-23",
+          "objectiveKey": "surge_repeatability",
+          "objectiveTitle": "Surge & High-Intensity Repeatability",
+          "templateId": "end_race_sim_01",
+          "templateTitle": "Race Simulation",
+          "modality": "Cycling",
+          "earnedCredit": 0.4
+        },
+        {
+          "weekIndex": 2,
+          "date": "2026-08-23",
+          "objectiveKey": "race_specific_endurance",
+          "objectiveTitle": "Cycling Race-Specific Endurance",
+          "templateId": "end_race_sim_01",
+          "templateTitle": "Race Simulation",
+          "modality": "Cycling",
+          "earnedCredit": 0.30000000000000004
+        },
+        {
+          "weekIndex": 2,
+          "date": "2026-08-25",
+          "objectiveKey": "threshold_quality",
+          "objectiveTitle": "Threshold Development",
+          "templateId": "end_mod_02",
+          "templateTitle": "Tempo Ride",
+          "modality": "Cycling",
+          "earnedCredit": 0.30000000000000004
         },
         {
           "weekIndex": 3,
-          "date": "2026-09-03",
-          "objectiveKey": "threshold_quality",
-          "objectiveTitle": "Threshold Development",
-          "templateId": "end_taper_sharpen_01",
-          "templateTitle": "Taper Sharpening Ride",
-          "modality": "Cycling"
+          "date": "2026-08-29",
+          "objectiveKey": "strength_maintenance",
+          "objectiveTitle": "Strength & Neuromuscular Maintenance",
+          "templateId": "str_upper_01",
+          "templateTitle": "Upper Body Push/Pull",
+          "modality": "Strength",
+          "earnedCredit": 0.8
+        },
+        {
+          "weekIndex": 3,
+          "date": "2026-08-30",
+          "objectiveKey": "strength_maintenance",
+          "objectiveTitle": "Strength & Neuromuscular Maintenance",
+          "templateId": "str_upper_01",
+          "templateTitle": "Upper Body Push/Pull",
+          "modality": "Strength",
+          "earnedCredit": 0.19999999999999996
         }
       ],
       "utilityDiagnostics": {
-        "fragileSelectionCount": 14,
-        "lowerBenefitSelectionCount": 0,
+        "fragileSelectionCount": 10,
+        "lowerBenefitSelectionCount": 1,
         "trainTierRestOrRecoveryCount": 0
       },
       "qualityWarnings": [
-        "Unresolved weekly objectives: threshold_quality 1/4.",
-        "Event-specific anchor missed in 2 nominated week(s).",
-        "Event-specific exposure occurred off the nominated anchor date in 1 week(s).",
-        "Same-template streak reached 4 days."
+        "Unresolved weekly objectives: strength_maintenance 3/4.",
+        "Event-specific anchor missed in 1 nominated week(s).",
+        "Event-specific exposure occurred off the nominated anchor date in 1 week(s)."
       ],
       "anchorWeeks": [
         {
@@ -684,7 +1050,8 @@
           "qualityAnchorDate": "2026-08-11",
           "eventSpecificAnchorHit": true,
           "eventSpecificExposureDates": [
-            "2026-08-09"
+            "2026-08-09",
+            "2026-08-12"
           ],
           "eventSpecificAnchorFulfilled": true,
           "qualityAnchorHit": false
@@ -695,8 +1062,10 @@
           "eventSpecificAnchorDate": "2026-08-16",
           "qualityAnchorDate": "2026-08-18",
           "eventSpecificAnchorHit": false,
-          "eventSpecificExposureDates": [],
-          "eventSpecificAnchorFulfilled": false,
+          "eventSpecificExposureDates": [
+            "2026-08-19"
+          ],
+          "eventSpecificAnchorFulfilled": true,
           "qualityAnchorHit": false
         },
         {
@@ -704,10 +1073,12 @@
           "weekStartDate": "2026-08-21",
           "eventSpecificAnchorDate": "2026-08-23",
           "qualityAnchorDate": "2026-08-25",
-          "eventSpecificAnchorHit": false,
-          "eventSpecificExposureDates": [],
-          "eventSpecificAnchorFulfilled": false,
-          "qualityAnchorHit": false
+          "eventSpecificAnchorHit": true,
+          "eventSpecificExposureDates": [
+            "2026-08-23"
+          ],
+          "eventSpecificAnchorFulfilled": true,
+          "qualityAnchorHit": true
         },
         {
           "weekIndex": 3,
@@ -715,18 +1086,16 @@
           "eventSpecificAnchorDate": "2026-08-30",
           "qualityAnchorDate": "2026-09-01",
           "eventSpecificAnchorHit": false,
-          "eventSpecificExposureDates": [
-            "2026-09-03"
-          ],
-          "eventSpecificAnchorFulfilled": true,
+          "eventSpecificExposureDates": [],
+          "eventSpecificAnchorFulfilled": false,
           "qualityAnchorHit": false
         }
       ],
       "anchorScopeNote": null,
       "fatigueTierDayCounts": {
-        "train": 1,
-        "modify": 14,
-        "recover": 9
+        "train": 8,
+        "modify": 8,
+        "recover": 4
       },
       "constraintViolations": []
     },
@@ -737,20 +1106,19 @@
       "weeksSimulated": 4,
       "totalDays": 28,
       "categoryDistribution": {
-        "Easy Endurance": 4,
-        "Mobility/Recovery": 8,
-        "Rest": 8,
-        "Lower-body Strength": 1,
-        "Moderate Endurance": 7
+        "Moderate Endurance": 5,
+        "Easy Endurance": 7,
+        "Mobility/Recovery": 12,
+        "Lower-body Strength": 2,
+        "Upper-body Strength": 2
       },
       "modalityDistribution": {
-        "Running": 11,
-        "Mobility": 8,
-        "None": 8,
-        "Strength": 1
+        "Running": 12,
+        "Mobility": 12,
+        "Strength": 4
       },
-      "restOrRecoveryDayCount": 16,
-      "restOrRecoveryDayPct": 57.1,
+      "restOrRecoveryDayCount": 12,
+      "restOrRecoveryDayPct": 42.9,
       "maxConsecutiveSameTemplateStreakWithinCall": 1,
       "maxConsecutiveSameTemplateStreakAcrossWeeks": 1,
       "objectiveResolution": [
@@ -778,7 +1146,8 @@
           "objectiveTitle": "Aerobic Base (Zone 2)",
           "templateId": "end_mod_01",
           "templateTitle": "Steady-State Tempo Run",
-          "modality": "Running"
+          "modality": "Running",
+          "earnedCredit": 0.7
         },
         {
           "weekIndex": 0,
@@ -787,7 +1156,8 @@
           "objectiveTitle": "Threshold Development",
           "templateId": "end_mod_01",
           "templateTitle": "Steady-State Tempo Run",
-          "modality": "Running"
+          "modality": "Running",
+          "earnedCredit": 0.8
         },
         {
           "weekIndex": 0,
@@ -796,21 +1166,93 @@
           "objectiveTitle": "Aerobic Base (Zone 2)",
           "templateId": "end_easy_02",
           "templateTitle": "Light Base Run",
-          "modality": "Running"
+          "modality": "Running",
+          "earnedCredit": 0.8
         },
         {
           "weekIndex": 0,
-          "date": "2026-08-11",
+          "date": "2026-08-09",
+          "objectiveKey": "zone2_aerobic",
+          "objectiveTitle": "Aerobic Base (Zone 2)",
+          "templateId": "mob_01",
+          "templateTitle": "Active Recovery & Mobility",
+          "modality": "Mobility",
+          "earnedCredit": 0.1
+        },
+        {
+          "weekIndex": 0,
+          "date": "2026-08-10",
+          "objectiveKey": "zone2_aerobic",
+          "objectiveTitle": "Aerobic Base (Zone 2)",
+          "templateId": "end_mod_01",
+          "templateTitle": "Steady-State Tempo Run",
+          "modality": "Running",
+          "earnedCredit": 0.3999999999999999
+        },
+        {
+          "weekIndex": 0,
+          "date": "2026-08-10",
+          "objectiveKey": "threshold_quality",
+          "objectiveTitle": "Threshold Development",
+          "templateId": "end_mod_01",
+          "templateTitle": "Steady-State Tempo Run",
+          "modality": "Running",
+          "earnedCredit": 0.19999999999999996
+        },
+        {
+          "weekIndex": 0,
+          "date": "2026-08-13",
           "objectiveKey": "strength_maintenance",
           "objectiveTitle": "Strength & Neuromuscular Maintenance",
           "templateId": "str_lower_01",
           "templateTitle": "Lower Body Strength & Power",
-          "modality": "Strength"
+          "modality": "Strength",
+          "earnedCredit": 0.9
+        },
+        {
+          "weekIndex": 1,
+          "date": "2026-08-14",
+          "objectiveKey": "strength_maintenance",
+          "objectiveTitle": "Strength & Neuromuscular Maintenance",
+          "templateId": "str_upper_01",
+          "templateTitle": "Upper Body Push/Pull",
+          "modality": "Strength",
+          "earnedCredit": 0.09999999999999998
+        },
+        {
+          "weekIndex": 2,
+          "date": "2026-08-21",
+          "objectiveKey": "strength_maintenance",
+          "objectiveTitle": "Strength & Neuromuscular Maintenance",
+          "templateId": "str_lower_01",
+          "templateTitle": "Lower Body Strength & Power",
+          "modality": "Strength",
+          "earnedCredit": 0.19999999999999996
+        },
+        {
+          "weekIndex": 3,
+          "date": "2026-08-28",
+          "objectiveKey": "zone2_aerobic",
+          "objectiveTitle": "Aerobic Base (Zone 2)",
+          "templateId": "end_mod_01",
+          "templateTitle": "Steady-State Tempo Run",
+          "modality": "Running",
+          "earnedCredit": 0.09999999999999987
+        },
+        {
+          "weekIndex": 3,
+          "date": "2026-08-28",
+          "objectiveKey": "threshold_quality",
+          "objectiveTitle": "Threshold Development",
+          "templateId": "end_mod_01",
+          "templateTitle": "Steady-State Tempo Run",
+          "modality": "Running",
+          "earnedCredit": 0.8
         }
       ],
       "utilityDiagnostics": {
-        "fragileSelectionCount": 9,
-        "lowerBenefitSelectionCount": 8,
+        "fragileSelectionCount": 14,
+        "lowerBenefitSelectionCount": 0,
         "trainTierRestOrRecoveryCount": 0
       },
       "qualityWarnings": [
@@ -860,9 +1302,9 @@
       ],
       "anchorScopeNote": "Anchor-day nomination only requires SOME focus event (Race-Specific Endurance templates' phaseEligibility.requiresFocusEvent doesn't check event category), so a nomination can appear even here -- but the optimizer's event-priority penalty for non-matching modalities makes it unlikely to actually win the day's pick. Treat eventSpecificAnchorHit/qualityAnchorHit, not the raw nomination, as the meaningful signal for non-cycling scenarios.",
       "fatigueTierDayCounts": {
-        "train": 8,
-        "modify": 0,
-        "recover": 16
+        "train": 4,
+        "modify": 4,
+        "recover": 12
       },
       "constraintViolations": []
     },
@@ -873,21 +1315,20 @@
       "weeksSimulated": 4,
       "totalDays": 28,
       "categoryDistribution": {
-        "Easy Endurance": 10,
-        "Upper-body Strength": 1,
-        "Mobility/Recovery": 11,
-        "Rest": 3,
-        "Moderate Endurance": 3
+        "Moderate Endurance": 6,
+        "Easy Endurance": 8,
+        "Mobility/Recovery": 8,
+        "Upper-body Strength": 4,
+        "Lower-body Strength": 2
       },
       "modalityDistribution": {
-        "Cycling": 11,
-        "Strength": 1,
-        "Mobility": 11,
-        "Running": 2,
-        "None": 3
+        "Cycling": 9,
+        "Running": 5,
+        "Mobility": 8,
+        "Strength": 6
       },
-      "restOrRecoveryDayCount": 14,
-      "restOrRecoveryDayPct": 50,
+      "restOrRecoveryDayCount": 8,
+      "restOrRecoveryDayPct": 28.6,
       "maxConsecutiveSameTemplateStreakWithinCall": 1,
       "maxConsecutiveSameTemplateStreakAcrossWeeks": 1,
       "objectiveResolution": [
@@ -915,7 +1356,8 @@
           "objectiveTitle": "Aerobic Base (Zone 2)",
           "templateId": "end_mod_02",
           "templateTitle": "Tempo Ride",
-          "modality": "Cycling"
+          "modality": "Cycling",
+          "earnedCredit": 0.7
         },
         {
           "weekIndex": 0,
@@ -924,7 +1366,8 @@
           "objectiveTitle": "Threshold Development",
           "templateId": "end_mod_02",
           "templateTitle": "Tempo Ride",
-          "modality": "Cycling"
+          "modality": "Cycling",
+          "earnedCredit": 0.8
         },
         {
           "weekIndex": 0,
@@ -933,35 +1376,87 @@
           "objectiveTitle": "Aerobic Base (Zone 2)",
           "templateId": "end_easy_01",
           "templateTitle": "Zone 2 Spin",
-          "modality": "Cycling"
+          "modality": "Cycling",
+          "earnedCredit": 0.8
         },
         {
           "weekIndex": 0,
           "date": "2026-08-09",
+          "objectiveKey": "zone2_aerobic",
+          "objectiveTitle": "Aerobic Base (Zone 2)",
+          "templateId": "end_mod_01",
+          "templateTitle": "Steady-State Tempo Run",
+          "modality": "Running",
+          "earnedCredit": 0.5
+        },
+        {
+          "weekIndex": 0,
+          "date": "2026-08-09",
+          "objectiveKey": "threshold_quality",
+          "objectiveTitle": "Threshold Development",
+          "templateId": "end_mod_01",
+          "templateTitle": "Steady-State Tempo Run",
+          "modality": "Running",
+          "earnedCredit": 0.19999999999999996
+        },
+        {
+          "weekIndex": 0,
+          "date": "2026-08-13",
           "objectiveKey": "strength_maintenance",
           "objectiveTitle": "Strength & Neuromuscular Maintenance",
           "templateId": "str_upper_01",
           "templateTitle": "Upper Body Push/Pull",
-          "modality": "Strength"
+          "modality": "Strength",
+          "earnedCredit": 0.8
         },
         {
           "weekIndex": 1,
           "date": "2026-08-14",
+          "objectiveKey": "strength_maintenance",
+          "objectiveTitle": "Strength & Neuromuscular Maintenance",
+          "templateId": "str_lower_01",
+          "templateTitle": "Lower Body Strength & Power",
+          "modality": "Strength",
+          "earnedCredit": 0.19999999999999996
+        },
+        {
+          "weekIndex": 2,
+          "date": "2026-08-21",
           "objectiveKey": "threshold_quality",
           "objectiveTitle": "Threshold Development",
           "templateId": "end_mod_02",
           "templateTitle": "Tempo Ride",
-          "modality": "Cycling"
+          "modality": "Cycling",
+          "earnedCredit": 0.8
+        },
+        {
+          "weekIndex": 2,
+          "date": "2026-08-24",
+          "objectiveKey": "threshold_quality",
+          "objectiveTitle": "Threshold Development",
+          "templateId": "end_mod_02",
+          "templateTitle": "Tempo Ride",
+          "modality": "Cycling",
+          "earnedCredit": 0.19999999999999996
+        },
+        {
+          "weekIndex": 3,
+          "date": "2026-08-28",
+          "objectiveKey": "strength_maintenance",
+          "objectiveTitle": "Strength & Neuromuscular Maintenance",
+          "templateId": "str_lower_01",
+          "templateTitle": "Lower Body Strength & Power",
+          "modality": "Strength",
+          "earnedCredit": 0.19999999999999996
         }
       ],
       "utilityDiagnostics": {
-        "fragileSelectionCount": 13,
-        "lowerBenefitSelectionCount": 3,
+        "fragileSelectionCount": 11,
+        "lowerBenefitSelectionCount": 0,
         "trainTierRestOrRecoveryCount": 0
       },
       "qualityWarnings": [
-        "Event-specific anchor missed in 2 nominated week(s).",
-        "Event-specific exposure occurred off the nominated anchor date in 2 week(s).",
+        "Event-specific anchor missed in 4 nominated week(s).",
         "Triathlon capability is partial: the engine has no Swimming modality or swim objective/catalog support."
       ],
       "anchorWeeks": [
@@ -973,7 +1468,7 @@
           "eventSpecificAnchorHit": false,
           "eventSpecificExposureDates": [],
           "eventSpecificAnchorFulfilled": false,
-          "qualityAnchorHit": false
+          "qualityAnchorHit": true
         },
         {
           "weekIndex": 1,
@@ -983,7 +1478,7 @@
           "eventSpecificAnchorHit": false,
           "eventSpecificExposureDates": [],
           "eventSpecificAnchorFulfilled": false,
-          "qualityAnchorHit": true
+          "qualityAnchorHit": false
         },
         {
           "weekIndex": 2,
@@ -991,11 +1486,9 @@
           "eventSpecificAnchorDate": "2026-08-23",
           "qualityAnchorDate": "2026-08-25",
           "eventSpecificAnchorHit": false,
-          "eventSpecificExposureDates": [
-            "2026-08-21"
-          ],
-          "eventSpecificAnchorFulfilled": true,
-          "qualityAnchorHit": true
+          "eventSpecificExposureDates": [],
+          "eventSpecificAnchorFulfilled": false,
+          "qualityAnchorHit": false
         },
         {
           "weekIndex": 3,
@@ -1003,18 +1496,16 @@
           "eventSpecificAnchorDate": "2026-08-30",
           "qualityAnchorDate": "2026-09-01",
           "eventSpecificAnchorHit": false,
-          "eventSpecificExposureDates": [
-            "2026-08-28"
-          ],
-          "eventSpecificAnchorFulfilled": true,
-          "qualityAnchorHit": true
+          "eventSpecificExposureDates": [],
+          "eventSpecificAnchorFulfilled": false,
+          "qualityAnchorHit": false
         }
       ],
       "anchorScopeNote": null,
       "fatigueTierDayCounts": {
-        "train": 3,
+        "train": 5,
         "modify": 7,
-        "recover": 14
+        "recover": 8
       },
       "constraintViolations": []
     },
@@ -1025,18 +1516,18 @@
       "weeksSimulated": 4,
       "totalDays": 28,
       "categoryDistribution": {
-        "Upper-body Strength": 13,
-        "Mobility/Recovery": 9,
-        "Power Maintenance": 3,
-        "Rest": 3
+        "Lower-body Strength": 2,
+        "Upper-body Strength": 4,
+        "Easy Endurance": 13,
+        "Mobility/Recovery": 9
       },
       "modalityDistribution": {
-        "Strength": 16,
-        "Mobility": 9,
-        "None": 3
+        "Strength": 6,
+        "Running": 13,
+        "Mobility": 9
       },
-      "restOrRecoveryDayCount": 12,
-      "restOrRecoveryDayPct": 42.9,
+      "restOrRecoveryDayCount": 9,
+      "restOrRecoveryDayPct": 32.1,
       "maxConsecutiveSameTemplateStreakWithinCall": 1,
       "maxConsecutiveSameTemplateStreakAcrossWeeks": 1,
       "objectiveResolution": [
@@ -1054,12 +1545,33 @@
           "objectiveTitle": "Strength & Neuromuscular Maintenance",
           "templateId": "str_lower_01",
           "templateTitle": "Lower Body Strength & Power",
-          "modality": "Strength"
+          "modality": "Strength",
+          "earnedCredit": 0.9
+        },
+        {
+          "weekIndex": 0,
+          "date": "2026-08-08",
+          "objectiveKey": "strength_maintenance",
+          "objectiveTitle": "Strength & Neuromuscular Maintenance",
+          "templateId": "str_upper_01",
+          "templateTitle": "Upper Body Push/Pull",
+          "modality": "Strength",
+          "earnedCredit": 0.09999999999999998
+        },
+        {
+          "weekIndex": 2,
+          "date": "2026-08-21",
+          "objectiveKey": "strength_maintenance",
+          "objectiveTitle": "Strength & Neuromuscular Maintenance",
+          "templateId": "str_lower_01",
+          "templateTitle": "Lower Body Strength & Power",
+          "modality": "Strength",
+          "earnedCredit": 0.19999999999999996
         }
       ],
       "utilityDiagnostics": {
-        "fragileSelectionCount": 24,
-        "lowerBenefitSelectionCount": 3,
+        "fragileSelectionCount": 19,
+        "lowerBenefitSelectionCount": 4,
         "trainTierRestOrRecoveryCount": 0
       },
       "qualityWarnings": [
@@ -1110,9 +1622,9 @@
       ],
       "anchorScopeNote": "Anchor-day nomination only requires SOME focus event (Race-Specific Endurance templates' phaseEligibility.requiresFocusEvent doesn't check event category), so a nomination can appear even here -- but the optimizer's event-priority penalty for non-matching modalities makes it unlikely to actually win the day's pick. Treat eventSpecificAnchorHit/qualityAnchorHit, not the raw nomination, as the meaningful signal for non-cycling scenarios.",
       "fatigueTierDayCounts": {
-        "train": 0,
-        "modify": 12,
-        "recover": 12
+        "train": 4,
+        "modify": 7,
+        "recover": 9
       },
       "constraintViolations": []
     },
@@ -1123,19 +1635,21 @@
       "weeksSimulated": 4,
       "totalDays": 28,
       "categoryDistribution": {
-        "Easy Endurance": 11,
-        "Mobility/Recovery": 16,
-        "Upper-body Strength": 1
+        "Moderate Endurance": 4,
+        "Upper-body Strength": 3,
+        "Easy Endurance": 9,
+        "Mobility/Recovery": 11,
+        "Lower-body Strength": 1
       },
       "modalityDistribution": {
-        "Running": 11,
-        "Mobility": 16,
-        "Strength": 1
+        "Running": 13,
+        "Strength": 4,
+        "Mobility": 11
       },
-      "restOrRecoveryDayCount": 16,
-      "restOrRecoveryDayPct": 57.1,
-      "maxConsecutiveSameTemplateStreakWithinCall": 1,
-      "maxConsecutiveSameTemplateStreakAcrossWeeks": 1,
+      "restOrRecoveryDayCount": 11,
+      "restOrRecoveryDayPct": 39.3,
+      "maxConsecutiveSameTemplateStreakWithinCall": 2,
+      "maxConsecutiveSameTemplateStreakAcrossWeeks": 2,
       "objectiveResolution": [
         {
           "key": "zone2_aerobic",
@@ -1161,7 +1675,8 @@
           "objectiveTitle": "Aerobic Base (Zone 2)",
           "templateId": "end_mod_01",
           "templateTitle": "Steady-State Tempo Run",
-          "modality": "Running"
+          "modality": "Running",
+          "earnedCredit": 0.7
         },
         {
           "weekIndex": 0,
@@ -1170,25 +1685,48 @@
           "objectiveTitle": "Threshold Development",
           "templateId": "end_mod_01",
           "templateTitle": "Steady-State Tempo Run",
-          "modality": "Running"
+          "modality": "Running",
+          "earnedCredit": 0.8
         },
         {
           "weekIndex": 0,
           "date": "2026-08-08",
-          "objectiveKey": "zone2_aerobic",
-          "objectiveTitle": "Aerobic Base (Zone 2)",
-          "templateId": "end_easy_02",
-          "templateTitle": "Light Base Run",
-          "modality": "Running"
-        },
-        {
-          "weekIndex": 0,
-          "date": "2026-08-11",
           "objectiveKey": "strength_maintenance",
           "objectiveTitle": "Strength & Neuromuscular Maintenance",
           "templateId": "str_upper_01",
           "templateTitle": "Upper Body Push/Pull",
-          "modality": "Strength"
+          "modality": "Strength",
+          "earnedCredit": 0.8
+        },
+        {
+          "weekIndex": 0,
+          "date": "2026-08-09",
+          "objectiveKey": "strength_maintenance",
+          "objectiveTitle": "Strength & Neuromuscular Maintenance",
+          "templateId": "str_upper_01",
+          "templateTitle": "Upper Body Push/Pull",
+          "modality": "Strength",
+          "earnedCredit": 0.19999999999999996
+        },
+        {
+          "weekIndex": 0,
+          "date": "2026-08-10",
+          "objectiveKey": "zone2_aerobic",
+          "objectiveTitle": "Aerobic Base (Zone 2)",
+          "templateId": "end_easy_02",
+          "templateTitle": "Light Base Run",
+          "modality": "Running",
+          "earnedCredit": 0.8
+        },
+        {
+          "weekIndex": 0,
+          "date": "2026-08-11",
+          "objectiveKey": "zone2_aerobic",
+          "objectiveTitle": "Aerobic Base (Zone 2)",
+          "templateId": "end_easy_03",
+          "templateTitle": "Recovery Walk/Jog Intervals",
+          "modality": "Running",
+          "earnedCredit": 0.5
         },
         {
           "weekIndex": 1,
@@ -1197,7 +1735,8 @@
           "objectiveTitle": "Threshold Development",
           "templateId": "end_mod_01",
           "templateTitle": "Steady-State Tempo Run",
-          "modality": "Running"
+          "modality": "Running",
+          "earnedCredit": 0.19999999999999996
         },
         {
           "weekIndex": 2,
@@ -1206,7 +1745,38 @@
           "objectiveTitle": "Threshold Development",
           "templateId": "end_mod_01",
           "templateTitle": "Steady-State Tempo Run",
-          "modality": "Running"
+          "modality": "Running",
+          "earnedCredit": 0.19999999999999996
+        },
+        {
+          "weekIndex": 2,
+          "date": "2026-08-22",
+          "objectiveKey": "strength_maintenance",
+          "objectiveTitle": "Strength & Neuromuscular Maintenance",
+          "templateId": "str_upper_01",
+          "templateTitle": "Upper Body Push/Pull",
+          "modality": "Strength",
+          "earnedCredit": 0.8
+        },
+        {
+          "weekIndex": 2,
+          "date": "2026-08-24",
+          "objectiveKey": "strength_maintenance",
+          "objectiveTitle": "Strength & Neuromuscular Maintenance",
+          "templateId": "str_lower_01",
+          "templateTitle": "Lower Body Strength & Power",
+          "modality": "Strength",
+          "earnedCredit": 0.19999999999999996
+        },
+        {
+          "weekIndex": 3,
+          "date": "2026-08-28",
+          "objectiveKey": "zone2_aerobic",
+          "objectiveTitle": "Aerobic Base (Zone 2)",
+          "templateId": "end_mod_01",
+          "templateTitle": "Steady-State Tempo Run",
+          "modality": "Running",
+          "earnedCredit": 0.20000000000000018
         },
         {
           "weekIndex": 3,
@@ -1215,12 +1785,13 @@
           "objectiveTitle": "Threshold Development",
           "templateId": "end_mod_01",
           "templateTitle": "Steady-State Tempo Run",
-          "modality": "Running"
+          "modality": "Running",
+          "earnedCredit": 0.19999999999999996
         }
       ],
       "utilityDiagnostics": {
-        "fragileSelectionCount": 23,
-        "lowerBenefitSelectionCount": 0,
+        "fragileSelectionCount": 15,
+        "lowerBenefitSelectionCount": 1,
         "trainTierRestOrRecoveryCount": 0
       },
       "qualityWarnings": [
@@ -1270,9 +1841,9 @@
       ],
       "anchorScopeNote": "Anchor-day nomination only requires SOME focus event (Race-Specific Endurance templates' phaseEligibility.requiresFocusEvent doesn't check event category), so a nomination can appear even here -- but the optimizer's event-priority penalty for non-matching modalities makes it unlikely to actually win the day's pick. Treat eventSpecificAnchorHit/qualityAnchorHit, not the raw nomination, as the meaningful signal for non-cycling scenarios.",
       "fatigueTierDayCounts": {
-        "train": 0,
-        "modify": 8,
-        "recover": 16
+        "train": 2,
+        "modify": 7,
+        "recover": 11
       },
       "constraintViolations": []
     },
@@ -1283,19 +1854,21 @@
       "weeksSimulated": 4,
       "totalDays": 28,
       "categoryDistribution": {
-        "Easy Endurance": 11,
-        "Mobility/Recovery": 16,
-        "Upper-body Strength": 1
+        "Moderate Endurance": 7,
+        "Upper-body Strength": 4,
+        "Easy Endurance": 5,
+        "Mobility/Recovery": 11,
+        "Lower-body Strength": 1
       },
       "modalityDistribution": {
-        "Running": 11,
-        "Mobility": 16,
-        "Strength": 1
+        "Running": 12,
+        "Strength": 5,
+        "Mobility": 11
       },
-      "restOrRecoveryDayCount": 16,
-      "restOrRecoveryDayPct": 57.1,
-      "maxConsecutiveSameTemplateStreakWithinCall": 1,
-      "maxConsecutiveSameTemplateStreakAcrossWeeks": 1,
+      "restOrRecoveryDayCount": 11,
+      "restOrRecoveryDayPct": 39.3,
+      "maxConsecutiveSameTemplateStreakWithinCall": 2,
+      "maxConsecutiveSameTemplateStreakAcrossWeeks": 2,
       "objectiveResolution": [
         {
           "key": "zone2_aerobic",
@@ -1321,7 +1894,8 @@
           "objectiveTitle": "Aerobic Base (Zone 2)",
           "templateId": "end_mod_01",
           "templateTitle": "Steady-State Tempo Run",
-          "modality": "Running"
+          "modality": "Running",
+          "earnedCredit": 0.7
         },
         {
           "weekIndex": 0,
@@ -1330,25 +1904,48 @@
           "objectiveTitle": "Threshold Development",
           "templateId": "end_mod_01",
           "templateTitle": "Steady-State Tempo Run",
-          "modality": "Running"
+          "modality": "Running",
+          "earnedCredit": 0.8
         },
         {
           "weekIndex": 0,
           "date": "2026-08-08",
-          "objectiveKey": "zone2_aerobic",
-          "objectiveTitle": "Aerobic Base (Zone 2)",
-          "templateId": "end_easy_02",
-          "templateTitle": "Light Base Run",
-          "modality": "Running"
-        },
-        {
-          "weekIndex": 0,
-          "date": "2026-08-11",
           "objectiveKey": "strength_maintenance",
           "objectiveTitle": "Strength & Neuromuscular Maintenance",
           "templateId": "str_upper_01",
           "templateTitle": "Upper Body Push/Pull",
-          "modality": "Strength"
+          "modality": "Strength",
+          "earnedCredit": 0.8
+        },
+        {
+          "weekIndex": 0,
+          "date": "2026-08-09",
+          "objectiveKey": "strength_maintenance",
+          "objectiveTitle": "Strength & Neuromuscular Maintenance",
+          "templateId": "str_upper_01",
+          "templateTitle": "Upper Body Push/Pull",
+          "modality": "Strength",
+          "earnedCredit": 0.19999999999999996
+        },
+        {
+          "weekIndex": 0,
+          "date": "2026-08-10",
+          "objectiveKey": "zone2_aerobic",
+          "objectiveTitle": "Aerobic Base (Zone 2)",
+          "templateId": "end_easy_02",
+          "templateTitle": "Light Base Run",
+          "modality": "Running",
+          "earnedCredit": 0.8
+        },
+        {
+          "weekIndex": 0,
+          "date": "2026-08-11",
+          "objectiveKey": "zone2_aerobic",
+          "objectiveTitle": "Aerobic Base (Zone 2)",
+          "templateId": "end_easy_03",
+          "templateTitle": "Recovery Walk/Jog Intervals",
+          "modality": "Running",
+          "earnedCredit": 0.5
         },
         {
           "weekIndex": 1,
@@ -1357,29 +1954,42 @@
           "objectiveTitle": "Threshold Development",
           "templateId": "end_mod_01",
           "templateTitle": "Steady-State Tempo Run",
-          "modality": "Running"
+          "modality": "Running",
+          "earnedCredit": 0.19999999999999996
         },
         {
           "weekIndex": 2,
           "date": "2026-08-21",
-          "objectiveKey": "threshold_quality",
-          "objectiveTitle": "Threshold Development",
-          "templateId": "end_mod_01",
-          "templateTitle": "Steady-State Tempo Run",
-          "modality": "Running"
+          "objectiveKey": "strength_maintenance",
+          "objectiveTitle": "Strength & Neuromuscular Maintenance",
+          "templateId": "str_lower_01",
+          "templateTitle": "Lower Body Strength & Power",
+          "modality": "Strength",
+          "earnedCredit": 0.9
+        },
+        {
+          "weekIndex": 2,
+          "date": "2026-08-22",
+          "objectiveKey": "strength_maintenance",
+          "objectiveTitle": "Strength & Neuromuscular Maintenance",
+          "templateId": "str_upper_01",
+          "templateTitle": "Upper Body Push/Pull",
+          "modality": "Strength",
+          "earnedCredit": 0.09999999999999998
         },
         {
           "weekIndex": 3,
           "date": "2026-08-28",
-          "objectiveKey": "threshold_quality",
-          "objectiveTitle": "Threshold Development",
-          "templateId": "end_mod_01",
-          "templateTitle": "Steady-State Tempo Run",
-          "modality": "Running"
+          "objectiveKey": "zone2_aerobic",
+          "objectiveTitle": "Aerobic Base (Zone 2)",
+          "templateId": "end_easy_02",
+          "templateTitle": "Light Base Run",
+          "modality": "Running",
+          "earnedCredit": 0.30000000000000027
         }
       ],
       "utilityDiagnostics": {
-        "fragileSelectionCount": 23,
+        "fragileSelectionCount": 10,
         "lowerBenefitSelectionCount": 0,
         "trainTierRestOrRecoveryCount": 0
       },
@@ -1428,9 +2038,9 @@
       ],
       "anchorScopeNote": "Anchor-day nomination only requires SOME focus event (Race-Specific Endurance templates' phaseEligibility.requiresFocusEvent doesn't check event category), so a nomination can appear even here -- but the optimizer's event-priority penalty for non-matching modalities makes it unlikely to actually win the day's pick. Treat eventSpecificAnchorHit/qualityAnchorHit, not the raw nomination, as the meaningful signal for non-cycling scenarios.",
       "fatigueTierDayCounts": {
-        "train": 0,
-        "modify": 8,
-        "recover": 16
+        "train": 5,
+        "modify": 4,
+        "recover": 11
       },
       "constraintViolations": []
     },
@@ -1441,19 +2051,21 @@
       "weeksSimulated": 4,
       "totalDays": 28,
       "categoryDistribution": {
-        "Easy Endurance": 11,
-        "Mobility/Recovery": 16,
-        "Upper-body Strength": 1
+        "Moderate Endurance": 7,
+        "Upper-body Strength": 4,
+        "Easy Endurance": 5,
+        "Mobility/Recovery": 11,
+        "Lower-body Strength": 1
       },
       "modalityDistribution": {
-        "Running": 11,
-        "Mobility": 16,
-        "Strength": 1
+        "Running": 12,
+        "Strength": 5,
+        "Mobility": 11
       },
-      "restOrRecoveryDayCount": 16,
-      "restOrRecoveryDayPct": 57.1,
-      "maxConsecutiveSameTemplateStreakWithinCall": 1,
-      "maxConsecutiveSameTemplateStreakAcrossWeeks": 1,
+      "restOrRecoveryDayCount": 11,
+      "restOrRecoveryDayPct": 39.3,
+      "maxConsecutiveSameTemplateStreakWithinCall": 2,
+      "maxConsecutiveSameTemplateStreakAcrossWeeks": 2,
       "objectiveResolution": [
         {
           "key": "zone2_aerobic",
@@ -1479,7 +2091,8 @@
           "objectiveTitle": "Aerobic Base (Zone 2)",
           "templateId": "end_mod_01",
           "templateTitle": "Steady-State Tempo Run",
-          "modality": "Running"
+          "modality": "Running",
+          "earnedCredit": 0.7
         },
         {
           "weekIndex": 0,
@@ -1488,25 +2101,48 @@
           "objectiveTitle": "Threshold Development",
           "templateId": "end_mod_01",
           "templateTitle": "Steady-State Tempo Run",
-          "modality": "Running"
+          "modality": "Running",
+          "earnedCredit": 0.8
         },
         {
           "weekIndex": 0,
           "date": "2026-08-08",
-          "objectiveKey": "zone2_aerobic",
-          "objectiveTitle": "Aerobic Base (Zone 2)",
-          "templateId": "end_easy_02",
-          "templateTitle": "Light Base Run",
-          "modality": "Running"
-        },
-        {
-          "weekIndex": 0,
-          "date": "2026-08-11",
           "objectiveKey": "strength_maintenance",
           "objectiveTitle": "Strength & Neuromuscular Maintenance",
           "templateId": "str_upper_01",
           "templateTitle": "Upper Body Push/Pull",
-          "modality": "Strength"
+          "modality": "Strength",
+          "earnedCredit": 0.8
+        },
+        {
+          "weekIndex": 0,
+          "date": "2026-08-09",
+          "objectiveKey": "strength_maintenance",
+          "objectiveTitle": "Strength & Neuromuscular Maintenance",
+          "templateId": "str_upper_01",
+          "templateTitle": "Upper Body Push/Pull",
+          "modality": "Strength",
+          "earnedCredit": 0.19999999999999996
+        },
+        {
+          "weekIndex": 0,
+          "date": "2026-08-10",
+          "objectiveKey": "zone2_aerobic",
+          "objectiveTitle": "Aerobic Base (Zone 2)",
+          "templateId": "end_easy_02",
+          "templateTitle": "Light Base Run",
+          "modality": "Running",
+          "earnedCredit": 0.8
+        },
+        {
+          "weekIndex": 0,
+          "date": "2026-08-11",
+          "objectiveKey": "zone2_aerobic",
+          "objectiveTitle": "Aerobic Base (Zone 2)",
+          "templateId": "end_easy_03",
+          "templateTitle": "Recovery Walk/Jog Intervals",
+          "modality": "Running",
+          "earnedCredit": 0.5
         },
         {
           "weekIndex": 1,
@@ -1515,29 +2151,42 @@
           "objectiveTitle": "Threshold Development",
           "templateId": "end_mod_01",
           "templateTitle": "Steady-State Tempo Run",
-          "modality": "Running"
+          "modality": "Running",
+          "earnedCredit": 0.19999999999999996
         },
         {
           "weekIndex": 2,
           "date": "2026-08-21",
-          "objectiveKey": "threshold_quality",
-          "objectiveTitle": "Threshold Development",
-          "templateId": "end_mod_01",
-          "templateTitle": "Steady-State Tempo Run",
-          "modality": "Running"
+          "objectiveKey": "strength_maintenance",
+          "objectiveTitle": "Strength & Neuromuscular Maintenance",
+          "templateId": "str_lower_01",
+          "templateTitle": "Lower Body Strength & Power",
+          "modality": "Strength",
+          "earnedCredit": 0.9
+        },
+        {
+          "weekIndex": 2,
+          "date": "2026-08-22",
+          "objectiveKey": "strength_maintenance",
+          "objectiveTitle": "Strength & Neuromuscular Maintenance",
+          "templateId": "str_upper_01",
+          "templateTitle": "Upper Body Push/Pull",
+          "modality": "Strength",
+          "earnedCredit": 0.09999999999999998
         },
         {
           "weekIndex": 3,
           "date": "2026-08-28",
-          "objectiveKey": "threshold_quality",
-          "objectiveTitle": "Threshold Development",
-          "templateId": "end_mod_01",
-          "templateTitle": "Steady-State Tempo Run",
-          "modality": "Running"
+          "objectiveKey": "zone2_aerobic",
+          "objectiveTitle": "Aerobic Base (Zone 2)",
+          "templateId": "end_easy_02",
+          "templateTitle": "Light Base Run",
+          "modality": "Running",
+          "earnedCredit": 0.30000000000000027
         }
       ],
       "utilityDiagnostics": {
-        "fragileSelectionCount": 23,
+        "fragileSelectionCount": 10,
         "lowerBenefitSelectionCount": 0,
         "trainTierRestOrRecoveryCount": 0
       },
@@ -1586,9 +2235,9 @@
       ],
       "anchorScopeNote": "Anchor-day nomination only requires SOME focus event (Race-Specific Endurance templates' phaseEligibility.requiresFocusEvent doesn't check event category), so a nomination can appear even here -- but the optimizer's event-priority penalty for non-matching modalities makes it unlikely to actually win the day's pick. Treat eventSpecificAnchorHit/qualityAnchorHit, not the raw nomination, as the meaningful signal for non-cycling scenarios.",
       "fatigueTierDayCounts": {
-        "train": 0,
-        "modify": 8,
-        "recover": 16
+        "train": 5,
+        "modify": 4,
+        "recover": 11
       },
       "constraintViolations": []
     },
@@ -1599,19 +2248,20 @@
       "weeksSimulated": 1,
       "totalDays": 7,
       "categoryDistribution": {
-        "Easy Endurance": 4,
-        "Upper-body Strength": 1,
-        "Mobility/Recovery": 2
+        "Moderate Endurance": 2,
+        "Easy Endurance": 1,
+        "Mobility/Recovery": 3,
+        "Lower-body Strength": 1
       },
       "modalityDistribution": {
-        "Cycling": 4,
-        "Strength": 1,
-        "Mobility": 2
+        "Cycling": 3,
+        "Mobility": 3,
+        "Strength": 1
       },
-      "restOrRecoveryDayCount": 2,
-      "restOrRecoveryDayPct": 28.6,
-      "maxConsecutiveSameTemplateStreakWithinCall": 3,
-      "maxConsecutiveSameTemplateStreakAcrossWeeks": 3,
+      "restOrRecoveryDayCount": 3,
+      "restOrRecoveryDayPct": 42.9,
+      "maxConsecutiveSameTemplateStreakWithinCall": 1,
+      "maxConsecutiveSameTemplateStreakAcrossWeeks": 1,
       "objectiveResolution": [
         {
           "key": "zone2_aerobic",
@@ -1637,7 +2287,8 @@
           "objectiveTitle": "Aerobic Base (Zone 2)",
           "templateId": "end_mod_02",
           "templateTitle": "Tempo Ride",
-          "modality": "Cycling"
+          "modality": "Cycling",
+          "earnedCredit": 0.7
         },
         {
           "weekIndex": 0,
@@ -1646,7 +2297,8 @@
           "objectiveTitle": "Threshold Development",
           "templateId": "end_mod_02",
           "templateTitle": "Tempo Ride",
-          "modality": "Cycling"
+          "modality": "Cycling",
+          "earnedCredit": 0.8
         },
         {
           "weekIndex": 0,
@@ -1655,20 +2307,42 @@
           "objectiveTitle": "Aerobic Base (Zone 2)",
           "templateId": "end_easy_01",
           "templateTitle": "Zone 2 Spin",
-          "modality": "Cycling"
+          "modality": "Cycling",
+          "earnedCredit": 0.8
         },
         {
           "weekIndex": 0,
           "date": "2026-03-04",
+          "objectiveKey": "zone2_aerobic",
+          "objectiveTitle": "Aerobic Base (Zone 2)",
+          "templateId": "end_mod_02",
+          "templateTitle": "Tempo Ride",
+          "modality": "Cycling",
+          "earnedCredit": 0.5
+        },
+        {
+          "weekIndex": 0,
+          "date": "2026-03-04",
+          "objectiveKey": "threshold_quality",
+          "objectiveTitle": "Threshold Development",
+          "templateId": "end_mod_02",
+          "templateTitle": "Tempo Ride",
+          "modality": "Cycling",
+          "earnedCredit": 0.19999999999999996
+        },
+        {
+          "weekIndex": 0,
+          "date": "2026-03-06",
           "objectiveKey": "strength_maintenance",
           "objectiveTitle": "Strength & Neuromuscular Maintenance",
-          "templateId": "str_upper_01",
-          "templateTitle": "Upper Body Push/Pull",
-          "modality": "Strength"
+          "templateId": "str_lower_01",
+          "templateTitle": "Lower Body Strength & Power",
+          "modality": "Strength",
+          "earnedCredit": 0.9
         }
       ],
       "utilityDiagnostics": {
-        "fragileSelectionCount": 4,
+        "fragileSelectionCount": 3,
         "lowerBenefitSelectionCount": 0,
         "trainTierRestOrRecoveryCount": 0
       },
@@ -1684,14 +2358,14 @@
           "eventSpecificAnchorHit": false,
           "eventSpecificExposureDates": [],
           "eventSpecificAnchorFulfilled": false,
-          "qualityAnchorHit": false
+          "qualityAnchorHit": true
         }
       ],
       "anchorScopeNote": null,
       "fatigueTierDayCounts": {
-        "train": 0,
-        "modify": 4,
-        "recover": 2
+        "train": 2,
+        "modify": 0,
+        "recover": 3
       },
       "constraintViolations": []
     }
@@ -1710,19 +2384,19 @@
       "trajectory": "fresh",
       "scenarioId": "cycling_criterium_fresh_A",
       "baselineScenarioId": "cycling_criterium_A",
-      "changedPlannedDays": 1,
-      "restOrRecoveryDayDelta": 0,
-      "raceSpecificExposureDelta": 1,
-      "summary": "fresh trajectory: 1 modality day(s) changed; Rest/Mobility delta +0; race-specific exposure delta +1."
+      "changedPlannedDays": 2,
+      "restOrRecoveryDayDelta": 1,
+      "raceSpecificExposureDelta": 0,
+      "summary": "fresh trajectory: 2 modality day(s) changed; Rest/Mobility delta +1; race-specific exposure delta +0."
     },
     {
       "trajectory": "stressed",
       "scenarioId": "cycling_criterium_stressed_A",
       "baselineScenarioId": "cycling_criterium_A",
       "changedPlannedDays": 4,
-      "restOrRecoveryDayDelta": -4,
-      "raceSpecificExposureDelta": 2,
-      "summary": "stressed trajectory: 4 modality day(s) changed; Rest/Mobility delta -4; race-specific exposure delta +2."
+      "restOrRecoveryDayDelta": 4,
+      "raceSpecificExposureDelta": -1,
+      "summary": "stressed trajectory: 4 modality day(s) changed; Rest/Mobility delta +4; race-specific exposure delta -1."
     }
   ]
 }

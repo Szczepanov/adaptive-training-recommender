@@ -33,9 +33,17 @@ service cloud.firestore {
         && (adherence.notes == null || adherence.notes is string);
     }
 
+    function hasValidDose(dose) {
+      return dose is map
+        && dose.keys().hasOnly(['volume', 'intensity'])
+        && dose.keys().hasAll(['volume', 'intensity'])
+        && dose.volume is number && dose.volume >= 0 && dose.volume <= 1
+        && dose.intensity is number && dose.intensity >= 0 && dose.intensity <= 1.2;
+    }
+
     function hasValidRecommendationAudit(audit) {
       return audit is map
-        && audit.keys().hasOnly(['policyVersion', 'evaluatedAt', 'decisionContextRevision', 'safetyStatus', 'history', 'envelope', 'candidateScores'])
+        && audit.keys().hasOnly(['policyVersion', 'evaluatedAt', 'decisionContextRevision', 'safetyStatus', 'history', 'envelope', 'plannedDose', 'executionDose', 'candidateScores'])
         && audit.keys().hasAll(['policyVersion', 'evaluatedAt', 'decisionContextRevision', 'safetyStatus', 'history', 'envelope', 'candidateScores'])
         && audit.policyVersion is string
         && audit.evaluatedAt is string
@@ -57,6 +65,8 @@ service cloud.firestore {
         && audit.envelope.keys().hasAll(['safetyRestrictedModalityCount', 'planMaxAllowableTier'])
         && audit.envelope.safetyRestrictedModalityCount is int && audit.envelope.safetyRestrictedModalityCount >= 0
         && audit.envelope.planMaxAllowableTier in ['Rest', 'Mobility', 'Easy', 'Moderate', 'Hard']
+        && (!('plannedDose' in audit) || hasValidDose(audit.plannedDose))
+        && (!('executionDose' in audit) || hasValidDose(audit.executionDose))
         && audit.candidateScores is list && audit.candidateScores.size() <= 64;
     }
 

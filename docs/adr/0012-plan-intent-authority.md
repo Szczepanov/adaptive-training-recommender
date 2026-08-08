@@ -90,14 +90,15 @@ Objective credit tracking adheres to three principles (detailed mechanics in Pha
 
 `intensityScale` is retained (taper is defined by volume reducing while intensity is preserved).
 
-*Consumer:* Specified here and implemented as **Phase 4 work item 4.5**:
+*Consumer:* Implemented by **Phase 4 work item 4.5**:
 ```ts
 interface PlannedDose {
   volume: number;    // duration target from PlanBlock.volumeScale
   intensity: number; // admissible intensity band from PlanBlock.intensityScale
 }
 ```
-Until Phase 4.5 lands, `intensityScale` remains declared in `PlanBlock` as a scheduled commitment with a named consumer.
+`trainingIntent.ts` `resolvePlannedDose` now carries `intensityScale` into candidate
+eligibility, while `dose.ts` applies its safety ceiling to volume only.
 
 ### 7. Production Wiring Scope (added in PR review)
 

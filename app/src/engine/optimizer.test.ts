@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildOptimizationContext, rankCandidates, rankCandidatesByUtility, type RecentHistoryEntry } from './optimizer';
+import { buildOptimizationContext, calculateStimulusBenefit, rankCandidates, rankCandidatesByUtility, type RecentHistoryEntry } from './optimizer';
 import { ENRICHED_TEMPLATES } from './templates';
 import type { FatigueState, SessionTemplate, UserContext, UserPreferences, WeeklyObjective } from './models';
 import type { ResolvedAvailability } from './schedule';
@@ -36,6 +36,17 @@ const DEFAULT_PREFERENCES: UserPreferences = {
     updatedAt: '',
 };
 
+const ZERO_CANONICAL_STIMULUS = {
+    aerobicEndurance: 0,
+    thresholdPower: 0,
+    vo2MaxPower: 0,
+    repeatedSurges: 0,
+    sprintPower: 0,
+    fatigueResistance: 0,
+    maxStrength: 0,
+    hypertrophy: 0,
+};
+
 describe('optimizer — dated, role-aware recovery constraints (F3 / 3.1)', () => {
     it('allows three cycling sessions across 7 days with >= 48h spacing without repetition penalty', () => {
         const thresholdRide = ENRICHED_TEMPLATES.find(t => t.category === 'Hard Endurance' && t.modality === 'Cycling')!;
@@ -45,14 +56,8 @@ describe('optimizer — dated, role-aware recovery constraints (F3 / 3.1)', () =
             { date: '2026-03-03', modality: 'Cycling', category: 'Moderate Endurance', role: 'supporting', systemicCost: 0.5, lowerBodyCost: 0.3, type: 'Cycling' },
         ];
 
-        // Target date 2026-03-05 (48h after 2026-03-03)
         const result = rankCandidates(
-            [thresholdRide],
-            [],
-            DEFAULT_FATIGUE,
-            DEFAULT_AVAILABILITY,
-            [],
-            DEFAULT_PREFERENCES,
+            [thresholdRide], [], DEFAULT_FATIGUE, DEFAULT_AVAILABILITY, [], DEFAULT_PREFERENCES,
             { date: '2026-03-05', recentHistory: history }
         );
 
@@ -61,20 +66,26 @@ describe('optimizer — dated, role-aware recovery constraints (F3 / 3.1)', () =
         expect(result.accepted[0].utilityScore).toBeGreaterThan(0);
     });
 
+    it('rejects a hard candidate when planned intensity is below the 0.8 admissibility boundary', () => {
+        const hardRide = ENRICHED_TEMPLATES.find(t => t.category === 'Hard Endurance' && t.modality === 'Cycling')!;
+        const result = rankCandidates(
+            [hardRide], [], DEFAULT_FATIGUE, DEFAULT_AVAILABILITY, [], DEFAULT_PREFERENCES,
+            { date: '2026-03-05', plannedDose: { volume: 1, intensity: 0.79 } }
+        );
+
+        expect(result.accepted).toHaveLength(0);
+        expect(result.rejected).toHaveLength(1);
+        expect(result.rejected[0].excludedReasons).toContain('INTENSITY_SCALE_INADMISSIBLE');
+    });
+
     it('rejects two hard lower-body sessions on consecutive days with HARD_LOWER_BODY_SPACING_VIOLATION', () => {
         const heavySquat = ENRICHED_TEMPLATES.find(t => t.category === 'Lower-body Strength') ?? ENRICHED_TEMPLATES.find(t => t.modality === 'Strength')!;
         const history: RecentHistoryEntry[] = [
             { date: '2026-03-04', modality: 'Strength', category: 'Lower-body Strength', role: 'anchor', systemicCost: 0.7, lowerBodyCost: 0.8, type: 'Lower-body Strength' }
         ];
 
-        // Target date 2026-03-05 (consecutive day, dayDiff = 1)
         const result = rankCandidates(
-            [heavySquat],
-            [],
-            DEFAULT_FATIGUE,
-            DEFAULT_AVAILABILITY,
-            [],
-            DEFAULT_PREFERENCES,
+            [heavySquat], [], DEFAULT_FATIGUE, DEFAULT_AVAILABILITY, [], DEFAULT_PREFERENCES,
             { date: '2026-03-05', recentHistory: history }
         );
 
@@ -84,8 +95,6 @@ describe('optimizer — dated, role-aware recovery constraints (F3 / 3.1)', () =
 
     it('rejects a hard session with ROLLING_HARD_CAP_EXCEEDED once 3 hard sessions already sit in the rolling 7-day window', () => {
         const moderateRide = ENRICHED_TEMPLATES.find(t => t.category === 'Moderate Endurance' && t.modality === 'Cycling')!;
-        // Target date 2026-03-10: three prior hard (systemicCost >= 0.5) sessions at
-        // dayDiff 1, 3, 5 -- all within the diff <= 6 rolling window.
         const history: RecentHistoryEntry[] = [
             { date: '2026-03-09', modality: 'Cycling', category: 'Easy Endurance', systemicCost: 0.6, lowerBodyCost: 0.3 },
             { date: '2026-03-07', modality: 'Strength', category: 'Upper-body Strength', systemicCost: 0.55, lowerBodyCost: 0 },
@@ -103,8 +112,6 @@ describe('optimizer — dated, role-aware recovery constraints (F3 / 3.1)', () =
 
     it('does not count a hard session exactly 7 days back toward the rolling cap (outside the dayDiff <= 6 window)', () => {
         const moderateRide = ENRICHED_TEMPLATES.find(t => t.category === 'Moderate Endurance' && t.modality === 'Cycling')!;
-        // Same shape as above, but only 2 sessions actually sit inside the window; the
-        // third sits exactly 7 days back (dayDiff = 7), one day outside it.
         const history: RecentHistoryEntry[] = [
             { date: '2026-03-09', modality: 'Cycling', category: 'Easy Endurance', systemicCost: 0.6, lowerBodyCost: 0.3 },
             { date: '2026-03-07', modality: 'Strength', category: 'Upper-body Strength', systemicCost: 0.55, lowerBodyCost: 0 },
@@ -126,7 +133,6 @@ describe('optimizer — dated, role-aware recovery constraints (F3 / 3.1)', () =
             { date: '2026-03-09', modality: 'Cycling', category: 'Hard Endurance', role: 'anchor', systemicCost: 0.8, lowerBodyCost: 0.5 },
         ];
 
-        // Target date 2026-03-10 (dayDiff = 1, inside the 0-1 day protection window)
         const result = rankCandidates(
             [heavySquat], [], DEFAULT_FATIGUE, DEFAULT_AVAILABILITY, [], DEFAULT_PREFERENCES,
             { date: '2026-03-10', recentHistory: history }
@@ -142,7 +148,6 @@ describe('optimizer — dated, role-aware recovery constraints (F3 / 3.1)', () =
             { date: '2026-03-08', modality: 'Cycling', category: 'Hard Endurance', role: 'anchor', systemicCost: 0.8, lowerBodyCost: 0.5 },
         ];
 
-        // Target date 2026-03-10 (dayDiff = 2, outside the 0-1 day protection window)
         const result = rankCandidates(
             [heavySquat], [], DEFAULT_FATIGUE, DEFAULT_AVAILABILITY, [], DEFAULT_PREFERENCES,
             { date: '2026-03-10', recentHistory: history }
@@ -153,40 +158,25 @@ describe('optimizer — dated, role-aware recovery constraints (F3 / 3.1)', () =
     });
 
     it('keeps every accepted candidate exactly once after near-equivalent variety rotation (no drop or duplicate)', () => {
-        // Regression for a bug where the rotation spliced `remaining` by *count*
-        // (accepted.slice(nearEquivalents.length)) instead of by identity: whenever the
-        // near-equivalent pair wasn't contiguous at the front of `accepted`, that dropped
-        // whatever candidate sat between them and duplicated one already in the pair.
-        //
-        // Three candidates share an identical benefit and utility score (no unresolved
-        // objectives -> flat non-objective baseline for all three, identical cost/stimulus
-        // profiles, no history-driven modifiers) so the pre-rotation sort is a stable
-        // no-op and preserves insertion order: [A, C, B]. A and B share category+modality
-        // (near-equivalents of each other); C's different modality excludes it from that
-        // group -- reproducing the exact "near-equivalents not contiguous at the front"
-        // shape the bug required.
         const sharedProfile = {
             requiredEquipment: [] as SessionTemplate['requiredEquipment'],
             environment: 'either' as const,
             safetyTags: [] as SessionTemplate['safetyTags'],
             systemicCost: 0.4,
-            stimulusProfile: { aerobicEndurance: 0.6, aerobicCapacity: 0.6 },
+            stimulusProfile: { ...ZERO_CANONICAL_STIMULUS, aerobicEndurance: 0.6 },
             costProfile: { systemic: 0, cardiovascular: 0, lowerBody: 0, upperBody: 0, impactTissue: 0, neuromuscular: 0 },
         };
         const templateA: SessionTemplate = {
             id: 'rotation_a', category: 'Easy Endurance', modality: 'Running',
-            durationMin: 30, durationMax: 45, title: 'Rotation Test A', description: '',
-            ...sharedProfile,
+            durationMin: 30, durationMax: 45, title: 'Rotation Test A', description: '', ...sharedProfile,
         };
         const templateB: SessionTemplate = {
             id: 'rotation_b', category: 'Easy Endurance', modality: 'Running',
-            durationMin: 30, durationMax: 45, title: 'Rotation Test B', description: '',
-            ...sharedProfile,
+            durationMin: 30, durationMax: 45, title: 'Rotation Test B', description: '', ...sharedProfile,
         };
         const templateC: SessionTemplate = {
             id: 'rotation_c', category: 'Easy Endurance', modality: 'Cycling',
-            durationMin: 30, durationMax: 45, title: 'Rotation Test C', description: '',
-            ...sharedProfile,
+            durationMin: 30, durationMax: 45, title: 'Rotation Test C', description: '', ...sharedProfile,
         };
 
         const result = rankCandidates(
@@ -200,96 +190,124 @@ describe('optimizer — dated, role-aware recovery constraints (F3 / 3.1)', () =
 });
 
 describe('optimizer — lexicographic ordering (3.2)', () => {
+    it('uses the stronger of max-strength and hypertrophy evidence for strength-maintenance benefit', () => {
+        const strengthObjective: WeeklyObjective = {
+            id: 'obj_strength_axes', key: 'strength_maintenance', title: 'Strength maintenance',
+            targetExposures: 1, completedExposures: 0,
+            targetStimulus: { maxStrength: 0.2, hypertrophy: 0.9 },
+        };
+        const candidate: SessionTemplate = {
+            id: 'strength_axes', category: 'Upper-body Strength', modality: 'Strength',
+            durationMin: 30, durationMax: 40, title: 'Strength Axes', description: '',
+            requiredEquipment: [], environment: 'either', safetyTags: [], systemicCost: 0.3,
+            stimulusProfile: { ...ZERO_CANONICAL_STIMULUS, maxStrength: 0.2, hypertrophy: 0.9 },
+            costProfile: { systemic: 0, cardiovascular: 0, lowerBody: 0, upperBody: 0.2, impactTissue: 0, neuromuscular: 0.2 },
+        };
+
+        expect(calculateStimulusBenefit(candidate, [strengthObjective])).toBeCloseTo(0.9 * 0.9 * 1.6 + 0.5);
+    });
+
+    it('scores the vo2MaxPower axis so a vo2_max objective can prioritize its matching templates', () => {
+        const vo2Objective: WeeklyObjective = {
+            id: 'obj_vo2_max', key: 'vo2_max', title: 'VO2 max development',
+            targetExposures: 1, completedExposures: 0,
+            targetStimulus: { vo2MaxPower: 0.9, aerobicEndurance: 0.5 },
+        };
+        const candidate: SessionTemplate = {
+            id: 'vo2_intervals', category: 'Hard Endurance', modality: 'Running',
+            durationMin: 40, durationMax: 55, title: 'VO2 Intervals', description: '',
+            requiredEquipment: [], environment: 'either', safetyTags: [], systemicCost: 0.6,
+            stimulusProfile: { ...ZERO_CANONICAL_STIMULUS, vo2MaxPower: 0.9 },
+            costProfile: { systemic: 0.5, cardiovascular: 0.6, lowerBody: 0.4, upperBody: 0, impactTissue: 0.4, neuromuscular: 0.2 },
+        };
+        const nonMatching: SessionTemplate = {
+            ...candidate, id: 'easy_no_vo2', category: 'Easy Endurance',
+            stimulusProfile: { ...ZERO_CANONICAL_STIMULUS, aerobicEndurance: 0.5 },
+        };
+
+        expect(calculateStimulusBenefit(candidate, [vo2Objective])).toBeCloseTo(0.9 * 0.9 * 1.5 + 0.5);
+        // A candidate carrying no vo2MaxPower stimulus still earns credit for the objective's
+        // secondary aerobicEndurance target, but none of the vo2MaxPower contribution.
+        expect(calculateStimulusBenefit(nonMatching, [vo2Objective])).toBeCloseTo(0.5 * 0.5 * 1.2 + 0.5);
+    });
+
+    it('enforces qualification.minimumStimulus so a candidate that cannot resolve an objective earns no benefit from it', () => {
+        const gatedObjective: WeeklyObjective = {
+            id: 'obj_gated_threshold', key: 'threshold_quality', title: 'Threshold Development',
+            targetExposures: 1, completedExposures: 0,
+            targetStimulus: { thresholdPower: 0.9 },
+            qualification: { minimumStimulus: { thresholdPower: 0.6 } },
+        };
+        const belowMinimum: SessionTemplate = {
+            id: 'weak_threshold', category: 'Moderate Endurance', modality: 'Running',
+            durationMin: 30, durationMax: 45, title: 'Weak Threshold', description: '',
+            requiredEquipment: [], environment: 'either', safetyTags: [], systemicCost: 0.4,
+            // thresholdPower is present but below the objective's minimumStimulus floor.
+            stimulusProfile: { ...ZERO_CANONICAL_STIMULUS, thresholdPower: 0.3 },
+            costProfile: { systemic: 0.3, cardiovascular: 0.3, lowerBody: 0.3, upperBody: 0, impactTissue: 0.3, neuromuscular: 0.1 },
+        };
+        const meetsMinimum: SessionTemplate = {
+            ...belowMinimum, id: 'strong_threshold',
+            stimulusProfile: { ...ZERO_CANONICAL_STIMULUS, thresholdPower: 0.7 },
+        };
+
+        // Below the qualification floor: the objective contributes nothing, only the baseline.
+        expect(calculateStimulusBenefit(belowMinimum, [gatedObjective])).toBeCloseTo(0.5);
+        // At/above the floor: the objective's threshold-power axis scores normally.
+        expect(calculateStimulusBenefit(meetsMinimum, [gatedObjective])).toBeCloseTo(0.9 * 0.7 * 1.5 + 0.5);
+    });
+
     it('ensures preference multiplier cannot promote a zero-objective candidate over an objective-satisfying candidate', () => {
         const thresholdObj: WeeklyObjective = {
-            id: 'obj_1',
-            key: 'threshold_quality',
-            title: 'Threshold Development',
-            targetExposures: 1,
-            completedExposures: 0,
-            targetStimulus: { thresholdDevelopment: 0.8 },
+            id: 'obj_1', key: 'threshold_quality', title: 'Threshold Development',
+            targetExposures: 1, completedExposures: 0, targetStimulus: { thresholdPower: 0.8 },
         };
 
         const thresholdCandidate = ENRICHED_TEMPLATES.find(t => t.category === 'Hard Endurance' && t.modality === 'Cycling')!;
-        const dislikedObjCandidate = {
-            ...thresholdCandidate,
-            id: 'obj_candidate_disliked',
-            modality: 'Running' as const, // marked as avoided -> soft 0.2 penalty
-        };
-
+        const dislikedObjCandidate = { ...thresholdCandidate, id: 'obj_candidate_disliked', modality: 'Running' as const };
         const preferredNoObjCandidate = {
             ...ENRICHED_TEMPLATES.find(t => t.category === 'Mobility/Recovery')!,
-            id: 'no_obj_candidate_preferred',
-            modality: 'Mobility' as const, // preferred -> soft 1.3 boost
+            id: 'no_obj_candidate_preferred', modality: 'Mobility' as const,
         };
 
         const prefs: UserPreferences = {
-            ...DEFAULT_PREFERENCES,
-            avoidedModalities: ['Running'],
-            preferredModalities: ['Mobility'],
+            ...DEFAULT_PREFERENCES, avoidedModalities: ['Running'], preferredModalities: ['Mobility'],
         };
 
         const result = rankCandidatesByUtility(
-            [dislikedObjCandidate, preferredNoObjCandidate],
-            [thresholdObj],
-            DEFAULT_FATIGUE,
-            DEFAULT_AVAILABILITY,
-            [],
-            prefs,
-            { date: '2026-03-05' }
+            [dislikedObjCandidate, preferredNoObjCandidate], [thresholdObj], DEFAULT_FATIGUE,
+            DEFAULT_AVAILABILITY, [], prefs, { date: '2026-03-05' }
         );
 
-        // Lexicographic ordering guarantees Level 4 (Objective benefit) beats Level 6 (Preference)
         expect(result[0].template.id).toBe('obj_candidate_disliked');
     });
 
     it('populates excludedReasons for every filtered candidate', () => {
-        const shortTimeAvailability: ResolvedAvailability = {
-            ...DEFAULT_AVAILABILITY,
-            maxTimeMinutes: 15,
-        };
-
+        const shortTimeAvailability: ResolvedAvailability = { ...DEFAULT_AVAILABILITY, maxTimeMinutes: 15 };
         const longWorkout = ENRICHED_TEMPLATES.find(t => t.durationMin > 30)!;
-
         const result = rankCandidates(
-            [longWorkout],
-            [],
-            DEFAULT_FATIGUE,
-            shortTimeAvailability,
-            [],
-            DEFAULT_PREFERENCES,
-            { date: '2026-03-05' }
+            [longWorkout], [], DEFAULT_FATIGUE, shortTimeAvailability, [], DEFAULT_PREFERENCES, { date: '2026-03-05' }
         );
-
         expect(result.accepted).toHaveLength(0);
         expect(result.rejected).toHaveLength(1);
         expect(result.rejected[0].excludedReasons).toContain('TIME_BUDGET_EXCEEDED');
     });
 
     it('produces an input-order-independent ranking across a benefit chain a naive pairwise tie-band handles non-transitively', () => {
-        // Regression: a pairwise |diff| <= BENEFIT_TIE_BAND rule is not transitive.
-        // Benefit scores 1.00 / 0.96 / 0.92 tie on every ADJACENT pair (each gap is 0.04)
-        // but the outer pair (1.00 vs 0.92, gap 0.08) does not -- Array.sort's comparator
-        // contract requires a consistent total order, so a non-transitive comparator
-        // produces engine-/input-order-dependent results. The real guarantee under test
-        // is determinism: the same candidates in a different input order must still
-        // produce the same accepted order.
         const aeroObj: WeeklyObjective = {
             id: 'obj_chain', key: 'zone2_aerobic', title: 'Aerobic Base',
-            targetExposures: 1, completedExposures: 0, targetStimulus: { aerobicCapacity: 1 },
+            targetExposures: 1, completedExposures: 0, targetStimulus: { aerobicEndurance: 1 },
         };
-        const makeCandidate = (id: string, aerobicCapacity: number): SessionTemplate => ({
+        const makeCandidate = (id: string, aerobicEndurance: number): SessionTemplate => ({
             id, category: 'Easy Endurance', modality: 'Running',
             durationMin: 30, durationMax: 45, title: id, description: '',
-            requiredEquipment: [], environment: 'either', safetyTags: [],
-            systemicCost: 0.3,
-            stimulusProfile: { aerobicCapacity },
+            requiredEquipment: [], environment: 'either', safetyTags: [], systemicCost: 0.3,
+            stimulusProfile: { ...ZERO_CANONICAL_STIMULUS, aerobicEndurance },
             costProfile: { systemic: 0, cardiovascular: 0, lowerBody: 0, upperBody: 0, impactTissue: 0, neuromuscular: 0 },
         });
-        // benefit = aerobicCapacity * 1 (target) * 1.2
-        const a = makeCandidate('chain_a', 1.00 / 1.2); // benefit 1.00
-        const b = makeCandidate('chain_b', 0.96 / 1.2); // benefit 0.96 -- 0.04 from A
-        const c = makeCandidate('chain_c', 0.92 / 1.2); // benefit 0.92 -- 0.04 from B, 0.08 from A
+        const a = makeCandidate('chain_a', 1.00 / 1.2);
+        const b = makeCandidate('chain_b', 0.96 / 1.2);
+        const c = makeCandidate('chain_c', 0.92 / 1.2);
 
         const inOrder = rankCandidates(
             [a, b, c], [aeroObj], DEFAULT_FATIGUE, DEFAULT_AVAILABILITY, [], DEFAULT_PREFERENCES, { date: '2026-03-05' }
@@ -303,37 +321,24 @@ describe('optimizer — lexicographic ordering (3.2)', () => {
     });
 
     it('keeps two candidates within BENEFIT_TIE_BAND of each other in the same tier even when they straddle a naive rounding boundary', () => {
-        // Regression: independently rounding each benefit score to the nearest
-        // BENEFIT_TIE_BAND multiple (Math.round(benefit / BAND)) has its own artifact --
-        // two candidates only 0.039 apart (well within the 0.05 band) can straddle the
-        // rounding boundary at 0.025 and land in different tiers, silently changing which
-        // one wins. This is exactly what broke a real day-by-day plan during review: a
-        // low-benefit/high-utility Rest candidate lost outright to a slightly-higher-
-        // benefit/lower-utility Mobility candidate it should have been tied with.
         const lowObj: WeeklyObjective = {
             id: 'obj_low', key: 'zone2_aerobic', title: 'Aerobic Base',
-            targetExposures: 1, completedExposures: 0, targetStimulus: { aerobicCapacity: 1 },
+            targetExposures: 1, completedExposures: 0, targetStimulus: { aerobicEndurance: 1 },
         };
-        const makeCandidate = (id: string, aerobicCapacity: number, avoided: boolean): SessionTemplate => ({
+        const makeCandidate = (id: string, aerobicEndurance: number, avoided: boolean): SessionTemplate => ({
             id, category: 'Mobility/Recovery', modality: avoided ? 'Cross Training' : 'Mobility',
             durationMin: 20, durationMax: 30, title: id, description: '',
-            requiredEquipment: [], environment: 'either', safetyTags: [],
-            systemicCost: 0.1,
-            stimulusProfile: { aerobicCapacity },
+            requiredEquipment: [], environment: 'either', safetyTags: [], systemicCost: 0.1,
+            stimulusProfile: { ...ZERO_CANONICAL_STIMULUS, aerobicEndurance },
             costProfile: { systemic: 0, cardiovascular: 0, lowerBody: 0, upperBody: 0, impactTissue: 0, neuromuscular: 0 },
         });
-        // benefit = aerobicCapacity * 1.2 (matches lowObj's aerobicCapacity: 1 target)
-        const low = makeCandidate('boundary_low', 0.02 / 1.2, false); // benefit 0.02, neutral preference
-        const high = makeCandidate('boundary_high', 0.0592 / 1.2, true); // benefit 0.0592, avoided -> 0.2x utility penalty
-        // gap = 0.0392, within BENEFIT_TIE_BAND (0.05): they must tie on benefit and fall
-        // through to utility, where `low` (no penalty) beats `high` (0.2x penalty)
-        // despite `high`'s higher raw benefit.
+        const low = makeCandidate('boundary_low', 0.02 / 1.2, false);
+        const high = makeCandidate('boundary_high', 0.0592 / 1.2, true);
 
         const result = rankCandidates(
             [low, high], [lowObj], DEFAULT_FATIGUE, DEFAULT_AVAILABILITY, [], {
                 ...DEFAULT_PREFERENCES, avoidedModalities: ['Cross Training'],
-            },
-            { date: '2026-03-05' }
+            }, { date: '2026-03-05' }
         );
 
         expect(result.accepted[0].template.id).toBe('boundary_low');
@@ -343,15 +348,12 @@ describe('optimizer — lexicographic ordering (3.2)', () => {
 describe('optimizer — one optimizer invocation context (F4 / 3.3)', () => {
     it('buildOptimizationContext produces equivalent context from intent and context inputs', () => {
         const intent = {
-            unresolvedObjectives: [],
-            fatigue: DEFAULT_FATIGUE,
-            periodization: { focusEvent: null },
+            unresolvedObjectives: [], fatigue: DEFAULT_FATIGUE, periodization: { focusEvent: null },
             history: [{ date: '2026-03-01', modality: 'Cycling', category: 'Hard Endurance' as const, systemicCost: 0.8, lowerBodyCost: 0.5 }],
         };
         const testContext = {
             trainingSettings: { userId: 'user_1', defaults: { weekdayMaxMinutes: 60, weekendMaxMinutes: 90 } },
-            constraints: { restrictedModalities: ['Running'] },
-            preferences: DEFAULT_PREFERENCES,
+            constraints: { restrictedModalities: ['Running'] }, preferences: DEFAULT_PREFERENCES,
         } as unknown as UserContext;
 
         const optContext = buildOptimizationContext(intent, testContext, DEFAULT_PREFERENCES, '2026-03-05');
@@ -364,21 +366,14 @@ describe('optimizer — one optimizer invocation context (F4 / 3.3)', () => {
 
     it('returns identical ranking when given identical OptimizationContext', () => {
         const template = ENRICHED_TEMPLATES.find(t => (t.requiredEquipment ?? []).length === 0)!;
-        const intent = {
-            unresolvedObjectives: [],
-            fatigue: DEFAULT_FATIGUE,
-            periodization: { focusEvent: null },
-            history: [],
-        };
+        const intent = { unresolvedObjectives: [], fatigue: DEFAULT_FATIGUE, periodization: { focusEvent: null }, history: [] };
         const testContext = {
             trainingSettings: { userId: 'user_1', defaults: { weekdayMaxMinutes: 60, weekendMaxMinutes: 90 } },
-            constraints: { restrictedModalities: [] },
-            preferences: DEFAULT_PREFERENCES,
+            constraints: { restrictedModalities: [] }, preferences: DEFAULT_PREFERENCES,
         } as unknown as UserContext;
 
         const optCtx1 = buildOptimizationContext(intent, testContext, DEFAULT_PREFERENCES, '2026-03-05');
         const optCtx2 = buildOptimizationContext(intent, testContext, DEFAULT_PREFERENCES, '2026-03-05');
-
         const res1 = rankCandidates([template], optCtx1.unresolvedObjectives, optCtx1.fatigueState, optCtx1.availability, optCtx1.injuryConstraints, optCtx1.preferences, optCtx1.options);
         const res2 = rankCandidates([template], optCtx2.unresolvedObjectives, optCtx2.fatigueState, optCtx2.availability, optCtx2.injuryConstraints, optCtx2.preferences, optCtx2.options);
 

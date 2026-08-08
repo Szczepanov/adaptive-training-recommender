@@ -1,10 +1,10 @@
-import type { DailyReadiness, FatigueState, MicrocycleState, UserEvent, WeeklyObjective } from './models';
+import type { DailyReadiness, FatigueState, MicrocycleState, PlannedDose, UserEvent, WeeklyObjective } from './models';
 import { computeInternalResponseStrain, buildFatigueStateFromHistory } from './fatigue';
 import { buildMicrocycleState, getUnresolvedObjectives } from './microcycle';
 import type { CompletedExposure, TrainingHistoryProvider } from './trainingHistory';
 import type { TrainingHistorySnapshot } from './trainingHistorySnapshot';
 import { evaluatePeriodizationPhase, type PeriodizationResult } from './periodization';
-import { resolvePlanDefinitionForEvent } from './planSchedule';
+import { resolvePlanDefinitionForEvent, type PlanDefinition } from './planSchedule';
 import { addDaysToLocalDateString } from '../utils/localDate';
 
 export type PlannedRecoveryReason = 
@@ -19,7 +19,7 @@ export type ExecutionModifier =
 export interface TrainingIntent {
     periodization: PeriodizationResult;
     unresolvedObjectives: WeeklyObjective[];
-    plannedDose: number;
+    plannedDose: PlannedDose;
     fatigue: FatigueState;
     /** Retained for the pure planner core after a single asynchronous read. */
     history: CompletedExposure[];
@@ -32,6 +32,52 @@ export interface TrainingIntent {
         priority: number;
     } | null;
     executionModifier?: ExecutionModifier | null;
+}
+
+const MAX_PLANNED_VOLUME = 1;
+const MAX_PLANNED_INTENSITY = 1.2;
+
+function boundedPlannedDose(volume: number, intensity: number): PlannedDose {
+    return {
+        volume: Math.max(0, Math.min(MAX_PLANNED_VOLUME, Number.isFinite(volume) ? volume : 0)),
+        intensity: Math.max(0, Math.min(MAX_PLANNED_INTENSITY, Number.isFinite(intensity) ? intensity : 0)),
+    };
+}
+
+/**
+ * Generic-mode fallback for events without an authored PlanDefinition. Volume retains the
+ * existing objective-urgency calculation; intensity follows the generic periodization phase.
+ */
+export function resolvePlannedDose(
+    phase: { volumeScale: number; intensityScale: number },
+    objectives: readonly WeeklyObjective[],
+    unresolvedObjectives: readonly WeeklyObjective[],
+): PlannedDose {
+    const urgency = objectives.length === 0 ? 0 : unresolvedObjectives.length / objectives.length;
+    return boundedPlannedDose(
+        (phase.volumeScale / 1.1) * (0.7 + (0.3 * urgency)),
+        phase.intensityScale,
+    );
+}
+
+/**
+ * Single ownership rule for planned dose. In ADR-0012 explicit mode the active authored
+ * PlanBlock owns BOTH dimensions, bounded only by the persisted PlannedDose contract;
+ * generic days-to-event periodization is used only when no authored block is active for
+ * this event/date.
+ */
+export function resolvePlannedDoseForDate(
+    phase: { volumeScale: number; intensityScale: number },
+    objectives: readonly WeeklyObjective[],
+    unresolvedObjectives: readonly WeeklyObjective[],
+    planDefinition: PlanDefinition | null | undefined,
+    date: string,
+): PlannedDose {
+    const activeBlock = planDefinition?.blocks.find(block => block.startDate <= date && date <= block.endDate);
+    if (activeBlock) {
+        return boundedPlannedDose(activeBlock.volumeScale, activeBlock.intensityScale);
+    }
+    return resolvePlannedDose(phase, objectives, unresolvedObjectives);
 }
 
 /** Fetch the bounded history once and reuse that immutable revision across every
@@ -61,15 +107,10 @@ export async function resolveTrainingIntent(
     preparedHistorySnapshot?: TrainingHistorySnapshot | null,
 ): Promise<TrainingIntent> {
     const periodization = evaluatePeriodizationPhase(events, date);
-    // The production provider is dynamically loaded only when necessary. This keeps
-    // Firebase configuration entirely outside deterministic engine-test imports.
     const historySnapshot = preparedHistorySnapshot
         ?? await prepareTrainingHistorySnapshot(userId, date, windowDays, historyProvider);
     const provider = historyProvider ?? (await import('./firestoreTrainingHistory')).firestoreTrainingHistoryProvider;
     const history = historySnapshot?.exposures ?? await provider.reconstruct(userId, date, windowDays);
-    // ADR-0012 "Explicit Mode": when the focus event has an authored PlanDefinition,
-    // its dated block calendar is the planning authority instead of the generic
-    // daysToEvent fallback -- see resolvePlanDefinitionForEvent's narrow matching rule.
     const planDefinition = resolvePlanDefinitionForEvent(periodization.focusEvent);
     const microcycle = buildMicrocycleState(
         periodization.phase,
@@ -81,9 +122,12 @@ export async function resolveTrainingIntent(
     );
     const unresolvedObjectives = getUnresolvedObjectives(microcycle);
     const fatigue = buildFatigueStateFromHistory(history, computeInternalResponseStrain(readiness), date);
-    const urgency = microcycle.objectives.length === 0 ? 0 : unresolvedObjectives.length / microcycle.objectives.length;
-    // Phase volume is normalized from its 0.4..1.1 policy range and then softened
-    // when the current rolling objectives have already been satisfied.
-    const plannedDose = Math.max(0, Math.min(1, (periodization.phase.volumeScale / 1.1) * (0.7 + (0.3 * urgency))));
+    const plannedDose = resolvePlannedDoseForDate(
+        periodization.phase,
+        microcycle.objectives,
+        unresolvedObjectives,
+        planDefinition,
+        date,
+    );
     return { periodization, unresolvedObjectives, plannedDose, fatigue, history, historySnapshot, microcycle };
 }

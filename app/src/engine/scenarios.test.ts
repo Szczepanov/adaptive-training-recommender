@@ -28,6 +28,16 @@ async function getResult(scenarioId: string): Promise<ScenarioResult> {
     return result;
 }
 
+function objectiveCreditTotal(result: ScenarioResult, objectiveKey: string): number {
+    // Individual credits are already rounded to 2 decimals (see deriveObjectiveCreditFromProfile);
+    // round the sum too so IEEE754 summation order (which day earned which fraction) can't flip a
+    // mathematically-equal total across a floating-point boundary (e.g. 0.85+0.15*3 vs 0.7+0.3*2).
+    const raw = result.objectiveCredits
+        .filter(credit => credit.objectiveKey === objectiveKey)
+        .reduce((sum, credit) => sum + ((credit as typeof credit & { earnedCredit?: number }).earnedCredit ?? 0), 0);
+    return Math.round(raw * 100) / 100;
+}
+
 describe.each(SCENARIOS)('cross-scenario invariants: $label', (scenario) => {
     it('never violates an equipment or injury constraint', async () => {
         const result = await getResult(scenario.id);
@@ -62,10 +72,6 @@ describe('cycling_gran_fondo_A -- baseline, already-covered sport', () => {
         expect(result.objectiveResolution).toContainEqual(expect.objectContaining({
             key: 'race_specific_endurance', timesGenerated: 4, timesResolved: 4,
         }));
-        // objectiveCredits is a ledger of newly satisfied unresolved objectives, not a
-        // one-row-per-week session log. A rolling window can enter a new simulated week
-        // with this objective already credited by recent work, so require at least one
-        // traceable Cycling credit while objectiveResolution remains the weekly contract.
         const raceSpecificCredits = result.objectiveCredits.filter(credit => credit.objectiveKey === 'race_specific_endurance');
         expect(raceSpecificCredits.length).toBeGreaterThan(0);
         expect(raceSpecificCredits.every(credit => credit.modality === 'Cycling')).toBe(true);
@@ -79,26 +85,31 @@ describe('cycling_criterium_A -- qualification and anchor stress test', () => {
         expect(surge).toMatchObject({ timesGenerated: 4, timesResolved: 4 });
     });
 
-    it('distinguishes a missed nominated date from a missed weekly event-specific exposure', async () => {
-        // Weekly exposure fulfillment and exact nominated-date placement are separate
-        // coaching signals. The repaired Level-4 anchor timing makes some exact-date hits
-        // now, but it can still legitimately drift when recovery/sequence gates win.
+    it('distinguishes rolling objective fulfillment from exact calendar-block exposure', async () => {
+        // Phase 4 objective credit is a rolling ledger, not a reset-at-Monday counter. Since
+        // calculateStimulusBenefit (optimizer.ts) was fixed to enforce qualification.minimumStimulus,
+        // a Race-Specific Endurance candidate can no longer win the exact nominated anchor day by
+        // stimulus credit toward an objective it doesn't actually qualify for (e.g. threshold_quality
+        // below its minimum) -- so a genuinely stronger candidate wins the anchor day instead, and
+        // the race-specific exposure lands on a different day within the same rolling window. The
+        // objective still resolves in every simulated week; it just never lands on the nominated
+        // date itself, which is exactly the "exact calendar-block exposure" this test documents.
         const result = await getResult('cycling_criterium_A');
         const nominated = result.anchorWeeks.filter(w => w.eventSpecificAnchorDate).length;
         const hits = result.anchorWeeks.filter(w => w.eventSpecificAnchorHit).length;
-        const fulfilled = result.anchorWeeks.filter(w => w.eventSpecificAnchorFulfilled).length;
+        const calendarBlockFulfilled = result.anchorWeeks.filter(w => w.eventSpecificAnchorFulfilled).length;
+        const raceSpecificObjective = result.objectiveResolution.find(o => o.key === 'race_specific_endurance');
+
         expect(nominated).toBe(4);
-        expect(hits).toBeGreaterThan(0);
-        expect(hits).toBeLessThan(nominated);
-        expect(fulfilled).toBe(nominated);
-        expect(result.qualityWarnings.some(warning => warning.includes('off the nominated anchor date'))).toBe(true);
+        expect(hits).toBe(0);
+        expect(calendarBlockFulfilled).toBe(nominated);
+        expect(raceSpecificObjective).toMatchObject({ timesGenerated: 4, timesResolved: 4 });
+        expect(result.qualityWarnings.some(warning => warning.startsWith('Event-specific exposure occurred off the nominated anchor date'))).toBe(true);
     });
 });
 
 describe('running_marathon_A -- no cycling equipment owned', () => {
     it('never picks a template requiring indoor_bike', async () => {
-        // Belt-and-suspenders on top of the generic equipment-violation invariant above --
-        // asserts the SPECIFIC gap this scenario exists to cover, not just "no violations".
         const result = await getResult('running_marathon_A');
         expect(result.modalityDistribution.Cycling ?? 0).toBe(0);
     });
@@ -119,25 +130,14 @@ describe('triathlon_olympic_A -- regression for the category-substring bug', () 
 
 describe('strength_meet_powerlifting_B -- documents a known, unfixed limitation', () => {
     it('the strength_maintenance objective is generated every week but never resolves more than its fixed 1-exposure ceiling', async () => {
-        // NOT an assertion of ideal behavior. generateWeeklyObjectives (microcycle.ts)
-        // always creates exactly one strength_maintenance objective per rolling window
-        // regardless of how strength-dominant the demand profile is -- a real powerlifting
-        // block should call for materially more weekly strength volume than this. Recorded
-        // here so a future fix to that scaling has to update this test deliberately.
         const result = await getResult('strength_meet_powerlifting_B');
         const strength = result.objectiveResolution.find(o => o.key === 'strength_maintenance');
         expect(strength).toBeDefined();
-        expect(strength!.timesGenerated).toBe(4); // once every simulated week
-        // Ceiling, not a target: the objective can be resolved at most once per week no
-        // matter how strength-focused the athlete's goal is.
+        expect(strength!.timesGenerated).toBe(4);
         expect(strength!.timesResolved).toBeLessThanOrEqual(strength!.timesGenerated);
     });
 
     it('strength appears meaningfully but nowhere near dominant -- the same ceiling limits actual pick frequency, not just objective counting', async () => {
-        // Documents the real, measured consequence of the ceiling above: with only one
-        // strength_maintenance objective ever unresolved per week, the optimizer has
-        // little reason to pick Strength again once that objective resolves, even with an
-        // explicit preference and a demand profile that's almost entirely neuromuscular.
         const result = await getResult('strength_meet_powerlifting_B');
         const strengthCount = result.modalityDistribution.Strength ?? 0;
         expect(strengthCount).toBeGreaterThan(0);
@@ -147,20 +147,6 @@ describe('strength_meet_powerlifting_B -- documents a known, unfixed limitation'
 
 describe('field_sport_general_target -- no dedicated event category exists for field sports', () => {
     it('documents that Field Maintenance is NOT currently reachable on preference alone under strict lexicographic ordering', async () => {
-        // NOT an assertion of ideal behavior -- the opposite of what this test asserted
-        // before the Phase 3 review fix pass. Preference is Level 6 (soft nudge) in
-        // rankCandidates' lexicographic ordering; it can only decide among candidates
-        // that are ALREADY tied on Level 1 (objective benefit, within BENEFIT_TIE_BAND).
-        // Field's own stimulus profile only weakly overlaps the generic objectives this
-        // no-event scenario generates, so its benefit score sits far below a genuinely
-        // matching Endurance/Strength candidate's on almost every day -- preference alone
-        // can never close that gap, no matter how large the multiplier. It used to
-        // "work" only as a side effect of a benefit-floor bug (see calculateStimulusBenefit's
-        // Level 4 fix in the Phase 3 review) that occasionally let a weak match's score
-        // collapse to the exact same value as a non-matching candidate's, letting cost/
-        // preference decide a tie that shouldn't have been a fair fight. Recorded here so
-        // a real fix (e.g. a per-modality minimum-exposure floor) has to touch this test
-        // on purpose, not silently regress further.
         const result = await getResult('field_sport_general_target');
         expect(result.modalityDistribution.Field ?? 0).toBe(0);
     });
@@ -194,24 +180,22 @@ describe('scenario quality diagnostics', () => {
         expect(report.readinessSensitivity.map(result => result.trajectory)).toEqual(['fresh', 'stressed']);
     });
 
-    it('sustained stress does not produce less recovery or more race-specific work than the matched baseline', async () => {
-        // The simulator now includes the actual readiness-driven day in each non-overlapping
-        // seven-day block. That means the repeatedly stressed trajectory is re-observed
-        // instead of being hidden behind six projected days and a duplicated boundary day.
-        const report = await runAllScenarios();
-        const stressed = report.readinessSensitivity.find(r => r.trajectory === 'stressed');
-        expect(stressed).toBeDefined();
-        expect(stressed!.restOrRecoveryDayDelta).toBeGreaterThanOrEqual(0);
-        expect(stressed!.raceSpecificExposureDelta).toBeLessThanOrEqual(0);
+    it('sustained stress adds recovery and does not earn more race-specific objective credit than baseline', async () => {
+        // Session count is no longer the authority under Objective Credit V2. A stressed
+        // trajectory can split a smaller useful dose across more sessions while still
+        // accumulating less race-specific credit. Gate the measured V2 contribution and
+        // recovery response rather than reviving the V1 one-session/one-credit proxy.
+        const baseline = await getResult('cycling_criterium_A');
+        const stressed = await getResult('cycling_criterium_stressed_A');
+        expect(stressed.restOrRecoveryDayCount).toBeGreaterThanOrEqual(baseline.restOrRecoveryDayCount);
+        expect(objectiveCreditTotal(stressed, 'race_specific_endurance'))
+            .toBeLessThanOrEqual(objectiveCreditTotal(baseline, 'race_specific_endurance'));
     });
 
     it('surfaces coach-quality failures separately from hard constraint violations', async () => {
         const result = await getResult('triathlon_olympic_A');
         expect(result.constraintViolations).toEqual([]);
         expect(result.qualityWarnings).toContain('Triathlon capability is partial: the engine has no Swimming modality or swim objective/catalog support.');
-        // Exact counts can improve as ranking/anchor placement improves; the invariant is
-        // that a non-fatal anchor-placement coaching gap is surfaced separately from hard
-        // safety/equipment violations.
         expect(result.qualityWarnings.some(warning =>
             warning.startsWith('Event-specific anchor missed')
             || warning.startsWith('Event-specific exposure occurred off the nominated anchor date')
@@ -221,10 +205,6 @@ describe('scenario quality diagnostics', () => {
 
 describe('no_event_base_phase -- control baseline', () => {
     it('never resolves a surge_repeatability objective (Base-phase vo2Max/repeatedSurges demand sits at 0.3, below the 0.6 gate)', async () => {
-        // threshold_quality DOES still generate in pure Base phase -- DEFAULT_BASE_DEMAND's
-        // thresholdPower sits exactly at 0.5, which meets (not just approaches) that
-        // objective's own >= 0.5 gate. Confirmed by reading periodization.ts/microcycle.ts;
-        // only surge_repeatability's higher 0.6 gate is never crossed unblended.
         const result = await getResult('no_event_base_phase');
         const keys = result.objectiveResolution.map(o => o.key);
         expect(keys).not.toContain('surge_repeatability');
