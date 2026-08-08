@@ -51,9 +51,10 @@ The keyword matcher is directionally wrong, not merely approximate: broad terms 
 `running`, `cycling`, `hard`, or `tempo` can classify the wrong objective. It therefore must
 not become the Garmin or normal structured-history path.
 
-`deriveObjectiveCredit` is authoritative. `requiredCredit` / `completedCredit` determine
-live resolution; `projectedCredit` is forecast-only; `completedExposures` is a compatibility
-display projection.
+`deriveObjectiveCredit` is authoritative at the untrusted/persisted boundary;
+`deriveObjectiveCreditFromProfile` is the internal primitive for already-canonical profiles.
+`requiredCredit` / `completedCredit` determine live resolution; `projectedCredit` is
+forecast-only; `completedExposures` is a compatibility display projection.
 
 ### Credit semantics supported by current evidence
 
@@ -69,7 +70,7 @@ The rules are intentionally limited to evidence that exists.
 * An independently supplied `completionRatio` is separate evidence and scales the result
   independently.
 * `strength_maintenance` does **not** use elapsed duration as a proxy for useful sets or
-  relative load; it uses the supported strength stimulus plus completion evidence.
+  relative load; it uses the stronger supported strength stimulus plus completion evidence.
 * Qualification gates remain hard gates: failing modality/category/minimum-stimulus rules
   yields zero credit.
 
@@ -83,6 +84,10 @@ A keyword match contributes a documented conservative `0.5` compatibility credit
 `completedCredit` instead of updating only `completedExposures`. Structured→legacy and
 legacy→structured replay therefore produce the same result. One keyword-only record cannot
 resolve a one-credit objective by itself.
+
+The live and forecast paths now use the same compatibility projection constant, so
+`completedExposures` cannot report a whole legacy exposure from a fractional credit amount
+that the live path would still present as partial.
 
 ### Cutover evidence — amended after PR #11 review
 
@@ -126,7 +131,7 @@ boundary:
 |---|---|
 | Canonical fields present | Use canonical values per axis. |
 | Legacy rename present for a missing corresponding canonical axis | Convert that valid legacy value. |
-| Both present and disagreeing | Canonical wins and divergence is logged. |
+| Both present and disagreeing | Canonical wins and divergence is logged once per parsed exposure. |
 | Neither vocabulary | `DataState.INVALID`. |
 | Any supplied known axis is non-numeric, non-finite, or outside `0..1` | `DataState.INVALID`. |
 
@@ -135,8 +140,9 @@ only its missing canonical counterpart; canonical-only axes with no historical e
 remain zero when absent. A malformed legacy value is not silently ignored merely because a
 canonical value also exists — malformed persistence is invalid input.
 
-This prevents strings, `NaN`, or out-of-range values from propagating into
-`completedCredit` and accidentally making an objective disappear from the unresolved set.
+Engine-owned template normalization also clamps finite authored axes into the canonical
+`0..1` range before they enter the typed catalog. This prevents a malformed authored number
+from bypassing the stricter persistence reader simply because it originated in code.
 
 ---
 
@@ -154,10 +160,10 @@ remains available to ranking/presentation.
 The Phase 0 harness compared current `max(external, internal)` fusion with the monotonic
 `min(1, external + internal)` candidate:
 
-* `max()` — **58.9%** rest/recovery days (169/287)
-* capped addition — **70.4%** (202/287)
+* `max()` — **58.9%** rest/recovery days (169/287) at the original reviewed Phase-4 boundary
+* capped addition — **70.4%** (202/287) at the same boundary
 
-Both violate the current aggregate recovery-share gate. Capped addition is worse on that
+Both violated the current aggregate recovery-share gate. Capped addition was worse on that
 metric and also has uncalibrated double-counting risk because internal response can partly
 reflect the same external work. The supported conclusion is therefore **retain `max()` for
 now; there is no evidence to replace it with this candidate**. It is not evidence that
@@ -165,9 +171,9 @@ now; there is no evidence to replace it with this candidate**. It is not evidenc
 
 ### Harness boundary analysis (2026-08-08)
 
-Phase 0 on `main` passes its aggregate gate at **34.8%** rest/recovery days (100/287). The
-Phase 4 branch descends through the Phase 3 series, whose last pre-Phase-4 point already
-fails at **52.3%** (150/287). That inherited failure is release debt, not a reason to retune
+Phase 0 on `main` passed its aggregate gate at **34.8%** rest/recovery days (100/287). The
+Phase 4 branch descended through the Phase 3 series, whose last pre-Phase-4 point already
+failed at **52.3%** (150/287). That inherited failure is release debt, not a reason to retune
 the bound.
 
 The deterministic boundary analysis found:
@@ -178,30 +184,34 @@ The deterministic boundary analysis found:
 | After 4.1 initial / 4.2 (`6d2ad01`) | 52.3% | no change |
 | After 4.3a (`d6c3a23`) | 58.5% | unsaturated replay retains external-load depth |
 | After 4.2 validation / 4.5 / 4.4 (`347cee4`) | 58.5% | no additional change |
-| Reviewed Phase 4 boundary (`81a1b75`) | 58.9% | 4.1 adds 0.4 percentage points |
+| Original reviewed Phase 4 boundary (`81a1b75`) | 58.9% | 4.1 adds 0.4 percentage points |
+| Post-stack/review-fix PR #11 run (`f475c8c`) | **44.3%** | improved, but still above the 40% release ceiling |
 
 Do not retune the 5–40% bound or choose a fusion formula merely to force the metric green.
-The aggregate failure remains a release blocker.
+The latest measured aggregate failure remains a release blocker until a subsequent CI run
+proves otherwise.
 
 ---
 
 ## `[x]` 4.5 — `PlannedDose`: give `intensityScale` its consumer (D2/F17)
 
-`PlannedDose` is `{ volume, intensity }` and both dimensions have an owner.
+`PlannedDose` is `{ volume, intensity }` and both dimensions have an owner. The persisted
+contract is finite `volume ∈ [0,1]`, `intensity ∈ [0,1.2]`.
 
-1. In ADR-0012 **explicit mode**, the active authored `PlanBlock` owns both values exactly.
-   The September plan therefore produces travel `0.6 / 0.8` and taper `0.5 / 1.0` — generic
-   days-to-event periodization cannot overwrite them.
+1. In ADR-0012 **explicit mode**, the active authored `PlanBlock` owns both values, bounded
+   only by the persisted contract. The September plan therefore produces travel
+   `0.6 / 0.8` and taper `0.5 / 1.0`; generic days-to-event periodization cannot overwrite them.
 2. In **generic mode**, `resolvePlannedDose` retains the existing objective-urgency volume
-   calculation and generic periodization intensity.
-3. `resolveExecutionDose` intersects volume with the clinical ceiling; intensity remains a
-   separate candidate-admissibility gate.
+   calculation and generic periodization intensity, bounded to the same persisted contract.
+3. `resolveExecutionDose` rejects invalid/out-of-contract plan inputs, intersects valid
+   volume with the clinical ceiling, and leaves intensity as a separate candidate-admissibility gate.
 4. Recommendation/provenance paths carry both planned and execution doses.
 5. The week-ahead planner uses the same `resolvePlannedDoseForDate` ownership rule on every
    projected date.
 
 `trainingIntentAcceptance.test.ts` asserts exact build, travel, and taper values rather than
-only checking that taper volume is lower than build volume.
+only checking that taper volume is lower than build volume. `dose.test.ts` covers the invalid
+input boundary and `optimizer.test.ts` covers hard-session rejection below intensity `0.8`.
 
 ---
 
@@ -209,8 +219,11 @@ only checking that taper volume is lower than build volume.
 
 The six-dimensional cost vector remains the abstraction. `scaleCostByDeliveredDose` makes
 completed cost respond to delivered duration relative to a comparable catalog session and,
-when independently supplied, completion ratio. Unknown modalities remain unscaled rather
-than receiving an invented reference duration.
+when independently supplied, completion ratio. The catalog reference uses the authored
+`durationMin`/`durationMax` range rather than silently choosing one boundary. Delivered
+duration can scale cost down for abbreviated work but is capped at the fully delivered
+intended dose (`1.0`) so an unusually long or inflated record cannot create unbounded raw
+fatigue. Unknown modalities remain unscaled rather than receiving an invented reference.
 
 The measured-response adjustment remains out of scope because the current delivered-dose
 contract does not carry a reliable per-session measured-response field at every construction
@@ -230,8 +243,9 @@ Phase 4 now enforces the distinction:
 * live unresolved state ignores projected credit; and
 * displayed `objectiveCredits` carry the fractional V2 amount actually allocated.
 
-This also removes the planner's former V1 display gate, so `addressesObjectives` cannot say
-“no credit” while the V2 ledger silently applies a partial contribution.
+Planner fan-out uses the same validated-profile V2 primitive as the live ledger and the same
+compatibility exposure projection. `addressesObjectives` therefore cannot say “no credit”
+while a separate planning model silently applies a partial contribution.
 
 ---
 
@@ -244,19 +258,22 @@ This also removes the planner's former V1 display gate, so `addressesObjectives`
 - [x] keyword fallback updates the authoritative fractional ledger and is replay-order independent
 - [x] planner display/ledger uses V2 fractional credit rather than the old 0.6 coverage gate
 - [x] future planning owns `projectedCredit`; completed evidence is not mutated by forecast picks
+- [x] live and forecast compatibility exposure projection share one named constant/helper
 - [x] persisted canonical/legacy stimulus values are finite `0..1` numbers or the record is `INVALID`
 - [x] partial-canonical persistence policy is documented and tested
 - [x] canonical stimulus axes required downstream; legacy aliases are boundary-only
-- [x] chronological ordering asserted in `buildFatigueStateFromHistory`
+- [x] chronological ordering asserted in `buildFatigueStateFromHistory`; out-of-order replay equals ordered replay
 - [x] unsaturated latent external-load state retained
 - [x] fusion function not changed without a recorded harness comparison
 - [x] fusion evidence is described as “retain max for now”, not “safe”
-- [x] cost responds to duration and completion ratio
-- [x] active authored PlanBlock owns exact `PlannedDose` in explicit mode; generic periodization is fallback only
+- [x] cost responds to bounded delivered duration and completion ratio
+- [x] active authored PlanBlock owns bounded `PlannedDose` in explicit mode; generic periodization is fallback only
 - [x] `PlannedDose { volume, intensity }` exists and `intensityScale` has a reader (D2/F17)
+- [x] invalid execution-dose inputs fail closed
 - [x] history ordering is validated/sorted at ingestion; malformed order degrades, not crashes
+- [x] historical policy version is explicitly audit-only in the current replay build
 - [x] `POLICY_VERSION` bumped
-- [ ] Phase 0 aggregate scenario gate reconciled; current reviewed branch evidence remains outside the 5–40% recovery-share bound
+- [ ] Phase 0 aggregate scenario gate reconciled; latest measured PR #11 evidence is 44.3% rest/recovery, above the 40% ceiling
 
 ## Risks & rollback
 
@@ -269,6 +286,8 @@ This also removes the planner's former V1 display gate, so `addressesObjectives`
   never persist it as completed evidence.
 * **Fusion remains unresolved modelling debt.** If a future candidate is not supported by
   better evidence, retain `max()` rather than introducing an uncited formula.
+* **Historical audit is not historical execution.** Old `policyVersion` values are readable
+  evidence, but this build refuses to replay a decision function it no longer contains.
 
 ## Out of scope
 
@@ -276,8 +295,9 @@ Sequence search (Phase 5). The evidence hierarchy for interpreting unplanned out
 (Phase 5) is also out of scope: Phase 4 improves vectors, dose semantics, and ledger
 authority, not the inference chain that produces those signals.
 
-## Docs to update
+## Docs updated
 
-* **ADR-0014** — objective credit V2 semantics, cutover-evidence amendment, plan-dose ownership, projected-credit ownership, and fatigue-fusion interpretation
-* **ADR-0006** — strain telemetry interaction with the new credit model
-* `docs/architecture/recommendation-engine.md` — credit, planned-dose, projection, and fatigue sections
+- [x] **ADR-0014** — objective credit V2 semantics, cutover-evidence amendment, plan-dose ownership, projected-credit ownership, and fatigue-fusion interpretation
+- [x] **ADR-0006** — completed-load replay and the completed fusion comparison interpretation
+- [x] `docs/architecture/recommendation-engine.md` — live credit, planned/execution dose, forecast ledger, completed-load, fatigue and replay sections
+- [x] `docs/README.md` — ADR-0014 index entry and encoding
