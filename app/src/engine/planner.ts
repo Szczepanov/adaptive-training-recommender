@@ -41,6 +41,7 @@ import {
     creditObjectivesFromStimulus,
     generateWeeklyObjectives,
     getUnresolvedObjectives,
+    projectCompatibilityExposures,
 } from './microcycle';
 import {
     type RecentHistoryEntry,
@@ -52,7 +53,7 @@ import {
 import { ENRICHED_TEMPLATES } from './templates';
 import { resolvePlannedDoseForDate, resolveTrainingIntent } from './trainingIntent';
 import { resolvePlanDefinitionForEvent } from './planSchedule';
-import { deriveObjectiveCredit } from './stimulus';
+import { deriveObjectiveCreditFromProfile } from './stimulus';
 import type { CompletedExposure, TrainingHistoryProvider } from './trainingHistory';
 import type { TrainingHistorySnapshot } from './trainingHistorySnapshot';
 
@@ -212,9 +213,10 @@ export interface ProjectedObjectiveCreditAllocation {
  * Subsequent projected days treat completed + projected credit as the outstanding-objective
  * authority.
  *
- * `completedExposures` remains a legacy/non-authoritative display projection for existing
- * forecast UI/tests. It may reflect that a projected session contributes to an objective,
- * but it is never used as projected evidence after completedCredit has been normalized.
+ * `completedExposures` remains a legacy/non-authoritative display projection. The exact
+ * same fractional-credit-to-exposure projection is shared with the live ledger so a
+ * forecast cannot display one full exposure for credit that the live path would still
+ * show as partial.
  */
 export function applyProjectedObjectiveCredits(
     microcycle: MicrocycleState,
@@ -226,8 +228,6 @@ export function applyProjectedObjectiveCredits(
         const proposed = proposedById.get(objective.id) ?? 0;
         if (!Number.isFinite(proposed) || proposed <= 0) return objective;
 
-        // If this is a legacy-only seed, materialize its already-completed evidence before
-        // any forecast mutation. This value is then held constant across future picks.
         const completedCredit = objective.completedCredit ?? objective.completedExposures;
         const projectedCredit = objective.projectedCredit ?? 0;
         const requiredCredit = objective.requiredCredit ?? objective.targetExposures;
@@ -237,18 +237,14 @@ export function applyProjectedObjectiveCredits(
 
         allocations.push({ objectiveId: objective.id, earnedCredit: allocated });
         const nextProjectedCredit = projectedCredit + allocated;
-        const compatibilityExposureProjection = Math.min(
-            objective.targetExposures,
-            Math.max(
-                objective.completedExposures,
-                Math.ceil(completedCredit + nextProjectedCredit),
-            ),
-        );
         return {
             ...objective,
             completedCredit,
             projectedCredit: nextProjectedCredit,
-            completedExposures: compatibilityExposureProjection,
+            completedExposures: projectCompatibilityExposures(
+                completedCredit + nextProjectedCredit,
+                objective.targetExposures,
+            ),
         };
     });
 
@@ -425,10 +421,6 @@ export function prepareWeekAheadPlanSeed(
     const completedHistory = history.filter(isCompletedExposure) as CompletedExposure[];
     const lightweightHistory = history.filter(entry => !isCompletedExposure(entry));
 
-    // Completed exposures retain their exact objective credit and external load even when
-    // the caller mixes them with lightweight RecentHistoryEntry fixtures. Apply the
-    // compatibility credit path only to the lightweight remainder instead of letting one
-    // such entry discard the completed-history seed entirely.
     if (completedHistory.length > 0) {
         let microcycle = buildMicrocycleState(
             periodization.phase,
@@ -457,9 +449,6 @@ export function prepareWeekAheadPlanSeed(
         };
     }
 
-    // Compatibility for lightweight RecentHistoryEntry fixtures that do not carry a
-    // CompletedExposure's costProfile/trainingRecordLike shape. Keep their historical
-    // objective-credit behavior, but never throw away today's real readiness strain.
     let microcycle = generateWeeklyObjectives(periodization.phase, todayDate, periodization.focusEvent);
     lightweightHistory.forEach(h => {
         const typeStr = 'type' in h && typeof h.type === 'string' ? h.type : undefined;
@@ -507,13 +496,13 @@ export function generateWeekAheadPlan(
         earnedCredit: number;
     };
 
-    // Planner display and planner state use the same V2 derivation as the live ledger.
-    // There is no V1 0.6 coverage gate here: partial qualifying stimulus is reported as
-    // partial credit exactly as deriveObjectiveCredit defines it.
+    // Template profiles are already canonical engine-owned data, so planner fan-out can
+    // use the validated-profile credit primitive directly instead of reparsing/logging the
+    // same profile once per objective.
     const creditingObjectivesFor = (template: SessionTemplate): DerivedPlanningCredit[] => {
         const stimulus = enrichedStimulusProfile(template);
         return getUnresolvedObjectives(microcycle, true).flatMap(objective => {
-            const credit = deriveObjectiveCredit(objective, stimulus, {}, {
+            const credit = deriveObjectiveCreditFromProfile(objective, stimulus, {}, {
                 modality: template.modality,
                 category: template.category,
             });
