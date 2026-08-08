@@ -482,11 +482,37 @@ export async function evaluateTrainingWithIntent(
         optContext.preferences,
         optContext.options
     );
-    const pick = rankingResult.accepted[0];
-    if (!pick) return evaluateTraining(readiness, context, date, previousMode, envelopeState);
     const phaseContext = intent.periodization.focusEvent
         ? `${intent.periodization.daysToEvent} days out from ${intent.periodization.focusEvent.title}, ${intent.periodization.phase.phaseName} phase.`
         : `${intent.periodization.phase.phaseName} phase.`;
+    const pick = rankingResult.accepted[0];
+    if (!pick) {
+        // Hard recovery/sequence exclusions are authority boundaries. Falling back into
+        // evaluateTraining() would re-enter the legacy selector without the intent
+        // history that produced those exclusions and could therefore recommend the very
+        // session rankCandidates just rejected. When no candidate survives, fail closed
+        // to an explicit safe recovery prescription instead.
+        const safeRecovery = candidates.find(template =>
+            template.category === 'Rest' || template.category === 'Mobility/Recovery'
+        ) ?? ENRICHED_TEMPLATES.find(template => template.category === 'Rest')
+          ?? TEMPLATES.find(template => template.category === 'Rest')
+          ?? TEMPLATES[0];
+        return {
+            template: safeRecovery,
+            rationale: `${phaseContext} No candidate survived the active hard constraints; defaulting to recovery rather than bypassing those constraints.`,
+            mode: 'recover',
+            envelopes,
+            telemetry,
+            decisionTrace: {
+                policyVersion: POLICY_VERSION,
+                candidateScores: rankingResult.all.map(candidate => ({
+                    templateId: candidate.template.id,
+                    utilityScore: candidate.utilityScore,
+                    excludedReasons: candidate.excludedReasons,
+                })),
+            },
+        };
+    }
     return {
         template: pick.template,
         plannedDose: intent.plannedDose,
