@@ -82,6 +82,9 @@ const DEFAULT_PREFERENCES: UserPreferences = {
 
 const INTENSITY_STACK_THRESHOLD = 0.5;
 const INTENSITY_STACK_PENALTY = 0.35;
+const HARD_INTENSITY_MIN = 0.8;
+const HARD_SYSTEMIC_COST_THRESHOLD = 0.6;
+const MODERATE_SYSTEMIC_COST_THRESHOLD = 0.3;
 const ANCHOR_ROLE_BOOST = 1.35;
 /** Weekly architecture is a Level-4 timing signal under the Phase-3 lexicographic
  * contract, not merely a Level-6 preference. This additive benefit lets a candidate that
@@ -131,13 +134,13 @@ export function candidateMatchesAnchorRole(
 
 export function intensityClassForTemplate(template: SessionTemplate): IntensityClass {
     if (template.category === 'Rest' || template.category === 'Mobility/Recovery') return 'recovery';
-    if (template.category === 'Hard Endurance' || template.category === 'Race-Specific Endurance' || template.systemicCost >= 0.6) return 'hard';
-    if (template.category === 'Moderate Endurance' || template.systemicCost >= 0.3) return 'moderate';
+    if (template.category === 'Hard Endurance' || template.category === 'Race-Specific Endurance' || template.systemicCost >= HARD_SYSTEMIC_COST_THRESHOLD) return 'hard';
+    if (template.category === 'Moderate Endurance' || template.systemicCost >= MODERATE_SYSTEMIC_COST_THRESHOLD) return 'moderate';
     return 'easy';
 }
 
 export function isIntensityClassAdmissible(intensityClass: IntensityClass, plannedIntensity: number): boolean {
-    return intensityClass !== 'hard' || plannedIntensity >= 0.8;
+    return intensityClass !== 'hard' || plannedIntensity >= HARD_INTENSITY_MIN;
 }
 
 export function getConsecutiveModalityCount(
@@ -192,7 +195,7 @@ export function normalizeHistory(
 
         const intensityClass = ('intensityClass' in entry && entry.intensityClass)
             ? entry.intensityClass
-            : systemicCost >= 0.6 ? 'hard' : systemicCost >= 0.3 ? 'moderate' : 'easy';
+            : systemicCost >= HARD_SYSTEMIC_COST_THRESHOLD ? 'hard' : systemicCost >= MODERATE_SYSTEMIC_COST_THRESHOLD ? 'moderate' : 'easy';
 
         return {
             date,
@@ -327,8 +330,8 @@ export function calculateStimulusBenefit(
         const aeroStim = stimulusProfile.aerobicEndurance;
         if (aeroTarget && aeroStim) benefit += aeroTarget * aeroStim * 1.2;
 
-        const strengthTarget = target.maxStrength ?? target.hypertrophy ?? 0;
-        const strengthStim = stimulusProfile.maxStrength ?? stimulusProfile.hypertrophy;
+        const strengthTarget = Math.max(target.maxStrength ?? 0, target.hypertrophy ?? 0);
+        const strengthStim = Math.max(stimulusProfile.maxStrength, stimulusProfile.hypertrophy);
         if (strengthTarget && strengthStim) benefit += strengthTarget * strengthStim * 1.6;
 
         const fatigueTarget = target.fatigueResistance ?? 0;
