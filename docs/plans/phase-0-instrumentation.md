@@ -17,7 +17,7 @@ Update the marker on the work-item heading **and** this table in the same commit
 |---|:--:|---|---|
 | 0.1 | `[x]` | Coaching invariants + aggregate bounds gate CI; snapshot becomes a non-blocking semantic diff | `app/scripts/simulate-scenarios.mjs`, `app/package.json`, `.github/workflows/ci.yml`, `docs/analysis/simulation-baseline.json` |
 | 0.2 | `[x]` | Golden coaching-contract scenario with fixed dates; one assertion lands expected-failing | `app/src/engine/simulation/scenarios.ts`, `app/src/engine/goldenWeek.test.ts` |
-| 0.3 | `[-]` | Lazy Firebase init so the suite runs from a clean clone | `app/src/firebase.ts`, `app/src/services/*.ts`, `app/.env.example`, `app/README.md` |
+| 0.3 | `[x]` | Lazy Firebase init so the suite runs from a clean clone | `app/src/firebase.ts`, `app/src/services/*.ts`, `app/.env.example`, `app/README.md` |
 | 0.4 | `[ ]` | `POLICY_VERSION` bump + CI drift guard using the CI base SHA | `app/src/engine/policy.ts`, `.github/workflows/ci.yml`, new guard script |
 | 0.5 | `[ ]` | `ruff` + `mypy` in `pyproject.toml` and CI | `pyproject.toml`, `.github/workflows/ci.yml` |
 | 0.6 | `[ ]` | Delete `garmin_login.py`; pin `uv`; add dependency audits | `garmin_login.py`, `Dockerfile`, `.github/workflows/ci.yml` |
@@ -117,7 +117,7 @@ F3. Land it as a documented failing assertion (`it.fails(...)`, with a comment c
 F3 and this plan) so Phase 3 has an unambiguous definition of done, rather than
 weakening the assertion to match current behaviour.
 
-### `[ ]` 0.3 — Make the frontend suite runnable from a clean clone
+### `[x]` 0.3 — Make the frontend suite runnable from a clean clone
 
 `app/src/firebase.ts` calls `initializeApp` / `getFirestore` / `getAuth` at module scope,
 so importing any service transitively initialises Firebase. Without `VITE_FIREBASE_*`,

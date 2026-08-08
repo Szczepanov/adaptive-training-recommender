@@ -1,6 +1,6 @@
-import { initializeApp } from 'firebase/app';
-import { getFirestore } from 'firebase/firestore';
-import { getAuth } from 'firebase/auth';
+import { initializeApp, type FirebaseApp } from 'firebase/app';
+import { getFirestore, type Firestore } from 'firebase/firestore';
+import { getAuth, type Auth } from 'firebase/auth';
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -12,6 +12,30 @@ const firebaseConfig = {
   measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID
 };
 
-export const app = initializeApp(firebaseConfig);
-export const db = getFirestore(app);
-export const auth = getAuth(app);
+let _app: FirebaseApp | undefined;
+export function getApp(): FirebaseApp {
+  return (_app ??= initializeApp(firebaseConfig));
+}
+
+let _db: Firestore | undefined;
+export function getDb(): Firestore {
+  return (_db ??= getFirestore(getApp()));
+}
+
+let _auth: Auth | undefined;
+export function getAuthInstance(): Auth {
+  return (_auth ??= getAuth(getApp()));
+}
+
+// Deprecated lazy proxies for legacy imports
+export const db: Firestore = new Proxy({} as Firestore, {
+  get(_target, prop, receiver) {
+    return Reflect.get(getDb(), prop, receiver);
+  }
+});
+
+export const auth: Auth = new Proxy({} as Auth, {
+  get(_target, prop, receiver) {
+    return Reflect.get(getAuthInstance(), prop, receiver);
+  }
+});
