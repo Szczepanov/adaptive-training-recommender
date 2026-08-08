@@ -108,6 +108,30 @@ than from the original analysis.
 
 ---
 
+## Task status
+
+Every work item inside a plan carries a status marker on its heading and a matching row in
+that plan's **Task board**:
+
+| Marker | Meaning |
+|:--:|---|
+| `[ ]` | Not started |
+| `[-]` | In progress |
+| `[x]` | Finished |
+
+Update **both** the heading marker and the board row in the same commit — a board that
+disagrees with its headings is worse than no board, because it will be trusted.
+
+A task is `[x]` only when its own *Done when* condition holds, not when the code was
+written. Where a task's outcome is a measurement rather than a migration (notably Phase
+5.1), recording a negative result satisfies it — see D-BEAM.
+
+Phase-level `Status` (`Approved` / `Ready`) is about the *plan*; task markers are about
+the *work*. A `Ready` plan can be entirely `[ ]`, and an `Approved (blocked)` plan should
+be.
+
+---
+
 ## Writing a plan
 
 Keep them executable. A plan that cannot be picked up by someone who did not write it is
@@ -121,6 +145,11 @@ not finished. Each should have:
 6. **Risks & rollback** — including what to do if the change is wrong.
 7. **Out of scope** — the adjacent work this plan deliberately does not do.
 8. **Docs to update** — ADRs to write or amend, architecture docs to correct.
+
+Each work item should be implementable by someone who has not read the rest of the
+document: name the real files, state the current behaviour, state the change, and give a
+verifiable *Done when*. If a task needs a decision made first, say so and point at the
+decision register rather than leaving the implementer to choose.
 
 Prefer to state the smallest change that closes the finding. Where a plan proposes both a
 tactical fix and a structural one, say which unblocks work now and which is the

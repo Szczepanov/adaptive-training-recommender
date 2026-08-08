@@ -9,6 +9,24 @@
 
 ---
 
+## Task board
+
+Status legend: `[ ]` not started · `[-]` in progress · `[x]` finished.
+Update the marker on the work-item heading **and** this table in the same commit.
+
+| Task | Status | Summary | Primary files |
+|---|:--:|---|---|
+| 2.1 | `[ ]` | Write and accept **ADR-0012**, recording D1 (canonical phase vocabulary), D2 (`intensityScale` consumer) and the lexicographic priority model | `docs/adr/0012-*.md` (new) |
+| 2.2 | `[ ]` | `PlanDefinition` / `PlanBlock` / `PlanObjectiveDefinition`; coverage and dated block schedule combined by `buildPlanDefinition` | `app/src/workouts/event-plan.ts`, `app/src/engine/models.ts`, `microcycle.ts`, new plan-schedule module |
+| 2.3 | `[ ]` | `EventTiming` with validated date ordering for unconfirmed events | `app/src/engine/models.ts`, `periodization.ts`, `persistence/parsers/*` |
+| 2.4 | `[ ]` | Extract `evaluateReadinessAndSafetyEnvelope`; collapse Path A / Path B (F9) | `app/src/engine/rules.ts`, `planner.ts` |
+
+**2.1 gates the rest.** Do not start 2.2 before the ADR is accepted — the domain objects
+are the ADR's output, and building them first inverts the dependency this phase exists to
+establish.
+
+---
+
 ## Goal
 
 Establish that an explicit training plan — not generic days-to-event arithmetic — is the
@@ -27,7 +45,7 @@ exist with no mapping between them.
 
 ---
 
-## 2.1 — ADR-0012: Plan Intent and Sequence Planning are the training authorities
+## `[ ]` 2.1 — ADR-0012: Plan Intent and Sequence Planning are the training authorities
 
 Write this first; it is the gate for everything after. It must define:
 
@@ -115,7 +133,7 @@ Until Phase 4.4 lands, `intensityScale` stays written-and-unread. That is accept
 *because it is now a scheduled commitment with a named consumer*, which is the state F17
 objects to it lacking.
 
-## 2.2 — `PlanDefinition`: make the event plan executable
+## `[ ]` 2.2 — `PlanDefinition`: make the event plan executable
 
 Generalise `event-plan.ts` from a September-specific coverage list into a plan the engine
 consumes. **Do not make the domain September-specific.**
@@ -198,7 +216,7 @@ else for it to come from.
 3. `validateEventPlanCoverage` keeps running — the catalog-completeness check is still
    worth having; it is just no longer the file's *only* purpose.
 
-## 2.3 — Race-date uncertainty
+## `[ ]` 2.3 — Race-date uncertainty
 
 Real events are not always one known date. Add:
 
@@ -221,7 +239,7 @@ rather than hiding it.
 possible, or after it has happened. Validate at the parse boundary (`DataState.INVALID`,
 consistent with ADR-0010) rather than defensively inside the planner.
 
-## 2.4 — Collapse Path A / Path B (F9)
+## `[ ]` 2.4 — Collapse Path A / Path B (F9)
 
 `evaluateTrainingWithIntent` currently calls `evaluateTraining` (`rules.ts:486`) to obtain
 `mode` and `envelopes`, then discards its template pick and re-selects. Extract the part

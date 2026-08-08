@@ -8,6 +8,25 @@
 
 ---
 
+## Task board
+
+Status legend: `[ ]` not started · `[-]` in progress · `[x]` finished.
+Update the marker on the work-item heading **and** this table in the same commit.
+
+| Task | Status | Summary | Primary files |
+|---|:--:|---|---|
+| 0.1 | `[ ]` | Coaching invariants + aggregate bounds gate CI; snapshot becomes a non-blocking semantic diff | `app/scripts/simulate-scenarios.mjs`, `app/package.json`, `.github/workflows/ci.yml`, `docs/analysis/simulation-baseline.json` |
+| 0.2 | `[ ]` | Golden coaching-contract scenario with fixed dates; one assertion lands expected-failing | `app/src/engine/simulation/scenarios.ts`, `app/src/engine/goldenWeek.test.ts` |
+| 0.3 | `[ ]` | Lazy Firebase init so the suite runs from a clean clone | `app/src/firebase.ts`, `app/src/services/*.ts`, `app/.env.example`, `app/README.md` |
+| 0.4 | `[ ]` | `POLICY_VERSION` bump + CI drift guard using the CI base SHA | `app/src/engine/policy.ts`, `.github/workflows/ci.yml`, new guard script |
+| 0.5 | `[ ]` | `ruff` + `mypy` in `pyproject.toml` and CI | `pyproject.toml`, `.github/workflows/ci.yml` |
+| 0.6 | `[ ]` | Delete `garmin_login.py`; pin `uv`; add dependency audits | `garmin_login.py`, `Dockerfile`, `.github/workflows/ci.yml` |
+
+**No task here changes engine behaviour.** If a change to `app/src/engine/**` becomes
+necessary to complete a task, stop — it belongs in a later phase.
+
+---
+
 ## Goal
 
 Make it possible to see whether a planning change improved or degraded the recommended
@@ -30,7 +49,7 @@ was ever committed.
 
 ## Work items
 
-### 0.1 — Invariants are the CI gate; the snapshot is a diagnostic
+### `[ ]` 0.1 — Invariants are the CI gate; the snapshot is a diagnostic
 
 **This item was restructured after PR #5 review.** The original version proposed a
 full-output snapshot diff as the CI gate. That is the wrong contract here, and the
@@ -69,7 +88,7 @@ so it should be stable — verify rather than assume. If it is not stable, the s
 worthless as a diagnostic; fix the nondeterminism or drop the snapshot and keep only the
 invariants.
 
-### 0.2 — Golden coaching-contract scenario
+### `[ ]` 0.2 — Golden coaching-contract scenario
 
 The existing scenario assertions in `app/src/engine/scenarios.test.ts` check engine
 semantics (no constraint violations, no absurd streaks). They do not assert that the
@@ -98,7 +117,7 @@ F3. Land it as a documented failing assertion (`it.fails(...)`, with a comment c
 F3 and this plan) so Phase 3 has an unambiguous definition of done, rather than
 weakening the assertion to match current behaviour.
 
-### 0.3 — Make the frontend suite runnable from a clean clone
+### `[ ]` 0.3 — Make the frontend suite runnable from a clean clone
 
 `app/src/firebase.ts` calls `initializeApp` / `getFirestore` / `getAuth` at module scope,
 so importing any service transitively initialises Firebase. Without `VITE_FIREBASE_*`,
@@ -127,7 +146,7 @@ instructions: install, env, `npm run check`, `npm run dev`, `npm run test:rules`
 
 **Acceptance:** `git clone && cd app && npm ci && npm test` passes with no `.env` present.
 
-### 0.4 — Policy version guard
+### `[ ]` 0.4 — Policy version guard
 
 `POLICY_VERSION` (`app/src/engine/policy.ts`) is documented as "increment whenever a
 change can alter a persisted recommendation decision" and has never moved, including
@@ -156,7 +175,7 @@ through `HEAD`'s new ranking tie-break. A frozen string makes `replay.ts`'s
    This check belongs in CI rather than `npm run check`, since it needs the base ref;
    keep `npm run check` local-only.
 
-### 0.5 — Python lint and type checking
+### `[ ]` 0.5 — Python lint and type checking
 
 `AGENTS.md` requires type hints across all Python modules; nothing enforces it.
 
@@ -165,7 +184,7 @@ Add to `pyproject.toml` dev dependencies: `ruff`, `mypy`. Add `[tool.ruff]` and
 `src/garmin_sync` only). Add both to the `python-tests` CI job. Fix whatever the first
 run surfaces, or record explicit per-module ignores with a reason.
 
-### 0.6 — Small cleanups
+### `[ ]` 0.6 — Small cleanups
 
 * Delete `garmin_login.py` (repo root). It duplicates
   `scripts/bootstrap_garmin_tokens.py` and bypasses the ADR-0002 guard by injecting

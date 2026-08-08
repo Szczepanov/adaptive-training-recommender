@@ -8,6 +8,25 @@
 
 ---
 
+## Task board
+
+Status legend: `[ ]` not started · `[-]` in progress · `[x]` finished.
+Update the marker on the work-item heading **and** this table in the same commit.
+
+| Task | Status | Summary | Primary files |
+|---|:--:|---|---|
+| 4.1 | `[ ]` | One credit model: fix and promote `deriveObjectiveCredit`; shadow-run V1 vs V2 first (F7) | `app/src/engine/stimulus.ts`, `microcycle.ts`, `trainingIntent.ts` |
+| 4.2 | `[ ]` | Canonical stimulus axes required; legacy aliases and derived fallbacks deleted (F8) | `app/src/engine/models.ts`, `templates.ts`, `optimizer.ts`, `microcycle.ts`, `completedTraining.ts`, fixtures |
+| 4.3 | `[ ]` | Fatigue: assert ordering now; **compare** fusion functions before choosing (F12) | `app/src/engine/fatigue.ts`, `trainingHistorySnapshot.ts` |
+| 4.5 | `[ ]` | `PlannedDose { volume, intensity }` — gives `intensityScale` its consumer (D2 / F17) | `app/src/engine/trainingIntent.ts`, `dose.ts`, `models.ts`, `optimizer.ts` |
+| 4.4 | `[ ]` | Cost responds to delivered duration and completion ratio | `app/src/engine/completedTraining.ts`, `fatigue.ts` |
+
+4.5 is numbered after 4.3 but should land **before** 4.4 — 4.4's dose-sensitive cost and
+4.5's `PlannedDose` touch the same call path, and doing 4.4 first means reworking it.
+4.3(b) is deliberately open: do not pick a fusion function without harness data.
+
+---
+
 ## Goal
 
 Collapse three objective-credit models into one dose-sensitive model, finish the stimulus
@@ -16,7 +35,7 @@ inventing constants the repository cannot justify.
 
 ---
 
-## 4.1 — F7: one credit model
+## `[ ]` 4.1 — F7: one credit model
 
 Today there are three:
 
@@ -81,7 +100,7 @@ Run V1 and V2 crediting side by side for one iteration, emitting both into the s
 report. Compare objective-resolution counts per scenario. Cut over only when the
 divergence is explainable — not merely when V2 runs without throwing.
 
-## 4.2 — F8: finish the stimulus rename
+## `[ ]` 4.2 — F8: finish the stimulus rename
 
 `WorkoutStimulusProfile` carries 7 canonical + 5 legacy axes, **all optional**.
 `canonicalizeStimulus` (`templates.ts:575-590`) fills both sides and invents two
@@ -122,7 +141,7 @@ populated.
    two unexplained constants permanently, and forces the one person who knows what a given
    session develops to say so explicitly rather than having it inferred.
 
-## 4.3 — F12: fatigue, in two separable pieces
+## `[ ]` 4.3 — F12: fatigue, in two separable pieces
 
 **This section was revised after PR #5 review.** An earlier draft prescribed
 `1 - exp(-x)` saturation plus a weighted external/internal combination. That is withdrawn:
@@ -167,7 +186,7 @@ before committing to one — and record the comparison in an ADR, with the data.
 This is deliberately slower than picking a formula. It is the process F11 asks for, and
 this phase is the first opportunity to actually follow it.
 
-## 4.5 — `PlannedDose`: give `intensityScale` its consumer (D2)
+## `[ ]` 4.5 — `PlannedDose`: give `intensityScale` its consumer (D2)
 
 **This is the work item that discharges D2 and F17.** Phase 2 decided `intensityScale`
 gets a consumer rather than being deleted; without an owning work item that commitment is
@@ -186,7 +205,7 @@ prose, which is the exact failure mode this review criticises.
 `volumeScale` down and `intensityScale` held produces shorter sessions at retained
 intensity class, asserted in the Phase-0 harness.
 
-## 4.4 — Dose-sensitive cost
+## `[ ]` 4.4 — Dose-sensitive cost
 
 `DEFAULT_COST_BY_MODALITY[modality][intensity]` returns a fixed vector; duration has
 almost no authority, so a 40-minute hard ride and a 3-hour hard ride score nearly

@@ -10,6 +10,23 @@
 
 ---
 
+## Task board
+
+Status legend: `[ ]` not started · `[-]` in progress · `[x]` finished.
+Update the marker on the work-item heading **and** this table in the same commit.
+
+| Task | Status | Blocked by | Summary | Primary files |
+|---|:--:|---|---|---|
+| 1.1 | `[ ]` | — | Structured `InjuryConstraint[]` replaces the dead free-text injury channel (F1) | `app/src/engine/models.ts`, `injuryPolicy.ts` (new), `adapters.ts`, `rules.ts`, `eligibility.ts`, `optimizer.ts`, `services/trainingSettingsService.ts`, `components/TrainingSettings.tsx`, `app/firestore.rules` |
+| 1.2 | `[ ]` | **Phase 0** | Recognised Garmin sessions earn objective credit from an inferred stimulus vector (F2) | `app/src/engine/completedTraining.ts`, `microcycle.ts`, `trainingHistory.ts` |
+| 1.3 | `[ ]` | — | Append-only recommendation revisions; decision fields immutable per revision (F6) | `app/firestore.rules`, `app/src/services/recommendationService.ts`, `app/src/components/Home.tsx`, `app/src/emulator/firestoreRules.emulator.test.ts` |
+
+1.1 and 1.3 are independent of each other and of Phase 0 — either can start today.
+**1.2 must not start before Phase 0**: it changes objective crediting for every existing
+user, and its constants cannot be chosen without the credit-regression harness.
+
+---
+
 ## Goal
 
 Fix the three defects where the system's actual behaviour differs from its documented
@@ -24,7 +41,7 @@ harder to see, because they will then be spread across a larger surface.
 
 ---
 
-## 1.1 — F1: give injury constraints a real data path
+## `[ ]` 1.1 — F1: give injury constraints a real data path
 
 ### Current state
 
@@ -177,7 +194,7 @@ object.
 
 ---
 
-## 1.2 — F2: Garmin-measured training must earn objective credit
+## `[ ]` 1.2 — F2: Garmin-measured training must earn objective credit
 
 > **Blocked by Phase 0.** This item introduces inferred-stimulus constants and changes
 > objective crediting for every existing user. It cannot be validated without the
@@ -319,7 +336,7 @@ Fix (b) makes Garmin rides start resolving objectives. That lowers `urgency` in
 
 ---
 
-## 1.3 — F6: make recommendation records actually immutable
+## `[ ]` 1.3 — F6: make recommendation records actually immutable
 
 ### Current state
 
@@ -354,17 +371,68 @@ Two lifecycles are viable:
 > discards, the audit stops matching what the user saw. Adherence semantics also stay
 > intact under (B): it attaches to the date, resolving to the latest revision.
 >
-> **Shape:** keep `users/{uid}/daily_recommendations/{date}` as the current decision, add
-> a monotonic `revision: number`, and require that any update changing decision fields
-> increments it while writing the prior state to
-> `users/{uid}/daily_recommendations/{date}/revisions/{revision}` in the same batch.
-> Rules enforce: revisions are create-only (never update or delete); `revision` strictly
-> increases; decision fields may only change when `revision` increases.
->
-> **Honest limit:** Firestore rules cannot verify the prior state was actually copied —
-> that is a client-side batch obligation. Rules enforce immutability *of what is written*;
-> the copy is covered by an emulator test, not by the rules themselves. Say so in ADR-0010's
-> amendment rather than implying stronger guarantees.
+> **Shape.** `users/{userId}/daily_recommendations/{date}` remains the *current* decision
+> and gains a monotonic `revision: number` (first write = `1`). Superseded decisions are
+> archived at `users/{userId}/daily_recommendations/{date}/revisions/{revision}`, where the
+> document ID is the **prior** revision number as a string. A decision change is one atomic
+> batch: create the archive doc for `resource.data.revision`, and set the current doc to
+> `revision + 1`.
+
+**The archive write is enforced by rules, not by client good behaviour.**
+
+An earlier revision of this plan claimed Firestore rules could not verify the prior state
+was copied, and left it as a client-side batch obligation. **That was wrong**, and it
+mattered: it would have left a malicious or buggy client free to overwrite the current
+recommendation without preserving the prior audit — destroying precisely the integrity
+property this work item exists to establish. Rules can validate another document's
+*post-write* state in the same batch or transaction via `getAfter()` / `existsAfter()`.
+
+```text
+function decisionFieldsChanged() {
+  return request.resource.data.templateId    != resource.data.templateId
+    ||   request.resource.data.templateTitle != resource.data.templateTitle
+    ||   request.resource.data.category      != resource.data.category
+    ||   request.resource.data.modality      != resource.data.modality
+    ||   request.resource.data.mode          != resource.data.mode
+    ||   request.resource.data.rationale     != resource.data.rationale
+    ||   request.resource.data.prescription  != resource.data.prescription;
+}
+
+// Bind the lookup once with `let` -- each distinct getAfter() is a document access and
+// rules cap those per request (10 single-document / 20 multi-document or batched).
+function archivesPriorRevision(userId, date) {
+  let priorPath = /databases/$(database)/documents/users/$(userId)/daily_recommendations/$(date)/revisions/$(string(resource.data.revision));
+  let prior = getAfter(priorPath).data;
+  return prior.revision      == resource.data.revision
+    &&   prior.templateId    == resource.data.templateId
+    &&   prior.templateTitle == resource.data.templateTitle
+    &&   prior.category      == resource.data.category
+    &&   prior.modality      == resource.data.modality
+    &&   prior.mode          == resource.data.mode
+    &&   prior.rationale     == resource.data.rationale
+    &&   prior.prescription  == resource.data.prescription
+    &&   (!('recommendationAudit' in resource.data)
+          || prior.recommendationAudit == resource.data.recommendationAudit);
+}
+```
+
+Update rule for `daily_recommendations/{date}`:
+
+* **Decision changed** → require `request.resource.data.revision == resource.data.revision + 1`
+  **and** `archivesPriorRevision(userId, date)`. The archive must match the *pre-update*
+  document field for field, so a missing, mismatched or fabricated archive is rejected.
+* **Decision unchanged** (adherence answer, or adding `adjustment`) → require `revision`
+  unchanged and no archive write. Routine updates must stay cheap; demanding an archive for
+  an adherence tick would make the common path expensive and push clients toward working
+  around it.
+
+Rules for `daily_recommendations/{date}/revisions/{revision}`: **create-only** for the
+owner, never update, never delete, and `request.resource.data.revision` must equal the
+document ID cast to a number.
+
+**Residual limit, stated accurately this time:** rules constrain the archive's content and
+its existence-after-write, but cannot compel a client to write a new decision at all. That
+is not a gap — a client that never writes simply leaves the record unchanged.
 
 **`prescription` is decision evidence** and must be pinned per revision alongside the
 other decision fields — the earlier `decisionFieldsUnchanged()` sketch omitted it.
@@ -407,7 +475,11 @@ result, so unmentioned fields compare equal, which is what these rules assume.
 
 ### Tests (extend `src/emulator/firestoreRules.emulator.test.ts`)
 
-* rejects an update that changes `templateId` on an existing document
+* rejects an update that changes `templateId` **without** the matching archive write
+* rejects a decision change whose archive document exists but has **mismatched** fields
+* rejects a decision change that archives under the **wrong revision number**
+* rejects `revision` not incrementing by exactly 1 on a decision change
+* rejects any update or delete of an existing `revisions/{revision}` document
 * rejects `schemaVersion` 3 → 1
 * rejects removing or altering `recommendationAudit` once set
 * **allows** setting `adherence` on an existing document

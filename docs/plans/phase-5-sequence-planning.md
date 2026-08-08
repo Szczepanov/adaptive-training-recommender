@@ -7,6 +7,28 @@
 
 ---
 
+## Task board
+
+Status legend: `[ ]` not started · `[-]` in progress · `[x]` finished.
+Update the marker on the work-item heading **and** this table in the same commit.
+
+Ordered by the increment sequence below, **not** by section number.
+
+| Order | Task | Status | Summary | Primary files |
+|:--:|---|:--:|---|---|
+| 1 | 5.3 | `[ ]` | Persist `FixedActivity` under a user-owned path with rules + emulator tests | `app/firestore.rules`, new `fixedActivityService.ts`, `app/src/engine/schedule.ts`, `planner.ts` |
+| 2 | 5.4 | `[ ]` | Per-region tissue state; may only tighten a Phase-1 injury constraint | `app/src/engine/models.ts`, `components/DailyCheckin.tsx`, `injuryPolicy.ts` |
+| 3 | 5.5 | `[ ]` | Evidence hierarchy for completed training, carrying `stimulusConfidence` | `app/src/engine/completedTraining.ts` |
+| 4 | 5.7 | `[ ]` | Taper as an explicit plan contract rather than an emergent side effect | `app/src/workouts/event-plan.ts`, `app/src/engine/periodization.ts` |
+| 5 | 5.6 | `[ ]` | Multi-event: one taper authority, multiple demand contributors | `app/src/engine/periodization.ts` |
+| 6 | 5.2 | `[ ]` | `PlanningCandidate` carries spacing/recovery metadata into the decision | `app/src/workouts/models.ts`, `app/src/engine/planner.ts` |
+| 7 | 5.1 | `[ ]` | Bounded sequence search — **build and measure**, adoption conditional (D-BEAM) | `app/src/engine/planner.ts` |
+
+**5.1 is an experiment, not a scheduled migration.** Marking it `[x]` requires a recorded
+adoption decision with harness data — retaining the greedy loop is a valid completion.
+
+---
+
 ## Goal
 
 Replace greedy day-by-day projection with bounded sequence search over the planning
@@ -38,7 +60,7 @@ increment, not a failed one. Increments 1–6 stand on their own either way.
 
 ---
 
-## 5.1 — Bounded sequence search
+## `[ ]` 5.1 — Bounded sequence search
 
 `generateWeekAheadPlan` walks one day at a time, greedily. To compensate, the optimizer
 accumulated six named policies (anti-stacking, post-objective strength suppression,
@@ -75,7 +97,7 @@ judgement the current architecture structurally cannot make.
 Prerequisite: Phase 3's lexicographic layer. Search needs hard constraints separated from
 sort keys; it cannot operate on a single blended multiplier.
 
-## 5.2 — Move the planner/workout-library boundary
+## `[ ]` 5.2 — Move the planner/workout-library boundary
 
 Detailed `WorkoutDefinition`s already carry recovery hours, mechanical and eccentric load,
 coordination demand, technical environment, contraindications, and minimum spacing after
@@ -103,7 +125,7 @@ interface PlanningCandidate {
 
 Prescription generation stays downstream and unchanged.
 
-## 5.3 — Persist fixed activities
+## `[ ]` 5.3 — Persist fixed activities
 
 `FixedActivity` exists in the domain and `WeekAheadOptions.fixedActivities` accepts it,
 but there is no Firestore-backed source (ADR-0008 §5 admits this). For a multi-sport
@@ -123,7 +145,7 @@ cross-user denied — the same three cases the recommendation rules already cove
 practical value for modest effort and does not depend on the search work — **it can land
 before 5.1.**
 
-## 5.4 — Local tissue state
+## `[ ]` 5.4 — Local tissue state
 
 One scalar soreness value cannot distinguish knee from Achilles from calf from adductor
 from general DOMS. Extend the check-in to per-region response (morning state, pain during
@@ -145,7 +167,7 @@ wearable-derived readiness (may tighten). Test all three pairwise conflicts.
 Fatigue estimates remain guidance; observed local response outranks *wearable* readiness,
 not the injury gate.
 
-## 5.5 — Evidence hierarchy for completed training
+## `[ ]` 5.5 — Evidence hierarchy for completed training
 
 Phase 1.2 ships a coarse modality×intensity stimulus inference. This generalises it:
 
@@ -172,7 +194,7 @@ materially better than treating meaningful unplanned training as adaptation-neut
 The asymmetry this closes: today the system sees **cost** from an unplanned hard group
 ride but not **benefit**, so it can prescribe work that was effectively already done.
 
-## 5.6 — Multi-event: separate taper authority from demand contribution
+## `[ ]` 5.6 — Multi-event: separate taper authority from demand contribution
 
 `evaluatePeriodizationPhase` picks one governing event by priority then proximity. A more
 realistic model is **one taper authority, multiple demand contributors**: an A-event 70
@@ -182,7 +204,7 @@ supply race-specific exposure without capturing the macrocycle.
 Explicit objectives and session roles express this far more naturally than one blended
 demand vector, which is why it sits after Phase 2.
 
-## 5.7 — Taper as an explicit contract
+## `[ ]` 5.7 — Taper as an explicit contract
 
 Taper behaviour currently emerges from interactions between `volumeScale`, objective
 generation, template `phaseEligibility` and utility ranking. `event-plan.ts` already names
