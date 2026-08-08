@@ -21,7 +21,7 @@ Update the marker on the work-item heading **and** this table in the same commit
 | 4.2 | `[x]` | Canonical stimulus axes required; legacy aliases and derived fallbacks deleted (F8) | `app/src/engine/models.ts`, `templates.ts`, `optimizer.ts`, `microcycle.ts`, `completedTraining.ts`, fixtures |
 | 4.3 | `[x]` | Fatigue: assert ordering now; **compare** fusion functions before choosing (F12) | `app/src/engine/fatigue.ts`, `trainingHistorySnapshot.ts` |
 | 4.5 | `[x]` | `PlannedDose { volume, intensity }` â€” gives `intensityScale` its consumer (D2 / F17) | `app/src/engine/trainingIntent.ts`, `dose.ts`, `models.ts`, `optimizer.ts` |
-| 4.4 | `[-]` | Cost responds to delivered duration and completion ratio | `app/src/engine/completedTraining.ts`, `fatigue.ts` |
+| 4.4 | `[x]` | Cost responds to delivered duration and completion ratio | `app/src/engine/completedTraining.ts`, `fatigue.ts` |
 
 4.5 is numbered after 4.3 but should land **before** 4.4 â€” 4.4's dose-sensitive cost and
 4.5's `PlannedDose` touch the same call path, and doing 4.4 first means reworking it.
@@ -251,7 +251,7 @@ components. Typecheck, lint, unit, and workout-catalog validation pass.
 `volumeScale` down and `intensityScale` held produces shorter sessions at retained
 intensity class, asserted in the Phase-0 harness.
 
-## `[-]` 4.4 â€” Dose-sensitive cost
+## `[x]` 4.4 â€” Dose-sensitive cost
 
 `DEFAULT_COST_BY_MODALITY[modality][intensity]` returns a fixed vector; duration has
 almost no authority, so a 40-minute hard ride and a 3-hour hard ride score nearly
@@ -289,6 +289,13 @@ So split the work, and do not let the second half block the first:
 measured-response term is not in this phase's acceptance criteria and must not be written
 into the formula until its input contract exists. The six-dimensional cost vector is
 unchanged throughout.
+
+**Completed 2026-08-08:** `scaleCostByDeliveredDose` scales every dimension using the
+duration relative to a comparable catalog session plus an independently supplied completion
+ratio. Garmin and adherence reconciliation now pass measured completed duration to that
+function; unknown modalities remain unscaled rather than receiving an invented reference
+duration. The measured-response term remains out of scope. Unit tests assert monotonic
+duration and completion behavior, and `npm run check` passes.
 
 ---
 

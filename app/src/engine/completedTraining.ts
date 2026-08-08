@@ -10,6 +10,7 @@ import type {
 } from './models';
 import type { CompletedExposure } from './trainingHistory';
 import { ENRICHED_TEMPLATES } from './templates';
+import type { DeliveredDose } from './stimulus';
 
 type CompletedModality = SessionTemplate['modality'] | 'Unknown';
 
@@ -91,18 +92,76 @@ function intensityFromGarmin(activity: NormalizedGarminActivity): CompletedTrain
     return trainingEffect > 0 ? 'easy' : 'unknown';
 }
 
+function catalogIntensity(template: SessionTemplate): CompletedTrainingIntensity {
+    const systemicCost = template.costProfile?.systemic ?? template.systemicCost;
+    if (systemicCost >= 0.55) return 'hard';
+    if (systemicCost >= 0.25) return 'moderate';
+    return 'easy';
+}
+
+/**
+ * Uses a comparable catalog session as the duration reference instead of adding a
+ * modality-wide duration constant. Unknown modalities deliberately have no invented
+ * reference, so their cost remains unscaled until a better source exists.
+ */
+function catalogReferenceDurationMin(modality: CompletedModality, intensity: CompletedTrainingIntensity): number | undefined {
+    const durations = ENRICHED_TEMPLATES
+        .filter(template => template.modality === modality && catalogIntensity(template) === intensity)
+        .map(template => template.durationMin)
+        .filter((duration): duration is number => Number.isFinite(duration) && duration > 0)
+        .sort((left, right) => left - right);
+    if (durations.length === 0) return undefined;
+    return durations[Math.floor(durations.length / 2)];
+}
+
+/**
+ * Scales the existing six-dimensional base vector by the delivered evidence. A caller
+ * may provide an independently measured completion ratio; when it is absent we do not
+ * fabricate one from duration, because that would count the same partial session twice.
+ */
+export function scaleCostByDeliveredDose(
+    costProfile: WorkoutCostProfile,
+    dose: DeliveredDose,
+): WorkoutCostProfile {
+    const durationScale = dose.plannedDurationMin && dose.plannedDurationMin > 0 && dose.completedDurationMin !== undefined
+        ? Math.max(0, dose.completedDurationMin) / dose.plannedDurationMin
+        : 1;
+    const completionScale = dose.completionRatio === undefined
+        ? 1
+        : Math.max(0, Math.min(1, dose.completionRatio));
+    const scale = durationScale * completionScale;
+    return {
+        systemic: costProfile.systemic * scale,
+        cardiovascular: costProfile.cardiovascular * scale,
+        lowerBody: costProfile.lowerBody * scale,
+        upperBody: costProfile.upperBody * scale,
+        impactTissue: costProfile.impactTissue * scale,
+        neuromuscular: costProfile.neuromuscular * scale,
+    };
+}
+
 function templateForRecommendation(recommendation: DailyRecommendation): SessionTemplate | undefined {
     return ENRICHED_TEMPLATES.find(template => template.id === recommendation.templateId);
 }
 
-function adherenceCandidate(recommendation: DailyRecommendation): { modality: CompletedModality; durationMin: number | null; template?: SessionTemplate } | null {
+function adherenceCandidate(recommendation: DailyRecommendation): { modality: CompletedModality; durationMin: number | null; plannedDurationMin: number | null; template?: SessionTemplate } | null {
     if (recommendation.adherence.followed === null || recommendation.adherence.skipped) return null;
     const template = templateForRecommendation(recommendation);
     if (recommendation.adherence.followed) {
-        return { modality: recommendation.modality, durationMin: template?.durationMin ?? null, template };
+        return {
+            modality: recommendation.modality,
+            durationMin: recommendation.adherence.actualDurationMin ?? template?.durationMin ?? null,
+            plannedDurationMin: template?.durationMin ?? null,
+            template,
+        };
     }
     if (!recommendation.adherence.actualModality) return null;
-    return { modality: recommendation.adherence.actualModality, durationMin: recommendation.adherence.actualDurationMin, template: undefined };
+    return {
+        modality: recommendation.adherence.actualModality,
+        durationMin: recommendation.adherence.actualDurationMin,
+        plannedDurationMin: null,
+        template: undefined,
+    };
 }
 
 function comparableDurationDifference(left: number | null, right: number | null): number {
@@ -154,6 +213,7 @@ export const DEFAULT_STIMULUS_BY_MODALITY: Record<CompletedModality, Record<Comp
 function candidateEventFromGarmin(activity: NormalizedGarminActivity): CompletedTrainingEvent {
     const modality = modalityFromActivityType(activity.type);
     const intensity = intensityFromGarmin(activity);
+    const baseCost = DEFAULT_COST_BY_MODALITY[modality][intensity];
     return {
         id: `garmin:${activity.activityId}`,
         date: activity.date,
@@ -161,7 +221,10 @@ function candidateEventFromGarmin(activity: NormalizedGarminActivity): Completed
         modality,
         intensity,
         trainingEffect: Math.max(activity.trainingEffectAerobic ?? 0, activity.trainingEffectAnaerobic ?? 0) || null,
-        estimatedCost: DEFAULT_COST_BY_MODALITY[modality][intensity],
+        estimatedCost: scaleCostByDeliveredDose(baseCost, {
+            plannedDurationMin: catalogReferenceDurationMin(modality, intensity),
+            completedDurationMin: activity.durationMin ?? undefined,
+        }),
         estimatedStimulus: DEFAULT_STIMULUS_BY_MODALITY[modality][intensity],
         exactTemplateMatch: false,
         sources: ['garmin'],
@@ -174,6 +237,7 @@ function candidateEventFromGarmin(activity: NormalizedGarminActivity): Completed
 
 function candidateEventFromAdherence(recommendation: DailyRecommendation, candidate: NonNullable<ReturnType<typeof adherenceCandidate>>): CompletedTrainingEvent {
     const intensity: CompletedTrainingIntensity = candidate.template?.systemicCost && candidate.template.systemicCost >= 0.55 ? 'hard' : 'moderate';
+    const baseCost = candidate.template?.costProfile ?? DEFAULT_COST_BY_MODALITY[candidate.modality][intensity];
     return {
         id: `adherence:${recommendation.date}`,
         date: recommendation.date,
@@ -181,7 +245,10 @@ function candidateEventFromAdherence(recommendation: DailyRecommendation, candid
         modality: candidate.modality,
         intensity,
         trainingEffect: null,
-        estimatedCost: candidate.template?.costProfile ?? DEFAULT_COST_BY_MODALITY[candidate.modality][intensity],
+        estimatedCost: scaleCostByDeliveredDose(baseCost, {
+            plannedDurationMin: candidate.plannedDurationMin ?? catalogReferenceDurationMin(candidate.modality, intensity),
+            completedDurationMin: candidate.durationMin ?? undefined,
+        }),
         estimatedStimulus: candidate.template?.stimulusProfile ?? DEFAULT_STIMULUS_BY_MODALITY[candidate.modality][intensity],
         exactTemplateMatch: !!candidate.template?.stimulusProfile,
         sources: ['adherence'],
@@ -197,6 +264,10 @@ function mergeAdherenceIntoGarmin(
     recommendation: DailyRecommendation,
     candidate: NonNullable<ReturnType<typeof adherenceCandidate>>,
 ): CompletedTrainingEvent {
+    const intensity = event.intensity;
+    const baseCost = recommendation.adherence.followed && candidate.template?.costProfile
+        ? candidate.template.costProfile
+        : DEFAULT_COST_BY_MODALITY[event.modality][intensity];
     return {
         ...event,
         sources: ['garmin', 'adherence'],
@@ -205,9 +276,10 @@ function mergeAdherenceIntoGarmin(
         // Garmin remains the measured duration/training-effect authority. Template
         // metadata improves dimensional cost/stimulus only when the athlete confirmed
         // the prescribed session was followed.
-        estimatedCost: recommendation.adherence.followed && candidate.template?.costProfile
-            ? candidate.template.costProfile
-            : event.estimatedCost,
+        estimatedCost: scaleCostByDeliveredDose(baseCost, {
+            plannedDurationMin: candidate.plannedDurationMin ?? catalogReferenceDurationMin(event.modality, intensity),
+            completedDurationMin: event.durationMin ?? undefined,
+        }),
         estimatedStimulus: recommendation.adherence.followed && candidate.template?.stimulusProfile
             ? candidate.template.stimulusProfile
             : event.estimatedStimulus,

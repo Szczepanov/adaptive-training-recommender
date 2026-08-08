@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { CompletedTrainingEvent, DailyRecommendation, NormalizedGarminActivity } from './models';
-import { completedEventToExposure, DEFAULT_STIMULUS_BY_MODALITY, deriveSessionPlanRelationship, reconcileCompletedTrainingEvents } from './completedTraining';
+import { completedEventToExposure, DEFAULT_STIMULUS_BY_MODALITY, deriveSessionPlanRelationship, reconcileCompletedTrainingEvents, scaleCostByDeliveredDose } from './completedTraining';
 
 function activity(overrides: Partial<NormalizedGarminActivity> = {}): NormalizedGarminActivity {
     return {
@@ -21,6 +21,17 @@ function recommendation(overrides: Partial<DailyRecommendation> = {}): DailyReco
 }
 
 describe('completed training reconciliation', () => {
+    it('scales each cost dimension monotonically with delivered duration and completion ratio', () => {
+        const base = { systemic: 0.6, cardiovascular: 0.7, lowerBody: 0.5, upperBody: 0.1, impactTissue: 0.2, neuromuscular: 0.4 };
+        const short = scaleCostByDeliveredDose(base, { plannedDurationMin: 60, completedDurationMin: 40, completionRatio: 1 });
+        const long = scaleCostByDeliveredDose(base, { plannedDurationMin: 60, completedDurationMin: 180, completionRatio: 1 });
+        const partial = scaleCostByDeliveredDose(base, { plannedDurationMin: 60, completedDurationMin: 180, completionRatio: 0.5 });
+
+        expect(long.systemic).toBeGreaterThan(short.systemic);
+        expect(partial.systemic).toBeLessThan(long.systemic);
+        expect(partial.impactTissue).toBeLessThan(long.impactTissue);
+    });
+
     it('retains a Garmin hard session with no adherence answer', () => {
         const [event] = reconcileCompletedTrainingEvents([activity()], []);
         expect(event.sources).toEqual(['garmin']);
