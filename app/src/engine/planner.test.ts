@@ -306,7 +306,7 @@ describe('generateWeekAheadPlan', () => {
                 { type: 'hard Cycling intervals', systemicCost: 0.8 },
                 { type: 'hard Cycling threshold', systemicCost: 0.8 },
             ],
-        })[0].utilityScore;
+        })[0]?.utilityScore ?? 0;
 
         expect(seededHistory).toBeLessThan(noHistory);
     });

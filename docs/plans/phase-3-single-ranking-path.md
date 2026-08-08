@@ -16,8 +16,8 @@ Update the marker on the work-item heading **and** this table in the same commit
 
 | Task | Status | Summary | Primary files |
 |---|:--:|---|---|
-| 3.1 | `[ ]` | Replace modality anti-stacking with dated, role-aware recovery constraints (F3) | `app/src/engine/optimizer.ts`, `models.ts`, `planner.ts`, `rules.ts` |
-| 3.2 | `[ ]` | Lexicographic ordering: hard filters separated from sort keys; named rejection reasons | `app/src/engine/optimizer.ts` |
+| 3.1 | `[x]` | Replace modality anti-stacking with dated, role-aware recovery constraints (F3) | `app/src/engine/optimizer.ts`, `models.ts`, `planner.ts`, `rules.ts` |
+| 3.2 | `[x]` | Lexicographic ordering: hard filters separated from sort keys; named rejection reasons | `app/src/engine/optimizer.ts` |
 | 3.3 | `[ ]` | One `buildOptimizationContext` shared by both call sites (F4) | `app/src/engine/rules.ts`, `planner.ts` |
 | 3.4 | `[ ]` | Next-day tier selector; stop hardcoding the green branch (F5) | `app/src/components/Home.tsx`, `WeekAheadStrip.tsx`, `app/src/engine/planner.ts` |
 
@@ -36,7 +36,7 @@ always green.
 
 ---
 
-## `[ ]` 3.1 — F3: replace modality anti-stacking
+## `[x]` 3.1 — F3: replace modality anti-stacking
 
 ### Why "add a date" is not the fix
 
@@ -110,7 +110,7 @@ key-status field — but do not leave the predicate to each call site to reinven
 Note the last row: variety is a tie-break between equivalent options, never a reason to
 change what kind of session a day gets. That is the distinction the current code loses.
 
-### `[ ]` 3.2 — Lexicographic ordering, not more multipliers
+### `[x]` 3.2 — Lexicographic ordering, not more multipliers
 
 The present architecture asks one multiplicative score to arbitrate safety,
 periodization, interference, recovery, preference and variety at once. F3 is the proof it

@@ -1,0 +1,150 @@
+import { describe, expect, it } from 'vitest';
+import { rankCandidates, rankCandidatesByUtility } from './optimizer';
+import { ENRICHED_TEMPLATES } from './templates';
+import type { FatigueState, SessionTemplate, UserPreferences, WeeklyObjective } from './models';
+import type { ResolvedAvailability } from './schedule';
+
+const DEFAULT_FATIGUE: FatigueState = {
+    lastUpdatedDate: '2026-03-01',
+    externalLoadFatigue: { systemic: 0, cardiovascular: 0, lowerBody: 0, upperBody: 0, impactTissue: 0, neuromuscular: 0 },
+    internalResponseStrain: { systemic: 0, cardiovascular: 0, lowerBody: 0, upperBody: 0, impactTissue: 0, neuromuscular: 0 },
+    combinedFatigue: { systemic: 0, cardiovascular: 0, lowerBody: 0, upperBody: 0, impactTissue: 0, neuromuscular: 0 },
+};
+
+const DEFAULT_AVAILABILITY: ResolvedAvailability = {
+    maxTimeMinutes: 120,
+    availableEquipment: ['free_weights', 'indoor_bike', 'treadmill', 'cable_machine'],
+    locationContext: 'home',
+    environment: 'indoor',
+};
+
+const DEFAULT_PREFERENCES: UserPreferences = {
+    avoidedModalities: [],
+    deprioritizedModalities: [],
+    preferredModalities: [],
+    conservativeBias: false,
+    preferredRecoveryStyle: 'mixed',
+    defaultWeekdayTimeMin: 60,
+    defaultWeekendTimeMin: 90,
+    preferredTimeOfDay: 'flexible',
+    explanationVerbosity: 'detailed',
+    preferredUnits: { distance: 'km', weight: 'kg', temperature: 'celsius' },
+    schemaVersion: 1,
+    createdAt: '',
+    updatedAt: '',
+};
+
+describe('optimizer — dated, role-aware recovery constraints (F3 / 3.1)', () => {
+    it('allows three cycling sessions across 7 days with >= 48h spacing without repetition penalty', () => {
+        const thresholdRide = ENRICHED_TEMPLATES.find(t => t.category === 'Hard Endurance' && t.modality === 'Cycling')!;
+        const history = [
+            { date: '2026-03-01', modality: 'Cycling', category: 'Hard Endurance', role: 'anchor', systemicCost: 0.8, lowerBodyCost: 0.5, type: 'Cycling' },
+            { date: '2026-03-02', modality: 'Rest', category: 'Rest', role: 'recovery', systemicCost: 0, lowerBodyCost: 0, type: 'Rest' },
+            { date: '2026-03-03', modality: 'Cycling', category: 'Moderate Endurance', role: 'supporting', systemicCost: 0.5, lowerBodyCost: 0.3, type: 'Cycling' },
+        ];
+
+        // Target date 2026-03-05 (48h after 2026-03-03)
+        const result = rankCandidates(
+            [thresholdRide],
+            [],
+            DEFAULT_FATIGUE,
+            DEFAULT_AVAILABILITY,
+            [],
+            DEFAULT_PREFERENCES,
+            { date: '2026-03-05', recentHistory: history as any }
+        );
+
+        expect(result.accepted).toHaveLength(1);
+        expect(result.accepted[0].excludedReasons).toEqual([]);
+        expect(result.accepted[0].utilityScore).toBeGreaterThan(0);
+    });
+
+    it('rejects two hard lower-body sessions on consecutive days with HARD_LOWER_BODY_SPACING_VIOLATION', () => {
+        const heavySquat = ENRICHED_TEMPLATES.find(t => t.category === 'Lower-body Strength') ?? ENRICHED_TEMPLATES.find(t => t.modality === 'Strength')!;
+        const history = [
+            { date: '2026-03-04', modality: 'Strength', category: 'Lower-body Strength', role: 'anchor', systemicCost: 0.7, lowerBodyCost: 0.8, type: 'Lower-body Strength' }
+        ];
+
+        // Target date 2026-03-05 (consecutive day, dayDiff = 1)
+        const result = rankCandidates(
+            [heavySquat],
+            [],
+            DEFAULT_FATIGUE,
+            DEFAULT_AVAILABILITY,
+            [],
+            DEFAULT_PREFERENCES,
+            { date: '2026-03-05', recentHistory: history as any }
+        );
+
+        expect(result.rejected).toHaveLength(1);
+        expect(result.rejected[0].excludedReasons).toContain('HARD_LOWER_BODY_SPACING_VIOLATION');
+    });
+});
+
+describe('optimizer — lexicographic ordering (3.2)', () => {
+    it('ensures preference multiplier cannot promote a zero-objective candidate over an objective-satisfying candidate', () => {
+        const thresholdObj: WeeklyObjective = {
+            id: 'obj_1',
+            key: 'threshold_quality',
+            title: 'Threshold Development',
+            targetExposures: 1,
+            completedExposures: 0,
+            targetStimulus: { thresholdDevelopment: 0.8 },
+        };
+
+        const thresholdCandidate = ENRICHED_TEMPLATES.find(t => t.category === 'Hard Endurance' && t.modality === 'Cycling')!;
+        const dislikedObjCandidate = {
+            ...thresholdCandidate,
+            id: 'obj_candidate_disliked',
+            modality: 'Running' as const, // marked as avoided -> soft 0.2 penalty
+        };
+
+        const preferredNoObjCandidate = {
+            ...ENRICHED_TEMPLATES.find(t => t.category === 'Mobility/Recovery')!,
+            id: 'no_obj_candidate_preferred',
+            modality: 'Mobility' as const, // preferred -> soft 1.3 boost
+        };
+
+        const prefs: UserPreferences = {
+            ...DEFAULT_PREFERENCES,
+            avoidedModalities: ['Running'],
+            preferredModalities: ['Mobility'],
+        };
+
+        const result = rankCandidatesByUtility(
+            [dislikedObjCandidate, preferredNoObjCandidate],
+            [thresholdObj],
+            DEFAULT_FATIGUE,
+            DEFAULT_AVAILABILITY,
+            [],
+            prefs,
+            { date: '2026-03-05' }
+        );
+
+        // Lexicographic ordering guarantees Level 4 (Objective benefit) beats Level 6 (Preference)
+        expect(result[0].template.id).toBe('obj_candidate_disliked');
+    });
+
+    it('populates excludedReasons for every filtered candidate', () => {
+        const shortTimeAvailability: ResolvedAvailability = {
+            ...DEFAULT_AVAILABILITY,
+            maxTimeMinutes: 15,
+        };
+
+        const longWorkout = ENRICHED_TEMPLATES.find(t => t.durationMin > 30)!;
+
+        const result = rankCandidates(
+            [longWorkout],
+            [],
+            DEFAULT_FATIGUE,
+            shortTimeAvailability,
+            [],
+            DEFAULT_PREFERENCES,
+            { date: '2026-03-05' }
+        );
+
+        expect(result.accepted).toHaveLength(0);
+        expect(result.rejected).toHaveLength(1);
+        expect(result.rejected[0].excludedReasons).toContain('TIME_BUDGET_EXCEEDED');
+    });
+});

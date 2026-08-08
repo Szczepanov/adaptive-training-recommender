@@ -70,9 +70,9 @@ describe('goldenWeek coaching contract: cycling_a_event_build_week', () => {
 
     // F3 / Phase 0: Event modality frequency contract.
     // In a 7-day Build week for a Cycling A-event, the athlete should get >= 2 key/race-specific Cycling quality sessions.
-    // TODAY THIS FAILS because of F3 (0.21x event-modality suppression in current engine produces 0 race-specific/hard cycling sessions).
-    // Marked expected-failing with it.fails() per Task 0.2 design in docs/plans/phase-0-instrumentation.md.
-    it.fails('contains >= 2 key/race-specific Cycling sessions in the 7-day Build strip (F3 contract gate)', async () => {
+    // F3 / Phase 3: Event modality frequency contract.
+    // In a 7-day Build week for a Cycling A-event, the athlete receives >= 2 key/race-specific Cycling quality sessions.
+    it('contains >= 2 key/race-specific Cycling sessions in the 7-day Build strip (F3 contract gate)', async () => {
         const result = await getBuildWeekResult();
         const keyCyclingCount = (result.categoryDistribution['Moderate Endurance'] ?? 0)
             + (result.categoryDistribution['Hard Endurance'] ?? 0)

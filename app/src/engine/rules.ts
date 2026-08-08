@@ -2,7 +2,7 @@ import type { DailyReadiness, UserContext, Recommendation, SessionTemplate, Next
 import { TEMPLATES } from './templates';
 import { eligibleTemplates, evaluateTemplateEligibility, resolveMaximumSessionMinutes } from './eligibility';
 import { ENRICHED_TEMPLATES } from './templates';
-import { rankCandidatesByUtility } from './optimizer';
+import { rankCandidates, rankCandidatesByUtility } from './optimizer';
 import { resolveAvailability } from './schedule';
 import { addDaysToLocalDateString } from '../utils/localDate';
 import type { TrainingHistoryProvider } from './trainingHistory';
@@ -473,7 +473,7 @@ export async function evaluateTrainingWithIntent(
         .filter(template => mode !== 'recover' || template.category === 'Rest' || template.category === 'Mobility/Recovery')
         .filter(template => mode !== 'modify' || template.systemicCost <= MODIFY_MAX_SYSTEMIC_COST)
         .filter(template => isTemplatePhaseEligible(template, intent.periodization));
-    const ranked = rankCandidatesByUtility(
+    const rankingResult = rankCandidates(
         candidates,
         intent.unresolvedObjectives,
         intent.fatigue,
@@ -487,11 +487,19 @@ export async function evaluateTrainingWithIntent(
             preferredUnits: { distance: 'km', weight: 'kg', temperature: 'celsius' }, schemaVersion: 1, createdAt: '', updatedAt: '',
         },
         {
+            date,
             focusEvent: intent.periodization.focusEvent,
-            recentHistory: intent.history.map(item => ({ modality: item.trainingRecordLike.type, type: item.trainingRecordLike.type }))
+            recentHistory: intent.history.map(item => ({
+                date: item.date,
+                modality: item.modality ?? item.trainingRecordLike.type,
+                type: item.trainingRecordLike.type,
+                category: item.category,
+                systemicCost: item.costProfile?.systemic ?? 0,
+                lowerBodyCost: item.costProfile?.lowerBody ?? 0,
+            }))
         }
     );
-    const pick = ranked[0];
+    const pick = rankingResult.accepted[0];
     if (!pick) return evaluateTraining(readiness, context, date, previousMode, envelopeState);
     const phaseContext = intent.periodization.focusEvent
         ? `${intent.periodization.daysToEvent} days out from ${intent.periodization.focusEvent.title}, ${intent.periodization.phase.phaseName} phase.`
@@ -506,10 +514,10 @@ export async function evaluateTrainingWithIntent(
         telemetry,
         decisionTrace: {
             policyVersion: POLICY_VERSION,
-            candidateScores: ranked.map(candidate => ({
+            candidateScores: rankingResult.all.map(candidate => ({
                 templateId: candidate.template.id,
                 utilityScore: candidate.utilityScore,
-                excludedReasons: [],
+                excludedReasons: candidate.excludedReasons,
             })),
         },
     };

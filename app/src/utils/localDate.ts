@@ -44,3 +44,17 @@ export function addDaysToLocalDateString(dateStr: string, days: number): string 
 export function getPreviousLocalDateString(dateStr: string): string {
     return addDaysToLocalDateString(dateStr, -1);
 }
+
+/**
+ * Computes calendar day difference between two Warsaw-local date strings: (dateStrA - dateStrB).
+ * Uses calendar components (year, month, day) in UTC midnights so DST transitions (23h or 25h days)
+ * do not cause rounding errors in day calculation.
+ */
+export function getDayDiff(dateStrA: string, dateStrB: string): number {
+    const da = new Date(dateStrA + 'T00:00:00');
+    const db = new Date(dateStrB + 'T00:00:00');
+    const utcA = Date.UTC(da.getFullYear(), da.getMonth(), da.getDate());
+    const utcB = Date.UTC(db.getFullYear(), db.getMonth(), db.getDate());
+    return Math.round((utcA - utcB) / (24 * 60 * 60 * 1000));
+}
+
