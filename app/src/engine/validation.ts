@@ -28,7 +28,10 @@ import type {
     FixedActivity,
     WorkoutStimulusProfile,
     WorkoutCostProfile,
-    TrainingEnvironment
+    TrainingEnvironment,
+    BodyRegion,
+    RegionTissueResponse,
+    TissueResponseLevel
 } from './models';
 import { validateEventTiming } from './models';
 import { deriveGoalCategory } from './periodization';
@@ -76,6 +79,65 @@ function normalizeEmptyToNull(value: any): any {
 }
 
 // --- Daily Subjective Check-in Validation ---
+
+const BODY_REGIONS: BodyRegion[] = [
+    'knee', 'achilles', 'ankle', 'calf', 'hamstring', 'quadriceps',
+    'adductor_groin', 'hip', 'lower_back', 'shoulder', 'elbow', 'wrist',
+];
+
+const TISSUE_LEVELS: TissueResponseLevel[] = ['normal', 'mild', 'moderate', 'severe'];
+
+function isValidTissueLevel(value: unknown): value is TissueResponseLevel {
+    return typeof value === 'string' && (TISSUE_LEVELS as string[]).includes(value);
+}
+
+/** Validates and rebuilds the optional per-region tissue-response map (Phase 5.4).
+ *  Unknown region keys or malformed entries are reported as errors rather than silently
+ *  dropped -- a client that gets this shape wrong is exactly the case validation exists
+ *  to catch, same as every other field here. */
+function validateTissueResponses(raw: any, errors: ValidationError[]): Partial<Record<BodyRegion, RegionTissueResponse>> | undefined {
+    if (raw === undefined || raw === null) return undefined;
+    if (typeof raw !== 'object' || Array.isArray(raw)) {
+        errors.push({ field: 'tissueResponses', message: 'tissueResponses must be an object keyed by body region' });
+        return undefined;
+    }
+
+    const result: Partial<Record<BodyRegion, RegionTissueResponse>> = {};
+    for (const key of Object.keys(raw)) {
+        if (!(BODY_REGIONS as string[]).includes(key)) {
+            errors.push({ field: 'tissueResponses', message: `tissueResponses has unrecognized region '${key}'` });
+            continue;
+        }
+        const region = key as BodyRegion;
+        const entry = raw[key];
+        if (!entry || typeof entry !== 'object') {
+            errors.push({ field: `tissueResponses.${region}`, message: 'Each region entry must be an object' });
+            continue;
+        }
+        if (!isValidTissueLevel(entry.morningState)) {
+            errors.push({ field: `tissueResponses.${region}.morningState`, message: `morningState must be one of: ${TISSUE_LEVELS.join(', ')}` });
+            continue;
+        }
+        const optionalFields: (keyof RegionTissueResponse)[] = ['painDuringTraining', 'afterTrainingState', 'nextMorningReaction'];
+        let hasInvalidOptional = false;
+        for (const field of optionalFields) {
+            if (entry[field] !== undefined && entry[field] !== null && !isValidTissueLevel(entry[field])) {
+                errors.push({ field: `tissueResponses.${region}.${field}`, message: `${field} must be one of: ${TISSUE_LEVELS.join(', ')}` });
+                hasInvalidOptional = true;
+            }
+        }
+        if (hasInvalidOptional) continue;
+
+        result[region] = {
+            region,
+            morningState: entry.morningState,
+            ...(isValidTissueLevel(entry.painDuringTraining) ? { painDuringTraining: entry.painDuringTraining } : {}),
+            ...(isValidTissueLevel(entry.afterTrainingState) ? { afterTrainingState: entry.afterTrainingState } : {}),
+            ...(isValidTissueLevel(entry.nextMorningReaction) ? { nextMorningReaction: entry.nextMorningReaction } : {}),
+        };
+    }
+    return result;
+}
 
 export function validateCheckin(raw: any): ValidationResult<DailySubjectiveCheckin> {
     const errors: ValidationError[] = [];
@@ -158,6 +220,9 @@ export function validateCheckin(raw: any): ValidationResult<DailySubjectiveCheck
         });
     }
 
+    // Per-region tissue response (Phase 5.4)
+    const tissueResponses = validateTissueResponses(raw.tissueResponses, errors);
+
     if (errors.length > 0) {
         return { isValid: false, errors };
     }
@@ -176,6 +241,7 @@ export function validateCheckin(raw: any): ValidationResult<DailySubjectiveCheck
         illnessSymptoms: raw.illnessSymptoms ?? false,
         unusuallyLimitedTime: raw.unusuallyLimitedTime ?? false,
         alreadyTrainedToday: raw.alreadyTrainedToday ?? false,
+        ...(tissueResponses && Object.keys(tissueResponses).length > 0 ? { tissueResponses } : {}),
         availability: {
             timeAvailableMin: normalizeEmptyToNull(raw.availability?.timeAvailableMin),
             preferredModalityToday: normalizeEmptyToNull(raw.availability?.preferredModalityToday),

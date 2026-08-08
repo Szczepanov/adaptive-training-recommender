@@ -17,7 +17,7 @@ Ordered by the increment sequence below, **not** by section number.
 | Order | Task | Status | Summary | Primary files |
 |:--:|---|:--:|---|---|
 | 1 | 5.3 | `[x]` | Persist `FixedActivity` under a user-owned path with rules + emulator tests | `app/firestore.rules`, new `fixedActivityService.ts`, `app/src/engine/schedule.ts`, `planner.ts` |
-| 2 | 5.4 | `[ ]` | Per-region tissue state; may only tighten a Phase-1 injury constraint | `app/src/engine/models.ts`, `components/DailyCheckin.tsx`, `injuryPolicy.ts` |
+| 2 | 5.4 | `[x]` | Per-region tissue state; may only tighten a Phase-1 injury constraint | `app/src/engine/models.ts`, `components/DailyCheckin.tsx`, `injuryPolicy.ts` |
 | 3 | 5.5 | `[ ]` | Evidence hierarchy for completed training, carrying `stimulusConfidence` | `app/src/engine/completedTraining.ts` |
 | 4 | 5.7 | `[ ]` | Taper as an explicit plan contract rather than an emergent side effect | `app/src/workouts/event-plan.ts`, `app/src/engine/periodization.ts` |
 | 5 | 5.6 | `[ ]` | Multi-event: one taper authority, multiple demand contributors | `app/src/engine/periodization.ts` |
@@ -174,7 +174,7 @@ Emulator cases beyond the three ownership ones: out-of-range `durationMin`, an
 and a malformed `date`. Each must be **denied** — these are the cases a buggy or
 tampered client actually produces.
 
-## `[ ]` 5.4 — Local tissue state
+## `[x]` 5.4 — Local tissue state
 
 One scalar soreness value cannot distinguish knee from Achilles from calf from adductor
 from general DOMS. Extend the check-in to per-region response (morning state, pain during

@@ -11,7 +11,7 @@ import type {
     UserPreferences,
     TrainingSettings,
 } from './models';
-import { resolveInjuryRestrictions } from './injuryPolicy';
+import { resolveInjuryRestrictions, resolveEffectiveInjuryConstraints } from './injuryPolicy';
 import { goalToUserEvent } from './periodization';
 import { getLocalDateString } from '../utils/localDate';
 
@@ -130,12 +130,19 @@ const DEFAULT_MAX_TIME_MINUTES = 180;
  * modality lists and conservativeBias existed only in Firestore/the Preferences screen.
  * Null (no preferences record yet) maps to all-empty/false, matching
  * preferencesService's own defaults.
+ *
+ * `todaysCheckin` feeds Phase 5.4's per-region tissue response into the injury gate: it
+ * may only tighten the standing InjuryConstraint[] for today's decision, never persisted
+ * back (see injuryPolicy.ts resolveEffectiveInjuryConstraints). Wearable-derived
+ * readiness plays no part here at all -- it acts through the separate fatigue/mode
+ * pipeline, so it cannot loosen what tissue response or the injury constraint decided.
  */
 export function mapContextFromGoalsAndTrainingSettings(
     goals: UserGoal[],
     trainingSettings: TrainingSettings,
     preferences: UserPreferences | null,
-    today?: string
+    today?: string,
+    todaysCheckin?: DailySubjectiveCheckin | null
 ): UserContext {
     const topGoalTitle = (category: UserGoal['category']): string => {
         const inCategory = goals.filter(g => g.category === category);
@@ -144,7 +151,8 @@ export function mapContextFromGoalsAndTrainingSettings(
     };
 
     const dateStr = today ?? getLocalDateString();
-    const resolvedInjuries = resolveInjuryRestrictions(trainingSettings.injuries, dateStr);
+    const effectiveInjuries = resolveEffectiveInjuryConstraints(trainingSettings.injuries, todaysCheckin?.tissueResponses, dateStr);
+    const resolvedInjuries = resolveInjuryRestrictions(effectiveInjuries, dateStr);
 
     return {
         goals: {

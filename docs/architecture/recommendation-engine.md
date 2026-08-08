@@ -216,6 +216,29 @@ Preferences rank; they never unlock. An avoided modality is a hard exclude on Pa
 0.2× soft penalty on Path B — a deliberate distinction, since taste must never behave like
 a safety constraint ([ADR-0007](../adr/0007-adaptive-multisport-engine-architecture.md) §6).
 
+### Injury gate sub-ordering (Phase 5.4)
+
+Within the "clinical / safety gates" step above, `injuryPolicy.ts` itself has a total
+order that a single `soreness: 1-10` scalar can't express, because it can't distinguish a
+knee from an Achilles from general DOMS:
+
+```text
+InjuryConstraint (hard, persisted)   TrainingSettings.injuries -- exclude/limit never weakened
+        ↓
+observed tissue response (may tighten)   today's per-region check-in (DailyCheckin.tsx)
+        ↓
+wearable-derived readiness (may tighten) HRV/RHR/body battery -- acts through the separate
+                                          fatigue/mode pipeline, not this gate at all
+```
+
+`resolveEffectiveInjuryConstraints` (called from `adapters.ts`
+`mapContextFromGoalsAndTrainingSettings`) implements the first two steps: it merges a
+day's `RegionTissueResponse[]` into the standing `InjuryConstraint[]`, but only ever
+raises a region's severity for that one read, never lowers it, and never persists the
+result back to `TrainingSettings`. Wearable-derived readiness has no parameter into that
+function at all — a structural guarantee, not just tested behavior, that a good HRV
+reading can't loosen what tissue response or the injury constraint decided.
+
 ---
 
 ## Completed load and fatigue (`completedTraining.ts`, `fatigue.ts`)

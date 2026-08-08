@@ -184,7 +184,7 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
       if (input.recoverySnapshot && canGenerateNormalRecommendation(safetyStatus)) {
         const objective = mapSnapshotToEngineInput(input.recoverySnapshot);
         const subjective = mapCheckinToSubjectiveInput(input.subjectiveCheckin);
-        const context = mapContextFromGoalsAndTrainingSettings(input.activeGoals, input.trainingSettings, input.preferences);
+        const context = mapContextFromGoalsAndTrainingSettings(input.activeGoals, input.trainingSettings, input.preferences, input.date, input.subjectiveCheckin);
         const events = mapGoalsToUserEvents(input.activeGoals);
         const preparedSnapshot = await prepareTrainingHistorySnapshot(userId, input.date);
         if (!isCurrent()) return;
@@ -259,7 +259,7 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
     if (!decisionInput || !decisionInput.recoverySnapshot) return null;
     const subjective = mapCheckinToSubjectiveInput(decisionInput.subjectiveCheckin);
     const objective = mapSnapshotToEngineInput(decisionInput.recoverySnapshot);
-    const context = mapContextFromGoalsAndTrainingSettings(decisionInput.activeGoals, decisionInput.trainingSettings, decisionInput.preferences);
+    const context = mapContextFromGoalsAndTrainingSettings(decisionInput.activeGoals, decisionInput.trainingSettings, decisionInput.preferences, decisionInput.date, decisionInput.subjectiveCheckin);
     return { subjective, objective, context };
   }, [decisionInput]);
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isValidDate, validateRecommendation, validateAdherenceUpdate, validateGoal, validateFixedActivity } from './validation';
+import { isValidDate, validateRecommendation, validateAdherenceUpdate, validateGoal, validateFixedActivity, validateCheckin } from './validation';
 
 describe('isValidDate', () => {
     it('rejects impossible calendar dates rather than normalizing them', () => {
@@ -304,6 +304,62 @@ describe('validateFixedActivity', () => {
         expect(validateFixedActivity({ ...baseFields, availabilityOverride: 60 }).isValid).toBe(true);
         expect(validateFixedActivity({ ...baseFields, availabilityOverride: -1 }).isValid).toBe(false);
         expect(validateFixedActivity({ ...baseFields, availabilityOverride: 1500 }).isValid).toBe(false);
+    });
+});
+
+describe('validateCheckin: tissueResponses (Phase 5.4)', () => {
+    const baseFields = {
+        userId: 'u1',
+        date: '2026-08-08',
+        readiness: 7,
+        painOrInjury: true,
+    };
+
+    it('accepts a minimal valid tissue response with just morningState', () => {
+        const result = validateCheckin({ ...baseFields, tissueResponses: { knee: { morningState: 'mild' } } });
+        expect(result.isValid).toBe(true);
+        expect(result.data?.tissueResponses?.knee).toEqual({ region: 'knee', morningState: 'mild' });
+    });
+
+    it('accepts all four signals on a region', () => {
+        const result = validateCheckin({
+            ...baseFields,
+            tissueResponses: {
+                shoulder: { morningState: 'normal', painDuringTraining: 'severe', afterTrainingState: 'moderate', nextMorningReaction: 'mild' },
+            },
+        });
+        expect(result.isValid).toBe(true);
+        expect(result.data?.tissueResponses?.shoulder).toEqual({
+            region: 'shoulder', morningState: 'normal', painDuringTraining: 'severe', afterTrainingState: 'moderate', nextMorningReaction: 'mild',
+        });
+    });
+
+    it('rejects an unrecognized region key', () => {
+        const result = validateCheckin({ ...baseFields, tissueResponses: { notARegion: { morningState: 'mild' } } });
+        expect(result.isValid).toBe(false);
+        expect(result.errors.some(e => e.field === 'tissueResponses')).toBe(true);
+    });
+
+    it('rejects a missing required morningState', () => {
+        const result = validateCheckin({ ...baseFields, tissueResponses: { knee: { painDuringTraining: 'mild' } } });
+        expect(result.isValid).toBe(false);
+        expect(result.errors.some(e => e.field === 'tissueResponses.knee.morningState')).toBe(true);
+    });
+
+    it('rejects an invalid level value', () => {
+        const result = validateCheckin({ ...baseFields, tissueResponses: { knee: { morningState: 'extreme' } } });
+        expect(result.isValid).toBe(false);
+        expect(result.errors.some(e => e.field === 'tissueResponses.knee.morningState')).toBe(true);
+    });
+
+    it('omits the field entirely when absent, and drops it when empty', () => {
+        const absent = validateCheckin({ ...baseFields });
+        expect(absent.isValid).toBe(true);
+        expect(absent.data?.tissueResponses).toBeUndefined();
+
+        const empty = validateCheckin({ ...baseFields, tissueResponses: {} });
+        expect(empty.isValid).toBe(true);
+        expect(empty.data?.tissueResponses).toBeUndefined();
     });
 });
 

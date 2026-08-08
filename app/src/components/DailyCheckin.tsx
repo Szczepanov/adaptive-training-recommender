@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { checkinService } from '../services/checkinService';
 import { recoverySnapshotService } from '../services/recoverySnapshotService';
-import type { DailySubjectiveCheckin } from '../engine/models';
+import type { BodyRegion, DailySubjectiveCheckin, RegionTissueResponse, TissueResponseLevel } from '../engine/models';
 import { getLocalDateString } from '../utils/localDate';
 import { getErrorMessage } from '../utils/errors';
 import './DailyCheckin.css';
@@ -11,6 +11,23 @@ interface DailyCheckinProps {
   onNavigate: (screen: 'home' | 'checkin' | 'goals' | 'constraints' | 'preferences') => void;
   onBack?: () => void;
 }
+
+const BODY_REGIONS: BodyRegion[] = [
+  'knee', 'achilles', 'ankle', 'calf', 'hamstring', 'quadriceps',
+  'adductor_groin', 'hip', 'lower_back', 'shoulder', 'elbow', 'wrist',
+];
+
+const REGION_LABELS: Record<BodyRegion, string> = {
+  knee: 'Knee', achilles: 'Achilles', ankle: 'Ankle', calf: 'Calf',
+  hamstring: 'Hamstring', quadriceps: 'Quadriceps', adductor_groin: 'Adductor/Groin',
+  hip: 'Hip', lower_back: 'Lower Back', shoulder: 'Shoulder', elbow: 'Elbow', wrist: 'Wrist',
+};
+
+const TISSUE_LEVELS: TissueResponseLevel[] = ['normal', 'mild', 'moderate', 'severe'];
+
+const TISSUE_LEVEL_LABELS: Record<TissueResponseLevel, string> = {
+  normal: 'Normal', mild: 'Mild', moderate: 'Moderate', severe: 'Severe',
+};
 
 const READINESS_FIELDS = [
   { key: 'readiness', label: 'Overall Readiness', desc: 'How ready do you feel to train today?' },
@@ -133,6 +150,40 @@ export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) 
   const handleBooleanToggle = (field: 'painOrInjury' | 'illnessSymptoms' | 'unusuallyLimitedTime' | 'alreadyTrainedToday') => {
     if (!checkin) return;
     setCheckin({ ...checkin, [field]: !checkin[field] });
+  };
+
+  // Per-region tissue response (Phase 5.4) -- see injuryPolicy.ts resolveEffectiveInjuryConstraints
+  // for how these feed the engine: preserve-or-tighten only against the athlete's
+  // standing InjuryConstraint[], never persisted anywhere but this day's check-in.
+  const handleAddTissueRegion = (region: BodyRegion) => {
+    if (!checkin) return;
+    const existing = checkin.tissueResponses ?? {};
+    if (existing[region]) return;
+    const entry: RegionTissueResponse = { region, morningState: 'mild' };
+    setCheckin({ ...checkin, tissueResponses: { ...existing, [region]: entry } });
+  };
+
+  const handleRemoveTissueRegion = (region: BodyRegion) => {
+    if (!checkin) return;
+    const remaining = { ...(checkin.tissueResponses ?? {}) };
+    delete remaining[region];
+    setCheckin({ ...checkin, tissueResponses: remaining });
+  };
+
+  const handleTissueFieldChange = (
+    region: BodyRegion,
+    field: keyof RegionTissueResponse,
+    value: TissueResponseLevel | ''
+  ) => {
+    if (!checkin) return;
+    const existing = checkin.tissueResponses?.[region];
+    if (!existing) return;
+    const updated: RegionTissueResponse = { ...existing };
+    if (field !== 'region') {
+      if (value === '') delete updated[field];
+      else updated[field] = value;
+    }
+    setCheckin({ ...checkin, tissueResponses: { ...checkin.tissueResponses, [region]: updated } });
   };
 
   const handleAvailabilityChange = (field: string, value: number | string | boolean | null) => {
@@ -297,6 +348,17 @@ export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) 
                   {checkin.painOrInjury ? 'Pain Flag' : checkin.illnessSymptoms ? 'Unwell' : 'None'}
                 </span>
               </div>
+              {checkin.tissueResponses && Object.keys(checkin.tissueResponses).length > 0 && (
+                <div className="summary-item">
+                  <span className="summary-label">Affected Areas:</span>
+                  <span className="summary-val">
+                    {Object.values(checkin.tissueResponses)
+                      .filter((response): response is NonNullable<typeof response> => !!response)
+                      .map(response => REGION_LABELS[response.region])
+                      .join(', ')}
+                  </span>
+                </div>
+              )}
               <div className="summary-item">
                 <span className="summary-label">Time Available:</span>
                 <span className="summary-val">{checkin.availability?.timeAvailableMin ?? 60} min</span>
@@ -490,6 +552,111 @@ export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) 
               </div>
             </label>
           </div>
+
+          {checkin.painOrInjury && (
+            <div className="tissue-response-section">
+              <h3>Which areas?</h3>
+              <p>Pinpointing where and when helps distinguish a sore knee from general fatigue.</p>
+
+              <div className="form-group">
+                <label htmlFor="add-tissue-region">Add affected area</label>
+                <select
+                  id="add-tissue-region"
+                  className="select-input"
+                  value=""
+                  onChange={(e) => {
+                    if (e.target.value) handleAddTissueRegion(e.target.value as BodyRegion);
+                  }}
+                >
+                  <option value="">Select a region...</option>
+                  {BODY_REGIONS.filter(region => !checkin.tissueResponses?.[region]).map(region => (
+                    <option key={region} value={region}>{REGION_LABELS[region]}</option>
+                  ))}
+                </select>
+              </div>
+
+              {Object.values(checkin.tissueResponses ?? {}).map(response => {
+                if (!response) return null;
+                const region = response.region;
+                return (
+                  <div className="tissue-region-card" key={region}>
+                    <div className="tissue-region-header">
+                      <strong>{REGION_LABELS[region]}</strong>
+                      <button
+                        type="button"
+                        className="tissue-region-remove"
+                        onClick={() => handleRemoveTissueRegion(region)}
+                        aria-label={`Remove ${REGION_LABELS[region]}`}
+                      >
+                        ✕
+                      </button>
+                    </div>
+
+                    <div className="tissue-region-fields">
+                      <div className="form-group">
+                        <label htmlFor={`${region}-morningState`}>This morning (before training)</label>
+                        <select
+                          id={`${region}-morningState`}
+                          className="select-input"
+                          value={response.morningState}
+                          onChange={(e) => handleTissueFieldChange(region, 'morningState', e.target.value as TissueResponseLevel)}
+                        >
+                          {TISSUE_LEVELS.map(level => (
+                            <option key={level} value={level}>{TISSUE_LEVEL_LABELS[level]}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className="form-group">
+                        <label htmlFor={`${region}-painDuringTraining`}>Pain during training (if any)</label>
+                        <select
+                          id={`${region}-painDuringTraining`}
+                          className="select-input"
+                          value={response.painDuringTraining ?? ''}
+                          onChange={(e) => handleTissueFieldChange(region, 'painDuringTraining', e.target.value as TissueResponseLevel | '')}
+                        >
+                          <option value="">Did not train / not applicable</option>
+                          {TISSUE_LEVELS.map(level => (
+                            <option key={level} value={level}>{TISSUE_LEVEL_LABELS[level]}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className="form-group">
+                        <label htmlFor={`${region}-afterTrainingState`}>Right after training</label>
+                        <select
+                          id={`${region}-afterTrainingState`}
+                          className="select-input"
+                          value={response.afterTrainingState ?? ''}
+                          onChange={(e) => handleTissueFieldChange(region, 'afterTrainingState', e.target.value as TissueResponseLevel | '')}
+                        >
+                          <option value="">Did not train / not applicable</option>
+                          {TISSUE_LEVELS.map(level => (
+                            <option key={level} value={level}>{TISSUE_LEVEL_LABELS[level]}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className="form-group">
+                        <label htmlFor={`${region}-nextMorningReaction`}>This morning's reaction to yesterday's session</label>
+                        <select
+                          id={`${region}-nextMorningReaction`}
+                          className="select-input"
+                          value={response.nextMorningReaction ?? ''}
+                          onChange={(e) => handleTissueFieldChange(region, 'nextMorningReaction', e.target.value as TissueResponseLevel | '')}
+                        >
+                          <option value="">No session yesterday / not applicable</option>
+                          {TISSUE_LEVELS.map(level => (
+                            <option key={level} value={level}>{TISSUE_LEVEL_LABELS[level]}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
 
           <button className="next-btn" onClick={handleNext}>
             Next

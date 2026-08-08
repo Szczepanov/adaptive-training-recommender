@@ -643,6 +643,10 @@ export interface DailySubjectiveCheckin {
     illnessSymptoms: boolean;
     unusuallyLimitedTime: boolean;
     alreadyTrainedToday: boolean; // Already completed a session today -- recommendation should be rest/recovery only
+    /** Per-region detail (Phase 5.4), populated when painOrInjury is flagged. Keyed by
+     *  BodyRegion; see injuryPolicy.ts resolveEffectiveInjuryConstraints for how this
+     *  combines with the athlete's standing InjuryConstraint[]. */
+    tissueResponses?: Partial<Record<BodyRegion, RegionTissueResponse>>;
     // Availability block
     availability: {
         timeAvailableMin: number | null;
@@ -743,6 +747,30 @@ export interface InjuryConstraint {
   reviewBy?: string;
   note?: string;
   restrictedModalities?: SessionTemplate['modality'][];
+}
+
+/** A single tissue-response observation point, shared across the four signals below --
+ * 'normal' means no restriction warranted by that signal alone. */
+export type TissueResponseLevel = 'normal' | 'mild' | 'moderate' | 'severe';
+
+/** Per-region subjective tissue feedback for one check-in day (Phase 5.4). One scalar
+ * `soreness` value can't distinguish a knee from an Achilles from general DOMS -- this
+ * captures WHERE and WHEN a response was felt, since "knee hurt during yesterday's run"
+ * and "knee felt stiff this morning with no training" call for different caution.
+ * Never persisted as an `InjuryConstraint` itself and never written back to
+ * TrainingSettings -- see injuryPolicy.ts's resolveEffectiveInjuryConstraints for how a
+ * day's tissue response may only tighten (never weaken or clear) the athlete's standing
+ * InjuryConstraint[]. */
+export interface RegionTissueResponse {
+  region: BodyRegion;
+  /** How the region felt on waking, independent of any training. */
+  morningState: TissueResponseLevel;
+  /** Only meaningful when a session actually happened; absent = nothing to report. */
+  painDuringTraining?: TissueResponseLevel;
+  /** Immediately after that session. */
+  afterTrainingState?: TissueResponseLevel;
+  /** The following morning's reaction to that session. */
+  nextMorningReaction?: TissueResponseLevel;
 }
 
 export interface TrainingSettings {
