@@ -23,6 +23,7 @@ export interface PlannedObjectiveCredit {
     templateId: string;
     templateTitle: string;
     modality: SessionTemplate['modality'];
+    earnedCredit: number;
 }
 import { resolveAvailability } from './schedule';
 import { isTemplatePhaseEligible, evaluatePeriodizationPhase } from './periodization';
@@ -33,9 +34,6 @@ import {
     creditObjectivesFromStimulus,
     generateWeeklyObjectives,
     getUnresolvedObjectives,
-    qualifiesForObjective,
-    stimulusCoverage,
-    STIMULUS_CREDIT_COVERAGE_THRESHOLD,
 } from './microcycle';
 import {
     type RecentHistoryEntry,
@@ -44,7 +42,9 @@ import {
     rankCandidates,
 } from './optimizer';
 import { ENRICHED_TEMPLATES } from './templates';
-import { resolvePlannedDose, resolveTrainingIntent } from './trainingIntent';
+import { resolvePlannedDoseForDate, resolveTrainingIntent } from './trainingIntent';
+import { resolvePlanDefinitionForEvent } from './planSchedule';
+import { deriveObjectiveCredit } from './stimulus';
 import type { TrainingHistoryProvider } from './trainingHistory';
 import type { TrainingHistorySnapshot } from './trainingHistorySnapshot';
 
@@ -158,6 +158,51 @@ function enrichedCostProfile(templateId: string): WorkoutCostProfile {
 
 function enrichedStimulusProfile(template: SessionTemplate): WorkoutStimulusProfile {
     return template.stimulusProfile ?? ENRICHED_TEMPLATES.find(t => t.id === template.id)?.stimulusProfile ?? ZERO_STIMULUS;
+}
+
+export interface ProjectedObjectiveCreditInput {
+    objectiveId: string;
+    earnedCredit: number;
+}
+
+export interface ProjectedObjectiveCreditAllocation {
+    objectiveId: string;
+    earnedCredit: number;
+}
+
+/**
+ * Forecast-only ledger mutation. Completed evidence is immutable during planning; future
+ * recommendations accumulate in projectedCredit, and subsequent projected days treat
+ * completed + projected credit as the outstanding-objective authority.
+ */
+export function applyProjectedObjectiveCredits(
+    microcycle: MicrocycleState,
+    credits: readonly ProjectedObjectiveCreditInput[],
+): { microcycle: MicrocycleState; allocations: ProjectedObjectiveCreditAllocation[] } {
+    const proposedById = new Map(credits.map(credit => [credit.objectiveId, credit.earnedCredit]));
+    const allocations: ProjectedObjectiveCreditAllocation[] = [];
+    const objectives = microcycle.objectives.map(objective => {
+        const proposed = proposedById.get(objective.id) ?? 0;
+        if (!Number.isFinite(proposed) || proposed <= 0) return objective;
+
+        const requiredCredit = objective.requiredCredit ?? objective.targetExposures;
+        const completedCredit = objective.completedCredit ?? objective.completedExposures;
+        const projectedCredit = objective.projectedCredit ?? 0;
+        const remaining = Math.max(0, requiredCredit - completedCredit - projectedCredit);
+        const allocated = Math.min(remaining, proposed);
+        if (allocated <= 0) return objective;
+
+        allocations.push({ objectiveId: objective.id, earnedCredit: allocated });
+        return {
+            ...objective,
+            projectedCredit: projectedCredit + allocated,
+        };
+    });
+
+    return {
+        microcycle: { ...microcycle, objectives },
+        allocations,
+    };
 }
 
 function isAdjacentDate(date: string, anchorDate: string | null): boolean {
@@ -362,21 +407,40 @@ export function generateWeekAheadPlan(
 
     const anchors = resolveWeeklyAnchors(todayDate, totalDays, events, fixedActivities, context, tomorrowRec?.template.category, tomorrowRec?.template.modality);
 
-    // Must mirror creditObjectivesFromStimulus's own coverage threshold and qualification
-    // check exactly (same imports as microcycle.ts uses) -- otherwise the reported
-    // objectiveCredits/addressesObjectives displayed to the user can claim a credit the
-    // real microcycle ledger (advanced below via creditObjectivesFromStimulus in
-    // applyPick) never actually applied.
-    const creditingObjectivesFor = (template: SessionTemplate): WeeklyObjective[] => {
-        const stimulus = enrichedStimulusProfile(template);
-        return getUnresolvedObjectives(microcycle).filter(objective =>
-            stimulusCoverage(stimulus, objective.targetStimulus) >= STIMULUS_CREDIT_COVERAGE_THRESHOLD
-            && qualifiesForObjective(stimulus, template.modality, objective.qualification, template.category)
-        );
+    type DerivedPlanningCredit = {
+        objective: WeeklyObjective;
+        earnedCredit: number;
     };
 
-    const applyPick = (date: string, template: SessionTemplate) => {
-        creditingObjectivesFor(template).forEach(objective => {
+    // Planner display and planner state use the same V2 derivation as the live ledger.
+    // There is no V1 0.6 coverage gate here: partial qualifying stimulus is reported as
+    // partial credit exactly as deriveObjectiveCredit defines it.
+    const creditingObjectivesFor = (template: SessionTemplate): DerivedPlanningCredit[] => {
+        const stimulus = enrichedStimulusProfile(template);
+        return getUnresolvedObjectives(microcycle, true).flatMap(objective => {
+            const credit = deriveObjectiveCredit(objective, stimulus, {}, {
+                modality: template.modality,
+                category: template.category,
+            });
+            return credit.qualifies && credit.earnedCredit > 0
+                ? [{ objective, earnedCredit: credit.earnedCredit }]
+                : [];
+        });
+    };
+
+    const applyPick = (
+        date: string,
+        template: SessionTemplate,
+        derivedCredits: DerivedPlanningCredit[] = creditingObjectivesFor(template),
+    ) => {
+        const projected = applyProjectedObjectiveCredits(
+            microcycle,
+            derivedCredits.map(item => ({ objectiveId: item.objective.id, earnedCredit: item.earnedCredit })),
+        );
+        const allocationById = new Map(projected.allocations.map(item => [item.objectiveId, item.earnedCredit]));
+        derivedCredits.forEach(({ objective }) => {
+            const allocated = allocationById.get(objective.id) ?? 0;
+            if (allocated <= 0) return;
             objectiveCredits.push({
                 date,
                 objectiveKey: objective.key,
@@ -384,9 +448,10 @@ export function generateWeekAheadPlan(
                 templateId: template.id,
                 templateTitle: template.title,
                 modality: template.modality,
+                earnedCredit: allocated,
             });
         });
-        microcycle = creditObjectivesFromStimulus(microcycle, enrichedStimulusProfile(template), template.modality, template.category);
+        microcycle = projected.microcycle;
         externalFatigue = applyCompletedSessionLoad(externalFatigue, date, enrichedCostProfile(template.id));
     };
 
@@ -395,6 +460,7 @@ export function generateWeekAheadPlan(
     if (tomorrowRec) {
         const tomorrowDate = addDaysToLocalDateString(todayDate, 1);
         const tomorrowPeriodization = evaluatePeriodizationPhase(events, tomorrowDate);
+        const tomorrowCredits = creditingObjectivesFor(tomorrowRec.template);
         resultDays.push({
             date: tomorrowDate,
             dayOffset: 1,
@@ -403,9 +469,9 @@ export function generateWeekAheadPlan(
             template: tomorrowRec.template,
             mode: tomorrowRec.mode === 'recover' ? 'recover' : 'train',
             rationale: tomorrowRec.rationale,
-            addressesObjectives: creditingObjectivesFor(tomorrowRec.template).map(objective => objective.title),
+            addressesObjectives: tomorrowCredits.map(item => item.objective.title),
         });
-        applyPick(tomorrowDate, tomorrowRec.template);
+        applyPick(tomorrowDate, tomorrowRec.template, tomorrowCredits);
     }
 
     for (let offset = resultDays.length + 1; offset <= totalDays; offset++) {
@@ -421,7 +487,7 @@ export function generateWeekAheadPlan(
             combinedFatigue: combineMax(externalFatigue.externalLoadFatigue, decayedInternalStrain),
         };
 
-        const unresolved = getUnresolvedObjectives(microcycle);
+        const unresolved = getUnresolvedObjectives(microcycle, true);
 
         const eligible = eligibleTemplates(ENRICHED_TEMPLATES, context, availability.maxTimeMinutes, date)
             .filter(t => isTemplatePhaseEligible(t, periodization));
@@ -466,13 +532,20 @@ export function generateWeekAheadPlan(
             })),
         ];
 
+        const planDefinition = resolvePlanDefinitionForEvent(periodization.focusEvent);
         const optContext = buildOptimizationContext(
             {
                 unresolvedObjectives: unresolved,
                 fatigue: rankingFatigue,
                 periodization,
                 history: projectedHistory,
-                plannedDose: resolvePlannedDose(periodization.phase, microcycle.objectives, unresolved),
+                plannedDose: resolvePlannedDoseForDate(
+                    periodization.phase,
+                    microcycle.objectives,
+                    unresolved,
+                    planDefinition,
+                    date,
+                ),
             },
             context,
             effectivePreferences,
@@ -515,8 +588,9 @@ export function generateWeekAheadPlan(
 
         const bestBenefit = [...(ranked.length > 0 ? ranked : [{ template: restFallback, benefitScore: 0 }])].sort((a, b) => b.benefitScore - a.benefitScore)[0];
 
-        const addressed = creditingObjectivesFor(pick.template).map(objective => objective.title);
-        applyPick(date, pick.template);
+        const pickCredits = creditingObjectivesFor(pick.template);
+        const addressed = pickCredits.map(item => item.objective.title);
+        applyPick(date, pick.template, pickCredits);
 
         resultDays.push({
             date,
