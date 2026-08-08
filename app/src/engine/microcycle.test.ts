@@ -217,21 +217,21 @@ describe('Task 1.2 / F2 Garmin objective crediting', () => {
       completedEventToExposure({
         id: 'garmin:1', date: '2026-08-04', durationMin: 60, modality: 'Cycling', intensity: 'moderate',
         trainingEffect: 2.5, estimatedCost: DEFAULT_COST_BY_MODALITY['Cycling']['moderate'],
-        estimatedStimulus: DEFAULT_STIMULUS_BY_MODALITY['Cycling']['moderate'],
+        estimatedStimulus: DEFAULT_STIMULUS_BY_MODALITY['Cycling']['moderate'], exactTemplateMatch: false,
         sources: ['garmin'], confidence: 'high', linkedActivityId: '1', linkedRecommendationDate: null,
         athleteFeedback: { followed: null, notes: null },
       }),
       completedEventToExposure({
         id: 'garmin:2', date: '2026-08-05', durationMin: 60, modality: 'Cycling', intensity: 'moderate',
         trainingEffect: 2.7, estimatedCost: DEFAULT_COST_BY_MODALITY['Cycling']['moderate'],
-        estimatedStimulus: DEFAULT_STIMULUS_BY_MODALITY['Cycling']['moderate'],
+        estimatedStimulus: DEFAULT_STIMULUS_BY_MODALITY['Cycling']['moderate'], exactTemplateMatch: false,
         sources: ['garmin'], confidence: 'high', linkedActivityId: '2', linkedRecommendationDate: null,
         athleteFeedback: { followed: null, notes: null },
       }),
       completedEventToExposure({
         id: 'garmin:3', date: '2026-08-06', durationMin: 45, modality: 'Strength', intensity: 'moderate',
         trainingEffect: 2.0, estimatedCost: DEFAULT_COST_BY_MODALITY['Strength']['moderate'],
-        estimatedStimulus: DEFAULT_STIMULUS_BY_MODALITY['Strength']['moderate'],
+        estimatedStimulus: DEFAULT_STIMULUS_BY_MODALITY['Strength']['moderate'], exactTemplateMatch: false,
         sources: ['garmin'], confidence: 'high', linkedActivityId: '3', linkedRecommendationDate: null,
         athleteFeedback: { followed: null, notes: null },
       }),
@@ -251,7 +251,7 @@ describe('Task 1.2 / F2 Garmin objective crediting', () => {
       completedEventToExposure({
         id: 'garmin:hard-ride', date: '2026-08-04', durationMin: 60, modality: 'Cycling', intensity: 'hard',
         trainingEffect: 3.8, estimatedCost: DEFAULT_COST_BY_MODALITY['Cycling']['hard'],
-        estimatedStimulus: DEFAULT_STIMULUS_BY_MODALITY['Cycling']['hard'],
+        estimatedStimulus: DEFAULT_STIMULUS_BY_MODALITY['Cycling']['hard'], exactTemplateMatch: false,
         sources: ['garmin'], confidence: 'high', linkedActivityId: 'hard-ride', linkedRecommendationDate: null,
         athleteFeedback: { followed: null, notes: null },
       }),

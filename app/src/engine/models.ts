@@ -823,6 +823,12 @@ export interface CompletedTrainingEvent {
     trainingEffect: number | null;
     estimatedCost: WorkoutCostProfile;
     estimatedStimulus: Partial<WorkoutStimulusProfile>;
+    /** True exactly when estimatedStimulus came from a real catalog template's own
+     *  stimulusProfile (an adherence-confirmed session matched to a known template) rather
+     *  than a coarse modality/intensity default. Drives CompletedExposure.stimulusConfidence
+     *  ('exact') independent of `confidence`, which instead reflects how well-evidenced the
+     *  *modality/duration match* itself is and conflates that with stimulus provenance. */
+    exactTemplateMatch: boolean;
     sources: CompletedTrainingSource[];
     confidence: CompletedTrainingConfidence;
     linkedActivityId: string | null;

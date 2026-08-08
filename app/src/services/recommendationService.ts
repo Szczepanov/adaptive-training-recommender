@@ -55,7 +55,15 @@ export class RecommendationService {
                 rationale: rec.rationale,
                 ...(rec.prescription ? { prescription: rec.prescription } : {}),
                 ...(rec.adjustment ? { adjustment: rec.adjustment } : {}),
-                ...(rec.recommendationAudit ? { recommendationAudit: rec.recommendationAudit } : {}),
+                // Audit is write-once per decision (firestore.rules: auditWriteOnce()):
+                // a freshly recomputed audit is only written when it actually describes a
+                // new decision (or none was stored yet). Re-saving the same template/mode/
+                // rationale later the same day must keep the original audit -- overwriting
+                // it every recompute (evaluatedAt always differs) would fail the immutability
+                // rule on every save after the first.
+                ...(rec.recommendationAudit && (isNewDoc || decisionChanged || !existing?.recommendationAudit)
+                    ? { recommendationAudit: rec.recommendationAudit }
+                    : {}),
                 schemaVersion: rec.recommendationAudit
                     ? Math.max(existing?.schemaVersion ?? 1, 3)
                     : (rec.prescription ? Math.max(existing?.schemaVersion ?? 1, 2) : (existing?.schemaVersion ?? 1)),
