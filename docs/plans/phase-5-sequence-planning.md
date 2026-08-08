@@ -19,7 +19,7 @@ Ordered by the increment sequence below, **not** by section number.
 | 1 | 5.3 | `[x]` | Persist `FixedActivity` under a user-owned path with rules + emulator tests | `app/firestore.rules`, new `fixedActivityService.ts`, `app/src/engine/schedule.ts`, `planner.ts` |
 | 2 | 5.4 | `[x]` | Per-region tissue state; may only tighten a Phase-1 injury constraint | `app/src/engine/models.ts`, `components/DailyCheckin.tsx`, `injuryPolicy.ts` |
 | 3 | 5.5 | `[x]` | Evidence hierarchy for completed training, carrying `stimulusConfidence` | `app/src/engine/completedTraining.ts` |
-| 4 | 5.7 | `[ ]` | Taper as an explicit plan contract rather than an emergent side effect | `app/src/workouts/event-plan.ts`, `app/src/engine/periodization.ts` |
+| 4 | 5.7 | `[x]` | Taper as an explicit plan contract rather than an emergent side effect | `app/src/workouts/event-plan.ts`, `app/src/engine/periodization.ts` |
 | 5 | 5.6 | `[ ]` | Multi-event: one taper authority, multiple demand contributors | `app/src/engine/periodization.ts` |
 | 6 | 5.2 | `[ ]` | `PlanningCandidate` carries spacing/recovery metadata into the decision | `app/src/workouts/models.ts`, `app/src/engine/planner.ts` |
 | 7 | 5.1 | `[ ]` | Bounded sequence search — **build and measure**, adoption conditional (D-BEAM) | `app/src/engine/planner.ts` |
@@ -263,7 +263,7 @@ Tests before 5.6 is executable: priority tie broken by proximity; proximity tie 
 date then id; two contributors sharing an objective key resolving to `max`, not sum; a
 contributor objective inside race week dropped with its reason present in the audit.
 
-## `[ ]` 5.7 — Taper as an explicit contract
+## `[x]` 5.7 — Taper as an explicit contract
 
 Taper behaviour currently emerges from interactions between `volumeScale`, objective
 generation, template `phaseEligibility` and utility ranking. `event-plan.ts` already names

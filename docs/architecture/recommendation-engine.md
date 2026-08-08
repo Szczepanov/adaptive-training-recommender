@@ -201,6 +201,27 @@ contract is finite `volume ∈ [0,1]`, `intensity ∈ [0,1.2]`.
 
 Recommendation provenance persists both planned and execution dose when available.
 
+### Taper as an explicit contract (Phase 5.7, `microcycle.ts`, `periodization.ts`, `planSchedule.ts`)
+
+Before this, `taperActive`/`volumeScale` reduced volume, but nothing represented "preserve
+useful, event-specific intensity" as its own thing -- `generateWeeklyObjectives` simply
+stopped generating a `race_specific_endurance` objective for the whole taper window
+(`!phaseWeights.taperActive`), so whatever survived `phaseEligibility.requiresTaper`
+gating and utility ranking was accidental, not requested. `event-plan.ts`'s
+`taper_sharpening`/`race_week_strength` coverage roles already named the real intent;
+nothing consumed them as objective targets.
+
+Both `generateWeeklyObjectives` branches (generic days-to-event and plan-derived) now
+generate a taper-calibrated `race_specific_endurance` objective during `taperActive`
+instead of omitting it, and lower the `strength_maintenance` target to a race-week-primer
+level -- calibrated against `end_taper_sharpen_01`'s own (deliberately lower) stimulus
+profile in `templates.ts`, not the full peak-block `end_race_sim_01` bar, which a taper
+session structurally cannot clear. `PlanObjectiveDefinition` (`planSchedule.ts`) gained an
+optional `role: PlanSessionRole` field -- previously declared but never assigned to
+anything -- and the authored September event plan's taper block now actually requests its
+own `taper_sharpening`/`race_week_strength` coverage keys instead of only the generic
+`easy_aerobic` one.
+
 ---
 
 ## Candidate ranking (`optimizer.ts`)

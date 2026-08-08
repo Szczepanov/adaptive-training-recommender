@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildMicrocycleState, creditObjectivesFromStimulus, stimulusCoverage, updateMicrocycleProgress } from './microcycle.ts';
+import { buildMicrocycleState, creditObjectivesFromStimulus, generateWeeklyObjectives, stimulusCoverage, updateMicrocycleProgress } from './microcycle.ts';
 import type { MicrocycleState, UserEvent, WorkoutStimulusProfile } from './models.ts';
 import type { CompletedExposure } from './trainingHistory.ts';
 import { completedEventToExposure, DEFAULT_COST_BY_MODALITY, DEFAULT_STIMULUS_BY_MODALITY } from './completedTraining.ts';
@@ -217,6 +217,88 @@ describe('evidence hierarchy confidence weighting (Phase 5.5)', () => {
     const microcycle = buildMicrocycleState(phase, '2026-08-03', [exposure], null);
     const z2 = microcycle.objectives.find(o => o.key === 'zone2_aerobic');
     expect(z2?.completedCredit).toBe(0.8); // full credit, same as pre-5.5 behavior
+  });
+});
+
+describe('taper as an explicit contract (Phase 5.7)', () => {
+  const aCyclingEvent = (): UserEvent => ({
+    id: 'race', title: 'A-Priority Road Race', date: '2026-08-14', priority: 'A', lifecycle: 'scheduled', category: 'cycling_event',
+    demandProfile: { aerobicEndurance: 0.7, thresholdPower: 0.6, vo2MaxPower: 0.4, repeatedSurges: 0.7, sprintPower: 0.2, fatigueResistance: 0.85, neuromuscular: 0.3 },
+  });
+
+  it('generates a taper-calibrated race_specific_endurance objective instead of silently dropping it', () => {
+    // 2026-08-07 is 7 days out from the 2026-08-14 A-event -- inside its 14-day taper window.
+    const result = evaluatePeriodizationPhase([aCyclingEvent()], '2026-08-07');
+    expect(result.phase.taperActive).toBe(true);
+
+    const microcycle = generateWeeklyObjectives(result.phase, '2026-08-03', result.focusEvent);
+    const taperObjective = microcycle.objectives.find(o => o.key === 'race_specific_endurance');
+    expect(taperObjective).toBeDefined();
+    expect(taperObjective?.title).toBe('Taper Sharpening (event-specific freshness)');
+    // Deliberately below the full-volume peak-block bar (aerobicEndurance 0.6) --
+    // end_taper_sharpen_01's own profile (templates.ts) could never clear that.
+    expect(taperObjective?.qualification?.minimumStimulus?.aerobicEndurance).toBeUndefined();
+    expect(taperObjective?.qualification?.minimumStimulus?.thresholdPower).toBe(0.3);
+  });
+
+  it('the taper objective is actually satisfiable by end_taper_sharpen_01\'s real stimulus profile', () => {
+    // Mirrors templates.ts's end_taper_sharpen_01 stimulusProfile exactly.
+    const taperSharpeningStimulus: WorkoutStimulusProfile = {
+      aerobicEndurance: 0.3, thresholdPower: 0.6, vo2MaxPower: 0.5, repeatedSurges: 0.5,
+      sprintPower: 0.1, fatigueResistance: 0.4, maxStrength: 0, hypertrophy: 0,
+    };
+    const result = evaluatePeriodizationPhase([aCyclingEvent()], '2026-08-07');
+    const microcycle = generateWeeklyObjectives(result.phase, '2026-08-03', result.focusEvent);
+
+    const updated = creditObjectivesFromStimulus(microcycle, taperSharpeningStimulus, 'Cycling', 'Race-Specific Endurance');
+    const taperObjective = updated.objectives.find(o => o.key === 'race_specific_endurance');
+    expect(taperObjective?.completedCredit ?? taperObjective?.completedExposures).toBeGreaterThan(0);
+  });
+
+  it('reduces the strength_maintenance target during taper (race-week primer, not full volume)', () => {
+    const result = evaluatePeriodizationPhase([aCyclingEvent()], '2026-08-07');
+    const microcycle = generateWeeklyObjectives(result.phase, '2026-08-03', result.focusEvent);
+    const strengthObjective = microcycle.objectives.find(o => o.key === 'strength_maintenance');
+    expect(strengthObjective?.title).toBe('Race-Week Strength Primer');
+    expect(strengthObjective?.targetStimulus.maxStrength).toBe(0.3);
+    expect(strengthObjective?.targetStimulus.maxStrength).toBeLessThan(0.7); // below the non-taper target
+  });
+
+  it('keeps the full-volume race_specific_endurance target outside taper (regression guard)', () => {
+    // 2026-07-01 is well outside any taper window for this event.
+    const result = evaluatePeriodizationPhase([aCyclingEvent()], '2026-07-01');
+    expect(result.phase.taperActive).toBe(false);
+    const microcycle = generateWeeklyObjectives(result.phase, '2026-06-27', result.focusEvent);
+    const objective = microcycle.objectives.find(o => o.key === 'race_specific_endurance');
+    expect(objective?.title).toBe('Cycling Race-Specific Endurance');
+    expect(objective?.qualification?.minimumStimulus?.aerobicEndurance).toBe(0.6);
+  });
+
+  it('plan-derived: the authored September event plan requests taper_sharpening and race_week_strength coverage during its taper block', async () => {
+    const { buildSeptemberCyclingEventPlan } = await import('./planSchedule.ts');
+    const septemberEvent: UserEvent = {
+      id: 'sep-event-1', title: 'September Cycling Event', date: '2026-09-20', priority: 'A', lifecycle: 'scheduled', category: 'cycling_event',
+      demandProfile: { aerobicEndurance: 0.8, thresholdPower: 0.8, vo2MaxPower: 0.7, repeatedSurges: 0.7, sprintPower: 0.3, fatigueResistance: 0.8, neuromuscular: 0.3 },
+    };
+    const planState = buildSeptemberCyclingEventPlan(septemberEvent);
+    expect(planState.status).toBe('AVAILABLE');
+    if (planState.status !== 'AVAILABLE') return;
+
+    // Taper-role objectives exist and are tagged with their PlanSessionRole.
+    const taperSharpening = planState.data.objectives.find(o => o.coverageKey === 'taper_sharpening');
+    const raceWeekStrength = planState.data.objectives.find(o => o.coverageKey === 'race_week_strength');
+    expect(taperSharpening?.role).toBe('taper_sharpening');
+    expect(raceWeekStrength?.role).toBe('secondary_support');
+
+    // 2026-09-10 falls inside block_taper (2026-09-07..2026-09-19).
+    const phase = evaluatePeriodizationPhase([septemberEvent], '2026-09-10').phase;
+    const microcycle = generateWeeklyObjectives(phase, '2026-09-10', septemberEvent, planState.data);
+
+    const sharpening = microcycle.objectives.find(o => o.key === 'race_specific_endurance');
+    expect(sharpening?.title).toBe('Taper Sharpening (event-specific freshness)');
+    const strength = microcycle.objectives.find(o => o.key === 'strength_maintenance');
+    expect(strength?.title).toBe('Race-Week Strength Primer');
+    expect(strength?.targetStimulus.maxStrength).toBe(0.3);
   });
 });
 
