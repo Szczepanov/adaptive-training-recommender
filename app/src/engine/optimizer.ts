@@ -1,5 +1,7 @@
 import type {
     FatigueState,
+    IntensityClass,
+    PlannedDose,
     SessionHistoryEntry,
     SessionRole,
     SessionTemplate,
@@ -49,6 +51,7 @@ export interface OptimizationOptions {
     recentHistory?: (RecentHistoryEntry | SessionHistoryEntry)[];
     anchorRole?: 'event-specific' | 'quality' | null;
     adjacentToAnchor?: boolean;
+    plannedDose?: PlannedDose;
 }
 
 export interface OptimizationContext {
@@ -119,6 +122,17 @@ export function candidateMatchesAnchorRole(
             && (template.category === 'Hard Endurance' || template.category === 'Moderate Endurance');
     }
     return false;
+}
+
+export function intensityClassForTemplate(template: SessionTemplate): IntensityClass {
+    if (template.category === 'Rest' || template.category === 'Mobility/Recovery') return 'recovery';
+    if (template.category === 'Hard Endurance' || template.category === 'Race-Specific Endurance' || template.systemicCost >= 0.6) return 'hard';
+    if (template.category === 'Moderate Endurance' || template.systemicCost >= 0.3) return 'moderate';
+    return 'easy';
+}
+
+export function isIntensityClassAdmissible(intensityClass: IntensityClass, plannedIntensity: number): boolean {
+    return intensityClass !== 'hard' || plannedIntensity >= 0.8;
 }
 
 export function getConsecutiveModalityCount(
@@ -284,7 +298,7 @@ export function calculateStimulusBenefit(
     if (!stimulusProfile || unresolvedObjectives.length === 0) {
         if (template.category === 'Mobility/Recovery') return 0.2;
         if (template.category === 'Technical Skill') return 0.3;
-        const totalStim = stimulusProfile ? (stimulusProfile.aerobicCapacity ?? 0) + (stimulusProfile.thresholdDevelopment ?? 0) : 0;
+        const totalStim = stimulusProfile ? stimulusProfile.aerobicEndurance + stimulusProfile.thresholdPower : 0;
         return Math.min(0.75, 0.45 + totalStim * 0.2);
     }
 
@@ -304,32 +318,32 @@ export function calculateStimulusBenefit(
         }
 
         const target = obj.targetStimulus;
-        const threshTarget = target.thresholdPower ?? target.thresholdDevelopment ?? 0;
-        const threshStim = stimulusProfile.thresholdPower ?? stimulusProfile.thresholdDevelopment ?? 0;
+        const threshTarget = target.thresholdPower ?? 0;
+        const threshStim = stimulusProfile.thresholdPower;
         if (threshTarget && threshStim) {
             benefit += threshTarget * threshStim * 1.5;
         }
 
-        const surgeTarget = target.repeatedSurges ?? target.surgeRepeatability ?? 0;
-        const surgeStim = stimulusProfile.repeatedSurges ?? stimulusProfile.surgeRepeatability ?? 0;
+        const surgeTarget = target.repeatedSurges ?? 0;
+        const surgeStim = stimulusProfile.repeatedSurges;
         if (surgeTarget && surgeStim) {
             benefit += surgeTarget * surgeStim * 1.5;
         }
 
-        const aeroTarget = target.aerobicEndurance ?? target.aerobicCapacity ?? 0;
-        const aeroStim = stimulusProfile.aerobicEndurance ?? stimulusProfile.aerobicCapacity ?? 0;
+        const aeroTarget = target.aerobicEndurance ?? 0;
+        const aeroStim = stimulusProfile.aerobicEndurance;
         if (aeroTarget && aeroStim) {
             benefit += aeroTarget * aeroStim * 1.2;
         }
 
         const strengthTarget = target.maxStrength ?? target.hypertrophy ?? 0;
-        const strengthStim = stimulusProfile.maxStrength ?? stimulusProfile.hypertrophy ?? 0;
+        const strengthStim = stimulusProfile.maxStrength ?? stimulusProfile.hypertrophy;
         if (strengthTarget && strengthStim) {
             benefit += strengthTarget * strengthStim * 1.6;
         }
 
         const fatigueTarget = target.fatigueResistance ?? 0;
-        const fatigueStim = stimulusProfile.fatigueResistance ?? 0;
+        const fatigueStim = stimulusProfile.fatigueResistance;
         if (fatigueTarget && fatigueStim) {
             benefit += fatigueTarget * fatigueStim * 1.2;
         }
@@ -368,6 +382,7 @@ export function buildOptimizationContext(
         fatigue: FatigueState;
         periodization?: { focusEvent?: UserEvent | null } | null;
         history?: (RecentHistoryEntry | SessionHistoryEntry)[];
+        plannedDose?: PlannedDose;
     },
     context: UserContext,
     preferences: Partial<UserPreferences> | null,
@@ -422,6 +437,7 @@ export function buildOptimizationContext(
         recentHistory: rawHistory,
         anchorRole: options.anchorRole ?? null,
         adjacentToAnchor: options.adjacentToAnchor ?? false,
+        ...(intent.plannedDose ? { plannedDose: intent.plannedDose } : {}),
     };
 
     return {
@@ -478,6 +494,10 @@ export function rankCandidates(
         const lowerMod = (template.modality ?? '').toLowerCase();
         if (injuryConstraints.some(inj => inj.toLowerCase() === lowerMod || inj.toLowerCase().includes(lowerMod))) {
             excludedReasons.push('INJURY_RESTRICTION');
+        }
+
+        if (options.plannedDose && !isIntensityClassAdmissible(intensityClassForTemplate(template), options.plannedDose.intensity)) {
+            excludedReasons.push('INTENSITY_SCALE_INADMISSIBLE');
         }
 
         const recoveryReasons = evaluateRecoveryConstraints(template, targetDate, history, options);
