@@ -265,6 +265,79 @@ describe('optimizer — lexicographic ordering (3.2)', () => {
         expect(result.rejected).toHaveLength(1);
         expect(result.rejected[0].excludedReasons).toContain('TIME_BUDGET_EXCEEDED');
     });
+
+    it('produces an input-order-independent ranking across a benefit chain a naive pairwise tie-band handles non-transitively', () => {
+        // Regression: a pairwise |diff| <= BENEFIT_TIE_BAND rule is not transitive.
+        // Benefit scores 1.00 / 0.96 / 0.92 tie on every ADJACENT pair (each gap is 0.04)
+        // but the outer pair (1.00 vs 0.92, gap 0.08) does not -- Array.sort's comparator
+        // contract requires a consistent total order, so a non-transitive comparator
+        // produces engine-/input-order-dependent results. The real guarantee under test
+        // is determinism: the same candidates in a different input order must still
+        // produce the same accepted order.
+        const aeroObj: WeeklyObjective = {
+            id: 'obj_chain', key: 'zone2_aerobic', title: 'Aerobic Base',
+            targetExposures: 1, completedExposures: 0, targetStimulus: { aerobicCapacity: 1 },
+        };
+        const makeCandidate = (id: string, aerobicCapacity: number): SessionTemplate => ({
+            id, category: 'Easy Endurance', modality: 'Running',
+            durationMin: 30, durationMax: 45, title: id, description: '',
+            requiredEquipment: [], environment: 'either', safetyTags: [],
+            systemicCost: 0.3,
+            stimulusProfile: { aerobicCapacity },
+            costProfile: { systemic: 0, cardiovascular: 0, lowerBody: 0, upperBody: 0, impactTissue: 0, neuromuscular: 0 },
+        });
+        // benefit = aerobicCapacity * 1 (target) * 1.2
+        const a = makeCandidate('chain_a', 1.00 / 1.2); // benefit 1.00
+        const b = makeCandidate('chain_b', 0.96 / 1.2); // benefit 0.96 -- 0.04 from A
+        const c = makeCandidate('chain_c', 0.92 / 1.2); // benefit 0.92 -- 0.04 from B, 0.08 from A
+
+        const inOrder = rankCandidates(
+            [a, b, c], [aeroObj], DEFAULT_FATIGUE, DEFAULT_AVAILABILITY, [], DEFAULT_PREFERENCES, { date: '2026-03-05' }
+        );
+        const shuffled = rankCandidates(
+            [c, a, b], [aeroObj], DEFAULT_FATIGUE, DEFAULT_AVAILABILITY, [], DEFAULT_PREFERENCES, { date: '2026-03-05' }
+        );
+
+        expect(inOrder.accepted).toHaveLength(3);
+        expect(inOrder.accepted.map(r => r.template.id)).toEqual(shuffled.accepted.map(r => r.template.id));
+    });
+
+    it('keeps two candidates within BENEFIT_TIE_BAND of each other in the same tier even when they straddle a naive rounding boundary', () => {
+        // Regression: independently rounding each benefit score to the nearest
+        // BENEFIT_TIE_BAND multiple (Math.round(benefit / BAND)) has its own artifact --
+        // two candidates only 0.039 apart (well within the 0.05 band) can straddle the
+        // rounding boundary at 0.025 and land in different tiers, silently changing which
+        // one wins. This is exactly what broke a real day-by-day plan during review: a
+        // low-benefit/high-utility Rest candidate lost outright to a slightly-higher-
+        // benefit/lower-utility Mobility candidate it should have been tied with.
+        const lowObj: WeeklyObjective = {
+            id: 'obj_low', key: 'zone2_aerobic', title: 'Aerobic Base',
+            targetExposures: 1, completedExposures: 0, targetStimulus: { aerobicCapacity: 1 },
+        };
+        const makeCandidate = (id: string, aerobicCapacity: number, avoided: boolean): SessionTemplate => ({
+            id, category: 'Mobility/Recovery', modality: avoided ? 'Cross Training' : 'Mobility',
+            durationMin: 20, durationMax: 30, title: id, description: '',
+            requiredEquipment: [], environment: 'either', safetyTags: [],
+            systemicCost: 0.1,
+            stimulusProfile: { aerobicCapacity },
+            costProfile: { systemic: 0, cardiovascular: 0, lowerBody: 0, upperBody: 0, impactTissue: 0, neuromuscular: 0 },
+        });
+        // benefit = aerobicCapacity * 1.2 (matches lowObj's aerobicCapacity: 1 target)
+        const low = makeCandidate('boundary_low', 0.02 / 1.2, false); // benefit 0.02, neutral preference
+        const high = makeCandidate('boundary_high', 0.0592 / 1.2, true); // benefit 0.0592, avoided -> 0.2x utility penalty
+        // gap = 0.0392, within BENEFIT_TIE_BAND (0.05): they must tie on benefit and fall
+        // through to utility, where `low` (no penalty) beats `high` (0.2x penalty)
+        // despite `high`'s higher raw benefit.
+
+        const result = rankCandidates(
+            [low, high], [lowObj], DEFAULT_FATIGUE, DEFAULT_AVAILABILITY, [], {
+                ...DEFAULT_PREFERENCES, avoidedModalities: ['Cross Training'],
+            },
+            { date: '2026-03-05' }
+        );
+
+        expect(result.accepted[0].template.id).toBe('boundary_low');
+    });
 });
 
 describe('optimizer — one optimizer invocation context (F4 / 3.3)', () => {

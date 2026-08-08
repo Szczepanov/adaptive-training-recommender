@@ -960,7 +960,8 @@
         "trainTierRestOrRecoveryCount": 0
       },
       "qualityWarnings": [
-        "Event-specific anchor missed in 4 nominated week(s).",
+        "Event-specific anchor missed in 2 nominated week(s).",
+        "Event-specific exposure occurred off the nominated anchor date in 2 week(s).",
         "Triathlon capability is partial: the engine has no Swimming modality or swim objective/catalog support."
       ],
       "anchorWeeks": [
@@ -990,8 +991,10 @@
           "eventSpecificAnchorDate": "2026-08-23",
           "qualityAnchorDate": "2026-08-25",
           "eventSpecificAnchorHit": false,
-          "eventSpecificExposureDates": [],
-          "eventSpecificAnchorFulfilled": false,
+          "eventSpecificExposureDates": [
+            "2026-08-21"
+          ],
+          "eventSpecificAnchorFulfilled": true,
           "qualityAnchorHit": true
         },
         {
@@ -1000,8 +1003,10 @@
           "eventSpecificAnchorDate": "2026-08-30",
           "qualityAnchorDate": "2026-09-01",
           "eventSpecificAnchorHit": false,
-          "eventSpecificExposureDates": [],
-          "eventSpecificAnchorFulfilled": false,
+          "eventSpecificExposureDates": [
+            "2026-08-28"
+          ],
+          "eventSpecificAnchorFulfilled": true,
           "qualityAnchorHit": true
         }
       ],
