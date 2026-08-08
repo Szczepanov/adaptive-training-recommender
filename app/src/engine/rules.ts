@@ -490,6 +490,7 @@ export async function evaluateTrainingWithIntent(
     const maxCost = PLAN_TIER_SYSTEMIC_COST_CEILING[base.envelopes!.plan.maxAllowableTier];
     const candidates = eligibleTemplates(ENRICHED_TEMPLATES, context, readiness.subjective.timeAvailable, date)
         .filter(template => !base.envelopes!.safety.restrictedModalities.includes(template.modality))
+        .filter(template => !(context.constraints.restrictedCategories ?? []).includes(template.category))
         .filter(template => template.systemicCost <= maxCost)
         .filter(template => base.mode !== 'recover' || template.category === 'Rest' || template.category === 'Mobility/Recovery')
         .filter(template => base.mode !== 'modify' || template.systemicCost <= MODIFY_MAX_SYSTEMIC_COST)
@@ -499,7 +500,7 @@ export async function evaluateTrainingWithIntent(
         intent.unresolvedObjectives,
         intent.fatigue,
         resolveAvailability(date, readiness.subjective, [], context),
-        context.constraints.injuries,
+        context.constraints.restrictedModalities ?? [],
         {
             userId, preferredRecoveryStyle: 'mixed', defaultWeekdayTimeMin: 45, defaultWeekendTimeMin: 60,
             preferredTimeOfDay: 'flexible', preferredModalities: context.preferences.preferredModalities,
@@ -541,19 +542,18 @@ export function evaluateEnvelopes(
     context: UserContext
 ): { safety: SafetyEnvelope; plan: PlanEnvelope } {
     const isPain = readiness.subjective.painFlag;
-    const injuries = (context.constraints.injuries || []).map(i => i.toLowerCase());
-    // Word-boundary match, not substring -- a plain .includes('run')/'leg' also fires on
-    // unrelated text like "trunk" or "college" (both contain "run"/"leg" as substrings),
-    // which would wrongly flag a running-safety restriction from an unrelated injury note.
-    const RUNNING_INJURY_PATTERN = /\b(knee|achilles|ankle|leg|run)/;
-    const hasRunningInjury = injuries.some(i => RUNNING_INJURY_PATTERN.test(i));
-    const clinicalFlagActive = isPain || hasRunningInjury;
-    const clinicalReason = clinicalFlagActive ? "Active pain or injury flag reported." : null;
+    const restrictedModalities = [...(context.constraints.restrictedModalities ?? [])];
+    const hasActiveInjury =
+        restrictedModalities.length > 0 ||
+        (context.constraints.impliedGuardrails ?? []).length > 0 ||
+        (context.constraints.restrictedCategories ?? []).length > 0;
 
-    const restrictedModalities: SessionTemplate['modality'][] = [];
-    if (hasRunningInjury || (isPain && injuries.length > 0)) {
+    if (isPain && !restrictedModalities.includes('Running')) {
         restrictedModalities.push('Running');
     }
+
+    const clinicalFlagActive = isPain || hasActiveInjury;
+    const clinicalReason = clinicalFlagActive ? "Active pain or injury flag reported." : null;
 
     let maxAllowableTier: 'Rest' | 'Mobility' | 'Easy' | 'Moderate' | 'Hard' = 'Hard';
     if (readiness.subjective.alreadyTrainedToday) {

@@ -18,7 +18,7 @@ function settings(overrides: Partial<TrainingSettings> = {}): TrainingSettings {
 function context(trainingSettings: TrainingSettings): UserContext {
     return {
         goals: { shortTerm: '', midTerm: '', longTerm: '' },
-        constraints: { hasCableMachine: true, hasFreeWeights: true, hasTreadmill: false, hasIndoorBike: true, injuries: [], maxTimeMinutes: 180 },
+        constraints: { hasCableMachine: true, hasFreeWeights: true, hasTreadmill: false, hasIndoorBike: true, restrictedModalities: [], maxTimeMinutes: 180 },
         preferences: { avoidedModalities: [], deprioritizedModalities: [], preferredModalities: [], conservativeBias: false },
         trainingSettings,
     };

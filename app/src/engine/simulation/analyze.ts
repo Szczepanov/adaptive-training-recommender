@@ -175,7 +175,7 @@ function computeMetrics(
             constraintViolations.push(`${day.date}: picked ${day.template.id} requiring [${day.template.requiredEquipment.join(',')}] the athlete doesn't have`);
         }
         const lowerMod = day.template.modality.toLowerCase();
-        if (scenario.context.constraints.injuries.some(inj => inj.toLowerCase().includes(lowerMod))) {
+        if ((scenario.context.constraints.restrictedModalities ?? []).some(mod => mod.toLowerCase() === lowerMod)) {
             constraintViolations.push(`${day.date}: picked ${day.template.id} (${day.template.modality}) despite an active injury constraint`);
         }
     });

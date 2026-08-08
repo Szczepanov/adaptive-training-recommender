@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { GuardrailKey, TrainingSettings as TrainingSettingsModel } from '../engine/models';
+import { resolveInjuryRestrictions } from '../engine/injuryPolicy';
 import { trainingSettingsService, type TrainingSettingsUpdate } from '../services/trainingSettingsService';
 import './TrainingSettings.css';
 
@@ -107,6 +108,45 @@ export function TrainingSettings({ userId }: TrainingSettingsProps) {
       <section aria-labelledby="preferences-title">
         <h2 id="preferences-title">Recovery preferences</h2>
         <label className="setting-row"><input type="checkbox" checked={settings.preferences.preferActiveRecovery} onChange={(event) => void save({ preferences: { preferActiveRecovery: event.target.checked } })} /><span><strong>Prefer active recovery</strong><small>When recovery is needed, mobility is ranked ahead of total rest when both are suitable.</small></span></label>
+      </section>
+
+      <section aria-labelledby="injuries-title">
+        <h2 id="injuries-title">Active Injury Constraints</h2>
+        <p className="section-intro">Structured injuries dynamically derive guardrails, restricted modalities, and restricted categories. Expired review dates are automatically ignored.</p>
+        
+        {settings.injuries && settings.injuries.length > 0 ? (
+          <div className="injuries-list">
+            {settings.injuries.map((inj, index) => (
+              <div key={index} className="setting-row injury-item" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '8px 0', padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}>
+                <div>
+                  <strong>{inj.region ? inj.region.toUpperCase().replace('_', ' ') : 'General Activity'}</strong> ({inj.severity})
+                  {inj.reviewBy && <small style={{ display: 'block' }}>Review by: {inj.reviewBy}</small>}
+                  {inj.note && <small style={{ display: 'block' }}>Note: {inj.note}</small>}
+                </div>
+                <button type="button" onClick={() => {
+                  const nextInjuries = (settings.injuries ?? []).filter((_, i) => i !== index);
+                  void save({ injuries: nextInjuries });
+                }}>Remove</button>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p><small>No active injuries recorded.</small></p>
+        )}
+
+        {(() => {
+          const derived = resolveInjuryRestrictions(settings.injuries, new Date().toISOString().split('T')[0]);
+          const hasDerived = derived.restrictedModalities.length > 0 || derived.impliedGuardrails.length > 0 || derived.restrictedCategories.length > 0;
+          if (!hasDerived) return null;
+          return (
+            <div className="derived-restrictions" style={{ marginTop: '12px', padding: '8px 12px', background: '#f5f5f5', borderRadius: '4px' }}>
+              <h4>Derived Restrictions (Read-only)</h4>
+              {derived.restrictedModalities.length > 0 && <p><small><strong>Restricted Modalities:</strong> {derived.restrictedModalities.join(', ')}</small></p>}
+              {derived.impliedGuardrails.length > 0 && <p><small><strong>Implied Guardrails:</strong> {derived.impliedGuardrails.join(', ')}</small></p>}
+              {derived.restrictedCategories.length > 0 && <p><small><strong>Restricted Categories:</strong> {derived.restrictedCategories.join(', ')}</small></p>}
+            </div>
+          );
+        })()}
       </section>
     </main>
   );

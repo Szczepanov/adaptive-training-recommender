@@ -68,7 +68,7 @@ started.
 
 ## 2. Tier 1 — Decisions that do not currently hold
 
-### F1. The documented hard injury gate has no data source at all
+### F1. The documented hard injury gate has no data source at all (**Resolved in Phase 1 Task 1.1**)
 
 `adapters.ts` — `mapContextFromGoalsAndTrainingSettings`, the sole production constructor of `UserContext` — hardcodes:
 

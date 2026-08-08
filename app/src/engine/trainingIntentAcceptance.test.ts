@@ -9,7 +9,7 @@ const fixtureHistory: TrainingHistoryProvider = { reconstruct: async () => [] };
 function context(overrides: Partial<UserContext['constraints']> = {}): UserContext {
     return {
         goals: { shortTerm: '', midTerm: '', longTerm: '' },
-        constraints: { hasCableMachine: false, hasFreeWeights: true, hasTreadmill: false, hasIndoorBike: true, injuries: [], maxTimeMinutes: 90, ...overrides },
+        constraints: { hasCableMachine: false, hasFreeWeights: true, hasTreadmill: false, hasIndoorBike: true, restrictedModalities: [], maxTimeMinutes: 90, ...overrides },
         preferences: { avoidedModalities: [], deprioritizedModalities: [], preferredModalities: [], conservativeBias: false },
     };
 }

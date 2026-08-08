@@ -110,12 +110,19 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    function hasValidInjuryList(injuries) {
+      return injuries is list && injuries.size() <= 20;
+    }
+
     match /users/{userId}/trainingSettings/profile {
       allow read: if isOwner(userId);
-      allow create: if hasOwnedUserId(userId) && request.resource.data.schemaVersion in [2, 3];
+      allow create: if hasOwnedUserId(userId)
+        && request.resource.data.schemaVersion in [2, 3]
+        && (!('injuries' in request.resource.data) || hasValidInjuryList(request.resource.data.injuries));
       allow update: if keepsOwnership(userId)
         && request.resource.data.createdAt == resource.data.createdAt
-        && request.resource.data.schemaVersion in [2, 3];
+        && request.resource.data.schemaVersion in [2, 3]
+        && (!('injuries' in request.resource.data) || hasValidInjuryList(request.resource.data.injuries));
       allow delete: if false;
     }
 

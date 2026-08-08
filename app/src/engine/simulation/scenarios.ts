@@ -5,6 +5,7 @@ import type {
     TrainingSettings,
     UserContext,
     UserEvent,
+    SessionTemplate,
 } from '../models';
 import { resolveDemandProfile } from '../eventPresets';
 import { addDaysToLocalDateString } from '../../utils/localDate';
@@ -58,7 +59,7 @@ function context(
             hasFreeWeights: equipmentOverrides.free_weights ?? true,
             hasTreadmill: !!equipmentOverrides.treadmill,
             hasIndoorBike: !!equipmentOverrides.indoor_bike,
-            injuries,
+            restrictedModalities: injuries as SessionTemplate['modality'][],
             maxTimeMinutes: 90,
         },
         preferences: { avoidedModalities: [], deprioritizedModalities: [], preferredModalities, conservativeBias: false },

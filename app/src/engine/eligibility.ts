@@ -45,7 +45,9 @@ export function evaluateTemplateEligibility(
     if (settings && settings.defaults.environment !== 'either' && template.environment !== 'either' && template.environment !== settings.defaults.environment) {
         reasons.push('environment');
     }
-    if (settings && template.safetyTags.some(tag => settings.guardrails[tag])) reasons.push('safety_guardrail');
+    const implied = context.constraints.impliedGuardrails ?? [];
+    const guardrailTriggered = template.safetyTags.some(tag => (settings?.guardrails[tag] ?? false) || implied.includes(tag));
+    if (guardrailTriggered) reasons.push('safety_guardrail');
     return { template, eligible: reasons.length === 0, reasons };
 }
 

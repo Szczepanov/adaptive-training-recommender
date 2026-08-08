@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { buildNextDayScenarios, evaluateTraining, evaluateNextDayPlan, evaluateNextDayPlanWithIntent, adjustSessionRecommendation, evaluateEnvelopes } from './rules';
 import type { TrainingHistoryProvider } from './trainingHistory';
-import type { DailyReadiness, UserContext, EngineObjectiveInput, SubjectiveInput } from './models';
+import type { DailyReadiness, UserContext, EngineObjectiveInput, SubjectiveInput, TrainingSettings } from './models';
+import { mapContextFromGoalsAndTrainingSettings } from './adapters';
 import { TEMPLATES } from './templates';
 
 // --- Fixtures --------------------------------------------------------------
@@ -14,7 +15,7 @@ function baseContext(overrides: Partial<UserContext['preferences']> = {}): UserC
             hasFreeWeights: true,
             hasTreadmill: false,
             hasIndoorBike: false,
-            injuries: [],
+            restrictedModalities: [],
             maxTimeMinutes: 90,
         },
         preferences: {
@@ -670,7 +671,7 @@ describe('session adjustment engine', () => {
         const readiness: DailyReadiness = { subjective: greenSubjective(), objective: quietObjective() };
         // Restrict running via injury so Tier 1-3 in running fail
         const context = baseContext();
-        context.constraints.injuries = ['running knee pain'];
+        context.constraints.restrictedModalities = ['Running'];
 
         const date = '2026-08-07';
         const baseRec = evaluateTraining(readiness, context, date);
@@ -711,7 +712,7 @@ describe('session adjustment engine', () => {
     it('evaluateEnvelopes computes clinical safety and plan envelopes correctly', () => {
         const readiness: DailyReadiness = { subjective: neutralSubjective({ painFlag: true }), objective: quietObjective() };
         const context = baseContext();
-        context.constraints.injuries = ['knee pain'];
+        context.constraints.restrictedModalities = ['Running'];
 
         const envelopes = evaluateEnvelopes(readiness, context);
         expect(envelopes.safety.clinicalFlagActive).toBe(true);
@@ -724,7 +725,7 @@ describe('session adjustment engine', () => {
         // matching keeps the running restriction tied to actual running-relevant injuries.
         const readiness: DailyReadiness = { subjective: neutralSubjective(), objective: quietObjective() };
         const context = baseContext();
-        context.constraints.injuries = ['sore trunk from travel'];
+        context.constraints.restrictedModalities = [];
 
         const envelopes = evaluateEnvelopes(readiness, context);
         expect(envelopes.safety.clinicalFlagActive).toBe(false);
@@ -764,6 +765,26 @@ describe('session adjustment engine', () => {
         const adjusted = adjustSessionRecommendation(baseRec, 'harder', readiness, context, date);
         expect(adjusted?.adjustment?.tier).toBe(1);
         expect(adjusted?.activeDose?.label).toBe('5x4 min Intervals (50 min)');
+    });
+
+    it('an exclude achilles injury removes every Running template on the readiness path and populates restrictedModalities', () => {
+        const readiness: DailyReadiness = { subjective: greenSubjective(), objective: quietObjective() };
+        const settings: TrainingSettings = {
+            userId: 'user1',
+            schemaVersion: 3,
+            equipment: { free_weights: true, cable_machine: true, treadmill: true, indoor_bike: true, pullup_bar: true },
+            guardrails: { avoid_high_impact: false, avoid_heavy_lower_body: false, avoid_overhead_pressing: false, avoid_heavy_spinal_loading: false },
+            injuries: [{ region: 'achilles', severity: 'exclude' }],
+            defaults: { weekdayMaxMinutes: 60, weekendMaxMinutes: 60, environment: 'either' },
+            preferences: { preferActiveRecovery: false },
+            migration: { legacyReviewed: true, migratedAt: null },
+            createdAt: '2026-08-08T00:00:00Z',
+            updatedAt: '2026-08-08T00:00:00Z',
+        };
+        const context = mapContextFromGoalsAndTrainingSettings([], settings, null, '2026-08-08');
+        const rec = evaluateTraining(readiness, context, '2026-08-08');
+        expect(rec.envelopes?.safety.restrictedModalities).toContain('Running');
+        expect(rec.template.modality).not.toBe('Running');
     });
 });
 

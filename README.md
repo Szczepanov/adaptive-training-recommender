@@ -45,14 +45,15 @@ Adaptive Training Recommendation
 ## Training Settings and Recommendation Safety
 
 The app stores athlete-controlled training settings in the user-scoped Firestore document
-`users/{firebaseUid}/trainingSettings/profile` (schema version 2). The settings model is
-intentionally divided into four concepts so the recommendation engine never mistakes an
+`users/{firebaseUid}/trainingSettings/profile` (schema version 3). The settings model is
+intentionally divided into concepts so the recommendation engine never mistakes an
 available resource for a safety restriction:
 
 | Group | Examples | Engine behavior |
 |---|---|---|
 | Equipment | Pull-up bar, treadmill, free weights | A capability gate: a session requiring unavailable equipment is excluded. |
 | Safety limits | Block high impact, heavy lower-body work, overhead pressing, spinal loading | A hard gate: matching templates are excluded from every recommendation and dose adjustment. |
+| Injuries | Knee, achilles, ankle, hamstring, back, shoulder | A structured safety gate deriving guardrails, restricted modalities, and categories via `injuryPolicy.ts`. |
 | Time and location | Weekday/weekend duration limit, indoor-only/outdoor-only | A hard feasibility gate evaluated together with today's check-in availability. |
 | Preferences | Prefer active recovery | A soft ranking signal only; it cannot bypass a hard gate. |
 

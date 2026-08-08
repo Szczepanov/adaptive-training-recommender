@@ -1,6 +1,6 @@
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { getDb } from '../firebase';
-import type { TrainingSettings, UserConstraint } from '../engine/models';
+import type { BodyRegion, TrainingSettings, UserConstraint } from '../engine/models';
 import type { DataState } from '../engine/dataState';
 import { constraintService } from './constraintService';
 import { getErrorCode } from '../utils/errors';
@@ -8,16 +8,18 @@ import { getErrorCode } from '../utils/errors';
 export type TrainingSettingsUpdate = {
     equipment?: Partial<TrainingSettings['equipment']>;
     guardrails?: Partial<TrainingSettings['guardrails']>;
+    injuries?: TrainingSettings['injuries'];
     defaults?: Partial<TrainingSettings['defaults']>;
     preferences?: Partial<TrainingSettings['preferences']>;
     migration?: Partial<TrainingSettings['migration']>;
 };
 
-const SETTINGS_SCHEMA_VERSION = 2 as const;
+const SETTINGS_SCHEMA_VERSION = 3 as const;
 const COLLECTION = 'trainingSettings';
 const DOCUMENT = 'profile';
 const equipmentKeys = ['free_weights', 'cable_machine', 'treadmill', 'indoor_bike', 'pullup_bar'] as const;
 const guardrailKeys = ['avoid_high_impact', 'avoid_heavy_lower_body', 'avoid_overhead_pressing', 'avoid_heavy_spinal_loading'] as const;
+const validBodyRegions = ['knee', 'achilles', 'ankle', 'calf', 'hamstring', 'quadriceps', 'adductor_groin', 'hip', 'lower_back', 'shoulder', 'elbow', 'wrist'] as const;
 
 function timestamp(): string {
     return new Date().toISOString();
@@ -29,6 +31,7 @@ export function createDefaultTrainingSettings(userId: string, now = timestamp())
         schemaVersion: SETTINGS_SCHEMA_VERSION,
         equipment: { free_weights: false, cable_machine: false, treadmill: false, indoor_bike: false, pullup_bar: false },
         guardrails: { avoid_high_impact: false, avoid_heavy_lower_body: false, avoid_overhead_pressing: false, avoid_heavy_spinal_loading: false },
+        injuries: [],
         defaults: { weekdayMaxMinutes: null, weekendMaxMinutes: null, environment: 'either' },
         preferences: { preferActiveRecovery: false },
         migration: { legacyReviewed: true, migratedAt: null },
@@ -41,11 +44,11 @@ function isDuration(value: unknown): value is number | null {
     return value === null || (typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= 1440);
 }
 
-/** Parses storage data defensively so malformed user data never enters the engine. */
+/** Parses storage data defensively so malformed user data never enters the engine. Accepts schema 2 or 3. */
 export function parseTrainingSettings(raw: unknown, userId: string): TrainingSettings | null {
     if (!raw || typeof raw !== 'object') return null;
     const data = raw as Record<string, unknown>;
-    if (data.userId !== userId || data.schemaVersion !== SETTINGS_SCHEMA_VERSION) return null;
+    if (data.userId !== userId || (data.schemaVersion !== 2 && data.schemaVersion !== 3)) return null;
     const equipment = data.equipment as Record<string, unknown> | undefined;
     const guardrails = data.guardrails as Record<string, unknown> | undefined;
     const defaults = data.defaults as Record<string, unknown> | undefined;
@@ -60,7 +63,22 @@ export function parseTrainingSettings(raw: unknown, userId: string): TrainingSet
     if (typeof migration.legacyReviewed !== 'boolean' || !(typeof migration.migratedAt === 'string' || migration.migratedAt === null)) return null;
     if (typeof data.createdAt !== 'string' || typeof data.updatedAt !== 'string') return null;
 
-    return data as unknown as TrainingSettings;
+    if (data.injuries !== undefined) {
+        if (!Array.isArray(data.injuries)) return null;
+        for (const inj of data.injuries) {
+            if (!inj || typeof inj !== 'object') return null;
+            const item = inj as Record<string, unknown>;
+            if (typeof item.severity !== 'string' || !['monitor', 'limit', 'exclude'].includes(item.severity)) return null;
+            if (item.region !== undefined && (typeof item.region !== 'string' || !validBodyRegions.includes(item.region as BodyRegion))) return null;
+            if (item.reviewBy !== undefined && typeof item.reviewBy !== 'string') return null;
+        }
+    }
+
+    return {
+        ...(data as unknown as TrainingSettings),
+        schemaVersion: SETTINGS_SCHEMA_VERSION,
+        injuries: (data.injuries as TrainingSettings['injuries']) ?? [],
+    };
 }
 
 /** Converts only unambiguous legacy data. The legacy boolean toggles are intentionally
@@ -85,8 +103,10 @@ export function migrateLegacyConstraints(userId: string, constraints: UserConstr
 function mergeSettings(current: TrainingSettings, update: TrainingSettingsUpdate): TrainingSettings {
     const next: TrainingSettings = {
         ...current,
+        schemaVersion: SETTINGS_SCHEMA_VERSION,
         equipment: { ...current.equipment, ...update.equipment },
         guardrails: { ...current.guardrails, ...update.guardrails },
+        injuries: update.injuries !== undefined ? update.injuries : current.injuries ?? [],
         defaults: { ...current.defaults, ...update.defaults },
         preferences: { ...current.preferences, ...update.preferences },
         migration: { ...current.migration, ...update.migration },

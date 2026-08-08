@@ -11,6 +11,7 @@ import type {
     UserPreferences,
     TrainingSettings,
 } from './models';
+import { resolveInjuryRestrictions } from './injuryPolicy';
 import { goalToUserEvent } from './periodization';
 
 /** Normalizes a raw Garmin per-day activity summary (yesterday's or today's) into the
@@ -132,13 +133,17 @@ const DEFAULT_MAX_TIME_MINUTES = 180;
 export function mapContextFromGoalsAndTrainingSettings(
     goals: UserGoal[],
     trainingSettings: TrainingSettings,
-    preferences: UserPreferences | null
+    preferences: UserPreferences | null,
+    today?: string
 ): UserContext {
     const topGoalTitle = (category: UserGoal['category']): string => {
         const inCategory = goals.filter(g => g.category === category);
         if (inCategory.length === 0) return '';
         return inCategory.reduce((best, g) => (g.priority > best.priority ? g : best)).title;
     };
+
+    const dateStr = today ?? new Date().toISOString().split('T')[0];
+    const resolvedInjuries = resolveInjuryRestrictions(trainingSettings.injuries, dateStr);
 
     return {
         goals: {
@@ -151,7 +156,9 @@ export function mapContextFromGoalsAndTrainingSettings(
             hasFreeWeights: trainingSettings.equipment.free_weights,
             hasTreadmill: trainingSettings.equipment.treadmill,
             hasIndoorBike: trainingSettings.equipment.indoor_bike,
-            injuries: [],
+            restrictedModalities: resolvedInjuries.restrictedModalities,
+            impliedGuardrails: resolvedInjuries.impliedGuardrails,
+            restrictedCategories: resolvedInjuries.restrictedCategories,
             maxTimeMinutes: trainingSettings.defaults.weekdayMaxMinutes ?? trainingSettings.defaults.weekendMaxMinutes ?? DEFAULT_MAX_TIME_MINUTES,
         },
         preferences: {

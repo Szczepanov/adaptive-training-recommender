@@ -45,7 +45,8 @@ We introduced a 6-tier adaptive multi-sport engine architecture:
    * Emits applied ranking modifiers in the candidate rationale and uses a stable tie-breaker so equivalent candidates do not flicker between evaluations.
 
 6. **Safety Authority vs. Preference Authority**:
-   * Physical pain/injury constraints (`UserConstraint`) are hard safety gates.
+   * Structured physical injuries (`TrainingSettings.injuries?: InjuryConstraint[]`, schema v3) dynamically derive guardrails, restricted modalities, and restricted categories via `resolveInjuryRestrictions` (`injuryPolicy.ts`). The region-to-restriction table acts as a conservative engineering mapping open to coaching revision.
+   * Physical pain/injury flags act as hard safety gates.
    * Modality dislikes (`UserPreferences.avoidedModalities`) apply soft ranking penalties (0.2x utility multiplier), ensuring users can adjust tastes without risking safety regressions.
    * `Extra Recovery Margin` tunes borderline decision boundaries without eliminating legitimate quality sessions during green readiness.
 

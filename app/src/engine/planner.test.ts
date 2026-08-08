@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { evaluateNextDayPlan, evaluateTraining } from './rules';
+import { mapContextFromGoalsAndTrainingSettings } from './adapters';
 import { generateWeekAheadPlan, generateWeekAheadPlanWithIntent, prepareWeekAheadPlanSeed, projectTrailingHistory, resolveWeeklyAnchors } from './planner';
 import type { DailyReadiness, EngineObjectiveInput, FatigueState, FixedActivity, SubjectiveInput, TrainingSettings, UserContext, UserEvent, UserPreferences } from './models';
 import type { CompletedExposure, TrainingHistoryProvider } from './trainingHistory';
@@ -17,7 +18,7 @@ function baseContext(overrides: Partial<UserContext['constraints']> = {}): UserC
             hasFreeWeights: true,
             hasTreadmill: false,
             hasIndoorBike: false,
-            injuries: [],
+            restrictedModalities: [],
             maxTimeMinutes: 90,
             ...overrides,
         },
@@ -96,7 +97,7 @@ describe('generateWeekAheadPlan', () => {
     });
 
     it('never recommends a modality the user has an active hard injury constraint against', () => {
-        const context = baseContext({ injuries: ['Running'] });
+        const context = baseContext({ restrictedModalities: ['Running'] });
         const { readiness, todayRec, tomorrowRec } = buildTodayAndTomorrow(context);
 
         const plan = generateWeekAheadPlan(readiness, context, null, '2026-08-07', todayRec, tomorrowRec, prepareWeekAheadPlanSeed(readiness, [], '2026-08-07', []), { days: 7 });
@@ -106,6 +107,26 @@ describe('generateWeekAheadPlan', () => {
         const projected = plan.days.filter(d => d.confidence === 'projected');
         expect(projected.length).toBeGreaterThan(0);
         projected.forEach(d => expect(d.template.modality).not.toBe('Running'));
+    });
+
+    it('an exclude achilles injury holds across all 7 projected days', () => {
+        const settings: TrainingSettings = {
+            userId: 'user1',
+            schemaVersion: 3,
+            equipment: { free_weights: true, cable_machine: true, treadmill: true, indoor_bike: true, pullup_bar: true },
+            guardrails: { avoid_high_impact: false, avoid_heavy_lower_body: false, avoid_overhead_pressing: false, avoid_heavy_spinal_loading: false },
+            injuries: [{ region: 'achilles', severity: 'exclude' }],
+            defaults: { weekdayMaxMinutes: 60, weekendMaxMinutes: 60, environment: 'either' },
+            preferences: { preferActiveRecovery: false },
+            migration: { legacyReviewed: true, migratedAt: null },
+            createdAt: '2026-08-08T00:00:00Z',
+            updatedAt: '2026-08-08T00:00:00Z',
+        };
+        const context = mapContextFromGoalsAndTrainingSettings([], settings, null, '2026-08-07');
+        const { readiness, todayRec, tomorrowRec } = buildTodayAndTomorrow(context);
+        const plan = generateWeekAheadPlan(readiness, context, null, '2026-08-07', todayRec, tomorrowRec, prepareWeekAheadPlanSeed(readiness, [], '2026-08-07', []), { days: 7 });
+
+        plan.days.forEach(d => expect(d.template.modality).not.toBe('Running'));
     });
 
     it('falls back to rest for a projected day with zero available time rather than dropping it', () => {

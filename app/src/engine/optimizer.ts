@@ -183,7 +183,7 @@ export function rankCandidatesByUtility(
         .filter(t => {
             // Hard safety gating: Physical injuries strictly exclude matching modalities
             const lowerMod = t.modality.toLowerCase();
-            return !injuryConstraints.some(inj => inj.toLowerCase().includes(lowerMod));
+            return !injuryConstraints.some(inj => inj.toLowerCase() === lowerMod || inj.toLowerCase().includes(lowerMod));
         })
         .map(template => {
             const benefit = calculateStimulusBenefit(template.stimulusProfile, unresolvedObjectives);
