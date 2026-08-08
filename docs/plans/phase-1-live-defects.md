@@ -1,0 +1,354 @@
+# Phase 1 — Live defects
+
+* **Status:** Ready
+* **Depends on:** nothing (Phase 0 is helpful but not blocking)
+* **Unlocks:** a correct foundation for the Phase 2–5 cutover
+* **Addresses:** F1, F2, F6
+* **Rough effort:** 3–4 days
+
+---
+
+## Goal
+
+Fix the three defects where the system's actual behaviour differs from its documented
+behaviour for a real user today: an injury gate with no data source, measured training
+that earns no objective credit, and audit records a client can rewrite.
+
+## Why this cannot wait for the architecture work
+
+The Phase 2–5 cutover migrates onto whatever foundation exists. Migrating onto an unwired
+safety gate and rewritable audit evidence carries both defects forward and makes them
+harder to see, because they will then be spread across a larger surface.
+
+---
+
+## 1.1 — F1: give injury constraints a real data path
+
+### Current state
+
+`app/src/engine/adapters.ts:154`, the only production constructor of `UserContext`,
+hardcodes `injuries: []`. Everything downstream is therefore dead in production:
+
+* `optimizer.ts:183-187` — the "hard safety gating" modality filter
+* `rules.ts:544-556` — `hasRunningInjury`, and the `isPain && injuries.length > 0` branch
+  that is the only writer of `restrictedModalities`
+* `planner.ts:352,482` — the same, across all 7 forecast days
+
+Consequences worth stating plainly: `SafetyEnvelope.restrictedModalities` is **always**
+`[]`, so `rules.ts:492`'s filter is a no-op and the persisted audit's
+`safetyRestrictedModalityCount` is always `0` — the audit records a safety check that
+never ran.
+
+Note that `simulation/scenarios.ts:51` *does* pass `injuries`, so the harness exercises
+and appears to validate a filter production can never trigger. This is the sharpest
+instance of the pattern in the review's §0.
+
+### What already works — do not rebuild it
+
+`TrainingSettings.guardrails` **is** wired end to end:
+`eligibility.ts` checks `template.safetyTags.some(tag => settings.guardrails[tag])`
+against the four `GuardrailKey`s (`avoid_high_impact`, `avoid_heavy_lower_body`,
+`avoid_overhead_pressing`, `avoid_heavy_spinal_loading`), and templates carry
+`safetyTags`. Athlete-set guardrails already gate correctly on both paths.
+
+So the gap is narrower than "injuries are unimplemented": there is a working *manual*
+guardrail channel and a dead *free-text injury* channel that ADR-0007 §6 calls the hard
+safety gate.
+
+### Two options
+
+**Option A — delete the dead channel.** Remove `UserContext.constraints.injuries` and its
+readers; consolidate on guardrails; amend ADR-0007 §6 to say guardrails are the hard
+safety gate. Cheapest, honest, and immediately removes the false `safetyRestrictedModalityCount`.
+But guardrails cannot express "no running", cannot expire, and cannot distinguish an
+acute injury from a standing preference.
+
+**Option B — formalise injuries as structured constraints that derive guardrails
+(recommended).** Keeps the ADR-0007 guarantee and makes it real.
+
+### Option B design
+
+Add to `TrainingSettings` at `schemaVersion: 3` (already permitted by the type
+`schemaVersion: 2 | 3` and by `firestore.rules`, which allows `[2, 3]` — the forward
+allowance exists and is currently unusable because `trainingSettingsService.ts:16` pins
+`SETTINGS_SCHEMA_VERSION = 2`):
+
+```ts
+export type BodyRegion =
+  | 'knee' | 'achilles' | 'calf' | 'hamstring' | 'quadriceps'
+  | 'adductor_groin' | 'hip' | 'lower_back' | 'shoulder' | 'elbow' | 'wrist';
+
+export interface InjuryConstraint {
+  region: BodyRegion;
+  severity: 'monitor' | 'limit' | 'exclude';
+  /** ISO date; absent = indefinite. Expired entries are ignored, not deleted. */
+  reviewBy?: string;
+  note?: string;
+}
+```
+
+Add a **pure** resolver, `app/src/engine/injuryPolicy.ts`:
+
+```ts
+export function resolveInjuryRestrictions(injuries: InjuryConstraint[], today: string): {
+  restrictedModalities: SessionTemplate['modality'][];
+  impliedGuardrails: GuardrailKey[];
+  restrictedCategories: SessionTemplate['category'][];
+}
+```
+
+with an explicit region → restriction table. Sketch (needs a domain review before
+landing — these are engineering defaults, not coaching advice):
+
+| Region | `exclude` implies | `limit` implies |
+|---|---|---|
+| knee, achilles, calf | modality `Running`; guardrail `avoid_high_impact` | guardrail `avoid_high_impact` |
+| hamstring, quadriceps, adductor_groin, hip | categories `Lower-body Strength`, `Full-body Strength`; guardrail `avoid_heavy_lower_body` | guardrail `avoid_heavy_lower_body` |
+| lower_back | guardrails `avoid_heavy_spinal_loading`, `avoid_heavy_lower_body` | `avoid_heavy_spinal_loading` |
+| shoulder, elbow, wrist | guardrail `avoid_overhead_pressing`; categories `Upper-body Strength` | `avoid_overhead_pressing` |
+
+`monitor` implies nothing structural — it exists to be surfaced in the UI and to feed
+Phase 5's tissue tracking.
+
+### Work items
+
+1. `models.ts` — add `BodyRegion`, `InjuryConstraint`, and `TrainingSettings.injuries?: InjuryConstraint[]`.
+2. `injuryPolicy.ts` — the pure resolver above, fully unit-tested. No Firebase, no I/O.
+3. `adapters.ts` — populate `constraints.injuries` from settings. Keep the field
+   `string[]` for now (`region` strings) so `rules.ts`/`optimizer.ts` keep compiling, and
+   **additionally** thread the structured result through `UserContext` so
+   `evaluateEnvelopes` can stop pattern-matching text.
+4. `rules.ts:544-556` — replace `RUNNING_INJURY_PATTERN` (`/\b(knee|achilles|ankle|leg|run)/`,
+   which also matches "legal" and "runny") with `resolveInjuryRestrictions`. Populate
+   `restrictedModalities` from it.
+5. `eligibility.ts` — union `settings.guardrails` with `impliedGuardrails` so injuries
+   gate templates on **both** paths without duplicating the check.
+6. `optimizer.ts:183-187` — replace the substring test
+   (`injuryConstraints.some(inj => inj.toLowerCase().includes(lowerMod))`, which relies on
+   an injury string happening to contain a modality name) with the resolved modality list.
+7. `trainingSettingsService.ts` — bump `SETTINGS_SCHEMA_VERSION` to 3; accept 2 on read
+   and default `injuries: []`; write 3.
+8. `Preferences.tsx` / `TrainingSettings.tsx` — an editor: region, severity, optional
+   review date. Show derived restrictions read-only so the athlete can see what a setting
+   actually does.
+9. `firestore.rules` — validate the `injuries` array shape (bounded length, enum region,
+   enum severity, optional ISO date string).
+
+### Tests
+
+* `injuryPolicy.test.ts` — full region × severity table, plus expiry behaviour.
+* `rules.test.ts` — an `exclude` achilles injury removes every `Running` template on the
+  readiness path and populates `restrictedModalities`.
+* `planner.test.ts` — the same injury holds across all 7 projected days.
+* `architecture.test.ts` — a `limit` hamstring injury excludes heavy lower-body work from
+  the intent path.
+* Regression: `safetyRestrictedModalityCount` in a persisted audit is non-zero when an
+  injury is active.
+
+---
+
+## 1.2 — F2: Garmin-measured training must earn objective credit
+
+### Current state
+
+Verified empirically: three Garmin activities in the rolling window (120 min hard ride,
+60 min strength, 90 min moderate ride) leave every objective at `0/target`.
+
+Chain: `completedTraining.ts:candidateEventFromGarmin` sets
+`estimatedStimulus: ZERO_STIMULUS` → `completedEventToExposure` attaches
+`stimulusProfile` whenever `modality !== 'Unknown'`, including the all-zero vector →
+`microcycle.ts:buildMicrocycleState` routes any exposure with `stimulusProfile && modality`
+to `creditObjectivesFromStimulus`, which needs `stimulusCoverage >= 0.6`.
+
+The inversion is the bug: an unrecognised activity type gets `modality: undefined`, falls
+through to `updateMicrocycleProgress`'s keyword matcher, and **does** get credit.
+
+### The keyword fallback is NOT the intended destination
+
+An earlier draft of this plan said to omit the all-zero profile "so Garmin-only events
+fall through to the fallback path". **That was wrong and is corrected here.**
+
+The review's own F7 shows the keyword matcher is directionally broken. For a recognised
+hard ride, `completedEventToExposure` builds `trainingRecordLike.type = "Cycling hard"`.
+If that string reaches `updateMicrocycleProgress` (`microcycle.ts:118-125`), it credits:
+
+* `threshold_quality` — because the string contains `hard`; **and**
+* `zone2_aerobic` — because the string contains `cycling`.
+
+So routing recognised Garmin sessions to the fallback would trade today's false negative
+for a **false positive with double credit** on a single ride. That is not an improvement.
+
+The correct framing:
+
+1. An all-zero stimulus vector means **unknown**, not "a valid structured vector that
+   happens to be zero". The guard exists to stop the engine treating unknown as known.
+2. Recognised Garmin sessions get a **coarse inferred stimulus vector** carrying an
+   evidence/confidence marker. This is the intended credit path.
+3. Keyword matching is **legacy last-resort compatibility only** — for genuinely
+   unrecognised activity types with no other signal. It should shrink over time, not grow.
+
+### Fix
+
+**(a) Make "unknown" distinguishable from "zero".**
+In `completedEventToExposure`, attach `stimulusProfile` only when the vector carries
+signal:
+
+```ts
+const hasStimulus = Object.values(event.estimatedStimulus ?? {}).some(v => (v ?? 0) > 0);
+```
+
+Modality is still attached when known — it is needed for qualification checks and ranking
+context regardless of whether a stimulus vector exists. Only the *stimulus* is withheld.
+
+**(b) Give recognised Garmin activities a real coarse stimulus — the actual fix.**
+Add `DEFAULT_STIMULUS_BY_MODALITY: Record<CompletedModality, Record<CompletedTrainingIntensity, WorkoutStimulusProfile>>`
+alongside the existing `DEFAULT_COST_BY_MODALITY`, and use it in
+`candidateEventFromGarmin`. Intensity comes from the existing `intensityFromGarmin`
+(training effect ≥ 3 → hard, ≥ 1.5 → moderate).
+
+With (b) in place, (a) rarely fires for recognised modalities — which is the point. (a) is
+a correctness guard, not a routing mechanism.
+
+Values must be deliberately conservative — the aim is "materially better than treating
+real training as adaptation-neutral", not physiological precision. Starting point for
+`Cycling`, to be reviewed before landing:
+
+| Intensity | `aerobicCapacity` | `thresholdDevelopment` | `surgeRepeatability` |
+|---|---|---|---|
+| easy | 0.75 | 0.15 | 0.0 |
+| moderate | 0.70 | 0.60 | 0.25 |
+| hard | 0.55 | 0.75 | 0.65 |
+
+Note the `moderate` row deliberately does **not** clear
+`STIMULUS_CREDIT_COVERAGE_THRESHOLD` (0.6) for both Z2 *and* threshold simultaneously
+under every objective's target vector — check this against
+`generateWeeklyObjectives`'s actual `targetStimulus` values when implementing, and tune
+so a single ride cannot resolve two contradictory objectives. Mark the constants
+provisional in a comment citing this plan; Phase 4 replaces them with the evidence
+hierarchy.
+
+**(c) Carry confidence.** Add `stimulusConfidence: 'exact' | 'inferred' | 'unknown'` to
+`CompletedExposure`. `exact` for adherence-confirmed catalog templates, `inferred` for
+(b), `unknown` where no vector exists. Phase 4's evidence hierarchy builds directly on
+this field; adding it now costs nothing and prevents a second migration.
+
+### Interaction to check
+
+Fix (b) makes Garmin rides start resolving objectives. That lowers `urgency` in
+`trainingIntent.ts:80`, which lowers `plannedDose`, which changes `executionDose`.
+**Re-run the Phase 0 invariant suite and read the semantic diff before merging.**
+
+### Tests
+
+* `completedTraining.test.ts` — a Garmin-only cycling event produces a non-zero stimulus
+  profile with `stimulusConfidence: 'inferred'`; an unknown-modality event produces none.
+* `microcycle.test.ts` — the F2 probe, promoted to a real test: three Garmin sessions
+  resolve `zone2_aerobic` and `strength_maintenance`.
+* `microcycle.test.ts` — **regression against the false-positive risk**: a generic
+  `"Cycling hard"` record does **not** resolve both `zone2_aerobic` and
+  `threshold_quality` unless the inferred structured stimulus independently supports
+  both. This is the test that keeps the fix from overshooting.
+* `microcycle.test.ts` — an adherence-confirmed exposure still uses the exact template
+  profile in preference to the modality default (evidence ordering holds).
+
+---
+
+## 1.3 — F6: make recommendation records actually immutable
+
+### Current state
+
+`app/firestore.rules` comments the document as "audit evidence and intentionally
+immutable", but `allow update` pins only `createdAt`. A client may rewrite `templateId`,
+`mode`, `rationale`, `recommendationAudit` or `candidateScores`. And because the audit
+requirement is conditional on `schemaVersion == 3`, a v3 document can be rewritten as v1
+and stripped of its audit entirely.
+
+### Fix
+
+Add two helpers and use them in the `daily_recommendations` update rule:
+
+```text
+function schemaRatchets() {
+  return request.resource.data.schemaVersion >= resource.data.schemaVersion;
+}
+
+function decisionFieldsUnchanged() {
+  return request.resource.data.templateId    == resource.data.templateId
+    &&  request.resource.data.templateTitle  == resource.data.templateTitle
+    &&  request.resource.data.category       == resource.data.category
+    &&  request.resource.data.modality       == resource.data.modality
+    &&  request.resource.data.mode           == resource.data.mode
+    &&  request.resource.data.rationale      == resource.data.rationale
+    &&  request.resource.data.createdAt      == resource.data.createdAt;
+}
+```
+
+`recommendationAudit` needs care: `Home.tsx` writes the record once with the audit
+attached, and `handleAdjustSession` re-saves the same base recommendation with an added
+`adjustment`. So `adjustment` **must** stay mutable, and the audit must be write-once —
+absent-then-set is legal, set-then-changed is not:
+
+```text
+function auditWriteOnce() {
+  return !('recommendationAudit' in resource.data)
+    || request.resource.data.recommendationAudit == resource.data.recommendationAudit;
+}
+```
+
+Verify against `recommendationService.saveRecommendation`'s `setDoc(..., { merge: true })`
+semantics before landing — `merge: true` means `request.resource.data` is the merged
+result, so unmentioned fields compare equal, which is what these rules assume.
+
+### Tests (extend `src/emulator/firestoreRules.emulator.test.ts`)
+
+* rejects an update that changes `templateId` on an existing document
+* rejects `schemaVersion` 3 → 1
+* rejects removing or altering `recommendationAudit` once set
+* **allows** setting `adherence` on an existing document
+* **allows** adding `adjustment` to an existing document
+* **allows** first-time attachment of `recommendationAudit`
+
+Note the emulator suite is `describe.skip` unless `FIRESTORE_EMULATOR_HOST` is set. It
+does run in CI (`npm run test:rules`); make sure the new cases are exercised there and
+not silently skipped locally.
+
+---
+
+## Acceptance criteria
+
+- [ ] `injuries: []` no longer appears in `adapters.ts`; an active injury changes the
+      recommendation on the readiness path, the intent path, and all 7 projected days
+- [ ] `safetyRestrictedModalityCount` is non-zero in a persisted audit when an injury is active
+- [ ] `RUNNING_INJURY_PATTERN` deleted
+- [ ] three Garmin-only sessions resolve at least two weekly objectives
+- [ ] recognised and unrecognised activity types both earn credit (no inversion)
+- [ ] emulator suite covers field tampering, schema downgrade, audit removal, and the
+      three legal-update cases
+- [ ] simulation baseline regenerated and the delta reviewed in the PR description
+
+## Risks & rollback
+
+* **1.2 changes recommendations for every existing user immediately** — more objectives
+  resolve, so `plannedDose` drops and the optimizer stops chasing them. This is the
+  intended correction, but it is a behaviour change; ship it behind the baseline diff and
+  read it before merging.
+* **1.3 could break the adjust-session save path** if `merge: true` semantics differ from
+  the assumption above. The emulator tests are the guard; write the three "allows" cases
+  first and watch them fail before the rules change lands.
+* **1.1 Option B is the larger change.** Option A is the rollback: delete the dead channel
+  and amend ADR-0007. Either outcome is better than the status quo, in which the ADR
+  states a guarantee the code cannot deliver.
+
+## Out of scope
+
+Local tissue-state tracking (Phase 5), evidence-hierarchy stimulus inference (Phase 4),
+dose-sensitive cost (Phase 4). 1.2 deliberately ships a coarse lookup table rather than
+waiting for the full model.
+
+## Docs to update
+
+* **ADR-0007** — amend §6 to describe the implemented injury model (or, under Option A,
+  to say guardrails are the gate)
+* **ADR-0002 or a new ADR** — `trainingSettings` schema v3
+* `README.md` — the training-settings table gains an Injuries row
+* `docs/analysis/2026-08-08-architecture-review.md` — mark F1/F2/F6 resolved with commit refs

@@ -28,6 +28,18 @@ Point-in-time assessments of the system as built, including gaps between documen
 
 ---
 
+### 🗺️ Implementation Plans
+How agreed changes get made. Mutable, status-tracked, and expected to go stale — see [`docs/plans/`](./plans/) for the index and conventions.
+
+* [**Phase 0: Instrumentation & developer baseline**](./plans/phase-0-instrumentation.md) — Coaching invariants as the CI gate; clean-clone runnability.
+* [**Phase 1: Live defects**](./plans/phase-1-live-defects.md) — Injury gate, Garmin objective credit, recommendation immutability.
+* [**Phase 2: Plan intent is the planning authority**](./plans/phase-2-plan-intent-authority.md) — ADR-0010, `PlanDefinition`, collapsing the two selection paths.
+* [**Phase 3: One ranking path**](./plans/phase-3-single-ranking-path.md) — Lexicographic priorities replacing modality anti-stacking.
+* [**Phase 4: Objective credit V2**](./plans/phase-4-objective-credit-v2.md) — One credit model, finished stimulus vocabulary, honest load.
+* [**Phase 5: Sequence planning**](./plans/phase-5-sequence-planning.md) — Bounded search, fixed activities, tissue state, evidence hierarchy.
+
+---
+
 ### 🏗️ System Architecture
 In-depth technical design documents covering system subsystems:
 

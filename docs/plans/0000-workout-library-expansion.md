@@ -1,6 +1,15 @@
 # Workout Library Expansion — Implementation Plan
 
-Status: implemented
+* **Status:** Implemented (2026-08-07)
+* **Relocated** from `docs/workout-library-expansion-plan.md` to establish the
+  `docs/plans/` convention. Content unchanged.
+
+> **Reader warning.** The line references in §1.2 (`rules.ts:200`, `rules.ts:387`,
+> `rules.ts:461`, `planner.ts:190`, `optimizer.ts:107-120`) are **stale** — see F9 in
+> [the 2026-08-08 review](../analysis/2026-08-08-architecture-review.md). The prose is
+> still accurate and §1.2 remains the fullest written description of the two selection
+> paths; treat the line numbers as historical.
+
 Date: 2026-08-07
 Scope: `app/src/workouts/`, `app/src/engine/templates.ts`, `app/src/engine/microcycle.ts`
 
@@ -45,7 +54,7 @@ different filtering rules. Any change here must be evaluated against both.
 
 **Path A — readiness rules (`evaluateTraining`, `rules.ts:200`)**
 
-```
+```text
 readiness → mode (train | modify | recover) → category allowlist → pickTemplate
 ```
 
@@ -63,7 +72,7 @@ category). `recover` mode is restricted to `Rest` / `Mobility/Recovery`.
 
 **Path B — intent optimizer (`evaluateTrainingWithIntent`, `rules.ts:461`; `generateWeekAheadPlan`, `planner.ts:190`)**
 
-```
+```text
 ENRICHED_TEMPLATES → eligibility → systemicCost ceiling → rankCandidatesByUtility → top pick
 ```
 
@@ -277,7 +286,7 @@ Each phase is independently shippable and leaves `npm run check` green.
 New file `app/src/workouts/catalog/strength-lower.ts`, exporting
 `LOWER_BODY_STRENGTH_WORKOUTS` with one definition:
 
-```
+```text
 id:       'strength_lower_body_01'
 category: 'full_body_strength'          // no lower-only WorkoutCategory; D7
 modality: 'strength'
@@ -512,7 +521,7 @@ cable exercises, and a `strength_cable_upper_01` workout with
 
 ## 9. Sequencing
 
-```
+```text
 Phase 1 (P0, routing)  ──▶  Phase 2 (P1, reachability)  ──▶  Phase 3 (evidence)  ──▶  Phase 4 (formats)
    independent               depends on Phase 1 tests        independent            independent
 ```

@@ -6,10 +6,18 @@ WORKDIR /app
 # Install uv for fast dependency restoration
 RUN pip install --no-cache-dir uv
 
-# Copy project definition and lock file
-COPY pyproject.toml uv.lock /app/
+# Copy project definition and lock file. README.md is required here even though it is
+# not source: pyproject.toml declares `readme = "README.md"`, and hatchling validates
+# that metadata while building the project, so `uv sync` fails with
+# "OSError: Readme file does not exist: README.md" without it.
+COPY pyproject.toml uv.lock README.md /app/
 
-# Install dependencies into virtual environment
+# Resolve third-party dependencies first, without building the project itself, so this
+# layer stays cached when only src/ changes.
+RUN uv sync --frozen --no-dev --no-install-project
+
+# Then add the sources and install the project on top.
+COPY src /app/src
 RUN uv sync --frozen --no-dev
 
 # Final runtime image

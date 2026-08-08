@@ -95,17 +95,22 @@ have no read path *and* no write path.
 
 The only injury signal reaching the engine is the boolean `painOrInjury` check-in flag,
 which caps the plan tier at `Mobility` but cannot express *where* the injury is. An
-athlete with an achilles problem is offered heavy lower-body strength the moment they
-stop ticking the pain box.
+athlete with an achilles problem **can be** offered heavy lower-body strength the moment
+they stop ticking the pain box — other gates (readiness mode, fatigue, equipment, time)
+may still suppress it in a given instance, but the persistent local-injury gate that
+should prevent it is not participating in the decision at all.
 
 This is the single most important finding in this document.
 
 ### F2. Garmin-measured training earns zero microcycle credit
 
+**Precise claim:** a *recognised* Garmin-only completion that has no matched structured or
+adherence-confirmed stimulus earns **zero** objective credit, because its all-zero profile
+selects the vector-coverage path and simultaneously blocks the keyword fallback.
+
 Verified empirically (throwaway probe, since removed): three Garmin activities in the
 rolling window — a 120-min hard ride, a 60-min strength session, a 90-min moderate ride —
-produce `zone2_aerobic 0/2`, `threshold_quality 0/1`, `strength_maintenance 0/1`. The
-weekly ledger stays completely unresolved.
+produce `zone2_aerobic 0/2`, `threshold_quality 0/1`, `strength_maintenance 0/1`.
 
 The chain:
 
@@ -122,12 +127,17 @@ The inversion is the tell: an activity whose type string Garmin reports as somet
 to `updateMicrocycleProgress`, and **does** get credit. Better-identified data is treated
 worse than worse-identified data.
 
-Practical effect for any athlete who does not answer the adherence prompt every single
-day: objectives never resolve, so `calculateStimulusBenefit` keeps scoring the same
-unresolved targets, `plannedDose` stays pinned near maximum urgency
-(`trainingIntent.ts:77-80`, `urgency = unresolved/total`), and the "post-objective
-aerobic filler" (optimizer Patch 3) never engages. The system behaves as if the athlete
-has done nothing all week while sitting on a Garmin history that says otherwise.
+**Practical effect, stated no more strongly than the evidence supports:** objectives can
+still resolve from other sources — an adherence-confirmed session carries the exact
+template's stimulus profile, and genuinely unrecognised activity types still reach the
+fallback. Missing one adherence response does not mean the ledger can never resolve.
+
+But where recognised Garmin-only sessions are the athlete's *primary* completion source —
+the common case for someone training outdoors and answering the prompt intermittently —
+the ledger can stay unresolved despite real training. When it does,
+`calculateStimulusBenefit` keeps scoring the same unresolved targets, `plannedDose` stays
+near maximum urgency (`trainingIntent.ts:77-80`, `urgency = unresolved/total`), and the
+post-objective aerobic filler (optimizer Patch 3) never engages.
 
 ### F3. Anti-stacking has no notion of calendar time — contradicting ADR-0008 §6
 
@@ -205,7 +215,7 @@ selector exists.
 
 `app/firestore.rules`, `daily_recommendations`:
 
-```
+```text
 // Recommendations are audit evidence and intentionally immutable as documents;
 // adherence remains a validated update on the same document.
 allow update: if hasValidRecommendation(userId, date) && keepsOwnership(userId)
@@ -216,7 +226,7 @@ Only `createdAt` is pinned. A client may rewrite `templateId`, `mode`, `rational
 `recommendationAudit`, or `candidateScores` on an existing document. Worse,
 `schemaVersion in [1, 2, 3]` combined with
 
-```
+```text
 && (request.resource.data.schemaVersion != 3 || (... hasValidRecommendationAudit ...))
 ```
 
@@ -286,7 +296,7 @@ then discards its template pick. Path A is still directly reachable via
 `evaluateNextDayPlan` and remains the only path some templates can appear on.
 
 The only place this dual structure is written down is
-`docs/workout-library-expansion-plan.md §1.2` — a file marked "Status: implemented",
+`docs/plans/0000-workout-library-expansion.md §1.2` — a file marked "Status: implemented",
 whose line references (`rules.ts:200`, `rules.ts:387`, `rules.ts:461`, `planner.ts:190`,
 `optimizer.ts:107-120`) are all now wrong. Architecture that only exists in a completed
 implementation plan will be lost.
@@ -389,7 +399,9 @@ Also unused-but-declared, reinforcing F7: `WeeklyObjective.requiredCredit`, `.wi
 
 ### F13. Documentation drift
 
-* `docs/README.md`'s ADR index stops at **0008**; ADR-0009 exists and is unlisted.
+* ~~`docs/README.md`'s ADR index stops at **0008**; ADR-0009 exists and is unlisted.~~
+  **Resolved by the same change that introduced this document** — recorded here as the
+  baseline state at `2ea45cd`, not as outstanding work.
 * `docs/architecture/recommendation-engine.md` **describes an engine that no longer
   exists**. It documents a `REST / RECOVERY / AEROBIC_BASE / QUALITY_STRENGTH` mode
   hierarchy and thresholds "HRV drop > 10%", "RHR > baseline + 3 bpm", "sleep score < 65".
@@ -410,7 +422,7 @@ Also unused-but-declared, reinforcing F7: `WeeklyObjective.requiredCredit`, `.wi
 `trainingSettingsService.test.ts` transitively imports it, so without `VITE_FIREBASE_*`
 set the whole file fails:
 
-```
+```text
 FAIL src/services/trainingSettingsService.test.ts
 FirebaseError: Firebase: Error (auth/invalid-api-key)
 Test Files  1 failed | 21 passed | 1 skipped
@@ -454,14 +466,19 @@ Small, mechanical, unblocks everything else.
    and replace `app/README.md` with real setup instructions.
 2. **Bump `POLICY_VERSION`** and add a check to `npm run check` that fails if
    `optimizer.ts`/`rules.ts`/`microcycle.ts` changed without it moving.
-3. **Commit a simulation baseline *and* a golden coaching scenario.** Un-gitignore a
-   deterministic `docs/analysis/simulation-baseline.json`, add `npm run simulate:check`
-   diffing against it, and wire it into CI. Alongside it, encode the current cycling
-   macrocycle as an asserted golden week (see §7.4) — invariants, not just diff-stability:
-   ≥48 h between key cycling quality exposures; no heavy lower-body strength compromising
-   them; no penalty merely for a third cycling exposure; outdoor work satisfies plan
-   objectives. **This is the instrument every later phase is measured with — it must land
-   before any constant or heuristic is changed.**
+3. **Make coaching invariants the CI gate; keep the snapshot diagnostic.** Encode the
+   current cycling macrocycle as an asserted golden week (see §7.4): ≥48 h between key
+   cycling quality exposures; no heavy lower-body strength compromising them; no penalty
+   merely for a third cycling exposure; outdoor work satisfies plan objectives. Those
+   assertions — plus a few deliberately loose aggregate bounds — are what blocks CI.
+   A committed `simulation-baseline.json` with a **semantic** diff
+   (`npm run simulate:diff`) is retained as a non-blocking review aid.
+   A byte-exact snapshot gate is explicitly rejected: Phases 3–5 intentionally change
+   planner behaviour, so an equality gate would both freeze today's known-bad output as
+   the reference and reduce every improvement to baseline churn.
+   **This is the instrument every later phase is measured with — it must land before any
+   constant or heuristic is changed.** See
+   [`docs/plans/phase-0-instrumentation.md`](../plans/phase-0-instrumentation.md).
 4. **Add `ruff` + `mypy` to `pyproject.toml` and CI.**
 
 ### Phase 1 — Close the safety gaps (~3-4 days) — *do not defer*
@@ -518,11 +535,19 @@ Small, mechanical, unblocks everything else.
     Simultaneously: make canonical axes **required** on `WorkoutStimulusProfile`, drop the
     legacy aliases behind a one-shot codemod, and type `targetStimulus` as
     `Partial<Record<keyof WorkoutStimulusProfile, number>>`.
-12. **F12 — Revisit fatigue accumulation.** Replace hard clamping with a saturating
-    function that stays monotonic past 1.0 (e.g. `1 - exp(-x)` on the raw sum), and
-    reconsider `max(external, internal)` in favour of a weighted combination. Add an
-    ordering assertion (throw, not comment) in `buildFatigueStateFromHistory`.
-    Gate this behind the Phase-0 simulation baseline — it will move every projected day.
+12. **F12 — Revisit fatigue accumulation, in that order.** Two separable pieces:
+    *(a) a correctness fix, do now* — assert chronological ordering in
+    `buildFatigueStateFromHistory` (throw, not comment).
+    *(b) a modelling question, do not pre-decide* — retain an unsaturated latent
+    external-load state so depth past the current 1.0 clamp is not discarded, then use the
+    Phase-0 harness to **compare** candidate fusion functions before committing to one in
+    an ADR.
+    An earlier draft of this document prescribed `1 - exp(-x)` plus a weighted
+    external/internal combination. That is withdrawn: it is not justified by anything here,
+    and it would repeat exactly the uncited-constant practice F11 criticises. It is also
+    probably wrong as stated — internal response (HRV/RHR/soreness) is partly a *reaction to*
+    the same external work, so a weighted sum double-counts load unless calibrated, and
+    `1 - exp(-x)` changes the state's scale and meaning rather than merely its monotonicity.
 13. **F9 — Decide Path A's future.** Either document it as a deliberate readiness-only
     fallback in an ADR, or collapse it: extract `evaluateReadinessMode()` returning
     `{mode, envelopes, telemetry}`, keep that as the only shared entry point, and let
@@ -535,8 +560,8 @@ Small, mechanical, unblocks everything else.
 15. **Backfill missing ADRs**: 0010 decision provenance & audit replay (retroactive),
     0011 weekly architecture & anchors, 0012 objective credit V2. Add a
     "Superseded/Amended by" line to ADR-0007 §6 and ADR-0008 §1/§6 once F1/F3/F5 land.
-16. **Fix `docs/README.md`'s index**, `AGENTS.md`'s schema version and module lists, and
-    the stale line references in `workout-library-expansion-plan.md` (or mark the file
+16. **Fix `AGENTS.md`'s schema version and module lists**, and
+    the stale line references in `docs/plans/0000-workout-library-expansion.md` (or mark the file
     archived and move the two-path explanation into an ADR).
 17. **Delete `garmin_login.py`** in favour of `scripts/bootstrap_garmin_tokens.py`.
 
