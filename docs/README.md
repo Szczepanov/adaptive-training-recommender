@@ -63,6 +63,8 @@ Architectural choices, system invariants, and technical trade-offs are documente
 * [**ADR-0010: Decision Provenance, Audit Records & Replay**](./adr/0010-decision-provenance-and-audit-replay.md) — `DataState` read semantics, immutable history revisions, persisted audits, `POLICY_VERSION`, and replay verification.
 * [**ADR-0011: Weekly Architecture — Session Anchors & Ranking Modifiers**](./adr/0011-weekly-architecture-anchors.md) — The anchor pre-pass and optimizer Patches 4–6, including why this composition should not be extended.
 
+* [**ADR-0014: Objective Credit V2 & Honest Delivered Load**](./adr/0014-objective-credit-v2-and-honest-load.md) â€” Fractional credit, canonical stimulus axes, delivered cost, and the deferred fatigue-fusion decision.
+
 Reserved for work sequenced in [`docs/plans/`](./plans/), written with their phase:
 **0012** plan intent · **0013** structured injury constraints · **0014** objective credit V2 · **0015** sequence planning.
 

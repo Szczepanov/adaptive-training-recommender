@@ -81,11 +81,11 @@ Asynchronous; resolves training intent from adherence history first. Path B cons
 | `eligibility.ts` | The single hard-gate resolver: time, equipment, environment, guardrails |
 | `rules.ts` | Strain scoring, `train`/`modify`/`recover` mode, safety & plan envelopes, adjustment tiers |
 | `periodization.ts` | Event lifecycle, focus-event resolution, continuous phase weights |
-| `microcycle.ts` | Weekly objectives and exposure crediting |
-| `fatigue.ts` | Six-dimensional fatigue with exponential decay |
-| `optimizer.ts` | Candidate ranking: benefit vs cost, plus named modifiers |
-| `trainingIntent.ts` | Composes periodization + objectives + fatigue + planned dose |
-| `dose.ts` | Intersects planned dose with the clinical ceiling and athlete adjustment |
+| `microcycle.ts` | Fractional weekly-objective credit ledger and legacy display projection |
+| `fatigue.ts` | Six-dimensional fatigue with exponential decay and raw external-load retention |
+| `optimizer.ts` | Candidate ranking: benefit vs cost, named modifiers, and plan-intensity eligibility |
+| `trainingIntent.ts` | Composes periodization + objectives + fatigue + `PlannedDose { volume, intensity }` |
+| `dose.ts` | Applies the clinical ceiling and athlete adjustment to dose volume only |
 | `planner.ts` | Rolling 7-day projection and the weekly anchor pre-pass |
 | `provenance.ts` / `replay.ts` | Audit construction and verification |
 
@@ -136,6 +136,31 @@ Phase 3 introduces a single, unified ranking path (`rankCandidates`) driven by s
 1. **Hard Eligibility Gates** (Level 1–3): Time budget, required equipment, injury constraints, safety envelopes, phase eligibility, and dated role-aware recovery constraints (`QUALITY_SPACING_VIOLATION`, `HARD_LOWER_BODY_SPACING_VIOLATION`, `ROLLING_HARD_CAP_EXCEEDED`, `ANCHOR_PROTECTION_VIOLATION`). Filtered candidates carry explicit `excludedReasons`.
 2. **Objective Benefit** (Level 4): Scores a template's stimulus profile against currently unresolved weekly objectives (`calculateStimulusBenefit`). Higher objective satisfaction strictly outranks non-objective candidates regardless of preference multipliers.
 3. **Utility Score** (Level 5 & 6): `utility = (benefit / (1 + fatigueCost)) × preferenceMultiplier`. Used to sort candidates of comparable objective benefit (within `0.05` benefit score).
+
+`PlannedDose.intensity` is a hard-candidate eligibility input, not a second duration
+multiplier. The existing low-intensity range below the Base phase's `0.8` excludes hard
+templates; Build (`0.9`) and taper (`1.0`) retain quality eligibility. `PlannedDose.volume`
+alone reaches `resolveExecutionDose` and the prescription variant selection.
+
+---
+
+## Objective credit and completed load
+
+`deriveObjectiveCredit` is the sole objective-specific credit calculation. The live
+microcycle accumulates its fractional result in `completedCredit`; `requiredCredit`
+determines resolution. `completedExposures` remains only for compatibility with older
+display/report readers, and `updateMicrocycleProgress` is used only when external history
+has no usable stimulus vector.
+
+Stimulus profiles use eight required canonical axes. The `readStimulusProfile` persistence
+boundary converts legacy-only records, logs canonical/legacy conflicts, and always lets
+canonical values win. No repository-wide derived VO2 or fatigue-resistance ratios remain.
+
+`completedTraining.ts` scales the existing six-dimensional cost vector by measured duration
+relative to a comparable catalog session and an independently supplied completion ratio.
+That delivered cost is replayed by `fatigue.ts`, which keeps both a raw unsaturated external
+state and a clamped ranking projection. Chronological history is sorted before replay; the
+external/internal fusion remains `max()` pending measured Phase 0 harness comparison.
 
 ---
 
@@ -195,6 +220,7 @@ Executed via `cd app && npm run replay:recommendation -- <audit.json>`. Accepts 
 | [0009](../adr/0009-training-intent-history.md) | History-seeded intent; the `TrainingHistoryProvider` boundary |
 | [0010](../adr/0010-decision-provenance-and-audit-replay.md) | `DataState`, audit records, replay, `POLICY_VERSION` |
 | [0011](../adr/0011-weekly-architecture-anchors.md) | Weekly anchors and ranking modifiers |
+| [0014](../adr/0014-objective-credit-v2-and-honest-load.md) | Fractional credit, delivered load, and deferred fatigue fusion |
 
 Known divergences between these decisions and the code are tracked in
 [the 2026-08-08 review](../analysis/2026-08-08-architecture-review.md); remediation is
