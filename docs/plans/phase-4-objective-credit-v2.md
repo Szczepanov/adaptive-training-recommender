@@ -20,7 +20,7 @@ Update the marker on the work-item heading **and** this table in the same commit
 | Task | Status | Summary | Primary files |
 |---|:--:|---|---|
 | 4.1 | `[x]` | One credit model: fix and promote `deriveObjectiveCredit`; shadow-run V1 vs V2 first (F7) | `app/src/engine/stimulus.ts`, `microcycle.ts`, `trainingIntent.ts` |
-| 4.2 | `[x]` | Canonical stimulus axes required; legacy aliases and derived fallbacks deleted (F8) | `app/src/engine/models.ts`, `templates.ts`, `optimizer.ts`, `microcycle.ts`, `completedTraining.ts`, fixtures |
+| 4.2 | `[-]` | Canonical stimulus axes required; legacy aliases and derived fallbacks deleted (F8) | `app/src/engine/models.ts`, `templates.ts`, `optimizer.ts`, `microcycle.ts`, `completedTraining.ts`, fixtures |
 | 4.3a | `[x]` | Sort/assert history and retain unsaturated external load (F12) | `app/src/engine/fatigue.ts`, `trainingHistorySnapshot.ts` |
 | 4.3b | `[-]` | Compare fatigue-fusion functions before choosing (F12) | Phase 0 harness, ADR-0014 |
 | 4.5 | `[x]` | `PlannedDose { volume, intensity }` Ă˘â‚¬â€ť gives `intensityScale` its consumer (D2 / F17) | `app/src/engine/trainingIntent.ts`, `dose.ts`, `models.ts`, `optimizer.ts` |
@@ -117,7 +117,7 @@ recovery-share aggregate-bound failure. This is a failed release gate, not missi
 work; the boundary analysis below separates the inherited Phase 3 failure from the Phase 4
 contribution rather than silently accepting the cutover.
 
-## `[x]` 4.2 Ă˘â‚¬â€ť F8: finish the stimulus rename
+## `[-]` 4.2 Ă˘â‚¬â€ť F8: finish the stimulus rename
 
 `WorkoutStimulusProfile` carries 7 canonical + 5 legacy axes, **all optional**.
 `canonicalizeStimulus` (`templates.ts` `canonicalizeStimulus`) fills both sides and invents two
@@ -188,6 +188,12 @@ populated.
 records, while every typed fixture and planner fallback now supplies the complete canonical
 profile. `npm run typecheck`, lint, and the unit suite pass; the partial TypeScript fixture
 migration left by the initial implementation was corrected before this task was closed.
+
+**Reopened 2026-08-08:** `readStimulusProfile` still converts a record with neither
+canonical nor legacy axes into a zero profile. That contradicts the explicit `INVALID`
+contract above and makes malformed persisted data indistinguishable from genuinely absent
+stimulus. The task remains in progress until the read boundary returns an invalid data state
+and its consumers refuse to credit or score that record as a zero-stimulus workout.
 
 ## `[x]` 4.3 Ă˘â‚¬â€ť F12: fatigue, in two separable pieces
 
