@@ -27,12 +27,22 @@ input was never run. Tests pass because they inject the fixture the production a
 never produces.
 
 The second theme is **unretired scaffolding**. There are now three objective-crediting
-models (two live, one dead), two stimulus vocabularies, and two selection paths — all
-shipped simultaneously, with the newest layer merged at `HEAD` explicitly labelled "not
-yet wired". Each was individually a reasonable step; together they are the main source
-of the divergences below.
+models (two live, one dead), two stimulus vocabularies, two phase vocabularies, and two
+selection paths — all shipped simultaneously, with the newest layer merged at `HEAD`
+explicitly labelled "not yet wired". Each was individually a reasonable step; together
+they are the main source of the divergences below.
 
-Neither theme requires a rewrite. Both require finishing things that were started.
+The third theme, added on reconciliation with an independent review (§7), is that
+**the richest training knowledge in the repository is not connected to the planner at
+all**: `workouts/event-plan.ts` encodes the real macrocycle — sustained quality,
+gap-closing, outdoor specificity, travel maintenance, taper sharpening, race-week
+strength — and its only consumer is a build-time catalog linter (F16). The live engine
+re-derives a lossy approximation of that plan from generic days-to-event arithmetic,
+half of whose output is itself unread (F17). This is the strongest argument that the
+long-term fix is architectural, not a further optimizer increment.
+
+None of the three requires a rewrite. All three require finishing things that were
+started.
 
 ---
 
@@ -327,6 +337,52 @@ suppression.
   out-of-order input silently mis-decays with no error. The invariant is asserted only in
   a comment (`planner.ts:129`).
 
+### F16. The event-plan contract is invisible to the engine
+
+*Added during the second-review reconciliation (§7); credit to the independent review.*
+
+`app/src/workouts/event-plan.ts` encodes 17 `EventPlanSessionCoverage` entries — each with
+a phase list (`build | travel | peak | taper | race`), a requirement tier
+(`required | optional | conditional`), concrete workout IDs, and genuine coaching notes:
+
+> *"Remove first when it compromises cycling quality or taper freshness."*
+> *"Remove in the final 7–10 days before the event."*
+> *"Use only when calf, Achilles and knee response remain normal."*
+> *"Short, low-volume and early enough to avoid soreness."*
+
+This is the richest training-domain knowledge in the repository. **Its only consumer is
+`app/scripts/validate-workouts.ts`** — a build-time catalog-completeness linter. No engine
+module imports it. Verified: the sole non-self references are `workouts/index.ts`
+(re-export) and the validation script.
+
+So the live planner cannot distinguish `sustained_quality` from `gap_closing` from
+`outdoor_event_specific`; it collapses all of them into `threshold_quality` /
+`surge_repeatability` and re-derives an approximation of the plan from generic
+days-to-event arithmetic. ADR-0004 §3 frames this file as *"a declarative phase coverage
+contract [that] guarantees every required workout family exists and is active"* — accurate
+as far as it goes, and that framing is probably why the file has stayed a linter input.
+
+### F17. Periodization's intensity dimension is entirely inert
+
+*Also added during the second-review reconciliation. F16/F17 are numbered after the
+Tier-3 findings below because they were appended after first publication; they belong to
+Tier 2 by consequence.*
+
+`PhaseWeights.intensityScale` is **assigned in six places in `periodization.ts` and read
+in zero**. Post-Event Recovery's `0.4` and Specificity's `1.1` affect nothing.
+`volumeScale` has exactly one consumer — `trainingIntent.ts:80`'s `plannedDose`. So of
+periodization's two output scalars, one is dead and the other is a single multiplier on a
+single number.
+
+Related: there are **two disjoint phase vocabularies with no mapping between them** —
+`EventPlanPhase` (`build | travel | peak | taper | race`, workouts layer) and
+`PhaseWeights.phaseName` (`Base | Build | Specificity | Peak/Taper | Post-Event Recovery`,
+engine layer). Any work on F16 has to reconcile these first.
+
+Also unused-but-declared, reinforcing F7: `WeeklyObjective.requiredCredit`, `.windowStart`,
+`.windowEnd`, `.priority`. `requiredCredit` is referenced only inside the dead
+`getUnresolvedObjectivesV2`.
+
 ---
 
 ## 4. Tier 3 — Documentation and process
@@ -398,9 +454,14 @@ Small, mechanical, unblocks everything else.
    and replace `app/README.md` with real setup instructions.
 2. **Bump `POLICY_VERSION`** and add a check to `npm run check` that fails if
    `optimizer.ts`/`rules.ts`/`microcycle.ts` changed without it moving.
-3. **Commit a simulation baseline.** Un-gitignore a single deterministic
-   `docs/analysis/simulation-baseline.json`, add `npm run simulate:check` diffing against
-   it, and wire it into CI. This is the regression net for every subsequent phase.
+3. **Commit a simulation baseline *and* a golden coaching scenario.** Un-gitignore a
+   deterministic `docs/analysis/simulation-baseline.json`, add `npm run simulate:check`
+   diffing against it, and wire it into CI. Alongside it, encode the current cycling
+   macrocycle as an asserted golden week (see §7.4) — invariants, not just diff-stability:
+   ≥48 h between key cycling quality exposures; no heavy lower-body strength compromising
+   them; no penalty merely for a third cycling exposure; outdoor work satisfies plan
+   objectives. **This is the instrument every later phase is measured with — it must land
+   before any constant or heuristic is changed.**
 4. **Add `ruff` + `mypy` to `pyproject.toml` and CI.**
 
 ### Phase 1 — Close the safety gaps (~3-4 days) — *do not defer*
@@ -428,13 +489,17 @@ Small, mechanical, unblocks everything else.
 
 ### Phase 2 — Make the two paths agree (~3 days)
 
-8. **F3 — Put dates back in the ranking context.** Add `date: string` to
-   `RecentHistoryEntry`; make `getConsecutiveModalityCount` require actual consecutive
-   calendar days, and give `getRollingModalityCount` an explicit window parameter.
-   Re-tune the rolling threshold against event modality: for an A-event athlete, three
-   sport-specific sessions per week is the target, not the thing to suppress. Consider
-   exempting the focus-event modality from the rolling arm entirely, or applying the
-   suppression to `category` rather than `modality`.
+8. **F3 — Replace modality anti-stacking; do not merely date it.** Adding `date: string`
+   to `RecentHistoryEntry` is necessary but not sufficient — it makes the rule *correct*
+   while leaving it the *wrong shape*. Modality repetition is not the hazard; insufficient
+   recovery between hard lower-body quality exposures is. Replace the two multipliers with
+   explicit structured constraints over a dated, role-annotated history: minimum hours
+   between quality sessions, no back-to-back hard lower-body work, a rolling hard-session
+   cap, and strength protection around key cycling days.
+   Express these **lexicographically**, not as further multipliers (see §7.3): the current
+   code demonstrates why a multiplicative scalar cannot hold the line — the 0.15× anti-stack
+   term buys out the 1.40× A-event boost, producing a net 0.21× against exactly the
+   modality the athlete's A-event requires.
 9. **F4 — One optimizer invocation builder.** Extract a single
    `buildOptimizationContext(intent, context, preferences, date)` used by both
    `rules.ts` and `planner.ts`. Delete the fabricated `UserPreferences` literal.
@@ -492,5 +557,119 @@ today; the third is why you could not prove it after the fact.
 
 ---
 
+## 7. Reconciliation with the independent review
+
+A second review of the same commit was produced independently and is reconciled here.
+Its claims were re-verified against the working tree before being adopted. The two
+reviews answer different questions and are complementary rather than competing:
+
+* **This document** asks *"what does the system do right now, and where does that differ
+  from what it claims?"* — a defect-and-drift audit, verified by execution.
+* **The independent review** asks *"what shape should the planning core be?"* — an
+  architectural critique, and on that question it is the stronger document.
+
+### 7.1 Adopted from the independent review
+
+| Claim | Verification | Outcome |
+|---|---|---|
+| The event-plan contract is disconnected from the live planner | Confirmed — sole consumer is `validate-workouts.ts` | Added as **F16** |
+| `intensityScale` is not authoritative | Confirmed, and stronger than stated: read in **zero** places | Added as **F17** |
+| Modality anti-stacking is the wrong abstraction | Confirmed against this document's own F3 evidence | Reframed Phase-2 step 8 |
+| Greedy per-day ranking is solving a sequence problem | Structural; accepted | See §7.3 |
+| Objective credit should be dose- and objective-specific | Consistent with F7; more specific than this document was | Folded into Phase 3 |
+| Fixed activities are not persisted planning inputs | Confirmed — `WeekAheadOptions.fixedActivities` has no Firestore source | Accepted |
+| Local tissue state is too coarse (one soreness scalar) | Confirmed; complements F1 | Accepted, sequenced after F1 |
+
+**F16 is the most significant thing this document originally missed.** ADR-0004 frames
+`event-plan.ts` as a coverage contract validated by a script; that framing was accepted
+here rather than interrogated. The independent review asked what *else* the file knows,
+and the answer is: most of the actual training plan.
+
+### 7.2 Findings absent from the independent review
+
+Three findings here do not appear there, and each undercuts a rating that review assigns:
+
+* **F1** — it endorses *"safety before preference — keep this"* and *"safety remains
+  independently authoritative"*, then proposes richer tissue tracking, while the existing
+  injury channel is hardcoded empty. Adding a tissue layer above a disconnected gate
+  reproduces the same failure one level up. **F1 must precede that work.**
+* **F6** — it rates security 8/10 and audit/replay 8.5/10 without the v3→v1 audit-strip
+  path. Those ratings do not survive the finding.
+* **F5** — it praises the `confirmed/provisional/projected` tiers without noting that the
+  provisional tier is hardcoded to the green branch, which biases every projected day it
+  seeds.
+
+On **F2**, that review reaches the right conclusion (*"the system sees cost but not
+benefit"*) without the mechanism, and so misses the inversion: attaching the all-zero
+vector actively *blocks* the keyword fallback, making recognised activities worse off than
+unrecognised ones. That distinction matters for sequencing — the fix is a guard plus a
+lookup table, deliverable now, rather than the evidence-hierarchy subsystem that review
+implies. Both are worth building; the small one should not wait for the large one.
+
+### 7.3 Where this document's plan is revised
+
+**Lexicographic priority ordering replaces multiplier tuning.** The independent review's
+proposed hierarchy is adopted:
+
+```text
+1. Safety and feasibility
+2. Must-have plan obligations
+3. Sequence and recovery constraints
+4. Objective coverage and timing
+5. Expected fatigue cost
+6. Preferences / variety / convenience
+```
+
+Scalar utility ranking remains, but *within an equivalent candidate class* — choosing
+between indoor Zone 2, an outdoor easy ride, and cross-training once the role is fixed.
+That is what it is good at. The present architecture instead asks one multiplicative score
+to arbitrate safety, periodization, interference, recovery, preference and variety
+simultaneously, and F3 is the proof that it cannot.
+
+**Bounded sequence search over the 7-day horizon** (beam width 10–20) replaces the greedy
+day-by-day walk in a later phase. A 7-day horizon does not warrant heavier machinery.
+
+### 7.4 Where this document dissents
+
+* **Drop the numeric scorecard.** A per-area /10 table is unfalsifiable, and is
+  miscalibrated by that review's own gaps (see §7.2).
+* **Reorder the implementation steps.** That review removes modality anti-stacking at
+  Step 2 and promotes simulations to coaching-contract tests at Step 10. That replaces one
+  uncalibrated heuristic with an uncalibrated constraint system and no instrument to
+  observe the change. Its own golden-scenario specification is excellent and belongs
+  **first** — note the simulation harness currently writes to a gitignored directory, so
+  no committed baseline exists at all (F11).
+* **Do not front-load the cutover past the live defects.** The V2 Plan-Intent cutover is
+  the right destination and should be the main line of development — but a cutover
+  performed over F1 and F6 inherits an unwired safety gate and rewritable audit evidence.
+  Roughly four days of Phase-1 work buys a correct foundation to migrate onto.
+
+### 7.5 Merged priority
+
+```text
+0. Simulation baseline + golden coaching scenario        (the instrument)
+1. F1, F2, F6                                            (live defects, ~4 days)
+2. ADR-0010: Plan Intent is the planning authority       (+ F16 engine-visible
+                                                            event plan, + F17
+                                                            intensityScale disposition)
+3. F3 via lexicographic constraints, F4, F5              (one coherent ranking path)
+4. Wire V2 objective progress; retire the dead layer     (F7, F8)
+5. Beam search, PlanDefinition, fixed activities,
+   local tissue state, dose-sensitive cost               (the cutover proper)
+```
+
+The independent review's closing principle is the right one to build toward, and is
+adopted here verbatim:
+
+> *The plan decides what adaptation is needed. Readiness decides how safely it can be
+> executed. The optimizer chooses among equivalent feasible implementations. Actual
+> training updates both achieved stimulus and incurred cost.*
+
+The addition this document makes is that steps 0 and 1 are prerequisites for it, not
+detours around it.
+
+---
+
 *Findings were verified against the working tree at `2ea45cd`. Probe code used to confirm
-F2 and F3 was temporary and is not committed.*
+F2 and F3 was temporary and is not committed. §7 reconciles an independent review of the
+same commit; its claims were re-verified before adoption.*
