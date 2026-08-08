@@ -26,6 +26,10 @@ export const ZERO_STIMULUS: WorkoutStimulusProfile = {
     hypertrophy: 0,
 };
 const ADHERENCE_DURATION_TOLERANCE_MIN = 20;
+/** Completed duration is evidence that a planned dose was delivered, not permission to
+ * invent arbitrarily deep load. Once the intended catalog dose is fully delivered, extra
+ * elapsed time is retained in the activity record but does not multiply estimated cost. */
+const MAX_DELIVERED_DURATION_SCALE = 1;
 
 export const DEFAULT_COST_BY_MODALITY: Record<CompletedModality, Record<CompletedTrainingIntensity, WorkoutCostProfile>> = {
     Cycling: {
@@ -99,6 +103,16 @@ function catalogIntensity(template: SessionTemplate): CompletedTrainingIntensity
     return 'easy';
 }
 
+/** One scalar planning reference from a displayed duration range. The midpoint uses both
+ * authored bounds and represents the intended dose without pretending either boundary is
+ * the single prescription. */
+function templateDurationReferenceMin(template: Pick<SessionTemplate, 'durationMin' | 'durationMax'>): number | undefined {
+    const min = Number.isFinite(template.durationMin) && template.durationMin > 0 ? template.durationMin : undefined;
+    const max = Number.isFinite(template.durationMax) && template.durationMax > 0 ? template.durationMax : undefined;
+    if (min !== undefined && max !== undefined) return (min + Math.max(min, max)) / 2;
+    return max ?? min;
+}
+
 /**
  * Uses a comparable catalog session as the duration reference instead of adding a
  * modality-wide duration constant. Unknown modalities deliberately have no invented
@@ -107,7 +121,7 @@ function catalogIntensity(template: SessionTemplate): CompletedTrainingIntensity
 function catalogReferenceDurationMin(modality: CompletedModality, intensity: CompletedTrainingIntensity): number | undefined {
     const durations = ENRICHED_TEMPLATES
         .filter(template => template.modality === modality && catalogIntensity(template) === intensity)
-        .map(template => template.durationMin)
+        .map(templateDurationReferenceMin)
         .filter((duration): duration is number => Number.isFinite(duration) && duration > 0)
         .sort((left, right) => left - right);
     if (durations.length === 0) return undefined;
@@ -118,14 +132,17 @@ function catalogReferenceDurationMin(modality: CompletedModality, intensity: Com
  * Scales the existing six-dimensional base vector by the delivered evidence. A caller
  * may provide an independently measured completion ratio; when it is absent we do not
  * fabricate one from duration, because that would count the same partial session twice.
+ * Duration scaling is capped at the fully delivered intended dose so an inflated or
+ * unusually long recorded duration cannot create unbounded raw fatigue depth.
  */
 export function scaleCostByDeliveredDose(
     costProfile: WorkoutCostProfile,
     dose: DeliveredDose,
 ): WorkoutCostProfile {
-    const durationScale = dose.plannedDurationMin && dose.plannedDurationMin > 0 && dose.completedDurationMin !== undefined
+    const rawDurationScale = dose.plannedDurationMin && dose.plannedDurationMin > 0 && dose.completedDurationMin !== undefined
         ? Math.max(0, dose.completedDurationMin) / dose.plannedDurationMin
         : 1;
+    const durationScale = Math.min(MAX_DELIVERED_DURATION_SCALE, rawDurationScale);
     const completionScale = dose.completionRatio === undefined
         ? 1
         : Math.max(0, Math.min(1, dose.completionRatio));
@@ -148,10 +165,11 @@ function adherenceCandidate(recommendation: DailyRecommendation): { modality: Co
     if (recommendation.adherence.followed === null || recommendation.adherence.skipped) return null;
     const template = templateForRecommendation(recommendation);
     if (recommendation.adherence.followed) {
+        const plannedDurationMin = template ? templateDurationReferenceMin(template) ?? null : null;
         return {
             modality: recommendation.modality,
-            durationMin: recommendation.adherence.actualDurationMin ?? template?.durationMin ?? null,
-            plannedDurationMin: template?.durationMin ?? null,
+            durationMin: recommendation.adherence.actualDurationMin ?? plannedDurationMin,
+            plannedDurationMin,
             template,
         };
     }
