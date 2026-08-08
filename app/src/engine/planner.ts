@@ -41,7 +41,7 @@ import {
     rankCandidates,
 } from './optimizer';
 import { ENRICHED_TEMPLATES } from './templates';
-import { resolveTrainingIntent } from './trainingIntent';
+import { resolvePlannedDose, resolveTrainingIntent } from './trainingIntent';
 import type { TrainingHistoryProvider } from './trainingHistory';
 import type { TrainingHistorySnapshot } from './trainingHistorySnapshot';
 
@@ -425,7 +425,13 @@ export function generateWeekAheadPlan(
         ];
 
         const optContext = buildOptimizationContext(
-            { unresolvedObjectives: unresolved, fatigue: rankingFatigue, periodization, history: projectedHistory },
+            {
+                unresolvedObjectives: unresolved,
+                fatigue: rankingFatigue,
+                periodization,
+                history: projectedHistory,
+                plannedDose: resolvePlannedDose(periodization.phase, microcycle.objectives, unresolved),
+            },
             context,
             effectivePreferences,
             date,

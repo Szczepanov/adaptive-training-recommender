@@ -1,4 +1,4 @@
-import type { Recommendation, TrainingSettings } from '../engine/models.ts';
+import type { PlannedDose, Recommendation, TrainingSettings } from '../engine/models.ts';
 import { EXERCISES } from './exercises.ts';
 import { WORKOUTS } from './catalog.ts';
 import type {
@@ -398,13 +398,13 @@ function applyVariant(workout: WorkoutDefinition, variantId: 'full' | 'reduced' 
   }));
 }
 
-export function variantFor(rec: Recommendation, executionDose?: number): 'full' | 'reduced' | 'return_to_training' {
+export function variantFor(rec: Recommendation, executionDose?: PlannedDose): 'full' | 'reduced' | 'return_to_training' {
   if (rec.mode === 'recover' && rec.template.category !== 'Rest') return 'return_to_training';
   const manualVariant = rec.adjustment?.direction === 'easier' ? 'reduced' : 'full';
   const dose = executionDose ?? rec.executionDose ?? rec.plannedDose;
-  const doseVariant = dose !== undefined && dose <= 0.4
+  const doseVariant = dose !== undefined && dose.volume <= 0.4
     ? 'return_to_training'
-    : dose !== undefined && dose <= 0.7
+    : dose !== undefined && dose.volume <= 0.7
       ? 'reduced'
       : 'full';
   const conservatism = { full: 0, reduced: 1, return_to_training: 2 } as const;
@@ -416,7 +416,7 @@ export function resolveWorkoutPrescription(
   userId: string,
   date: string,
   profile?: AthletePerformanceProfile,
-  executionDose?: number,
+  executionDose?: PlannedDose,
   trainingSettings?: TrainingSettings
 ): WorkoutPrescription | null {
   const workout = workoutForTemplate(recommendation.template.id);

@@ -1,4 +1,4 @@
-import type { DailyReadiness, FatigueState, MicrocycleState, UserEvent, WeeklyObjective } from './models';
+import type { DailyReadiness, FatigueState, MicrocycleState, PlannedDose, UserEvent, WeeklyObjective } from './models';
 import { computeInternalResponseStrain, buildFatigueStateFromHistory } from './fatigue';
 import { buildMicrocycleState, getUnresolvedObjectives } from './microcycle';
 import type { CompletedExposure, TrainingHistoryProvider } from './trainingHistory';
@@ -19,7 +19,7 @@ export type ExecutionModifier =
 export interface TrainingIntent {
     periodization: PeriodizationResult;
     unresolvedObjectives: WeeklyObjective[];
-    plannedDose: number;
+    plannedDose: PlannedDose;
     fatigue: FatigueState;
     /** Retained for the pure planner core after a single asynchronous read. */
     history: CompletedExposure[];
@@ -32,6 +32,23 @@ export interface TrainingIntent {
         priority: number;
     } | null;
     executionModifier?: ExecutionModifier | null;
+}
+
+/**
+ * Resolves the two independent components of a plan dose. Volume retains the existing
+ * objective-urgency calculation; intensity is the authored PlanBlock scale and is read
+ * later only by candidate-intensity eligibility.
+ */
+export function resolvePlannedDose(
+    phase: { volumeScale: number; intensityScale: number },
+    objectives: readonly WeeklyObjective[],
+    unresolvedObjectives: readonly WeeklyObjective[],
+): PlannedDose {
+    const urgency = objectives.length === 0 ? 0 : unresolvedObjectives.length / objectives.length;
+    return {
+        volume: Math.max(0, Math.min(1, (phase.volumeScale / 1.1) * (0.7 + (0.3 * urgency)))),
+        intensity: Math.max(0, phase.intensityScale),
+    };
 }
 
 /** Fetch the bounded history once and reuse that immutable revision across every
@@ -81,9 +98,6 @@ export async function resolveTrainingIntent(
     );
     const unresolvedObjectives = getUnresolvedObjectives(microcycle);
     const fatigue = buildFatigueStateFromHistory(history, computeInternalResponseStrain(readiness), date);
-    const urgency = microcycle.objectives.length === 0 ? 0 : unresolvedObjectives.length / microcycle.objectives.length;
-    // Phase volume is normalized from its 0.4..1.1 policy range and then softened
-    // when the current rolling objectives have already been satisfied.
-    const plannedDose = Math.max(0, Math.min(1, (periodization.phase.volumeScale / 1.1) * (0.7 + (0.3 * urgency))));
+    const plannedDose = resolvePlannedDose(periodization.phase, microcycle.objectives, unresolvedObjectives);
     return { periodization, unresolvedObjectives, plannedDose, fatigue, history, historySnapshot, microcycle };
 }

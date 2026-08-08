@@ -313,6 +313,14 @@ export interface DoseVariation {
     prescriptionSummary: string;
 }
 
+/** Plan-owned session dose. Volume controls duration; intensity controls which
+ * intensity-class templates may be selected. The two values intentionally do not share
+ * a safety ceiling: a taper can reduce duration while retaining quality work. */
+export interface PlannedDose {
+    volume: number;
+    intensity: number;
+}
+
 /** Governs when a template becomes selectable relative to the athlete's governing event,
  *  independent of the generic weekly-objective/fatigue ranking. Absent = eligible always
  *  (all templates that existed before this field was added keep exactly that behavior).
@@ -403,10 +411,11 @@ export interface Recommendation {
      *  from the template category alone. */
     mode: 'train' | 'modify' | 'recover';
     activeDose?: DoseVariation;
-    /** Normalized plan-side dose derived from periodization and remaining objectives. */
-    plannedDose?: number;
-    /** Final dose after the plan target, safety ceiling, and athlete adjustment meet. */
-    executionDose?: number;
+    /** Plan-owned volume and intensity targets. */
+    plannedDose?: PlannedDose;
+    /** Final volume after the safety ceiling and athlete adjustment meet. Intensity is
+     * retained as the plan's candidate-admissibility contract. */
+    executionDose?: PlannedDose;
     adjustment?: SessionAdjustment;
     envelopes?: {
         safety: SafetyEnvelope;
@@ -897,6 +906,10 @@ export interface RecommendationAudit {
         safetyRestrictedModalityCount: number;
         planMaxAllowableTier: PlanEnvelope['maxAllowableTier'];
     };
+    /** Present for intent-aware recommendations so persisted decisions retain the
+     * plan-owned volume and intensity contract used to choose them. */
+    plannedDose?: PlannedDose;
+    executionDose?: PlannedDose;
     candidateScores: Array<{
         templateId: string;
         utilityScore: number;

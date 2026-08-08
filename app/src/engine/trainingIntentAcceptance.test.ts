@@ -80,4 +80,12 @@ describe('ADR-0012 explicit PlanDefinition wiring (Phase 2 review fix)', () => {
         const intent = await resolveTrainingIntent('u1', [roadRace], '2026-08-10', readiness(), 7, fixtureHistory);
         expect(intent.microcycle.objectives.some(o => o.id.startsWith('obj_plan_'))).toBe(false);
     });
+
+    it('preserves taper intensity while reducing its volume component', async () => {
+        const build = await resolveTrainingIntent('u1', [septemberCyclingEvent], '2026-08-10', readiness(), 7, fixtureHistory);
+        const taper = await resolveTrainingIntent('u1', [septemberCyclingEvent], '2026-09-10', readiness(), 7, fixtureHistory);
+
+        expect(taper.plannedDose.intensity).toBe(1);
+        expect(taper.plannedDose.volume).toBeLessThan(build.plannedDose.volume);
+    });
 });

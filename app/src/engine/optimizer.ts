@@ -1,5 +1,7 @@
 import type {
     FatigueState,
+    IntensityClass,
+    PlannedDose,
     SessionHistoryEntry,
     SessionRole,
     SessionTemplate,
@@ -49,6 +51,7 @@ export interface OptimizationOptions {
     recentHistory?: (RecentHistoryEntry | SessionHistoryEntry)[];
     anchorRole?: 'event-specific' | 'quality' | null;
     adjacentToAnchor?: boolean;
+    plannedDose?: PlannedDose;
 }
 
 export interface OptimizationContext {
@@ -83,6 +86,22 @@ const ANCHOR_ROLE_BOOST = 1.35;
 const ANCHOR_ADJACENCY_SUPPRESSION = 0.3;
 const HEAVY_LOWER_BODY_STRENGTH_CATEGORIES: SessionTemplate['category'][] = ['Lower-body Strength', 'Full-body Strength'];
 const VARIETY_TIE_BREAK_GAP = 0.05;
+
+/** Maps catalog load semantics to the existing intensity vocabulary. The plan scale
+ * has one intentionally narrow gate: only the authored low-intensity range below the
+ * Base phase's 0.8 scale excludes hard templates; moderate, easy, and recovery work
+ * remain feasible. This preserves Build quality at 0.9 and taper quality at 1.0 without
+ * turning intensity into a second duration multiplier. */
+export function intensityClassForTemplate(template: SessionTemplate): IntensityClass {
+    if (template.category === 'Rest' || template.category === 'Mobility/Recovery') return 'recovery';
+    if (template.category === 'Hard Endurance' || template.category === 'Race-Specific Endurance' || template.systemicCost >= 0.6) return 'hard';
+    if (template.category === 'Moderate Endurance' || template.systemicCost >= 0.3) return 'moderate';
+    return 'easy';
+}
+
+export function isIntensityClassAdmissible(intensityClass: IntensityClass, plannedIntensity: number): boolean {
+    return intensityClass !== 'hard' || plannedIntensity >= 0.8;
+}
 
 export function getConsecutiveModalityCount(
     history: { modality?: string; type?: string }[],
@@ -329,6 +348,7 @@ export function buildOptimizationContext(
         fatigue: FatigueState;
         periodization?: { focusEvent?: UserEvent | null } | null;
         history?: (RecentHistoryEntry | SessionHistoryEntry)[];
+        plannedDose?: PlannedDose;
     },
     context: UserContext,
     preferences: Partial<UserPreferences> | null,
@@ -383,6 +403,7 @@ export function buildOptimizationContext(
         recentHistory: rawHistory,
         anchorRole: options.anchorRole ?? null,
         adjacentToAnchor: options.adjacentToAnchor ?? false,
+        ...(intent.plannedDose ? { plannedDose: intent.plannedDose } : {}),
     };
 
     return {
@@ -442,6 +463,10 @@ export function rankCandidates(
         const lowerMod = (template.modality ?? '').toLowerCase();
         if (injuryConstraints.some(inj => inj.toLowerCase() === lowerMod || inj.toLowerCase().includes(lowerMod))) {
             excludedReasons.push('INJURY_RESTRICTION');
+        }
+
+        if (options.plannedDose && !isIntensityClassAdmissible(intensityClassForTemplate(template), options.plannedDose.intensity)) {
+            excludedReasons.push('INTENSITY_SCALE_INADMISSIBLE');
         }
 
         // Level 3: Sequence & Recovery Constraints

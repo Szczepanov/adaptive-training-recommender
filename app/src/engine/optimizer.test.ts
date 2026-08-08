@@ -196,3 +196,20 @@ describe('optimizer â€” one optimizer invocation context (F4 / 3.3)', () =>
         expect(res1.accepted[0].utilityScore).toEqual(res2.accepted[0].utilityScore);
     });
 });
+
+describe('PlannedDose intensity eligibility (4.5)', () => {
+    it('keeps hard candidates eligible for a volume-reduced taper when intensity is held, but excludes them below baseline intensity', () => {
+        const hardRide = ENRICHED_TEMPLATES.find(t => t.category === 'Hard Endurance' && t.modality === 'Cycling')!;
+        const taper = rankCandidates(
+            [hardRide], [], DEFAULT_FATIGUE, DEFAULT_AVAILABILITY, [], DEFAULT_PREFERENCES,
+            { date: '2026-03-05', plannedDose: { volume: 0.5, intensity: 1 } },
+        );
+        const reducedIntensity = rankCandidates(
+            [hardRide], [], DEFAULT_FATIGUE, DEFAULT_AVAILABILITY, [], DEFAULT_PREFERENCES,
+            { date: '2026-03-05', plannedDose: { volume: 0.8, intensity: 0.7 } },
+        );
+
+        expect(taper.accepted).toHaveLength(1);
+        expect(reducedIntensity.rejected[0].excludedReasons).toContain('INTENSITY_SCALE_INADMISSIBLE');
+    });
+});

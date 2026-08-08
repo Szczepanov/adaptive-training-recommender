@@ -761,6 +761,15 @@ export function validateRecommendation(raw: any): ValidationResult<DailyRecommen
         const audit = raw.recommendationAudit;
         const validStatuses = ['AVAILABLE', 'MISSING', 'INVALID', 'UNAVAILABLE'];
         const validTiers = ['Rest', 'Mobility', 'Easy', 'Moderate', 'Hard'];
+        const validDose = (dose: unknown) => dose && typeof dose === 'object'
+            && typeof (dose as Record<string, unknown>).volume === 'number'
+            && Number.isFinite((dose as Record<string, number>).volume)
+            && (dose as Record<string, number>).volume >= 0
+            && (dose as Record<string, number>).volume <= 1
+            && typeof (dose as Record<string, unknown>).intensity === 'number'
+            && Number.isFinite((dose as Record<string, number>).intensity)
+            && (dose as Record<string, number>).intensity >= 0
+            && (dose as Record<string, number>).intensity <= 1.2;
         const validAudit = audit && typeof audit === 'object'
             && typeof audit.policyVersion === 'string'
             && typeof audit.evaluatedAt === 'string'
@@ -774,6 +783,8 @@ export function validateRecommendation(raw: any): ValidationResult<DailyRecommen
             && audit.envelope && typeof audit.envelope === 'object'
             && Number.isInteger(audit.envelope.safetyRestrictedModalityCount) && audit.envelope.safetyRestrictedModalityCount >= 0
             && validTiers.includes(audit.envelope.planMaxAllowableTier)
+            && (audit.plannedDose === undefined || validDose(audit.plannedDose))
+            && (audit.executionDose === undefined || validDose(audit.executionDose))
             && Array.isArray(audit.candidateScores)
             && audit.candidateScores.every((candidate: any) => candidate && typeof candidate.templateId === 'string'
                 && typeof candidate.utilityScore === 'number' && Number.isFinite(candidate.utilityScore)
