@@ -118,6 +118,16 @@ emulatorDescribe('Firestore security rules', () => {
         }, { merge: true }));
     });
 
+    it('rejects adding a prescription without incrementing the revision and archiving the prior decision', async () => {
+        await testEnvironment.withSecurityRulesDisabled(async context => {
+            await setDoc(doc(context.firestore(), recommendationPath), { ...validRecommendation(), revision: 1 });
+        });
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertFails(setDoc(doc(ownerDb, recommendationPath), {
+            prescription: { workoutId: 'easy_ride', displayBlocks: [] },
+        }, { merge: true }));
+    });
+
     it('rejects decision update when archived prior revision fields are mismatched', async () => {
         await testEnvironment.withSecurityRulesDisabled(async context => {
             await setDoc(doc(context.firestore(), recommendationPath), { ...validRecommendation(), revision: 1 });

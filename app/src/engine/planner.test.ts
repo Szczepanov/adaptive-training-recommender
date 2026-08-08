@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { evaluateNextDayPlan, evaluateTraining } from './rules';
 import { mapContextFromGoalsAndTrainingSettings } from './adapters';
 import { generateWeekAheadPlan, generateWeekAheadPlanWithIntent, prepareWeekAheadPlanSeed, projectTrailingHistory, resolveWeeklyAnchors } from './planner';
@@ -65,6 +65,8 @@ function buildTodayAndTomorrow(context: UserContext, date = '2026-08-07') {
 // --- Tests -------------------------------------------------------------------
 
 describe('generateWeekAheadPlan', () => {
+    afterEach(() => vi.useRealTimers());
+
     it('produces the requested number of future days beginning tomorrow', () => {
         const context = baseContext();
         const { readiness, todayRec, tomorrowRec } = buildTodayAndTomorrow(context);
@@ -127,6 +129,41 @@ describe('generateWeekAheadPlan', () => {
         const plan = generateWeekAheadPlan(readiness, context, null, '2026-08-07', todayRec, tomorrowRec, prepareWeekAheadPlanSeed(readiness, [], '2026-08-07', []), { days: 7 });
 
         plan.days.forEach(d => expect(d.template.modality).not.toBe('Running'));
+    });
+
+    it('omits category-restricted templates from projected days', () => {
+        const settings: TrainingSettings = {
+            userId: 'user1', schemaVersion: 3,
+            equipment: { free_weights: true, cable_machine: true, treadmill: true, indoor_bike: true, pullup_bar: true },
+            guardrails: { avoid_high_impact: false, avoid_heavy_lower_body: false, avoid_overhead_pressing: false, avoid_heavy_spinal_loading: false },
+            injuries: [{ region: 'quadriceps', severity: 'exclude' }],
+            defaults: { weekdayMaxMinutes: 60, weekendMaxMinutes: 60, environment: 'either' },
+            preferences: { preferActiveRecovery: false }, migration: { legacyReviewed: true, migratedAt: null },
+            createdAt: '2026-08-08T00:00:00Z', updatedAt: '2026-08-08T00:00:00Z',
+        };
+        const context = mapContextFromGoalsAndTrainingSettings([], settings, null, '2026-08-07');
+        const { readiness, todayRec, tomorrowRec } = buildTodayAndTomorrow(context);
+        const plan = generateWeekAheadPlan(readiness, context, null, '2026-08-07', todayRec, tomorrowRec, prepareWeekAheadPlanSeed(readiness, [], '2026-08-07', []), { days: 7 });
+
+        plan.days.filter(day => day.confidence === 'projected').forEach(day => {
+            expect(['Lower-body Strength', 'Full-body Strength']).not.toContain(day.template.category);
+        });
+    });
+
+    it('uses the Warsaw calendar date when resolving an omitted injury-policy date', () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-08-07T22:30:00.000Z')); // 00:30 on 8 August in Warsaw
+        const settings: TrainingSettings = {
+            userId: 'user1', schemaVersion: 3,
+            equipment: { free_weights: true, cable_machine: true, treadmill: true, indoor_bike: true, pullup_bar: true },
+            guardrails: { avoid_high_impact: false, avoid_heavy_lower_body: false, avoid_overhead_pressing: false, avoid_heavy_spinal_loading: false },
+            injuries: [{ region: 'knee', severity: 'exclude', reviewBy: '2026-08-07' }],
+            defaults: { weekdayMaxMinutes: 60, weekendMaxMinutes: 60, environment: 'either' },
+            preferences: { preferActiveRecovery: false }, migration: { legacyReviewed: true, migratedAt: null },
+            createdAt: '2026-08-07T00:00:00Z', updatedAt: '2026-08-07T00:00:00Z',
+        };
+
+        expect(mapContextFromGoalsAndTrainingSettings([], settings, null).constraints.restrictedModalities).toEqual([]);
     });
 
     it('falls back to rest for a projected day with zero available time rather than dropping it', () => {

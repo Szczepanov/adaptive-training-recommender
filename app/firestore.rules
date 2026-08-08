@@ -102,7 +102,9 @@ service cloud.firestore {
         && request.resource.data.modality == resource.data.modality
         && request.resource.data.mode == resource.data.mode
         && request.resource.data.rationale == resource.data.rationale
-        && (!('prescription' in resource.data) || (('prescription' in request.resource.data) && request.resource.data.prescription == resource.data.prescription));
+        && (('prescription' in request.resource.data) == ('prescription' in resource.data))
+        && (!('prescription' in resource.data)
+          || request.resource.data.prescription == resource.data.prescription);
     }
 
     function archivesPriorRevision(userId, date) {

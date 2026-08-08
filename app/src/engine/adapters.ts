@@ -13,6 +13,7 @@ import type {
 } from './models';
 import { resolveInjuryRestrictions } from './injuryPolicy';
 import { goalToUserEvent } from './periodization';
+import { getLocalDateString } from '../utils/localDate';
 
 /** Normalizes a raw Garmin per-day activity summary (yesterday's or today's) into the
  * engine's TrainingRecord shape, or null if no qualifying activity data is present. */
@@ -142,7 +143,7 @@ export function mapContextFromGoalsAndTrainingSettings(
         return inCategory.reduce((best, g) => (g.priority > best.priority ? g : best)).title;
     };
 
-    const dateStr = today ?? new Date().toISOString().split('T')[0];
+    const dateStr = today ?? getLocalDateString();
     const resolvedInjuries = resolveInjuryRestrictions(trainingSettings.injuries, dateStr);
 
     return {

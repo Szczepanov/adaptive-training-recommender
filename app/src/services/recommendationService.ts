@@ -1,4 +1,4 @@
-import { doc, getDoc, setDoc, writeBatch, collection, query, where, orderBy, limit, getDocs } from 'firebase/firestore';
+import { collection, deleteField, doc, getDoc, getDocs, limit, orderBy, query, setDoc, where, writeBatch } from 'firebase/firestore';
 import { getDb } from '../firebase';
 import type { DailyRecommendation, Recommendation } from '../engine/models';
 import { validateRecommendation, validateAdherenceUpdate } from '../engine/validation';
@@ -42,9 +42,11 @@ export class RecommendationService {
             );
 
             const nextRevision = isNewDoc ? 1 : (decisionChanged ? priorRevision + 1 : priorRevision);
+            const recommendationAudit = rec.recommendationAudit && (isNewDoc || decisionChanged || !existing?.recommendationAudit)
+                ? rec.recommendationAudit
+                : existing?.recommendationAudit;
 
             const rawData = {
-                ...existing,
                 userId,
                 date,
                 templateId: rec.template.id,
@@ -55,16 +57,15 @@ export class RecommendationService {
                 rationale: rec.rationale,
                 ...(rec.prescription ? { prescription: rec.prescription } : {}),
                 ...(rec.adjustment ? { adjustment: rec.adjustment } : {}),
+                ...(existing?.adherence ? { adherence: existing.adherence } : {}),
                 // Audit is write-once per decision (firestore.rules: auditWriteOnce()):
                 // a freshly recomputed audit is only written when it actually describes a
                 // new decision (or none was stored yet). Re-saving the same template/mode/
                 // rationale later the same day must keep the original audit -- overwriting
                 // it every recompute (evaluatedAt always differs) would fail the immutability
                 // rule on every save after the first.
-                ...(rec.recommendationAudit && (isNewDoc || decisionChanged || !existing?.recommendationAudit)
-                    ? { recommendationAudit: rec.recommendationAudit }
-                    : {}),
-                schemaVersion: rec.recommendationAudit
+                ...(recommendationAudit ? { recommendationAudit } : {}),
+                schemaVersion: recommendationAudit
                     ? Math.max(existing?.schemaVersion ?? 1, 3)
                     : (rec.prescription ? Math.max(existing?.schemaVersion ?? 1, 2) : (existing?.schemaVersion ?? 1)),
                 createdAt: existing?.createdAt,
@@ -78,6 +79,9 @@ export class RecommendationService {
             }
 
             const validated = validation.data!;
+            const writeData = !rec.prescription && existing?.prescription
+                ? { ...validated, prescription: deleteField() }
+                : validated;
 
             if (decisionChanged) {
                 const batch = writeBatch(getDb());
@@ -95,10 +99,10 @@ export class RecommendationService {
                 if (existing.recommendationAudit) archiveData.recommendationAudit = existing.recommendationAudit;
 
                 batch.set(archiveRef, archiveData);
-                batch.set(docRef, validated, { merge: true });
+                batch.set(docRef, writeData, { merge: true });
                 await batch.commit();
             } else {
-                await setDoc(docRef, validated, { merge: true });
+                await setDoc(docRef, writeData, { merge: true });
             }
 
             return validated;

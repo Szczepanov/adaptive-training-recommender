@@ -36,6 +36,17 @@ describe('training-settings eligibility', () => {
         expect(eligibleTemplates(TEMPLATES, context(profile), 60, '2026-08-07').some(t => t.modality === 'Running' || t.modality === 'Field')).toBe(false);
     });
 
+    it('filters explicitly restricted modalities as a hard gate', () => {
+        const profile = settings();
+        const ctx = context(profile);
+        ctx.constraints.restrictedModalities = ['Cycling'];
+
+        const result = evaluateTemplateEligibility(TEMPLATES.find(t => t.id === 'cycling_technical_01')!, ctx, 60, '2026-08-07');
+        expect(result.eligible).toBe(false);
+        expect(result.reasons).toContain('restricted_modality');
+        expect(eligibleTemplates(TEMPLATES, ctx, 60, '2026-08-07').some(t => t.modality === 'Cycling')).toBe(false);
+    });
+
     it('enforces an indoor-only boundary and keeps either-location recovery available', () => {
         const profile = settings({ defaults: { weekdayMaxMinutes: 45, weekendMaxMinutes: 90, environment: 'indoor' } });
         const templates = eligibleTemplates(TEMPLATES, context(profile), 60, '2026-08-07');

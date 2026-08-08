@@ -1,9 +1,10 @@
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { getDb } from '../firebase';
-import type { BodyRegion, TrainingSettings, UserConstraint } from '../engine/models';
+import type { BodyRegion, SessionTemplate, TrainingSettings, UserConstraint } from '../engine/models';
 import type { DataState } from '../engine/dataState';
 import { constraintService } from './constraintService';
 import { getErrorCode } from '../utils/errors';
+import { isValidDate } from '../engine/validation';
 
 export type TrainingSettingsUpdate = {
     equipment?: Partial<TrainingSettings['equipment']>;
@@ -20,6 +21,7 @@ const DOCUMENT = 'profile';
 const equipmentKeys = ['free_weights', 'cable_machine', 'treadmill', 'indoor_bike', 'pullup_bar'] as const;
 const guardrailKeys = ['avoid_high_impact', 'avoid_heavy_lower_body', 'avoid_overhead_pressing', 'avoid_heavy_spinal_loading'] as const;
 const validBodyRegions = ['knee', 'achilles', 'ankle', 'calf', 'hamstring', 'quadriceps', 'adductor_groin', 'hip', 'lower_back', 'shoulder', 'elbow', 'wrist'] as const;
+const validModalities: SessionTemplate['modality'][] = ['Running', 'Cycling', 'Strength', 'Field', 'Mobility', 'Cross Training', 'None'];
 
 function timestamp(): string {
     return new Date().toISOString();
@@ -70,7 +72,11 @@ export function parseTrainingSettings(raw: unknown, userId: string): TrainingSet
             const item = inj as Record<string, unknown>;
             if (typeof item.severity !== 'string' || !['monitor', 'limit', 'exclude'].includes(item.severity)) return null;
             if (item.region !== undefined && (typeof item.region !== 'string' || !validBodyRegions.includes(item.region as BodyRegion))) return null;
-            if (item.reviewBy !== undefined && typeof item.reviewBy !== 'string') return null;
+            if (item.reviewBy !== undefined && (typeof item.reviewBy !== 'string' || !isValidDate(item.reviewBy))) return null;
+            if (item.note !== undefined && typeof item.note !== 'string') return null;
+            if (item.restrictedModalities !== undefined
+                && (!Array.isArray(item.restrictedModalities)
+                    || !item.restrictedModalities.every(modality => typeof modality === 'string' && validModalities.includes(modality as SessionTemplate['modality'])))) return null;
         }
     }
 

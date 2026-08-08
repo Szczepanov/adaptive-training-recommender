@@ -1,6 +1,6 @@
 import type { SessionTemplate, TrainingSettings, UserContext } from './models';
 
-export type EligibilityReason = 'time_limit' | 'equipment' | 'environment' | 'safety_guardrail' | 'restricted_category';
+export type EligibilityReason = 'time_limit' | 'equipment' | 'environment' | 'safety_guardrail' | 'restricted_modality' | 'restricted_category';
 
 export interface TemplateEligibility {
     template: SessionTemplate;
@@ -45,6 +45,8 @@ export function evaluateTemplateEligibility(
     if (settings && settings.defaults.environment !== 'either' && template.environment !== 'either' && template.environment !== settings.defaults.environment) {
         reasons.push('environment');
     }
+    const restrictedModalities = context.constraints.restrictedModalities ?? [];
+    if (restrictedModalities.includes(template.modality)) reasons.push('restricted_modality');
     const implied = context.constraints.impliedGuardrails ?? [];
     const guardrailTriggered = template.safetyTags.some(tag => (settings?.guardrails[tag] ?? false) || implied.includes(tag));
     if (guardrailTriggered) reasons.push('safety_guardrail');
