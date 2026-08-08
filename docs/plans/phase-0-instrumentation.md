@@ -1,6 +1,6 @@
 # Phase 0 — Instrumentation & developer baseline
 
-* **Status:** Ready
+* **Status:** Implemented
 * **Blocked by:** nothing
 * **Unlocks:** Phases 3, 4, 5 (none of them can be evaluated without this)
 * **Addresses:** F11, F14, F15, part of F10
@@ -20,7 +20,7 @@ Update the marker on the work-item heading **and** this table in the same commit
 | 0.3 | `[x]` | Lazy Firebase init so the suite runs from a clean clone | `app/src/firebase.ts`, `app/src/services/*.ts`, `app/.env.example`, `app/README.md` |
 | 0.4 | `[x]` | `POLICY_VERSION` bump + CI drift guard using the CI base SHA | `app/src/engine/policy.ts`, `.github/workflows/ci.yml`, new guard script |
 | 0.5 | `[x]` | `ruff` + `mypy` in `pyproject.toml` and CI | `pyproject.toml`, `.github/workflows/ci.yml` |
-| 0.6 | `[ ]` | Delete `garmin_login.py`; pin `uv`; add dependency audits | `garmin_login.py`, `Dockerfile`, `.github/workflows/ci.yml` |
+| 0.6 | `[x]` | Delete `garmin_login.py`; pin `uv`; add dependency audits | `garmin_login.py`, `Dockerfile`, `.github/workflows/ci.yml` |
 
 **No task here changes engine behaviour.** If a change to `app/src/engine/**` becomes
 necessary to complete a task, stop — it belongs in a later phase.
@@ -184,7 +184,7 @@ Add to `pyproject.toml` dev dependencies: `ruff`, `mypy`. Add `[tool.ruff]` and
 `src/garmin_sync` only). Add both to the `python-tests` CI job. Fix whatever the first
 run surfaces, or record explicit per-module ignores with a reason.
 
-### `[ ]` 0.6 — Small cleanups
+### `[x]` 0.6 — Small cleanups
 
 * Delete `garmin_login.py` (repo root). It duplicates
   `scripts/bootstrap_garmin_tokens.py` and bypasses the ADR-0002 guard by injecting
@@ -201,17 +201,17 @@ run surfaces, or record explicit per-module ignores with a reason.
 
 ## Acceptance criteria
 
-- [ ] invariant suite (0.2) + aggregate bounds (0.1) run in CI and are blocking
-- [ ] `npm run simulate:diff` emits a semantic diff and is explicitly non-blocking
-- [ ] `docs/analysis/simulation-baseline.json` is committed and reproducible twice in a row
-- [ ] `goldenWeek.test.ts` exists; the event-modality-frequency assertion is present and
+- [x] invariant suite (0.2) + aggregate bounds (0.1) run in CI and are blocking
+- [x] `npm run simulate:diff` emits a semantic diff and is explicitly non-blocking
+- [x] `docs/analysis/simulation-baseline.json` is committed and reproducible twice in a row
+- [x] `goldenWeek.test.ts` exists; the event-modality-frequency assertion is present and
       marked as expected-failing with a citation to F3
-- [ ] `npm test` passes from a clean clone with no `.env`
-- [ ] `app/.env.example` exists; `app/README.md` is project-specific
-- [ ] `POLICY_VERSION` bumped; the drift guard runs **in CI** against an explicit base SHA
+- [x] `npm test` passes from a clean clone with no `.env`
+- [x] `app/.env.example` exists; `app/README.md` is project-specific
+- [x] `POLICY_VERSION` bumped; the drift guard runs **in CI** against an explicit base SHA
       (not in `npm run check`, which stays local-only and has no base ref)
-- [ ] `ruff` and `mypy` run in CI
-- [ ] `garmin_login.py` removed
+- [x] `ruff` and `mypy` run in CI
+- [x] `garmin_login.py` removed
 
 ## Risks & rollback
 

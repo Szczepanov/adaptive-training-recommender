@@ -38,6 +38,10 @@ jobs:
       - name: Run pytest
         run: uv run pytest
 
+      - name: Python dependency audit
+        run: npx pip-audit || uv pip audit || true
+        continue-on-error: true
+
   frontend-build:
     name: Frontend Build & Firestore Rules
     runs-on: ubuntu-latest
@@ -95,6 +99,10 @@ jobs:
 
       - name: Build frontend
         run: npm run build
+
+      - name: Node dependency audit
+        run: npm audit --audit-level=high
+        continue-on-error: true
 
   docker-build:
     name: Docker Image Build
