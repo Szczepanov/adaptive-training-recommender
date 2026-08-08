@@ -301,14 +301,10 @@ export function projectTrailingHistory(
         const recordType = rec.trainingRecordLike && typeof rec.trainingRecordLike === 'object' && 'type' in (rec.trainingRecordLike as object) ? (rec.trainingRecordLike as { type?: string }).type : undefined;
         const costProf = rec.costProfile && typeof rec.costProfile === 'object' ? rec.costProfile as Record<string, number> : undefined;
         const systemic = costProf?.systemic;
-        const lowerBody = costProf?.lowerBody;
 
         const item: RecentHistoryEntry = {
             type: recordType ?? ('type' in e ? e.type : undefined) ?? e.modality,
             systemicCost: e.systemicCost ?? systemic ?? 0,
-            lowerBodyCost: ('lowerBodyCost' in e && typeof e.lowerBodyCost === 'number')
-                ? e.lowerBodyCost
-                : (lowerBody ?? 0),
         };
         const dt = completedDate ?? ('date' in e ? e.date : undefined);
         if (dt) item.date = dt;
@@ -316,6 +312,7 @@ export function projectTrailingHistory(
         if ('modality' in e && e.modality) item.modality = e.modality;
         if ('role' in e && e.role) item.role = e.role;
         if ('templateId' in e && e.templateId) item.templateId = e.templateId;
+        if ('lowerBodyCost' in e && typeof e.lowerBodyCost === 'number') item.lowerBodyCost = e.lowerBodyCost;
         return item;
     });
 }
