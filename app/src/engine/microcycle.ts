@@ -247,6 +247,12 @@ export function updateMicrocycleProgress(
 }
 
 export function getUnresolvedObjectives(microcycle: MicrocycleState): WeeklyObjective[] {
+    // Defensive only: every typed production call site (generateWeeklyObjectives,
+    // buildMicrocycleState, resolveTrainingIntent's intent.microcycle) always produces a
+    // well-formed { windowStartDate, objectives } object, so this branch is not known to
+    // be reachable today. Kept as a guard against a caller that bypasses the type system
+    // (an untyped fixture, a cast, or a future refactor) rather than throwing on it --
+    // revisit if a real caller turns out to need this.
     if (!microcycle || !microcycle.objectives) return [];
     return microcycle.objectives.filter(objective => {
         const requiredCredit = objective.requiredCredit ?? objective.targetExposures;
@@ -305,6 +311,7 @@ export function creditObjectivesFromStimulus(
     category?: SessionTemplate['category'],
     dose: DeliveredDose = {},
 ): MicrocycleState {
+    // Defensive only -- see getUnresolvedObjectives' identical guard above for why.
     if (!microcycle || !microcycle.objectives) return microcycle;
     return {
         ...microcycle,
