@@ -37,6 +37,15 @@ We introduced a **reconciled strain telemetry model** in the recommendation engi
 
 ## Consequences
 
+### Amendment (2026-08-08): completed-load replay
+
+External fatigue replay now consumes the six-dimensional cost after
+`completedTraining.ts` `scaleCostByDeliveredDose` applies measured duration and any
+independent completion ratio. `fatigue.ts` retains unsaturated raw external load while
+ranking consumes its clamped projection. The fusion with today’s internal response remains
+`max()` pending the ADR-0014 harness comparison; this amendment does not choose a new
+fusion formula.
+
 ### Positive
 * Transparent, debuggable strain metrics provided alongside every workout recommendation.
 * Accurately distinguishes between temporary acute fatigue and accumulated chronic overtraining.

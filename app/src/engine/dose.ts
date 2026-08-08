@@ -1,4 +1,4 @@
-import type { PlanEnvelope } from './models';
+import type { PlannedDose, PlanEnvelope } from './models';
 
 /** Execution dose is a normalized 0..1 input to structured-workout variant selection.
  * It is intentionally separate from a template's raw systemic cost: Phase 3b derives
@@ -25,15 +25,20 @@ function clampDose(dose: number): number {
  * readiness/clinical ceiling.
  */
 export function resolveExecutionDose(
-    plannedDose: number,
+    plannedDose: PlannedDose,
     safety: PlanEnvelope,
     userAdjustment: 'easier' | 'harder' | null
-): number {
+): PlannedDose {
     const adjustment = userAdjustment === 'easier'
         ? -USER_ADJUSTMENT_DELTA
         : userAdjustment === 'harder'
             ? USER_ADJUSTMENT_DELTA
             : 0;
-    const requestedDose = clampDose(plannedDose + adjustment);
-    return Math.min(requestedDose, MAX_EXECUTION_DOSE_BY_TIER[safety.maxAllowableTier]);
+    const requestedVolume = clampDose(plannedDose.volume + adjustment);
+    return {
+        volume: Math.min(requestedVolume, MAX_EXECUTION_DOSE_BY_TIER[safety.maxAllowableTier]),
+        // Intensity is not a duration ceiling. It was already consumed as a candidate
+        // admissibility gate before the selected template reached execution dosing.
+        intensity: Math.max(0, plannedDose.intensity),
+    };
 }

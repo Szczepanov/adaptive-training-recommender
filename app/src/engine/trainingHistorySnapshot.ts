@@ -50,6 +50,9 @@ export function buildTrainingHistorySnapshot(
     const activityRecords = requireAvailable('activities', activities);
     const recommendationRecords = requireAvailable('recommendations', recommendations);
     const completedEvents = reconcileCompletedTrainingEvents(activityRecords, recommendationRecords);
+    completedEvents.sort((a, b) => a.date.localeCompare(b.date));
+    const exposures = completedEvents.map(completedEventToExposure);
+    exposures.sort((a, b) => a.date.localeCompare(b.date));
     const activityRevision = revisionOf(activities);
     const recommendationRevision = revisionOf(recommendations);
 
@@ -57,7 +60,7 @@ export function buildTrainingHistorySnapshot(
         throughDateExclusive,
         windowDays,
         completedEvents,
-        exposures: completedEvents.map(completedEventToExposure),
+        exposures,
         sourceStates: {
             activities: summarizeDataState(activities),
             recommendations: summarizeDataState(recommendations),

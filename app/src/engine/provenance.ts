@@ -30,6 +30,8 @@ export function buildRecommendationAudit(
             safetyRestrictedModalityCount: envelopes.safety.restrictedModalities.length,
             planMaxAllowableTier: envelopes.plan.maxAllowableTier,
         },
+        ...(recommendation.plannedDose ? { plannedDose: recommendation.plannedDose } : {}),
+        ...(recommendation.executionDose ? { executionDose: recommendation.executionDose } : {}),
         candidateScores: trace.candidateScores,
     };
 }

@@ -80,4 +80,14 @@ describe('ADR-0012 explicit PlanDefinition wiring (Phase 2 review fix)', () => {
         const intent = await resolveTrainingIntent('u1', [roadRace], '2026-08-10', readiness(), 7, fixtureHistory);
         expect(intent.microcycle.objectives.some(o => o.id.startsWith('obj_plan_'))).toBe(false);
     });
+
+    it('uses the authored active PlanBlock as exact PlannedDose authority', async () => {
+        const build = await resolveTrainingIntent('u1', [septemberCyclingEvent], '2026-08-10', readiness(), 7, fixtureHistory);
+        const travel = await resolveTrainingIntent('u1', [septemberCyclingEvent], '2026-08-26', readiness(), 7, fixtureHistory);
+        const taper = await resolveTrainingIntent('u1', [septemberCyclingEvent], '2026-09-10', readiness(), 7, fixtureHistory);
+
+        expect(build.plannedDose).toEqual({ volume: 1.0, intensity: 1.0 });
+        expect(travel.plannedDose).toEqual({ volume: 0.6, intensity: 0.8 });
+        expect(taper.plannedDose).toEqual({ volume: 0.5, intensity: 1.0 });
+    });
 });

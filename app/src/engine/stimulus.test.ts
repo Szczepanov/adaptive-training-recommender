@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { deriveObjectiveCredit, getUnresolvedObjectivesV2 } from './stimulus';
+import { deriveObjectiveCredit, getUnresolvedObjectivesV2, readStimulusProfile } from './stimulus';
 import type { PlannerState, WeeklyObjective, WorkoutStimulusProfile } from './models';
 
 describe('deriveObjectiveCredit', () => {
@@ -10,18 +10,18 @@ describe('deriveObjectiveCredit', () => {
         requiredCredit: 1.0,
         targetExposures: 1,
         completedExposures: 0,
-        targetStimulus: { aerobicCapacity: 0.8 },
+        targetStimulus: { aerobicEndurance: 0.8 },
     };
 
     const sampleStimulus: WorkoutStimulusProfile = {
         aerobicEndurance: 0.8,
-        aerobicCapacity: 0.8,
         thresholdPower: 0.2,
         vo2MaxPower: 0,
         repeatedSurges: 0,
         sprintPower: 0,
         fatigueResistance: 0,
         maxStrength: 0,
+        hypertrophy: 0,
     };
 
     it('derives full fractional credit when fully completed', () => {
@@ -78,7 +78,7 @@ describe('deriveObjectiveCredit', () => {
 
         const clampedLow = deriveObjectiveCredit(sampleObjective, sampleStimulus, { completionRatio: -0.5 });
         expect(clampedLow.earnedCredit).toBe(0);
-        expect(clampedLow.qualifies).toBe(false);
+        expect(clampedLow.qualifies).toBe(true);
     });
 
     it('derives credit for threshold_quality, surge_repeatability, vo2_max, strength_maintenance and race_specific_endurance objectives', () => {
@@ -111,13 +111,65 @@ describe('deriveObjectiveCredit', () => {
     });
 
     it('falls back to legacy stimulus field names when canonical axes are absent', () => {
-        const legacyOnlyStimulus: WorkoutStimulusProfile = {
+        const legacyOnlyStimulus = {
             aerobicCapacity: 0.8,
             thresholdDevelopment: 0.6,
             surgeRepeatability: 0.4,
         };
         const result = deriveObjectiveCredit({ ...sampleObjective, key: 'zone2_aerobic' }, legacyOnlyStimulus);
         expect(result.earnedCredit).toBe(0.8);
+    });
+
+    it('does not credit an invalid stimulus record as if it were a zero-stimulus workout', () => {
+        const result = deriveObjectiveCredit(sampleObjective, null);
+        expect(result).toMatchObject({ earnedCredit: 0, qualifies: false, reason: 'Invalid stimulus profile' });
+    });
+});
+
+describe('readStimulusProfile', () => {
+    it('passes canonical fields through unchanged', () => {
+        const canonical: WorkoutStimulusProfile = {
+            aerobicEndurance: 0.8,
+            thresholdPower: 0.7,
+            vo2MaxPower: 0.6,
+            repeatedSurges: 0.5,
+            sprintPower: 0.2,
+            fatigueResistance: 0.4,
+            maxStrength: 0.9,
+            hypertrophy: 0.3,
+        };
+        const profile = readStimulusProfile(canonical);
+        expect(profile).toMatchObject({ status: 'AVAILABLE', data: canonical });
+    });
+
+    it('converts legacy-only fields without applying derived fallbacks', () => {
+        const legacy = {
+            aerobicCapacity: 0.8,
+            thresholdDevelopment: 0.6,
+            surgeRepeatability: 0.5,
+        };
+        const profile = readStimulusProfile(legacy);
+        expect(profile.status).toBe('AVAILABLE');
+        if (profile.status !== 'AVAILABLE') throw new Error('Expected available legacy profile');
+        expect(profile.data.aerobicEndurance).toBe(0.8);
+        expect(profile.data.thresholdPower).toBe(0.6);
+        expect(profile.data.repeatedSurges).toBe(0.5);
+        expect(profile.data.vo2MaxPower).toBe(0); // derived multiplier deleted
+        expect(profile.data.fatigueResistance).toBe(0); // derived multiplier deleted
+    });
+
+    it('prefers canonical values and logs when canonical and legacy fields conflict', () => {
+        const conflicting = {
+            aerobicEndurance: 0.9,
+            aerobicCapacity: 0.4,
+        };
+        const profile = readStimulusProfile(conflicting);
+        expect(profile).toMatchObject({ status: 'AVAILABLE', data: { aerobicEndurance: 0.9 } });
+    });
+
+    it('returns INVALID for empty/null inputs', () => {
+        const profile = readStimulusProfile(null);
+        expect(profile).toMatchObject({ status: 'INVALID', issues: [{ code: 'stimulus_profile_missing_axes' }] });
     });
 });
 

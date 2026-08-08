@@ -1,10 +1,6 @@
-import type { ObjectiveKey, ObjectiveProgress, PlannerState, WeeklyObjective, WorkoutStimulusProfile } from './models';
-
-export interface DeliveredDose {
-    plannedDurationMin?: number;
-    completedDurationMin?: number;
-    completionRatio?: number; // 0.0 to 1.0 (defaults to 1.0)
-}
+import type { DeliveredDose, ObjectiveKey, ObjectiveProgress, PlannerState, WeeklyObjective, WorkoutStimulusProfile } from './models';
+import type { DataIssue, DataState } from './dataState';
+export type { DeliveredDose } from './models';
 
 export interface CreditContext {
     modality?: string;
@@ -19,18 +15,127 @@ export interface ObjectiveCredit {
     reason?: string;
 }
 
+const CANONICAL_AXES = [
+    'aerobicEndurance',
+    'thresholdPower',
+    'vo2MaxPower',
+    'repeatedSurges',
+    'sprintPower',
+    'fatigueResistance',
+    'maxStrength',
+    'hypertrophy',
+] as const;
+
+const LEGACY_AXES = [
+    'aerobicCapacity',
+    'thresholdDevelopment',
+    'surgeRepeatability',
+] as const;
+
+function isValidStimulusValue(value: unknown): value is number {
+    return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1;
+}
+
+function clamp01(value: number): number {
+    if (!Number.isFinite(value)) return 0;
+    return Math.min(1, Math.max(0, value));
+}
+
+/**
+ * Boundary reader for persisted or external stimulus records.
+ *
+ * Partial-canonical policy is axis-local: a supplied canonical axis wins for that axis;
+ * the corresponding legacy rename may backfill only when that canonical axis is absent.
+ * Canonical-only axes that are absent remain 0 because legacy persistence never carried
+ * them. Every supplied known canonical/legacy value must nevertheless be a finite number
+ * in the documented 0..1 range; malformed persisted data is INVALID even if a valid
+ * canonical value would otherwise override it.
+ */
+export function readStimulusProfile(raw: unknown): DataState<WorkoutStimulusProfile> {
+    if (!raw || typeof raw !== 'object') {
+        return {
+            status: 'INVALID',
+            issues: [{ code: 'stimulus_profile_missing_axes', documentPath: 'completed-training stimulus profile' }],
+        };
+    }
+    const r = raw as Record<string, unknown>;
+
+    const hasCanonical = CANONICAL_AXES.some(axis => r[axis] !== undefined);
+    const hasLegacy = LEGACY_AXES.some(axis => r[axis] !== undefined);
+
+    if (!hasCanonical && !hasLegacy) {
+        return {
+            status: 'INVALID',
+            issues: [{ code: 'stimulus_profile_missing_axes', documentPath: 'completed-training stimulus profile' }],
+        };
+    }
+
+    const invalidIssues: DataIssue[] = [];
+    for (const axis of [...CANONICAL_AXES, ...LEGACY_AXES]) {
+        const value = r[axis];
+        if (value !== undefined && !isValidStimulusValue(value)) {
+            invalidIssues.push({
+                code: 'stimulus_profile_invalid_axis',
+                field: axis,
+                documentPath: 'completed-training stimulus profile',
+            });
+        }
+    }
+    if (invalidIssues.length > 0) {
+        return { status: 'INVALID', issues: invalidIssues };
+    }
+
+    if (hasCanonical && hasLegacy) {
+        if (r.aerobicEndurance !== undefined && r.aerobicCapacity !== undefined && r.aerobicEndurance !== r.aerobicCapacity) {
+            console.warn(`[readStimulusProfile] Divergence: aerobicEndurance (${r.aerobicEndurance}) vs legacy aerobicCapacity (${r.aerobicCapacity}). Canonical wins.`);
+        }
+        if (r.thresholdPower !== undefined && r.thresholdDevelopment !== undefined && r.thresholdPower !== r.thresholdDevelopment) {
+            console.warn(`[readStimulusProfile] Divergence: thresholdPower (${r.thresholdPower}) vs legacy thresholdDevelopment (${r.thresholdDevelopment}). Canonical wins.`);
+        }
+        if (r.repeatedSurges !== undefined && r.surgeRepeatability !== undefined && r.repeatedSurges !== r.surgeRepeatability) {
+            console.warn(`[readStimulusProfile] Divergence: repeatedSurges (${r.repeatedSurges}) vs legacy surgeRepeatability (${r.surgeRepeatability}). Canonical wins.`);
+        }
+    }
+
+    return {
+        status: 'AVAILABLE',
+        revision: null,
+        data: {
+            aerobicEndurance: (r.aerobicEndurance as number | undefined) ?? (r.aerobicCapacity as number | undefined) ?? 0,
+            thresholdPower: (r.thresholdPower as number | undefined) ?? (r.thresholdDevelopment as number | undefined) ?? 0,
+            vo2MaxPower: (r.vo2MaxPower as number | undefined) ?? 0,
+            repeatedSurges: (r.repeatedSurges as number | undefined) ?? (r.surgeRepeatability as number | undefined) ?? 0,
+            sprintPower: (r.sprintPower as number | undefined) ?? 0,
+            fatigueResistance: (r.fatigueResistance as number | undefined) ?? 0,
+            maxStrength: (r.maxStrength as number | undefined) ?? 0,
+            hypertrophy: (r.hypertrophy as number | undefined) ?? 0,
+        },
+    };
+}
+
 /**
  * Calculates dose-sensitive fractional objective credit derived from the workout's stimulus profile
- * and delivered duration/completion ratio.
+ * and delivered duration/completion evidence.
  */
 export function deriveObjectiveCredit(
     objective: WeeklyObjective,
-    stimulus: WorkoutStimulusProfile,
+    rawStimulus: unknown,
     dose: DeliveredDose = {},
     context?: CreditContext
 ): ObjectiveCredit {
-    const completionRatio = Math.min(1.0, Math.max(0.0, dose.completionRatio ?? 1.0));
-    
+    const stimulusState = readStimulusProfile(rawStimulus);
+    if (stimulusState.status !== 'AVAILABLE') {
+        return {
+            objectiveId: objective.id,
+            objectiveKey: objective.key,
+            earnedCredit: 0,
+            qualifies: false,
+            reason: 'Invalid stimulus profile',
+        };
+    }
+    const stimulus = stimulusState.data;
+    const completionRatio = clamp01(dose.completionRatio ?? 1.0);
+
     // Check qualification constraints if present
     if (objective.qualification) {
         const qual = objective.qualification;
@@ -48,7 +153,11 @@ export function deriveObjectiveCredit(
         }
         if (qual.minimumStimulus) {
             for (const [axis, minVal] of Object.entries(qual.minimumStimulus)) {
-                const val = stimulus[axis as keyof WorkoutStimulusProfile] ?? 0;
+                const canonicalAxis = axis === 'thresholdDevelopment' ? 'thresholdPower'
+                    : axis === 'surgeRepeatability' ? 'repeatedSurges'
+                    : axis === 'aerobicCapacity' ? 'aerobicEndurance'
+                    : axis;
+                const val = stimulus[canonicalAxis as keyof WorkoutStimulusProfile] ?? 0;
                 if (val < (minVal ?? 0)) {
                     return { objectiveId: objective.id, objectiveKey: objective.key, earnedCredit: 0, qualifies: false, reason: `Minimum ${axis} stimulus not met` };
                 }
@@ -60,57 +169,65 @@ export function deriveObjectiveCredit(
     let rawStimulusContribution = 0;
     switch (objective.key) {
         case 'zone2_aerobic':
-            rawStimulusContribution = (stimulus.aerobicEndurance ?? stimulus.aerobicCapacity ?? 0);
+            rawStimulusContribution = stimulus.aerobicEndurance;
             break;
         case 'threshold_quality':
-            rawStimulusContribution = (stimulus.thresholdPower ?? stimulus.thresholdDevelopment ?? 0);
+            rawStimulusContribution = stimulus.thresholdPower;
             break;
         case 'surge_repeatability':
-            rawStimulusContribution = (stimulus.repeatedSurges ?? stimulus.surgeRepeatability ?? 0);
+            rawStimulusContribution = stimulus.repeatedSurges;
             break;
         case 'vo2_max':
-            rawStimulusContribution = (stimulus.vo2MaxPower ?? 0);
+            rawStimulusContribution = stimulus.vo2MaxPower;
             break;
         case 'strength_maintenance':
-            rawStimulusContribution = Math.max(
-                stimulus.maxStrength ?? 0,
-                stimulus.hypertrophy ?? 0
-            );
+            rawStimulusContribution = Math.max(stimulus.maxStrength, stimulus.hypertrophy);
             break;
         case 'race_specific_endurance':
             rawStimulusContribution = Math.max(
-                stimulus.fatigueResistance ?? 0,
-                ((stimulus.aerobicEndurance ?? 0) * 0.5 + (stimulus.repeatedSurges ?? 0) * 0.5)
+                stimulus.fatigueResistance,
+                (stimulus.aerobicEndurance * 0.5 + stimulus.repeatedSurges * 0.5)
             );
             break;
-        default:
-            rawStimulusContribution = 0.5;
+        default: {
+            const objKey: string = (objective as { key?: string }).key ?? 'unknown';
+            console.warn(`[deriveObjectiveCredit] Unrecognized objective key: ${objKey}`);
+            rawStimulusContribution = 0;
+            break;
+        }
     }
 
-    // Scale by delivered dose completion ratio
-    const earnedCredit = Math.round(rawStimulusContribution * completionRatio * 100) / 100;
+    // Duration is meaningful evidence for endurance/power objectives but not for strength
+    // maintenance, where elapsed time is a poor proxy for useful sets and relative load.
+    // When planned and completed duration are both measured, duration completion and an
+    // independently supplied completionRatio are separate pieces of evidence and therefore
+    // scale multiplicatively. Missing duration evidence does not invent a reference dose.
+    let durationRatio = 1;
+    if (objective.key !== 'strength_maintenance'
+        && dose.plannedDurationMin !== undefined
+        && dose.completedDurationMin !== undefined) {
+        const planned = dose.plannedDurationMin;
+        const completed = dose.completedDurationMin;
+        durationRatio = Number.isFinite(planned) && planned > 0 && Number.isFinite(completed) && completed >= 0
+            ? clamp01(completed / planned)
+            : 0;
+    }
+
+    const deliveredDoseRatio = completionRatio * durationRatio;
+    const earnedCredit = Math.round(rawStimulusContribution * deliveredDoseRatio * 100) / 100;
 
     return {
         objectiveId: objective.id,
         objectiveKey: objective.key,
         earnedCredit,
-        qualifies: earnedCredit > 0,
+        qualifies: true,
     };
 }
 
 /**
- * V2 counterpart of microcycle.ts's `getUnresolvedObjectives(microcycle: MicrocycleState)`
- * (deliberately named differently to avoid colliding with it): operates on the fractional
- * `PlannerState`/`ObjectiveProgress` shape rather than integer `completedExposures`, so an
- * objective with partial dose-sensitive credit (see `deriveObjectiveCredit` above) can stay
- * "unresolved" even once at least one exposure has landed. Falls back to the objective's own
- * `completedExposures` when no progress entry is supplied, so it degrades gracefully for
- * objectives that haven't been credited through the fractional path yet.
- *
- * Not yet wired into planner.ts/microcycle.ts -- the live scheduling pipeline still runs on
- * the integer exposure-count model in microcycle.ts. This exists as the V2 building block for
- * migrating that pipeline; call sites should switch over deliberately, not implicitly, since
- * the two credit models are not numerically equivalent.
+ * Compatibility reader for a persisted `PlannerState`/`ObjectiveProgress` pair. The live
+ * microcycle ledger also uses fractional credit; this helper remains for audit/replay callers
+ * that hold progress separately from their objective objects.
  */
 export function getUnresolvedObjectivesV2(
     state: PlannerState,

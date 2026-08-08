@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { TEMPLATES } from '../engine/templates.ts';
-import type { Recommendation, SessionTemplate, TrainingSettings } from '../engine/models.ts';
+import type { PlannedDose, Recommendation, SessionTemplate, TrainingSettings } from '../engine/models.ts';
 import { WORKOUTS } from './catalog.ts';
 import { resolveWorkoutPrescription, variantFor, workoutForTemplate } from './prescription.ts';
 
@@ -8,6 +8,10 @@ function recommendation(templateId: string, overrides: Partial<Recommendation> =
   const template = TEMPLATES.find((item) => item.id === templateId);
   if (!template) throw new Error(`Missing template ${templateId}`);
   return { template, rationale: 'test', mode: 'train', ...overrides };
+}
+
+function dose(volume: number, intensity = 1): PlannedDose {
+  return { volume, intensity };
 }
 
 function makeSettings(overrides: Partial<TrainingSettings['capabilities']> = {}): TrainingSettings {
@@ -121,16 +125,16 @@ describe('resolveWorkoutPrescription', () => {
   });
 
   it('uses the more conservative planned-dose variant when no manual adjustment is present', () => {
-    expect(resolveWorkoutPrescription(recommendation('end_easy_01'), 'u1', '2026-08-07', undefined, 0.71)?.variantId).toBe('full');
-    expect(resolveWorkoutPrescription(recommendation('end_easy_01'), 'u1', '2026-08-07', undefined, 0.65)?.variantId).toBe('reduced');
-    expect(resolveWorkoutPrescription(recommendation('end_easy_01'), 'u1', '2026-08-07', undefined, 0.35)?.variantId).toBe('return_to_training');
+    expect(resolveWorkoutPrescription(recommendation('end_easy_01'), 'u1', '2026-08-07', undefined, dose(0.71))?.variantId).toBe('full');
+    expect(resolveWorkoutPrescription(recommendation('end_easy_01'), 'u1', '2026-08-07', undefined, dose(0.65))?.variantId).toBe('reduced');
+    expect(resolveWorkoutPrescription(recommendation('end_easy_01'), 'u1', '2026-08-07', undefined, dose(0.35))?.variantId).toBe('return_to_training');
   });
 
   it('uses the more conservative result when manual direction and execution dose disagree', () => {
     const easier = recommendation('end_easy_01', { adjustment: { direction: 'easier', tier: 1, originalTemplateId: 'end_easy_01', originalTemplateTitle: 'Zone 2 Spin', rationale: 'easier' } });
     const harder = recommendation('end_easy_01', { adjustment: { direction: 'harder', tier: 1, originalTemplateId: 'end_easy_01', originalTemplateTitle: 'Zone 2 Spin', rationale: 'harder' } });
-    expect(variantFor(easier, 0.35)).toBe('return_to_training');
-    expect(variantFor(harder, 0.65)).toBe('reduced');
+    expect(variantFor(easier, dose(0.35))).toBe('return_to_training');
+    expect(variantFor(harder, dose(0.65))).toBe('reduced');
   });
 
   it('keeps strength prescription relative when no 1RM is known and exposes tempo', () => {
@@ -148,7 +152,7 @@ describe('resolveWorkoutPrescription', () => {
       'u1',
       '2026-08-07',
       { cycling: { ftpWatts: 200, lthrBpm: 155, measuredAt: '2026-08-01T00:00:00Z' } },
-      1,
+      dose(1),
       makeSettings({ powerMeter: true, heartRateMonitor: true, cadenceData: true })
     );
 
@@ -165,7 +169,7 @@ describe('resolveWorkoutPrescription', () => {
       'u1',
       '2026-08-07',
       { cycling: { ftpWatts: 200, lthrBpm: 155, measuredAt: '2026-08-01T00:00:00Z' } },
-      1,
+      dose(1),
       makeSettings({ powerMeter: false, heartRateMonitor: true, cadenceData: true })
     );
 
@@ -183,7 +187,7 @@ describe('resolveWorkoutPrescription', () => {
       'u1',
       '2026-08-07',
       { cycling: { ftpWatts: 200, measuredAt: oldDate } },
-      1,
+      dose(1),
       makeSettings({ powerMeter: true })
     );
 
