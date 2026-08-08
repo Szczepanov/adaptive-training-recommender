@@ -48,28 +48,28 @@ export function generateWeeklyObjectives(
             const windowEnd = block?.endDate;
 
             let title = 'Plan Objective';
-            let targetStimulus: Record<string, number> = { aerobicCapacity: 0.5 };
+            let targetStimulus: WeeklyObjective['targetStimulus'] = { aerobicEndurance: 0.5 };
             let qualification: WeeklyObjective['qualification'] = undefined;
             const allowedModalities = focusEvent ? modalitiesForEventCategory(focusEvent.category) : [];
 
             switch (objDef.key) {
                 case 'zone2_aerobic':
                     title = 'Aerobic Base (Zone 2)';
-                    targetStimulus = { aerobicCapacity: 0.8 };
+                    targetStimulus = { aerobicEndurance: 0.8 };
                     break;
                 case 'threshold_quality':
                     title = 'Threshold Development';
-                    targetStimulus = { thresholdDevelopment: 0.9 };
+                    targetStimulus = { thresholdPower: 0.9 };
                     qualification = {
-                        minimumStimulus: { thresholdDevelopment: 0.6 },
+                        minimumStimulus: { thresholdPower: 0.6 },
                         ...(allowedModalities.length > 0 ? { allowedModalities } : {}),
                     };
                     break;
                 case 'surge_repeatability':
                     title = 'Surge & High-Intensity Repeatability';
-                    targetStimulus = { surgeRepeatability: 0.9, aerobicCapacity: 0.5 };
+                    targetStimulus = { repeatedSurges: 0.9, aerobicEndurance: 0.5 };
                     qualification = {
-                        minimumStimulus: { surgeRepeatability: 0.6 },
+                        minimumStimulus: { repeatedSurges: 0.6 },
                         ...(allowedModalities.length > 0 ? { allowedModalities } : {}),
                     };
                     break;
@@ -79,16 +79,16 @@ export function generateWeeklyObjectives(
                     break;
                 case 'race_specific_endurance':
                     title = 'Cycling Race-Specific Endurance';
-                    targetStimulus = { aerobicCapacity: 0.6, surgeRepeatability: 0.6 };
+                    targetStimulus = { aerobicEndurance: 0.6, repeatedSurges: 0.6 };
                     qualification = {
-                        minimumStimulus: { aerobicCapacity: 0.6 },
+                        minimumStimulus: { aerobicEndurance: 0.6 },
                         allowedModalities: ['Cycling'],
                         allowedCategories: ['Race-Specific Endurance'],
                     };
                     break;
                 case 'vo2_max':
                     title = 'VO2 Max Intervals';
-                    targetStimulus = { vo2MaxPower: 0.9, aerobicCapacity: 0.5 };
+                    targetStimulus = { vo2MaxPower: 0.9, aerobicEndurance: 0.5 };
                     break;
                 default: {
                     // Exhaustiveness guard: a future ObjectiveKey addition must add a case
@@ -130,7 +130,7 @@ export function generateWeeklyObjectives(
             title: 'Aerobic Base (Zone 2)',
             targetExposures: demand.aerobicEndurance >= 0.7 ? 2 : 1,
             completedExposures: 0,
-            targetStimulus: { aerobicCapacity: 0.8 },
+            targetStimulus: { aerobicEndurance: 0.8 },
         });
     }
 
@@ -143,9 +143,9 @@ export function generateWeeklyObjectives(
             title: 'Threshold Development',
             targetExposures: 1,
             completedExposures: 0,
-            targetStimulus: { thresholdDevelopment: 0.9 },
+            targetStimulus: { thresholdPower: 0.9 },
             qualification: {
-                minimumStimulus: { thresholdDevelopment: 0.6 },
+                minimumStimulus: { thresholdPower: 0.6 },
                 ...(allowedModalities.length > 0 ? { allowedModalities } : {}),
             },
         });
@@ -160,9 +160,9 @@ export function generateWeeklyObjectives(
             title: 'Surge & High-Intensity Repeatability',
             targetExposures: 1,
             completedExposures: 0,
-            targetStimulus: { surgeRepeatability: 0.9, aerobicCapacity: 0.5 },
+            targetStimulus: { repeatedSurges: 0.9, aerobicEndurance: 0.5 },
             qualification: {
-                minimumStimulus: { surgeRepeatability: 0.6 },
+                minimumStimulus: { repeatedSurges: 0.6 },
                 ...(allowedModalities.length > 0 ? { allowedModalities } : {}),
             },
         });
@@ -191,9 +191,9 @@ export function generateWeeklyObjectives(
             title: 'Cycling Race-Specific Endurance',
             targetExposures: 1,
             completedExposures: 0,
-            targetStimulus: { aerobicCapacity: 0.6, surgeRepeatability: 0.6 },
+            targetStimulus: { aerobicEndurance: 0.6, repeatedSurges: 0.6 },
             qualification: {
-                minimumStimulus: { aerobicCapacity: 0.6 },
+                minimumStimulus: { aerobicEndurance: 0.6 },
                 allowedModalities: ['Cycling'],
                 allowedCategories: ['Race-Specific Endurance'],
             },

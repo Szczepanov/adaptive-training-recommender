@@ -14,13 +14,15 @@ import { ENRICHED_TEMPLATES } from './templates';
 type CompletedModality = SessionTemplate['modality'] | 'Unknown';
 
 const ZERO_COST: WorkoutCostProfile = { systemic: 0, cardiovascular: 0, lowerBody: 0, upperBody: 0, impactTissue: 0, neuromuscular: 0 };
-const ZERO_STIMULUS: WorkoutStimulusProfile = {
-    aerobicCapacity: 0,
-    thresholdDevelopment: 0,
-    surgeRepeatability: 0,
+export const ZERO_STIMULUS: WorkoutStimulusProfile = {
+    aerobicEndurance: 0,
+    thresholdPower: 0,
+    vo2MaxPower: 0,
+    repeatedSurges: 0,
+    sprintPower: 0,
+    fatigueResistance: 0,
     maxStrength: 0,
     hypertrophy: 0,
-    mobilityRecovery: 0,
 };
 const ADHERENCE_DURATION_TOLERANCE_MIN = 20;
 
@@ -110,40 +112,40 @@ function comparableDurationDifference(left: number | null, right: number | null)
 
 export const DEFAULT_STIMULUS_BY_MODALITY: Record<CompletedModality, Record<CompletedTrainingIntensity, WorkoutStimulusProfile>> = {
     Cycling: {
-        easy: { aerobicCapacity: 0.55, thresholdDevelopment: 0.10, surgeRepeatability: 0.05, maxStrength: 0, hypertrophy: 0, mobilityRecovery: 0.10 },
-        moderate: { aerobicCapacity: 0.70, thresholdDevelopment: 0.20, surgeRepeatability: 0.10, maxStrength: 0, hypertrophy: 0, mobilityRecovery: 0 },
-        hard: { aerobicCapacity: 0.45, thresholdDevelopment: 0.70, surgeRepeatability: 0.65, maxStrength: 0, hypertrophy: 0, mobilityRecovery: 0 },
-        unknown: { aerobicCapacity: 0.55, thresholdDevelopment: 0.15, surgeRepeatability: 0.10, maxStrength: 0, hypertrophy: 0, mobilityRecovery: 0 },
+        easy: { aerobicEndurance: 0.55, thresholdPower: 0.10, vo2MaxPower: 0, repeatedSurges: 0.05, sprintPower: 0, fatigueResistance: 0.10, maxStrength: 0, hypertrophy: 0 },
+        moderate: { aerobicEndurance: 0.70, thresholdPower: 0.20, vo2MaxPower: 0.10, repeatedSurges: 0.10, sprintPower: 0, fatigueResistance: 0.20, maxStrength: 0, hypertrophy: 0 },
+        hard: { aerobicEndurance: 0.45, thresholdPower: 0.70, vo2MaxPower: 0.50, repeatedSurges: 0.65, sprintPower: 0.20, fatigueResistance: 0.50, maxStrength: 0, hypertrophy: 0 },
+        unknown: { aerobicEndurance: 0.55, thresholdPower: 0.15, vo2MaxPower: 0, repeatedSurges: 0.10, sprintPower: 0, fatigueResistance: 0.10, maxStrength: 0, hypertrophy: 0 },
     },
     Running: {
-        easy: { aerobicCapacity: 0.55, thresholdDevelopment: 0.10, surgeRepeatability: 0.05, maxStrength: 0, hypertrophy: 0, mobilityRecovery: 0.10 },
-        moderate: { aerobicCapacity: 0.70, thresholdDevelopment: 0.20, surgeRepeatability: 0.10, maxStrength: 0, hypertrophy: 0, mobilityRecovery: 0 },
-        hard: { aerobicCapacity: 0.45, thresholdDevelopment: 0.70, surgeRepeatability: 0.65, maxStrength: 0, hypertrophy: 0, mobilityRecovery: 0 },
-        unknown: { aerobicCapacity: 0.55, thresholdDevelopment: 0.15, surgeRepeatability: 0.10, maxStrength: 0, hypertrophy: 0, mobilityRecovery: 0 },
+        easy: { aerobicEndurance: 0.55, thresholdPower: 0.10, vo2MaxPower: 0, repeatedSurges: 0.05, sprintPower: 0, fatigueResistance: 0.10, maxStrength: 0, hypertrophy: 0 },
+        moderate: { aerobicEndurance: 0.70, thresholdPower: 0.20, vo2MaxPower: 0.10, repeatedSurges: 0.10, sprintPower: 0, fatigueResistance: 0.20, maxStrength: 0, hypertrophy: 0 },
+        hard: { aerobicEndurance: 0.45, thresholdPower: 0.70, vo2MaxPower: 0.50, repeatedSurges: 0.65, sprintPower: 0.20, fatigueResistance: 0.50, maxStrength: 0, hypertrophy: 0 },
+        unknown: { aerobicEndurance: 0.55, thresholdPower: 0.15, vo2MaxPower: 0, repeatedSurges: 0.10, sprintPower: 0, fatigueResistance: 0.10, maxStrength: 0, hypertrophy: 0 },
     },
     Strength: {
-        easy: { aerobicCapacity: 0.10, thresholdDevelopment: 0.05, surgeRepeatability: 0.05, maxStrength: 0.40, hypertrophy: 0.30, mobilityRecovery: 0.20 },
-        moderate: { aerobicCapacity: 0.15, thresholdDevelopment: 0.10, surgeRepeatability: 0.10, maxStrength: 0.70, hypertrophy: 0.60, mobilityRecovery: 0.10 },
-        hard: { aerobicCapacity: 0.20, thresholdDevelopment: 0.20, surgeRepeatability: 0.20, maxStrength: 0.85, hypertrophy: 0.75, mobilityRecovery: 0 },
-        unknown: { aerobicCapacity: 0.15, thresholdDevelopment: 0.10, surgeRepeatability: 0.10, maxStrength: 0.55, hypertrophy: 0.45, mobilityRecovery: 0.10 },
+        easy: { aerobicEndurance: 0.10, thresholdPower: 0.05, vo2MaxPower: 0, repeatedSurges: 0.05, sprintPower: 0, fatigueResistance: 0, maxStrength: 0.40, hypertrophy: 0.30 },
+        moderate: { aerobicEndurance: 0.15, thresholdPower: 0.10, vo2MaxPower: 0, repeatedSurges: 0.10, sprintPower: 0, fatigueResistance: 0, maxStrength: 0.70, hypertrophy: 0.60 },
+        hard: { aerobicEndurance: 0.20, thresholdPower: 0.20, vo2MaxPower: 0, repeatedSurges: 0.20, sprintPower: 0, fatigueResistance: 0, maxStrength: 0.85, hypertrophy: 0.75 },
+        unknown: { aerobicEndurance: 0.15, thresholdPower: 0.10, vo2MaxPower: 0, repeatedSurges: 0.10, sprintPower: 0, fatigueResistance: 0, maxStrength: 0.55, hypertrophy: 0.45 },
     },
     Field: {
-        easy: { aerobicCapacity: 0.40, thresholdDevelopment: 0.20, surgeRepeatability: 0.25, maxStrength: 0.10, hypertrophy: 0.10, mobilityRecovery: 0.10 },
-        moderate: { aerobicCapacity: 0.60, thresholdDevelopment: 0.45, surgeRepeatability: 0.50, maxStrength: 0.20, hypertrophy: 0.20, mobilityRecovery: 0.05 },
-        hard: { aerobicCapacity: 0.50, thresholdDevelopment: 0.70, surgeRepeatability: 0.75, maxStrength: 0.30, hypertrophy: 0.30, mobilityRecovery: 0 },
-        unknown: { aerobicCapacity: 0.50, thresholdDevelopment: 0.40, surgeRepeatability: 0.45, maxStrength: 0.20, hypertrophy: 0.20, mobilityRecovery: 0.05 },
+        easy: { aerobicEndurance: 0.40, thresholdPower: 0.20, vo2MaxPower: 0.10, repeatedSurges: 0.25, sprintPower: 0.20, fatigueResistance: 0.10, maxStrength: 0.10, hypertrophy: 0.10 },
+        moderate: { aerobicEndurance: 0.60, thresholdPower: 0.45, vo2MaxPower: 0.30, repeatedSurges: 0.50, sprintPower: 0.30, fatigueResistance: 0.30, maxStrength: 0.20, hypertrophy: 0.20 },
+        hard: { aerobicEndurance: 0.50, thresholdPower: 0.70, vo2MaxPower: 0.60, repeatedSurges: 0.75, sprintPower: 0.40, fatigueResistance: 0.40, maxStrength: 0.30, hypertrophy: 0.30 },
+        unknown: { aerobicEndurance: 0.50, thresholdPower: 0.40, vo2MaxPower: 0.20, repeatedSurges: 0.45, sprintPower: 0.30, fatigueResistance: 0.20, maxStrength: 0.20, hypertrophy: 0.20 },
     },
     Mobility: {
-        easy: { aerobicCapacity: 0.10, thresholdDevelopment: 0.05, surgeRepeatability: 0.05, maxStrength: 0.05, hypertrophy: 0.05, mobilityRecovery: 0.80 },
-        moderate: { aerobicCapacity: 0.15, thresholdDevelopment: 0.05, surgeRepeatability: 0.05, maxStrength: 0.10, hypertrophy: 0.10, mobilityRecovery: 0.70 },
-        hard: { aerobicCapacity: 0.20, thresholdDevelopment: 0.10, surgeRepeatability: 0.10, maxStrength: 0.15, hypertrophy: 0.15, mobilityRecovery: 0.50 },
-        unknown: { aerobicCapacity: 0.15, thresholdDevelopment: 0.05, surgeRepeatability: 0.05, maxStrength: 0.10, hypertrophy: 0.10, mobilityRecovery: 0.70 },
+        easy: { aerobicEndurance: 0.10, thresholdPower: 0.05, vo2MaxPower: 0, repeatedSurges: 0.05, sprintPower: 0, fatigueResistance: 0, maxStrength: 0.05, hypertrophy: 0.05 },
+        moderate: { aerobicEndurance: 0.15, thresholdPower: 0.05, vo2MaxPower: 0, repeatedSurges: 0.05, sprintPower: 0, fatigueResistance: 0, maxStrength: 0.10, hypertrophy: 0.10 },
+        hard: { aerobicEndurance: 0.20, thresholdPower: 0.10, vo2MaxPower: 0, repeatedSurges: 0.10, sprintPower: 0, fatigueResistance: 0, maxStrength: 0.15, hypertrophy: 0.15 },
+        unknown: { aerobicEndurance: 0.15, thresholdPower: 0.05, vo2MaxPower: 0, repeatedSurges: 0.05, sprintPower: 0, fatigueResistance: 0, maxStrength: 0.10, hypertrophy: 0.10 },
     },
     'Cross Training': {
-        easy: { aerobicCapacity: 0.55, thresholdDevelopment: 0.10, surgeRepeatability: 0.05, maxStrength: 0.10, hypertrophy: 0.10, mobilityRecovery: 0.10 },
-        moderate: { aerobicCapacity: 0.70, thresholdDevelopment: 0.20, surgeRepeatability: 0.10, maxStrength: 0.15, hypertrophy: 0.15, mobilityRecovery: 0.05 },
-        hard: { aerobicCapacity: 0.50, thresholdDevelopment: 0.65, surgeRepeatability: 0.60, maxStrength: 0.20, hypertrophy: 0.20, mobilityRecovery: 0 },
-        unknown: { aerobicCapacity: 0.60, thresholdDevelopment: 0.20, surgeRepeatability: 0.15, maxStrength: 0.15, hypertrophy: 0.15, mobilityRecovery: 0.05 },
+        easy: { aerobicEndurance: 0.55, thresholdPower: 0.10, vo2MaxPower: 0, repeatedSurges: 0.05, sprintPower: 0, fatigueResistance: 0.10, maxStrength: 0.10, hypertrophy: 0.10 },
+        moderate: { aerobicEndurance: 0.70, thresholdPower: 0.20, vo2MaxPower: 0.10, repeatedSurges: 0.10, sprintPower: 0, fatigueResistance: 0.15, maxStrength: 0.15, hypertrophy: 0.15 },
+        hard: { aerobicEndurance: 0.50, thresholdPower: 0.65, vo2MaxPower: 0.40, repeatedSurges: 0.60, sprintPower: 0.20, fatigueResistance: 0.30, maxStrength: 0.20, hypertrophy: 0.20 },
+        unknown: { aerobicEndurance: 0.60, thresholdPower: 0.20, vo2MaxPower: 0.10, repeatedSurges: 0.15, sprintPower: 0, fatigueResistance: 0.15, maxStrength: 0.15, hypertrophy: 0.15 },
     },
     None: { easy: ZERO_STIMULUS, moderate: ZERO_STIMULUS, hard: ZERO_STIMULUS, unknown: ZERO_STIMULUS },
     Unknown: { easy: ZERO_STIMULUS, moderate: ZERO_STIMULUS, hard: ZERO_STIMULUS, unknown: ZERO_STIMULUS },

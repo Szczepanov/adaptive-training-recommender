@@ -341,7 +341,7 @@ export const TEMPLATES: SessionTemplate[] = [
         durationMin: 25, durationMax: 45, title: 'Compact Power Maintenance',
         description: 'Low-fatigue power, upper-body strength, and tissue-capacity maintenance.',
         requiredEquipment: ['free_weights'], environment: 'either', safetyTags: ['avoid_heavy_lower_body'], systemicCost: 0.35, objectiveTransferable: false,
-        stimulusProfile: { aerobicCapacity: 0, thresholdDevelopment: 0, surgeRepeatability: 0.6, maxStrength: 0.5, hypertrophy: 0.2, mobilityRecovery: 0.1 },
+        stimulusProfile: { aerobicEndurance: 0, thresholdPower: 0, vo2MaxPower: 0.3, repeatedSurges: 0.6, sprintPower: 0.5, fatigueResistance: 0.2, maxStrength: 0.5, hypertrophy: 0.2 },
         costProfile: { systemic: 0.35, cardiovascular: 0.2, lowerBody: 0.4, upperBody: 0.5, impactTissue: 0.3, neuromuscular: 0.7 }
     },
     {
@@ -349,7 +349,7 @@ export const TEMPLATES: SessionTemplate[] = [
         durationMin: 25, durationMax: 50, title: 'Controlled Field & Football Maintenance',
         description: 'Controlled acceleration, braking, cutting, and ball skill for athletes already tolerating field mechanics.',
         requiredEquipment: [], environment: 'outdoor', safetyTags: ['avoid_high_impact', 'avoid_heavy_lower_body'], systemicCost: 0.6, objectiveTransferable: false,
-        stimulusProfile: { aerobicCapacity: 0.4, thresholdDevelopment: 0.2, surgeRepeatability: 0.7, maxStrength: 0.1, hypertrophy: 0, mobilityRecovery: 0 },
+        stimulusProfile: { aerobicEndurance: 0.4, thresholdPower: 0.2, vo2MaxPower: 0.5, repeatedSurges: 0.7, sprintPower: 0.4, fatigueResistance: 0.3, maxStrength: 0.1, hypertrophy: 0 },
         costProfile: { systemic: 0.6, cardiovascular: 0.5, lowerBody: 0.7, upperBody: 0.05, impactTissue: 0.8, neuromuscular: 0.8 }
     },
     {
@@ -487,12 +487,6 @@ export const TEMPLATES: SessionTemplate[] = [
             prescriptionSummary: "Increased to 10 hard hill repeats."
         }
     },
-    // --- Race-Specific Endurance: event-proximity-gated cycling progression. Wires the
-    // previously-orphaned build-support/cycling-race/taper-race catalogue workouts (see
-    // docs/workout-library-expansion-plan.md, which deliberately deferred this) into the
-    // day-by-day engine via engineTemplateIds. Only ever selectable on Path B (the intent
-    // optimizer) -- see phaseEligibility and rules.ts's evaluateTraining, which has no
-    // PeriodizationResult to evaluate these against at all.
     {
         id: "end_race_specific_01",
         category: "Race-Specific Endurance",
@@ -505,7 +499,7 @@ export const TEMPLATES: SessionTemplate[] = [
         environment: 'outdoor', safetyTags: [],
         systemicCost: 0.65,
         objectiveTransferable: false,
-        stimulusProfile: { aerobicCapacity: 0.8, thresholdDevelopment: 0.4, surgeRepeatability: 0.6, maxStrength: 0, hypertrophy: 0, mobilityRecovery: 0 },
+        stimulusProfile: { aerobicEndurance: 0.8, thresholdPower: 0.4, vo2MaxPower: 0.4, repeatedSurges: 0.6, sprintPower: 0.1, fatigueResistance: 0.7, maxStrength: 0, hypertrophy: 0 },
         costProfile: { systemic: 0.55, cardiovascular: 0.6, lowerBody: 0.35, upperBody: 0.1, impactTissue: 0.15, neuromuscular: 0.3 },
         phaseEligibility: { requiresFocusEvent: true, excludeTaper: true }
     },
@@ -521,7 +515,7 @@ export const TEMPLATES: SessionTemplate[] = [
         environment: 'outdoor', safetyTags: [],
         systemicCost: 0.95,
         objectiveTransferable: false,
-        stimulusProfile: { aerobicCapacity: 0.6, thresholdDevelopment: 0.7, surgeRepeatability: 1.0, maxStrength: 0, hypertrophy: 0, mobilityRecovery: 0 },
+        stimulusProfile: { aerobicEndurance: 0.6, thresholdPower: 0.7, vo2MaxPower: 0.8, repeatedSurges: 1.0, sprintPower: 0.2, fatigueResistance: 0.85, maxStrength: 0, hypertrophy: 0 },
         costProfile: { systemic: 0.9, cardiovascular: 0.95, lowerBody: 0.6, upperBody: 0.1, impactTissue: 0.2, neuromuscular: 0.75 },
         phaseEligibility: { requiresFocusEvent: true, maxDaysToEvent: 35, excludeTaper: true }
     },
@@ -537,7 +531,7 @@ export const TEMPLATES: SessionTemplate[] = [
         environment: 'outdoor', safetyTags: [],
         systemicCost: 0.45,
         objectiveTransferable: false,
-        stimulusProfile: { aerobicCapacity: 0.3, thresholdDevelopment: 0.6, surgeRepeatability: 0.5, maxStrength: 0, hypertrophy: 0, mobilityRecovery: 0.1 },
+        stimulusProfile: { aerobicEndurance: 0.3, thresholdPower: 0.6, vo2MaxPower: 0.5, repeatedSurges: 0.5, sprintPower: 0.1, fatigueResistance: 0.4, maxStrength: 0, hypertrophy: 0 },
         costProfile: { systemic: 0.4, cardiovascular: 0.5, lowerBody: 0.25, upperBody: 0.05, impactTissue: 0.1, neuromuscular: 0.35 },
         phaseEligibility: { requiresFocusEvent: true, requiresTaper: true }
     },
@@ -553,60 +547,42 @@ export const TEMPLATES: SessionTemplate[] = [
         environment: 'outdoor', safetyTags: [],
         systemicCost: 0.2,
         objectiveTransferable: false,
-        stimulusProfile: { aerobicCapacity: 0.2, thresholdDevelopment: 0.1, surgeRepeatability: 0.3, maxStrength: 0, hypertrophy: 0, mobilityRecovery: 0.3 },
+        stimulusProfile: { aerobicEndurance: 0.2, thresholdPower: 0.1, vo2MaxPower: 0.2, repeatedSurges: 0.3, sprintPower: 0.1, fatigueResistance: 0.2, maxStrength: 0, hypertrophy: 0 },
         costProfile: { systemic: 0.15, cardiovascular: 0.2, lowerBody: 0.1, upperBody: 0.05, impactTissue: 0.05, neuromuscular: 0.2 },
         phaseEligibility: { requiresFocusEvent: true, requiresTaper: true, maxDaysToEvent: 3 }
     }
 ];
 
-/**
- * Backfills the newer canonical V2 stimulus axes (aerobicEndurance, thresholdPower,
- * vo2MaxPower, repeatedSurges, sprintPower, fatigueResistance) from the legacy axes no
- * template author has been asked to fill in directly yet, and vice versa, so both names
- * for a given axis always agree on one template.
- *
- * vo2MaxPower and fatigueResistance have no legacy 1:1 counterpart, so they're estimated
- * from a related legacy axis (surgeRepeatability * 0.8, thresholdDevelopment * 0.7). Those
- * multipliers are placeholder approximations, not measured coefficients -- nothing in the
- * live scheduling path reads these two axes yet (only stimulus.ts's not-yet-wired
- * deriveObjectiveCredit does), so treat them as low-confidence until templates.ts gains
- * real per-template vo2MaxPower/fatigueResistance authoring.
- */
-function canonicalizeStimulus(s: WorkoutStimulusProfile): WorkoutStimulusProfile {
+function canonicalizeStimulus(s: Partial<WorkoutStimulusProfile> & Record<string, number>): WorkoutStimulusProfile {
     return {
         aerobicEndurance: s.aerobicEndurance ?? s.aerobicCapacity ?? 0,
         thresholdPower: s.thresholdPower ?? s.thresholdDevelopment ?? 0,
-        vo2MaxPower: s.vo2MaxPower ?? (s.surgeRepeatability ? s.surgeRepeatability * 0.8 : 0),
+        vo2MaxPower: s.vo2MaxPower ?? 0,
         repeatedSurges: s.repeatedSurges ?? s.surgeRepeatability ?? 0,
         sprintPower: s.sprintPower ?? 0,
-        fatigueResistance: s.fatigueResistance ?? (s.thresholdDevelopment ? s.thresholdDevelopment * 0.7 : 0),
+        fatigueResistance: s.fatigueResistance ?? 0,
         maxStrength: s.maxStrength ?? 0,
-        aerobicCapacity: s.aerobicCapacity ?? s.aerobicEndurance ?? 0,
-        thresholdDevelopment: s.thresholdDevelopment ?? s.thresholdPower ?? 0,
-        surgeRepeatability: s.surgeRepeatability ?? s.repeatedSurges ?? 0,
         hypertrophy: s.hypertrophy ?? 0,
-        mobilityRecovery: s.mobilityRecovery ?? 0,
     };
 }
 
-// Helper to ensure all templates have typed 6D stimulus & cost profiles
 export const ENRICHED_TEMPLATES: SessionTemplate[] = TEMPLATES.map(t => {
     let stimulus = t.stimulusProfile;
     let cost = t.costProfile;
 
     if (!stimulus) {
-        if (t.category === 'Rest') stimulus = { aerobicCapacity: 0, thresholdDevelopment: 0, surgeRepeatability: 0, maxStrength: 0, hypertrophy: 0, mobilityRecovery: 1.0 };
-        else if (t.category === 'Mobility/Recovery') stimulus = { aerobicCapacity: 0.1, thresholdDevelopment: 0, surgeRepeatability: 0, maxStrength: 0, hypertrophy: 0, mobilityRecovery: 1.0 };
-        else if (t.category === 'Easy Endurance') stimulus = { aerobicCapacity: 0.8, thresholdDevelopment: 0.2, surgeRepeatability: 0, maxStrength: 0, hypertrophy: 0, mobilityRecovery: 0.2 };
-        else if (t.category === 'Moderate Endurance') stimulus = { aerobicCapacity: 0.7, thresholdDevelopment: 0.8, surgeRepeatability: 0.3, maxStrength: 0, hypertrophy: 0, mobilityRecovery: 0 };
-        else if (t.category === 'Hard Endurance') stimulus = { aerobicCapacity: 0.6, thresholdDevelopment: 0.8, surgeRepeatability: 1.0, maxStrength: 0, hypertrophy: 0, mobilityRecovery: 0 };
-        else if (t.category === 'Race-Specific Endurance') stimulus = { aerobicCapacity: 0.6, thresholdDevelopment: 0.6, surgeRepeatability: 0.8, maxStrength: 0, hypertrophy: 0, mobilityRecovery: 0 };
-        else if (t.category === 'Technical Skill') stimulus = { aerobicCapacity: 0.1, thresholdDevelopment: 0, surgeRepeatability: 0.2, maxStrength: 0, hypertrophy: 0, mobilityRecovery: 0.1 };
-        else if (t.category === 'Upper-body Strength') stimulus = { aerobicCapacity: 0, thresholdDevelopment: 0, surgeRepeatability: 0.2, maxStrength: 0.8, hypertrophy: 0.8, mobilityRecovery: 0.2 };
-        else if (t.category === 'Lower-body Strength') stimulus = { aerobicCapacity: 0, thresholdDevelopment: 0, surgeRepeatability: 0.2, maxStrength: 0.9, hypertrophy: 0.8, mobilityRecovery: 0.2 };
-        else if (t.category === 'Power Maintenance') stimulus = { aerobicCapacity: 0, thresholdDevelopment: 0, surgeRepeatability: 0.6, maxStrength: 0.5, hypertrophy: 0.2, mobilityRecovery: 0.1 };
-        else if (t.category === 'Field Maintenance') stimulus = { aerobicCapacity: 0.4, thresholdDevelopment: 0.2, surgeRepeatability: 0.7, maxStrength: 0.1, hypertrophy: 0, mobilityRecovery: 0 };
-        else stimulus = { aerobicCapacity: 0.2, thresholdDevelopment: 0.3, surgeRepeatability: 0.4, maxStrength: 0.8, hypertrophy: 0.7, mobilityRecovery: 0.2 };
+        if (t.category === 'Rest') stimulus = { aerobicEndurance: 0, thresholdPower: 0, vo2MaxPower: 0, repeatedSurges: 0, sprintPower: 0, fatigueResistance: 0, maxStrength: 0, hypertrophy: 0 };
+        else if (t.category === 'Mobility/Recovery') stimulus = { aerobicEndurance: 0.1, thresholdPower: 0, vo2MaxPower: 0, repeatedSurges: 0, sprintPower: 0, fatigueResistance: 0, maxStrength: 0, hypertrophy: 0 };
+        else if (t.category === 'Easy Endurance') stimulus = { aerobicEndurance: 0.8, thresholdPower: 0.2, vo2MaxPower: 0, repeatedSurges: 0, sprintPower: 0, fatigueResistance: 0.2, maxStrength: 0, hypertrophy: 0 };
+        else if (t.category === 'Moderate Endurance') stimulus = { aerobicEndurance: 0.7, thresholdPower: 0.8, vo2MaxPower: 0.2, repeatedSurges: 0.3, sprintPower: 0, fatigueResistance: 0.5, maxStrength: 0, hypertrophy: 0 };
+        else if (t.category === 'Hard Endurance') stimulus = { aerobicEndurance: 0.6, thresholdPower: 0.8, vo2MaxPower: 0.9, repeatedSurges: 1.0, sprintPower: 0.3, fatigueResistance: 0.6, maxStrength: 0, hypertrophy: 0 };
+        else if (t.category === 'Race-Specific Endurance') stimulus = { aerobicEndurance: 0.6, thresholdPower: 0.6, vo2MaxPower: 0.6, repeatedSurges: 0.8, sprintPower: 0.2, fatigueResistance: 0.7, maxStrength: 0, hypertrophy: 0 };
+        else if (t.category === 'Technical Skill') stimulus = { aerobicEndurance: 0.1, thresholdPower: 0, vo2MaxPower: 0, repeatedSurges: 0.2, sprintPower: 0.1, fatigueResistance: 0, maxStrength: 0, hypertrophy: 0 };
+        else if (t.category === 'Upper-body Strength') stimulus = { aerobicEndurance: 0, thresholdPower: 0, vo2MaxPower: 0, repeatedSurges: 0.2, sprintPower: 0, fatigueResistance: 0, maxStrength: 0.8, hypertrophy: 0.8 };
+        else if (t.category === 'Lower-body Strength') stimulus = { aerobicEndurance: 0, thresholdPower: 0, vo2MaxPower: 0, repeatedSurges: 0.2, sprintPower: 0, fatigueResistance: 0, maxStrength: 0.9, hypertrophy: 0.8 };
+        else if (t.category === 'Power Maintenance') stimulus = { aerobicEndurance: 0, thresholdPower: 0, vo2MaxPower: 0.3, repeatedSurges: 0.6, sprintPower: 0.5, fatigueResistance: 0.2, maxStrength: 0.5, hypertrophy: 0.2 };
+        else if (t.category === 'Field Maintenance') stimulus = { aerobicEndurance: 0.4, thresholdPower: 0.2, vo2MaxPower: 0.5, repeatedSurges: 0.7, sprintPower: 0.4, fatigueResistance: 0.3, maxStrength: 0.1, hypertrophy: 0 };
+        else stimulus = { aerobicEndurance: 0.2, thresholdPower: 0.3, vo2MaxPower: 0.2, repeatedSurges: 0.4, sprintPower: 0.1, fatigueResistance: 0.2, maxStrength: 0.8, hypertrophy: 0.7 };
     }
 
     if (!cost) {

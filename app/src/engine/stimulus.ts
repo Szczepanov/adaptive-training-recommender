@@ -20,15 +20,75 @@ export interface ObjectiveCredit {
 }
 
 /**
+ * Boundary reader for persisted or external stimulus records.
+ * Canonical fields win unconditionally; legacy fields convert if canonical fields are missing.
+ * Disagreements between canonical and legacy fields are logged.
+ */
+export function readStimulusProfile(raw: unknown): WorkoutStimulusProfile {
+    if (!raw || typeof raw !== 'object') {
+        return {
+            aerobicEndurance: 0,
+            thresholdPower: 0,
+            vo2MaxPower: 0,
+            repeatedSurges: 0,
+            sprintPower: 0,
+            fatigueResistance: 0,
+            maxStrength: 0,
+            hypertrophy: 0,
+        };
+    }
+    const r = raw as Record<string, unknown>;
+
+    const hasCanonical =
+        r.aerobicEndurance !== undefined ||
+        r.thresholdPower !== undefined ||
+        r.vo2MaxPower !== undefined ||
+        r.repeatedSurges !== undefined ||
+        r.sprintPower !== undefined ||
+        r.fatigueResistance !== undefined ||
+        r.maxStrength !== undefined ||
+        r.hypertrophy !== undefined;
+
+    const hasLegacy =
+        r.aerobicCapacity !== undefined ||
+        r.thresholdDevelopment !== undefined ||
+        r.surgeRepeatability !== undefined;
+
+    if (hasCanonical && hasLegacy) {
+        if (r.aerobicEndurance !== undefined && r.aerobicCapacity !== undefined && r.aerobicEndurance !== r.aerobicCapacity) {
+            console.warn(`[readStimulusProfile] Divergence: aerobicEndurance (${r.aerobicEndurance}) vs legacy aerobicCapacity (${r.aerobicCapacity}). Canonical wins.`);
+        }
+        if (r.thresholdPower !== undefined && r.thresholdDevelopment !== undefined && r.thresholdPower !== r.thresholdDevelopment) {
+            console.warn(`[readStimulusProfile] Divergence: thresholdPower (${r.thresholdPower}) vs legacy thresholdDevelopment (${r.thresholdDevelopment}). Canonical wins.`);
+        }
+        if (r.repeatedSurges !== undefined && r.surgeRepeatability !== undefined && r.repeatedSurges !== r.surgeRepeatability) {
+            console.warn(`[readStimulusProfile] Divergence: repeatedSurges (${r.repeatedSurges}) vs legacy surgeRepeatability (${r.surgeRepeatability}). Canonical wins.`);
+        }
+    }
+
+    return {
+        aerobicEndurance: (r.aerobicEndurance as number) ?? (r.aerobicCapacity as number) ?? 0,
+        thresholdPower: (r.thresholdPower as number) ?? (r.thresholdDevelopment as number) ?? 0,
+        vo2MaxPower: (r.vo2MaxPower as number) ?? 0,
+        repeatedSurges: (r.repeatedSurges as number) ?? (r.surgeRepeatability as number) ?? 0,
+        sprintPower: (r.sprintPower as number) ?? 0,
+        fatigueResistance: (r.fatigueResistance as number) ?? 0,
+        maxStrength: (r.maxStrength as number) ?? 0,
+        hypertrophy: (r.hypertrophy as number) ?? 0,
+    };
+}
+
+/**
  * Calculates dose-sensitive fractional objective credit derived from the workout's stimulus profile
  * and delivered duration/completion ratio.
  */
 export function deriveObjectiveCredit(
     objective: WeeklyObjective,
-    stimulus: WorkoutStimulusProfile,
+    rawStimulus: WorkoutStimulusProfile,
     dose: DeliveredDose = {},
     context?: CreditContext
 ): ObjectiveCredit {
+    const stimulus = readStimulusProfile(rawStimulus);
     const completionRatio = Math.min(1.0, Math.max(0.0, dose.completionRatio ?? 1.0));
     
     // Check qualification constraints if present
@@ -48,7 +108,11 @@ export function deriveObjectiveCredit(
         }
         if (qual.minimumStimulus) {
             for (const [axis, minVal] of Object.entries(qual.minimumStimulus)) {
-                const val = stimulus[axis as keyof WorkoutStimulusProfile] ?? 0;
+                const canonicalAxis = axis === 'thresholdDevelopment' ? 'thresholdPower'
+                    : axis === 'surgeRepeatability' ? 'repeatedSurges'
+                    : axis === 'aerobicCapacity' ? 'aerobicEndurance'
+                    : axis;
+                const val = stimulus[canonicalAxis as keyof WorkoutStimulusProfile] ?? 0;
                 if (val < (minVal ?? 0)) {
                     return { objectiveId: objective.id, objectiveKey: objective.key, earnedCredit: 0, qualifies: false, reason: `Minimum ${axis} stimulus not met` };
                 }
@@ -60,27 +124,24 @@ export function deriveObjectiveCredit(
     let rawStimulusContribution = 0;
     switch (objective.key) {
         case 'zone2_aerobic':
-            rawStimulusContribution = (stimulus.aerobicEndurance ?? stimulus.aerobicCapacity ?? 0);
+            rawStimulusContribution = stimulus.aerobicEndurance;
             break;
         case 'threshold_quality':
-            rawStimulusContribution = (stimulus.thresholdPower ?? stimulus.thresholdDevelopment ?? 0);
+            rawStimulusContribution = stimulus.thresholdPower;
             break;
         case 'surge_repeatability':
-            rawStimulusContribution = (stimulus.repeatedSurges ?? stimulus.surgeRepeatability ?? 0);
+            rawStimulusContribution = stimulus.repeatedSurges;
             break;
         case 'vo2_max':
-            rawStimulusContribution = (stimulus.vo2MaxPower ?? 0);
+            rawStimulusContribution = stimulus.vo2MaxPower;
             break;
         case 'strength_maintenance':
-            rawStimulusContribution = Math.max(
-                stimulus.maxStrength ?? 0,
-                stimulus.hypertrophy ?? 0
-            );
+            rawStimulusContribution = Math.max(stimulus.maxStrength, stimulus.hypertrophy);
             break;
         case 'race_specific_endurance':
             rawStimulusContribution = Math.max(
-                stimulus.fatigueResistance ?? 0,
-                ((stimulus.aerobicEndurance ?? stimulus.aerobicCapacity ?? 0) * 0.5 + (stimulus.repeatedSurges ?? stimulus.surgeRepeatability ?? 0) * 0.5)
+                stimulus.fatigueResistance,
+                (stimulus.aerobicEndurance * 0.5 + stimulus.repeatedSurges * 0.5)
             );
             break;
         default: {

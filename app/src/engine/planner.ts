@@ -92,7 +92,14 @@ const ZERO_COST: WorkoutCostProfile = {
 };
 
 const ZERO_STIMULUS: WorkoutStimulusProfile = {
-    aerobicCapacity: 0, thresholdDevelopment: 0, surgeRepeatability: 0, maxStrength: 0, hypertrophy: 0, mobilityRecovery: 0,
+    aerobicEndurance: 0,
+    thresholdPower: 0,
+    vo2MaxPower: 0,
+    repeatedSurges: 0,
+    sprintPower: 0,
+    fatigueResistance: 0,
+    maxStrength: 0,
+    hypertrophy: 0,
 };
 
 function combineMax(a: DimensionalFatigue, b: DimensionalFatigue): DimensionalFatigue {

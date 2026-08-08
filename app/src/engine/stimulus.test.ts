@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { deriveObjectiveCredit, getUnresolvedObjectivesV2 } from './stimulus';
+import { deriveObjectiveCredit, getUnresolvedObjectivesV2, readStimulusProfile } from './stimulus';
 import type { PlannerState, WeeklyObjective, WorkoutStimulusProfile } from './models';
 
 describe('deriveObjectiveCredit', () => {
@@ -118,6 +118,52 @@ describe('deriveObjectiveCredit', () => {
         };
         const result = deriveObjectiveCredit({ ...sampleObjective, key: 'zone2_aerobic' }, legacyOnlyStimulus);
         expect(result.earnedCredit).toBe(0.8);
+    });
+});
+
+describe('readStimulusProfile', () => {
+    it('passes canonical fields through unchanged', () => {
+        const canonical: WorkoutStimulusProfile = {
+            aerobicEndurance: 0.8,
+            thresholdPower: 0.7,
+            vo2MaxPower: 0.6,
+            repeatedSurges: 0.5,
+            sprintPower: 0.2,
+            fatigueResistance: 0.4,
+            maxStrength: 0.9,
+            hypertrophy: 0.3,
+        };
+        const profile = readStimulusProfile(canonical);
+        expect(profile).toEqual(canonical);
+    });
+
+    it('converts legacy-only fields without applying derived fallbacks', () => {
+        const legacy = {
+            aerobicCapacity: 0.8,
+            thresholdDevelopment: 0.6,
+            surgeRepeatability: 0.5,
+        };
+        const profile = readStimulusProfile(legacy);
+        expect(profile.aerobicEndurance).toBe(0.8);
+        expect(profile.thresholdPower).toBe(0.6);
+        expect(profile.repeatedSurges).toBe(0.5);
+        expect(profile.vo2MaxPower).toBe(0); // derived multiplier deleted
+        expect(profile.fatigueResistance).toBe(0); // derived multiplier deleted
+    });
+
+    it('prefers canonical values and logs when canonical and legacy fields conflict', () => {
+        const conflicting = {
+            aerobicEndurance: 0.9,
+            aerobicCapacity: 0.4,
+        };
+        const profile = readStimulusProfile(conflicting);
+        expect(profile.aerobicEndurance).toBe(0.9);
+    });
+
+    it('returns zero canonical profile for empty/null inputs', () => {
+        const profile = readStimulusProfile(null);
+        expect(profile.aerobicEndurance).toBe(0);
+        expect(profile.thresholdPower).toBe(0);
     });
 });
 

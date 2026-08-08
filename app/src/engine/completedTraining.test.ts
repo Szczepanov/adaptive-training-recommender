@@ -87,7 +87,7 @@ describe('completed training reconciliation', () => {
         const [event] = reconcileCompletedTrainingEvents([activity({ type: 'cycling', intensityTag: 'moderate', trainingEffectAerobic: 2.5 })], []);
         const exposure = completedEventToExposure(event);
         expect(exposure.stimulusConfidence).toBe('inferred');
-        expect(exposure.stimulusProfile?.aerobicCapacity).toBeGreaterThan(0.5);
+        expect(exposure.stimulusProfile?.aerobicEndurance).toBeGreaterThan(0.5);
         expect(exposure.modality).toBe('Cycling');
     });
 

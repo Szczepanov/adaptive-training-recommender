@@ -192,7 +192,7 @@ export interface WeeklyObjective {
     requiredCredit?: number;
     targetExposures: number;
     completedExposures: number;
-    targetStimulus: Record<string, number>;
+    targetStimulus: Partial<Record<keyof WorkoutStimulusProfile, number>>;
     priority?: ObjectivePriority;
     /** Optional stricter completion policy for objectives whose target stimulus alone
      * is too broad to identify the intended event-specific exposure. */
@@ -214,20 +214,14 @@ export interface MicrocycleState {
 }
 
 export interface WorkoutStimulusProfile {
-    aerobicEndurance?: number;     // 0.0 - 1.0 (canonical)
-    thresholdPower?: number;       // 0.0 - 1.0 (canonical)
-    vo2MaxPower?: number;          // 0.0 - 1.0 (canonical)
-    repeatedSurges?: number;       // 0.0 - 1.0 (canonical)
-    sprintPower?: number;          // 0.0 - 1.0 (canonical)
-    fatigueResistance?: number;    // 0.0 - 1.0 (canonical)
-    maxStrength?: number;          // 0.0 - 1.0 (canonical)
-
-    // Legacy backward-compatibility aliases
-    aerobicCapacity?: number;
-    thresholdDevelopment?: number;
-    surgeRepeatability?: number;
-    hypertrophy?: number;
-    mobilityRecovery?: number;
+    aerobicEndurance: number;     // 0.0 - 1.0 (canonical)
+    thresholdPower: number;       // 0.0 - 1.0 (canonical)
+    vo2MaxPower: number;          // 0.0 - 1.0 (canonical)
+    repeatedSurges: number;       // 0.0 - 1.0 (canonical)
+    sprintPower: number;          // 0.0 - 1.0 (canonical)
+    fatigueResistance: number;    // 0.0 - 1.0 (canonical)
+    maxStrength: number;          // 0.0 - 1.0 (canonical)
+    hypertrophy: number;          // 0.0 - 1.0 (canonical)
 }
 
 export interface ObjectiveQualification {
