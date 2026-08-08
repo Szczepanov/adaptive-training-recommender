@@ -259,14 +259,15 @@ The same deterministic boundary run found these Phase 4 deltas:
 |---|---:|---|
 | Phase 3 / before Phase 4 (`89434d7`) | 52.3% | inherited failure |
 | After 4.1 initial / 4.2 (`6d2ad01`) | 52.3% | no change |
-| After 4.5 (`e3dcd92`) | 58.5% | intensity eligibility requires investigation |
-| After 4.4 (`347cee4`) | 58.5% | no additional change |
+| After 4.3a (`d6c3a23`) | 58.5% | unsaturated replay retains external-load depth |
+| After 4.2 validation / 4.5 / 4.4 (`347cee4`) | 58.5% | no additional change |
 | Current Phase 4 (`81a1b75`) | 58.9% | 4.1 adds 0.4 percentage points |
 
 Do not retune Phase 0's 5–40% bound or choose a fatigue-fusion formula to force this metric
-green. First establish whether the 4.5 candidate-intensity classification excludes a session
-class beyond the `PlanBlock` contract. Then compare fusion candidates against the corrected
-or explicitly accepted Phase 3 baseline, and record the data in ADR-0014.
+green. The 4.3a result is behavior-changing by design: latent load survives past the prior
+clamping point and can therefore keep the ranking projection elevated after repeated work.
+Compare fusion candidates against the corrected or explicitly accepted Phase 3 baseline, and
+record the data in ADR-0014 before choosing any replacement for `max()`.
 
 ## `[x]` 4.5 Ă˘â‚¬â€ť `PlannedDose`: give `intensityScale` its consumer (D2)
 
