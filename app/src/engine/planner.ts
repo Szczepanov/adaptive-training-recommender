@@ -26,7 +26,7 @@ export interface PlannedObjectiveCredit {
     earnedCredit: number;
 }
 import { resolveAvailability } from './schedule';
-import { isTemplatePhaseEligible, evaluatePeriodizationPhase } from './periodization';
+import { isTemplatePhaseEligible, evaluatePeriodizationPhase, resolveMultiEventObjectives } from './periodization';
 import { eligibleTemplates } from './eligibility';
 import { addDaysToLocalDateString, getDayDiff } from '../utils/localDate';
 import {
@@ -454,6 +454,14 @@ export function prepareWeekAheadPlanSeed(
             completedHistory,
             periodization.focusEvent,
         );
+        // Phase 5.6: one taper authority (periodization.focusEvent, already resolved by
+        // evaluatePeriodizationPhase's total order above), multiple demand contributors.
+        // A no-op for the common single-or-no-event case (nothing else in `events` falls
+        // in another event's contribution window).
+        microcycle = {
+            ...microcycle,
+            objectives: resolveMultiEventObjectives(events, todayDate, periodization, microcycle.objectives).objectives,
+        };
         lightweightHistory.forEach(h => {
             const typeStr = 'type' in h && typeof h.type === 'string' ? h.type : undefined;
             const modality = (h.modality ?? typeStr ?? 'None') as SessionTemplate['modality'];
@@ -476,6 +484,11 @@ export function prepareWeekAheadPlanSeed(
     }
 
     let microcycle = generateWeeklyObjectives(periodization.phase, todayDate, periodization.focusEvent);
+    // Phase 5.6: see the completed-history branch above for the same wiring.
+    microcycle = {
+        ...microcycle,
+        objectives: resolveMultiEventObjectives(events, todayDate, periodization, microcycle.objectives).objectives,
+    };
     lightweightHistory.forEach(h => {
         const typeStr = 'type' in h && typeof h.type === 'string' ? h.type : undefined;
         const modality = (h.modality ?? typeStr ?? 'None') as SessionTemplate['modality'];

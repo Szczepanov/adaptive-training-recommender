@@ -11,35 +11,14 @@ import type {
 } from './models';
 import type { CompletedExposure } from './microcycleHistory';
 import type { PlanDefinition } from './planSchedule';
-import { modalitiesForEventCategory, type PhaseWeights } from './periodization';
-
-/**
- * Phase 5.7: taper as an explicit contract, not an emergent side effect.
- *
- * Before this, a taper day either silently dropped the race_specific_endurance objective
- * entirely (the generic path's `!phaseWeights.taperActive` guard) or -- if reached via the
- * full-volume qualification below -- demanded a bar (`aerobicEndurance >= 0.6`) that a
- * genuine taper session structurally cannot and should not clear. Either way, "preserve
- * useful intensity and event-specific freshness" during taper was never itself
- * represented; it only ever emerged from `volumeScale`/`phaseEligibility.requiresTaper`
- * interactions with whatever survived. These two constants give it a name and a real,
- * reachable target -- calibrated against `end_taper_sharpen_01`'s own (deliberately
- * lower) stimulus profile in templates.ts, matching event-plan.ts's `taper_sharpening`
- * coverage role, rather than the peak-block `end_race_sim_01`/`end_event_specific_01`
- * bar `race_specific_endurance` uses everywhere else.
- */
-const TAPER_SHARPENING_TARGET_STIMULUS: WeeklyObjective['targetStimulus'] = { thresholdPower: 0.5, repeatedSurges: 0.4 };
-const TAPER_SHARPENING_QUALIFICATION: ObjectiveQualification = {
-    minimumStimulus: { thresholdPower: 0.3 },
-    allowedModalities: ['Cycling'],
-    allowedCategories: ['Race-Specific Endurance'],
-};
-
-/** Same rationale as TAPER_SHARPENING_TARGET_STIMULUS above, for event-plan.ts's
- *  `race_week_strength` role: a taper day's strength_maintenance objective should pull
- *  toward a short, low-volume primer (strength_race_week_primer_01's own intent) rather
- *  than the same full-volume target every other phase uses. */
-const TAPER_STRENGTH_TARGET_STIMULUS: WeeklyObjective['targetStimulus'] = { maxStrength: 0.3, hypertrophy: 0.2 };
+import {
+    modalitiesForEventCategory,
+    objectivesFromDemand,
+    TAPER_SHARPENING_QUALIFICATION,
+    TAPER_SHARPENING_TARGET_STIMULUS,
+    TAPER_STRENGTH_TARGET_STIMULUS,
+    type PhaseWeights,
+} from './periodization';
 
 export function generateWeeklyObjectives(
     phaseWeights: PhaseWeights,
@@ -147,76 +126,19 @@ export function generateWeeklyObjectives(
         return { windowStartDate, objectives };
     }
 
-    const demand = phaseWeights.targetDemandVector;
-    const objectives: WeeklyObjective[] = [];
-
-    if (demand.aerobicEndurance >= 0.4) {
-        objectives.push({
-            id: 'obj_z2_aerobic', key: 'zone2_aerobic', title: 'Aerobic Base (Zone 2)',
-            targetExposures: demand.aerobicEndurance >= 0.7 ? 2 : 1,
-            completedExposures: 0,
-            targetStimulus: { aerobicEndurance: 0.8 },
-        });
-    }
-
-    if (demand.thresholdPower >= 0.5 && !phaseWeights.taperActive) {
-        const allowedModalities = focusEvent ? modalitiesForEventCategory(focusEvent.category) : [];
-        objectives.push({
-            id: 'obj_threshold', key: 'threshold_quality', title: 'Threshold Development',
-            targetExposures: 1, completedExposures: 0,
-            targetStimulus: { thresholdPower: 0.9 },
-            qualification: {
-                minimumStimulus: { thresholdPower: 0.6 },
-                ...(allowedModalities.length > 0 ? { allowedModalities } : {}),
-            },
-        });
-    }
-
-    if ((demand.vo2MaxPower >= 0.6 || demand.repeatedSurges >= 0.6) && phaseWeights.phaseName !== 'Post-Event Recovery') {
-        const allowedModalities = focusEvent ? modalitiesForEventCategory(focusEvent.category) : [];
-        objectives.push({
-            id: 'obj_surges', key: 'surge_repeatability', title: 'Surge & High-Intensity Repeatability',
-            targetExposures: 1, completedExposures: 0,
-            targetStimulus: { repeatedSurges: 0.9, aerobicEndurance: 0.5 },
-            qualification: {
-                minimumStimulus: { repeatedSurges: 0.6 },
-                ...(allowedModalities.length > 0 ? { allowedModalities } : {}),
-            },
-        });
-    }
-
-    objectives.push({
-        id: 'obj_strength', key: 'strength_maintenance',
-        title: phaseWeights.taperActive ? 'Race-Week Strength Primer' : 'Strength & Neuromuscular Maintenance',
-        targetExposures: 1, completedExposures: 0,
-        // Phase 5.7: event-plan.ts's race_week_strength role -- a taper day still
-        // maintains strength, just at primer volume, not full-volume as if nothing changed.
-        targetStimulus: phaseWeights.taperActive ? TAPER_STRENGTH_TARGET_STIMULUS : { maxStrength: 0.7, hypertrophy: 0.5 },
-    });
-
-    if (focusEvent?.category === 'cycling_event' && phaseWeights.phaseName !== 'Post-Event Recovery') {
-        if (!phaseWeights.taperActive && (demand.fatigueResistance >= 0.7 || demand.repeatedSurges >= 0.6)) {
-            objectives.push({
-                id: 'obj_cycling_race_specific', key: 'race_specific_endurance', title: 'Cycling Race-Specific Endurance',
-                targetExposures: 1, completedExposures: 0,
-                targetStimulus: { aerobicEndurance: 0.6, repeatedSurges: 0.6 },
-                qualification: {
-                    minimumStimulus: { aerobicEndurance: 0.6 },
-                    allowedModalities: ['Cycling'],
-                    allowedCategories: ['Race-Specific Endurance'],
-                },
-            });
-        } else if (phaseWeights.taperActive) {
-            // Phase 5.7: previously this branch was silently skipped for the entire
-            // taper window -- see TAPER_SHARPENING_TARGET_STIMULUS above for why.
-            objectives.push({
-                id: 'obj_taper_sharpening', key: 'race_specific_endurance', title: 'Taper Sharpening (event-specific freshness)',
-                targetExposures: 1, completedExposures: 0,
-                targetStimulus: TAPER_SHARPENING_TARGET_STIMULUS,
-                qualification: TAPER_SHARPENING_QUALIFICATION,
-            });
-        }
-    }
+    // Phase 5.6: this translation (demand vector + category + taper state -> objective
+    // set) is now shared with resolveMultiEventObjectives (periodization.ts), which
+    // reuses it unchanged for each contributor event's OWN demand vector -- never a
+    // blended one. This call is the taper authority's own objectives, identical
+    // behavior to before the extraction.
+    const allowedModalities = focusEvent ? modalitiesForEventCategory(focusEvent.category) : [];
+    const objectives = objectivesFromDemand(
+        phaseWeights.targetDemandVector,
+        focusEvent?.category,
+        phaseWeights.taperActive,
+        phaseWeights.phaseName === 'Post-Event Recovery',
+        allowedModalities
+    );
 
     return { windowStartDate, objectives };
 }

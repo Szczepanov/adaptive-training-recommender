@@ -529,3 +529,38 @@ describe('generateWeekAheadPlan weekly-architecture anchoring', () => {
         expect(plan.days).toHaveLength(7);
     });
 });
+
+describe('prepareWeekAheadPlanSeed: multi-event contributor wiring (Phase 5.6)', () => {
+    it('a single-event (or no-event) seed is unaffected by resolveMultiEventObjectives being wired in', () => {
+        const readiness: DailyReadiness = { subjective: neutralSubjective(), objective: quietObjective() };
+        const noEventSeed = prepareWeekAheadPlanSeed(readiness, [], '2026-08-07', []);
+        const singleEventSeed = prepareWeekAheadPlanSeed(readiness, [cyclingEvent('2026-08-27')], '2026-08-07', []);
+
+        // Base-phase objectives (zone2_aerobic/threshold_quality/strength_maintenance)
+        // still generate with no event at all -- unaffected by resolveMultiEventObjectives
+        // being wired in, since there's no eligible authority to run it against.
+        expect(noEventSeed.microcycle.objectives.map(o => o.key).sort()).toEqual(['strength_maintenance', 'threshold_quality', 'zone2_aerobic']);
+        // Same objective set generateWeeklyObjectives alone would produce -- the
+        // multi-event merge is a no-op with only one eligible event.
+        expect(singleEventSeed.microcycle.objectives.length).toBeGreaterThan(0);
+        expect(singleEventSeed.microcycle.objectives.find(o => o.key === 'race_specific_endurance')).toBeDefined();
+    });
+
+    it('a B-event contributor adds its own race-specific objective to the seed built for an A-event authority', () => {
+        const readiness: DailyReadiness = { subjective: neutralSubjective(), objective: quietObjective() };
+        const aEvent = cyclingEvent('2026-10-17'); // ~70 days out from 2026-08-07 -- Build phase, not tapering
+        const bEvent: UserEvent = {
+            id: 'b1', title: 'Local Crit', date: '2026-08-19', priority: 'B', lifecycle: 'scheduled', category: 'cycling_event',
+            demandProfile: { aerobicEndurance: 0.7, thresholdPower: 0.6, vo2MaxPower: 0.5, repeatedSurges: 0.8, sprintPower: 0.4, fatigueResistance: 0.75, neuromuscular: 0.4 },
+        };
+
+        const authorityOnlySeed = prepareWeekAheadPlanSeed(readiness, [aEvent], '2026-08-07', []);
+        const withContributorSeed = prepareWeekAheadPlanSeed(readiness, [aEvent, bEvent], '2026-08-07', []);
+
+        // The A-event authority alone (Build phase, demand thresholds not met for
+        // race_specific_endurance) generates no race-specific objective on its own.
+        expect(authorityOnlySeed.microcycle.objectives.find(o => o.key === 'race_specific_endurance')).toBeUndefined();
+        // The B-event contributor (12 days out, high repeatedSurges) adds one.
+        expect(withContributorSeed.microcycle.objectives.find(o => o.key === 'race_specific_endurance')).toBeDefined();
+    });
+});

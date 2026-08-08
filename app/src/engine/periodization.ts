@@ -2,10 +2,12 @@ import type {
     EventDemandProfile,
     EventPriority,
     GoalCategory,
+    ObjectiveKey,
     TemplatePhaseEligibility,
     SessionTemplate,
     UserEvent,
     UserGoal,
+    WeeklyObjective,
 } from './models';
 import { resolveDemandProfile } from './eventPresets';
 
@@ -29,6 +31,11 @@ export interface PeriodizationResult {
     staleEvents: UserEvent[];
     /** A DNF focus event gets the normal recovery window, but its load is uncertain. */
     partialEffort: boolean;
+    /** Phase 5.6: two eligible events fully tied on priority, proximity, AND planning
+     *  date -- decidable only by the id-lexicographic determinism backstop. Two A-events
+     *  on the same day is a planning error, not something to blend; this surfaces it
+     *  instead of silently picking one. Empty unless a genuine tie occurred. */
+    governingEventTie: UserEvent[];
 }
 
 /** Modalities that constitute sport-specific exposure for a governing event. This is
@@ -52,6 +59,117 @@ export const DEFAULT_BASE_DEMAND: EventDemandProfile = {
     fatigueResistance: 0.5,
     neuromuscular: 0.4,
 };
+
+/**
+ * Phase 5.7: taper as an explicit contract, not an emergent side effect.
+ *
+ * Before this, a taper day either silently dropped the race_specific_endurance objective
+ * entirely, or -- if reached via the full-volume qualification below -- demanded a bar
+ * (`aerobicEndurance >= 0.6`) a genuine taper session structurally cannot clear. These two
+ * constants give "preserve useful intensity and event-specific freshness" a name and a
+ * real, reachable target -- calibrated against `end_taper_sharpen_01`'s own (deliberately
+ * lower) stimulus profile in templates.ts, matching event-plan.ts's `taper_sharpening`
+ * coverage role, rather than the peak-block `end_race_sim_01`/`end_event_specific_01` bar
+ * `race_specific_endurance` uses everywhere else. Exported so both
+ * `objectivesFromDemand` below and microcycle.ts's plan-derived branch share exactly one
+ * calibration.
+ */
+export const TAPER_SHARPENING_TARGET_STIMULUS: WeeklyObjective['targetStimulus'] = { thresholdPower: 0.5, repeatedSurges: 0.4 };
+export const TAPER_SHARPENING_QUALIFICATION: NonNullable<WeeklyObjective['qualification']> = {
+    minimumStimulus: { thresholdPower: 0.3 },
+    allowedModalities: ['Cycling'],
+    allowedCategories: ['Race-Specific Endurance'],
+};
+
+/** Same rationale as TAPER_SHARPENING_TARGET_STIMULUS above, for event-plan.ts's
+ *  `race_week_strength` role: a taper day's strength_maintenance objective should pull
+ *  toward a short, low-volume primer (strength_race_week_primer_01's own intent) rather
+ *  than the same full-volume target every other phase uses. */
+export const TAPER_STRENGTH_TARGET_STIMULUS: WeeklyObjective['targetStimulus'] = { maxStrength: 0.3, hypertrophy: 0.2 };
+
+/**
+ * Translates one event's demand vector + category into the generic (non-plan-derived)
+ * objective set a day governed by it would want. Pure function of the event's OWN
+ * profile -- never a blended vector -- so it can be reused for both:
+ *   - the taper authority's own objectives (generateWeeklyObjectives's generic branch,
+ *     unchanged behavior from before this function was extracted); and
+ *   - Phase 5.6's per-contributor objectives (resolveMultiEventObjectives below), each
+ *     derived from that contributor's own demand/category/taper state, never a blend
+ *     with the authority's.
+ */
+export function objectivesFromDemand(
+    demand: EventDemandProfile,
+    category: UserEvent['category'] | undefined,
+    taperActive: boolean,
+    isPostEventRecovery: boolean,
+    allowedModalities: SessionTemplate['modality'][]
+): WeeklyObjective[] {
+    const objectives: WeeklyObjective[] = [];
+
+    if (demand.aerobicEndurance >= 0.4) {
+        objectives.push({
+            id: 'obj_z2_aerobic', key: 'zone2_aerobic', title: 'Aerobic Base (Zone 2)',
+            targetExposures: demand.aerobicEndurance >= 0.7 ? 2 : 1,
+            completedExposures: 0,
+            targetStimulus: { aerobicEndurance: 0.8 },
+        });
+    }
+
+    if (demand.thresholdPower >= 0.5 && !taperActive) {
+        objectives.push({
+            id: 'obj_threshold', key: 'threshold_quality', title: 'Threshold Development',
+            targetExposures: 1, completedExposures: 0,
+            targetStimulus: { thresholdPower: 0.9 },
+            qualification: {
+                minimumStimulus: { thresholdPower: 0.6 },
+                ...(allowedModalities.length > 0 ? { allowedModalities } : {}),
+            },
+        });
+    }
+
+    if ((demand.vo2MaxPower >= 0.6 || demand.repeatedSurges >= 0.6) && !isPostEventRecovery) {
+        objectives.push({
+            id: 'obj_surges', key: 'surge_repeatability', title: 'Surge & High-Intensity Repeatability',
+            targetExposures: 1, completedExposures: 0,
+            targetStimulus: { repeatedSurges: 0.9, aerobicEndurance: 0.5 },
+            qualification: {
+                minimumStimulus: { repeatedSurges: 0.6 },
+                ...(allowedModalities.length > 0 ? { allowedModalities } : {}),
+            },
+        });
+    }
+
+    objectives.push({
+        id: 'obj_strength', key: 'strength_maintenance',
+        title: taperActive ? 'Race-Week Strength Primer' : 'Strength & Neuromuscular Maintenance',
+        targetExposures: 1, completedExposures: 0,
+        targetStimulus: taperActive ? TAPER_STRENGTH_TARGET_STIMULUS : { maxStrength: 0.7, hypertrophy: 0.5 },
+    });
+
+    if (category === 'cycling_event' && !isPostEventRecovery) {
+        if (!taperActive && (demand.fatigueResistance >= 0.7 || demand.repeatedSurges >= 0.6)) {
+            objectives.push({
+                id: 'obj_cycling_race_specific', key: 'race_specific_endurance', title: 'Cycling Race-Specific Endurance',
+                targetExposures: 1, completedExposures: 0,
+                targetStimulus: { aerobicEndurance: 0.6, repeatedSurges: 0.6 },
+                qualification: {
+                    minimumStimulus: { aerobicEndurance: 0.6 },
+                    allowedModalities: ['Cycling'],
+                    allowedCategories: ['Race-Specific Endurance'],
+                },
+            });
+        } else if (taperActive) {
+            objectives.push({
+                id: 'obj_taper_sharpening', key: 'race_specific_endurance', title: 'Taper Sharpening (event-specific freshness)',
+                targetExposures: 1, completedExposures: 0,
+                targetStimulus: TAPER_SHARPENING_TARGET_STIMULUS,
+                qualification: TAPER_SHARPENING_QUALIFICATION,
+            });
+        }
+    }
+
+    return objectives;
+}
 
 function getDaysBetween(date1Str: string, date2Str: string): number {
     // These are calendar dates, not instants. Local-midnight timestamps differ by 23
@@ -103,6 +221,7 @@ export function evaluatePeriodizationPhase(
         const targetDate = event.timing?.planningDate ?? event.date;
         return {
             event,
+            targetDate,
             daysToEvent: getDaysBetween(currentDateStr, targetDate),
         };
     });
@@ -128,17 +247,38 @@ export function evaluatePeriodizationPhase(
             daysToEvent: null,
             staleEvents,
             partialEffort: false,
+            governingEventTie: [],
         };
     }
 
-    // Resolve focus event by Priority (A > B > C) and then Proximity.
+    // Resolve the taper authority (Phase 5.6 terminology) by a full total order --
+    // otherwise this is less deterministic than the single-governing-event rule it
+    // replaces. In order: (1) priority A > B > C; (2) proximity, fewer days first;
+    // (3) planning date ascending; (4) event id, lexicographic. (4) is not a real
+    // criterion -- it is a determinism backstop for a genuine tie, commented as such
+    // rather than left to look like a meaningful ranking signal.
     const sortedEvents = [...eligibleEvents].sort((a, b) => {
         const prioMap = { A: 1, B: 2, C: 3 };
         if (prioMap[a.event.priority] !== prioMap[b.event.priority]) {
             return prioMap[a.event.priority] - prioMap[b.event.priority];
         }
-        return a.daysToEvent - b.daysToEvent;
+        if (a.daysToEvent !== b.daysToEvent) {
+            return a.daysToEvent - b.daysToEvent;
+        }
+        if (a.targetDate !== b.targetDate) {
+            return a.targetDate < b.targetDate ? -1 : 1;
+        }
+        return a.event.id < b.event.id ? -1 : a.event.id > b.event.id ? 1 : 0;
     });
+
+    // Two A-events on the same day is a planning error, not something to blend --
+    // surfaced here rather than silently resolved by the id backstop above. Empty
+    // unless 2+ events are genuinely tied through every real criterion.
+    const tiedWithTop = sortedEvents.filter(({ event, daysToEvent, targetDate }) => {
+        const top = sortedEvents[0];
+        return event.priority === top.event.priority && daysToEvent === top.daysToEvent && targetDate === top.targetDate;
+    });
+    const governingEventTie = tiedWithTop.length > 1 ? tiedWithTop.map(({ event }) => event) : [];
 
     const { event: focusEvent, daysToEvent } = sortedEvents[0];
     const partialEffort = focusEvent.lifecycle === 'DNF';
@@ -204,6 +344,7 @@ export function evaluatePeriodizationPhase(
         daysToEvent,
         staleEvents,
         partialEffort,
+        governingEventTie,
     };
 }
 
@@ -282,4 +423,126 @@ export function goalToUserEvent(goal: UserGoal & { id?: string }): UserEvent | n
         // other already-typed UserGoal field this function reads.
         ...(goal.timing ? { timing: goal.timing } : {}),
     };
+}
+
+// --- Phase 5.6: one taper authority, multiple demand contributors ---
+
+/** A contributor event within its own contribution window (see CONTRIBUTION_WINDOW_DAYS
+ *  below), close enough to matter but not the taper authority. Matches
+ *  evaluatePeriodizationPhase's own Specificity-phase threshold -- the same "close
+ *  enough to shape training" boundary already used for a single governing event. */
+const CONTRIBUTION_WINDOW_DAYS = 35;
+
+export type ObjectiveDropReason = 'inadmissible_during_taper';
+
+export interface DroppedContributorObjective {
+    eventId: string;
+    eventTitle: string;
+    objectiveKey: ObjectiveKey;
+    reason: ObjectiveDropReason;
+    /** Athlete-facing explanation, not just a machine code -- see the plan's own framing:
+     *  "your B-event's threshold session was dropped because it fell in A-event race
+     *  week" is actionable; a quietly reweighted plan teaches the athlete nothing. */
+    message: string;
+}
+
+export interface MultiEventObjectiveResolution {
+    objectives: WeeklyObjective[];
+    droppedContributorObjectives: DroppedContributorObjective[];
+}
+
+/** Objective keys a contributor may never inject while the taper authority is tapering --
+ *  a full-volume quality session landing inside the authority's race week is a safety/
+ *  freshness conflict, not a preference to weigh. Extensible: add a key here (with the
+ *  drop message updated below) if another key needs the same protection. */
+const INADMISSIBLE_DURING_AUTHORITY_TAPER: ReadonlySet<ObjectiveKey> = new Set(['threshold_quality']);
+
+/**
+ * Phase 5.6: one taper authority, multiple demand contributors.
+ *
+ * `authorityResult` must be the SAME `PeriodizationResult` used to produce
+ * `authorityObjectives` (e.g. via `generateWeeklyObjectives`) -- its `focusEvent`/`phase`
+ * are the taper authority, already resolved by `evaluatePeriodizationPhase`'s total order.
+ * Only the authority sets `volumeScale`/`intensityScale`; this function never touches
+ * `phase` at all, only the objective list.
+ *
+ * Every OTHER eligible, scheduled event within `CONTRIBUTION_WINDOW_DAYS` contributes
+ * objectives derived from its OWN demand vector, category and OWN taper state via
+ * `objectivesFromDemand` -- never a blended demand vector, which is the point of doing
+ * this after Phase 2's explicit objectives. Where a contributor's objective key collides
+ * with an existing one, the existing (authority-first, then earlier contributors) entry's
+ * fields win on everything except its required amount, which takes
+ * `max(existing, contributor)` -- never summed, or two similar B-events would demand
+ * double the work of one. A contributor objective inadmissible under the authority's
+ * current phase (today: any `threshold_quality` while the authority is tapering) is
+ * dropped with a recorded, athlete-facing reason rather than silently reweighted.
+ */
+export function resolveMultiEventObjectives(
+    events: UserEvent[],
+    currentDateStr: string,
+    authorityResult: PeriodizationResult,
+    authorityObjectives: WeeklyObjective[]
+): MultiEventObjectiveResolution {
+    const merged: WeeklyObjective[] = authorityObjectives.map(objective => ({ ...objective }));
+    const byKey = new Map<ObjectiveKey, WeeklyObjective>(merged.map(objective => [objective.key, objective]));
+    const droppedContributorObjectives: DroppedContributorObjective[] = [];
+
+    const authorityEventId = authorityResult.focusEvent?.id ?? null;
+    if (!authorityEventId) {
+        return { objectives: merged, droppedContributorObjectives };
+    }
+
+    for (const event of events) {
+        if (event.id === authorityEventId) continue;
+        // Contributors are forward-looking, active commitments only -- a stale/cancelled/
+        // DNS/completed event has nothing live to contribute.
+        if (event.lifecycle !== 'scheduled') continue;
+
+        const targetDate = event.timing?.planningDate ?? event.date;
+        const daysToEvent = getDaysBetween(currentDateStr, targetDate);
+        if (daysToEvent < 0 || daysToEvent > CONTRIBUTION_WINDOW_DAYS) continue;
+
+        const contributorTaperWindowDays = event.priority === 'A' ? 14 : (event.priority === 'B' ? 5 : 0);
+        const contributorTaperActive = contributorTaperWindowDays > 0 && daysToEvent <= contributorTaperWindowDays;
+        const allowedModalities = modalitiesForEventCategory(event.category);
+
+        const contributorObjectives = objectivesFromDemand(
+            event.demandProfile,
+            event.category,
+            contributorTaperActive,
+            false, // a forward-looking contributor (daysToEvent >= 0) is never Post-Event Recovery
+            allowedModalities
+        );
+
+        for (const objective of contributorObjectives) {
+            if (authorityResult.phase.taperActive && INADMISSIBLE_DURING_AUTHORITY_TAPER.has(objective.key)) {
+                droppedContributorObjectives.push({
+                    eventId: event.id,
+                    eventTitle: event.title,
+                    objectiveKey: objective.key,
+                    reason: 'inadmissible_during_taper',
+                    message: `${event.title}'s ${objective.title} session was dropped because it fell in ${authorityResult.focusEvent?.title ?? 'the governing event'}'s taper window.`,
+                });
+                continue;
+            }
+
+            const existing = byKey.get(objective.key);
+            if (!existing) {
+                const added = { ...objective };
+                merged.push(added);
+                byKey.set(objective.key, added);
+                continue;
+            }
+            const existingRequired = existing.requiredCredit ?? existing.targetExposures;
+            const contributorRequired = objective.requiredCredit ?? objective.targetExposures;
+            if (contributorRequired > existingRequired) {
+                // The existing entry's other fields (title/qualification/targetStimulus/id)
+                // win -- only the required amount is allowed to grow, and only grow.
+                existing.requiredCredit = contributorRequired;
+                existing.targetExposures = Math.max(existing.targetExposures, objective.targetExposures);
+            }
+        }
+    }
+
+    return { objectives: merged, droppedContributorObjectives };
 }

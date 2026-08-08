@@ -222,6 +222,33 @@ anything -- and the authored September event plan's taper block now actually req
 own `taper_sharpening`/`race_week_strength` coverage keys instead of only the generic
 `easy_aerobic` one.
 
+### Multi-event: one taper authority, multiple demand contributors (Phase 5.6, `periodization.ts`)
+
+`evaluatePeriodizationPhase` still picks exactly one governing event (the **taper
+authority**) -- but now by a full, commented total order: priority, then proximity, then
+planning date, then event id as a determinism backstop (never a real ranking signal). Two
+events genuinely tied through every real criterion surface via the new
+`governingEventTie` field rather than being silently resolved by the id backstop as if it
+meant something.
+
+Every other eligible, scheduled event within a 35-day window (matching the existing
+Specificity-phase threshold) is a **demand contributor**: `objectivesFromDemand` (shared
+with Phase 5.7's own objective generation) derives objectives from *that event's own*
+demand vector, category, and own taper state -- never a blended vector, which is the
+reason this sits after Phase 2's explicit objectives at all. `resolveMultiEventObjectives`
+unions a contributor's objectives into the authority's own by `ObjectiveKey`: on a
+collision the authority's title/qualification/targetStimulus/id win, and only the
+required amount grows, via `max()` -- two similar B-events never demand double one
+B-event's work by summing. A contributor's `threshold_quality` objective landing inside
+the authority's taper window is dropped, not silently reweighted, with an athlete-facing
+reason recorded (`DroppedContributorObjective.message`).
+
+Only the taper authority ever sets `volumeScale`/`intensityScale` -- contributors supply
+objectives only. Wired into `planner.ts`'s `prepareWeekAheadPlanSeed`, reaching the live
+week-ahead pipeline for any athlete with more than one active dated event; a no-op
+otherwise (`simulate:diff` confirms zero semantic change against the committed baseline).
+The plan-derived path (`PlanDefinition`) is not wired to contributors in this increment.
+
 ---
 
 ## Candidate ranking (`optimizer.ts`)

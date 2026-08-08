@@ -20,7 +20,7 @@ Ordered by the increment sequence below, **not** by section number.
 | 2 | 5.4 | `[x]` | Per-region tissue state; may only tighten a Phase-1 injury constraint | `app/src/engine/models.ts`, `components/DailyCheckin.tsx`, `injuryPolicy.ts` |
 | 3 | 5.5 | `[x]` | Evidence hierarchy for completed training, carrying `stimulusConfidence` | `app/src/engine/completedTraining.ts` |
 | 4 | 5.7 | `[x]` | Taper as an explicit plan contract rather than an emergent side effect | `app/src/workouts/event-plan.ts`, `app/src/engine/periodization.ts` |
-| 5 | 5.6 | `[ ]` | Multi-event: one taper authority, multiple demand contributors | `app/src/engine/periodization.ts` |
+| 5 | 5.6 | `[x]` | Multi-event: one taper authority, multiple demand contributors | `app/src/engine/periodization.ts` |
 | 6 | 5.2 | `[ ]` | `PlanningCandidate` carries spacing/recovery metadata into the decision | `app/src/workouts/models.ts`, `app/src/engine/planner.ts` |
 | 7 | 5.1 | `[ ]` | Bounded sequence search — **build and measure**, adoption conditional (D-BEAM) | `app/src/engine/planner.ts` |
 
@@ -223,7 +223,7 @@ materially better than treating meaningful unplanned training as adaptation-neut
 The asymmetry this closes: today the system sees **cost** from an unplanned hard group
 ride but not **benefit**, so it can prescribe work that was effectively already done.
 
-## `[ ]` 5.6 — Multi-event: separate taper authority from demand contribution
+## `[x]` 5.6 — Multi-event: separate taper authority from demand contribution
 
 `evaluatePeriodizationPhase` picks one governing event by priority then proximity. A more
 realistic model is **one taper authority, multiple demand contributors**: an A-event 70
@@ -262,6 +262,22 @@ teaches them nothing.
 Tests before 5.6 is executable: priority tie broken by proximity; proximity tie broken by
 date then id; two contributors sharing an objective key resolving to `max`, not sum; a
 contributor objective inside race week dropped with its reason present in the audit.
+
+**Delivered as:** `evaluatePeriodizationPhase`'s existing sort gained the two missing
+tie-breakers (planning date, then event id) plus a `governingEventTie` field that
+surfaces — rather than silently resolves — a genuine two-A-events-same-day conflict.
+`objectivesFromDemand` (extracted from Phase 5.7's work, now shared) derives objectives
+from one event's own demand vector; `resolveMultiEventObjectives` (both new, in
+`periodization.ts`) unions the taper authority's objectives with every other eligible
+event's own contribution (within a 35-day window, matching the existing Specificity
+threshold), applying `max(requiredCredit)` on key collisions and dropping — with a
+recorded, athlete-facing reason — any contributor `threshold_quality` objective while the
+authority is tapering. Wired into `planner.ts`'s `prepareWeekAheadPlanSeed` (both the
+completed-history and generic branches), so it reaches the live week-ahead pipeline for
+any athlete with more than one active dated event; a no-op otherwise, confirmed via
+`simulate:diff` against the committed baseline. **Scope boundary:** the plan-derived path
+(`PlanDefinition`/`buildSeptemberCyclingEventPlan`) is not wired to contributors in this
+increment — only the generic days-to-event path is.
 
 ## `[x]` 5.7 — Taper as an explicit contract
 
