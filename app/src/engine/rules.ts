@@ -201,18 +201,22 @@ function metricStrain(
  */
 const MODIFY_MAX_SYSTEMIC_COST = 0.5;
 
-export function evaluateTraining(
+export function evaluateReadinessAndSafetyEnvelope(
     readiness: DailyReadiness,
     context: UserContext,
-    date: string,
-    /** Yesterday's *final* mode (post-hysteresis), if known -- e.g. from the previous
-     *  day's persisted DailyRecommendation.mode. Optional and stateless by default: a
-     *  caller with no history (or evaluating a hypothetical scenario, see
-     *  evaluateNextDayPlan's single-plan-override branch) simply omits it and gets the
-     *  same behavior as before hysteresis existed. See POST_RECOVER_BUFFER below for
-     *  the one rule that uses it. */
+    _date?: string,
     previousMode?: 'train' | 'modify' | 'recover'
-): Recommendation {
+): {
+    mode: 'train' | 'modify' | 'recover';
+    envelopes: { safety: SafetyEnvelope; plan: PlanEnvelope };
+    telemetry: DecisionScoreTelemetry;
+    maxExecutionDose: number;
+    restrictedModalities: Set<string>;
+    alreadyTrainedOverride: boolean;
+    fatigueTriggeredRecover: boolean;
+    multiDayDriftIsDecisionRelevant: boolean;
+    postRecoverBufferApplied: boolean;
+} {
     const { subjective, objective } = readiness;
 
     // 1. Subjective fatigue scoring (10 = worst fatigue)
@@ -220,7 +224,6 @@ export function evaluateTraining(
     const invertedSleepQual = 10 - subjective.sleepQuality;
     const invertedReadiness = 10 - subjective.readiness;
 
-    // Core subjective penalty calculation
     const overallFatigueScore = (subjective.fatigue + subjective.soreness + invertedReadiness + invertedSleepQual + invertedMotivation) / 5;
 
     // 2. Objective strain scoring & telemetry decomposition (baseline-relative)
@@ -241,14 +244,11 @@ export function evaluateTraining(
     const totalMultiDayDrift = hrvStrain.multiDayDrift + rhrStrain.multiDayDrift + sleepStrain.multiDayDrift;
     const totalMetricStrain = totalAcuteDeviation + totalMultiDayDrift;
 
-    // Absolute safety net: a genuinely wrecked night still matters even if it doesn't
-    // read as unusual relative to this person's own (possibly already-low) baseline.
     let sleepFloorPenalty = 0;
     if (objective.sleep_score !== null && objective.sleep_score < SLEEP_SCORE_ABSOLUTE_FLOOR) {
         sleepFloorPenalty = SLEEP_SCORE_ABSOLUTE_FLOOR_STRAIN;
     }
 
-    // Body Battery: smooth ramp rather than a step function at 50.
     let bodyBatteryDeficit = 0;
     if (objective.body_battery_wake !== null) {
         const deficit = BODY_BATTERY_LOW_ANCHOR - objective.body_battery_wake;
@@ -263,16 +263,14 @@ export function evaluateTraining(
 
     const extremeFatigue = subjective.fatigue > 8 || subjective.soreness > 8 || subjective.painFlag;
 
-    // Prevent overtraining if you've done too many hard sessions recently
     const recentHardSessionsCount = objective.last_3_days_hard_sessions_count || 0;
     let recentHardSessionsPenalty = 0;
     if (recentHardSessionsCount >= 2) {
-        recentHardSessionsPenalty = RECENT_HARD_SESSIONS_STRAIN; // 2+ hard sessions in 3 days warrants caution
+        recentHardSessionsPenalty = RECENT_HARD_SESSIONS_STRAIN;
     }
 
     const objectiveStrain = totalMetricStrain + sleepFloorPenalty + bodyBatteryDeficit + conservativeBias + recentHardSessionsPenalty;
 
-    // 3. Determine Core Mode Hierarchy (Train vs Modify vs Recover)
     let mode: 'train' | 'modify' | 'recover' = 'train';
 
     const lowBodyBatteryRecovery = objective.body_battery_wake !== null
@@ -281,166 +279,23 @@ export function evaluateTraining(
     if (fatigueTriggeredRecover) {
         mode = 'recover';
     } else if (overallFatigueScore > 5 || subjective.soreness > 6 || objectiveStrain >= STRAIN_MODIFY_THRESHOLD) {
-        mode = 'modify'; // Cap systemic load -- see MODIFY_MAX_SYSTEMIC_COST, not a flat demotion to endurance-only
+        mode = 'modify';
     }
 
-    // Causal decision-relevance check: did multiDayDrift alter the final mode outcome?
     const strainWithoutDrift = objectiveStrain - totalMultiDayDrift;
     const counterfactualRecover = overallFatigueScore > 7 || extremeFatigue || strainWithoutDrift >= STRAIN_RECOVER_THRESHOLD;
     const counterfactualModify = counterfactualRecover || overallFatigueScore > 5 || subjective.soreness > 6 || strainWithoutDrift >= STRAIN_MODIFY_THRESHOLD;
     const counterfactualModeWithoutDrift = counterfactualRecover ? 'recover' : (counterfactualModify ? 'modify' : 'train');
     const multiDayDriftIsDecisionRelevant = (mode !== 'train') && (mode !== counterfactualModeWithoutDrift);
 
-    // 3a-hysteresis. Post-recover buffer: a single morning's numbers looking fully
-    // green the day right after a mandated recovery day doesn't mean tissues are fully
-    // back -- standard coaching practice eases back in rather than jumping straight
-    // from rest to a hard day. Only softens a fresh 'train' read down one notch to
-    // 'modify'; never overrides today's own fatigue/pain signal (fatigueTriggeredRecover
-    // already stands on its own above) and never applies without real history (an
-    // omitted previousMode -- e.g. a stateless hypothetical preview -- leaves this
-    // inert, matching pre-hysteresis behavior).
     const postRecoverBufferApplied = mode === 'train' && previousMode === 'recover';
     if (postRecoverBufferApplied) {
         mode = 'modify';
     }
 
-    // 3b. Already-trained-today override: takes precedence over everything above.
-    // A user-reported or Garmin-synced same-day session means no further training should
-    // be prescribed today, regardless of how fresh the readiness numbers otherwise look.
     const alreadyTrainedOverride = subjective.alreadyTrainedToday === true || objective.today_training !== null;
     if (alreadyTrainedOverride) {
         mode = 'recover';
-    }
-
-    // 4. Filter templates through the single hard-gate resolver. Preferences rank
-    // the remaining feasible options; they never bypass a safety or access rule.
-    const availableTemplates = eligibleTemplates(TEMPLATES, context, subjective.timeAvailable, date).filter(t => {
-        // Avoided modalities are a hard exclude, same standing as an equipment gate --
-        // unlike deprioritized (soft) or preferred (soft), see rankByModalityPreference.
-        if (context.preferences.avoidedModalities.some(m => modalityMatches(t.modality, m))) return false;
-        // Phase-gated templates (phaseEligibility) are excluded from Path A entirely, not
-        // just from the 'train' category allowlist below: an explicit preferredModalityToday
-        // ask widens that allowlist to every constraint-eligible template of the asked
-        // modality (see applyModalityPreference), which would otherwise let e.g. a
-        // taper-only or event-proximity-gated session through with zero regard for how far
-        // away the event actually is -- evaluateTraining has no PeriodizationResult to check
-        // that against at all, so these must never reach `availableTemplates` in the first
-        // place, on any path, on any mode.
-        if (t.phaseEligibility) return false;
-        return true;
-    });
-
-    // 5. Select Template Based on Mode & Constraints
-    let selectedTemplate = availableTemplates.find(t => t.category === 'Rest') || TEMPLATES[1]; // fallback
-    let rationale = "";
-
-    let modalityNote: string | null = null;
-
-    if (mode === 'recover') {
-        const recoverOptions = availableTemplates.filter(t => t.category === 'Rest' || t.category === 'Mobility/Recovery');
-        // Recover's ceiling is safety-motivated -- search and fallback pool are the same
-        // restricted set, so an explicit ask can't push above it.
-        const preferenceResult = applyModalityPreference(recoverOptions, recoverOptions, subjective.preferredModalityToday);
-        modalityNote = preferenceResult.note;
-        let rankedRecoverOptions = rankByModalityPreference(
-            preferenceResult.options, context.preferences.preferredModalities, context.preferences.deprioritizedModalities
-        );
-        if (context.trainingSettings?.preferences.preferActiveRecovery) {
-            rankedRecoverOptions = [...rankedRecoverOptions].sort((a, b) =>
-                Number(b.category === 'Mobility/Recovery') - Number(a.category === 'Mobility/Recovery')
-            );
-        }
-        // pickTemplate only returns undefined for an empty array, already excluded by the guard.
-        if (rankedRecoverOptions.length > 0) selectedTemplate = pickTemplate(rankedRecoverOptions, date)!;
-
-        if (alreadyTrainedOverride) {
-            const loggedSession = objective.today_training;
-            const sessionDescription = loggedSession
-                ? `Garmin shows you already completed a ${loggedSession.type} session today (~${loggedSession.duration_min} min).`
-                : "You've already logged a training session today.";
-
-            if (fatigueTriggeredRecover) {
-                // Fatigue/pain independently pushed mode to 'recover' -- don't let the
-                // already-trained message crowd out that safety-relevant context.
-                const cautionNote = subjective.painFlag
-                    ? "You're also flagging pain or injury today, so prioritize recovery and get it checked out if it persists."
-                    : "Your fatigue markers are also elevated today, so prioritize recovery (hydration, nutrition, sleep) rather than adding anything further.";
-                rationale = `${sessionDescription} ${cautionNote}`;
-            } else {
-                rationale = `${sessionDescription} Nice work -- no further training is needed. Focus on recovery (hydration, nutrition, sleep) for the rest of the day.`;
-            }
-        } else {
-            rationale = "Your overall fatigue markers are high today (combining subjective feel with drops in objective baselines). Pushing hard could be counter-productive; focus on active or passive recovery.";
-        }
-
-    } else if (mode === 'modify') {
-        // Cap by systemic cost, not by category -- a low-cost, muscle-local session
-        // (upper-body strength) is a legitimate option here even though the broader
-        // category was excluded before. See MODIFY_MAX_SYSTEMIC_COST.
-        const modifyOptions = availableTemplates.filter(t => t.category !== 'Rest' && t.systemicCost <= MODIFY_MAX_SYSTEMIC_COST);
-        // Modify's cost ceiling is safety-motivated too -- same restricted set for both
-        // search and fallback (an ask for something above the ceiling isn't honored).
-        const preferenceResult = applyModalityPreference(modifyOptions, modifyOptions, subjective.preferredModalityToday);
-        modalityNote = preferenceResult.note;
-        const rankedModifyOptions = rankByModalityPreference(
-            preferenceResult.options, context.preferences.preferredModalities, context.preferences.deprioritizedModalities
-        );
-        if (rankedModifyOptions.length > 0) selectedTemplate = pickTemplate(rankedModifyOptions, date)!;
-        else selectedTemplate = TEMPLATES[0]; // Rest fallback
-
-        rationale = "You're showing moderate soreness or slight downward trends in Garmin baselines. We're capping today's systemic/autonomic load rather than ruling out a whole modality.";
-        if (selectedTemplate.category === 'Upper-body Strength') {
-            rationale += " Upper-body strength is included: it's a low-systemic-load, muscle-local stimulus, so softer HRV/RHR readings are a better reason to skip legs or intervals than to skip push/pull work.";
-        }
-
-    } else {
-        // 'Moderate Endurance' (Zone-3 tempo) belongs here, not in 'modify' -- it's
-        // explicitly a comfortably-hard, full-intensity option, which would contradict
-        // modify mode's "capping intensity" rationale above.
-        // 'Race-Specific Endurance' isn't in this allowlist -- phase-gated templates are
-        // already excluded from `availableTemplates` itself (step 4 above), so it's moot here.
-        const trainOptions = availableTemplates.filter(t => t.category === 'Hard Endurance' || t.category === 'Moderate Endurance' || t.category === 'Full-body Strength' || t.category === 'Upper-body Strength' || t.category === 'Lower-body Strength' || t.category === 'Power Maintenance');
-        // No ceiling to protect on a 'train' day -- an explicit ask for something gentler
-        // (e.g. mobility) than train mode would normally offer is fine to honor, so the
-        // search pool is every constraint-eligible template, not just trainOptions.
-        const preferenceResult = applyModalityPreference(availableTemplates, trainOptions, subjective.preferredModalityToday);
-        modalityNote = preferenceResult.note;
-        const rankedTrainOptions = rankByModalityPreference(
-            preferenceResult.options, context.preferences.preferredModalities, context.preferences.deprioritizedModalities
-        );
-        if (rankedTrainOptions.length > 0) selectedTemplate = pickTemplate(rankedTrainOptions, date)!;
-
-        // An honored preference can land outside train mode's usual categories (e.g. an
-        // explicit ask for mobility on an otherwise green-light day) -- say so rather
-        // than claiming a "hard session" rationale for what's actually an easy one.
-        if (!trainOptions.some(t => t.id === selectedTemplate!.id)) {
-            rationale = `Readiness is solid -- you'd be fine pushing harder -- but you asked for ${selectedTemplate.modality.toLowerCase()} today, so going with that instead.`;
-        } else {
-            rationale = "Readiness is solid across both subjective feelings and Garmin baselines. Great day for a hard session aligned with your primary goals!";
-        }
-    }
-
-    if (modalityNote) {
-        rationale += ` ${modalityNote}`;
-    }
-
-    if (multiDayDriftIsDecisionRelevant) {
-        rationale += " Your recovery metrics have been trending away from baseline over several days, capping today's training load.";
-    }
-
-    if (postRecoverBufferApplied) {
-        rationale += " Yesterday was a mandated recovery day, so easing back in today (rather than going straight to a hard session) even though this morning's numbers look fully green.";
-    }
-
-    // Add previous day context if available and relevant
-    if (objective.yesterday_training && objective.yesterday_training.duration_min && mode === 'modify') {
-        rationale += ` Giving your body a break after yesterday's ${objective.yesterday_training.type} session.`;
-    }
-
-    // Fallback safety
-    if (!selectedTemplate) {
-        selectedTemplate = TEMPLATES[0];
-        rationale += " (Defaulted to Rest/Mobility due to severe time/equipment constraints).";
     }
 
     const round2 = (val: number) => Math.round(val * 100) / 100;
@@ -460,6 +315,128 @@ export function evaluateTraining(
     };
 
     const envelopes = evaluateEnvelopes({ subjective, objective }, context);
+
+    return {
+        mode,
+        envelopes,
+        telemetry,
+        maxExecutionDose: 1.0,
+        restrictedModalities: new Set(envelopes.safety.restrictedModalities),
+        alreadyTrainedOverride,
+        fatigueTriggeredRecover,
+        multiDayDriftIsDecisionRelevant,
+        postRecoverBufferApplied,
+    };
+}
+
+export function evaluateTraining(
+    readiness: DailyReadiness,
+    context: UserContext,
+    date: string,
+    previousMode?: 'train' | 'modify' | 'recover'
+): Recommendation {
+    const { subjective, objective } = readiness;
+    const state = evaluateReadinessAndSafetyEnvelope(readiness, context, date, previousMode);
+    const { mode } = state;
+    const { envelopes, telemetry, alreadyTrainedOverride, fatigueTriggeredRecover, multiDayDriftIsDecisionRelevant, postRecoverBufferApplied } = state;
+
+    // 4. Filter templates through the single hard-gate resolver. Preferences rank
+    // the remaining feasible options; they never bypass a safety or access rule.
+    const availableTemplates = eligibleTemplates(TEMPLATES, context, subjective.timeAvailable, date).filter(t => {
+        if (context.preferences.avoidedModalities.some(m => modalityMatches(t.modality, m))) return false;
+        if (t.phaseEligibility) return false;
+        return true;
+    });
+
+    // 5. Select Template Based on Mode & Constraints
+    let selectedTemplate = availableTemplates.find(t => t.category === 'Rest') || TEMPLATES[1]; // fallback
+    let rationale = "";
+
+    let modalityNote: string | null = null;
+
+    if (mode === 'recover') {
+        const recoverOptions = availableTemplates.filter(t => t.category === 'Rest' || t.category === 'Mobility/Recovery');
+        const preferenceResult = applyModalityPreference(recoverOptions, recoverOptions, subjective.preferredModalityToday);
+        modalityNote = preferenceResult.note;
+        let rankedRecoverOptions = rankByModalityPreference(
+            preferenceResult.options, context.preferences.preferredModalities, context.preferences.deprioritizedModalities
+        );
+        if (context.trainingSettings?.preferences.preferActiveRecovery) {
+            rankedRecoverOptions = [...rankedRecoverOptions].sort((a, b) =>
+                Number(b.category === 'Mobility/Recovery') - Number(a.category === 'Mobility/Recovery')
+            );
+        }
+        if (rankedRecoverOptions.length > 0) selectedTemplate = pickTemplate(rankedRecoverOptions, date)!;
+
+        if (alreadyTrainedOverride) {
+            const loggedSession = objective.today_training;
+            const sessionDescription = loggedSession
+                ? `Garmin shows you already completed a ${loggedSession.type} session today (~${loggedSession.duration_min} min).`
+                : "You've already logged a training session today.";
+
+            if (fatigueTriggeredRecover) {
+                const cautionNote = subjective.painFlag
+                    ? "You're also flagging pain or injury today, so prioritize recovery and get it checked out if it persists."
+                    : "Your fatigue markers are also elevated today, so prioritize recovery (hydration, nutrition, sleep) rather than adding anything further.";
+                rationale = `${sessionDescription} ${cautionNote}`;
+            } else {
+                rationale = `${sessionDescription} Nice work -- no further training is needed. Focus on recovery (hydration, nutrition, sleep) for the rest of the day.`;
+            }
+        } else {
+            rationale = "Your overall fatigue markers are high today (combining subjective feel with drops in objective baselines). Pushing hard could be counter-productive; focus on active or passive recovery.";
+        }
+
+    } else if (mode === 'modify') {
+        const modifyOptions = availableTemplates.filter(t => t.category !== 'Rest' && t.systemicCost <= MODIFY_MAX_SYSTEMIC_COST);
+        const preferenceResult = applyModalityPreference(modifyOptions, modifyOptions, subjective.preferredModalityToday);
+        modalityNote = preferenceResult.note;
+        const rankedModifyOptions = rankByModalityPreference(
+            preferenceResult.options, context.preferences.preferredModalities, context.preferences.deprioritizedModalities
+        );
+        if (rankedModifyOptions.length > 0) selectedTemplate = pickTemplate(rankedModifyOptions, date)!;
+        else selectedTemplate = TEMPLATES[0]; // Rest fallback
+
+        rationale = "You're showing moderate soreness or slight downward trends in Garmin baselines. We're capping today's systemic/autonomic load rather than ruling out a whole modality.";
+        if (selectedTemplate.category === 'Upper-body Strength') {
+            rationale += " Upper-body strength is included: it's a low-systemic-load, muscle-local stimulus, so softer HRV/RHR readings are a better reason to skip legs or intervals than to skip push/pull work.";
+        }
+
+    } else {
+        const trainOptions = availableTemplates.filter(t => t.category === 'Hard Endurance' || t.category === 'Moderate Endurance' || t.category === 'Full-body Strength' || t.category === 'Upper-body Strength' || t.category === 'Lower-body Strength' || t.category === 'Power Maintenance');
+        const preferenceResult = applyModalityPreference(availableTemplates, trainOptions, subjective.preferredModalityToday);
+        modalityNote = preferenceResult.note;
+        const rankedTrainOptions = rankByModalityPreference(
+            preferenceResult.options, context.preferences.preferredModalities, context.preferences.deprioritizedModalities
+        );
+        if (rankedTrainOptions.length > 0) selectedTemplate = pickTemplate(rankedTrainOptions, date)!;
+
+        if (!trainOptions.some(t => t.id === selectedTemplate!.id)) {
+            rationale = `Readiness is solid -- you'd be fine pushing harder -- but you asked for ${selectedTemplate.modality.toLowerCase()} today, so going with that instead.`;
+        } else {
+            rationale = "Readiness is solid across both subjective feelings and Garmin baselines. Great day for a hard session aligned with your primary goals!";
+        }
+    }
+
+    if (modalityNote) {
+        rationale += ` ${modalityNote}`;
+    }
+
+    if (multiDayDriftIsDecisionRelevant) {
+        rationale += " Your recovery metrics have been trending away from baseline over several days, capping today's training load.";
+    }
+
+    if (postRecoverBufferApplied) {
+        rationale += " Yesterday was a mandated recovery day, so easing back in today (rather than going straight to a hard session) even though this morning's numbers look fully green.";
+    }
+
+    if (objective.yesterday_training && objective.yesterday_training.duration_min && mode === 'modify') {
+        rationale += ` Giving your body a break after yesterday's ${objective.yesterday_training.type} session.`;
+    }
+
+    if (!selectedTemplate) {
+        selectedTemplate = TEMPLATES[0];
+        rationale += " (Defaulted to Rest/Mobility due to severe time/equipment constraints).";
+    }
 
     return {
         template: selectedTemplate,
@@ -483,17 +460,17 @@ export async function evaluateTrainingWithIntent(
     historyProvider?: TrainingHistoryProvider,
     preparedHistorySnapshot?: TrainingHistorySnapshot | null,
 ): Promise<Recommendation> {
-    const base = evaluateTraining(readiness, context, date, previousMode);
-    // The resolver retains Firebase behind its production-provider boundary; fixture
-    // providers keep this asynchronous path deterministic in engine unit tests.
+    const envelopeState = evaluateReadinessAndSafetyEnvelope(readiness, context, date, previousMode);
+    const { mode, envelopes, telemetry } = envelopeState;
+
     const intent = await resolveTrainingIntent(userId, events, date, readiness, 7, historyProvider, preparedHistorySnapshot);
-    const maxCost = PLAN_TIER_SYSTEMIC_COST_CEILING[base.envelopes!.plan.maxAllowableTier];
+    const maxCost = PLAN_TIER_SYSTEMIC_COST_CEILING[envelopes.plan.maxAllowableTier];
     const candidates = eligibleTemplates(ENRICHED_TEMPLATES, context, readiness.subjective.timeAvailable, date)
-        .filter(template => !base.envelopes!.safety.restrictedModalities.includes(template.modality))
+        .filter(template => !envelopes.safety.restrictedModalities.includes(template.modality))
         .filter(template => !(context.constraints.restrictedCategories ?? []).includes(template.category))
         .filter(template => template.systemicCost <= maxCost)
-        .filter(template => base.mode !== 'recover' || template.category === 'Rest' || template.category === 'Mobility/Recovery')
-        .filter(template => base.mode !== 'modify' || template.systemicCost <= MODIFY_MAX_SYSTEMIC_COST)
+        .filter(template => mode !== 'recover' || template.category === 'Rest' || template.category === 'Mobility/Recovery')
+        .filter(template => mode !== 'modify' || template.systemicCost <= MODIFY_MAX_SYSTEMIC_COST)
         .filter(template => isTemplatePhaseEligible(template, intent.periodization));
     const ranked = rankCandidatesByUtility(
         candidates,
@@ -514,16 +491,18 @@ export async function evaluateTrainingWithIntent(
         }
     );
     const pick = ranked[0];
-    if (!pick) return base;
+    if (!pick) return evaluateTraining(readiness, context, date, previousMode);
     const phaseContext = intent.periodization.focusEvent
         ? `${intent.periodization.daysToEvent} days out from ${intent.periodization.focusEvent.title}, ${intent.periodization.phase.phaseName} phase.`
         : `${intent.periodization.phase.phaseName} phase.`;
     return {
-        ...base,
         template: pick.template,
         plannedDose: intent.plannedDose,
-        executionDose: resolveExecutionDose(intent.plannedDose, base.envelopes!.plan, null),
-        rationale: `${base.rationale} ${phaseContext} ${pick.rationale}`,
+        executionDose: resolveExecutionDose(intent.plannedDose, envelopes.plan, null),
+        rationale: `${phaseContext} ${pick.rationale}`,
+        mode,
+        envelopes,
+        telemetry,
         decisionTrace: {
             policyVersion: POLICY_VERSION,
             candidateScores: ranked.map(candidate => ({

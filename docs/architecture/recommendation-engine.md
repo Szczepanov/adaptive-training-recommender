@@ -37,13 +37,7 @@ ENRICHED_TEMPLATES → eligibility → envelope + mode ceilings → phase eligib
                    → rankCandidatesByUtility → top pick
 ```
 
-Asynchronous; resolves training intent from adherence history first. **Path B runs Path A
-internally** to obtain `mode` and `envelopes`, then discards Path A's template choice and
-re-selects via the optimizer.
-
-> That overlap is deliberate-but-transitional (finding F9). The intended end state is one
-> `evaluateReadinessAndSafetyEnvelope` feeding a single selection path — see
-> [`docs/plans/phase-3-single-ranking-path.md`](../plans/phase-3-single-ranking-path.md).
+Asynchronous; resolves training intent from adherence history first. Path B consumes `evaluateReadinessAndSafetyEnvelope` to obtain `mode`, `envelopes`, and `telemetry` directly, sharing the exact readiness calculation with Path A without running a discarded template selection (F9 resolved under ADR-0012).
 
 ---
 

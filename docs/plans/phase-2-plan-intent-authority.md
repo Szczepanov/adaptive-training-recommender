@@ -1,6 +1,6 @@
 # Phase 2 — Plan intent is the planning authority
 
-* **Status:** Ready — domain-model decisions D1/D2 taken 2026-08-08 (see below)
+* **Status:** Finished (ADR-0012, PlanDefinition, EventTiming, envelope extraction implemented and verified 2026-08-08)
 * **Depends on:** Phase 1 (do not migrate onto an unwired safety gate)
 * **Unlocks:** Phases 3, 4, 5
 * **Addresses:** F16, F17, F9
@@ -19,7 +19,7 @@ Update the marker on the work-item heading **and** this table in the same commit
 | 2.1 | `[x]` | Write and accept **ADR-0012**, recording D1 (canonical phase vocabulary), D2 (`intensityScale` consumer) and the lexicographic priority model | `docs/adr/0012-*.md` (new) |
 | 2.2 | `[x]` | `PlanDefinition` / `PlanBlock` / `PlanObjectiveDefinition`; coverage and dated block schedule combined by `buildPlanDefinition` | `app/src/workouts/event-plan.ts`, `app/src/engine/models.ts`, `microcycle.ts`, new plan-schedule module |
 | 2.3 | `[x]` | `EventTiming` with validated date ordering for unconfirmed events | `app/src/engine/models.ts`, `periodization.ts`, `persistence/parsers/*` |
-| 2.4 | `[ ]` | Extract `evaluateReadinessAndSafetyEnvelope`; collapse Path A / Path B (F9) | `app/src/engine/rules.ts`, `planner.ts` |
+| 2.4 | `[x]` | Extract `evaluateReadinessAndSafetyEnvelope`; collapse Path A / Path B (F9) | `app/src/engine/rules.ts`, `planner.ts` |
 
 **2.1 gates the rest.** Do not start 2.2 before the ADR is accepted — the domain objects
 are the ADR's output, and building them first inverts the dependency this phase exists to
@@ -42,6 +42,16 @@ live planner instead reduces the plan to five generic rolling objectives and re-
 phase from `daysToEvent`, producing a `PhaseWeights` whose `intensityScale` is read by
 nobody and whose `volumeScale` feeds a single multiplier (F17). Two phase vocabularies
 exist with no mapping between them.
+
+## Acceptance criteria
+
+- [x] ADR-0012 accepted, recording D1 (canonical phase vocabulary) and D2 (`intensityScale` consumer)
+- [x] `PlanDefinition` exists; `generateWeeklyObjectives` consumes it when present
+- [x] `event-plan.ts` has at least one engine-path consumer
+- [x] `intensityScale` has a named, scheduled consumer (`PlannedDose.intensity`, Phase 4.4)
+- [x] `MicrocycleState.weekStartDate` renamed to `windowStartDate`
+- [x] one readiness/safety envelope function; no discarded template selection
+- [x] Phase 0 invariants still pass; semantic diff explained in the PR authorities
 
 ---
 
@@ -260,7 +270,7 @@ making it a validation error means a half-finished confirmation fails loudly at 
 boundary instead of producing a silently mistimed taper. The confirmation flow sets both
 fields in one write. Test the exact case above.
 
-## `[ ]` 2.4 — Collapse Path A / Path B (F9)
+## `[x]` 2.4 — Collapse Path A / Path B (F9)
 
 `evaluateTrainingWithIntent` currently calls `evaluateTraining` (`evaluateTrainingWithIntent`'s call to `evaluateTraining`) to obtain
 `mode` and `envelopes`, then discards its template pick and re-selects. Extract the part
@@ -283,13 +293,13 @@ there is one path.
 
 ## Acceptance criteria
 
-- [ ] ADR-0012 accepted, recording D1 (canonical phase vocabulary) and D2 (`intensityScale` consumer)
-- [ ] `PlanDefinition` exists; `generateWeeklyObjectives` consumes it when present
-- [ ] `event-plan.ts` has at least one engine-path consumer
-- [ ] `intensityScale` has a named, scheduled consumer (`PlannedDose.intensity`, Phase 4.4)
-- [ ] `MicrocycleState.weekStartDate` renamed to `windowStartDate`
-- [ ] one readiness/safety envelope function; no discarded template selection
-- [ ] Phase 0 invariants still pass; semantic diff explained in the PR
+- [x] ADR-0012 accepted, recording D1 (canonical phase vocabulary) and D2 (`intensityScale` consumer)
+- [x] `PlanDefinition` exists; `generateWeeklyObjectives` consumes it when present
+- [x] `event-plan.ts` has at least one engine-path consumer
+- [x] `intensityScale` has a named, scheduled consumer (`PlannedDose.intensity`, Phase 4.4)
+- [x] `MicrocycleState.weekStartDate` renamed to `windowStartDate`
+- [x] one readiness/safety envelope function; no discarded template selection
+- [x] Phase 0 invariants still pass; semantic diff explained in the PR
 
 ## Risks & rollback
 
