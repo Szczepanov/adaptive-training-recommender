@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { runScenario } from './simulation/analyze';
+import { runScenario, type ScenarioResult } from './simulation/analyze';
 import { SCENARIOS } from './simulation/scenarios';
 import { ENRICHED_TEMPLATES } from './templates';
 import type { SessionTemplate } from './models';
@@ -11,17 +11,37 @@ import type { SessionTemplate } from './models';
  * See docs/plans/phase-0-instrumentation.md (Task 0.2).
  */
 
-// ObjectiveCredit only carries `templateId`/`templateTitle`/`objectiveTitle` (the latter is
-// the *objective's* title, e.g. "Threshold Development" -- not a session category). Resolve
-// the actual template via this lookup so category- and modality-based assertions below
-// check what they claim to check (a non-Cycling template in a "key" category must not
-// satisfy a Cycling-scoped contract).
 const templateById = new Map<string, SessionTemplate>(
     ENRICHED_TEMPLATES.map((t) => [t.id, t]),
 );
 const categoryByTemplateId = new Map<string, SessionTemplate['category']>(
     ENRICHED_TEMPLATES.map((t) => [t.id, t.category]),
 );
+
+/** Objective credits are a ledger of newly satisfied unresolved objectives, not a
+ * session log. A second quality ride after threshold is already resolved is therefore a
+ * real session but intentionally creates no new credit row. Combine credited key rides
+ * with the simulator's realized anchor observations, both of which are modality-checked
+ * against the actual selected template. */
+function actualKeyCyclingDates(result: ScenarioResult): string[] {
+    const keyCategories = new Set(['Hard Endurance', 'Moderate Endurance', 'Race-Specific Endurance']);
+    const dates = new Set(
+        result.objectiveCredits
+            .filter((credit) => {
+                const template = templateById.get(credit.templateId);
+                return credit.modality === 'Cycling'
+                    && template?.modality === 'Cycling'
+                    && keyCategories.has(template.category);
+            })
+            .map((credit) => credit.date),
+    );
+
+    result.anchorWeeks.forEach((week) => {
+        if (week.qualityAnchorHit && week.qualityAnchorDate) dates.add(week.qualityAnchorDate);
+        week.eventSpecificExposureDates.forEach((date) => dates.add(date));
+    });
+    return Array.from(dates).sort();
+}
 
 describe('goldenWeek coaching contract: cycling_a_event_build_week', () => {
     async function getBuildWeekResult() {
@@ -32,16 +52,8 @@ describe('goldenWeek coaching contract: cycling_a_event_build_week', () => {
 
     it('key cycling quality sessions are spaced by >= 48 hours', async () => {
         const result = await getBuildWeekResult();
-        const keyCategories = new Set(['Hard Endurance', 'Moderate Endurance', 'Race-Specific Endurance']);
+        const keyCyclingDates = actualKeyCyclingDates(result);
 
-        // Find distinct dates of key cycling quality sessions across the scenario
-        const keyCyclingDates = Array.from(new Set(
-            result.objectiveCredits
-                .filter((credit) => credit.modality === 'Cycling' && keyCategories.has(categoryByTemplateId.get(credit.templateId) ?? ''))
-                .map((credit) => credit.date),
-        )).sort();
-
-        // Parse dates into timestamps and check spacing between consecutive key quality days
         const timestamps = keyCyclingDates.map((d) => new Date(d + 'T00:00:00').getTime());
         for (let i = 1; i < timestamps.length; i++) {
             const diffHours = (timestamps[i] - timestamps[i - 1]) / (1000 * 60 * 60);
@@ -51,15 +63,9 @@ describe('goldenWeek coaching contract: cycling_a_event_build_week', () => {
 
     it('protects key cycling days from adjacent heavy strength sessions', async () => {
         const result = await getBuildWeekResult();
-        const keyCyclingDates = new Set(
-            result.objectiveCredits
-                .filter((c) => c.modality === 'Cycling')
-                .map((c) => c.date),
-        );
-
+        const keyCyclingDates = new Set(actualKeyCyclingDates(result));
         const heavyStrengthCategories = new Set(['Lower-body Strength', 'Full-body Strength']);
 
-        // Assert no heavy strength day is placed on day before or after key cycling day
         result.objectiveCredits.forEach((c) => {
             if (heavyStrengthCategories.has(categoryByTemplateId.get(c.templateId) ?? '')) {
                 const strengthTime = new Date(c.date + 'T00:00:00').getTime();
@@ -72,23 +78,11 @@ describe('goldenWeek coaching contract: cycling_a_event_build_week', () => {
         });
     });
 
-    // F3 / Phase 0: Event modality frequency contract. Count distinct session days, not
-    // objective-credit rows, because one Cycling workout may resolve multiple objectives.
+    // F3 / Phase 0: Event modality frequency contract. Count actual distinct key-session
+    // dates, not objective-credit rows (which stop once an objective is already resolved).
     it('delivers at least two key/race-specific Cycling sessions in the 7-day Build strip (F3)', async () => {
         const result = await getBuildWeekResult();
-        const keyCategories = new Set(['Hard Endurance', 'Moderate Endurance', 'Race-Specific Endurance']);
-        const keyCyclingDays = new Set(
-            result.objectiveCredits
-                .filter((c) => {
-                    const template = templateById.get(c.templateId);
-                    return c.modality === 'Cycling'
-                        && template?.modality === 'Cycling'
-                        && keyCategories.has(template.category);
-                })
-                .map((c) => c.date)
-        );
-
-        expect(keyCyclingDays.size).toBeGreaterThanOrEqual(2);
+        expect(actualKeyCyclingDates(result).length).toBeGreaterThanOrEqual(2);
     });
 
     it('resolves required weekly objectives (threshold_quality and strength_maintenance)', async () => {
