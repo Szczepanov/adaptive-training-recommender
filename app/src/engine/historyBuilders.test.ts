@@ -15,6 +15,10 @@ const thresholdExposure: CompletedExposure = {
     trainingRecordLike: { type: 'Cycling Threshold', duration_min: 45, training_effect: 3, intensity_tag: 'hard' },
 };
 
+const zeroInternal = {
+    systemic: 0, cardiovascular: 0, lowerBody: 0, upperBody: 0, impactTissue: 0, neuromuscular: 0,
+};
+
 describe('history-seeded training state', () => {
     it('credits completed history into the current microcycle objectives', () => {
         const state = buildMicrocycleState(phase, '2026-08-01', [thresholdExposure], null);
@@ -30,16 +34,16 @@ describe('history-seeded training state', () => {
         expect(fatigue.rawExternalLoadFatigue).toBeDefined();
     });
 
-    it('handles out-of-order history input deterministically without mis-decaying or throwing', () => {
+    it('sorts out-of-order history to the same deterministic fatigue state as ordered replay', () => {
         const earlyExp: CompletedExposure = { ...thresholdExposure, date: '2026-08-02' };
         const lateExp: CompletedExposure = { ...thresholdExposure, date: '2026-08-04' };
-        const outOfOrderHistory = [lateExp, earlyExp];
 
-        const fatigue = buildFatigueStateFromHistory(outOfOrderHistory, {
-            systemic: 0, cardiovascular: 0, lowerBody: 0, upperBody: 0, impactTissue: 0, neuromuscular: 0,
-        }, '2026-08-05');
+        const ordered = buildFatigueStateFromHistory([earlyExp, lateExp], zeroInternal, '2026-08-05');
+        const outOfOrder = buildFatigueStateFromHistory([lateExp, earlyExp], zeroInternal, '2026-08-05');
 
-        expect(fatigue.lastUpdatedDate).toBe('2026-08-05');
-        expect(fatigue.externalLoadFatigue.systemic).toBeGreaterThan(0);
+        expect(outOfOrder.lastUpdatedDate).toBe('2026-08-05');
+        expect(outOfOrder.externalLoadFatigue).toEqual(ordered.externalLoadFatigue);
+        expect(outOfOrder.rawExternalLoadFatigue).toEqual(ordered.rawExternalLoadFatigue);
+        expect(outOfOrder.combinedFatigue).toEqual(ordered.combinedFatigue);
     });
 });
