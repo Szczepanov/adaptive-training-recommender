@@ -1,9 +1,11 @@
 # Phase 4 Ă˘â‚¬â€ť Objective credit V2, and honest load
 
-* **Status:** In progress — implementation tasks are committed; release approval is blocked on Phase 0 harness evidence
-* **Blocked by:** Phase 0Ă˘â‚¬â„˘s harness-gate evidence is required before credit/fusion cutover is
-  considered release-ready; implementation work proceeds on the committed Phase 2 contract.
-* **Depends on:** Phase 0 (harness evidence), Phase 2 (ADR-0012 fixes the credit contract)
+* **Status:** In progress — implementation tasks are committed; release approval is blocked on a failing
+  scenario-harness gate.
+* **Blocked by:** Scenario evidence must be reconciled before credit/fusion cutover is considered
+  release-ready. Phase 0 is already implemented on `main`; its harness is available and is the
+  gate reporting the failure, not a missing dependency.
+* **Depends on:** Phase 0 (implemented harness), Phase 2 (ADR-0012 fixes the credit contract)
 * **Unlocks:** Phase 5
 * **Addresses:** F7, F8, F12
 * **Rough effort:** 4Ă˘â‚¬â€ś5 days
@@ -110,9 +112,10 @@ compatibility projection only; it no longer decides resolution. Reconciled compl
 carry `DeliveredDose` into history, so actual duration reaches the credit function. The
 objective rules are intentionally narrowed to the currently measured stimulus vector plus
 completion ratio; effort-count, recovery-pattern, and event-context rules remain deferred
-until those signals have a source. `npm run check` passes. The scenario run produced a
-58.9% recovery-share aggregate-bound failure; its release interpretation remains blocked on
-the Phase 0 harness gate and is recorded below rather than silently accepting the cutover.
+until those signals have a source. `npm run check` passes. The scenario run produced a 58.9%
+recovery-share aggregate-bound failure. This is a failed release gate, not missing Phase 0
+work; the boundary analysis below separates the inherited Phase 3 failure from the Phase 4
+contribution rather than silently accepting the cutover.
 
 ## `[x]` 4.2 Ă˘â‚¬â€ť F8: finish the stimulus rename
 
@@ -212,7 +215,7 @@ error, not bad data Ă˘â‚¬â€ť but the caller still degrades to the esta
 (ADR-0010's `INVALID` path) rather than crashing. Add a recommendation-path test for
 malformed ordering, not just a unit test on the function.
 
-### `[-]` (b) Modelling — blocked on Phase 0 harness comparison
+### `[-]` (b) Modelling — awaiting scenario comparison
 
 Two real questions:
 
@@ -236,6 +239,28 @@ chronological invariant, and `rawExternalLoadFatigue` retains unsaturated depth.
 not complete:** ADR-0014 records that `max()` remains in force until the harness comparison
 exists. The failed 58.9% recovery-share aggregate bound is release evidence, not a basis to
 select a fusion formula.
+
+### Harness boundary analysis (2026-08-08)
+
+Phase 0 is implemented on `main` and its `simulate:scenarios` gate passes there at **34.8%**
+rest/recovery days (100/287). The Phase 4 branch does not descend from that `main` tip: it
+contains the Phase 3 series. The simulator at the last Phase 3 commit (`89434d7`) already
+fails at **52.3%** (150/287), so that is inherited release debt, not a Phase 4 defect.
+
+The same deterministic boundary run found these Phase 4 deltas:
+
+| Boundary | Rest/recovery share | Interpretation |
+|---|---:|---|
+| Phase 3 / before Phase 4 (`89434d7`) | 52.3% | inherited failure |
+| After 4.1 initial / 4.2 (`6d2ad01`) | 52.3% | no change |
+| After 4.5 (`e3dcd92`) | 58.5% | intensity eligibility requires investigation |
+| After 4.4 (`347cee4`) | 58.5% | no additional change |
+| Current Phase 4 (`81a1b75`) | 58.9% | 4.1 adds 0.4 percentage points |
+
+Do not retune Phase 0's 5–40% bound or choose a fatigue-fusion formula to force this metric
+green. First establish whether the 4.5 candidate-intensity classification excludes a session
+class beyond the `PlanBlock` contract. Then compare fusion candidates against the corrected
+or explicitly accepted Phase 3 baseline, and record the data in ADR-0014.
 
 ## `[x]` 4.5 Ă˘â‚¬â€ť `PlannedDose`: give `intensityScale` its consumer (D2)
 
@@ -322,7 +347,8 @@ duration and completion behavior, and `npm run check` passes.
 - [x] one credit model live; `updateMicrocycleProgress` demoted to documented last-resort
       compatibility with a shrinking call surface
 - [x] `deriveObjectiveCredit`'s `qualifies` and `default` defects fixed before promotion
-- [ ] shadow-mode comparison run and its divergence explained in the PR — blocked by Phase 0 harness
+- [ ] shadow-mode comparison run and its divergence explained in the PR — Phase 0 harness is
+      available; release gate currently fails and must be reconciled
 - [x] canonical stimulus axes required; legacy aliases deleted; `targetStimulus` typed
 - [x] chronological ordering asserted in `buildFatigueStateFromHistory`
 - [x] unsaturated latent external-load state retained
