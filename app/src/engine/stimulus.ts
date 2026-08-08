@@ -1,10 +1,5 @@
-import type { ObjectiveKey, ObjectiveProgress, PlannerState, WeeklyObjective, WorkoutStimulusProfile } from './models';
-
-export interface DeliveredDose {
-    plannedDurationMin?: number;
-    completedDurationMin?: number;
-    completionRatio?: number; // 0.0 to 1.0 (defaults to 1.0)
-}
+import type { DeliveredDose, ObjectiveKey, ObjectiveProgress, PlannerState, WeeklyObjective, WorkoutStimulusProfile } from './models';
+export type { DeliveredDose } from './models';
 
 export interface CreditContext {
     modality?: string;
@@ -164,18 +159,9 @@ export function deriveObjectiveCredit(
 }
 
 /**
- * V2 counterpart of microcycle.ts's `getUnresolvedObjectives(microcycle: MicrocycleState)`
- * (deliberately named differently to avoid colliding with it): operates on the fractional
- * `PlannerState`/`ObjectiveProgress` shape rather than integer `completedExposures`, so an
- * objective with partial dose-sensitive credit (see `deriveObjectiveCredit` above) can stay
- * "unresolved" even once at least one exposure has landed. Falls back to the objective's own
- * `completedExposures` when no progress entry is supplied, so it degrades gracefully for
- * objectives that haven't been credited through the fractional path yet.
- *
- * Not yet wired into planner.ts/microcycle.ts -- the live scheduling pipeline still runs on
- * the integer exposure-count model in microcycle.ts. This exists as the V2 building block for
- * migrating that pipeline; call sites should switch over deliberately, not implicitly, since
- * the two credit models are not numerically equivalent.
+ * Compatibility reader for a persisted `PlannerState`/`ObjectiveProgress` pair. The live
+ * microcycle ledger also uses fractional credit; this helper remains for audit/replay callers
+ * that hold progress separately from their objective objects.
  */
 export function getUnresolvedObjectivesV2(
     state: PlannerState,

@@ -10,7 +10,7 @@ import type {
 } from './models';
 import type { CompletedExposure } from './trainingHistory';
 import { ENRICHED_TEMPLATES } from './templates';
-import type { DeliveredDose } from './stimulus';
+import type { DeliveredDose } from './models';
 
 type CompletedModality = SessionTemplate['modality'] | 'Unknown';
 
@@ -214,17 +214,19 @@ function candidateEventFromGarmin(activity: NormalizedGarminActivity): Completed
     const modality = modalityFromActivityType(activity.type);
     const intensity = intensityFromGarmin(activity);
     const baseCost = DEFAULT_COST_BY_MODALITY[modality][intensity];
+    const deliveredDose: DeliveredDose = {
+        plannedDurationMin: catalogReferenceDurationMin(modality, intensity),
+        completedDurationMin: activity.durationMin ?? undefined,
+    };
     return {
         id: `garmin:${activity.activityId}`,
         date: activity.date,
         durationMin: activity.durationMin,
+        deliveredDose,
         modality,
         intensity,
         trainingEffect: Math.max(activity.trainingEffectAerobic ?? 0, activity.trainingEffectAnaerobic ?? 0) || null,
-        estimatedCost: scaleCostByDeliveredDose(baseCost, {
-            plannedDurationMin: catalogReferenceDurationMin(modality, intensity),
-            completedDurationMin: activity.durationMin ?? undefined,
-        }),
+        estimatedCost: scaleCostByDeliveredDose(baseCost, deliveredDose),
         estimatedStimulus: DEFAULT_STIMULUS_BY_MODALITY[modality][intensity],
         exactTemplateMatch: false,
         sources: ['garmin'],
@@ -238,17 +240,19 @@ function candidateEventFromGarmin(activity: NormalizedGarminActivity): Completed
 function candidateEventFromAdherence(recommendation: DailyRecommendation, candidate: NonNullable<ReturnType<typeof adherenceCandidate>>): CompletedTrainingEvent {
     const intensity: CompletedTrainingIntensity = candidate.template?.systemicCost && candidate.template.systemicCost >= 0.55 ? 'hard' : 'moderate';
     const baseCost = candidate.template?.costProfile ?? DEFAULT_COST_BY_MODALITY[candidate.modality][intensity];
+    const deliveredDose: DeliveredDose = {
+        plannedDurationMin: candidate.plannedDurationMin ?? catalogReferenceDurationMin(candidate.modality, intensity),
+        completedDurationMin: candidate.durationMin ?? undefined,
+    };
     return {
         id: `adherence:${recommendation.date}`,
         date: recommendation.date,
         durationMin: candidate.durationMin,
+        deliveredDose,
         modality: candidate.modality,
         intensity,
         trainingEffect: null,
-        estimatedCost: scaleCostByDeliveredDose(baseCost, {
-            plannedDurationMin: candidate.plannedDurationMin ?? catalogReferenceDurationMin(candidate.modality, intensity),
-            completedDurationMin: candidate.durationMin ?? undefined,
-        }),
+        estimatedCost: scaleCostByDeliveredDose(baseCost, deliveredDose),
         estimatedStimulus: candidate.template?.stimulusProfile ?? DEFAULT_STIMULUS_BY_MODALITY[candidate.modality][intensity],
         exactTemplateMatch: !!candidate.template?.stimulusProfile,
         sources: ['adherence'],
@@ -268,18 +272,20 @@ function mergeAdherenceIntoGarmin(
     const baseCost = recommendation.adherence.followed && candidate.template?.costProfile
         ? candidate.template.costProfile
         : DEFAULT_COST_BY_MODALITY[event.modality][intensity];
+    const deliveredDose: DeliveredDose = {
+        plannedDurationMin: candidate.plannedDurationMin ?? catalogReferenceDurationMin(event.modality, intensity),
+        completedDurationMin: event.durationMin ?? undefined,
+    };
     return {
         ...event,
         sources: ['garmin', 'adherence'],
         confidence: 'high',
         linkedRecommendationDate: recommendation.date,
+        deliveredDose,
         // Garmin remains the measured duration/training-effect authority. Template
         // metadata improves dimensional cost/stimulus only when the athlete confirmed
         // the prescribed session was followed.
-        estimatedCost: scaleCostByDeliveredDose(baseCost, {
-            plannedDurationMin: candidate.plannedDurationMin ?? catalogReferenceDurationMin(event.modality, intensity),
-            completedDurationMin: event.durationMin ?? undefined,
-        }),
+        estimatedCost: scaleCostByDeliveredDose(baseCost, deliveredDose),
         estimatedStimulus: recommendation.adherence.followed && candidate.template?.stimulusProfile
             ? candidate.template.stimulusProfile
             : event.estimatedStimulus,
@@ -347,6 +353,7 @@ export function completedEventToExposure(event: CompletedTrainingEvent): Complet
         date: event.date,
         costProfile: event.estimatedCost,
         trainingRecordLike: record,
+        ...(event.deliveredDose ? { deliveredDose: event.deliveredDose } : {}),
         stimulusConfidence: confidence,
         ...(modality && hasStimulus ? {
             modality,

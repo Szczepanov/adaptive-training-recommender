@@ -190,6 +190,11 @@ export interface WeeklyObjective {
     key: ObjectiveKey;
     title: string;
     requiredCredit?: number;
+    /** Fractional credit accumulated from completed evidence. `completedExposures` is
+     * retained only as a legacy display projection. */
+    completedCredit?: number;
+    /** Fractional credit already allocated in a future projection; never persisted. */
+    projectedCredit?: number;
     targetExposures: number;
     completedExposures: number;
     targetStimulus: Partial<Record<keyof WorkoutStimulusProfile, number>>;
@@ -242,6 +247,13 @@ export interface WorkoutCostProfile {
     upperBody: number;       // Push/Pull muscle strain
     impactTissue: number;    // Joint / connective tissue / eccentric cost
     neuromuscular: number;   // Explosive / CNS fatigue
+}
+
+/** Evidence used by both objective credit and external-load costing. */
+export interface DeliveredDose {
+    plannedDurationMin?: number;
+    completedDurationMin?: number;
+    completionRatio?: number;
 }
 
 export interface DimensionalFatigue {
@@ -871,6 +883,7 @@ export interface CompletedTrainingEvent {
     id: string;
     date: string;
     durationMin: number | null;
+    deliveredDose?: DeliveredDose;
     modality: SessionTemplate['modality'] | 'Unknown';
     intensity: CompletedTrainingIntensity;
     trainingEffect: number | null;

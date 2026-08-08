@@ -262,7 +262,9 @@ describe('Task 1.2 / F2 Garmin objective crediting', () => {
     const thresh = state.objectives.find(o => o.key === 'threshold_quality');
 
     expect(z2?.completedExposures).toBe(0);
+    expect(z2?.completedCredit).toBeGreaterThan(0);
     expect(thresh?.completedExposures).toBe(1);
+    expect(thresh?.completedCredit).toBeGreaterThan(0);
   });
 
   it('prefers the exact template stimulus profile for adherence-followed exposures', () => {

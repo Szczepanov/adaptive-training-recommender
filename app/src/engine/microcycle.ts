@@ -1,4 +1,5 @@
 import type {
+    DeliveredDose,
     FixedActivity,
     MicrocycleState,
     ObjectiveQualification,
@@ -247,7 +248,11 @@ export function updateMicrocycleProgress(
 
 export function getUnresolvedObjectives(microcycle: MicrocycleState): WeeklyObjective[] {
     if (!microcycle || !microcycle.objectives) return [];
-    return microcycle.objectives.filter(o => o.completedExposures < o.targetExposures);
+    return microcycle.objectives.filter(objective => {
+        const requiredCredit = objective.requiredCredit ?? objective.targetExposures;
+        const completedCredit = objective.completedCredit ?? objective.completedExposures;
+        return completedCredit < requiredCredit;
+    });
 }
 
 /** Fraction (0-1) of an objective's target stimulus vector a workout's own stimulus
@@ -298,15 +303,26 @@ export function creditObjectivesFromStimulus(
     stimulus: WorkoutStimulusProfile,
     modality: SessionTemplate['modality'],
     category?: SessionTemplate['category'],
+    dose: DeliveredDose = {},
 ): MicrocycleState {
     if (!microcycle || !microcycle.objectives) return microcycle;
     return {
         ...microcycle,
         objectives: microcycle.objectives.map(obj => {
-            if (obj.completedExposures >= obj.targetExposures) return obj;
-            const credit = deriveObjectiveCredit(obj, stimulus, {}, { modality, category });
-            if (!credit.qualifies || credit.earnedCredit < 0.5) return obj;
-            return { ...obj, completedExposures: obj.completedExposures + 1 };
+            const requiredCredit = obj.requiredCredit ?? obj.targetExposures;
+            const completedCredit = obj.completedCredit ?? obj.completedExposures;
+            if (completedCredit >= requiredCredit) return obj;
+            const credit = deriveObjectiveCredit(obj, stimulus, dose, { modality, category });
+            if (!credit.qualifies || credit.earnedCredit <= 0) return obj;
+            const nextCredit = Math.min(requiredCredit, completedCredit + credit.earnedCredit);
+            return {
+                ...obj,
+                completedCredit: nextCredit,
+                // Preserve a compatibility projection for callers that still display
+                // exposures. Resolution authority is completedCredit above; a token
+                // contribution below the historic 0.5 coverage floor stays at zero.
+                completedExposures: Math.min(obj.targetExposures, Math.floor(nextCredit / 0.5)),
+            };
         }),
     };
 }
@@ -326,7 +342,13 @@ export function buildMicrocycleState(
 ): MicrocycleState {
     return history.reduce((state, exposure) => {
         if (exposure.stimulusProfile && exposure.modality) {
-            return creditObjectivesFromStimulus(state, exposure.stimulusProfile, exposure.modality, exposure.category);
+            return creditObjectivesFromStimulus(
+                state,
+                exposure.stimulusProfile,
+                exposure.modality,
+                exposure.category,
+                exposure.deliveredDose,
+            );
         }
         return updateMicrocycleProgress(state, exposure.trainingRecordLike);
     }, generateWeeklyObjectives(phase, windowStartDate, focusEvent, planDefinition, asOfDate));

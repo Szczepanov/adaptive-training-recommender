@@ -62,7 +62,10 @@ describe('cycling_gran_fondo_A -- baseline, already-covered sport', () => {
         expect(result.objectiveResolution).toContainEqual(expect.objectContaining({
             key: 'race_specific_endurance', timesGenerated: 4, timesResolved: 4,
         }));
-        expect(result.objectiveCredits.filter(credit => credit.objectiveKey === 'race_specific_endurance')).toHaveLength(4);
+        // Fractional credit can require a second meaningful exposure within a week;
+        // preserve the coaching contract (one fulfilled objective per week) without
+        // freezing the old integer-credit exposure count.
+        expect(result.objectiveCredits.filter(credit => credit.objectiveKey === 'race_specific_endurance').length).toBeGreaterThanOrEqual(4);
     });
 });
 
