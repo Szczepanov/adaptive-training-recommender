@@ -190,9 +190,14 @@ export interface WeeklyObjective {
     key: ObjectiveKey;
     title: string;
     requiredCredit?: number;
+    /** Fractional credit accumulated from completed evidence. `completedExposures` is
+     * retained only as a legacy display projection. */
+    completedCredit?: number;
+    /** Fractional credit already allocated in a future projection; never persisted. */
+    projectedCredit?: number;
     targetExposures: number;
     completedExposures: number;
-    targetStimulus: Record<string, number>;
+    targetStimulus: Partial<Record<keyof WorkoutStimulusProfile, number>>;
     priority?: ObjectivePriority;
     /** Optional stricter completion policy for objectives whose target stimulus alone
      * is too broad to identify the intended event-specific exposure. */
@@ -214,20 +219,14 @@ export interface MicrocycleState {
 }
 
 export interface WorkoutStimulusProfile {
-    aerobicEndurance?: number;     // 0.0 - 1.0 (canonical)
-    thresholdPower?: number;       // 0.0 - 1.0 (canonical)
-    vo2MaxPower?: number;          // 0.0 - 1.0 (canonical)
-    repeatedSurges?: number;       // 0.0 - 1.0 (canonical)
-    sprintPower?: number;          // 0.0 - 1.0 (canonical)
-    fatigueResistance?: number;    // 0.0 - 1.0 (canonical)
-    maxStrength?: number;          // 0.0 - 1.0 (canonical)
-
-    // Legacy backward-compatibility aliases
-    aerobicCapacity?: number;
-    thresholdDevelopment?: number;
-    surgeRepeatability?: number;
-    hypertrophy?: number;
-    mobilityRecovery?: number;
+    aerobicEndurance: number;     // 0.0 - 1.0 (canonical)
+    thresholdPower: number;       // 0.0 - 1.0 (canonical)
+    vo2MaxPower: number;          // 0.0 - 1.0 (canonical)
+    repeatedSurges: number;       // 0.0 - 1.0 (canonical)
+    sprintPower: number;          // 0.0 - 1.0 (canonical)
+    fatigueResistance: number;    // 0.0 - 1.0 (canonical)
+    maxStrength: number;          // 0.0 - 1.0 (canonical)
+    hypertrophy: number;          // 0.0 - 1.0 (canonical)
 }
 
 export interface ObjectiveQualification {
@@ -250,6 +249,13 @@ export interface WorkoutCostProfile {
     neuromuscular: number;   // Explosive / CNS fatigue
 }
 
+/** Evidence used by both objective credit and external-load costing. */
+export interface DeliveredDose {
+    plannedDurationMin?: number;
+    completedDurationMin?: number;
+    completionRatio?: number;
+}
+
 export interface DimensionalFatigue {
     systemic: number;        // 0.0 - 1.0
     cardiovascular: number;  // 0.0 - 1.0
@@ -264,6 +270,7 @@ export interface FatigueState {
     externalLoadFatigue: DimensionalFatigue;
     internalResponseStrain: DimensionalFatigue;
     combinedFatigue: DimensionalFatigue;
+    rawExternalLoadFatigue?: DimensionalFatigue;
 }
 
 export type Modality = SessionTemplate['modality'];
@@ -316,6 +323,14 @@ export interface DoseVariation {
     durationMax: number;
     doseRatio: number;
     prescriptionSummary: string;
+}
+
+/** Plan-owned session dose. Volume controls duration; intensity controls which
+ * intensity-class templates may be selected. The two values intentionally do not share
+ * a safety ceiling: a taper can reduce duration while retaining quality work. */
+export interface PlannedDose {
+    volume: number;
+    intensity: number;
 }
 
 /** Governs when a template becomes selectable relative to the athlete's governing event,
@@ -408,10 +423,11 @@ export interface Recommendation {
      *  from the template category alone. */
     mode: 'train' | 'modify' | 'recover';
     activeDose?: DoseVariation;
-    /** Normalized plan-side dose derived from periodization and remaining objectives. */
-    plannedDose?: number;
-    /** Final dose after the plan target, safety ceiling, and athlete adjustment meet. */
-    executionDose?: number;
+    /** Plan-owned volume and intensity targets. */
+    plannedDose?: PlannedDose;
+    /** Final volume after the safety ceiling and athlete adjustment meet. Intensity is
+     * retained as the plan's candidate-admissibility contract. */
+    executionDose?: PlannedDose;
     adjustment?: SessionAdjustment;
     envelopes?: {
         safety: SafetyEnvelope;
@@ -867,6 +883,7 @@ export interface CompletedTrainingEvent {
     id: string;
     date: string;
     durationMin: number | null;
+    deliveredDose?: DeliveredDose;
     modality: SessionTemplate['modality'] | 'Unknown';
     intensity: CompletedTrainingIntensity;
     trainingEffect: number | null;
@@ -902,6 +919,10 @@ export interface RecommendationAudit {
         safetyRestrictedModalityCount: number;
         planMaxAllowableTier: PlanEnvelope['maxAllowableTier'];
     };
+    /** Present for intent-aware recommendations so persisted decisions retain the
+     * plan-owned volume and intensity contract used to choose them. */
+    plannedDose?: PlannedDose;
+    executionDose?: PlannedDose;
     candidateScores: Array<{
         templateId: string;
         utilityScore: number;

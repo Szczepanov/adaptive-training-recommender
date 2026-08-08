@@ -1,4 +1,5 @@
 import type {
+    DeliveredDose,
     FixedActivity,
     MicrocycleState,
     ObjectiveQualification,
@@ -48,28 +49,28 @@ export function generateWeeklyObjectives(
             const windowEnd = block?.endDate;
 
             let title = 'Plan Objective';
-            let targetStimulus: Record<string, number> = { aerobicCapacity: 0.5 };
+            let targetStimulus: WeeklyObjective['targetStimulus'] = { aerobicEndurance: 0.5 };
             let qualification: WeeklyObjective['qualification'] = undefined;
             const allowedModalities = focusEvent ? modalitiesForEventCategory(focusEvent.category) : [];
 
             switch (objDef.key) {
                 case 'zone2_aerobic':
                     title = 'Aerobic Base (Zone 2)';
-                    targetStimulus = { aerobicCapacity: 0.8 };
+                    targetStimulus = { aerobicEndurance: 0.8 };
                     break;
                 case 'threshold_quality':
                     title = 'Threshold Development';
-                    targetStimulus = { thresholdDevelopment: 0.9 };
+                    targetStimulus = { thresholdPower: 0.9 };
                     qualification = {
-                        minimumStimulus: { thresholdDevelopment: 0.6 },
+                        minimumStimulus: { thresholdPower: 0.6 },
                         ...(allowedModalities.length > 0 ? { allowedModalities } : {}),
                     };
                     break;
                 case 'surge_repeatability':
                     title = 'Surge & High-Intensity Repeatability';
-                    targetStimulus = { surgeRepeatability: 0.9, aerobicCapacity: 0.5 };
+                    targetStimulus = { repeatedSurges: 0.9, aerobicEndurance: 0.5 };
                     qualification = {
-                        minimumStimulus: { surgeRepeatability: 0.6 },
+                        minimumStimulus: { repeatedSurges: 0.6 },
                         ...(allowedModalities.length > 0 ? { allowedModalities } : {}),
                     };
                     break;
@@ -79,16 +80,16 @@ export function generateWeeklyObjectives(
                     break;
                 case 'race_specific_endurance':
                     title = 'Cycling Race-Specific Endurance';
-                    targetStimulus = { aerobicCapacity: 0.6, surgeRepeatability: 0.6 };
+                    targetStimulus = { aerobicEndurance: 0.6, repeatedSurges: 0.6 };
                     qualification = {
-                        minimumStimulus: { aerobicCapacity: 0.6 },
+                        minimumStimulus: { aerobicEndurance: 0.6 },
                         allowedModalities: ['Cycling'],
                         allowedCategories: ['Race-Specific Endurance'],
                     };
                     break;
                 case 'vo2_max':
                     title = 'VO2 Max Intervals';
-                    targetStimulus = { vo2MaxPower: 0.9, aerobicCapacity: 0.5 };
+                    targetStimulus = { vo2MaxPower: 0.9, aerobicEndurance: 0.5 };
                     break;
                 default: {
                     // Exhaustiveness guard: a future ObjectiveKey addition must add a case
@@ -130,7 +131,7 @@ export function generateWeeklyObjectives(
             title: 'Aerobic Base (Zone 2)',
             targetExposures: demand.aerobicEndurance >= 0.7 ? 2 : 1,
             completedExposures: 0,
-            targetStimulus: { aerobicCapacity: 0.8 },
+            targetStimulus: { aerobicEndurance: 0.8 },
         });
     }
 
@@ -143,9 +144,9 @@ export function generateWeeklyObjectives(
             title: 'Threshold Development',
             targetExposures: 1,
             completedExposures: 0,
-            targetStimulus: { thresholdDevelopment: 0.9 },
+            targetStimulus: { thresholdPower: 0.9 },
             qualification: {
-                minimumStimulus: { thresholdDevelopment: 0.6 },
+                minimumStimulus: { thresholdPower: 0.6 },
                 ...(allowedModalities.length > 0 ? { allowedModalities } : {}),
             },
         });
@@ -160,9 +161,9 @@ export function generateWeeklyObjectives(
             title: 'Surge & High-Intensity Repeatability',
             targetExposures: 1,
             completedExposures: 0,
-            targetStimulus: { surgeRepeatability: 0.9, aerobicCapacity: 0.5 },
+            targetStimulus: { repeatedSurges: 0.9, aerobicEndurance: 0.5 },
             qualification: {
-                minimumStimulus: { surgeRepeatability: 0.6 },
+                minimumStimulus: { repeatedSurges: 0.6 },
                 ...(allowedModalities.length > 0 ? { allowedModalities } : {}),
             },
         });
@@ -191,9 +192,9 @@ export function generateWeeklyObjectives(
             title: 'Cycling Race-Specific Endurance',
             targetExposures: 1,
             completedExposures: 0,
-            targetStimulus: { aerobicCapacity: 0.6, surgeRepeatability: 0.6 },
+            targetStimulus: { aerobicEndurance: 0.6, repeatedSurges: 0.6 },
             qualification: {
-                minimumStimulus: { aerobicCapacity: 0.6 },
+                minimumStimulus: { aerobicEndurance: 0.6 },
                 allowedModalities: ['Cycling'],
                 allowedCategories: ['Race-Specific Endurance'],
             },
@@ -206,8 +207,17 @@ export function generateWeeklyObjectives(
     };
 }
 
+import { deriveObjectiveCredit } from './stimulus';
+
+/** Keyword-only evidence is deliberately worth less than a structured measured exposure.
+ * It remains useful for old/external records, but cannot resolve a one-credit objective by
+ * itself. Most importantly, it updates the SAME authoritative ledger as V2 structured
+ * evidence, making structured->legacy and legacy->structured replay order-independent. */
+export const LEGACY_KEYWORD_COMPATIBILITY_CREDIT = 0.5;
+
 /**
- * Updates microcycle objective completion status from a completed activity (Garmin sync or fixed activity).
+ * DEPRECATED: Keyword matching on free text descriptions.
+ * Retained strictly as a documented last-resort fallback for legacy/external training records.
  */
 export function updateMicrocycleProgress(
     currentMicrocycle: MicrocycleState,
@@ -228,9 +238,13 @@ export function updateMicrocycleProgress(
         }
 
         if (matched) {
+            const requiredCredit = obj.requiredCredit ?? obj.targetExposures;
+            const completedCredit = obj.completedCredit ?? obj.completedExposures;
+            const nextCredit = Math.min(requiredCredit, completedCredit + LEGACY_KEYWORD_COMPATIBILITY_CREDIT);
             return {
                 ...obj,
-                completedExposures: Math.min(obj.targetExposures, obj.completedExposures + 1),
+                completedCredit: nextCredit,
+                completedExposures: Math.min(obj.targetExposures, Math.floor(nextCredit / LEGACY_KEYWORD_COMPATIBILITY_CREDIT)),
             };
         }
         return obj;
@@ -242,7 +256,10 @@ export function updateMicrocycleProgress(
     };
 }
 
-export function getUnresolvedObjectives(microcycle: MicrocycleState): WeeklyObjective[] {
+export function getUnresolvedObjectives(
+    microcycle: MicrocycleState,
+    includeProjectedCredit: boolean = false,
+): WeeklyObjective[] {
     // Defensive only: every typed production call site (generateWeeklyObjectives,
     // buildMicrocycleState, resolveTrainingIntent's intent.microcycle) always produces a
     // well-formed { windowStartDate, objectives } object, so this branch is not known to
@@ -250,7 +267,12 @@ export function getUnresolvedObjectives(microcycle: MicrocycleState): WeeklyObje
     // (an untyped fixture, a cast, or a future refactor) rather than throwing on it --
     // revisit if a real caller turns out to need this.
     if (!microcycle || !microcycle.objectives) return [];
-    return microcycle.objectives.filter(o => o.completedExposures < o.targetExposures);
+    return microcycle.objectives.filter(objective => {
+        const requiredCredit = objective.requiredCredit ?? objective.targetExposures;
+        const completedCredit = objective.completedCredit ?? objective.completedExposures;
+        const projectedCredit = includeProjectedCredit ? (objective.projectedCredit ?? 0) : 0;
+        return completedCredit + projectedCredit < requiredCredit;
+    });
 }
 
 /** Fraction (0-1) of an objective's target stimulus vector a workout's own stimulus
@@ -270,12 +292,12 @@ export function stimulusCoverage(
 }
 
 /** A pick must cover at least this much of an objective's target stimulus vector to
- *  earn credit -- keeps a session that merely touches an axis (e.g. a technical skill
- *  drill with a token 0.1 aerobicCapacity) from silently resolving it. */
+ *  earn credit -- retained only for compatibility tests/readers of the former V1 model.
+ *  V2 live/planner credit is derived by deriveObjectiveCredit. */
 export const STIMULUS_CREDIT_COVERAGE_THRESHOLD = 0.6;
 
-/** Applies an objective's optional strict qualification policy. Objectives without one
- *  retain the legacy stimulus-coverage-only completion behavior. */
+/** Applies an objective's optional strict qualification policy. Retained for compatibility
+ * with callers/tests that inspect the former V1 qualification path. */
 export function qualifiesForObjective(
     stimulus: WorkoutStimulusProfile,
     modality: SessionTemplate['modality'],
@@ -293,32 +315,35 @@ export function qualifiesForObjective(
 }
 
 /**
- * Credits weekly objectives from a workout's own numeric stimulus profile -- the same
- * vector calculateStimulusBenefit (optimizer.ts) scores candidates against -- instead of
- * pattern-matching a free-text description. This is the crediting path for internally
- * generated picks (planner.ts's projected days) where a real SessionTemplate and its
- * profile are available.
- *
- * updateMicrocycleProgress's keyword matching below remains the conservative fallback
- * for externally-reported completions that carry nothing but a loose type string. Exact
- * followed recommendations and reconciled events retain their structured profile through
- * CompletedExposure and must use this same qualification path.
+ * Credits weekly objectives from a workout's own numeric stimulus profile via deriveObjectiveCredit
+ * -- the authoritative dose-sensitive credit model.
  */
 export function creditObjectivesFromStimulus(
     microcycle: MicrocycleState,
     stimulus: WorkoutStimulusProfile,
     modality: SessionTemplate['modality'],
     category?: SessionTemplate['category'],
+    dose: DeliveredDose = {},
 ): MicrocycleState {
     // Defensive only -- see getUnresolvedObjectives' identical guard above for why.
     if (!microcycle || !microcycle.objectives) return microcycle;
     return {
         ...microcycle,
         objectives: microcycle.objectives.map(obj => {
-            if (obj.completedExposures >= obj.targetExposures) return obj;
-            if (stimulusCoverage(stimulus, obj.targetStimulus) < STIMULUS_CREDIT_COVERAGE_THRESHOLD) return obj;
-            if (!qualifiesForObjective(stimulus, modality, obj.qualification, category)) return obj;
-            return { ...obj, completedExposures: obj.completedExposures + 1 };
+            const requiredCredit = obj.requiredCredit ?? obj.targetExposures;
+            const completedCredit = obj.completedCredit ?? obj.completedExposures;
+            if (completedCredit >= requiredCredit) return obj;
+            const credit = deriveObjectiveCredit(obj, stimulus, dose, { modality, category });
+            if (!credit.qualifies || credit.earnedCredit <= 0) return obj;
+            const nextCredit = Math.min(requiredCredit, completedCredit + credit.earnedCredit);
+            return {
+                ...obj,
+                completedCredit: nextCredit,
+                // Preserve a compatibility projection for callers that still display
+                // exposures. Resolution authority is completedCredit above; a token
+                // contribution below the historic 0.5 coverage floor stays at zero.
+                completedExposures: Math.min(obj.targetExposures, Math.floor(nextCredit / 0.5)),
+            };
         }),
     };
 }
@@ -338,7 +363,13 @@ export function buildMicrocycleState(
 ): MicrocycleState {
     return history.reduce((state, exposure) => {
         if (exposure.stimulusProfile && exposure.modality) {
-            return creditObjectivesFromStimulus(state, exposure.stimulusProfile, exposure.modality, exposure.category);
+            return creditObjectivesFromStimulus(
+                state,
+                exposure.stimulusProfile,
+                exposure.modality,
+                exposure.category,
+                exposure.deliveredDose,
+            );
         }
         return updateMicrocycleProgress(state, exposure.trainingRecordLike);
     }, generateWeeklyObjectives(phase, windowStartDate, focusEvent, planDefinition, asOfDate));
