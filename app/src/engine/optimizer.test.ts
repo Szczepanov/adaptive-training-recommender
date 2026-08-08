@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildOptimizationContext, rankCandidates, rankCandidatesByUtility, type RecentHistoryEntry } from './optimizer';
+import { buildOptimizationContext, calculateStimulusBenefit, rankCandidates, rankCandidatesByUtility, type RecentHistoryEntry } from './optimizer';
 import { ENRICHED_TEMPLATES } from './templates';
 import type { FatigueState, SessionTemplate, UserContext, UserPreferences, WeeklyObjective } from './models';
 import type { ResolvedAvailability } from './schedule';
@@ -64,6 +64,18 @@ describe('optimizer — dated, role-aware recovery constraints (F3 / 3.1)', () =
         expect(result.accepted).toHaveLength(1);
         expect(result.accepted[0].excludedReasons).toEqual([]);
         expect(result.accepted[0].utilityScore).toBeGreaterThan(0);
+    });
+
+    it('rejects a hard candidate when planned intensity is below the 0.8 admissibility boundary', () => {
+        const hardRide = ENRICHED_TEMPLATES.find(t => t.category === 'Hard Endurance' && t.modality === 'Cycling')!;
+        const result = rankCandidates(
+            [hardRide], [], DEFAULT_FATIGUE, DEFAULT_AVAILABILITY, [], DEFAULT_PREFERENCES,
+            { date: '2026-03-05', plannedDose: { volume: 1, intensity: 0.79 } }
+        );
+
+        expect(result.accepted).toHaveLength(0);
+        expect(result.rejected).toHaveLength(1);
+        expect(result.rejected[0].excludedReasons).toContain('INTENSITY_SCALE_INADMISSIBLE');
     });
 
     it('rejects two hard lower-body sessions on consecutive days with HARD_LOWER_BODY_SPACING_VIOLATION', () => {
@@ -178,6 +190,23 @@ describe('optimizer — dated, role-aware recovery constraints (F3 / 3.1)', () =
 });
 
 describe('optimizer — lexicographic ordering (3.2)', () => {
+    it('uses the stronger of max-strength and hypertrophy evidence for strength-maintenance benefit', () => {
+        const strengthObjective: WeeklyObjective = {
+            id: 'obj_strength_axes', key: 'strength_maintenance', title: 'Strength maintenance',
+            targetExposures: 1, completedExposures: 0,
+            targetStimulus: { maxStrength: 0.2, hypertrophy: 0.9 },
+        };
+        const candidate: SessionTemplate = {
+            id: 'strength_axes', category: 'Upper-body Strength', modality: 'Strength',
+            durationMin: 30, durationMax: 40, title: 'Strength Axes', description: '',
+            requiredEquipment: [], environment: 'either', safetyTags: [], systemicCost: 0.3,
+            stimulusProfile: { ...ZERO_CANONICAL_STIMULUS, maxStrength: 0.2, hypertrophy: 0.9 },
+            costProfile: { systemic: 0, cardiovascular: 0, lowerBody: 0, upperBody: 0.2, impactTissue: 0, neuromuscular: 0.2 },
+        };
+
+        expect(calculateStimulusBenefit(candidate, [strengthObjective])).toBeCloseTo(0.9 * 0.9 * 1.6 + 0.5);
+    });
+
     it('ensures preference multiplier cannot promote a zero-objective candidate over an objective-satisfying candidate', () => {
         const thresholdObj: WeeklyObjective = {
             id: 'obj_1', key: 'threshold_quality', title: 'Threshold Development',
