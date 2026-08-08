@@ -1,5 +1,5 @@
 import type { DeliveredDose, ObjectiveKey, ObjectiveProgress, PlannerState, WeeklyObjective, WorkoutStimulusProfile } from './models';
-import type { DataState } from './dataState';
+import type { DataIssue, DataState } from './dataState';
 export type { DeliveredDose } from './models';
 
 export interface CreditContext {
@@ -15,10 +15,41 @@ export interface ObjectiveCredit {
     reason?: string;
 }
 
+const CANONICAL_AXES = [
+    'aerobicEndurance',
+    'thresholdPower',
+    'vo2MaxPower',
+    'repeatedSurges',
+    'sprintPower',
+    'fatigueResistance',
+    'maxStrength',
+    'hypertrophy',
+] as const;
+
+const LEGACY_AXES = [
+    'aerobicCapacity',
+    'thresholdDevelopment',
+    'surgeRepeatability',
+] as const;
+
+function isValidStimulusValue(value: unknown): value is number {
+    return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1;
+}
+
+function clamp01(value: number): number {
+    if (!Number.isFinite(value)) return 0;
+    return Math.min(1, Math.max(0, value));
+}
+
 /**
  * Boundary reader for persisted or external stimulus records.
- * Canonical fields win unconditionally; legacy fields convert if canonical fields are missing.
- * Disagreements between canonical and legacy fields are logged.
+ *
+ * Partial-canonical policy is axis-local: a supplied canonical axis wins for that axis;
+ * the corresponding legacy rename may backfill only when that canonical axis is absent.
+ * Canonical-only axes that are absent remain 0 because legacy persistence never carried
+ * them. Every supplied known canonical/legacy value must nevertheless be a finite number
+ * in the documented 0..1 range; malformed persisted data is INVALID even if a valid
+ * canonical value would otherwise override it.
  */
 export function readStimulusProfile(raw: unknown): DataState<WorkoutStimulusProfile> {
     if (!raw || typeof raw !== 'object') {
@@ -29,26 +60,29 @@ export function readStimulusProfile(raw: unknown): DataState<WorkoutStimulusProf
     }
     const r = raw as Record<string, unknown>;
 
-    const hasCanonical =
-        r.aerobicEndurance !== undefined ||
-        r.thresholdPower !== undefined ||
-        r.vo2MaxPower !== undefined ||
-        r.repeatedSurges !== undefined ||
-        r.sprintPower !== undefined ||
-        r.fatigueResistance !== undefined ||
-        r.maxStrength !== undefined ||
-        r.hypertrophy !== undefined;
-
-    const hasLegacy =
-        r.aerobicCapacity !== undefined ||
-        r.thresholdDevelopment !== undefined ||
-        r.surgeRepeatability !== undefined;
+    const hasCanonical = CANONICAL_AXES.some(axis => r[axis] !== undefined);
+    const hasLegacy = LEGACY_AXES.some(axis => r[axis] !== undefined);
 
     if (!hasCanonical && !hasLegacy) {
         return {
             status: 'INVALID',
             issues: [{ code: 'stimulus_profile_missing_axes', documentPath: 'completed-training stimulus profile' }],
         };
+    }
+
+    const invalidIssues: DataIssue[] = [];
+    for (const axis of [...CANONICAL_AXES, ...LEGACY_AXES]) {
+        const value = r[axis];
+        if (value !== undefined && !isValidStimulusValue(value)) {
+            invalidIssues.push({
+                code: 'stimulus_profile_invalid_axis',
+                field: axis,
+                documentPath: 'completed-training stimulus profile',
+            });
+        }
+    }
+    if (invalidIssues.length > 0) {
+        return { status: 'INVALID', issues: invalidIssues };
     }
 
     if (hasCanonical && hasLegacy) {
@@ -67,21 +101,21 @@ export function readStimulusProfile(raw: unknown): DataState<WorkoutStimulusProf
         status: 'AVAILABLE',
         revision: null,
         data: {
-            aerobicEndurance: (r.aerobicEndurance as number) ?? (r.aerobicCapacity as number) ?? 0,
-            thresholdPower: (r.thresholdPower as number) ?? (r.thresholdDevelopment as number) ?? 0,
-            vo2MaxPower: (r.vo2MaxPower as number) ?? 0,
-            repeatedSurges: (r.repeatedSurges as number) ?? (r.surgeRepeatability as number) ?? 0,
-            sprintPower: (r.sprintPower as number) ?? 0,
-            fatigueResistance: (r.fatigueResistance as number) ?? 0,
-            maxStrength: (r.maxStrength as number) ?? 0,
-            hypertrophy: (r.hypertrophy as number) ?? 0,
+            aerobicEndurance: (r.aerobicEndurance as number | undefined) ?? (r.aerobicCapacity as number | undefined) ?? 0,
+            thresholdPower: (r.thresholdPower as number | undefined) ?? (r.thresholdDevelopment as number | undefined) ?? 0,
+            vo2MaxPower: (r.vo2MaxPower as number | undefined) ?? 0,
+            repeatedSurges: (r.repeatedSurges as number | undefined) ?? (r.surgeRepeatability as number | undefined) ?? 0,
+            sprintPower: (r.sprintPower as number | undefined) ?? 0,
+            fatigueResistance: (r.fatigueResistance as number | undefined) ?? 0,
+            maxStrength: (r.maxStrength as number | undefined) ?? 0,
+            hypertrophy: (r.hypertrophy as number | undefined) ?? 0,
         },
     };
 }
 
 /**
  * Calculates dose-sensitive fractional objective credit derived from the workout's stimulus profile
- * and delivered duration/completion ratio.
+ * and delivered duration/completion evidence.
  */
 export function deriveObjectiveCredit(
     objective: WeeklyObjective,
@@ -100,8 +134,8 @@ export function deriveObjectiveCredit(
         };
     }
     const stimulus = stimulusState.data;
-    const completionRatio = Math.min(1.0, Math.max(0.0, dose.completionRatio ?? 1.0));
-    
+    const completionRatio = clamp01(dose.completionRatio ?? 1.0);
+
     // Check qualification constraints if present
     if (objective.qualification) {
         const qual = objective.qualification;
@@ -163,8 +197,24 @@ export function deriveObjectiveCredit(
         }
     }
 
-    // Scale by delivered dose completion ratio
-    const earnedCredit = Math.round(rawStimulusContribution * completionRatio * 100) / 100;
+    // Duration is meaningful evidence for endurance/power objectives but not for strength
+    // maintenance, where elapsed time is a poor proxy for useful sets and relative load.
+    // When planned and completed duration are both measured, duration completion and an
+    // independently supplied completionRatio are separate pieces of evidence and therefore
+    // scale multiplicatively. Missing duration evidence does not invent a reference dose.
+    let durationRatio = 1;
+    if (objective.key !== 'strength_maintenance'
+        && dose.plannedDurationMin !== undefined
+        && dose.completedDurationMin !== undefined) {
+        const planned = dose.plannedDurationMin;
+        const completed = dose.completedDurationMin;
+        durationRatio = Number.isFinite(planned) && planned > 0 && Number.isFinite(completed) && completed >= 0
+            ? clamp01(completed / planned)
+            : 0;
+    }
+
+    const deliveredDoseRatio = completionRatio * durationRatio;
+    const earnedCredit = Math.round(rawStimulusContribution * deliveredDoseRatio * 100) / 100;
 
     return {
         objectiveId: objective.id,
