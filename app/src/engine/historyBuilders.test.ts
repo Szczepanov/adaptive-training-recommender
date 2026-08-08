@@ -27,5 +27,19 @@ describe('history-seeded training state', () => {
         }, '2026-08-05');
         expect(fatigue.externalLoadFatigue.lowerBody).toBeGreaterThan(0.1);
         expect(fatigue.combinedFatigue.lowerBody).toBe(fatigue.externalLoadFatigue.lowerBody);
+        expect(fatigue.rawExternalLoadFatigue).toBeDefined();
+    });
+
+    it('handles out-of-order history input deterministically without mis-decaying or throwing', () => {
+        const earlyExp: CompletedExposure = { ...thresholdExposure, date: '2026-08-02' };
+        const lateExp: CompletedExposure = { ...thresholdExposure, date: '2026-08-04' };
+        const outOfOrderHistory = [lateExp, earlyExp];
+
+        const fatigue = buildFatigueStateFromHistory(outOfOrderHistory, {
+            systemic: 0, cardiovascular: 0, lowerBody: 0, upperBody: 0, impactTissue: 0, neuromuscular: 0,
+        }, '2026-08-05');
+
+        expect(fatigue.lastUpdatedDate).toBe('2026-08-05');
+        expect(fatigue.externalLoadFatigue.systemic).toBeGreaterThan(0);
     });
 });

@@ -258,6 +258,7 @@ export interface FatigueState {
     externalLoadFatigue: DimensionalFatigue;
     internalResponseStrain: DimensionalFatigue;
     combinedFatigue: DimensionalFatigue;
+    rawExternalLoadFatigue?: DimensionalFatigue;
 }
 
 export type Modality = SessionTemplate['modality'];

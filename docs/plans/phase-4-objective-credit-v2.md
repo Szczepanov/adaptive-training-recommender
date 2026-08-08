@@ -17,7 +17,7 @@ Update the marker on the work-item heading **and** this table in the same commit
 |---|:--:|---|---|
 | 4.1 | `[x]` | One credit model: fix and promote `deriveObjectiveCredit`; shadow-run V1 vs V2 first (F7) | `app/src/engine/stimulus.ts`, `microcycle.ts`, `trainingIntent.ts` |
 | 4.2 | `[x]` | Canonical stimulus axes required; legacy aliases and derived fallbacks deleted (F8) | `app/src/engine/models.ts`, `templates.ts`, `optimizer.ts`, `microcycle.ts`, `completedTraining.ts`, fixtures |
-| 4.3 | `[ ]` | Fatigue: assert ordering now; **compare** fusion functions before choosing (F12) | `app/src/engine/fatigue.ts`, `trainingHistorySnapshot.ts` |
+| 4.3 | `[x]` | Fatigue: assert ordering now; **compare** fusion functions before choosing (F12) | `app/src/engine/fatigue.ts`, `trainingHistorySnapshot.ts` |
 | 4.5 | `[ ]` | `PlannedDose { volume, intensity }` — gives `intensityScale` its consumer (D2 / F17) | `app/src/engine/trainingIntent.ts`, `dose.ts`, `models.ts`, `optimizer.ts` |
 | 4.4 | `[ ]` | Cost responds to delivered duration and completion ratio | `app/src/engine/completedTraining.ts`, `fatigue.ts` |
 
@@ -167,7 +167,7 @@ populated.
    two unexplained constants permanently, and forces the one person who knows what a given
    session develops to say so explicitly rather than having it inferred.
 
-## `[ ]` 4.3 — F12: fatigue, in two separable pieces
+## `[x]` 4.3 — F12: fatigue, in two separable pieces
 
 **This section was revised after PR #5 review.** An earlier draft prescribed
 `1 - exp(-x)` saturation plus a weighted external/internal combination. That is withdrawn:
