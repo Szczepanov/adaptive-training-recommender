@@ -13,6 +13,8 @@ Quick guide for building, testing, and working on `adaptive-training-recommender
 ### Python Environment
 - Install / Sync: `uv sync`
 - Run Tests: `uv run pytest`
+- Lint Python: `uv run ruff check .`
+- Type Check Python: `uv run mypy src/garmin_sync`
 - Daily Sync CLI: `uv run python -m garmin_sync sync [--date YYYY-MM-DD] [--force]`
 - Backfill CLI: `uv run python -m garmin_sync backfill [--days N] [--force]`
 - Login Bootstrap: `uv run python scripts/bootstrap_garmin_tokens.py`
@@ -24,6 +26,8 @@ Quick guide for building, testing, and working on `adaptive-training-recommender
 - Build: `cd app && npm run build`
 - Dev Server: `cd app && npm run dev` (automatically runs `npm run check` first via `predev`)
 - Engine Simulation: `cd app && npm run simulate:scenarios`
+- Simulation Diff: `cd app && npm run simulate:diff`
+- Policy Version Guard: `cd app && node scripts/check-policy-drift.mjs <base-sha>`
 - Replay Decision Audit: `cd app && npm run replay:recommendation -- <audit.json>`
 - Visual Review Harness: `cd app && npm run visual:refresh` (captures screenshots to `artifacts/visual-review/latest/`)
 - Firestore Rules Tests: `cd app && npm run test:rules` (executes Vitest in Firebase Firestore emulator)
