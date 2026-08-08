@@ -17,6 +17,14 @@ Architectural choices, system invariants, and technical trade-offs are documente
 * [**ADR-0006: Reconciled Strain Telemetry & Baseline Drift Scoring**](./adr/0006-reconciled-strain-telemetry.md) — Acute metric deviation vs 28-day baseline drift strain decomposition.
 * [**ADR-0007: Adaptive Multi-Sport Engine Architecture & Utility Optimization Pipeline**](./adr/0007-adaptive-multisport-engine-architecture.md) — 6-tier adaptive engine, schedule availability, event periodization, microcycle objectives, 6D fatigue decay, and utility optimization.
 * [**ADR-0008: Rolling 7-Day Week-Ahead Planning**](./adr/0008-week-ahead-planning.md) — Confidence-tiered multi-day forecast, rolling microcycle window, and never-persisted recomputation.
+* [**ADR-0009: Training Intent Is History-Seeded**](./adr/0009-training-intent-history.md) — Evaluation-time intent resolution, the `TrainingHistoryProvider` boundary, and advisory-only sequence context.
+
+---
+
+### 🔍 Reviews & Analysis
+Point-in-time assessments of the system as built, including gaps between documented decisions and implemented behaviour:
+
+* [**2026-08-08 Codebase, Docs & Decision Review**](./analysis/2026-08-08-architecture-review.md) — Full-repository review with a sequenced remediation plan.
 
 ---
 
