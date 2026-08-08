@@ -189,6 +189,16 @@ otherwise never actually select rest. Nothing beyond today is persisted. See
 
 ---
 
+## Verification & audit tooling
+
+### Multi-week scenario simulation (`simulate:scenarios`)
+Executed via `cd app && npm run simulate:scenarios`. Runs synthetic athlete scenarios across multi-week spans to audit engine periodization, microcycle objective fulfillment, fatigue decay curves, anchor placements, and constraint safety. Outputs `report.json` and `report.md` to `app/artifacts/simulation-reports/latest/`.
+
+### Recommendation decision replay (`replay:recommendation`)
+Executed via `cd app && npm run replay:recommendation -- <audit.json>`. Accepts a JSON snapshot of a historical recommendation and passes it into `replayRecommendationAudit()` ([`app/src/engine/replay.ts`](../../app/src/engine/replay.ts)) to verify deterministic decision reproducibility and log rationale differences.
+
+---
+
 ## Related decisions
 
 | ADR | Covers |

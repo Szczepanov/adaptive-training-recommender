@@ -23,6 +23,10 @@ Quick guide for building, testing, and working on `adaptive-training-recommender
 - Run Tests: `cd app && npm test`
 - Build: `cd app && npm run build`
 - Dev Server: `cd app && npm run dev` (automatically runs `npm run check` first via `predev`)
+- Engine Simulation: `cd app && npm run simulate:scenarios`
+- Replay Decision Audit: `cd app && npm run replay:recommendation -- <audit.json>`
+- Visual Review Harness: `cd app && npm run visual:refresh` (captures screenshots to `artifacts/visual-review/latest/`)
+- Firestore Rules Tests: `cd app && npm run test:rules` (executes Vitest in Firebase Firestore emulator)
 
 ### Docker Container
 - Build: `docker build -t adaptive-training-garmin-sync .`
