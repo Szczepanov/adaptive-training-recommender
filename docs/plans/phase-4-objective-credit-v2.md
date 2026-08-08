@@ -1,262 +1,176 @@
-# Phase 4 Ă˘â‚¬â€ť Objective credit V2, and honest load
+# Phase 4 — Objective credit V2 and honest load
 
-* **Status:** In progress — implementation tasks are committed; release approval is blocked on a failing
-  scenario-harness gate.
-* **Blocked by:** Scenario evidence must be reconciled before credit/fusion cutover is considered
-  release-ready. Phase 0 is already implemented on `main`; its harness is available and is the
-  gate reporting the failure, not a missing dependency.
+* **Status:** In progress — implementation tasks are committed; release approval remains blocked on the failing scenario-harness aggregate gate.
+* **Blocked by:** Scenario evidence must be reconciled before Phase 4 is release-ready. Phase 0 is already implemented on `main`; its harness is available and is the gate reporting the failure, not a missing dependency.
 * **Depends on:** Phase 0 (implemented harness), Phase 2 (ADR-0012 fixes the credit contract)
 * **Unlocks:** Phase 5
 * **Addresses:** F7, F8, F12
-* **Rough effort:** 4Ă˘â‚¬â€ś5 days
+* **Rough effort:** 4–5 days
 
 ---
 
 ## Task board
 
-Status legend: `[ ]` not started Ă‚Â· `[-]` in progress Ă‚Â· `[x]` finished.
+Status legend: `[ ]` not started · `[-]` in progress · `[x]` finished.
 Update the marker on the work-item heading **and** this table in the same commit.
 
 | Task | Status | Summary | Primary files |
 |---|:--:|---|---|
-| 4.1 | `[x]` | One credit model: fix and promote `deriveObjectiveCredit`; shadow-run V1 vs V2 first (F7) | `app/src/engine/stimulus.ts`, `microcycle.ts`, `trainingIntent.ts` |
-| 4.2 | `[x]` | Canonical stimulus axes required; legacy aliases and derived fallbacks deleted (F8) | `app/src/engine/models.ts`, `templates.ts`, `optimizer.ts`, `microcycle.ts`, `completedTraining.ts`, fixtures |
+| 4.1 | `[x]` | One authoritative fractional credit model; deterministic V1→V2 divergence matrix replaces the obsolete live shadow model (F7) | `app/src/engine/stimulus.ts`, `microcycle.ts`, `planner.ts`, `phase4ReviewFixes.test.ts` |
+| 4.2 | `[x]` | Canonical stimulus axes required; legacy persistence validated and converted at the boundary (F8) | `app/src/engine/models.ts`, `templates.ts`, `optimizer.ts`, `stimulus.ts`, `completedTraining.ts`, fixtures |
 | 4.3a | `[x]` | Sort/assert history and retain unsaturated external load (F12) | `app/src/engine/fatigue.ts`, `trainingHistorySnapshot.ts` |
 | 4.3b | `[x]` | Compare fatigue-fusion functions before choosing (F12) | Phase 0 harness, ADR-0014 |
-| 4.5 | `[x]` | `PlannedDose { volume, intensity }` Ă˘â‚¬â€ť gives `intensityScale` its consumer (D2 / F17) | `app/src/engine/trainingIntent.ts`, `dose.ts`, `models.ts`, `optimizer.ts` |
+| 4.5 | `[x]` | `PlannedDose { volume, intensity }`; authored PlanBlock owns both values in explicit mode (D2 / F17) | `app/src/engine/trainingIntent.ts`, `planner.ts`, `dose.ts`, `optimizer.ts` |
 | 4.4 | `[x]` | Cost responds to delivered duration and completion ratio | `app/src/engine/completedTraining.ts`, `fatigue.ts` |
 
-4.5 is numbered after 4.3 but should land **before** 4.4 Ă˘â‚¬â€ť 4.4's dose-sensitive cost and
-4.5's `PlannedDose` touch the same call path, and doing 4.4 first means reworking it.
-4.3(b) is deliberately open: do not pick a fusion function without harness data.
+4.5 is numbered after 4.3 but landed before 4.4 because both touch the same dose path.
+4.3(b) is complete as a comparison: it did **not** validate `max()` as safe; it only found
+no evidence to replace it with the tested capped-addition candidate.
 
 ---
 
 ## Goal
 
-Collapse three objective-credit models into one dose-sensitive model, finish the stimulus
-vocabulary rename, and make delivered load respond to what was actually done Ă˘â‚¬â€ť without
-inventing constants the repository cannot justify.
+Collapse the objective-credit paths into one dose-sensitive model, finish the stimulus
+vocabulary migration, make planned dose follow authored plan blocks, and make delivered load
+respond to what was actually done — without inventing constants the repository cannot justify.
 
 ---
 
-## `[x]` 4.1 Ă˘â‚¬â€ť F7: one credit model
+## `[x]` 4.1 — F7: one credit model
 
-Today there are three:
+The repository started Phase 4 with three competing semantics:
 
-| Model | Location | Status |
+| Model | Location | Phase-4 disposition |
 |---|---|---|
-| Keyword substring on free text | `microcycle.ts` `updateMicrocycleProgress` | live (fallback) |
-| Stimulus-vector coverage Ă˘â€°Ä„ 0.6 | `microcycle.ts` `creditObjectivesFromStimulus` | live (primary) |
-| Fractional dose-sensitive credit | `stimulus.ts` `deriveObjectiveCredit` | **dead** |
+| Keyword substring on free text | `microcycle.ts` `updateMicrocycleProgress` | last-resort compatibility only |
+| Stimulus-vector coverage ≥ 0.6 | former live/planner path | retained only for compatibility/regression comparison |
+| Fractional dose-sensitive credit | `stimulus.ts` `deriveObjectiveCredit` | authoritative |
 
-The keyword matcher is directionally wrong, not merely approximate: `zone2_aerobic`
-matches any type containing `running` or `cycling`, so a threshold ride credits Zone 2;
-`threshold_quality` matches `hard` or `tempo`. Phase 1.2 already establishes that it must
-not become the Garmin path.
+The keyword matcher is directionally wrong, not merely approximate: broad terms such as
+`running`, `cycling`, `hard`, or `tempo` can classify the wrong objective. It therefore must
+not become the Garmin or normal structured-history path.
 
-**Target:** `deriveObjectiveCredit` becomes authoritative, with `requiredCredit` /
-`completedCredit` / `projectedCredit` / `windowStart` / `windowEnd` / `priority` Ă˘â‚¬â€ť all
-already declared in `models.ts` and all unused Ă˘â‚¬â€ť carrying real values from Phase 2's
-`PlanDefinition`.
+`deriveObjectiveCredit` is authoritative. `requiredCredit` / `completedCredit` determine
+live resolution; `projectedCredit` is forecast-only; `completedExposures` is a compatibility
+display projection.
 
-### Fix `deriveObjectiveCredit` before promoting it
+### Credit semantics supported by current evidence
 
-Two defects in the current scaffolding:
+The contract currently carries a numeric stimulus vector, planned/completed duration,
+completion ratio, modality, and category. It does **not** carry effort count, recovery
+pattern, continued pedalling after efforts, aerobic-load context, or event-like context.
+The rules are intentionally limited to evidence that exists.
 
-1. `qualifies: earnedCredit > 0` conflates *"not permitted"* with *"contributed nothing"*.
-   A session that passes every qualification gate but scores zero stimulus reports
-   `qualifies: false`. Separate the two: `qualifies` reflects the gates only;
-   `earnedCredit` reflects the dose.
-2. `default: rawStimulusContribution = 0.5` silently grants half credit for any
-   unrecognised objective key. Make it `0` and log, or make the switch exhaustive over
-   `ObjectiveKey` so the compiler catches a missing arm.
+* `zone2_aerobic`, `threshold_quality`, `surge_repeatability`, `vo2_max`, and
+  `race_specific_endurance` derive their raw contribution from the relevant canonical
+  stimulus axis/axes and, when both durations are measured, scale by
+  `completedDurationMin / plannedDurationMin` clamped to `0..1`.
+* An independently supplied `completionRatio` is separate evidence and scales the result
+  independently.
+* `strength_maintenance` does **not** use elapsed duration as a proxy for useful sets or
+  relative load; it uses the supported strength stimulus plus completion evidence.
+* Qualification gates remain hard gates: failing modality/category/minimum-stimulus rules
+  yields zero credit.
 
-### Objective-specific dose semantics
+This fixes the concrete defect that 15 abbreviated minutes and 75 planned minutes with the
+same inferred endurance stimulus could previously earn identical credit.
 
-A single generic formula is not appropriate Ă˘â‚¬â€ť 15 abbreviated minutes should not equal a
-75-minute race-specific ride because each "counts once".
+### Legacy fallback uses the same ledger
 
-| Objective | Credit should depend primarily on |
+`updateMicrocycleProgress` remains only for records without usable structured stimulus.
+A keyword match contributes a documented conservative `0.5` compatibility credit to
+`completedCredit` instead of updating only `completedExposures`. Structured→legacy and
+legacy→structured replay therefore produce the same result. One keyword-only record cannot
+resolve a one-credit objective by itself.
+
+### Cutover evidence — amended after PR #11 review
+
+The original plan required V1 and V2 to run side-by-side for one iteration and said
+“Cut over only when the divergence is explainable.” The implementation had already cut over
+while that checkbox remained open, which made the plan contradict the code.
+
+That gate is **explicitly amended** rather than keeping the known-defective V1 model live in
+parallel. The cutover evidence is now a deterministic semantic-divergence regression matrix,
+plus the existing Phase 0 scenario harness. Every expected V1→V2 difference must be named
+and tested; any new unexplained difference must fail review.
+
+Required divergence matrix:
+
+1. qualifying stimulus below V1's `0.6` coverage threshold earns fractional V2 credit
+   instead of V1's zero;
+2. abbreviated endurance work earns less credit than the same stimulus delivered for the
+   planned duration;
+3. malformed persisted stimulus (`string`, `NaN`, outside `0..1`) is rejected rather than
+   entering the ledger;
+4. keyword-only fallback contributes `0.5` to the authoritative ledger and is replay-order
+   independent with structured evidence;
+5. qualification failures still earn zero; and
+6. future recommendations accumulate in `projectedCredit`, not `completedCredit`.
+
+These cases are covered in `phase4ReviewFixes.test.ts`; exact authored plan-dose ownership is
+also covered in `trainingIntentAcceptance.test.ts`. ADR-0014 records this cutover amendment.
+The broader scenario harness remains a release gate and is **not** waived by this change.
+
+---
+
+## `[x]` 4.2 — F8: finish the stimulus rename and persistence boundary
+
+`WorkoutStimulusProfile` now exposes eight required canonical axes. Typed producers and
+consumers use that vocabulary; the old repository-wide derived fallbacks are not recreated.
+
+Persisted historical data cannot be codemodded, so `readStimulusProfile` is the compatibility
+boundary:
+
+| Persisted record | Behaviour |
 |---|---|
-| `zone2_aerobic` | meaningful aerobic minutes |
-| `threshold_quality` | accumulated work near threshold Ă˘â‚¬â€ť `2Ä‚â€”8`, `4Ä‚â€”8`, `3Ä‚â€”12` are not equivalent |
-| `surge_repeatability` | effort count, duration, recovery pattern, and whether performed under aerobic load |
-| `race_specific_endurance` | duration, fatigue resistance, continued pedalling after efforts, event-like context |
-| `strength_maintenance` | useful sets and movement exposure at relative intensity, not elapsed time |
+| Canonical fields present | Use canonical values per axis. |
+| Legacy rename present for a missing corresponding canonical axis | Convert that valid legacy value. |
+| Both present and disagreeing | Canonical wins and divergence is logged. |
+| Neither vocabulary | `DataState.INVALID`. |
+| Any supplied known axis is non-numeric, non-finite, or outside `0..1` | `DataState.INVALID`. |
 
-Implement as per-objective functions behind one interface. Resist collapsing them into a
-shared formula with per-objective coefficients Ă˘â‚¬â€ť that reintroduces F11's uncited-constant
-problem in a new place.
+The partial-canonical policy is explicitly **axis-local**. A valid legacy rename may backfill
+only its missing canonical counterpart; canonical-only axes with no historical equivalent
+remain zero when absent. A malformed legacy value is not silently ignored merely because a
+canonical value also exists — malformed persistence is invalid input.
 
-**The input contract must carry the evidence these rules need.** `stimulus.ts`'s
-`DeliveredDose` currently offers only `plannedDurationMin`, `completedDurationMin` and
-`completionRatio`, and `CreditContext` only `modality`/`category`. That cannot express
-effort count, recovery pattern, continued pedalling after efforts, aerobic-load context,
-or event-like context. Either extend the contract to carry them (with
-`stimulusConfidence` marking what is measured vs inferred) **or** narrow the objective
-rules to what the available evidence supports. What must not happen is a credit function
-that silently ignores a factor its own specification names Ă˘â‚¬â€ť that is how an unfalsifiable
-formula gets shipped.
+This prevents strings, `NaN`, or out-of-range values from propagating into
+`completedCredit` and accidentally making an objective disappear from the unresolved set.
 
-### Shadow mode before cutover
+---
 
-Run V1 and V2 crediting side by side for one iteration, emitting both into the simulation
-report. Compare objective-resolution counts per scenario. Cut over only when the
-divergence is explainable Ă˘â‚¬â€ť not merely when V2 runs without throwing.
+## `[x]` 4.3 — F12: fatigue correctness and fusion evidence
 
-**Completed 2026-08-08:** The live microcycle ledger now accumulates
-`WeeklyObjective.completedCredit` from `deriveObjectiveCredit`, with
-`requiredCredit` as the unresolved authority. The legacy `completedExposures` field is a
-compatibility projection only; it no longer decides resolution. Reconciled completed events
-carry `DeliveredDose` into history, so actual duration reaches the credit function. The
-objective rules are intentionally narrowed to the currently measured stimulus vector plus
-completion ratio; effort-count, recovery-pattern, and event-context rules remain deferred
-until those signals have a source. `npm run check` passes. The scenario run produced a 58.9%
-recovery-share aggregate-bound failure. This is a failed release gate, not missing Phase 0
-work; the boundary analysis below separates the inherited Phase 3 failure from the Phase 4
-contribution rather than silently accepting the cutover.
+### `[x]` 4.3a — chronological replay and unsaturated external load
 
-## `[x]` 4.2 Ă˘â‚¬â€ť F8: finish the stimulus rename
+History is validated/sorted at ingestion and replay asserts the chronological invariant it
+relies on. External load retains an unsaturated latent state so repeated hard work can remain
+“deeper in the hole” instead of losing information at a `1.0` clamp. A clamped projection
+remains available to ranking/presentation.
 
-`WorkoutStimulusProfile` carries 7 canonical + 5 legacy axes, **all optional**.
-`canonicalizeStimulus` (`templates.ts` `canonicalizeStimulus`) fills both sides and invents two
-derivations with no cited basis:
+### `[x]` 4.3b — fusion comparison
 
-```ts
-vo2MaxPower:       s.vo2MaxPower       ?? (s.surgeRepeatability   ? s.surgeRepeatability   * 0.8 : 0),
-fatigueResistance: s.fatigueResistance ?? (s.thresholdDevelopment ? s.thresholdDevelopment * 0.7 : 0),
-```
+The Phase 0 harness compared current `max(external, internal)` fusion with the monotonic
+`min(1, external + internal)` candidate:
 
-Consumers disagree on which vocabulary is authoritative Ă˘â‚¬â€ť `optimizer.ts` reads legacy
-only, `stimulus.ts` reads canonical-first. This is masked today only because both are
-populated.
+* `max()` — **58.9%** rest/recovery days (169/287)
+* capped addition — **70.4%** (202/287)
 
-1. Make canonical axes **required**; delete the legacy aliases. **Inventory every producer
-   and consumer first** Ă˘â‚¬â€ť the codemod is not limited to `templates.ts` and the catalog.
-   Known readers of the legacy vocabulary: `optimizer.ts` (`calculateStimulusBenefit`
-   reads legacy axes exclusively), `microcycle.ts` (`targetStimulus` keys in
-   `generateWeeklyObjectives` and `stimulusCoverage`), `completedTraining.ts`
-   (`ZERO_STIMULUS`), `planner.ts` (`ZERO_STIMULUS`), `stimulus.ts` (canonical-first),
-   plus test fixtures and any persisted `estimatedStimulus` on stored
-   `CompletedTrainingEvent`s. Deleting aliases without migrating all of them either fails
-   to compile or, worse, compiles and silently scores zero coverage. Include a
-   compatibility read for persisted profiles written under the old vocabulary.
-
-   **Specify that compatibility read before deleting anything.** Persisted
-   `estimatedStimulus` on stored `CompletedTrainingEvent`s is the one input this change
-   cannot codemod, and records exist in three states Ă˘â‚¬â€ť canonical-only, legacy-only, and
-   both (everything `canonicalizeStimulus` has written to date, since it fills both
-   sides). Define one `readStimulusProfile(raw): WorkoutStimulusProfile` at the read
-   boundary and route every consumer through it:
-
-   | Persisted record | Behaviour |
-   |---|---|
-   | Canonical fields present | Use them. **Canonical wins**, unconditionally. |
-   | Legacy only | Convert via the canonical mapping below; do not consult legacy again downstream. |
-   | Both present and disagreeing | Canonical wins, and the divergence is **logged** Ă˘â‚¬â€ť it means a writer was missed, and silently preferring one would hide that. |
-   | Neither | `DataState.INVALID`, not a zero profile. A zero profile is indistinguishable from "genuinely no stimulus" and scores zero coverage forever. |
-
-   The canonical mapping is the *identity for the five renamed axes* Ă˘â‚¬â€ť this is a rename,
-   not a remodelling Ă˘â‚¬â€ť with one exception: the two derived fallbacks
-   (`vo2MaxPower Ă˘â€ Â surgeRepeatability * 0.8`, `fatigueResistance Ă˘â€ Â thresholdDevelopment
-   * 0.7`) are **not** part of the mapping, because item 3 deletes them as unjustified. A
-   legacy-only record therefore converts with `vo2MaxPower` and `fatigueResistance`
-   absent, which is honest: those values were never measured, only invented.
-
-   Tests required before the aliases are removed: legacy-only converts correctly;
-   canonical-only passes through; conflicting record resolves canonical **and** logs;
-   empty record yields `INVALID`. Remove the alias fields only once every producer and
-   every consumer named above reads through `readStimulusProfile`.
-2. Type `WeeklyObjective.targetStimulus` as
-   `Partial<Record<keyof WorkoutStimulusProfile, number>>` instead of
-   `Record<string, number>`, so a typo'd axis is a compile error rather than a silent
-   zero-coverage objective that can never resolve.
-3. **Decision (2026-08-08): delete the derived fallbacks; make templates declare the axes
-   explicitly.** `vo2MaxPower` and `fatigueResistance` become required fields that each
-   template states outright, and the `* 0.8` / `* 0.7` derivations in
-   `canonicalizeStimulus` are removed.
-
-   The alternative Ă˘â‚¬â€ť find a citation for the coefficients Ă˘â‚¬â€ť is the wrong shape of work.
-   No citation can justify a *repository-wide* claim that VO2 stimulus is uniformly 80% of
-   surge stimulus across every template; that relationship varies per session by
-   construction. Making 22 templates each declare two numbers is a couple of hours, removes
-   two unexplained constants permanently, and forces the one person who knows what a given
-   session develops to say so explicitly rather than having it inferred.
-
-**Completed 2026-08-08:** The compatibility boundary is exercised with raw legacy-only
-records, while every typed fixture and planner fallback now supplies the complete canonical
-profile. `npm run typecheck`, lint, and the unit suite pass; the partial TypeScript fixture
-migration left by the initial implementation was corrected before this task was closed.
-
-**Completed 2026-08-08 (invalid boundary):** `readStimulusProfile` now returns
-`DataState.INVALID` for a record with neither canonical nor legacy axes. Objective credit
-returns zero with an explicit invalid-profile reason, and optimizer benefit scoring returns
-zero rather than treating malformed data as a valid zero-stimulus workout. Unit tests cover
-the state transition and both consumers.
-
-## `[x]` 4.3 Ă˘â‚¬â€ť F12: fatigue, in two separable pieces
-
-**This section was revised after PR #5 review.** An earlier draft prescribed
-`1 - exp(-x)` saturation plus a weighted external/internal combination. That is withdrawn:
-it was not justified by anything in the review, and it is the exact practice F11
-criticises. It may also be wrong Ă˘â‚¬â€ť internal response (HRV/RHR/soreness) is partly a
-*reaction to* the same external work, so a weighted sum double-counts load unless
-calibrated, and `1 - exp(-x)` changes the state's scale and meaning, not just its
-monotonicity.
-
-### `[x]` (a) Correctness — done
-
-`buildFatigueStateFromHistory` seeds from `history[0].date`, and
-`applyCompletedSessionLoad` floors `elapsedHours` at 0. Oldest-to-newest ordering is
-therefore load-bearing and asserted only in a comment on `projectTrailingHistory`. Out-of-order
-input silently mis-decays.
-
-**Sort, then assert Ă˘â‚¬â€ť do not take the dashboard down.** History is external, persisted
-input; a bare `throw` on malformed ordering turns a data problem into an outage. The
-boundary behaviour: validate and deterministically sort at ingestion
-(`buildTrainingHistorySnapshot`), and have `buildFatigueStateFromHistory` assert the
-invariant it relies on. If the assertion ever fires in production it is a programming
-error, not bad data Ă˘â‚¬â€ť but the caller still degrades to the established controlled state
-(ADR-0010's `INVALID` path) rather than crashing. Add a recommendation-path test for
-malformed ordering, not just a unit test on the function.
-
-### `[x]` (b) Modelling — comparison complete
-
-Two real questions:
-
-* **Saturation.** `Math.min(1, ...)` per axis (`applyCompletedSessionLoad`) means two hard
-  lower-body days Ă˘â€°Â one, at the ceiling. The model cannot represent "significantly deeper
-  in the hole".
-* **Fusion.** `combinedFatigue = max(external, internal)` lets a bad night fully *mask*
-  accumulated external load, and vice versa.
-
-**Approach:** retain an unsaturated latent external-load state so depth is not discarded
-at accumulation time, keeping the clamped value only as a presentation/ranking projection.
-That is a strictly information-preserving change and can land independently. Then use the
-Phase 0 harness to **compare** candidate fusion functions against the coaching invariants
-before committing to one Ă˘â‚¬â€ť and record the comparison in an ADR, with the data.
-
-This is deliberately slower than picking a formula. It is the process F11 asks for, and
-this phase is the first opportunity to actually follow it.
-
-**4.3a completed 2026-08-08:** the ingestion boundary sorts history, replay defends its
-chronological invariant, and `rawExternalLoadFatigue` retains unsaturated depth. **4.3b is
-complete:** the Phase 0 harness compared current `max()` fusion with the monotonic
-`min(1, external + internal)` alternative. `max()` produced 58.9% rest/recovery days
-(169/287); capped addition produced 70.4% (202/287). Capped addition therefore worsens the
-existing release-gate failure and adds the uncalibrated double-counting risk described above.
-ADR-0014 records the decision to retain `max()`. The failed 58.9% recovery-share aggregate
-bound remains release evidence, not a reason to select a formula that merely forces it green.
+Both violate the current aggregate recovery-share gate. Capped addition is worse on that
+metric and also has uncalibrated double-counting risk because internal response can partly
+reflect the same external work. The supported conclusion is therefore **retain `max()` for
+now; there is no evidence to replace it with this candidate**. It is not evidence that
+`max()` is safe or calibrated.
 
 ### Harness boundary analysis (2026-08-08)
 
-Phase 0 is implemented on `main` and its `simulate:scenarios` gate passes there at **34.8%**
-rest/recovery days (100/287). The Phase 4 branch does not descend from that `main` tip: it
-contains the Phase 3 series. The simulator at the last Phase 3 commit (`89434d7`) already
-fails at **52.3%** (150/287), so that is inherited release debt, not a Phase 4 defect.
+Phase 0 on `main` passes its aggregate gate at **34.8%** rest/recovery days (100/287). The
+Phase 4 branch descends through the Phase 3 series, whose last pre-Phase-4 point already
+fails at **52.3%** (150/287). That inherited failure is release debt, not a reason to retune
+the bound.
 
-The same deterministic boundary run found these Phase 4 deltas:
+The deterministic boundary analysis found:
 
 | Boundary | Rest/recovery share | Interpretation |
 |---|---:|---|
@@ -264,129 +178,106 @@ The same deterministic boundary run found these Phase 4 deltas:
 | After 4.1 initial / 4.2 (`6d2ad01`) | 52.3% | no change |
 | After 4.3a (`d6c3a23`) | 58.5% | unsaturated replay retains external-load depth |
 | After 4.2 validation / 4.5 / 4.4 (`347cee4`) | 58.5% | no additional change |
-| Current Phase 4 (`81a1b75`) | 58.9% | 4.1 adds 0.4 percentage points |
+| Reviewed Phase 4 boundary (`81a1b75`) | 58.9% | 4.1 adds 0.4 percentage points |
 
-Do not retune Phase 0's 5–40% bound or choose a fatigue-fusion formula to force this metric
-green. The 4.3a result is behavior-changing by design: latent load survives past the prior
-clamping point and can therefore keep the ranking projection elevated after repeated work.
-Compare fusion candidates against the corrected or explicitly accepted Phase 3 baseline, and
-record the data in ADR-0014 before choosing any replacement for `max()`.
+Do not retune the 5–40% bound or choose a fusion formula merely to force the metric green.
+The aggregate failure remains a release blocker.
 
-## `[x]` 4.5 Ă˘â‚¬â€ť `PlannedDose`: give `intensityScale` its consumer (D2)
+---
 
-**This is the work item that discharges D2 and F17.** Phase 2 decided `intensityScale`
-gets a consumer rather than being deleted; without an owning work item that commitment is
-prose, which is the exact failure mode this review criticises.
+## `[x]` 4.5 — `PlannedDose`: give `intensityScale` its consumer (D2/F17)
 
-1. Replace the scalar `plannedDose` (`resolveTrainingIntent`) with
-   `PlannedDose { volume, intensity }`.
-2. `volume` derives from `PlanBlock.volumeScale` (current behaviour, unchanged).
-3. `intensity` derives from `PlanBlock.intensityScale` and gates which intensity-class
-   candidates are admissible, so a taper can hold intensity while cutting volume.
-4. `Recommendation.plannedDose` and the persisted audit carry both components.
-5. `resolveExecutionDose` (`dose.ts`) intersects `volume` with the clinical ceiling as
-   today; `intensity` is a separate admissibility gate, not a second ceiling on duration.
+`PlannedDose` is `{ volume, intensity }` and both dimensions have an owner.
 
-**Depends on:** Phase 2's accepted `PlanDefinition`/`PlanBlock` contract (landed on this
-branch). **Done when:** all recommendation, prescription, provenance, and replay paths
-carry `PlannedDose`; candidate intensity eligibility is tested for a volume-reduced,
-intensity-retained taper; and `npm run check` passes. This task's commit also changes its
-board and heading markers to `[x]`.
+1. In ADR-0012 **explicit mode**, the active authored `PlanBlock` owns both values exactly.
+   The September plan therefore produces travel `0.6 / 0.8` and taper `0.5 / 1.0` — generic
+   days-to-event periodization cannot overwrite them.
+2. In **generic mode**, `resolvePlannedDose` retains the existing objective-urgency volume
+   calculation and generic periodization intensity.
+3. `resolveExecutionDose` intersects volume with the clinical ceiling; intensity remains a
+   separate candidate-admissibility gate.
+4. Recommendation/provenance paths carry both planned and execution doses.
+5. The week-ahead planner uses the same `resolvePlannedDoseForDate` ownership rule on every
+   projected date.
 
-**Completed 2026-08-08:** `resolvePlannedDose` derives `volume` from the existing urgency
-formula and carries the authored `intensityScale` unchanged. `rankCandidates` now rejects
-hard templates only below the existing Base phase's 0.8 intensity scale; Build (0.9) and
-taper (1.0) therefore retain quality eligibility. `resolveExecutionDose` changes volume
-only, while the immutable recommendation audit records both the planned and execution
-components. Typecheck, lint, unit, and workout-catalog validation pass.
+`trainingIntentAcceptance.test.ts` asserts exact build, travel, and taper values rather than
+only checking that taper volume is lower than build volume.
 
-**Acceptance:** `intensityScale` has at least one reader; a taper block with
-`volumeScale` down and `intensityScale` held produces shorter sessions at retained
-intensity class, asserted in the Phase-0 harness.
+---
 
-## `[x]` 4.4 Ă˘â‚¬â€ť Dose-sensitive cost
+## `[x]` 4.4 — dose-sensitive completed-load cost
 
-`DEFAULT_COST_BY_MODALITY[modality][intensity]` returns a fixed vector; duration has
-almost no authority, so a 40-minute hard ride and a 3-hour hard ride score nearly
-identically. Move toward:
+The six-dimensional cost vector remains the abstraction. `scaleCostByDeliveredDose` makes
+completed cost respond to delivered duration relative to a comparable catalog session and,
+when independently supplied, completion ratio. Unknown modalities remain unscaled rather
+than receiving an invented reference duration.
 
-```text
-base session cost Ä‚â€” delivered dose Ä‚â€” measured-response adjustment
-```
+The measured-response adjustment remains out of scope because the current delivered-dose
+contract does not carry a reliable per-session measured-response field at every construction
+site. It must not be added as a term that silently defaults to neutral.
 
-Keep the six dimensions Ă˘â‚¬â€ť they are a good abstraction. This does **not** require adopting
-TSS/CTL/ATL as ground truth; it requires the existing vectors to respond to duration,
-completion ratio and measured training effect.
+---
 
-**Two of the three factors have an input today; the third does not.** `DeliveredDose` in
-`stimulus.ts` carries `plannedDurationMin`, `completedDurationMin` and `completionRatio`
-Ă˘â‚¬â€ť enough for `base Ä‚â€” delivered dose`, and nothing at all for the measured-response
-adjustment. Writing the three-factor formula against a two-factor contract is how a term
-ends up quietly evaluating to 1.0 forever, which is the `intensityScale` failure (F17)
-repeated.
+## Forecast ledger ownership
 
-So split the work, and do not let the second half block the first:
+The week-ahead planner previously mutated `completedCredit` for tomorrow/future picks even
+though `WeeklyObjective.projectedCredit` existed specifically for forecast allocation.
+Phase 4 now enforces the distinction:
 
-1. **Duration and completion Ă˘â‚¬â€ť now.** Extend the cost function to consume `DeliveredDose`
-   as it stands. This alone fixes the stated defect: a 40-minute and a 3-hour hard ride
-   stop scoring alike.
-2. **Measured response Ă˘â‚¬â€ť only once it has a source.** The signal exists upstream
-   (`intensityFromGarmin` already reads Garmin training effect, and 4.3 introduces
-   internal response), but it is not on `DeliveredDose`. Adding the term requires adding
-   the field *and* populating it at every construction site, with `DataState` handling for
-   the sessions that have no measurement Ă˘â‚¬â€ť an untracked activity has no training effect,
-   and defaulting it to a neutral value silently reintroduces the dead term.
+* completed history owns `completedCredit`;
+* forecast recommendations own `projectedCredit`;
+* forecast unresolved state uses completed + projected credit;
+* live unresolved state ignores projected credit; and
+* displayed `objectiveCredits` carry the fractional V2 amount actually allocated.
 
-**Acceptance covers step 1 only**: cost responds monotonically to
-`completedDurationMin` and to `completionRatio`, asserted on the Phase-0 harness. The
-measured-response term is not in this phase's acceptance criteria and must not be written
-into the formula until its input contract exists. The six-dimensional cost vector is
-unchanged throughout.
-
-**Completed 2026-08-08:** `scaleCostByDeliveredDose` scales every dimension using the
-duration relative to a comparable catalog session plus an independently supplied completion
-ratio. Garmin and adherence reconciliation now pass measured completed duration to that
-function; unknown modalities remain unscaled rather than receiving an invented reference
-duration. The measured-response term remains out of scope. Unit tests assert monotonic
-duration and completion behavior, and `npm run check` passes.
+This also removes the planner's former V1 display gate, so `addressesObjectives` cannot say
+“no credit” while the V2 ledger silently applies a partial contribution.
 
 ---
 
 ## Acceptance criteria
 
-- [x] one credit model live; `updateMicrocycleProgress` demoted to documented last-resort
-      compatibility with a shrinking call surface
-- [x] `deriveObjectiveCredit`'s `qualifies` and `default` defects fixed before promotion
-- [ ] shadow-mode comparison run and its divergence explained in the PR — Phase 0 harness is
-      available; release gate currently fails and must be reconciled
-- [x] canonical stimulus axes required; legacy aliases deleted; `targetStimulus` typed
+- [x] one credit model live; `updateMicrocycleProgress` is documented last-resort compatibility
+- [x] `deriveObjectiveCredit` separates qualification from earned credit and has no unknown-objective default credit
+- [x] original live V1/V2 shadow gate explicitly amended to a reviewed deterministic divergence matrix; expected deltas are named and tested
+- [x] endurance/power objective credit responds to delivered duration when planned/completed duration is measured
+- [x] keyword fallback updates the authoritative fractional ledger and is replay-order independent
+- [x] planner display/ledger uses V2 fractional credit rather than the old 0.6 coverage gate
+- [x] future planning owns `projectedCredit`; completed evidence is not mutated by forecast picks
+- [x] persisted canonical/legacy stimulus values are finite `0..1` numbers or the record is `INVALID`
+- [x] partial-canonical persistence policy is documented and tested
+- [x] canonical stimulus axes required downstream; legacy aliases are boundary-only
 - [x] chronological ordering asserted in `buildFatigueStateFromHistory`
 - [x] unsaturated latent external-load state retained
-- [x] fusion function **not** changed without a recorded harness comparison
+- [x] fusion function not changed without a recorded harness comparison
+- [x] fusion evidence is described as “retain max for now”, not “safe”
 - [x] cost responds to duration and completion ratio
+- [x] active authored PlanBlock owns exact `PlannedDose` in explicit mode; generic periodization is fallback only
 - [x] `PlannedDose { volume, intensity }` exists and `intensityScale` has a reader (D2/F17)
-- [x] credit input contract carries the evidence the objective rules name, or the rules are narrowed
 - [x] history ordering is validated/sorted at ingestion; malformed order degrades, not crashes
 - [x] `POLICY_VERSION` bumped
+- [ ] Phase 0 aggregate scenario gate reconciled; current reviewed branch evidence remains outside the 5–40% recovery-share bound
 
 ## Risks & rollback
 
-* **Credit-model cutover moves every recommendation.** Shadow mode exists precisely so
-  the divergence is inspected before it ships. Do not skip it to save a day.
-* **The stimulus codemod is wide but mechanical.** Land it separately from the credit
-  change so a bisect can separate a type migration from a behaviour change.
-* **Scope creep into 4.3(b).** If the fusion comparison is not converging, ship 4.3(a) and
-  the latent-state change and leave `max()` in place. A documented open question beats an
-  undocumented guess.
+* **Credit-model cutover is behavior-changing.** Expected V1→V2 divergences are now an
+  explicit regression matrix. A new divergence must be explained and reviewed rather than
+  silently accepted.
+* **Persisted data is untrusted.** Invalid stimulus must remain a controlled data state, not
+  a zero profile and not a source of `NaN` progress.
+* **Projection must not masquerade as completion.** Keep `projectedCredit` ephemeral and
+  never persist it as completed evidence.
+* **Fusion remains unresolved modelling debt.** If a future candidate is not supported by
+  better evidence, retain `max()` rather than introducing an uncited formula.
 
 ## Out of scope
 
 Sequence search (Phase 5). The evidence hierarchy for interpreting unplanned outdoor work
-(Phase 5) Ă˘â‚¬â€ť 4.x improves the vectors, not the inference chain that produces them.
+(Phase 5) is also out of scope: Phase 4 improves vectors, dose semantics, and ledger
+authority, not the inference chain that produces those signals.
 
 ## Docs to update
 
-* **ADR-0014** (new) Ă˘â‚¬â€ť objective credit V2 semantics and the fatigue fusion decision, with
-  the harness comparison attached
-* **ADR-0006** Ă˘â‚¬â€ť amend: strain telemetry interacts with the new credit model
-* `docs/architecture/recommendation-engine.md` Ă˘â‚¬â€ť the credit and fatigue sections
+* **ADR-0014** — objective credit V2 semantics, cutover-evidence amendment, plan-dose ownership, projected-credit ownership, and fatigue-fusion interpretation
+* **ADR-0006** — strain telemetry interaction with the new credit model
+* `docs/architecture/recommendation-engine.md` — credit, planned-dose, projection, and fatigue sections
