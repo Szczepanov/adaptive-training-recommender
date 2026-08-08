@@ -88,6 +88,11 @@ const ANCHOR_ROLE_BOOST = 1.35;
  * actually fulfils the nominated role outrank unrelated unresolved work on that date,
  * while still allowing fatigue/safety/recovery hard gates to reject the anchor. */
 const ANCHOR_TIMING_BENEFIT = 1.0;
+/** A triathlon focus event has two currently supported sport modalities. Treat an absent
+ * supported modality in the rolling planning window as the same Level-4 timing class as
+ * an anchor: it is event architecture, not a user-preference multiplier. Reusing the
+ * established timing weight avoids inventing a second calibration constant. */
+const MULTISPORT_MODALITY_COVERAGE_BENEFIT = ANCHOR_TIMING_BENEFIT;
 const ANCHOR_ADJACENCY_SUPPRESSION = 0.3;
 const HEAVY_LOWER_BODY_STRENGTH_CATEGORIES: SessionTemplate['category'][] = ['Lower-body Strength', 'Full-body Strength'];
 const VARIETY_TIE_BREAK_GAP = 0.05;
@@ -202,6 +207,22 @@ export function normalizeHistory(
     });
 }
 
+function needsMultisportModalityCoverage(
+    template: SessionTemplate,
+    focusEvent: UserEvent | null | undefined,
+    history: SessionHistoryEntry[],
+    targetDate: string,
+): boolean {
+    if (focusEvent?.category !== 'triathlon') return false;
+    if (template.modality !== 'Cycling' && template.modality !== 'Running') return false;
+
+    const seenInRollingWindow = history.some(entry => {
+        const diff = getDayDiff(targetDate, entry.date);
+        return diff >= 1 && diff <= 6 && entry.modality === template.modality;
+    });
+    return !seenInRollingWindow;
+}
+
 export function evaluateRecoveryConstraints(
     template: SessionTemplate,
     targetDate: string,
@@ -210,9 +231,6 @@ export function evaluateRecoveryConstraints(
 ): string[] {
     const reasons: string[] = [];
 
-    // Constraint 1: Quality spacing -- >= 1 clear day (dayDiff >= 2) between two anchor-role sessions.
-    // When the planner nominated this date, only a candidate that actually fulfils the
-    // nominated role is an anchor; Rest/Mobility/supporting work must remain available.
     const isCandidateAnchor = options.anchorRole
         ? candidateMatchesAnchorRole(template, options.anchorRole)
         : ANCHOR_HISTORY_CATEGORIES.includes(template.category);
@@ -225,35 +243,26 @@ export function evaluateRecoveryConstraints(
                 (h.category && ANCHOR_HISTORY_CATEGORIES.includes(h.category))
             );
         });
-        if (priorAnchor) {
-            reasons.push('QUALITY_SPACING_VIOLATION');
-        }
+        if (priorAnchor) reasons.push('QUALITY_SPACING_VIOLATION');
     }
 
-    // Constraint 2: Hard lower-body spacing -- no back-to-back sessions with lowerBodyCost >= 0.6
     const candidateLowerBodyCost = template.costProfile?.lowerBody ?? (STRENGTH_CATEGORIES.includes(template.category) ? 0.6 : 0);
     if (candidateLowerBodyCost >= 0.6) {
         const priorHardLower = history.find(h => {
             const diff = getDayDiff(targetDate, h.date);
             return diff === 1 && h.lowerBodyCost >= 0.6;
         });
-        if (priorHardLower) {
-            reasons.push('HARD_LOWER_BODY_SPACING_VIOLATION');
-        }
+        if (priorHardLower) reasons.push('HARD_LOWER_BODY_SPACING_VIOLATION');
     }
 
-    // Constraint 3: Rolling hard cap -- <= 3 sessions with systemicCost >= 0.5 in any rolling 7 days (dayDiff <= 6)
     if (template.systemicCost >= 0.5) {
         const hardInRollingWindow = history.filter(h => {
             const diff = getDayDiff(targetDate, h.date);
             return diff >= 1 && diff <= 6 && h.systemicCost >= 0.5;
         }).length;
-        if (hardInRollingWindow >= 3) {
-            reasons.push('ROLLING_HARD_CAP_EXCEEDED');
-        }
+        if (hardInRollingWindow >= 3) reasons.push('ROLLING_HARD_CAP_EXCEEDED');
     }
 
-    // Constraint 4: Anchor protection -- no heavy lower-body strength within 1 day of a key cycling session
     const isHeavyLowerBodyStrength = HEAVY_LOWER_BODY_STRENGTH_CATEGORIES.includes(template.category) ||
         (template.modality === 'Strength' && (template.costProfile?.lowerBody ?? 0) >= 0.6);
     const isKeyCyclingSession = candidateMatchesAnchorRole(template, options.anchorRole)
@@ -267,9 +276,7 @@ export function evaluateRecoveryConstraints(
                 h.role === 'anchor' || (h.category && ['Race-Specific Endurance', 'Hard Endurance'].includes(h.category))
             );
         });
-        if (priorKeyCycling) {
-            reasons.push('ANCHOR_PROTECTION_VIOLATION');
-        }
+        if (priorKeyCycling) reasons.push('ANCHOR_PROTECTION_VIOLATION');
     } else if (isKeyCyclingSession) {
         const priorHeavyStrength = history.find(h => {
             const diff = getDayDiff(targetDate, h.date);
@@ -278,9 +285,7 @@ export function evaluateRecoveryConstraints(
                 (h.modality === 'Strength' && h.lowerBodyCost >= 0.6)
             );
         });
-        if (priorHeavyStrength) {
-            reasons.push('ANCHOR_PROTECTION_VIOLATION');
-        }
+        if (priorHeavyStrength) reasons.push('ANCHOR_PROTECTION_VIOLATION');
     }
 
     return reasons;
@@ -290,9 +295,7 @@ export function calculateStimulusBenefit(
     template: SessionTemplate,
     unresolvedObjectives: WeeklyObjective[]
 ): number {
-    if (template.category === 'Rest') {
-        return 0.1;
-    }
+    if (template.category === 'Rest') return 0.1;
 
     const stimulusProfile = template.stimulusProfile;
     if (!stimulusProfile || unresolvedObjectives.length === 0) {
@@ -305,58 +308,36 @@ export function calculateStimulusBenefit(
     let benefit = 0;
     unresolvedObjectives.forEach(obj => {
         if (obj.qualification) {
-            if (obj.qualification.allowedCategories && obj.qualification.allowedCategories.length > 0) {
-                if (!obj.qualification.allowedCategories.includes(template.category)) {
-                    return;
-                }
-            }
-            if (obj.qualification.allowedModalities && obj.qualification.allowedModalities.length > 0) {
-                if (!obj.qualification.allowedModalities.includes(template.modality)) {
-                    return;
-                }
-            }
+            if (obj.qualification.allowedCategories && obj.qualification.allowedCategories.length > 0
+                && !obj.qualification.allowedCategories.includes(template.category)) return;
+            if (obj.qualification.allowedModalities && obj.qualification.allowedModalities.length > 0
+                && !obj.qualification.allowedModalities.includes(template.modality)) return;
         }
 
         const target = obj.targetStimulus;
         const threshTarget = target.thresholdPower ?? 0;
         const threshStim = stimulusProfile.thresholdPower;
-        if (threshTarget && threshStim) {
-            benefit += threshTarget * threshStim * 1.5;
-        }
+        if (threshTarget && threshStim) benefit += threshTarget * threshStim * 1.5;
 
         const surgeTarget = target.repeatedSurges ?? 0;
         const surgeStim = stimulusProfile.repeatedSurges;
-        if (surgeTarget && surgeStim) {
-            benefit += surgeTarget * surgeStim * 1.5;
-        }
+        if (surgeTarget && surgeStim) benefit += surgeTarget * surgeStim * 1.5;
 
         const aeroTarget = target.aerobicEndurance ?? 0;
         const aeroStim = stimulusProfile.aerobicEndurance;
-        if (aeroTarget && aeroStim) {
-            benefit += aeroTarget * aeroStim * 1.2;
-        }
+        if (aeroTarget && aeroStim) benefit += aeroTarget * aeroStim * 1.2;
 
         const strengthTarget = target.maxStrength ?? target.hypertrophy ?? 0;
         const strengthStim = stimulusProfile.maxStrength ?? stimulusProfile.hypertrophy;
-        if (strengthTarget && strengthStim) {
-            benefit += strengthTarget * strengthStim * 1.6;
-        }
+        if (strengthTarget && strengthStim) benefit += strengthTarget * strengthStim * 1.6;
 
         const fatigueTarget = target.fatigueResistance ?? 0;
         const fatigueStim = stimulusProfile.fatigueResistance;
-        if (fatigueTarget && fatigueStim) {
-            benefit += fatigueTarget * fatigueStim * 1.2;
-        }
+        if (fatigueTarget && fatigueStim) benefit += fatigueTarget * fatigueStim * 1.2;
     });
 
     const nonObjectiveBaseline = template.category === 'Mobility/Recovery' ? 0.2 : 0.5;
-    if (benefit === 0) {
-        benefit = nonObjectiveBaseline;
-    } else {
-        benefit = benefit + nonObjectiveBaseline;
-    }
-
-    return benefit;
+    return benefit === 0 ? nonObjectiveBaseline : benefit + nonObjectiveBaseline;
 }
 
 export function calculateFatigueCostPenalty(
@@ -365,15 +346,12 @@ export function calculateFatigueCostPenalty(
 ): number {
     if (!costProfile) return 0;
     const combined = fatigueState.combinedFatigue;
-
-    const systemicPenalty = costProfile.systemic * combined.systemic * 2.0;
-    const cardioPenalty = costProfile.cardiovascular * combined.cardiovascular * 1.5;
-    const lowerBodyPenalty = costProfile.lowerBody * combined.lowerBody * 2.5;
-    const upperBodyPenalty = costProfile.upperBody * combined.upperBody * 1.5;
-    const impactPenalty = costProfile.impactTissue * combined.impactTissue * 2.0;
-    const neuroPenalty = costProfile.neuromuscular * combined.neuromuscular * 1.8;
-
-    return systemicPenalty + cardioPenalty + lowerBodyPenalty + upperBodyPenalty + impactPenalty + neuroPenalty;
+    return costProfile.systemic * combined.systemic * 2.0
+        + costProfile.cardiovascular * combined.cardiovascular * 1.5
+        + costProfile.lowerBody * combined.lowerBody * 2.5
+        + costProfile.upperBody * combined.upperBody * 1.5
+        + costProfile.impactTissue * combined.impactTissue * 2.0
+        + costProfile.neuromuscular * combined.neuromuscular * 1.8;
 }
 
 export function buildOptimizationContext(
@@ -400,10 +378,7 @@ export function buildOptimizationContext(
     const userId = (context.trainingSettings?.userId && context.trainingSettings.userId !== '')
         ? context.trainingSettings.userId
         : (basePrefs.userId ?? '');
-    const effectivePreferences: UserPreferences = {
-        ...basePrefs,
-        userId,
-    };
+    const effectivePreferences: UserPreferences = { ...basePrefs, userId };
 
     const availability = resolveAvailability(date, null, [], context);
     const injuryConstraints = context.constraints?.restrictedModalities ?? [];
@@ -411,7 +386,8 @@ export function buildOptimizationContext(
     const rawHistory: (RecentHistoryEntry | SessionHistoryEntry)[] = options.recentHistory ?? (intent.history ?? []).map(e => {
         const completedDate = 'completedDate' in e && typeof e.completedDate === 'string' ? e.completedDate : undefined;
         const rec = e as Record<string, unknown>;
-        const recType = rec.trainingRecordLike && typeof rec.trainingRecordLike === 'object' && 'type' in (rec.trainingRecordLike as object) ? (rec.trainingRecordLike as { type?: string }).type : undefined;
+        const recType = rec.trainingRecordLike && typeof rec.trainingRecordLike === 'object' && 'type' in (rec.trainingRecordLike as object)
+            ? (rec.trainingRecordLike as { type?: string }).type : undefined;
         const costProf = rec.costProfile && typeof rec.costProfile === 'object' ? rec.costProfile as Record<string, number> : undefined;
         const systemic = costProf?.systemic;
         const lowerBody = costProf?.lowerBody;
@@ -424,21 +400,10 @@ export function buildOptimizationContext(
             modality: e.modality ?? recType ?? entryType,
             role: e.role,
             systemicCost: e.systemicCost ?? systemic ?? 0,
-            lowerBodyCost: ('lowerBodyCost' in e && typeof e.lowerBodyCost === 'number')
-                ? e.lowerBodyCost
-                : (lowerBody ?? 0),
+            lowerBodyCost: ('lowerBodyCost' in e && typeof e.lowerBodyCost === 'number') ? e.lowerBodyCost : (lowerBody ?? 0),
             type: entryType ?? recType,
         };
     });
-
-    const optimizationOptions: OptimizationOptions = {
-        date,
-        focusEvent: options.focusEvent ?? intent.periodization?.focusEvent ?? null,
-        recentHistory: rawHistory,
-        anchorRole: options.anchorRole ?? null,
-        adjacentToAnchor: options.adjacentToAnchor ?? false,
-        ...(intent.plannedDose ? { plannedDose: intent.plannedDose } : {}),
-    };
 
     return {
         unresolvedObjectives: intent.unresolvedObjectives ?? [],
@@ -446,7 +411,14 @@ export function buildOptimizationContext(
         availability,
         injuryConstraints,
         preferences: effectivePreferences,
-        options: optimizationOptions,
+        options: {
+            date,
+            focusEvent: options.focusEvent ?? intent.periodization?.focusEvent ?? null,
+            recentHistory: rawHistory,
+            anchorRole: options.anchorRole ?? null,
+            adjacentToAnchor: options.adjacentToAnchor ?? false,
+            ...(intent.plannedDose ? { plannedDose: intent.plannedDose } : {}),
+        },
     };
 }
 
@@ -467,7 +439,6 @@ export function rankCandidates(
     const rawHistory = options.recentHistory ?? [];
     const targetDate = options.date ?? getLocalDateString();
     const history = normalizeHistory(rawHistory, targetDate);
-
     const isStrengthResolved = !unresolvedObjectives.some(o => o.key === 'strength_maintenance');
 
     const accepted: RankedCandidate[] = [];
@@ -478,13 +449,8 @@ export function rankCandidates(
         if (!template) return;
         const excludedReasons: string[] = [];
 
-        const durationMin = template.durationMin ?? 0;
-        if (durationMin > availability.maxTimeMinutes) {
-            excludedReasons.push('TIME_BUDGET_EXCEEDED');
-        }
-
-        const requiredEquipment = template.requiredEquipment ?? [];
-        for (const req of requiredEquipment) {
+        if ((template.durationMin ?? 0) > availability.maxTimeMinutes) excludedReasons.push('TIME_BUDGET_EXCEEDED');
+        for (const req of template.requiredEquipment ?? []) {
             if (!availability.availableEquipment.includes(req)) {
                 excludedReasons.push('MISSING_REQUIRED_EQUIPMENT');
                 break;
@@ -500,16 +466,11 @@ export function rankCandidates(
             excludedReasons.push('INTENSITY_SCALE_INADMISSIBLE');
         }
 
-        const recoveryReasons = evaluateRecoveryConstraints(template, targetDate, history, options);
-        excludedReasons.push(...recoveryReasons);
+        excludedReasons.push(...evaluateRecoveryConstraints(template, targetDate, history, options));
 
         let benefit = calculateStimulusBenefit(template, unresolvedObjectives);
         const fulfilsNominatedAnchor = candidateMatchesAnchorRole(template, options.anchorRole);
 
-        // Endurance/multisport event relevance remains a standing Level-4 signal. A
-        // strength meet is different: once its generic weekly strength objective is
-        // resolved, an unconditional event boost would make low-cost Strength outrank the
-        // Level-6 "strength already resolved" nudge and monopolize the rest of the week.
         if (focusEvent && (focusEvent.priority === 'A' || focusEvent.priority === 'B')) {
             const categoryLower = focusEvent.category.toLowerCase();
             const templateModLower = (template.modality ?? '').toLowerCase();
@@ -523,40 +484,27 @@ export function rankCandidates(
                     ? obj.qualification.allowedModalities.includes(template.modality)
                     : (template.modality === 'Strength' && obj.key === 'strength_maintenance')
             );
-            const eventPriorityApplies = !categoryLower.includes('strength')
-                || satisfiesUnresolvedObjective
-                || fulfilsNominatedAnchor;
+            const eventPriorityApplies = !categoryLower.includes('strength') || satisfiesUnresolvedObjective || fulfilsNominatedAnchor;
             if (matchesEvent && eventPriorityApplies) {
-                const boost = focusEvent.priority === 'A' ? 1.40 : 1.25;
-                benefit *= boost;
+                benefit *= focusEvent.priority === 'A' ? 1.40 : 1.25;
             } else if (!matchesEvent && !isPreferred(template) && !satisfiesUnresolvedObjective && unresolvedObjectives.length > 0) {
                 benefit *= 0.20;
             }
         }
 
-        // Phase-3 ordering explicitly places objective coverage *and timing* ahead of
-        // fatigue cost and preference. A nominated anchor that this actual candidate can
-        // fulfil therefore receives a primary-key timing credit. It is still fully
-        // subordinate to the hard fatigue/recovery gates above: a blocked anchor remains
-        // a missed anchor rather than an unsafe recommendation.
-        if (fulfilsNominatedAnchor) {
-            benefit += ANCHOR_TIMING_BENEFIT;
+        if (needsMultisportModalityCoverage(template, focusEvent, history, targetDate)) {
+            benefit += MULTISPORT_MODALITY_COVERAGE_BENEFIT;
         }
+
+        if (fulfilsNominatedAnchor) benefit += ANCHOR_TIMING_BENEFIT;
 
         let costPenalty = calculateFatigueCostPenalty(template.costProfile, fatigueState);
-
-        if (extraMargin && template.systemicCost > 0.5) {
-            costPenalty += 0.3;
-        }
+        if (extraMargin && template.systemicCost > 0.5) costPenalty += 0.3;
 
         if (excludedReasons.length > 0) {
             const item: RankedCandidate = {
-                template,
-                benefitScore: benefit,
-                costPenalty,
-                utilityScore: 0,
-                rationale: `Excluded by hard constraint(s): ${excludedReasons.join(', ')}.`,
-                excludedReasons,
+                template, benefitScore: benefit, costPenalty, utilityScore: 0,
+                rationale: `Excluded by hard constraint(s): ${excludedReasons.join(', ')}.`, excludedReasons,
             };
             rejected.push(item);
             all.push(item);
@@ -564,64 +512,38 @@ export function rankCandidates(
         }
 
         let prefMultiplier = 1.0;
-        if (isDisliked(template)) {
-            prefMultiplier = 0.2;
-        } else if (isPreferred(template)) {
-            prefMultiplier = 1.3;
-        }
+        if (isDisliked(template)) prefMultiplier = 0.2;
+        else if (isPreferred(template)) prefMultiplier = 1.3;
 
         const isStrengthCategory = STRENGTH_CATEGORIES.includes(template.category);
-        if (isStrengthResolved && isStrengthCategory) {
-            prefMultiplier *= 0.20;
-        }
+        if (isStrengthResolved && isStrengthCategory) prefMultiplier *= 0.20;
 
         const lastEntry = history
             .filter(h => getDayDiff(targetDate, h.date) >= 1)
             .sort((a, b) => getDayDiff(targetDate, a.date) - getDayDiff(targetDate, b.date))[0];
         const lastWasHighIntensity = (lastEntry?.systemicCost ?? 0) >= INTENSITY_STACK_THRESHOLD;
         const candidateIsHighIntensity = template.systemicCost >= INTENSITY_STACK_THRESHOLD;
-        if (lastWasHighIntensity && candidateIsHighIntensity) {
-            prefMultiplier *= INTENSITY_STACK_PENALTY;
-        }
+        if (lastWasHighIntensity && candidateIsHighIntensity) prefMultiplier *= INTENSITY_STACK_PENALTY;
 
-        const usedYesterday = history.some(h =>
-            getDayDiff(targetDate, h.date) === 1 && h.templateId === template.id
-        );
-        if (usedYesterday) {
-            prefMultiplier *= 0.2;
-        }
+        const usedYesterday = history.some(h => getDayDiff(targetDate, h.date) === 1 && h.templateId === template.id);
+        if (usedYesterday) prefMultiplier *= 0.2;
 
         const isAerobicDefault = template.category === 'Easy Endurance' || (template.title ?? '').toLowerCase().includes('zone 2');
-        if (unresolvedObjectives.length === 0 && isAerobicDefault) {
-            prefMultiplier *= 1.25;
-        }
+        if (unresolvedObjectives.length === 0 && isAerobicDefault) prefMultiplier *= 1.25;
 
-        // Retain the original anchor preference as a within-tier nudge. The Level-4
-        // timing credit above is what establishes the day's class; this multiplier only
-        // chooses among otherwise near-equivalent implementations.
-        if (fulfilsNominatedAnchor) {
-            prefMultiplier *= ANCHOR_ROLE_BOOST;
-        }
-
+        if (fulfilsNominatedAnchor) prefMultiplier *= ANCHOR_ROLE_BOOST;
         if (options.adjacentToAnchor && HEAVY_LOWER_BODY_STRENGTH_CATEGORIES.includes(template.category) && template.systemicCost >= INTENSITY_STACK_THRESHOLD) {
             prefMultiplier *= ANCHOR_ADJACENCY_SUPPRESSION;
         }
 
         const utility = (benefit / (1 + costPenalty)) * prefMultiplier;
-
         let rationale = `Benefit score: ${benefit.toFixed(2)}, Fatigue cost penalty: ${costPenalty.toFixed(2)}.`;
-        if (isDisliked(template)) {
-            rationale += ` (Soft penalty applied: modality '${template.modality}' is marked as avoided/disliked).`;
+        if (isDisliked(template)) rationale += ` (Soft penalty applied: modality '${template.modality}' is marked as avoided/disliked).`;
+        if (needsMultisportModalityCoverage(template, focusEvent, history, targetDate)) {
+            rationale += ` (Event-modality coverage: ${template.modality} has no exposure in the rolling 6-day history.)`;
         }
 
-        const item: RankedCandidate = {
-            template,
-            benefitScore: benefit,
-            costPenalty,
-            utilityScore: utility,
-            rationale,
-            excludedReasons: [],
-        };
+        const item: RankedCandidate = { template, benefitScore: benefit, costPenalty, utilityScore: utility, rationale, excludedReasons: [] };
         accepted.push(item);
         all.push(item);
     });
@@ -657,12 +579,8 @@ export function rankCandidates(
                 for (let i = rawHistory.length - 1; i >= 0; i--) {
                     const entry = rawHistory[i];
                     const typeStr = ('type' in entry && typeof entry.type === 'string' ? entry.type : undefined) ?? entry.modality ?? '';
-                    if (template.id && typeStr.includes(template.id)) {
-                        return rawHistory.length - i;
-                    }
-                    if (template.title && typeStr.includes(template.title)) {
-                        return rawHistory.length - i;
-                    }
+                    if (template.id && typeStr.includes(template.id)) return rawHistory.length - i;
+                    if (template.title && typeStr.includes(template.title)) return rawHistory.length - i;
                 }
                 return 999;
             };
@@ -692,13 +610,5 @@ export function rankCandidatesByUtility(
     preferences: UserPreferences,
     options: OptimizationOptions = {}
 ): RankedCandidate[] {
-    return rankCandidates(
-        candidates,
-        unresolvedObjectives,
-        fatigueState,
-        availability,
-        injuryConstraints,
-        preferences,
-        options
-    ).accepted;
+    return rankCandidates(candidates, unresolvedObjectives, fatigueState, availability, injuryConstraints, preferences, options).accepted;
 }
