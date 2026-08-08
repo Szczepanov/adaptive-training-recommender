@@ -136,3 +136,22 @@ export function buildSeptemberCyclingEventPlan(event: UserEvent): DataState<Plan
 
   return buildPlanDefinition(SEPTEMBER_CYCLING_EVENT_SESSION_COVERAGE, blocks, event, objectives);
 }
+
+/**
+ * Resolves the concrete `PlanDefinition` for a focus event, when one has actually been
+ * authored for it.
+ *
+ * Intentionally narrow, not a generic plan-authoring mechanism: only the specific
+ * September cycling event that `buildSeptemberCyclingEventPlan`'s block calendar and
+ * `requiredCredit` numbers were authored against resolves to a `PlanDefinition` here.
+ * Every other event continues through `periodization.ts`'s generic `daysToEvent`
+ * fallback (ADR-0012 "Generic Mode") -- there is no per-event plan-builder UI or
+ * persistence layer yet (`Goals.tsx` collects a target date and event category, not a
+ * block/objective schedule), so a user-authored plan for an arbitrary event isn't
+ * possible until that lands.
+ */
+export function resolvePlanDefinitionForEvent(event: UserEvent | null): PlanDefinition | null {
+  if (!event || event.category !== 'cycling_event' || event.date !== '2026-09-20') return null;
+  const result = buildSeptemberCyclingEventPlan(event);
+  return result.status === 'AVAILABLE' ? result.data : null;
+}

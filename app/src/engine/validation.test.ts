@@ -98,6 +98,44 @@ describe('validateGoal', () => {
         expect(result.isValid).toBe(false);
         expect(result.errors.some(e => e.field === 'eventLifecycle')).toBe(true);
     });
+
+    // ADR-0012 Task 2.3 (EventTiming) -- validateGoal is the write-side gate that keeps
+    // an inconsistent timing object out of Firestore in the first place.
+    it('rejects timing without a dated event category', () => {
+        const result = validateGoal({
+            ...baseFields, category: 'long-term',
+            timing: { earliestDate: '2026-09-05', latestDate: '2026-09-20', planningDate: '2026-09-05' },
+        });
+        expect(result.isValid).toBe(false);
+        expect(result.errors.some(e => e.field === 'timing')).toBe(true);
+    });
+
+    it('rejects timing whose dates violate validateEventTiming\'s ordering invariants', () => {
+        const result = validateGoal({
+            ...baseFields, targetDate: '2026-09-13', eventCategory: 'cycling_event',
+            timing: { earliestDate: '2026-09-10', latestDate: '2026-09-05', planningDate: '2026-09-10' },
+        });
+        expect(result.isValid).toBe(false);
+        expect(result.errors.some(e => e.field === 'timing')).toBe(true);
+    });
+
+    it('accepts a valid unconfirmed timing range alongside a dated event and carries it through', () => {
+        const result = validateGoal({
+            ...baseFields, targetDate: '2026-09-05', eventCategory: 'cycling_event',
+            timing: { earliestDate: '2026-09-05', latestDate: '2026-09-20', planningDate: '2026-09-05' },
+        });
+        expect(result.isValid).toBe(true);
+        expect(result.data?.timing).toEqual({ earliestDate: '2026-09-05', latestDate: '2026-09-20', planningDate: '2026-09-05' });
+    });
+
+    it('accepts a confirmed date once planningDate has been updated to match it', () => {
+        const result = validateGoal({
+            ...baseFields, targetDate: '2026-09-05', eventCategory: 'cycling_event',
+            timing: { earliestDate: '2026-09-05', latestDate: '2026-09-20', planningDate: '2026-09-19', confirmedDate: '2026-09-19' },
+        });
+        expect(result.isValid).toBe(true);
+        expect(result.data?.timing?.confirmedDate).toBe('2026-09-19');
+    });
 });
 
 describe('validateRecommendation', () => {

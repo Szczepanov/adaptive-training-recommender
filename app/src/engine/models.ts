@@ -654,6 +654,12 @@ export interface UserGoal {
     /** No 'rescheduled' state here by design -- rescheduling a goal is just editing
      *  targetDate while it stays 'scheduled'. Defaults to 'scheduled' when eventCategory is set. */
     eventLifecycle?: 'scheduled' | 'completed' | 'DNS' | 'DNF' | 'cancelled';
+    /** Race-date uncertainty (ADR-0012 Task 2.3). Only meaningful alongside targetDate +
+     *  eventCategory -- validated by validateGoal (see validation.ts) and carried through
+     *  goalToUserEvent (periodization.ts) into UserEvent.timing unchanged. Confirming a
+     *  date is a single write that sets both confirmedDate and planningDate together --
+     *  see validateEventTiming's invariant above. */
+    timing?: EventTiming | null;
     schemaVersion: number;
     createdAt: string;
     updatedAt: string;

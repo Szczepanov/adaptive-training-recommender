@@ -210,8 +210,6 @@ export function evaluateReadinessAndSafetyEnvelope(
     mode: 'train' | 'modify' | 'recover';
     envelopes: { safety: SafetyEnvelope; plan: PlanEnvelope };
     telemetry: DecisionScoreTelemetry;
-    maxExecutionDose: number;
-    restrictedModalities: Set<string>;
     alreadyTrainedOverride: boolean;
     fatigueTriggeredRecover: boolean;
     multiDayDriftIsDecisionRelevant: boolean;
@@ -320,8 +318,6 @@ export function evaluateReadinessAndSafetyEnvelope(
         mode,
         envelopes,
         telemetry,
-        maxExecutionDose: 1.0,
-        restrictedModalities: new Set(envelopes.safety.restrictedModalities),
         alreadyTrainedOverride,
         fatigueTriggeredRecover,
         multiDayDriftIsDecisionRelevant,
@@ -333,10 +329,15 @@ export function evaluateTraining(
     readiness: DailyReadiness,
     context: UserContext,
     date: string,
-    previousMode?: 'train' | 'modify' | 'recover'
+    previousMode?: 'train' | 'modify' | 'recover',
+    /** Lets a caller that already ran evaluateReadinessAndSafetyEnvelope (e.g.
+     *  evaluateTrainingWithIntent's empty-candidates fallback) reuse that result instead
+     *  of paying for the same readiness/envelope computation twice. Omit for the normal
+     *  standalone-call case. */
+    precomputedEnvelopeState?: ReturnType<typeof evaluateReadinessAndSafetyEnvelope>
 ): Recommendation {
     const { subjective, objective } = readiness;
-    const state = evaluateReadinessAndSafetyEnvelope(readiness, context, date, previousMode);
+    const state = precomputedEnvelopeState ?? evaluateReadinessAndSafetyEnvelope(readiness, context, date, previousMode);
     const { mode } = state;
     const { envelopes, telemetry, alreadyTrainedOverride, fatigueTriggeredRecover, multiDayDriftIsDecisionRelevant, postRecoverBufferApplied } = state;
 
@@ -491,7 +492,7 @@ export async function evaluateTrainingWithIntent(
         }
     );
     const pick = ranked[0];
-    if (!pick) return evaluateTraining(readiness, context, date, previousMode);
+    if (!pick) return evaluateTraining(readiness, context, date, previousMode, envelopeState);
     const phaseContext = intent.periodization.focusEvent
         ? `${intent.periodization.daysToEvent} days out from ${intent.periodization.focusEvent.title}, ${intent.periodization.phase.phaseName} phase.`
         : `${intent.periodization.phase.phaseName} phase.`;

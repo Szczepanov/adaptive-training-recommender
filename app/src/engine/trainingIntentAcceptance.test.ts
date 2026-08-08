@@ -26,6 +26,13 @@ const roadRace: UserEvent = {
     demandProfile: { aerobicEndurance: 0.8, thresholdPower: 0.9, vo2MaxPower: 0.7, repeatedSurges: 0.9, sprintPower: 0.5, fatigueResistance: 0.9, neuromuscular: 0.5 },
 };
 
+// Matches resolvePlanDefinitionForEvent's narrow id/category/date match (planSchedule.ts)
+// -- the one event buildSeptemberCyclingEventPlan's block calendar was actually authored for.
+const septemberCyclingEvent: UserEvent = {
+    id: 'sep-event-1', title: 'September Cycling Event', date: '2026-09-20', priority: 'A', lifecycle: 'scheduled', category: 'cycling_event',
+    demandProfile: { aerobicEndurance: 0.8, thresholdPower: 0.8, vo2MaxPower: 0.7, repeatedSurges: 0.7, sprintPower: 0.3, fatigueResistance: 0.8, neuromuscular: 0.3 },
+};
+
 describe('day-0 event-intent acceptance', () => {
     it('changes the healthy day-0 selection for an A-priority road race 37 days away and targets an unresolved objective', async () => {
         const input = readiness();
@@ -57,5 +64,20 @@ describe('day-0 event-intent acceptance', () => {
         const titleOnly = evaluateTraining(input, { ...context(), goals: { shortTerm: 'taper aggressively', midTerm: '', longTerm: '' } }, '2026-08-07');
         expect(titleOnly.mode).toBe(ordinary.mode);
         expect(titleOnly.template.category).toBe(ordinary.template.category);
+    });
+});
+
+describe('ADR-0012 explicit PlanDefinition wiring (Phase 2 review fix)', () => {
+    it('resolveTrainingIntent picks up the authored PlanDefinition for the September cycling event, scoped to the active block', async () => {
+        // 2026-08-10 falls inside block_build (2026-08-01..2026-08-23) only.
+        const intent = await resolveTrainingIntent('u1', [septemberCyclingEvent], '2026-08-10', readiness(), 7, fixtureHistory);
+        expect(intent.microcycle.objectives.length).toBeGreaterThan(0);
+        expect(intent.microcycle.objectives.every(o => o.id.startsWith('obj_plan_'))).toBe(true);
+        expect(intent.microcycle.objectives.every(o => o.windowStart === '2026-08-01' && o.windowEnd === '2026-08-23')).toBe(true);
+    });
+
+    it('does not apply the September plan to a different cycling event it was not authored for', async () => {
+        const intent = await resolveTrainingIntent('u1', [roadRace], '2026-08-10', readiness(), 7, fixtureHistory);
+        expect(intent.microcycle.objectives.some(o => o.id.startsWith('obj_plan_'))).toBe(false);
     });
 });

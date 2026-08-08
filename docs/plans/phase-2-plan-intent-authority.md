@@ -1,6 +1,6 @@
 # Phase 2 — Plan intent is the planning authority
 
-* **Status:** Finished (ADR-0012, PlanDefinition, EventTiming, envelope extraction implemented and verified 2026-08-08)
+* **Status:** Finished (ADR-0012, PlanDefinition, EventTiming, envelope extraction implemented and verified 2026-08-08; production wiring for both PlanDefinition and EventTiming, plus date-window scoping, added in PR review the same day — see ADR-0012 §7)
 * **Depends on:** Phase 1 (do not migrate onto an unwired safety gate)
 * **Unlocks:** Phases 3, 4, 5
 * **Addresses:** F16, F17, F9
@@ -47,11 +47,13 @@ exist with no mapping between them.
 
 - [x] ADR-0012 accepted, recording D1 (canonical phase vocabulary) and D2 (`intensityScale` consumer)
 - [x] `PlanDefinition` exists; `generateWeeklyObjectives` consumes it when present
-- [x] `event-plan.ts` has at least one engine-path consumer
+- [x] `event-plan.ts` has at least one *production* engine-path consumer — `resolveTrainingIntent` resolves a `PlanDefinition` via `resolvePlanDefinitionForEvent` (narrow single-event match, see ADR-0012 §7) and threads it into `buildMicrocycleState`, not just the two new unit tests calling `generateWeeklyObjectives` directly
 - [x] `intensityScale` has a named, scheduled consumer (`PlannedDose.intensity`, Phase 4.4)
 - [x] `MicrocycleState.weekStartDate` renamed to `windowStartDate`
 - [x] one readiness/safety envelope function; no discarded template selection
 - [x] Phase 0 invariants still pass; semantic diff explained in the PR authorities
+- [x] `EventTiming` has a real write/read path — `UserGoal.timing` validated by `validateGoal`, persisted/cleared by `goalService.ts`, carried onto `UserEvent.timing` by `goalToUserEvent` — not just validated in isolation by `validateEventTiming`'s own unit tests
+- [x] plan-derived objectives are scoped to the `PlanBlock` active on the current date, not every block in the whole macrocycle at once
 
 ---
 
@@ -295,11 +297,13 @@ there is one path.
 
 - [x] ADR-0012 accepted, recording D1 (canonical phase vocabulary) and D2 (`intensityScale` consumer)
 - [x] `PlanDefinition` exists; `generateWeeklyObjectives` consumes it when present
-- [x] `event-plan.ts` has at least one engine-path consumer
+- [x] `event-plan.ts` has at least one *production* engine-path consumer (see the identical note in the acceptance criteria above)
 - [x] `intensityScale` has a named, scheduled consumer (`PlannedDose.intensity`, Phase 4.4)
 - [x] `MicrocycleState.weekStartDate` renamed to `windowStartDate`
 - [x] one readiness/safety envelope function; no discarded template selection
 - [x] Phase 0 invariants still pass; semantic diff explained in the PR
+- [x] `EventTiming` has a real write/read path, not just isolated validation (see above)
+- [x] plan-derived objectives are date-window scoped (see above)
 
 ## Risks & rollback
 

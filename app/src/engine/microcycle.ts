@@ -16,13 +16,33 @@ export function generateWeeklyObjectives(
     phaseWeights: PhaseWeights,
     windowStartDate: string,
     focusEvent: UserEvent | null,
-    planDefinition?: PlanDefinition | null
+    planDefinition?: PlanDefinition | null,
+    /** Reference date used to select which PlanBlock is "current" for the plan-derived
+     *  branch below -- defaults to windowStartDate so existing callers that only pass 4
+     *  args keep working, but a caller building a forward-looking microcycle (e.g.
+     *  trainingIntent.ts, where windowStartDate is a lookback boundary rather than
+     *  today) should pass today's date explicitly. */
+    asOfDate: string = windowStartDate
 ): MicrocycleState {
     if (planDefinition && planDefinition.objectives.length > 0) {
         const objectives: WeeklyObjective[] = [];
         const blockMap = new Map(planDefinition.blocks.map((b) => [b.id, b]));
+        // Scope to the block(s) actually active on asOfDate -- a PlanDefinition spans the
+        // whole macrocycle (build/travel/peak/taper/race/recovery), and without this an
+        // athlete in the build block would see peak- and taper-block objectives (e.g. a
+        // race-specific-endurance session two months out) as already "unresolved" from
+        // day one. Multiple blocks can be active simultaneously only if the caller passed
+        // an invalid overlapping schedule (buildPlanDefinition rejects that), so this is
+        // normally at most one block.
+        const activeBlockIds = new Set(
+            planDefinition.blocks
+                .filter((b) => b.startDate <= asOfDate && asOfDate <= b.endDate)
+                .map((b) => b.id)
+        );
 
-        planDefinition.objectives.forEach((objDef, idx) => {
+        planDefinition.objectives
+            .filter((objDef) => activeBlockIds.has(objDef.blockId))
+            .forEach((objDef, idx) => {
             const block = blockMap.get(objDef.blockId);
             const windowStart = block?.startDate;
             const windowEnd = block?.endDate;
@@ -70,6 +90,12 @@ export function generateWeeklyObjectives(
                     title = 'VO2 Max Intervals';
                     targetStimulus = { vo2MaxPower: 0.9, aerobicCapacity: 0.5 };
                     break;
+                default: {
+                    // Exhaustiveness guard: a future ObjectiveKey addition must add a case
+                    // above, not silently fall through to the 'Plan Objective' placeholder.
+                    const _exhaustive: never = objDef.key;
+                    void _exhaustive;
+                }
             }
 
             objectives.push({
@@ -295,12 +321,16 @@ export function buildMicrocycleState(
     windowStartDate: string,
     history: CompletedExposure[],
     focusEvent: UserEvent | null,
-    planDefinition?: PlanDefinition | null
+    planDefinition?: PlanDefinition | null,
+    /** See generateWeeklyObjectives's asOfDate -- pass today's date here (not
+     *  windowStartDate, which is a lookback boundary) so a plan-derived microcycle scopes
+     *  to the block actually active today. */
+    asOfDate?: string
 ): MicrocycleState {
     return history.reduce((state, exposure) => {
         if (exposure.stimulusProfile && exposure.modality) {
             return creditObjectivesFromStimulus(state, exposure.stimulusProfile, exposure.modality, exposure.category);
         }
         return updateMicrocycleProgress(state, exposure.trainingRecordLike);
-    }, generateWeeklyObjectives(phase, windowStartDate, focusEvent, planDefinition));
+    }, generateWeeklyObjectives(phase, windowStartDate, focusEvent, planDefinition, asOfDate));
 }

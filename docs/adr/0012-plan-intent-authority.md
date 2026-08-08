@@ -99,6 +99,37 @@ interface PlannedDose {
 ```
 Until Phase 4.5 lands, `intensityScale` remains declared in `PlanBlock` as a scheduled commitment with a named consumer.
 
+### 7. Production Wiring Scope (added in PR review)
+
+Landing the domain objects (`PlanDefinition`, `EventTiming`) without a real path from
+persisted data to the engine would leave `event-plan.ts` without an actual engine-path
+consumer -- the exact problem (F16) this ADR exists to close. This PR therefore wires
+both all the way through, with an explicitly narrow scope for the plan side:
+
+* **`EventTiming` is fully generic.** `UserGoal.timing` is validated on write by
+  `validateGoal` (`validation.ts`), persisted/cleared by `goalService.ts` the same way
+  as `eventCategory`/`eventPreset`/`eventLifecycle`, and carried unchanged onto
+  `UserEvent.timing` by `goalToUserEvent` (`periodization.ts`) -- the only real
+  production constructor of `UserEvent`. `evaluatePeriodizationPhase` already anchored
+  on `event.timing?.planningDate`; that now has real data to read for *any* event a user
+  enters, not just a fixture. There is still no UI for entering/confirming a date range
+  (`Goals.tsx` collects a single `targetDate`) -- that is separate, future work.
+* **`PlanDefinition` is intentionally narrow, not generic.** There is no per-event
+  plan-authoring mechanism or persistence layer yet -- `buildSeptemberCyclingEventPlan`'s
+  block calendar and `requiredCredit` numbers are hand-authored for one specific event.
+  `resolvePlanDefinitionForEvent` (`planSchedule.ts`) matches only that event
+  (`category === 'cycling_event' && date === '2026-09-20'`) and is wired into
+  `resolveTrainingIntent` (`trainingIntent.ts`); every other event continues through the
+  generic `daysToEvent` fallback. Authoring a `PlanDefinition` for an arbitrary
+  user-created event is future work, tracked separately from this ADR's acceptance
+  criteria.
+* **Plan-derived objectives are date-scoped.** `generateWeeklyObjectives`'s plan branch
+  originally returned every objective from every block in the plan regardless of the
+  current date. It now takes an `asOfDate` and returns only the objectives belonging to
+  the block active on that date -- without this, an athlete in the build block would see
+  peak- and taper-block objectives (e.g. a race-specific-endurance session two months
+  out) as already unresolved from day one.
+
 ---
 
 ## Migration and Acceptance Criteria

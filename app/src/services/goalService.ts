@@ -35,12 +35,16 @@ function storedGoalPayload(goal: UserGoal): DocumentData {
         delete payload.eventCategory;
         delete payload.eventPreset;
         delete payload.eventLifecycle;
+        // timing (ADR-0012 Task 2.3) is event-only too -- same rule as eventCategory/
+        // eventPreset/eventLifecycle above.
+        delete payload.timing;
     }
     return payload;
 }
 
 /** Merge writes need explicit field deletions for values that existed on an earlier
- * version of a goal (for example when "This is a race" is unchecked). */
+ * version of a goal (for example when "This is a race" is unchecked, or a confirmed
+ * date is reverted back to an uncertain range). */
 function updatedGoalPayload(goal: UserGoal): DocumentData {
     const payload = storedGoalPayload(goal);
     if (goal.targetDate) payload.category = deleteField();
@@ -48,6 +52,9 @@ function updatedGoalPayload(goal: UserGoal): DocumentData {
         payload.eventCategory = deleteField();
         payload.eventPreset = deleteField();
         payload.eventLifecycle = deleteField();
+        payload.timing = deleteField();
+    } else if (!goal.timing) {
+        payload.timing = deleteField();
     }
     return payload;
 }

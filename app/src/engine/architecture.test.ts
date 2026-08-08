@@ -220,6 +220,33 @@ describe('Architecture & Phased Engine Integration', () => {
             // Blended toward the cycling demand vector, not the flat default base demand
             expect(phase.phase.targetDemandVector.thresholdPower).toBeGreaterThan(0.5);
         });
+
+        // ADR-0012 Task 2.3 (EventTiming) -- goalToUserEvent is the only real production
+        // constructor of UserEvent, so timing must survive that hop unchanged.
+        it('goalToUserEvent carries timing through onto UserEvent when present', () => {
+            const timing = { earliestDate: '2026-09-05', latestDate: '2026-09-20', planningDate: '2026-09-05' };
+            const event = goalToUserEvent({
+                ...baseGoal, targetDate: '2026-09-05', eventCategory: 'cycling_event', timing,
+            });
+            expect(event!.timing).toEqual(timing);
+        });
+
+        it('goalToUserEvent omits timing entirely when the goal has none', () => {
+            const event = goalToUserEvent({ ...baseGoal, targetDate: '2026-09-13', eventCategory: 'cycling_event' });
+            expect(event!.timing).toBeUndefined();
+        });
+
+        it('evaluatePeriodizationPhase anchors on an unconfirmed timing.planningDate rather than the fallback targetDate', () => {
+            // planningDate (earliest possible date) is materially closer than the fallback
+            // targetDate -- if periodization.ts ignored timing, daysToEvent would read 37,
+            // not 10, and the taper/build phase read below would be wrong.
+            const event = goalToUserEvent({
+                ...baseGoal, targetDate: '2026-09-13', eventCategory: 'cycling_event',
+                timing: { earliestDate: '2026-08-17', latestDate: '2026-09-13', planningDate: '2026-08-17' },
+            })!;
+            const phase = evaluatePeriodizationPhase([event], '2026-08-07');
+            expect(phase.daysToEvent).toBe(10);
+        });
     });
 
     describe('Phase 3: Microcycle Objectives', () => {

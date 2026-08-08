@@ -283,26 +283,65 @@ describe('Task 1.2 / F2 Garmin objective crediting', () => {
 });
 
 describe('Task 2.2 PlanDefinition & PlanSchedule', () => {
-  it('generates plan-derived objectives with dated block windows when planDefinition is supplied', async () => {
+  const septemberEvent: UserEvent = {
+    id: 'sep-event-1', title: 'September Cycling Event', date: '2026-09-20', priority: 'A', lifecycle: 'scheduled', category: 'cycling_event',
+    demandProfile: { aerobicEndurance: 0.8, thresholdPower: 0.8, vo2MaxPower: 0.7, repeatedSurges: 0.7, sprintPower: 0.3, fatigueResistance: 0.8, neuromuscular: 0.3 },
+  };
+
+  it('generates plan-derived objectives with dated block windows, scoped to the block active on asOfDate', async () => {
     const { buildSeptemberCyclingEventPlan } = await import('./planSchedule.ts');
     const { generateWeeklyObjectives } = await import('./microcycle.ts');
-    const event: UserEvent = {
-      id: 'sep-event-1', title: 'September Cycling Event', date: '2026-09-20', priority: 'A', lifecycle: 'scheduled', category: 'cycling_event',
-      demandProfile: { aerobicEndurance: 0.8, thresholdPower: 0.8, vo2MaxPower: 0.7, repeatedSurges: 0.7, sprintPower: 0.3, fatigueResistance: 0.8, neuromuscular: 0.3 },
-    };
 
-    const planState = buildSeptemberCyclingEventPlan(event);
+    const planState = buildSeptemberCyclingEventPlan(septemberEvent);
     expect(planState.status).toBe('AVAILABLE');
     if (planState.status !== 'AVAILABLE') return;
 
-    const phase = evaluatePeriodizationPhase([event], '2026-08-03').phase;
-    const microcycle = generateWeeklyObjectives(phase, '2026-08-03', event, planState.data);
+    const phase = evaluatePeriodizationPhase([septemberEvent], '2026-08-03').phase;
+    // asOfDate ('2026-08-03') falls inside block_build (2026-08-01..2026-08-23) only --
+    // the microcycle must not also surface block_peak/block_taper objectives two months
+    // out (that was the Phase 2 review's date-window-scoping finding).
+    const microcycle = generateWeeklyObjectives(phase, '2026-08-03', septemberEvent, planState.data);
 
     expect(microcycle.windowStartDate).toBe('2026-08-03');
-    expect(microcycle.objectives.length).toBe(planState.data.objectives.length);
-    const z2BuildObj = microcycle.objectives.find(o => o.key === 'zone2_aerobic' && o.windowStart === '2026-08-01');
+    const buildObjectiveCount = planState.data.objectives.filter(o => o.blockId === 'block_build').length;
+    expect(microcycle.objectives.length).toBe(buildObjectiveCount);
+    expect(microcycle.objectives.every(o => o.windowStart === '2026-08-01' && o.windowEnd === '2026-08-23')).toBe(true);
+
+    const z2BuildObj = microcycle.objectives.find(o => o.key === 'zone2_aerobic');
     expect(z2BuildObj).toBeDefined();
+    expect(z2BuildObj?.windowStart).toBe('2026-08-01');
     expect(z2BuildObj?.windowEnd).toBe('2026-08-23');
+  });
+
+  it('scopes to a different block when asOfDate falls in the peak window instead', async () => {
+    const { buildSeptemberCyclingEventPlan } = await import('./planSchedule.ts');
+    const { generateWeeklyObjectives } = await import('./microcycle.ts');
+
+    const planState = buildSeptemberCyclingEventPlan(septemberEvent);
+    if (planState.status !== 'AVAILABLE') throw new Error('expected AVAILABLE plan');
+
+    const phase = evaluatePeriodizationPhase([septemberEvent], '2026-09-01').phase;
+    // windowStartDate (lookback boundary) and asOfDate (today) diverge here on purpose --
+    // asOfDate drives block selection, not windowStartDate.
+    const microcycle = generateWeeklyObjectives(phase, '2026-08-25', septemberEvent, planState.data, '2026-09-01');
+
+    const peakObjectiveCount = planState.data.objectives.filter(o => o.blockId === 'block_peak').length;
+    expect(microcycle.objectives.length).toBe(peakObjectiveCount);
+    expect(microcycle.objectives.every(o => o.windowStart === '2026-08-31' && o.windowEnd === '2026-09-06')).toBe(true);
+    expect(microcycle.objectives.some(o => o.key === 'race_specific_endurance')).toBe(true);
+  });
+
+  it('returns no plan-derived objectives when asOfDate falls outside every block', async () => {
+    const { buildSeptemberCyclingEventPlan } = await import('./planSchedule.ts');
+    const { generateWeeklyObjectives } = await import('./microcycle.ts');
+
+    const planState = buildSeptemberCyclingEventPlan(septemberEvent);
+    if (planState.status !== 'AVAILABLE') throw new Error('expected AVAILABLE plan');
+
+    const phase = evaluatePeriodizationPhase([septemberEvent], '2026-07-01').phase;
+    const microcycle = generateWeeklyObjectives(phase, '2026-07-01', septemberEvent, planState.data, '2026-07-01');
+
+    expect(microcycle.objectives).toEqual([]);
   });
 
   it('rejects invalid plan definitions with overlapping blocks', async () => {
@@ -320,6 +359,22 @@ describe('Task 2.2 PlanDefinition & PlanSchedule', () => {
 
     const result = buildPlanDefinition(SEPTEMBER_CYCLING_EVENT_SESSION_COVERAGE, invalidBlocks, event);
     expect(result.status).toBe('INVALID');
+  });
+
+  describe('resolvePlanDefinitionForEvent', () => {
+    it('resolves the authored plan for the specific September cycling event', async () => {
+      const { resolvePlanDefinitionForEvent } = await import('./planSchedule.ts');
+      const resolved = resolvePlanDefinitionForEvent(septemberEvent);
+      expect(resolved).not.toBeNull();
+      expect(resolved?.eventId).toBe(septemberEvent.id);
+    });
+
+    it('returns null for events it was not authored for (narrow, non-generic matching)', async () => {
+      const { resolvePlanDefinitionForEvent } = await import('./planSchedule.ts');
+      expect(resolvePlanDefinitionForEvent(null)).toBeNull();
+      expect(resolvePlanDefinitionForEvent({ ...septemberEvent, category: 'running_race' })).toBeNull();
+      expect(resolvePlanDefinitionForEvent({ ...septemberEvent, date: '2027-09-20' })).toBeNull();
+    });
   });
 });
 
