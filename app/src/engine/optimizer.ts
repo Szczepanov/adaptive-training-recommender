@@ -263,7 +263,11 @@ export function calculateStimulusBenefit(
         return 0.1;
     }
 
-    const stimulusProfile = readStimulusProfile(template.stimulusProfile);
+    const stimulusState = readStimulusProfile(template.stimulusProfile);
+    // A malformed persisted profile is not the same thing as an intentionally empty
+    // stimulus vector. Do not manufacture a neutral score that could still win a tie.
+    if (stimulusState.status !== 'AVAILABLE') return 0;
+    const stimulusProfile = stimulusState.data;
     if (unresolvedObjectives.length === 0) {
         if (template.category === 'Mobility/Recovery') return 0.2;
         if (template.category === 'Technical Skill') return 0.3;

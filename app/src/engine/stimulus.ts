@@ -1,4 +1,5 @@
 import type { DeliveredDose, ObjectiveKey, ObjectiveProgress, PlannerState, WeeklyObjective, WorkoutStimulusProfile } from './models';
+import type { DataState } from './dataState';
 export type { DeliveredDose } from './models';
 
 export interface CreditContext {
@@ -19,17 +20,11 @@ export interface ObjectiveCredit {
  * Canonical fields win unconditionally; legacy fields convert if canonical fields are missing.
  * Disagreements between canonical and legacy fields are logged.
  */
-export function readStimulusProfile(raw: unknown): WorkoutStimulusProfile {
+export function readStimulusProfile(raw: unknown): DataState<WorkoutStimulusProfile> {
     if (!raw || typeof raw !== 'object') {
         return {
-            aerobicEndurance: 0,
-            thresholdPower: 0,
-            vo2MaxPower: 0,
-            repeatedSurges: 0,
-            sprintPower: 0,
-            fatigueResistance: 0,
-            maxStrength: 0,
-            hypertrophy: 0,
+            status: 'INVALID',
+            issues: [{ code: 'stimulus_profile_missing_axes', documentPath: 'completed-training stimulus profile' }],
         };
     }
     const r = raw as Record<string, unknown>;
@@ -49,6 +44,13 @@ export function readStimulusProfile(raw: unknown): WorkoutStimulusProfile {
         r.thresholdDevelopment !== undefined ||
         r.surgeRepeatability !== undefined;
 
+    if (!hasCanonical && !hasLegacy) {
+        return {
+            status: 'INVALID',
+            issues: [{ code: 'stimulus_profile_missing_axes', documentPath: 'completed-training stimulus profile' }],
+        };
+    }
+
     if (hasCanonical && hasLegacy) {
         if (r.aerobicEndurance !== undefined && r.aerobicCapacity !== undefined && r.aerobicEndurance !== r.aerobicCapacity) {
             console.warn(`[readStimulusProfile] Divergence: aerobicEndurance (${r.aerobicEndurance}) vs legacy aerobicCapacity (${r.aerobicCapacity}). Canonical wins.`);
@@ -62,14 +64,18 @@ export function readStimulusProfile(raw: unknown): WorkoutStimulusProfile {
     }
 
     return {
-        aerobicEndurance: (r.aerobicEndurance as number) ?? (r.aerobicCapacity as number) ?? 0,
-        thresholdPower: (r.thresholdPower as number) ?? (r.thresholdDevelopment as number) ?? 0,
-        vo2MaxPower: (r.vo2MaxPower as number) ?? 0,
-        repeatedSurges: (r.repeatedSurges as number) ?? (r.surgeRepeatability as number) ?? 0,
-        sprintPower: (r.sprintPower as number) ?? 0,
-        fatigueResistance: (r.fatigueResistance as number) ?? 0,
-        maxStrength: (r.maxStrength as number) ?? 0,
-        hypertrophy: (r.hypertrophy as number) ?? 0,
+        status: 'AVAILABLE',
+        revision: null,
+        data: {
+            aerobicEndurance: (r.aerobicEndurance as number) ?? (r.aerobicCapacity as number) ?? 0,
+            thresholdPower: (r.thresholdPower as number) ?? (r.thresholdDevelopment as number) ?? 0,
+            vo2MaxPower: (r.vo2MaxPower as number) ?? 0,
+            repeatedSurges: (r.repeatedSurges as number) ?? (r.surgeRepeatability as number) ?? 0,
+            sprintPower: (r.sprintPower as number) ?? 0,
+            fatigueResistance: (r.fatigueResistance as number) ?? 0,
+            maxStrength: (r.maxStrength as number) ?? 0,
+            hypertrophy: (r.hypertrophy as number) ?? 0,
+        },
     };
 }
 
@@ -83,7 +89,17 @@ export function deriveObjectiveCredit(
     dose: DeliveredDose = {},
     context?: CreditContext
 ): ObjectiveCredit {
-    const stimulus = readStimulusProfile(rawStimulus);
+    const stimulusState = readStimulusProfile(rawStimulus);
+    if (stimulusState.status !== 'AVAILABLE') {
+        return {
+            objectiveId: objective.id,
+            objectiveKey: objective.key,
+            earnedCredit: 0,
+            qualifies: false,
+            reason: 'Invalid stimulus profile',
+        };
+    }
+    const stimulus = stimulusState.data;
     const completionRatio = Math.min(1.0, Math.max(0.0, dose.completionRatio ?? 1.0));
     
     // Check qualification constraints if present

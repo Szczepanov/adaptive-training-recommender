@@ -154,7 +154,9 @@ has no usable stimulus vector.
 
 Stimulus profiles use eight required canonical axes. The `readStimulusProfile` persistence
 boundary converts legacy-only records, logs canonical/legacy conflicts, and always lets
-canonical values win. No repository-wide derived VO2 or fatigue-resistance ratios remain.
+canonical values win. A record with neither vocabulary is `DataState.INVALID`; it cannot be
+silently treated as a zero-stimulus workout for credit or optimizer scoring. No
+repository-wide derived VO2 or fatigue-resistance ratios remain.
 
 `completedTraining.ts` scales the existing six-dimensional cost vector by measured duration
 relative to a comparable catalog session and an independently supplied completion ratio.

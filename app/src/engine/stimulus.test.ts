@@ -119,6 +119,11 @@ describe('deriveObjectiveCredit', () => {
         const result = deriveObjectiveCredit({ ...sampleObjective, key: 'zone2_aerobic' }, legacyOnlyStimulus);
         expect(result.earnedCredit).toBe(0.8);
     });
+
+    it('does not credit an invalid stimulus record as if it were a zero-stimulus workout', () => {
+        const result = deriveObjectiveCredit(sampleObjective, null);
+        expect(result).toMatchObject({ earnedCredit: 0, qualifies: false, reason: 'Invalid stimulus profile' });
+    });
 });
 
 describe('readStimulusProfile', () => {
@@ -134,7 +139,7 @@ describe('readStimulusProfile', () => {
             hypertrophy: 0.3,
         };
         const profile = readStimulusProfile(canonical);
-        expect(profile).toEqual(canonical);
+        expect(profile).toMatchObject({ status: 'AVAILABLE', data: canonical });
     });
 
     it('converts legacy-only fields without applying derived fallbacks', () => {
@@ -144,11 +149,13 @@ describe('readStimulusProfile', () => {
             surgeRepeatability: 0.5,
         };
         const profile = readStimulusProfile(legacy);
-        expect(profile.aerobicEndurance).toBe(0.8);
-        expect(profile.thresholdPower).toBe(0.6);
-        expect(profile.repeatedSurges).toBe(0.5);
-        expect(profile.vo2MaxPower).toBe(0); // derived multiplier deleted
-        expect(profile.fatigueResistance).toBe(0); // derived multiplier deleted
+        expect(profile.status).toBe('AVAILABLE');
+        if (profile.status !== 'AVAILABLE') throw new Error('Expected available legacy profile');
+        expect(profile.data.aerobicEndurance).toBe(0.8);
+        expect(profile.data.thresholdPower).toBe(0.6);
+        expect(profile.data.repeatedSurges).toBe(0.5);
+        expect(profile.data.vo2MaxPower).toBe(0); // derived multiplier deleted
+        expect(profile.data.fatigueResistance).toBe(0); // derived multiplier deleted
     });
 
     it('prefers canonical values and logs when canonical and legacy fields conflict', () => {
@@ -157,13 +164,12 @@ describe('readStimulusProfile', () => {
             aerobicCapacity: 0.4,
         };
         const profile = readStimulusProfile(conflicting);
-        expect(profile.aerobicEndurance).toBe(0.9);
+        expect(profile).toMatchObject({ status: 'AVAILABLE', data: { aerobicEndurance: 0.9 } });
     });
 
-    it('returns zero canonical profile for empty/null inputs', () => {
+    it('returns INVALID for empty/null inputs', () => {
         const profile = readStimulusProfile(null);
-        expect(profile.aerobicEndurance).toBe(0);
-        expect(profile.thresholdPower).toBe(0);
+        expect(profile).toMatchObject({ status: 'INVALID', issues: [{ code: 'stimulus_profile_missing_axes' }] });
     });
 });
 

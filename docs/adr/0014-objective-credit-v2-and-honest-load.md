@@ -22,7 +22,9 @@ aerobic-load context, or event context until those signals are collected with pr
 
 `WorkoutStimulusProfile` has eight required canonical axes. Persisted legacy-only records
 are converted at `readStimulusProfile`; canonical values always win, conflicts are logged,
-and the former repository-wide `0.8` and `0.7` derivations are not recreated.
+and the former repository-wide `0.8` and `0.7` derivations are not recreated. A record
+with neither vocabulary is `DataState.INVALID`, never a zero-stimulus profile; it cannot
+earn objective credit or receive a manufactured optimizer benefit.
 
 Completed-load cost is the existing six-dimensional base cost scaled by delivered duration
 relative to a comparable catalog session and, where independently supplied, completion
