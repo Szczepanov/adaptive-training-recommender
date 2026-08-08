@@ -34,6 +34,16 @@ export interface TrainingIntent {
     executionModifier?: ExecutionModifier | null;
 }
 
+const MAX_PLANNED_VOLUME = 1;
+const MAX_PLANNED_INTENSITY = 1.2;
+
+function boundedPlannedDose(volume: number, intensity: number): PlannedDose {
+    return {
+        volume: Math.max(0, Math.min(MAX_PLANNED_VOLUME, Number.isFinite(volume) ? volume : 0)),
+        intensity: Math.max(0, Math.min(MAX_PLANNED_INTENSITY, Number.isFinite(intensity) ? intensity : 0)),
+    };
+}
+
 /**
  * Generic-mode fallback for events without an authored PlanDefinition. Volume retains the
  * existing objective-urgency calculation; intensity follows the generic periodization phase.
@@ -44,16 +54,17 @@ export function resolvePlannedDose(
     unresolvedObjectives: readonly WeeklyObjective[],
 ): PlannedDose {
     const urgency = objectives.length === 0 ? 0 : unresolvedObjectives.length / objectives.length;
-    return {
-        volume: Math.max(0, Math.min(1, (phase.volumeScale / 1.1) * (0.7 + (0.3 * urgency)))),
-        intensity: Math.max(0, phase.intensityScale),
-    };
+    return boundedPlannedDose(
+        (phase.volumeScale / 1.1) * (0.7 + (0.3 * urgency)),
+        phase.intensityScale,
+    );
 }
 
 /**
  * Single ownership rule for planned dose. In ADR-0012 explicit mode the active authored
- * PlanBlock owns BOTH dimensions exactly; generic days-to-event periodization is used only
- * when no authored block is active for this event/date.
+ * PlanBlock owns BOTH dimensions, bounded only by the persisted PlannedDose contract;
+ * generic days-to-event periodization is used only when no authored block is active for
+ * this event/date.
  */
 export function resolvePlannedDoseForDate(
     phase: { volumeScale: number; intensityScale: number },
@@ -64,10 +75,7 @@ export function resolvePlannedDoseForDate(
 ): PlannedDose {
     const activeBlock = planDefinition?.blocks.find(block => block.startDate <= date && date <= block.endDate);
     if (activeBlock) {
-        return {
-            volume: Math.max(0, activeBlock.volumeScale),
-            intensity: Math.max(0, activeBlock.intensityScale),
-        };
+        return boundedPlannedDose(activeBlock.volumeScale, activeBlock.intensityScale);
     }
     return resolvePlannedDose(phase, objectives, unresolvedObjectives);
 }
@@ -99,15 +107,10 @@ export async function resolveTrainingIntent(
     preparedHistorySnapshot?: TrainingHistorySnapshot | null,
 ): Promise<TrainingIntent> {
     const periodization = evaluatePeriodizationPhase(events, date);
-    // The production provider is dynamically loaded only when necessary. This keeps
-    // Firebase configuration entirely outside deterministic engine-test imports.
     const historySnapshot = preparedHistorySnapshot
         ?? await prepareTrainingHistorySnapshot(userId, date, windowDays, historyProvider);
     const provider = historyProvider ?? (await import('./firestoreTrainingHistory')).firestoreTrainingHistoryProvider;
     const history = historySnapshot?.exposures ?? await provider.reconstruct(userId, date, windowDays);
-    // ADR-0012 "Explicit Mode": when the focus event has an authored PlanDefinition,
-    // its dated block calendar is the planning authority instead of the generic
-    // daysToEvent fallback -- see resolvePlanDefinitionForEvent's narrow matching rule.
     const planDefinition = resolvePlanDefinitionForEvent(periodization.focusEvent);
     const microcycle = buildMicrocycleState(
         periodization.phase,
