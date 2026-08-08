@@ -3,6 +3,7 @@ import type {
     SessionHistoryEntry,
     SessionRole,
     SessionTemplate,
+    UserContext,
     UserEvent,
     UserPreferences,
     WeeklyObjective,
@@ -10,6 +11,7 @@ import type {
     WorkoutStimulusProfile,
 } from './models';
 import type { ResolvedAvailability } from './schedule';
+import { resolveAvailability } from './schedule';
 import { addDaysToLocalDateString, getDayDiff, getLocalDateString } from '../utils/localDate';
 
 const STRENGTH_CATEGORIES: SessionTemplate['category'][] = [
@@ -48,6 +50,15 @@ export interface OptimizationOptions {
     recentHistory?: (RecentHistoryEntry | SessionHistoryEntry)[];
     anchorRole?: 'event-specific' | 'quality' | null;
     adjacentToAnchor?: boolean;
+}
+
+export interface OptimizationContext {
+    unresolvedObjectives: WeeklyObjective[];
+    fatigueState: FatigueState;
+    availability: ResolvedAvailability;
+    injuryConstraints: string[];
+    preferences: UserPreferences;
+    options: OptimizationOptions;
 }
 
 const INTENSITY_STACK_THRESHOLD = 0.5;
@@ -289,6 +300,61 @@ export function calculateFatigueCostPenalty(
     const neuroPenalty = costProfile.neuromuscular * combined.neuromuscular * 1.8;
 
     return systemicPenalty + cardioPenalty + lowerBodyPenalty + upperBodyPenalty + impactPenalty + neuroPenalty;
+}
+
+export function buildOptimizationContext(
+    intent: {
+        unresolvedObjectives: WeeklyObjective[];
+        fatigue: FatigueState;
+        periodization?: { focusEvent?: UserEvent | null } | null;
+        history?: (RecentHistoryEntry | SessionHistoryEntry | any)[];
+    },
+    context: UserContext,
+    preferences: UserPreferences | null,
+    date: string,
+    options: Partial<OptimizationOptions> = {}
+): OptimizationContext {
+    const basePrefs = preferences ?? DEFAULT_PREFERENCES;
+    const userId = (context.trainingSettings?.userId && context.trainingSettings.userId !== '')
+        ? context.trainingSettings.userId
+        : (basePrefs.userId ?? '');
+    const effectivePreferences: UserPreferences = {
+        ...basePrefs,
+        userId,
+    };
+
+    const availability = resolveAvailability(date, null, [], context);
+    const injuryConstraints = context.constraints?.restrictedModalities ?? [];
+
+    const rawHistory = options.recentHistory ?? (intent.history ?? []).map(e => ({
+        date: ('completedDate' in e ? (e as any).completedDate : e.date) ?? date,
+        templateId: e.templateId,
+        category: e.category,
+        modality: e.modality ?? ('trainingRecordLike' in e ? (e as any).trainingRecordLike?.type : e.type),
+        role: e.role,
+        systemicCost: e.systemicCost ?? ('costProfile' in e ? (e as any).costProfile?.systemic : 0) ?? 0,
+        lowerBodyCost: ('lowerBodyCost' in e && typeof e.lowerBodyCost === 'number')
+            ? e.lowerBodyCost
+            : ('costProfile' in e ? (e as any).costProfile?.lowerBody : 0) ?? 0,
+        type: e.type ?? ('trainingRecordLike' in e ? (e as any).trainingRecordLike?.type : undefined),
+    }));
+
+    const optimizationOptions: OptimizationOptions = {
+        date,
+        focusEvent: options.focusEvent ?? intent.periodization?.focusEvent ?? null,
+        recentHistory: rawHistory,
+        anchorRole: options.anchorRole ?? null,
+        adjacentToAnchor: options.adjacentToAnchor ?? false,
+    };
+
+    return {
+        unresolvedObjectives: intent.unresolvedObjectives ?? [],
+        fatigueState: intent.fatigue,
+        availability,
+        injuryConstraints,
+        preferences: effectivePreferences,
+        options: optimizationOptions,
+    };
 }
 
 /**

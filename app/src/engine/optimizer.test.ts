@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { rankCandidates, rankCandidatesByUtility } from './optimizer';
+import { buildOptimizationContext, rankCandidates, rankCandidatesByUtility } from './optimizer';
 import { ENRICHED_TEMPLATES } from './templates';
 import type { FatigueState, SessionTemplate, UserPreferences, WeeklyObjective } from './models';
 import type { ResolvedAvailability } from './schedule';
@@ -19,6 +19,7 @@ const DEFAULT_AVAILABILITY: ResolvedAvailability = {
 };
 
 const DEFAULT_PREFERENCES: UserPreferences = {
+    userId: 'user_default',
     avoidedModalities: [],
     deprioritizedModalities: [],
     preferredModalities: [],
@@ -146,5 +147,51 @@ describe('optimizer — lexicographic ordering (3.2)', () => {
         expect(result.accepted).toHaveLength(0);
         expect(result.rejected).toHaveLength(1);
         expect(result.rejected[0].excludedReasons).toContain('TIME_BUDGET_EXCEEDED');
+    });
+});
+
+describe('optimizer — one optimizer invocation context (F4 / 3.3)', () => {
+    it('buildOptimizationContext produces equivalent context from intent and context inputs', () => {
+        const intent = {
+            unresolvedObjectives: [],
+            fatigue: DEFAULT_FATIGUE,
+            periodization: { focusEvent: null },
+            history: [{ date: '2026-03-01', modality: 'Cycling', category: 'Hard Endurance', systemicCost: 0.8, lowerBodyCost: 0.5 }],
+        };
+        const context = {
+            trainingSettings: { userId: 'user_1', defaults: { weekdayMaxMinutes: 60, weekendMaxMinutes: 90 } },
+            constraints: { restrictedModalities: ['Running'] },
+            preferences: DEFAULT_PREFERENCES,
+        } as any;
+
+        const optContext = buildOptimizationContext(intent, context, DEFAULT_PREFERENCES, '2026-03-05');
+
+        expect(optContext.injuryConstraints).toEqual(['Running']);
+        expect(optContext.preferences.userId).toBe('user_1');
+        expect(optContext.options.date).toBe('2026-03-05');
+        expect(optContext.options.recentHistory).toHaveLength(1);
+    });
+
+    it('returns identical ranking when given identical OptimizationContext', () => {
+        const template = ENRICHED_TEMPLATES.find(t => (t.requiredEquipment ?? []).length === 0)!;
+        const intent = {
+            unresolvedObjectives: [],
+            fatigue: DEFAULT_FATIGUE,
+            periodization: { focusEvent: null },
+            history: [],
+        };
+        const context = {
+            trainingSettings: { userId: 'user_1', defaults: { weekdayMaxMinutes: 60, weekendMaxMinutes: 90 } },
+            constraints: { restrictedModalities: [] },
+            preferences: DEFAULT_PREFERENCES,
+        } as any;
+
+        const optCtx1 = buildOptimizationContext(intent, context, DEFAULT_PREFERENCES, '2026-03-05');
+        const optCtx2 = buildOptimizationContext(intent, context, DEFAULT_PREFERENCES, '2026-03-05');
+
+        const res1 = rankCandidates([template], optCtx1.unresolvedObjectives, optCtx1.fatigueState, optCtx1.availability, optCtx1.injuryConstraints, optCtx1.preferences, optCtx1.options);
+        const res2 = rankCandidates([template], optCtx2.unresolvedObjectives, optCtx2.fatigueState, optCtx2.availability, optCtx2.injuryConstraints, optCtx2.preferences, optCtx2.options);
+
+        expect(res1.accepted[0].utilityScore).toEqual(res2.accepted[0].utilityScore);
     });
 });
