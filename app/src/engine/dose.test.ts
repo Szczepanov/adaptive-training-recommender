@@ -21,15 +21,24 @@ describe('resolveExecutionDose', () => {
     });
 
     it('intersects every request with the clinical/readiness ceiling', () => {
-        expect(resolveExecutionDose(dose(0.9), envelope('Easy'), null).volume).toBe(0.5);
-        expect(resolveExecutionDose(dose(0.9), envelope('Easy'), 'harder').volume).toBe(0.5);
-        expect(resolveExecutionDose(dose(0.4), envelope('Easy'), 'harder').volume).toBe(0.5);
-        expect(resolveExecutionDose(dose(0.4), envelope('Easy'), 'easier').volume).toBeCloseTo(0.25);
-        expect(resolveExecutionDose(dose(0.9), envelope('Rest'), 'easier').volume).toBe(0);
+        expect(resolveExecutionDose(dose(0.9), envelope('Easy'), null)?.volume).toBe(0.5);
+        expect(resolveExecutionDose(dose(0.9), envelope('Easy'), 'harder')?.volume).toBe(0.5);
+        expect(resolveExecutionDose(dose(0.4), envelope('Easy'), 'harder')?.volume).toBe(0.5);
+        expect(resolveExecutionDose(dose(0.4), envelope('Easy'), 'easier')?.volume).toBeCloseTo(0.25);
+        expect(resolveExecutionDose(dose(0.9), envelope('Rest'), 'easier')?.volume).toBe(0);
     });
 
-    it('normalizes invalid plan inputs to the supported 0..1 range', () => {
-        expect(resolveExecutionDose(dose(-1), envelope('Hard'), null).volume).toBe(0);
-        expect(resolveExecutionDose(dose(2), envelope('Hard'), null).volume).toBe(1);
+    it('fails closed for planned volume outside the persisted audit contract', () => {
+        expect(resolveExecutionDose(dose(-1), envelope('Hard'), null)).toBeUndefined();
+        expect(resolveExecutionDose(dose(2), envelope('Hard'), null)).toBeUndefined();
+    });
+
+    it('fails closed for non-finite volume or intensity and intensity above 1.2', () => {
+        expect(resolveExecutionDose(dose(Number.NaN, 1), envelope('Hard'), null)).toBeUndefined();
+        expect(resolveExecutionDose(dose(Number.POSITIVE_INFINITY, 1), envelope('Hard'), null)).toBeUndefined();
+        expect(resolveExecutionDose(dose(0.7, Number.NaN), envelope('Hard'), null)).toBeUndefined();
+        expect(resolveExecutionDose(dose(0.7, Number.POSITIVE_INFINITY), envelope('Hard'), null)).toBeUndefined();
+        expect(resolveExecutionDose(dose(0.7, 1.21), envelope('Hard'), null)).toBeUndefined();
+        expect(resolveExecutionDose(dose(Number.NaN, Number.POSITIVE_INFINITY), envelope('Hard'), null)).toBeUndefined();
     });
 });
