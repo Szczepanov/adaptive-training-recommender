@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { deriveObjectiveCredit, getUnresolvedObjectivesV2, readStimulusProfile } from './stimulus';
 import type { PlannerState, WeeklyObjective, WorkoutStimulusProfile } from './models';
 
@@ -103,10 +103,9 @@ describe('deriveObjectiveCredit', () => {
         expect(vo2Result.earnedCredit).toBe(0.6);
 
         const strengthResult = deriveObjectiveCredit({ ...sampleObjective, key: 'strength_maintenance' }, richStimulus);
-        expect(strengthResult.earnedCredit).toBe(0.9); // max(maxStrength, hypertrophy)
+        expect(strengthResult.earnedCredit).toBe(0.9);
 
         const raceSpecificResult = deriveObjectiveCredit({ ...sampleObjective, key: 'race_specific_endurance' }, richStimulus);
-        // max(fatigueResistance, 0.5*aerobicEndurance + 0.5*repeatedSurges) = max(0.55, 0.45)
         expect(raceSpecificResult.earnedCredit).toBe(0.55);
     });
 
@@ -154,17 +153,37 @@ describe('readStimulusProfile', () => {
         expect(profile.data.aerobicEndurance).toBe(0.8);
         expect(profile.data.thresholdPower).toBe(0.6);
         expect(profile.data.repeatedSurges).toBe(0.5);
-        expect(profile.data.vo2MaxPower).toBe(0); // derived multiplier deleted
-        expect(profile.data.fatigueResistance).toBe(0); // derived multiplier deleted
+        expect(profile.data.vo2MaxPower).toBe(0);
+        expect(profile.data.fatigueResistance).toBe(0);
     });
 
-    it('prefers canonical values and logs when canonical and legacy fields conflict', () => {
-        const conflicting = {
-            aerobicEndurance: 0.9,
-            aerobicCapacity: 0.4,
-        };
-        const profile = readStimulusProfile(conflicting);
-        expect(profile).toMatchObject({ status: 'AVAILABLE', data: { aerobicEndurance: 0.9 } });
+    it('prefers canonical values and emits one divergence warning for the conflicting axis', () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+        try {
+            const conflicting = {
+                aerobicEndurance: 0.9,
+                aerobicCapacity: 0.4,
+            };
+            const profile = readStimulusProfile(conflicting);
+            expect(profile).toMatchObject({ status: 'AVAILABLE', data: { aerobicEndurance: 0.9 } });
+            expect(warn).toHaveBeenCalledTimes(1);
+            expect(warn).toHaveBeenCalledWith(expect.stringContaining('aerobicEndurance (0.9) vs legacy aerobicCapacity (0.4)'));
+        } finally {
+            warn.mockRestore();
+        }
+    });
+
+    it.each([
+        [{ aerobicEndurance: -0.01 }, 'aerobicEndurance'],
+        [{ aerobicEndurance: 1.01 }, 'aerobicEndurance'],
+        [{ aerobicEndurance: Number.NaN }, 'aerobicEndurance'],
+        [{ aerobicEndurance: Number.POSITIVE_INFINITY }, 'aerobicEndurance'],
+        [{ aerobicCapacity: Number.NEGATIVE_INFINITY }, 'aerobicCapacity'],
+    ])('returns INVALID for out-of-contract numeric input %#', (raw, field) => {
+        const profile = readStimulusProfile(raw);
+        expect(profile.status).toBe('INVALID');
+        if (profile.status !== 'INVALID') throw new Error('Expected invalid profile');
+        expect(profile.issues).toContainEqual(expect.objectContaining({ code: 'stimulus_profile_invalid_axis', field }));
     });
 
     it('returns INVALID for empty/null inputs', () => {
@@ -208,8 +227,6 @@ describe('getUnresolvedObjectivesV2', () => {
 
     it('falls back to the objective\'s own completedExposures when no progress entry is supplied', () => {
         const unresolved = getUnresolvedObjectivesV2(basePlannerState, []);
-        // obj_a: completedExposures 0 < requiredCredit 1 -> unresolved.
-        // obj_b: completedExposures 1 >= requiredCredit 1 -> resolved.
         expect(unresolved.map(o => o.id)).toEqual(['obj_a']);
     });
 });
