@@ -179,22 +179,25 @@ export function projectFatigueForRankingDate(
  * rest/recovery day. 0.6 remains the modify boundary. */
 export const PROJECTED_FATIGUE_RECOVER_THRESHOLD = 0.65;
 export const PROJECTED_FATIGUE_MODIFY_THRESHOLD = 0.6;
-const PROJECTED_MODIFY_MAX_SYSTEMIC_COST = 0.5;
+// Exported for reuse by sequenceSearch.ts's beam-search prototype (Phase 5.1) -- these
+// three are pure, stable helpers with no state of their own; exporting them keeps one
+// source of truth instead of a second copy of the fatigue-tier gating logic.
+export const PROJECTED_MODIFY_MAX_SYSTEMIC_COST = 0.5;
 
-function maxFatigueDimension(fatigue: DimensionalFatigue): number {
+export function maxFatigueDimension(fatigue: DimensionalFatigue): number {
     return Math.max(
         fatigue.systemic, fatigue.cardiovascular, fatigue.lowerBody,
         fatigue.upperBody, fatigue.impactTissue, fatigue.neuromuscular
     );
 }
 
-function fatigueTierFor(peakFatigue: number): 'train' | 'modify' | 'recover' {
+export function fatigueTierFor(peakFatigue: number): 'train' | 'modify' | 'recover' {
     if (peakFatigue >= PROJECTED_FATIGUE_RECOVER_THRESHOLD) return 'recover';
     if (peakFatigue >= PROJECTED_FATIGUE_MODIFY_THRESHOLD) return 'modify';
     return 'train';
 }
 
-const NEUTRAL_PREFERENCES: UserPreferences = {
+export const NEUTRAL_PREFERENCES: UserPreferences = {
     userId: '',
     preferredRecoveryStyle: 'mixed',
     defaultWeekdayTimeMin: 45,
@@ -211,15 +214,15 @@ const NEUTRAL_PREFERENCES: UserPreferences = {
     updatedAt: '',
 };
 
-function displayModeFromCategory(category: SessionTemplate['category']): 'train' | 'recover' {
+export function displayModeFromCategory(category: SessionTemplate['category']): 'train' | 'recover' {
     return category === 'Rest' || category === 'Mobility/Recovery' ? 'recover' : 'train';
 }
 
-function enrichedCostProfile(templateId: string): WorkoutCostProfile {
+export function enrichedCostProfile(templateId: string): WorkoutCostProfile {
     return ENRICHED_TEMPLATES.find(t => t.id === templateId)?.costProfile ?? ZERO_COST;
 }
 
-function enrichedStimulusProfile(template: SessionTemplate): WorkoutStimulusProfile {
+export function enrichedStimulusProfile(template: SessionTemplate): WorkoutStimulusProfile {
     return template.stimulusProfile ?? ENRICHED_TEMPLATES.find(t => t.id === template.id)?.stimulusProfile ?? ZERO_STIMULUS;
 }
 
@@ -281,7 +284,7 @@ export function applyProjectedObjectiveCredits(
     };
 }
 
-function isAdjacentDate(date: string, anchorDate: string | null): boolean {
+export function isAdjacentDate(date: string, anchorDate: string | null): boolean {
     if (!anchorDate) return false;
     return addDaysToLocalDateString(date, 1) === anchorDate || addDaysToLocalDateString(date, -1) === anchorDate;
 }

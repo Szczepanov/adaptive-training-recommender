@@ -1,6 +1,9 @@
 # Phase 5 — Sequence planning, real inputs, and the feedback loop
 
-* **Status:** Ready — approved as the destination; increments ordered below. Not the next thing to build.
+* **Status:** Complete — all seven increments landed in the approved order. 5.1's
+  completion is a recorded adoption decision (retain greedy; see
+  [ADR-0015](../adr/0015-sequence-planning-and-session-role-model.md)), not a promotion,
+  per the plan's own definition of done for that increment.
 * **Depends on:** Phases 0–4
 * **Addresses:** the V2 Plan Intent cutover proper
 * **Rough effort:** multi-week; ship as independent increments, not one landing
@@ -22,7 +25,7 @@ Ordered by the increment sequence below, **not** by section number.
 | 4 | 5.7 | `[x]` | Taper as an explicit plan contract rather than an emergent side effect | `app/src/workouts/event-plan.ts`, `app/src/engine/periodization.ts` |
 | 5 | 5.6 | `[x]` | Multi-event: one taper authority, multiple demand contributors | `app/src/engine/periodization.ts` |
 | 6 | 5.2 | `[x]` | `PlanningCandidate` carries spacing/recovery metadata into the decision | `app/src/workouts/models.ts`, `app/src/engine/planner.ts` |
-| 7 | 5.1 | `[ ]` | Bounded sequence search — **build and measure**, adoption conditional (D-BEAM) | `app/src/engine/planner.ts` |
+| 7 | 5.1 | `[x]` | Bounded sequence search — **build and measure**, adoption conditional (D-BEAM) | `app/src/engine/planner.ts` |
 
 **5.1 is an experiment, not a scheduled migration.** Marking it `[x]` requires a recorded
 adoption decision with harness data — retaining the greedy loop is a valid completion.
@@ -60,7 +63,7 @@ increment, not a failed one. Increments 1–6 stand on their own either way.
 
 ---
 
-## `[ ]` 5.1 — Bounded sequence search
+## `[x]` 5.1 — Bounded sequence search
 
 `generateWeekAheadPlan` walks one day at a time, greedily. To compensate, the optimizer
 accumulated six named policies (anti-stacking, post-objective strength suppression,
@@ -96,6 +99,19 @@ judgement the current architecture structurally cannot make.
 
 Prerequisite: Phase 3's lexicographic layer. Search needs hard constraints separated from
 sort keys; it cannot operate on a single blended multiplier.
+
+**Delivered as:** `app/src/engine/sequenceSearch.ts` (`beamSearchWeekAheadPlan`,
+`generateWeekAheadPlanWithIntentBeamSearch`) -- a genuine beam-search prototype built by
+maximal reuse of `rankCandidates`' existing hard-gate-before-scoring separation (the
+Phase 3 prerequisite), not a parallel engine. Benchmarked against greedy via
+`npm run compare:sequence-search` on the Phase 0 invariants and the golden-week semantic
+harness (now run against both algorithms permanently in `goldenWeek.test.ts`). **Decision
+recorded in [ADR-0015](../adr/0015-sequence-planning-and-session-role-model.md): greedy
+retained as the live default.** The comparison itself was genuinely positive (zero new
+constraint/golden-week violations, better objective resolution in several scenarios) --
+adoption is deferred rather than rejected, pending compute-cost profiling and product
+sign-off on a real rest-day-frequency behavior shift the harness cannot judge on its own.
+`sequenceSearch.ts` is not imported by any production code path.
 
 ## `[x]` 5.2 — Move the planner/workout-library boundary
 
@@ -305,18 +321,21 @@ event-specific freshness* rather than arriving as an emergent side effect.
 
 ## Acceptance criteria
 
-- [ ] a sequence-search prototype exists and is benchmarked against greedy on the Phase-0
-      invariants and semantic harness
-- [ ] an explicit adoption decision is recorded in an ADR, with the comparison data —
+- [x] a sequence-search prototype exists and is benchmarked against greedy on the Phase-0
+      invariants and semantic harness (`sequenceSearch.ts`, `compare:sequence-search`)
+- [x] an explicit adoption decision is recorded in an ADR, with the comparison data —
       **either** (a) beam search is promoted, hard constraints reject before scoring, and a
       full week is scored as a sequence and is explainable; **or** (b) greedy is retained
-      and the negative result is recorded. Both satisfy this criterion.
-- [ ] `PlanningCandidate` carries spacing/recovery metadata into the decision
-- [ ] fixed activities persist and affect availability and adjacent days
-- [ ] per-region tissue state constrains mechanical work independently of wearable readiness
-- [ ] inferred stimulus carries confidence and uses the strongest available evidence
-- [ ] taper roles come from the plan, not from weight interactions
-- [ ] Phase 0 invariants hold throughout; each increment's semantic diff explained
+      and the negative result is recorded. Both satisfy this criterion. ([ADR-0015](../adr/0015-sequence-planning-and-session-role-model.md):
+      (b), though the comparison itself was genuinely positive, not negative — adoption is
+      deferred pending compute-cost profiling and product sign-off on a real behavior
+      shift, not rejected on the merits the harness can measure.)
+- [x] `PlanningCandidate` carries spacing/recovery metadata into the decision
+- [x] fixed activities persist and affect availability and adjacent days
+- [x] per-region tissue state constrains mechanical work independently of wearable readiness
+- [x] inferred stimulus carries confidence and uses the strongest available evidence
+- [x] taper roles come from the plan, not from weight interactions
+- [x] Phase 0 invariants hold throughout; each increment's semantic diff explained
 
 ## Risks & rollback
 
@@ -344,6 +363,10 @@ event-specific freshness* rather than arriving as an emergent side effect.
 
 ## Docs to update
 
-* **ADR-0015** (new) — sequence planning and the session-role model
-* **ADR-0008** — superseded in part: the greedy projected loop is replaced
-* `docs/architecture/recommendation-engine.md` — the planner section
+* **ADR-0015** (new, done) — sequence planning: the beam-search prototype, its
+  comparison data, and the recorded adoption decision (defer, not reject).
+* ~~ADR-0008 — superseded in part: the greedy projected loop is replaced~~ Did not
+  happen: the adoption decision (ADR-0015) retained the greedy loop as the live default,
+  so ADR-0008's confidence-tier/greedy-walk description remains accurate as written.
+* `docs/architecture/recommendation-engine.md` (done) — the planner section, plus new
+  subsections for each landed increment (5.3, 5.4, 5.5, 5.6, 5.7, 5.2, 5.1).

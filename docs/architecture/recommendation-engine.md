@@ -388,6 +388,22 @@ shifting a movable placeholder. See
 [docs/plans/phase-5-sequence-planning.md](../plans/phase-5-sequence-planning.md) 5.3 for
 the full storage/validation contract.
 
+### Bounded sequence search prototype (Phase 5.1, `sequenceSearch.ts`) -- not live
+
+The "projected" tier above is a greedy walk: each day takes `rankCandidates`' rank-0 pick
+with no visibility into how that choice constrains later days. `sequenceSearch.ts`'s
+`beamSearchWeekAheadPlan` is a bounded beam-search prototype (width 15, 5 candidates/day
+by default) that scores whole partial sequences instead, reusing `rankCandidates`'
+existing hard-gate-before-scoring separation rather than reimplementing it. Benchmarked
+against greedy on the Phase 0 invariants and semantic scenario harness
+(`npm run compare:sequence-search`): zero new hard-constraint or golden-week violations,
+and strictly better weekly-objective resolution in several scenarios, at a real ~5.7x
+compute cost and a materially lower rest-day frequency the harness can't judge as better
+or worse on its own. **Adoption is deferred, not rejected** -- see
+[ADR-0015](../adr/0015-sequence-planning-and-session-role-model.md) for the full
+comparison data and reasoning. Greedy (`generateWeekAheadPlan`) remains the live default;
+`sequenceSearch.ts` is not imported by any production code path.
+
 ---
 
 ## Verification & audit tooling
@@ -397,6 +413,9 @@ Executed via `cd app && npm run simulate:scenarios`. Runs synthetic athlete scen
 
 ### Recommendation decision replay (`replay:recommendation`)
 Executed via `cd app && npm run replay:recommendation -- <audit.json>`. Accepts a JSON snapshot of a historical recommendation and passes it into `replayRecommendationAudit()` ([`app/src/engine/replay.ts`](../../app/src/engine/replay.ts)). The current policy version can be verified for reproducibility. Known historical policy versions remain auditable but are explicitly rejected as executable replay unless that historical decision function is bundled in a future build.
+
+### Sequence-search comparison (`compare:sequence-search`)
+Executed via `cd app && npm run compare:sequence-search`. Runs every scenario through both the production greedy planner and the Phase 5.1 beam-search prototype ([`app/src/engine/sequenceSearch.ts`](../../app/src/engine/sequenceSearch.ts)) using the identical `runScenario` harness, and reports the comparison (rest-day share, constraint violations, golden-week invariants, per-scenario deltas, timing). Outputs `comparison.json` to `app/artifacts/sequence-search-comparison/` (gitignored, regenerable). See [ADR-0015](../adr/0015-sequence-planning-and-session-role-model.md).
 
 ---
 
