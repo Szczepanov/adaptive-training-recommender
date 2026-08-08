@@ -42,6 +42,24 @@ describe('completed training reconciliation', () => {
         expect(events[0]).toMatchObject({ sources: ['adherence'], linkedActivityId: null, modality: 'Cycling' });
     });
 
+    it('classifies a standalone adherence-confirmed, catalog-matched session as exact confidence', () => {
+        // No corroborating Garmin activity at all -- the athlete self-confirmed following a
+        // real catalog template. Per docs/plans/phase-1-live-defects.md Task 1.2(c): "exact
+        // for adherence-confirmed catalog templates" -- this must not fall back to 'inferred'
+        // just because there's no Garmin measurement backing it.
+        const [event] = reconcileCompletedTrainingEvents([], [recommendation()]);
+        expect(event.exactTemplateMatch).toBe(true);
+        const exposure = completedEventToExposure(event);
+        expect(exposure.stimulusConfidence).toBe('exact');
+    });
+
+    it('classifies a Garmin-only session (no adherence answer) as inferred, not exact', () => {
+        const [event] = reconcileCompletedTrainingEvents([activity()], []);
+        expect(event.exactTemplateMatch).toBe(false);
+        const exposure = completedEventToExposure(event);
+        expect(exposure.stimulusConfidence).toBe('inferred');
+    });
+
     it('does not count skipped or unanswered recommendations as completed training', () => {
         const skipped = recommendation({ adherence: { respondedAt: 'x', followed: false, actualModality: null, actualDurationMin: null, skipped: true, notes: null } });
         const unanswered = recommendation({ adherence: { respondedAt: null, followed: null, actualModality: null, actualDurationMin: null, skipped: false, notes: null } });
@@ -99,7 +117,7 @@ function completedEvent(overrides: Partial<CompletedTrainingEvent> = {}): Comple
     return {
         id: 'evt-1', date: '2026-08-06', durationMin: 45, modality: 'Cycling', intensity: 'moderate',
         trainingEffect: 3.0, estimatedCost: { systemic: 0.3, cardiovascular: 0.3, lowerBody: 0.2, upperBody: 0, impactTissue: 0.1, neuromuscular: 0 },
-        estimatedStimulus: {}, sources: ['garmin'], confidence: 'high',
+        estimatedStimulus: {}, exactTemplateMatch: false, sources: ['garmin'], confidence: 'high',
         linkedActivityId: 'garmin-1', linkedRecommendationDate: '2026-08-06',
         athleteFeedback: { followed: true, notes: null },
         ...overrides,

@@ -161,6 +161,7 @@ function candidateEventFromGarmin(activity: NormalizedGarminActivity): Completed
         trainingEffect: Math.max(activity.trainingEffectAerobic ?? 0, activity.trainingEffectAnaerobic ?? 0) || null,
         estimatedCost: DEFAULT_COST_BY_MODALITY[modality][intensity],
         estimatedStimulus: DEFAULT_STIMULUS_BY_MODALITY[modality][intensity],
+        exactTemplateMatch: false,
         sources: ['garmin'],
         confidence: modality === 'Unknown' ? 'medium' : 'high',
         linkedActivityId: activity.activityId,
@@ -180,6 +181,7 @@ function candidateEventFromAdherence(recommendation: DailyRecommendation, candid
         trainingEffect: null,
         estimatedCost: candidate.template?.costProfile ?? DEFAULT_COST_BY_MODALITY[candidate.modality][intensity],
         estimatedStimulus: candidate.template?.stimulusProfile ?? DEFAULT_STIMULUS_BY_MODALITY[candidate.modality][intensity],
+        exactTemplateMatch: !!candidate.template?.stimulusProfile,
         sources: ['adherence'],
         confidence: candidate.template ? 'medium' : 'low',
         linkedActivityId: null,
@@ -207,6 +209,7 @@ function mergeAdherenceIntoGarmin(
         estimatedStimulus: recommendation.adherence.followed && candidate.template?.stimulusProfile
             ? candidate.template.stimulusProfile
             : event.estimatedStimulus,
+        exactTemplateMatch: !!(recommendation.adherence.followed && candidate.template?.stimulusProfile),
         athleteFeedback: { followed: recommendation.adherence.followed, notes: recommendation.adherence.notes },
     };
 }
@@ -262,7 +265,7 @@ export function completedEventToExposure(event: CompletedTrainingEvent): Complet
     const modality = event.modality === 'Unknown' ? undefined : event.modality;
     const hasStimulus = Object.values(event.estimatedStimulus ?? {}).some(v => (v ?? 0) > 0);
     const confidence: 'exact' | 'inferred' | 'unknown' =
-        event.sources.includes('adherence') && event.confidence === 'high'
+        event.exactTemplateMatch
             ? 'exact'
             : (hasStimulus && modality ? 'inferred' : 'unknown');
 
