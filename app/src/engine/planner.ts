@@ -28,8 +28,15 @@ import { resolveAvailability } from './schedule';
 import { isTemplatePhaseEligible, evaluatePeriodizationPhase } from './periodization';
 import { eligibleTemplates } from './eligibility';
 import { addDaysToLocalDateString, getDayDiff } from '../utils/localDate';
-import { createEmptyFatigue, applyCompletedSessionLoad, decayFatigue } from './fatigue';
 import {
+    createEmptyFatigue,
+    applyCompletedSessionLoad,
+    buildFatigueStateFromHistory,
+    computeInternalResponseStrain,
+    decayFatigue,
+} from './fatigue';
+import {
+    buildMicrocycleState,
     creditObjectivesFromStimulus,
     generateWeeklyObjectives,
     getUnresolvedObjectives,
@@ -46,7 +53,7 @@ import {
 } from './optimizer';
 import { ENRICHED_TEMPLATES } from './templates';
 import { resolveTrainingIntent } from './trainingIntent';
-import type { TrainingHistoryProvider } from './trainingHistory';
+import type { CompletedExposure, TrainingHistoryProvider } from './trainingHistory';
 import type { TrainingHistorySnapshot } from './trainingHistorySnapshot';
 
 export interface WeekAheadDay {
@@ -129,7 +136,13 @@ export function projectFatigueForRankingDate(
     };
 }
 
-export const PROJECTED_FATIGUE_RECOVER_THRESHOLD = 0.8;
+/** Fatigue dimensions are capped at 1.0 and the slowest modeled half-life is 48 h. After
+ * the reviewed fix correctly decays external load before the next day's ranking, even a
+ * fully saturated dimension can be at most ~0.707 after 24 h. The previous 0.8 recovery
+ * ceiling was therefore unreachable at the daily planning cadence. 0.625 sits just below
+ * the one-day residual of a saturated 36 h dimension (~0.63), while 0.6 remains the
+ * modify boundary, so recovery is reserved for genuinely high residual load. */
+export const PROJECTED_FATIGUE_RECOVER_THRESHOLD = 0.625;
 export const PROJECTED_FATIGUE_MODIFY_THRESHOLD = 0.6;
 const PROJECTED_MODIFY_MAX_SYSTEMIC_COST = 0.5;
 
@@ -248,10 +261,6 @@ export function resolveWeeklyAnchors(
         pool.reduce((best, d) => (d.maxTimeMinutes > best.maxTimeMinutes ? d : best), pool[0]);
 
     if (!eventSpecificAnchorDate && dayInfo.length > 0) {
-        // Mirrors the quality-anchor pool's own gap check below, but in the other
-        // direction: qualityAnchorDate can already be set here (from tomorrow's actual
-        // pick, above) before this search runs, and without this check an
-        // event-specific anchor could land immediately next to it.
         const farEnoughFromQuality = (d: AnchorDayInfo) => {
             if (!qualityAnchorDate) return true;
             const qualityOffset = qualityAnchorDate === tomorrowDate ? 1 : (dayInfo.find(di => di.date === qualityAnchorDate)?.offset ?? 0);
@@ -292,10 +301,14 @@ export function projectTrailingHistory(
         const recordType = rec.trainingRecordLike && typeof rec.trainingRecordLike === 'object' && 'type' in (rec.trainingRecordLike as object) ? (rec.trainingRecordLike as { type?: string }).type : undefined;
         const costProf = rec.costProfile && typeof rec.costProfile === 'object' ? rec.costProfile as Record<string, number> : undefined;
         const systemic = costProf?.systemic;
+        const lowerBody = costProf?.lowerBody;
 
         const item: RecentHistoryEntry = {
             type: recordType ?? ('type' in e ? e.type : undefined) ?? e.modality,
             systemicCost: e.systemicCost ?? systemic ?? 0,
+            lowerBodyCost: ('lowerBodyCost' in e && typeof e.lowerBodyCost === 'number')
+                ? e.lowerBodyCost
+                : (lowerBody ?? 0),
         };
         const dt = completedDate ?? ('date' in e ? e.date : undefined);
         if (dt) item.date = dt;
@@ -303,9 +316,15 @@ export function projectTrailingHistory(
         if ('modality' in e && e.modality) item.modality = e.modality;
         if ('role' in e && e.role) item.role = e.role;
         if ('templateId' in e && e.templateId) item.templateId = e.templateId;
-        if ('lowerBodyCost' in e && typeof e.lowerBodyCost === 'number') item.lowerBodyCost = e.lowerBodyCost;
         return item;
     });
+}
+
+function isCompletedExposure(entry: RecentHistoryEntry | SessionHistoryEntry): entry is CompletedExposure & (RecentHistoryEntry | SessionHistoryEntry) {
+    const record = entry as unknown as Record<string, unknown>;
+    return typeof record.date === 'string'
+        && !!record.costProfile && typeof record.costProfile === 'object'
+        && !!record.trainingRecordLike && typeof record.trainingRecordLike === 'object';
 }
 
 export function prepareWeekAheadPlanSeed(
@@ -322,8 +341,36 @@ export function prepareWeekAheadPlanSeed(
         };
     }
 
+    const readiness = readinessOrMicrocycle as DailyReadiness;
     const events = (Array.isArray(eventsOrFatigue) ? eventsOrFatigue : []) as UserEvent[];
     const periodization = evaluatePeriodizationPhase(events, todayDate);
+    const completedHistory = history.filter(isCompletedExposure) as CompletedExposure[];
+
+    // Preserve main's history-backed seed semantics for the legacy/pure caller shape:
+    // completed work must influence both the rolling objective ledger and external
+    // fatigue, and today's readiness must seed internal response strain. A previous
+    // Phase-3 refactor replaced this with createEmptyFatigue(), making prior heavy load
+    // invisible to projected recovery decisions.
+    if (completedHistory.length === history.length) {
+        return {
+            microcycle: buildMicrocycleState(
+                periodization.phase,
+                addDaysToLocalDateString(todayDate, -7),
+                completedHistory,
+                periodization.focusEvent,
+            ),
+            fatigue: buildFatigueStateFromHistory(
+                completedHistory,
+                computeInternalResponseStrain(readiness),
+                todayDate,
+            ),
+            trailingHistory: projectTrailingHistory(history),
+        };
+    }
+
+    // Compatibility for lightweight RecentHistoryEntry fixtures that do not carry a
+    // CompletedExposure's costProfile/trainingRecordLike shape. Keep their historical
+    // objective-credit behavior, but never throw away today's real readiness strain.
     let microcycle = generateWeeklyObjectives(periodization.phase, todayDate, periodization.focusEvent);
     history.forEach(h => {
         const typeStr = 'type' in h && typeof h.type === 'string' ? h.type : undefined;
@@ -331,7 +378,7 @@ export function prepareWeekAheadPlanSeed(
         const category = h.category;
         microcycle = creditObjectivesFromStimulus(microcycle, { thresholdDevelopment: 0.8, aerobicCapacity: 0.5, surgeRepeatability: 0.5, maxStrength: 0.5, hypertrophy: 0.5, mobilityRecovery: 0.5 }, modality, category);
     });
-    const fatigue = createEmptyFatigue(todayDate);
+    const fatigue = buildFatigueStateFromHistory([], computeInternalResponseStrain(readiness), todayDate);
     return {
         microcycle,
         fatigue,
@@ -357,23 +404,6 @@ export function generateWeekAheadPlan(
 
     const periodizationToday = evaluatePeriodizationPhase(events, todayDate);
     let microcycle: MicrocycleState = seed.microcycle ?? generateWeeklyObjectives(periodizationToday.phase, todayDate, periodizationToday.focusEvent);
-    // Seeded from today's actual readiness reading and never itself re-measured -- ADR-0008
-    // has this signal fade via decayFatigue as the strip walks further from today (see the
-    // per-projected-date decay below), same as externalFatigue does through applyPick's own
-    // applyCompletedSessionLoad calls. Without that decay this would act as a permanent
-    // fatigue ceiling across the entire forecast instead of fading out.
-    //
-    // This assumes today's readiness is a point-in-time snapshot likely to trend back to
-    // normal -- correct for a real dashboard, where tomorrow gets its own fresh check-in
-    // once it actually arrives. It does NOT hold for a caller that re-asserts the exact
-    // same (e.g. sustained-stress) readiness for every day of a multi-day window without
-    // ever re-measuring it: simulation/analyze.ts's runScenario samples readinessForWeek
-    // only once per week and then projects the remaining 6 days from this single seed, so
-    // a scenario modeling chronic stress will look progressively less conservative toward
-    // the end of the week as this decays, even though the underlying readiness never
-    // actually improved. Known, understood gap (surfaced by review) -- the real fix is
-    // giving the simulation harness a per-day readiness re-evaluation path, not
-    // reintroducing the undecayed-forever bug this replaced.
     const internalStrain: DimensionalFatigue = seed.fatigue?.internalResponseStrain ?? { systemic: 0, cardiovascular: 0, lowerBody: 0, upperBody: 0, impactTissue: 0, neuromuscular: 0 };
     const internalStrainAsOf = todayDate;
     let externalFatigue: FatigueState = seed.fatigue?.externalLoadFatigue ? seed.fatigue : createEmptyFatigue(todayDate);
@@ -383,11 +413,6 @@ export function generateWeekAheadPlan(
 
     const anchors = resolveWeeklyAnchors(todayDate, totalDays, events, fixedActivities, context, tomorrowRec?.template.category, tomorrowRec?.template.modality);
 
-    // Must mirror creditObjectivesFromStimulus's own coverage threshold and qualification
-    // check exactly (same imports as microcycle.ts uses) -- otherwise the reported
-    // objectiveCredits/addressesObjectives displayed to the user can claim a credit the
-    // real microcycle ledger (advanced below via creditObjectivesFromStimulus in
-    // applyPick) never actually applied.
     const creditingObjectivesFor = (template: SessionTemplate): WeeklyObjective[] => {
         const stimulus = enrichedStimulusProfile(template);
         return getUnresolvedObjectives(microcycle).filter(objective =>
