@@ -26,20 +26,22 @@ This document outlines repository rules, code conventions, testing instructions,
 * `uv run pytest` — Run unit tests
 * `uv run python -m garmin_sync sync` — Run daily ingestion
 * `uv run python -m garmin_sync backfill --days 56` — Run historical backfill
+* `uv run python -m garmin_sync audit --days 90` — Report sync/archive completeness
+* `uv run python -m garmin_sync rebuild --start-date X --end-date Y` — Offline snapshot rebuild
 
 ### Frontend App
 * `cd app && npm ci` — Install node dependencies
 * `cd app && npm run check` — Run full validation suite (TypeScript typecheck, ESLint, Vitest, workout catalog)
 * `cd app && npm test` — Run engine unit test suite (`vitest run`)
+* `cd app && npm run test:rules` — Firestore security-rule suite inside the local Firebase emulator (needs Java)
 * `cd app && npm run build` — Build production bundle (`npm run check && vite build`)
 * `cd app && npm run dev` — Start Vite dev server (automatically executes `npm run check` pre-flight)
 * `cd app && npm run validate:workouts` — Validate workout catalog definitions and prescription contracts
-* `cd app && npm run simulate:scenarios` — Run multi-week engine simulations and generate reports in `artifacts/simulation-reports/latest/`
-* `cd app && npm run replay:recommendation -- <audit.json>` — Replay and audit historical recommendation decision reproducibility
+* `cd app && npm run simulate:scenarios` — Run multi-week engine simulations; reports land in `artifacts/simulation-reports/latest/`
+* `cd app && npm run replay:recommendation -- <audit.json>` — Replay a persisted decision against its own audit to verify reproducibility
 * `cd app && npm run visual:install` — Install Playwright Chromium binary for visual review tests
 * `cd app && npm run visual:refresh` — Capture desktop/mobile visual review screenshots in `artifacts/visual-review/latest/`
 * `cd app && npm run visual:serve` — Start visual review harness dev server with synthetic fixtures (`http://127.0.0.1:4174`)
-* `cd app && npm run test:rules` — Run Firestore security rules unit test suite inside local Firebase emulator
 
 
 ### Docker
@@ -53,13 +55,18 @@ This document outlines repository rules, code conventions, testing instructions,
 src/garmin_sync/
   config.py            # Typed Settings & validation
   dates.py             # Europe/Warsaw date provider
-  models.py            # Domain Schema Version 2 models & provenance
+  models.py            # Schema Version 3 models (ADR-0002); provenance records (ADR-0010)
   garmin_client.py     # Garmin API wrapper with exponential backoff
   token_store.py       # LocalTokenStore & GcsTokenStore abstraction
   firestore_repository.py # Firestore user-scoped repository
   metrics.py           # Pure baseline and intensity classification math
   mapper.py            # Payload transformation with metric dates
-  service.py           # Daily sync and backfill orchestrator
+  provider.py          # WearableProvider protocol (vendor-neutral boundary)
+  garmin_provider.py   # Garmin adapter implementing WearableProvider
+  canonical.py         # Vendor-neutral canonical metric/activity models
+  archive.py           # Immutable raw payload archive (ADR-0005)
+  audit.py             # Sync completeness reporting
+  service.py           # Daily sync, backfill, rebuild orchestrator
   cli.py               # Argument parsing and entry points
 
 app/src/engine/
@@ -72,7 +79,61 @@ app/src/engine/
   microcycle.ts        # Weekly training objectives & exposure progress tracker
   fatigue.ts           # 6-dimensional fatigue state, exponential decay & internal response
   optimizer.ts         # Benefit vs cost utility optimization candidate selector
+  eligibility.ts       # The single hard-gate resolver (time/equipment/environment/guardrails)
+  trainingIntent.ts    # Composes periodization + objectives + fatigue + planned dose (ADR-0009)
+  trainingHistory.ts   # TrainingHistoryProvider boundary; Firestore impl is injected
+  trainingHistorySnapshot.ts # Immutable, revisioned bounded history (ADR-0010)
+  completedTraining.ts # Garmin/adherence reconciliation into completed exposures
+  dataState.ts         # AVAILABLE / MISSING / INVALID / UNAVAILABLE read semantics
+  dose.ts              # Planned dose x clinical ceiling x athlete adjustment
+  planner.ts           # Rolling 7-day projection & weekly anchor pre-pass (ADR-0008/0011)
+  provenance.ts        # Builds the persisted RecommendationAudit
+  replay.ts            # Verifies a persisted decision against its own audit
+  policy.ts            # POLICY_VERSION -- bump when a decision-affecting change lands
+  stimulus.ts          # V2 fractional objective credit (scaffolding, not yet wired)
+  simulation/          # Scenario harness: runAllScenarios, decision-quality metrics
 ```
+
+**Before changing engine behaviour**, read
+`docs/architecture/recommendation-engine.md` (the two selection paths) and the relevant
+ADR. Known divergences between the ADRs and the code are tracked in
+`docs/analysis/2026-08-08-architecture-review.md`, with remediation sequenced in
+`docs/plans/`.
+
+---
+
+## Reading the documentation
+
+`docs/` directories are not interchangeable — each has a different relationship to the
+truth, and reading one as if it were another has already caused a fixed defect to be
+re-reported three times. **[`docs/README.md`](./docs/README.md) opens with the routing
+table**: which directory is authoritative for what, precedence when two documents
+disagree, and task-oriented entry points. Read it before trusting any other document
+here.
+
+The short version:
+
+| Directory | Is | Trust for |
+|---|---|---|
+| `docs/adr/` | Immutable decisions | Intended design and rationale — *not* current behaviour |
+| `docs/architecture/` | Living reference | How it works today |
+| `docs/analysis/` | Dated audit | Evidence as of its date — verify findings against code |
+| `docs/plans/` | Mutable, status-tracked | Work to be done; `Implemented`/`Archived` plans are history, not instructions |
+| `docs/ops/` | Runbooks | Operational procedure |
+
+**When two documents disagree, the code wins, then `architecture/`, then `adr/`.** Do not
+silently pick one — fix the doc or record the divergence in the current review document,
+and say which you did.
+
+### Writing conventions
+
+* **Reference symbols, never line numbers.** Write `` `rules.ts` `evaluateEnvelopes` `` or
+  `` `prescription.ts:workoutForTemplate` ``, never `` `rules.ts:544-556` ``. Line numbers
+  drift within hours; a 2026-08-08 audit found 91 of them in `docs/plans/`, three of six
+  sampled already pointing at the wrong code on the day they were written.
+* **A finished plan must not read like a work list.** When a plan reaches `Implemented`,
+  strike or delete its present-tense problem statements. See
+  [`docs/plans/README.md`](./docs/plans/README.md#conventions-that-exist-because-they-were-violated).
 
 ---
 

@@ -4,6 +4,48 @@ Welcome to the documentation for **Adaptive Training Recommender**, a hybrid sys
 
 ---
 
+## Start here: which document is authoritative?
+
+Directories in `docs/` are not interchangeable. Each has a different relationship to the
+truth, and reading one as if it were another is the single most expensive mistake made in
+this repository so far — a fixed defect was re-reported three times because an
+`Implemented` plan still read like a work list.
+
+| Directory | Answers | Trust it for | Do **not** trust it for |
+|---|---|---|---|
+| [`adr/`](./adr/) | "What did we choose, and why?" | The intended design and its rationale. Immutable once accepted. | What the code *does today* — an ADR can be aspirational or partly unimplemented. |
+| [`architecture/`](./architecture/) | "How does it work now?" | Current behaviour. Living reference, updated with the code. | Rationale — it describes, it does not justify. |
+| [`analysis/`](./analysis/) | "What was true on date X?" | Evidence gathered on its date. Dated, never edited after publication. | Current state. Findings may have been fixed since. Verify against code. |
+| [`plans/`](./plans/) | "How do we get from here to there?" | Sequenced work, with per-task status markers. | Anything in a plan marked `Implemented` or `Archived` — historical record only. |
+| [`ops/`](./ops/) | "How do I run it?" | Operational procedure. | Design intent. |
+
+**Precedence when two documents disagree: the code wins, then `architecture/`, then
+`adr/`, then everything else.** If you find a disagreement, do not silently pick one —
+record it in the current review document
+([`analysis/2026-08-08-architecture-review.md`](./analysis/2026-08-08-architecture-review.md))
+or fix the doc, and say which you did.
+
+Two conventions apply to every document here, both added after being violated (see
+[`plans/README.md` § Conventions](./plans/README.md#conventions-that-exist-because-they-were-violated)):
+
+* **Reference symbols, never line numbers.** Write `` `rules.ts` `evaluateEnvelopes` ``,
+  not `` `rules.ts:544-556` ``. Line numbers were measured to go stale within hours.
+* **A finished plan must not read like a work list.** Present-tense problem statements in
+  `Implemented` documents get acted on as if they were live.
+
+### Task-oriented entry points
+
+| If you are… | Read, in order |
+|---|---|
+| Changing engine decision behaviour | [`architecture/recommendation-engine.md`](./architecture/recommendation-engine.md) → the relevant ADR → [`analysis/2026-08-08-architecture-review.md`](./analysis/2026-08-08-architecture-review.md) for known divergences |
+| Picking up scheduled work | [`plans/README.md`](./plans/README.md) — the status table says what is startable today |
+| Changing Firestore paths, rules, or schema | [ADR-0002](./adr/0002-user-scoped-firestore-isolation.md) → [ADR-0010](./adr/0010-decision-provenance-and-audit-replay.md) → `app/firestore.rules` |
+| Changing dates or step semantics | [ADR-0003](./adr/0003-timezone-semantics-and-d1-step-window.md) — these are hard invariants, not preferences |
+| Adding or editing workouts | [`workout-library.md`](./workout-library.md) → [ADR-0004](./adr/0004-workout-library-architecture.md) |
+| Deploying or backfilling | [`ops/`](./ops/) |
+
+---
+
 ## 📚 Documentation Index
 
 ### 🏛️ Architecture Decision Records (ADRs)
@@ -17,6 +59,31 @@ Architectural choices, system invariants, and technical trade-offs are documente
 * [**ADR-0006: Reconciled Strain Telemetry & Baseline Drift Scoring**](./adr/0006-reconciled-strain-telemetry.md) — Acute metric deviation vs 28-day baseline drift strain decomposition.
 * [**ADR-0007: Adaptive Multi-Sport Engine Architecture & Utility Optimization Pipeline**](./adr/0007-adaptive-multisport-engine-architecture.md) — 6-tier adaptive engine, schedule availability, event periodization, microcycle objectives, 6D fatigue decay, and utility optimization.
 * [**ADR-0008: Rolling 7-Day Week-Ahead Planning**](./adr/0008-week-ahead-planning.md) — Confidence-tiered multi-day forecast, rolling microcycle window, and never-persisted recomputation.
+* [**ADR-0009: Training Intent Is History-Seeded**](./adr/0009-training-intent-history.md) — Evaluation-time intent resolution, the `TrainingHistoryProvider` boundary, and advisory-only sequence context.
+* [**ADR-0010: Decision Provenance, Audit Records & Replay**](./adr/0010-decision-provenance-and-audit-replay.md) — `DataState` read semantics, immutable history revisions, persisted audits, `POLICY_VERSION`, and replay verification.
+* [**ADR-0011: Weekly Architecture — Session Anchors & Ranking Modifiers**](./adr/0011-weekly-architecture-anchors.md) — The anchor pre-pass and optimizer Patches 4–6, including why this composition should not be extended.
+
+Reserved for work sequenced in [`docs/plans/`](./plans/), written with their phase:
+**0012** plan intent · **0013** structured injury constraints · **0014** objective credit V2 · **0015** sequence planning.
+
+---
+
+### 🔍 Reviews & Analysis
+Point-in-time assessments of the system as built, including gaps between documented decisions and implemented behaviour:
+
+* [**2026-08-08 Codebase, Docs & Decision Review**](./analysis/2026-08-08-architecture-review.md) — Full-repository review with a sequenced remediation plan.
+
+---
+
+### 🗺️ Implementation Plans
+How agreed changes get made. Mutable, status-tracked, and expected to go stale — see [`docs/plans/`](./plans/) for the index and conventions.
+
+* [**Phase 0: Instrumentation & developer baseline**](./plans/phase-0-instrumentation.md) — Coaching invariants as the CI gate; clean-clone runnability.
+* [**Phase 1: Live defects**](./plans/phase-1-live-defects.md) — Injury gate, Garmin objective credit, recommendation immutability.
+* [**Phase 2: Plan intent is the planning authority**](./plans/phase-2-plan-intent-authority.md) — ADR-0012, `PlanDefinition`, collapsing the two selection paths.
+* [**Phase 3: One ranking path**](./plans/phase-3-single-ranking-path.md) — Lexicographic priorities replacing modality anti-stacking.
+* [**Phase 4: Objective credit V2**](./plans/phase-4-objective-credit-v2.md) — One credit model, finished stimulus vocabulary, honest load.
+* [**Phase 5: Sequence planning**](./plans/phase-5-sequence-planning.md) — Bounded search, fixed activities, tissue state, evidence hierarchy.
 
 ---
 
@@ -24,7 +91,7 @@ Architectural choices, system invariants, and technical trade-offs are documente
 In-depth technical design documents covering system subsystems:
 
 * [**Ingestion Pipeline Architecture**](./architecture/ingestion-pipeline.md) — Python Garmin API client, token persistence, baseline metrics calculation, and Firestore repository.
-* [**Recommendation Engine**](./architecture/recommendation-engine.md) — TypeScript rule engine (`rules.ts`), strain scoring breakdown, mode hierarchy, and decision rationale generation.
+* [**Recommendation Engine**](./architecture/recommendation-engine.md) — The two selection paths, module map, self-normalised strain scoring, `train`/`modify`/`recover` modes, candidate ranking, and the authority ordering.
 * [**Workout Library Architecture**](./workout-library.md) — Multi-layered workout definitions, variants, and September race event plan contract.
 
 ---
