@@ -57,11 +57,12 @@ export function WeekAheadStrip({ plan, nextDayPlan, selectedTier = 'green', onSe
           <span className="provisional-tag">Recalculates daily as your data changes</span>
         </div>
         {nextDayPlan && !nextDayPlan.isSinglePlan && onSelectTier && (
-          <div className="tier-selector" aria-label="Tomorrow's expected readiness tier">
+          <div className="tier-selector" role="group" aria-label="Tomorrow's expected readiness tier">
             <span className="tier-selector-label">Tomorrow:</span>
             <button
               type="button"
               className={`tier-btn tier-green ${selectedTier === 'green' ? 'active' : ''}`}
+              aria-pressed={selectedTier === 'green'}
               onClick={() => onSelectTier('green')}
               title="Green: High readiness forecast"
             >
@@ -70,6 +71,7 @@ export function WeekAheadStrip({ plan, nextDayPlan, selectedTier = 'green', onSe
             <button
               type="button"
               className={`tier-btn tier-yellow ${selectedTier === 'yellow' ? 'active' : ''}`}
+              aria-pressed={selectedTier === 'yellow'}
               onClick={() => onSelectTier('yellow')}
               title="Yellow: Moderate readiness forecast"
             >
@@ -78,6 +80,7 @@ export function WeekAheadStrip({ plan, nextDayPlan, selectedTier = 'green', onSe
             <button
               type="button"
               className={`tier-btn tier-red ${selectedTier === 'red' ? 'active' : ''}`}
+              aria-pressed={selectedTier === 'red'}
               onClick={() => onSelectTier('red')}
               title="Red: Low readiness / mandatory recovery forecast"
             >
