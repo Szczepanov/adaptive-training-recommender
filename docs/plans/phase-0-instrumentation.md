@@ -15,7 +15,7 @@ Update the marker on the work-item heading **and** this table in the same commit
 
 | Task | Status | Summary | Primary files |
 |---|:--:|---|---|
-| 0.1 | `[ ]` | Coaching invariants + aggregate bounds gate CI; snapshot becomes a non-blocking semantic diff | `app/scripts/simulate-scenarios.mjs`, `app/package.json`, `.github/workflows/ci.yml`, `docs/analysis/simulation-baseline.json` |
+| 0.1 | `[x]` | Coaching invariants + aggregate bounds gate CI; snapshot becomes a non-blocking semantic diff | `app/scripts/simulate-scenarios.mjs`, `app/package.json`, `.github/workflows/ci.yml`, `docs/analysis/simulation-baseline.json` |
 | 0.2 | `[ ]` | Golden coaching-contract scenario with fixed dates; one assertion lands expected-failing | `app/src/engine/simulation/scenarios.ts`, `app/src/engine/goldenWeek.test.ts` |
 | 0.3 | `[ ]` | Lazy Firebase init so the suite runs from a clean clone | `app/src/firebase.ts`, `app/src/services/*.ts`, `app/.env.example`, `app/README.md` |
 | 0.4 | `[ ]` | `POLICY_VERSION` bump + CI drift guard using the CI base SHA | `app/src/engine/policy.ts`, `.github/workflows/ci.yml`, new guard script |
@@ -49,7 +49,7 @@ was ever committed.
 
 ## Work items
 
-### `[ ]` 0.1 — Invariants are the CI gate; the snapshot is a diagnostic
+### `[x]` 0.1 — Invariants are the CI gate; the snapshot is a diagnostic
 
 **This item was restructured after PR #5 review.** The original version proposed a
 full-output snapshot diff as the CI gate. That is the wrong contract here, and the

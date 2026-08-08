@@ -75,6 +75,13 @@ jobs:
       - name: Run Firestore security-rule emulator suite
         run: npm run test:rules
 
+      - name: Run simulation scenarios & aggregate bounds gate
+        run: npm run simulate:scenarios
+
+      - name: Report simulation semantic diff
+        run: npm run simulate:diff
+        continue-on-error: true
+
       - name: Build frontend
         run: npm run build
 
