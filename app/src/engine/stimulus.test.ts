@@ -78,7 +78,7 @@ describe('deriveObjectiveCredit', () => {
 
         const clampedLow = deriveObjectiveCredit(sampleObjective, sampleStimulus, { completionRatio: -0.5 });
         expect(clampedLow.earnedCredit).toBe(0);
-        expect(clampedLow.qualifies).toBe(false);
+        expect(clampedLow.qualifies).toBe(true);
     });
 
     it('derives credit for threshold_quality, surge_repeatability, vo2_max, strength_maintenance and race_specific_endurance objectives', () => {

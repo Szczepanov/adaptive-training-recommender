@@ -206,8 +206,11 @@ export function generateWeeklyObjectives(
     };
 }
 
+import { deriveObjectiveCredit } from './stimulus';
+
 /**
- * Updates microcycle objective completion status from a completed activity (Garmin sync or fixed activity).
+ * DEPRECATED: Keyword matching on free text descriptions.
+ * Retained strictly as a documented last-resort fallback for legacy/external training records.
  */
 export function updateMicrocycleProgress(
     currentMicrocycle: MicrocycleState,
@@ -287,16 +290,8 @@ export function qualifiesForObjective(
 }
 
 /**
- * Credits weekly objectives from a workout's own numeric stimulus profile -- the same
- * vector calculateStimulusBenefit (optimizer.ts) scores candidates against -- instead of
- * pattern-matching a free-text description. This is the crediting path for internally
- * generated picks (planner.ts's projected days) where a real SessionTemplate and its
- * profile are available.
- *
- * updateMicrocycleProgress's keyword matching below remains the conservative fallback
- * for externally-reported completions that carry nothing but a loose type string. Exact
- * followed recommendations and reconciled events retain their structured profile through
- * CompletedExposure and must use this same qualification path.
+ * Credits weekly objectives from a workout's own numeric stimulus profile via deriveObjectiveCredit
+ * -- the authoritative dose-sensitive credit model.
  */
 export function creditObjectivesFromStimulus(
     microcycle: MicrocycleState,
@@ -309,8 +304,8 @@ export function creditObjectivesFromStimulus(
         ...microcycle,
         objectives: microcycle.objectives.map(obj => {
             if (obj.completedExposures >= obj.targetExposures) return obj;
-            if (stimulusCoverage(stimulus, obj.targetStimulus) < STIMULUS_CREDIT_COVERAGE_THRESHOLD) return obj;
-            if (!qualifiesForObjective(stimulus, modality, obj.qualification, category)) return obj;
+            const credit = deriveObjectiveCredit(obj, stimulus, {}, { modality, category });
+            if (!credit.qualifies || credit.earnedCredit < 0.5) return obj;
             return { ...obj, completedExposures: obj.completedExposures + 1 };
         }),
     };

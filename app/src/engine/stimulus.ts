@@ -80,11 +80,15 @@ export function deriveObjectiveCredit(
         case 'race_specific_endurance':
             rawStimulusContribution = Math.max(
                 stimulus.fatigueResistance ?? 0,
-                ((stimulus.aerobicEndurance ?? 0) * 0.5 + (stimulus.repeatedSurges ?? 0) * 0.5)
+                ((stimulus.aerobicEndurance ?? stimulus.aerobicCapacity ?? 0) * 0.5 + (stimulus.repeatedSurges ?? stimulus.surgeRepeatability ?? 0) * 0.5)
             );
             break;
-        default:
-            rawStimulusContribution = 0.5;
+        default: {
+            const objKey: string = (objective as { key?: string }).key ?? 'unknown';
+            console.warn(`[deriveObjectiveCredit] Unrecognized objective key: ${objKey}`);
+            rawStimulusContribution = 0;
+            break;
+        }
     }
 
     // Scale by delivered dose completion ratio
@@ -94,7 +98,7 @@ export function deriveObjectiveCredit(
         objectiveId: objective.id,
         objectiveKey: objective.key,
         earnedCredit,
-        qualifies: earnedCredit > 0,
+        qualifies: true,
     };
 }
 

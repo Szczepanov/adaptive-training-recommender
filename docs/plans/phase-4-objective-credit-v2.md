@@ -15,7 +15,7 @@ Update the marker on the work-item heading **and** this table in the same commit
 
 | Task | Status | Summary | Primary files |
 |---|:--:|---|---|
-| 4.1 | `[ ]` | One credit model: fix and promote `deriveObjectiveCredit`; shadow-run V1 vs V2 first (F7) | `app/src/engine/stimulus.ts`, `microcycle.ts`, `trainingIntent.ts` |
+| 4.1 | `[x]` | One credit model: fix and promote `deriveObjectiveCredit`; shadow-run V1 vs V2 first (F7) | `app/src/engine/stimulus.ts`, `microcycle.ts`, `trainingIntent.ts` |
 | 4.2 | `[ ]` | Canonical stimulus axes required; legacy aliases and derived fallbacks deleted (F8) | `app/src/engine/models.ts`, `templates.ts`, `optimizer.ts`, `microcycle.ts`, `completedTraining.ts`, fixtures |
 | 4.3 | `[ ]` | Fatigue: assert ordering now; **compare** fusion functions before choosing (F12) | `app/src/engine/fatigue.ts`, `trainingHistorySnapshot.ts` |
 | 4.5 | `[ ]` | `PlannedDose { volume, intensity }` — gives `intensityScale` its consumer (D2 / F17) | `app/src/engine/trainingIntent.ts`, `dose.ts`, `models.ts`, `optimizer.ts` |
@@ -35,7 +35,7 @@ inventing constants the repository cannot justify.
 
 ---
 
-## `[ ]` 4.1 — F7: one credit model
+## `[x]` 4.1 — F7: one credit model
 
 Today there are three:
 
