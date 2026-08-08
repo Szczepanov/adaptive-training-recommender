@@ -72,44 +72,23 @@ describe('goldenWeek coaching contract: cycling_a_event_build_week', () => {
         });
     });
 
-    // F3 / Phase 0: Event modality frequency contract.
-    // In a 7-day Build week for a Cycling A-event, the athlete should get >= 2 key/race-specific Cycling quality sessions.
-    // F3 / Phase 3 review: the >=2 target is NOT actually met by runScenario's simulation
-    // harness, even after fixing every ranking bug found in review (see below) -- NOT an
-    // assertion of the ideal target.
-    it('documents the current key/race-specific Cycling session count in the 7-day Build strip (F3 contract gate, known gap)', async () => {
-        // Root cause: resolveWeeklyAnchors (planner.ts)'s weekly-anchor pre-pass -- the
-        // mechanism that's supposed to *guarantee* one event-specific + one quality
-        // Cycling day per week -- is only wired into generateWeekAheadPlan's multi-day
-        // forecast projection. runScenario drives its day-by-day simulation entirely
-        // through evaluateTrainingWithIntent (rules.ts), which never threads an
-        // anchorRole/adjacentToAnchor into buildOptimizationContext at all. anchorWeeks'
-        // own eventSpecificAnchorHit/qualityAnchorHit fields (computed for diagnostics)
-        // are false here: the nominated anchor dates are a forecast-only signal that the
-        // real per-day ranking never actually consults or is steered by. This mirrors
-        // the same disconnect cycling_criterium_A's "distinguishes a missed nominated
-        // date..." test already documents for a different scenario (nominated: 4, hits:
-        // 0 there too) -- it is a pre-existing architectural gap, not something this
-        // review's fixes introduced or could fix without wiring anchor state into Path B,
-        // a materially larger change than a bug-fix pass. Recorded here so a real fix has
-        // to touch this test on purpose, not silently drift further.
+    // F3 / Phase 0: Event modality frequency contract. Count distinct session days, not
+    // objective-credit rows, because one Cycling workout may resolve multiple objectives.
+    it('delivers at least two key/race-specific Cycling sessions in the 7-day Build strip (F3)', async () => {
         const result = await getBuildWeekResult();
         const keyCategories = new Set(['Hard Endurance', 'Moderate Endurance', 'Race-Specific Endurance']);
-        // Count distinct DAYS with a key Cycling session (not raw credit entries -- a
-        // single session can satisfy more than one unresolved objective at once, e.g.
-        // both threshold_quality and surge_repeatability, which would otherwise inflate
-        // the count) across the whole horizon -- objectiveCredits already covers today,
-        // tomorrow's provisional pick, and every projected day (see planner.ts's applyPick
-        // calls), so there's no need to special-case "today" separately. Scoped to
-        // modality === 'Cycling' so a non-Cycling template landing in a "key" category
-        // (Hard/Moderate/Race-Specific Endurance are not Cycling-exclusive categories)
-        // can't satisfy what is specifically a Cycling contract.
         const keyCyclingDays = new Set(
             result.objectiveCredits
-                .filter((c) => c.modality === 'Cycling' && keyCategories.has(templateById.get(c.templateId)?.category ?? ''))
+                .filter((c) => {
+                    const template = templateById.get(c.templateId);
+                    return c.modality === 'Cycling'
+                        && template?.modality === 'Cycling'
+                        && keyCategories.has(template.category);
+                })
                 .map((c) => c.date)
         );
-        expect(keyCyclingDays.size).toBeGreaterThanOrEqual(1);
+
+        expect(keyCyclingDays.size).toBeGreaterThanOrEqual(2);
     });
 
     it('resolves required weekly objectives (threshold_quality and strength_maintenance)', async () => {
