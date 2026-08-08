@@ -390,7 +390,11 @@ describe('Architecture & Phased Engine Integration', () => {
                 { date: '2026-08-07', recentHistory: [{ date: '2026-08-06', modality: 'Cycling', category: 'Hard Endurance', role: 'anchor', systemicCost: 0.8 }] }
             );
             const unstackedCycling = unstackedCyclingRanked.find(r => r.template.modality === 'Cycling');
-            const stackedCycling = stackedCyclingRanked.rejected.find(r => r.template.modality === 'Cycling');
+            // Rejection order follows ENRICHED_TEMPLATES order, and a Cycling template can
+            // be rejected for MISSING_REQUIRED_EQUIPMENT or TIME_BUDGET_EXCEEDED instead of
+            // quality spacing -- filter by the anchor category too (matching the lower-body
+            // case above) so this checks the behavior under test, not an unrelated rejection.
+            const stackedCycling = stackedCyclingRanked.rejected.find(r => r.template.modality === 'Cycling' && r.template.category === 'Hard Endurance');
 
             expect(unstackedCycling).toBeDefined();
             expect(stackedCycling).toBeDefined();
@@ -412,22 +416,38 @@ describe('Architecture & Phased Engine Integration', () => {
 
             // Yesterday: a hard cycling day. Today's candidate: a hard STRENGTH session --
             // different modality, so the same-modality anti-stacking check above never
-            // fires, yet back-to-back hard days is still the thing to avoid.
+            // fires, yet back-to-back hard days is still the thing to avoid. Read both
+            // sides from the SAME collection (accepted) -- comparing .all (which includes
+            // rejected candidates carrying a flat utilityScore of 0) against an
+            // accepted-only collection would make a hard exclusion masquerade as "lower
+            // utility because of the soft intensity-stacking penalty", which is a
+            // different mechanism this test isn't targeting.
             const afterHardBike = rankCandidates(
                 ENRICHED_TEMPLATES, [], fatigue, availability, [], prefs,
                 { recentHistory: [{ date: '2026-08-06', modality: 'Cycling', category: 'Hard Endurance', type: 'Bike VO2 Intervals', systemicCost: 1.0 }] }
             );
-            const afterEasyBike = rankCandidatesByUtility(
+            const afterEasyBike = rankCandidates(
                 ENRICHED_TEMPLATES, [], fatigue, availability, [], prefs,
                 { recentHistory: [{ date: '2026-08-06', modality: 'Cycling', type: 'Zone 2 Spin', systemicCost: 0.3 }] }
             );
 
-            const hardStrengthAfterHard = afterHardBike.all.find(r => r.template.category === 'Full-body Strength');
-            const hardStrengthAfterEasy = afterEasyBike.find(r => r.template.category === 'Full-body Strength');
+            const hardStrengthAfterHard = afterHardBike.accepted.find(r => r.template.category === 'Full-body Strength');
+            const hardStrengthAfterEasy = afterEasyBike.accepted.find(r => r.template.category === 'Full-body Strength');
 
-            expect(hardStrengthAfterHard).toBeDefined();
             expect(hardStrengthAfterEasy).toBeDefined();
-            expect(hardStrengthAfterHard!.utilityScore).toBeLessThan(hardStrengthAfterEasy!.utilityScore);
+            if (hardStrengthAfterHard) {
+                // Still accepted, just soft-penalized (intensity-stacking cap): lower utility.
+                expect(hardStrengthAfterHard.utilityScore).toBeLessThan(hardStrengthAfterEasy!.utilityScore);
+            } else {
+                // Hard-excluded outright instead (e.g. ANCHOR_PROTECTION_VIOLATION, since
+                // Full-body Strength is a heavy-lower-body category within a day of a key
+                // Cycling session) -- a *stronger* guarantee than the soft penalty this
+                // test originally checked, so assert that explicitly rather than silently
+                // passing on a candidate that's simply gone.
+                const rejected = afterHardBike.rejected.find(r => r.template.category === 'Full-body Strength');
+                expect(rejected).toBeDefined();
+                expect(rejected!.excludedReasons.length).toBeGreaterThan(0);
+            }
         });
 
         it('rotates between near-equivalent templates in the same modality/category rather than always returning the same one', () => {

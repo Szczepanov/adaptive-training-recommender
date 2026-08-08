@@ -83,6 +83,21 @@ const ANCHOR_ROLE_BOOST = 1.35;
 const ANCHOR_ADJACENCY_SUPPRESSION = 0.3;
 const HEAVY_LOWER_BODY_STRENGTH_CATEGORIES: SessionTemplate['category'][] = ['Lower-body Strength', 'Full-body Strength'];
 const VARIETY_TIE_BREAK_GAP = 0.05;
+/** Lexicographic tie band for Level 4 (objective benefit) sorting -- deliberately a
+ *  separate constant from VARIETY_TIE_BREAK_GAP even though both are currently 0.05:
+ *  one governs whether two candidates count as "same objective benefit" for sort
+ *  ordering, the other whether they're "close enough to rotate for variety". Sharing a
+ *  literal between them made either one easy to change by accident. */
+const BENEFIT_TIE_BAND = 0.05;
+/** Single source of truth for "this session counts as a protected anchor/quality
+ *  session" -- used for history role classification (normalizeHistory), the recovery
+ *  constraints themselves (evaluateRecoveryConstraints), and planner.ts's own history
+ *  tagging. Deliberately excludes 'Moderate Endurance': a moderate day is a real but
+ *  lesser stimulus than these, and evaluateRecoveryConstraints' own isCandidateAnchor/
+ *  priorAnchor checks already only treat these three as anchor-grade. */
+export const ANCHOR_HISTORY_CATEGORIES: SessionTemplate['category'][] = [
+    'Hard Endurance', 'Race-Specific Endurance', 'Full-body Strength',
+];
 
 export function getConsecutiveModalityCount(
     history: { modality?: string; type?: string }[],
@@ -130,7 +145,7 @@ export function normalizeHistory(
         let role: SessionRole = 'supporting';
         if ('role' in entry && entry.role) {
             role = entry.role;
-        } else if (('category' in entry && entry.category && ['Hard Endurance', 'Moderate Endurance', 'Race-Specific Endurance', 'Full-body Strength'].includes(entry.category)) || systemicCost >= 0.7) {
+        } else if (('category' in entry && entry.category && ANCHOR_HISTORY_CATEGORIES.includes(entry.category)) || systemicCost >= 0.7) {
             role = 'anchor';
         }
 
@@ -162,16 +177,14 @@ export function evaluateRecoveryConstraints(
     // Constraint 1: Quality spacing -- >= 1 clear day (dayDiff >= 2) between two anchor-role sessions
     const isCandidateAnchor = options.anchorRole === 'event-specific' ||
         options.anchorRole === 'quality' ||
-        template.category === 'Hard Endurance' ||
-        template.category === 'Race-Specific Endurance' ||
-        template.category === 'Full-body Strength';
+        ANCHOR_HISTORY_CATEGORIES.includes(template.category);
 
     if (isCandidateAnchor) {
         const priorAnchor = history.find(h => {
             const diff = getDayDiff(targetDate, h.date);
             return diff > 0 && diff < 2 && (
                 h.role === 'anchor' ||
-                (h.category && ['Hard Endurance', 'Race-Specific Endurance', 'Full-body Strength'].includes(h.category))
+                (h.category && ANCHOR_HISTORY_CATEGORIES.includes(h.category))
             );
         });
         if (priorAnchor) {
@@ -209,13 +222,18 @@ export function evaluateRecoveryConstraints(
         (options.anchorRole === 'event-specific' || options.anchorRole === 'quality' || template.category === 'Race-Specific Endurance' || template.category === 'Hard Endurance');
 
     if (isHeavyLowerBodyStrength) {
+        // Hard exclusion is scoped to a *realized* prior key cycling session (found in
+        // actual history) -- adjacency to a day the weekly pre-pass merely nominated as
+        // an anchor (options.adjacentToAnchor) is deliberately a soft nudge only (see
+        // ANCHOR_ADJACENCY_SUPPRESSION below), since that designated day might not even
+        // end up hosting the anchor session once its own ranking runs.
         const priorKeyCycling = history.find(h => {
             const diff = getDayDiff(targetDate, h.date);
             return diff >= 0 && diff <= 1 && h.modality === 'Cycling' && (
                 h.role === 'anchor' || (h.category && ['Race-Specific Endurance', 'Hard Endurance'].includes(h.category))
             );
         });
-        if (priorKeyCycling || options.adjacentToAnchor) {
+        if (priorKeyCycling) {
             reasons.push('ANCHOR_PROTECTION_VIOLATION');
         }
     } else if (isKeyCyclingSession) {
@@ -298,11 +316,25 @@ export function calculateStimulusBenefit(
         }
     });
 
+    const nonObjectiveBaseline = template.category === 'Mobility/Recovery' ? 0.2 : 0.5;
     if (benefit === 0) {
-        benefit = template.category === 'Mobility/Recovery' ? 0.2 : 0.5;
+        benefit = nonObjectiveBaseline;
+    } else {
+        // A genuine (even weak/partial) objective match must never score at or below the
+        // flat baseline a candidate that matches NO objective gets -- docs/architecture/
+        // recommendation-engine.md's Level 4 rule ("objective satisfaction strictly
+        // outranks non-objective candidates") would otherwise invert once a weak match's
+        // raw score fell under the baseline and the two landed in the same lexicographic
+        // tie band (BENEFIT_TIE_BAND). Additive rather than a clamp/floor: a clamp would
+        // collapse every weak match below the baseline to the *same* score, losing the
+        // real (if small) differentiation between two different weak matches -- adding
+        // the baseline on top preserves that relative ordering exactly (it cancels out
+        // when two matched candidates are compared) while still guaranteeing any nonzero
+        // match strictly outranks the flat unmatched baseline.
+        benefit = benefit + nonObjectiveBaseline;
     }
 
-    return Math.max(0.2, benefit);
+    return benefit;
 }
 
 export function calculateFatigueCostPenalty(
@@ -363,7 +395,13 @@ export function buildOptimizationContext(
         const entryType = 'type' in e && typeof e.type === 'string' ? e.type : undefined;
 
         return {
-            date: completedDate ?? e.date ?? date,
+            // Leave undated entries undefined -- normalizeHistory backfills a missing
+            // date to a *preceding* day (see its own `total - idx` arithmetic). Stamping
+            // it with the target `date` here instead would make an undated entry look
+            // like "today": constraints 1-3 in evaluateRecoveryConstraints require
+            // dayDiff >= 1 so they'd never fire for it, while constraint 4 accepts
+            // dayDiff >= 0 so it could raise a spurious ANCHOR_PROTECTION_VIOLATION.
+            date: completedDate ?? e.date,
             templateId: e.templateId,
             category: e.category,
             modality: e.modality ?? recType ?? entryType,
@@ -502,7 +540,12 @@ export function rankCandidates(
             prefMultiplier *= 0.20;
         }
 
-        const lastEntry = history[history.length - 1];
+        // normalizeHistory preserves the caller's array order rather than sorting by
+        // date, so "last element" isn't reliably "most recent" -- pick explicitly by the
+        // smallest positive dayDiff (the closest prior day) instead.
+        const lastEntry = history
+            .filter(h => getDayDiff(targetDate, h.date) >= 1)
+            .sort((a, b) => getDayDiff(targetDate, a.date) - getDayDiff(targetDate, b.date))[0];
         const lastWasHighIntensity = (lastEntry?.systemicCost ?? 0) >= INTENSITY_STACK_THRESHOLD;
         const candidateIsHighIntensity = template.systemicCost >= INTENSITY_STACK_THRESHOLD;
         if (lastWasHighIntensity && candidateIsHighIntensity) {
@@ -552,7 +595,7 @@ export function rankCandidates(
     // Lexicographic Sorting
     accepted.sort((a, b) => {
         const benefitDiff = b.benefitScore - a.benefitScore;
-        if (Math.abs(benefitDiff) > 0.05) {
+        if (Math.abs(benefitDiff) > BENEFIT_TIE_BAND) {
             return benefitDiff;
         }
         return b.utilityScore - a.utilityScore;
@@ -590,7 +633,13 @@ export function rankCandidates(
                 return y.utilityScore - x.utilityScore;
             });
 
-            const remaining = accepted.slice(nearEquivalents.length);
+            // nearEquivalents is a filtered subset of accepted -- its members are not
+            // guaranteed to occupy the first nearEquivalents.length positions, so slicing
+            // by count (the old approach) could both drop a candidate that sits between
+            // them and duplicate one that's already in nearEquivalents. Remove by
+            // identity instead.
+            const nearEquivalentSet = new Set(nearEquivalents);
+            const remaining = accepted.filter(c => !nearEquivalentSet.has(c));
             accepted.splice(0, accepted.length, ...nearEquivalents, ...remaining);
         }
     }

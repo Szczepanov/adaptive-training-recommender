@@ -3,7 +3,12 @@ import { SEPTEMBER_CYCLING_EVENT_SESSION_COVERAGE } from '../workouts/event-plan
 import type { DataIssue, DataState } from './dataState.ts';
 import type { ObjectiveKey, ObjectivePriority, UserEvent } from './models.ts';
 
-export type SessionRole = 'primary_developmental' | 'secondary_support' | 'taper_sharpening' | 'recovery_active';
+// Named PlanSessionRole (not SessionRole) to avoid colliding with the unrelated
+// SessionRole type in models.ts ('anchor' | 'supporting' | 'recovery', added in Phase 3
+// for optimizer.ts's history/recovery-constraint role tagging) -- same name, incompatible
+// value sets, different concepts (a plan objective's role within its block vs. a
+// completed/candidate session's role in the recovery-constraint history).
+export type PlanSessionRole = 'primary_developmental' | 'secondary_support' | 'taper_sharpening' | 'recovery_active';
 
 export interface PlanBlock {
   id: string; // objectives reference this, not the phase

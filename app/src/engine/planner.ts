@@ -27,16 +27,19 @@ export interface PlannedObjectiveCredit {
 import { resolveAvailability } from './schedule';
 import { isTemplatePhaseEligible, evaluatePeriodizationPhase } from './periodization';
 import { eligibleTemplates } from './eligibility';
-import { addDaysToLocalDateString } from '../utils/localDate';
-import { createEmptyFatigue, applyCompletedSessionLoad } from './fatigue';
+import { addDaysToLocalDateString, getDayDiff } from '../utils/localDate';
+import { createEmptyFatigue, applyCompletedSessionLoad, decayFatigue } from './fatigue';
 import {
     creditObjectivesFromStimulus,
     generateWeeklyObjectives,
     getUnresolvedObjectives,
+    qualifiesForObjective,
     stimulusCoverage,
+    STIMULUS_CREDIT_COVERAGE_THRESHOLD,
 } from './microcycle';
 import {
     type RecentHistoryEntry,
+    ANCHOR_HISTORY_CATEGORIES,
     buildOptimizationContext,
     rankCandidates,
 } from './optimizer';
@@ -44,8 +47,6 @@ import { ENRICHED_TEMPLATES } from './templates';
 import { resolveTrainingIntent } from './trainingIntent';
 import type { TrainingHistoryProvider } from './trainingHistory';
 import type { TrainingHistorySnapshot } from './trainingHistorySnapshot';
-
-const STIMULUS_CREDIT_COVERAGE_THRESHOLD = 0.5;
 
 export interface WeekAheadDay {
     date: string;
@@ -170,7 +171,13 @@ export function resolveWeeklyAnchors(
     events: UserEvent[],
     fixedActivities: FixedActivity[],
     context: UserContext,
-    tomorrowCategory?: SessionTemplate['category']
+    tomorrowCategory?: SessionTemplate['category'],
+    /** Both the event-specific and quality anchor mechanisms are deliberately scoped to
+     *  Cycling only (same athlete/event-specific progression they were built for -- see
+     *  ANCHOR_ROLE_BOOST in optimizer.ts). Without this, a Running Hard/Moderate
+     *  Endurance day tomorrow would get treated as a Cycling quality anchor and could
+     *  suppress selection of the real Cycling anchor elsewhere in the week. */
+    tomorrowModality?: SessionTemplate['modality']
 ): WeeklyAnchors {
     const raceSpecificTemplates = ENRICHED_TEMPLATES.filter(t => t.category === 'Race-Specific Endurance' && !t.phaseEligibility?.requiresTaper);
     const qualityTemplates = ENRICHED_TEMPLATES.filter(t => t.modality === 'Cycling' && (t.category === 'Moderate Endurance' || t.category === 'Hard Endurance'));
@@ -179,9 +186,9 @@ export function resolveWeeklyAnchors(
     let eventSpecificAnchorDate: string | null = null;
     let qualityAnchorDate: string | null = null;
 
-    if (tomorrowCategory === 'Race-Specific Endurance') {
+    if (tomorrowModality === 'Cycling' && tomorrowCategory === 'Race-Specific Endurance') {
         eventSpecificAnchorDate = tomorrowDate;
-    } else if (tomorrowCategory === 'Hard Endurance' || tomorrowCategory === 'Moderate Endurance') {
+    } else if (tomorrowModality === 'Cycling' && (tomorrowCategory === 'Hard Endurance' || tomorrowCategory === 'Moderate Endurance')) {
         qualityAnchorDate = tomorrowDate;
     }
 
@@ -204,7 +211,17 @@ export function resolveWeeklyAnchors(
         pool.reduce((best, d) => (d.maxTimeMinutes > best.maxTimeMinutes ? d : best), pool[0]);
 
     if (!eventSpecificAnchorDate && dayInfo.length > 0) {
+        // Mirrors the quality-anchor pool's own gap check below, but in the other
+        // direction: qualityAnchorDate can already be set here (from tomorrow's actual
+        // pick, above) before this search runs, and without this check an
+        // event-specific anchor could land immediately next to it.
+        const farEnoughFromQuality = (d: AnchorDayInfo) => {
+            if (!qualityAnchorDate) return true;
+            const qualityOffset = qualityAnchorDate === tomorrowDate ? 1 : (dayInfo.find(di => di.date === qualityAnchorDate)?.offset ?? 0);
+            return Math.abs(d.offset - qualityOffset) >= QUALITY_ANCHOR_MIN_GAP_DAYS;
+        };
         const eventSpecificPool = dayInfo.filter(d =>
+            farEnoughFromQuality(d) &&
             eligibleTemplates(raceSpecificTemplates, context, d.maxTimeMinutes, d.date).some(t => isTemplatePhaseEligible(t, d.periodization))
         );
         if (eventSpecificPool.length > 0) {
@@ -303,18 +320,30 @@ export function generateWeekAheadPlan(
 
     const periodizationToday = evaluatePeriodizationPhase(events, todayDate);
     let microcycle: MicrocycleState = seed.microcycle ?? generateWeeklyObjectives(periodizationToday.phase, todayDate, periodizationToday.focusEvent);
+    // Seeded from today's actual readiness reading and never itself re-measured -- ADR-0008
+    // has this signal fade via decayFatigue as the strip walks further from today (see the
+    // per-projected-date decay below), same as externalFatigue does through applyPick's own
+    // applyCompletedSessionLoad calls. Without that decay this would act as a permanent
+    // fatigue ceiling across the entire forecast instead of fading out.
     const internalStrain: DimensionalFatigue = seed.fatigue?.internalResponseStrain ?? { systemic: 0, cardiovascular: 0, lowerBody: 0, upperBody: 0, impactTissue: 0, neuromuscular: 0 };
+    const internalStrainAsOf = todayDate;
     let externalFatigue: FatigueState = seed.fatigue?.externalLoadFatigue ? seed.fatigue : createEmptyFatigue(todayDate);
 
     const resultDays: WeekAheadDay[] = [];
     const objectiveCredits: PlannedObjectiveCredit[] = [];
 
-    const anchors = resolveWeeklyAnchors(todayDate, totalDays, events, fixedActivities, context, tomorrowRec?.template.category);
+    const anchors = resolveWeeklyAnchors(todayDate, totalDays, events, fixedActivities, context, tomorrowRec?.template.category, tomorrowRec?.template.modality);
 
+    // Must mirror creditObjectivesFromStimulus's own coverage threshold and qualification
+    // check exactly (same imports as microcycle.ts uses) -- otherwise the reported
+    // objectiveCredits/addressesObjectives displayed to the user can claim a credit the
+    // real microcycle ledger (advanced below via creditObjectivesFromStimulus in
+    // applyPick) never actually applied.
     const creditingObjectivesFor = (template: SessionTemplate): WeeklyObjective[] => {
         const stimulus = enrichedStimulusProfile(template);
         return getUnresolvedObjectives(microcycle).filter(objective =>
             stimulusCoverage(stimulus, objective.targetStimulus) >= STIMULUS_CREDIT_COVERAGE_THRESHOLD
+            && qualifiesForObjective(stimulus, template.modality, objective.qualification, template.category)
         );
     };
 
@@ -356,11 +385,12 @@ export function generateWeekAheadPlan(
         const periodization = evaluatePeriodizationPhase(events, date);
         const availability = resolveAvailability(date, null, fixedActivities, context);
 
+        const decayedInternalStrain = decayFatigue(internalStrain, getDayDiff(date, internalStrainAsOf) * 24);
         const rankingFatigue: FatigueState = {
             lastUpdatedDate: date,
             externalLoadFatigue: externalFatigue.externalLoadFatigue,
-            internalResponseStrain: internalStrain,
-            combinedFatigue: combineMax(externalFatigue.externalLoadFatigue, internalStrain),
+            internalResponseStrain: decayedInternalStrain,
+            combinedFatigue: combineMax(externalFatigue.externalLoadFatigue, decayedInternalStrain),
         };
 
         const unresolved = getUnresolvedObjectives(microcycle);
@@ -391,7 +421,7 @@ export function generateWeekAheadPlan(
                 templateId: todayRec.template.id,
                 category: todayRec.template.category,
                 modality: todayRec.template.modality,
-                role: (['Hard Endurance', 'Moderate Endurance', 'Race-Specific Endurance', 'Full-body Strength'].includes(todayRec.template.category) ? 'anchor' : 'supporting') as SessionRole,
+                role: (ANCHOR_HISTORY_CATEGORIES.includes(todayRec.template.category) ? 'anchor' : 'supporting') as SessionRole,
                 systemicCost: todayRec.template.systemicCost,
                 lowerBodyCost: todayRec.template.costProfile?.lowerBody ?? 0,
                 type: todayRec.template.title,
@@ -401,7 +431,7 @@ export function generateWeekAheadPlan(
                 templateId: d.template.id,
                 category: d.template.category,
                 modality: d.template.modality,
-                role: (d.date === anchors.eventSpecificAnchorDate || d.date === anchors.qualityAnchorDate || ['Hard Endurance', 'Moderate Endurance', 'Race-Specific Endurance', 'Full-body Strength'].includes(d.template.category) ? 'anchor' : 'supporting') as SessionRole,
+                role: (d.date === anchors.eventSpecificAnchorDate || d.date === anchors.qualityAnchorDate || ANCHOR_HISTORY_CATEGORIES.includes(d.template.category) ? 'anchor' : 'supporting') as SessionRole,
                 systemicCost: d.template.systemicCost,
                 lowerBodyCost: d.template.costProfile?.lowerBody ?? 0,
                 type: d.template.title,

@@ -141,18 +141,23 @@ Phase 3 introduces a single, unified ranking path (`rankCandidates`) driven by s
 
 ## Authority ordering
 
-The engine's real hierarchy, in the order it is applied:
+The engine's real hierarchy. This is *authority precedence* (what wins when two rules
+conflict), which happens to also match the actual filter/sort sequence
+`evaluateTrainingWithIntent` runs today: the candidate list is narrowed by every step down
+through phase eligibility *before* `rankCandidates` ever runs, and dated recovery
+constraints are themselves evaluated as `rankCandidates`' own first (hard-filter) pass,
+ahead of objective benefit and utility:
 
 ```text
 clinical / safety gates     hard exclusion — never overridable
         ↓
 feasibility                 time, equipment, environment, guardrails
         ↓
-dated recovery constraints   quality spacing, rolling hard caps, anchor protection (F3)
-        ↓
 readiness mode ceiling      train / modify / recover cost caps
         ↓
 phase eligibility           event-relative template gating (Path B only)
+        ↓
+dated recovery constraints   quality spacing, rolling hard caps, anchor protection (F3)
         ↓
 lexicographic priority      objective benefit outranks preference (Level 4)
         ↓
