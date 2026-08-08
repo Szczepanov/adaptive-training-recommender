@@ -209,6 +209,12 @@ export function generateWeeklyObjectives(
 
 import { deriveObjectiveCredit } from './stimulus';
 
+/** Keyword-only evidence is deliberately worth less than a structured measured exposure.
+ * It remains useful for old/external records, but cannot resolve a one-credit objective by
+ * itself. Most importantly, it updates the SAME authoritative ledger as V2 structured
+ * evidence, making structured->legacy and legacy->structured replay order-independent. */
+export const LEGACY_KEYWORD_COMPATIBILITY_CREDIT = 0.5;
+
 /**
  * DEPRECATED: Keyword matching on free text descriptions.
  * Retained strictly as a documented last-resort fallback for legacy/external training records.
@@ -232,9 +238,13 @@ export function updateMicrocycleProgress(
         }
 
         if (matched) {
+            const requiredCredit = obj.requiredCredit ?? obj.targetExposures;
+            const completedCredit = obj.completedCredit ?? obj.completedExposures;
+            const nextCredit = Math.min(requiredCredit, completedCredit + LEGACY_KEYWORD_COMPATIBILITY_CREDIT);
             return {
                 ...obj,
-                completedExposures: Math.min(obj.targetExposures, obj.completedExposures + 1),
+                completedCredit: nextCredit,
+                completedExposures: Math.min(obj.targetExposures, Math.floor(nextCredit / LEGACY_KEYWORD_COMPATIBILITY_CREDIT)),
             };
         }
         return obj;
@@ -246,7 +256,10 @@ export function updateMicrocycleProgress(
     };
 }
 
-export function getUnresolvedObjectives(microcycle: MicrocycleState): WeeklyObjective[] {
+export function getUnresolvedObjectives(
+    microcycle: MicrocycleState,
+    includeProjectedCredit: boolean = false,
+): WeeklyObjective[] {
     // Defensive only: every typed production call site (generateWeeklyObjectives,
     // buildMicrocycleState, resolveTrainingIntent's intent.microcycle) always produces a
     // well-formed { windowStartDate, objectives } object, so this branch is not known to
@@ -257,7 +270,8 @@ export function getUnresolvedObjectives(microcycle: MicrocycleState): WeeklyObje
     return microcycle.objectives.filter(objective => {
         const requiredCredit = objective.requiredCredit ?? objective.targetExposures;
         const completedCredit = objective.completedCredit ?? objective.completedExposures;
-        return completedCredit < requiredCredit;
+        const projectedCredit = includeProjectedCredit ? (objective.projectedCredit ?? 0) : 0;
+        return completedCredit + projectedCredit < requiredCredit;
     });
 }
 
@@ -278,12 +292,12 @@ export function stimulusCoverage(
 }
 
 /** A pick must cover at least this much of an objective's target stimulus vector to
- *  earn credit -- keeps a session that merely touches an axis (e.g. a technical skill
- *  drill with a token 0.1 aerobicCapacity) from silently resolving it. */
+ *  earn credit -- retained only for compatibility tests/readers of the former V1 model.
+ *  V2 live/planner credit is derived by deriveObjectiveCredit. */
 export const STIMULUS_CREDIT_COVERAGE_THRESHOLD = 0.6;
 
-/** Applies an objective's optional strict qualification policy. Objectives without one
- *  retain the legacy stimulus-coverage-only completion behavior. */
+/** Applies an objective's optional strict qualification policy. Retained for compatibility
+ * with callers/tests that inspect the former V1 qualification path. */
 export function qualifiesForObjective(
     stimulus: WorkoutStimulusProfile,
     modality: SessionTemplate['modality'],
