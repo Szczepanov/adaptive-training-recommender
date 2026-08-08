@@ -557,7 +557,7 @@ function canonicalizeStimulus(s: Partial<WorkoutStimulusProfile> | Record<string
     const raw = s as Record<string, unknown>;
     const numberOrZero = (...values: unknown[]): number => {
         const value = values.find(candidate => typeof candidate === 'number' && Number.isFinite(candidate));
-        return typeof value === 'number' ? value : 0;
+        return typeof value === 'number' ? Math.max(0, Math.min(1, value)) : 0;
     };
     return {
         aerobicEndurance: numberOrZero(s.aerobicEndurance, raw.aerobicCapacity),
