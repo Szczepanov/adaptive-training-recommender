@@ -28,15 +28,21 @@ describe('completed training reconciliation', () => {
         const partial = scaleCostByDeliveredDose(base, { plannedDurationMin: 60, completedDurationMin: 180, completionRatio: 0.5 });
 
         expect(long.systemic).toBeGreaterThan(short.systemic);
+        expect(long.systemic).toBe(base.systemic);
         expect(partial.systemic).toBeLessThan(long.systemic);
         expect(partial.impactTissue).toBeLessThan(long.impactTissue);
     });
 
-    it('retains a Garmin hard session with no adherence answer', () => {
+    it('retains a Garmin hard session with no adherence answer and scales it against the catalog duration reference', () => {
         const [event] = reconcileCompletedTrainingEvents([activity()], []);
+        const exposure = completedEventToExposure(event);
         expect(event.sources).toEqual(['garmin']);
         expect(event.intensity).toBe('hard');
-        expect(completedEventToExposure(event).costProfile.systemic).toBeGreaterThan(0.5);
+        expect(event.deliveredDose?.completedDurationMin).toBe(45);
+        expect(event.deliveredDose?.plannedDurationMin).toBeGreaterThan(45);
+        expect(exposure.costProfile.systemic).toBeGreaterThan(0);
+        expect(exposure.costProfile.systemic).toBeLessThan(DEFAULT_STIMULUS_BY_MODALITY.Cycling.hard.aerobicEndurance + 0.25);
+        expect(exposure.costProfile.systemic).toBe(event.estimatedCost.systemic);
     });
 
     it('merges matching Garmin and followed-adherence evidence into one event', () => {
@@ -54,10 +60,6 @@ describe('completed training reconciliation', () => {
     });
 
     it('classifies a standalone adherence-confirmed, catalog-matched session as exact confidence', () => {
-        // No corroborating Garmin activity at all -- the athlete self-confirmed following a
-        // real catalog template. Per docs/plans/phase-1-live-defects.md Task 1.2(c): "exact
-        // for adherence-confirmed catalog templates" -- this must not fall back to 'inferred'
-        // just because there's no Garmin measurement backing it.
         const [event] = reconcileCompletedTrainingEvents([], [recommendation()]);
         expect(event.exactTemplateMatch).toBe(true);
         const exposure = completedEventToExposure(event);
