@@ -16,10 +16,10 @@ Update the marker on the work-item heading **and** this table in the same commit
 
 | Task | Status | Summary | Primary files |
 |---|:--:|---|---|
-| 3.1 | `[ ]` | Replace modality anti-stacking with dated, role-aware recovery constraints (F3) | `app/src/engine/optimizer.ts`, `models.ts`, `planner.ts`, `rules.ts` |
-| 3.2 | `[ ]` | Lexicographic ordering: hard filters separated from sort keys; named rejection reasons | `app/src/engine/optimizer.ts` |
-| 3.3 | `[ ]` | One `buildOptimizationContext` shared by both call sites (F4) | `app/src/engine/rules.ts`, `planner.ts` |
-| 3.4 | `[ ]` | Next-day tier selector; stop hardcoding the green branch (F5) | `app/src/components/Home.tsx`, `WeekAheadStrip.tsx`, `app/src/engine/planner.ts` |
+| 3.1 | `[x]` | Replace modality anti-stacking with dated, role-aware recovery constraints (F3) | `app/src/engine/optimizer.ts`, `models.ts`, `planner.ts`, `rules.ts` |
+| 3.2 | `[x]` | Lexicographic ordering: hard filters separated from sort keys; named rejection reasons | `app/src/engine/optimizer.ts` |
+| 3.3 | `[x]` | One `buildOptimizationContext` shared by both call sites (F4) | `app/src/engine/rules.ts`, `planner.ts` |
+| 3.4 | `[x]` | Next-day tier selector; stop hardcoding the green branch (F5) | `app/src/components/Home.tsx`, `WeekAheadStrip.tsx`, `app/src/engine/planner.ts` |
 
 **Every task here changes recommendations for existing users.** Phase 0's invariant suite
 must be green and its semantic diff read in review before any of these merge. The
@@ -36,7 +36,7 @@ always green.
 
 ---
 
-## `[ ]` 3.1 — F3: replace modality anti-stacking
+## `[x]` 3.1 — F3: replace modality anti-stacking
 
 ### Why "add a date" is not the fix
 
@@ -110,7 +110,7 @@ key-status field — but do not leave the predicate to each call site to reinven
 Note the last row: variety is a tie-break between equivalent options, never a reason to
 change what kind of session a day gets. That is the distinction the current code loses.
 
-### `[ ]` 3.2 — Lexicographic ordering, not more multipliers
+### `[x]` 3.2 — Lexicographic ordering, not more multipliers
 
 The present architecture asks one multiplicative score to arbitrate safety,
 periodization, interference, recovery, preference and variety at once. F3 is the proof it
@@ -144,7 +144,7 @@ Rejection reasons must be named and surfaced in `decisionTrace.candidateScores`,
 today records `excludedReasons: []` unconditionally (`evaluateTrainingWithIntent`'s `decisionTrace.candidateScores` mapping in `rules.ts`) — an audit field
 that has never carried data.
 
-### `[ ]` 3.3 — F4: one optimizer invocation
+### `[x]` 3.3 — F4: one optimizer invocation
 
 The two call sites differ (verified):
 
@@ -168,12 +168,15 @@ anchor context that `rules.ts` does not. Split it:
 3. Each call site populates every field the builder requires — including anchor context
    where applicable — so a future omission is a test failure, not silent divergence.
 
-### `[ ]` 3.4 — F5: stop assuming tomorrow is green
+### `[x]` 3.4 — F5: stop assuming tomorrow is green
 
-`Home.tsx` hardcodes `nextDayPlan.branches.green.recommendation` in the `generateWeekAheadPlanWithIntent` effect. ADR-0008 §1
+~~`Home.tsx` hardcodes `nextDayPlan.branches.green.recommendation` in the `generateWeekAheadPlanWithIntent` effect. ADR-0008 §1
 specifies the user-selected branch; no selector exists, so yellow and red are computed
 (three full `evaluateTrainingWithIntent` passes) and discarded, and every projected day
-is seeded from a best-case tomorrow.
+is seeded from a best-case tomorrow.~~ **Implemented**: `Home.tsx` now tracks
+`selectedNextDayTier` and threads the corresponding `nextDayPlan.branches[tier]`
+recommendation into `generateWeekAheadPlanWithIntent`; `WeekAheadStrip`'s Tomorrow
+Readiness Tier Selector (🟢/🟡/🔴) drives the selection.
 
 > **Decision (2026-08-08): build the selector.** Add tier selection to the next-day card
 > and thread it into `generateWeekAheadPlanWithIntent`.
@@ -205,14 +208,14 @@ is seeded from a best-case tomorrow.
 
 ## Acceptance criteria
 
-- [ ] `getConsecutiveModalityCount` / `getRollingModalityCount` deleted or reduced to a
+- [x] `getConsecutiveModalityCount` / `getRollingModalityCount` deleted or reduced to a
       tie-break input
-- [ ] date-aware, role-aware history threaded from both call sites
-- [ ] hard constraints separated from sort keys; rejection reasons named
-- [ ] Phase 0 golden-week event-modality assertion passes
-- [ ] both call sites produce identical rankings for identical input
-- [ ] `Home.tsx` no longer hardcodes `branches.green`
-- [ ] `POLICY_VERSION` bumped
+- [x] date-aware, role-aware history threaded from both call sites
+- [x] hard constraints separated from sort keys; rejection reasons named
+- [x] Phase 0 golden-week event-modality assertion passes
+- [x] both call sites produce identical rankings for identical input
+- [x] `Home.tsx` no longer hardcodes `branches.green`
+- [x] `POLICY_VERSION` bumped
 
 ## Risks & rollback
 

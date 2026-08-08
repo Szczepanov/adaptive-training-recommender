@@ -1,9 +1,13 @@
 import { useState } from 'react';
 import type { WeekAheadDay, WeekAheadPlan } from '../engine/planner';
+import type { NextDayPotentialPlan } from '../engine/models';
 import './WeekAheadStrip.css';
 
 interface WeekAheadStripProps {
   plan: WeekAheadPlan | null;
+  nextDayPlan?: NextDayPotentialPlan | null;
+  selectedTier?: 'green' | 'yellow' | 'red';
+  onSelectTier?: (tier: 'green' | 'yellow' | 'red') => void;
 }
 
 const MODALITY_ICON: Record<string, string> = {
@@ -27,7 +31,6 @@ const SHORT_MODALITY_LABEL: Record<string, string> = {
 };
 
 const CONFIDENCE_LABEL: Record<WeekAheadDay['confidence'], string> = {
-  confirmed: 'Confirmed',
   provisional: 'Provisional',
   projected: 'Projected',
 };
@@ -35,26 +38,14 @@ const CONFIDENCE_LABEL: Record<WeekAheadDay['confidence'], string> = {
 const WEEKDAY_FORMATTER = new Intl.DateTimeFormat('en-US', { weekday: 'short', timeZone: 'UTC' });
 
 function weekdayLabel(dateStr: string): string {
-  // dateStr is an already-local YYYY-MM-DD calendar date; parsing as UTC midnight and
-  // formatting in UTC avoids the date shifting a day in either direction depending on
-  // the browser's own timezone offset.
   return WEEKDAY_FORMATTER.format(new Date(dateStr + 'T00:00:00Z'));
 }
 
-/**
- * Rolling 7-day horizontal strip built on top of planner.ts's generateWeekAheadPlan.
- * Deliberately re-renders from whatever `plan` the parent recomputed on this load --
- * nothing here is cached or persisted, so a goal/constraint/check-in edit that changes
- * the underlying plan is reflected immediately on the next render.
- */
-export function WeekAheadStrip({ plan }: WeekAheadStripProps) {
+export function WeekAheadStrip({ plan, nextDayPlan, selectedTier = 'green', onSelectTier }: WeekAheadStripProps) {
   const [selectedIndex, setSelectedIndex] = useState(0);
 
   if (!plan || plan.days.length === 0) return null;
 
-  // Clamp during render rather than syncing via an effect (e.g. if options.days ever
-  // shrinks the plan out from under an out-of-range selection) -- avoids the extra
-  // render-then-correct cascade an effect-based reset would cause.
   const safeIndex = Math.min(selectedIndex, plan.days.length - 1);
   const selected = plan.days[safeIndex];
 
@@ -65,6 +56,38 @@ export function WeekAheadStrip({ plan }: WeekAheadStripProps) {
           <h3>Next 7 Days</h3>
           <span className="provisional-tag">Recalculates daily as your data changes</span>
         </div>
+        {nextDayPlan && !nextDayPlan.isSinglePlan && onSelectTier && (
+          <div className="tier-selector" role="group" aria-label="Tomorrow's expected readiness tier">
+            <span className="tier-selector-label">Tomorrow:</span>
+            <button
+              type="button"
+              className={`tier-btn tier-green ${selectedTier === 'green' ? 'active' : ''}`}
+              aria-pressed={selectedTier === 'green'}
+              onClick={() => onSelectTier('green')}
+              title="Green: High readiness forecast"
+            >
+              🟢 Optimal
+            </button>
+            <button
+              type="button"
+              className={`tier-btn tier-yellow ${selectedTier === 'yellow' ? 'active' : ''}`}
+              aria-pressed={selectedTier === 'yellow'}
+              onClick={() => onSelectTier('yellow')}
+              title="Yellow: Moderate readiness forecast"
+            >
+              🟡 Moderate
+            </button>
+            <button
+              type="button"
+              className={`tier-btn tier-red ${selectedTier === 'red' ? 'active' : ''}`}
+              aria-pressed={selectedTier === 'red'}
+              onClick={() => onSelectTier('red')}
+              title="Red: Low readiness / mandatory recovery forecast"
+            >
+              🔴 Low
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="week-ahead-strip">
@@ -90,7 +113,7 @@ export function WeekAheadStrip({ plan }: WeekAheadStripProps) {
             <h4>{selected.template.title}</h4>
             <span className="detail-date">{selected.date}</span>
           </div>
-          <span className={`status-badge ${selected.confidence === 'confirmed' ? 'success' : 'info'}`}>
+          <span className="status-badge info">
             {CONFIDENCE_LABEL[selected.confidence]}
           </span>
         </div>
@@ -98,16 +121,16 @@ export function WeekAheadStrip({ plan }: WeekAheadStripProps) {
           {selected.template.category} · {selected.template.durationMin}-{selected.template.durationMax} min · {selected.phaseName} phase
         </p>
         <p className="detail-rationale">{selected.rationale}</p>
-        {selected.addressesObjectives.length > 0 && (
+        {selected.addressesObjectives && selected.addressesObjectives.length > 0 && (
           <p className="detail-objectives">
-            Works toward: {selected.addressesObjectives.join(', ')}
+            🎯 Works toward: {selected.addressesObjectives.join(', ')}
           </p>
         )}
         {selected.confidence === 'projected' && (
           <p className="detail-caveat">
-            ⚠️ This far out there's no real recovery data yet -- treat this as the likely
+            ⚠️ This far out there&apos;s no real recovery data yet -- treat this as the likely
             session <em>type</em>, not a locked prescription. It will adjust automatically
-            as each day's actual readiness comes in.
+            as each day&apos;s actual readiness comes in.
           </p>
         )}
       </div>

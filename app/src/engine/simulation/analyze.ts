@@ -1,7 +1,8 @@
-import type { EquipmentKey, SessionTemplate, UserContext, WorkoutCostProfile } from '../models';
+import type { EquipmentKey, Recommendation, SessionTemplate, UserContext, WorkoutCostProfile } from '../models';
 import { evaluateNextDayPlanWithIntent, evaluateTrainingWithIntent } from '../rules';
 import { generateWeekAheadPlanWithIntent, resolveWeeklyAnchors, type WeekAheadDay } from '../planner';
 import type { CompletedExposure, TrainingHistoryProvider } from '../trainingHistory';
+import { evaluatePeriodizationPhase } from '../periodization';
 import { addDaysToLocalDateString } from '../../utils/localDate';
 import type { AthleteScenario } from './scenarios';
 import { SCENARIOS } from './scenarios';
@@ -10,13 +11,10 @@ const ZERO_COST: WorkoutCostProfile = { systemic: 0, cardiovascular: 0, lowerBod
 
 export interface ObjectiveTally {
     key: string;
-    /** Weeks in which this objective was generated at all (its demand threshold was met). */
     timesGenerated: number;
-    /** Weeks in which it was generated AND fully resolved (completedExposures >= target) by week's end. */
     timesResolved: number;
 }
 
-/** A concrete projected session that met the engine's present objective-credit rule. */
 export interface ObjectiveCredit {
     weekIndex: number;
     date: string;
@@ -28,9 +26,7 @@ export interface ObjectiveCredit {
 }
 
 export interface UtilityDiagnosticsSummary {
-    /** Top-two utility scores differ by at most five percent of the selected score. */
     fragileSelectionCount: number;
-    /** A cheaper candidate won despite another eligible candidate having more raw benefit. */
     lowerBenefitSelectionCount: number;
     trainTierRestOrRecoveryCount: number;
 }
@@ -40,15 +36,8 @@ export interface AnchorWeekResult {
     weekStartDate: string;
     eventSpecificAnchorDate: string | null;
     qualityAnchorDate: string | null;
-    /** Did the actual displayed pick on the nominated date match the anchor's intended
-     *  role? A nomination can exist (phase-eligible + duration/equipment-feasible) but
-     *  still lose the final ranking to something else -- this is what actually happened. */
     eventSpecificAnchorHit: boolean | null;
-    /** All race-specific exposures in this weekly planning pass, including today's
-     * confirmed recommendation. The anchor is a placement preference, not a reason to
-     * call the training objective missed when safe event-specific work already happened. */
     eventSpecificExposureDates: string[];
-    /** Whether the week contains an event-specific exposure, on or off its nominated day. */
     eventSpecificAnchorFulfilled: boolean | null;
     qualityAnchorHit: boolean | null;
 }
@@ -63,33 +52,15 @@ export interface ScenarioResult {
     modalityDistribution: Partial<Record<SessionTemplate['modality'], number>>;
     restOrRecoveryDayCount: number;
     restOrRecoveryDayPct: number;
-    /** Longest same-template streak found *within a single week-strip generation call*.
-     *  This remains a diagnostic rather than a hard cap: anti-stacking applies soft
-     *  modality and intensity penalties, not a template-level exclusion. */
     maxConsecutiveSameTemplateStreakWithinCall: number;
-    /** Longest same-template streak across the WHOLE chained horizon, including the
-     *  boundary between one week's call and the next. Real completed history is now
-     *  seeded into each fresh planner call, so its anti-stacking policy sees the boundary;
-     *  the metric remains diagnostic because that policy is deliberately soft. */
     maxConsecutiveSameTemplateStreakAcrossWeeks: number;
     objectiveResolution: ObjectiveTally[];
     objectiveCredits: ObjectiveCredit[];
     utilityDiagnostics: UtilityDiagnosticsSummary;
-    /** Coaching-quality concerns. Unlike constraintViolations, these do not make a plan
-     * unsafe; they make known limitations impossible to overlook in a green test run. */
     qualityWarnings: string[];
     anchorWeeks: AnchorWeekResult[];
-    /** Explanatory note for scenarios where the anchor mechanism's own eligibility check
-     *  (isTemplatePhaseEligible on the Race-Specific Endurance templates) only requires
-     *  *some* focus event, not specifically a cycling-relevant one -- so a nomination can
-     *  technically appear even for a running/strength scenario, but the optimizer's
-     *  event-priority penalty makes it very unlikely to ever win the final pick. Null for
-     *  cycling_event/triathlon scenarios, where this is the intended, well-scoped case. */
     anchorScopeNote: string | null;
     fatigueTierDayCounts: { train: number; modify: number; recover: number };
-    /** Must be empty -- both a metric and a hard sanity invariant. Each entry describes a
-     *  concrete violation (equipment the athlete doesn't own, or a modality matching an
-     *  active injury) found in the actual generated plan. */
     constraintViolations: string[];
 }
 
@@ -101,8 +72,21 @@ function equipmentSatisfied(context: UserContext, required: EquipmentKey[]): boo
         if (eq === 'cable_machine') return context.constraints.hasCableMachine;
         if (eq === 'treadmill') return context.constraints.hasTreadmill;
         if (eq === 'indoor_bike') return context.constraints.hasIndoorBike;
-        return false; // pullup_bar has no engine-level constraint flag -- can't verify, treat as unmet
+        return false;
     });
+}
+
+function recommendationAsDay(date: string, recommendation: Recommendation, phaseName: string): WeekAheadDay {
+    return {
+        date,
+        dayOffset: 0,
+        confidence: 'provisional',
+        phaseName,
+        template: recommendation.template,
+        mode: recommendation.mode === 'recover' ? 'recover' : 'train',
+        rationale: recommendation.rationale,
+        addressesObjectives: [],
+    };
 }
 
 function toCompletedExposure(day: WeekAheadDay): CompletedExposure {
@@ -240,23 +224,24 @@ function computeMetrics(
 }
 
 /**
- * Runs one scenario end to end through the real production code path (the same
- * `evaluateTrainingWithIntent` / `evaluateNextDayPlanWithIntent` / `generateWeekAheadPlanWithIntent`
- * chain `Home.tsx` calls), chaining 7-day windows rather than one large `days:` call --
- * `resolveWeeklyAnchors` only nominates one anchor pair per call, so a single big call
- * would produce one "big day" for the whole horizon instead of a recurring weekly one.
- *
- * A single accumulating `TrainingHistoryProvider` is shared across all three calls in
- * every week, and is fed forward with each week's own picks before the next week runs --
- * this keeps `evaluateTrainingWithIntent`'s view of history consistent with what
- * `generateWeekAheadPlanWithIntent`'s own seed sees, rather than each week starting from
- * an artificially empty history.
+ * Runs one scenario end to end through the real production code path. Each iteration is
+ * one non-overlapping seven-calendar-day block: today's real readiness-driven decision
+ * plus the next six forecast days. The previous harness counted tomorrow..day+7 and then
+ * advanced the next block to day+7, which both omitted the only day where a scenario's
+ * weekly readiness input was directly evaluated and duplicated that boundary day across
+ * consecutive windows. That made the sustained-stress scenario look artificially similar
+ * to baseline (its weekly mandated recovery day was never part of the metrics).
  */
 export async function runScenario(scenario: AthleteScenario): Promise<ScenarioResult> {
     const events = scenario.event ? [scenario.event] : [];
     const accumulatedHistory: CompletedExposure[] = [];
     const historyProvider: TrainingHistoryProvider = {
-        reconstruct: async () => accumulatedHistory,
+        reconstruct: async (_userId, throughDateExclusive, windowDays) => {
+            const windowStart = addDaysToLocalDateString(throughDateExclusive, -windowDays);
+            return accumulatedHistory.filter(exposure =>
+                exposure.date >= windowStart && exposure.date < throughDateExclusive
+            );
+        },
     };
 
     const weeklyDays: WeekAheadDay[][] = [];
@@ -272,39 +257,62 @@ export async function runScenario(scenario: AthleteScenario): Promise<ScenarioRe
         const nextDayPlan = await evaluateNextDayPlanWithIntent('sim-user', events, readiness, scenario.context, currentDate, todayRec, historyProvider);
         const tomorrowRec = nextDayPlan.branches.yellow.recommendation;
 
+        // Six future days + today's actual decision = one non-overlapping 7-day block.
         const plan = await generateWeekAheadPlanWithIntent(
             'sim-user', readiness, scenario.context, null, events, currentDate, todayRec, tomorrowRec,
-            { days: 7 }, historyProvider,
+            { days: 6 }, historyProvider,
         );
-
-        const anchors = resolveWeeklyAnchors(currentDate, 7, events, [], scenario.context);
-        const findPick = (date: string | null) => date ? plan.days.find(d => d.date === date) ?? null : null;
-        const eventSpecificExposureDates = [
-            ...(todayRec.template.category === 'Race-Specific Endurance' ? [currentDate] : []),
-            ...plan.days.filter(day => day.template.category === 'Race-Specific Endurance').map(day => day.date),
+        const todayPhase = evaluatePeriodizationPhase(events, currentDate).phase.phaseName;
+        const simulatedDays: WeekAheadDay[] = [
+            recommendationAsDay(currentDate, todayRec, todayPhase),
+            ...plan.days,
         ];
+
+        // Mirror the planner's real pre-pass inputs, including tomorrow's realized
+        // category/modality. Diagnostics must evaluate the same nominated dates the plan
+        // actually ranked, not recompute a subtly different anchor pair afterward.
+        const anchors = resolveWeeklyAnchors(
+            currentDate,
+            6,
+            events,
+            [],
+            scenario.context,
+            tomorrowRec.template.category,
+            tomorrowRec.template.modality,
+        );
+        const findPick = (date: string | null) => date ? simulatedDays.find(d => d.date === date) ?? null : null;
+        const eventSpecificExposureDates = simulatedDays
+            .filter(day => day.template.modality === 'Cycling' && day.template.category === 'Race-Specific Endurance')
+            .map(day => day.date);
         anchorWeeks.push({
             weekIndex: week,
             weekStartDate: currentDate,
             eventSpecificAnchorDate: anchors.eventSpecificAnchorDate,
             qualityAnchorDate: anchors.qualityAnchorDate,
             eventSpecificAnchorHit: anchors.eventSpecificAnchorDate
-                ? (findPick(anchors.eventSpecificAnchorDate)?.template.category === 'Race-Specific Endurance')
+                ? (() => {
+                    const pick = findPick(anchors.eventSpecificAnchorDate);
+                    return pick?.template.modality === 'Cycling' && pick.template.category === 'Race-Specific Endurance';
+                })()
                 : null,
             eventSpecificExposureDates,
             eventSpecificAnchorFulfilled: anchors.eventSpecificAnchorDate
                 ? eventSpecificExposureDates.length > 0
                 : null,
             qualityAnchorHit: anchors.qualityAnchorDate
-                ? (['Moderate Endurance', 'Hard Endurance'].includes(findPick(anchors.qualityAnchorDate)?.template.category ?? ''))
+                ? (() => {
+                    const pick = findPick(anchors.qualityAnchorDate);
+                    return pick?.template.modality === 'Cycling'
+                        && ['Moderate Endurance', 'Hard Endurance'].includes(pick.template.category);
+                })()
                 : null,
         });
 
-        weeklyDays.push(plan.days);
+        weeklyDays.push(simulatedDays);
         plan.objectiveCredits.forEach(credit => {
             objectiveCredits.push({ weekIndex: week, ...credit });
         });
-        plan.days.forEach(d => accumulatedHistory.push(toCompletedExposure(d)));
+        simulatedDays.forEach(day => accumulatedHistory.push(toCompletedExposure(day)));
 
         plan.microcycleObjectives.forEach(obj => {
             const tally = objectiveTallies.get(obj.key) ?? { key: obj.key, timesGenerated: 0, timesResolved: 0 };
@@ -334,7 +342,6 @@ export interface PreferenceSensitivityResult {
     preferredScenarioId: string;
     baselineScenarioId: string;
     changedPlannedDays: number;
-    /** A zero count means the declared preference made no observable difference. */
     summary: string;
 }
 
@@ -398,11 +405,6 @@ function evaluateReadinessSensitivity(results: ScenarioResult[]): ReadinessSensi
     });
 }
 
-/** `commit` is supplied by the caller rather than resolved here: this module runs both
- *  inside vitest (`scenarios.test.ts`) and as a plain Node script
- *  (`scripts/simulate-scenarios.ts`), and `node:child_process` isn't available under
- *  `src/`'s (browser-targeted) tsconfig -- only the unchecked script has real Node access,
- *  so the git lookup lives there. */
 export async function runAllScenarios(scenarios: AthleteScenario[] = SCENARIOS, commit = 'unknown'): Promise<SimulationReport> {
     const results: ScenarioResult[] = [];
     for (const scenario of scenarios) {

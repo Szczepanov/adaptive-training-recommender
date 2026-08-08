@@ -266,12 +266,19 @@ export interface FatigueState {
     combinedFatigue: DimensionalFatigue;
 }
 
+export type Modality = SessionTemplate['modality'];
+export type SessionRole = 'anchor' | 'supporting' | 'recovery';
+export type IntensityClass = 'hard' | 'moderate' | 'easy' | 'recovery';
+
 export interface SessionHistoryEntry {
-    date: string;
-    templateId: string;
-    category: SessionTemplate['category'];
+    date: string;              // YYYY-MM-DD, Warsaw-local calendar date
+    templateId?: string;
+    category?: SessionTemplate['category'];
     modality: SessionTemplate['modality'];
-    sessionRole?: 'anchor' | 'supporting' | 'recovery';
+    role?: SessionRole;        // 'anchor' | 'supporting' | 'recovery'
+    intensityClass?: IntensityClass;
+    systemicCost: number;
+    lowerBodyCost: number;
 }
 
 export type SessionPlanRelationship = 

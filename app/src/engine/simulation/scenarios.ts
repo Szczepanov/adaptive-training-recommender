@@ -216,7 +216,7 @@ export const SCENARIOS: AthleteScenario[] = [
         id: 'cycling_a_event_build_week',
         label: 'Cycling A-event (Build phase, fixed 2026-03-02)',
         description: 'Golden coaching-contract scenario. 60 days to A-event (Build phase), 1 week strip. Tests key cycling quality spacing, anchor protection, event modality frequency, objective resolution, and rest day presence.',
-        context: context({ indoor_bike: true, free_weights: true }, [], [], { weekdayMaxMinutes: 60, weekendMaxMinutes: 150 }),
+        context: context({ indoor_bike: true, free_weights: true }, ['Cycling'], [], { weekdayMaxMinutes: 60, weekendMaxMinutes: 150 }),
         event: {
             id: 'e-cycling-build-golden',
             title: 'cycling_event (road_race)',

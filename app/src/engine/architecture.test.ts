@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { applyCompletedSessionLoad, createEmptyFatigue } from './fatigue';
 import { generateWeeklyObjectives, updateMicrocycleProgress } from './microcycle';
 import type { SessionTemplate, TrainingSettings, UserContext, UserEvent, UserGoal, UserPreferences } from './models';
-import { rankCandidatesByUtility } from './optimizer';
+import { rankCandidates, rankCandidatesByUtility } from './optimizer';
 import { deriveEventPriority, deriveGoalCategory, evaluatePeriodizationPhase, getDaysToEvent, goalToUserEvent, isTemplatePhaseEligible } from './periodization';
 import { resolveAvailability } from './schedule';
 import { ENRICHED_TEMPLATES } from './templates';
@@ -360,41 +360,45 @@ describe('Architecture & Phased Engine Integration', () => {
                 preferredUnits: { distance: 'km', weight: 'kg', temperature: 'celsius' }, schemaVersion: 1, createdAt: '', updatedAt: '',
             };
 
+            const strengthAvailability = { ...availability, availableEquipment: ['free_weights', 'indoor_bike'] };
             const unstackedRanked = rankCandidatesByUtility(
-                ENRICHED_TEMPLATES, [], fatigue, availability, [], prefs,
-                { recentHistory: [] }
+                ENRICHED_TEMPLATES, [], fatigue, strengthAvailability, [], prefs,
+                { date: '2026-08-07', recentHistory: [] }
             );
 
-            const stackedRanked = rankCandidatesByUtility(
-                ENRICHED_TEMPLATES, [], fatigue, availability, [], prefs,
-                { recentHistory: [{ modality: 'Strength' }, { modality: 'Strength' }] }
+            const stackedRanked = rankCandidates(
+                ENRICHED_TEMPLATES, [], fatigue, strengthAvailability, [], prefs,
+                { date: '2026-08-07', recentHistory: [{ date: '2026-08-06', modality: 'Strength', category: 'Lower-body Strength', systemicCost: 0.8, lowerBodyCost: 0.8 }] }
             );
 
-            const unstackedStrength = unstackedRanked.find(r => r.template.modality === 'Strength');
-            const stackedStrength = stackedRanked.find(r => r.template.modality === 'Strength');
+            const unstackedStrength = unstackedRanked.find(r => r.template.category === 'Lower-body Strength');
+            const stackedStrength = stackedRanked.rejected.find(r => r.template.category === 'Lower-body Strength');
 
             expect(unstackedStrength).toBeDefined();
             expect(stackedStrength).toBeDefined();
-            expect(stackedStrength!.utilityScore).toBeLessThan(unstackedStrength!.utilityScore * 0.2);
+            expect(stackedStrength!.excludedReasons).toContain('HARD_LOWER_BODY_SPACING_VIOLATION');
 
-            // Cycling/Running used to be explicitly exempted from this same check --
-            // exactly the gap that let the optimizer chain the identical endurance
-            // template every day of a 7-day forecast (see docs/adr/0008 incident notes).
+            // Phase 3 (F3): Dated, role-aware recovery constraints replace indiscriminate modality 0.15x penalty.
+            // Consecutive-day anchor quality sessions are gated by Quality Spacing.
             const cyclingAvailability = { ...availability, availableEquipment: ['indoor_bike'] };
             const unstackedCyclingRanked = rankCandidatesByUtility(
                 ENRICHED_TEMPLATES, [], fatigue, cyclingAvailability, [], prefs,
-                { recentHistory: [] }
+                { date: '2026-08-07', recentHistory: [] }
             );
-            const stackedCyclingRanked = rankCandidatesByUtility(
+            const stackedCyclingRanked = rankCandidates(
                 ENRICHED_TEMPLATES, [], fatigue, cyclingAvailability, [], prefs,
-                { recentHistory: [{ modality: 'Cycling' }, { modality: 'Cycling' }] }
+                { date: '2026-08-07', recentHistory: [{ date: '2026-08-06', modality: 'Cycling', category: 'Hard Endurance', role: 'anchor', systemicCost: 0.8 }] }
             );
             const unstackedCycling = unstackedCyclingRanked.find(r => r.template.modality === 'Cycling');
-            const stackedCycling = stackedCyclingRanked.find(r => r.template.modality === 'Cycling');
+            // Rejection order follows ENRICHED_TEMPLATES order, and a Cycling template can
+            // be rejected for MISSING_REQUIRED_EQUIPMENT or TIME_BUDGET_EXCEEDED instead of
+            // quality spacing -- filter by the anchor category too (matching the lower-body
+            // case above) so this checks the behavior under test, not an unrelated rejection.
+            const stackedCycling = stackedCyclingRanked.rejected.find(r => r.template.modality === 'Cycling' && r.template.category === 'Hard Endurance');
 
             expect(unstackedCycling).toBeDefined();
             expect(stackedCycling).toBeDefined();
-            expect(stackedCycling!.utilityScore).toBeLessThan(unstackedCycling!.utilityScore * 0.2);
+            expect(stackedCycling!.excludedReasons).toContain('QUALITY_SPACING_VIOLATION');
         });
 
         it('suppresses a second consecutive Moderate/Hard day across DIFFERENT modalities (intensity-stacking cap)', () => {
@@ -412,22 +416,38 @@ describe('Architecture & Phased Engine Integration', () => {
 
             // Yesterday: a hard cycling day. Today's candidate: a hard STRENGTH session --
             // different modality, so the same-modality anti-stacking check above never
-            // fires, yet back-to-back hard days is still the thing to avoid.
-            const afterHardBike = rankCandidatesByUtility(
+            // fires, yet back-to-back hard days is still the thing to avoid. Read both
+            // sides from the SAME collection (accepted) -- comparing .all (which includes
+            // rejected candidates carrying a flat utilityScore of 0) against an
+            // accepted-only collection would make a hard exclusion masquerade as "lower
+            // utility because of the soft intensity-stacking penalty", which is a
+            // different mechanism this test isn't targeting.
+            const afterHardBike = rankCandidates(
                 ENRICHED_TEMPLATES, [], fatigue, availability, [], prefs,
-                { recentHistory: [{ modality: 'Cycling', type: 'Bike VO2 Intervals', systemicCost: 1.0 }] }
+                { recentHistory: [{ date: '2026-08-06', modality: 'Cycling', category: 'Hard Endurance', type: 'Bike VO2 Intervals', systemicCost: 1.0 }] }
             );
-            const afterEasyBike = rankCandidatesByUtility(
+            const afterEasyBike = rankCandidates(
                 ENRICHED_TEMPLATES, [], fatigue, availability, [], prefs,
-                { recentHistory: [{ modality: 'Cycling', type: 'Zone 2 Spin', systemicCost: 0.3 }] }
+                { recentHistory: [{ date: '2026-08-06', modality: 'Cycling', type: 'Zone 2 Spin', systemicCost: 0.3 }] }
             );
 
-            const hardStrengthAfterHard = afterHardBike.find(r => r.template.category === 'Full-body Strength');
-            const hardStrengthAfterEasy = afterEasyBike.find(r => r.template.category === 'Full-body Strength');
+            const hardStrengthAfterHard = afterHardBike.accepted.find(r => r.template.category === 'Full-body Strength');
+            const hardStrengthAfterEasy = afterEasyBike.accepted.find(r => r.template.category === 'Full-body Strength');
 
-            expect(hardStrengthAfterHard).toBeDefined();
             expect(hardStrengthAfterEasy).toBeDefined();
-            expect(hardStrengthAfterHard!.utilityScore).toBeLessThan(hardStrengthAfterEasy!.utilityScore);
+            if (hardStrengthAfterHard) {
+                // Still accepted, just soft-penalized (intensity-stacking cap): lower utility.
+                expect(hardStrengthAfterHard.utilityScore).toBeLessThan(hardStrengthAfterEasy!.utilityScore);
+            } else {
+                // Hard-excluded outright instead (e.g. ANCHOR_PROTECTION_VIOLATION, since
+                // Full-body Strength is a heavy-lower-body category within a day of a key
+                // Cycling session) -- a *stronger* guarantee than the soft penalty this
+                // test originally checked, so assert that explicitly rather than silently
+                // passing on a candidate that's simply gone.
+                const rejected = afterHardBike.rejected.find(r => r.template.category === 'Full-body Strength');
+                expect(rejected).toBeDefined();
+                expect(rejected!.excludedReasons.length).toBeGreaterThan(0);
+            }
         });
 
         it('rotates between near-equivalent templates in the same modality/category rather than always returning the same one', () => {

@@ -40,8 +40,8 @@ We introduced a 6-tier adaptive multi-sport engine architecture:
 5. **Utility Optimization Engine ([`app/src/engine/optimizer.ts`](../../app/src/engine/optimizer.ts))**:
    * Evaluates candidate workouts using utility scoring:
      $$\text{Utility} = \frac{\text{Benefit (Alignment with Unresolved Weekly Objectives)}}{1 + \text{Fatigue Cost Penalty}} \times \text{Preference Multiplier}$$
-   * Accepts explicit, optional ranking context: dated recent sessions plus the evaluated focus event and periodization phase. It never infers a goal from a workout title.
-   * Applies named, auditable soft modifiers after candidate safety/availability filtering: a third-consecutive-Strength penalty, an A-event modality preference during Build and Specificity, and an `Easy Endurance` preference once rolling objectives are complete.
+   * **Amendment ([Phase 3](../plans/phase-3-single-ranking-path.md)):** Soft modality anti-stacking multipliers are superseded by explicit dated, role-aware recovery constraints (`QUALITY_SPACING_VIOLATION`, `HARD_LOWER_BODY_SPACING_VIOLATION`, `ROLLING_HARD_CAP_EXCEEDED`, `ANCHOR_PROTECTION_VIOLATION`). Candidates are evaluated via strict lexicographic priority: hard filters & recovery constraints first (with named `excludedReasons`), followed by objective benefit satisfaction (Level 4), and then utility score (Level 5-6).
+   * Accepts explicit, optional ranking context via `buildOptimizationContext` shared by both call sites (`evaluateTrainingWithIntent` and `generateWeekAheadPlan`).
    * Maps event categories to catalog modalities deliberately (`cycling_event` -> Cycling, `running_race` -> Running, `strength_meet` -> Strength, triathlon -> Cycling/Running); generic targets get no modality bonus.
    * Emits applied ranking modifiers in the candidate rationale and uses a stable tie-breaker so equivalent candidates do not flicker between evaluations.
 
