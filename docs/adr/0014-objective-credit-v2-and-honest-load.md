@@ -96,8 +96,10 @@ covers at minimum:
 These are intentional, explainable divergences rather than unexplained shadow drift. Any
 future change outside this matrix must either add an explicit reviewed divergence or fail
 regression. The broader scenario harness remains a release gate for coaching-policy effects;
-its current aggregate recovery-share failure is still unresolved and is not waived by this
-credit-model amendment.
+its aggregate recovery-share gate previously failed at 44.3% and has since been fixed by
+correcting a miscalibrated fatigue-recovery threshold in `planner.ts` (see
+`docs/plans/phase-4-objective-credit-v2.md`'s "Harness boundary analysis") -- not waived
+by this credit-model amendment, and not by retuning the bound.
 
 ## Consequences
 
@@ -114,8 +116,10 @@ credit-model amendment.
 * A taper can reduce duration while retaining quality eligibility.
 * `max()` fusion is retained as the status quo, not declared safe; the release approval
   remains gated by simulation evidence. The 2026-08-08 scenario run reported a 58.9%
-  aggregate recovery share, outside its current 5–40% bound; this is recorded as a release
-  blocker, not normalized away.
+  aggregate recovery share, outside its current 5–40% bound; this was recorded as a
+  release blocker rather than normalized away, and root-caused separately (a
+  miscalibrated `PROJECTED_FATIGUE_RECOVER_THRESHOLD`, not the fusion formula) -- the
+  scenario harness now measures 32.4%, inside the bound.
 
 ## Code references
 

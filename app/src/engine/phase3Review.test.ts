@@ -205,12 +205,14 @@ describe('Phase 3 review regressions', () => {
                 neuromuscular: 0.8,
             },
             stimulusProfile: {
-                aerobicCapacity: 0,
-                thresholdDevelopment: 0,
-                surgeRepeatability: 0,
+                aerobicEndurance: 0,
+                thresholdPower: 0,
+                vo2MaxPower: 0,
+                repeatedSurges: 0,
+                sprintPower: 0,
+                fatigueResistance: 0,
                 maxStrength: 1,
                 hypertrophy: 0.8,
-                mobilityRecovery: 0,
             },
             trainingRecordLike: {
                 type: 'Strength Full-body Strength',

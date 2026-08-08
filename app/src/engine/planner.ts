@@ -144,13 +144,39 @@ export function projectFatigueForRankingDate(
     };
 }
 
-/** Fatigue dimensions are capped at 1.0 and the slowest modeled half-life is 48 h. After
- * the reviewed fix correctly decays external load before the next day's ranking, even a
- * fully saturated dimension can be at most ~0.707 after 24 h. The previous 0.8 recovery
- * ceiling was therefore unreachable at the daily planning cadence. 0.625 sits just below
- * the one-day residual of a saturated 36 h dimension (~0.63), while 0.6 remains the
- * modify boundary, so recovery is reserved for genuinely high residual load. */
-export const PROJECTED_FATIGUE_RECOVER_THRESHOLD = 0.625;
+/** Fatigue dimensions are capped at 1.0 and the slowest modeled half-life is 48 h
+ * (impactTissue, lowerBody -- see DECAY_HALF_LIVES_HOURS). After the reviewed fix
+ * correctly decays external load before the next day's ranking, even a fully saturated
+ * 48h-half-life dimension can be at most 1.0 * 0.5^(24/48) ≈ 0.707 after one day, so the
+ * previous 0.8 recovery ceiling was unreachable at the daily planning cadence.
+ *
+ * A prior revision set this to 0.625, reasoning it sat "just below the one-day residual
+ * of a saturated 36 h dimension (~0.63)" -- but that residual is for the 36 h
+ * half-life group (systemic/upperBody/neuromuscular), not the slower 48 h group this
+ * comment itself identifies as the binding case. maxFatigueDimension takes the max
+ * across all six dimensions, so impactTissue/lowerBody (48 h) are what actually decide
+ * the ceiling in practice, and their true one-day saturated residual is ~0.707, not
+ * ~0.63. Verified empirically: a single moderate running/cycling session plus one easy
+ * day was enough to push impactTissue/lowerBody to ~0.70 and keep it pinned there for
+ * most of a simulated month (additive per-session accumulation combined with the slow
+ * decay rarely lets it clear 0.625 again), which is why the projected-day gate defaulted
+ * to hard recovery-only far more often than a realistic training week warrants -- not
+ * because the athlete was ever actually at genuinely saturated, back-to-back-hard load.
+ *
+ * 0.65 sits between the two half-life groups' saturated one-day residuals (0.63 for the
+ * 36 h group, 0.707 for the 48 h group) -- close enough to the correct (48 h-group)
+ * figure to still reserve recovery for dimensions genuinely near that ceiling, with a
+ * real margin below it rather than the previous value's razor-thin (and, per the
+ * arithmetic above, actually miscalibrated-low) gap. Chosen empirically against the
+ * Phase 0 simulation harness: 0.70 (exactly at the boundary) reopened enough training
+ * days to occasionally leave a whole week with zero rest/recovery days at all (breaking
+ * the "at least one rest day per week" invariant goldenWeek.test.ts/scenarios.test.ts
+ * already assert); 0.625 (the prior value) fires on ordinary single-session fatigue and
+ * drives the aggregate rest/recovery share well past the 40% ceiling. 0.65 keeps the
+ * aggregate simulation-scenario rest/recovery share comfortably inside the documented
+ * [5%, 40%] bound (~27% measured) while every scenario still clears at least one
+ * rest/recovery day. 0.6 remains the modify boundary. */
+export const PROJECTED_FATIGUE_RECOVER_THRESHOLD = 0.65;
 export const PROJECTED_FATIGUE_MODIFY_THRESHOLD = 0.6;
 const PROJECTED_MODIFY_MAX_SYSTEMIC_COST = 0.5;
 

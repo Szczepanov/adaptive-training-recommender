@@ -122,7 +122,7 @@ function catalogReferenceDurationMin(modality: CompletedModality, intensity: Com
     const durations = ENRICHED_TEMPLATES
         .filter(template => template.modality === modality && catalogIntensity(template) === intensity)
         .map(templateDurationReferenceMin)
-        .filter((duration): duration is number => Number.isFinite(duration) && duration > 0)
+        .filter((duration): duration is number => typeof duration === 'number' && Number.isFinite(duration) && duration > 0)
         .sort((left, right) => left - right);
     if (durations.length === 0) return undefined;
     return durations[Math.floor(durations.length / 2)];
