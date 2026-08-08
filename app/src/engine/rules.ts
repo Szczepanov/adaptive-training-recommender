@@ -10,6 +10,7 @@ import { resolveTrainingIntent } from './trainingIntent';
 import { POLICY_VERSION } from './policy';
 import { resolveExecutionDose } from './dose';
 import { isTemplatePhaseEligible } from './periodization';
+import { resolveMinimumDaysAfterHardLowerBody } from './planningCandidate';
 
 /**
  * Deterministically pick one template from a filtered set of same-category options,
@@ -472,7 +473,7 @@ export async function evaluateTrainingWithIntent(
         .filter(template => mode !== 'recover' || template.category === 'Rest' || template.category === 'Mobility/Recovery')
         .filter(template => mode !== 'modify' || template.systemicCost <= MODIFY_MAX_SYSTEMIC_COST)
         .filter(template => isTemplatePhaseEligible(template, intent.periodization));
-    const optContext = buildOptimizationContext(intent, context, context.preferences, date);
+    const optContext = buildOptimizationContext(intent, context, context.preferences, date, { resolveMinimumDaysAfterHardLowerBody });
     const rankingResult = rankCandidates(
         candidates,
         optContext.unresolvedObjectives,

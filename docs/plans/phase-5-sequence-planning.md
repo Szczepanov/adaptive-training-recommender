@@ -21,7 +21,7 @@ Ordered by the increment sequence below, **not** by section number.
 | 3 | 5.5 | `[x]` | Evidence hierarchy for completed training, carrying `stimulusConfidence` | `app/src/engine/completedTraining.ts` |
 | 4 | 5.7 | `[x]` | Taper as an explicit plan contract rather than an emergent side effect | `app/src/workouts/event-plan.ts`, `app/src/engine/periodization.ts` |
 | 5 | 5.6 | `[x]` | Multi-event: one taper authority, multiple demand contributors | `app/src/engine/periodization.ts` |
-| 6 | 5.2 | `[ ]` | `PlanningCandidate` carries spacing/recovery metadata into the decision | `app/src/workouts/models.ts`, `app/src/engine/planner.ts` |
+| 6 | 5.2 | `[x]` | `PlanningCandidate` carries spacing/recovery metadata into the decision | `app/src/workouts/models.ts`, `app/src/engine/planner.ts` |
 | 7 | 5.1 | `[ ]` | Bounded sequence search — **build and measure**, adoption conditional (D-BEAM) | `app/src/engine/planner.ts` |
 
 **5.1 is an experiment, not a scheduled migration.** Marking it `[x]` requires a recorded
@@ -97,7 +97,7 @@ judgement the current architecture structurally cannot make.
 Prerequisite: Phase 3's lexicographic layer. Search needs hard constraints separated from
 sort keys; it cannot operate on a single blended multiplier.
 
-## `[ ]` 5.2 — Move the planner/workout-library boundary
+## `[x]` 5.2 — Move the planner/workout-library boundary
 
 Detailed `WorkoutDefinition`s already carry recovery hours, mechanical and eccentric load,
 coordination demand, technical environment, contraindications, and minimum spacing after
@@ -124,6 +124,20 @@ interface PlanningCandidate {
 ```
 
 Prescription generation stays downstream and unchanged.
+
+**Delivered as:** `app/src/engine/planningCandidate.ts` (not literally
+`workouts/models.ts` -- see the file's own doc comment: `engine/models.ts` already
+imports from `workouts/models.ts`, so a type referencing `SessionRole`/`Modality`/
+`WorkoutStimulusProfile`/`WorkoutCostProfile`/`TrainingEnvironment` living in
+`workouts/models.ts` would make that dependency circular). `derivePlanningCandidate`
+resolves one `WorkoutDefinition` against its linked `SessionTemplate`;
+`PLANNING_CANDIDATE_INDEX` builds the full catalog once, keyed by engine template id.
+Wired into the one concrete gap this closes: `optimizer.ts`'s
+`evaluateRecoveryConstraints` hard-lower-body spacing check was a flat 2-day rule with no
+per-workout data behind it at all -- it now consults
+`resolveMinimumDaysAfterHardLowerBody` (optional, defaults to the identical flat rule)
+so a workout's own `eligibility.minimumDaysAfterHardLowerBody` can tighten *or* loosen
+that gate correctly, wired at both live call sites (`planner.ts`, `rules.ts`).
 
 ## `[x]` 5.3 — Persist fixed activities
 

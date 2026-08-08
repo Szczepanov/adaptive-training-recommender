@@ -51,6 +51,7 @@ import {
     rankCandidates,
 } from './optimizer';
 import { ENRICHED_TEMPLATES } from './templates';
+import { resolveMinimumDaysAfterHardLowerBody } from './planningCandidate';
 import { resolvePlannedDoseForDate, resolveTrainingIntent } from './trainingIntent';
 import { resolvePlanDefinitionForEvent } from './planSchedule';
 import { deriveObjectiveCreditFromProfile } from './stimulus';
@@ -672,7 +673,7 @@ export function generateWeekAheadPlan(
             context,
             effectivePreferences,
             date,
-            { anchorRole, adjacentToAnchor }
+            { anchorRole, adjacentToAnchor, resolveMinimumDaysAfterHardLowerBody }
         );
 
         const rankingResult = rankCandidates(

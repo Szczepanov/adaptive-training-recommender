@@ -261,6 +261,29 @@ Phase 3 introduced a single, unified ranking path (`rankCandidates`) driven by s
 
 Strength-maintenance benefit takes the stronger of `maxStrength` and `hypertrophy` target/evidence rather than allowing field order to choose which axis counts.
 
+### The planner/workout-library boundary (Phase 5.2, `planningCandidate.ts`)
+
+Detailed `WorkoutDefinition`s (the prescription catalog) already carry recovery hours,
+mechanical/eccentric load, technical environment, contraindications, and per-workout
+minimum spacing after hard lower-body work -- but the planner selects a coarse
+`SessionTemplate` first, so that richer data used to arrive only *after* the decision it
+should have informed. Concretely: `evaluateRecoveryConstraints`'s hard-lower-body spacing
+gate was a flat 2-day rule with no per-workout data behind it at all.
+
+`PlanningCandidate` (`derivePlanningCandidate`, `PLANNING_CANDIDATE_INDEX`) resolves each
+catalog workout against its linked engine template -- enough semantics to sequence a
+week, without dragging blocks/variants/parameters into the planner; prescription
+generation (`resolveWorkoutPrescription`) stays downstream and unchanged. Wired into
+`OptimizationOptions.resolveMinimumDaysAfterHardLowerBody` (optional, defaults to the
+identical flat rule so every caller that doesn't pass it is unaffected): a workout's own
+`eligibility.minimumDaysAfterHardLowerBody` can now tighten *or* correctly loosen that
+gate per workout instead of one generic number for every lower-body session.
+
+Lives in `engine/`, not `workouts/models.ts` as a first read of the type might suggest --
+`engine/models.ts` already imports from `workouts/models.ts`, so a type referencing
+`SessionRole`/`Modality`/`WorkoutStimulusProfile`/`TrainingEnvironment` inside
+`workouts/models.ts` would make that dependency circular.
+
 ---
 
 ## Authority ordering

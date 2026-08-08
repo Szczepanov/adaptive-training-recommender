@@ -93,6 +93,58 @@ describe('optimizer — dated, role-aware recovery constraints (F3 / 3.1)', () =
         expect(result.rejected[0].excludedReasons).toContain('HARD_LOWER_BODY_SPACING_VIOLATION');
     });
 
+    // Phase 5.2: a detailed workout's own minimumDaysAfterHardLowerBody can require a
+    // longer (or shorter) gap than the flat default -- resolveMinimumDaysAfterHardLowerBody
+    // is the injection point (planningCandidate.ts is the real, catalog-backed resolver;
+    // these tests exercise the mechanism directly with a synthetic one).
+    describe('per-workout hard-lower-body spacing override (Phase 5.2)', () => {
+        const heavySquat = () => ENRICHED_TEMPLATES.find(t => t.category === 'Lower-body Strength') ?? ENRICHED_TEMPLATES.find(t => t.modality === 'Strength')!;
+        const oneDayPriorHistory: RecentHistoryEntry[] = [
+            { date: '2026-03-04', modality: 'Strength', category: 'Lower-body Strength', role: 'anchor', systemicCost: 0.7, lowerBodyCost: 0.8, type: 'Lower-body Strength' },
+        ];
+
+        it('a stricter (3-day) workout-level requirement rejects a candidate that the flat 2-day default would already reject, and also rejects at day 2', () => {
+            const template = heavySquat();
+            const twoDaysPriorHistory: RecentHistoryEntry[] = [
+                { date: '2026-03-03', modality: 'Strength', category: 'Lower-body Strength', role: 'anchor', systemicCost: 0.7, lowerBodyCost: 0.8, type: 'Lower-body Strength' },
+            ];
+            // Default (no resolver): day-2 gap already clears the flat 2-day rule.
+            const defaultResult = rankCandidates(
+                [template], [], DEFAULT_FATIGUE, DEFAULT_AVAILABILITY, [], DEFAULT_PREFERENCES,
+                { date: '2026-03-05', recentHistory: twoDaysPriorHistory },
+            );
+            expect(defaultResult.accepted).toHaveLength(1);
+
+            // A workout that declares it needs 3 full days still rejects at day 2.
+            const strictResult = rankCandidates(
+                [template], [], DEFAULT_FATIGUE, DEFAULT_AVAILABILITY, [], DEFAULT_PREFERENCES,
+                { date: '2026-03-05', recentHistory: twoDaysPriorHistory, resolveMinimumDaysAfterHardLowerBody: () => 3 },
+            );
+            expect(strictResult.rejected).toHaveLength(1);
+            expect(strictResult.rejected[0].excludedReasons).toContain('HARD_LOWER_BODY_SPACING_VIOLATION');
+        });
+
+        it('a more lenient (1-day) workout-level requirement accepts a candidate the flat 2-day default would reject', () => {
+            const template = heavySquat();
+            const result = rankCandidates(
+                [template], [], DEFAULT_FATIGUE, DEFAULT_AVAILABILITY, [], DEFAULT_PREFERENCES,
+                { date: '2026-03-05', recentHistory: oneDayPriorHistory, resolveMinimumDaysAfterHardLowerBody: () => 1 },
+            );
+            expect(result.accepted).toHaveLength(1);
+            expect(result.accepted[0].excludedReasons).not.toContain('HARD_LOWER_BODY_SPACING_VIOLATION');
+        });
+
+        it('a resolver that returns undefined for this template falls back to the flat 2-day default, unchanged', () => {
+            const template = heavySquat();
+            const result = rankCandidates(
+                [template], [], DEFAULT_FATIGUE, DEFAULT_AVAILABILITY, [], DEFAULT_PREFERENCES,
+                { date: '2026-03-05', recentHistory: oneDayPriorHistory, resolveMinimumDaysAfterHardLowerBody: () => undefined },
+            );
+            expect(result.rejected).toHaveLength(1);
+            expect(result.rejected[0].excludedReasons).toContain('HARD_LOWER_BODY_SPACING_VIOLATION');
+        });
+    });
+
     it('rejects a hard session with ROLLING_HARD_CAP_EXCEEDED once 3 hard sessions already sit in the rolling 7-day window', () => {
         const moderateRide = ENRICHED_TEMPLATES.find(t => t.category === 'Moderate Endurance' && t.modality === 'Cycling')!;
         const history: RecentHistoryEntry[] = [
