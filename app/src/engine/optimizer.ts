@@ -80,6 +80,11 @@ const DEFAULT_PREFERENCES: UserPreferences = {
 const INTENSITY_STACK_THRESHOLD = 0.5;
 const INTENSITY_STACK_PENALTY = 0.35;
 const ANCHOR_ROLE_BOOST = 1.35;
+/** Weekly architecture is a Level-4 timing signal under the Phase-3 lexicographic
+ * contract, not merely a Level-6 preference. This additive benefit lets a candidate that
+ * actually fulfils the nominated role outrank unrelated unresolved work on that date,
+ * while still allowing fatigue/safety/recovery hard gates to reject the anchor. */
+const ANCHOR_TIMING_BENEFIT = 1.0;
 const ANCHOR_ADJACENCY_SUPPRESSION = 0.3;
 const HEAVY_LOWER_BODY_STRENGTH_CATEGORIES: SessionTemplate['category'][] = ['Lower-body Strength', 'Full-body Strength'];
 const VARIETY_TIE_BREAK_GAP = 0.05;
@@ -242,11 +247,6 @@ export function evaluateRecoveryConstraints(
             && (template.category === 'Race-Specific Endurance' || template.category === 'Hard Endurance'));
 
     if (isHeavyLowerBodyStrength) {
-        // Hard exclusion is scoped to a *realized* prior key cycling session (found in
-        // actual history) -- adjacency to a day the weekly pre-pass merely nominated as
-        // an anchor (options.adjacentToAnchor) is deliberately a soft nudge only (see
-        // ANCHOR_ADJACENCY_SUPPRESSION below), since that designated day might not even
-        // end up hosting the anchor session once its own ranking runs.
         const priorKeyCycling = history.find(h => {
             const diff = getDayDiff(targetDate, h.date);
             return diff >= 0 && diff <= 1 && h.modality === 'Cycling' && (
@@ -301,7 +301,6 @@ export function calculateStimulusBenefit(
                     return;
                 }
             }
-
         }
 
         const target = obj.targetStimulus;
@@ -340,17 +339,6 @@ export function calculateStimulusBenefit(
     if (benefit === 0) {
         benefit = nonObjectiveBaseline;
     } else {
-        // A genuine (even weak/partial) objective match must never score at or below the
-        // flat baseline a candidate that matches NO objective gets -- docs/architecture/
-        // recommendation-engine.md's Level 4 rule ("objective satisfaction strictly
-        // outranks non-objective candidates") would otherwise invert once a weak match's
-        // raw score fell under the baseline and the two landed in the same lexicographic
-        // tie band (BENEFIT_TIE_BAND). Additive rather than a clamp/floor: a clamp would
-        // collapse every weak match below the baseline to the *same* score, losing the
-        // real (if small) differentiation between two different weak matches -- adding
-        // the baseline on top preserves that relative ordering exactly (it cancels out
-        // when two matched candidates are compared) while still guaranteeing any nonzero
-        // match strictly outranks the flat unmatched baseline.
         benefit = benefit + nonObjectiveBaseline;
     }
 
@@ -415,12 +403,6 @@ export function buildOptimizationContext(
         const entryType = 'type' in e && typeof e.type === 'string' ? e.type : undefined;
 
         return {
-            // Leave undated entries undefined -- normalizeHistory backfills a missing
-            // date to a *preceding* day (see its own `total - idx` arithmetic). Stamping
-            // it with the target `date` here instead would make an undated entry look
-            // like "today": constraints 1-3 in evaluateRecoveryConstraints require
-            // dayDiff >= 1 so they'd never fire for it, while constraint 4 accepts
-            // dayDiff >= 0 so it could raise a spurious ANCHOR_PROTECTION_VIOLATION.
             date: completedDate ?? e.date,
             templateId: e.templateId,
             category: e.category,
@@ -480,13 +462,11 @@ export function rankCandidates(
         if (!template) return;
         const excludedReasons: string[] = [];
 
-        // Level 1: Time Feasibility
         const durationMin = template.durationMin ?? 0;
         if (durationMin > availability.maxTimeMinutes) {
             excludedReasons.push('TIME_BUDGET_EXCEEDED');
         }
 
-        // Level 1: Equipment Feasibility
         const requiredEquipment = template.requiredEquipment ?? [];
         for (const req of requiredEquipment) {
             if (!availability.availableEquipment.includes(req)) {
@@ -495,19 +475,23 @@ export function rankCandidates(
             }
         }
 
-        // Level 1: Injury Safety
         const lowerMod = (template.modality ?? '').toLowerCase();
         if (injuryConstraints.some(inj => inj.toLowerCase() === lowerMod || inj.toLowerCase().includes(lowerMod))) {
             excludedReasons.push('INJURY_RESTRICTION');
         }
 
-        // Level 3: Sequence & Recovery Constraints
         const recoveryReasons = evaluateRecoveryConstraints(template, targetDate, history, options);
         excludedReasons.push(...recoveryReasons);
 
         let benefit = calculateStimulusBenefit(template, unresolvedObjectives);
+        const fulfilsNominatedAnchor = candidateMatchesAnchorRole(template, options.anchorRole);
 
-        // Level 4 Event Modality Priority: Boost benefit for templates matching an A/B event modality
+        // Event priority is a Level-4 objective/timing signal, not a permanent modality
+        // monopoly. Only boost an A/B event modality while the candidate is serving a
+        // still-unresolved event-qualified objective (or the day's explicit anchor role).
+        // This matters after lexicographic ordering: an unconditional benefit boost would
+        // otherwise outrank the Level-6 "strength objective already resolved" nudge and
+        // prescribe low-cost Strength every day of a strength-meet build.
         if (focusEvent && (focusEvent.priority === 'A' || focusEvent.priority === 'B')) {
             const categoryLower = focusEvent.category.toLowerCase();
             const templateModLower = (template.modality ?? '').toLowerCase();
@@ -517,14 +501,26 @@ export function rankCandidates(
                 (categoryLower.includes('strength') && templateModLower.includes('strength')) ||
                 (categoryLower === 'triathlon' && (templateModLower.includes('cycling') || templateModLower.includes('running')));
             const satisfiesUnresolvedObjective = unresolvedObjectives.some(obj =>
-                obj.qualification?.allowedModalities ? obj.qualification.allowedModalities.includes(template.modality) : (template.modality === 'Strength' && obj.key === 'strength_maintenance')
+                obj.qualification?.allowedModalities
+                    ? obj.qualification.allowedModalities.includes(template.modality)
+                    : (template.modality === 'Strength' && obj.key === 'strength_maintenance')
             );
-            if (matchesEvent) {
+            const eventPriorityApplies = satisfiesUnresolvedObjective || fulfilsNominatedAnchor;
+            if (matchesEvent && eventPriorityApplies) {
                 const boost = focusEvent.priority === 'A' ? 1.40 : 1.25;
                 benefit *= boost;
-            } else if (!isPreferred(template) && !satisfiesUnresolvedObjective) {
+            } else if (!matchesEvent && !isPreferred(template) && !satisfiesUnresolvedObjective && unresolvedObjectives.length > 0) {
                 benefit *= 0.20;
             }
+        }
+
+        // Phase-3 ordering explicitly places objective coverage *and timing* ahead of
+        // fatigue cost and preference. A nominated anchor that this actual candidate can
+        // fulfil therefore receives a primary-key timing credit. It is still fully
+        // subordinate to the hard fatigue/recovery gates above: a blocked anchor remains
+        // a missed anchor rather than an unsafe recommendation.
+        if (fulfilsNominatedAnchor) {
+            benefit += ANCHOR_TIMING_BENEFIT;
         }
 
         let costPenalty = calculateFatigueCostPenalty(template.costProfile, fatigueState);
@@ -547,7 +543,6 @@ export function rankCandidates(
             return;
         }
 
-        // Level 6: Preference & Soft Nudges
         let prefMultiplier = 1.0;
         if (isDisliked(template)) {
             prefMultiplier = 0.2;
@@ -560,9 +555,6 @@ export function rankCandidates(
             prefMultiplier *= 0.20;
         }
 
-        // normalizeHistory preserves the caller's array order rather than sorting by
-        // date, so "last element" isn't reliably "most recent" -- pick explicitly by the
-        // smallest positive dayDiff (the closest prior day) instead.
         const lastEntry = history
             .filter(h => getDayDiff(targetDate, h.date) >= 1)
             .sort((a, b) => getDayDiff(targetDate, a.date) - getDayDiff(targetDate, b.date))[0];
@@ -572,10 +564,6 @@ export function rankCandidates(
             prefMultiplier *= INTENSITY_STACK_PENALTY;
         }
 
-        // Variety must not act like another category/modality anti-stacking policy. The
-        // only pre-ranking repetition nudge here is for the exact same template on the
-        // immediately preceding day; broader variety is handled below as a tie-break
-        // among already-equivalent candidates.
         const usedYesterday = history.some(h =>
             getDayDiff(targetDate, h.date) === 1 && h.templateId === template.id
         );
@@ -588,9 +576,10 @@ export function rankCandidates(
             prefMultiplier *= 1.25;
         }
 
-        if (options.anchorRole === 'event-specific' && template.modality === 'Cycling' && template.category === 'Race-Specific Endurance') {
-            prefMultiplier *= ANCHOR_ROLE_BOOST;
-        } else if (options.anchorRole === 'quality' && template.modality === 'Cycling' && (template.category === 'Moderate Endurance' || template.category === 'Hard Endurance')) {
+        // Retain the original anchor preference as a within-tier nudge. The Level-4
+        // timing credit above is what establishes the day's class; this multiplier only
+        // chooses among otherwise near-equivalent implementations.
+        if (fulfilsNominatedAnchor) {
             prefMultiplier *= ANCHOR_ROLE_BOOST;
         }
 
@@ -617,27 +606,6 @@ export function rankCandidates(
         all.push(item);
     });
 
-    // Lexicographic Sorting
-    // A pairwise `Math.abs(diff) <= BENEFIT_TIE_BAND` rule is not transitive: for benefit
-    // scores 1.00/0.96/0.92, each adjacent pair ties (0.04 <= 0.05) but the outer pair
-    // does not (0.08 > 0.05). Array.sort's comparator contract requires a consistent
-    // total order -- a non-transitive comparator produces engine-/input-order-dependent
-    // results (unspecified behavior per the ECMAScript spec, not just "unlikely to
-    // matter"). Assign a discrete benefit tier first so "same tier" is an actual
-    // equivalence relation shared by the sort and the near-equivalents grouping below.
-    //
-    // Deliberately NOT independent rounding (Math.round(benefit / BENEFIT_TIE_BAND)):
-    // verified by regression that it introduces its own artifact -- two candidates only
-    // 0.039 apart (e.g. 0.020 and 0.059) can straddle a rounding boundary (0.025) and
-    // land in different tiers despite being well within BENEFIT_TIE_BAND of each other,
-    // which silently changed a real pick (see the "resolves the threshold objective..."
-    // test this broke during review). Chaining instead: sort by real benefitScore first
-    // (a plain numeric sort, already transitive on its own), then walk that order and
-    // start a new tier only when the gap from the immediately-preceding candidate
-    // exceeds BENEFIT_TIE_BAND. Every candidate gets exactly one fixed tier number
-    // up front, independent of comparison order, which is what makes the final sort
-    // transitive -- and adjacent-close candidates stay grouped the way the original
-    // pairwise rule intended for the common case.
     const byBenefitDesc = [...accepted].sort((a, b) => b.benefitScore - a.benefitScore);
     const benefitTierByCandidate = new Map<RankedCandidate, number>();
     byBenefitDesc.forEach((c, idx) => {
@@ -653,7 +621,6 @@ export function rankCandidates(
         return b.utilityScore - a.utilityScore;
     });
 
-    // Catalog Variety Rotation on accepted candidates
     if (accepted.length > 1) {
         const topCandidate = accepted[0];
         const topBenefitTier = getBenefitTier(topCandidate);
@@ -687,11 +654,6 @@ export function rankCandidates(
                 return y.utilityScore - x.utilityScore;
             });
 
-            // nearEquivalents is a filtered subset of accepted -- its members are not
-            // guaranteed to occupy the first nearEquivalents.length positions, so slicing
-            // by count (the old approach) could both drop a candidate that sits between
-            // them and duplicate one that's already in nearEquivalents. Remove by
-            // identity instead.
             const nearEquivalentSet = new Set(nearEquivalents);
             const remaining = accepted.filter(c => !nearEquivalentSet.has(c));
             accepted.splice(0, accepted.length, ...nearEquivalents, ...remaining);
