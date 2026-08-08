@@ -41,6 +41,7 @@ import {
     type RecentHistoryEntry,
     ANCHOR_HISTORY_CATEGORIES,
     buildOptimizationContext,
+    candidateMatchesAnchorRole,
     rankCandidates,
 } from './optimizer';
 import { ENRICHED_TEMPLATES } from './templates';
@@ -107,6 +108,27 @@ function combineMax(a: DimensionalFatigue, b: DimensionalFatigue): DimensionalFa
     };
 }
 
+/** Project both fatigue signals to the exact date that will be ranked. External load is
+ * stored as-of the last applied/completed session date, so reusing it without decay makes
+ * tomorrow inherit yesterday's post-session value and systematically overstates fatigue. */
+export function projectFatigueForRankingDate(
+    externalFatigue: FatigueState,
+    internalStrain: DimensionalFatigue,
+    internalStrainAsOf: string,
+    date: string,
+): FatigueState {
+    const externalHours = Math.max(0, getDayDiff(date, externalFatigue.lastUpdatedDate) * 24);
+    const internalHours = Math.max(0, getDayDiff(date, internalStrainAsOf) * 24);
+    const decayedExternal = decayFatigue(externalFatigue.externalLoadFatigue, externalHours);
+    const decayedInternal = decayFatigue(internalStrain, internalHours);
+    return {
+        lastUpdatedDate: date,
+        externalLoadFatigue: decayedExternal,
+        internalResponseStrain: decayedInternal,
+        combinedFatigue: combineMax(decayedExternal, decayedInternal),
+    };
+}
+
 export const PROJECTED_FATIGUE_RECOVER_THRESHOLD = 0.8;
 export const PROJECTED_FATIGUE_MODIFY_THRESHOLD = 0.6;
 const PROJECTED_MODIFY_MAX_SYSTEMIC_COST = 0.5;
@@ -164,6 +186,21 @@ export interface WeeklyAnchors {
 }
 
 const QUALITY_ANCHOR_MIN_GAP_DAYS = 2;
+
+/** Role is derived from the realized session. A nominated date only becomes an anchor
+ * when the pick actually fulfils its nominated Cycling role; otherwise the session keeps
+ * whatever intrinsic role its own category carries. */
+export function realizedSessionRole(
+    date: string,
+    template: SessionTemplate,
+    anchors: WeeklyAnchors,
+): SessionRole {
+    const nominatedRole = date === anchors.eventSpecificAnchorDate
+        ? 'event-specific'
+        : date === anchors.qualityAnchorDate ? 'quality' : null;
+    if (candidateMatchesAnchorRole(template, nominatedRole)) return 'anchor';
+    return ANCHOR_HISTORY_CATEGORIES.includes(template.category) ? 'anchor' : 'supporting';
+}
 
 export function resolveWeeklyAnchors(
     todayDate: string,
@@ -397,13 +434,12 @@ export function generateWeekAheadPlan(
         const periodization = evaluatePeriodizationPhase(events, date);
         const availability = resolveAvailability(date, null, fixedActivities, context);
 
-        const decayedInternalStrain = decayFatigue(internalStrain, getDayDiff(date, internalStrainAsOf) * 24);
-        const rankingFatigue: FatigueState = {
-            lastUpdatedDate: date,
-            externalLoadFatigue: externalFatigue.externalLoadFatigue,
-            internalResponseStrain: decayedInternalStrain,
-            combinedFatigue: combineMax(externalFatigue.externalLoadFatigue, decayedInternalStrain),
-        };
+        const rankingFatigue = projectFatigueForRankingDate(
+            externalFatigue,
+            internalStrain,
+            internalStrainAsOf,
+            date,
+        );
 
         const unresolved = getUnresolvedObjectives(microcycle);
 
@@ -433,7 +469,7 @@ export function generateWeekAheadPlan(
                 templateId: todayRec.template.id,
                 category: todayRec.template.category,
                 modality: todayRec.template.modality,
-                role: (ANCHOR_HISTORY_CATEGORIES.includes(todayRec.template.category) ? 'anchor' : 'supporting') as SessionRole,
+                role: realizedSessionRole(todayDate, todayRec.template, anchors),
                 systemicCost: todayRec.template.systemicCost,
                 lowerBodyCost: todayRec.template.costProfile?.lowerBody ?? 0,
                 type: todayRec.template.title,
@@ -443,7 +479,7 @@ export function generateWeekAheadPlan(
                 templateId: d.template.id,
                 category: d.template.category,
                 modality: d.template.modality,
-                role: (d.date === anchors.eventSpecificAnchorDate || d.date === anchors.qualityAnchorDate || ANCHOR_HISTORY_CATEGORIES.includes(d.template.category) ? 'anchor' : 'supporting') as SessionRole,
+                role: realizedSessionRole(d.date, d.template, anchors),
                 systemicCost: d.template.systemicCost,
                 lowerBodyCost: d.template.costProfile?.lowerBody ?? 0,
                 type: d.template.title,
