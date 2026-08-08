@@ -2,7 +2,7 @@ import type { DailyReadiness, UserContext, Recommendation, SessionTemplate, Next
 import { TEMPLATES } from './templates';
 import { eligibleTemplates, evaluateTemplateEligibility, resolveMaximumSessionMinutes } from './eligibility';
 import { ENRICHED_TEMPLATES } from './templates';
-import { rankCandidates, rankCandidatesByUtility } from './optimizer';
+import { buildOptimizationContext, rankCandidates, rankCandidatesByUtility } from './optimizer';
 import { resolveAvailability } from './schedule';
 import { addDaysToLocalDateString } from '../utils/localDate';
 import type { TrainingHistoryProvider } from './trainingHistory';
@@ -473,31 +473,15 @@ export async function evaluateTrainingWithIntent(
         .filter(template => mode !== 'recover' || template.category === 'Rest' || template.category === 'Mobility/Recovery')
         .filter(template => mode !== 'modify' || template.systemicCost <= MODIFY_MAX_SYSTEMIC_COST)
         .filter(template => isTemplatePhaseEligible(template, intent.periodization));
+    const optContext = buildOptimizationContext(intent, context, context.preferences as any, date);
     const rankingResult = rankCandidates(
         candidates,
-        intent.unresolvedObjectives,
-        intent.fatigue,
-        resolveAvailability(date, readiness.subjective, [], context),
-        context.constraints.restrictedModalities ?? [],
-        {
-            userId, preferredRecoveryStyle: 'mixed', defaultWeekdayTimeMin: 45, defaultWeekendTimeMin: 60,
-            preferredTimeOfDay: 'flexible', preferredModalities: context.preferences.preferredModalities,
-            deprioritizedModalities: context.preferences.deprioritizedModalities, avoidedModalities: context.preferences.avoidedModalities,
-            explanationVerbosity: 'detailed', conservativeBias: context.preferences.conservativeBias,
-            preferredUnits: { distance: 'km', weight: 'kg', temperature: 'celsius' }, schemaVersion: 1, createdAt: '', updatedAt: '',
-        },
-        {
-            date,
-            focusEvent: intent.periodization.focusEvent,
-            recentHistory: intent.history.map(item => ({
-                date: item.date,
-                modality: item.modality ?? item.trainingRecordLike.type,
-                type: item.trainingRecordLike.type,
-                category: item.category,
-                systemicCost: item.costProfile?.systemic ?? 0,
-                lowerBodyCost: item.costProfile?.lowerBody ?? 0,
-            }))
-        }
+        optContext.unresolvedObjectives,
+        optContext.fatigueState,
+        optContext.availability,
+        optContext.injuryConstraints,
+        optContext.preferences,
+        optContext.options
     );
     const pick = rankingResult.accepted[0];
     if (!pick) return evaluateTraining(readiness, context, date, previousMode, envelopeState);

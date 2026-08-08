@@ -18,7 +18,7 @@ Update the marker on the work-item heading **and** this table in the same commit
 |---|:--:|---|---|
 | 3.1 | `[x]` | Replace modality anti-stacking with dated, role-aware recovery constraints (F3) | `app/src/engine/optimizer.ts`, `models.ts`, `planner.ts`, `rules.ts` |
 | 3.2 | `[x]` | Lexicographic ordering: hard filters separated from sort keys; named rejection reasons | `app/src/engine/optimizer.ts` |
-| 3.3 | `[ ]` | One `buildOptimizationContext` shared by both call sites (F4) | `app/src/engine/rules.ts`, `planner.ts` |
+| 3.3 | `[x]` | One `buildOptimizationContext` shared by both call sites (F4) | `app/src/engine/rules.ts`, `planner.ts` |
 | 3.4 | `[ ]` | Next-day tier selector; stop hardcoding the green branch (F5) | `app/src/components/Home.tsx`, `WeekAheadStrip.tsx`, `app/src/engine/planner.ts` |
 
 **Every task here changes recommendations for existing users.** Phase 0's invariant suite
@@ -144,7 +144,7 @@ Rejection reasons must be named and surfaced in `decisionTrace.candidateScores`,
 today records `excludedReasons: []` unconditionally (`evaluateTrainingWithIntent`'s `decisionTrace.candidateScores` mapping in `rules.ts`) — an audit field
 that has never carried data.
 
-### `[ ]` 3.3 — F4: one optimizer invocation
+### `[x]` 3.3 — F4: one optimizer invocation
 
 The two call sites differ (verified):
 

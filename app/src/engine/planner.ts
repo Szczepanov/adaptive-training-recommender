@@ -29,6 +29,7 @@ import {
 } from './microcycle';
 import {
     type RecentHistoryEntry,
+    buildOptimizationContext,
     rankCandidatesByUtility,
     rankCandidates,
     getConsecutiveModalityCount,
@@ -386,14 +387,22 @@ export function generateWeekAheadPlan(
             })),
         ];
 
+        const optContext = buildOptimizationContext(
+            { unresolvedObjectives: unresolved, fatigue: rankingFatigue, periodization, history: projectedHistory },
+            context,
+            effectivePreferences,
+            date,
+            { anchorRole, adjacentToAnchor }
+        );
+
         const ranked = rankCandidatesByUtility(
             fatigueGated,
-            unresolved,
-            rankingFatigue,
-            availability,
-            injuries,
-            effectivePreferences,
-            { date, focusEvent: periodization.focusEvent, recentHistory: projectedHistory, anchorRole, adjacentToAnchor }
+            optContext.unresolvedObjectives,
+            optContext.fatigueState,
+            optContext.availability,
+            optContext.injuryConstraints,
+            optContext.preferences,
+            optContext.options
         );
 
         const restFallback: SessionTemplate = ENRICHED_TEMPLATES.find(t => t.category === 'Rest') ?? {
