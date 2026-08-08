@@ -22,6 +22,26 @@ describe('recommendation audit replay', () => {
         expect(replayRecommendationAudit(auditedRecommendation())).toEqual({ reproducible: true, policyMatchesCurrent: true, errors: [] });
     });
 
+    it('explicitly rejects the historical single-ranking-path policy as audit-only', () => {
+        const record = auditedRecommendation();
+        record.recommendationAudit!.policyVersion = '2026-08-single-ranking-path-v1';
+        expect(replayRecommendationAudit(record)).toEqual({
+            reproducible: false,
+            policyMatchesCurrent: false,
+            errors: ['Historical policy version 2026-08-single-ranking-path-v1 is intentionally audit-only and cannot be replayed by this build.'],
+        });
+    });
+
+    it('rejects an unknown policy version distinctly from a known historical policy', () => {
+        const record = auditedRecommendation();
+        record.recommendationAudit!.policyVersion = 'unknown-policy';
+        expect(replayRecommendationAudit(record)).toMatchObject({
+            reproducible: false,
+            policyMatchesCurrent: false,
+            errors: ['Policy version unknown-policy is not available in this build.'],
+        });
+    });
+
     it('rejects a record whose selected template was not the highest-scoring candidate', () => {
         const record = auditedRecommendation();
         record.recommendationAudit!.candidateScores[1].utilityScore = 2;
