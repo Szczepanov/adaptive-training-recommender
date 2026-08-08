@@ -75,8 +75,11 @@ The existing scenario assertions in `app/src/engine/scenarios.test.ts` check eng
 semantics (no constraint violations, no absurd streaks). They do not assert that the
 week is *coached well*. Add one scenario that does.
 
-Add to `app/src/engine/simulation/scenarios.ts` a scenario `cycling_a_event_build_week`:
-an A-priority `cycling_event` roughly 60 days out, `free_weights: true`,
+Add to `app/src/engine/simulation/scenarios.ts` a scenario `cycling_a_event_build_week`.
+**Use fixed dates, not a relative offset** — `daysToEvent` drives phase selection and
+phase-specific template eligibility, so a floating "~60 days out" would make the
+assertions drift: `startDate: '2026-03-02'`, event date `'2026-05-01'` (60 days, squarely
+in Build). Other attributes: `free_weights: true`,
 `indoor_bike: true`, `environment: 'either'`, weekday 60 / weekend 150 minutes, stable
 moderate readiness.
 
@@ -179,7 +182,7 @@ run surfaces, or record explicit per-module ignores with a reason.
 
 ## Acceptance criteria
 
-- [ ] invariant suite (0.2) + aggregate bounds run in CI and are blocking
+- [ ] invariant suite (0.2) + aggregate bounds (0.1) run in CI and are blocking
 - [ ] `npm run simulate:diff` emits a semantic diff and is explicitly non-blocking
 - [ ] `docs/analysis/simulation-baseline.json` is committed and reproducible twice in a row
 - [ ] `goldenWeek.test.ts` exists; the event-modality-frequency assertion is present and

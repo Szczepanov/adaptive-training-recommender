@@ -58,7 +58,7 @@ This document outlines repository rules, code conventions, testing instructions,
 src/garmin_sync/
   config.py            # Typed Settings & validation
   dates.py             # Europe/Warsaw date provider
-  models.py            # Domain Schema Version 3 models & provenance (ADR-0002)
+  models.py            # Schema Version 3 models (ADR-0002); provenance records (ADR-0010)
   garmin_client.py     # Garmin API wrapper with exponential backoff
   token_store.py       # LocalTokenStore & GcsTokenStore abstraction
   firestore_repository.py # Firestore user-scoped repository

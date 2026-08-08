@@ -44,24 +44,38 @@ steers the plan away from precisely the modality the event requires.
 
 ```ts
 export interface SessionHistoryEntry {
-  date: string;
+  date: string;              // YYYY-MM-DD, Warsaw-local calendar date
   templateId: string;
   modality: Modality;
-  role: SessionRole;
+  role: SessionRole;         // 'anchor' | 'supporting' | 'recovery'
   intensityClass: IntensityClass;
   systemicCost: number;
   lowerBodyCost: number;
 }
 ```
 
+Two definitions the constraints below depend on — state them, do not leave them implied:
+
+**Time model.** `date` is a calendar date, not a timestamp, so "48 hours" is not literally
+checkable. Define the rule in calendar terms: *at least one full clear day between the two
+sessions* (i.e. `dayDiff >= 2`). That is the honest reading of date-only data, and it is
+what the golden-week assertion should test — including the boundary cases `dayDiff === 1`
+(violation) and `dayDiff === 2` (allowed). Do not write "48 h" in the implementation and
+compare dates.
+
+**Key-cycling predicate.** `SessionRole` alone cannot distinguish a key ride from a
+supporting one. Define it explicitly beside the constraint:
+`modality === 'Cycling' && role === 'anchor'`. If that proves too coarse, add an explicit
+key-status field — but do not leave the predicate to each call site to reinvent.
+
 **Explicit constraints** replacing `consecutiveCount >= 2 || rollingCount >= 2`:
 
 | Constraint | Rule |
 |---|---|
-| Quality spacing | ≥ 48 h between two `quality`-role sessions |
+| Quality spacing | ≥ 1 clear day (`dayDiff >= 2`) between two anchor-role sessions |
 | Hard lower-body | no back-to-back sessions with `lowerBodyCost >= 0.6` |
 | Rolling hard cap | ≤ 3 sessions with `systemicCost >= 0.5` in any rolling 7 days |
-| Anchor protection | no heavy lower-body strength within 1 day of a key cycling session |
+| Anchor protection | no heavy lower-body strength within 1 day of a *key cycling session* (predicate above) |
 | Variety | applies **only** among candidates in the same role and modality |
 
 Note the last row: variety is a tie-break between equivalent options, never a reason to
@@ -115,8 +129,15 @@ The two call sites differ (verified):
 Extract `buildOptimizationContext(intent, context, preferences, date)` used by both, and
 delete the fabricated `UserPreferences` literal at `rules.ts:503-509`.
 
-**Test:** given identical inputs, both call sites produce identical `RankedCandidate[]`.
-This is the assertion that keeps them from drifting again.
+**Test — but test the right thing.** Feeding both call sites literally identical inputs
+does not exercise the production difference, since `planner.ts` legitimately supplies
+anchor context that `rules.ts` does not. Split it:
+
+1. `buildOptimizationContext` produces an equivalent normalized context from each call
+   site's own inputs (asserting the *builder* is shared and total).
+2. Given equivalent contexts, `rankCandidates` returns identical `RankedCandidate[]`.
+3. Each call site populates every field the builder requires — including anchor context
+   where applicable — so a future omission is a test failure, not silent divergence.
 
 ### 3.4 — F5: stop assuming tomorrow is green
 

@@ -533,6 +533,7 @@ on its own — it is the only phase that fixes incorrect user-facing output.
 
 - Update `docs/workout-library.md` §Source of the catalogue and §File layout.
 - Consider a dedicated ADR for D4 (workout-per-template vs parameter-variant) if §4.1 resolves.
-  (Originally written as "ADR-0010"; that number is now taken by decision provenance.
-  Reserve the next free number at the time it is written.)
+  (Originally written as "ADR-0010"; that number now belongs to decision provenance.
+  0010–0015 are reserved — see the ADR index in [`docs/README.md`](../README.md) — so take
+  the next number after the documented reservations.)
   toward a resolver change — that is an architectural decision, not a content one.

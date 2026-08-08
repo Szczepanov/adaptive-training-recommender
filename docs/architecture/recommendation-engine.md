@@ -13,8 +13,9 @@ How `app/src/engine/` turns a morning's data into a prescribed session.
 
 ## Two selection paths
 
-A template can reach the athlete through **two independent paths with different filtering
-rules**. Any change here must be evaluated against both.
+A template can reach the athlete through **two distinct selection paths with different
+filtering rules** (distinct, not independent — Path B runs Path A internally for mode and
+envelopes, so the readiness computation is shared; only the *selection* differs). Any change here must be evaluated against both.
 
 ### Path A — readiness only (`evaluateTraining`)
 

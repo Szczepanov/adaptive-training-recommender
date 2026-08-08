@@ -65,6 +65,16 @@ Implement as per-objective functions behind one interface. Resist collapsing the
 shared formula with per-objective coefficients — that reintroduces F11's uncited-constant
 problem in a new place.
 
+**The input contract must carry the evidence these rules need.** `stimulus.ts`'s
+`DeliveredDose` currently offers only `plannedDurationMin`, `completedDurationMin` and
+`completionRatio`, and `CreditContext` only `modality`/`category`. That cannot express
+effort count, recovery pattern, continued pedalling after efforts, aerobic-load context,
+or event-like context. Either extend the contract to carry them (with
+`stimulusConfidence` marking what is measured vs inferred) **or** narrow the objective
+rules to what the available evidence supports. What must not happen is a credit function
+that silently ignores a factor its own specification names — that is how an unfalsifiable
+formula gets shipped.
+
 ### Shadow mode before cutover
 
 Run V1 and V2 crediting side by side for one iteration, emitting both into the simulation
@@ -86,8 +96,16 @@ Consumers disagree on which vocabulary is authoritative — `optimizer.ts` reads
 only, `stimulus.ts` reads canonical-first. This is masked today only because both are
 populated.
 
-1. Make canonical axes **required**; delete the legacy aliases via a one-shot codemod over
-   `templates.ts` and the catalog.
+1. Make canonical axes **required**; delete the legacy aliases. **Inventory every producer
+   and consumer first** — the codemod is not limited to `templates.ts` and the catalog.
+   Known readers of the legacy vocabulary: `optimizer.ts` (`calculateStimulusBenefit`
+   reads legacy axes exclusively), `microcycle.ts` (`targetStimulus` keys in
+   `generateWeeklyObjectives` and `stimulusCoverage`), `completedTraining.ts`
+   (`ZERO_STIMULUS`), `planner.ts` (`ZERO_STIMULUS`), `stimulus.ts` (canonical-first),
+   plus test fixtures and any persisted `estimatedStimulus` on stored
+   `CompletedTrainingEvent`s. Deleting aliases without migrating all of them either fails
+   to compile or, worse, compiles and silently scores zero coverage. Include a
+   compatibility read for persisted profiles written under the old vocabulary.
 2. Type `WeeklyObjective.targetStimulus` as
    `Partial<Record<keyof WorkoutStimulusProfile, number>>` instead of
    `Record<string, number>`, so a typo'd axis is a compile error rather than a silent
@@ -121,7 +139,14 @@ monotonicity.
 therefore load-bearing and asserted only in a comment (`planner.ts:129`). Out-of-order
 input silently mis-decays.
 
-**Throw on unordered input.** One assertion, one test.
+**Sort, then assert — do not take the dashboard down.** History is external, persisted
+input; a bare `throw` on malformed ordering turns a data problem into an outage. The
+boundary behaviour: validate and deterministically sort at ingestion
+(`buildTrainingHistorySnapshot`), and have `buildFatigueStateFromHistory` assert the
+invariant it relies on. If the assertion ever fires in production it is a programming
+error, not bad data — but the caller still degrades to the established controlled state
+(ADR-0010's `INVALID` path) rather than crashing. Add a recommendation-path test for
+malformed ordering, not just a unit test on the function.
 
 ### (b) Modelling — do not pre-decide
 
@@ -141,6 +166,25 @@ before committing to one — and record the comparison in an ADR, with the data.
 
 This is deliberately slower than picking a formula. It is the process F11 asks for, and
 this phase is the first opportunity to actually follow it.
+
+## 4.5 — `PlannedDose`: give `intensityScale` its consumer (D2)
+
+**This is the work item that discharges D2 and F17.** Phase 2 decided `intensityScale`
+gets a consumer rather than being deleted; without an owning work item that commitment is
+prose, which is the exact failure mode this review criticises.
+
+1. Replace the scalar `plannedDose` (`trainingIntent.ts:80`) with
+   `PlannedDose { volume, intensity }`.
+2. `volume` derives from `PlanBlock.volumeScale` (current behaviour, unchanged).
+3. `intensity` derives from `PlanBlock.intensityScale` and gates which intensity-class
+   candidates are admissible, so a taper can hold intensity while cutting volume.
+4. `Recommendation.plannedDose` and the persisted audit carry both components.
+5. `resolveExecutionDose` (`dose.ts`) intersects `volume` with the clinical ceiling as
+   today; `intensity` is a separate admissibility gate, not a second ceiling on duration.
+
+**Acceptance:** `intensityScale` has at least one reader; a taper block with
+`volumeScale` down and `intensityScale` held produces shorter sessions at retained
+intensity class, asserted in the Phase-0 harness.
 
 ## 4.4 — Dose-sensitive cost
 
@@ -171,6 +215,9 @@ is unused.
 - [ ] unsaturated latent external-load state retained
 - [ ] fusion function **not** changed without a recorded harness comparison
 - [ ] cost responds to duration and completion ratio
+- [ ] `PlannedDose { volume, intensity }` exists and `intensityScale` has a reader (D2/F17)
+- [ ] credit input contract carries the evidence the objective rules name, or the rules are narrowed
+- [ ] history ordering is validated/sorted at ingestion; malformed order degrades, not crashes
 - [ ] `POLICY_VERSION` bumped
 
 ## Risks & rollback

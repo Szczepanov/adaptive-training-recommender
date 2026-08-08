@@ -83,7 +83,7 @@ this table exists so none of them has to be rediscovered by reading six document
 
 | ID | Decision | Where | One-line reason |
 |---|---|---|---|
-| **D-INJ** | Structured `InjuryConstraint` (Option B), not consolidation onto guardrails (Option A) | [1.1](./phase-1-live-defects.md#two-options-and-the-decision) | Guardrails cannot express a modality exclusion, cannot expire, and Phase 5.4 needs the schema anyway |
+| **D-INJ** | Structured `InjuryConstraint[]` (Option B), not consolidation onto guardrails (Option A) | [1.1](./phase-1-live-defects.md#two-options-and-the-decision) | Guardrails cannot express a modality exclusion, cannot expire, and Phase 5.4 needs the schema anyway |
 | **D-KWD** | The keyword matcher is legacy last-resort only; recognised Garmin sessions get an inferred vector | [1.2](./phase-1-live-defects.md) | Routing to it trades a false negative for double credit on one ride |
 | **D-GATE** | Coaching invariants gate CI; the simulation snapshot is a non-blocking semantic diff | [0.1](./phase-0-instrumentation.md) | A byte-exact gate would freeze today's known-bad behaviour and make every improvement look like a regression |
 | **D-PHASE** | `EventPlanPhase` is the canonical phase vocabulary; `PhaseWeights.phaseName` becomes a derived label | [2.1 D1](./phase-2-plan-intent-authority.md) | It is what a coach actually names, and it can express `travel`, which days-to-event structurally cannot |
@@ -93,9 +93,12 @@ this table exists so none of them has to be rediscovered by reading six document
 | **D-AXES** | Delete the `*0.8` / `*0.7` stimulus derivations; templates declare the axes | [4.2](./phase-4-objective-credit-v2.md) | No citation can justify a repository-wide fixed ratio between per-session properties |
 | **D-FUSE** | Fatigue fusion is *measured before chosen*, not prescribed now | [4.3](./phase-4-objective-credit-v2.md) | Prescribing a formula here would repeat exactly the uncited-constant practice F11 criticises |
 | **D-BEAM** | Beam search is approved to be **built and measured**, not to be shipped regardless of result | [5 increment order](./phase-5-sequence-planning.md) | Whether it beats greedy is empirical; "it didn't" is a valid, useful outcome |
+| **D-LIFE** | Recommendations become append-only revisions; decision fields immutable *per revision* | [1.3](./phase-1-live-defects.md) | Same-day recomputation is a real second decision; naive field-pinning would reject it and leave the audit contradicting the UI |
+| **D-RECOV** | `EventPlanPhase` gains a canonical `recovery` member | [2.1 D1](./phase-2-plan-intent-authority.md) | Mapping `Post-Event Recovery → build` would make fitness-developing objectives eligible during recovery |
 
-Two of these (**D-KWD**, **D-GATE**) correct errors in the first draft of the plans and
-came out of the PR #5 review.
+Five of these — **D-KWD**, **D-GATE**, **D-LIFE**, **D-RECOV**, and the withdrawal inside
+**D-FUSE** — correct errors in earlier drafts and came out of PR #5 review rounds rather
+than from the original analysis.
 
 ### Archived
 

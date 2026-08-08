@@ -111,7 +111,15 @@ planner it is a first-order gap: Wednesday football *is* training; travel change
 equipment and availability; a booked session should shape the days on either side of it.
 
 Persist per activity: date, duration, expected stimulus, expected cost, fixed vs movable,
-environment/location, available equipment, and availability override. This is high
+environment/location, available equipment, and availability override.
+
+**Storage contract — user-owned, like every other athlete record (ADR-0002).** Path
+`users/{userId}/fixed_activities/{activityId}`, with a `userId` field matching the path
+segment. Extend `app/firestore.rules` following the existing `goals` pattern: read/create
+for the owner, update preserving ownership and `createdAt`, plus document-shape validation
+(bounded string lengths, `date` matching `^[0-9]{4}-[0-9]{2}-[0-9]{2}$`, numeric duration
+≥ 0). Add emulator tests for owner read/write allowed, unauthenticated denied, and
+cross-user denied — the same three cases the recommendation rules already cover. This is high
 practical value for modest effort and does not depend on the search work — **it can land
 before 5.1.**
 
@@ -127,7 +135,15 @@ override wearable-derived readiness where relevant.
 disconnected injury gate — richer input feeding a channel that is not consulted. Phase 1
 first, always.
 
-Fatigue estimates remain guidance; observed local response gets higher authority.
+**Precedence against Phase 1 injury constraints — state it, do not leave it to reading.**
+Tissue feedback may only *preserve or tighten* an active `InjuryConstraint`; it can never
+weaken or clear an `exclude` or `limit`. A green knee reading does not unlock running
+while an `exclude` knee constraint is active — only editing the constraint does that.
+Ordering: `InjuryConstraint` (hard) → observed tissue response (may tighten) →
+wearable-derived readiness (may tighten). Test all three pairwise conflicts.
+
+Fatigue estimates remain guidance; observed local response outranks *wearable* readiness,
+not the injury gate.
 
 ## 5.5 — Evidence hierarchy for completed training
 
@@ -178,8 +194,12 @@ event-specific freshness* rather than arriving as an emergent side effect.
 
 ## Acceptance criteria
 
-- [ ] beam search replaces the greedy projected loop; hard constraints reject before scoring
-- [ ] a full week is scored as a sequence, and the chosen week is explainable
+- [ ] a sequence-search prototype exists and is benchmarked against greedy on the Phase-0
+      invariants and semantic harness
+- [ ] an explicit adoption decision is recorded in an ADR, with the comparison data —
+      **either** (a) beam search is promoted, hard constraints reject before scoring, and a
+      full week is scored as a sequence and is explainable; **or** (b) greedy is retained
+      and the negative result is recorded. Both satisfy this criterion.
 - [ ] `PlanningCandidate` carries spacing/recovery metadata into the decision
 - [ ] fixed activities persist and affect availability and adjacent days
 - [ ] per-region tissue state constrains mechanical work independently of wearable readiness

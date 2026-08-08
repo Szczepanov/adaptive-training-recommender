@@ -483,7 +483,7 @@ Small, mechanical, unblocks everything else.
 
 ### Phase 1 — Close the safety gaps (~3-4 days) — *do not defer*
 
-5. **F1 — Give injuries a real path.** Add a typed `injuries: BodyRegionConstraint[]`
+5. **F1 — Give injuries a real path.** Add a typed `injuries: InjuryConstraint[]`
    (region + severity + optional expiry) to `TrainingSettings` v3, a Preferences-screen
    editor, Firestore rules validation, and thread it through
    `mapContextFromGoalsAndTrainingSettings`. Replace the substring `RUNNING_INJURY_PATTERN`
@@ -654,8 +654,9 @@ That is what it is good at. The present architecture instead asks one multiplica
 to arbitrate safety, periodization, interference, recovery, preference and variety
 simultaneously, and F3 is the proof that it cannot.
 
-**Bounded sequence search over the 7-day horizon** (beam width 10–20) replaces the greedy
-day-by-day walk in a later phase. A 7-day horizon does not warrant heavier machinery.
+**Bounded sequence search over the 7-day horizon** (beam width 10–20) is *evaluated against*
+the greedy day-by-day walk in a later phase, and whichever measures better is retained — see
+D-BEAM. A 7-day horizon does not warrant heavier machinery than beam search if it is adopted.
 
 ### 7.4 Where this document dissents
 
@@ -677,7 +678,7 @@ day-by-day walk in a later phase. A 7-day horizon does not warrant heavier machi
 ```text
 0. Simulation baseline + golden coaching scenario        (the instrument)
 1. F1, F2, F6                                            (live defects, ~4 days)
-2. ADR-0010: Plan Intent is the planning authority       (+ F16 engine-visible
+2. ADR-0012: Plan Intent is the planning authority       (+ F16 engine-visible
                                                             event plan, + F17
                                                             intensityScale disposition)
 3. F3 via lexicographic constraints, F4, F5              (one coherent ranking path)

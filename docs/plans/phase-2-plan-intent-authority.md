@@ -67,12 +67,21 @@ because travel has nothing to do with event proximity. The reverse mapping loses
 
 Mapping for the generic fallback:
 
+`EventPlanPhase` gains a **`recovery`** member. An earlier draft mapped
+`Post-Event Recovery → build (at reduced volume)`; that is lossy in exactly the layer being
+made authoritative. `build` means *develop fitness* and would make build-phase objectives
+and workout families eligible during a window the generic engine deliberately marks as
+recovery. Reduced volume does not restore the missing semantics.
+
 | `PhaseWeights.phaseName` | `EventPlanPhase` |
 |---|---|
 | Base, Build | `build` |
 | Specificity | `peak` |
 | Peak/Taper | `taper` |
-| Post-Event Recovery | `build` (at reduced volume) |
+| Post-Event Recovery | **`recovery`** |
+
+The ADR must declare which coverage families are legal in `recovery` (expected:
+`easy_aerobic`, `recovery_or_rest`, and nothing that develops fitness).
 
 `race` and `travel` are only ever set by an explicit `PlanDefinition` — the generic model
 has no way to know about either, and inferring them would be a guess.
@@ -86,7 +95,8 @@ elsewhere from template `phaseEligibility` and ranking weights (F17, and the eme
 problem in Phase 5.7). Deleting `intensityScale` would make a correct taper harder to
 express, not simpler.
 
-The consumer, specified here and implemented in Phase 4.4:
+The consumer, specified here and implemented as **Phase 4 work item 4.5** (which exists
+for this purpose — 4.4 covers dose-sensitive *cost*, a different thing):
 
 ```ts
 // replaces the single `plannedDose` scalar
@@ -127,14 +137,29 @@ export interface PlanBlock {
   intensityScale: number;
 }
 
+export interface PlanBlock {
+  id: string;                          // objectives reference this, not the phase
+  phase: EventPlanPhase;
+  /* ...dates and scales as above... */
+}
+
 export interface PlanObjectiveDefinition {
   key: ObjectiveKey;
   coverageKey: EventPlanCoverageKey;   // ties back to event-plan.ts
-  phases: EventPlanPhase[];
+  blockIds: string[];                  // NOT `phases` — see below
   requiredCredit: number;
   priority: ObjectivePriority;         // already declared in models.ts, unused
   minGapHoursFrom?: ObjectiveKey[];
 }
+```
+
+**Objectives reference blocks, not phases.** A phase can occur more than once in a
+macrocycle (two build blocks either side of a travel week is the normal case), so
+`phases: EventPlanPhase[]` cannot tell `generateWeeklyObjectives` which dated window an
+objective belongs to — it would have to guess, which is the inference this phase exists to
+remove. `blockIds` makes `windowStart`/`windowEnd` derivable deterministically.
+
+```ts
 ```
 
 `WeeklyObjective` already declares `requiredCredit`, `priority`, `windowStart` and
@@ -143,10 +168,30 @@ become real dated ranges derived from `PlanBlock`, replacing the generic rolling
 counter (`MicrocycleState.weekStartDate`, whose name already misdescribes it: rename to
 `windowStartDate`).
 
+### Coverage and schedule are two different inputs
+
+An earlier draft proposed `planDefinitionFromCoverage(coverage, event)`. **That function
+cannot exist.** Coverage knows phases, requirement tiers and workout IDs; it does not know
+`PlanBlock.startDate`/`endDate`, `volumeScale`, `intensityScale`, or when travel is. A
+`UserEvent` supplies only the event date — it cannot tell you travel is Aug 19–22. Deriving
+blocks from coverage + event would push exactly the hidden inference back into the layer
+built to remove it.
+
+So the model has two inputs:
+
+| Input | Contains | Reusable? |
+|---|---|---|
+| **Coverage** (`event-plan.ts`) | phase → workout-family knowledge, requirement tiers | Yes — reusable across athletes and events |
+| **Block schedule** (new) | dated `PlanBlock`s: build/travel/peak/taper/race/recovery, with scales | No — specific to one athlete's macrocycle |
+
+`buildPlanDefinition(coverage, blockSchedule, event)` combines them. The block schedule is
+new authored input — it is the thing that makes the plan explicit, and there is nowhere
+else for it to come from.
+
 ### Migration path
 
-1. Keep `SEPTEMBER_CYCLING_EVENT_SESSION_COVERAGE` as data; add a pure adapter
-   `planDefinitionFromCoverage(coverage, event)` producing a `PlanDefinition`.
+1. Keep `SEPTEMBER_CYCLING_EVENT_SESSION_COVERAGE` as coverage data; author a dated block
+   schedule for the September event; combine via `buildPlanDefinition`.
 2. `generateWeeklyObjectives` gains an optional `planDefinition` parameter. When present,
    objectives come from the plan; when absent, current behaviour is unchanged. This keeps
    the eventless/generic athlete working throughout.
@@ -169,6 +214,12 @@ export interface EventTiming {
 Taper logic anchors on `planningDate`, so an unconfirmed event gets a safe (early) taper
 anchor rather than requiring a fabricated exact date. Surface the uncertainty in the UI
 rather than hiding it.
+
+**Validate the ordering — an unvalidated `EventTiming` is a taper bug.** Reject
+`earliestDate > planningDate`, `planningDate > latestDate`, or a `confirmedDate` outside
+`[earliestDate, latestDate]`. Without these, taper can anchor before the event is even
+possible, or after it has happened. Validate at the parse boundary (`DataState.INVALID`,
+consistent with ADR-0010) rather than defensively inside the planner.
 
 ## 2.4 — Collapse Path A / Path B (F9)
 

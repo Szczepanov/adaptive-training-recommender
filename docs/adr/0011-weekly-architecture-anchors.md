@@ -77,7 +77,8 @@ was built for.
 
 ### 3. Anchors nudge; they do not command
 
-All three are multipliers applied *after* the hard gates. A genuinely infeasible anchor
+All three are ranking modifiers applied *after* the hard gates — Patches 4 and 5 are
+multipliers, Patch 6 is a tie-break that reorders already-equivalent candidates. A genuinely infeasible anchor
 day falls through to the next-best real option rather than forcing an unsuitable session.
 Applied modifiers are emitted in the candidate rationale.
 

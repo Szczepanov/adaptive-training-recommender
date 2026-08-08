@@ -87,7 +87,7 @@ allowance exists and is currently unusable because `trainingSettingsService.ts:1
 
 ```ts
 export type BodyRegion =
-  | 'knee' | 'achilles' | 'calf' | 'hamstring' | 'quadriceps'
+  | 'knee' | 'achilles' | 'ankle' | 'calf' | 'hamstring' | 'quadriceps'
   | 'adductor_groin' | 'hip' | 'lower_back' | 'shoulder' | 'elbow' | 'wrist';
 
 export interface InjuryConstraint {
@@ -117,7 +117,7 @@ record the revision in ADR-0007's amendment rather than silently editing the tab
 
 | Region | `exclude` implies | `limit` implies |
 |---|---|---|
-| knee, achilles, calf | modality `Running`; guardrail `avoid_high_impact` | guardrail `avoid_high_impact` |
+| knee, achilles, **ankle**, calf | modality `Running`; guardrail `avoid_high_impact` | guardrail `avoid_high_impact` |
 | hamstring, quadriceps, adductor_groin, hip | categories `Lower-body Strength`, `Full-body Strength`; guardrail `avoid_heavy_lower_body` | guardrail `avoid_heavy_lower_body` |
 | lower_back | guardrails `avoid_heavy_spinal_loading`, `avoid_heavy_lower_body` | `avoid_heavy_spinal_loading` |
 | shoulder, elbow, wrist | guardrail `avoid_overhead_pressing`; categories `Upper-body Strength` | `avoid_overhead_pressing` |
@@ -125,14 +125,29 @@ record the revision in ADR-0007's amendment rather than silently editing the tab
 `monitor` implies nothing structural — it exists to be surfaced in the UI and to feed
 Phase 5's tissue tracking.
 
+**`ankle` is not optional.** The existing `RUNNING_INJURY_PATTERN`
+(`/\b(knee|achilles|ankle|leg|run)/`) matches `ankle`, so omitting it from `BodyRegion`
+would let this change *remove* an existing running restriction. Every token the old
+pattern matched must map to at least the same restriction before the pattern is deleted —
+verify that as a migration checklist item, not by inspection.
+
+**One canonical representation, one derived form.** `UserContext.constraints.injuries`
+must not become a second source of truth alongside structured injuries: a settings update
+or migration could refresh one and leave the other stale, in the safety layer. So:
+`InjuryConstraint[]` is canonical and lives on `TrainingSettings`; `UserContext` carries
+the **resolved** output of `resolveInjuryRestrictions` (modalities, categories,
+guardrails); the legacy `injuries: string[]` field is **deleted**, not retained in
+parallel. `rules.ts` and `optimizer.ts` migrate to the resolved lists in the same change.
+A test must assert both evaluation paths derive identical restrictions from one settings
+object.
+
 ### Work items
 
 1. `models.ts` — add `BodyRegion`, `InjuryConstraint`, and `TrainingSettings.injuries?: InjuryConstraint[]`.
 2. `injuryPolicy.ts` — the pure resolver above, fully unit-tested. No Firebase, no I/O.
-3. `adapters.ts` — populate `constraints.injuries` from settings. Keep the field
-   `string[]` for now (`region` strings) so `rules.ts`/`optimizer.ts` keep compiling, and
-   **additionally** thread the structured result through `UserContext` so
-   `evaluateEnvelopes` can stop pattern-matching text.
+3. `adapters.ts` / `models.ts` — **delete** `UserContext.constraints.injuries: string[]`
+   and replace it with the resolved output of `resolveInjuryRestrictions`. Do not keep the
+   legacy field in parallel (see "One canonical representation" above).
 4. `rules.ts:544-556` — replace `RUNNING_INJURY_PATTERN` (`/\b(knee|achilles|ankle|leg|run)/`,
    which also matches "legal" and "runny") with `resolveInjuryRestrictions`. Populate
    `restrictedModalities` from it.
@@ -285,7 +300,14 @@ Fix (b) makes Garmin rides start resolving objectives. That lowers `urgency` in
 ### Tests
 
 * `completedTraining.test.ts` — a Garmin-only cycling event produces a non-zero stimulus
-  profile with `stimulusConfidence: 'inferred'`; an unknown-modality event produces none.
+  profile with `stimulusConfidence: 'inferred'`.
+* `completedTraining.test.ts` — an unknown-modality event produces **no structured
+  stimulus profile** (`stimulusConfidence: 'unknown'`). This is deliberately *not* the
+  same as "earns no credit": it still reaches the legacy keyword fallback, which may award
+  compatibility credit. Assert the two separately — one test that no structured profile is
+  produced, one that the intended fallback credit is preserved — so this change neither
+  introduces false-positive keyword credit nor silently removes existing compatibility
+  credit.
 * `microcycle.test.ts` — the F2 probe, promoted to a real test: three Garmin sessions
   resolve `zone2_aerobic` and `strength_maintenance`.
 * `microcycle.test.ts` — **regression against the false-positive risk**: a generic
@@ -307,9 +329,49 @@ immutable", but `allow update` pins only `createdAt`. A client may rewrite `temp
 requirement is conditional on `schemaVersion == 3`, a v3 document can be rewritten as v1
 and stripped of its audit entirely.
 
+### Decide the lifecycle first — the ratchet is blocked on it
+
+Pinning decision fields breaks a legitimate flow. `Home.tsx` recomputes today's
+recommendation on **every** dashboard load and calls `saveRecommendation`, which
+`setDoc(..., { merge: true })`s the newly computed `templateId` / `mode` / `rationale`
+over the existing `{date}` document. Recomputation can legitimately change the answer
+within a day — the athlete completes a session at noon, `alreadyTrainedToday` flips, mode
+becomes `recover`. With naive field pinning that write is **rejected**, and the UI then
+shows a recommendation the persisted audit contradicts. That is worse than the gap being
+fixed.
+
+Two lifecycles are viable:
+
+* **(A) First write wins.** The first persisted recommendation for a date is
+  authoritative; later loads replay it rather than re-deciding. Simple, but freezes a
+  morning decision that has since become wrong, and discards a real second decision.
+* **(B) Append-only revisions.** Decision fields are immutable *per revision*; a changed
+  decision creates a new one. The latest revision is what the UI and adherence refer to.
+
+> **Recommendation: (B).** A same-day recomputation after a completed session is a real,
+> correct decision, not a correction of the morning's — and the morning's was also really
+> shown to the athlete. (A) would have to discard one of the two, and whichever it
+> discards, the audit stops matching what the user saw. Adherence semantics also stay
+> intact under (B): it attaches to the date, resolving to the latest revision.
+>
+> **Shape:** keep `users/{uid}/daily_recommendations/{date}` as the current decision, add
+> a monotonic `revision: number`, and require that any update changing decision fields
+> increments it while writing the prior state to
+> `users/{uid}/daily_recommendations/{date}/revisions/{revision}` in the same batch.
+> Rules enforce: revisions are create-only (never update or delete); `revision` strictly
+> increases; decision fields may only change when `revision` increases.
+>
+> **Honest limit:** Firestore rules cannot verify the prior state was actually copied —
+> that is a client-side batch obligation. Rules enforce immutability *of what is written*;
+> the copy is covered by an emulator test, not by the rules themselves. Say so in ADR-0010's
+> amendment rather than implying stronger guarantees.
+
+**`prescription` is decision evidence** and must be pinned per revision alongside the
+other decision fields — the earlier `decisionFieldsUnchanged()` sketch omitted it.
+
 ### Fix
 
-Add two helpers and use them in the `daily_recommendations` update rule:
+Once (B) is chosen, add these helpers to the `daily_recommendations` update rule:
 
 ```text
 function schemaRatchets() {
@@ -352,9 +414,12 @@ result, so unmentioned fields compare equal, which is what these rules assume.
 * **allows** adding `adjustment` to an existing document
 * **allows** first-time attachment of `recommendationAudit`
 
-Note the emulator suite is `describe.skip` unless `FIRESTORE_EMULATOR_HOST` is set. It
-does run in CI (`npm run test:rules`); make sure the new cases are exercised there and
-not silently skipped locally.
+**Make a skipped rules suite a failure, not a pass.** The suite is `describe.skip` unless
+`FIRESTORE_EMULATOR_HOST` is set, so `npm run test:rules` can exit 0 having executed none
+of the immutability tests — the security suite would appear green while testing nothing.
+Add a guard test *outside* the conditional block that fails when the emulator host is
+absent in CI (and reports a clear setup error locally), plus an assertion on the expected
+rule-test count so a silently-shrinking suite is caught.
 
 ---
 
