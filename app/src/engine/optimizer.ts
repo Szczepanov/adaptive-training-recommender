@@ -593,18 +593,47 @@ export function rankCandidates(
     });
 
     // Lexicographic Sorting
+    // A pairwise `Math.abs(diff) <= BENEFIT_TIE_BAND` rule is not transitive: for benefit
+    // scores 1.00/0.96/0.92, each adjacent pair ties (0.04 <= 0.05) but the outer pair
+    // does not (0.08 > 0.05). Array.sort's comparator contract requires a consistent
+    // total order -- a non-transitive comparator produces engine-/input-order-dependent
+    // results (unspecified behavior per the ECMAScript spec, not just "unlikely to
+    // matter"). Assign a discrete benefit tier first so "same tier" is an actual
+    // equivalence relation shared by the sort and the near-equivalents grouping below.
+    //
+    // Deliberately NOT independent rounding (Math.round(benefit / BENEFIT_TIE_BAND)):
+    // verified by regression that it introduces its own artifact -- two candidates only
+    // 0.039 apart (e.g. 0.020 and 0.059) can straddle a rounding boundary (0.025) and
+    // land in different tiers despite being well within BENEFIT_TIE_BAND of each other,
+    // which silently changed a real pick (see the "resolves the threshold objective..."
+    // test this broke during review). Chaining instead: sort by real benefitScore first
+    // (a plain numeric sort, already transitive on its own), then walk that order and
+    // start a new tier only when the gap from the immediately-preceding candidate
+    // exceeds BENEFIT_TIE_BAND. Every candidate gets exactly one fixed tier number
+    // up front, independent of comparison order, which is what makes the final sort
+    // transitive -- and adjacent-close candidates stay grouped the way the original
+    // pairwise rule intended for the common case.
+    const byBenefitDesc = [...accepted].sort((a, b) => b.benefitScore - a.benefitScore);
+    const benefitTierByCandidate = new Map<RankedCandidate, number>();
+    byBenefitDesc.forEach((c, idx) => {
+        const prevTier = idx === 0 ? 0 : benefitTierByCandidate.get(byBenefitDesc[idx - 1])!;
+        const startsNewTier = idx > 0 && (byBenefitDesc[idx - 1].benefitScore - c.benefitScore) > BENEFIT_TIE_BAND;
+        benefitTierByCandidate.set(c, startsNewTier ? prevTier + 1 : prevTier);
+    });
+    const getBenefitTier = (candidate: RankedCandidate) => benefitTierByCandidate.get(candidate)!;
+
     accepted.sort((a, b) => {
-        const benefitDiff = b.benefitScore - a.benefitScore;
-        if (Math.abs(benefitDiff) > BENEFIT_TIE_BAND) {
-            return benefitDiff;
-        }
+        const tierDiff = getBenefitTier(a) - getBenefitTier(b);
+        if (tierDiff !== 0) return tierDiff;
         return b.utilityScore - a.utilityScore;
     });
 
     // Catalog Variety Rotation on accepted candidates
     if (accepted.length > 1) {
         const topCandidate = accepted[0];
+        const topBenefitTier = getBenefitTier(topCandidate);
         const nearEquivalents = accepted.filter(c =>
+            getBenefitTier(c) === topBenefitTier &&
             c.template.category === topCandidate.template.category &&
             (c.template.modality === topCandidate.template.modality ||
              (focusEvent?.category === 'triathlon' && ['Cycling', 'Running'].includes(c.template.modality) && ['Cycling', 'Running'].includes(topCandidate.template.modality))) &&

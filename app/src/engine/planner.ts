@@ -325,6 +325,18 @@ export function generateWeekAheadPlan(
     // per-projected-date decay below), same as externalFatigue does through applyPick's own
     // applyCompletedSessionLoad calls. Without that decay this would act as a permanent
     // fatigue ceiling across the entire forecast instead of fading out.
+    //
+    // This assumes today's readiness is a point-in-time snapshot likely to trend back to
+    // normal -- correct for a real dashboard, where tomorrow gets its own fresh check-in
+    // once it actually arrives. It does NOT hold for a caller that re-asserts the exact
+    // same (e.g. sustained-stress) readiness for every day of a multi-day window without
+    // ever re-measuring it: simulation/analyze.ts's runScenario samples readinessForWeek
+    // only once per week and then projects the remaining 6 days from this single seed, so
+    // a scenario modeling chronic stress will look progressively less conservative toward
+    // the end of the week as this decays, even though the underlying readiness never
+    // actually improved. Known, understood gap (surfaced by review) -- the real fix is
+    // giving the simulation harness a per-day readiness re-evaluation path, not
+    // reintroducing the undecayed-forever bug this replaced.
     const internalStrain: DimensionalFatigue = seed.fatigue?.internalResponseStrain ?? { systemic: 0, cardiovascular: 0, lowerBody: 0, upperBody: 0, impactTissue: 0, neuromuscular: 0 };
     const internalStrainAsOf = todayDate;
     let externalFatigue: FatigueState = seed.fatigue?.externalLoadFatigue ? seed.fatigue : createEmptyFatigue(todayDate);

@@ -107,6 +107,55 @@ for (const baseScenario of baseline.scenarios) {
     diffs.push(`  Objective resolution: ${objDiffs.join(', ')}`);
   }
 
+  // 6. Objective Credits -- which sessions actually earned credit, not just the tally.
+  // Compares the full set (date/objectiveKey/templateId), so a same-count-but-different-
+  // day/template change (e.g. a different session resolving the same objective) is
+  // still caught, not just a change in total resolution counts (#5 above).
+  const creditKey = (c) => `${c.weekIndex}|${c.date}|${c.objectiveKey}|${c.templateId}`;
+  const baseCreditKeys = new Set(baseScenario.objectiveCredits.map(creditKey));
+  const curCreditKeys = new Set(curScenario.objectiveCredits.map(creditKey));
+  if (baseCreditKeys.size !== curCreditKeys.size
+      || ![...baseCreditKeys].every((k) => curCreditKeys.has(k))) {
+    diffs.push(`  Objective credits: ${baseCreditKeys.size} -> ${curCreditKeys.size} entries (set changed)`);
+  }
+
+  // 7. Utility diagnostics
+  const bUtil = baseScenario.utilityDiagnostics;
+  const cUtil = curScenario.utilityDiagnostics;
+  const utilDiffs = [];
+  for (const key of ['fragileSelectionCount', 'lowerBenefitSelectionCount', 'trainTierRestOrRecoveryCount']) {
+    if (bUtil[key] !== cUtil[key]) utilDiffs.push(`${key}: ${bUtil[key]} -> ${cUtil[key]}`);
+  }
+  if (utilDiffs.length > 0) {
+    diffs.push(`  Utility diagnostics: ${utilDiffs.join(', ')}`);
+  }
+
+  // 8. Quality warnings -- coaching-quality concerns (ADR-0012 review: this field can
+  // change (e.g. anchor-hit rate improving) without any of the other numeric metrics
+  // above catching it, since it's derived from anchorWeeks/objective state, not from the
+  // distributions this script already compares.
+  const baseWarnings = [...baseScenario.qualityWarnings].sort();
+  const curWarnings = [...curScenario.qualityWarnings].sort();
+  if (JSON.stringify(baseWarnings) !== JSON.stringify(curWarnings)) {
+    diffs.push(`  Quality warnings: [${baseWarnings.join(' | ')}] -> [${curWarnings.join(' | ')}]`);
+  }
+
+  // 9. Anchor weeks -- whether the weekly-anchor pre-pass nomination actually landed.
+  const anchorKey = (w) => `${w.weekIndex}|${w.eventSpecificAnchorDate}|${w.qualityAnchorDate}|${w.eventSpecificAnchorHit}|${w.eventSpecificAnchorFulfilled}|${w.qualityAnchorHit}`;
+  const baseAnchorKeys = baseScenario.anchorWeeks.map(anchorKey);
+  const curAnchorKeys = curScenario.anchorWeeks.map(anchorKey);
+  if (JSON.stringify(baseAnchorKeys) !== JSON.stringify(curAnchorKeys)) {
+    diffs.push(`  Anchor weeks changed (${baseAnchorKeys.length} -> ${curAnchorKeys.length} weeks, or hit/fulfilled state differs)`);
+  }
+
+  // 10. Same-template streak diagnostics
+  if (baseScenario.maxConsecutiveSameTemplateStreakWithinCall !== curScenario.maxConsecutiveSameTemplateStreakWithinCall) {
+    diffs.push(`  Max streak within call: ${baseScenario.maxConsecutiveSameTemplateStreakWithinCall} -> ${curScenario.maxConsecutiveSameTemplateStreakWithinCall}`);
+  }
+  if (baseScenario.maxConsecutiveSameTemplateStreakAcrossWeeks !== curScenario.maxConsecutiveSameTemplateStreakAcrossWeeks) {
+    diffs.push(`  Max streak across weeks: ${baseScenario.maxConsecutiveSameTemplateStreakAcrossWeeks} -> ${curScenario.maxConsecutiveSameTemplateStreakAcrossWeeks}`);
+  }
+
   if (diffs.length > 0) {
     changesFound = true;
     console.log(`[MODIFIED] ${curScenario.label} (${curScenario.scenarioId}):`);
@@ -120,6 +169,32 @@ for (const curScenario of current.scenarios) {
     console.log(`[NEW SCENARIO] ${curScenario.scenarioId}: ${curScenario.label}`);
     changesFound = true;
   }
+}
+
+// 11. Readiness sensitivity (fresh/stressed trajectories vs baseline) and preference
+// sensitivity (declared modality preference vs matched baseline) are top-level report
+// fields, not per-scenario -- a real change here (e.g. a stressed trajectory training
+// MORE than baseline) would otherwise never be caught by the per-scenario comparisons
+// above, since those only compare each scenario against ITS OWN prior run, never against
+// another scenario the way readinessSensitivity/preferenceSensitivity do.
+const sensitivityKey = (r) => JSON.stringify(r);
+const baseReadiness = (baseline.readinessSensitivity ?? []).map(sensitivityKey);
+const curReadiness = (current.readinessSensitivity ?? []).map(sensitivityKey);
+if (JSON.stringify(baseReadiness) !== JSON.stringify(curReadiness)) {
+  console.log('[MODIFIED] readinessSensitivity:');
+  console.log(`  ${JSON.stringify(baseline.readinessSensitivity)} ->`);
+  console.log(`  ${JSON.stringify(current.readinessSensitivity)}`);
+  console.log('');
+  changesFound = true;
+}
+const basePreference = (baseline.preferenceSensitivity ?? []).map(sensitivityKey);
+const curPreference = (current.preferenceSensitivity ?? []).map(sensitivityKey);
+if (JSON.stringify(basePreference) !== JSON.stringify(curPreference)) {
+  console.log('[MODIFIED] preferenceSensitivity:');
+  console.log(`  ${JSON.stringify(baseline.preferenceSensitivity)} ->`);
+  console.log(`  ${JSON.stringify(current.preferenceSensitivity)}`);
+  console.log('');
+  changesFound = true;
 }
 
 if (!changesFound) {
