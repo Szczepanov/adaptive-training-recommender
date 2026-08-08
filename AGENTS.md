@@ -29,10 +29,18 @@ This document outlines repository rules, code conventions, testing instructions,
 
 ### Frontend App
 * `cd app && npm ci` — Install node dependencies
-* `cd app && npm run check` — Run full validation suite (TypeScript, ESLint, Vitest, workout catalog)
+* `cd app && npm run check` — Run full validation suite (TypeScript typecheck, ESLint, Vitest, workout catalog)
 * `cd app && npm test` — Run engine unit test suite (`vitest run`)
 * `cd app && npm run build` — Build production bundle (`npm run check && vite build`)
 * `cd app && npm run dev` — Start Vite dev server (automatically executes `npm run check` pre-flight)
+* `cd app && npm run validate:workouts` — Validate workout catalog definitions and prescription contracts
+* `cd app && npm run simulate:scenarios` — Run multi-week engine simulations and generate reports in `artifacts/simulation-reports/latest/`
+* `cd app && npm run replay:recommendation -- <audit.json>` — Replay and audit historical recommendation decision reproducibility
+* `cd app && npm run visual:install` — Install Playwright Chromium binary for visual review tests
+* `cd app && npm run visual:refresh` — Capture desktop/mobile visual review screenshots in `artifacts/visual-review/latest/`
+* `cd app && npm run visual:serve` — Start visual review harness dev server with synthetic fixtures (`http://127.0.0.1:4174`)
+* `cd app && npm run test:rules` — Run Firestore security rules unit test suite inside local Firebase emulator
+
 
 ### Docker
 * `docker build -t adaptive-training-garmin-sync .` — Build container image

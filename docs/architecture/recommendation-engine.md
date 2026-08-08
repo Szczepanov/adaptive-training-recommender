@@ -61,3 +61,14 @@ $$\text{Total Strain} = \text{Acute Deviation} + \text{Multi-Day Drift} + \text{
 * **Resting Heart Rate Elevation**: $RHR > RHR_{baseline} + 3\text{ bpm}$ adds acute strain.
 * **Sleep Deficit**: Sleep score $< 65$ or duration $< 6.5\text{ hours}$ triggers sleep floor penalties.
 * **Step Overload**: Previous-day step count ($D-1$) exceeding target thresholds increases non-exercise fatigue load.
+
+---
+
+## 🧪 Verification & Audit Tooling
+
+### Multi-Week Scenario Simulation (`simulate:scenarios`)
+Executed via `cd app && npm run simulate:scenarios`. Runs synthetic athlete scenarios across multi-week spans to audit engine periodization, microcycle objective fulfillment, fatigue decay curves, anchor placements, and constraint safety. Outputs `report.json` and `report.md` to `app/artifacts/simulation-reports/latest/`.
+
+### Recommendation Decision Replay (`replay:recommendation`)
+Executed via `cd app && npm run replay:recommendation -- <audit.json>`. Accepts a JSON snapshot of a historical recommendation and passes it into `replayRecommendationAudit()` ([`app/src/engine/replay.ts`](../../app/src/engine/replay.ts)) to verify deterministic decision reproducibility and log rationale differences.
+

@@ -159,6 +159,18 @@ npm test
 
 # Start Vite dev server (automatically runs `npm run check` first via npm `predev` hook)
 npm run dev
+
+# Run multi-week engine simulation suite (outputs reports to app/artifacts/simulation-reports/latest/)
+npm run simulate:scenarios
+
+# Replay and audit historical recommendation reproducibility
+npm run replay:recommendation -- <path-to-recommendation-audit.json>
+
+# Generate visual review screenshot bundle (requires npm run visual:install once)
+npm run visual:refresh
+
+# Run Firestore security rules unit tests in local Firebase emulator
+npm run test:rules
 ```
 
 ---
