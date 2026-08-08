@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { CompletedTrainingEvent, DailyRecommendation, NormalizedGarminActivity } from './models';
-import { completedEventToExposure, DEFAULT_STIMULUS_BY_MODALITY, deriveSessionPlanRelationship, reconcileCompletedTrainingEvents, scaleCostByDeliveredDose } from './completedTraining';
+import { completedEventToExposure, DEFAULT_COST_BY_MODALITY, DEFAULT_STIMULUS_BY_MODALITY, deriveSessionPlanRelationship, reconcileCompletedTrainingEvents, scaleCostByDeliveredDose } from './completedTraining';
 
 function activity(overrides: Partial<NormalizedGarminActivity> = {}): NormalizedGarminActivity {
     return {
@@ -41,7 +41,7 @@ describe('completed training reconciliation', () => {
         expect(event.deliveredDose?.completedDurationMin).toBe(45);
         expect(event.deliveredDose?.plannedDurationMin).toBeGreaterThan(45);
         expect(exposure.costProfile.systemic).toBeGreaterThan(0);
-        expect(exposure.costProfile.systemic).toBeLessThan(DEFAULT_STIMULUS_BY_MODALITY.Cycling.hard.aerobicEndurance + 0.25);
+        expect(exposure.costProfile.systemic).toBeLessThan(DEFAULT_COST_BY_MODALITY.Cycling.hard.systemic);
         expect(exposure.costProfile.systemic).toBe(event.estimatedCost.systemic);
     });
 
