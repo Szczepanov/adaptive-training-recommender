@@ -82,5 +82,5 @@ export function parseDailyRecommendation(raw: unknown, documentPath: string): Da
             issues: result.errors.map(error => ({ code: 'schema-validation-failed', field: error.field, documentPath, ...(typeof schemaVersion === 'number' ? { schemaVersion } : {}) })),
         };
     }
-    return { status: 'AVAILABLE', data: result.data, revision: result.data.updatedAt || null };
+    return { status: 'AVAILABLE', data: result.data, revision: result.data.revision ? `r${result.data.revision}:${result.data.updatedAt}` : (result.data.updatedAt || null) };
 }

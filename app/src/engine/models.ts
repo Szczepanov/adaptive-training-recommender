@@ -765,6 +765,7 @@ export interface DailyRecommendation {
     mode: 'train' | 'modify' | 'recover';
     rationale: string;
     schemaVersion: number;
+    revision?: number;
     createdAt: string;
     updatedAt: string;
     adjustment?: SessionAdjustment;

@@ -96,12 +96,10 @@ record against its own audit: policy version availability, `safetyStatus`, revis
 format, history-count coherence, and — the substantive one — that the persisted template
 is present among the audited candidates **and** was the highest-utility one.
 
-### 6. Security rules require the audit on schema-version-3 writes
+### 6. Security rules require the audit on schema-version-3 writes, schema ratchets, and append-only revision archiving
 
 `firestore.rules` validates the audit's full shape **for `schemaVersion == 3` writes**, bounds
-`candidateScores` to 64 entries, and constrains every enum. It does **not** prevent an
-existing v3 record from being rewritten as v1 and losing the audit — downgrade protection
-is a known gap, recorded below. Wearable-derived collections
+`candidateScores` to 64 entries, and constrains every enum. It enforces schema version ratchets (`schemaVersion >= resource.data.schemaVersion`), audit immutability (`auditWriteOnce`), and append-only revision subcollection archiving (`revisions/{revision}`): when decision fields change, `revision` increments monotonically by 1 and an atomic batch write creates an exact archive document at `revisions/{priorRevision}` matching the pre-update decision state. Revisions in subcollection are create-only and permanently immutable. Wearable-derived collections
 (`daily_recovery_snapshots`, `activities`) are `allow write: if false` — the browser may
 read them but can never forge a wearable fact.
 

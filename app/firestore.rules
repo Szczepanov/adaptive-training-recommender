@@ -63,7 +63,7 @@ service cloud.firestore {
     function hasValidRecommendation(userId, date) {
       return hasOwnedUserId(userId)
         && isDateDocument(date)
-        && request.resource.data.keys().hasOnly(['userId', 'date', 'templateId', 'templateTitle', 'category', 'modality', 'mode', 'rationale', 'schemaVersion', 'createdAt', 'updatedAt', 'adjustment', 'prescription', 'adherence', 'recommendationAudit'])
+        && request.resource.data.keys().hasOnly(['userId', 'date', 'templateId', 'templateTitle', 'category', 'modality', 'mode', 'rationale', 'schemaVersion', 'createdAt', 'updatedAt', 'adjustment', 'prescription', 'adherence', 'recommendationAudit', 'revision'])
         && request.resource.data.keys().hasAll(['userId', 'date', 'templateId', 'templateTitle', 'category', 'modality', 'mode', 'rationale', 'schemaVersion', 'createdAt', 'updatedAt', 'adherence'])
         && request.resource.data.templateId is string
         && request.resource.data.templateTitle is string
@@ -74,9 +74,44 @@ service cloud.firestore {
         && request.resource.data.createdAt is string
         && request.resource.data.updatedAt is string
         && request.resource.data.schemaVersion in [1, 2, 3]
+        && (!('revision' in request.resource.data) || (request.resource.data.revision is int && request.resource.data.revision >= 1))
         && hasValidAdherence(request.resource.data.adherence)
         && (request.resource.data.schemaVersion != 3
           || ('recommendationAudit' in request.resource.data && hasValidRecommendationAudit(request.resource.data.recommendationAudit)));
+    }
+
+    function schemaRatchets() {
+      return request.resource.data.schemaVersion >= resource.data.schemaVersion;
+    }
+
+    function auditWriteOnce() {
+      return !('recommendationAudit' in resource.data)
+        || (('recommendationAudit' in request.resource.data) && request.resource.data.recommendationAudit == resource.data.recommendationAudit);
+    }
+
+    function decisionFieldsUnchanged() {
+      return request.resource.data.templateId == resource.data.templateId
+        && request.resource.data.templateTitle == resource.data.templateTitle
+        && request.resource.data.category == resource.data.category
+        && request.resource.data.modality == resource.data.modality
+        && request.resource.data.mode == resource.data.mode
+        && request.resource.data.rationale == resource.data.rationale
+        && (!('prescription' in resource.data) || (('prescription' in request.resource.data) && request.resource.data.prescription == resource.data.prescription));
+    }
+
+    function archivesPriorRevision(userId, date) {
+      let priorRevNum = ('revision' in resource.data) ? resource.data.revision : 1;
+      let priorPath = /databases/$(database)/documents/users/$(userId)/daily_recommendations/$(date)/revisions/$(string(priorRevNum));
+      let prior = getAfter(priorPath).data;
+      return prior.revision == priorRevNum
+        && prior.templateId == resource.data.templateId
+        && prior.templateTitle == resource.data.templateTitle
+        && prior.category == resource.data.category
+        && prior.modality == resource.data.modality
+        && prior.mode == resource.data.mode
+        && prior.rationale == resource.data.rationale
+        && (!('prescription' in resource.data) || (('prescription' in prior) && prior.prescription == resource.data.prescription))
+        && (!('recommendationAudit' in resource.data) || (('recommendationAudit' in prior) && prior.recommendationAudit == resource.data.recommendationAudit));
     }
 
     // Legacy collections are permanently disabled after the user-scoped migration.
@@ -142,10 +177,29 @@ service cloud.firestore {
       allow create: if hasValidRecommendation(userId, date);
       allow update: if hasValidRecommendation(userId, date)
         && keepsOwnership(userId)
-        && request.resource.data.createdAt == resource.data.createdAt;
-      // Recommendations are audit evidence and intentionally immutable as documents;
-      // adherence remains a validated update on the same document.
+        && request.resource.data.createdAt == resource.data.createdAt
+        && schemaRatchets()
+        && auditWriteOnce()
+        && (
+          (decisionFieldsUnchanged() && (
+            (('revision' in resource.data) && request.resource.data.revision == resource.data.revision) ||
+            (!('revision' in resource.data) && (!('revision' in request.resource.data) || request.resource.data.revision == 1))
+          ))
+          ||
+          (!decisionFieldsUnchanged() && (
+            request.resource.data.revision == (('revision' in resource.data) ? resource.data.revision : 1) + 1
+            && archivesPriorRevision(userId, date)
+          ))
+        );
       allow delete: if false;
+
+      match /revisions/{revId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId)
+          && request.resource.data.revision is int
+          && string(request.resource.data.revision) == revId;
+        allow update, delete: if false;
+      }
     }
   }
 }

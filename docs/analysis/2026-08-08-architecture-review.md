@@ -211,7 +211,7 @@ the green branch's cost into the chained fatigue/objective ledger, **every** pro
 day inherits a best-case tomorrow. The three-branch evaluation is pure waste until a
 selector exists.
 
-### F6. Firestore rules do not enforce the immutability they document
+### F6. Firestore rules do not enforce the immutability they document (**Resolved in Phase 1 Task 1.3**)
 
 `app/firestore.rules`, `daily_recommendations`:
 

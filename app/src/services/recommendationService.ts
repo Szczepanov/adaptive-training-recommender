@@ -1,4 +1,4 @@
-import { doc, getDoc, setDoc, collection, query, where, orderBy, limit, getDocs } from 'firebase/firestore';
+import { doc, getDoc, setDoc, writeBatch, collection, query, where, orderBy, limit, getDocs } from 'firebase/firestore';
 import { getDb } from '../firebase';
 import type { DailyRecommendation, Recommendation } from '../engine/models';
 import { validateRecommendation, validateAdherenceUpdate } from '../engine/validation';
@@ -26,7 +26,22 @@ export class RecommendationService {
         try {
             const docRef = doc(getDb(), 'users', userId, this.collectionPath, date);
             const existingSnap = await getDoc(docRef);
-            const existing = existingSnap.exists() ? existingSnap.data() : undefined;
+            const existing = existingSnap.exists() ? existingSnap.data() as DailyRecommendation : undefined;
+
+            const isNewDoc = !existing;
+            const priorRevision = existing ? (existing.revision ?? 1) : 1;
+
+            const decisionChanged = existing !== undefined && (
+                existing.templateId !== rec.template.id ||
+                existing.templateTitle !== rec.template.title ||
+                existing.category !== rec.template.category ||
+                existing.modality !== rec.template.modality ||
+                existing.mode !== rec.mode ||
+                existing.rationale !== rec.rationale ||
+                JSON.stringify(existing.prescription ?? null) !== JSON.stringify(rec.prescription ?? null)
+            );
+
+            const nextRevision = isNewDoc ? 1 : (decisionChanged ? priorRevision + 1 : priorRevision);
 
             const rawData = {
                 ...existing,
@@ -45,6 +60,7 @@ export class RecommendationService {
                     ? Math.max(existing?.schemaVersion ?? 1, 3)
                     : (rec.prescription ? Math.max(existing?.schemaVersion ?? 1, 2) : (existing?.schemaVersion ?? 1)),
                 createdAt: existing?.createdAt,
+                revision: nextRevision,
             };
 
             const validation = validateRecommendation(rawData);
@@ -54,7 +70,29 @@ export class RecommendationService {
             }
 
             const validated = validation.data!;
-            await setDoc(docRef, validated, { merge: true });
+
+            if (decisionChanged) {
+                const batch = writeBatch(getDb());
+                const archiveRef = doc(getDb(), 'users', userId, this.collectionPath, date, 'revisions', String(priorRevision));
+                const archiveData: Record<string, unknown> = {
+                    revision: priorRevision,
+                    templateId: existing.templateId,
+                    templateTitle: existing.templateTitle,
+                    category: existing.category,
+                    modality: existing.modality,
+                    mode: existing.mode,
+                    rationale: existing.rationale,
+                };
+                if (existing.prescription) archiveData.prescription = existing.prescription;
+                if (existing.recommendationAudit) archiveData.recommendationAudit = existing.recommendationAudit;
+
+                batch.set(archiveRef, archiveData);
+                batch.set(docRef, validated, { merge: true });
+                await batch.commit();
+            } else {
+                await setDoc(docRef, validated, { merge: true });
+            }
+
             return validated;
         } catch (error: unknown) {
             // Non-fatal by design: failing to persist a recommendation record shouldn't
