@@ -1,6 +1,6 @@
 # Phase 4 — Objective credit V2, and honest load
 
-* **Status:** Ready — derivation-constant decision taken 2026-08-08 (see 4.2)
+* **Status:** In progress — 4.2 fixture and boundary migration is being revalidated
 * **Depends on:** Phase 0 (hard), Phase 2 (ADR-0012 fixes the credit contract)
 * **Unlocks:** Phase 5
 * **Addresses:** F7, F8, F12
@@ -16,7 +16,7 @@ Update the marker on the work-item heading **and** this table in the same commit
 | Task | Status | Summary | Primary files |
 |---|:--:|---|---|
 | 4.1 | `[x]` | One credit model: fix and promote `deriveObjectiveCredit`; shadow-run V1 vs V2 first (F7) | `app/src/engine/stimulus.ts`, `microcycle.ts`, `trainingIntent.ts` |
-| 4.2 | `[x]` | Canonical stimulus axes required; legacy aliases and derived fallbacks deleted (F8) | `app/src/engine/models.ts`, `templates.ts`, `optimizer.ts`, `microcycle.ts`, `completedTraining.ts`, fixtures |
+| 4.2 | `[-]` | Canonical stimulus axes required; legacy aliases and derived fallbacks deleted (F8) | `app/src/engine/models.ts`, `templates.ts`, `optimizer.ts`, `microcycle.ts`, `completedTraining.ts`, fixtures |
 | 4.3 | `[x]` | Fatigue: assert ordering now; **compare** fusion functions before choosing (F12) | `app/src/engine/fatigue.ts`, `trainingHistorySnapshot.ts` |
 | 4.5 | `[ ]` | `PlannedDose { volume, intensity }` — gives `intensityScale` its consumer (D2 / F17) | `app/src/engine/trainingIntent.ts`, `dose.ts`, `models.ts`, `optimizer.ts` |
 | 4.4 | `[ ]` | Cost responds to delivered duration and completion ratio | `app/src/engine/completedTraining.ts`, `fatigue.ts` |
@@ -100,7 +100,7 @@ Run V1 and V2 crediting side by side for one iteration, emitting both into the s
 report. Compare objective-resolution counts per scenario. Cut over only when the
 divergence is explainable — not merely when V2 runs without throwing.
 
-## `[x]` 4.2 — F8: finish the stimulus rename
+## `[-]` 4.2 — F8: finish the stimulus rename
 
 `WorkoutStimulusProfile` carries 7 canonical + 5 legacy axes, **all optional**.
 `canonicalizeStimulus` (`templates.ts` `canonicalizeStimulus`) fills both sides and invents two
