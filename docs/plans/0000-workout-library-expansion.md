@@ -4,11 +4,18 @@
 * **Relocated** from `docs/workout-library-expansion-plan.md` to establish the
   `docs/plans/` convention. Content unchanged.
 
-> **Reader warning.** The line references in §1.2 (`rules.ts:200`, `rules.ts:387`,
-> `rules.ts:461`, `planner.ts:190`, `optimizer.ts:107-120`) are **stale** — see F9 in
+> **Reader warning — this document is a historical record, not a work list.**
+> It was written *before* the work it describes was carried out, so its findings and
+> "fix this" instructions describe a state that no longer exists. At least one of them
+> (§1.3's resolver `status` finding) was re-reported as live during the 2026-08-08 review
+> because this file was read as current. **Verify any finding here against the code before
+> acting on it.**
+>
+> Its line references (`rules.ts:200`, `rules.ts:387`, `rules.ts:461`, `planner.ts:190`,
+> `optimizer.ts:107-120`) are also stale — see F9 in
 > [the 2026-08-08 review](../analysis/2026-08-08-architecture-review.md). The prose is
 > still accurate and §1.2 remains the fullest written description of the two selection
-> paths; treat the line numbers as historical.
+> paths; treat the specifics as historical.
 
 Date: 2026-08-07
 Scope: `app/src/workouts/`, `app/src/engine/templates.ts`, `app/src/engine/microcycle.ts`
@@ -97,13 +104,18 @@ cost ceiling, mode gate, duration, equipment, and injury filters
 This is a real guardrail: adding a template without a mapping fails CI. It does *not*
 check that the mapping is semantically correct.
 
-> **Incidental finding (P1).** `docs/workout-library.md` states the resolver looks for
-> an *"active, non-manual"* workout. The code at `prescription.ts:310` filters only on
-> `!workout.manualOnly` — there is **no `status === 'active'` check**. A `draft` or
-> `deprecated` workout carrying `engineTemplateIds` would be prescribed. Nothing
-> currently exploits this (all 30 workouts are `active`), but it is a latent trap for
-> exactly the kind of catalogue growth this plan proposes. Fix in Phase 1 alongside
-> 1.2 — one predicate, plus a test that a `deprecated` workout is never resolved.
+> **~~Incidental finding (P1)~~ — RESOLVED during this plan's own implementation.**
+> Verified against the code 2026-08-08: `workoutForTemplate`
+> ([`prescription.ts:303`](../../app/src/workouts/prescription.ts)) filters on
+> `workout.status === 'active' && !workout.manualOnly && workout.engineTemplateIds?.includes(templateId)`,
+> and the legacy fallback at line 307 also requires `status === 'active'`. The resolver
+> matches what `docs/workout-library.md` describes; there is no gap.
+>
+> The original text (a `draft`/`deprecated` workout could be prescribed, "fix in Phase 1")
+> described the state *before* this plan was implemented and is struck through rather than
+> deleted so the history stays readable. **It is not outstanding work.** It was
+> re-reported as a live finding during the 2026-08-08 review cycle purely because this
+> document was read as current — see the reader warning at the top.
 
 ---
 
