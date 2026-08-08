@@ -361,6 +361,26 @@ describe('Task 2.2 PlanDefinition & PlanSchedule', () => {
     expect(result.status).toBe('INVALID');
   });
 
+  it('rejects an objective whose coverage is unavailable in its block phase', async () => {
+    const { buildPlanDefinition } = await import('./planSchedule.ts');
+    const { SEPTEMBER_CYCLING_EVENT_SESSION_COVERAGE } = await import('../workouts/event-plan.ts');
+    const blocks = [
+      { id: 'travel', phase: 'travel' as const, startDate: '2026-08-24', endDate: '2026-08-30', volumeScale: 0.6, intensityScale: 0.8 },
+    ];
+
+    const result = buildPlanDefinition(
+      SEPTEMBER_CYCLING_EVENT_SESSION_COVERAGE,
+      blocks,
+      septemberEvent,
+      [{ key: 'race_specific_endurance', coverageKey: 'outdoor_event_specific', blockId: 'travel', requiredCredit: 1, priority: 'must_have' }],
+    );
+
+    expect(result.status).toBe('INVALID');
+    if (result.status === 'INVALID') {
+      expect(result.issues.some(issue => issue.code === 'COVERAGE_UNAVAILABLE_IN_BLOCK_PHASE')).toBe(true);
+    }
+  });
+
   describe('resolvePlanDefinitionForEvent', () => {
     it('resolves the authored plan for the specific September cycling event', async () => {
       const { resolvePlanDefinitionForEvent } = await import('./planSchedule.ts');

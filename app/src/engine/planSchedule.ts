@@ -73,18 +73,26 @@ export function buildPlanDefinition(
   }
 
   // 3. Validate objective block references & coverage keys
-  const coverageKeys = new Set(coverage.map((c) => c.key));
+  const coverageByKey = new Map(coverage.map((item) => [item.key, item]));
   for (const obj of objectives) {
-    if (!blockIds.has(obj.blockId)) {
+    const block = blockSchedule.find((item) => item.id === obj.blockId);
+    if (!block) {
       issues.push({
         code: 'DANGLING_BLOCK_ID',
         field: `objectives.${obj.key}`,
         documentPath: `plan/${id}`,
       });
     }
-    if (!coverageKeys.has(obj.coverageKey)) {
+    const coverageItem = coverageByKey.get(obj.coverageKey);
+    if (!coverageItem) {
       issues.push({
         code: 'UNKNOWN_COVERAGE_KEY',
+        field: `objectives.${obj.key}`,
+        documentPath: `plan/${id}`,
+      });
+    } else if (block && !coverageItem.phases.includes(block.phase)) {
+      issues.push({
+        code: 'COVERAGE_UNAVAILABLE_IN_BLOCK_PHASE',
         field: `objectives.${obj.key}`,
         documentPath: `plan/${id}`,
       });
