@@ -41,9 +41,9 @@ Today there are three:
 
 | Model | Location | Status |
 |---|---|---|
-| Keyword substring on free text | `microcycle.ts:110-141` | live (fallback) |
-| Stimulus-vector coverage ≥ 0.6 | `microcycle.ts:198-213` | live (primary) |
-| Fractional dose-sensitive credit | `stimulus.ts:26-99` | **dead** |
+| Keyword substring on free text | `microcycle.ts` `updateMicrocycleProgress` | live (fallback) |
+| Stimulus-vector coverage ≥ 0.6 | `microcycle.ts` `creditObjectivesFromStimulus` | live (primary) |
+| Fractional dose-sensitive credit | `stimulus.ts` `deriveObjectiveCredit` | **dead** |
 
 The keyword matcher is directionally wrong, not merely approximate: `zone2_aerobic`
 matches any type containing `running` or `cycling`, so a threshold ride credits Zone 2;
@@ -103,7 +103,7 @@ divergence is explainable — not merely when V2 runs without throwing.
 ## `[ ]` 4.2 — F8: finish the stimulus rename
 
 `WorkoutStimulusProfile` carries 7 canonical + 5 legacy axes, **all optional**.
-`canonicalizeStimulus` (`templates.ts:575-590`) fills both sides and invents two
+`canonicalizeStimulus` (`templates.ts` `canonicalizeStimulus`) fills both sides and invents two
 derivations with no cited basis:
 
 ```ts
@@ -155,7 +155,7 @@ monotonicity.
 
 `buildFatigueStateFromHistory` seeds from `history[0].date`, and
 `applyCompletedSessionLoad` floors `elapsedHours` at 0. Oldest-to-newest ordering is
-therefore load-bearing and asserted only in a comment (`planner.ts:129`). Out-of-order
+therefore load-bearing and asserted only in a comment on `projectTrailingHistory`. Out-of-order
 input silently mis-decays.
 
 **Sort, then assert — do not take the dashboard down.** History is external, persisted
@@ -171,7 +171,7 @@ malformed ordering, not just a unit test on the function.
 
 Two real questions:
 
-* **Saturation.** `Math.min(1, ...)` per axis (`fatigue.ts:104-111`) means two hard
+* **Saturation.** `Math.min(1, ...)` per axis (`applyCompletedSessionLoad`) means two hard
   lower-body days ≈ one, at the ceiling. The model cannot represent "significantly deeper
   in the hole".
 * **Fusion.** `combinedFatigue = max(external, internal)` lets a bad night fully *mask*
@@ -192,7 +192,7 @@ this phase is the first opportunity to actually follow it.
 gets a consumer rather than being deleted; without an owning work item that commitment is
 prose, which is the exact failure mode this review criticises.
 
-1. Replace the scalar `plannedDose` (`trainingIntent.ts:80`) with
+1. Replace the scalar `plannedDose` (`resolveTrainingIntent`) with
    `PlannedDose { volume, intensity }`.
 2. `volume` derives from `PlanBlock.volumeScale` (current behaviour, unchanged).
 3. `intensity` derives from `PlanBlock.intensityScale` and gates which intensity-class

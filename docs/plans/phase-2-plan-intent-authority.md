@@ -83,13 +83,13 @@ already attached to real workout content in `event-plan.ts`, and it expresses `t
 a genuine planning state that the days-to-event model structurally cannot represent,
 because travel has nothing to do with event proximity. The reverse mapping loses that.
 
-Mapping for the generic fallback:
-
 `EventPlanPhase` gains a **`recovery`** member. An earlier draft mapped
 `Post-Event Recovery → build (at reduced volume)`; that is lossy in exactly the layer being
 made authoritative. `build` means *develop fitness* and would make build-phase objectives
 and workout families eligible during a window the generic engine deliberately marks as
 recovery. Reduced volume does not restore the missing semantics.
+
+Mapping for the generic fallback:
 
 | `PhaseWeights.phaseName` | `EventPlanPhase` |
 |---|---|
@@ -241,7 +241,7 @@ consistent with ADR-0010) rather than defensively inside the planner.
 
 ## `[ ]` 2.4 — Collapse Path A / Path B (F9)
 
-`evaluateTrainingWithIntent` currently calls `evaluateTraining` (`rules.ts:486`) to obtain
+`evaluateTrainingWithIntent` currently calls `evaluateTraining` (`evaluateTrainingWithIntent`'s call to `evaluateTraining`) to obtain
 `mode` and `envelopes`, then discards its template pick and re-selects. Extract the part
 that is actually wanted:
 

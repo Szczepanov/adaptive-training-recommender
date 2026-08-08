@@ -11,8 +11,8 @@
 > because this file was read as current. **Verify any finding here against the code before
 > acting on it.**
 >
-> Its line references (`rules.ts:200`, `rules.ts:387`, `rules.ts:461`, `planner.ts:190`,
-> `optimizer.ts:107-120`) are also stale — see F9 in
+> Its line references (`rules.ts`, `rules.ts`, `rules.ts`, `planner.ts`,
+> `optimizer.ts`) are also stale — see F9 in
 > [the 2026-08-08 review](../analysis/2026-08-08-architecture-review.md). The prose is
 > still accurate and §1.2 remains the fullest written description of the two selection
 > paths; treat the specifics as historical.
@@ -59,14 +59,14 @@ Implemented on 2026-08-07. The library now contains 52 exercises, 36 workout def
 A template can reach the user through **two independent code paths**, and they have
 different filtering rules. Any change here must be evaluated against both.
 
-**Path A — readiness rules (`evaluateTraining`, `rules.ts:200`)**
+**Path A — readiness rules (`evaluateTraining`, `rules.ts`)**
 
 ```text
 readiness → mode (train | modify | recover) → category allowlist → pickTemplate
 ```
 
 On a `train` day the candidate pool is a hardcoded **category allowlist**
-(`rules.ts:387`):
+(`rules.ts`):
 
 ```ts
 t.category === 'Hard Endurance' || t.category === 'Moderate Endurance'
@@ -77,7 +77,7 @@ t.category === 'Hard Endurance' || t.category === 'Moderate Endurance'
 `modify` mode filters by `systemicCost <= MODIFY_MAX_SYSTEMIC_COST` (any non-Rest
 category). `recover` mode is restricted to `Rest` / `Mobility/Recovery`.
 
-**Path B — intent optimizer (`evaluateTrainingWithIntent`, `rules.ts:461`; `generateWeekAheadPlan`, `planner.ts:190`)**
+**Path B — intent optimizer (`evaluateTrainingWithIntent`, `rules.ts`; `generateWeekAheadPlan`, `planner.ts`)**
 
 ```text
 ENRICHED_TEMPLATES → eligibility → systemicCost ceiling → rankCandidatesByUtility → top pick
@@ -85,7 +85,7 @@ ENRICHED_TEMPLATES → eligibility → systemicCost ceiling → rankCandidatesBy
 
 There is **no category allowlist** on this path — only modality restriction, systemic
 cost ceiling, mode gate, duration, equipment, and injury filters
-(`optimizer.ts:107-120`).
+(`optimizer.ts`).
 
 > **Consequence:** a new template in a category outside the Path A allowlist is
 > selectable on Path B but invisible on Path A. This is the single most important
@@ -96,17 +96,17 @@ cost ceiling, mode gate, duration, equipment, and injury filters
 `prescription.ts` resolves an engine template to a catalogue workout in two steps:
 
 1. **Preferred** — find a non-`manualOnly` workout whose `engineTemplateIds` contains
-   the template id (`prescription.ts:310`). Only 8 of 20 templates currently have one.
-2. **Fallback** — `FALLBACK_TEMPLATE_TO_WORKOUT` (`prescription.ts:19-37`), a 17-entry
+   the template id (`prescription.ts`). Only 8 of 20 templates currently have one.
+2. **Fallback** — `FALLBACK_TEMPLATE_TO_WORKOUT` (`prescription.ts`), a 17-entry
    hand-written table.
 
-`prescription.test.ts:29` asserts **every** template in `TEMPLATES` resolves non-null.
+`prescription.test.ts` asserts **every** template in `TEMPLATES` resolves non-null.
 This is a real guardrail: adding a template without a mapping fails CI. It does *not*
 check that the mapping is semantically correct.
 
 > **~~Incidental finding (P1)~~ — RESOLVED during this plan's own implementation.**
 > Verified against the code 2026-08-08: `workoutForTemplate`
-> ([`prescription.ts:303`](../../app/src/workouts/prescription.ts)) filters on
+> ([`prescription.ts` `workoutForTemplate`](../../app/src/workouts/prescription.ts)) filters on
 > `workout.status === 'active' && !workout.manualOnly && workout.engineTemplateIds?.includes(templateId)`,
 > and the legacy fallback at line 307 also requires `status === 'active'`. The resolver
 > matches what `docs/workout-library.md` describes; there is no gap.
@@ -143,7 +143,7 @@ routinely selectable, and every selection silently delivers a full-body session.
 
 ### 2.2 P1 — Two declared engine categories have zero templates
 
-`SessionTemplate['category']` (`engine/models.ts:220`) declares 11 categories.
+`SessionTemplate['category']` (`engine/models.ts`) declares 11 categories.
 `templates.ts` defines templates for 9. Missing:
 
 - **`'Power Maintenance'`** — the catalogue has `strength_compact_power_01`
@@ -157,7 +157,7 @@ daily recommendation.
 
 ### 2.3 P1 — `ENRICHED_TEMPLATES` default profiles are wrong for the missing categories
 
-`templates.ts:481-513` assigns stimulus/cost profiles by category with an `else` branch
+`templates.ts` assigns stimulus/cost profiles by category with an `else` branch
 for anything unmatched:
 
 ```ts
@@ -174,8 +174,8 @@ explicit `stimulusProfile` and `costProfile`, or the `else` branch must be exten
 
 ### 2.4 P1 — Field sessions earn no microcycle credit
 
-`planner.ts:141` builds the credit string as `` `${modality} ${category}` ``.
-`microcycle.ts:80-88` matches objectives by keyword. A field session produces
+`planner.ts` builds the credit string as `` `${modality} ${category}` ``.
+`microcycle.ts` matches objectives by keyword. A field session produces
 `"Field Field Maintenance"`, which matches **none** of the four objective keyword sets
 (`threshold|hard|tempo`, `surge|vo2|football|hiit`, `easy|endurance|zone 2|running|cycling`,
 `strength|weight|lifting`). Note `'football'` is already a `surge_repeatability` keyword —
@@ -204,8 +204,8 @@ that builds the relevant tissue capacity.
 
 ### 2.6 Explicitly NOT problems
 
-- **Two `Equipment` unions.** `workouts/models.ts:50` (`Equipment`) and
-  `engine/models.ts:553` (`EquipmentKey`) are deliberately separate vocabularies —
+- **Two `Equipment` unions.** `workouts/models.ts` (`Equipment`) and
+  `engine/models.ts` (`EquipmentKey`) are deliberately separate vocabularies —
   the engine gates on coarse user-owned equipment, the catalogue on fine-grained
   per-exercise needs. Do not merge them.
 - **Intensity distribution model.** See §3.4.
@@ -273,7 +273,7 @@ evidence does not support the engineering cost.
 | # | Decision | Rationale |
 |---|---|---|
 | D1 | Fix routing before adding content | A correct catalogue behind a broken router still delivers the wrong session. §2.1 is the only P0. |
-| D2 | New plyometric exercises get `modality: 'strength'`, not `'field'` | `validation.ts:22-30` restricts a `strength` workout to `strength` exercises. Using `'field'` would force widening the compatibility matrix, weakening a useful invariant. |
+| D2 | New plyometric exercises get `modality: 'strength'`, not `'field'` | `validation.ts` restricts a `strength` workout to `strength` exercises. Using `'field'` would force widening the compatibility matrix, weakening a useful invariant. |
 | D3 | Every new engine template carries explicit `stimulusProfile` + `costProfile` | Avoids the wrong `else`-branch defaults (§2.3). Also extend the `else` branches defensively. |
 | D4 | New quality sessions attach to existing templates via `engineTemplateIds`, not new templates | A template is an engine-level *choice*; a workout is an execution. Two VO₂ formats are two executions of one choice. Avoids inflating the Path A candidate pool. |
 | D5 | Add `Power Maintenance` to the Path A `train` allowlist; keep `Field Maintenance` optimizer-only | The readiness path cannot enforce field session spacing; see Risk R2. |
@@ -314,7 +314,7 @@ exist — no `exercises.ts` change needed in this phase.
 
 Must satisfy `validation.ts`:
 - three variants `full` / `reduced` / `return_to_training`, durations non-increasing
-  in that order (`validation.ts:240-241`);
+  in that order (`validation.ts`);
 - `duration.minimumMin <= defaultMin <= maximumMin`, minimum > 0 (`:208-209`);
 - `full.targetDurationMin === duration.defaultMin` to avoid the warning at `:237`;
 - `loadMultiplier` in `(0, 1.2]` (`:274`);
@@ -327,11 +327,11 @@ Must satisfy `validation.ts`:
 
 Register in `catalog.ts` (import + spread).
 
-**1.2 Prune and correct the fallback table** (`prescription.ts:19-37`)
+**1.2 Prune and correct the fallback table** (`prescription.ts`)
 
 - Remove `end_mod_01`, `end_mod_02`, `end_hard_01`, `end_hard_02`, `end_hard_03` —
   all now superseded by `engineTemplateIds` in `quality-support.ts`. Verify by
-  temporarily removing and confirming `prescription.test.ts:29` still passes.
+  temporarily removing and confirming `prescription.test.ts` still passes.
 - Remove `str_lower_01` — superseded by 1.1.
 - Leave `end_easy_02`/`end_easy_03` → `running_walk_run_01` (accepted, documented).
 - Leave `str_upper_02` → `strength_upper_body_trunk_01` until Phase 4.
@@ -345,7 +345,7 @@ resolved **modality and category agreement** for every template — e.g. a
 
 **1.4 Enforce `status === 'active'` in the resolver**
 
-`prescription.ts:310` — add the missing status predicate so the code matches the
+`prescription.ts` — add the missing status predicate so the code matches the
 documented contract (see incidental finding in §1.3):
 
 ```ts
@@ -400,7 +400,7 @@ a deprecation from silently continuing to ship.
 Explicit profiles per D3. Note `field_maint_01` carries `impactTissue: 0.8` — the
 `else`-branch default would have given `0.5` with `upperBody: 0.8`.
 
-**2.2 Extend the `ENRICHED_TEMPLATES` fallback branches** (`templates.ts:481-513`)
+**2.2 Extend the `ENRICHED_TEMPLATES` fallback branches** (`templates.ts`)
 
 Add explicit `Power Maintenance` and `Field Maintenance` branches so a future template
 that omits profiles still gets sane values.
@@ -408,13 +408,13 @@ that omits profiles still gets sane values.
 **2.3 Wire `engineTemplateIds` in the catalogue**
 
 - `strength_compact_power_01` → `engineTemplateIds: ['str_power_01']`
-  (`catalog/strength.ts:42`)
+  (`catalog/strength.ts`)
 - `field_controlled_maintenance_01` → `engineTemplateIds: ['field_maint_01']`
-  (`catalog/field.ts:6`)
+  (`catalog/field.ts`)
 
 No fallback-table entries needed — `engineTemplateIds` takes precedence.
 
-**2.4 Add the safe category to the Path A `train` allowlist** (`rules.ts:387`)
+**2.4 Add the safe category to the Path A `train` allowlist** (`rules.ts`)
 
 `Power Maintenance` is allowed. `Field Maintenance` remains Path B-only because the
 readiness path cannot enforce `minimumDaysAfterHardLowerBody`; this is the selected
@@ -422,7 +422,7 @@ Risk R2 mitigation.
 
 See Risk R2 for the guard this needs.
 
-**2.5 Credit field sessions in the microcycle** (`microcycle.ts:82`)
+**2.5 Credit field sessions in the microcycle** (`microcycle.ts`)
 
 Add `'field'` to the `surge_repeatability` keyword set alongside `'football'`, so
 `"Field Field Maintenance"` resolves an objective. Verify against
@@ -437,7 +437,7 @@ is the guard which makes §2.2 unrepeatable.
 
 ### Phase 3 — Reactive strength and eccentric tissue work (P2, highest evidence value)
 
-**3.1 New `Equipment` member** — add `'plyo_box'` to `workouts/models.ts:50`.
+**3.1 New `Equipment` member** — add `'plyo_box'` to `workouts/models.ts`.
 
 **3.2 New exercises** (`exercises.ts`) — all `modality: 'strength'` per D2:
 
@@ -466,7 +466,7 @@ Add as a second option on the existing `compact_strength` event-plan coverage ke
 
 Add `nordic_hamstring_curl` and `eccentric_heel_raise` as optional accessory steps
 (`optional: true`) to `strength_full_body_maintenance_01` and the Phase 1
-`strength_lower_body_01`. Guard the duration warning at `validation.ts:344` — optional
+`strength_lower_body_01`. Guard the duration warning at `validation.ts` — optional
 steps still count toward computed duration, so re-check each variant's
 `targetDurationMin`.
 
@@ -504,7 +504,7 @@ cable exercises, and a `strength_cable_upper_01` workout with
 |---|---|---|
 | Static | Type check across both `Equipment` unions and the category union | `npm run typecheck` |
 | Library | Referential, duration, equipment, variant, parameter-binding validation | `npm run validate:workouts` |
-| Unit | Every template resolves non-null (existing) | `prescription.test.ts:29` |
+| Unit | Every template resolves non-null (existing) | `prescription.test.ts` |
 | Unit | **New** — resolved workout's modality/category agrees with the template's | `prescription.test.ts` |
 | Unit | **New** — every `SessionTemplate['category']` value has ≥1 template | `prescription.test.ts` |
 | Unit | **New** — a `Field` session credits a microcycle objective | `microcycle` tests |

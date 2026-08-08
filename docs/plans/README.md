@@ -132,6 +132,42 @@ be.
 
 ---
 
+## Conventions that exist because they were violated
+
+Both of these were added after a document in this directory misled a reader. They are
+cheap to follow and the failure mode is expensive.
+
+### Reference symbols, never line numbers
+
+Write `` `rules.ts` `evaluateEnvelopes` `` or `` `prescription.ts:workoutForTemplate` ``.
+Do **not** write `` `rules.ts:544-556` ``.
+
+Line numbers drift within hours of being written. A 2026-08-08 audit of this directory
+found 91 line references, and a six-sample spot check found **three already pointing at
+the wrong code** — all written the same day. An agent following a stale line reference
+lands on unrelated code and either acts on it or burns time reconciling it. Symbol names
+survive refactors, are greppable, and fail loudly when renamed rather than silently
+pointing somewhere plausible.
+
+### An `Implemented` plan must not read like a work list
+
+When a plan flips to `Implemented`, **strike through or delete its findings, "problems
+found", and "fix this" sections**, keeping the outcome summary. Do not leave a
+pre-implementation problem statement sitting in the present tense.
+
+This is not hygiene. On 2026-08-08 an already-fixed P1 from
+[`0000-workout-library-expansion.md`](./0000-workout-library-expansion.md) §1.3 was
+re-reported as a live defect three times — in two PR comments and a summary — because the
+archived plan still described it in the present tense with a "fix in Phase 1"
+instruction. `Status: Implemented` in the header was not a strong enough signal; the body
+read as current, so it was treated as current.
+
+Every archived plan therefore also carries a reader warning at the top stating that it is
+a historical record and that its findings must be verified against the code before being
+acted on.
+
+---
+
 ## Writing a plan
 
 Keep them executable. A plan that cannot be picked up by someone who did not write it is
@@ -145,6 +181,8 @@ not finished. Each should have:
 6. **Risks & rollback** — including what to do if the change is wrong.
 7. **Out of scope** — the adjacent work this plan deliberately does not do.
 8. **Docs to update** — ADRs to write or amend, architecture docs to correct.
+
+Reference symbols rather than line numbers (see the convention above).
 
 Each work item should be implementable by someone who has not read the rest of the
 document: name the real files, state the current behaviour, state the change, and give a

@@ -45,20 +45,20 @@ harder to see, because they will then be spread across a larger surface.
 
 ### Current state
 
-`app/src/engine/adapters.ts:154`, the only production constructor of `UserContext`,
+`app/src/engine/adapters.ts` — `mapContextFromGoalsAndTrainingSettings`, the only production constructor of `UserContext` —
 hardcodes `injuries: []`. Everything downstream is therefore dead in production:
 
-* `optimizer.ts:183-187` — the "hard safety gating" modality filter
-* `rules.ts:544-556` — `hasRunningInjury`, and the `isPain && injuries.length > 0` branch
+* `optimizer.ts` — `rankCandidatesByUtility`'s "hard safety gating" modality filter
+* `rules.ts` `evaluateEnvelopes` — `hasRunningInjury`, and the `isPain && injuries.length > 0` branch
   that is the only writer of `restrictedModalities`
-* `planner.ts:352,482` — the same, across all 7 forecast days
+* `planner.ts` — `generateWeekAheadPlan` reads `context.constraints.injuries` and passes it to `rankCandidatesByUtility`; same dead filter, across all 7 forecast days
 
 Consequences worth stating plainly: `SafetyEnvelope.restrictedModalities` is **always**
-`[]`, so `rules.ts:492`'s filter is a no-op and the persisted audit's
+`[]`, so the `restrictedModalities` filter inside `evaluateTrainingWithIntent` is a no-op and the persisted audit's
 `safetyRestrictedModalityCount` is always `0` — the audit records a safety check that
 never ran.
 
-Note that `simulation/scenarios.ts:51` *does* pass `injuries`, so the harness exercises
+Note that `simulation/scenarios.ts`'s `context()` helper *does* pass `injuries`, so the harness exercises
 and appears to validate a filter production can never trigger. This is the sharpest
 instance of the pattern in the review's §0.
 
@@ -99,7 +99,7 @@ Keeps the ADR-0007 guarantee and makes it real.
 
 Add to `TrainingSettings` at `schemaVersion: 3` (already permitted by the type
 `schemaVersion: 2 | 3` and by `firestore.rules`, which allows `[2, 3]` — the forward
-allowance exists and is currently unusable because `trainingSettingsService.ts:16` pins
+allowance exists and is currently unusable because `trainingSettingsService.ts`'s `SETTINGS_SCHEMA_VERSION` pins
 `SETTINGS_SCHEMA_VERSION = 2`):
 
 ```ts
@@ -165,12 +165,12 @@ object.
 3. `adapters.ts` / `models.ts` — **delete** `UserContext.constraints.injuries: string[]`
    and replace it with the resolved output of `resolveInjuryRestrictions`. Do not keep the
    legacy field in parallel (see "One canonical representation" above).
-4. `rules.ts:544-556` — replace `RUNNING_INJURY_PATTERN` (`/\b(knee|achilles|ankle|leg|run)/`,
+4. `rules.ts` `evaluateEnvelopes` — replace `RUNNING_INJURY_PATTERN` (`/\b(knee|achilles|ankle|leg|run)/`,
    which also matches "legal" and "runny") with `resolveInjuryRestrictions`. Populate
    `restrictedModalities` from it.
 5. `eligibility.ts` — union `settings.guardrails` with `impliedGuardrails` so injuries
    gate templates on **both** paths without duplicating the check.
-6. `optimizer.ts:183-187` — replace the substring test
+6. `optimizer.ts` — in `rankCandidatesByUtility`, replace the substring test
    (`injuryConstraints.some(inj => inj.toLowerCase().includes(lowerMod))`, which relies on
    an injury string happening to contain a modality name) with the resolved modality list.
 7. `trainingSettingsService.ts` — bump `SETTINGS_SCHEMA_VERSION` to 3; accept 2 on read
@@ -223,7 +223,7 @@ fall through to the fallback path". **That was wrong and is corrected here.**
 
 The review's own F7 shows the keyword matcher is directionally broken. For a recognised
 hard ride, `completedEventToExposure` builds `trainingRecordLike.type = "Cycling hard"`.
-If that string reaches `updateMicrocycleProgress` (`microcycle.ts:118-125`), it credits:
+If that string reaches `updateMicrocycleProgress` (`updateMicrocycleProgress`), it credits:
 
 * `threshold_quality` — because the string contains `hard`; **and**
 * `zone2_aerobic` — because the string contains `cycling`.
@@ -311,7 +311,7 @@ this field; adding it now costs nothing and prevents a second migration.
 ### Interaction to check
 
 Fix (b) makes Garmin rides start resolving objectives. That lowers `urgency` in
-`trainingIntent.ts:80`, which lowers `plannedDose`, which changes `executionDose`.
+`resolveTrainingIntent`, which lowers `plannedDose`, which changes `executionDose`.
 **Re-run the Phase 0 invariant suite and read the semantic diff before merging.**
 
 ### Tests

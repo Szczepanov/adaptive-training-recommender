@@ -40,7 +40,7 @@ always green.
 
 ### Why "add a date" is not the fix
 
-`RecentHistoryEntry` (`optimizer.ts:24-28`) has no `date`, so
+`RecentHistoryEntry` (`optimizer.ts` `RecentHistoryEntry`) has no `date`, so
 `getConsecutiveModalityCount` treats array adjacency as calendar adjacency, contradicting
 ADR-0008 §6. Adding the field makes the rule *correct* — and still the wrong shape.
 
@@ -131,14 +131,14 @@ rankCandidates(candidates, context) →
 ```
 
 Rejection reasons must be named and surfaced in `decisionTrace.candidateScores`, which
-today records `excludedReasons: []` unconditionally (`rules.ts:530`) — an audit field
+today records `excludedReasons: []` unconditionally (`evaluateTrainingWithIntent`'s `decisionTrace.candidateScores` mapping in `rules.ts`) — an audit field
 that has never carried data.
 
 ### `[ ]` 3.3 — F4: one optimizer invocation
 
 The two call sites differ (verified):
 
-| | `rules.ts:497-514` | `planner.ts:477-485` |
+| | `rules.ts` (`evaluateTrainingWithIntent`) | `planner.ts` (`generateWeekAheadPlan`) |
 |---|---|---|
 | `systemicCost` in history | absent → Patch 1c dead | present → live |
 | `modality` | set to the *type* string | omitted |
@@ -146,7 +146,7 @@ The two call sites differ (verified):
 | anchor context | never passed | passed |
 
 Extract `buildOptimizationContext(intent, context, preferences, date)` used by both, and
-delete the fabricated `UserPreferences` literal at `rules.ts:503-509`.
+delete the fabricated `UserPreferences` object literal passed to `rankCandidatesByUtility` inside `evaluateTrainingWithIntent`.
 
 **Test — but test the right thing.** Feeding both call sites literally identical inputs
 does not exercise the production difference, since `planner.ts` legitimately supplies
@@ -160,7 +160,7 @@ anchor context that `rules.ts` does not. Split it:
 
 ### `[ ]` 3.4 — F5: stop assuming tomorrow is green
 
-`Home.tsx:332` hardcodes `nextDayPlan.branches.green.recommendation`. ADR-0008 §1
+`Home.tsx` hardcodes `nextDayPlan.branches.green.recommendation` in the `generateWeekAheadPlanWithIntent` effect. ADR-0008 §1
 specifies the user-selected branch; no selector exists, so yellow and red are computed
 (three full `evaluateTrainingWithIntent` passes) and discarded, and every projected day
 is seeded from a best-case tomorrow.

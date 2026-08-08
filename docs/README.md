@@ -4,6 +4,48 @@ Welcome to the documentation for **Adaptive Training Recommender**, a hybrid sys
 
 ---
 
+## Start here: which document is authoritative?
+
+Directories in `docs/` are not interchangeable. Each has a different relationship to the
+truth, and reading one as if it were another is the single most expensive mistake made in
+this repository so far — a fixed defect was re-reported three times because an
+`Implemented` plan still read like a work list.
+
+| Directory | Answers | Trust it for | Do **not** trust it for |
+|---|---|---|---|
+| [`adr/`](./adr/) | "What did we choose, and why?" | The intended design and its rationale. Immutable once accepted. | What the code *does today* — an ADR can be aspirational or partly unimplemented. |
+| [`architecture/`](./architecture/) | "How does it work now?" | Current behaviour. Living reference, updated with the code. | Rationale — it describes, it does not justify. |
+| [`analysis/`](./analysis/) | "What was true on date X?" | Evidence gathered on its date. Dated, never edited after publication. | Current state. Findings may have been fixed since. Verify against code. |
+| [`plans/`](./plans/) | "How do we get from here to there?" | Sequenced work, with per-task status markers. | Anything in a plan marked `Implemented` or `Archived` — historical record only. |
+| [`ops/`](./ops/) | "How do I run it?" | Operational procedure. | Design intent. |
+
+**Precedence when two documents disagree: the code wins, then `architecture/`, then
+`adr/`, then everything else.** If you find a disagreement, do not silently pick one —
+record it in the current review document
+([`analysis/2026-08-08-architecture-review.md`](./analysis/2026-08-08-architecture-review.md))
+or fix the doc, and say which you did.
+
+Two conventions apply to every document here, both added after being violated (see
+[`plans/README.md` § Conventions](./plans/README.md#conventions-that-exist-because-they-were-violated)):
+
+* **Reference symbols, never line numbers.** Write `` `rules.ts` `evaluateEnvelopes` ``,
+  not `` `rules.ts:544-556` ``. Line numbers were measured to go stale within hours.
+* **A finished plan must not read like a work list.** Present-tense problem statements in
+  `Implemented` documents get acted on as if they were live.
+
+### Task-oriented entry points
+
+| If you are… | Read, in order |
+|---|---|
+| Changing engine decision behaviour | [`architecture/recommendation-engine.md`](./architecture/recommendation-engine.md) → the relevant ADR → [`analysis/2026-08-08-architecture-review.md`](./analysis/2026-08-08-architecture-review.md) for known divergences |
+| Picking up scheduled work | [`plans/README.md`](./plans/README.md) — the status table says what is startable today |
+| Changing Firestore paths, rules, or schema | [ADR-0002](./adr/0002-user-scoped-firestore-isolation.md) → [ADR-0010](./adr/0010-decision-provenance-and-audit-replay.md) → `app/firestore.rules` |
+| Changing dates or step semantics | [ADR-0003](./adr/0003-timezone-semantics-and-d1-step-window.md) — these are hard invariants, not preferences |
+| Adding or editing workouts | [`workout-library.md`](./workout-library.md) → [ADR-0004](./adr/0004-workout-library-architecture.md) |
+| Deploying or backfilling | [`ops/`](./ops/) |
+
+---
+
 ## 📚 Documentation Index
 
 ### 🏛️ Architecture Decision Records (ADRs)

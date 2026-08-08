@@ -54,7 +54,7 @@ started.
   the `audit`/`rebuild` pair give real data lineage.
 * **The `DataState` discipline.** `INVALID`/`UNAVAILABLE` blocking planning instead of
   silently degrading to "empty training week" (`trainingHistorySnapshot.ts`,
-  `Home.tsx:150-168`) is the correct call for a system that makes load decisions, and
+  `Home.tsx`'s `loadDashboardData` source-state guards) is the correct call for a system that makes load decisions, and
   it is applied consistently.
 * **Timezone handling.** `periodization.ts:getDaysBetween` using `Date.UTC` purely as a
   DST-free ordinal, with the reasoning written down, is better than most production code.
@@ -70,7 +70,7 @@ started.
 
 ### F1. The documented hard injury gate has no data source at all
 
-`adapters.ts:154` — the sole production constructor of `UserContext` — hardcodes:
+`adapters.ts` — `mapContextFromGoalsAndTrainingSettings`, the sole production constructor of `UserContext` — hardcodes:
 
 ```ts
 constraints: { ..., injuries: [], ... }
@@ -78,14 +78,14 @@ constraints: { ..., injuries: [], ... }
 
 Everything downstream that consumes it is therefore dead code in production:
 
-* `optimizer.ts:183-187` — *"Hard safety gating: Physical injuries strictly exclude
+* `rankCandidatesByUtility`'s injury filter — *"Hard safety gating: Physical injuries strictly exclude
   matching modalities"* — filters against an always-empty list.
-* `rules.ts:544-556` — `hasRunningInjury`, and the `isPain && injuries.length > 0`
+* `rules.ts` `evaluateEnvelopes` — `hasRunningInjury`, and the `isPain && injuries.length > 0`
   branch that populates `restrictedModalities`, can never fire. `restrictedModalities`
   is therefore *always* `[]`, which also means `evaluateTrainingWithIntent`'s
-  `.filter(t => !restrictedModalities.includes(...))` (rules.ts:492) is a no-op, and the
+  `.filter(t => !restrictedModalities.includes(...))` (rules.ts) is a no-op, and the
   persisted audit's `safetyRestrictedModalityCount` is always `0`.
-* `planner.ts:352,482` — same, for the whole 7-day forecast.
+* `planner.ts` — `generateWeekAheadPlan` passes the same empty list to `rankCandidatesByUtility`, for the whole 7-day forecast.
 
 ADR-0007 §6 states: *"Physical pain/injury constraints (`UserConstraint`) are hard safety
 gates."* That guarantee is not implemented. The legacy `users/{uid}/constraints/*`
@@ -136,12 +136,12 @@ But where recognised Garmin-only sessions are the athlete's *primary* completion
 the common case for someone training outdoors and answering the prompt intermittently —
 the ledger can stay unresolved despite real training. When it does,
 `calculateStimulusBenefit` keeps scoring the same unresolved targets, `plannedDose` stays
-near maximum urgency (`trainingIntent.ts:77-80`, `urgency = unresolved/total`), and the
+near maximum urgency (`resolveTrainingIntent`, `urgency = unresolved/total`), and the
 post-objective aerobic filler (optimizer Patch 3) never engages.
 
 ### F3. Anti-stacking has no notion of calendar time — contradicting ADR-0008 §6
 
-`optimizer.ts:24-28`:
+`optimizer.ts` `RecentHistoryEntry`:
 
 ```ts
 export interface RecentHistoryEntry {
@@ -156,10 +156,10 @@ There is no `date`. `getConsecutiveModalityCount` scans the array backwards and 
 > penalty without treating sessions separated by a calendar gap as consecutive."*
 
 The date is present on `CompletedExposure` and is dropped at the `projectTrailingHistory`
-/ `rules.ts:512` boundary. Two strength sessions eleven days apart with nothing logged
+/ `rules.ts` boundary. Two strength sessions eleven days apart with nothing logged
 between them read as consecutive.
 
-Worse is the rolling arm. `optimizer.ts:214`:
+Worse is the rolling arm. `optimizer.ts`'s Patch 1 anti-stacking branch:
 
 ```ts
 if (consecutiveCount >= 2 || rollingCount >= 2) prefMultiplier *= 0.15;
@@ -179,7 +179,7 @@ multiplier stops discriminating and ranking degenerates toward whatever is left.
 
 ### F4. The two optimizer call sites run different policies
 
-| | `rules.ts:497-514` (today) | `planner.ts:477-485` (days 2+) |
+| | `evaluateTrainingWithIntent` (today) | `generateWeekAheadPlan` (days 2+) |
 |---|---|---|
 | `recentHistory.systemicCost` | **not supplied** | supplied |
 | Patch 1c intensity-stacking | **structurally dead** | live |
@@ -187,15 +187,15 @@ multiplier stops discriminating and ranking degenerates toward whatever is left.
 | preferences | fabricated literal (`preferredRecoveryStyle:'mixed'`, `defaultWeekdayTimeMin:45`, …) | `preferences ?? NEUTRAL_PREFERENCES` |
 | anchor role / adjacency | never passed | passed |
 
-So the hard/moderate-into-hard/moderate guard that `optimizer.ts:228-240` describes as
+So the hard/moderate-into-hard/moderate guard that `optimizer.ts`'s Patch 1c describes as
 *"what actually stops the tempo trap"* protects the forecast but not today's actual
-prescription. And `rules.ts:503-509` invents a `UserPreferences` object rather than
+prescription. And `rules.ts` invents a `UserPreferences` object rather than
 threading the real profile or reusing `planner.ts`'s `NEUTRAL_PREFERENCES` — two answers
 to the same question, 200 lines apart. No test asserts parity between the call sites.
 
 ### F5. The week-ahead strip always assumes tomorrow is green
 
-`Home.tsx:332`:
+`Home.tsx`, in the week-ahead effect:
 
 ```ts
 const tomorrowRec = nextDayPlan ? nextDayPlan.branches.green.recommendation : null;
@@ -204,7 +204,7 @@ const tomorrowRec = nextDayPlan ? nextDayPlan.branches.green.recommendation : nu
 ADR-0008 §1 specifies the provisional tier as *"tomorrow's already-computed
 green/yellow/red preview branch (**whichever the user has selected**)"*. No selection
 state exists anywhere in the app — `branches.yellow` and `branches.red` are computed
-(three full `evaluateTrainingWithIntent` passes, `rules.ts:984-988`) and then discarded.
+(three full `evaluateTrainingWithIntent` passes, `rules.ts`) and then discarded.
 
 Consequences: the forecast is systematically optimistic, and because `applyPick` charges
 the green branch's cost into the chained fatigue/objective ledger, **every** projected
@@ -244,12 +244,12 @@ plus field-pinning for everything except `adherence` — close both holes.)
 
 | Model | Location | Status |
 |---|---|---|
-| Keyword substring on free text | `microcycle.ts:110-141` | live (fallback) |
-| Stimulus-vector coverage ≥ 0.6 | `microcycle.ts:198-213` | live (primary) |
-| Fractional dose-sensitive credit | `stimulus.ts:26-99` | **dead** |
+| Keyword substring on free text | `microcycle.ts` `updateMicrocycleProgress` | live (fallback) |
+| Stimulus-vector coverage ≥ 0.6 | `microcycle.ts` `creditObjectivesFromStimulus` | live (primary) |
+| Fractional dose-sensitive credit | `stimulus.ts` `deriveObjectiveCredit` | **dead** |
 
 The keyword matcher is not merely approximate, it is wrong in a directional way
-(`microcycle.ts:118-125`): `zone2_aerobic` matches any type string containing `running`
+(`updateMicrocycleProgress`): `zone2_aerobic` matches any type string containing `running`
 or `cycling` — so a threshold ride credits the Zone-2 objective; `threshold_quality`
 matches `hard` or `tempo`. The two live models disagree about what a given session
 resolved, and which one runs depends on an incidental property of the exposure (F2).
@@ -268,8 +268,8 @@ objective key it doesn't recognise.
 
 ### F8. `WorkoutStimulusProfile` is a half-finished rename encoded in the type system
 
-Seven canonical axes plus five legacy aliases, **all optional** (`models.ts:170-186`).
-`templates.ts:575-590` populates both sides on every template, inventing two derivations
+Seven canonical axes plus five legacy aliases, **all optional** (`models.ts` `WorkoutStimulusProfile`).
+`templates.ts` `canonicalizeStimulus` populates both sides on every template, inventing two derivations
 with no cited basis:
 
 ```ts
@@ -291,14 +291,14 @@ compile-clean 0-coverage objective that can never be resolved.
 
 Path A (`evaluateTraining`: mode → hardcoded category allowlist → date-hash pick) and
 Path B (`evaluateTrainingWithIntent`: eligibility → cost ceiling → utility ranking) both
-ship. Path B *runs Path A first* (`rules.ts:486`) purely to obtain `mode` and `envelopes`,
+ship. Path B *runs Path A first* (`evaluateTrainingWithIntent`'s call to `evaluateTraining`) purely to obtain `mode` and `envelopes`,
 then discards its template pick. Path A is still directly reachable via
 `evaluateNextDayPlan` and remains the only path some templates can appear on.
 
 The only place this dual structure is written down is
 `docs/plans/0000-workout-library-expansion.md §1.2` — a file marked "Status: implemented",
-whose line references (`rules.ts:200`, `rules.ts:387`, `rules.ts:461`, `planner.ts:190`,
-`optimizer.ts:107-120`) are all now wrong. Architecture that only exists in a completed
+whose line references (`rules.ts`, `rules.ts`, `rules.ts`, `planner.ts`,
+`optimizer.ts`) are all now wrong. Architecture that only exists in a completed
 implementation plan will be lost.
 
 ### F10. Significant policy surfaces have no ADR, and `POLICY_VERSION` never moves
@@ -321,7 +321,7 @@ version string makes `replay.ts`'s `policyMatchesCurrent` check meaningless.
 
 ### F11. ~35 tuned constants, no calibration record, no decision-quality regression gate
 
-`rules.ts:151-155` states the strain thresholds were *"calibrated against ~2 months of
+`rules.ts`'s strain-threshold constants states the strain thresholds were *"calibrated against ~2 months of
 real HRV/RHR/sleep data"*. That dataset, the procedure, and the resulting
 trigger-frequency numbers exist nowhere in the repository. The same applies to the six
 fatigue half-lives, the six cost-penalty weights, `PROJECTED_FATIGUE_*_THRESHOLD`, and
@@ -335,17 +335,17 @@ suppression.
 
 ### F12. Fatigue model saturates, masks, and depends on an unasserted ordering invariant
 
-* `fatigue.ts:104-111` clamps each axis at 1.0 on accumulation. Two consecutive hard
+* `applyCompletedSessionLoad` clamps each axis at 1.0 on accumulation. Two consecutive hard
   lower-body days ≈ one hard day at the ceiling — the model cannot represent
   *"significantly deeper in the hole"*.
-* `combinedFatigue = max(external, internal)` (`fatigue.ts:113-121`): a bad night fully
+* `combinedFatigue = max(external, internal)` (the `combined` vector in `applyCompletedSessionLoad`): a bad night fully
   *masks* accumulated external load rather than adding to it. An athlete deep in a load
   block whose HRV happens to read fine is scored identically to a rested one at the same
   external level, and vice versa.
 * `buildFatigueStateFromHistory` seeds from `history[0].date` and `applyCompletedSessionLoad`
   floors `elapsedHours` at 0. Oldest-to-newest ordering is therefore load-bearing;
   out-of-order input silently mis-decays with no error. The invariant is asserted only in
-  a comment (`planner.ts:129`).
+  a comment on `projectTrailingHistory`.
 
 ### F16. The event-plan contract is invisible to the engine
 
@@ -380,7 +380,7 @@ Tier 2 by consequence.*
 
 `PhaseWeights.intensityScale` is **assigned in six places in `periodization.ts` and read
 in zero**. Post-Event Recovery's `0.4` and Specificity's `1.1` affect nothing.
-`volumeScale` has exactly one consumer — `trainingIntent.ts:80`'s `plannedDose`. So of
+`volumeScale` has exactly one consumer — `resolveTrainingIntent`'s `plannedDose`. So of
 periodization's two output scalars, one is dead and the other is a single multiplier on a
 single number.
 

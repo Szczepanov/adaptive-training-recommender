@@ -33,18 +33,15 @@ This document outlines repository rules, code conventions, testing instructions,
 * `cd app && npm ci` — Install node dependencies
 * `cd app && npm run check` — Run full validation suite (TypeScript typecheck, ESLint, Vitest, workout catalog)
 * `cd app && npm test` — Run engine unit test suite (`vitest run`)
-* `cd app && npm run test:rules` — Firestore security-rule suite (needs Java + emulator)
-* `cd app && npm run simulate:scenarios` — Decision-quality scenario report
-* `cd app && npm run replay:recommendation` — Replay a persisted decision against its audit
+* `cd app && npm run test:rules` — Firestore security-rule suite inside the local Firebase emulator (needs Java)
 * `cd app && npm run build` — Build production bundle (`npm run check && vite build`)
 * `cd app && npm run dev` — Start Vite dev server (automatically executes `npm run check` pre-flight)
 * `cd app && npm run validate:workouts` — Validate workout catalog definitions and prescription contracts
-* `cd app && npm run simulate:scenarios` — Run multi-week engine simulations and generate reports in `artifacts/simulation-reports/latest/`
-* `cd app && npm run replay:recommendation -- <audit.json>` — Replay and audit historical recommendation decision reproducibility
+* `cd app && npm run simulate:scenarios` — Run multi-week engine simulations; reports land in `artifacts/simulation-reports/latest/`
+* `cd app && npm run replay:recommendation -- <audit.json>` — Replay a persisted decision against its own audit to verify reproducibility
 * `cd app && npm run visual:install` — Install Playwright Chromium binary for visual review tests
 * `cd app && npm run visual:refresh` — Capture desktop/mobile visual review screenshots in `artifacts/visual-review/latest/`
 * `cd app && npm run visual:serve` — Start visual review harness dev server with synthetic fixtures (`http://127.0.0.1:4174`)
-* `cd app && npm run test:rules` — Run Firestore security rules unit test suite inside local Firebase emulator
 
 
 ### Docker
@@ -102,6 +99,41 @@ app/src/engine/
 ADR. Known divergences between the ADRs and the code are tracked in
 `docs/analysis/2026-08-08-architecture-review.md`, with remediation sequenced in
 `docs/plans/`.
+
+---
+
+## Reading the documentation
+
+`docs/` directories are not interchangeable — each has a different relationship to the
+truth, and reading one as if it were another has already caused a fixed defect to be
+re-reported three times. **[`docs/README.md`](./docs/README.md) opens with the routing
+table**: which directory is authoritative for what, precedence when two documents
+disagree, and task-oriented entry points. Read it before trusting any other document
+here.
+
+The short version:
+
+| Directory | Is | Trust for |
+|---|---|---|
+| `docs/adr/` | Immutable decisions | Intended design and rationale — *not* current behaviour |
+| `docs/architecture/` | Living reference | How it works today |
+| `docs/analysis/` | Dated audit | Evidence as of its date — verify findings against code |
+| `docs/plans/` | Mutable, status-tracked | Work to be done; `Implemented`/`Archived` plans are history, not instructions |
+| `docs/ops/` | Runbooks | Operational procedure |
+
+**When two documents disagree, the code wins, then `architecture/`, then `adr/`.** Do not
+silently pick one — fix the doc or record the divergence in the current review document,
+and say which you did.
+
+### Writing conventions
+
+* **Reference symbols, never line numbers.** Write `` `rules.ts` `evaluateEnvelopes` `` or
+  `` `prescription.ts:workoutForTemplate` ``, never `` `rules.ts:544-556` ``. Line numbers
+  drift within hours; a 2026-08-08 audit found 91 of them in `docs/plans/`, three of six
+  sampled already pointing at the wrong code on the day they were written.
+* **A finished plan must not read like a work list.** When a plan reaches `Implemented`,
+  strike or delete its present-tense problem statements. See
+  [`docs/plans/README.md`](./docs/plans/README.md#conventions-that-exist-because-they-were-violated).
 
 ---
 

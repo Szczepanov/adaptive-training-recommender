@@ -39,7 +39,7 @@ Every later phase replaces a tuned heuristic with a different one. Today there i
 committed artifact that would show the difference: `npm run simulate:scenarios` produces
 a genuinely rich report — objective resolution counts, constraint violations, fatigue
 tier distribution, anchor placement, fragile-selection diagnostics — and writes it to
-`app/artifacts/simulation-reports/`, which is **gitignored** (`app/.gitignore:14`).
+`app/artifacts/simulation-reports/`, which is **gitignored** (`app/.gitignore`).
 
 The 0.21× event-modality suppression in F3 is the concrete case: it is visible in
 `modalityDistribution` and `objectiveResolution`, and nobody saw it because no baseline
