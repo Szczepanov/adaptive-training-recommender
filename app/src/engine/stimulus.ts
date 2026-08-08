@@ -113,30 +113,17 @@ export function readStimulusProfile(raw: unknown): DataState<WorkoutStimulusProf
     };
 }
 
-/**
- * Calculates dose-sensitive fractional objective credit derived from the workout's stimulus profile
- * and delivered duration/completion evidence.
- */
-export function deriveObjectiveCredit(
+/** Calculates credit from an already validated/canonical profile. Use this when one
+ * exposure fans out across several objectives so validation and divergence logging happen
+ * once at the exposure boundary instead of once per objective. */
+export function deriveObjectiveCreditFromProfile(
     objective: WeeklyObjective,
-    rawStimulus: unknown,
+    stimulus: WorkoutStimulusProfile,
     dose: DeliveredDose = {},
-    context?: CreditContext
+    context?: CreditContext,
 ): ObjectiveCredit {
-    const stimulusState = readStimulusProfile(rawStimulus);
-    if (stimulusState.status !== 'AVAILABLE') {
-        return {
-            objectiveId: objective.id,
-            objectiveKey: objective.key,
-            earnedCredit: 0,
-            qualifies: false,
-            reason: 'Invalid stimulus profile',
-        };
-    }
-    const stimulus = stimulusState.data;
     const completionRatio = clamp01(dose.completionRatio ?? 1.0);
 
-    // Check qualification constraints if present
     if (objective.qualification) {
         const qual = objective.qualification;
         if (qual.allowedModalities && qual.allowedModalities.length > 0 && context?.modality) {
@@ -165,7 +152,6 @@ export function deriveObjectiveCredit(
         }
     }
 
-    // Derive raw stimulus contribution based on objective key
     let rawStimulusContribution = 0;
     switch (objective.key) {
         case 'zone2_aerobic':
@@ -197,11 +183,6 @@ export function deriveObjectiveCredit(
         }
     }
 
-    // Duration is meaningful evidence for endurance/power objectives but not for strength
-    // maintenance, where elapsed time is a poor proxy for useful sets and relative load.
-    // When planned and completed duration are both measured, duration completion and an
-    // independently supplied completionRatio are separate pieces of evidence and therefore
-    // scale multiplicatively. Missing duration evidence does not invent a reference dose.
     let durationRatio = 1;
     if (objective.key !== 'strength_maintenance'
         && dose.plannedDurationMin !== undefined
@@ -222,6 +203,29 @@ export function deriveObjectiveCredit(
         earnedCredit,
         qualifies: true,
     };
+}
+
+/**
+ * Calculates dose-sensitive fractional objective credit derived from an untrusted or
+ * persisted stimulus profile and delivered duration/completion evidence.
+ */
+export function deriveObjectiveCredit(
+    objective: WeeklyObjective,
+    rawStimulus: unknown,
+    dose: DeliveredDose = {},
+    context?: CreditContext
+): ObjectiveCredit {
+    const stimulusState = readStimulusProfile(rawStimulus);
+    if (stimulusState.status !== 'AVAILABLE') {
+        return {
+            objectiveId: objective.id,
+            objectiveKey: objective.key,
+            earnedCredit: 0,
+            qualifies: false,
+            reason: 'Invalid stimulus profile',
+        };
+    }
+    return deriveObjectiveCreditFromProfile(objective, stimulusState.data, dose, context);
 }
 
 /**
