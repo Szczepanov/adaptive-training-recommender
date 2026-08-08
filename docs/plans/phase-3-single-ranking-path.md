@@ -1,6 +1,6 @@
 # Phase 3 — One ranking path, lexicographically ordered
 
-* **Status:** Draft
+* **Status:** Ready — F5 resolution decided 2026-08-08 (see 3.4)
 * **Depends on:** Phase 0 (**hard** — this phase changes ranking behaviour and is
   unmeasurable without the invariant suite), ADR-0010 from Phase 2
 * **Unlocks:** Phase 5 (sequence search needs a coherent scoring layer to sit on)
@@ -125,11 +125,20 @@ specifies the user-selected branch; no selector exists, so yellow and red are co
 (three full `evaluateTrainingWithIntent` passes) and discarded, and every projected day
 is seeded from a best-case tomorrow.
 
-* **Preferred:** add tier selection to the next-day card; thread the selection into
-  `generateWeekAheadPlanWithIntent`.
-* **Interim, if the UI work is deferred:** default to `yellow` — the honest median — and
-  amend ADR-0008 §1 to say so. Do not leave the ADR describing a selector that does not
-  exist.
+> **Decision (2026-08-08): build the selector.** Add tier selection to the next-day card
+> and thread it into `generateWeekAheadPlanWithIntent`.
+>
+> The cheap alternative — default to `yellow` and amend the ADR — was considered and
+> rejected. It swaps one wrong fixed assumption for a less wrong fixed assumption while
+> still discarding two of the three branches the engine already computes. The three
+> `evaluateTrainingWithIntent` passes are being paid for regardless; the only thing
+> missing is a control to choose between them, which is a small piece of UI against an
+> API that already returns all three. Defaulting to yellow would leave that waste in
+> place permanently and remove the pressure to fix it.
+>
+> **Fallback if the UI slips past this phase:** ship `yellow` as the default *and* amend
+> ADR-0008 §1 in the same commit, so the ADR never describes a selector that does not
+> exist. Do not ship the yellow default silently.
 
 ---
 

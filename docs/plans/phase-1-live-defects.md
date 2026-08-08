@@ -55,7 +55,7 @@ So the gap is narrower than "injuries are unimplemented": there is a working *ma
 guardrail channel and a dead *free-text injury* channel that ADR-0007 §6 calls the hard
 safety gate.
 
-### Two options
+### Two options, and the decision
 
 **Option A — delete the dead channel.** Remove `UserContext.constraints.injuries` and its
 readers; consolidate on guardrails; amend ADR-0007 §6 to say guardrails are the hard
@@ -63,10 +63,20 @@ safety gate. Cheapest, honest, and immediately removes the false `safetyRestrict
 But guardrails cannot express "no running", cannot expire, and cannot distinguish an
 acute injury from a standing preference.
 
-**Option B — formalise injuries as structured constraints that derive guardrails
-(recommended).** Keeps the ADR-0007 guarantee and makes it real.
+**Option B — formalise injuries as structured constraints that derive guardrails.**
+Keeps the ADR-0007 guarantee and makes it real.
 
-### Option B design
+> **Decision (2026-08-08): Option B.**
+> Option A is cheaper but structurally caps what the system can ever express, and this is
+> the safety layer — the one place where paying for expressiveness up front is correct.
+> Three specific things Option A cannot do and Option B can: exclude a *modality*
+> (guardrails are template-tag scoped, so "no running" is inexpressible); *expire* a
+> constraint, so an acute injury does not silently become a permanent restriction; and
+> distinguish an injury from a standing preference, which matters because Phase 5.4's
+> tissue tracking needs somewhere to attach. Choosing A would mean redoing this work at
+> Phase 5 anyway, on top of a schema that had already been simplified in the wrong
+> direction.
+> Option A remains the documented rollback if Option B proves too large mid-phase.
 
 Add to `TrainingSettings` at `schemaVersion: 3` (already permitted by the type
 `schemaVersion: 2 | 3` and by `firestore.rules`, which allows `[2, 3]` — the forward
@@ -97,8 +107,11 @@ export function resolveInjuryRestrictions(injuries: InjuryConstraint[], today: s
 }
 ```
 
-with an explicit region → restriction table. Sketch (needs a domain review before
-landing — these are engineering defaults, not coaching advice):
+with an explicit region → restriction table. **Adopted as the implementation default**
+— these are conservative engineering mappings, not coaching advice. They are deliberately
+biased toward over-restriction: a false exclusion costs one session, a false permission
+costs a re-injury. Implement as written; revise only if a coaching review disagrees, and
+record the revision in ADR-0007's amendment rather than silently editing the table:
 
 | Region | `exclude` implies | `limit` implies |
 |---|---|---|
@@ -210,8 +223,8 @@ With (b) in place, (a) rarely fires for recognised modalities — which is the p
 a correctness guard, not a routing mechanism.
 
 Values must be deliberately conservative — the aim is "materially better than treating
-real training as adaptation-neutral", not physiological precision. Starting point for
-`Cycling`, to be reviewed before landing:
+real training as adaptation-neutral", not physiological precision. **Adopted starting
+values** for `Cycling`; the other modalities follow the same shape:
 
 | Intensity | `aerobicCapacity` | `thresholdDevelopment` | `surgeRepeatability` |
 |---|---|---|---|
@@ -219,13 +232,16 @@ real training as adaptation-neutral", not physiological precision. Starting poin
 | moderate | 0.70 | 0.60 | 0.25 |
 | hard | 0.55 | 0.75 | 0.65 |
 
-Note the `moderate` row deliberately does **not** clear
+**Required verification step, not optional.** The `moderate` row must not clear
 `STIMULUS_CREDIT_COVERAGE_THRESHOLD` (0.6) for both Z2 *and* threshold simultaneously
-under every objective's target vector — check this against
-`generateWeeklyObjectives`'s actual `targetStimulus` values when implementing, and tune
-so a single ride cannot resolve two contradictory objectives. Mark the constants
-provisional in a comment citing this plan; Phase 4 replaces them with the evidence
-hierarchy.
+under any objective's target vector. Check the numbers against `generateWeeklyObjectives`'s
+actual `targetStimulus` values during implementation and tune until a single ride cannot
+resolve two contradictory objectives — this is the same double-credit failure the keyword
+matcher produces, and re-introducing it through the inference table would defeat the whole
+fix. The regression test below is what enforces it.
+
+Mark the constants provisional in a comment citing this plan; Phase 4 replaces them with
+the evidence hierarchy.
 
 **(c) Carry confidence.** Add `stimulusConfidence: 'exact' | 'inferred' | 'unknown'` to
 `CompletedExposure`. `exact` for adherence-confirmed catalog templates, `inferred` for
@@ -335,9 +351,12 @@ not silently skipped locally.
 * **1.3 could break the adjust-session save path** if `merge: true` semantics differ from
   the assumption above. The emulator tests are the guard; write the three "allows" cases
   first and watch them fail before the rules change lands.
-* **1.1 Option B is the larger change.** Option A is the rollback: delete the dead channel
-  and amend ADR-0007. Either outcome is better than the status quo, in which the ADR
-  states a guarantee the code cannot deliver.
+* **1.1 Option B is the larger change.** Option A remains the rollback: delete the dead
+  channel and amend ADR-0007. Either outcome is better than the status quo, in which the
+  ADR states a guarantee the code cannot deliver. Trigger for falling back: if the
+  `TrainingSettings` v3 migration or the settings UI turns out to be more than ~2 days,
+  ship Option A and reopen Option B as part of Phase 5.4, where the tissue model needs
+  the same schema anyway.
 
 ## Out of scope
 
@@ -347,8 +366,9 @@ waiting for the full model.
 
 ## Docs to update
 
-* **ADR-0007** — amend §6 to describe the implemented injury model (or, under Option A,
-  to say guardrails are the gate)
+* **ADR-0007** — amend §6 to describe the implemented structured injury model, and to
+  record that the region → restriction table is a conservative engineering default open
+  to coaching revision
 * **ADR-0002 or a new ADR** — `trainingSettings` schema v3
 * `README.md` — the training-settings table gains an Injuries row
 * `docs/analysis/2026-08-08-architecture-review.md` — mark F1/F2/F6 resolved with commit refs

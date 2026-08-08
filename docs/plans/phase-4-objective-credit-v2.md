@@ -1,6 +1,6 @@
 # Phase 4 — Objective credit V2, and honest load
 
-* **Status:** Draft
+* **Status:** Ready — derivation-constant decision taken 2026-08-08 (see 4.2)
 * **Depends on:** Phase 0 (hard), Phase 2 (ADR-0010 fixes the credit contract)
 * **Unlocks:** Phase 5
 * **Addresses:** F7, F8, F12
@@ -92,9 +92,17 @@ populated.
    `Partial<Record<keyof WorkoutStimulusProfile, number>>` instead of
    `Record<string, number>`, so a typo'd axis is a compile error rather than a silent
    zero-coverage objective that can never resolve.
-3. Either justify the `0.8` / `0.7` derivations with a citation or make the templates
-   declare those axes explicitly. Do not carry unexplained coefficients through the
-   cutover.
+3. **Decision (2026-08-08): delete the derived fallbacks; make templates declare the axes
+   explicitly.** `vo2MaxPower` and `fatigueResistance` become required fields that each
+   template states outright, and the `* 0.8` / `* 0.7` derivations in
+   `canonicalizeStimulus` are removed.
+
+   The alternative — find a citation for the coefficients — is the wrong shape of work.
+   No citation can justify a *repository-wide* claim that VO2 stimulus is uniformly 80% of
+   surge stimulus across every template; that relationship varies per session by
+   construction. Making 22 templates each declare two numbers is a couple of hours, removes
+   two unexplained constants permanently, and forces the one person who knows what a given
+   session develops to say so explicitly rather than having it inferred.
 
 ## 4.3 — F12: fatigue, in two separable pieces
 

@@ -1,6 +1,6 @@
 # Phase 2 — Plan intent is the planning authority
 
-* **Status:** Draft — needs agreement on the domain model before it becomes `Ready`
+* **Status:** Ready — domain-model decisions D1/D2 taken 2026-08-08 (see below)
 * **Depends on:** Phase 1 (do not migrate onto an unwired safety gate)
 * **Unlocks:** Phases 3, 4, 5
 * **Addresses:** F16, F17, F9
@@ -53,17 +53,57 @@ Write this first; it is the gate for everything after. It must define:
 7. **Simulation acceptance criteria** — a plan change is accepted when the Phase 0
    invariants hold and the semantic diff is explained.
 
-### Decide in the ADR, do not leave implicit
+### Decisions taken (2026-08-08) — record these in the ADR
 
-* **Phase vocabulary.** `EventPlanPhase` (`build|travel|peak|taper|race`) and
-  `PhaseWeights.phaseName` (`Base|Build|Specificity|Peak/Taper|Post-Event Recovery`) must
-  be reconciled. Recommended: `EventPlanPhase` becomes canonical because it is what an
-  athlete and a coach actually name; `PhaseWeights.phaseName` becomes a derived label for
-  the generic fallback.
-* **`intensityScale`'s fate.** It is currently written six times and read zero. Either
-  give it a consumer (the natural one is Phase 4's dose resolution, alongside
-  `volumeScale`) or delete it. A third state — declared, assigned, unread — is not
-  acceptable to carry into the cutover.
+**D1 — `EventPlanPhase` becomes the canonical phase vocabulary.**
+`PhaseWeights.phaseName` (`Base|Build|Specificity|Peak/Taper|Post-Event Recovery`) becomes
+a *derived label* produced by the generic fallback, mapped onto `EventPlanPhase`
+(`build|travel|peak|taper|race`).
+
+Rationale: `EventPlanPhase` is the vocabulary an athlete and a coach actually use, it is
+already attached to real workout content in `event-plan.ts`, and it expresses `travel` —
+a genuine planning state that the days-to-event model structurally cannot represent,
+because travel has nothing to do with event proximity. The reverse mapping loses that.
+
+Mapping for the generic fallback:
+
+| `PhaseWeights.phaseName` | `EventPlanPhase` |
+|---|---|
+| Base, Build | `build` |
+| Specificity | `peak` |
+| Peak/Taper | `taper` |
+| Post-Event Recovery | `build` (at reduced volume) |
+
+`race` and `travel` are only ever set by an explicit `PlanDefinition` — the generic model
+has no way to know about either, and inferring them would be a guess.
+
+**D2 — `intensityScale` gets a consumer; it is not deleted.**
+The deletion argument is that nothing reads it. The counter-argument wins: taper is
+*defined* by volume and intensity moving in opposite directions — volume down, intensity
+preserved. `plannedDose` currently collapses both into one scalar derived from
+`volumeScale` alone, which is precisely why taper behaviour has to be reconstructed
+elsewhere from template `phaseEligibility` and ranking weights (F17, and the emergent-taper
+problem in Phase 5.7). Deleting `intensityScale` would make a correct taper harder to
+express, not simpler.
+
+The consumer, specified here and implemented in Phase 4.4:
+
+```ts
+// replaces the single `plannedDose` scalar
+interface PlannedDose {
+  volume: number;     // from PlanBlock.volumeScale   — duration target
+  intensity: number;  // from PlanBlock.intensityScale — admissible intensity band
+}
+```
+
+`volume` continues to drive duration selection as `plannedDose` does today. `intensity`
+gates which intensity-class candidates are admissible, so a taper can hold intensity while
+cutting volume — one block declaration instead of an emergent interaction between four
+subsystems.
+
+Until Phase 4.4 lands, `intensityScale` stays written-and-unread. That is acceptable
+*because it is now a scheduled commitment with a named consumer*, which is the state F17
+objects to it lacking.
 
 ## 2.2 — `PlanDefinition`: make the event plan executable
 
@@ -153,10 +193,10 @@ there is one path.
 
 ## Acceptance criteria
 
-- [ ] ADR-0010 accepted, with the phase vocabulary and `intensityScale` disposition decided
+- [ ] ADR-0010 accepted, recording D1 (canonical phase vocabulary) and D2 (`intensityScale` consumer)
 - [ ] `PlanDefinition` exists; `generateWeeklyObjectives` consumes it when present
 - [ ] `event-plan.ts` has at least one engine-path consumer
-- [ ] `intensityScale` is either consumed or deleted
+- [ ] `intensityScale` has a named, scheduled consumer (`PlannedDose.intensity`, Phase 4.4)
 - [ ] `MicrocycleState.weekStartDate` renamed to `windowStartDate`
 - [ ] one readiness/safety envelope function; no discarded template selection
 - [ ] Phase 0 invariants still pass; semantic diff explained in the PR

@@ -1,6 +1,6 @@
 # Phase 5 — Sequence planning, real inputs, and the feedback loop
 
-* **Status:** Draft — the destination, not the next thing to build
+* **Status:** Ready — approved as the destination; increments ordered below. Not the next thing to build.
 * **Depends on:** Phases 0–4
 * **Addresses:** the V2 Plan Intent cutover proper
 * **Rough effort:** multi-week; ship as independent increments, not one landing
@@ -13,6 +13,28 @@ Replace greedy day-by-day projection with bounded sequence search over the plann
 horizon, give the planner the real-world inputs it currently lacks (fixed activities,
 local tissue state), and close the loop so completed training updates achieved stimulus
 as well as incurred cost.
+
+## Increment order (decided 2026-08-08)
+
+Approved as the destination, but explicitly **not** as one landing. Ship in this order —
+value-per-risk descending, with the deepest and least certain change last:
+
+| # | Increment | Why here |
+|---|---|---|
+| 1 | **5.3 fixed activities** | Highest value per effort, zero dependency on the search work. A planner that doesn't know about Wednesday football is wrong every Wednesday. |
+| 2 | **5.4 local tissue state** | Builds directly on Phase 1.1's `BodyRegion` model; independently useful the day it ships. |
+| 3 | **5.5 evidence hierarchy** | Generalises Phase 1.2's coarse inference; needs `stimulusConfidence`, which Phase 1.2(c) already adds. |
+| 4 | **5.7 taper as explicit contract** | Needs Phase 2's `PlanDefinition` and Phase 4.4's `PlannedDose.intensity`; small once both exist. |
+| 5 | **5.6 multi-event** | Needs explicit objectives and session roles to express cleanly. |
+| 6 | **5.2 planning candidate** | Prerequisite refactor for 5.1; do it immediately before, not months earlier. |
+| 7 | **5.1 bounded sequence search** | The deep change, and the only one whose benefit is genuinely uncertain. Last, so everything it depends on is settled. |
+
+**The one thing not pre-approved: adopting beam search.** Approving this plan approves
+*building and measuring* 5.1, not shipping it regardless of outcome. Whether sequence
+search beats the greedy loop is an empirical question, and the Phase 0 invariants plus the
+golden week are how it gets answered. If it does not measurably improve them, the correct
+outcome is to record that result and keep the greedy loop — that is a successful
+increment, not a failed one. Increments 1–6 stand on their own either way.
 
 ---
 
