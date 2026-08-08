@@ -99,10 +99,13 @@ export function evaluatePeriodizationPhase(
         taperActive: false,
     };
 
-    const datedEvents = events.map(event => ({
-        event,
-        daysToEvent: getDaysBetween(currentDateStr, event.date),
-    }));
+    const datedEvents = events.map(event => {
+        const targetDate = event.timing?.planningDate ?? event.date;
+        return {
+            event,
+            daysToEvent: getDaysBetween(currentDateStr, targetDate),
+        };
+    });
 
     // A scheduled event that has passed is intentionally not treated as a completed
     // race. It needs an explicit outcome before granting post-event recovery.

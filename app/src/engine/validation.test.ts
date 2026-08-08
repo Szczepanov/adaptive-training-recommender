@@ -184,3 +184,57 @@ describe('validateAdherenceUpdate', () => {
         expect(result.data?.actualModality).toBeNull();
     });
 });
+
+describe('validateEventTiming', () => {
+    it('accepts valid unconfirmed EventTiming', async () => {
+        const { validateEventTiming } = await import('./models');
+        const result = validateEventTiming({
+            earliestDate: '2026-09-05',
+            latestDate: '2026-09-20',
+            planningDate: '2026-09-05',
+        });
+        expect(result.status).toBe('AVAILABLE');
+    });
+
+    it('rejects earliestDate > planningDate', async () => {
+        const { validateEventTiming } = await import('./models');
+        const result = validateEventTiming({
+            earliestDate: '2026-09-10',
+            latestDate: '2026-09-20',
+            planningDate: '2026-09-05',
+        });
+        expect(result.status).toBe('INVALID');
+    });
+
+    it('rejects planningDate > latestDate', async () => {
+        const { validateEventTiming } = await import('./models');
+        const result = validateEventTiming({
+            earliestDate: '2026-09-05',
+            latestDate: '2026-09-15',
+            planningDate: '2026-09-20',
+        });
+        expect(result.status).toBe('INVALID');
+    });
+
+    it('rejects confirmedDate outside range or not matching planningDate', async () => {
+        const { validateEventTiming } = await import('./models');
+        // Confirmed date inside range, but planningDate hasn't been updated to match confirmedDate
+        const resultMismatch = validateEventTiming({
+            earliestDate: '2026-09-05',
+            latestDate: '2026-09-20',
+            planningDate: '2026-09-05',
+            confirmedDate: '2026-09-19',
+        });
+        expect(resultMismatch.status).toBe('INVALID');
+
+        // Confirmed date matching planningDate and inside range -> valid
+        const resultValid = validateEventTiming({
+            earliestDate: '2026-09-05',
+            latestDate: '2026-09-20',
+            planningDate: '2026-09-19',
+            confirmedDate: '2026-09-19',
+        });
+        expect(resultValid.status).toBe('AVAILABLE');
+    });
+});
+
