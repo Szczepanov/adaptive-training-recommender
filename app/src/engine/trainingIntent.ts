@@ -4,7 +4,7 @@ import { buildMicrocycleState, getUnresolvedObjectives } from './microcycle';
 import type { CompletedExposure, TrainingHistoryProvider } from './trainingHistory';
 import type { TrainingHistorySnapshot } from './trainingHistorySnapshot';
 import { evaluatePeriodizationPhase, type PeriodizationResult } from './periodization';
-import { resolvePlanDefinitionForEvent } from './planSchedule';
+import { resolvePlanDefinitionForEvent, type PlanDefinition } from './planSchedule';
 import { addDaysToLocalDateString } from '../utils/localDate';
 
 export type PlannedRecoveryReason = 
@@ -35,9 +35,8 @@ export interface TrainingIntent {
 }
 
 /**
- * Resolves the two independent components of a plan dose. Volume retains the existing
- * objective-urgency calculation; intensity is the authored PlanBlock scale and is read
- * later only by candidate-intensity eligibility.
+ * Generic-mode fallback for events without an authored PlanDefinition. Volume retains the
+ * existing objective-urgency calculation; intensity follows the generic periodization phase.
  */
 export function resolvePlannedDose(
     phase: { volumeScale: number; intensityScale: number },
@@ -49,6 +48,28 @@ export function resolvePlannedDose(
         volume: Math.max(0, Math.min(1, (phase.volumeScale / 1.1) * (0.7 + (0.3 * urgency)))),
         intensity: Math.max(0, phase.intensityScale),
     };
+}
+
+/**
+ * Single ownership rule for planned dose. In ADR-0012 explicit mode the active authored
+ * PlanBlock owns BOTH dimensions exactly; generic days-to-event periodization is used only
+ * when no authored block is active for this event/date.
+ */
+export function resolvePlannedDoseForDate(
+    phase: { volumeScale: number; intensityScale: number },
+    objectives: readonly WeeklyObjective[],
+    unresolvedObjectives: readonly WeeklyObjective[],
+    planDefinition: PlanDefinition | null | undefined,
+    date: string,
+): PlannedDose {
+    const activeBlock = planDefinition?.blocks.find(block => block.startDate <= date && date <= block.endDate);
+    if (activeBlock) {
+        return {
+            volume: Math.max(0, activeBlock.volumeScale),
+            intensity: Math.max(0, activeBlock.intensityScale),
+        };
+    }
+    return resolvePlannedDose(phase, objectives, unresolvedObjectives);
 }
 
 /** Fetch the bounded history once and reuse that immutable revision across every
@@ -98,6 +119,12 @@ export async function resolveTrainingIntent(
     );
     const unresolvedObjectives = getUnresolvedObjectives(microcycle);
     const fatigue = buildFatigueStateFromHistory(history, computeInternalResponseStrain(readiness), date);
-    const plannedDose = resolvePlannedDose(periodization.phase, microcycle.objectives, unresolvedObjectives);
+    const plannedDose = resolvePlannedDoseForDate(
+        periodization.phase,
+        microcycle.objectives,
+        unresolvedObjectives,
+        planDefinition,
+        date,
+    );
     return { periodization, unresolvedObjectives, plannedDose, fatigue, history, historySnapshot, microcycle };
 }
