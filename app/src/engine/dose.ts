@@ -21,6 +21,8 @@ function clampDose(dose: number): number {
 
 function isValidPlannedDose(dose: PlannedDose): boolean {
     return Number.isFinite(dose.volume)
+        && dose.volume >= 0
+        && dose.volume <= 1
         && Number.isFinite(dose.intensity)
         && dose.intensity >= 0
         && dose.intensity <= MAX_PLANNED_INTENSITY;
@@ -32,9 +34,9 @@ function isValidPlannedDose(dose: PlannedDose): boolean {
  * a session easier at any time, but a harder request is never allowed to exceed the
  * readiness/clinical ceiling.
  *
- * Invalid/non-finite inputs fail closed. They must not be normalized into a seemingly
- * valid recommendation because persisted recommendation audits require finite volume in
- * 0..1 and intensity in 0..1.2.
+ * Invalid/out-of-contract inputs fail closed. They must not be normalized into a
+ * seemingly valid recommendation because persisted recommendation audits require finite
+ * volume in 0..1 and intensity in 0..1.2.
  */
 export function resolveExecutionDose(
     plannedDose: PlannedDose,
