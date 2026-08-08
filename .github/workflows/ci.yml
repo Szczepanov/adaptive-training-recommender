@@ -29,6 +29,12 @@ jobs:
       - name: Install dependencies
         run: uv sync --frozen
 
+      - name: Lint Python with ruff
+        run: uv run ruff check .
+
+      - name: Type check Python with mypy
+        run: uv run mypy src/garmin_sync
+
       - name: Run pytest
         run: uv run pytest
 

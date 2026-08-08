@@ -1,6 +1,9 @@
 from unittest.mock import MagicMock
+
 import pytest
+
 from garmin_sync.firestore_repository import FirestoreRecoveryRepository
+
 
 def test_firestore_repository_rejects_default_user():
     with pytest.raises(ValueError, match="requires a valid non-default user_id"):

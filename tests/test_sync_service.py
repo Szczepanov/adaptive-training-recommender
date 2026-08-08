@@ -1,11 +1,16 @@
 from unittest.mock import MagicMock
+
 import pytest
 from garminconnect import GarminConnectTooManyRequestsError
-from garmin_sync.canonical import CanonicalDailyMetrics
-from garmin_sync.canonical import CanonicalPerformanceTargets
-from garmin_sync.provider import ProviderPerformanceTargetsResult
+
+from garmin_sync.canonical import CanonicalDailyMetrics, CanonicalPerformanceTargets
 from garmin_sync.config import Settings
-from garmin_sync.provider import ProviderActivitiesResult, ProviderCapabilities, ProviderFetchResult
+from garmin_sync.provider import (
+    ProviderActivitiesResult,
+    ProviderCapabilities,
+    ProviderFetchResult,
+    ProviderPerformanceTargetsResult,
+)
 from garmin_sync.service import GarminSyncService
 
 

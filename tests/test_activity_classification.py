@@ -1,5 +1,6 @@
 from garmin_sync.metrics import classify_activity_intensity
 
+
 def test_classify_activity_by_training_effect():
     is_hard, tag = classify_activity_intensity(training_effect=3.0, average_hr=130)
     assert is_hard is True

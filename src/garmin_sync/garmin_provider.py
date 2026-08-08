@@ -3,7 +3,8 @@ codebase allowed to know Garmin Connect response shapes (dailySleepDTO, sleepSco
 hrvSummary, activityType, etc.) -- everything downstream (mapper.py, service.py, the
 recommendation engine) operates on canonical.py types only."""
 import logging
-from typing import Any
+from typing import Any, Callable
+
 from .canonical import (
     CanonicalActivity,
     CanonicalBodyBattery,
@@ -16,7 +17,12 @@ from .canonical import (
 )
 from .garmin_client import GarminClientWrapper
 from .metrics import classify_activity_intensity
-from .provider import ProviderActivitiesResult, ProviderCapabilities, ProviderFetchResult, ProviderPerformanceTargetsResult
+from .provider import (
+    ProviderActivitiesResult,
+    ProviderCapabilities,
+    ProviderFetchResult,
+    ProviderPerformanceTargetsResult,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -79,7 +85,7 @@ def _canonicalize_training_status(training_status_today: dict[str, Any] | None) 
         return None
 
     status_data = (training_status_today.get("mostRecentTrainingStatus") or {}).get("latestTrainingStatusData") or {}
-    device_status = next(iter(status_data.values()), {}) if status_data else {}
+    device_status: dict[str, Any] = next(iter(status_data.values()), {}) if status_data else {}
     acute_load_dto = device_status.get("acuteTrainingLoadDTO") or {}
 
     vo2max = training_status_today.get("mostRecentVO2Max") or {}
@@ -338,7 +344,7 @@ class GarminProviderAdapter:
             self._sleep_cache[date_iso] = self.client.get_sleep_data(date_iso)
         return self._sleep_cache[date_iso]
 
-    def _fetch_enrichment(self, name: str, fetch_fn) -> Any:
+    def _fetch_enrichment(self, name: str, fetch_fn: Callable[[], Any]) -> Any:
         """Best-effort fetch for metric-enrichment endpoints (stress/body battery/
         training readiness/training status): log and continue on failure rather than
         aborting the whole sync. Unlike stats/sleep/hrv/activities, these are

@@ -1,10 +1,11 @@
-from pathlib import Path
 from unittest.mock import MagicMock, patch
+
 import pytest
 from garminconnect import (
     GarminConnectAuthenticationError,
     GarminConnectTooManyRequestsError,
 )
+
 from garmin_sync.garmin_client import GarminClientWrapper
 
 

@@ -1,6 +1,7 @@
 import statistics
 from typing import Any
-from .models import DerivedMetrics, DerivedDeltas, BASELINE_COMPUTATION_VERSION
+
+from .models import BASELINE_COMPUTATION_VERSION, DerivedDeltas, DerivedMetrics
 
 # Domain intensity thresholds (temporary heuristics)
 HARD_SESSION_MIN_TRAINING_EFFECT = 3.0

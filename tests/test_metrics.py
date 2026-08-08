@@ -1,5 +1,12 @@
 import statistics
-from garmin_sync.metrics import calculate_average, calculate_delta, calculate_stdev, compute_derived_metrics
+
+from garmin_sync.metrics import (
+    calculate_average,
+    calculate_delta,
+    calculate_stdev,
+    compute_derived_metrics,
+)
+
 
 def test_calculate_average_thresholds():
     # Fewer than min_required returns None

@@ -19,7 +19,7 @@ Update the marker on the work-item heading **and** this table in the same commit
 | 0.2 | `[x]` | Golden coaching-contract scenario with fixed dates; one assertion lands expected-failing | `app/src/engine/simulation/scenarios.ts`, `app/src/engine/goldenWeek.test.ts` |
 | 0.3 | `[x]` | Lazy Firebase init so the suite runs from a clean clone | `app/src/firebase.ts`, `app/src/services/*.ts`, `app/.env.example`, `app/README.md` |
 | 0.4 | `[x]` | `POLICY_VERSION` bump + CI drift guard using the CI base SHA | `app/src/engine/policy.ts`, `.github/workflows/ci.yml`, new guard script |
-| 0.5 | `[ ]` | `ruff` + `mypy` in `pyproject.toml` and CI | `pyproject.toml`, `.github/workflows/ci.yml` |
+| 0.5 | `[x]` | `ruff` + `mypy` in `pyproject.toml` and CI | `pyproject.toml`, `.github/workflows/ci.yml` |
 | 0.6 | `[ ]` | Delete `garmin_login.py`; pin `uv`; add dependency audits | `garmin_login.py`, `Dockerfile`, `.github/workflows/ci.yml` |
 
 **No task here changes engine behaviour.** If a change to `app/src/engine/**` becomes
@@ -175,7 +175,7 @@ through `HEAD`'s new ranking tie-break. A frozen string makes `replay.ts`'s
    This check belongs in CI rather than `npm run check`, since it needs the base ref;
    keep `npm run check` local-only.
 
-### `[ ]` 0.5 — Python lint and type checking
+### `[x]` 0.5 — Python lint and type checking
 
 `AGENTS.md` requires type hints across all Python modules; nothing enforces it.
 

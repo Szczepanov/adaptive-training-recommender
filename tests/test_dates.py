@@ -1,5 +1,13 @@
 from datetime import date
-from garmin_sync.dates import local_today, parse_date_string, get_date_string, n_days_ago, get_date_range
+
+from garmin_sync.dates import (
+    get_date_range,
+    get_date_string,
+    local_today,
+    n_days_ago,
+    parse_date_string,
+)
+
 
 def test_local_today_returns_date():
     today = local_today("Europe/Warsaw")

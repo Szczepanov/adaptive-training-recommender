@@ -2,9 +2,11 @@
 import os
 import sys
 from pathlib import Path
-from garmin_sync.config import load_settings, Settings
+
+from garmin_sync.config import load_settings
 from garmin_sync.garmin_client import GarminClientWrapper
 from garmin_sync.token_store import create_token_store
+
 
 def main():
     try:

@@ -3,6 +3,7 @@ eventually the recommendation engine) depends on instead of any single vendor's 
 A second provider (real or fake-for-tests) only needs to satisfy WearableProvider."""
 from dataclasses import dataclass
 from typing import Any, Protocol
+
 from .canonical import CanonicalActivity, CanonicalDailyMetrics, CanonicalPerformanceTargets
 
 
