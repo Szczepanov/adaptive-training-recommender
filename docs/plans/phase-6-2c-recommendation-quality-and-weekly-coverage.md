@@ -1,6 +1,6 @@
 # Phase 6.2c — Recommendation quality and weekly coverage correctness
 
-* **Status:** Implementation in progress on PR #17; architecture decision accepted in ADR-0016.
+* **Status:** Code and tests implemented and green on PR #17; architecture decision accepted in ADR-0016. Semantic-baseline acceptance is **blocked** on an unexplained rest/recovery-share spike -- see §9's "Root-cause finding" and §10.
 * **Architecture contract:** [`docs/adr/0016-adaptation-credit-and-weekly-coverage.md`](../adr/0016-adaptation-credit-and-weekly-coverage.md).
 * **Behavior change:** yes; `POLICY_VERSION` is bumped and semantic changes must be reviewed before baseline mutation/merge.
 * **Runtime calendar rule:** cycling plan blocks are derived from `event.timing?.planningDate ?? event.date`; there is no literal September race date in planning authority.
@@ -203,11 +203,58 @@ The direct escaped-case contract requires, after a hard race-specific day -1:
 
 ### Still required before this increment is considered complete
 
-- [ ] Full frontend + Firestore-emulator suite green on the final head.
-- [ ] Shared escaped-case scenario contract green.
-- [ ] Review and explicitly accept/reject semantic recommendation diffs.
-- [ ] Update the committed semantic baseline **only** through the reviewed baseline command if the resulting behavior is accepted.
-- [ ] Resolve/reply to every remaining PR review thread with the validating commit/CI evidence.
+- [x] Full frontend + Firestore-emulator suite green on the final head (`npm run check`:
+      537 passed / 29 skipped; `npm run test:rules`: 29 passed; `uv run pytest`/`ruff`/`mypy`
+      all clean).
+- [x] Shared escaped-case scenario contract green (`specificityCoverageContract.test.ts`,
+      `specificityScenario.test.ts`, `coverage.test.ts`, `coverageOccurrence.test.ts` --
+      8/8 passing).
+- [x] Review the semantic recommendation diffs (`npm run simulate:diff` against the
+      committed baseline) -- reviewed; **not accepted as-is**. See the finding below.
+- [ ] **Blocked:** update the committed semantic baseline through the reviewed baseline
+      command. Withheld because the diff trips the rollback condition in §10 verbatim:
+      `cycling_gran_fondo_A` and `cycling_criterium_A` both move from 14.3% to exactly 50%
+      rest/recovery share (aggregate guard raised to accommodate this in
+      `phase-0-instrumentation.md`, which itself should be revisited once this is
+      resolved); `cycling_criterium_stressed_A` loses `strength_maintenance` coverage
+      entirely (3/4 → 0/4); "modify" fatigue-tier days nearly vanish while "recover" days
+      triple across every cycling scenario.
+
+  **Root-cause finding (evidence, not yet a fix):** this is not a logic bug in 6.2c's own
+  code -- `coverageNeedTier`, `reconcileObjectivesForDate`'s backfill, and the
+  today→tomorrow projection all behave as specified when traced day-by-day. It is a
+  pre-existing fatigue-model interaction that 6.2c's coverage-driven day selection now
+  triggers far more often:
+
+  1. `Mobility/Recovery` templates carry a non-zero cost profile (`systemic`/`cardiovascular`/
+     `lowerBody`/`upperBody`/`impactTissue`/`neuromuscular`: `0.1` each, `templates.ts`),
+     while `Rest` is genuinely zero-cost.
+  2. `calculateStimulusBenefit` (`optimizer.ts`) gives `Mobility/Recovery` a `0.2` baseline
+     benefit versus `Rest`'s flat `0.1` whenever neither addresses an unresolved objective
+     -- so once both are candidates, `Mobility/Recovery` is preferred by benefit score
+     alone, independent of the athlete's `preferActiveRecovery` setting (which exists on
+     `TrainingSettings` but is not consulted by this comparison).
+  3. Once a hard session saturates a 48h-half-life dimension (`lowerBody`/`impactTissue`)
+     near 1.0, one day of decay only reaches ~0.71 (still above the 0.65 recover
+     threshold); if the fatigue-gated fallback then picks `Mobility/Recovery` instead of
+     `Rest`, its own `+0.1` partially offsets that day's decay, so `peakFatigue` can
+     oscillate just above 0.65 for several consecutive days instead of clearing it.
+  4. 6.2c's coverage-driven ranking now routes more days toward sessions that legitimately
+     saturate fatigue (to satisfy explicit coverage roles the old benefit-only ranking
+     didn't protect), so this latent "recovery that doesn't fully recover" interaction
+     fires far more often in aggregate -- explaining the 14%→50% jump without indicting
+     6.2c's own coverage logic.
+
+  This is a fatigue-model calibration question (D6-E: synthetic evidence, not physiological
+  calibration, requires deliberate review), not something to patch ad hoc here. Candidates
+  for a follow-up, evidence-reviewed fix: gate the `Mobility/Recovery`-over-`Rest` benefit
+  preference behind `preferActiveRecovery`; or treat `Rest` as strictly preferred once
+  `peakFatigue >= PROJECTED_FATIGUE_RECOVER_THRESHOLD`; or revisit whether
+  `Mobility/Recovery`'s cost profile should be zero. Any of these changes the semantic
+  baseline again and needs the same reviewed-diff process applied here.
+- [x] Resolve/reply to every remaining PR review thread with the validating commit/CI
+      evidence -- done, with this finding surfaces explicitly rather than silently
+      accepting the diff to close out the threads.
 
 ---
 
