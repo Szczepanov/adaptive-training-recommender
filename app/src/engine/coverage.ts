@@ -61,38 +61,25 @@ const COVERAGE_BY_KEY = new Map(
     SEPTEMBER_CYCLING_EVENT_SESSION_COVERAGE.map(item => [item.key, item]),
 );
 
-/** Hard developmental roles are deliberately anchor-timed. Treating every unmet role as
- * equally urgent on every healthy day makes the greedy planner front-load threshold +
- * race-specific work, then spend several days recovering. The weekly contract still
- * requires these roles; this set only controls *when* they receive Level-4 urgency. */
+/** Hard developmental roles are anchor-timed first, then become repairable once the
+ * immediately-fillable minimum roles have been handled. */
 const ANCHOR_TIMED_COVERAGE_KEYS = new Set<EventPlanCoverageKey>([
     'sustained_quality',
     'outdoor_event_specific',
 ]);
 
-/** Recovery is a required weekly shape, but it should normally emerge on a fatigue,
+/** Recovery is required weekly shape, but it should normally emerge on a fatigue,
  * adjacency or low-opportunity-cost day rather than outrank developmental work on the
- * first green day of a fresh rolling window. It therefore advances at target tier unless
- * safety/readiness has already restricted the candidate set to recovery. */
+ * first green day of a fresh rolling window. */
 const DEFERRED_SUPPORT_COVERAGE_KEYS = new Set<EventPlanCoverageKey>([
     'recovery_or_rest',
 ]);
 
-/**
- * The detailed-workout resolver used for coverage is exactly the same resolver used to
- * produce the athlete-facing prescription. This is important because some older session
- * families are linked through prescription.ts's explicit fallback table rather than a
- * WorkoutDefinition.engineTemplateIds field. Coverage must describe the workout the user
- * would actually receive, not a parallel approximation of template identity.
- */
 export function workoutIdForTemplateId(templateId: string | undefined): string | undefined {
     if (!templateId) return undefined;
     return workoutForTemplate(templateId)?.id;
 }
 
-/** Exact authored mapping only. An exposure may fulfil more than one role when the event
- * plan explicitly maps the same workout to multiple coverage keys (e.g. an event-specific
- * workout can also cover short surges). */
 export function coverageKeysForExposure(
     identity: ExposureIdentity,
     phase: EventPlanPhase | null,
@@ -154,11 +141,6 @@ function newRequirement(args: {
     };
 }
 
-/**
- * Builds the rolling seven-day programming-role ledger for the currently active authored
- * block. The rolling window is clipped to the block boundary; work from a prior phase does
- * not satisfy the new phase's role contract merely because it is six days old.
- */
 export function buildCoverageState(
     planDefinition: PlanDefinition | null | undefined,
     asOfDate: string,
@@ -256,10 +238,12 @@ function fulfilledSessions(requirement: WeeklyCoverageRequirement): number {
     return requirement.completedSessions + requirement.projectedSessions;
 }
 
+function isMinimumUnmet(requirement: WeeklyCoverageRequirement): boolean {
+    return requirement.minimumSessions > 0 && fulfilledSessions(requirement) < requirement.minimumSessions;
+}
+
 export function getUnfulfilledRequiredCoverage(state: CoverageState): WeeklyCoverageRequirement[] {
-    return state.requirements.filter(requirement =>
-        requirement.minimumSessions > 0 && fulfilledSessions(requirement) < requirement.minimumSessions
-    );
+    return state.requirements.filter(isMinimumUnmet);
 }
 
 export function getUnfulfilledTargetCoverage(state: CoverageState): WeeklyCoverageRequirement[] {
@@ -271,14 +255,10 @@ export function getUnfulfilledTargetCoverage(state: CoverageState): WeeklyCovera
  * Hard feasibility/readiness gates still run before this tier participates in sorting.
  *
  * 0 = fulfils the nominated hard-developmental anchor role now
- * 1 = advances an unmet immediately-fillable required minimum
- * 2 = advances an anchor-timed/deferred required role off its intended day, or an unmet target
+ * 1 = advances an unmet immediately-fillable minimum, OR repairs a still-missing hard
+ *     role after the immediately-fillable minima have been handled
+ * 2 = advances an anchor-timed/deferred role before repair is needed, or an unmet target
  * 3 = does not advance current explicit coverage
- *
- * The crucial distinction is weekly requirement vs daily urgency. `sustained_quality` and
- * `outdoor_event_specific` remain minimum requirements, but they only become tier 0 on the
- * date the planner nominated for that role. This stops greedy day-0/day-1 front-loading
- * without weakening the seven-day contract.
  */
 export function coverageNeedTierForTemplate(
     state: CoverageState,
@@ -294,21 +274,36 @@ export function coverageNeedTierForTemplate(
 
     if (anchorKey && keys.includes(anchorKey)) {
         const requirement = state.requirements.find(item => item.key === anchorKey);
-        if (requirement && fulfilledSessions(requirement) < requirement.minimumSessions) return 0;
+        if (requirement && isMinimumUnmet(requirement)) return 0;
     }
 
-    let advancesDeferredRequired = false;
+    const outstandingImmediateMinimum = state.requirements.some(requirement =>
+        isMinimumUnmet(requirement)
+        && !ANCHOR_TIMED_COVERAGE_KEYS.has(requirement.key)
+        && !DEFERRED_SUPPORT_COVERAGE_KEYS.has(requirement.key)
+    );
+
+    let advancesAnchorTimedMinimum = false;
+    let advancesDeferredSupportMinimum = false;
     for (const key of keys) {
         const requirement = state.requirements.find(item => item.key === key);
-        if (!requirement || fulfilledSessions(requirement) >= requirement.minimumSessions) continue;
-        if (ANCHOR_TIMED_COVERAGE_KEYS.has(key) || DEFERRED_SUPPORT_COVERAGE_KEYS.has(key)) {
-            advancesDeferredRequired = true;
+        if (!requirement || !isMinimumUnmet(requirement)) continue;
+        if (ANCHOR_TIMED_COVERAGE_KEYS.has(key)) {
+            advancesAnchorTimedMinimum = true;
+            continue;
+        }
+        if (DEFERRED_SUPPORT_COVERAGE_KEYS.has(key)) {
+            advancesDeferredSupportMinimum = true;
             continue;
         }
         return 1;
     }
 
-    if (advancesDeferredRequired) return 2;
+    // Self-repair: once easy aerobic / primary strength (and any other immediate minima)
+    // are no longer missing, a hard weekly role that missed its nominated anchor becomes
+    // urgent on the next day where the existing spacing/fatigue gates actually admit it.
+    if (advancesAnchorTimedMinimum && !outstandingImmediateMinimum) return 1;
+    if (advancesAnchorTimedMinimum || advancesDeferredSupportMinimum) return 2;
 
     for (const key of keys) {
         const requirement = state.requirements.find(item => item.key === key);
