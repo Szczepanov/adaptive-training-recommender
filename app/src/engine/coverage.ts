@@ -61,6 +61,23 @@ const COVERAGE_BY_KEY = new Map(
     SEPTEMBER_CYCLING_EVENT_SESSION_COVERAGE.map(item => [item.key, item]),
 );
 
+/** Hard developmental roles are deliberately anchor-timed. Treating every unmet role as
+ * equally urgent on every healthy day makes the greedy planner front-load threshold +
+ * race-specific work, then spend several days recovering. The weekly contract still
+ * requires these roles; this set only controls *when* they receive Level-4 urgency. */
+const ANCHOR_TIMED_COVERAGE_KEYS = new Set<EventPlanCoverageKey>([
+    'sustained_quality',
+    'outdoor_event_specific',
+]);
+
+/** Recovery is a required weekly shape, but it should normally emerge on a fatigue,
+ * adjacency or low-opportunity-cost day rather than outrank developmental work on the
+ * first green day of a fresh rolling window. It therefore advances at target tier unless
+ * safety/readiness has already restricted the candidate set to recovery. */
+const DEFERRED_SUPPORT_COVERAGE_KEYS = new Set<EventPlanCoverageKey>([
+    'recovery_or_rest',
+]);
+
 /**
  * The detailed-workout resolver used for coverage is exactly the same resolver used to
  * produce the athlete-facing prescription. This is important because some older session
@@ -189,9 +206,6 @@ export function buildCoverageState(
         if (requirement) requirementsByKey.set(definition.coverageKey, requirement);
     });
 
-    // Recovery is a weekly programming role without a physiological ObjectiveKey. That is
-    // exactly why ADR-0016 introduced a second ledger. Author it directly from the event
-    // plan's required recovery coverage rather than fabricating a fake stimulus objective.
     const recoveryCoverage = COVERAGE_BY_KEY.get('recovery_or_rest');
     if (recoveryCoverage?.requirement === 'required'
         && recoveryCoverage.phases.includes(block.phase)
@@ -211,8 +225,6 @@ export function buildCoverageState(
     }
 
     for (const exposure of history) {
-        // Ranking for `asOfDate` reasons about work that happened/projected before this
-        // decision. Same-day booked work is applied explicitly by its caller before rank.
         if (exposure.date < windowStart || exposure.date >= asOfDate || exposure.date > block.endDate) continue;
         const keys = coverageKeysForExposure(exposure, block.phase);
         const workoutId = exposure.workoutId ?? workoutIdForTemplateId(exposure.templateId);
@@ -258,10 +270,15 @@ export function getUnfulfilledTargetCoverage(state: CoverageState): WeeklyCovera
  * Ordinal Level-4 planning signal, deliberately not another tuning coefficient.
  * Hard feasibility/readiness gates still run before this tier participates in sorting.
  *
- * 0 = fulfils the nominated required anchor role now
- * 1 = advances an unmet required minimum
- * 2 = advances an unmet target/optional amount
+ * 0 = fulfils the nominated hard-developmental anchor role now
+ * 1 = advances an unmet immediately-fillable required minimum
+ * 2 = advances an anchor-timed/deferred required role off its intended day, or an unmet target
  * 3 = does not advance current explicit coverage
+ *
+ * The crucial distinction is weekly requirement vs daily urgency. `sustained_quality` and
+ * `outdoor_event_specific` remain minimum requirements, but they only become tier 0 on the
+ * date the planner nominated for that role. This stops greedy day-0/day-1 front-loading
+ * without weakening the seven-day contract.
  */
 export function coverageNeedTierForTemplate(
     state: CoverageState,
@@ -280,10 +297,19 @@ export function coverageNeedTierForTemplate(
         if (requirement && fulfilledSessions(requirement) < requirement.minimumSessions) return 0;
     }
 
+    let advancesDeferredRequired = false;
     for (const key of keys) {
         const requirement = state.requirements.find(item => item.key === key);
-        if (requirement && fulfilledSessions(requirement) < requirement.minimumSessions) return 1;
+        if (!requirement || fulfilledSessions(requirement) >= requirement.minimumSessions) continue;
+        if (ANCHOR_TIMED_COVERAGE_KEYS.has(key) || DEFERRED_SUPPORT_COVERAGE_KEYS.has(key)) {
+            advancesDeferredRequired = true;
+            continue;
+        }
+        return 1;
     }
+
+    if (advancesDeferredRequired) return 2;
+
     for (const key of keys) {
         const requirement = state.requirements.find(item => item.key === key);
         if (requirement && fulfilledSessions(requirement) < requirement.targetSessions) return 2;
