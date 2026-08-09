@@ -26,21 +26,23 @@ const roadRace: UserEvent = {
     demandProfile: { aerobicEndurance: 0.8, thresholdPower: 0.9, vo2MaxPower: 0.7, repeatedSurges: 0.9, sprintPower: 0.5, fatigueResistance: 0.9, neuromuscular: 0.5 },
 };
 
-// Event-relative explicit plan fixture. The authored block dates are derived from this
-// event's own target date rather than from one literal repository calendar.
-const septemberCyclingEvent: UserEvent = {
-    id: 'sep-event-1', title: 'September Cycling Event', date: '2026-09-20', priority: 'A', lifecycle: 'scheduled', category: 'cycling_event',
+// Event-relative fixture: literal dates here are test inputs only. Runtime block dates are
+// derived from each event's own planning date by buildCyclingEventPlan.
+const cyclingPlanFixture: UserEvent = {
+    id: 'cycling-plan-fixture', title: 'Cycling Event Fixture', date: '2026-09-20', priority: 'A', lifecycle: 'scheduled', category: 'cycling_event',
     demandProfile: { aerobicEndurance: 0.8, thresholdPower: 0.8, vo2MaxPower: 0.7, repeatedSurges: 0.7, sprintPower: 0.3, fatigueResistance: 0.8, neuromuscular: 0.3 },
 };
 
 describe('day-0 event-intent acceptance', () => {
-    it('changes the healthy day-0 selection for an A-priority road race 37 days away and targets an unresolved objective', async () => {
+    it('changes the healthy day-0 selection for an A-priority road race and starts with an unmet explicit weekly role rather than forcing intensity immediately', async () => {
         const input = readiness();
         const baseline = await evaluateTrainingWithIntent('u1', input, context(), [], '2026-08-07', undefined, fixtureHistory);
         const eventDriven = await evaluateTrainingWithIntent('u1', input, context(), [roadRace], '2026-08-07', undefined, fixtureHistory);
         const intent = await resolveTrainingIntent('u1', [roadRace], '2026-08-07', input, 7, fixtureHistory);
         expect(eventDriven.template.id).not.toBe(baseline.template.id);
-        expect(eventDriven.template.category).toBe('Hard Endurance');
+        // ADR-0016: a fresh rolling week does not imply "hard today". Easy aerobic is a
+        // distinct required role and hard quality is anchor-timed/repairable later.
+        expect(eventDriven.template.category).toBe('Easy Endurance');
         expect(intent.unresolvedObjectives.map(objective => objective.key)).toContain('surge_repeatability');
         expect(intent.unresolvedObjectives.map(objective => objective.key)).toContain('race_specific_endurance');
         expect(eventDriven.rationale).toContain('Build phase');
@@ -69,25 +71,22 @@ describe('day-0 event-intent acceptance', () => {
 
 describe('ADR-0012/0016 explicit event-relative PlanDefinition wiring', () => {
     it('resolveTrainingIntent picks up the authored cycling PlanDefinition, scoped to the active relative block', async () => {
-        // For a 2026-09-20 A event, build is 2026-06-28..2026-08-15.
-        const intent = await resolveTrainingIntent('u1', [septemberCyclingEvent], '2026-08-10', readiness(), 7, fixtureHistory);
+        const intent = await resolveTrainingIntent('u1', [cyclingPlanFixture], '2026-08-10', readiness(), 7, fixtureHistory);
         expect(intent.microcycle.objectives.length).toBeGreaterThan(0);
         expect(intent.microcycle.objectives.every(o => o.id.startsWith('obj_plan_'))).toBe(true);
         expect(intent.microcycle.objectives.every(o => o.windowStart === '2026-06-28' && o.windowEnd === '2026-08-15')).toBe(true);
     });
 
     it('applies the richer authored plan to another cycling target date instead of falling back to generic mode', async () => {
-        // 2026-08-10 is 34 days before this 2026-09-13 event, so it is in the
-        // event-relative Specificity/peak block and must still be plan-derived.
         const intent = await resolveTrainingIntent('u1', [roadRace], '2026-08-10', readiness(), 7, fixtureHistory);
         expect(intent.microcycle.objectives.some(o => o.id.startsWith('obj_plan_'))).toBe(true);
         expect(intent.microcycle.objectives.some(o => o.key === 'race_specific_endurance')).toBe(true);
     });
 
     it('uses the authored active PlanBlock as exact PlannedDose authority without fabricating travel', async () => {
-        const build = await resolveTrainingIntent('u1', [septemberCyclingEvent], '2026-08-10', readiness(), 7, fixtureHistory);
-        const specificity = await resolveTrainingIntent('u1', [septemberCyclingEvent], '2026-08-26', readiness(), 7, fixtureHistory);
-        const taper = await resolveTrainingIntent('u1', [septemberCyclingEvent], '2026-09-10', readiness(), 7, fixtureHistory);
+        const build = await resolveTrainingIntent('u1', [cyclingPlanFixture], '2026-08-10', readiness(), 7, fixtureHistory);
+        const specificity = await resolveTrainingIntent('u1', [cyclingPlanFixture], '2026-08-26', readiness(), 7, fixtureHistory);
+        const taper = await resolveTrainingIntent('u1', [cyclingPlanFixture], '2026-09-10', readiness(), 7, fixtureHistory);
 
         expect(build.plannedDose).toEqual({ volume: 1.0, intensity: 0.9 });
         expect(specificity.plannedDose).toEqual({ volume: 1.0, intensity: 1.1 });
