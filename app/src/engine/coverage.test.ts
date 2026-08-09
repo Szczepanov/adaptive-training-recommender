@@ -1,21 +1,20 @@
 import { describe, expect, it } from 'vitest';
-import { WORKOUTS } from '../workouts/catalog';
 import { ENRICHED_TEMPLATES } from './templates';
 import { resolveDemandProfile } from './eventPresets';
 import { buildCyclingEventPlan } from './planSchedule';
 import {
     buildCoverageState,
     coverageKeysForExposure,
+    coverageKeysForTemplate,
     coverageNeedTierForTemplate,
 } from './coverage';
 import type { SessionTemplate, UserEvent } from './models';
 import { addDaysToLocalDateString } from '../utils/localDate';
+import type { EventPlanCoverageKey, EventPlanPhase } from '../workouts/event-plan';
 
-function templateForWorkout(workoutId: string): SessionTemplate {
-    const workout = WORKOUTS.find(item => item.id === workoutId);
-    const templateId = workout?.engineTemplateIds?.[0];
-    const template = ENRICHED_TEMPLATES.find(item => item.id === templateId);
-    if (!template) throw new Error(`No engine template for workout ${workoutId}`);
+function templateForCoverage(key: EventPlanCoverageKey, phase: EventPlanPhase): SessionTemplate {
+    const template = ENRICHED_TEMPLATES.find(item => coverageKeysForTemplate(item, phase).includes(key));
+    if (!template) throw new Error(`No engine template resolves to coverage ${key} in ${phase}`);
     return template;
 }
 
@@ -48,12 +47,19 @@ describe('Phase 6.2c explicit weekly coverage', () => {
         expect(coverageKeysForExposure({ modality: 'Cycling', category: 'Race-Specific Endurance' }, 'peak')).toEqual([]);
     });
 
+    it('uses the same coarse-template -> detailed-workout resolution as prescription generation', () => {
+        expect(coverageKeysForTemplate(templateForCoverage('easy_aerobic', 'peak'), 'peak')).toContain('easy_aerobic');
+        expect(coverageKeysForTemplate(templateForCoverage('sustained_quality', 'peak'), 'peak')).toContain('sustained_quality');
+        expect(coverageKeysForTemplate(templateForCoverage('outdoor_event_specific', 'peak'), 'peak')).toContain('outdoor_event_specific');
+        expect(coverageKeysForTemplate(templateForCoverage('recovery_or_rest', 'peak'), 'peak')).toContain('recovery_or_rest');
+    });
+
     it('keeps adaptation-compatible race-specific history from substituting for easy or sustained roles', () => {
         const event = cyclingEvent();
         const planState = buildCyclingEventPlan(event);
         if (planState.status !== 'AVAILABLE') throw new Error('cycling plan should be available');
         const asOfDate = '2026-08-20';
-        const raceTemplate = templateForWorkout('cycling_event_specific_endurance_01');
+        const raceTemplate = templateForCoverage('outdoor_event_specific', 'peak');
         const state = buildCoverageState(planState.data, asOfDate, [{
             date: addDaysToLocalDateString(asOfDate, -1),
             templateId: raceTemplate.id,
@@ -63,14 +69,17 @@ describe('Phase 6.2c explicit weekly coverage', () => {
         expect(byKey.get('outdoor_event_specific')?.completedSessions).toBe(1);
         expect(byKey.get('easy_aerobic')?.completedSessions).toBe(0);
         expect(byKey.get('sustained_quality')?.completedSessions).toBe(0);
+        expect(byKey.get('recovery_or_rest')?.completedSessions).toBe(0);
 
-        const zone2 = templateForWorkout('cycling_zone2_standard_01');
-        const threshold = templateForWorkout('cycling_controlled_threshold_4x8_01');
+        const zone2 = templateForCoverage('easy_aerobic', 'peak');
+        const threshold = templateForCoverage('sustained_quality', 'peak');
+        const recovery = templateForCoverage('recovery_or_rest', 'peak');
         const technical = ENRICHED_TEMPLATES.find(item => item.modality === 'Cycling' && item.category === 'Technical Skill');
         if (!technical) throw new Error('Cycling Technical Skill template missing');
 
         expect(coverageNeedTierForTemplate(state, zone2)).toBe(1);
         expect(coverageNeedTierForTemplate(state, threshold)).toBe(1);
+        expect(coverageNeedTierForTemplate(state, recovery)).toBe(1);
         expect(coverageNeedTierForTemplate(state, raceTemplate)).toBeGreaterThanOrEqual(2);
         expect(coverageNeedTierForTemplate(state, technical)).toBe(3);
     });
@@ -80,7 +89,7 @@ describe('Phase 6.2c explicit weekly coverage', () => {
         const planState = buildCyclingEventPlan(event);
         if (planState.status !== 'AVAILABLE') throw new Error('cycling plan should be available');
         const date = '2026-08-20';
-        const raceTemplate = templateForWorkout('cycling_event_specific_endurance_01');
+        const raceTemplate = templateForCoverage('outdoor_event_specific', 'peak');
         const exposureDate = addDaysToLocalDateString(date, -6);
 
         const today = buildCoverageState(planState.data, date, [{ date: exposureDate, templateId: raceTemplate.id }]);

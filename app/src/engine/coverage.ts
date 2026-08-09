@@ -1,6 +1,6 @@
 import type { EventPlanCoverageKey, EventPlanPhase, EventPlanRequirement } from '../workouts/event-plan';
 import { SEPTEMBER_CYCLING_EVENT_SESSION_COVERAGE } from '../workouts/event-plan';
-import { WORKOUTS } from '../workouts/catalog';
+import { workoutForTemplate } from '../workouts/prescription';
 import type { ObjectivePriority, SessionTemplate } from './models';
 import type { PlanDefinition } from './planSchedule';
 import { addDaysToLocalDateString } from '../utils/localDate';
@@ -61,19 +61,16 @@ const COVERAGE_BY_KEY = new Map(
     SEPTEMBER_CYCLING_EVENT_SESSION_COVERAGE.map(item => [item.key, item]),
 );
 
-/** Mirrors planningCandidate.ts's deterministic "highest priority, otherwise first" rule
- * without importing PlanningCandidate and creating optimizer -> coverage -> planningCandidate
- * -> optimizer runtime recursion. */
+/**
+ * The detailed-workout resolver used for coverage is exactly the same resolver used to
+ * produce the athlete-facing prescription. This is important because some older session
+ * families are linked through prescription.ts's explicit fallback table rather than a
+ * WorkoutDefinition.engineTemplateIds field. Coverage must describe the workout the user
+ * would actually receive, not a parallel approximation of template identity.
+ */
 export function workoutIdForTemplateId(templateId: string | undefined): string | undefined {
     if (!templateId) return undefined;
-    let selected: (typeof WORKOUTS)[number] | undefined;
-    for (const workout of WORKOUTS) {
-        if (workout.status !== 'active' || !workout.engineTemplateIds?.includes(templateId)) continue;
-        if (!selected || (workout.engineTemplatePriority ?? 0) > (selected.engineTemplatePriority ?? 0)) {
-            selected = workout;
-        }
-    }
-    return selected?.id;
+    return workoutForTemplate(templateId)?.id;
 }
 
 /** Exact authored mapping only. An exposure may fulfil more than one role when the event
@@ -108,6 +105,36 @@ function laterDate(left: string, right: string): string {
 
 function activePlanBlock(planDefinition: PlanDefinition | null | undefined, date: string) {
     return planDefinition?.blocks.find(block => block.startDate <= date && date <= block.endDate) ?? null;
+}
+
+function newRequirement(args: {
+    blockId: string;
+    key: EventPlanCoverageKey;
+    minimumSessions: number;
+    targetSessions: number;
+    priority: ObjectivePriority;
+    rollingWindowDays: number;
+    windowStart: string;
+    windowEnd: string;
+    index: number;
+}): WeeklyCoverageRequirement | null {
+    const coverage = COVERAGE_BY_KEY.get(args.key);
+    if (!coverage) return null;
+    return {
+        id: `coverage_${args.blockId}_${args.key}_${args.index}`,
+        key: args.key,
+        label: coverage.label,
+        requirement: coverage.requirement,
+        minimumSessions: args.minimumSessions,
+        targetSessions: args.targetSessions,
+        completedSessions: 0,
+        projectedSessions: 0,
+        priority: args.priority,
+        rollingWindowDays: args.rollingWindowDays,
+        windowStart: args.windowStart,
+        windowEnd: args.windowEnd,
+        credits: [],
+    };
 }
 
 /**
@@ -148,22 +175,40 @@ export function buildCoverageState(
             else if (definition.priority === 'should_have' && existing.priority === 'nice_to_have') existing.priority = 'should_have';
             return;
         }
-        requirementsByKey.set(definition.coverageKey, {
-            id: `coverage_${block.id}_${definition.coverageKey}_${index}`,
+        const requirement = newRequirement({
+            blockId: block.id,
             key: definition.coverageKey,
-            label: coverage.label,
-            requirement: coverage.requirement,
             minimumSessions,
             targetSessions,
-            completedSessions: 0,
-            projectedSessions: 0,
             priority: definition.priority,
             rollingWindowDays,
             windowStart,
             windowEnd: block.endDate,
-            credits: [],
+            index,
         });
+        if (requirement) requirementsByKey.set(definition.coverageKey, requirement);
     });
+
+    // Recovery is a weekly programming role without a physiological ObjectiveKey. That is
+    // exactly why ADR-0016 introduced a second ledger. Author it directly from the event
+    // plan's required recovery coverage rather than fabricating a fake stimulus objective.
+    const recoveryCoverage = COVERAGE_BY_KEY.get('recovery_or_rest');
+    if (recoveryCoverage?.requirement === 'required'
+        && recoveryCoverage.phases.includes(block.phase)
+        && !requirementsByKey.has('recovery_or_rest')) {
+        const recoveryRequirement = newRequirement({
+            blockId: block.id,
+            key: 'recovery_or_rest',
+            minimumSessions: 1,
+            targetSessions: 1,
+            priority: 'must_have',
+            rollingWindowDays,
+            windowStart,
+            windowEnd: block.endDate,
+            index: activeDefinitions.length,
+        });
+        if (recoveryRequirement) requirementsByKey.set('recovery_or_rest', recoveryRequirement);
+    }
 
     for (const exposure of history) {
         // Ranking for `asOfDate` reasons about work that happened/projected before this
