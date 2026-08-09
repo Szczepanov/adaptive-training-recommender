@@ -273,8 +273,8 @@ export function getUnfulfilledTargetCoverage(state: CoverageState): WeeklyCovera
  * Ordinal Level-4 planning signal, deliberately not another tuning coefficient.
  * Hard feasibility/readiness gates still run before this tier participates in sorting.
  *
- * 0 = fulfils the nominated hard role OR repairs an overdue hard role once its aerobic floor is met
- * 1 = advances an unmet immediately-fillable minimum
+ * 0 = fulfils the role nominated for this date
+ * 1 = advances an unmet immediately-fillable minimum or repairs an overdue hard role
  * 2 = advances an anchor-timed/deferred role before repair is due, or an unmet target
  * 3 = does not advance current explicit coverage
  */
@@ -315,11 +315,10 @@ export function coverageNeedTierForTemplate(
         return 1;
     }
 
-    // Once the aerobic floor has been handled, a hard role that was missed on its
-    // nominated date (or became unmet as an older exposure aged out) is overdue. It gets
-    // the same tier-0 urgency as a nominated anchor, but existing fatigue/spacing/time
-    // hard gates still decide whether it is feasible on this date.
-    if (advancesAnchorTimedMinimum && !repairPrerequisiteMissing) return 0;
+    // A missed/expired hard role becomes urgent once the aerobic floor exists, but it must
+    // not tie a specifically nominated quality/event anchor and steal that date. Existing
+    // safety/fatigue/spacing gates still outrank both tiers.
+    if (advancesAnchorTimedMinimum && !repairPrerequisiteMissing) return 1;
     if (advancesAnchorTimedMinimum || advancesDeferredSupportMinimum) return 2;
 
     for (const key of keys) {
