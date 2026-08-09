@@ -674,6 +674,11 @@ export function generateWeekAheadPlan(
     const resultDays: WeekAheadDay[] = [];
     const objectiveCredits: PlannedObjectiveCredit[] = [];
     const anchors = resolveWeeklyAnchors(todayDate, totalDays, events, fixedActivities, context, tomorrowRec?.template.category, tomorrowRec?.template.modality);
+    const beganAfterHardRaceSpecificExposure = todayRec.mode === 'recover' && (seed.trailingHistory ?? []).some(entry =>
+        entry.date === addDaysToLocalDateString(todayDate, -1)
+        && entry.category === 'Race-Specific Endurance'
+        && (entry.systemicCost ?? 0) >= PROJECTED_MODIFY_MAX_SYSTEMIC_COST
+    );
 
     const creditMemory = new Map<WeeklyObjective['key'], ObjectiveCreditSnapshot>();
     const droppedContributorObjectives: DroppedContributorObjective[] = [...(seed.droppedContributorObjectives ?? [])];
@@ -886,7 +891,7 @@ export function generateWeekAheadPlan(
         // fatigue ceiling, do not spend the recovery opportunity on unrelated work.
         // A rest/recovery pick lets the greedy horizon reconsider that exact role on a
         // later, safer date instead of silently losing it after its pre-pass anchor.
-        const hasFatigueGatedRequiredCoverage = anchorRole === 'event-specific' && eligible.some(template =>
+        const hasFatigueGatedRequiredCoverage = beganAfterHardRaceSpecificExposure && anchorRole === 'event-specific' && eligible.some(template =>
             !fatigueGated.includes(template)
             && (template.category === 'Race-Specific Endurance'
                 || template.category === 'Hard Endurance'

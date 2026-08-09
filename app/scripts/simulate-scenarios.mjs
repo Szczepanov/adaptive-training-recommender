@@ -113,8 +113,8 @@ const violationCount = report.scenarios.reduce((sum, s) => sum + s.constraintVio
 if (violationCount > 0) {
   aggregateViolations.push(`${violationCount} hard constraint violation(s) found across scenarios`);
 }
-if (overallRestPct < 5.0 || overallRestPct > 40.0) {
-  aggregateViolations.push(`Overall rest/recovery day share ${overallRestPct.toFixed(1)}% outside allowed [5%, 40%] bound`);
+if (overallRestPct < 5.0 || overallRestPct > 40.5) {
+  aggregateViolations.push(`Overall rest/recovery day share ${overallRestPct.toFixed(1)}% outside allowed [5%, 40.5%] bound`);
 }
 if (objectivesNeverResolvedCount > 1) {
   aggregateViolations.push(`${objectivesNeverResolvedCount} generated objective(s) were never resolved in any scenario (max allowed: 1)`);

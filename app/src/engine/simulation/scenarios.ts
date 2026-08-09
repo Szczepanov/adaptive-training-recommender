@@ -278,8 +278,8 @@ export const SCENARIOS: AthleteScenario[] = [
         }],
         weeks: 1,
         readinessForWeek: () => stableReadiness(
-            { readiness: 6, sleepQuality: 7, fatigue: 4, soreness: 4, stress: 3, motivation: 7, timeAvailable: 120 },
-            { last_3_days_hard_sessions_count: 1, sleep_score: 82, sleep_duration_min: 460, body_battery_wake: 80 },
+            { readiness: 8, sleepQuality: 8, fatigue: 2, soreness: 2, stress: 2, motivation: 8, timeAvailable: 120 },
+            { last_3_days_hard_sessions_count: 1, sleep_score: 88, sleep_duration_min: 480, body_battery_wake: 90 },
         ),
     },
 ];

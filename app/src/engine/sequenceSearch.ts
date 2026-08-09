@@ -117,6 +117,11 @@ export function beamSearchWeekAheadPlan(
     const initialFatigue: FatigueState = seed.fatigue?.externalLoadFatigue ? seed.fatigue : createEmptyFatigue(todayDate);
 
     const anchors = resolveWeeklyAnchors(todayDate, totalDays, events, fixedActivities, context, tomorrowRec?.template.category, tomorrowRec?.template.modality);
+    const beganAfterHardRaceSpecificExposure = todayRec.mode === 'recover' && (seed.trailingHistory ?? []).some(entry =>
+        entry.date === addDaysToLocalDateString(todayDate, -1)
+        && entry.category === 'Race-Specific Endurance'
+        && (entry.systemicCost ?? 0) >= PROJECTED_MODIFY_MAX_SYSTEMIC_COST
+    );
 
     const creditingObjectivesFor = (microcycle: MicrocycleState, template: SessionTemplate) => {
         const stimulus = enrichedStimulusProfile(template);
@@ -274,7 +279,7 @@ export function beamSearchWeekAheadPlan(
                 fixedActivities,
             );
 
-            const hasFatigueGatedRequiredCoverage = anchorRole === 'event-specific' && eligible.some(template =>
+            const hasFatigueGatedRequiredCoverage = beganAfterHardRaceSpecificExposure && anchorRole === 'event-specific' && eligible.some(template =>
                 !fatigueGated.includes(template)
                 && (template.category === 'Race-Specific Endurance'
                     || template.category === 'Hard Endurance'
