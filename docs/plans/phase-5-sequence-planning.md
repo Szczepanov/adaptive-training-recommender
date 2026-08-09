@@ -1,12 +1,16 @@
 # Phase 5 — Sequence planning, real inputs, and the feedback loop
 
-* **Status:** Complete — all seven increments landed in the approved order. 5.1's
+* **Status:** Implemented — all seven increments landed in the approved order. 5.1's
   completion is a recorded adoption decision (retain greedy; see
   [ADR-0015](../adr/0015-sequence-planning-and-session-role-model.md)), not a promotion,
   per the plan's own definition of done for that increment.
 * **Depends on:** Phases 0–4
 * **Addresses:** the V2 Plan Intent cutover proper
 * **Rough effort:** multi-week; ship as independent increments, not one landing
+
+> **Historical implementation record.** All work items and acceptance criteria below
+> were verified as delivered on 2026-08-09. They are retained for rationale and are
+> not instructions for new work.
 
 ---
 
@@ -32,12 +36,12 @@ adoption decision with harness data — retaining the greedy loop is a valid com
 
 ---
 
-## Goal
+## Completed outcome
 
-Replace greedy day-by-day projection with bounded sequence search over the planning
-horizon, give the planner the real-world inputs it currently lacks (fixed activities,
-local tissue state), and close the loop so completed training updates achieved stimulus
-as well as incurred cost.
+Fixed activities, local tissue state, and evidence-ranked completed training now inform
+planning. Bounded sequence search was built and measured, then deliberately retained as
+a non-production prototype; the live planner remains greedy by the recorded ADR-0015
+decision.
 
 ## Increment order (decided 2026-08-08)
 
