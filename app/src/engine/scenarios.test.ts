@@ -84,7 +84,11 @@ describe('cycling_criterium_A -- qualification and anchor stress test', () => {
         const raceSpecificObjective = result.objectiveResolution.find(o => o.key === 'race_specific_endurance');
 
         expect(nominated).toBe(4);
-        expect(hits).toBe(0);
+        // ADR-0016 makes the event-specific role decision-bearing. It is now allowed (and
+        // desirable) for some nominated anchors to land exactly instead of preserving the
+        // old regression artifact of zero hits across all four weeks.
+        expect(hits).toBeGreaterThanOrEqual(1);
+        expect(hits).toBeLessThanOrEqual(nominated);
         expect(calendarBlockFulfilled).toBe(nominated);
         expect(raceSpecificObjective).toMatchObject({ timesGenerated: 4, timesResolved: 4 });
         expect(result.qualityWarnings.some(warning => warning.startsWith('Event-specific exposure occurred off the nominated anchor date'))).toBe(true);
