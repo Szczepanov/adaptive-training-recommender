@@ -121,9 +121,6 @@ function activePlanBlock(planDefinition: PlanDefinition | null | undefined, date
 function occurrenceKeyFor(exposure: CoverageHistoryEntry, resolvedWorkoutId: string | undefined): string {
     if (exposure.occurrenceKey) return exposure.occurrenceKey;
     const source = exposure.source ?? 'completed';
-    // Conservative legacy fallback. It intentionally collapses duplicate same-day copies of
-    // one exact identity rather than risk double-counting them. New production/projection
-    // paths supply an explicit occurrenceKey.
     return `${source}:${exposure.date}:${resolvedWorkoutId ?? exposure.templateId ?? 'unknown'}`;
 }
 
@@ -276,9 +273,9 @@ export function getUnfulfilledTargetCoverage(state: CoverageState): WeeklyCovera
  * Ordinal Level-4 planning signal, deliberately not another tuning coefficient.
  * Hard feasibility/readiness gates still run before this tier participates in sorting.
  *
- * 0 = fulfils the nominated hard-developmental anchor role now
- * 1 = advances an unmet immediately-fillable minimum, OR repairs a still-missing hard role
- * 2 = advances an anchor-timed/deferred role before repair is needed, or an unmet target
+ * 0 = fulfils the nominated hard role OR repairs an overdue hard role once its aerobic floor is met
+ * 1 = advances an unmet immediately-fillable minimum
+ * 2 = advances an anchor-timed/deferred role before repair is due, or an unmet target
  * 3 = does not advance current explicit coverage
  */
 export function coverageNeedTierForTemplate(
@@ -318,7 +315,11 @@ export function coverageNeedTierForTemplate(
         return 1;
     }
 
-    if (advancesAnchorTimedMinimum && !repairPrerequisiteMissing) return 1;
+    // Once the aerobic floor has been handled, a hard role that was missed on its
+    // nominated date (or became unmet as an older exposure aged out) is overdue. It gets
+    // the same tier-0 urgency as a nominated anchor, but existing fatigue/spacing/time
+    // hard gates still decide whether it is feasible on this date.
+    if (advancesAnchorTimedMinimum && !repairPrerequisiteMissing) return 0;
     if (advancesAnchorTimedMinimum || advancesDeferredSupportMinimum) return 2;
 
     for (const key of keys) {
