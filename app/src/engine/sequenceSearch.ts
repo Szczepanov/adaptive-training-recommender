@@ -47,36 +47,11 @@ import {
 /**
  * Phase 5.1: bounded sequence search -- an EXPERIMENT, not a scheduled migration.
  *
- * `generateWeekAheadPlan` (planner.ts) walks the "projected" tier one day at a time,
- * greedily: each day takes `rankCandidates`' rank-0 pick with no visibility into how that
- * choice constrains the days after it. This module scores the whole partial sequence
- * across a bounded beam instead, so the planner can prefer
- *
- *   Tue threshold / Thu easy aerobic / Sat race-specific
- *
- * over
- *
- *   Tue threshold / Wed threshold / Thu rest / Fri race-specific
- *
- * even when Wednesday's threshold scores higher in isolation -- the class of judgement
- * the greedy walk structurally cannot make.
- *
- * Deliberately maximal reuse, not a parallel engine: per (branch, day) this calls the
- * exact same `rankCandidates` Phase-3 lexicographic pipeline the greedy loop uses --
- * hard-gate rejection (`excludedReasons`) already happens *before* `rankCandidates`
- * returns a score at all, which is this prototype's "reject hard spacing/recovery
- * violations before scoring" for free, from the prerequisite the plan names. What
- * changes is which -- and how many -- of `rankCandidates`' accepted results a branch
- * keeps (top `candidatesPerDay`, not just rank 0), and that pruning after each day is by
- * *cumulative* sequence score, not that day's score alone.
- *
- * Today and tomorrow (the confirmed/provisional tiers) are copied verbatim from the
- * greedy inputs, unsearched -- this experiment concerns only the "projected" tier's
- * day-by-day walk, matching the plan's own framing (`Prerequisite: Phase 3's
- * lexicographic layer`, not a rethink of the confirmed/provisional tiers).
- *
- * NOT wired into the live default path. See docs/adr/0015-sequence-planning-and-session-role-model.md
- * for the recorded adoption decision and the comparison data behind it.
+ * The search reuses the same daily hard gates and lexicographic candidate ranking as the
+ * production greedy planner. ADR-0016 adds one important requirement to that comparison:
+ * branch pruning must preserve the daily coverage tier before considering cumulative
+ * utility. Otherwise the candidate list is coverage-aware but the beam immediately
+ * throws that ordering away when it chooses which whole-week branches survive.
  */
 
 export const DEFAULT_BEAM_WIDTH = 15;
@@ -91,8 +66,10 @@ interface SearchBranch {
     microcycle: MicrocycleState;
     externalFatigue: FatigueState;
     objectiveCredits: PlannedObjectiveCredit[];
-    /** Sum of each day's utilityScore across the branch's whole sequence so far -- the
-     *  thing beam pruning actually ranks on, not any single day's score. */
+    /** Lower is better. Every branch at a pruning step has the same number of projected
+     * days, so the sum preserves the candidate-level lexicographic coverage priority. */
+    cumulativeCoverageTier: number;
+    /** Utility only breaks ties after cumulative coverage tier. */
     cumulativeScore: number;
 }
 
@@ -110,14 +87,9 @@ export interface BeamSearchWeekAheadPlan {
     days: WeekAheadDay[];
     objectiveCredits: PlannedObjectiveCredit[];
     microcycleObjectives: WeeklyObjective[];
-    /** The winning branch's own day-by-day trail -- "why is this the best week" in a
-     *  directly answerable form: each day's chosen template, its score, the runner-up's
-     *  score, and the running cumulative total that pruning actually selected on. */
     explain: SequenceExplainEntry[];
     beamWidthUsed: number;
     candidatesPerDayUsed: number;
-    /** Total (branch, candidate) pairs scored across the whole search -- a rough cost
-     *  signal for the "beam search cost" risk the plan calls out. */
     branchDaysScored: number;
 }
 
@@ -196,6 +168,7 @@ export function beamSearchWeekAheadPlan(
         utilityScore: number,
         benefitScore: number,
         costPenalty: number,
+        coverageNeedTier: number,
         peakFatigue: number,
         runnerUpUtility: number | null,
         bestBenefitTemplateId: string,
@@ -214,12 +187,17 @@ export function beamSearchWeekAheadPlan(
                 bestBenefitTemplateId, bestBenefitScore,
             },
         };
-        return { ...applied, days: [...branch.days, day], cumulativeScore: branch.cumulativeScore + utilityScore };
+        return {
+            ...applied,
+            days: [...branch.days, day],
+            cumulativeCoverageTier: branch.cumulativeCoverageTier + coverageNeedTier,
+            cumulativeScore: branch.cumulativeScore + utilityScore,
+        };
     };
 
-    // Today + tomorrow: copied from the greedy inputs verbatim, unsearched (see module doc).
     let seedBranch: SearchBranch = {
-        days: [], microcycle: initialMicrocycle, externalFatigue: initialFatigue, objectiveCredits: [], cumulativeScore: 0,
+        days: [], microcycle: initialMicrocycle, externalFatigue: initialFatigue,
+        objectiveCredits: [], cumulativeCoverageTier: 0, cumulativeScore: 0,
     };
     seedBranch = applyPick(seedBranch, todayDate, todayRec.template);
 
@@ -282,15 +260,6 @@ export function beamSearchWeekAheadPlan(
                 })),
             ];
 
-            // Phase 6.2b: thread fixedActivities through so `optContext.availability` (and
-            // therefore the equipment/time gates rankCandidates applies below) reflects the
-            // same day this loop's own `resolveAvailability(date, null, fixedActivities,
-            // context)` call above already accounted for -- without this, the two would
-            // silently disagree exactly the way planner.ts's own loop once did. This
-            // comparison tool does not otherwise replicate 6.2b's reserved-cost-fatigue or
-            // stimulus-credited-before-ranking treatment (see planner.ts): it is a
-            // Phase 5.1 measurement aid, not the production planner (ADR-0015), so that
-            // fuller parity is deferred unless beam search is ever promoted.
             const optContext = buildOptimizationContext(
                 {
                     unresolvedObjectives: unresolved,
@@ -309,9 +278,6 @@ export function beamSearchWeekAheadPlan(
                 optContext.injuryConstraints, optContext.preferences, optContext.options
             );
 
-            // Hard-constraint rejection already happened inside rankCandidates -- accepted
-            // is the post-rejection, scored candidate set. This is the plan's "reject
-            // before scoring" step, reused rather than reimplemented.
             const accepted = rankingResult.accepted;
             branchDaysScored += accepted.length;
 
@@ -319,7 +285,7 @@ export function beamSearchWeekAheadPlan(
                 if (restFallback) {
                     nextGeneration.push(extendBranch(
                         branch, date, offset, periodization, restFallback,
-                        0, 0, 0, peakFatigue, null, restFallback.id, 0, 'No admissible candidate; fell back to rest.'
+                        0, 0, 0, 3, peakFatigue, null, restFallback.id, 0, 'No admissible candidate; fell back to rest.'
                     ));
                 }
                 continue;
@@ -329,26 +295,18 @@ export function beamSearchWeekAheadPlan(
             accepted.slice(0, candidatesPerDay).forEach(candidate => {
                 nextGeneration.push(extendBranch(
                     branch, date, offset, periodization, candidate.template,
-                    candidate.utilityScore, candidate.benefitScore, candidate.costPenalty,
+                    candidate.utilityScore, candidate.benefitScore, candidate.costPenalty, candidate.coverageNeedTier,
                     peakFatigue, accepted[1]?.utilityScore ?? null,
                     bestBenefit.template.id, bestBenefit.benefitScore, candidate.rationale
                 ));
             });
         }
 
-        // Whole-sequence pruning: the beam survives on cumulative score, not the best
-        // single day -- this is what lets the search prefer a slightly weaker day if it
-        // keeps stronger options open for the rest of the week.
-        nextGeneration.sort((a, b) => b.cumulativeScore - a.cumulativeScore);
-        // Only replace the beam if at least one branch survived this day. Every branch
-        // pushes a rest-fallback extension when `accepted.length === 0`, so an empty
-        // `nextGeneration` should not happen -- but resetting to `[seedBranch]` on it would
-        // discard every previously-planned day while `offset` keeps advancing, producing a
-        // truncated/misnumbered plan. Keeping the current (pre-this-day) beam instead means
-        // the search simply stalls on this day rather than corrupting what came before it.
-        if (nextGeneration.length > 0) {
-            beam = nextGeneration.slice(0, beamWidth);
-        }
+        nextGeneration.sort((a, b) =>
+            a.cumulativeCoverageTier - b.cumulativeCoverageTier
+            || b.cumulativeScore - a.cumulativeScore
+        );
+        if (nextGeneration.length > 0) beam = nextGeneration.slice(0, beamWidth);
     }
 
     const winner = beam[0] ?? seedBranch;
@@ -375,15 +333,6 @@ export function beamSearchWeekAheadPlan(
     };
 }
 
-/**
- * Drop-in beam-search analog of `planner.ts`'s `generateWeekAheadPlanWithIntent`, same
- * arity through `preparedHistorySnapshot` so a comparison harness (see
- * `simulation/analyze.ts`'s `runScenario` optional `planGenerator` parameter) can swap it
- * in for the exact same scenario without duplicating history/microcycle/fatigue
- * resolution. Strips `BeamSearchWeekAheadPlan`'s extra diagnostic fields
- * (`explain`/`beamWidthUsed`/etc.) down to the plain `WeekAheadPlan` shape the harness
- * already knows how to score.
- */
 export async function generateWeekAheadPlanWithIntentBeamSearch(
     userId: string,
     todayReadiness: DailyReadiness,
