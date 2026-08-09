@@ -43,7 +43,7 @@ service cloud.firestore {
 
     function hasValidRecommendationAudit(audit) {
       return audit is map
-        && audit.keys().hasOnly(['policyVersion', 'evaluatedAt', 'decisionContextRevision', 'safetyStatus', 'history', 'envelope', 'plannedDose', 'executionDose', 'candidateScores'])
+        && audit.keys().hasOnly(['policyVersion', 'evaluatedAt', 'decisionContextRevision', 'safetyStatus', 'history', 'envelope', 'plannedDose', 'executionDose', 'candidateScores', 'droppedContributorObjectives'])
         && audit.keys().hasAll(['policyVersion', 'evaluatedAt', 'decisionContextRevision', 'safetyStatus', 'history', 'envelope', 'candidateScores'])
         && audit.policyVersion is string
         && audit.evaluatedAt is string
@@ -67,7 +67,8 @@ service cloud.firestore {
         && audit.envelope.planMaxAllowableTier in ['Rest', 'Mobility', 'Easy', 'Moderate', 'Hard']
         && (!('plannedDose' in audit) || hasValidDose(audit.plannedDose))
         && (!('executionDose' in audit) || hasValidDose(audit.executionDose))
-        && audit.candidateScores is list && audit.candidateScores.size() <= 64;
+        && audit.candidateScores is list && audit.candidateScores.size() <= 64
+        && (!('droppedContributorObjectives' in audit) || (audit.droppedContributorObjectives is list && audit.droppedContributorObjectives.size() <= 64));
     }
 
     function hasValidRecommendation(userId, date) {
