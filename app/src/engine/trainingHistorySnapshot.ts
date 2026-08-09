@@ -40,7 +40,13 @@ function exposureWithExactIdentity(
     event: CompletedTrainingEvent,
     recommendations: readonly DailyRecommendation[],
 ): CompletedExposure {
-    const exposure = completedEventToExposure(event);
+    // When a real event reconciles to a daily recommendation, reuse the exact same
+    // occurrence key the projection path used. That makes the transition
+    // projected->completed idempotent instead of counting one physical session twice.
+    const occurrenceKey = event.linkedRecommendationDate
+        ? `recommendation:${event.linkedRecommendationDate}`
+        : `completed:${event.id}`;
+    const exposure: CompletedExposure = { ...completedEventToExposure(event), occurrenceKey };
     if (!event.exactTemplateMatch || !event.linkedRecommendationDate) return exposure;
     const recommendation = recommendations.find(item => item.date === event.linkedRecommendationDate);
     if (!recommendation) return exposure;
@@ -70,11 +76,6 @@ export function buildTrainingHistorySnapshot(
     const recommendationRecords = requireAvailable('recommendations', recommendations);
     const completedEvents = reconcileCompletedTrainingEvents(activityRecords, recommendationRecords);
     completedEvents.sort((a, b) => a.date.localeCompare(b.date));
-    // Phase 6.2c / ADR-0016: reconcileCompletedTrainingEvents already knows when an
-    // exposure exactly matches an adherence-confirmed recommendation. Join the durable
-    // recommendation here so the rolling history preserves template/workout identity for
-    // coverage without expanding CompletedTrainingEvent's persisted/domain schema or
-    // inferring roles from a title/modality later.
     const exposures = completedEvents.map(event => exposureWithExactIdentity(event, recommendationRecords));
     exposures.sort((a, b) => a.date.localeCompare(b.date));
     const activityRevision = revisionOf(activities);
