@@ -511,6 +511,7 @@ export async function evaluateTrainingWithIntent(
                     utilityScore: candidate.utilityScore,
                     excludedReasons: candidate.excludedReasons,
                 })),
+                droppedContributorObjectives: intent.droppedContributorObjectives,
             },
         };
     }
@@ -529,6 +530,7 @@ export async function evaluateTrainingWithIntent(
                 utilityScore: candidate.utilityScore,
                 excludedReasons: candidate.excludedReasons,
             })),
+            droppedContributorObjectives: intent.droppedContributorObjectives,
         },
     };
 }

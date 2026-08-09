@@ -572,4 +572,34 @@ describe('prepareWeekAheadPlanSeed: multi-event contributor wiring (Phase 5.6)',
         // The B-event contributor (12 days out, high repeatedSurges) adds one.
         expect(withContributorSeed.microcycle.objectives.find(o => o.key === 'race_specific_endurance')).toBeDefined();
     });
+
+    it("a dropped contributor objective's reason survives from the resolver through the seed into the final WeekAheadPlan", () => {
+        const context = baseContext();
+        const { readiness, todayRec, tomorrowRec } = buildTodayAndTomorrow(context);
+        const aEvent = cyclingEvent('2026-08-14'); // 7 days out from 2026-08-07 -- inside the 14-day A-taper window
+        const bEvent: UserEvent = {
+            id: 'b-event', title: 'Local Crit', date: '2026-08-25', priority: 'B', lifecycle: 'scheduled', category: 'cycling_event',
+            // thresholdPower >= 0.5 and outside its own 5-day B-taper window (18 days out)
+            // -- objectivesFromDemand would generate threshold_quality on its own, so the
+            // only reason it's absent from the merged seed is the authority-taper drop.
+            demandProfile: { aerobicEndurance: 0.7, thresholdPower: 0.9, vo2MaxPower: 0, repeatedSurges: 0, sprintPower: 0.2, fatigueResistance: 0.6, neuromuscular: 0.3 },
+        };
+        const events = [aEvent, bEvent];
+
+        const seed = prepareWeekAheadPlanSeed(readiness, events, '2026-08-07', []);
+        expect(seed.microcycle.objectives.some(o => o.key === 'threshold_quality')).toBe(false);
+        const seedDropped = seed.droppedContributorObjectives?.find(d => d.objectiveKey === 'threshold_quality');
+        expect(seedDropped).toBeDefined();
+        expect(seedDropped?.eventId).toBe('b-event');
+        expect(seedDropped?.reason).toBe('inadmissible_during_taper');
+        expect(seedDropped?.message).toContain('taper window');
+
+        // The unit-level resolver's result is not enough on its own -- the same drop must
+        // reach the actual WeekAheadPlan the live app renders and persists, not just the
+        // intermediate seed.
+        const plan = generateWeekAheadPlan(readiness, context, null, '2026-08-07', todayRec, tomorrowRec, seed, { days: 7, events });
+        expect(plan.droppedContributorObjectives).toEqual(seed.droppedContributorObjectives);
+        const planDropped = plan.droppedContributorObjectives.find(d => d.objectiveKey === 'threshold_quality');
+        expect(planDropped?.eventId).toBe('b-event');
+    });
 });

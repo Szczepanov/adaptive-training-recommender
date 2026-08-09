@@ -234,6 +234,24 @@ export interface ObjectiveProgress {
     rawCompletedCredit: number;
 }
 
+// --- Phase 5.6: one taper authority, multiple demand contributors ---
+// Canonical location for periodization.ts's resolveMultiEventObjectives result shape --
+// lives here (not periodization.ts) so decisionTrace/RecommendationAudit below can
+// reference it without periodization.ts importing back from models.ts.
+
+export type ObjectiveDropReason = 'inadmissible_during_taper';
+
+export interface DroppedContributorObjective {
+    eventId: string;
+    eventTitle: string;
+    objectiveKey: ObjectiveKey;
+    reason: ObjectiveDropReason;
+    /** Athlete-facing explanation, not just a machine code -- see the plan's own framing:
+     *  "your B-event's threshold session was dropped because it fell in A-event race
+     *  week" is actionable; a quietly reweighted plan teaches the athlete nothing. */
+    message: string;
+}
+
 export interface MicrocycleState {
     windowStartDate: string; // YYYY-MM-DD (Warsaw-local start date)
     objectives: WeeklyObjective[];
@@ -468,6 +486,11 @@ export interface Recommendation {
             utilityScore: number;
             excludedReasons: string[];
         }>;
+        /** Phase 5.6: contributor objectives dropped from this decision's microcycle
+         *  because they fell inadmissible during the taper authority's taper window -- see
+         *  periodization.ts resolveMultiEventObjectives. Empty in the overwhelmingly
+         *  common single-or-no-event case. */
+        droppedContributorObjectives: DroppedContributorObjective[];
     };
 }
 
@@ -1009,6 +1032,10 @@ export interface RecommendationAudit {
         utilityScore: number;
         excludedReasons: string[];
     }>;
+    /** Phase 5.6: carried through from the decision's decisionTrace -- see
+     *  DroppedContributorObjective's own doc comment. Empty in the overwhelmingly common
+     *  single-or-no-event case. */
+    droppedContributorObjectives: DroppedContributorObjective[];
 }
 
 // --- Type Utilities ---

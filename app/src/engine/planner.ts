@@ -26,7 +26,7 @@ export interface PlannedObjectiveCredit {
     earnedCredit: number;
 }
 import { resolveAvailability } from './schedule';
-import { isTemplatePhaseEligible, evaluatePeriodizationPhase, resolveMultiEventObjectives } from './periodization';
+import { isTemplatePhaseEligible, evaluatePeriodizationPhase, resolveMultiEventObjectives, type DroppedContributorObjective } from './periodization';
 import { eligibleTemplates } from './eligibility';
 import { addDaysToLocalDateString, getDayDiff } from '../utils/localDate';
 import {
@@ -84,12 +84,18 @@ export interface WeekAheadPlan {
     days: WeekAheadDay[];
     objectiveCredits: PlannedObjectiveCredit[];
     microcycleObjectives: WeeklyObjective[];
+    /** Phase 5.6 contributor objectives dropped because they fell inadmissible during the
+     *  taper authority's taper window -- see periodization.ts resolveMultiEventObjectives
+     *  and each entry's own athlete-facing `message`. Empty in the overwhelmingly common
+     *  single-or-no-event case. */
+    droppedContributorObjectives: DroppedContributorObjective[];
 }
 
 export interface WeekAheadPlanSeed {
     microcycle: MicrocycleState;
     fatigue: FatigueState;
     trailingHistory?: (RecentHistoryEntry | SessionHistoryEntry)[];
+    droppedContributorObjectives?: DroppedContributorObjective[];
 }
 
 export interface WeekAheadOptions {
@@ -481,10 +487,8 @@ export function prepareWeekAheadPlanSeed(
         // evaluatePeriodizationPhase's total order above), multiple demand contributors.
         // A no-op for the common single-or-no-event case (nothing else in `events` falls
         // in another event's contribution window).
-        microcycle = {
-            ...microcycle,
-            objectives: resolveMultiEventObjectives(events, todayDate, periodization, microcycle.objectives).objectives,
-        };
+        const multiEventResolution = resolveMultiEventObjectives(events, todayDate, periodization, microcycle.objectives);
+        microcycle = { ...microcycle, objectives: multiEventResolution.objectives };
         lightweightHistory.forEach(h => {
             const typeStr = 'type' in h && typeof h.type === 'string' ? h.type : undefined;
             const modality = (h.modality ?? typeStr ?? 'None') as SessionTemplate['modality'];
@@ -503,15 +507,14 @@ export function prepareWeekAheadPlanSeed(
                 todayDate,
             ),
             trailingHistory: projectTrailingHistory(history),
+            droppedContributorObjectives: multiEventResolution.droppedContributorObjectives,
         };
     }
 
     let microcycle = generateWeeklyObjectives(periodization.phase, todayDate, periodization.focusEvent);
     // Phase 5.6: see the completed-history branch above for the same wiring.
-    microcycle = {
-        ...microcycle,
-        objectives: resolveMultiEventObjectives(events, todayDate, periodization, microcycle.objectives).objectives,
-    };
+    const multiEventResolution = resolveMultiEventObjectives(events, todayDate, periodization, microcycle.objectives);
+    microcycle = { ...microcycle, objectives: multiEventResolution.objectives };
     lightweightHistory.forEach(h => {
         const typeStr = 'type' in h && typeof h.type === 'string' ? h.type : undefined;
         const modality = (h.modality ?? typeStr ?? 'None') as SessionTemplate['modality'];
@@ -523,6 +526,7 @@ export function prepareWeekAheadPlanSeed(
         microcycle,
         fatigue,
         trailingHistory: projectTrailingHistory(history),
+        droppedContributorObjectives: multiEventResolution.droppedContributorObjectives,
     };
 }
 
@@ -622,6 +626,19 @@ export function generateWeekAheadPlan(
 
     for (let offset = resultDays.length + 1; offset <= totalDays; offset++) {
         const date = addDaysToLocalDateString(todayDate, offset);
+        // Recomputed per day for template eligibility (isTemplatePhaseEligible below) and
+        // fatigue/anchor logic, but NOT for the objective SET itself: `microcycle.objectives`
+        // (including which Phase 5.6 contributor objectives survived resolveMultiEventObjectives)
+        // was seeded once at todayDate by resolveTrainingIntent/prepareWeekAheadPlanSeed and
+        // is carried unchanged through every day of this loop. A contributor/authority
+        // taper-window transition that falls strictly inside the horizon (e.g. the
+        // authority enters its 14-day taper on day 2 of a 7-day plan, or a contributor
+        // enters its own 35-day contribution window mid-horizon) is therefore not reflected
+        // in which objectives are admissible on days after the transition -- a known,
+        // recorded gap (not silently unnoticed), deliberately not addressed in the same
+        // change that first wired Phase 5.6 into the live path: fixing it requires deciding
+        // how to handle an objective's already-accrued mid-week credit when its
+        // admissibility changes, which is a product question, not just an engineering one.
         const periodization = evaluatePeriodizationPhase(events, date);
         const availability = resolveAvailability(date, null, fixedActivities, context);
 
@@ -764,6 +781,7 @@ export function generateWeekAheadPlan(
         days: resultDays,
         objectiveCredits,
         microcycleObjectives: microcycle.objectives ?? [],
+        droppedContributorObjectives: seed.droppedContributorObjectives ?? [],
     };
 }
 
@@ -792,6 +810,7 @@ export async function generateWeekAheadPlanWithIntent(
             microcycle: intent.microcycle,
             fatigue: intent.fatigue,
             trailingHistory: trailingHistoryFromCompletedExposures(intent.history, todayDate),
+            droppedContributorObjectives: intent.droppedContributorObjectives,
         },
         { ...options, events },
     );

@@ -132,4 +132,15 @@ describe('FixedActivityService persistence shape', () => {
         const result = await service.getActivity('u1', 'bad-1');
         expect(result).toBeNull();
     });
+
+    it('getActivity returns null for a valid but differently-owned document rather than trusting the doc path alone', async () => {
+        firestore.getDoc.mockResolvedValue({
+            exists: () => true,
+            data: () => ({ ...validActivity, userId: 'someone-else', createdAt: '2026-08-01T00:00:00.000Z', updatedAt: '2026-08-01T00:00:00.000Z' }),
+            id: 'activity-1',
+        });
+        const service = new FixedActivityService();
+        const result = await service.getActivity('u1', 'activity-1');
+        expect(result).toBeNull();
+    });
 });

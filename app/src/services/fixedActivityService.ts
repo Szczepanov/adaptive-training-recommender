@@ -79,7 +79,11 @@ export class FixedActivityService {
         const docSnap = await getDoc(docRef);
         if (!docSnap.exists()) return null;
         const validation = validateFixedActivity({ ...docSnap.data(), id: docSnap.id });
-        if (!validation.isValid || !validation.data) return null;
+        // The document's own `userId` field must match the requested owner -- unlike
+        // listAll's `where('userId', '==', userId)` query, a direct doc-path read has no
+        // query-level ownership filter, so a stored field that disagrees with the path
+        // (e.g. from a bug or a migration mistake) must not be trusted implicitly.
+        if (!validation.isValid || !validation.data || validation.data.userId !== userId) return null;
         return { ...validation.data, id: docSnap.id };
     }
 

@@ -103,6 +103,34 @@ describe('resolveMultiEventObjectives (Phase 5.6)', () => {
         expect(resolution.droppedContributorObjectives).toEqual([]);
     });
 
+    it('two contributors of different modalities sharing an objective key union their allowedModalities, order-invariant', () => {
+        // A Running B-event and a Cycling B-event both produce threshold_quality
+        // (thresholdPower >= 0.5, not tapering). objectivesFromDemand scopes each
+        // contributor's own qualification.allowedModalities to its own event category, so
+        // a naive first-contributor-wins merge would let whichever one is processed first
+        // silently exclude the other modality's sessions from satisfying the shared key.
+        const aEvent = event({ id: 'a-event', date: '2026-10-17', priority: 'A', demandProfile: ZERO_DEMAND }); // far out, not tapering
+        const bRunning = event({ id: 'b-running', date: '2026-08-25', priority: 'B', category: 'running_race', demandProfile: cyclingDemand });
+        const bCycling = event({ id: 'b-cycling', date: '2026-08-20', priority: 'B', category: 'cycling_event', demandProfile: cyclingDemand });
+        const currentDate = '2026-08-08';
+
+        const authorityResult = evaluatePeriodizationPhase([aEvent, bRunning, bCycling], currentDate);
+        expect(authorityResult.phase.taperActive).toBe(false);
+
+        const forward = resolveMultiEventObjectives([aEvent, bRunning, bCycling], currentDate, authorityResult, []);
+        const reversed = resolveMultiEventObjectives([aEvent, bCycling, bRunning], currentDate, authorityResult, []);
+
+        const forwardThreshold = forward.objectives.find(o => o.key === 'threshold_quality');
+        const reversedThreshold = reversed.objectives.find(o => o.key === 'threshold_quality');
+
+        expect(forwardThreshold).toBeDefined();
+        expect(reversedThreshold).toBeDefined();
+        expect(forwardThreshold?.qualification?.allowedModalities?.slice().sort()).toEqual(['Cycling', 'Running']);
+        // Order-invariant: swapping which contributor is processed first must not change
+        // the merged result.
+        expect(reversedThreshold?.qualification?.allowedModalities?.slice().sort()).toEqual(['Cycling', 'Running']);
+    });
+
     it('two contributors sharing an objective key resolve to max(requiredCredit), not sum', () => {
         const aEvent = event({ id: 'a-event', date: '2026-10-17', priority: 'A', demandProfile: ZERO_DEMAND });
         const bEvent1 = event({ id: 'b-1', date: '2026-08-20', priority: 'B', demandProfile: { ...cyclingDemand, aerobicEndurance: 0.9 } });

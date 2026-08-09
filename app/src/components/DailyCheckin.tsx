@@ -143,7 +143,20 @@ export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) 
 
   const handleBooleanToggle = (field: 'painOrInjury' | 'illnessSymptoms' | 'unusuallyLimitedTime' | 'alreadyTrainedToday') => {
     if (!checkin) return;
-    setCheckin({ ...checkin, [field]: !checkin[field] });
+    const next = !checkin[field];
+    if (field === 'painOrInjury' && !next) {
+      // The tissue-response editor below only renders while painOrInjury is true -- clear
+      // any previously entered tissueResponses the moment the flag flips false, rather than
+      // leaving them hidden-but-persisted. mapContextFromGoalsAndTrainingSettings consumes
+      // tissueResponses regardless of this flag, so a stale entry would keep restricting
+      // the athlete on a region they can no longer see or edit, after explicitly reporting
+      // "no pain/injury".
+      const cleared: Partial<DailySubjectiveCheckin> = { ...checkin, [field]: next };
+      delete cleared.tissueResponses;
+      setCheckin(cleared);
+      return;
+    }
+    setCheckin({ ...checkin, [field]: next });
   };
 
   // Per-region tissue response (Phase 5.4) -- see injuryPolicy.ts resolveEffectiveInjuryConstraints
@@ -252,7 +265,7 @@ export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) 
       setError(null);
       const now = new Date().toISOString();
       const isFirstSubmission = !checkin.initialSubmittedAt || !checkin.dataQuality?.isComplete;
-      
+
       const checkinToSave: Partial<DailySubjectiveCheckin> = {
         ...checkin,
         submittedAt: now,

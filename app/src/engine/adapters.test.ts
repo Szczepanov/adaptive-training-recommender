@@ -55,4 +55,24 @@ describe('mapContextFromGoalsAndTrainingSettings (Phase 5.4 tissue response wiri
         const context = mapContextFromGoalsAndTrainingSettings([], settings, null, '2026-08-08');
         expect(context.constraints.impliedGuardrails).toContain('avoid_overhead_pressing');
     });
+
+    // Regression coverage for the Home.tsx forecast-leak bug: a today-only tissue-derived
+    // restriction (no standing InjuryConstraint at all) must restrict a decision built WITH
+    // today's checkin, but must NOT restrict a decision built without one -- which is
+    // exactly the distinction Home.tsx's `context` (today) vs `forecastContext`
+    // (tomorrow's provisional plan and the week-ahead strip) relies on to keep a single
+    // day's tissue flag from silently blocking Running on every projected day of the week.
+    it("a today-only tissue-derived restriction (no standing InjuryConstraint) restricts today's context but not a forecast context built without the checkin", () => {
+        const settings = testTrainingSettings({ injuries: [] });
+        const checkin = testCheckin({
+            painOrInjury: true,
+            tissueResponses: { knee: { region: 'knee', morningState: 'severe' } },
+        });
+
+        const todayContext = mapContextFromGoalsAndTrainingSettings([], settings, null, '2026-08-08', checkin);
+        expect(todayContext.constraints.restrictedModalities).toContain('Running');
+
+        const forecastContext = mapContextFromGoalsAndTrainingSettings([], settings, null, '2026-08-08', null);
+        expect(forecastContext.constraints.restrictedModalities).not.toContain('Running');
+    });
 });

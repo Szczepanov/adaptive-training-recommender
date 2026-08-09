@@ -400,6 +400,7 @@ export async function generateWeekAheadPlanWithIntentBeamSearch(
             microcycle: intent.microcycle,
             fatigue: intent.fatigue,
             trailingHistory: trailingHistoryFromCompletedExposures(intent.history, todayDate),
+            droppedContributorObjectives: intent.droppedContributorObjectives,
         },
         { ...options, events },
         beamWidth,
@@ -410,5 +411,6 @@ export async function generateWeekAheadPlanWithIntentBeamSearch(
         days: result.days,
         objectiveCredits: result.objectiveCredits,
         microcycleObjectives: result.microcycleObjectives,
+        droppedContributorObjectives: intent.droppedContributorObjectives,
     };
 }

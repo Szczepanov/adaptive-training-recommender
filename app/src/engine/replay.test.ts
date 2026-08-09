@@ -13,6 +13,7 @@ function auditedRecommendation(): DailyRecommendation {
             history: { completedEventCount: 1, unmatchedEventCount: 0, sourceStatuses: { activities: 'AVAILABLE', recommendations: 'AVAILABLE', manualTraining: 'MISSING' } },
             envelope: { safetyRestrictedModalityCount: 0, planMaxAllowableTier: 'Easy' },
             candidateScores: [{ templateId: 'easy_01', utilityScore: 1, excludedReasons: [] }, { templateId: 'easy_02', utilityScore: 0.5, excludedReasons: [] }],
+            droppedContributorObjectives: [],
         },
     };
 }

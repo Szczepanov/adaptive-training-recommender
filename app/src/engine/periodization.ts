@@ -1,7 +1,9 @@
 import type {
+    DroppedContributorObjective,
     EventDemandProfile,
     EventPriority,
     GoalCategory,
+    ObjectiveDropReason,
     ObjectiveKey,
     TemplatePhaseEligibility,
     SessionTemplate,
@@ -9,6 +11,10 @@ import type {
     UserGoal,
     WeeklyObjective,
 } from './models';
+// Re-exported for existing importers (e.g. planner.ts, trainingIntent.ts) -- the
+// canonical type definitions live in models.ts (see its own comment) so
+// decisionTrace/RecommendationAudit there can reference them without a circular import.
+export type { DroppedContributorObjective, ObjectiveDropReason };
 import { resolveDemandProfile } from './eventPresets';
 
 export interface PhaseWeights {
@@ -440,19 +446,6 @@ export function goalToUserEvent(goal: UserGoal & { id?: string }): UserEvent | n
  *  enough to shape training" boundary already used for a single governing event. */
 const CONTRIBUTION_WINDOW_DAYS = 35;
 
-export type ObjectiveDropReason = 'inadmissible_during_taper';
-
-export interface DroppedContributorObjective {
-    eventId: string;
-    eventTitle: string;
-    objectiveKey: ObjectiveKey;
-    reason: ObjectiveDropReason;
-    /** Athlete-facing explanation, not just a machine code -- see the plan's own framing:
-     *  "your B-event's threshold session was dropped because it fell in A-event race
-     *  week" is actionable; a quietly reweighted plan teaches the athlete nothing. */
-    message: string;
-}
-
 export interface MultiEventObjectiveResolution {
     objectives: WeeklyObjective[];
     droppedContributorObjectives: DroppedContributorObjective[];
@@ -492,6 +485,9 @@ export function resolveMultiEventObjectives(
 ): MultiEventObjectiveResolution {
     const merged: WeeklyObjective[] = authorityObjectives.map(objective => ({ ...objective }));
     const byKey = new Map<ObjectiveKey, WeeklyObjective>(merged.map(objective => [objective.key, objective]));
+    // Tracks which keys are the authority's own (always wins its fields outright) versus a
+    // previously-merged contributor's (eligible for the union merge below) -- see the loop.
+    const authorityKeys = new Set(authorityObjectives.map(objective => objective.key));
     const droppedContributorObjectives: DroppedContributorObjective[] = [];
 
     const authorityEventId = authorityResult.focusEvent?.id ?? null;
@@ -499,16 +495,31 @@ export function resolveMultiEventObjectives(
         return { objectives: merged, droppedContributorObjectives };
     }
 
-    for (const event of events) {
-        if (event.id === authorityEventId) continue;
-        // Contributors are forward-looking, active commitments only -- a stale/cancelled/
-        // DNS/completed event has nothing live to contribute.
-        if (event.lifecycle !== 'scheduled') continue;
+    // Deterministic contributor order -- mirrors evaluatePeriodizationPhase's own total
+    // order (priority, then proximity, then planning date, then id) so which contributor
+    // "wins" a same-key collision below never depends on the caller-supplied `events`
+    // array order. Without this, two contributors of different modalities producing the
+    // same objective key (e.g. a Running B-event and a Cycling B-event both needing
+    // threshold_quality) could see the winner -- and therefore the merged qualification's
+    // allowedModalities -- flip depending on array order alone.
+    const contributors = events
+        .filter(event => event.id !== authorityEventId && event.lifecycle === 'scheduled')
+        .map(event => {
+            const targetDate = event.timing?.planningDate ?? event.date;
+            return { event, targetDate, daysToEvent: getDaysBetween(currentDateStr, targetDate) };
+        })
+        .filter(({ daysToEvent }) => daysToEvent >= 0 && daysToEvent <= CONTRIBUTION_WINDOW_DAYS)
+        .sort((a, b) => {
+            const prioMap = { A: 1, B: 2, C: 3 };
+            if (prioMap[a.event.priority] !== prioMap[b.event.priority]) {
+                return prioMap[a.event.priority] - prioMap[b.event.priority];
+            }
+            if (a.daysToEvent !== b.daysToEvent) return a.daysToEvent - b.daysToEvent;
+            if (a.targetDate !== b.targetDate) return a.targetDate < b.targetDate ? -1 : 1;
+            return a.event.id < b.event.id ? -1 : a.event.id > b.event.id ? 1 : 0;
+        });
 
-        const targetDate = event.timing?.planningDate ?? event.date;
-        const daysToEvent = getDaysBetween(currentDateStr, targetDate);
-        if (daysToEvent < 0 || daysToEvent > CONTRIBUTION_WINDOW_DAYS) continue;
-
+    for (const { event, daysToEvent } of contributors) {
         const contributorTaperWindowDays = event.priority === 'A' ? 14 : (event.priority === 'B' ? 5 : 0);
         const contributorTaperActive = contributorTaperWindowDays > 0 && daysToEvent <= contributorTaperWindowDays;
         const allowedModalities = modalitiesForEventCategory(event.category);
@@ -547,6 +558,28 @@ export function resolveMultiEventObjectives(
                 // win -- only the required amount is allowed to grow, and only grow.
                 existing.requiredCredit = contributorRequired;
                 existing.targetExposures = Math.max(existing.targetExposures, objective.targetExposures);
+            }
+
+            // Contributor-vs-contributor collisions only (never the authority's own entry,
+            // which always wins its fields outright per the doc comment above): union
+            // compatible modality qualifiers rather than letting the first-processed
+            // contributor's allowedModalities silently exclude a later contributor's
+            // sessions from satisfying the same key. Undefined on either side means "any
+            // modality accepted" -- unioning "any" with anything is still "any", so the
+            // restriction is dropped rather than merged with the other list.
+            if (!authorityKeys.has(objective.key) && existing.qualification) {
+                const existingModalities = existing.qualification.allowedModalities;
+                const contributorModalities = objective.qualification?.allowedModalities;
+                if (existingModalities && contributorModalities) {
+                    existing.qualification = {
+                        ...existing.qualification,
+                        allowedModalities: Array.from(new Set([...existingModalities, ...contributorModalities])),
+                    };
+                } else if (existingModalities || contributorModalities) {
+                    const widened = { ...existing.qualification };
+                    delete widened.allowedModalities;
+                    existing.qualification = widened;
+                }
             }
         }
     }
