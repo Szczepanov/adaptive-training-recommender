@@ -1,6 +1,7 @@
 import type { DailyRecommendation, DeliveredDose, SessionTemplate, TrainingRecord, WorkoutCostProfile, WorkoutStimulusProfile } from './models';
 import type { TrainingHistorySnapshot } from './trainingHistorySnapshot';
 import { ENRICHED_TEMPLATES } from './templates';
+import { workoutForTemplate } from '../workouts/prescription';
 
 /** A completed, adherence-backed exposure reconstructed for the rolling engine. */
 export interface CompletedExposure {
@@ -8,6 +9,12 @@ export interface CompletedExposure {
     costProfile: WorkoutCostProfile;
     trainingRecordLike: TrainingRecord;
     deliveredDose?: DeliveredDose;
+    /** Exact identity is optional and fails closed for coverage when unavailable. It is
+     * separate from stimulus provenance: an inferred Garmin vector may still earn
+     * adaptation while only exact template/workout identity can fulfil an authored
+     * weekly programming role (ADR-0016). */
+    templateId?: string;
+    workoutId?: string;
     /** Present only when the completed work is known to match a catalog template or
      * reconciled evidence supplies an explicit stimulus vector. This prevents the
      * microcycle ledger from re-inferring a precise objective from loose title text. */
@@ -45,6 +52,7 @@ export function exposureFromRecommendation(date: string, rec: DailyRecommendatio
         training_effect: 0,
         intensity_tag: '',
     };
+    const exactWorkoutId = rec.adherence.followed ? workoutForTemplate(template.id)?.id : undefined;
     return {
         date,
         costProfile: template.costProfile ?? ZERO_COST,
@@ -54,7 +62,13 @@ export function exposureFromRecommendation(date: string, rec: DailyRecommendatio
         // catalog identity. A modified session does not, so it intentionally falls back
         // to the conservative unstructured-history path.
         ...(rec.adherence.followed && template.stimulusProfile
-            ? { stimulusProfile: template.stimulusProfile, modality: template.modality, category: template.category }
+            ? {
+                stimulusProfile: template.stimulusProfile,
+                modality: template.modality,
+                category: template.category,
+                templateId: template.id,
+                ...(exactWorkoutId ? { workoutId: exactWorkoutId } : {}),
+            }
             : {}),
     };
 }
