@@ -1,4 +1,4 @@
-import { doc, getDoc, setDoc, deleteDoc, collection, query, where, orderBy, limit, getDocs } from 'firebase/firestore';
+import { doc, getDoc, setDoc, deleteDoc, deleteField, collection, query, where, orderBy, limit, getDocs } from 'firebase/firestore';
 import { getDb } from '../firebase';
 import type { DailySubjectiveCheckin } from '../engine/models';
 import type { DataState } from '../engine/dataState';
@@ -75,10 +75,24 @@ export class CheckinService {
             }
 
             const validatedCheckin = validation.data!;
-            
-            // Save to Firestore
+
+            // Save to Firestore. validateCheckin omits `tissueResponses` from its result
+            // entirely whenever it's absent -- with `merge: true`, an omitted key leaves
+            // whatever was already stored untouched, it does NOT clear it. So a day that
+            // previously had tissueResponses and now reports painOrInjury: false would
+            // otherwise keep the stale region data live in Firestore even though the UI
+            // (DailyCheckin's handleBooleanToggle) already cleared it locally --
+            // mapContextFromGoalsAndTrainingSettings consumes tissueResponses regardless of
+            // painOrInjury, so a stale value would keep restricting the athlete after they
+            // explicitly reported no pain/injury. Explicitly delete the field whenever this
+            // write's own painOrInjury is false, covering every upsert path (including
+            // MinimumSafetyCheckin's partial safety-subset save), not just DailyCheckin's.
+            const payload: Record<string, unknown> = { ...validatedCheckin };
+            if (!validatedCheckin.painOrInjury) {
+                payload.tissueResponses = deleteField();
+            }
             const docRef = doc(getDb(), 'users', userId, this.collectionPath, validatedCheckin.date);
-            await setDoc(docRef, validatedCheckin, { merge: true });
+            await setDoc(docRef, payload, { merge: true });
 
             return validatedCheckin;
         } catch (error) {

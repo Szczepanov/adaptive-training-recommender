@@ -22,6 +22,7 @@ describe('recommendation provenance', () => {
             decisionTrace: {
                 policyVersion: POLICY_VERSION,
                 candidateScores: [{ templateId: template.id, utilityScore: 1.25, excludedReasons: [] }],
+                droppedContributorObjectives: [],
             },
         };
         const snapshot = buildTrainingHistorySnapshot(
@@ -46,6 +47,7 @@ describe('recommendation provenance', () => {
             plannedDose: { volume: 0.6, intensity: 1 },
             executionDose: { volume: 0.5, intensity: 1 },
             candidateScores: [{ templateId: template.id, utilityScore: 1.25, excludedReasons: [] }],
+            droppedContributorObjectives: [],
         });
         expect(JSON.stringify(audit)).not.toContain('This should never');
     });
@@ -64,6 +66,7 @@ describe('recommendation provenance', () => {
             decisionTrace: {
                 policyVersion: POLICY_VERSION,
                 candidateScores: [{ templateId: template.id, utilityScore: 1.25, excludedReasons: [] }],
+                droppedContributorObjectives: [],
             },
         };
         const snapshot = buildTrainingHistorySnapshot(

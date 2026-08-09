@@ -26,7 +26,7 @@ export interface PlannedObjectiveCredit {
     earnedCredit: number;
 }
 import { resolveAvailability } from './schedule';
-import { isTemplatePhaseEligible, evaluatePeriodizationPhase } from './periodization';
+import { isTemplatePhaseEligible, evaluatePeriodizationPhase, resolveMultiEventObjectives, type DroppedContributorObjective } from './periodization';
 import { eligibleTemplates } from './eligibility';
 import { addDaysToLocalDateString, getDayDiff } from '../utils/localDate';
 import {
@@ -51,6 +51,7 @@ import {
     rankCandidates,
 } from './optimizer';
 import { ENRICHED_TEMPLATES } from './templates';
+import { resolveMinimumDaysAfterHardLowerBody } from './planningCandidate';
 import { resolvePlannedDoseForDate, resolveTrainingIntent } from './trainingIntent';
 import { resolvePlanDefinitionForEvent } from './planSchedule';
 import { deriveObjectiveCreditFromProfile } from './stimulus';
@@ -83,12 +84,18 @@ export interface WeekAheadPlan {
     days: WeekAheadDay[];
     objectiveCredits: PlannedObjectiveCredit[];
     microcycleObjectives: WeeklyObjective[];
+    /** Phase 5.6 contributor objectives dropped because they fell inadmissible during the
+     *  taper authority's taper window -- see periodization.ts resolveMultiEventObjectives
+     *  and each entry's own athlete-facing `message`. Empty in the overwhelmingly common
+     *  single-or-no-event case. */
+    droppedContributorObjectives: DroppedContributorObjective[];
 }
 
 export interface WeekAheadPlanSeed {
     microcycle: MicrocycleState;
     fatigue: FatigueState;
     trailingHistory?: (RecentHistoryEntry | SessionHistoryEntry)[];
+    droppedContributorObjectives?: DroppedContributorObjective[];
 }
 
 export interface WeekAheadOptions {
@@ -178,22 +185,25 @@ export function projectFatigueForRankingDate(
  * rest/recovery day. 0.6 remains the modify boundary. */
 export const PROJECTED_FATIGUE_RECOVER_THRESHOLD = 0.65;
 export const PROJECTED_FATIGUE_MODIFY_THRESHOLD = 0.6;
-const PROJECTED_MODIFY_MAX_SYSTEMIC_COST = 0.5;
+// Exported for reuse by sequenceSearch.ts's beam-search prototype (Phase 5.1) -- these
+// three are pure, stable helpers with no state of their own; exporting them keeps one
+// source of truth instead of a second copy of the fatigue-tier gating logic.
+export const PROJECTED_MODIFY_MAX_SYSTEMIC_COST = 0.5;
 
-function maxFatigueDimension(fatigue: DimensionalFatigue): number {
+export function maxFatigueDimension(fatigue: DimensionalFatigue): number {
     return Math.max(
         fatigue.systemic, fatigue.cardiovascular, fatigue.lowerBody,
         fatigue.upperBody, fatigue.impactTissue, fatigue.neuromuscular
     );
 }
 
-function fatigueTierFor(peakFatigue: number): 'train' | 'modify' | 'recover' {
+export function fatigueTierFor(peakFatigue: number): 'train' | 'modify' | 'recover' {
     if (peakFatigue >= PROJECTED_FATIGUE_RECOVER_THRESHOLD) return 'recover';
     if (peakFatigue >= PROJECTED_FATIGUE_MODIFY_THRESHOLD) return 'modify';
     return 'train';
 }
 
-const NEUTRAL_PREFERENCES: UserPreferences = {
+export const NEUTRAL_PREFERENCES: UserPreferences = {
     userId: '',
     preferredRecoveryStyle: 'mixed',
     defaultWeekdayTimeMin: 45,
@@ -210,15 +220,15 @@ const NEUTRAL_PREFERENCES: UserPreferences = {
     updatedAt: '',
 };
 
-function displayModeFromCategory(category: SessionTemplate['category']): 'train' | 'recover' {
+export function displayModeFromCategory(category: SessionTemplate['category']): 'train' | 'recover' {
     return category === 'Rest' || category === 'Mobility/Recovery' ? 'recover' : 'train';
 }
 
-function enrichedCostProfile(templateId: string): WorkoutCostProfile {
+export function enrichedCostProfile(templateId: string): WorkoutCostProfile {
     return ENRICHED_TEMPLATES.find(t => t.id === templateId)?.costProfile ?? ZERO_COST;
 }
 
-function enrichedStimulusProfile(template: SessionTemplate): WorkoutStimulusProfile {
+export function enrichedStimulusProfile(template: SessionTemplate): WorkoutStimulusProfile {
     return template.stimulusProfile ?? ENRICHED_TEMPLATES.find(t => t.id === template.id)?.stimulusProfile ?? ZERO_STIMULUS;
 }
 
@@ -280,7 +290,7 @@ export function applyProjectedObjectiveCredits(
     };
 }
 
-function isAdjacentDate(date: string, anchorDate: string | null): boolean {
+export function isAdjacentDate(date: string, anchorDate: string | null): boolean {
     if (!anchorDate) return false;
     return addDaysToLocalDateString(date, 1) === anchorDate || addDaysToLocalDateString(date, -1) === anchorDate;
 }
@@ -409,6 +419,25 @@ export function projectTrailingHistory(
     });
 }
 
+/** Shared `CompletedExposure[]` -> trailing-history projection for `resolveTrainingIntent`
+ *  callers. Used by both the live greedy entry point (`generateWeekAheadPlanWithIntent`
+ *  below) and the beam-search comparison entry point
+ *  (`sequenceSearch.ts`'s `generateWeekAheadPlanWithIntentBeamSearch`) so ADR-0015's
+ *  comparison stays apples-to-apples -- if this mapping ever drifted between the two call
+ *  sites, the comparison would silently stop being fair. */
+export function trailingHistoryFromCompletedExposures(
+    history: CompletedExposure[],
+    todayDate: string
+): RecentHistoryEntry[] {
+    return history.map(e => ({
+        date: ('completedDate' in e && typeof e.completedDate === 'string' ? e.completedDate : 'date' in e && typeof e.date === 'string' ? e.date : todayDate),
+        modality: e.modality,
+        category: e.category,
+        systemicCost: e.costProfile?.systemic ?? 0,
+        lowerBodyCost: e.costProfile?.lowerBody ?? 0,
+    }));
+}
+
 function isCompletedExposure(entry: RecentHistoryEntry | SessionHistoryEntry): entry is CompletedExposure & (RecentHistoryEntry | SessionHistoryEntry) {
     const record = entry as unknown as Record<string, unknown>;
     return typeof record.date === 'string'
@@ -454,6 +483,12 @@ export function prepareWeekAheadPlanSeed(
             completedHistory,
             periodization.focusEvent,
         );
+        // Phase 5.6: one taper authority (periodization.focusEvent, already resolved by
+        // evaluatePeriodizationPhase's total order above), multiple demand contributors.
+        // A no-op for the common single-or-no-event case (nothing else in `events` falls
+        // in another event's contribution window).
+        const multiEventResolution = resolveMultiEventObjectives(events, todayDate, periodization, microcycle.objectives);
+        microcycle = { ...microcycle, objectives: multiEventResolution.objectives };
         lightweightHistory.forEach(h => {
             const typeStr = 'type' in h && typeof h.type === 'string' ? h.type : undefined;
             const modality = (h.modality ?? typeStr ?? 'None') as SessionTemplate['modality'];
@@ -472,10 +507,14 @@ export function prepareWeekAheadPlanSeed(
                 todayDate,
             ),
             trailingHistory: projectTrailingHistory(history),
+            droppedContributorObjectives: multiEventResolution.droppedContributorObjectives,
         };
     }
 
     let microcycle = generateWeeklyObjectives(periodization.phase, todayDate, periodization.focusEvent);
+    // Phase 5.6: see the completed-history branch above for the same wiring.
+    const multiEventResolution = resolveMultiEventObjectives(events, todayDate, periodization, microcycle.objectives);
+    microcycle = { ...microcycle, objectives: multiEventResolution.objectives };
     lightweightHistory.forEach(h => {
         const typeStr = 'type' in h && typeof h.type === 'string' ? h.type : undefined;
         const modality = (h.modality ?? typeStr ?? 'None') as SessionTemplate['modality'];
@@ -487,6 +526,7 @@ export function prepareWeekAheadPlanSeed(
         microcycle,
         fatigue,
         trailingHistory: projectTrailingHistory(history),
+        droppedContributorObjectives: multiEventResolution.droppedContributorObjectives,
     };
 }
 
@@ -586,6 +626,19 @@ export function generateWeekAheadPlan(
 
     for (let offset = resultDays.length + 1; offset <= totalDays; offset++) {
         const date = addDaysToLocalDateString(todayDate, offset);
+        // Recomputed per day for template eligibility (isTemplatePhaseEligible below) and
+        // fatigue/anchor logic, but NOT for the objective SET itself: `microcycle.objectives`
+        // (including which Phase 5.6 contributor objectives survived resolveMultiEventObjectives)
+        // was seeded once at todayDate by resolveTrainingIntent/prepareWeekAheadPlanSeed and
+        // is carried unchanged through every day of this loop. A contributor/authority
+        // taper-window transition that falls strictly inside the horizon (e.g. the
+        // authority enters its 14-day taper on day 2 of a 7-day plan, or a contributor
+        // enters its own 35-day contribution window mid-horizon) is therefore not reflected
+        // in which objectives are admissible on days after the transition -- a known,
+        // recorded gap (not silently unnoticed), deliberately not addressed in the same
+        // change that first wired Phase 5.6 into the live path: fixing it requires deciding
+        // how to handle an objective's already-accrued mid-week credit when its
+        // admissibility changes, which is a product question, not just an engineering one.
         const periodization = evaluatePeriodizationPhase(events, date);
         const availability = resolveAvailability(date, null, fixedActivities, context);
 
@@ -659,7 +712,7 @@ export function generateWeekAheadPlan(
             context,
             effectivePreferences,
             date,
-            { anchorRole, adjacentToAnchor }
+            { anchorRole, adjacentToAnchor, resolveMinimumDaysAfterHardLowerBody }
         );
 
         const rankingResult = rankCandidates(
@@ -728,6 +781,7 @@ export function generateWeekAheadPlan(
         days: resultDays,
         objectiveCredits,
         microcycleObjectives: microcycle.objectives ?? [],
+        droppedContributorObjectives: seed.droppedContributorObjectives ?? [],
     };
 }
 
@@ -755,13 +809,8 @@ export async function generateWeekAheadPlanWithIntent(
         {
             microcycle: intent.microcycle,
             fatigue: intent.fatigue,
-            trailingHistory: intent.history.map(e => ({
-                date: ('completedDate' in e && typeof e.completedDate === 'string' ? e.completedDate : 'date' in e && typeof e.date === 'string' ? e.date : todayDate),
-                modality: e.modality,
-                category: e.category,
-                systemicCost: e.costProfile?.systemic ?? 0,
-                lowerBodyCost: e.costProfile?.lowerBody ?? 0,
-            })),
+            trailingHistory: trailingHistoryFromCompletedExposures(intent.history, todayDate),
+            droppedContributorObjectives: intent.droppedContributorObjectives,
         },
         { ...options, events },
     );

@@ -1107,20 +1107,20 @@
       "totalDays": 28,
       "categoryDistribution": {
         "Moderate Endurance": 5,
-        "Easy Endurance": 7,
-        "Mobility/Recovery": 12,
+        "Easy Endurance": 6,
+        "Mobility/Recovery": 13,
         "Lower-body Strength": 2,
         "Upper-body Strength": 2
       },
       "modalityDistribution": {
-        "Running": 12,
-        "Mobility": 12,
+        "Running": 11,
+        "Mobility": 13,
         "Strength": 4
       },
-      "restOrRecoveryDayCount": 12,
-      "restOrRecoveryDayPct": 42.9,
+      "restOrRecoveryDayCount": 13,
+      "restOrRecoveryDayPct": 46.4,
       "maxConsecutiveSameTemplateStreakWithinCall": 1,
-      "maxConsecutiveSameTemplateStreakAcrossWeeks": 1,
+      "maxConsecutiveSameTemplateStreakAcrossWeeks": 2,
       "objectiveResolution": [
         {
           "key": "zone2_aerobic",
@@ -1214,30 +1214,40 @@
           "date": "2026-08-14",
           "objectiveKey": "strength_maintenance",
           "objectiveTitle": "Strength & Neuromuscular Maintenance",
-          "templateId": "str_upper_01",
-          "templateTitle": "Upper Body Push/Pull",
+          "templateId": "str_lower_01",
+          "templateTitle": "Lower Body Strength & Power",
           "modality": "Strength",
           "earnedCredit": 0.09999999999999998
         },
         {
           "weekIndex": 2,
           "date": "2026-08-21",
-          "objectiveKey": "strength_maintenance",
-          "objectiveTitle": "Strength & Neuromuscular Maintenance",
-          "templateId": "str_lower_01",
-          "templateTitle": "Lower Body Strength & Power",
-          "modality": "Strength",
-          "earnedCredit": 0.19999999999999996
-        },
-        {
-          "weekIndex": 3,
-          "date": "2026-08-28",
           "objectiveKey": "zone2_aerobic",
           "objectiveTitle": "Aerobic Base (Zone 2)",
           "templateId": "end_mod_01",
           "templateTitle": "Steady-State Tempo Run",
           "modality": "Running",
           "earnedCredit": 0.09999999999999987
+        },
+        {
+          "weekIndex": 2,
+          "date": "2026-08-21",
+          "objectiveKey": "threshold_quality",
+          "objectiveTitle": "Threshold Development",
+          "templateId": "end_mod_01",
+          "templateTitle": "Steady-State Tempo Run",
+          "modality": "Running",
+          "earnedCredit": 0.19999999999999996
+        },
+        {
+          "weekIndex": 2,
+          "date": "2026-08-25",
+          "objectiveKey": "strength_maintenance",
+          "objectiveTitle": "Strength & Neuromuscular Maintenance",
+          "templateId": "str_upper_01",
+          "templateTitle": "Upper Body Push/Pull",
+          "modality": "Strength",
+          "earnedCredit": 0.09999999999999998
         },
         {
           "weekIndex": 3,
@@ -1247,11 +1257,21 @@
           "templateId": "end_mod_01",
           "templateTitle": "Steady-State Tempo Run",
           "modality": "Running",
-          "earnedCredit": 0.8
+          "earnedCredit": 0.19999999999999996
+        },
+        {
+          "weekIndex": 3,
+          "date": "2026-09-01",
+          "objectiveKey": "strength_maintenance",
+          "objectiveTitle": "Strength & Neuromuscular Maintenance",
+          "templateId": "str_upper_01",
+          "templateTitle": "Upper Body Push/Pull",
+          "modality": "Strength",
+          "earnedCredit": 0.19999999999999996
         }
       ],
       "utilityDiagnostics": {
-        "fragileSelectionCount": 14,
+        "fragileSelectionCount": 11,
         "lowerBenefitSelectionCount": 0,
         "trainTierRestOrRecoveryCount": 0
       },
@@ -1302,9 +1322,9 @@
       ],
       "anchorScopeNote": "Anchor-day nomination only requires SOME focus event (Race-Specific Endurance templates' phaseEligibility.requiresFocusEvent doesn't check event category), so a nomination can appear even here -- but the optimizer's event-priority penalty for non-matching modalities makes it unlikely to actually win the day's pick. Treat eventSpecificAnchorHit/qualityAnchorHit, not the raw nomination, as the meaningful signal for non-cycling scenarios.",
       "fatigueTierDayCounts": {
-        "train": 4,
+        "train": 3,
         "modify": 4,
-        "recover": 12
+        "recover": 13
       },
       "constraintViolations": []
     },

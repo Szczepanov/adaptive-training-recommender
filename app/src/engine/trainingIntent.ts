@@ -3,7 +3,7 @@ import { computeInternalResponseStrain, buildFatigueStateFromHistory } from './f
 import { buildMicrocycleState, getUnresolvedObjectives } from './microcycle';
 import type { CompletedExposure, TrainingHistoryProvider } from './trainingHistory';
 import type { TrainingHistorySnapshot } from './trainingHistorySnapshot';
-import { evaluatePeriodizationPhase, type PeriodizationResult } from './periodization';
+import { evaluatePeriodizationPhase, resolveMultiEventObjectives, type DroppedContributorObjective, type PeriodizationResult } from './periodization';
 import { resolvePlanDefinitionForEvent, type PlanDefinition } from './planSchedule';
 import { addDaysToLocalDateString } from '../utils/localDate';
 
@@ -26,6 +26,10 @@ export interface TrainingIntent {
     /** Null only for legacy fixture providers that implement reconstruct() alone. */
     historySnapshot: TrainingHistorySnapshot | null;
     microcycle: MicrocycleState;
+    /** Phase 5.6: a contributor objective dropped because it fell inadmissible during the
+     *  taper authority's taper window (see periodization.ts resolveMultiEventObjectives).
+     *  Empty in the overwhelmingly common single-or-no-event case. */
+    droppedContributorObjectives: DroppedContributorObjective[];
     sessionRole?: 'anchor' | 'supporting' | 'recovery';
     recoveryIntent?: {
         reason: PlannedRecoveryReason;
@@ -112,7 +116,7 @@ export async function resolveTrainingIntent(
     const provider = historyProvider ?? (await import('./firestoreTrainingHistory')).firestoreTrainingHistoryProvider;
     const history = historySnapshot?.exposures ?? await provider.reconstruct(userId, date, windowDays);
     const planDefinition = resolvePlanDefinitionForEvent(periodization.focusEvent);
-    const microcycle = buildMicrocycleState(
+    const builtMicrocycle = buildMicrocycleState(
         periodization.phase,
         addDaysToLocalDateString(date, -windowDays),
         history,
@@ -120,6 +124,15 @@ export async function resolveTrainingIntent(
         planDefinition,
         date,
     );
+    // Phase 5.6: one taper authority (periodization.focusEvent, already resolved by
+    // evaluatePeriodizationPhase's total order above), multiple demand contributors. A
+    // no-op for the common single-or-no-event case (nothing else in `events` falls in
+    // another event's contribution window). This is the single seed-building point shared
+    // by today's decision (evaluateTrainingWithIntent), tomorrow's provisional plan
+    // (evaluateNextDayPlanWithIntent), and the week-ahead strip
+    // (generateWeekAheadPlanWithIntent) -- all three call resolveTrainingIntent.
+    const multiEventResolution = resolveMultiEventObjectives(events, date, periodization, builtMicrocycle.objectives);
+    const microcycle: MicrocycleState = { ...builtMicrocycle, objectives: multiEventResolution.objectives };
     const unresolvedObjectives = getUnresolvedObjectives(microcycle);
     const fatigue = buildFatigueStateFromHistory(history, computeInternalResponseStrain(readiness), date);
     const plannedDose = resolvePlannedDoseForDate(
@@ -129,5 +142,8 @@ export async function resolveTrainingIntent(
         planDefinition,
         date,
     );
-    return { periodization, unresolvedObjectives, plannedDose, fatigue, history, historySnapshot, microcycle };
+    return {
+        periodization, unresolvedObjectives, plannedDose, fatigue, history, historySnapshot, microcycle,
+        droppedContributorObjectives: multiEventResolution.droppedContributorObjectives,
+    };
 }

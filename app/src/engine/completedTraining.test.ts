@@ -104,11 +104,28 @@ describe('completed training reconciliation', () => {
         expect(exposure.modality).toBe('Cycling');
     });
 
-    it('withholds stimulus profile and sets unknown confidence for unknown modality', () => {
+    it('still infers a generic stimulus profile from real Garmin measured-effort evidence even when the modality itself is unknown', () => {
+        // Phase 5.5: modality and evidence quality are independent axes -- this activity's
+        // sport couldn't be classified, but it still carries real trainingEffect +
+        // activityTrainingLoad, so it must not be treated as adaptation-neutral.
         const [event] = reconcileCompletedTrainingEvents([activity({ type: 'unknown_sport' })], []);
+        expect(event.evidenceTier).toBe('measuredEffort');
+        const exposure = completedEventToExposure(event);
+        expect(exposure.stimulusConfidence).toBe('inferred');
+        expect(exposure.stimulusProfile).toBeDefined();
+        expect(exposure.stimulusProfile?.aerobicEndurance).toBeGreaterThan(0);
+        expect(exposure.modality).toBeUndefined(); // genuinely unknown -- never fabricated
+    });
+
+    it('withholds stimulus profile and sets unknown confidence when there is genuinely no evidence at all', () => {
+        const [event] = reconcileCompletedTrainingEvents([activity({
+            type: 'unknown_sport', trainingEffectAerobic: 0, trainingEffectAnaerobic: 0, activityTrainingLoad: null, intensityTag: '',
+        })], []);
+        expect(event.evidenceTier).toBe('genericModalityFallback');
         const exposure = completedEventToExposure(event);
         expect(exposure.stimulusConfidence).toBe('unknown');
-        expect(exposure.stimulusProfile).toBeUndefined();
+        expect(exposure.stimulusProfile).toBeDefined(); // still non-zero -- see DEFAULT_STIMULUS_BY_MODALITY.Unknown
+        expect(exposure.modality).toBeUndefined();
     });
 
     it('asserts DEFAULT_STIMULUS_BY_MODALITY table totality for all recognized modalities and intensities', () => {
@@ -183,5 +200,75 @@ describe('deriveSessionPlanRelationship', () => {
         const rec = recommendation({ date: '2026-08-06', modality: 'Cycling' });
         const event = completedEvent({ date: '2026-08-07', modality: 'Running' });
         expect(deriveSessionPlanRelationship(rec, event)).toBe('unplanned');
+    });
+});
+
+// Phase 5.5: docs/plans/phase-5-sequence-planning.md 5.5 -- every rung of the evidence
+// hierarchy that's actually reachable given current ingested data.
+describe('evidence hierarchy (Phase 5.5)', () => {
+    it('measuredEffort: known modality with both trainingEffect and activityTrainingLoad', () => {
+        const [event] = reconcileCompletedTrainingEvents([activity()], []); // base fixture has both
+        expect(event.evidenceTier).toBe('measuredEffort');
+        expect(completedEventToExposure(event).stimulusConfidence).toBe('inferred');
+    });
+
+    it('garminTrainingEffect: trainingEffect present but no activityTrainingLoad', () => {
+        const [event] = reconcileCompletedTrainingEvents([activity({ activityTrainingLoad: null })], []);
+        expect(event.evidenceTier).toBe('garminTrainingEffect');
+        expect(completedEventToExposure(event).stimulusConfidence).toBe('inferred');
+    });
+
+    it('durationIntensity: only an intensity tag, no trainingEffect or trainingLoad', () => {
+        const [event] = reconcileCompletedTrainingEvents([activity({
+            trainingEffectAerobic: 0, trainingEffectAnaerobic: 0, activityTrainingLoad: null, intensityTag: 'moderate',
+        })], []);
+        expect(event.evidenceTier).toBe('durationIntensity');
+        expect(completedEventToExposure(event).stimulusConfidence).toBe('inferred');
+    });
+
+    it('athleteClassification: modality guessed from free text, no other signal at all', () => {
+        const [event] = reconcileCompletedTrainingEvents([activity({
+            type: 'cycling', trainingEffectAerobic: 0, trainingEffectAnaerobic: 0, activityTrainingLoad: null, intensityTag: '',
+        })], []);
+        expect(event.evidenceTier).toBe('athleteClassification');
+        expect(completedEventToExposure(event).stimulusConfidence).toBe('inferred');
+    });
+
+    it('genericModalityFallback: nothing known at all', () => {
+        const [event] = reconcileCompletedTrainingEvents([activity({
+            type: 'unknown_sport', trainingEffectAerobic: 0, trainingEffectAnaerobic: 0, activityTrainingLoad: null, intensityTag: '',
+        })], []);
+        expect(event.evidenceTier).toBe('genericModalityFallback');
+        expect(completedEventToExposure(event).stimulusConfidence).toBe('unknown');
+    });
+
+    it('exactPrescribedMatch: adherence-only event confirming a template with an authored stimulusProfile', () => {
+        const [event] = reconcileCompletedTrainingEvents([], [recommendation()]);
+        expect(event.evidenceTier).toBe('exactPrescribedMatch');
+        expect(completedEventToExposure(event).stimulusConfidence).toBe('exact');
+    });
+
+    it('athleteClassification: adherence-only event with a self-reported modality and no template match', () => {
+        const rec = recommendation({
+            templateId: 'nonexistent',
+            adherence: { respondedAt: 'x', followed: false, actualModality: 'Strength', actualDurationMin: 40, skipped: false, notes: null },
+        });
+        const [event] = reconcileCompletedTrainingEvents([], [rec]);
+        expect(event.evidenceTier).toBe('athleteClassification');
+        expect(completedEventToExposure(event).stimulusConfidence).toBe('inferred');
+    });
+
+    it('mergeAdherenceIntoGarmin upgrades a Garmin-only tier to exactPrescribedMatch when adherence confirms the exact template', () => {
+        const events = reconcileCompletedTrainingEvents([activity()], [recommendation()]);
+        expect(events).toHaveLength(1);
+        expect(events[0].evidenceTier).toBe('exactPrescribedMatch');
+        expect(completedEventToExposure(events[0]).stimulusConfidence).toBe('exact');
+    });
+
+    it('mergeAdherenceIntoGarmin retains the Garmin-derived tier when adherence does not confirm the exact template', () => {
+        const rec = recommendation({ adherence: { respondedAt: 'x', followed: false, actualModality: 'Cycling', actualDurationMin: 45, skipped: false, notes: null } });
+        const events = reconcileCompletedTrainingEvents([activity()], [rec]);
+        expect(events).toHaveLength(1);
+        expect(events[0].evidenceTier).toBe('measuredEffort'); // unchanged from the Garmin-only classification
     });
 });

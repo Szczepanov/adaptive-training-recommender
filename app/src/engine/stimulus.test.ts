@@ -123,6 +123,52 @@ describe('deriveObjectiveCredit', () => {
         const result = deriveObjectiveCredit(sampleObjective, null);
         expect(result).toMatchObject({ earnedCredit: 0, qualifies: false, reason: 'Invalid stimulus profile' });
     });
+
+    // Phase 5.5: confidence discounts earned credit via CONFIDENCE_CREDIT_WEIGHT.
+    describe('confidence weighting', () => {
+        it('defaults to exact (full credit) when confidence is not supplied, unchanged from before this parameter existed', () => {
+            const result = deriveObjectiveCredit(sampleObjective, sampleStimulus, { completionRatio: 1.0 });
+            expect(result.earnedCredit).toBe(0.8);
+        });
+
+        it('discounts credit for inferred confidence', () => {
+            const result = deriveObjectiveCredit(sampleObjective, sampleStimulus, { completionRatio: 1.0 }, undefined, 'inferred');
+            expect(result.earnedCredit).toBe(0.6); // 0.8 * 0.75
+        });
+
+        it('discounts credit further for unknown confidence, but never to zero', () => {
+            const result = deriveObjectiveCredit(sampleObjective, sampleStimulus, { completionRatio: 1.0 }, undefined, 'unknown');
+            expect(result.earnedCredit).toBe(0.32); // 0.8 * 0.4
+            expect(result.earnedCredit).toBeGreaterThan(0);
+            expect(result.qualifies).toBe(true);
+        });
+    });
+
+    // Phase 5.5: a modality/category-scoped objective must fail closed when the evidence
+    // doesn't even know the modality/category, not silently skip the check.
+    describe('fail-closed qualification when context is unknown', () => {
+        it('rejects a modality-scoped objective when context.modality is absent', () => {
+            const restrictedObj: WeeklyObjective = { ...sampleObjective, qualification: { allowedModalities: ['Cycling'] } };
+            const result = deriveObjectiveCredit(restrictedObj, sampleStimulus, { completionRatio: 1.0 });
+            expect(result.qualifies).toBe(false);
+            expect(result.earnedCredit).toBe(0);
+            expect(result.reason).toBe('Modality unknown');
+        });
+
+        it('rejects a category-scoped objective when context.category is absent', () => {
+            const restrictedObj: WeeklyObjective = { ...sampleObjective, qualification: { allowedCategories: ['Race-Specific Endurance'] } };
+            const result = deriveObjectiveCredit(restrictedObj, sampleStimulus, { completionRatio: 1.0 }, { modality: 'Cycling' });
+            expect(result.qualifies).toBe(false);
+            expect(result.earnedCredit).toBe(0);
+            expect(result.reason).toBe('Category unknown');
+        });
+
+        it('still credits an unscoped objective (no qualification at all) with no context supplied', () => {
+            const result = deriveObjectiveCredit(sampleObjective, sampleStimulus, { completionRatio: 1.0 });
+            expect(result.qualifies).toBe(true);
+            expect(result.earnedCredit).toBe(0.8);
+        });
+    });
 });
 
 describe('readStimulusProfile', () => {

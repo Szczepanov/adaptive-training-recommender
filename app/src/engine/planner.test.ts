@@ -7,6 +7,8 @@ import type { CompletedExposure, TrainingHistoryProvider } from './trainingHisto
 import { rankCandidatesByUtility } from './optimizer';
 import { resolveAvailability } from './schedule';
 import { ENRICHED_TEMPLATES } from './templates';
+import { generateWeeklyObjectives } from './microcycle';
+import { evaluatePeriodizationPhase } from './periodization';
 
 // --- Fixtures (mirrors rules.test.ts's pattern) -----------------------------
 
@@ -469,7 +471,9 @@ describe('resolveWeeklyAnchors', () => {
         context.trainingSettings = weeklyTrainingSettings({ weekdayMaxMinutes: 60 });
         const event = cyclingEvent('2026-08-27');
         const reservedSunday: FixedActivity = {
-            id: 'family-event', title: 'Fixed commitment', date: '2026-08-09', durationMin: 150, isCompleted: false,
+            id: 'family-event', userId: 'athlete-1', title: 'Fixed commitment', date: '2026-08-09', durationMin: 150,
+            isCompleted: false, fixed: true, environment: 'either', equipment: [],
+            createdAt: '2026-08-01T00:00:00Z', updatedAt: '2026-08-01T00:00:00Z',
         };
 
         const anchors = resolveWeeklyAnchors('2026-08-07', 7, [event], [reservedSunday], context);
@@ -525,5 +529,77 @@ describe('generateWeekAheadPlan weekly-architecture anchoring', () => {
         // fixture -- asserting it's untouched by this feature's presence.
         const plan = generateWeekAheadPlan(readiness, context, null, '2026-08-07', todayRec, tomorrowRec, seed, { days: 7 });
         expect(plan.days).toHaveLength(7);
+    });
+});
+
+describe('prepareWeekAheadPlanSeed: multi-event contributor wiring (Phase 5.6)', () => {
+    it('a single-event (or no-event) seed is unaffected by resolveMultiEventObjectives being wired in', () => {
+        const readiness: DailyReadiness = { subjective: neutralSubjective(), objective: quietObjective() };
+        const noEventSeed = prepareWeekAheadPlanSeed(readiness, [], '2026-08-07', []);
+        const event = cyclingEvent('2026-08-27');
+        const singleEventSeed = prepareWeekAheadPlanSeed(readiness, [event], '2026-08-07', []);
+
+        // Base-phase objectives (zone2_aerobic/threshold_quality/strength_maintenance)
+        // still generate with no event at all -- unaffected by resolveMultiEventObjectives
+        // being wired in, since there's no eligible authority to run it against.
+        expect(noEventSeed.microcycle.objectives.map(o => o.key).sort()).toEqual(['strength_maintenance', 'threshold_quality', 'zone2_aerobic']);
+
+        // The single event is its own taper authority with no other contributor in scope,
+        // so resolveMultiEventObjectives (wired into prepareWeekAheadPlanSeed) must be a
+        // true no-op: the exact same key set generateWeeklyObjectives alone would produce
+        // for this event/phase, not merely "non-empty and contains one expected key" (which
+        // wouldn't catch the merge silently adding or mutating objectives).
+        const periodization = evaluatePeriodizationPhase([event], '2026-08-07');
+        const baselineWithoutMerge = generateWeeklyObjectives(periodization.phase, '2026-08-07', periodization.focusEvent);
+        expect(singleEventSeed.microcycle.objectives.map(o => o.key).sort()).toEqual(baselineWithoutMerge.objectives.map(o => o.key).sort());
+        expect(singleEventSeed.microcycle.objectives.find(o => o.key === 'race_specific_endurance')).toBeDefined();
+    });
+
+    it('a B-event contributor adds its own race-specific objective to the seed built for an A-event authority', () => {
+        const readiness: DailyReadiness = { subjective: neutralSubjective(), objective: quietObjective() };
+        const aEvent = cyclingEvent('2026-10-17'); // ~70 days out from 2026-08-07 -- Build phase, not tapering
+        const bEvent: UserEvent = {
+            id: 'b1', title: 'Local Crit', date: '2026-08-19', priority: 'B', lifecycle: 'scheduled', category: 'cycling_event',
+            demandProfile: { aerobicEndurance: 0.7, thresholdPower: 0.6, vo2MaxPower: 0.5, repeatedSurges: 0.8, sprintPower: 0.4, fatigueResistance: 0.75, neuromuscular: 0.4 },
+        };
+
+        const authorityOnlySeed = prepareWeekAheadPlanSeed(readiness, [aEvent], '2026-08-07', []);
+        const withContributorSeed = prepareWeekAheadPlanSeed(readiness, [aEvent, bEvent], '2026-08-07', []);
+
+        // The A-event authority alone (Build phase, demand thresholds not met for
+        // race_specific_endurance) generates no race-specific objective on its own.
+        expect(authorityOnlySeed.microcycle.objectives.find(o => o.key === 'race_specific_endurance')).toBeUndefined();
+        // The B-event contributor (12 days out, high repeatedSurges) adds one.
+        expect(withContributorSeed.microcycle.objectives.find(o => o.key === 'race_specific_endurance')).toBeDefined();
+    });
+
+    it("a dropped contributor objective's reason survives from the resolver through the seed into the final WeekAheadPlan", () => {
+        const context = baseContext();
+        const { readiness, todayRec, tomorrowRec } = buildTodayAndTomorrow(context);
+        const aEvent = cyclingEvent('2026-08-14'); // 7 days out from 2026-08-07 -- inside the 14-day A-taper window
+        const bEvent: UserEvent = {
+            id: 'b-event', title: 'Local Crit', date: '2026-08-25', priority: 'B', lifecycle: 'scheduled', category: 'cycling_event',
+            // thresholdPower >= 0.5 and outside its own 5-day B-taper window (18 days out)
+            // -- objectivesFromDemand would generate threshold_quality on its own, so the
+            // only reason it's absent from the merged seed is the authority-taper drop.
+            demandProfile: { aerobicEndurance: 0.7, thresholdPower: 0.9, vo2MaxPower: 0, repeatedSurges: 0, sprintPower: 0.2, fatigueResistance: 0.6, neuromuscular: 0.3 },
+        };
+        const events = [aEvent, bEvent];
+
+        const seed = prepareWeekAheadPlanSeed(readiness, events, '2026-08-07', []);
+        expect(seed.microcycle.objectives.some(o => o.key === 'threshold_quality')).toBe(false);
+        const seedDropped = seed.droppedContributorObjectives?.find(d => d.objectiveKey === 'threshold_quality');
+        expect(seedDropped).toBeDefined();
+        expect(seedDropped?.eventId).toBe('b-event');
+        expect(seedDropped?.reason).toBe('inadmissible_during_taper');
+        expect(seedDropped?.message).toContain('taper window');
+
+        // The unit-level resolver's result is not enough on its own -- the same drop must
+        // reach the actual WeekAheadPlan the live app renders and persists, not just the
+        // intermediate seed.
+        const plan = generateWeekAheadPlan(readiness, context, null, '2026-08-07', todayRec, tomorrowRec, seed, { days: 7, events });
+        expect(plan.droppedContributorObjectives).toEqual(seed.droppedContributorObjectives);
+        const planDropped = plan.droppedContributorObjectives.find(d => d.objectiveKey === 'threshold_quality');
+        expect(planDropped?.eventId).toBe('b-event');
     });
 });

@@ -11,7 +11,16 @@ import type {
 } from './models';
 import type { CompletedExposure } from './microcycleHistory';
 import type { PlanDefinition } from './planSchedule';
-import { modalitiesForEventCategory, type PhaseWeights } from './periodization';
+import {
+    modalitiesForEventCategory,
+    objectivesFromDemand,
+    TAPER_SHARPENING_QUALIFICATION,
+    TAPER_SHARPENING_TARGET_STIMULUS,
+    TAPER_SHARPENING_TITLE,
+    TAPER_STRENGTH_PRIMER_TITLE,
+    TAPER_STRENGTH_TARGET_STIMULUS,
+    type PhaseWeights,
+} from './periodization';
 
 export function generateWeeklyObjectives(
     phaseWeights: PhaseWeights,
@@ -45,6 +54,11 @@ export function generateWeeklyObjectives(
             let targetStimulus: WeeklyObjective['targetStimulus'] = { aerobicEndurance: 0.5 };
             let qualification: WeeklyObjective['qualification'] = undefined;
             const allowedModalities = focusEvent ? modalitiesForEventCategory(focusEvent.category) : [];
+            // Phase 5.7: a block's own declared phase -- not just its objective key --
+            // decides whether race_specific_endurance/strength_maintenance mean the
+            // full-volume peak-block target or the taper_sharpening/race_week_strength
+            // primer-level one. See TAPER_SHARPENING_TARGET_STIMULUS above.
+            const isTaperBlock = block?.phase === 'taper';
 
             switch (objDef.key) {
                 case 'zone2_aerobic':
@@ -68,17 +82,23 @@ export function generateWeeklyObjectives(
                     };
                     break;
                 case 'strength_maintenance':
-                    title = 'Strength & Neuromuscular Maintenance';
-                    targetStimulus = { maxStrength: 0.7, hypertrophy: 0.5 };
+                    title = isTaperBlock ? TAPER_STRENGTH_PRIMER_TITLE : 'Strength & Neuromuscular Maintenance';
+                    targetStimulus = isTaperBlock ? TAPER_STRENGTH_TARGET_STIMULUS : { maxStrength: 0.7, hypertrophy: 0.5 };
                     break;
                 case 'race_specific_endurance':
-                    title = 'Cycling Race-Specific Endurance';
-                    targetStimulus = { aerobicEndurance: 0.6, repeatedSurges: 0.6 };
-                    qualification = {
-                        minimumStimulus: { aerobicEndurance: 0.6 },
-                        allowedModalities: ['Cycling'],
-                        allowedCategories: ['Race-Specific Endurance'],
-                    };
+                    if (isTaperBlock) {
+                        title = TAPER_SHARPENING_TITLE;
+                        targetStimulus = TAPER_SHARPENING_TARGET_STIMULUS;
+                        qualification = TAPER_SHARPENING_QUALIFICATION;
+                    } else {
+                        title = 'Cycling Race-Specific Endurance';
+                        targetStimulus = { aerobicEndurance: 0.6, repeatedSurges: 0.6 };
+                        qualification = {
+                            minimumStimulus: { aerobicEndurance: 0.6 },
+                            allowedModalities: ['Cycling'],
+                            allowedCategories: ['Race-Specific Endurance'],
+                        };
+                    }
                     break;
                 case 'vo2_max':
                     title = 'VO2 Max Intervals';
@@ -108,69 +128,24 @@ export function generateWeeklyObjectives(
         return { windowStartDate, objectives };
     }
 
-    const demand = phaseWeights.targetDemandVector;
-    const objectives: WeeklyObjective[] = [];
-
-    if (demand.aerobicEndurance >= 0.4) {
-        objectives.push({
-            id: 'obj_z2_aerobic', key: 'zone2_aerobic', title: 'Aerobic Base (Zone 2)',
-            targetExposures: demand.aerobicEndurance >= 0.7 ? 2 : 1,
-            completedExposures: 0,
-            targetStimulus: { aerobicEndurance: 0.8 },
-        });
-    }
-
-    if (demand.thresholdPower >= 0.5 && !phaseWeights.taperActive) {
-        const allowedModalities = focusEvent ? modalitiesForEventCategory(focusEvent.category) : [];
-        objectives.push({
-            id: 'obj_threshold', key: 'threshold_quality', title: 'Threshold Development',
-            targetExposures: 1, completedExposures: 0,
-            targetStimulus: { thresholdPower: 0.9 },
-            qualification: {
-                minimumStimulus: { thresholdPower: 0.6 },
-                ...(allowedModalities.length > 0 ? { allowedModalities } : {}),
-            },
-        });
-    }
-
-    if ((demand.vo2MaxPower >= 0.6 || demand.repeatedSurges >= 0.6) && phaseWeights.phaseName !== 'Post-Event Recovery') {
-        const allowedModalities = focusEvent ? modalitiesForEventCategory(focusEvent.category) : [];
-        objectives.push({
-            id: 'obj_surges', key: 'surge_repeatability', title: 'Surge & High-Intensity Repeatability',
-            targetExposures: 1, completedExposures: 0,
-            targetStimulus: { repeatedSurges: 0.9, aerobicEndurance: 0.5 },
-            qualification: {
-                minimumStimulus: { repeatedSurges: 0.6 },
-                ...(allowedModalities.length > 0 ? { allowedModalities } : {}),
-            },
-        });
-    }
-
-    objectives.push({
-        id: 'obj_strength', key: 'strength_maintenance', title: 'Strength & Neuromuscular Maintenance',
-        targetExposures: 1, completedExposures: 0,
-        targetStimulus: { maxStrength: 0.7, hypertrophy: 0.5 },
-    });
-
-    if (focusEvent?.category === 'cycling_event'
-        && !phaseWeights.taperActive
-        && (demand.fatigueResistance >= 0.7 || demand.repeatedSurges >= 0.6)) {
-        objectives.push({
-            id: 'obj_cycling_race_specific', key: 'race_specific_endurance', title: 'Cycling Race-Specific Endurance',
-            targetExposures: 1, completedExposures: 0,
-            targetStimulus: { aerobicEndurance: 0.6, repeatedSurges: 0.6 },
-            qualification: {
-                minimumStimulus: { aerobicEndurance: 0.6 },
-                allowedModalities: ['Cycling'],
-                allowedCategories: ['Race-Specific Endurance'],
-            },
-        });
-    }
+    // Phase 5.6: this translation (demand vector + category + taper state -> objective
+    // set) is now shared with resolveMultiEventObjectives (periodization.ts), which
+    // reuses it unchanged for each contributor event's OWN demand vector -- never a
+    // blended one. This call is the taper authority's own objectives, identical
+    // behavior to before the extraction.
+    const allowedModalities = focusEvent ? modalitiesForEventCategory(focusEvent.category) : [];
+    const objectives = objectivesFromDemand(
+        phaseWeights.targetDemandVector,
+        focusEvent?.category,
+        phaseWeights.taperActive,
+        phaseWeights.phaseName === 'Post-Event Recovery',
+        allowedModalities
+    );
 
     return { windowStartDate, objectives };
 }
 
-import { deriveObjectiveCreditFromProfile, readStimulusProfile } from './stimulus';
+import { deriveObjectiveCreditFromProfile, readStimulusProfile, type StimulusConfidence } from './stimulus';
 
 /** Keyword-only evidence is deliberately worth less than a structured measured exposure.
  * It remains useful for old/external records, but cannot resolve a one-credit objective by
@@ -275,13 +250,24 @@ export function qualifiesForObjective(
  * Credits weekly objectives from a workout's numeric stimulus profile. The profile is
  * validated/canonicalized once at the exposure boundary, then reused for every objective;
  * this avoids duplicate migration warnings for the same persisted record.
+ *
+ * `modality` is now optional (Phase 5.5): a generic/unclassified exposure can still
+ * carry a genuine stimulus profile (see completedTraining.ts's genericModalityFallback
+ * tier) and credit a modality-agnostic objective, while deriveObjectiveCreditFromProfile
+ * fails closed on any objective that actually requires a known modality.
+ *
+ * `confidence` (Phase 5.5) discounts earned credit for anything short of an exact match
+ * -- see stimulus.ts CONFIDENCE_CREDIT_WEIGHT. Defaults to 'exact' so a caller supplying
+ * only authored/hypothetical data (e.g. planner.ts scoring a candidate template) is
+ * unaffected.
  */
 export function creditObjectivesFromStimulus(
     microcycle: MicrocycleState,
     rawStimulus: WorkoutStimulusProfile,
-    modality: SessionTemplate['modality'],
+    modality: SessionTemplate['modality'] | undefined,
     category?: SessionTemplate['category'],
     dose: DeliveredDose = {},
+    confidence: StimulusConfidence = 'exact',
 ): MicrocycleState {
     if (!microcycle || !microcycle.objectives) return microcycle;
     const stimulusState = readStimulusProfile(rawStimulus);
@@ -294,7 +280,7 @@ export function creditObjectivesFromStimulus(
             const requiredCredit = obj.requiredCredit ?? obj.targetExposures;
             const completedCredit = obj.completedCredit ?? obj.completedExposures;
             if (completedCredit >= requiredCredit) return obj;
-            const credit = deriveObjectiveCreditFromProfile(obj, stimulus, dose, { modality, category });
+            const credit = deriveObjectiveCreditFromProfile(obj, stimulus, dose, { modality, category }, confidence);
             if (!credit.qualifies || credit.earnedCredit <= 0) return obj;
             const nextCredit = Math.min(requiredCredit, completedCredit + credit.earnedCredit);
             return {
@@ -317,13 +303,18 @@ export function buildMicrocycleState(
     asOfDate?: string
 ): MicrocycleState {
     return history.reduce((state, exposure) => {
-        if (exposure.stimulusProfile && exposure.modality) {
+        // Phase 5.5: a stimulus profile no longer requires a known modality to be
+        // creditable -- see creditObjectivesFromStimulus's doc comment. An exposure with
+        // neither (e.g. legacy free-text-only evidence) still falls back to the
+        // deprecated keyword matcher below.
+        if (exposure.stimulusProfile) {
             return creditObjectivesFromStimulus(
                 state,
                 exposure.stimulusProfile,
                 exposure.modality,
                 exposure.category,
                 exposure.deliveredDose,
+                exposure.stimulusConfidence ?? 'exact',
             );
         }
         return updateMicrocycleProgress(state, exposure.trainingRecordLike);

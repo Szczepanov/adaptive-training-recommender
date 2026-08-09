@@ -152,6 +152,36 @@ Keyword matching remains a last-resort compatibility path for old/external recor
 structured stimulus. A match contributes `0.5` credit to the **same** ledger rather than a
 parallel counter, making mixed structured/legacy replay order-independent.
 
+### Evidence hierarchy for completed training (Phase 5.5, `completedTraining.ts`)
+
+Generalises the coarse modality x intensity inference above into a named, ordered
+`EvidenceTier` (strongest to weakest): `exactPrescribedMatch` (adherence confirms a
+catalog template with an authored `stimulusProfile`) → `completedStructuredWorkout` /
+`measuredEffort` (Garmin `activityTrainingLoad` alongside Training Effect -- the closest
+currently-ingested proxy for "completedStructuredWorkout" and per-interval
+power/HR/cadence structure, which nothing ingests yet) → `garminTrainingEffect` →
+`durationIntensity` (an intensity tag alone) → `athleteClassification` (modality guessed
+from free text) → `genericModalityFallback` (nothing known at all).
+`classifyGarminTier`/`stimulusConfidenceForTier` produce `CompletedExposure`'s existing
+`stimulusConfidence` ('exact' | 'inferred' | 'unknown') from this ladder, replacing what
+used to be an ad hoc `exactTemplateMatch`/`hasStimulus`/`modality` check.
+
+`stimulus.ts`'s `CONFIDENCE_CREDIT_WEIGHT` (exact 1.0, inferred 0.75, unknown 0.4) then
+discounts `deriveObjectiveCreditFromProfile`'s earned credit by that confidence -- every
+caller that doesn't pass a confidence defaults to `'exact'` (unchanged full-credit
+behavior, e.g. `planner.ts` scoring an authored candidate template). This closes the
+asymmetry the plan named: `DEFAULT_STIMULUS_BY_MODALITY.Unknown` used to be all-zero even
+though `DEFAULT_COST_BY_MODALITY.Unknown` was not, so an unplanned, unclassifiable session
+was charged fatigue but credited no adaptation at all. It now carries a real, deliberately
+conservative generic profile, discounted rather than zeroed.
+
+A stimulus profile no longer requires a *known* modality to be creditable --
+`genericModalityFallback` still credits a modality-agnostic objective. This is safe only
+because `deriveObjectiveCreditFromProfile` now **fails closed**: a modality- or
+category-scoped objective is rejected (not silently skipped) when the evidence's
+modality/category is unknown, rather than the previous behavior where an absent
+`context.modality`/`context.category` bypassed the restriction entirely.
+
 ---
 
 ## Planned and execution dose authority (`trainingIntent.ts`, `dose.ts`)
@@ -171,6 +201,54 @@ contract is finite `volume ∈ [0,1]`, `intensity ∈ [0,1.2]`.
 
 Recommendation provenance persists both planned and execution dose when available.
 
+### Taper as an explicit contract (Phase 5.7, `microcycle.ts`, `periodization.ts`, `planSchedule.ts`)
+
+Before this, `taperActive`/`volumeScale` reduced volume, but nothing represented "preserve
+useful, event-specific intensity" as its own thing -- `generateWeeklyObjectives` simply
+stopped generating a `race_specific_endurance` objective for the whole taper window
+(`!phaseWeights.taperActive`), so whatever survived `phaseEligibility.requiresTaper`
+gating and utility ranking was accidental, not requested. `event-plan.ts`'s
+`taper_sharpening`/`race_week_strength` coverage roles already named the real intent;
+nothing consumed them as objective targets.
+
+Both `generateWeeklyObjectives` branches (generic days-to-event and plan-derived) now
+generate a taper-calibrated `race_specific_endurance` objective during `taperActive`
+instead of omitting it, and lower the `strength_maintenance` target to a race-week-primer
+level -- calibrated against `end_taper_sharpen_01`'s own (deliberately lower) stimulus
+profile in `templates.ts`, not the full peak-block `end_race_sim_01` bar, which a taper
+session structurally cannot clear. `PlanObjectiveDefinition` (`planSchedule.ts`) gained an
+optional `role: PlanSessionRole` field -- previously declared but never assigned to
+anything -- and the authored September event plan's taper block now actually requests its
+own `taper_sharpening`/`race_week_strength` coverage keys instead of only the generic
+`easy_aerobic` one.
+
+### Multi-event: one taper authority, multiple demand contributors (Phase 5.6, `periodization.ts`)
+
+`evaluatePeriodizationPhase` still picks exactly one governing event (the **taper
+authority**) -- but now by a full, commented total order: priority, then proximity, then
+planning date, then event id as a determinism backstop (never a real ranking signal). Two
+events genuinely tied through every real criterion surface via the new
+`governingEventTie` field rather than being silently resolved by the id backstop as if it
+meant something.
+
+Every other eligible, scheduled event within a 35-day window (matching the existing
+Specificity-phase threshold) is a **demand contributor**: `objectivesFromDemand` (shared
+with Phase 5.7's own objective generation) derives objectives from *that event's own*
+demand vector, category, and own taper state -- never a blended vector, which is the
+reason this sits after Phase 2's explicit objectives at all. `resolveMultiEventObjectives`
+unions a contributor's objectives into the authority's own by `ObjectiveKey`: on a
+collision the authority's title/qualification/targetStimulus/id win, and only the
+required amount grows, via `max()` -- two similar B-events never demand double one
+B-event's work by summing. A contributor's `threshold_quality` objective landing inside
+the authority's taper window is dropped, not silently reweighted, with an athlete-facing
+reason recorded (`DroppedContributorObjective.message`).
+
+Only the taper authority ever sets `volumeScale`/`intensityScale` -- contributors supply
+objectives only. Wired into `planner.ts`'s `prepareWeekAheadPlanSeed`, reaching the live
+week-ahead pipeline for any athlete with more than one active dated event; a no-op
+otherwise (`simulate:diff` confirms zero semantic change against the committed baseline).
+The plan-derived path (`PlanDefinition`) is not wired to contributors in this increment.
+
 ---
 
 ## Candidate ranking (`optimizer.ts`)
@@ -182,6 +260,29 @@ Phase 3 introduced a single, unified ranking path (`rankCandidates`) driven by s
 3. **Utility Score** (Level 5 & 6): `utility = (benefit / (1 + fatigueCost)) × preferenceMultiplier`. Used to sort candidates of comparable objective benefit (within `0.05` benefit score).
 
 Strength-maintenance benefit takes the stronger of `maxStrength` and `hypertrophy` target/evidence rather than allowing field order to choose which axis counts.
+
+### The planner/workout-library boundary (Phase 5.2, `planningCandidate.ts`)
+
+Detailed `WorkoutDefinition`s (the prescription catalog) already carry recovery hours,
+mechanical/eccentric load, technical environment, contraindications, and per-workout
+minimum spacing after hard lower-body work -- but the planner selects a coarse
+`SessionTemplate` first, so that richer data used to arrive only *after* the decision it
+should have informed. Concretely: `evaluateRecoveryConstraints`'s hard-lower-body spacing
+gate was a flat 2-day rule with no per-workout data behind it at all.
+
+`PlanningCandidate` (`derivePlanningCandidate`, `PLANNING_CANDIDATE_INDEX`) resolves each
+catalog workout against its linked engine template -- enough semantics to sequence a
+week, without dragging blocks/variants/parameters into the planner; prescription
+generation (`resolveWorkoutPrescription`) stays downstream and unchanged. Wired into
+`OptimizationOptions.resolveMinimumDaysAfterHardLowerBody` (optional, defaults to the
+identical flat rule so every caller that doesn't pass it is unaffected): a workout's own
+`eligibility.minimumDaysAfterHardLowerBody` can now tighten *or* correctly loosen that
+gate per workout instead of one generic number for every lower-body session.
+
+Lives in `engine/`, not `workouts/models.ts` as a first read of the type might suggest --
+`engine/models.ts` already imports from `workouts/models.ts`, so a type referencing
+`SessionRole`/`Modality`/`WorkoutStimulusProfile`/`TrainingEnvironment` inside
+`workouts/models.ts` would make that dependency circular.
 
 ---
 
@@ -216,6 +317,29 @@ Preferences rank; they never unlock. An avoided modality is a hard exclude on Pa
 0.2× soft penalty on Path B — a deliberate distinction, since taste must never behave like
 a safety constraint ([ADR-0007](../adr/0007-adaptive-multisport-engine-architecture.md) §6).
 
+### Injury gate sub-ordering (Phase 5.4)
+
+Within the "clinical / safety gates" step above, `injuryPolicy.ts` itself has a total
+order that a single `soreness: 1-10` scalar can't express, because it can't distinguish a
+knee from an Achilles from general DOMS:
+
+```text
+InjuryConstraint (hard, persisted)   TrainingSettings.injuries -- exclude/limit never weakened
+        ↓
+observed tissue response (may tighten)   today's per-region check-in (DailyCheckin.tsx)
+        ↓
+wearable-derived readiness (may tighten) HRV/RHR/body battery -- acts through the separate
+                                          fatigue/mode pipeline, not this gate at all
+```
+
+`resolveEffectiveInjuryConstraints` (called from `adapters.ts`
+`mapContextFromGoalsAndTrainingSettings`) implements the first two steps: it merges a
+day's `RegionTissueResponse[]` into the standing `InjuryConstraint[]`, but only ever
+raises a region's severity for that one read, never lowers it, and never persists the
+result back to `TrainingSettings`. Wearable-derived readiness has no parameter into that
+function at all — a structural guarantee, not just tested behavior, that a good HRV
+reading can't loosen what tissue response or the injury constraint decided.
+
 ---
 
 ## Completed load and fatigue (`completedTraining.ts`, `fatigue.ts`)
@@ -248,6 +372,38 @@ Forecast recommendations never mutate completed credit. They accumulate in
 The planner's `objectiveCredits` display is derived from the same V2 objective-credit
 function used by the live ledger, not the old `stimulusCoverage >= 0.6` model.
 
+### Fixed activities (Phase 5.3)
+
+`FixedActivity` (external commitments -- a booked class, a match, travel) is persisted at
+`users/{userId}/fixed_activities/{activityId}` via `fixedActivityService.ts`, the same
+user-owned/validated-at-the-rule pattern as `goals` (ADR-0002). `Home.tsx` reads the
+current week's activities and passes them into `WeekAheadOptions.fixedActivities`, which
+`resolveWeeklyAnchors`/`resolveAvailability` (`schedule.ts`) already consumed -- the gap
+this closed was the absent Firestore source, not the consuming logic. An
+`availabilityOverride` on an activity caps that day's whole training budget (e.g. a travel
+day) before the activity's own `durationMin` is deducted; several overrides on the same
+day take the most restrictive. `fixed` (movable vs immovable) is captured now but not yet
+consumed -- it becomes load-bearing once sequence search (5.1/5.2) can reason about
+shifting a movable placeholder. See
+[docs/plans/phase-5-sequence-planning.md](../plans/phase-5-sequence-planning.md) 5.3 for
+the full storage/validation contract.
+
+### Bounded sequence search prototype (Phase 5.1, `sequenceSearch.ts`) -- not live
+
+The "projected" tier above is a greedy walk: each day takes `rankCandidates`' rank-0 pick
+with no visibility into how that choice constrains later days. `sequenceSearch.ts`'s
+`beamSearchWeekAheadPlan` is a bounded beam-search prototype (width 15, 5 candidates/day
+by default) that scores whole partial sequences instead, reusing `rankCandidates`'
+existing hard-gate-before-scoring separation rather than reimplementing it. Benchmarked
+against greedy on the Phase 0 invariants and semantic scenario harness
+(`npm run compare:sequence-search`): zero new hard-constraint or golden-week violations,
+and strictly better weekly-objective resolution in several scenarios, at a real ~5.7x
+compute cost and a materially lower rest-day frequency the harness can't judge as better
+or worse on its own. **Adoption is deferred, not rejected** -- see
+[ADR-0015](../adr/0015-sequence-planning-and-session-role-model.md) for the full
+comparison data and reasoning. Greedy (`generateWeekAheadPlan`) remains the live default;
+`sequenceSearch.ts` is not imported by any production code path.
+
 ---
 
 ## Verification & audit tooling
@@ -257,6 +413,9 @@ Executed via `cd app && npm run simulate:scenarios`. Runs synthetic athlete scen
 
 ### Recommendation decision replay (`replay:recommendation`)
 Executed via `cd app && npm run replay:recommendation -- <audit.json>`. Accepts a JSON snapshot of a historical recommendation and passes it into `replayRecommendationAudit()` ([`app/src/engine/replay.ts`](../../app/src/engine/replay.ts)). The current policy version can be verified for reproducibility. Known historical policy versions remain auditable but are explicitly rejected as executable replay unless that historical decision function is bundled in a future build.
+
+### Sequence-search comparison (`compare:sequence-search`)
+Executed via `cd app && npm run compare:sequence-search`. Runs every scenario through both the production greedy planner and the Phase 5.1 beam-search prototype ([`app/src/engine/sequenceSearch.ts`](../../app/src/engine/sequenceSearch.ts)) using the identical `runScenario` harness, and reports the comparison (rest-day share, constraint violations, golden-week invariants, per-scenario deltas, timing). Outputs `comparison.json` to `app/artifacts/sequence-search-comparison/` (gitignored, regenerable). See [ADR-0015](../adr/0015-sequence-planning-and-session-role-model.md).
 
 ---
 

@@ -33,5 +33,6 @@ export function buildRecommendationAudit(
         ...(recommendation.plannedDose ? { plannedDose: recommendation.plannedDose } : {}),
         ...(recommendation.executionDose ? { executionDose: recommendation.executionDose } : {}),
         candidateScores: trace.candidateScores,
+        droppedContributorObjectives: trace.droppedContributorObjectives,
     };
 }

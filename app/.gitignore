@@ -12,6 +12,7 @@ dist
 dist-ssr
 artifacts/visual-review/
 artifacts/simulation-reports/
+artifacts/sequence-search-comparison/
 test-results/
 playwright-report/
 *.local

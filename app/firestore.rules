@@ -150,6 +150,104 @@ service cloud.firestore {
       allow delete: if isOwner(userId);
     }
 
+    // --- Fixed activities (Phase 5.3) ---
+    // See docs/plans/phase-5-sequence-planning.md 5.3 for the full storage contract this
+    // must stay aligned with (models.ts FixedActivity, validation.ts validateFixedActivity).
+
+    function isValidActivityDate(date) {
+      return date is string && date.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$') && isRealCalendarDate(date.split('-'));
+    }
+
+    // Rejects a date that merely matches YYYY-MM-DD shape but isn't a real calendar date
+    // (e.g. 2026-02-30) -- matches validation.ts's isValidDate, which does full calendar
+    // validation client-side. A direct authenticated write bypassing validation.ts must not
+    // be able to persist a date the client-side layer would have rejected.
+    function isRealCalendarDate(parts) {
+      let year = int(parts[0]);
+      let month = int(parts[1]);
+      let day = int(parts[2]);
+      let isLeapYear = (year % 4 == 0 && year % 100 != 0) || year % 400 == 0;
+      let daysInMonth = month == 2 ? (isLeapYear ? 29 : 28)
+        : (month == 4 || month == 6 || month == 9 || month == 11) ? 30
+        : 31;
+      return month >= 1 && month <= 12 && day >= 1 && day <= daysInMonth;
+    }
+
+    // A single reusable "is this map entry, if present, a 0..1 number" check -- shared by
+    // both expectedStimulus and expectedCost below, since both are just differently-keyed
+    // instances of the same 0..1 axis-map shape.
+    function hasValidAxisValue(m, key) {
+      return !(key in m) || (m[key] is number && m[key] >= 0 && m[key] <= 1);
+    }
+
+    // Firestore rules cannot loop over an arbitrary-length map, so every recognized axis
+    // is checked by name -- this is only tractable because the canonical axis set is
+    // small and fixed (WorkoutStimulusProfile has exactly 8 axes; keep this list and
+    // models.ts in sync when a axis is added).
+    function hasValidExpectedStimulus(m) {
+      return m is map
+        && m.keys().hasOnly(['aerobicEndurance', 'thresholdPower', 'vo2MaxPower', 'repeatedSurges', 'sprintPower', 'fatigueResistance', 'maxStrength', 'hypertrophy'])
+        && m.size() <= 8
+        && hasValidAxisValue(m, 'aerobicEndurance')
+        && hasValidAxisValue(m, 'thresholdPower')
+        && hasValidAxisValue(m, 'vo2MaxPower')
+        && hasValidAxisValue(m, 'repeatedSurges')
+        && hasValidAxisValue(m, 'sprintPower')
+        && hasValidAxisValue(m, 'fatigueResistance')
+        && hasValidAxisValue(m, 'maxStrength')
+        && hasValidAxisValue(m, 'hypertrophy');
+    }
+
+    // Same rationale as above -- WorkoutCostProfile has exactly 6 dimensions.
+    function hasValidExpectedCost(m) {
+      return m is map
+        && m.keys().hasOnly(['systemic', 'cardiovascular', 'lowerBody', 'upperBody', 'impactTissue', 'neuromuscular'])
+        && m.size() <= 6
+        && hasValidAxisValue(m, 'systemic')
+        && hasValidAxisValue(m, 'cardiovascular')
+        && hasValidAxisValue(m, 'lowerBody')
+        && hasValidAxisValue(m, 'upperBody')
+        && hasValidAxisValue(m, 'impactTissue')
+        && hasValidAxisValue(m, 'neuromuscular');
+    }
+
+    // Bounds equipment by length and item count only. Firestore rules cannot iterate a
+    // list to type-check each item, so per-item type/length (string, <= 50 chars) is
+    // enforced client-side by validation.ts's validateFixedActivity, not by this rule --
+    // stated explicitly per the 5.3 plan rather than left for a reader to assume covered.
+    function hasValidEquipmentList(list) {
+      return list is list && list.size() <= 20;
+    }
+
+    function hasValidFixedActivity(userId) {
+      let data = request.resource.data;
+      return hasOwnedUserId(userId)
+        && isValidActivityDate(data.date)
+        && data.keys().hasOnly(['userId', 'title', 'date', 'startTime', 'durationMin', 'fixed', 'expectedStimulus', 'expectedCost', 'environment', 'equipment', 'availabilityOverride', 'isCompleted', 'createdAt', 'updatedAt'])
+        && data.keys().hasAll(['userId', 'title', 'date', 'durationMin', 'fixed', 'environment', 'isCompleted', 'createdAt', 'updatedAt'])
+        && data.title is string && data.title.size() <= 200
+        && data.durationMin is int && data.durationMin > 0 && data.durationMin <= 1440
+        && data.fixed is bool
+        && data.environment in ['indoor', 'outdoor', 'either']
+        && data.isCompleted is bool
+        && data.createdAt is string
+        && data.updatedAt is string
+        && (!('startTime' in data) || data.startTime is string)
+        && (!('expectedStimulus' in data) || hasValidExpectedStimulus(data.expectedStimulus))
+        && (!('expectedCost' in data) || hasValidExpectedCost(data.expectedCost))
+        && (!('equipment' in data) || hasValidEquipmentList(data.equipment))
+        && (!('availabilityOverride' in data) || (data.availabilityOverride is number && data.availabilityOverride >= 0 && data.availabilityOverride <= 1440));
+    }
+
+    match /users/{userId}/fixed_activities/{activityId} {
+      allow read: if isOwner(userId);
+      allow create: if hasValidFixedActivity(userId);
+      allow update: if hasValidFixedActivity(userId)
+        && keepsOwnership(userId)
+        && request.resource.data.createdAt == resource.data.createdAt;
+      allow delete: if isOwner(userId);
+    }
+
     // Legacy constraints are retained solely for one-time migration reads.
     match /users/{userId}/constraints/{constraintId} {
       allow read: if isOwner(userId);

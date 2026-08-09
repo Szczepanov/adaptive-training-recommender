@@ -15,6 +15,23 @@ export interface ObjectiveCredit {
     reason?: string;
 }
 
+/** How sure the engine is about a stimulus profile, from strongest to weakest evidence --
+ * see docs/plans/phase-5-sequence-planning.md 5.5 and completedTraining.ts's EvidenceTier,
+ * which produces this value. Absent (the default) means "authored/hypothetical data",
+ * e.g. a catalog template's own stimulusProfile evaluated for a *planned* candidate --
+ * there is nothing to be unsure about there, so it earns full credit exactly as before
+ * this parameter existed. */
+export type StimulusConfidence = 'exact' | 'inferred' | 'unknown';
+
+/** Discounts earned credit by how confident the evidence is, so a genuinely unplanned
+ * session still counts toward adaptation (closing the asymmetry where cost was already
+ * charged but benefit was not) without being trusted as much as a confirmed exact match. */
+export const CONFIDENCE_CREDIT_WEIGHT: Record<StimulusConfidence, number> = {
+    exact: 1.0,
+    inferred: 0.75,
+    unknown: 0.4,
+};
+
 const CANONICAL_AXES = [
     'aerobicEndurance',
     'thresholdPower',
@@ -115,24 +132,40 @@ export function readStimulusProfile(raw: unknown): DataState<WorkoutStimulusProf
 
 /** Calculates credit from an already validated/canonical profile. Use this when one
  * exposure fans out across several objectives so validation and divergence logging happen
- * once at the exposure boundary instead of once per objective. */
+ * once at the exposure boundary instead of once per objective.
+ *
+ * `confidence` (Phase 5.5) discounts earnedCredit via CONFIDENCE_CREDIT_WEIGHT and
+ * defaults to 'exact' -- every pre-existing caller that doesn't pass it keeps today's
+ * full-credit behavior unchanged. */
 export function deriveObjectiveCreditFromProfile(
     objective: WeeklyObjective,
     stimulus: WorkoutStimulusProfile,
     dose: DeliveredDose = {},
     context?: CreditContext,
+    confidence: StimulusConfidence = 'exact',
 ): ObjectiveCredit {
     const completionRatio = clamp01(dose.completionRatio ?? 1.0);
 
     if (objective.qualification) {
         const qual = objective.qualification;
-        if (qual.allowedModalities && qual.allowedModalities.length > 0 && context?.modality) {
+        if (qual.allowedModalities && qual.allowedModalities.length > 0) {
+            // Fail closed: a modality-scoped objective cannot be satisfied by evidence
+            // whose modality isn't even known (e.g. a genuinely unclassified Garmin
+            // activity) -- silently *skipping* this check when context.modality is
+            // absent would let an unknown-source session credit an objective it was
+            // never shown to actually match.
+            if (!context?.modality) {
+                return { objectiveId: objective.id, objectiveKey: objective.key, earnedCredit: 0, qualifies: false, reason: 'Modality unknown' };
+            }
             const allowed = qual.allowedModalities.map(m => m.toLowerCase());
             if (!allowed.includes(context.modality.toLowerCase())) {
                 return { objectiveId: objective.id, objectiveKey: objective.key, earnedCredit: 0, qualifies: false, reason: 'Modality not allowed' };
             }
         }
-        if (qual.allowedCategories && qual.allowedCategories.length > 0 && context?.category) {
+        if (qual.allowedCategories && qual.allowedCategories.length > 0) {
+            if (!context?.category) {
+                return { objectiveId: objective.id, objectiveKey: objective.key, earnedCredit: 0, qualifies: false, reason: 'Category unknown' };
+            }
             const allowed = qual.allowedCategories.map(c => c.toLowerCase());
             if (!allowed.includes(context.category.toLowerCase())) {
                 return { objectiveId: objective.id, objectiveKey: objective.key, earnedCredit: 0, qualifies: false, reason: 'Category not allowed' };
@@ -195,7 +228,8 @@ export function deriveObjectiveCreditFromProfile(
     }
 
     const deliveredDoseRatio = completionRatio * durationRatio;
-    const earnedCredit = Math.round(rawStimulusContribution * deliveredDoseRatio * 100) / 100;
+    const confidenceWeight = CONFIDENCE_CREDIT_WEIGHT[confidence];
+    const earnedCredit = Math.round(rawStimulusContribution * deliveredDoseRatio * confidenceWeight * 100) / 100;
 
     return {
         objectiveId: objective.id,
@@ -213,7 +247,8 @@ export function deriveObjectiveCredit(
     objective: WeeklyObjective,
     rawStimulus: unknown,
     dose: DeliveredDose = {},
-    context?: CreditContext
+    context?: CreditContext,
+    confidence: StimulusConfidence = 'exact',
 ): ObjectiveCredit {
     const stimulusState = readStimulusProfile(rawStimulus);
     if (stimulusState.status !== 'AVAILABLE') {
@@ -225,7 +260,7 @@ export function deriveObjectiveCredit(
             reason: 'Invalid stimulus profile',
         };
     }
-    return deriveObjectiveCreditFromProfile(objective, stimulusState.data, dose, context);
+    return deriveObjectiveCreditFromProfile(objective, stimulusState.data, dose, context, confidence);
 }
 
 /**

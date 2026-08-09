@@ -26,6 +26,12 @@ export interface PlanObjectiveDefinition {
   requiredCredit: number;
   priority: ObjectivePriority; // declared in models.ts
   minGapHoursFrom?: ObjectiveKey[];
+  /** Phase 5.7: the session's role within its block, from the same named vocabulary
+   *  event-plan.ts's coverage keys and templates.ts's phaseEligibility already imply --
+   *  optional so existing plan authoring is unaffected, but generateWeeklyObjectives
+   *  (microcycle.ts) uses a block's `phase === 'taper'` (not this field) to decide
+   *  taper-appropriate calibration; `role` here is the legible label for *why*. */
+  role?: PlanSessionRole;
 }
 
 export interface SequencingRule {
@@ -135,16 +141,29 @@ export function buildSeptemberCyclingEventPlan(event: UserEvent): DataState<Plan
   ];
 
   const objectives: PlanObjectiveDefinition[] = [
-    { key: 'zone2_aerobic', coverageKey: 'easy_aerobic', blockId: 'block_build', requiredCredit: 2, priority: 'must_have' },
-    { key: 'threshold_quality', coverageKey: 'sustained_quality', blockId: 'block_build', requiredCredit: 1, priority: 'must_have' },
-    { key: 'surge_repeatability', coverageKey: 'short_surges', blockId: 'block_build', requiredCredit: 1, priority: 'should_have' },
-    { key: 'strength_maintenance', coverageKey: 'primary_strength', blockId: 'block_build', requiredCredit: 1, priority: 'should_have' },
+    { key: 'zone2_aerobic', coverageKey: 'easy_aerobic', blockId: 'block_build', requiredCredit: 2, priority: 'must_have', role: 'primary_developmental' },
+    { key: 'threshold_quality', coverageKey: 'sustained_quality', blockId: 'block_build', requiredCredit: 1, priority: 'must_have', role: 'primary_developmental' },
+    { key: 'surge_repeatability', coverageKey: 'short_surges', blockId: 'block_build', requiredCredit: 1, priority: 'should_have', role: 'secondary_support' },
+    { key: 'strength_maintenance', coverageKey: 'primary_strength', blockId: 'block_build', requiredCredit: 1, priority: 'should_have', role: 'secondary_support' },
 
-    { key: 'zone2_aerobic', coverageKey: 'easy_aerobic', blockId: 'block_peak', requiredCredit: 1, priority: 'must_have' },
-    { key: 'threshold_quality', coverageKey: 'sustained_quality', blockId: 'block_peak', requiredCredit: 1, priority: 'must_have' },
-    { key: 'race_specific_endurance', coverageKey: 'outdoor_event_specific', blockId: 'block_peak', requiredCredit: 1, priority: 'must_have' },
+    { key: 'zone2_aerobic', coverageKey: 'easy_aerobic', blockId: 'block_peak', requiredCredit: 1, priority: 'must_have', role: 'primary_developmental' },
+    { key: 'threshold_quality', coverageKey: 'sustained_quality', blockId: 'block_peak', requiredCredit: 1, priority: 'must_have', role: 'primary_developmental' },
+    { key: 'race_specific_endurance', coverageKey: 'outdoor_event_specific', blockId: 'block_peak', requiredCredit: 1, priority: 'must_have', role: 'primary_developmental' },
 
-    { key: 'zone2_aerobic', coverageKey: 'easy_aerobic', blockId: 'block_taper', requiredCredit: 1, priority: 'must_have' },
+    // Phase 5.7: the taper block previously only ever authored the generic easy_aerobic
+    // objective, leaving its own declared taper_sharpening/race_week_strength coverage
+    // keys (SEPTEMBER_CYCLING_EVENT_SESSION_COVERAGE above) with no objective demanding
+    // them at all -- exactly the "emergent side effect" the plan describes. These two
+    // additions close that: generateWeeklyObjectives detects blockId -> phase 'taper' and
+    // calibrates both to TAPER_SHARPENING_TARGET_STIMULUS / TAPER_STRENGTH_TARGET_STIMULUS
+    // rather than the peak-block full-volume targets.
+    { key: 'zone2_aerobic', coverageKey: 'easy_aerobic', blockId: 'block_taper', requiredCredit: 1, priority: 'must_have', role: 'primary_developmental' },
+    { key: 'race_specific_endurance', coverageKey: 'taper_sharpening', blockId: 'block_taper', requiredCredit: 1, priority: 'should_have', role: 'taper_sharpening' },
+    // 'secondary_support', not 'taper_sharpening' -- PlanSessionRole's four values are a
+    // generic block-role axis, not a 1:1 restatement of event-plan.ts's four taper
+    // coverage keys; the race-week strength primer is support work that happens to fall
+    // in the taper block, distinct from the endurance-specific sharpening role above.
+    { key: 'strength_maintenance', coverageKey: 'race_week_strength', blockId: 'block_taper', requiredCredit: 1, priority: 'should_have', role: 'secondary_support' },
   ];
 
   return buildPlanDefinition(SEPTEMBER_CYCLING_EVENT_SESSION_COVERAGE, blocks, event, objectives);

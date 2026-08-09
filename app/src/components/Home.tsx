@@ -8,9 +8,11 @@ import type { TrainingHistorySnapshot } from '../engine/trainingHistorySnapshot'
 import { buildRecommendationAudit } from '../engine/provenance';
 import { evaluatePeriodizationPhase, getDaysToEvent } from '../engine/periodization';
 import { resolveExecutionDose } from '../engine/dose';
-import type { DailyDecisionInput, Recommendation, NextDayPotentialPlan, DailyRecommendation } from '../engine/models';
+import type { DailyDecisionInput, Recommendation, NextDayPotentialPlan, DailyRecommendation, FixedActivity } from '../engine/models';
+import type { DataState } from '../engine/dataState';
 import { recommendationService } from '../services/recommendationService';
-import { getPreviousLocalDateString } from '../utils/localDate';
+import { fixedActivityService } from '../services/fixedActivityService';
+import { getPreviousLocalDateString, addDaysToLocalDateString } from '../utils/localDate';
 import { getPrescriptionLegend, resolveWorkoutPrescription } from '../workouts';
 import type { WorkoutPrescription } from '../workouts';
 import { AdherencePrompt } from './AdherencePrompt';
@@ -183,7 +185,15 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
       if (input.recoverySnapshot && canGenerateNormalRecommendation(safetyStatus)) {
         const objective = mapSnapshotToEngineInput(input.recoverySnapshot);
         const subjective = mapCheckinToSubjectiveInput(input.subjectiveCheckin);
-        const context = mapContextFromGoalsAndTrainingSettings(input.activeGoals, input.trainingSettings, input.preferences);
+        const context = mapContextFromGoalsAndTrainingSettings(input.activeGoals, input.trainingSettings, input.preferences, input.date, input.subjectiveCheckin);
+        // injuryPolicy.ts's resolveEffectiveInjuryConstraints documents tissue-derived
+        // restrictions as a single TODAY-only decision (reviewBy: today, never persisted).
+        // `context` above bakes today's checkin into restrictedModalities/impliedGuardrails
+        // for `evaluateTrainingWithIntent` below, which is correct for today's own
+        // decision -- but tomorrow's provisional plan is a different day's decision, so it
+        // must not inherit it. `forecastContext` omits todaysCheckin, leaving only the
+        // athlete's standing InjuryConstraint[] in force.
+        const forecastContext = mapContextFromGoalsAndTrainingSettings(input.activeGoals, input.trainingSettings, input.preferences, input.date, null);
         const events = mapGoalsToUserEvents(input.activeGoals);
         const preparedSnapshot = await prepareTrainingHistorySnapshot(userId, input.date);
         if (!isCurrent()) return;
@@ -206,7 +216,7 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
         setRecommendation(todayRec);
 
         const tomorrowPlan = await evaluateNextDayPlanWithIntent(
-          userId, events, { subjective, objective }, context, input.date, todayRec, undefined, preparedSnapshot,
+          userId, events, { subjective, objective }, forecastContext, input.date, todayRec, undefined, preparedSnapshot,
         );
         if (!isCurrent()) return;
         setNextDayPlan(tomorrowPlan);
@@ -258,7 +268,21 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
     if (!decisionInput || !decisionInput.recoverySnapshot) return null;
     const subjective = mapCheckinToSubjectiveInput(decisionInput.subjectiveCheckin);
     const objective = mapSnapshotToEngineInput(decisionInput.recoverySnapshot);
-    const context = mapContextFromGoalsAndTrainingSettings(decisionInput.activeGoals, decisionInput.trainingSettings, decisionInput.preferences);
+    const context = mapContextFromGoalsAndTrainingSettings(decisionInput.activeGoals, decisionInput.trainingSettings, decisionInput.preferences, decisionInput.date, decisionInput.subjectiveCheckin);
+    return { subjective, objective, context };
+  }, [decisionInput]);
+
+  // Same subjective/objective inputs as `engineInputs`, but `context` omits today's
+  // checkin so its tissue-derived restrictions (single-day only, per
+  // injuryPolicy.ts's resolveEffectiveInjuryConstraints) don't leak into the week-ahead
+  // strip -- only the athlete's standing InjuryConstraint[] should constrain any of those
+  // future days. `engineInputs.context` remains correct for adjusting TODAY's own
+  // recommendation (computeAdjustedRecommendation below).
+  const forecastEngineInputs = useMemo(() => {
+    if (!decisionInput || !decisionInput.recoverySnapshot) return null;
+    const subjective = mapCheckinToSubjectiveInput(decisionInput.subjectiveCheckin);
+    const objective = mapSnapshotToEngineInput(decisionInput.recoverySnapshot);
+    const context = mapContextFromGoalsAndTrainingSettings(decisionInput.activeGoals, decisionInput.trainingSettings, decisionInput.preferences, decisionInput.date, null);
     return { subjective, objective, context };
   }, [decisionInput]);
 
@@ -318,6 +342,41 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
     };
   }, [decisionInput]);
 
+  // Matches generateWeekAheadPlan's own WeekAheadOptions.days default (planner.ts) -- the
+  // fixed-activity read below must cover the same horizon the planner actually walks.
+  const WEEK_AHEAD_DAYS = 7;
+
+  // Fixed activities (Phase 5.3) persisted at users/{userId}/fixed_activities -- read
+  // once per user/date, same lifecycle as the other week-ahead inputs below.
+  //
+  // Uses the State-returning read, not the plain-array convenience wrapper: the wrapper
+  // deliberately collapses both INVALID (malformed documents) and UNAVAILABLE (read
+  // failure) into `[]`, which is correct for a "just show me what you have" UI list, but
+  // wrong for the planner path -- it would make the week-ahead generator interpret a
+  // failed or malformed read as "the athlete has no commitments this week" and schedule
+  // straight through a real (unreadable) evening football game or similar. The week-ahead
+  // effect below only runs generateWeekAheadPlanWithIntent once this state is AVAILABLE.
+  const [fixedActivitiesState, setFixedActivitiesState] = useState<DataState<FixedActivity[]>>({ status: 'AVAILABLE', data: [], revision: null });
+  useEffect(() => {
+    let cancelled = false;
+    if (!decisionInput) {
+      setFixedActivitiesState({ status: 'AVAILABLE', data: [], revision: null });
+      return () => { cancelled = true; };
+    }
+    const endDate = addDaysToLocalDateString(decisionInput.date, WEEK_AHEAD_DAYS);
+    fixedActivityService.getActivitiesInRangeState(userId, decisionInput.date, endDate)
+      .then(state => { if (!cancelled) setFixedActivitiesState(state); })
+      .catch(err => {
+        console.warn('Failed to load fixed activities:', err);
+        if (!cancelled) setFixedActivitiesState({ status: 'UNAVAILABLE', operation: 'read fixed activities', retryable: true });
+      });
+    return () => { cancelled = true; };
+  }, [userId, decisionInput]);
+  const fixedActivities = useMemo(
+    () => (fixedActivitiesState.status === 'AVAILABLE' ? fixedActivitiesState.data : []),
+    [fixedActivitiesState]
+  );
+
   // The production planner reads adherence history once, so it must run outside render.
   // Cancellation ensures a prior user/date/goals/check-in/settings state cannot replace
   // the forecast after a newer dashboard snapshot has been composed.
@@ -325,11 +384,21 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
   const [weekAheadPlan, setWeekAheadPlan] = useState<WeekAheadPlan | null>(null);
   useEffect(() => {
     let cancelled = false;
-    if (!engineInputs || !decisionInput || !activeRec || !canGenerateNormalPlan || !historySnapshot) {
+    if (!forecastEngineInputs || !decisionInput || !activeRec || !canGenerateNormalPlan || !historySnapshot) {
       setWeekAheadPlan(null);
       return () => { cancelled = true; };
     }
-    const { subjective, objective, context } = engineInputs;
+    if (fixedActivitiesState.status !== 'AVAILABLE') {
+      // Do not generate a week-ahead plan on an INVALID/UNAVAILABLE fixed-activities read
+      // -- silently treating that as "no commitments this week" (what the plain-array
+      // convenience wrapper would have done) could schedule straight through a real,
+      // merely-unreadable commitment. WeekAheadStrip already renders nothing for a null
+      // plan, matching how every other week-ahead precondition above fails closed.
+      console.warn(`Skipping week-ahead plan generation: fixed activities read is ${fixedActivitiesState.status}, not AVAILABLE.`);
+      setWeekAheadPlan(null);
+      return () => { cancelled = true; };
+    }
+    const { subjective, objective, context } = forecastEngineInputs;
     const tomorrowRec = nextDayPlan
       ? (nextDayPlan.branches[selectedNextDayTier]?.recommendation ?? nextDayPlan.branches.green.recommendation)
       : null;
@@ -342,7 +411,7 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
       decisionInput.date,
       activeRec,
       tomorrowRec,
-      {},
+      { days: WEEK_AHEAD_DAYS, fixedActivities },
       undefined,
       historySnapshot,
     ).then(plan => {
@@ -354,7 +423,7 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
       }
     });
     return () => { cancelled = true; };
-  }, [userId, engineInputs, decisionInput, activeRec, canGenerateNormalPlan, nextDayPlan, selectedNextDayTier, eventPeriodization, historySnapshot]);
+  }, [userId, forecastEngineInputs, decisionInput, activeRec, canGenerateNormalPlan, nextDayPlan, selectedNextDayTier, eventPeriodization, historySnapshot, fixedActivitiesState, fixedActivities]);
 
   if (loading) {
     return (

@@ -2,6 +2,7 @@ import type {
     CompletedTrainingEvent,
     CompletedTrainingIntensity,
     DailyRecommendation,
+    EvidenceTier,
     NormalizedGarminActivity,
     SessionTemplate,
     TrainingRecord,
@@ -9,6 +10,7 @@ import type {
     WorkoutStimulusProfile,
 } from './models';
 import type { CompletedExposure } from './trainingHistory';
+import type { StimulusConfidence } from './stimulus';
 import { ENRICHED_TEMPLATES } from './templates';
 import type { DeliveredDose } from './models';
 
@@ -94,6 +96,55 @@ function intensityFromGarmin(activity: NormalizedGarminActivity): CompletedTrain
     if (trainingEffect >= 3) return 'hard';
     if (trainingEffect >= 1.5) return 'moderate';
     return trainingEffect > 0 ? 'easy' : 'unknown';
+}
+
+// --- Evidence hierarchy (Phase 5.5) ---
+// docs/plans/phase-5-sequence-planning.md 5.5: generalises the coarse modality x
+// intensity inference below into a named, ordered hierarchy so every inferred profile
+// carries a legible reason for how confident it is, not just a flat true/false.
+
+/** Signals classifyGarminTier actually has available. `activityTrainingLoad` is Garmin's
+ *  own proprietary composite (derived from HR/pace/power across the session) -- a
+ *  materially different, richer signal than the coarse 0-5 trainingEffect scalar alone,
+ *  even though it still isn't per-interval structure. `averageHr` is deliberately not
+ *  consulted: a single session-average HR number without zone/interval context isn't
+ *  meaningfully more informative than trainingEffect, and treating it as if it were would
+ *  overclaim precision this data doesn't have. */
+interface GarminEvidenceSignals {
+    trainingEffectAerobic: number | null;
+    trainingEffectAnaerobic: number | null;
+    intensityTag: string;
+    activityTrainingLoad: number | null;
+    modalityKnown: boolean;
+}
+
+function classifyGarminTier(signals: GarminEvidenceSignals): EvidenceTier {
+    const hasTrainingEffect = (signals.trainingEffectAerobic ?? 0) > 0 || (signals.trainingEffectAnaerobic ?? 0) > 0;
+    const hasTrainingLoad = signals.activityTrainingLoad !== null && signals.activityTrainingLoad > 0;
+    if (hasTrainingEffect && hasTrainingLoad) return 'measuredEffort';
+    if (hasTrainingEffect) return 'garminTrainingEffect';
+    if (signals.intensityTag.trim() !== '') return 'durationIntensity';
+    if (signals.modalityKnown) return 'athleteClassification';
+    return 'genericModalityFallback';
+}
+
+/** Maps a tier to the coarse 3-value confidence CompletedExposure.stimulusConfidence
+ *  (and, downstream, stimulus.ts's CONFIDENCE_CREDIT_WEIGHT) already expects -- this is
+ *  the "hook" Phase 1.2(c) added; this function is what finally drives it from something
+ *  more legible than an ad hoc exact/modality/hasStimulus check. */
+export function stimulusConfidenceForTier(tier: EvidenceTier): StimulusConfidence {
+    switch (tier) {
+        case 'exactPrescribedMatch':
+        case 'completedStructuredWorkout':
+            return 'exact';
+        case 'measuredEffort':
+        case 'garminTrainingEffect':
+        case 'durationIntensity':
+        case 'athleteClassification':
+            return 'inferred';
+        case 'genericModalityFallback':
+            return 'unknown';
+    }
 }
 
 function catalogIntensity(template: SessionTemplate): CompletedTrainingIntensity {
@@ -225,7 +276,20 @@ export const DEFAULT_STIMULUS_BY_MODALITY: Record<CompletedModality, Record<Comp
         unknown: { aerobicEndurance: 0.60, thresholdPower: 0.20, vo2MaxPower: 0.10, repeatedSurges: 0.15, sprintPower: 0, fatigueResistance: 0.15, maxStrength: 0.15, hypertrophy: 0.15 },
     },
     None: { easy: ZERO_STIMULUS, moderate: ZERO_STIMULUS, hard: ZERO_STIMULUS, unknown: ZERO_STIMULUS },
-    Unknown: { easy: ZERO_STIMULUS, moderate: ZERO_STIMULUS, hard: ZERO_STIMULUS, unknown: ZERO_STIMULUS },
+    // Phase 5.5: this used to be all-zero, the literal asymmetry the plan calls out --
+    // DEFAULT_COST_BY_MODALITY.Unknown above already charges real cost for an
+    // unclassified session, while stimulus stayed at zero, so the system saw the fatigue
+    // but not the fitness benefit. Deliberately conservative and aerobic-leaning (lower
+    // magnitude than every known-modality table above) since genuinely nothing is known
+    // about what quality of work happened -- see genericModalityFallback's stimulusConfidence
+    // ('unknown') and CONFIDENCE_CREDIT_WEIGHT.unknown, which further discount how much
+    // objective credit this is allowed to redeem.
+    Unknown: {
+        easy: { aerobicEndurance: 0.35, thresholdPower: 0.05, vo2MaxPower: 0, repeatedSurges: 0.05, sprintPower: 0, fatigueResistance: 0.15, maxStrength: 0.05, hypertrophy: 0.05 },
+        moderate: { aerobicEndurance: 0.50, thresholdPower: 0.15, vo2MaxPower: 0.05, repeatedSurges: 0.10, sprintPower: 0, fatigueResistance: 0.25, maxStrength: 0.10, hypertrophy: 0.10 },
+        hard: { aerobicEndurance: 0.40, thresholdPower: 0.35, vo2MaxPower: 0.25, repeatedSurges: 0.30, sprintPower: 0.10, fatigueResistance: 0.35, maxStrength: 0.15, hypertrophy: 0.15 },
+        unknown: { aerobicEndurance: 0.30, thresholdPower: 0.10, vo2MaxPower: 0, repeatedSurges: 0.05, sprintPower: 0, fatigueResistance: 0.15, maxStrength: 0.05, hypertrophy: 0.05 },
+    },
 };
 
 function candidateEventFromGarmin(activity: NormalizedGarminActivity): CompletedTrainingEvent {
@@ -236,6 +300,13 @@ function candidateEventFromGarmin(activity: NormalizedGarminActivity): Completed
         plannedDurationMin: catalogReferenceDurationMin(modality, intensity),
         completedDurationMin: activity.durationMin ?? undefined,
     };
+    const evidenceTier = classifyGarminTier({
+        trainingEffectAerobic: activity.trainingEffectAerobic,
+        trainingEffectAnaerobic: activity.trainingEffectAnaerobic,
+        intensityTag: activity.intensityTag,
+        activityTrainingLoad: activity.activityTrainingLoad,
+        modalityKnown: modality !== 'Unknown',
+    });
     return {
         id: `garmin:${activity.activityId}`,
         date: activity.date,
@@ -249,6 +320,7 @@ function candidateEventFromGarmin(activity: NormalizedGarminActivity): Completed
         exactTemplateMatch: false,
         sources: ['garmin'],
         confidence: modality === 'Unknown' ? 'medium' : 'high',
+        evidenceTier,
         linkedActivityId: activity.activityId,
         linkedRecommendationDate: null,
         athleteFeedback: { followed: null, notes: null },
@@ -262,6 +334,10 @@ function candidateEventFromAdherence(recommendation: DailyRecommendation, candid
         plannedDurationMin: candidate.plannedDurationMin ?? catalogReferenceDurationMin(candidate.modality, intensity),
         completedDurationMin: candidate.durationMin ?? undefined,
     };
+    // No Garmin signals at all on this path -- either the athlete confirmed the exact
+    // prescribed template (exactPrescribedMatch), or all that's known is a self-reported
+    // modality with no measured evidence behind it (athleteClassification).
+    const evidenceTier: EvidenceTier = candidate.template?.stimulusProfile ? 'exactPrescribedMatch' : 'athleteClassification';
     return {
         id: `adherence:${recommendation.date}`,
         date: recommendation.date,
@@ -275,6 +351,7 @@ function candidateEventFromAdherence(recommendation: DailyRecommendation, candid
         exactTemplateMatch: !!candidate.template?.stimulusProfile,
         sources: ['adherence'],
         confidence: candidate.template ? 'medium' : 'low',
+        evidenceTier,
         linkedActivityId: null,
         linkedRecommendationDate: recommendation.date,
         athleteFeedback: { followed: recommendation.adherence.followed, notes: recommendation.adherence.notes },
@@ -294,10 +371,16 @@ function mergeAdherenceIntoGarmin(
         plannedDurationMin: candidate.plannedDurationMin ?? catalogReferenceDurationMin(event.modality, intensity),
         completedDurationMin: event.durationMin ?? undefined,
     };
+    // An adherence-confirmed exact template match upgrades whatever Garmin-derived tier
+    // this event already carried; otherwise the real measured Garmin evidence stands.
+    const evidenceTier: EvidenceTier = recommendation.adherence.followed && candidate.template?.stimulusProfile
+        ? 'exactPrescribedMatch'
+        : (event.evidenceTier ?? 'garminTrainingEffect');
     return {
         ...event,
         sources: ['garmin', 'adherence'],
         confidence: 'high',
+        evidenceTier,
         linkedRecommendationDate: recommendation.date,
         deliveredDose,
         // Garmin remains the measured duration/training-effect authority. Template
@@ -362,10 +445,13 @@ export function completedEventToExposure(event: CompletedTrainingEvent): Complet
     };
     const modality = event.modality === 'Unknown' ? undefined : event.modality;
     const hasStimulus = Object.values(event.estimatedStimulus ?? {}).some(v => (v ?? 0) > 0);
-    const confidence: 'exact' | 'inferred' | 'unknown' =
-        event.exactTemplateMatch
-            ? 'exact'
-            : (hasStimulus && modality ? 'inferred' : 'unknown');
+    // Phase 5.5: driven by the named evidence tier rather than an ad hoc
+    // exact/hasStimulus/modality check -- event.evidenceTier is the source of truth when
+    // present; the exactTemplateMatch/hasStimulus fallback only covers legacy/test
+    // construction paths that predate this field.
+    const tier: EvidenceTier = event.evidenceTier
+        ?? (event.exactTemplateMatch ? 'exactPrescribedMatch' : (hasStimulus && modality ? 'garminTrainingEffect' : 'genericModalityFallback'));
+    const confidence = stimulusConfidenceForTier(tier);
 
     return {
         date: event.date,
@@ -373,12 +459,16 @@ export function completedEventToExposure(event: CompletedTrainingEvent): Complet
         trainingRecordLike: record,
         ...(event.deliveredDose ? { deliveredDose: event.deliveredDose } : {}),
         stimulusConfidence: confidence,
-        ...(modality && hasStimulus ? {
-            modality,
+        // A stimulus profile no longer requires a *known* modality to be attached (Phase
+        // 5.5) -- genericModalityFallback still carries a real, if conservative, profile
+        // (see DEFAULT_STIMULUS_BY_MODALITY.Unknown) that can credit a modality-agnostic
+        // objective. `modality` itself is only ever set when genuinely known, so a
+        // modality-SCOPED objective still can't be satisfied by this
+        // (deriveObjectiveCreditFromProfile fails closed on that -- see stimulus.ts).
+        ...(hasStimulus ? {
             stimulusProfile: { ...ZERO_STIMULUS, ...event.estimatedStimulus },
-        } : modality ? {
-            modality,
         } : {}),
+        ...(modality ? { modality } : {}),
     };
 }
 

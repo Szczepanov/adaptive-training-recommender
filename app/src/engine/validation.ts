@@ -24,9 +24,16 @@ import type {
     ConstraintCategory,
     RecoveryStyle,
     TimeOfDay,
-    ExplanationVerbosity
+    ExplanationVerbosity,
+    FixedActivity,
+    WorkoutStimulusProfile,
+    WorkoutCostProfile,
+    TrainingEnvironment,
+    BodyRegion,
+    RegionTissueResponse,
+    TissueResponseLevel
 } from './models';
-import { validateEventTiming } from './models';
+import { validateEventTiming, BODY_REGIONS, TISSUE_LEVELS } from './models';
 import { deriveGoalCategory } from './periodization';
 import { EVENT_PRESETS } from './eventPresets';
 import { getLocalDateString } from '../utils/localDate';
@@ -72,6 +79,62 @@ function normalizeEmptyToNull(value: any): any {
 }
 
 // --- Daily Subjective Check-in Validation ---
+
+function isValidTissueLevel(value: unknown): value is TissueResponseLevel {
+    return typeof value === 'string' && (TISSUE_LEVELS as readonly string[]).includes(value);
+}
+
+/** Validates and rebuilds the optional per-region tissue-response map (Phase 5.4).
+ *  Unknown region keys or malformed entries are reported as errors rather than silently
+ *  dropped -- a client that gets this shape wrong is exactly the case validation exists
+ *  to catch, same as every other field here. */
+function validateTissueResponses(raw: any, errors: ValidationError[]): Partial<Record<BodyRegion, RegionTissueResponse>> | undefined {
+    if (raw === undefined || raw === null) return undefined;
+    if (typeof raw !== 'object' || Array.isArray(raw)) {
+        errors.push({ field: 'tissueResponses', message: 'tissueResponses must be an object keyed by body region' });
+        return undefined;
+    }
+
+    const result: Partial<Record<BodyRegion, RegionTissueResponse>> = {};
+    for (const key of Object.keys(raw)) {
+        if (!(BODY_REGIONS as readonly string[]).includes(key)) {
+            errors.push({ field: 'tissueResponses', message: `tissueResponses has unrecognized region '${key}'` });
+            continue;
+        }
+        const region = key as BodyRegion;
+        const entry = raw[key];
+        if (!entry || typeof entry !== 'object') {
+            errors.push({ field: `tissueResponses.${region}`, message: 'Each region entry must be an object' });
+            continue;
+        }
+        if (entry.region !== undefined && entry.region !== region) {
+            errors.push({ field: `tissueResponses.${region}.region`, message: `region must match the containing key '${region}', got '${entry.region}'` });
+            continue;
+        }
+        if (!isValidTissueLevel(entry.morningState)) {
+            errors.push({ field: `tissueResponses.${region}.morningState`, message: `morningState must be one of: ${TISSUE_LEVELS.join(', ')}` });
+            continue;
+        }
+        const optionalFields: (keyof RegionTissueResponse)[] = ['painDuringTraining', 'afterTrainingState', 'nextMorningReaction'];
+        let hasInvalidOptional = false;
+        for (const field of optionalFields) {
+            if (entry[field] !== undefined && entry[field] !== null && !isValidTissueLevel(entry[field])) {
+                errors.push({ field: `tissueResponses.${region}.${field}`, message: `${field} must be one of: ${TISSUE_LEVELS.join(', ')}` });
+                hasInvalidOptional = true;
+            }
+        }
+        if (hasInvalidOptional) continue;
+
+        result[region] = {
+            region,
+            morningState: entry.morningState,
+            ...(isValidTissueLevel(entry.painDuringTraining) ? { painDuringTraining: entry.painDuringTraining } : {}),
+            ...(isValidTissueLevel(entry.afterTrainingState) ? { afterTrainingState: entry.afterTrainingState } : {}),
+            ...(isValidTissueLevel(entry.nextMorningReaction) ? { nextMorningReaction: entry.nextMorningReaction } : {}),
+        };
+    }
+    return result;
+}
 
 export function validateCheckin(raw: any): ValidationResult<DailySubjectiveCheckin> {
     const errors: ValidationError[] = [];
@@ -154,6 +217,9 @@ export function validateCheckin(raw: any): ValidationResult<DailySubjectiveCheck
         });
     }
 
+    // Per-region tissue response (Phase 5.4)
+    const tissueResponses = validateTissueResponses(raw.tissueResponses, errors);
+
     if (errors.length > 0) {
         return { isValid: false, errors };
     }
@@ -172,6 +238,7 @@ export function validateCheckin(raw: any): ValidationResult<DailySubjectiveCheck
         illnessSymptoms: raw.illnessSymptoms ?? false,
         unusuallyLimitedTime: raw.unusuallyLimitedTime ?? false,
         alreadyTrainedToday: raw.alreadyTrainedToday ?? false,
+        ...(tissueResponses && Object.keys(tissueResponses).length > 0 ? { tissueResponses } : {}),
         availability: {
             timeAvailableMin: normalizeEmptyToNull(raw.availability?.timeAvailableMin),
             preferredModalityToday: normalizeEmptyToNull(raw.availability?.preferredModalityToday),
@@ -718,6 +785,130 @@ export function validatePreferences(raw: any): ValidationResult<UserPreferences>
     };
 
     return { isValid: true, data: preferences, errors: [] };
+}
+
+// --- Fixed Activity Validation ---
+
+const STIMULUS_AXES: (keyof WorkoutStimulusProfile)[] = [
+    'aerobicEndurance', 'thresholdPower', 'vo2MaxPower', 'repeatedSurges',
+    'sprintPower', 'fatigueResistance', 'maxStrength', 'hypertrophy',
+];
+
+const COST_DIMENSIONS: (keyof WorkoutCostProfile)[] = [
+    'systemic', 'cardiovascular', 'lowerBody', 'upperBody', 'impactTissue', 'neuromuscular',
+];
+
+const TRAINING_ENVIRONMENTS: TrainingEnvironment[] = ['indoor', 'outdoor', 'either'];
+
+const MAX_EQUIPMENT_ITEMS = 20;
+const MAX_EQUIPMENT_ITEM_LENGTH = 50;
+
+/** Every key must be a recognized axis and every value a finite 0..1 number -- mirrors
+ *  firestore.rules' hasValidExpectedStimulus/hasValidExpectedCost, which can bound a
+ *  map's keys and size but (per the 5.3 storage contract) cannot iterate a list to type
+ *  check items, so equipment item type/length is enforced here, not just at the rule. */
+function validateProfileMap<K extends string>(
+    raw: any,
+    axes: readonly K[],
+    field: string,
+    errors: ValidationError[]
+): Partial<Record<K, number>> | undefined {
+    if (raw === undefined || raw === null) return undefined;
+    if (typeof raw !== 'object' || Array.isArray(raw)) {
+        errors.push({ field, message: `${field} must be an object` });
+        return undefined;
+    }
+    const keys = Object.keys(raw);
+    const result: Partial<Record<K, number>> = {};
+    for (const key of keys) {
+        if (!(axes as readonly string[]).includes(key)) {
+            errors.push({ field, message: `${field} has unrecognized key '${key}'` });
+            continue;
+        }
+        const value = raw[key];
+        if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 1) {
+            errors.push({ field, message: `${field}.${key} must be a number in [0, 1]` });
+            continue;
+        }
+        result[key as K] = value;
+    }
+    return result;
+}
+
+export function validateFixedActivity(raw: any): ValidationResult<FixedActivity> {
+    const errors: ValidationError[] = [];
+
+    if (!raw.userId || typeof raw.userId !== 'string') {
+        errors.push({ field: 'userId', message: 'User ID is required' });
+    }
+    if (!raw.title || typeof raw.title !== 'string' || raw.title.trim() === '') {
+        errors.push({ field: 'title', message: 'Title is required' });
+    } else if (raw.title.length > 200) {
+        errors.push({ field: 'title', message: 'Title must be 200 characters or fewer' });
+    }
+    if (!raw.date || typeof raw.date !== 'string' || !isValidDate(raw.date)) {
+        errors.push({ field: 'date', message: 'Date must be a valid date (YYYY-MM-DD)' });
+    }
+    if (!Number.isInteger(raw.durationMin) || raw.durationMin <= 0 || raw.durationMin > 1440) {
+        errors.push({ field: 'durationMin', message: 'Duration must be an integer between 1 and 1440 minutes' });
+    }
+    if (typeof raw.fixed !== 'boolean') {
+        errors.push({ field: 'fixed', message: 'fixed (movable vs immovable) is required' });
+    }
+    if (!raw.environment || !TRAINING_ENVIRONMENTS.includes(raw.environment)) {
+        errors.push({ field: 'environment', message: `Environment must be one of: ${TRAINING_ENVIRONMENTS.join(', ')}` });
+    }
+    if (typeof raw.isCompleted !== 'boolean') {
+        errors.push({ field: 'isCompleted', message: 'isCompleted is required' });
+    }
+
+    let equipment: string[] = [];
+    if (raw.equipment !== undefined) {
+        if (!Array.isArray(raw.equipment) || raw.equipment.length > MAX_EQUIPMENT_ITEMS) {
+            errors.push({ field: 'equipment', message: `equipment must be a list of at most ${MAX_EQUIPMENT_ITEMS} items` });
+        } else if (raw.equipment.some((item: unknown) => typeof item !== 'string' || item.length > MAX_EQUIPMENT_ITEM_LENGTH)) {
+            errors.push({ field: 'equipment', message: `Every equipment item must be a string of at most ${MAX_EQUIPMENT_ITEM_LENGTH} characters` });
+        } else {
+            equipment = raw.equipment;
+        }
+    }
+
+    if (raw.startTime !== undefined && raw.startTime !== null && typeof raw.startTime !== 'string') {
+        errors.push({ field: 'startTime', message: 'startTime must be a string' });
+    }
+
+    if (raw.availabilityOverride !== undefined && raw.availabilityOverride !== null) {
+        if (typeof raw.availabilityOverride !== 'number' || !Number.isFinite(raw.availabilityOverride) || raw.availabilityOverride < 0 || raw.availabilityOverride > 1440) {
+            errors.push({ field: 'availabilityOverride', message: 'availabilityOverride must be a number of minutes in [0, 1440]' });
+        }
+    }
+
+    const expectedStimulus = validateProfileMap(raw.expectedStimulus, STIMULUS_AXES, 'expectedStimulus', errors);
+    const expectedCost = validateProfileMap(raw.expectedCost, COST_DIMENSIONS, 'expectedCost', errors);
+
+    if (errors.length > 0) {
+        return { isValid: false, errors };
+    }
+
+    const activity: FixedActivity = {
+        id: raw.id ?? '',
+        userId: raw.userId,
+        title: raw.title.trim(),
+        date: raw.date,
+        durationMin: raw.durationMin,
+        fixed: raw.fixed,
+        environment: raw.environment,
+        equipment,
+        isCompleted: raw.isCompleted,
+        ...(raw.startTime ? { startTime: raw.startTime } : {}),
+        ...(expectedStimulus && Object.keys(expectedStimulus).length > 0 ? { expectedStimulus } : {}),
+        ...(expectedCost && Object.keys(expectedCost).length > 0 ? { expectedCost } : {}),
+        ...(typeof raw.availabilityOverride === 'number' ? { availabilityOverride: raw.availabilityOverride } : {}),
+        createdAt: raw.createdAt || new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+    };
+
+    return { isValid: true, data: activity, errors: [] };
 }
 
 // --- Daily Recommendation Validation ---

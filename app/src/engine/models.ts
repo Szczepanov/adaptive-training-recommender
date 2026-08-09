@@ -105,15 +105,36 @@ export interface UserContext {
     trainingSettings?: TrainingSettings;
 }
 
+/** Persisted at `users/{userId}/fixed_activities/{activityId}` (ADR-0002 user-owned
+ *  path, Phase 5.3) -- see docs/plans/phase-5-sequence-planning.md 5.3 for the storage
+ *  contract and firestore.rules validation table this type must stay aligned with. */
 export interface FixedActivity {
     id: string;
+    userId: string;
     title: string;
-    date: string; // YYYY-MM-DD
+    date: string; // YYYY-MM-DD, Warsaw-local (ADR-0003)
     startTime?: string;
     durationMin: number;
-    expectedStimulus?: Record<string, number>;
-    expectedCost?: Record<string, number>;
+    /** Keys are the canonical WorkoutStimulusProfile axes; each value 0..1. */
+    expectedStimulus?: Partial<Record<keyof WorkoutStimulusProfile, number>>;
+    /** Keys are the six WorkoutCostProfile dimensions; each value 0..1. */
+    expectedCost?: Partial<Record<keyof WorkoutCostProfile, number>>;
+    /** Immovable (booked class, match kickoff) vs a movable placeholder the athlete could
+     *  reschedule around. Load-bearing for the planner/search -- see 5.3's storage table. */
+    fixed: boolean;
+    environment: TrainingEnvironment;
+    /** Equipment available *at* this activity, not the athlete's general profile
+     *  equipment (e.g. away-game gear, a hotel gym's limited rack). Size/type bounds are
+     *  enforced in validation.ts and the FixedActivity form -- firestore.rules can only
+     *  bound the list's length, not iterate to check each item (see 5.3). */
+    equipment: string[];
+    /** Overrides the day's total available training minutes outright (e.g. a travel day:
+     *  the whole day's budget shrinks, not just this activity's own duration). Absent =
+     *  the normal weekday/weekend profile budget applies, reduced only by durationMin. */
+    availabilityOverride?: number;
     isCompleted: boolean;
+    createdAt: string;
+    updatedAt: string;
 }
 
 export type EventPriority = 'A' | 'B' | 'C';
@@ -211,6 +232,24 @@ export interface ObjectiveProgress {
     projectedCredit: number;
     completedCredit: number;
     rawCompletedCredit: number;
+}
+
+// --- Phase 5.6: one taper authority, multiple demand contributors ---
+// Canonical location for periodization.ts's resolveMultiEventObjectives result shape --
+// lives here (not periodization.ts) so decisionTrace/RecommendationAudit below can
+// reference it without periodization.ts importing back from models.ts.
+
+export type ObjectiveDropReason = 'inadmissible_during_taper';
+
+export interface DroppedContributorObjective {
+    eventId: string;
+    eventTitle: string;
+    objectiveKey: ObjectiveKey;
+    reason: ObjectiveDropReason;
+    /** Athlete-facing explanation, not just a machine code -- see the plan's own framing:
+     *  "your B-event's threshold session was dropped because it fell in A-event race
+     *  week" is actionable; a quietly reweighted plan teaches the athlete nothing. */
+    message: string;
 }
 
 export interface MicrocycleState {
@@ -447,6 +486,11 @@ export interface Recommendation {
             utilityScore: number;
             excludedReasons: string[];
         }>;
+        /** Phase 5.6: contributor objectives dropped from this decision's microcycle
+         *  because they fell inadmissible during the taper authority's taper window -- see
+         *  periodization.ts resolveMultiEventObjectives. Empty in the overwhelmingly
+         *  common single-or-no-event case. */
+        droppedContributorObjectives: DroppedContributorObjective[];
     };
 }
 
@@ -622,6 +666,10 @@ export interface DailySubjectiveCheckin {
     illnessSymptoms: boolean;
     unusuallyLimitedTime: boolean;
     alreadyTrainedToday: boolean; // Already completed a session today -- recommendation should be rest/recovery only
+    /** Per-region detail (Phase 5.4), populated when painOrInjury is flagged. Keyed by
+     *  BodyRegion; see injuryPolicy.ts resolveEffectiveInjuryConstraints for how this
+     *  combines with the athlete's standing InjuryConstraint[]. */
+    tissueResponses?: Partial<Record<BodyRegion, RegionTissueResponse>>;
     // Availability block
     availability: {
         timeAvailableMin: number | null;
@@ -711,9 +759,15 @@ export type EquipmentKey = 'free_weights' | 'cable_machine' | 'treadmill' | 'ind
 export type TrainingEnvironment = 'indoor' | 'outdoor' | 'either';
 export type GuardrailKey = 'avoid_high_impact' | 'avoid_heavy_lower_body' | 'avoid_overhead_pressing' | 'avoid_heavy_spinal_loading';
 
-export type BodyRegion =
-  | 'knee' | 'achilles' | 'ankle' | 'calf' | 'hamstring' | 'quadriceps'
-  | 'adductor_groin' | 'hip' | 'lower_back' | 'shoulder' | 'elbow' | 'wrist';
+/** Canonical list -- the single source of truth for BodyRegion. validation.ts and any UI
+ * enumerating regions (e.g. DailyCheckin.tsx) must import this rather than re-listing the
+ * union, so an added region can't compile while silently missing from a validator or UI. */
+export const BODY_REGIONS = [
+  'knee', 'achilles', 'ankle', 'calf', 'hamstring', 'quadriceps',
+  'adductor_groin', 'hip', 'lower_back', 'shoulder', 'elbow', 'wrist',
+] as const;
+
+export type BodyRegion = typeof BODY_REGIONS[number];
 
 export interface InjuryConstraint {
   region?: BodyRegion;
@@ -722,6 +776,34 @@ export interface InjuryConstraint {
   reviewBy?: string;
   note?: string;
   restrictedModalities?: SessionTemplate['modality'][];
+}
+
+/** Canonical list -- the single source of truth for TissueResponseLevel; see BODY_REGIONS
+ * above for why this is exported rather than re-enumerated at each call site. */
+export const TISSUE_LEVELS = ['normal', 'mild', 'moderate', 'severe'] as const;
+
+/** A single tissue-response observation point, shared across the four signals below --
+ * 'normal' means no restriction warranted by that signal alone. */
+export type TissueResponseLevel = typeof TISSUE_LEVELS[number];
+
+/** Per-region subjective tissue feedback for one check-in day (Phase 5.4). One scalar
+ * `soreness` value can't distinguish a knee from an Achilles from general DOMS -- this
+ * captures WHERE and WHEN a response was felt, since "knee hurt during yesterday's run"
+ * and "knee felt stiff this morning with no training" call for different caution.
+ * Never persisted as an `InjuryConstraint` itself and never written back to
+ * TrainingSettings -- see injuryPolicy.ts's resolveEffectiveInjuryConstraints for how a
+ * day's tissue response may only tighten (never weaken or clear) the athlete's standing
+ * InjuryConstraint[]. */
+export interface RegionTissueResponse {
+  region: BodyRegion;
+  /** How the region felt on waking, independent of any training. */
+  morningState: TissueResponseLevel;
+  /** Only meaningful when a session actually happened; absent = nothing to report. */
+  painDuringTraining?: TissueResponseLevel;
+  /** Immediately after that session. */
+  afterTrainingState?: TissueResponseLevel;
+  /** The following morning's reaction to that session. */
+  nextMorningReaction?: TissueResponseLevel;
 }
 
 export interface TrainingSettings {
@@ -874,6 +956,25 @@ export type CompletedTrainingSource = 'garmin' | 'adherence' | 'manual';
 export type CompletedTrainingIntensity = 'easy' | 'moderate' | 'hard' | 'unknown';
 export type CompletedTrainingConfidence = 'high' | 'medium' | 'low';
 
+/** The evidence hierarchy for inferring completed-training stimulus (Phase 5.5) -- see
+ *  docs/plans/phase-5-sequence-planning.md 5.5 and completedTraining.ts's
+ *  classifyGarminTier/stimulusConfidenceForTier. Strongest to weakest evidence.
+ *  `completedStructuredWorkout` is named for completeness against the plan's full ladder
+ *  but is not currently reachable -- no ingested source yet carries a structured
+ *  completed-workout record independent of the prescribed template. `measuredEffort` IS
+ *  reachable: classifyGarminTier returns it when a Garmin activity has both a training
+ *  effect and a positive `activityTrainingLoad`, Garmin's own proprietary composite
+ *  (derived from HR/pace/power across the session) standing in as the closest available
+ *  approximation of true per-interval power/cadence structure. */
+export type EvidenceTier =
+    | 'exactPrescribedMatch'
+    | 'completedStructuredWorkout'
+    | 'measuredEffort'
+    | 'garminTrainingEffect'
+    | 'durationIntensity'
+    | 'athleteClassification'
+    | 'genericModalityFallback';
+
 /**
  * One real-world completed session after all available evidence is reconciled. It is an
  * engine-domain model, derived from durable source records; it is not itself persisted
@@ -897,6 +998,9 @@ export interface CompletedTrainingEvent {
     exactTemplateMatch: boolean;
     sources: CompletedTrainingSource[];
     confidence: CompletedTrainingConfidence;
+    /** Which rung of the Phase 5.5 evidence hierarchy this event's stimulus was derived
+     *  from. Optional only for legacy construction paths that predate this field. */
+    evidenceTier?: EvidenceTier;
     linkedActivityId: string | null;
     linkedRecommendationDate: string | null;
     athleteFeedback: {
@@ -928,6 +1032,10 @@ export interface RecommendationAudit {
         utilityScore: number;
         excludedReasons: string[];
     }>;
+    /** Phase 5.6: carried through from the decision's decisionTrace -- see
+     *  DroppedContributorObjective's own doc comment. Empty in the overwhelmingly common
+     *  single-or-no-event case. */
+    droppedContributorObjectives: DroppedContributorObjective[];
 }
 
 // --- Type Utilities ---

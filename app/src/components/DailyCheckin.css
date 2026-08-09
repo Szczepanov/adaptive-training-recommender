@@ -236,6 +236,57 @@
   cursor: pointer;
 }
 
+/* Per-region tissue response (Phase 5.4) */
+.tissue-response-section {
+  margin: 2rem 0;
+  padding-top: 1.5rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.tissue-response-section h3 {
+  margin: 0 0 0.25rem;
+  font-size: 1.1rem;
+}
+
+.tissue-response-section > p {
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  margin: 0 0 1rem;
+}
+
+.tissue-region-card {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  padding: 1rem;
+  margin-top: 1rem;
+}
+
+.tissue-region-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.75rem;
+}
+
+.tissue-region-remove {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 1rem;
+  padding: 0.25rem 0.5rem;
+}
+
+.tissue-region-remove:hover {
+  color: white;
+}
+
+.tissue-region-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
 .textarea-input {
   resize: vertical;
   font-family: inherit;

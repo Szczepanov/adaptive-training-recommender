@@ -223,6 +223,12 @@ function computeMetrics(
     };
 }
 
+/** Same shape as `generateWeekAheadPlanWithIntent` (planner.ts) -- the parameter
+ *  `runScenario` below swaps to compare an alternative sequencing strategy (Phase 5.1's
+ *  `generateWeekAheadPlanWithIntentBeamSearch`) against the real production greedy path
+ *  over the exact same scenarios/metrics, with no other part of the harness changing. */
+type WeekAheadPlanGenerator = typeof generateWeekAheadPlanWithIntent;
+
 /**
  * Runs one scenario end to end through the real production code path. Each iteration is
  * one non-overlapping seven-calendar-day block: today's real readiness-driven decision
@@ -231,8 +237,12 @@ function computeMetrics(
  * weekly readiness input was directly evaluated and duplicated that boundary day across
  * consecutive windows. That made the sustained-stress scenario look artificially similar
  * to baseline (its weekly mandated recovery day was never part of the metrics).
+ *
+ * `planGenerator` defaults to the real production greedy path -- pass
+ * `generateWeekAheadPlanWithIntentBeamSearch` (sequenceSearch.ts) to run the identical
+ * scenario through Phase 5.1's beam-search prototype instead, for a direct comparison.
  */
-export async function runScenario(scenario: AthleteScenario): Promise<ScenarioResult> {
+export async function runScenario(scenario: AthleteScenario, planGenerator: WeekAheadPlanGenerator = generateWeekAheadPlanWithIntent): Promise<ScenarioResult> {
     const events = scenario.event ? [scenario.event] : [];
     const accumulatedHistory: CompletedExposure[] = [];
     const historyProvider: TrainingHistoryProvider = {
@@ -258,7 +268,7 @@ export async function runScenario(scenario: AthleteScenario): Promise<ScenarioRe
         const tomorrowRec = nextDayPlan.branches.yellow.recommendation;
 
         // Six future days + today's actual decision = one non-overlapping 7-day block.
-        const plan = await generateWeekAheadPlanWithIntent(
+        const plan = await planGenerator(
             'sim-user', readiness, scenario.context, null, events, currentDate, todayRec, tomorrowRec,
             { days: 6 }, historyProvider,
         );

@@ -1,6 +1,9 @@
 # Phase 5 — Sequence planning, real inputs, and the feedback loop
 
-* **Status:** Ready — approved as the destination; increments ordered below. Not the next thing to build.
+* **Status:** Complete — all seven increments landed in the approved order. 5.1's
+  completion is a recorded adoption decision (retain greedy; see
+  [ADR-0015](../adr/0015-sequence-planning-and-session-role-model.md)), not a promotion,
+  per the plan's own definition of done for that increment.
 * **Depends on:** Phases 0–4
 * **Addresses:** the V2 Plan Intent cutover proper
 * **Rough effort:** multi-week; ship as independent increments, not one landing
@@ -16,13 +19,13 @@ Ordered by the increment sequence below, **not** by section number.
 
 | Order | Task | Status | Summary | Primary files |
 |:--:|---|:--:|---|---|
-| 1 | 5.3 | `[ ]` | Persist `FixedActivity` under a user-owned path with rules + emulator tests | `app/firestore.rules`, new `fixedActivityService.ts`, `app/src/engine/schedule.ts`, `planner.ts` |
-| 2 | 5.4 | `[ ]` | Per-region tissue state; may only tighten a Phase-1 injury constraint | `app/src/engine/models.ts`, `components/DailyCheckin.tsx`, `injuryPolicy.ts` |
-| 3 | 5.5 | `[ ]` | Evidence hierarchy for completed training, carrying `stimulusConfidence` | `app/src/engine/completedTraining.ts` |
-| 4 | 5.7 | `[ ]` | Taper as an explicit plan contract rather than an emergent side effect | `app/src/workouts/event-plan.ts`, `app/src/engine/periodization.ts` |
-| 5 | 5.6 | `[ ]` | Multi-event: one taper authority, multiple demand contributors | `app/src/engine/periodization.ts` |
-| 6 | 5.2 | `[ ]` | `PlanningCandidate` carries spacing/recovery metadata into the decision | `app/src/workouts/models.ts`, `app/src/engine/planner.ts` |
-| 7 | 5.1 | `[ ]` | Bounded sequence search — **build and measure**, adoption conditional (D-BEAM) | `app/src/engine/planner.ts` |
+| 1 | 5.3 | `[x]` | Persist `FixedActivity` under a user-owned path with rules + emulator tests | `app/firestore.rules`, new `fixedActivityService.ts`, `app/src/engine/schedule.ts`, `planner.ts` |
+| 2 | 5.4 | `[x]` | Per-region tissue state; may only tighten a Phase-1 injury constraint | `app/src/engine/models.ts`, `components/DailyCheckin.tsx`, `injuryPolicy.ts` |
+| 3 | 5.5 | `[x]` | Evidence hierarchy for completed training, carrying `stimulusConfidence` | `app/src/engine/completedTraining.ts` |
+| 4 | 5.7 | `[x]` | Taper as an explicit plan contract rather than an emergent side effect | `app/src/workouts/event-plan.ts`, `app/src/engine/periodization.ts` |
+| 5 | 5.6 | `[x]` | Multi-event: one taper authority, multiple demand contributors | `app/src/engine/periodization.ts` |
+| 6 | 5.2 | `[x]` | `PlanningCandidate` carries spacing/recovery metadata into the decision | `app/src/engine/planningCandidate.ts`, `app/src/engine/optimizer.ts`, `app/src/engine/rules.ts`, `app/src/engine/planner.ts` |
+| 7 | 5.1 | `[x]` | Bounded sequence search — **build and measure**, adoption conditional (D-BEAM) | `app/src/engine/sequenceSearch.ts`, `app/src/engine/planner.ts`, `app/scripts/compare-sequence-search.mjs` |
 
 **5.1 is an experiment, not a scheduled migration.** Marking it `[x]` requires a recorded
 adoption decision with harness data — retaining the greedy loop is a valid completion.
@@ -60,7 +63,7 @@ increment, not a failed one. Increments 1–6 stand on their own either way.
 
 ---
 
-## `[ ]` 5.1 — Bounded sequence search
+## `[x]` 5.1 — Bounded sequence search
 
 `generateWeekAheadPlan` walks one day at a time, greedily. To compensate, the optimizer
 accumulated six named policies (anti-stacking, post-objective strength suppression,
@@ -97,7 +100,20 @@ judgement the current architecture structurally cannot make.
 Prerequisite: Phase 3's lexicographic layer. Search needs hard constraints separated from
 sort keys; it cannot operate on a single blended multiplier.
 
-## `[ ]` 5.2 — Move the planner/workout-library boundary
+**Delivered as:** `app/src/engine/sequenceSearch.ts` (`beamSearchWeekAheadPlan`,
+`generateWeekAheadPlanWithIntentBeamSearch`) -- a genuine beam-search prototype built by
+maximal reuse of `rankCandidates`' existing hard-gate-before-scoring separation (the
+Phase 3 prerequisite), not a parallel engine. Benchmarked against greedy via
+`npm run compare:sequence-search` on the Phase 0 invariants and the golden-week semantic
+harness (now run against both algorithms permanently in `goldenWeek.test.ts`). **Decision
+recorded in [ADR-0015](../adr/0015-sequence-planning-and-session-role-model.md): greedy
+retained as the live default.** The comparison itself was genuinely positive (zero new
+constraint/golden-week violations, better objective resolution in several scenarios) --
+adoption is deferred rather than rejected, pending compute-cost profiling and product
+sign-off on a real rest-day-frequency behavior shift the harness cannot judge on its own.
+`sequenceSearch.ts` is not imported by any production code path.
+
+## `[x]` 5.2 — Move the planner/workout-library boundary
 
 Detailed `WorkoutDefinition`s already carry recovery hours, mechanical and eccentric load,
 coordination demand, technical environment, contraindications, and minimum spacing after
@@ -125,7 +141,21 @@ interface PlanningCandidate {
 
 Prescription generation stays downstream and unchanged.
 
-## `[ ]` 5.3 — Persist fixed activities
+**Delivered as:** `app/src/engine/planningCandidate.ts` (not literally
+`workouts/models.ts` -- see the file's own doc comment: `engine/models.ts` already
+imports from `workouts/models.ts`, so a type referencing `SessionRole`/`Modality`/
+`WorkoutStimulusProfile`/`WorkoutCostProfile`/`TrainingEnvironment` living in
+`workouts/models.ts` would make that dependency circular). `derivePlanningCandidate`
+resolves one `WorkoutDefinition` against its linked `SessionTemplate`;
+`PLANNING_CANDIDATE_INDEX` builds the full catalog once, keyed by engine template id.
+Wired into the one concrete gap this closes: `optimizer.ts`'s
+`evaluateRecoveryConstraints` hard-lower-body spacing check was a flat 2-day rule with no
+per-workout data behind it at all -- it now consults
+`resolveMinimumDaysAfterHardLowerBody` (optional, defaults to the identical flat rule)
+so a workout's own `eligibility.minimumDaysAfterHardLowerBody` can tighten *or* loosen
+that gate correctly, wired at both live call sites (`planner.ts`, `rules.ts`).
+
+## `[x]` 5.3 — Persist fixed activities
 
 `FixedActivity` exists in the domain and `WeekAheadOptions.fixedActivities` accepts it,
 but there is no Firestore-backed source (ADR-0008 §5 admits this). For a multi-sport
@@ -174,7 +204,7 @@ Emulator cases beyond the three ownership ones: out-of-range `durationMin`, an
 and a malformed `date`. Each must be **denied** — these are the cases a buggy or
 tampered client actually produces.
 
-## `[ ]` 5.4 — Local tissue state
+## `[x]` 5.4 — Local tissue state
 
 One scalar soreness value cannot distinguish knee from Achilles from calf from adductor
 from general DOMS. Extend the check-in to per-region response (morning state, pain during
@@ -196,7 +226,7 @@ wearable-derived readiness (may tighten). Test all three pairwise conflicts.
 Fatigue estimates remain guidance; observed local response outranks *wearable* readiness,
 not the injury gate.
 
-## `[ ]` 5.5 — Evidence hierarchy for completed training
+## `[x]` 5.5 — Evidence hierarchy for completed training
 
 Phase 1.2 ships a coarse modality×intensity stimulus inference. This generalises it:
 
@@ -223,7 +253,7 @@ materially better than treating meaningful unplanned training as adaptation-neut
 The asymmetry this closes: today the system sees **cost** from an unplanned hard group
 ride but not **benefit**, so it can prescribe work that was effectively already done.
 
-## `[ ]` 5.6 — Multi-event: separate taper authority from demand contribution
+## `[x]` 5.6 — Multi-event: separate taper authority from demand contribution
 
 `evaluatePeriodizationPhase` picks one governing event by priority then proximity. A more
 realistic model is **one taper authority, multiple demand contributors**: an A-event 70
@@ -263,7 +293,23 @@ Tests before 5.6 is executable: priority tie broken by proximity; proximity tie 
 date then id; two contributors sharing an objective key resolving to `max`, not sum; a
 contributor objective inside race week dropped with its reason present in the audit.
 
-## `[ ]` 5.7 — Taper as an explicit contract
+**Delivered as:** `evaluatePeriodizationPhase`'s existing sort gained the two missing
+tie-breakers (planning date, then event id) plus a `governingEventTie` field that
+surfaces — rather than silently resolves — a genuine two-A-events-same-day conflict.
+`objectivesFromDemand` (extracted from Phase 5.7's work, now shared) derives objectives
+from one event's own demand vector; `resolveMultiEventObjectives` (both new, in
+`periodization.ts`) unions the taper authority's objectives with every other eligible
+event's own contribution (within a 35-day window, matching the existing Specificity
+threshold), applying `max(requiredCredit)` on key collisions and dropping — with a
+recorded, athlete-facing reason — any contributor `threshold_quality` objective while the
+authority is tapering. Wired into `planner.ts`'s `prepareWeekAheadPlanSeed` (both the
+completed-history and generic branches), so it reaches the live week-ahead pipeline for
+any athlete with more than one active dated event; a no-op otherwise, confirmed via
+`simulate:diff` against the committed baseline. **Scope boundary:** the plan-derived path
+(`PlanDefinition`/`buildSeptemberCyclingEventPlan`) is not wired to contributors in this
+increment — only the generic days-to-event path is.
+
+## `[x]` 5.7 — Taper as an explicit contract
 
 Taper behaviour currently emerges from interactions between `volumeScale`, objective
 generation, template `phaseEligibility` and utility ranking. `event-plan.ts` already names
@@ -275,18 +321,22 @@ event-specific freshness* rather than arriving as an emergent side effect.
 
 ## Acceptance criteria
 
-- [ ] a sequence-search prototype exists and is benchmarked against greedy on the Phase-0
-      invariants and semantic harness
-- [ ] an explicit adoption decision is recorded in an ADR, with the comparison data —
+- [x] a sequence-search prototype exists and is benchmarked against greedy on the Phase-0
+      invariants and semantic harness (`sequenceSearch.ts`, `compare:sequence-search`)
+- [x] an explicit adoption decision is recorded in an ADR, with the comparison data —
       **either** (a) beam search is promoted, hard constraints reject before scoring, and a
       full week is scored as a sequence and is explainable; **or** (b) greedy is retained
-      and the negative result is recorded. Both satisfy this criterion.
-- [ ] `PlanningCandidate` carries spacing/recovery metadata into the decision
-- [ ] fixed activities persist and affect availability and adjacent days
-- [ ] per-region tissue state constrains mechanical work independently of wearable readiness
-- [ ] inferred stimulus carries confidence and uses the strongest available evidence
-- [ ] taper roles come from the plan, not from weight interactions
-- [ ] Phase 0 invariants hold throughout; each increment's semantic diff explained
+      and the measured result and adoption decision are recorded. Both satisfy this
+      criterion. ([ADR-0015](../adr/0015-sequence-planning-and-session-role-model.md): (b) —
+      the comparison itself was genuinely positive, not negative, and is recorded as such;
+      adoption is deferred pending compute-cost profiling and product sign-off on a real
+      behavior shift, not rejected on the merits the harness can measure.)
+- [x] `PlanningCandidate` carries spacing/recovery metadata into the decision
+- [x] fixed activities persist and affect availability and adjacent days
+- [x] per-region tissue state constrains mechanical work independently of wearable readiness
+- [x] inferred stimulus carries confidence and uses the strongest available evidence
+- [x] taper roles come from the plan, not from weight interactions
+- [x] Phase 0 invariants hold throughout; each increment's semantic diff explained
 
 ## Risks & rollback
 
@@ -314,6 +364,10 @@ event-specific freshness* rather than arriving as an emergent side effect.
 
 ## Docs to update
 
-* **ADR-0015** (new) — sequence planning and the session-role model
-* **ADR-0008** — superseded in part: the greedy projected loop is replaced
-* `docs/architecture/recommendation-engine.md` — the planner section
+* **ADR-0015** (new, done) — sequence planning: the beam-search prototype, its
+  comparison data, and the recorded adoption decision (defer, not reject).
+* ~~ADR-0008 — superseded in part: the greedy projected loop is replaced~~ Did not
+  happen: the adoption decision (ADR-0015) retained the greedy loop as the live default,
+  so ADR-0008's confidence-tier/greedy-walk description remains accurate as written.
+* `docs/architecture/recommendation-engine.md` (done) — the planner section, plus new
+  subsections for each landed increment (5.3, 5.4, 5.5, 5.6, 5.7, 5.2, 5.1).
