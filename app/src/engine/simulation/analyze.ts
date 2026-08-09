@@ -4,6 +4,7 @@ import { generateWeekAheadPlanWithIntent, resolveWeeklyAnchors, type WeekAheadDa
 import type { CompletedExposure, TrainingHistoryProvider } from '../trainingHistory';
 import { evaluatePeriodizationPhase } from '../periodization';
 import { addDaysToLocalDateString } from '../../utils/localDate';
+import { workoutForTemplate } from '../../workouts/prescription';
 import type { AthleteScenario } from './scenarios';
 import { SCENARIOS } from './scenarios';
 
@@ -90,10 +91,14 @@ function recommendationAsDay(date: string, recommendation: Recommendation, phase
 }
 
 function toCompletedExposure(day: WeekAheadDay): CompletedExposure {
+    const workoutId = workoutForTemplate(day.template.id)?.id;
     return {
         date: day.date,
         costProfile: day.template.costProfile ?? ZERO_COST,
         stimulusProfile: day.template.stimulusProfile,
+        stimulusConfidence: 'exact',
+        templateId: day.template.id,
+        ...(workoutId ? { workoutId } : {}),
         modality: day.template.modality,
         category: day.template.category,
         trainingRecordLike: {
@@ -322,6 +327,9 @@ export async function runScenario(scenario: AthleteScenario, planGenerator: Week
         plan.objectiveCredits.forEach(credit => {
             objectiveCredits.push({ weekIndex: week, ...credit });
         });
+        // Chained weeks must preserve the same exact catalog identity production history
+        // now carries. Dropping template/workout identity here makes ADR-0016 fail closed
+        // at each 7-day boundary and falsely re-open every weekly role.
         simulatedDays.forEach(day => accumulatedHistory.push(toCompletedExposure(day)));
 
         plan.microcycleObjectives.forEach(obj => {
