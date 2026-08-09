@@ -74,6 +74,7 @@ Reserved for work sequenced in [`docs/plans/`](./plans/), written with their pha
 Point-in-time assessments of the system as built, including gaps between documented decisions and implemented behaviour:
 
 * [**2026-08-08 Codebase, Docs & Decision Review**](./analysis/2026-08-08-architecture-review.md) — Full-repository review with a sequenced remediation plan.
+* [**2026-08-09 Phase 0–5 completion review**](./analysis/2026-08-09-phase-0-5-completion-review.md) — Current reconciliation of the remediation plans, verification evidence, and remaining calibration/process work.
 
 ---
 

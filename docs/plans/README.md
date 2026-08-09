@@ -51,8 +51,9 @@ These implement the way forward in
 §7.5. Finding IDs (`F1`, `F16`, …) refer to that document.
 
 All six phases are **implemented** as verified on 2026-08-09. Their task boards are
-historical implementation records; a follow-up analysis records which original findings
-are fully closed and which remain ongoing work.
+historical implementation records; the
+[follow-up analysis](../analysis/2026-08-09-phase-0-5-completion-review.md) records
+which original findings are fully closed and which remain ongoing work.
 
 `Status` is a single plan-level lifecycle value from the table above. Because a plan can
 be part-startable, **which work items are unblocked is a separate column** — `Ready` at
