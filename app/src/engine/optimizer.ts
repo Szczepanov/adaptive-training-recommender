@@ -258,8 +258,11 @@ export function evaluateRecoveryConstraints(
     const candidateLowerBodyCost = template.costProfile?.lowerBody ?? (STRENGTH_CATEGORIES.includes(template.category) ? 0.6 : 0);
     if (candidateLowerBodyCost >= 0.6) {
         // Phase 5.2: a detailed workout's own eligibility.minimumDaysAfterHardLowerBody
-        // (planningCandidate.ts) can require a longer gap than the flat 2-day default
-        // below -- the default reproduces the exact prior behavior (diff === 1 was the
+        // (planningCandidate.ts) can override the flat 2-day default below in EITHER
+        // direction -- most catalog overrides are 1 (e.g. race-week/taper primers and
+        // quality-support sessions deliberately allow a shorter gap than the flat
+        // default), and a few are stricter (e.g. `field.ts`'s technical field sessions use
+        // 2). The default itself reproduces the exact prior behavior (diff === 1 was the
         // only violation) for every template with no such workout-level override.
         const minGapDays = options.resolveMinimumDaysAfterHardLowerBody?.(template.id) ?? 2;
         const priorHardLower = history.find(h => {

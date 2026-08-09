@@ -310,6 +310,13 @@ emulatorDescribe('Firestore security rules', () => {
         await assertFails(setDoc(doc(ownerDb, fixedActivityPath), { ...validFixedActivity(), date: '08/12/2026' }));
     });
 
+    it('rejects a fixed activity with a YYYY-MM-DD-shaped but calendar-impossible date', async () => {
+        // Regex-only shape validation would accept this; a direct authenticated write
+        // (bypassing validation.ts's client-side isValidDate) must still be rejected.
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertFails(setDoc(doc(ownerDb, fixedActivityPath), { ...validFixedActivity(), date: '2026-02-30' }));
+    });
+
     it('rejects a fixed activity missing the required fixed field', async () => {
         const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
         const withoutFixed: Record<string, unknown> = validFixedActivity();

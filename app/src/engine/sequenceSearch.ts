@@ -41,6 +41,7 @@ import {
     projectFatigueForRankingDate,
     realizedSessionRole,
     resolveWeeklyAnchors,
+    trailingHistoryFromCompletedExposures,
 } from './planner';
 
 /**
@@ -329,8 +330,15 @@ export function beamSearchWeekAheadPlan(
         // single day -- this is what lets the search prefer a slightly weaker day if it
         // keeps stronger options open for the rest of the week.
         nextGeneration.sort((a, b) => b.cumulativeScore - a.cumulativeScore);
-        beam = nextGeneration.slice(0, beamWidth);
-        if (beam.length === 0) beam = [seedBranch]; // degenerate case: no branch survived (shouldn't happen given the rest fallback)
+        // Only replace the beam if at least one branch survived this day. Every branch
+        // pushes a rest-fallback extension when `accepted.length === 0`, so an empty
+        // `nextGeneration` should not happen -- but resetting to `[seedBranch]` on it would
+        // discard every previously-planned day while `offset` keeps advancing, producing a
+        // truncated/misnumbered plan. Keeping the current (pre-this-day) beam instead means
+        // the search simply stalls on this day rather than corrupting what came before it.
+        if (nextGeneration.length > 0) {
+            beam = nextGeneration.slice(0, beamWidth);
+        }
     }
 
     const winner = beam[0] ?? seedBranch;
@@ -391,13 +399,7 @@ export async function generateWeekAheadPlanWithIntentBeamSearch(
         {
             microcycle: intent.microcycle,
             fatigue: intent.fatigue,
-            trailingHistory: intent.history.map(e => ({
-                date: ('completedDate' in e && typeof e.completedDate === 'string' ? e.completedDate : 'date' in e && typeof e.date === 'string' ? e.date : todayDate),
-                modality: e.modality,
-                category: e.category,
-                systemicCost: e.costProfile?.systemic ?? 0,
-                lowerBodyCost: e.costProfile?.lowerBody ?? 0,
-            })),
+            trailingHistory: trailingHistoryFromCompletedExposures(intent.history, todayDate),
         },
         { ...options, events },
         beamWidth,

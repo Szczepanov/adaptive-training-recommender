@@ -361,6 +361,18 @@ describe('validateCheckin: tissueResponses (Phase 5.4)', () => {
         expect(empty.isValid).toBe(true);
         expect(empty.data?.tissueResponses).toBeUndefined();
     });
+
+    it('rejects an entry whose own region field mismatches its containing map key', () => {
+        const result = validateCheckin({ ...baseFields, tissueResponses: { knee: { region: 'ankle', morningState: 'mild' } } });
+        expect(result.isValid).toBe(false);
+        expect(result.errors.some(e => e.field === 'tissueResponses.knee.region')).toBe(true);
+    });
+
+    it('accepts an entry whose own region field matches its containing map key', () => {
+        const result = validateCheckin({ ...baseFields, tissueResponses: { knee: { region: 'knee', morningState: 'mild' } } });
+        expect(result.isValid).toBe(true);
+        expect(result.data?.tissueResponses?.knee).toEqual({ region: 'knee', morningState: 'mild' });
+    });
 });
 
 describe('validateEventTiming', () => {

@@ -155,7 +155,22 @@ service cloud.firestore {
     // must stay aligned with (models.ts FixedActivity, validation.ts validateFixedActivity).
 
     function isValidActivityDate(date) {
-      return date is string && date.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$');
+      return date is string && date.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$') && isRealCalendarDate(date.split('-'));
+    }
+
+    // Rejects a date that merely matches YYYY-MM-DD shape but isn't a real calendar date
+    // (e.g. 2026-02-30) -- matches validation.ts's isValidDate, which does full calendar
+    // validation client-side. A direct authenticated write bypassing validation.ts must not
+    // be able to persist a date the client-side layer would have rejected.
+    function isRealCalendarDate(parts) {
+      let year = int(parts[0]);
+      let month = int(parts[1]);
+      let day = int(parts[2]);
+      let isLeapYear = (year % 4 == 0 && year % 100 != 0) || year % 400 == 0;
+      let daysInMonth = month == 2 ? (isLeapYear ? 29 : 28)
+        : (month == 4 || month == 6 || month == 9 || month == 11) ? 30
+        : 31;
+      return month >= 1 && month <= 12 && day >= 1 && day <= daysInMonth;
     }
 
     // A single reusable "is this map entry, if present, a 0..1 number" check -- shared by

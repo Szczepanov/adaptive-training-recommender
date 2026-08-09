@@ -24,8 +24,8 @@ Ordered by the increment sequence below, **not** by section number.
 | 3 | 5.5 | `[x]` | Evidence hierarchy for completed training, carrying `stimulusConfidence` | `app/src/engine/completedTraining.ts` |
 | 4 | 5.7 | `[x]` | Taper as an explicit plan contract rather than an emergent side effect | `app/src/workouts/event-plan.ts`, `app/src/engine/periodization.ts` |
 | 5 | 5.6 | `[x]` | Multi-event: one taper authority, multiple demand contributors | `app/src/engine/periodization.ts` |
-| 6 | 5.2 | `[x]` | `PlanningCandidate` carries spacing/recovery metadata into the decision | `app/src/workouts/models.ts`, `app/src/engine/planner.ts` |
-| 7 | 5.1 | `[x]` | Bounded sequence search — **build and measure**, adoption conditional (D-BEAM) | `app/src/engine/planner.ts` |
+| 6 | 5.2 | `[x]` | `PlanningCandidate` carries spacing/recovery metadata into the decision | `app/src/engine/planningCandidate.ts`, `app/src/engine/optimizer.ts`, `app/src/engine/rules.ts`, `app/src/engine/planner.ts` |
+| 7 | 5.1 | `[x]` | Bounded sequence search — **build and measure**, adoption conditional (D-BEAM) | `app/src/engine/sequenceSearch.ts`, `app/src/engine/planner.ts`, `app/scripts/compare-sequence-search.mjs` |
 
 **5.1 is an experiment, not a scheduled migration.** Marking it `[x]` requires a recorded
 adoption decision with harness data — retaining the greedy loop is a valid completion.
@@ -326,10 +326,11 @@ event-specific freshness* rather than arriving as an emergent side effect.
 - [x] an explicit adoption decision is recorded in an ADR, with the comparison data —
       **either** (a) beam search is promoted, hard constraints reject before scoring, and a
       full week is scored as a sequence and is explainable; **or** (b) greedy is retained
-      and the negative result is recorded. Both satisfy this criterion. ([ADR-0015](../adr/0015-sequence-planning-and-session-role-model.md):
-      (b), though the comparison itself was genuinely positive, not negative — adoption is
-      deferred pending compute-cost profiling and product sign-off on a real behavior
-      shift, not rejected on the merits the harness can measure.)
+      and the measured result and adoption decision are recorded. Both satisfy this
+      criterion. ([ADR-0015](../adr/0015-sequence-planning-and-session-role-model.md): (b) —
+      the comparison itself was genuinely positive, not negative, and is recorded as such;
+      adoption is deferred pending compute-cost profiling and product sign-off on a real
+      behavior shift, not rejected on the merits the harness can measure.)
 - [x] `PlanningCandidate` carries spacing/recovery metadata into the decision
 - [x] fixed activities persist and affect availability and adjacent days
 - [x] per-region tissue state constrains mechanical work independently of wearable readiness

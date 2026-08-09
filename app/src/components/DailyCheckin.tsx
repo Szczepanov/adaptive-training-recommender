@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { checkinService } from '../services/checkinService';
 import { recoverySnapshotService } from '../services/recoverySnapshotService';
 import type { BodyRegion, DailySubjectiveCheckin, RegionTissueResponse, TissueResponseLevel } from '../engine/models';
+import { BODY_REGIONS, TISSUE_LEVELS } from '../engine/models';
 import { getLocalDateString } from '../utils/localDate';
 import { getErrorMessage } from '../utils/errors';
 import './DailyCheckin.css';
@@ -12,18 +13,11 @@ interface DailyCheckinProps {
   onBack?: () => void;
 }
 
-const BODY_REGIONS: BodyRegion[] = [
-  'knee', 'achilles', 'ankle', 'calf', 'hamstring', 'quadriceps',
-  'adductor_groin', 'hip', 'lower_back', 'shoulder', 'elbow', 'wrist',
-];
-
 const REGION_LABELS: Record<BodyRegion, string> = {
   knee: 'Knee', achilles: 'Achilles', ankle: 'Ankle', calf: 'Calf',
   hamstring: 'Hamstring', quadriceps: 'Quadriceps', adductor_groin: 'Adductor/Groin',
   hip: 'Hip', lower_back: 'Lower Back', shoulder: 'Shoulder', elbow: 'Elbow', wrist: 'Wrist',
 };
-
-const TISSUE_LEVELS: TissueResponseLevel[] = ['normal', 'mild', 'moderate', 'severe'];
 
 const TISSUE_LEVEL_LABELS: Record<TissueResponseLevel, string> = {
   normal: 'Normal', mild: 'Mild', moderate: 'Moderate', severe: 'Severe',

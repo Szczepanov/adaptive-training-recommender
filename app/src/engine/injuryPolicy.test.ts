@@ -242,5 +242,28 @@ describe('injuryPolicy', () => {
             expect(resolveEffectiveInjuryConstraints(baseInjuries, undefined, '2026-08-08')).toEqual(baseInjuries);
             expect(resolveEffectiveInjuryConstraints(baseInjuries, {}, '2026-08-08')).toEqual(baseInjuries);
         });
+
+        it('keeps every same-region base constraint, not just the highest-severity one, and tightens each independently', () => {
+            // Two standing knee constraints: a general monitor plus an explicit
+            // modality-specific limit. A collapse-to-one-per-region bug would silently
+            // drop one of these, along with its restrictedModalities.
+            const baseInjuries: InjuryConstraint[] = [
+                { region: 'knee', severity: 'monitor', note: 'general knee caution' },
+                { region: 'knee', severity: 'limit', restrictedModalities: ['Running'], note: 'no running on knee' },
+            ];
+            const tissueResponses = { knee: { region: 'knee' as const, morningState: 'moderate' as const } };
+
+            const effective = resolveEffectiveInjuryConstraints(baseInjuries, tissueResponses, '2026-08-08');
+            const kneeConstraints = effective.filter(i => i.region === 'knee');
+
+            // Both base constraints survive, each tightened by the moderate tissue reading
+            // (monitor -> limit; limit stays limit since 'limit' already outranks the
+            // derived 'limit') and neither constraint's restrictedModalities is lost.
+            expect(kneeConstraints).toHaveLength(2);
+            expect(kneeConstraints.find(i => i.note === 'general knee caution')?.severity).toBe('limit');
+            const explicitLimit = kneeConstraints.find(i => i.note === 'no running on knee');
+            expect(explicitLimit?.severity).toBe('limit');
+            expect(explicitLimit?.restrictedModalities).toEqual(['Running']);
+        });
     });
 });

@@ -141,39 +141,46 @@ export function resolveEffectiveInjuryConstraints(
     if (!tissueResponses || Object.keys(tissueResponses).length === 0) return base;
 
     const regionless = base.filter(injury => !injury.region);
-    const byRegion = new Map<BodyRegion, InjuryConstraint>();
+    // Every same-region base constraint is kept -- a region can legitimately carry more
+    // than one (e.g. a general limit plus a modality-specific exclude), each with its own
+    // restrictedModalities. Collapsing to a single "worst" constraint would silently drop
+    // the others' restrictedModalities.
+    const byRegion = new Map<BodyRegion, InjuryConstraint[]>();
     for (const injury of base) {
         if (!injury.region) continue;
-        // Total order even if a caller somehow supplies two constraints for one region.
         const existing = byRegion.get(injury.region);
-        if (!existing || SEVERITY_RANK[injury.severity] > SEVERITY_RANK[existing.severity]) {
-            byRegion.set(injury.region, injury);
-        }
+        if (existing) existing.push(injury);
+        else byRegion.set(injury.region, [injury]);
     }
 
     const allRegions = new Set<BodyRegion>([...byRegion.keys(), ...(Object.keys(tissueResponses) as BodyRegion[])]);
     const merged: InjuryConstraint[] = [...regionless];
 
     for (const region of allRegions) {
-        const injury = byRegion.get(region);
+        const injuriesForRegion = byRegion.get(region) ?? [];
         const response = tissueResponses[region];
         const derived = response ? deriveTissueSeverity(response) : null;
-        const isActive = !!injury && !(injury.reviewBy !== undefined && injury.reviewBy < today);
 
-        if (injury && isActive && derived) {
-            merged.push({ ...injury, severity: moreSevere(injury.severity, derived) });
-            continue;
+        let anyActive = false;
+        for (const injury of injuriesForRegion) {
+            const isActive = !(injury.reviewBy !== undefined && injury.reviewBy < today);
+            if (isActive) anyActive = true;
+            if (isActive && derived) {
+                // Tighten this constraint's severity -- restrictedModalities and every
+                // other field pass through unchanged.
+                merged.push({ ...injury, severity: moreSevere(injury.severity, derived) });
+            } else {
+                // Pass the base constraint through unchanged -- resolveInjuryRestrictions is
+                // what actually drops an expired one; this function never resurrects it.
+                merged.push(injury);
+            }
         }
-        if (injury) {
-            // Pass the base constraint through unchanged -- resolveInjuryRestrictions is
-            // what actually drops an expired one; this function never resurrects it.
-            merged.push(injury);
-        }
-        if (derived && (!injury || !isActive)) {
-            // Either a brand-new region with no standing constraint, or the standing
-            // constraint has lapsed and today's tissue response found a fresh problem --
-            // either way this is today-only, so it gets its own bounded reviewBy rather
-            // than silently persisting if this result were ever mistakenly saved.
+        if (derived && !anyActive) {
+            // Either a brand-new region with no standing constraint, or every standing
+            // constraint for it has lapsed and today's tissue response found a fresh
+            // problem -- either way this is today-only, so it gets its own bounded
+            // reviewBy rather than silently persisting if this result were ever mistakenly
+            // saved.
             merged.push({ region, severity: derived, reviewBy: today, note: "Derived from today's tissue check-in" });
         }
     }

@@ -736,9 +736,15 @@ export type EquipmentKey = 'free_weights' | 'cable_machine' | 'treadmill' | 'ind
 export type TrainingEnvironment = 'indoor' | 'outdoor' | 'either';
 export type GuardrailKey = 'avoid_high_impact' | 'avoid_heavy_lower_body' | 'avoid_overhead_pressing' | 'avoid_heavy_spinal_loading';
 
-export type BodyRegion =
-  | 'knee' | 'achilles' | 'ankle' | 'calf' | 'hamstring' | 'quadriceps'
-  | 'adductor_groin' | 'hip' | 'lower_back' | 'shoulder' | 'elbow' | 'wrist';
+/** Canonical list -- the single source of truth for BodyRegion. validation.ts and any UI
+ * enumerating regions (e.g. DailyCheckin.tsx) must import this rather than re-listing the
+ * union, so an added region can't compile while silently missing from a validator or UI. */
+export const BODY_REGIONS = [
+  'knee', 'achilles', 'ankle', 'calf', 'hamstring', 'quadriceps',
+  'adductor_groin', 'hip', 'lower_back', 'shoulder', 'elbow', 'wrist',
+] as const;
+
+export type BodyRegion = typeof BODY_REGIONS[number];
 
 export interface InjuryConstraint {
   region?: BodyRegion;
@@ -749,9 +755,13 @@ export interface InjuryConstraint {
   restrictedModalities?: SessionTemplate['modality'][];
 }
 
+/** Canonical list -- the single source of truth for TissueResponseLevel; see BODY_REGIONS
+ * above for why this is exported rather than re-enumerated at each call site. */
+export const TISSUE_LEVELS = ['normal', 'mild', 'moderate', 'severe'] as const;
+
 /** A single tissue-response observation point, shared across the four signals below --
  * 'normal' means no restriction warranted by that signal alone. */
-export type TissueResponseLevel = 'normal' | 'mild' | 'moderate' | 'severe';
+export type TissueResponseLevel = typeof TISSUE_LEVELS[number];
 
 /** Per-region subjective tissue feedback for one check-in day (Phase 5.4). One scalar
  * `soreness` value can't distinguish a knee from an Achilles from general DOMS -- this
@@ -926,11 +936,13 @@ export type CompletedTrainingConfidence = 'high' | 'medium' | 'low';
 /** The evidence hierarchy for inferring completed-training stimulus (Phase 5.5) -- see
  *  docs/plans/phase-5-sequence-planning.md 5.5 and completedTraining.ts's
  *  classifyGarminTier/stimulusConfidenceForTier. Strongest to weakest evidence.
- *  `completedStructuredWorkout` and `measuredEffort` are named for completeness against
- *  the plan's full ladder but are not currently reachable -- no ingested source yet
- *  carries a structured completed-workout record independent of the prescribed template
- *  (the former) or per-interval power/cadence structure (the latter); Garmin's aggregate
- *  Training Load stands in for the closest available approximation of the latter. */
+ *  `completedStructuredWorkout` is named for completeness against the plan's full ladder
+ *  but is not currently reachable -- no ingested source yet carries a structured
+ *  completed-workout record independent of the prescribed template. `measuredEffort` IS
+ *  reachable: classifyGarminTier returns it when a Garmin activity has both a training
+ *  effect and a positive `activityTrainingLoad`, Garmin's own proprietary composite
+ *  (derived from HR/pace/power across the session) standing in as the closest available
+ *  approximation of true per-interval power/cadence structure. */
 export type EvidenceTier =
     | 'exactPrescribedMatch'
     | 'completedStructuredWorkout'

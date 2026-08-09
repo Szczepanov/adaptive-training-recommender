@@ -16,6 +16,8 @@ import {
     objectivesFromDemand,
     TAPER_SHARPENING_QUALIFICATION,
     TAPER_SHARPENING_TARGET_STIMULUS,
+    TAPER_SHARPENING_TITLE,
+    TAPER_STRENGTH_PRIMER_TITLE,
     TAPER_STRENGTH_TARGET_STIMULUS,
     type PhaseWeights,
 } from './periodization';
@@ -80,12 +82,12 @@ export function generateWeeklyObjectives(
                     };
                     break;
                 case 'strength_maintenance':
-                    title = isTaperBlock ? 'Race-Week Strength Primer' : 'Strength & Neuromuscular Maintenance';
+                    title = isTaperBlock ? TAPER_STRENGTH_PRIMER_TITLE : 'Strength & Neuromuscular Maintenance';
                     targetStimulus = isTaperBlock ? TAPER_STRENGTH_TARGET_STIMULUS : { maxStrength: 0.7, hypertrophy: 0.5 };
                     break;
                 case 'race_specific_endurance':
                     if (isTaperBlock) {
-                        title = 'Taper Sharpening (event-specific freshness)';
+                        title = TAPER_SHARPENING_TITLE;
                         targetStimulus = TAPER_SHARPENING_TARGET_STIMULUS;
                         qualification = TAPER_SHARPENING_QUALIFICATION;
                     } else {

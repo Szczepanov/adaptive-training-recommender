@@ -33,7 +33,7 @@ import type {
     RegionTissueResponse,
     TissueResponseLevel
 } from './models';
-import { validateEventTiming } from './models';
+import { validateEventTiming, BODY_REGIONS, TISSUE_LEVELS } from './models';
 import { deriveGoalCategory } from './periodization';
 import { EVENT_PRESETS } from './eventPresets';
 import { getLocalDateString } from '../utils/localDate';
@@ -80,15 +80,8 @@ function normalizeEmptyToNull(value: any): any {
 
 // --- Daily Subjective Check-in Validation ---
 
-const BODY_REGIONS: BodyRegion[] = [
-    'knee', 'achilles', 'ankle', 'calf', 'hamstring', 'quadriceps',
-    'adductor_groin', 'hip', 'lower_back', 'shoulder', 'elbow', 'wrist',
-];
-
-const TISSUE_LEVELS: TissueResponseLevel[] = ['normal', 'mild', 'moderate', 'severe'];
-
 function isValidTissueLevel(value: unknown): value is TissueResponseLevel {
-    return typeof value === 'string' && (TISSUE_LEVELS as string[]).includes(value);
+    return typeof value === 'string' && (TISSUE_LEVELS as readonly string[]).includes(value);
 }
 
 /** Validates and rebuilds the optional per-region tissue-response map (Phase 5.4).
@@ -104,7 +97,7 @@ function validateTissueResponses(raw: any, errors: ValidationError[]): Partial<R
 
     const result: Partial<Record<BodyRegion, RegionTissueResponse>> = {};
     for (const key of Object.keys(raw)) {
-        if (!(BODY_REGIONS as string[]).includes(key)) {
+        if (!(BODY_REGIONS as readonly string[]).includes(key)) {
             errors.push({ field: 'tissueResponses', message: `tissueResponses has unrecognized region '${key}'` });
             continue;
         }
@@ -112,6 +105,10 @@ function validateTissueResponses(raw: any, errors: ValidationError[]): Partial<R
         const entry = raw[key];
         if (!entry || typeof entry !== 'object') {
             errors.push({ field: `tissueResponses.${region}`, message: 'Each region entry must be an object' });
+            continue;
+        }
+        if (entry.region !== undefined && entry.region !== region) {
+            errors.push({ field: `tissueResponses.${region}.region`, message: `region must match the containing key '${region}', got '${entry.region}'` });
             continue;
         }
         if (!isValidTissueLevel(entry.morningState)) {
@@ -881,7 +878,7 @@ export function validateFixedActivity(raw: any): ValidationResult<FixedActivity>
     }
 
     if (raw.availabilityOverride !== undefined && raw.availabilityOverride !== null) {
-        if (typeof raw.availabilityOverride !== 'number' || raw.availabilityOverride < 0 || raw.availabilityOverride > 1440) {
+        if (typeof raw.availabilityOverride !== 'number' || !Number.isFinite(raw.availabilityOverride) || raw.availabilityOverride < 0 || raw.availabilityOverride > 1440) {
             errors.push({ field: 'availabilityOverride', message: 'availabilityOverride must be a number of minutes in [0, 1440]' });
         }
     }

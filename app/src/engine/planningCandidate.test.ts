@@ -124,9 +124,13 @@ describe('buildPlanningCandidateIndex (Phase 5.2)', () => {
     it('the real, module-level PLANNING_CANDIDATE_INDEX is built from the actual catalog and template roster', () => {
         expect(PLANNING_CANDIDATE_INDEX.size).toBeGreaterThan(0);
         // Cross-check against a fresh build from the same live data -- guards against the
-        // module-level singleton silently drifting from WORKOUTS/ENRICHED_TEMPLATES.
+        // module-level singleton silently drifting from WORKOUTS/ENRICHED_TEMPLATES. Compare
+        // resolved workout ids per template, not just index size -- two equal-size indexes
+        // could still map the same template id to different workout ids.
         const rebuilt = buildPlanningCandidateIndex(WORKOUTS, ENRICHED_TEMPLATES);
-        expect(PLANNING_CANDIDATE_INDEX.size).toBe(rebuilt.size);
+        const asPairs = (index: typeof rebuilt) =>
+            [...index.entries()].map(([templateId, candidate]) => [templateId, candidate.workoutId]).sort();
+        expect(asPairs(PLANNING_CANDIDATE_INDEX)).toEqual(asPairs(rebuilt));
     });
 
     it('every real active workout with a resolvable engineTemplateIds entry produces a non-null candidate', () => {

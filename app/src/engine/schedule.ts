@@ -83,6 +83,13 @@ export function resolveAvailability(
         : (Number.isFinite(checkinMinutes) ? checkinMinutes : NO_CONTEXT_FALLBACK_MINUTES);
 
     // 3. Process Fixed Activities on Target Date
+    // Deliberately not filtered by `fixed: true/false` -- a movable placeholder still
+    // occupies real time on the date it is currently scheduled for, so it must reduce
+    // availability exactly like an immovable commitment does. `fixed` (movable vs
+    // immovable) is captured on the model but not yet consumed here: it becomes
+    // load-bearing once sequence search (Phase 5.1/5.2) can reason about shifting a
+    // movable placeholder to a different day, at which point *that* code -- not this
+    // availability calculation -- is what should treat movable and immovable differently.
     const daysFixed = fixedActivities.filter(a => a.date === dateStr);
     // An availabilityOverride caps the whole day's budget outright (e.g. a travel day
     // where the normal weekday/weekend profile default no longer applies) *before* any

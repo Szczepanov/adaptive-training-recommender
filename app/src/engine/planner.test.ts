@@ -7,6 +7,8 @@ import type { CompletedExposure, TrainingHistoryProvider } from './trainingHisto
 import { rankCandidatesByUtility } from './optimizer';
 import { resolveAvailability } from './schedule';
 import { ENRICHED_TEMPLATES } from './templates';
+import { generateWeeklyObjectives } from './microcycle';
+import { evaluatePeriodizationPhase } from './periodization';
 
 // --- Fixtures (mirrors rules.test.ts's pattern) -----------------------------
 
@@ -534,15 +536,22 @@ describe('prepareWeekAheadPlanSeed: multi-event contributor wiring (Phase 5.6)',
     it('a single-event (or no-event) seed is unaffected by resolveMultiEventObjectives being wired in', () => {
         const readiness: DailyReadiness = { subjective: neutralSubjective(), objective: quietObjective() };
         const noEventSeed = prepareWeekAheadPlanSeed(readiness, [], '2026-08-07', []);
-        const singleEventSeed = prepareWeekAheadPlanSeed(readiness, [cyclingEvent('2026-08-27')], '2026-08-07', []);
+        const event = cyclingEvent('2026-08-27');
+        const singleEventSeed = prepareWeekAheadPlanSeed(readiness, [event], '2026-08-07', []);
 
         // Base-phase objectives (zone2_aerobic/threshold_quality/strength_maintenance)
         // still generate with no event at all -- unaffected by resolveMultiEventObjectives
         // being wired in, since there's no eligible authority to run it against.
         expect(noEventSeed.microcycle.objectives.map(o => o.key).sort()).toEqual(['strength_maintenance', 'threshold_quality', 'zone2_aerobic']);
-        // Same objective set generateWeeklyObjectives alone would produce -- the
-        // multi-event merge is a no-op with only one eligible event.
-        expect(singleEventSeed.microcycle.objectives.length).toBeGreaterThan(0);
+
+        // The single event is its own taper authority with no other contributor in scope,
+        // so resolveMultiEventObjectives (wired into prepareWeekAheadPlanSeed) must be a
+        // true no-op: the exact same key set generateWeeklyObjectives alone would produce
+        // for this event/phase, not merely "non-empty and contains one expected key" (which
+        // wouldn't catch the merge silently adding or mutating objectives).
+        const periodization = evaluatePeriodizationPhase([event], '2026-08-07');
+        const baselineWithoutMerge = generateWeeklyObjectives(periodization.phase, '2026-08-07', periodization.focusEvent);
+        expect(singleEventSeed.microcycle.objectives.map(o => o.key).sort()).toEqual(baselineWithoutMerge.objectives.map(o => o.key).sort());
         expect(singleEventSeed.microcycle.objectives.find(o => o.key === 'race_specific_endurance')).toBeDefined();
     });
 

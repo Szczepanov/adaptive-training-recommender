@@ -81,7 +81,7 @@ Produced by `npm run compare:sequence-search`
 | Aggregate rest/recovery share (11 scenarios) | 34.5% | 25.1% |
 | Aggregate hard constraint violations | 0 | 0 |
 | Golden week (`cycling_a_event_build_week`) invariant violations | none | none |
-| Wall-clock time, 11 scenarios (multi-week each) | 128ms | 730ms (**5.7x**) |
+| Wall-clock time, 11 scenarios | 128ms | 730ms (**5.7x**) |
 
 Both remain within the Phase 0 aggregate rest-day bound (`[5%, 40%]`, see
 `scripts/simulate-scenarios.mjs`). Per-scenario, beam search **resolved a weekly

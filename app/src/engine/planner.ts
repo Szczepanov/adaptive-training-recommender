@@ -413,6 +413,25 @@ export function projectTrailingHistory(
     });
 }
 
+/** Shared `CompletedExposure[]` -> trailing-history projection for `resolveTrainingIntent`
+ *  callers. Used by both the live greedy entry point (`generateWeekAheadPlanWithIntent`
+ *  below) and the beam-search comparison entry point
+ *  (`sequenceSearch.ts`'s `generateWeekAheadPlanWithIntentBeamSearch`) so ADR-0015's
+ *  comparison stays apples-to-apples -- if this mapping ever drifted between the two call
+ *  sites, the comparison would silently stop being fair. */
+export function trailingHistoryFromCompletedExposures(
+    history: CompletedExposure[],
+    todayDate: string
+): RecentHistoryEntry[] {
+    return history.map(e => ({
+        date: ('completedDate' in e && typeof e.completedDate === 'string' ? e.completedDate : 'date' in e && typeof e.date === 'string' ? e.date : todayDate),
+        modality: e.modality,
+        category: e.category,
+        systemicCost: e.costProfile?.systemic ?? 0,
+        lowerBodyCost: e.costProfile?.lowerBody ?? 0,
+    }));
+}
+
 function isCompletedExposure(entry: RecentHistoryEntry | SessionHistoryEntry): entry is CompletedExposure & (RecentHistoryEntry | SessionHistoryEntry) {
     const record = entry as unknown as Record<string, unknown>;
     return typeof record.date === 'string'
@@ -772,13 +791,7 @@ export async function generateWeekAheadPlanWithIntent(
         {
             microcycle: intent.microcycle,
             fatigue: intent.fatigue,
-            trailingHistory: intent.history.map(e => ({
-                date: ('completedDate' in e && typeof e.completedDate === 'string' ? e.completedDate : 'date' in e && typeof e.date === 'string' ? e.date : todayDate),
-                modality: e.modality,
-                category: e.category,
-                systemicCost: e.costProfile?.systemic ?? 0,
-                lowerBodyCost: e.costProfile?.lowerBody ?? 0,
-            })),
+            trailingHistory: trailingHistoryFromCompletedExposures(intent.history, todayDate),
         },
         { ...options, events },
     );

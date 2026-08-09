@@ -39,23 +39,24 @@ function keyCyclingDates(result, templateById) {
   return Array.from(dates).sort();
 }
 
-function goldenWeekInvariants(result, templateById, categoryByTemplateId) {
+function goldenWeekInvariants(result, templateById, categoryByTemplateId, getDayDiff) {
   const violations = [];
   const dates = keyCyclingDates(result, templateById);
-  const timestamps = dates.map((d) => new Date(`${d}T00:00:00`).getTime());
-  for (let i = 1; i < timestamps.length; i++) {
-    const diffHours = (timestamps[i] - timestamps[i - 1]) / (1000 * 60 * 60);
-    if (diffHours < 48) violations.push(`key cycling spacing violation: ${dates[i - 1]} -> ${dates[i]} (${diffHours}h)`);
+  // Calendar-day arithmetic via getDayDiff (Date.UTC on the literal YYYY-MM-DD components)
+  // rather than `new Date(`${d}T00:00:00`).getTime()`, which parses in the host's local
+  // timezone and would silently mis-measure spacing across a DST transition inside the
+  // simulated week.
+  for (let i = 1; i < dates.length; i++) {
+    const diffDays = getDayDiff(dates[i], dates[i - 1]);
+    if (diffDays < 2) violations.push(`key cycling spacing violation: ${dates[i - 1]} -> ${dates[i]} (${diffDays}d)`);
   }
 
   const heavyStrengthCategories = new Set(['Lower-body Strength', 'Full-body Strength']);
   const keyDateSet = new Set(dates);
   result.objectiveCredits.forEach((c) => {
     if (heavyStrengthCategories.has(categoryByTemplateId.get(c.templateId) ?? '')) {
-      const strengthTime = new Date(`${c.date}T00:00:00`).getTime();
       keyDateSet.forEach((cycleDate) => {
-        const cycleTime = new Date(`${cycleDate}T00:00:00`).getTime();
-        const diffDays = Math.abs(strengthTime - cycleTime) / (1000 * 60 * 60 * 24);
+        const diffDays = Math.abs(getDayDiff(c.date, cycleDate));
         if (diffDays === 1) violations.push(`heavy strength adjacent to key cycling day: ${c.date} / ${cycleDate}`);
       });
     }
@@ -79,6 +80,7 @@ try {
   const { runScenario } = await server.ssrLoadModule('/src/engine/simulation/analyze.ts');
   const { generateWeekAheadPlanWithIntentBeamSearch } = await server.ssrLoadModule('/src/engine/sequenceSearch.ts');
   const { ENRICHED_TEMPLATES } = await server.ssrLoadModule('/src/engine/templates.ts');
+  const { getDayDiff } = await server.ssrLoadModule('/src/utils/localDate.ts');
 
   const templateById = new Map(ENRICHED_TEMPLATES.map((t) => [t.id, t]));
   const categoryByTemplateId = new Map(ENRICHED_TEMPLATES.map((t) => [t.id, t.category]));
@@ -112,8 +114,8 @@ try {
     },
     goldenWeek: {
       scenarioFound: !!goldenWeekScenario,
-      greedyViolations: greedyGolden ? goldenWeekInvariants(greedyGolden, templateById, categoryByTemplateId) : ['scenario result missing'],
-      beamViolations: beamGolden ? goldenWeekInvariants(beamGolden, templateById, categoryByTemplateId) : ['scenario result missing'],
+      greedyViolations: greedyGolden ? goldenWeekInvariants(greedyGolden, templateById, categoryByTemplateId, getDayDiff) : ['scenario result missing'],
+      beamViolations: beamGolden ? goldenWeekInvariants(beamGolden, templateById, categoryByTemplateId, getDayDiff) : ['scenario result missing'],
     },
     perScenario: SCENARIOS.map((scenario, i) => {
       const g = greedyResults[i];
@@ -155,3 +157,12 @@ comparison.perScenario.forEach((s) => {
   }
 });
 console.log('');
+
+// Non-zero exit on a golden-week invariant violation (greedy is the live production path
+// -- a beam-only violation is comparison data, not a regression, so it doesn't fail the
+// script) so this stays a usable CI gate if `compare:sequence-search` is ever wired in,
+// rather than always exiting 0 regardless of what it found.
+if (comparison.goldenWeek.greedyViolations.length > 0) {
+  console.error(`Golden week invariant violations in greedy output: ${comparison.goldenWeek.greedyViolations.join('; ')}`);
+  process.exitCode = 1;
+}

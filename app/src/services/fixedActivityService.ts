@@ -59,12 +59,18 @@ export class FixedActivityService {
         return state.status === 'AVAILABLE' ? state.data : [];
     }
 
+    /** Malformed documents are dropped rather than thrown, same contract as
+     *  `getActivitiesInRangeState` -- these are UI list callers, not the planner path, and
+     *  a validation failure here shouldn't crash the caller. */
     async listAll(userId: string): Promise<FixedActivityWithId[]> {
         const collRef = collection(getDb(), 'users', userId, this.collectionPath);
         const q = query(collRef, where('userId', '==', userId));
         const querySnapshot = await getDocs(q);
         return querySnapshot.docs
-            .map(d => ({ ...d.data(), id: d.id } as FixedActivityWithId))
+            .flatMap(d => {
+                const validation = validateFixedActivity({ ...d.data(), id: d.id });
+                return validation.isValid && validation.data ? [{ ...validation.data, id: d.id }] : [];
+            })
             .sort((a, b) => a.date.localeCompare(b.date));
     }
 
@@ -72,7 +78,9 @@ export class FixedActivityService {
         const docRef = doc(getDb(), 'users', userId, this.collectionPath, activityId);
         const docSnap = await getDoc(docRef);
         if (!docSnap.exists()) return null;
-        return { ...docSnap.data(), id: docSnap.id } as FixedActivityWithId;
+        const validation = validateFixedActivity({ ...docSnap.data(), id: docSnap.id });
+        if (!validation.isValid || !validation.data) return null;
+        return { ...validation.data, id: docSnap.id };
     }
 
     async createActivity(userId: string, activityData: Omit<FixedActivity, 'id' | 'userId' | 'createdAt' | 'updatedAt'>): Promise<FixedActivity> {

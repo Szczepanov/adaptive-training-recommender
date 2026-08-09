@@ -108,4 +108,28 @@ describe('FixedActivityService persistence shape', () => {
             expect(state.data[0].title).toBe('Evening Football');
         }
     });
+
+    it('listAll drops a malformed persisted document rather than surfacing it to UI callers', async () => {
+        firestore.getDocs.mockResolvedValue({
+            docs: [
+                { id: 'good-1', data: () => ({ ...validActivity, userId: 'u1', createdAt: '2026-08-01T00:00:00.000Z', updatedAt: '2026-08-01T00:00:00.000Z' }) },
+                { id: 'bad-1', data: () => ({ ...validActivity, userId: 'u1', durationMin: -5, createdAt: 'x', updatedAt: 'x' }) },
+            ],
+        });
+        const service = new FixedActivityService();
+        const result = await service.listAll('u1');
+        expect(result).toHaveLength(1);
+        expect(result[0].id).toBe('good-1');
+    });
+
+    it('getActivity returns null for a malformed persisted document instead of an unvalidated cast', async () => {
+        firestore.getDoc.mockResolvedValue({
+            exists: () => true,
+            data: () => ({ ...validActivity, userId: 'u1', durationMin: -5, createdAt: 'x', updatedAt: 'x' }),
+            id: 'bad-1',
+        });
+        const service = new FixedActivityService();
+        const result = await service.getActivity('u1', 'bad-1');
+        expect(result).toBeNull();
+    });
 });

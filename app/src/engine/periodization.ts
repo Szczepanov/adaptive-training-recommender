@@ -87,6 +87,13 @@ export const TAPER_SHARPENING_QUALIFICATION: NonNullable<WeeklyObjective['qualif
  *  than the same full-volume target every other phase uses. */
 export const TAPER_STRENGTH_TARGET_STIMULUS: WeeklyObjective['targetStimulus'] = { maxStrength: 0.3, hypertrophy: 0.2 };
 
+/** Exported alongside the taper target-stimulus constants above so `objectivesFromDemand`
+ *  below and microcycle.ts's plan-derived branch use exactly the same title text for the
+ *  same taper-phase objective, rather than two independently-typed string literals that
+ *  could silently drift apart. */
+export const TAPER_STRENGTH_PRIMER_TITLE = 'Race-Week Strength Primer';
+export const TAPER_SHARPENING_TITLE = 'Taper Sharpening (event-specific freshness)';
+
 /**
  * Translates one event's demand vector + category into the generic (non-plan-derived)
  * objective set a day governed by it would want. Pure function of the event's OWN
@@ -141,7 +148,7 @@ export function objectivesFromDemand(
 
     objectives.push({
         id: 'obj_strength', key: 'strength_maintenance',
-        title: taperActive ? 'Race-Week Strength Primer' : 'Strength & Neuromuscular Maintenance',
+        title: taperActive ? TAPER_STRENGTH_PRIMER_TITLE : 'Strength & Neuromuscular Maintenance',
         targetExposures: 1, completedExposures: 0,
         targetStimulus: taperActive ? TAPER_STRENGTH_TARGET_STIMULUS : { maxStrength: 0.7, hypertrophy: 0.5 },
     });
@@ -160,7 +167,7 @@ export function objectivesFromDemand(
             });
         } else if (taperActive) {
             objectives.push({
-                id: 'obj_taper_sharpening', key: 'race_specific_endurance', title: 'Taper Sharpening (event-specific freshness)',
+                id: 'obj_taper_sharpening', key: 'race_specific_endurance', title: TAPER_SHARPENING_TITLE,
                 targetExposures: 1, completedExposures: 0,
                 targetStimulus: TAPER_SHARPENING_TARGET_STIMULUS,
                 qualification: TAPER_SHARPENING_QUALIFICATION,

@@ -98,12 +98,19 @@ describe('optimizer — dated, role-aware recovery constraints (F3 / 3.1)', () =
     // is the injection point (planningCandidate.ts is the real, catalog-backed resolver;
     // these tests exercise the mechanism directly with a synthetic one).
     describe('per-workout hard-lower-body spacing override (Phase 5.2)', () => {
-        const heavySquat = () => ENRICHED_TEMPLATES.find(t => t.category === 'Lower-body Strength') ?? ENRICHED_TEMPLATES.find(t => t.modality === 'Strength')!;
+        // No fallback to "any Strength template" -- a fallback that isn't heavy lower-body
+        // would silently defeat evaluateRecoveryConstraints' hard-lower-body spacing rule
+        // these tests exist to exercise, so a missing fixture template must fail loudly.
+        const heavySquat = () => {
+            const template = ENRICHED_TEMPLATES.find(t => t.category === 'Lower-body Strength');
+            if (!template) throw new Error('No Lower-body Strength template in ENRICHED_TEMPLATES');
+            return template;
+        };
         const oneDayPriorHistory: RecentHistoryEntry[] = [
             { date: '2026-03-04', modality: 'Strength', category: 'Lower-body Strength', role: 'anchor', systemicCost: 0.7, lowerBodyCost: 0.8, type: 'Lower-body Strength' },
         ];
 
-        it('a stricter (3-day) workout-level requirement rejects a candidate that the flat 2-day default would already reject, and also rejects at day 2', () => {
+        it('a stricter (3-day) workout-level requirement rejects at a day-2 gap that the flat 2-day default accepts', () => {
             const template = heavySquat();
             const twoDaysPriorHistory: RecentHistoryEntry[] = [
                 { date: '2026-03-03', modality: 'Strength', category: 'Lower-body Strength', role: 'anchor', systemicCost: 0.7, lowerBodyCost: 0.8, type: 'Lower-body Strength' },

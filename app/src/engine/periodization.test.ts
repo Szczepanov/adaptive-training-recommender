@@ -37,6 +37,20 @@ describe('evaluatePeriodizationPhase: taper authority total order (Phase 5.6)', 
         expect(result.focusEvent?.id).toBe('aaa');
     });
 
+    it('planning date ranks ahead of the id backstop when it differs from the event date', () => {
+        // Same priority and event date (so the id backstop alone would pick 'aaa'
+        // lexicographically), but 'zzz' has the earlier timing.planningDate -- proving the
+        // ordering actually consults planningDate rather than only ever falling through to
+        // the id tie-breaker.
+        const events = [
+            event({ id: 'aaa', date: '2026-08-20', priority: 'A', timing: { earliestDate: '2026-08-20', latestDate: '2026-08-20', planningDate: '2026-08-21' } }),
+            event({ id: 'zzz', date: '2026-08-20', priority: 'A', timing: { earliestDate: '2026-08-20', latestDate: '2026-08-20', planningDate: '2026-08-19' } }),
+        ];
+        const result = evaluatePeriodizationPhase(events, '2026-08-08');
+        expect(result.focusEvent?.id).toBe('zzz');
+        expect(result.governingEventTie).toEqual([]);
+    });
+
     it('a genuine tie through every real criterion is surfaced via governingEventTie, not silently resolved', () => {
         const events = [
             event({ id: 'race-a', date: '2026-08-20', priority: 'A' }),
@@ -139,7 +153,9 @@ describe('resolveMultiEventObjectives (Phase 5.6)', () => {
         const zone2 = resolution.objectives.find(o => o.key === 'zone2_aerobic');
         expect(zone2?.id).toBe('obj_z2_authority'); // authority's identity wins
         expect(zone2?.title).toBe('Authority Aerobic Base'); // authority's title wins
-        expect(zone2?.targetExposures).toBeGreaterThanOrEqual(1); // required amount may still grow
+        // The contributor's cyclingDemand.aerobicEndurance (0.8, >= 0.7) yields
+        // targetExposures 2, which the max-merge raises the authority's 1 to.
+        expect(zone2?.targetExposures).toBe(2);
     });
 
     it('ignores a contributor outside its contribution window (too far out) and a non-scheduled event', () => {
