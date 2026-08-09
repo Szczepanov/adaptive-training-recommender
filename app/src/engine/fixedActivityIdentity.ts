@@ -6,10 +6,9 @@ import type { FixedActivity, SessionTemplate } from './models';
 /**
  * Phase 6.2c / ADR-0016 integration boundary.
  *
- * FixedActivity predates exact catalog identity. These optional fields are persisted only
- * when a booked activity is intended to behave like a known authored workout for stimulus
- * and weekly-role credit. The declaration merge keeps the legacy model source-compatible
- * while the persistence/parser/rules paths are upgraded in this PR.
+ * FixedActivity predates exact catalog identity. These optional fields are persisted when
+ * a booked activity is intended to behave like a known authored workout for scoped
+ * stimulus and weekly-role credit.
  */
 declare module './models' {
     interface FixedActivity {
@@ -27,6 +26,10 @@ export interface ResolvedFixedActivityIdentity {
     workoutId: string;
     modality: SessionTemplate['modality'];
     category: SessionTemplate['category'];
+    /** False only for the legacy anonymous-stimulus compatibility case below. Such an
+     * occurrence can contribute to an objective that is genuinely modality/category
+     * agnostic, but its sentinel ids never map to event-plan coverage. */
+    exactCatalogIdentity: boolean;
 }
 
 export function fixedActivityOccurrenceKey(activity: Pick<FixedActivity, 'id'>): string {
@@ -34,14 +37,29 @@ export function fixedActivityOccurrenceKey(activity: Pick<FixedActivity, 'id'>):
 }
 
 /**
- * Exact identity only. No title/category/modality inference is allowed here: without a
- * valid catalog link a fixed activity may still reserve time/cost, but its expected
- * stimulus cannot discharge an adaptation objective or a weekly coverage role.
+ * Resolve a fixed activity for objective-credit bookkeeping.
+ *
+ * - Supplied template/workout ids must resolve exactly and consistently.
+ * - A legacy activity with neither id gets an unlinked sentinel identity. This preserves
+ *   backward-compatible credit for genuinely unscoped objectives (for example generic
+ *   strength maintenance), while modality-scoped cycling objectives fail because the
+ *   modality is `None`, and weekly coverage fails because the sentinel workout id is not
+ *   in the authored catalog mapping.
+ * - No title/category heuristic is ever used.
  */
 export function resolveFixedActivityIdentity(activity: FixedActivity): ResolvedFixedActivityIdentity | null {
     const templateId = activity.templateId;
     const declaredWorkoutId = activity.workoutId;
-    if (!templateId && !declaredWorkoutId) return null;
+    if (!templateId && !declaredWorkoutId) {
+        return {
+            occurrenceKey: fixedActivityOccurrenceKey(activity),
+            templateId: activity.id,
+            workoutId: `unlinked:${activity.id}`,
+            modality: 'None',
+            category: 'Rest',
+            exactCatalogIdentity: false,
+        };
+    }
 
     if (templateId) {
         const template = ENRICHED_TEMPLATES.find(item => item.id === templateId);
@@ -54,6 +72,7 @@ export function resolveFixedActivityIdentity(activity: FixedActivity): ResolvedF
             workoutId: resolvedWorkout.id,
             modality: template.modality,
             category: template.category,
+            exactCatalogIdentity: true,
         };
     }
 
@@ -69,5 +88,12 @@ export function resolveFixedActivityIdentity(activity: FixedActivity): ResolvedF
         workoutId: workout.id,
         modality: template.modality,
         category: template.category,
+        exactCatalogIdentity: true,
     };
+}
+
+/** Persistence accepts an identity field only when it is a real catalog link; the legacy
+ * anonymous sentinel exists solely inside the engine and is never written. */
+export function hasExactFixedActivityCatalogIdentity(activity: FixedActivity): boolean {
+    return resolveFixedActivityIdentity(activity)?.exactCatalogIdentity === true;
 }
