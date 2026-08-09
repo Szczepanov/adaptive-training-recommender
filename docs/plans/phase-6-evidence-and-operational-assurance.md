@@ -48,7 +48,7 @@ Status legend: `[ ]` not started · `[-]` in progress · `[x]` finished.
 | Task | Status | Blocked by | Outcome | Primary files |
 |---|:--:|---|---|---|
 | 6.1 | `[x]` | — | Scenario runs cannot mutate the committed baseline; reviewed baseline update is explicit | `scripts/simulate-scenarios.mjs`, `scripts/simulate-diff.mjs`, `scripts/simulate-update-baseline.mjs`, `package.json` |
-| 6.2 | `[x]` | — | Closed Phase 5.6 mid-horizon objective drift and Phase 5.3 fixed-activity projection semantics; `POLICY_VERSION` bumped to `2026-08-phase6-correctness-carryovers-v1` | `planner.ts`, `periodization.ts`, `schedule.ts`, `models.ts`, `policy.ts`, `planner.test.ts`, `architecture.test.ts`, `replay.test.ts`, `scenarios.test.ts` |
+| 6.2 | `[x]` | — | Closed Phase 5.6 mid-horizon objective drift and Phase 5.3 fixed-activity projection semantics, including the live day-0/day-1 path, not only the week-ahead forecast; `POLICY_VERSION` bumped to `2026-08-phase6-correctness-carryovers-v1` | `planner.ts`, `periodization.ts`, `schedule.ts`, `models.ts`, `policy.ts`, `optimizer.ts`, `rules.ts`, `sequenceSearch.ts`, `validation.ts`, `firestore.rules`, `components/Home.tsx`, plus corresponding tests |
 | 6.3 | `[ ]` | 6.2 interface decisions | Scenario harness can represent the real boundaries added in Phases 4–5 and permanently exercises them | `simulation/scenarios.ts`, `simulation/analyze.ts`, `scenarios.test.ts`, integration tests |
 | 6.4 | `[ ]` | 6.3 | Produce daily decision traces and reproducible trigger-frequency/calibration reports without auto-tuning | `simulation/analyze.ts`, new calibration/report script, `docs/analysis/` |
 | 6.5 | `[ ]` | production Firebase project + deployment owner | Detect drift between repository rules and deployed rules | `.github/workflows/`, Firebase config, `docs/ops/` |
@@ -226,6 +226,18 @@ contribution-window entry, credit preserved across a definition change, credit r
 re-entry) plus the pre-existing seed-level `periodization.test.ts`/`planner.test.ts`
 coverage, all still green.
 
+**Amended after manual review (a real gap, not a style note):** a genuinely new key still
+started at zero credit even when an earlier day's own pick in the SAME projection would
+already have qualified for it -- breaking the "fresh plan on day N from equivalent
+projected history" contract for the reconstructed-history half, not just the definition
+half. `planner.ts` now tracks a `projectionExposures` ledger (every applied
+pick's/fixed-activity's own stimulus, dated) and `reconcileObjectivesForDate` replays the
+exposures strictly before `date` against a newly-admitted definition via
+`backfillCreditFromPriorExposures`, capped at the objective's required amount and recorded
+as `projectedCredit` (not `completedCredit` -- it is still a projection). Tests: two more
+cases in the same describe block (backfills from an earlier qualifying exposure; does not
+backfill from an exposure dated on/after the reconciled date).
+
 ### 6.2b — Treat fixed activities as projected exposures, not just calendar blockers
 
 #### Current behavior
@@ -281,24 +293,68 @@ authored `expectedCost` fields, D6-C removes the old `?? 0.2` default) and
 `environmentOverride`/equipment-intersection from an explicit
 `FixedActivity.availabilityContextOverride` (D6-B; the activity's own `environment`/
 `equipment` never restrict another session by themselves). `reservedCapacityCost` stays as
-a `.systemic`-derived compatibility scalar. `planner.ts`'s loop now folds the day's
-`reservedCapacityCostProfile` into the fatigue used for *that day's ranking only* (never
-into the carried-forward `externalFatigue` ledger, so it's never marked complete before it
-happens), filters candidates by `environmentOverride`, and passes its own
-`fixedActivities`-aware `availability` into `rankCandidates` instead of
-`buildOptimizationContext`'s internal no-fixed-activities recompute (a latent wiring gap
-that made the day-context equipment override otherwise unenforceable). A new
-`applyFixedActivityExposures` closure applies each uncompleted fixed activity's
-`expectedCost` to next-day external fatigue and `expectedStimulus` to objective credit
-through `deriveObjectiveCreditFromProfile` (no `SessionTemplate.modality`, so
-modality-scoped objectives correctly fail closed, matching stimulus.ts's existing
-unknown-modality contract) after today's, tomorrow's, and every projected day's pick.
-Completed activities are excluded from every one of these paths, so their load is never
-projected twice. Tests: `architecture.test.ts` (D6-C zero fallback, dimensional summation,
-D6-B non-restriction, `availabilityContextOverride` equipment intersection and multi-
-override intersection) and `planner.test.ts` "Phase 6.2b" describe block (next-day fatigue
-delta, completed-activity no-op, stimulus credit via the canonical primitive, zero-fallback
-at the plan level, environment-override gating an actual pick).
+a `.systemic`-derived compatibility scalar.
+
+`planner.ts`'s loop folds the day's `reservedCapacityCostProfile` into the fatigue used for
+*that day's ranking only* (never into the carried-forward `externalFatigue` ledger, so it's
+never marked complete before it happens) and filters candidates by `environmentOverride`.
+`applyFixedActivityStimulusCredit`/`fixedActivityCostProfileForDate` (new, module-level,
+pure) apply an uncompleted activity's `expectedStimulus`/`expectedCost` to objective credit
+and fatigue respectively -- exported so `rules.ts`'s single-day live evaluation
+(`evaluateTrainingWithIntent`) can share exactly the same treatment, not a second
+implementation of it. `buildOptimizationContext` (`optimizer.ts`) now takes
+`fixedActivities` directly and is the single place availability gets resolved for ranking,
+removing a latent wiring gap where its own internal `resolveAvailability` call always
+passed an empty fixed-activity list regardless of what the caller already had.
+
+**Amended after manual review (real gaps, not style notes):**
+
+* **Stimulus credit was applied AFTER that day's own pick, not before.** A booked activity
+  that already satisfied an objective could not stop the optimizer from separately ranking
+  and selecting more work for that same still-"unresolved" objective -- only marking it
+  resolved once both had already been scheduled. `applyFixedActivityStimulusCredit` is now
+  called before `unresolvedObjectives` is computed for ranking (today's own fixed activity
+  in `evaluateTrainingWithIntent`; each loop day's in `generateWeekAheadPlan`), while cost
+  is still applied after the pick (`applyFixedActivityCost`) since it only becomes real
+  once the day has actually happened.
+* **The reserved-cost fatigue fusion used `combineMax`, not addition.** A booked activity's
+  reserved cost is genuinely additional load stacking on top of whatever fatigue already
+  exists, not an independent signal to take the max against -- `max(existing, reserved)`
+  silently hid the reservation whenever existing fatigue already exceeded it. Both
+  `planner.ts`'s loop and `evaluateTrainingWithIntent` now fuse it via
+  `applyCompletedSessionLoad(fatigue, date, reservedCapacityCostProfile)` (elapsedHours=0,
+  since the fatigue was already decayed to `date`), the same additive-then-clamped
+  semantics a real completed session uses, transiently for ranking only.
+* **Today's and tomorrow's own fixed activities had no effect on the live pick at all.**
+  `evaluateTrainingWithIntent`/`evaluateNextDayPlanWithIntent` (`rules.ts`) never accepted
+  a `fixedActivities` parameter -- only the week-ahead forecast strip (day 2+) saw any of
+  this. Both now accept it (defaulting to `[]`) and apply the same availability/reserved-
+  cost/stimulus-credit-before-ranking treatment as the week-ahead loop, scoped to that
+  call's own date (cross-day cost propagation from an still-uncompleted PRIOR-day activity
+  is out of scope here -- each call independently replays real completed history via
+  `resolveTrainingIntent`). `Home.tsx` now fetches today's/tomorrow's fixed activities
+  (fails open to `[]` with a console warning on a read failure -- an interactive one-day
+  decision, unlike the week-ahead strip's fail-closed 7-day forecast) and passes them
+  through.
+* **`availabilityContextOverride` was not reachable through persistence.**
+  `validateFixedActivity` (`validation.ts`) neither validated nor copied the field, and
+  `firestore.rules`' `hasValidFixedActivity` excluded it from the `hasOnly(...)` allow-list,
+  so a client write containing it would have been silently dropped or rejected outright.
+  Both now validate/allow it (mirrored between the two, per the existing convention for
+  every other `FixedActivity` field); `FixedActivityService` already round-trips whatever
+  `validateFixedActivity` produces, so no separate service change was needed.
+
+Tests: `architecture.test.ts` (D6-C zero fallback, dimensional summation, D6-B
+non-restriction, `availabilityContextOverride` equipment intersection and multi-override
+intersection), `validation.test.ts`/the emulator suite (`availabilityContextOverride`
+accepted/rejected at both validation layers), `planner.test.ts` "Phase 6.2b" describe block
+(next-day fatigue delta, completed-activity no-op, stimulus credit via the canonical
+primitive, zero-fallback at the plan level, environment-override gating an actual pick,
+the additive-vs-`max()` masking regression with non-zero pre-existing fatigue, the
+redundant-same-day-work ordering regression), and `trainingIntentAcceptance.test.ts`
+"Phase 6.2b" describe block (today's own availabilityOverride/stimulus credit affecting
+`evaluateTrainingWithIntent`'s actual pick; tomorrow's own fixed activity affecting
+`evaluateNextDayPlanWithIntent`'s provisional plan).
 
 ---
 

@@ -544,6 +544,45 @@ function snapshotObjectiveCredit(objective: WeeklyObjective): ObjectiveCreditSna
     };
 }
 
+/** Phase 6.2a follow-up (D6-A): one already-applied pick or fixed-activity stimulus,
+ *  dated, kept around so a LATER-admitted objective can be checked against days that
+ *  already happened earlier in this same projection -- see backfillCreditFromPriorExposures. */
+export interface ProjectionExposure {
+    date: string;
+    stimulus: WorkoutStimulusProfile;
+    modality?: SessionTemplate['modality'];
+    category?: SessionTemplate['category'];
+}
+
+/**
+ * Phase 6.2a follow-up: `reconcileObjectivesForDate`'s "Generating the week on day 1 and
+ * inspecting day N yields the same objective admissibility as generating a fresh plan on
+ * day N" contract requires more than starting a newly-admitted key at zero -- a fresh
+ * build on day N replays real completed history through the objective, so an equivalent
+ * projected history (this run's own earlier picks/fixed-activity stimuli) must be replayed
+ * too. Sums how much credit `priorExposures` would earn against `definition` via the same
+ * canonical credit primitive used everywhere else, capped at the objective's own required
+ * amount. Confidence is 'exact' (the default) throughout -- every exposure here is this
+ * run's own first-party pick or authored fixed-activity stimulus, not external evidence. */
+function backfillCreditFromPriorExposures(
+    definition: WeeklyObjective,
+    priorExposures: readonly ProjectionExposure[],
+): number {
+    const requiredCredit = definition.requiredCredit ?? definition.targetExposures;
+    let total = 0;
+    for (const exposure of priorExposures) {
+        if (total >= requiredCredit) break;
+        const credit = deriveObjectiveCreditFromProfile(definition, exposure.stimulus, {}, {
+            modality: exposure.modality,
+            category: exposure.category,
+        });
+        if (credit.qualifies && credit.earnedCredit > 0) {
+            total = Math.min(requiredCredit, total + credit.earnedCredit);
+        }
+    }
+    return total;
+}
+
 /**
  * Phase 6.2a / D6-A: re-resolves which objectives are admissible for `date` from scratch --
  * mirroring resolveTrainingIntent's own construction (generic-vs-plan-derived branching via
@@ -567,6 +606,7 @@ export function reconcileObjectivesForDate(
     todayDate: string,
     periodization: PeriodizationResult,
     creditMemory: Map<WeeklyObjective['key'], ObjectiveCreditSnapshot>,
+    priorExposures: readonly ProjectionExposure[] = [],
 ): { microcycle: MicrocycleState; droppedContributorObjectives: DroppedContributorObjective[] } {
     // Phase 5's own scope boundary: only the generic days-to-event objective set gains
     // contributor demand (see resolveMultiEventObjectives's doc comment); generateWeeklyObjectives
@@ -589,14 +629,119 @@ export function reconcileObjectivesForDate(
     const objectives = fresh.objectives.map(definition => {
         const existing = existingByKey.get(definition.key);
         const carried = existing ? snapshotObjectiveCredit(existing) : creditMemory.get(definition.key);
-        if (!carried) return definition; // a key this projection has never seen: start at zero
-        return { ...definition, ...carried };
+        if (carried) return { ...definition, ...carried };
+
+        // A key genuinely new to this projection: check whether an earlier day's pick or
+        // fixed-activity stimulus already qualifies for it, rather than assuming zero (see
+        // backfillCreditFromPriorExposures's doc comment for why this is required, not an
+        // enhancement).
+        const relevantExposures = priorExposures.filter(exposure => exposure.date < date);
+        const backfilled = backfillCreditFromPriorExposures(definition, relevantExposures);
+        if (backfilled <= 0) return definition;
+        return {
+            ...definition,
+            projectedCredit: backfilled,
+            completedExposures: projectCompatibilityExposures(backfilled, definition.targetExposures),
+        };
     });
 
     return {
         microcycle: { ...microcycle, objectives },
         droppedContributorObjectives: fresh.droppedContributorObjectives,
     };
+}
+
+export interface FixedActivityStimulusResult {
+    microcycle: MicrocycleState;
+    credits: PlannedObjectiveCredit[];
+    exposures: ProjectionExposure[];
+}
+
+/**
+ * Phase 6.2b / D6-C: credits `date`'s uncompleted fixed activities' `expectedStimulus`, if
+ * any, against currently-unresolved objectives through the same canonical credit primitive
+ * as a structured exposure (`deriveObjectiveCreditFromProfile`). Pure -- returns the
+ * updated microcycle rather than mutating anything, so both `generateWeekAheadPlan`'s
+ * multi-day loop and a single-day live evaluation (rules.ts) can share it.
+ *
+ * Callers MUST apply this before that day's own ranking/pick, not after -- crediting it
+ * only afterward (an earlier revision's bug) meant a booked evening session that already
+ * satisfied e.g. `strength_maintenance` could not stop the optimizer from separately
+ * prescribing more work for that same still-"unresolved" objective, only marking it
+ * resolved after both had already been scheduled.
+ *
+ * A missing `expectedStimulus` contributes zero, never an invented default. A
+ * `FixedActivity` carries no `SessionTemplate.modality`, so a modality-scoped objective
+ * correctly fails closed here exactly as it would for any other exposure of unknown
+ * modality (stimulus.ts). Completed activities are skipped: their load already reached the
+ * athlete's real completed-training ledger elsewhere, so crediting them again here would
+ * double it.
+ */
+export function applyFixedActivityStimulusCredit(
+    microcycle: MicrocycleState,
+    fixedActivities: FixedActivity[],
+    date: string,
+): FixedActivityStimulusResult {
+    const dayActivities = fixedActivities.filter(a => a.date === date && !a.isCompleted && a.expectedStimulus);
+    let nextMicrocycle = microcycle;
+    const credits: PlannedObjectiveCredit[] = [];
+    const exposures: ProjectionExposure[] = [];
+
+    dayActivities.forEach(activity => {
+        const stimulus: WorkoutStimulusProfile = { ...ZERO_STIMULUS, ...activity.expectedStimulus };
+        exposures.push({ date, stimulus, modality: undefined, category: undefined });
+
+        const derivedCredits = getUnresolvedObjectives(nextMicrocycle, true).flatMap(objective => {
+            const credit = deriveObjectiveCreditFromProfile(objective, stimulus);
+            return credit.qualifies && credit.earnedCredit > 0
+                ? [{ objective, earnedCredit: credit.earnedCredit }]
+                : [];
+        });
+        if (derivedCredits.length === 0) return;
+
+        const projected = applyProjectedObjectiveCredits(
+            nextMicrocycle,
+            derivedCredits.map(item => ({ objectiveId: item.objective.id, earnedCredit: item.earnedCredit })),
+        );
+        const allocationById = new Map(projected.allocations.map(item => [item.objectiveId, item.earnedCredit]));
+        derivedCredits.forEach(({ objective }) => {
+            const allocated = allocationById.get(objective.id) ?? 0;
+            if (allocated <= 0) return;
+            credits.push({
+                date,
+                objectiveKey: objective.key,
+                objectiveTitle: objective.title,
+                templateId: activity.id,
+                templateTitle: activity.title,
+                modality: 'None',
+                earnedCredit: allocated,
+            });
+        });
+        nextMicrocycle = projected.microcycle;
+    });
+
+    return { microcycle: nextMicrocycle, credits, exposures };
+}
+
+/** Phase 6.2b / D6-C: sums `date`'s uncompleted fixed activities' authored `expectedCost`
+ *  -- never an invented default. Pure; callers apply the result to a fatigue state
+ *  themselves (via `applyCompletedSessionLoad` for "this became real load", or folded
+ *  transiently for "same-day ranking should see this reservation" -- see planner.ts's loop
+ *  and rules.ts's `evaluateTrainingWithIntent` for the two use sites). */
+export function fixedActivityCostProfileForDate(fixedActivities: FixedActivity[], date: string): WorkoutCostProfile {
+    const dayActivities = fixedActivities.filter(a => a.date === date && !a.isCompleted);
+    return dayActivities.reduce((sum, activity) => {
+        const cost = activity.expectedCost;
+        if (!cost) return sum;
+        return {
+            systemic: sum.systemic + (cost.systemic ?? 0),
+            cardiovascular: sum.cardiovascular + (cost.cardiovascular ?? 0),
+            lowerBody: sum.lowerBody + (cost.lowerBody ?? 0),
+            upperBody: sum.upperBody + (cost.upperBody ?? 0),
+            impactTissue: sum.impactTissue + (cost.impactTissue ?? 0),
+            neuromuscular: sum.neuromuscular + (cost.neuromuscular ?? 0),
+        };
+    }, ZERO_COST);
 }
 
 /** Phase 6.2a: `resolveMultiEventObjectives` reports every currently-inadmissible
@@ -658,6 +803,10 @@ export function generateWeekAheadPlan(
     const currentlyDroppedPairs = new Set<string>(
         droppedContributorObjectives.map(d => `${d.eventId}:${d.objectiveKey}`)
     );
+    // Phase 6.2a follow-up: every pick's/fixed-activity's own stimulus, dated, so a
+    // newly-admitted objective can be backfilled against earlier days in this same
+    // projection -- see reconcileObjectivesForDate/backfillCreditFromPriorExposures.
+    const projectionExposures: ProjectionExposure[] = [];
 
     type DerivedPlanningCredit = {
         objective: WeeklyObjective;
@@ -705,82 +854,48 @@ export function generateWeekAheadPlan(
         });
         microcycle = projected.microcycle;
         externalFatigue = applyCompletedSessionLoad(externalFatigue, date, enrichedCostProfile(template.id));
-    };
-
-    /**
-     * Phase 6.2b / D6-B, D6-C: at the end of `date`, folds every uncompleted fixed
-     * activity scheduled that day into the same ledgers a chosen template uses -- its
-     * authored `expectedCost` becomes real (not merely reserved) load for tomorrow's
-     * fatigue projection, and its authored `expectedStimulus`, if any, can resolve an
-     * objective through the same canonical credit primitive as a structured exposure
-     * (`deriveObjectiveCreditFromProfile`). A missing `expectedCost`/`expectedStimulus`
-     * contributes zero, never an invented default. A `FixedActivity` carries no
-     * `SessionTemplate.modality`, so a modality-scoped objective correctly fails closed
-     * here exactly as it would for any other exposure of unknown modality (stimulus.ts) --
-     * only modality-agnostic objectives (e.g. `strength_maintenance`) can be credited by
-     * one. Completed activities are skipped: their load already reached the athlete's real
-     * completed-training ledger elsewhere, so projecting them again here would double it.
-     */
-    const applyFixedActivityExposures = (date: string) => {
-        const dayActivities = fixedActivities.filter(a => a.date === date && !a.isCompleted);
-        if (dayActivities.length === 0) return;
-
-        const costProfile = dayActivities.reduce((sum, activity) => {
-            const cost = activity.expectedCost;
-            if (!cost) return sum;
-            return {
-                systemic: sum.systemic + (cost.systemic ?? 0),
-                cardiovascular: sum.cardiovascular + (cost.cardiovascular ?? 0),
-                lowerBody: sum.lowerBody + (cost.lowerBody ?? 0),
-                upperBody: sum.upperBody + (cost.upperBody ?? 0),
-                impactTissue: sum.impactTissue + (cost.impactTissue ?? 0),
-                neuromuscular: sum.neuromuscular + (cost.neuromuscular ?? 0),
-            };
-        }, ZERO_COST);
-        externalFatigue = applyCompletedSessionLoad(externalFatigue, date, costProfile);
-
-        dayActivities.forEach(activity => {
-            if (!activity.expectedStimulus) return;
-            const stimulus: WorkoutStimulusProfile = { ...ZERO_STIMULUS, ...activity.expectedStimulus };
-            const derivedCredits: DerivedPlanningCredit[] = getUnresolvedObjectives(microcycle, true).flatMap(objective => {
-                const credit = deriveObjectiveCreditFromProfile(objective, stimulus);
-                return credit.qualifies && credit.earnedCredit > 0
-                    ? [{ objective, earnedCredit: credit.earnedCredit }]
-                    : [];
-            });
-            if (derivedCredits.length === 0) return;
-
-            const projected = applyProjectedObjectiveCredits(
-                microcycle,
-                derivedCredits.map(item => ({ objectiveId: item.objective.id, earnedCredit: item.earnedCredit })),
-            );
-            const allocationById = new Map(projected.allocations.map(item => [item.objectiveId, item.earnedCredit]));
-            derivedCredits.forEach(({ objective }) => {
-                const allocated = allocationById.get(objective.id) ?? 0;
-                if (allocated <= 0) return;
-                objectiveCredits.push({
-                    date,
-                    objectiveKey: objective.key,
-                    objectiveTitle: objective.title,
-                    templateId: activity.id,
-                    templateTitle: activity.title,
-                    modality: 'None',
-                    earnedCredit: allocated,
-                });
-            });
-            microcycle = projected.microcycle;
+        projectionExposures.push({
+            date,
+            stimulus: enrichedStimulusProfile(template),
+            modality: template.modality,
+            category: template.category,
         });
     };
 
+    // Stimulus credit before the pick (prevents redundant same-day work); cost after it
+    // (becomes real load only once the day has actually happened) -- see
+    // applyFixedActivityStimulusCredit's/fixedActivityCostProfileForDate's own doc comments
+    // for why the order matters. Extracted to module level so rules.ts's single-day live
+    // evaluation (`evaluateTrainingWithIntent`) can apply the identical treatment to
+    // today's/tomorrow's own fixed activities, not just this multi-day forecast.
+    const applyFixedActivityStimulus = (date: string) => {
+        const result = applyFixedActivityStimulusCredit(microcycle, fixedActivities, date);
+        microcycle = result.microcycle;
+        objectiveCredits.push(...result.credits);
+        projectionExposures.push(...result.exposures);
+    };
+
+    const applyFixedActivityCost = (date: string) => {
+        const costProfile = fixedActivityCostProfileForDate(fixedActivities, date);
+        const hasActivityToday = fixedActivities.some(a => a.date === date && !a.isCompleted);
+        if (!hasActivityToday) return;
+        externalFatigue = applyCompletedSessionLoad(externalFatigue, date, costProfile);
+    };
+
+    // Stimulus credit before the pick (prevents redundant same-day work); cost after it
+    // (becomes real load only once the day has actually happened) -- see each function's
+    // own doc comment for why the order matters.
+    applyFixedActivityStimulus(todayDate);
     applyPick(todayDate, todayRec.template);
-    applyFixedActivityExposures(todayDate);
+    applyFixedActivityCost(todayDate);
 
     if (tomorrowRec) {
         const tomorrowDate = addDaysToLocalDateString(todayDate, 1);
         const tomorrowPeriodization = evaluatePeriodizationPhase(events, tomorrowDate);
-        const tomorrowReconciled = reconcileObjectivesForDate(microcycle, events, tomorrowDate, todayDate, tomorrowPeriodization, creditMemory);
+        const tomorrowReconciled = reconcileObjectivesForDate(microcycle, events, tomorrowDate, todayDate, tomorrowPeriodization, creditMemory, projectionExposures);
         microcycle = tomorrowReconciled.microcycle;
         accumulateNewDrops(droppedContributorObjectives, currentlyDroppedPairs, tomorrowReconciled.droppedContributorObjectives);
+        applyFixedActivityStimulus(tomorrowDate);
         const tomorrowCredits = creditingObjectivesFor(tomorrowRec.template);
         resultDays.push({
             date: tomorrowDate,
@@ -793,7 +908,7 @@ export function generateWeekAheadPlan(
             addressesObjectives: tomorrowCredits.map(item => item.objective.title),
         });
         applyPick(tomorrowDate, tomorrowRec.template, tomorrowCredits);
-        applyFixedActivityExposures(tomorrowDate);
+        applyFixedActivityCost(tomorrowDate);
     }
 
     for (let offset = resultDays.length + 1; offset <= totalDays; offset++) {
@@ -810,9 +925,16 @@ export function generateWeekAheadPlan(
         const periodization = evaluatePeriodizationPhase(events, date);
         const availability = resolveAvailability(date, null, fixedActivities, context);
 
-        const reconciled = reconcileObjectivesForDate(microcycle, events, date, todayDate, periodization, creditMemory);
+        const reconciled = reconcileObjectivesForDate(microcycle, events, date, todayDate, periodization, creditMemory, projectionExposures);
         microcycle = reconciled.microcycle;
         accumulateNewDrops(droppedContributorObjectives, currentlyDroppedPairs, reconciled.droppedContributorObjectives);
+
+        // Phase 6.2b ordering fix: credit today's booked fixed activities BEFORE computing
+        // `unresolved`/ranking below, not after picking -- otherwise an activity that
+        // already satisfies an objective cannot stop the optimizer from separately ranking
+        // and picking more work for that same still-"unresolved" objective (see
+        // applyFixedActivityStimulus's own doc comment).
+        applyFixedActivityStimulus(date);
 
         const rankingFatigue = projectFatigueForRankingDate(
             externalFatigue,
@@ -822,14 +944,25 @@ export function generateWeekAheadPlan(
         );
         // Phase 6.2b: fold today's reserved (not-yet-happened) fixed-activity load into the
         // fatigue signal used for THIS DAY's ranking/gating only -- externalFatigue itself
-        // (the carried-forward ledger) is untouched here, so this never marks the load as
-        // already completed before the activity occurs (D6-B/6.2b item 2). Its cost only
-        // becomes real, carried-forward load at the end of the day, via
-        // applyFixedActivityExposures below.
-        const rankingFatigueForDate: FatigueState = {
-            ...rankingFatigue,
-            combinedFatigue: combineMax(rankingFatigue.combinedFatigue, availability.reservedCapacityCostProfile),
-        };
+        // (the carried-forward ledger) is untouched here (this result is never assigned
+        // back to it), so this never marks the load as already completed before the
+        // activity occurs (D6-B/6.2b item 2). Its cost only becomes real, carried-forward
+        // load at the end of the day, via applyFixedActivityCost below.
+        //
+        // Reused via applyCompletedSessionLoad rather than combineMax(combinedFatigue,
+        // reservedCost): the reservation is genuinely ADDITIONAL external load stacking on
+        // top of whatever is already there, not an independent signal to take the max
+        // against. max(existing, reserved) silently masks the reservation whenever
+        // existing fatigue already exceeds it (e.g. max(0.6, 0.5) = 0.6, reserving no
+        // extra capacity for a booked hard evening session) -- applyCompletedSessionLoad's
+        // additive-then-clamped-then-max-with-internal-response semantics are exactly
+        // right here, called with elapsedHours=0 (same date as rankingFatigue was already
+        // decayed to) so it adds the reservation without any further decay.
+        const rankingFatigueForDate: FatigueState = applyCompletedSessionLoad(
+            rankingFatigue,
+            date,
+            availability.reservedCapacityCostProfile,
+        );
 
         const unresolved = getUnresolvedObjectives(microcycle, true);
 
@@ -898,19 +1031,15 @@ export function generateWeekAheadPlan(
             context,
             effectivePreferences,
             date,
-            { anchorRole, adjacentToAnchor, resolveMinimumDaysAfterHardLowerBody }
+            { anchorRole, adjacentToAnchor, resolveMinimumDaysAfterHardLowerBody },
+            fixedActivities,
         );
 
         const rankingResult = rankCandidates(
             fatigueGated,
             optContext.unresolvedObjectives,
             optContext.fatigueState,
-            // Phase 6.2b: use THIS loop's own availability (resolved with the real
-            // fixedActivities) rather than optContext.availability, which
-            // buildOptimizationContext resolves with an empty fixed-activity list -- the
-            // day-context equipment/time gates below must see the same day the pre-filter
-            // above already accounted for.
-            availability,
+            optContext.availability,
             optContext.injuryConstraints,
             optContext.preferences,
             optContext.options
@@ -944,7 +1073,7 @@ export function generateWeekAheadPlan(
         const pickCredits = creditingObjectivesFor(pick.template);
         const addressed = pickCredits.map(item => item.objective.title);
         applyPick(date, pick.template, pickCredits);
-        applyFixedActivityExposures(date);
+        applyFixedActivityCost(date);
 
         resultDays.push({
             date,

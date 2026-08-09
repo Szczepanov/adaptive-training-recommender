@@ -219,11 +219,22 @@ service cloud.firestore {
       return list is list && list.size() <= 20;
     }
 
+    // Phase 6.2b / D6-B: a TRUE day-wide restriction, deliberately separate from and
+    // independently validated from the activity's own environment/equipment above -- see
+    // FixedActivity's own doc comment in models.ts. Mirrors validation.ts's
+    // validateAvailabilityContextOverride, which this must stay aligned with.
+    function hasValidAvailabilityContextOverride(m) {
+      return m is map
+        && m.keys().hasOnly(['environment', 'equipment'])
+        && (!('environment' in m) || m.environment in ['indoor', 'outdoor', 'either'])
+        && (!('equipment' in m) || hasValidEquipmentList(m.equipment));
+    }
+
     function hasValidFixedActivity(userId) {
       let data = request.resource.data;
       return hasOwnedUserId(userId)
         && isValidActivityDate(data.date)
-        && data.keys().hasOnly(['userId', 'title', 'date', 'startTime', 'durationMin', 'fixed', 'expectedStimulus', 'expectedCost', 'environment', 'equipment', 'availabilityOverride', 'isCompleted', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['userId', 'title', 'date', 'startTime', 'durationMin', 'fixed', 'expectedStimulus', 'expectedCost', 'environment', 'equipment', 'availabilityOverride', 'availabilityContextOverride', 'isCompleted', 'createdAt', 'updatedAt'])
         && data.keys().hasAll(['userId', 'title', 'date', 'durationMin', 'fixed', 'environment', 'isCompleted', 'createdAt', 'updatedAt'])
         && data.title is string && data.title.size() <= 200
         && data.durationMin is int && data.durationMin > 0 && data.durationMin <= 1440
@@ -236,7 +247,8 @@ service cloud.firestore {
         && (!('expectedStimulus' in data) || hasValidExpectedStimulus(data.expectedStimulus))
         && (!('expectedCost' in data) || hasValidExpectedCost(data.expectedCost))
         && (!('equipment' in data) || hasValidEquipmentList(data.equipment))
-        && (!('availabilityOverride' in data) || (data.availabilityOverride is number && data.availabilityOverride >= 0 && data.availabilityOverride <= 1440));
+        && (!('availabilityOverride' in data) || (data.availabilityOverride is number && data.availabilityOverride >= 0 && data.availabilityOverride <= 1440))
+        && (!('availabilityContextOverride' in data) || hasValidAvailabilityContextOverride(data.availabilityContextOverride));
     }
 
     match /users/{userId}/fixed_activities/{activityId} {

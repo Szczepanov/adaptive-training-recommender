@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { evaluateTraining, evaluateTrainingWithIntent } from './rules';
+import { evaluateTraining, evaluateTrainingWithIntent, evaluateNextDayPlanWithIntent } from './rules';
 import { resolveTrainingIntent } from './trainingIntent';
-import type { DailyReadiness, UserContext, UserEvent } from './models';
+import type { DailyReadiness, FixedActivity, UserContext, UserEvent } from './models';
 import type { TrainingHistoryProvider } from './trainingHistory';
 
 const fixtureHistory: TrainingHistoryProvider = { reconstruct: async () => [] };
@@ -94,5 +94,70 @@ describe('ADR-0012 explicit PlanDefinition wiring (Phase 2 review fix)', () => {
         expect(build.plannedDose).toEqual({ volume: 1.0, intensity: 1.0 });
         expect(travel.plannedDose).toEqual({ volume: 0.6, intensity: 0.8 });
         expect(taper.plannedDose).toEqual({ volume: 0.5, intensity: 1.0 });
+    });
+});
+
+describe('Phase 6.2b -- fixed activities affect the live day-0/day-1 selection, not just the week-ahead forecast', () => {
+    // Regression for a real gap: `evaluateTrainingWithIntent` (today's actual pick) and
+    // `evaluateNextDayPlanWithIntent` (tomorrow's provisional plan) never received
+    // `fixedActivities` at all before this fix, so a booked activity on today/tomorrow
+    // could not affect either -- only the week-ahead forecast strip (day 2+) did.
+    const fixedActivity = (overrides: Partial<FixedActivity> & Pick<FixedActivity, 'id' | 'date'>): FixedActivity => ({
+        userId: 'u1', title: 'Fixed activity', durationMin: 30, isCompleted: false, fixed: true,
+        environment: 'either', equipment: [],
+        createdAt: '2026-08-01T00:00:00Z', updatedAt: '2026-08-01T00:00:00Z',
+        ...overrides,
+    });
+
+    it("a travel-day availabilityOverride on TODAY constrains today's own eligible time budget", async () => {
+        const input = readiness();
+        // 55-minute day budget minus a 50-minute activity leaves 5 minutes -- below any
+        // real template's floor, so the live pick must fail closed to recovery.
+        const travelDay = fixedActivity({ id: 'travel', date: '2026-08-07', durationMin: 50, availabilityOverride: 55 });
+
+        const withoutTravel = await evaluateTrainingWithIntent('u1', input, context(), [], '2026-08-07', undefined, fixtureHistory, undefined, []);
+        const withTravel = await evaluateTrainingWithIntent('u1', input, context(), [], '2026-08-07', undefined, fixtureHistory, undefined, [travelDay]);
+
+        expect(['Rest', 'Mobility/Recovery']).not.toContain(withoutTravel.template.category);
+        expect(['Rest', 'Mobility/Recovery']).toContain(withTravel.template.category);
+    });
+
+    it("a booked fixed activity on TODAY that already resolves strength_maintenance lowers a same-day Strength candidate's utility (stimulus credited before ranking, not after)", async () => {
+        // A generous time budget so the fixed activity's own duration does not itself
+        // exclude the Strength candidate on time -- this test isolates the credit-ordering
+        // effect, not the (separately tested) time-budget effect.
+        const input = readiness({ timeAvailable: 90 });
+        const homeGym = fixedActivity({ id: 'home_gym', date: '2026-08-07', expectedStimulus: { maxStrength: 1.0 } });
+        const strengthTemplateId = 'str_upper_01'; // requiredEquipment: ['free_weights'], owned by context()
+
+        const withoutActivity = await evaluateTrainingWithIntent('u1', input, context(), [], '2026-08-07', undefined, fixtureHistory, undefined, []);
+        const withActivity = await evaluateTrainingWithIntent('u1', input, context(), [], '2026-08-07', undefined, fixtureHistory, undefined, [homeGym]);
+
+        const scoreWithout = withoutActivity.decisionTrace?.candidateScores.find(c => c.templateId === strengthTemplateId)?.utilityScore;
+        const scoreWith = withActivity.decisionTrace?.candidateScores.find(c => c.templateId === strengthTemplateId)?.utilityScore;
+        expect(scoreWithout).toBeDefined();
+        expect(scoreWith).toBeDefined();
+        // optimizer.ts's isStrengthResolved gate applies a same-day 0.20x suppression to
+        // every Strength candidate once strength_maintenance is no longer unresolved -- it
+        // only fires here if the fixed activity's credit landed before ranking ran.
+        expect(scoreWith!).toBeLessThan(scoreWithout!);
+    });
+
+    it("a booked fixed activity on TOMORROW affects tomorrow's provisional plan through evaluateNextDayPlanWithIntent", async () => {
+        const input = readiness({ timeAvailable: 90 });
+        const todayRec = await evaluateTrainingWithIntent('u1', input, context(), [], '2026-08-07', undefined, fixtureHistory);
+        const tomorrowHomeGym = fixedActivity({ id: 'home_gym_tomorrow', date: '2026-08-08', expectedStimulus: { maxStrength: 1.0 } });
+        const strengthTemplateId = 'str_upper_01';
+
+        const withoutActivity = await evaluateNextDayPlanWithIntent('u1', [], input, context(), '2026-08-07', todayRec, fixtureHistory, undefined, []);
+        const withActivity = await evaluateNextDayPlanWithIntent('u1', [], input, context(), '2026-08-07', todayRec, fixtureHistory, undefined, [tomorrowHomeGym]);
+
+        const yellowWithout = withoutActivity.branches.yellow.recommendation;
+        const yellowWith = withActivity.branches.yellow.recommendation;
+        const scoreWithout = yellowWithout.decisionTrace?.candidateScores.find(c => c.templateId === strengthTemplateId)?.utilityScore;
+        const scoreWith = yellowWith.decisionTrace?.candidateScores.find(c => c.templateId === strengthTemplateId)?.utilityScore;
+        expect(scoreWithout).toBeDefined();
+        expect(scoreWith).toBeDefined();
+        expect(scoreWith!).toBeLessThan(scoreWithout!);
     });
 });

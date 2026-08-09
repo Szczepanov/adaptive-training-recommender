@@ -1,5 +1,6 @@
 import type {
     FatigueState,
+    FixedActivity,
     IntensityClass,
     PlannedDose,
     SessionHistoryEntry,
@@ -384,7 +385,15 @@ export function buildOptimizationContext(
     context: UserContext,
     preferences: Partial<UserPreferences> | null,
     date: string,
-    options: Partial<OptimizationOptions> = {}
+    options: Partial<OptimizationOptions> = {},
+    /** Phase 6.2b: threaded into `resolveAvailability` so `availability` (equipment, time,
+     *  `reservedCapacityCostProfile`, `environmentOverride`) reflects the day's real
+     *  booked/travel commitments. Defaulting to `[]` keeps every existing caller's
+     *  behaviour unchanged unless it opts in. This is now the SINGLE place availability is
+     *  resolved for ranking -- a caller should use `optContext.availability` for
+     *  `rankCandidates` rather than re-resolving it separately, or the two can drift (as
+     *  they once did here). */
+    fixedActivities: FixedActivity[] = [],
 ): OptimizationContext {
     const contextPrefs = context.preferences ? {
         ...DEFAULT_PREFERENCES,
@@ -399,7 +408,7 @@ export function buildOptimizationContext(
         : (basePrefs.userId ?? '');
     const effectivePreferences: UserPreferences = { ...basePrefs, userId };
 
-    const availability = resolveAvailability(date, null, [], context);
+    const availability = resolveAvailability(date, null, fixedActivities, context);
     const injuryConstraints = context.constraints?.restrictedModalities ?? [];
 
     const rawHistory: (RecentHistoryEntry | SessionHistoryEntry)[] = options.recentHistory ?? (intent.history ?? []).map(e => {

@@ -181,6 +181,22 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
           : null
       );
 
+      // Phase 6.2b: today's and tomorrow's own fixed activities must affect the actual
+      // live pick and provisional plan (availability/fatigue/objective credit), not just
+      // the separately-fetched week-ahead forecast strip below. Unlike that forecast read
+      // (which fails closed on a non-AVAILABLE state -- silently treating it as "no
+      // commitments" over a 7-day horizon someone plans around), the live day-0/day-1
+      // decision fails OPEN to an empty list here: this is one day's already-interactive
+      // recommendation, not an unattended multi-day schedule, and a temporary read failure
+      // should not block it entirely -- same tradeoff already made for `yesterdayRec` above.
+      const todayAndTomorrowFixedActivities = await fixedActivityService
+        .getActivitiesInRange(userId, input.date, addDaysToLocalDateString(input.date, 1))
+        .catch(err => {
+          console.warn('Failed to load fixed activities for today/tomorrow:', err);
+          return [];
+        });
+      if (!isCurrent()) return;
+
       const safetyStatus = getMinimumSafetyCheckinStatus(input.subjectiveCheckin);
       if (input.recoverySnapshot && canGenerateNormalRecommendation(safetyStatus)) {
         const objective = mapSnapshotToEngineInput(input.recoverySnapshot);
@@ -203,6 +219,7 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
         setHistorySnapshot(preparedSnapshot);
         const baseRecommendation = await evaluateTrainingWithIntent(
           userId, { subjective, objective }, context, events, input.date, yesterdayRec?.mode, undefined, preparedSnapshot,
+          todayAndTomorrowFixedActivities,
         );
         if (!isCurrent()) return;
         const recommendationWithPrescription = {
@@ -217,6 +234,7 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
 
         const tomorrowPlan = await evaluateNextDayPlanWithIntent(
           userId, events, { subjective, objective }, forecastContext, input.date, todayRec, undefined, preparedSnapshot,
+          todayAndTomorrowFixedActivities,
         );
         if (!isCurrent()) return;
         setNextDayPlan(tomorrowPlan);

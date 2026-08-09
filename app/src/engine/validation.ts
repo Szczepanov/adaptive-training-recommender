@@ -835,6 +835,52 @@ function validateProfileMap<K extends string>(
     return result;
 }
 
+/** Phase 6.2b / D6-B: a TRUE day-wide restriction, deliberately separate from and
+ *  independently validated from the activity's own `environment`/`equipment` above --
+ *  see FixedActivity's own doc comment in models.ts. Mirrors firestore.rules'
+ *  hasValidAvailabilityContextOverride, which this must stay aligned with. */
+function validateAvailabilityContextOverride(
+    raw: any,
+    errors: ValidationError[]
+): FixedActivity['availabilityContextOverride'] | undefined {
+    if (raw === undefined || raw === null) return undefined;
+    if (typeof raw !== 'object' || Array.isArray(raw)) {
+        errors.push({ field: 'availabilityContextOverride', message: 'availabilityContextOverride must be an object' });
+        return undefined;
+    }
+    const allowedKeys = ['environment', 'equipment'];
+    const extraKeys = Object.keys(raw).filter(key => !allowedKeys.includes(key));
+    if (extraKeys.length > 0) {
+        errors.push({ field: 'availabilityContextOverride', message: `availabilityContextOverride has unrecognized key(s): ${extraKeys.join(', ')}` });
+    }
+
+    let environment: TrainingEnvironment | undefined;
+    if (raw.environment !== undefined) {
+        if (!TRAINING_ENVIRONMENTS.includes(raw.environment)) {
+            errors.push({ field: 'availabilityContextOverride.environment', message: `environment must be one of: ${TRAINING_ENVIRONMENTS.join(', ')}` });
+        } else {
+            environment = raw.environment;
+        }
+    }
+
+    let equipment: string[] | undefined;
+    if (raw.equipment !== undefined) {
+        if (!Array.isArray(raw.equipment) || raw.equipment.length > MAX_EQUIPMENT_ITEMS) {
+            errors.push({ field: 'availabilityContextOverride.equipment', message: `equipment must be a list of at most ${MAX_EQUIPMENT_ITEMS} items` });
+        } else if (raw.equipment.some((item: unknown) => typeof item !== 'string' || item.length > MAX_EQUIPMENT_ITEM_LENGTH)) {
+            errors.push({ field: 'availabilityContextOverride.equipment', message: `Every equipment item must be a string of at most ${MAX_EQUIPMENT_ITEM_LENGTH} characters` });
+        } else {
+            equipment = raw.equipment;
+        }
+    }
+
+    if (environment === undefined && equipment === undefined) return undefined;
+    return {
+        ...(environment !== undefined ? { environment } : {}),
+        ...(equipment !== undefined ? { equipment } : {}),
+    };
+}
+
 export function validateFixedActivity(raw: any): ValidationResult<FixedActivity> {
     const errors: ValidationError[] = [];
 
@@ -885,6 +931,7 @@ export function validateFixedActivity(raw: any): ValidationResult<FixedActivity>
 
     const expectedStimulus = validateProfileMap(raw.expectedStimulus, STIMULUS_AXES, 'expectedStimulus', errors);
     const expectedCost = validateProfileMap(raw.expectedCost, COST_DIMENSIONS, 'expectedCost', errors);
+    const availabilityContextOverride = validateAvailabilityContextOverride(raw.availabilityContextOverride, errors);
 
     if (errors.length > 0) {
         return { isValid: false, errors };
@@ -904,6 +951,7 @@ export function validateFixedActivity(raw: any): ValidationResult<FixedActivity>
         ...(expectedStimulus && Object.keys(expectedStimulus).length > 0 ? { expectedStimulus } : {}),
         ...(expectedCost && Object.keys(expectedCost).length > 0 ? { expectedCost } : {}),
         ...(typeof raw.availabilityOverride === 'number' ? { availabilityOverride: raw.availabilityOverride } : {}),
+        ...(availabilityContextOverride ? { availabilityContextOverride } : {}),
         createdAt: raw.createdAt || new Date().toISOString(),
         updatedAt: new Date().toISOString(),
     };

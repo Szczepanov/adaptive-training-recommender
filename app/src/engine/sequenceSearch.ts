@@ -282,6 +282,15 @@ export function beamSearchWeekAheadPlan(
                 })),
             ];
 
+            // Phase 6.2b: thread fixedActivities through so `optContext.availability` (and
+            // therefore the equipment/time gates rankCandidates applies below) reflects the
+            // same day this loop's own `resolveAvailability(date, null, fixedActivities,
+            // context)` call above already accounted for -- without this, the two would
+            // silently disagree exactly the way planner.ts's own loop once did. This
+            // comparison tool does not otherwise replicate 6.2b's reserved-cost-fatigue or
+            // stimulus-credited-before-ranking treatment (see planner.ts): it is a
+            // Phase 5.1 measurement aid, not the production planner (ADR-0015), so that
+            // fuller parity is deferred unless beam search is ever promoted.
             const optContext = buildOptimizationContext(
                 {
                     unresolvedObjectives: unresolved,
@@ -291,7 +300,8 @@ export function beamSearchWeekAheadPlan(
                     plannedDose: resolvePlannedDoseForDate(periodization.phase, branch.microcycle.objectives, unresolved, planDefinition, date),
                 },
                 context, effectivePreferences, date,
-                { anchorRole, adjacentToAnchor, resolveMinimumDaysAfterHardLowerBody }
+                { anchorRole, adjacentToAnchor, resolveMinimumDaysAfterHardLowerBody },
+                fixedActivities,
             );
 
             const rankingResult = rankCandidates(

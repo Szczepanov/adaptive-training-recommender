@@ -305,6 +305,30 @@ emulatorDescribe('Firestore security rules', () => {
         await assertFails(setDoc(doc(ownerDb, fixedActivityPath), { ...validFixedActivity(), equipment: Array.from({ length: 21 }, (_, i) => `item-${i}`) }));
     });
 
+    it('allows a fixed activity with a valid availabilityContextOverride (Phase 6.2b / D6-B)', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await expect(assertSucceeds(setDoc(doc(ownerDb, fixedActivityPath), {
+            ...validFixedActivity(),
+            availabilityContextOverride: { environment: 'indoor', equipment: ['indoor_bike'] },
+        }))).resolves.toBeUndefined();
+    });
+
+    it('rejects a fixed activity with an unknown environment inside availabilityContextOverride', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertFails(setDoc(doc(ownerDb, fixedActivityPath), {
+            ...validFixedActivity(),
+            availabilityContextOverride: { environment: 'space' },
+        }));
+    });
+
+    it('rejects a fixed activity with an unrecognized key inside availabilityContextOverride', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertFails(setDoc(doc(ownerDb, fixedActivityPath), {
+            ...validFixedActivity(),
+            availabilityContextOverride: { environment: 'indoor', extra: true },
+        }));
+    });
+
     it('rejects a fixed activity with a malformed date', async () => {
         const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
         await assertFails(setDoc(doc(ownerDb, fixedActivityPath), { ...validFixedActivity(), date: '08/12/2026' }));

@@ -305,6 +305,49 @@ describe('validateFixedActivity', () => {
         expect(validateFixedActivity({ ...baseFields, availabilityOverride: -1 }).isValid).toBe(false);
         expect(validateFixedActivity({ ...baseFields, availabilityOverride: 1500 }).isValid).toBe(false);
     });
+
+    describe('availabilityContextOverride (Phase 6.2b / D6-B)', () => {
+        it('accepts a valid day-wide environment/equipment override and round-trips it', () => {
+            const result = validateFixedActivity({
+                ...baseFields,
+                availabilityContextOverride: { environment: 'indoor', equipment: ['indoor_bike'] },
+            });
+            expect(result.isValid).toBe(true);
+            expect(result.data?.availabilityContextOverride).toEqual({ environment: 'indoor', equipment: ['indoor_bike'] });
+        });
+
+        it('accepts an override with only one of environment/equipment set', () => {
+            expect(validateFixedActivity({ ...baseFields, availabilityContextOverride: { environment: 'outdoor' } }).isValid).toBe(true);
+            expect(validateFixedActivity({ ...baseFields, availabilityContextOverride: { equipment: [] } }).isValid).toBe(true);
+        });
+
+        it('omits availabilityContextOverride entirely when absent -- no fabricated default', () => {
+            const result = validateFixedActivity({ ...baseFields });
+            expect(result.isValid).toBe(true);
+            expect(result.data && 'availabilityContextOverride' in result.data).toBe(false);
+        });
+
+        it('rejects an unknown environment inside availabilityContextOverride', () => {
+            const result = validateFixedActivity({ ...baseFields, availabilityContextOverride: { environment: 'space' } });
+            expect(result.isValid).toBe(false);
+            expect(result.errors.some(e => e.field === 'availabilityContextOverride.environment')).toBe(true);
+        });
+
+        it('rejects an unrecognized key inside availabilityContextOverride', () => {
+            const result = validateFixedActivity({ ...baseFields, availabilityContextOverride: { environment: 'indoor', extra: true } });
+            expect(result.isValid).toBe(false);
+            expect(result.errors.some(e => e.field === 'availabilityContextOverride')).toBe(true);
+        });
+
+        it('rejects an oversized equipment list inside availabilityContextOverride', () => {
+            const result = validateFixedActivity({
+                ...baseFields,
+                availabilityContextOverride: { equipment: Array.from({ length: 21 }, (_, i) => `item-${i}`) },
+            });
+            expect(result.isValid).toBe(false);
+            expect(result.errors.some(e => e.field === 'availabilityContextOverride.equipment')).toBe(true);
+        });
+    });
 });
 
 describe('validateCheckin: tissueResponses (Phase 5.4)', () => {

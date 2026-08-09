@@ -1,4 +1,4 @@
-import type { DailyReadiness, UserContext, Recommendation, SessionTemplate, NextDayPotentialPlan, NextDayPlanBranch, NextDayScenario, NextDayScenarioSet, DecisionScoreTelemetry, SafetyEnvelope, PlanEnvelope, UserEvent } from './models';
+import type { DailyReadiness, UserContext, Recommendation, SessionTemplate, NextDayPotentialPlan, NextDayPlanBranch, NextDayScenario, NextDayScenarioSet, DecisionScoreTelemetry, SafetyEnvelope, PlanEnvelope, UserEvent, FixedActivity } from './models';
 import { TEMPLATES } from './templates';
 import { eligibleTemplates, evaluateTemplateEligibility, resolveMaximumSessionMinutes } from './eligibility';
 import { ENRICHED_TEMPLATES } from './templates';
@@ -11,6 +11,10 @@ import { POLICY_VERSION } from './policy';
 import { resolveExecutionDose } from './dose';
 import { isTemplatePhaseEligible } from './periodization';
 import { resolveMinimumDaysAfterHardLowerBody } from './planningCandidate';
+import { applyFixedActivityStimulusCredit } from './planner';
+import { getUnresolvedObjectives } from './microcycle';
+import { applyCompletedSessionLoad } from './fatigue';
+import { resolveAvailability } from './schedule';
 
 /**
  * Deterministically pick one template from a filtered set of same-category options,
@@ -460,20 +464,63 @@ export async function evaluateTrainingWithIntent(
     previousMode?: 'train' | 'modify' | 'recover',
     historyProvider?: TrainingHistoryProvider,
     preparedHistorySnapshot?: TrainingHistorySnapshot | null,
+    /** Phase 6.2b: the athlete's fixed activities covering (at least) `date`, so today's
+     *  actual selection sees the same booked-activity availability/fatigue/objective-credit
+     *  treatment the week-ahead planner already applies -- previously this parameter did
+     *  not exist and `date`'s own fixed activities had no effect on the live pick at all. */
+    fixedActivities: FixedActivity[] = [],
 ): Promise<Recommendation> {
     const envelopeState = evaluateReadinessAndSafetyEnvelope(readiness, context, date, previousMode);
     const { mode, envelopes, telemetry } = envelopeState;
 
-    const intent = await resolveTrainingIntent(userId, events, date, readiness, 7, historyProvider, preparedHistorySnapshot);
+    let intent = await resolveTrainingIntent(userId, events, date, readiness, 7, historyProvider, preparedHistorySnapshot);
+
+    // Phase 6.2b: credit today's own booked, uncompleted fixed activities BEFORE ranking --
+    // same ordering requirement as the week-ahead loop (planner.ts), and for the same
+    // reason: crediting afterward would let the optimizer separately prescribe redundant
+    // work for an objective a booked session already satisfies. Cross-day propagation (a
+    // still-uncompleted activity from a PRIOR date affecting a LATER date's fatigue
+    // baseline) is not attempted here -- each call to this function independently replays
+    // real completed history via resolveTrainingIntent, so only THIS date's own activities
+    // are considered; see the phase-6 plan's follow-up scope note.
+    const todaysFixedActivities = fixedActivities.filter(a => a.date === date && !a.isCompleted);
+    if (todaysFixedActivities.length > 0) {
+        const stimulusResult = applyFixedActivityStimulusCredit(intent.microcycle, fixedActivities, date);
+        intent = {
+            ...intent,
+            microcycle: stimulusResult.microcycle,
+            unresolvedObjectives: getUnresolvedObjectives(stimulusResult.microcycle, true),
+        };
+    }
+
+    const availability = resolveAvailability(date, readiness.subjective, fixedActivities, context);
     const maxCost = PLAN_TIER_SYSTEMIC_COST_CEILING[envelopes.plan.maxAllowableTier];
-    const candidates = eligibleTemplates(ENRICHED_TEMPLATES, context, readiness.subjective.timeAvailable, date)
+    const candidates = eligibleTemplates(ENRICHED_TEMPLATES, context, availability.maxTimeMinutes, date)
         .filter(template => !envelopes.safety.restrictedModalities.includes(template.modality))
         .filter(template => !(context.constraints.restrictedCategories ?? []).includes(template.category))
         .filter(template => template.systemicCost <= maxCost)
         .filter(template => mode !== 'recover' || template.category === 'Rest' || template.category === 'Mobility/Recovery')
         .filter(template => mode !== 'modify' || template.systemicCost <= MODIFY_MAX_SYSTEMIC_COST)
-        .filter(template => isTemplatePhaseEligible(template, intent.periodization));
-    const optContext = buildOptimizationContext(intent, context, context.preferences, date, { resolveMinimumDaysAfterHardLowerBody });
+        .filter(template => isTemplatePhaseEligible(template, intent.periodization))
+        // Phase 6.2b / D6-B: an explicit day-wide availabilityContextOverride restricts
+        // which environment is reachable; a fixed activity's own environment never does
+        // this on its own -- see resolveAvailability/D6-B.
+        .filter(template => !availability.environmentOverride || template.environment === 'either' || template.environment === availability.environmentOverride);
+    // Phase 6.2b: fold today's reserved (not-yet-happened) fixed-activity load into the
+    // fatigue signal used for ranking only -- intent.fatigue itself is untouched (this
+    // result is never written back to it), so this never marks the load as already
+    // completed before the activity occurs. Additive via applyCompletedSessionLoad, not
+    // combineMax -- see planner.ts's identical fusion for why max() masks the reservation
+    // whenever existing fatigue already exceeds it.
+    const rankingFatigue = applyCompletedSessionLoad(intent.fatigue, date, availability.reservedCapacityCostProfile);
+    const optContext = buildOptimizationContext(
+        { ...intent, fatigue: rankingFatigue },
+        context,
+        context.preferences,
+        date,
+        { resolveMinimumDaysAfterHardLowerBody },
+        fixedActivities,
+    );
     const rankingResult = rankCandidates(
         candidates,
         optContext.unresolvedObjectives,
@@ -975,11 +1022,14 @@ export async function evaluateNextDayPlanWithIntent(
     todayRec: Recommendation,
     historyProvider?: TrainingHistoryProvider,
     preparedHistorySnapshot?: TrainingHistorySnapshot | null,
+    /** Phase 6.2b: threaded straight through to `evaluateTrainingWithIntent` for tomorrow's
+     *  date -- see that function's own doc comment. */
+    fixedActivities: FixedActivity[] = [],
 ): Promise<NextDayPotentialPlan> {
     const scenarios = buildNextDayScenarios(todayReadiness, context, todayDate, todayRec);
     const evaluate = async (scenario: NextDayScenario) => evaluatedBranch(
         scenario,
-        await evaluateTrainingWithIntent(userId, scenario.readiness, context, events, scenarios.date, todayRec.mode, historyProvider, preparedHistorySnapshot),
+        await evaluateTrainingWithIntent(userId, scenario.readiness, context, events, scenarios.date, todayRec.mode, historyProvider, preparedHistorySnapshot, fixedActivities),
     );
     const [green, yellow, red] = await Promise.all([
         evaluate(scenarios.scenarios.green),
