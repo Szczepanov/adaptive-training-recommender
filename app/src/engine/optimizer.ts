@@ -16,6 +16,8 @@ import type { ResolvedAvailability } from './schedule';
 import { resolveAvailability } from './schedule';
 import { addDaysToLocalDateString, getDayDiff, getLocalDateString } from '../utils/localDate';
 import { qualifiesForObjective } from './microcycle';
+import { buildCoverageState, coverageNeedTierForTemplate, type CoverageState } from './coverage';
+import { resolvePlanDefinitionForEvent } from './planSchedule';
 
 const STRENGTH_CATEGORIES: SessionTemplate['category'][] = [
     'Upper-body Strength', 'Lower-body Strength', 'Full-body Strength', 'Power Maintenance',
@@ -26,6 +28,9 @@ export interface RankedCandidate {
     benefitScore: number;
     costPenalty: number;
     utilityScore: number;
+    /** Phase 6.2c / ADR-0016: ordinal weekly-role urgency. Hard gates have already
+     * rejected inadmissible candidates before this tier participates in sorting. */
+    coverageNeedTier: 0 | 1 | 2 | 3;
     rationale: string;
     excludedReasons: string[];
 }
@@ -54,10 +59,14 @@ export interface OptimizationOptions {
     anchorRole?: 'event-specific' | 'quality' | null;
     adjacentToAnchor?: boolean;
     plannedDose?: PlannedDose;
-    /** Phase 5.2: per-workout hard-lower-body spacing (planningCandidate.ts's
-     *  `PlanningCandidate.minimumDaysAfterHardLowerBody`), keyed by engine template id.
-     *  Optional and unset by default -- every existing caller keeps today's flat
-     *  2-day-minimum-gap rule (see evaluateRecoveryConstraints) unchanged. */
+    /** Phase 6.2c: callers that already resolved check-in/fixed-activity availability
+     * must pass the exact object so eligibility and rank hard gates cannot drift. */
+    resolvedAvailability?: ResolvedAvailability;
+    /** Optional explicit coverage state for a caller that has already projected same-day
+     * booked work. Otherwise buildOptimizationContext derives it from exact recent-history
+     * template identity and the event-relative PlanDefinition. */
+    coverageState?: CoverageState;
+    /** Phase 5.2: per-workout hard-lower-body spacing. */
     resolveMinimumDaysAfterHardLowerBody?: (templateId: string) => number | undefined;
 }
 
@@ -67,6 +76,7 @@ export interface OptimizationContext {
     availability: ResolvedAvailability;
     injuryConstraints: string[];
     preferences: UserPreferences;
+    coverageState: CoverageState;
     options: OptimizationOptions;
 }
 
@@ -93,38 +103,16 @@ const HARD_INTENSITY_MIN = 0.8;
 const HARD_SYSTEMIC_COST_THRESHOLD = 0.6;
 const MODERATE_SYSTEMIC_COST_THRESHOLD = 0.3;
 const ANCHOR_ROLE_BOOST = 1.35;
-/** Weekly architecture is a Level-4 timing signal under the Phase-3 lexicographic
- * contract, not merely a Level-6 preference. This additive benefit lets a candidate that
- * actually fulfils the nominated role outrank unrelated unresolved work on that date,
- * while still allowing fatigue/safety/recovery hard gates to reject the anchor. */
 const ANCHOR_TIMING_BENEFIT = 1.0;
-/** A triathlon focus event has two currently supported sport modalities. Treat an absent
- * supported modality in the rolling planning window as the same Level-4 timing class as
- * an anchor: it is event architecture, not a user-preference multiplier. Reusing the
- * established timing weight avoids inventing a second calibration constant. */
 const MULTISPORT_MODALITY_COVERAGE_BENEFIT = ANCHOR_TIMING_BENEFIT;
 const ANCHOR_ADJACENCY_SUPPRESSION = 0.3;
 const HEAVY_LOWER_BODY_STRENGTH_CATEGORIES: SessionTemplate['category'][] = ['Lower-body Strength', 'Full-body Strength'];
 const VARIETY_TIE_BREAK_GAP = 0.05;
-/** Lexicographic tie band for Level 4 (objective benefit) sorting -- deliberately a
- *  separate constant from VARIETY_TIE_BREAK_GAP even though both are currently 0.05:
- *  one governs whether two candidates count as "same objective benefit" for sort
- *  ordering, the other whether they're "close enough to rotate for variety". Sharing a
- *  literal between them made either one easy to change by accident. */
 const BENEFIT_TIE_BAND = 0.05;
-/** Single source of truth for "this session counts as a protected anchor/quality
- *  session" -- used for history role classification (normalizeHistory), the recovery
- *  constraints themselves (evaluateRecoveryConstraints), and planner.ts's own history
- *  tagging. Deliberately excludes 'Moderate Endurance': a moderate day is a real but
- *  lesser stimulus than these, and evaluateRecoveryConstraints' own isCandidateAnchor/
- *  priorAnchor checks already only treat these three as anchor-grade. */
 export const ANCHOR_HISTORY_CATEGORIES: SessionTemplate['category'][] = [
     'Hard Endurance', 'Race-Specific Endurance', 'Full-body Strength',
 ];
 
-/** A weekly anchor nomination describes what the day is trying to host; it is not a
- * property of every candidate evaluated on that date. A candidate only inherits the
- * nominated anchor role when its realized modality/category actually fulfils that role. */
 export function candidateMatchesAnchorRole(
     template: SessionTemplate,
     anchorRole: OptimizationOptions['anchorRole']
@@ -159,11 +147,8 @@ export function getConsecutiveModalityCount(
     for (let i = history.length - 1; i >= 0; i--) {
         const item = history[i];
         const modality = (item.modality ?? item.type ?? '').toLowerCase();
-        if (modality.includes(target)) {
-            count++;
-        } else {
-            break;
-        }
+        if (modality.includes(target)) count++;
+        else break;
     }
     return count;
 }
@@ -189,16 +174,11 @@ export function normalizeHistory(
         const date = entry.date ?? addDaysToLocalDateString(targetDate, -(total - idx));
         const modality = ((entry.modality ?? entry.type ?? 'None') as SessionTemplate['modality']);
         const systemicCost = entry.systemicCost ?? 0;
-        const lowerBodyCost = ('lowerBodyCost' in entry && typeof entry.lowerBodyCost === 'number')
-            ? entry.lowerBodyCost
-            : 0;
+        const lowerBodyCost = ('lowerBodyCost' in entry && typeof entry.lowerBodyCost === 'number') ? entry.lowerBodyCost : 0;
 
         let role: SessionRole = 'supporting';
-        if ('role' in entry && entry.role) {
-            role = entry.role;
-        } else if (('category' in entry && entry.category && ANCHOR_HISTORY_CATEGORIES.includes(entry.category)) || systemicCost >= 0.7) {
-            role = 'anchor';
-        }
+        if ('role' in entry && entry.role) role = entry.role;
+        else if (('category' in entry && entry.category && ANCHOR_HISTORY_CATEGORIES.includes(entry.category)) || systemicCost >= 0.7) role = 'anchor';
 
         const intensityClass = ('intensityClass' in entry && entry.intensityClass)
             ? entry.intensityClass
@@ -249,8 +229,7 @@ export function evaluateRecoveryConstraints(
         const priorAnchor = history.find(h => {
             const diff = getDayDiff(targetDate, h.date);
             return diff > 0 && diff < 2 && (
-                h.role === 'anchor' ||
-                (h.category && ANCHOR_HISTORY_CATEGORIES.includes(h.category))
+                h.role === 'anchor' || (h.category && ANCHOR_HISTORY_CATEGORIES.includes(h.category))
             );
         });
         if (priorAnchor) reasons.push('QUALITY_SPACING_VIOLATION');
@@ -258,13 +237,6 @@ export function evaluateRecoveryConstraints(
 
     const candidateLowerBodyCost = template.costProfile?.lowerBody ?? (STRENGTH_CATEGORIES.includes(template.category) ? 0.6 : 0);
     if (candidateLowerBodyCost >= 0.6) {
-        // Phase 5.2: a detailed workout's own eligibility.minimumDaysAfterHardLowerBody
-        // (planningCandidate.ts) can override the flat 2-day default below in EITHER
-        // direction -- most catalog overrides are 1 (e.g. race-week/taper primers and
-        // quality-support sessions deliberately allow a shorter gap than the flat
-        // default), and a few are stricter (e.g. `field.ts`'s technical field sessions use
-        // 2). The default itself reproduces the exact prior behavior (diff === 1 was the
-        // only violation) for every template with no such workout-level override.
         const minGapDays = options.resolveMinimumDaysAfterHardLowerBody?.(template.id) ?? 2;
         const priorHardLower = history.find(h => {
             const diff = getDayDiff(targetDate, h.date);
@@ -284,8 +256,7 @@ export function evaluateRecoveryConstraints(
     const isHeavyLowerBodyStrength = HEAVY_LOWER_BODY_STRENGTH_CATEGORIES.includes(template.category) ||
         (template.modality === 'Strength' && (template.costProfile?.lowerBody ?? 0) >= 0.6);
     const isKeyCyclingSession = candidateMatchesAnchorRole(template, options.anchorRole)
-        || (template.modality === 'Cycling'
-            && (template.category === 'Race-Specific Endurance' || template.category === 'Hard Endurance'));
+        || (template.modality === 'Cycling' && (template.category === 'Race-Specific Endurance' || template.category === 'Hard Endurance'));
 
     if (isHeavyLowerBodyStrength) {
         const priorKeyCycling = history.find(h => {
@@ -325,9 +296,6 @@ export function calculateStimulusBenefit(
 
     let benefit = 0;
     unresolvedObjectives.forEach(obj => {
-        // Mirrors microcycle.ts's qualifiesForObjective/deriveObjectiveCreditFromProfile gate:
-        // a candidate that cannot actually resolve an objective (wrong category/modality, or
-        // below its minimumStimulus floor) must not rank as if it could.
         if (!qualifiesForObjective(stimulusProfile, template.modality, obj.qualification, template.category)) return;
 
         const target = obj.targetStimulus;
@@ -386,13 +354,6 @@ export function buildOptimizationContext(
     preferences: Partial<UserPreferences> | null,
     date: string,
     options: Partial<OptimizationOptions> = {},
-    /** Phase 6.2b: threaded into `resolveAvailability` so `availability` (equipment, time,
-     *  `reservedCapacityCostProfile`, `environmentOverride`) reflects the day's real
-     *  booked/travel commitments. Defaulting to `[]` keeps every existing caller's
-     *  behaviour unchanged unless it opts in. This is now the SINGLE place availability is
-     *  resolved for ranking -- a caller should use `optContext.availability` for
-     *  `rankCandidates` rather than re-resolving it separately, or the two can drift (as
-     *  they once did here). */
     fixedActivities: FixedActivity[] = [],
 ): OptimizationContext {
     const contextPrefs = context.preferences ? {
@@ -404,11 +365,10 @@ export function buildOptimizationContext(
     } : DEFAULT_PREFERENCES;
     const basePrefs = preferences ? { ...DEFAULT_PREFERENCES, ...preferences } : contextPrefs;
     const userId = (context.trainingSettings?.userId && context.trainingSettings.userId !== '')
-        ? context.trainingSettings.userId
-        : (basePrefs.userId ?? '');
+        ? context.trainingSettings.userId : (basePrefs.userId ?? '');
     const effectivePreferences: UserPreferences = { ...basePrefs, userId };
 
-    const availability = resolveAvailability(date, null, fixedActivities, context);
+    const availability = options.resolvedAvailability ?? resolveAvailability(date, null, fixedActivities, context);
     const injuryConstraints = context.constraints?.restrictedModalities ?? [];
 
     const rawHistory: (RecentHistoryEntry | SessionHistoryEntry)[] = options.recentHistory ?? (intent.history ?? []).map(e => {
@@ -433,19 +393,31 @@ export function buildOptimizationContext(
         };
     });
 
+    const focusEvent = options.focusEvent ?? intent.periodization?.focusEvent ?? null;
+    const coverageState = options.coverageState ?? buildCoverageState(
+        resolvePlanDefinitionForEvent(focusEvent),
+        date,
+        rawHistory.flatMap(entry => entry.date && entry.templateId
+            ? [{ date: entry.date, templateId: entry.templateId }]
+            : []),
+    );
+
     return {
         unresolvedObjectives: intent.unresolvedObjectives ?? [],
         fatigueState: intent.fatigue,
         availability,
         injuryConstraints,
         preferences: effectivePreferences,
+        coverageState,
         options: {
             date,
-            focusEvent: options.focusEvent ?? intent.periodization?.focusEvent ?? null,
+            focusEvent,
             recentHistory: rawHistory,
             anchorRole: options.anchorRole ?? null,
             adjacentToAnchor: options.adjacentToAnchor ?? false,
+            coverageState,
             ...(intent.plannedDose ? { plannedDose: intent.plannedDose } : {}),
+            ...(options.resolvedAvailability ? { resolvedAvailability: options.resolvedAvailability } : {}),
             ...(options.resolveMinimumDaysAfterHardLowerBody ? { resolveMinimumDaysAfterHardLowerBody: options.resolveMinimumDaysAfterHardLowerBody } : {}),
         },
     };
@@ -469,6 +441,7 @@ export function rankCandidates(
     const targetDate = options.date ?? getLocalDateString();
     const history = normalizeHistory(rawHistory, targetDate);
     const isStrengthResolved = !unresolvedObjectives.some(o => o.key === 'strength_maintenance');
+    const coverageState = options.coverageState;
 
     const accepted: RankedCandidate[] = [];
     const rejected: RankedCandidate[] = [];
@@ -499,6 +472,9 @@ export function rankCandidates(
 
         let benefit = calculateStimulusBenefit(template, unresolvedObjectives);
         const fulfilsNominatedAnchor = candidateMatchesAnchorRole(template, options.anchorRole);
+        const coverageNeedTier = coverageState
+            ? coverageNeedTierForTemplate(coverageState, template, options.anchorRole ?? null)
+            : 3;
 
         if (focusEvent && (focusEvent.priority === 'A' || focusEvent.priority === 'B')) {
             const categoryLower = focusEvent.category.toLowerCase();
@@ -514,17 +490,13 @@ export function rankCandidates(
                     : (template.modality === 'Strength' && obj.key === 'strength_maintenance')
             );
             const eventPriorityApplies = !categoryLower.includes('strength') || satisfiesUnresolvedObjective || fulfilsNominatedAnchor;
-            if (matchesEvent && eventPriorityApplies) {
-                benefit *= focusEvent.priority === 'A' ? 1.40 : 1.25;
-            } else if (!matchesEvent && !isPreferred(template) && !satisfiesUnresolvedObjective && unresolvedObjectives.length > 0) {
-                benefit *= 0.20;
-            }
+            if (matchesEvent && eventPriorityApplies) benefit *= focusEvent.priority === 'A' ? 1.40 : 1.25;
+            else if (!matchesEvent && !isPreferred(template) && !satisfiesUnresolvedObjective && unresolvedObjectives.length > 0) benefit *= 0.20;
         }
 
         if (needsMultisportModalityCoverage(template, focusEvent, history, targetDate)) {
             benefit += MULTISPORT_MODALITY_COVERAGE_BENEFIT;
         }
-
         if (fulfilsNominatedAnchor) benefit += ANCHOR_TIMING_BENEFIT;
 
         let costPenalty = calculateFatigueCostPenalty(template.costProfile, fatigueState);
@@ -532,7 +504,7 @@ export function rankCandidates(
 
         if (excludedReasons.length > 0) {
             const item: RankedCandidate = {
-                template, benefitScore: benefit, costPenalty, utilityScore: 0,
+                template, benefitScore: benefit, costPenalty, utilityScore: 0, coverageNeedTier,
                 rationale: `Excluded by hard constraint(s): ${excludedReasons.join(', ')}.`, excludedReasons,
             };
             rejected.push(item);
@@ -566,13 +538,14 @@ export function rankCandidates(
         }
 
         const utility = (benefit / (1 + costPenalty)) * prefMultiplier;
-        let rationale = `Benefit score: ${benefit.toFixed(2)}, Fatigue cost penalty: ${costPenalty.toFixed(2)}.`;
+        let rationale = `Coverage tier: ${coverageNeedTier}. Benefit score: ${benefit.toFixed(2)}, Fatigue cost penalty: ${costPenalty.toFixed(2)}.`;
+        if (coverageNeedTier <= 1) rationale += ' (Advances an explicit required weekly programming role.)';
         if (isDisliked(template)) rationale += ` (Soft penalty applied: modality '${template.modality}' is marked as avoided/disliked).`;
         if (needsMultisportModalityCoverage(template, focusEvent, history, targetDate)) {
             rationale += ` (Event-modality coverage: ${template.modality} has no exposure in the rolling 6-day history.)`;
         }
 
-        const item: RankedCandidate = { template, benefitScore: benefit, costPenalty, utilityScore: utility, rationale, excludedReasons: [] };
+        const item: RankedCandidate = { template, benefitScore: benefit, costPenalty, utilityScore: utility, coverageNeedTier, rationale, excludedReasons: [] };
         accepted.push(item);
         all.push(item);
     });
@@ -587,6 +560,8 @@ export function rankCandidates(
     const getBenefitTier = (candidate: RankedCandidate) => benefitTierByCandidate.get(candidate)!;
 
     accepted.sort((a, b) => {
+        const coverageDiff = a.coverageNeedTier - b.coverageNeedTier;
+        if (coverageDiff !== 0) return coverageDiff;
         const tierDiff = getBenefitTier(a) - getBenefitTier(b);
         if (tierDiff !== 0) return tierDiff;
         return b.utilityScore - a.utilityScore;
@@ -596,6 +571,7 @@ export function rankCandidates(
         const topCandidate = accepted[0];
         const topBenefitTier = getBenefitTier(topCandidate);
         const nearEquivalents = accepted.filter(c =>
+            c.coverageNeedTier === topCandidate.coverageNeedTier &&
             getBenefitTier(c) === topBenefitTier &&
             c.template.category === topCandidate.template.category &&
             (c.template.modality === topCandidate.template.modality ||
