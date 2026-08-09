@@ -7,10 +7,35 @@ This follow-up verifies the implementation plans derived from
 PR #16's code, with the audit work on `codex/phase-0-5-completion-audit`. The earlier
 analysis remains a point-in-time record and is not edited.
 
-**All Phase 0–5 work items are implemented.** The original review is fully closed for
-F1–F10 and F13–F17. F11, F12, and F15 are only partially closed: the harness and key
-correctness work landed, but the remaining calibration, fatigue-fusion, and operational
-controls are not represented as finished work.
+**Phases 0–5 are implemented; three original findings and two Phase 5 residual gaps are
+not fully closed.** The original review is fully closed for F1–F10, F13–F14, and F16–F17.
+F11, F12, and F15 are only partially closed: the harness and key correctness work landed,
+but the remaining calibration, fatigue-fusion, and operational controls are not
+represented as finished work.
+
+Two further gaps surfaced during Phase 5's own implementation, are not original review
+findings, and are not yet closed:
+
+* **Multi-event objectives are not re-resolved mid-horizon.** `planner.ts`'s
+  `generateWeekAheadPlan` seeds `microcycle.objectives` — including which Phase 5.6
+  contributor objectives survive `resolveMultiEventObjectives` — once at `todayDate`, then
+  carries that set unchanged through every later day of the 7-day loop. A taper authority
+  or contributor crossing a window boundary strictly inside the horizon is not reflected in
+  which objectives are admissible afterward. This is recorded in-code as a known, deliberate
+  gap (see the per-day loop comment in `planner.ts`), not something this audit discovered.
+* **`FixedActivity.environment`/`equipment` and `reservedCapacityCost` are not consumed.**
+  `schedule.ts`'s `resolveAvailability` derives available equipment only from the athlete's
+  standing constraints, never from the day's booked activity; and `reservedCapacityCost` is
+  computed but not read by `rankCandidates` or the fatigue projection. `schedule.ts`
+  documents `fixed` (movable vs immovable) as "captured on the model but not yet consumed";
+  the same is true of these two fields.
+
+Both are Phase-5-scope behaviours, not F11/F12/F15 calibration work, so they are not folded
+into those three findings. Reopening Phase 5's `Implemented` status to track them would
+misrepresent what shipped (5.3 and 5.6 landed and are exercised by tests); instead they are
+carried forward as explicitly Phase-6-owned carryover work — see
+[`phase-6-evidence-and-operational-assurance.md`](../plans/phase-6-evidence-and-operational-assurance.md)
+6.2a/6.2b — rather than left implied by "all Phase 0–5 work items are implemented."
 
 ## Finding reconciliation
 
@@ -33,6 +58,8 @@ controls are not represented as finished work.
 | F15 — CI and tooling | Partial | CI now runs ruff, mypy, dependency audits, policy-drift checking, and simulations. Coverage thresholds and deployed-Firestore-rule drift detection remain absent. |
 | F16 — invisible event plan | Closed | `PlanDefinition` / `PlanBlock` are resolved in `resolveTrainingIntent` and drive active-window objectives. |
 | F17 — inert intensity scale | Closed | `PlannedDose` owns both volume and intensity and reads authored plan-block scales. |
+| *(not a review finding)* — 5.6 mid-horizon re-resolution | Owned by Phase 6 | `planner.ts` seeds `microcycle.objectives` once at `todayDate`; a taper/contribution-window transition inside the 7-day horizon does not change which objectives are admissible after it. See [phase-6 plan](../plans/phase-6-evidence-and-operational-assurance.md), task 6.2a. |
+| *(not a review finding)* — 5.3 fixed-activity wiring | Owned by Phase 6 | `schedule.ts`'s `resolveAvailability` does not read a `FixedActivity`'s `environment`/`equipment`, and `reservedCapacityCost` is computed but not consumed by ranking or fatigue. See [phase-6 plan](../plans/phase-6-evidence-and-operational-assurance.md), task 6.2b. |
 
 ## Verification performed
 
@@ -60,3 +87,9 @@ planned separately:
 2. Revisit the retained `max()` fatigue fusion only when new measured-response evidence
    supports an alternative (F12).
 3. Add coverage thresholds and a deployed-rules drift check to CI (F15).
+4. Re-resolve multi-event objective admissibility when a taper or contribution window
+   boundary falls inside the 7-day horizon, instead of carrying the `todayDate`-seeded set
+   unchanged (Phase 5.6 residual).
+5. Wire `FixedActivity.environment`/`equipment` into `resolveAvailability` and
+   `reservedCapacityCost` into ranking/fatigue, or record an explicit decision that they
+   should stay unconsumed (Phase 5.3 residual).

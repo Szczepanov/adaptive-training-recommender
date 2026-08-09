@@ -50,8 +50,8 @@ These implement the way forward in
 [`docs/analysis/2026-08-08-architecture-review.md`](../analysis/2026-08-08-architecture-review.md)
 §7.5. Finding IDs (`F1`, `F16`, …) refer to that document.
 
-All six phases are **implemented** as verified on 2026-08-09. Their task boards are
-historical implementation records; the
+Phases 0–5 are **implemented** as verified on 2026-08-09; Phase 6 is Draft. The Phase
+0–5 task boards are historical implementation records; the
 [follow-up analysis](../analysis/2026-08-09-phase-0-5-completion-review.md) records
 which original findings are fully closed and which remain ongoing work.
 
@@ -68,11 +68,11 @@ all-`Ready` table became unusable.
 | 3 | [One ranking path](./phase-3-single-ranking-path.md) | **Implemented** | — | — | F3, F4, F5 |
 | 4 | [Objective credit V2](./phase-4-objective-credit-v2.md) | **Implemented** | — | — | F7, F8, F12 |
 | 5 | [Sequence planning](./phase-5-sequence-planning.md) | **Implemented** | — | — | the cutover proper |
-| 6 | [Evidence-driven calibration & operational assurance](./phase-6-evidence-and-operational-assurance.md) | Draft | none | measurement-contract approval; Firebase deployment owner | remaining F11, F12, F15 |
+| 6 | [Evidence-driven calibration & operational assurance](./phase-6-evidence-and-operational-assurance.md) | Draft | none | measurement-contract approval; Firebase deployment owner | remaining F11, F12, F15; Phase 5.6/5.3 carryover gaps (not review findings) |
 
-All six phases are complete. Phase 0 supplied the safety harness used to evaluate the
-behaviour-changing work in Phases 1–5. Phase 5.1 was measured rather than automatically
-shipped; its recorded decision retains the greedy production planner.
+Phases 0–5 are complete; Phase 6 remains Draft. Phase 0 supplied the safety harness used
+to evaluate the behaviour-changing work in Phases 1–5. Phase 5.1 was measured rather than
+automatically shipped; its recorded decision retains the greedy production planner.
 
 ---
 

@@ -44,7 +44,7 @@ harder to see, because they will then be spread across a larger surface.
 
 ## `[x]` 1.1 — F1: give injury constraints a real data path
 
-### Pre-implementation state
+### Pre-implementation state (historical — resolved by 1.1)
 
 `app/src/engine/adapters.ts` — `mapContextFromGoalsAndTrainingSettings`, the only production constructor of `UserContext` —
 hardcodes `injuries: []`. Everything downstream is therefore dead in production:
@@ -184,7 +184,7 @@ parallel. `rules.ts` and `optimizer.ts` migrate to the resolved lists in the sam
 A test must assert both evaluation paths derive identical restrictions from one settings
 object.
 
-### Work items
+### Work items (historical checklist — completed)
 
 1. `models.ts` — add `BodyRegion`, `InjuryConstraint`, and `TrainingSettings.injuries?: InjuryConstraint[]`.
 2. `injuryPolicy.ts` — the pure resolver above, fully unit-tested. No Firebase, no I/O.
@@ -207,7 +207,7 @@ object.
 9. `firestore.rules` — validate the `injuries` array shape (bounded length, enum region,
    enum severity, optional ISO date string).
 
-### Tests
+### Tests (added)
 
 * `injuryPolicy.test.ts` — full region × severity table, plus expiry behaviour.
 * `rules.test.ts` — an `exclude` achilles injury removes every `Running` template on the
@@ -228,7 +228,7 @@ object.
 > before that harness exists — see "Constants are illustrative" below for why that is not
 > a formality.
 
-### Current state
+### Current state (historical — resolved by 1.2)
 
 Verified empirically: three Garmin activities in the rolling window (120 min hard ride,
 60 min strength, 90 min moderate ride) leave every objective at `0/target`.
@@ -266,7 +266,7 @@ The correct framing:
 3. Keyword matching is **legacy last-resort compatibility only** — for genuinely
    unrecognised activity types with no other signal. It should shrink over time, not grow.
 
-### Fix
+### Fix (as delivered)
 
 **(a) Make "unknown" distinguishable from "zero".**
 In `completedEventToExposure`, attach `stimulusProfile` only when the vector carries
@@ -351,7 +351,7 @@ Fix (b) makes Garmin rides start resolving objectives. That lowers `urgency` in
 `resolveTrainingIntent`, which lowers `plannedDose`, which changes `executionDose`.
 **Re-run the Phase 0 invariant suite and read the semantic diff before merging.**
 
-### Tests
+### Tests (added)
 
 * `completedTraining.test.ts` — a Garmin-only cycling event produces a non-zero stimulus
   profile with `stimulusConfidence: 'inferred'`.
@@ -375,7 +375,7 @@ Fix (b) makes Garmin rides start resolving objectives. That lowers `urgency` in
 
 ## `[x]` 1.3 — F6: make recommendation records actually immutable
 
-### Current state
+### Current state (historical — resolved by 1.3)
 
 `app/firestore.rules` comments the document as "audit evidence and intentionally
 immutable", but `allow update` pins only `createdAt`. A client may rewrite `templateId`,
@@ -474,7 +474,7 @@ is not a gap — a client that never writes simply leaves the record unchanged.
 **`prescription` is decision evidence** and must be pinned per revision alongside the
 other decision fields — the earlier `decisionFieldsUnchanged()` sketch omitted it.
 
-### Fix
+### Fix (as delivered)
 
 Once (B) is chosen, add these helpers to the `daily_recommendations` update rule:
 
@@ -510,7 +510,7 @@ Verify against `recommendationService.saveRecommendation`'s `setDoc(..., { merge
 semantics before landing — `merge: true` means `request.resource.data` is the merged
 result, so unmentioned fields compare equal, which is what these rules assume.
 
-### Tests (extend `src/emulator/firestoreRules.emulator.test.ts`)
+### Tests (added, extend `src/emulator/firestoreRules.emulator.test.ts`)
 
 * rejects an update that changes `templateId` **without** the matching archive write
 * rejects a decision change whose archive document exists but has **mismatched** fields

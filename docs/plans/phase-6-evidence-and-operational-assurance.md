@@ -4,9 +4,12 @@
 * **Blocked by:** approval of the measurement contract for Tasks 6.1–6.3; production
   Firebase project identity and deployment owner for Task 6.4
 * **Unlocks:** evidence-backed changes to fatigue fusion and tuned decision thresholds
-* **Addresses:** remaining portions of F11, F12, and F15 in
+* **Addresses:** remaining portions of F11, F12, and F15, **plus two Phase 5 carryover
+  gaps that are not original review findings** — mid-horizon multi-event objective
+  re-resolution (Phase 5.6, task 6.2a) and `FixedActivity` environment/equipment/
+  `reservedCapacityCost` consumption (Phase 5.3, task 6.2b) — all tracked in
   [`2026-08-09-phase-0-5-completion-review.md`](../analysis/2026-08-09-phase-0-5-completion-review.md)
-* **Rough effort:** 4–7 focused days, excluding any later fatigue-policy experiment
+* **Rough effort:** 5–8 focused days, excluding any later fatigue-policy experiment
 
 ---
 
@@ -18,7 +21,7 @@ Update the marker on the work-item heading **and** this table in the same commit
 | Task | Status | Blocked by | Summary | Primary files |
 |---|:--:|---|---|---|
 | 6.1 | `[ ]` | measurement-contract approval | Make scenario runs reproducible observations; separate report generation from baseline mutation | `simulation/scenarios.ts`, `simulation/analyze.ts`, `scripts/simulate-*.mjs` |
-| 6.2 | `[ ]` | 6.1 | Add targeted multi-event, fixed-activity, load/readiness, and completion-evidence scenarios | `simulation/scenarios.ts`, `scenarios.test.ts`, `goldenWeek.test.ts` |
+| 6.2 | `[ ]` | 6.1 | Add targeted multi-event, fixed-activity, load/readiness, and completion-evidence scenarios; fix the mid-horizon objective re-resolution and fixed-activity wiring gaps carried over from Phase 5.6/5.3 | `simulation/scenarios.ts`, `scenarios.test.ts`, `goldenWeek.test.ts`, `planner.ts`, `schedule.ts` |
 | 6.3 | `[ ]` | 6.1, 6.2 | Report decision-critical telemetry and distinguish contract from observational scenarios | `simulation/analyze.ts`, `scripts/simulate-scenarios.mjs`, `docs/analysis/` |
 | 6.4 | `[ ]` | Firebase project and deployment-owner decision | Establish a Firestore-rule source of truth and detect deployed-rule drift | `.github/workflows/`, Firebase configuration, `docs/ops/` |
 | 6.5 | `[ ]` | evidence review from 6.1–6.3 | Decide whether a fatigue-fusion experiment is justified; retain `max()` if it is not | `engine/fatigue.ts`, `docs/adr/`, `docs/architecture/` |
@@ -95,14 +98,26 @@ Keep the existing 11 scenarios as controls. Each addition names one decision ris
 fixed synthetic inputs, and is classified as a blocking contract or an observational
 diagnostic.
 
-### 6.2a — Multi-event taper conflict
+### 6.2a — Multi-event taper conflict, including mid-horizon transitions
 
 Add `multi_event_taper_conflict`: an A-priority cycling event inside taper and a nearby
-scheduled B-priority event with overlapping demand.
+scheduled B-priority event with overlapping demand. Add a second case,
+`multi_event_taper_conflict_mid_horizon`, where the taper authority enters taper — or a
+contributor enters or leaves its contribution window — on day 2–6 of the 7-day plan, not
+on `todayDate`.
 
 * Contract: `evaluatePeriodizationPhase` reports one taper authority.
 * Contract: `resolveMultiEventObjectives` includes eligible contributor demand, takes the
   maximum rather than sum on collisions, and records a taper-incompatible quality drop.
+* **Fix, not just observe.** `planner.ts`'s per-day loop in `generateWeekAheadPlan` seeds
+  `microcycle.objectives` once at `todayDate` and carries it unchanged through every later
+  day — a known, in-code-recorded gap, not something this scenario merely documents.
+  Re-resolve objective admissibility for each day whose periodization phase differs from
+  `todayDate`'s, and record — as a decision, not an implementation accident — how
+  already-accrued mid-week credit is treated when an objective's admissibility changes
+  under it.
+* Contract: the mid-horizon case shows the resolved objective set changing on the day the
+  transition occurs, not staying frozen at the `todayDate` seed.
 
 ### 6.2b — Travel and fixed-activity week
 
@@ -111,7 +126,17 @@ Add `travel_fixed_activity_week`: a fixed travel activity with an
 
 * Contract: `resolveAvailability` applies the restrictive budget before selection.
 * Contract: selected templates fit time, environment, and equipment.
-* Observation: record the effect on next-day projected fatigue and objective urgency.
+* **Fix, not just observe.** `resolveAvailability` currently derives available equipment
+  only from the athlete's standing constraints (`resolveOwnedEquipment`), never from the
+  day's `FixedActivity.environment`/`equipment` — so a booked away-game or hotel-gym
+  constraint cannot gate template eligibility even though the fields are persisted. Wire
+  both into the day's resolved availability. `reservedCapacityCost` is computed in the same
+  function but not consumed by `rankCandidates` or the fatigue projection; wire it into the
+  load side of ranking so a booked future activity's planned cost is reflected before that
+  day is reached, or record an explicit decision for why it should stay unconsumed.
+* Observation: record the effect on next-day projected fatigue and objective urgency, now
+  that `reservedCapacityCost` and the activity's own environment/equipment can actually
+  move that number.
 
 ### 6.2c — External load despite good readiness
 
@@ -254,6 +279,11 @@ gates.
 - [ ] The harness has deterministic multi-event, initial-history, fixed-activity, and
       date-level readiness inputs while legacy fixtures remain valid.
 - [ ] The targeted scenario risks and tissue integration contract are covered.
+- [ ] Mid-horizon multi-event and taper transitions re-resolve objective admissibility
+      instead of carrying the `todayDate`-seeded set unchanged (Phase 5.6 carryover).
+- [ ] `FixedActivity.environment`/`equipment` and `reservedCapacityCost` are consumed by
+      availability/ranking/fatigue, or an explicit decision records why they stay
+      unconsumed (Phase 5.3 carryover).
 - [ ] Daily reports distinguish external, raw-external, internal, and combined fatigue.
 - [ ] Contract scenarios block CI; observational scenarios remain visible in reports and
       semantic diff.

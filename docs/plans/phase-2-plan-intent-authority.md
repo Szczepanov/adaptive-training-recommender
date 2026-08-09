@@ -36,15 +36,15 @@ An explicit training plan is the authority for its active date window and is rea
 production engine; generic days-to-event arithmetic remains a fallback where no authored
 plan applies.
 
-## Pre-implementation state
+## Pre-implementation state (historical — resolved by 2.1/2.2)
 
-`app/src/workouts/event-plan.ts` encodes the real macrocycle: 17 coverage entries with
+`app/src/workouts/event-plan.ts` encoded the real macrocycle: 17 coverage entries with
 phases (`build | travel | peak | taper | race`), requirement tiers, workout IDs and
-coaching notes. **Its only consumer is `app/scripts/validate-workouts.ts`** (F16). The
-live planner instead reduces the plan to five generic rolling objectives and re-derives
-phase from `daysToEvent`, producing a `PhaseWeights` whose `intensityScale` is read by
-nobody and whose `volumeScale` feeds a single multiplier (F17). Two phase vocabularies
-exist with no mapping between them.
+coaching notes. **Its only consumer was `app/scripts/validate-workouts.ts`** (F16). The
+live planner instead reduced the plan to five generic rolling objectives and re-derived
+phase from `daysToEvent`, producing a `PhaseWeights` whose `intensityScale` was read by
+nobody and whose `volumeScale` fed a single multiplier (F17). Two phase vocabularies
+existed with no mapping between them.
 
 ## Acceptance criteria
 
@@ -150,8 +150,8 @@ objects to it lacking.
 
 ## `[x]` 2.2 — `PlanDefinition`: make the event plan executable
 
-Generalise `event-plan.ts` from a September-specific coverage list into a plan the engine
-consumes. **Do not make the domain September-specific.**
+`event-plan.ts` was generalised from a September-specific coverage list into a plan the
+engine consumes. **The domain was kept event-agnostic, not September-specific.**
 
 ```ts
 export interface PlanDefinition {
