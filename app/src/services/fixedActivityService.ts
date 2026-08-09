@@ -1,4 +1,4 @@
-import { doc, getDoc, setDoc, deleteDoc, collection, query, where, getDocs, addDoc, type DocumentData } from 'firebase/firestore';
+import { doc, getDoc, setDoc, deleteDoc, deleteField, collection, query, where, getDocs, addDoc, type DocumentData } from 'firebase/firestore';
 import { getDb } from '../firebase';
 import type { FixedActivity } from '../engine/models';
 import type { DataIssue, DataState } from '../engine/dataState';
@@ -7,6 +7,11 @@ import { resolveFixedActivityIdentity } from '../engine/fixedActivityIdentity';
 import { getErrorCode } from '../utils/errors';
 
 type FixedActivityWithId = FixedActivity & { id: string };
+type FixedActivityUpdates = Omit<Partial<FixedActivity>, 'templateId' | 'workoutId'> & {
+    templateId?: string | null;
+    workoutId?: string | null;
+};
+type ParsedActivity = { activity: FixedActivity; identityValid: boolean };
 
 /** Builds a document payload containing only stored fields -- `id` is the document key,
  *  not a stored field, mirroring goalService's storedGoalPayload. */
@@ -36,10 +41,13 @@ function attachExactIdentity(activity: FixedActivity, raw: DocumentData): FixedA
     return resolveFixedActivityIdentity(candidate) ? candidate : null;
 }
 
-function parseActivity(raw: DocumentData): FixedActivity | null {
+function parseActivity(raw: DocumentData): ParsedActivity | null {
     const validation = validateFixedActivity(raw);
     if (!validation.isValid || !validation.data) return null;
-    return attachExactIdentity(validation.data, raw);
+    const withIdentity = attachExactIdentity(validation.data, raw);
+    return withIdentity
+        ? { activity: withIdentity, identityValid: true }
+        : { activity: validation.data, identityValid: false };
 }
 
 /**
@@ -58,20 +66,24 @@ export class FixedActivityService {
             const q = query(collRef, where('date', '>=', startDate), where('date', '<=', endDate));
             const querySnapshot = await getDocs(q);
             const activities: FixedActivityWithId[] = [];
-            const issues: DataIssue[] = [];
+            const schemaIssues: DataIssue[] = [];
+            const identityIssues: DataIssue[] = [];
             const revisions: string[] = [];
             for (const activityDoc of querySnapshot.docs) {
                 const raw = { ...activityDoc.data(), id: activityDoc.id };
                 const parsed = parseActivity(raw);
-                if (!parsed || parsed.userId !== userId) {
-                    issues.push({ code: 'schema-validation-failed', documentPath: `users/${userId}/${this.collectionPath}/${activityDoc.id}` });
+                if (!parsed || parsed.activity.userId !== userId) {
+                    schemaIssues.push({ code: 'schema-validation-failed', documentPath: `users/${userId}/${this.collectionPath}/${activityDoc.id}` });
                     continue;
                 }
-                activities.push({ ...parsed, id: activityDoc.id });
+                activities.push({ ...parsed.activity, id: activityDoc.id });
+                if (!parsed.identityValid) {
+                    identityIssues.push({ code: 'catalog-identity-unresolved', field: 'templateId/workoutId', documentPath: `users/${userId}/${this.collectionPath}/${activityDoc.id}` });
+                }
                 if (typeof activityDoc.data().updatedAt === 'string') revisions.push(`${activityDoc.id}:${activityDoc.data().updatedAt}`);
             }
-            if (issues.length > 0) return { status: 'INVALID', issues };
-            return { status: 'AVAILABLE', data: activities, revision: revisions.sort().join('|') || null };
+            if (schemaIssues.length > 0) return { status: 'INVALID', issues: schemaIssues };
+            return { status: 'AVAILABLE', data: activities, revision: revisions.sort().join('|') || null, ...(identityIssues.length > 0 ? { issues: identityIssues } : {}) };
         } catch (error: unknown) {
             return { status: 'UNAVAILABLE', operation: 'read fixed activities', retryable: getErrorCode(error) !== 'permission-denied' };
         }
@@ -89,7 +101,7 @@ export class FixedActivityService {
         return querySnapshot.docs
             .flatMap(d => {
                 const parsed = parseActivity({ ...d.data(), id: d.id });
-                return parsed ? [{ ...parsed, id: d.id }] : [];
+                return parsed ? [{ ...parsed.activity, id: d.id }] : [];
             })
             .sort((a, b) => a.date.localeCompare(b.date));
     }
@@ -99,8 +111,8 @@ export class FixedActivityService {
         const docSnap = await getDoc(docRef);
         if (!docSnap.exists()) return null;
         const parsed = parseActivity({ ...docSnap.data(), id: docSnap.id });
-        if (!parsed || parsed.userId !== userId) return null;
-        return { ...parsed, id: docSnap.id };
+        if (!parsed || parsed.activity.userId !== userId) return null;
+        return { ...parsed.activity, id: docSnap.id };
     }
 
     async createActivity(userId: string, activityData: Omit<FixedActivity, 'id' | 'userId' | 'createdAt' | 'updatedAt'>): Promise<FixedActivity> {
@@ -117,10 +129,12 @@ export class FixedActivityService {
         return { ...validated, id: docRef.id };
     }
 
-    async updateActivity(userId: string, activityId: string, updates: Partial<FixedActivity>): Promise<FixedActivity> {
+    async updateActivity(userId: string, activityId: string, updates: FixedActivityUpdates): Promise<FixedActivity> {
         const existing = await this.getActivity(userId, activityId);
         if (!existing) throw new Error('Fixed activity not found');
         const updatedData: DocumentData = { ...existing, ...updates };
+        if (updates.templateId === null) delete updatedData.templateId;
+        if (updates.workoutId === null) delete updatedData.workoutId;
         const validation = validateFixedActivity(updatedData);
         if (!validation.isValid || !validation.data) {
             const errorMessages = validation.errors.map(e => `${e.field}: ${e.message}`).join('; ');
@@ -129,7 +143,10 @@ export class FixedActivityService {
         const validated = attachExactIdentity(validation.data, updatedData);
         if (!validated) throw new Error('Validation failed: templateId/workoutId must identify one matching active catalog workout');
         const docRef = doc(getDb(), 'users', userId, this.collectionPath, activityId);
-        await setDoc(docRef, storedActivityPayload(validated), { merge: true });
+        const payload = storedActivityPayload(validated);
+        if (updates.templateId === null) payload.templateId = deleteField();
+        if (updates.workoutId === null) payload.workoutId = deleteField();
+        await setDoc(docRef, payload, { merge: true });
         return validated;
     }
 

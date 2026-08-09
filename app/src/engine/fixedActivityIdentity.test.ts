@@ -41,6 +41,16 @@ describe('Phase 6.2c fixed-activity exact identity', () => {
         }))).toBeNull();
     });
 
+    it('resolves a workout-only identity through the same canonical template mapping', () => {
+        expect(resolveFixedActivityIdentity(activity({ workoutId: 'cycling_zone2_standard_01' }))).toMatchObject({
+            templateId: 'end_easy_01',
+            workoutId: 'cycling_zone2_standard_01',
+            modality: 'Cycling',
+            category: 'Easy Endurance',
+            exactCatalogIdentity: true,
+        });
+    });
+
     it('keeps legacy anonymous stimulus unlinked so it cannot invent cycling coverage', () => {
         const identity = resolveFixedActivityIdentity(activity({
             title: 'Football match',

@@ -67,10 +67,10 @@ interface SearchBranch {
     microcycle: MicrocycleState;
     externalFatigue: FatigueState;
     objectiveCredits: PlannedObjectiveCredit[];
-    /** Lower is better. Every branch at a pruning step has the same number of projected
-     * days, so the sum preserves the candidate-level lexicographic coverage priority. */
-    cumulativeCoverageTier: number;
-    /** Utility only breaks ties after cumulative coverage tier. */
+    /** Per projected day, lower is better. Equal-length branches are compared in date
+     * order, preserving the coverage-first ordering for earlier projected days. */
+    coverageTiers: number[];
+    /** Utility only breaks ties after the coverage-tier sequence. */
     cumulativeScore: number;
 }
 
@@ -196,14 +196,14 @@ export function beamSearchWeekAheadPlan(
         return {
             ...applied,
             days: [...branch.days, day],
-            cumulativeCoverageTier: branch.cumulativeCoverageTier + coverageNeedTier,
+            coverageTiers: [...branch.coverageTiers, coverageNeedTier],
             cumulativeScore: branch.cumulativeScore + utilityScore,
         };
     };
 
     let seedBranch: SearchBranch = {
         days: [], microcycle: initialMicrocycle, externalFatigue: initialFatigue,
-        objectiveCredits: [], cumulativeCoverageTier: 0, cumulativeScore: 0,
+        objectiveCredits: [], coverageTiers: [], cumulativeScore: 0,
     };
     seedBranch = applyPick(seedBranch, todayDate, todayRec.template);
 
@@ -319,10 +319,13 @@ export function beamSearchWeekAheadPlan(
             });
         }
 
-        nextGeneration.sort((a, b) =>
-            a.cumulativeCoverageTier - b.cumulativeCoverageTier
-            || b.cumulativeScore - a.cumulativeScore
-        );
+        nextGeneration.sort((a, b) => {
+            for (let index = 0; index < a.coverageTiers.length; index++) {
+                const difference = a.coverageTiers[index] - b.coverageTiers[index];
+                if (difference !== 0) return difference;
+            }
+            return b.cumulativeScore - a.cumulativeScore;
+        });
         if (nextGeneration.length > 0) beam = nextGeneration.slice(0, beamWidth);
     }
 

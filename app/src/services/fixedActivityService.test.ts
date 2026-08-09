@@ -5,6 +5,7 @@ const firestore = vi.hoisted(() => {
     return {
         addDoc: vi.fn(),
         collection: vi.fn(),
+        deleteField: vi.fn(() => 'delete-field-marker'),
         deleteDoc: vi.fn(),
         doc: vi.fn(),
         getDoc: vi.fn(),
@@ -109,6 +110,23 @@ describe('FixedActivityService persistence shape', () => {
         }
     });
 
+    it('keeps a schema-valid activity available when its catalog identity is stale', async () => {
+        firestore.getDocs.mockResolvedValue({
+            docs: [
+                { id: 'stale-identity', data: () => ({ ...validActivity, templateId: 'removed_template', userId: 'u1', createdAt: '2026-08-01T00:00:00.000Z', updatedAt: '2026-08-01T00:00:00.000Z' }) },
+            ],
+        });
+        const service = new FixedActivityService();
+        const state = await service.getActivitiesInRangeState('u1', '2026-08-01', '2026-08-31');
+
+        expect(state.status).toBe('AVAILABLE');
+        if (state.status === 'AVAILABLE') {
+            expect(state.data).toHaveLength(1);
+            expect(state.data[0]).not.toHaveProperty('templateId');
+            expect(state.issues).toEqual([expect.objectContaining({ code: 'catalog-identity-unresolved' })]);
+        }
+    });
+
     it('listAll drops a malformed persisted document rather than surfacing it to UI callers', async () => {
         firestore.getDocs.mockResolvedValue({
             docs: [
@@ -142,5 +160,32 @@ describe('FixedActivityService persistence shape', () => {
         const service = new FixedActivityService();
         const result = await service.getActivity('u1', 'activity-1');
         expect(result).toBeNull();
+    });
+
+    it('returns an identity-stripped activity so an update can repair a stale catalog reference', async () => {
+        firestore.getDoc.mockResolvedValue({
+            exists: () => true,
+            data: () => ({ ...validActivity, templateId: 'removed_template', userId: 'u1', createdAt: '2026-08-01T00:00:00.000Z', updatedAt: '2026-08-01T00:00:00.000Z' }),
+            id: 'activity-1',
+        });
+        const service = new FixedActivityService();
+
+        const result = await service.getActivity('u1', 'activity-1');
+        expect(result).not.toBeNull();
+        expect(result).not.toHaveProperty('templateId');
+    });
+
+    it('deletes explicitly cleared catalog identity fields during merge updates', async () => {
+        firestore.getDoc.mockResolvedValue({
+            exists: () => true,
+            data: () => ({ ...validActivity, templateId: 'end_easy_01', userId: 'u1', createdAt: '2026-08-01T00:00:00.000Z', updatedAt: '2026-08-01T00:00:00.000Z' }),
+            id: 'activity-1',
+        });
+        const service = new FixedActivityService();
+
+        const result = await service.updateActivity('u1', 'activity-1', { templateId: null });
+        const payload = firestore.setDoc.mock.calls[0][1] as Record<string, unknown>;
+        expect(result).not.toHaveProperty('templateId');
+        expect(payload.templateId).toBe('delete-field-marker');
     });
 });

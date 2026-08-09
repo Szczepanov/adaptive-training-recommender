@@ -558,6 +558,7 @@ const ZERO_STIMULUS: WorkoutStimulusProfile = { aerobicEndurance: 0, thresholdPo
 function recommendationProjection(date: string, rec: Recommendation): CompletedExposure {
     const workoutId = workoutForTemplate(rec.template.id)?.id;
     return {
+        occurrenceKey: `recommendation:${date}`,
         date,
         costProfile: rec.template.costProfile ?? ZERO_COST,
         stimulusProfile: rec.template.stimulusProfile,

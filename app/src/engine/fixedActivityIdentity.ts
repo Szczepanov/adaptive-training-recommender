@@ -76,10 +76,11 @@ export function resolveFixedActivityIdentity(activity: FixedActivity): ResolvedF
         };
     }
 
-    const workout = WORKOUTS.find(item => item.id === declaredWorkoutId && item.status === 'active');
-    const templateIdFromWorkout = workout?.engineTemplateIds?.[0];
-    const template = templateIdFromWorkout
-        ? ENRICHED_TEMPLATES.find(item => item.id === templateIdFromWorkout)
+    const workout = WORKOUTS.find(item => item.id === declaredWorkoutId && item.status === 'active' && !item.manualOnly);
+    // Resolve back through the same priority-ordered mapping the template-first path
+    // uses, so either persisted identifier shape reaches one canonical identity.
+    const template = workout
+        ? ENRICHED_TEMPLATES.find(candidate => workoutForTemplate(candidate.id)?.id === workout.id)
         : undefined;
     if (!workout || !template) return null;
     return {
