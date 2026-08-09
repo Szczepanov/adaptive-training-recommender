@@ -13,6 +13,10 @@ import { addDaysToLocalDateString } from '../utils/localDate';
  */
 
 export interface ExposureIdentity {
+    /** Stable occurrence identity, not a workout/template identity. The same physical or
+     * projected exposure must carry the same key through completed/projected/fixed paths
+     * so role counts are idempotent. */
+    occurrenceKey?: string;
     templateId?: string;
     workoutId?: string;
     modality?: SessionTemplate['modality'];
@@ -22,6 +26,7 @@ export interface ExposureIdentity {
 export type CoverageCreditSource = 'completed' | 'projected' | 'fixed_activity';
 
 export interface CoverageCredit {
+    occurrenceKey: string;
     date: string;
     coverageKey: EventPlanCoverageKey;
     source: CoverageCreditSource;
@@ -61,18 +66,20 @@ const COVERAGE_BY_KEY = new Map(
     SEPTEMBER_CYCLING_EVENT_SESSION_COVERAGE.map(item => [item.key, item]),
 );
 
-/** Hard developmental roles are anchor-timed first, then become repairable once the
- * immediately-fillable minimum roles have been handled. */
 const ANCHOR_TIMED_COVERAGE_KEYS = new Set<EventPlanCoverageKey>([
     'sustained_quality',
     'outdoor_event_specific',
 ]);
 
-/** Recovery is required weekly shape, but it should normally emerge on a fatigue,
- * adjacency or low-opportunity-cost day rather than outrank developmental work on the
- * first green day of a fresh rolling window. */
 const DEFERRED_SUPPORT_COVERAGE_KEYS = new Set<EventPlanCoverageKey>([
     'recovery_or_rest',
+]);
+
+/** For a cycling A/B event the aerobic-volume floor is the prerequisite for repairing a
+ * missed hard role. Primary strength remains a tier-1 required role, but it cannot veto
+ * the next feasible cycling-quality repair. */
+const HARD_ROLE_REPAIR_PREREQUISITES = new Set<EventPlanCoverageKey>([
+    'easy_aerobic',
 ]);
 
 export function workoutIdForTemplateId(templateId: string | undefined): string | undefined {
@@ -109,6 +116,15 @@ function laterDate(left: string, right: string): string {
 
 function activePlanBlock(planDefinition: PlanDefinition | null | undefined, date: string) {
     return planDefinition?.blocks.find(block => block.startDate <= date && date <= block.endDate) ?? null;
+}
+
+function occurrenceKeyFor(exposure: CoverageHistoryEntry, resolvedWorkoutId: string | undefined): string {
+    if (exposure.occurrenceKey) return exposure.occurrenceKey;
+    const source = exposure.source ?? 'completed';
+    // Conservative legacy fallback. It intentionally collapses duplicate same-day copies of
+    // one exact identity rather than risk double-counting them. New production/projection
+    // paths supply an explicit occurrenceKey.
+    return `${source}:${exposure.date}:${resolvedWorkoutId ?? exposure.templateId ?? 'unknown'}`;
 }
 
 function newRequirement(args: {
@@ -206,15 +222,21 @@ export function buildCoverageState(
         if (recoveryRequirement) requirementsByKey.set('recovery_or_rest', recoveryRequirement);
     }
 
+    const seenOccurrences = new Set<string>();
     for (const exposure of history) {
         if (exposure.date < windowStart || exposure.date >= asOfDate || exposure.date > block.endDate) continue;
-        const keys = coverageKeysForExposure(exposure, block.phase);
         const workoutId = exposure.workoutId ?? workoutIdForTemplateId(exposure.templateId);
+        const occurrenceKey = occurrenceKeyFor(exposure, workoutId);
+        if (seenOccurrences.has(occurrenceKey)) continue;
+        seenOccurrences.add(occurrenceKey);
+
+        const keys = coverageKeysForExposure(exposure, block.phase);
         for (const key of keys) {
             const requirement = requirementsByKey.get(key);
             if (!requirement) continue;
             const source = exposure.source ?? 'completed';
             requirement.credits.push({
+                occurrenceKey,
                 date: exposure.date,
                 coverageKey: key,
                 source,
@@ -255,8 +277,7 @@ export function getUnfulfilledTargetCoverage(state: CoverageState): WeeklyCovera
  * Hard feasibility/readiness gates still run before this tier participates in sorting.
  *
  * 0 = fulfils the nominated hard-developmental anchor role now
- * 1 = advances an unmet immediately-fillable minimum, OR repairs a still-missing hard
- *     role after the immediately-fillable minima have been handled
+ * 1 = advances an unmet immediately-fillable minimum, OR repairs a still-missing hard role
  * 2 = advances an anchor-timed/deferred role before repair is needed, or an unmet target
  * 3 = does not advance current explicit coverage
  */
@@ -277,10 +298,8 @@ export function coverageNeedTierForTemplate(
         if (requirement && isMinimumUnmet(requirement)) return 0;
     }
 
-    const outstandingImmediateMinimum = state.requirements.some(requirement =>
-        isMinimumUnmet(requirement)
-        && !ANCHOR_TIMED_COVERAGE_KEYS.has(requirement.key)
-        && !DEFERRED_SUPPORT_COVERAGE_KEYS.has(requirement.key)
+    const repairPrerequisiteMissing = state.requirements.some(requirement =>
+        HARD_ROLE_REPAIR_PREREQUISITES.has(requirement.key) && isMinimumUnmet(requirement)
     );
 
     let advancesAnchorTimedMinimum = false;
@@ -299,10 +318,7 @@ export function coverageNeedTierForTemplate(
         return 1;
     }
 
-    // Self-repair: once easy aerobic / primary strength (and any other immediate minima)
-    // are no longer missing, a hard weekly role that missed its nominated anchor becomes
-    // urgent on the next day where the existing spacing/fatigue gates actually admit it.
-    if (advancesAnchorTimedMinimum && !outstandingImmediateMinimum) return 1;
+    if (advancesAnchorTimedMinimum && !repairPrerequisiteMissing) return 1;
     if (advancesAnchorTimedMinimum || advancesDeferredSupportMinimum) return 2;
 
     for (const key of keys) {
