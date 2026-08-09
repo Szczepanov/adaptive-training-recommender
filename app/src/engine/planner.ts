@@ -55,6 +55,7 @@ import { resolveMinimumDaysAfterHardLowerBody } from './planningCandidate';
 import { resolvePlannedDoseForDate, resolveTrainingIntent } from './trainingIntent';
 import { resolvePlanDefinitionForEvent } from './planSchedule';
 import { deriveObjectiveCreditFromProfile } from './stimulus';
+import { coverageNeedTierForTemplate } from './coverage';
 import type { CompletedExposure, TrainingHistoryProvider } from './trainingHistory';
 import type { TrainingHistorySnapshot } from './trainingHistorySnapshot';
 import { resolveFixedActivityIdentity } from './fixedActivityIdentity';
@@ -881,8 +882,23 @@ export function generateWeekAheadPlan(
             fixedActivities,
         );
 
+        // If a required developmental role is temporarily excluded by the projected
+        // fatigue ceiling, do not spend the recovery opportunity on unrelated work.
+        // A rest/recovery pick lets the greedy horizon reconsider that exact role on a
+        // later, safer date instead of silently losing it after its pre-pass anchor.
+        const hasFatigueGatedRequiredCoverage = anchorRole === 'event-specific' && eligible.some(template =>
+            !fatigueGated.includes(template)
+            && (template.category === 'Race-Specific Endurance'
+                || template.category === 'Hard Endurance'
+                || template.category === 'Moderate Endurance')
+            && coverageNeedTierForTemplate(optContext.coverageState, template, anchorRole) <= 1
+        );
+        const rankingCandidates = hasFatigueGatedRequiredCoverage
+            ? fatigueGated.filter(template => template.category === 'Rest' || template.category === 'Mobility/Recovery')
+            : fatigueGated;
+
         const rankingResult = rankCandidates(
-            fatigueGated,
+            rankingCandidates,
             optContext.unresolvedObjectives,
             optContext.fatigueState,
             optContext.availability,

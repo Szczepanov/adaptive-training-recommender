@@ -21,6 +21,7 @@ import { addDaysToLocalDateString } from '../utils/localDate';
 import { applyCompletedSessionLoad, createEmptyFatigue } from './fatigue';
 import { generateWeeklyObjectives, getUnresolvedObjectives } from './microcycle';
 import { buildOptimizationContext, rankCandidates, type RecentHistoryEntry } from './optimizer';
+import { coverageNeedTierForTemplate } from './coverage';
 import { ENRICHED_TEMPLATES } from './templates';
 import { resolvePlanDefinitionForEvent } from './planSchedule';
 import { deriveObjectiveCreditFromProfile } from './stimulus';
@@ -273,8 +274,19 @@ export function beamSearchWeekAheadPlan(
                 fixedActivities,
             );
 
+            const hasFatigueGatedRequiredCoverage = anchorRole === 'event-specific' && eligible.some(template =>
+                !fatigueGated.includes(template)
+                && (template.category === 'Race-Specific Endurance'
+                    || template.category === 'Hard Endurance'
+                    || template.category === 'Moderate Endurance')
+                && coverageNeedTierForTemplate(optContext.coverageState, template, anchorRole) <= 1
+            );
+            const rankingCandidates = hasFatigueGatedRequiredCoverage
+                ? fatigueGated.filter(template => template.category === 'Rest' || template.category === 'Mobility/Recovery')
+                : fatigueGated;
+
             const rankingResult = rankCandidates(
-                fatigueGated, optContext.unresolvedObjectives, optContext.fatigueState, optContext.availability,
+                rankingCandidates, optContext.unresolvedObjectives, optContext.fatigueState, optContext.availability,
                 optContext.injuryConstraints, optContext.preferences, optContext.options
             );
 

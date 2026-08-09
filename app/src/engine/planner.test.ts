@@ -698,6 +698,7 @@ describe('Phase 6.2a -- reconcileObjectivesForDate (mid-horizon multi-event re-r
         // before the contributor's window opens on day 4, so the objective did not exist to
         // credit it against at the time.
         const priorExposures: ProjectionExposure[] = [{
+            occurrenceKey: 'recommendation:2026-08-08',
             date: '2026-08-08',
             stimulus: {
                 aerobicEndurance: 0.7, thresholdPower: 0, vo2MaxPower: 0, repeatedSurges: 0.7,
@@ -732,6 +733,7 @@ describe('Phase 6.2a -- reconcileObjectivesForDate (mid-horizon multi-event re-r
         const creditMemory = new Map();
         // Dated the SAME day being reconciled, not strictly before it.
         const sameDayExposure: ProjectionExposure[] = [{
+            occurrenceKey: 'recommendation:2026-08-11',
             date: '2026-08-11',
             stimulus: {
                 aerobicEndurance: 0.7, thresholdPower: 0, vo2MaxPower: 0, repeatedSurges: 0.7,

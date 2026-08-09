@@ -137,9 +137,8 @@ export interface FixedActivity {
      *  does not imply a separate same-day indoor session is also outdoor-only -- only set
      *  this when the day itself is actually constrained (e.g. travel: every session that
      *  day really is stuck at a hotel gym). Absent = this activity's venue never restricts
-     *  another session on the same date. Not yet covered by `firestore.rules`' `hasOnly`
-     *  allow-list (see 5.3's storage table) -- persistence validation is a follow-up
-     *  required before the UI can write this field. */
+     *  another session on the same date. Firestore and persistence validation enforce this
+     *  field's shape before it is stored. */
     availabilityContextOverride?: {
         environment?: TrainingEnvironment;
         equipment?: string[];

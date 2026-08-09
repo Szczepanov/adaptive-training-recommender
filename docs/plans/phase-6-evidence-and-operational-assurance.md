@@ -395,6 +395,14 @@ Keep the existing 11 scenarios as controls and add at least these deterministic 
 Local tissue response stays an integration test from adapter → injury resolution →
 optimizer; do not force UI state through the planner-only scenario harness.
 
+8. `cycling_specificity_after_hard_race_specific` — A-priority cycling event in
+   Specificity with an exact hard race-specific cycling exposure on day -1. Contractually
+   require immediate recovery/spacing, then (once the projected fatigue gate permits it)
+   a true easy-aerobic cycling role, a distinct sustained threshold/over-under role, and
+   appropriately spaced outdoor event-specific work. Support, technical, and recovery
+   work may appear but cannot fulfil those developmental roles; a fatigue-gated nominated
+   quality role must be reconsidered later in the horizon rather than silently abandoned.
+
 ### Contract assertions
 
 Contracts block CI only for safety/policy guarantees, for example:
