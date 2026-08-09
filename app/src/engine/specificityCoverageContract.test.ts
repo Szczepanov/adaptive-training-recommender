@@ -71,9 +71,6 @@ describe('escaped coaching contract: Specificity after hard race-specific day -1
         const recovery = ENRICHED_TEMPLATES.find(item => item.category === 'Mobility/Recovery');
         if (!recovery || !raceSpecific.stimulusProfile) throw new Error('required templates missing');
 
-        // Deliberately reproduce the original failure mechanism: yesterday's hard
-        // race-specific work cross-credits physiological objectives before the next week
-        // is planned. Coverage must remain independent from those adaptation credits.
         let microcycle = generateWeeklyObjectives(
             periodization.phase,
             addDaysToLocalDateString(TODAY, -7),
@@ -135,20 +132,23 @@ describe('escaped coaching contract: Specificity after hard race-specific day -1
             keys: coverageKeysForTemplate(day.template, 'peak'),
             template: day.template,
         }));
-        expect(coverageByDay.some(day => day.keys.includes('easy_aerobic'))).toBe(true);
-        expect(coverageByDay.some(day => day.keys.includes('sustained_quality'))).toBe(true);
-        expect(coverageByDay.some(day => day.keys.includes('outdoor_event_specific'))).toBe(true);
+        const sequence = coverageByDay
+            .map(day => `${day.date}:${day.template.id}:${day.template.category}[${day.keys.join(',')}]`)
+            .join(' | ');
+        expect(coverageByDay.some(day => day.keys.includes('easy_aerobic')), sequence).toBe(true);
+        expect(coverageByDay.some(day => day.keys.includes('sustained_quality')), sequence).toBe(true);
+        expect(coverageByDay.some(day => day.keys.includes('outdoor_event_specific')), sequence).toBe(true);
 
         const keyDates = coverageByDay
             .filter(day => day.keys.includes('sustained_quality') || day.keys.includes('outdoor_event_specific'))
             .map(day => day.date)
             .sort();
         for (let i = 1; i < keyDates.length; i++) {
-            expect(getDayDiff(keyDates[i], keyDates[i - 1])).toBeGreaterThanOrEqual(2);
+            expect(getDayDiff(keyDates[i], keyDates[i - 1]), sequence).toBeGreaterThanOrEqual(2);
         }
 
         const technicalCount = week.days.filter(day => day.template.category === 'Technical Skill').length;
         const mobilityCount = week.days.filter(day => day.template.category === 'Mobility/Recovery').length;
-        expect(technicalCount + mobilityCount).toBeLessThan(week.days.length);
+        expect(technicalCount + mobilityCount, sequence).toBeLessThan(week.days.length);
     });
 });
