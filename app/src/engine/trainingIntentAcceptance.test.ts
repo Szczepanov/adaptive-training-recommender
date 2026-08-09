@@ -26,8 +26,8 @@ const roadRace: UserEvent = {
     demandProfile: { aerobicEndurance: 0.8, thresholdPower: 0.9, vo2MaxPower: 0.7, repeatedSurges: 0.9, sprintPower: 0.5, fatigueResistance: 0.9, neuromuscular: 0.5 },
 };
 
-// Matches resolvePlanDefinitionForEvent's narrow id/category/date match (planSchedule.ts)
-// -- the one event buildSeptemberCyclingEventPlan's block calendar was actually authored for.
+// Event-relative explicit plan fixture. The authored block dates are derived from this
+// event's own target date rather than from one literal repository calendar.
 const septemberCyclingEvent: UserEvent = {
     id: 'sep-event-1', title: 'September Cycling Event', date: '2026-09-20', priority: 'A', lifecycle: 'scheduled', category: 'cycling_event',
     demandProfile: { aerobicEndurance: 0.8, thresholdPower: 0.8, vo2MaxPower: 0.7, repeatedSurges: 0.7, sprintPower: 0.3, fatigueResistance: 0.8, neuromuscular: 0.3 },
@@ -40,11 +40,6 @@ describe('day-0 event-intent acceptance', () => {
         const eventDriven = await evaluateTrainingWithIntent('u1', input, context(), [roadRace], '2026-08-07', undefined, fixtureHistory);
         const intent = await resolveTrainingIntent('u1', [roadRace], '2026-08-07', input, 7, fixtureHistory);
         expect(eventDriven.template.id).not.toBe(baseline.template.id);
-        // Race-Specific Endurance's only day-0-eligible candidate (37 days out excludes the
-        // <=35-day race-sim template) has thresholdPower stimulus below threshold_quality's
-        // qualification.minimumStimulus, so since calculateStimulusBenefit (optimizer.ts) enforces
-        // that gate it correctly earns no benefit toward that objective. Hard Endurance genuinely
-        // qualifies for both threshold_quality and surge_repeatability and wins on real merit.
         expect(eventDriven.template.category).toBe('Hard Endurance');
         expect(intent.unresolvedObjectives.map(objective => objective.key)).toContain('surge_repeatability');
         expect(intent.unresolvedObjectives.map(objective => objective.key)).toContain('race_specific_endurance');
@@ -72,36 +67,35 @@ describe('day-0 event-intent acceptance', () => {
     });
 });
 
-describe('ADR-0012 explicit PlanDefinition wiring (Phase 2 review fix)', () => {
-    it('resolveTrainingIntent picks up the authored PlanDefinition for the September cycling event, scoped to the active block', async () => {
-        // 2026-08-10 falls inside block_build (2026-08-01..2026-08-23) only.
+describe('ADR-0012/0016 explicit event-relative PlanDefinition wiring', () => {
+    it('resolveTrainingIntent picks up the authored cycling PlanDefinition, scoped to the active relative block', async () => {
+        // For a 2026-09-20 A event, build is 2026-06-28..2026-08-15.
         const intent = await resolveTrainingIntent('u1', [septemberCyclingEvent], '2026-08-10', readiness(), 7, fixtureHistory);
         expect(intent.microcycle.objectives.length).toBeGreaterThan(0);
         expect(intent.microcycle.objectives.every(o => o.id.startsWith('obj_plan_'))).toBe(true);
-        expect(intent.microcycle.objectives.every(o => o.windowStart === '2026-08-01' && o.windowEnd === '2026-08-23')).toBe(true);
+        expect(intent.microcycle.objectives.every(o => o.windowStart === '2026-06-28' && o.windowEnd === '2026-08-15')).toBe(true);
     });
 
-    it('does not apply the September plan to a different cycling event it was not authored for', async () => {
+    it('applies the richer authored plan to another cycling target date instead of falling back to generic mode', async () => {
+        // 2026-08-10 is 34 days before this 2026-09-13 event, so it is in the
+        // event-relative Specificity/peak block and must still be plan-derived.
         const intent = await resolveTrainingIntent('u1', [roadRace], '2026-08-10', readiness(), 7, fixtureHistory);
-        expect(intent.microcycle.objectives.some(o => o.id.startsWith('obj_plan_'))).toBe(false);
+        expect(intent.microcycle.objectives.some(o => o.id.startsWith('obj_plan_'))).toBe(true);
+        expect(intent.microcycle.objectives.some(o => o.key === 'race_specific_endurance')).toBe(true);
     });
 
-    it('uses the authored active PlanBlock as exact PlannedDose authority', async () => {
+    it('uses the authored active PlanBlock as exact PlannedDose authority without fabricating travel', async () => {
         const build = await resolveTrainingIntent('u1', [septemberCyclingEvent], '2026-08-10', readiness(), 7, fixtureHistory);
-        const travel = await resolveTrainingIntent('u1', [septemberCyclingEvent], '2026-08-26', readiness(), 7, fixtureHistory);
+        const specificity = await resolveTrainingIntent('u1', [septemberCyclingEvent], '2026-08-26', readiness(), 7, fixtureHistory);
         const taper = await resolveTrainingIntent('u1', [septemberCyclingEvent], '2026-09-10', readiness(), 7, fixtureHistory);
 
-        expect(build.plannedDose).toEqual({ volume: 1.0, intensity: 1.0 });
-        expect(travel.plannedDose).toEqual({ volume: 0.6, intensity: 0.8 });
-        expect(taper.plannedDose).toEqual({ volume: 0.5, intensity: 1.0 });
+        expect(build.plannedDose).toEqual({ volume: 1.0, intensity: 0.9 });
+        expect(specificity.plannedDose).toEqual({ volume: 1.0, intensity: 1.1 });
+        expect(taper.plannedDose).toEqual({ volume: 0.6, intensity: 1.0 });
     });
 });
 
 describe('Phase 6.2b -- fixed activities affect the live day-0/day-1 selection, not just the week-ahead forecast', () => {
-    // Regression for a real gap: `evaluateTrainingWithIntent` (today's actual pick) and
-    // `evaluateNextDayPlanWithIntent` (tomorrow's provisional plan) never received
-    // `fixedActivities` at all before this fix, so a booked activity on today/tomorrow
-    // could not affect either -- only the week-ahead forecast strip (day 2+) did.
     const fixedActivity = (overrides: Partial<FixedActivity> & Pick<FixedActivity, 'id' | 'date'>): FixedActivity => ({
         userId: 'u1', title: 'Fixed activity', durationMin: 30, isCompleted: false, fixed: true,
         environment: 'either', equipment: [],
@@ -111,8 +105,6 @@ describe('Phase 6.2b -- fixed activities affect the live day-0/day-1 selection, 
 
     it("a travel-day availabilityOverride on TODAY constrains today's own eligible time budget", async () => {
         const input = readiness();
-        // 55-minute day budget minus a 50-minute activity leaves 5 minutes -- below any
-        // real template's floor, so the live pick must fail closed to recovery.
         const travelDay = fixedActivity({ id: 'travel', date: '2026-08-07', durationMin: 50, availabilityOverride: 55 });
 
         const withoutTravel = await evaluateTrainingWithIntent('u1', input, context(), [], '2026-08-07', undefined, fixtureHistory, undefined, []);
@@ -123,12 +115,9 @@ describe('Phase 6.2b -- fixed activities affect the live day-0/day-1 selection, 
     });
 
     it("a booked fixed activity on TODAY that already resolves strength_maintenance lowers a same-day Strength candidate's utility (stimulus credited before ranking, not after)", async () => {
-        // A generous time budget so the fixed activity's own duration does not itself
-        // exclude the Strength candidate on time -- this test isolates the credit-ordering
-        // effect, not the (separately tested) time-budget effect.
         const input = readiness({ timeAvailable: 90 });
         const homeGym = fixedActivity({ id: 'home_gym', date: '2026-08-07', expectedStimulus: { maxStrength: 1.0 } });
-        const strengthTemplateId = 'str_upper_01'; // requiredEquipment: ['free_weights'], owned by context()
+        const strengthTemplateId = 'str_upper_01';
 
         const withoutActivity = await evaluateTrainingWithIntent('u1', input, context(), [], '2026-08-07', undefined, fixtureHistory, undefined, []);
         const withActivity = await evaluateTrainingWithIntent('u1', input, context(), [], '2026-08-07', undefined, fixtureHistory, undefined, [homeGym]);
@@ -137,9 +126,6 @@ describe('Phase 6.2b -- fixed activities affect the live day-0/day-1 selection, 
         const scoreWith = withActivity.decisionTrace?.candidateScores.find(c => c.templateId === strengthTemplateId)?.utilityScore;
         expect(scoreWithout).toBeDefined();
         expect(scoreWith).toBeDefined();
-        // optimizer.ts's isStrengthResolved gate applies a same-day 0.20x suppression to
-        // every Strength candidate once strength_maintenance is no longer unresolved -- it
-        // only fires here if the fixed activity's credit landed before ranking ran.
         expect(scoreWith!).toBeLessThan(scoreWithout!);
     });
 
