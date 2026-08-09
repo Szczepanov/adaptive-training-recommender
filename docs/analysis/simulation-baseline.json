@@ -35,8 +35,8 @@
         },
         {
           "key": "threshold_quality",
-          "timesGenerated": 4,
-          "timesResolved": 3
+          "timesGenerated": 3,
+          "timesResolved": 2
         },
         {
           "key": "strength_maintenance",
@@ -197,7 +197,7 @@
         "trainTierRestOrRecoveryCount": 0
       },
       "qualityWarnings": [
-        "Unresolved weekly objectives: threshold_quality 3/4.",
+        "Unresolved weekly objectives: threshold_quality 2/3.",
         "Event-specific exposure occurred off the nominated anchor date in 3 week(s)."
       ],
       "anchorWeeks": [
@@ -291,8 +291,8 @@
         },
         {
           "key": "threshold_quality",
-          "timesGenerated": 4,
-          "timesResolved": 4
+          "timesGenerated": 3,
+          "timesResolved": 3
         },
         {
           "key": "surge_repeatability",
@@ -561,8 +561,8 @@
         },
         {
           "key": "threshold_quality",
-          "timesGenerated": 4,
-          "timesResolved": 4
+          "timesGenerated": 3,
+          "timesResolved": 3
         },
         {
           "key": "surge_repeatability",
@@ -818,11 +818,11 @@
       "totalDays": 28,
       "categoryDistribution": {
         "Mobility/Recovery": 8,
-        "Easy Endurance": 7,
-        "Race-Specific Endurance": 4,
-        "Moderate Endurance": 2,
+        "Easy Endurance": 6,
+        "Race-Specific Endurance": 5,
+        "Moderate Endurance": 3,
         "Upper-body Strength": 4,
-        "Technical Skill": 3
+        "Technical Skill": 2
       },
       "modalityDistribution": {
         "Mobility": 8,
@@ -841,8 +841,8 @@
         },
         {
           "key": "threshold_quality",
-          "timesGenerated": 4,
-          "timesResolved": 4
+          "timesGenerated": 3,
+          "timesResolved": 3
         },
         {
           "key": "surge_repeatability",
@@ -1030,17 +1030,26 @@
           "templateTitle": "Upper Body Push/Pull",
           "modality": "Strength",
           "earnedCredit": 0.19999999999999996
+        },
+        {
+          "weekIndex": 3,
+          "date": "2026-09-02",
+          "objectiveKey": "race_specific_endurance",
+          "objectiveTitle": "Taper Sharpening (event-specific freshness)",
+          "templateId": "end_taper_sharpen_01",
+          "templateTitle": "Taper Sharpening Ride",
+          "modality": "Cycling",
+          "earnedCredit": 0.15000000000000002
         }
       ],
       "utilityDiagnostics": {
-        "fragileSelectionCount": 10,
+        "fragileSelectionCount": 11,
         "lowerBenefitSelectionCount": 1,
         "trainTierRestOrRecoveryCount": 0
       },
       "qualityWarnings": [
         "Unresolved weekly objectives: strength_maintenance 3/4.",
-        "Event-specific anchor missed in 1 nominated week(s).",
-        "Event-specific exposure occurred off the nominated anchor date in 1 week(s)."
+        "Event-specific exposure occurred off the nominated anchor date in 2 week(s)."
       ],
       "anchorWeeks": [
         {
@@ -1086,8 +1095,10 @@
           "eventSpecificAnchorDate": "2026-08-30",
           "qualityAnchorDate": "2026-09-01",
           "eventSpecificAnchorHit": false,
-          "eventSpecificExposureDates": [],
-          "eventSpecificAnchorFulfilled": false,
+          "eventSpecificExposureDates": [
+            "2026-09-02"
+          ],
+          "eventSpecificAnchorFulfilled": true,
           "qualityAnchorHit": false
         }
       ],
@@ -1129,8 +1140,8 @@
         },
         {
           "key": "threshold_quality",
-          "timesGenerated": 4,
-          "timesResolved": 4
+          "timesGenerated": 3,
+          "timesResolved": 3
         },
         {
           "key": "strength_maintenance",
@@ -1359,8 +1370,8 @@
         },
         {
           "key": "threshold_quality",
-          "timesGenerated": 4,
-          "timesResolved": 4
+          "timesGenerated": 3,
+          "timesResolved": 3
         },
         {
           "key": "strength_maintenance",
@@ -2415,8 +2426,8 @@
       "baselineScenarioId": "cycling_criterium_A",
       "changedPlannedDays": 4,
       "restOrRecoveryDayDelta": 4,
-      "raceSpecificExposureDelta": -1,
-      "summary": "stressed trajectory: 4 modality day(s) changed; Rest/Mobility delta +4; race-specific exposure delta -1."
+      "raceSpecificExposureDelta": 0,
+      "summary": "stressed trajectory: 4 modality day(s) changed; Rest/Mobility delta +4; race-specific exposure delta +0."
     }
   ]
 }

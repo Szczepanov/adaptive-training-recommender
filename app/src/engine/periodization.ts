@@ -540,6 +540,7 @@ export function resolveMultiEventObjectives(
                     objectiveKey: objective.key,
                     reason: 'inadmissible_during_taper',
                     message: `${event.title}'s ${objective.title} session was dropped because it fell in ${authorityResult.focusEvent?.title ?? 'the governing event'}'s taper window.`,
+                    date: currentDateStr,
                 });
                 continue;
             }

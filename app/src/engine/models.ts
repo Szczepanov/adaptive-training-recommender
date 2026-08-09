@@ -132,6 +132,18 @@ export interface FixedActivity {
      *  the whole day's budget shrinks, not just this activity's own duration). Absent =
      *  the normal weekday/weekend profile budget applies, reduced only by durationMin. */
     availabilityOverride?: number;
+    /** Phase 6.2b / D6-B: a TRUE day-wide restriction, deliberately separate from this
+     *  activity's own `environment`/`equipment` above. An outdoor football match's venue
+     *  does not imply a separate same-day indoor session is also outdoor-only -- only set
+     *  this when the day itself is actually constrained (e.g. travel: every session that
+     *  day really is stuck at a hotel gym). Absent = this activity's venue never restricts
+     *  another session on the same date. Not yet covered by `firestore.rules`' `hasOnly`
+     *  allow-list (see 5.3's storage table) -- persistence validation is a follow-up
+     *  required before the UI can write this field. */
+    availabilityContextOverride?: {
+        environment?: TrainingEnvironment;
+        equipment?: string[];
+    };
     isCompleted: boolean;
     createdAt: string;
     updatedAt: string;
@@ -250,6 +262,11 @@ export interface DroppedContributorObjective {
      *  "your B-event's threshold session was dropped because it fell in A-event race
      *  week" is actionable; a quietly reweighted plan teaches the athlete nothing. */
     message: string;
+    /** Phase 6.2a: the planning date this drop was resolved for. The week-ahead loop
+     *  re-resolves objective admissibility per projected day (see planner.ts), so a
+     *  transition that falls mid-horizon needs its own effective date rather than always
+     *  implying "today". */
+    date: string;
 }
 
 export interface MicrocycleState {

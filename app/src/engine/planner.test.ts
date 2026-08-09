@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { evaluateNextDayPlan, evaluateTraining } from './rules';
 import { mapContextFromGoalsAndTrainingSettings } from './adapters';
-import { generateWeekAheadPlan, generateWeekAheadPlanWithIntent, prepareWeekAheadPlanSeed, projectTrailingHistory, resolveWeeklyAnchors } from './planner';
+import { generateWeekAheadPlan, generateWeekAheadPlanWithIntent, prepareWeekAheadPlanSeed, projectTrailingHistory, reconcileObjectivesForDate, resolveWeeklyAnchors } from './planner';
 import type { DailyReadiness, EngineObjectiveInput, FatigueState, FixedActivity, SubjectiveInput, TrainingSettings, UserContext, UserEvent, UserPreferences } from './models';
 import type { CompletedExposure, TrainingHistoryProvider } from './trainingHistory';
 import { rankCandidatesByUtility } from './optimizer';
@@ -601,5 +601,239 @@ describe('prepareWeekAheadPlanSeed: multi-event contributor wiring (Phase 5.6)',
         expect(plan.droppedContributorObjectives).toEqual(seed.droppedContributorObjectives);
         const planDropped = plan.droppedContributorObjectives.find(d => d.objectiveKey === 'threshold_quality');
         expect(planDropped?.eventId).toBe('b-event');
+    });
+
+    it('re-resolves the dated drop trace mid-horizon when the seed date itself predates the transition', () => {
+        const context = baseContext();
+        const { readiness, todayRec, tomorrowRec } = buildTodayAndTomorrow(context);
+        const aEvent = cyclingEvent('2026-08-24'); // 17 days out from 2026-08-07 -> taper starts day 3 (2026-08-10)
+        const bEvent: UserEvent = {
+            id: 'b-event', title: 'Local Crit', date: '2026-08-27', priority: 'B', lifecycle: 'scheduled', category: 'cycling_event',
+            demandProfile: { aerobicEndurance: 0.7, thresholdPower: 0.9, vo2MaxPower: 0, repeatedSurges: 0, sprintPower: 0.2, fatigueResistance: 0.6, neuromuscular: 0.3 },
+        };
+        const events = [aEvent, bEvent];
+
+        const seed = prepareWeekAheadPlanSeed(readiness, events, '2026-08-07', []);
+        // Seeded at today (17 days out): not yet tapering, so nothing is dropped yet --
+        // unlike the sibling test above, where the seed date is already inside taper.
+        expect(seed.microcycle.objectives.some(o => o.key === 'threshold_quality')).toBe(true);
+        expect(seed.droppedContributorObjectives).toEqual([]);
+
+        const plan = generateWeekAheadPlan(readiness, context, null, '2026-08-07', todayRec, tomorrowRec, seed, { days: 7, events });
+
+        const dropped = plan.droppedContributorObjectives.find(d => d.objectiveKey === 'threshold_quality' && d.eventId === 'b-event');
+        expect(dropped).toBeDefined();
+        expect(dropped?.date).toBe('2026-08-10');
+        expect(dropped?.reason).toBe('inadmissible_during_taper');
+        expect(dropped?.message).toContain('taper window');
+    });
+});
+
+describe('Phase 6.2a -- reconcileObjectivesForDate (mid-horizon multi-event re-resolution)', () => {
+    it('drops a contributor objective the day the authority enters taper, keeping earlier days admissible', () => {
+        const aEvent = cyclingEvent('2026-08-24'); // 17 days out from 2026-08-07 -> taper starts day 3 (2026-08-10)
+        const bEvent: UserEvent = {
+            id: 'b-event', title: 'Local Crit', date: '2026-08-27', priority: 'B', lifecycle: 'scheduled', category: 'cycling_event',
+            demandProfile: { aerobicEndurance: 0.7, thresholdPower: 0.9, vo2MaxPower: 0, repeatedSurges: 0, sprintPower: 0.2, fatigueResistance: 0.6, neuromuscular: 0.3 },
+        };
+        const events = [aEvent, bEvent];
+        const creditMemory = new Map();
+
+        const day2 = evaluatePeriodizationPhase(events, '2026-08-09'); // daysToEvent 15 -- not yet tapering
+        const before = reconcileObjectivesForDate(
+            generateWeeklyObjectives(day2.phase, '2026-08-07', day2.focusEvent),
+            events, '2026-08-09', '2026-08-07', day2, creditMemory,
+        );
+        expect(before.microcycle.objectives.some(o => o.key === 'threshold_quality')).toBe(true);
+        expect(before.droppedContributorObjectives).toEqual([]);
+
+        const day3 = evaluatePeriodizationPhase(events, '2026-08-10'); // daysToEvent 14 -- taper starts
+        const after = reconcileObjectivesForDate(before.microcycle, events, '2026-08-10', '2026-08-07', day3, creditMemory);
+        expect(after.microcycle.objectives.some(o => o.key === 'threshold_quality')).toBe(false);
+        const dropped = after.droppedContributorObjectives.find(d => d.objectiveKey === 'threshold_quality');
+        expect(dropped?.eventId).toBe('b-event');
+        expect(dropped?.date).toBe('2026-08-10');
+        expect(dropped?.reason).toBe('inadmissible_during_taper');
+    });
+
+    it('admits a contributor objective the day it enters its own 35-day contribution window, not before', () => {
+        const aEvent = cyclingEvent('2027-02-23'); // ~200 days out -- Base phase, far authority, never tapers
+        const bEvent: UserEvent = {
+            id: 'b-crit', title: 'Late Crit', date: '2026-09-15', priority: 'B', lifecycle: 'scheduled', category: 'cycling_event',
+            // 39 days out from 2026-08-07: still outside the 35-day window through day 3
+            // (36 days out), inside it from day 4 (35 days out).
+            demandProfile: { aerobicEndurance: 0.7, thresholdPower: 0.3, vo2MaxPower: 0.3, repeatedSurges: 0.8, sprintPower: 0.4, fatigueResistance: 0.75, neuromuscular: 0.4 },
+        };
+        const events = [aEvent, bEvent];
+        const creditMemory = new Map();
+
+        const day3 = evaluatePeriodizationPhase(events, '2026-08-10');
+        const before = reconcileObjectivesForDate(
+            generateWeeklyObjectives(day3.phase, '2026-08-07', day3.focusEvent),
+            events, '2026-08-10', '2026-08-07', day3, creditMemory,
+        );
+        expect(before.microcycle.objectives.some(o => o.key === 'race_specific_endurance')).toBe(false);
+
+        const day4 = evaluatePeriodizationPhase(events, '2026-08-11');
+        const after = reconcileObjectivesForDate(before.microcycle, events, '2026-08-11', '2026-08-07', day4, creditMemory);
+        expect(after.microcycle.objectives.some(o => o.key === 'race_specific_endurance')).toBe(true);
+    });
+
+    it('carries completed/projected credit forward when an objective definition changes but its key survives', () => {
+        const aEvent = cyclingEvent('2026-08-24'); // taper starts day 3
+        const events = [aEvent];
+        const creditMemory = new Map();
+
+        const day2 = evaluatePeriodizationPhase(events, '2026-08-09');
+        const seeded = generateWeeklyObjectives(day2.phase, '2026-08-07', day2.focusEvent);
+        const withCredit = {
+            ...seeded,
+            objectives: seeded.objectives.map(o => o.key === 'zone2_aerobic' ? { ...o, completedCredit: 0.6, projectedCredit: 0.2 } : o),
+        };
+        const before = reconcileObjectivesForDate(withCredit, events, '2026-08-09', '2026-08-07', day2, creditMemory);
+        const zone2Before = before.microcycle.objectives.find(o => o.key === 'zone2_aerobic');
+        expect(zone2Before?.completedCredit).toBe(0.6);
+        expect(zone2Before?.projectedCredit).toBe(0.2);
+
+        // Day 3: taper starts. zone2_aerobic's definition is regenerated fresh (still
+        // admissible -- aerobic demand doesn't gate on taperActive), but its credit
+        // ledger must carry the same accrued amount, not reset to zero (D6-A).
+        const day3 = evaluatePeriodizationPhase(events, '2026-08-10');
+        const after = reconcileObjectivesForDate(before.microcycle, events, '2026-08-10', '2026-08-07', day3, creditMemory);
+        const zone2After = after.microcycle.objectives.find(o => o.key === 'zone2_aerobic');
+        expect(zone2After?.completedCredit).toBe(0.6);
+        expect(zone2After?.projectedCredit).toBe(0.2);
+    });
+
+    it("restores a dropped objective's remembered credit if it becomes admissible again later in the same projection", () => {
+        const aEvent = cyclingEvent('2026-08-24');
+        const bEvent: UserEvent = {
+            id: 'b-event', title: 'Local Crit', date: '2026-08-27', priority: 'B', lifecycle: 'scheduled', category: 'cycling_event',
+            demandProfile: { aerobicEndurance: 0.7, thresholdPower: 0.9, vo2MaxPower: 0, repeatedSurges: 0, sprintPower: 0.2, fatigueResistance: 0.6, neuromuscular: 0.3 },
+        };
+        const events = [aEvent, bEvent];
+        const creditMemory = new Map();
+
+        // Day 2: threshold_quality admissible; give it some accrued credit.
+        const day2 = evaluatePeriodizationPhase(events, '2026-08-09');
+        const seeded = reconcileObjectivesForDate(
+            generateWeeklyObjectives(day2.phase, '2026-08-07', day2.focusEvent),
+            events, '2026-08-09', '2026-08-07', day2, creditMemory,
+        );
+        const credited = {
+            ...seeded.microcycle,
+            objectives: seeded.microcycle.objectives.map(o => o.key === 'threshold_quality' ? { ...o, completedCredit: 0.7 } : o),
+        };
+
+        // Day 3: authority taper drops it -- its credit is remembered, not discarded.
+        const day3 = evaluatePeriodizationPhase(events, '2026-08-10');
+        const dropped = reconcileObjectivesForDate(credited, events, '2026-08-10', '2026-08-07', day3, creditMemory);
+        expect(dropped.microcycle.objectives.some(o => o.key === 'threshold_quality')).toBe(false);
+
+        // A later re-admission of the same key within the same projection (here: the
+        // authority taper conflict clearing) restores the remembered credit instead of
+        // restarting at zero.
+        const day3NoAuthority = evaluatePeriodizationPhase([bEvent], '2026-08-10');
+        const restored = reconcileObjectivesForDate(dropped.microcycle, [bEvent], '2026-08-10', '2026-08-07', day3NoAuthority, creditMemory);
+        const restoredObjective = restored.microcycle.objectives.find(o => o.key === 'threshold_quality');
+        expect(restoredObjective?.completedCredit).toBe(0.7);
+    });
+});
+
+describe('Phase 6.2b -- fixed activities as projected exposures', () => {
+    const fixedActivity = (overrides: Partial<FixedActivity> & Pick<FixedActivity, 'id' | 'date'>): FixedActivity => ({
+        userId: 'u1', title: 'Fixed activity', durationMin: 60, isCompleted: false, fixed: true,
+        environment: 'either', equipment: [],
+        createdAt: '2026-08-01T00:00:00Z', updatedAt: '2026-08-01T00:00:00Z',
+        ...overrides,
+    });
+
+    it("an uncompleted fixed activity's authored expectedCost becomes real load for the following day's fatigue projection", () => {
+        const context = baseContext();
+        const { readiness, todayRec, tomorrowRec, seed } = buildTodayAndTomorrow(context);
+        const tomorrowDate = '2026-08-08';
+        const heavyFootball = fixedActivity({
+            id: 'football', date: tomorrowDate, durationMin: 90,
+            expectedCost: { systemic: 0.9, lowerBody: 0.9 },
+        });
+
+        const withoutActivity = generateWeekAheadPlan(readiness, context, null, '2026-08-07', todayRec, tomorrowRec, seed, { days: 3 });
+        const withActivity = generateWeekAheadPlan(readiness, context, null, '2026-08-07', todayRec, tomorrowRec, seed, { days: 3, fixedActivities: [heavyFootball] });
+
+        const dayAfterWithout = withoutActivity.days.find(d => d.dayOffset === 2)!;
+        const dayAfterWith = withActivity.days.find(d => d.dayOffset === 2)!;
+        expect(dayAfterWith.diagnostics!.peakFatigue).toBeGreaterThan(dayAfterWithout.diagnostics!.peakFatigue);
+    });
+
+    it('a completed fixed activity is not projected a second time -- its load never re-enters the fatigue ledger here', () => {
+        const context = baseContext();
+        const { readiness, todayRec, tomorrowRec, seed } = buildTodayAndTomorrow(context);
+        const tomorrowDate = '2026-08-08';
+        const alreadyDone = fixedActivity({
+            id: 'football', date: tomorrowDate, durationMin: 90, isCompleted: true,
+            expectedCost: { systemic: 0.9, lowerBody: 0.9 },
+        });
+
+        const withoutActivity = generateWeekAheadPlan(readiness, context, null, '2026-08-07', todayRec, tomorrowRec, seed, { days: 3 });
+        const withCompletedActivity = generateWeekAheadPlan(readiness, context, null, '2026-08-07', todayRec, tomorrowRec, seed, { days: 3, fixedActivities: [alreadyDone] });
+
+        const dayAfterWithout = withoutActivity.days.find(d => d.dayOffset === 2)!;
+        const dayAfterWithCompleted = withCompletedActivity.days.find(d => d.dayOffset === 2)!;
+        expect(dayAfterWithCompleted.diagnostics!.peakFatigue).toBe(dayAfterWithout.diagnostics!.peakFatigue);
+    });
+
+    it('an authored expectedStimulus resolves an objective through the same canonical credit primitive as a structured exposure', () => {
+        const context = baseContext();
+        const { readiness, todayRec, tomorrowRec, seed } = buildTodayAndTomorrow(context);
+        const tomorrowDate = '2026-08-08';
+        // strength_maintenance carries no qualification (modality-agnostic), so a
+        // FixedActivity -- which has no SessionTemplate.modality of its own -- can still
+        // resolve it, unlike a modality-scoped objective (see stimulus.ts's fail-closed
+        // "Modality unknown" gate).
+        const homeWorkout = fixedActivity({
+            id: 'home_strength', date: tomorrowDate,
+            expectedStimulus: { maxStrength: 0.8, hypertrophy: 0.6 },
+        });
+
+        const plan = generateWeekAheadPlan(readiness, context, null, '2026-08-07', todayRec, tomorrowRec, seed, { days: 3, fixedActivities: [homeWorkout] });
+
+        const credit = plan.objectiveCredits.find(c => c.templateId === 'home_strength');
+        expect(credit).toBeDefined();
+        expect(credit?.objectiveKey).toBe('strength_maintenance');
+        expect(credit?.date).toBe(tomorrowDate);
+        expect(credit?.earnedCredit).toBeGreaterThan(0);
+    });
+
+    it('a fixed activity without expectedCost/expectedStimulus reserves time but contributes zero fabricated fatigue or credit', () => {
+        const context = baseContext();
+        const { readiness, todayRec, tomorrowRec, seed } = buildTodayAndTomorrow(context);
+        const tomorrowDate = '2026-08-08';
+        const unknownLoad = fixedActivity({ id: 'unknown', date: tomorrowDate });
+
+        const withoutActivity = generateWeekAheadPlan(readiness, context, null, '2026-08-07', todayRec, tomorrowRec, seed, { days: 3 });
+        const withUnknownActivity = generateWeekAheadPlan(readiness, context, null, '2026-08-07', todayRec, tomorrowRec, seed, { days: 3, fixedActivities: [unknownLoad] });
+
+        const dayAfterWithout = withoutActivity.days.find(d => d.dayOffset === 2)!;
+        const dayAfterWithUnknown = withUnknownActivity.days.find(d => d.dayOffset === 2)!;
+        expect(dayAfterWithUnknown.diagnostics!.peakFatigue).toBe(dayAfterWithout.diagnostics!.peakFatigue);
+        expect(withUnknownActivity.objectiveCredits.some(c => c.templateId === 'unknown')).toBe(false);
+    });
+
+    it('an explicit availabilityContextOverride restricts which environment the forecast loop can select, unlike a fixed activity\'s own venue metadata', () => {
+        const context = baseContext();
+        const { readiness, todayRec, tomorrowRec, seed } = buildTodayAndTomorrow(context);
+        // Day 3 (2026-08-10) is inside this function's own ranking loop (not today/tomorrow,
+        // which are supplied externally), so the override is guaranteed to affect a day
+        // this function actually selects a template for.
+        const travelDay = fixedActivity({
+            id: 'travel', date: '2026-08-10', durationMin: 0,
+            availabilityContextOverride: { environment: 'indoor', equipment: [] },
+        });
+
+        const plan = generateWeekAheadPlan(readiness, context, null, '2026-08-07', todayRec, tomorrowRec, seed, { days: 3, fixedActivities: [travelDay] });
+
+        const overriddenDay = plan.days.find(d => d.date === '2026-08-10');
+        expect(overriddenDay).toBeDefined();
+        expect(overriddenDay!.template.environment).not.toBe('outdoor');
     });
 });

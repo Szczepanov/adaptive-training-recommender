@@ -8,39 +8,45 @@ PR #16's code, with the audit and Phase 6 planning work on
 `codex/phase-0-5-completion-audit`. The earlier analysis remains a point-in-time record
 and is not edited.
 
-**Phases 0–5 are implemented; three original findings and two Phase 5 residual gaps are
-not fully closed.** The original review is fully closed for F1–F10, F13–F14, and F16–F17.
-F11, F12, and F15 are only partially closed: the harness and key correctness work landed,
-but the remaining calibration, fatigue-fusion, and operational controls are not
-represented as finished work.
+**Phases 0–5 are implemented; F11, F12, and F15 remain the only findings not fully
+closed.** The original review is fully closed for F1–F10, F13–F14, and F16–F17. F11, F12,
+and F15 are only partially closed: the harness and key correctness work landed, but the
+remaining calibration, fatigue-fusion, and operational controls are not represented as
+finished work.
 
-Two further gaps surfaced during Phase 5's own implementation, are not original review
-findings, and are not yet closed:
+Two further gaps surfaced during Phase 5's own implementation and were not original review
+findings. Both are now closed by Phase 6.2, landed in this same PR:
 
-* **Multi-event objectives are not re-resolved mid-horizon.** `planner.ts`'s
-  `generateWeekAheadPlan` seeds `microcycle.objectives` — including which Phase 5.6
-  contributor objectives survive `resolveMultiEventObjectives` — once at `todayDate`, then
-  carries that set unchanged through every later day of the 7-day loop. A taper authority
-  or contributor crossing a window boundary strictly inside the horizon is not reflected in
-  which objectives are admissible afterward. This is recorded in-code as a known, deliberate
-  gap (see the per-day loop comment in `planner.ts`), not something this audit discovered.
-* **Fixed activities are calendar blockers but not yet full projected exposures.**
-  `schedule.ts` deducts duration and computes `reservedCapacityCost`, but that scalar is not
-  consumed by ranking or fatigue and `expectedStimulus` is not projected into objective
-  credit. The activity's `environment`/`equipment` describe its venue and must not be
-  naively treated as a whole-day restriction for an unrelated session; true travel/day
-  restrictions need explicit day-context semantics. `fixed: false` is also deliberately
-  not rescheduled while greedy planning remains production behavior.
+* **Multi-event objectives were not re-resolved mid-horizon.** `planner.ts`'s
+  `generateWeekAheadPlan` seeded `microcycle.objectives` once at `todayDate` and carried
+  that set unchanged through the rest of the 7-day loop. Fixed by `reconcileObjectivesForDate`
+  (new), which re-resolves the day's objective definition before ranking every day the loop
+  itself picks a template, reconciling onto the running credit ledger by `ObjectiveKey`
+  (D6-A). This transitively also fixed same-event Build→Specificity/taper transitions the
+  original Phase 5.6 gap description didn't single out, not only multi-event ones.
+* **Fixed activities were calendar blockers but not projected exposures.** `schedule.ts`
+  computed a scalar `reservedCapacityCost` that nothing consumed, and `expectedStimulus`
+  was never projected into objective credit. Fixed by a dimensional
+  `reservedCapacityCostProfile` (D6-C: no invented default), consumed by planner.ts's
+  same-day ranking and, at end of day, folded into next-day fatigue and objective credit
+  through the same canonical credit primitive as a structured exposure. `environment`/
+  `equipment` remain activity-only metadata (D6-B); a true day-wide restriction requires an
+  explicit new `FixedActivity.availabilityContextOverride`, not the activity's own venue
+  fields.
 
-Both are Phase-5-scope behaviours, not F11/F12/F15 calibration work, so they are not folded
-into those three findings. Reopening Phase 5's `Implemented` status to track them would
-misrepresent what shipped; instead they are carried forward as explicitly Phase-6-owned
-correctness work in task 6.2.
+Neither residual was folded into F11/F12/F15 (they are Phase-5-scope behaviours, not
+calibration work), and Phase 5's `Implemented` status was not reopened to track them, per
+the plan given in the prior revision of this document. See
+[`phase-6-evidence-and-operational-assurance.md`](../plans/phase-6-evidence-and-operational-assurance.md)
+6.2a/6.2b for the full change description and test list.
 
-PR #17 has now started Phase 6 with **6.1 baseline ownership implemented**: normal scenario
-runs no longer overwrite the committed semantic baseline, baseline updates require the
-explicit reviewed command, and CI verifies the baseline remains unchanged during normal
-simulation.
+PR #17 has now landed Phase 6.1 (baseline ownership) and 6.2 (both correctness
+carryovers): normal scenario runs no longer overwrite the committed semantic baseline,
+baseline updates require the explicit reviewed command, CI verifies the baseline remains
+unchanged during normal simulation, and `POLICY_VERSION` is bumped to
+`2026-08-phase6-correctness-carryovers-v1` for the 6.2 behavior change (the preceding
+`2026-08-phase5-sequence-planning-v1` version is now itself historical/audit-only, with
+replay regression coverage added for that classification).
 
 ## Finding reconciliation
 
@@ -63,21 +69,22 @@ simulation.
 | F15 — CI and tooling | Partial | CI runs ruff, mypy, dependency audits, policy-drift checking, simulations, and now guards baseline immutability. Coverage reporting and deployed-Firestore-rule drift detection remain absent. |
 | F16 — invisible event plan | Closed | `PlanDefinition` / `PlanBlock` are resolved in `resolveTrainingIntent` and drive active-window objectives. |
 | F17 — inert intensity scale | Closed | `PlannedDose` owns both volume and intensity and reads authored plan-block scales. |
-| *(not a review finding)* — 5.6 mid-horizon re-resolution | Owned by Phase 6 | `planner.ts` seeds `microcycle.objectives` once at `todayDate`; a taper/contribution-window transition inside the 7-day horizon does not change which objectives are admissible after it. Phase 6.2a specifies date-correct re-resolution with historical credit preservation. |
-| *(not a review finding)* — 5.3 fixed-activity projection | Owned by Phase 6 | Fixed activities reserve calendar time, but expected stimulus/cost are not yet projected through objective credit and adjacent-day fatigue. Phase 6.2b defines the missing exposure semantics without overloading venue metadata as a day-wide restriction. |
+| *(not a review finding)* — 5.6 mid-horizon re-resolution | Closed (Phase 6.2a) | `reconcileObjectivesForDate` (`planner.ts`) re-resolves objective admissibility per projected day and reconciles credit by `ObjectiveKey` (D6-A); dated drop trace via `DroppedContributorObjective.date`. Covered by `planner.test.ts`'s "Phase 6.2a" tests. |
+| *(not a review finding)* — 5.3 fixed-activity projection | Closed (Phase 6.2b) | `schedule.ts`'s `reservedCapacityCostProfile` is consumed by planner.ts's same-day ranking and end-of-day fatigue/credit projection; `availabilityContextOverride` gives day-wide restriction explicit semantics (D6-B/D6-C). Covered by `architecture.test.ts` and `planner.test.ts`'s "Phase 6.2b" tests. |
 
 ## Verification performed
 
 | Check | Result |
 |---|---|
-| `npm run check` | Passed before the Phase 6.1 script/doc follow-up: TypeScript, ESLint, 486 unit tests (26 skipped), and workout validation. |
-| `npm run test:rules` | Passed: 26 Firestore emulator tests. |
-| `npm run simulate:scenarios` | Passed: 11 scenarios completed and the aggregate gate passed. Phase 6.1 changes this command so it no longer writes the committed baseline. |
+| `npm run check` | Passed after Phase 6.2: TypeScript, ESLint, 502 unit tests (26 skipped), and workout validation. |
+| `npm run test:rules` | Passed: 26 Firestore emulator tests (unchanged -- 6.2 touches no `firestore.rules`). |
+| `npm run simulate:scenarios` | Passed: 11 scenarios completed and the aggregate gate passed. |
+| `npm run simulate:diff` | Semantic diff reviewed and explained (six A-event scenarios' weekly `threshold_quality` target correctly drops once mid-week taper stops demanding it; stressed-trajectory category mix shifts because a race-specific session now lands on the correct side of a phase boundary) and folded into the reviewed baseline via `simulate:update-baseline -- --reviewed`. `simulate:diff` now reports no differences against the committed baseline. |
 | `npm run compare:sequence-search` | Both greedy and beam search had zero constraint and golden-week violations; the production decision to retain greedy remains documented in ADR-0015. |
-| `uv run pytest`, `uv run ruff check .`, `uv run mypy src/garmin_sync` | Passed: 86 Python tests, lint, and type checking. |
-| `node app/scripts/check-policy-drift.mjs <PR-base-SHA>` | Passed after rebasing onto `main`; the Phase 6.1 work changes tooling/docs, not decision-affecting engine files. |
+| `uv run pytest`, `uv run ruff check .`, `uv run mypy src/garmin_sync` | Passed: 86 Python tests, lint, and type checking (no Python files touched by 6.2). |
+| `node app/scripts/check-policy-drift.mjs origin/main` | Passed: `planner.ts`/`periodization.ts`/`schedule.ts`/`models.ts` changed and `policy.ts`'s `POLICY_VERSION` was bumped in the same commit. |
 
-After Phase 6.1, `simulate:diff` is once again an independent comparison: the preceding
+`simulate:diff` is once again an independent comparison after Phase 6.1: the preceding
 `simulate:scenarios` command no longer rewrites its baseline input. CI additionally runs
 `git diff --exit-code -- ../docs/analysis/simulation-baseline.json` immediately after the
 scenario gate, so a future accidental baseline write is blocking rather than silently
@@ -89,22 +96,18 @@ The detailed execution plan is
 [`phase-6-evidence-and-operational-assurance.md`](../plans/phase-6-evidence-and-operational-assurance.md).
 In priority order:
 
-1. **Close the Phase 5 correctness carryovers (6.2).** Re-resolve multi-event objectives on
-   the date a taper/contribution boundary changes, preserving historical credit; and treat
-   fixed activities as explicit projected exposures for time, objective credit, same-day
-   capacity, and adjacent-day fatigue.
-2. **Expand the deterministic scenario contract (6.3).** Add multiple events, initial
-   history, fixed activities, date-level readiness, and targeted cases for the two
-   carryovers plus load/readiness/evidence boundaries.
-3. **Build the F11 evidence layer (6.4).** Add daily decision traces, a synthetic
+1. **Expand the deterministic scenario contract (6.3).** Add multiple events, initial
+   history, fixed activities, date-level readiness, and targeted cases exercising the two
+   now-closed carryovers plus load/readiness/evidence boundaries.
+2. **Build the F11 evidence layer (6.4).** Add daily decision traces, a synthetic
    policy-regression corpus, and a reproducible trigger-frequency report. Do not market
    synthetic cases as physiological calibration and do not auto-tune thresholds.
-4. **Add coverage visibility (6.6).** Publish frontend/backend coverage in CI without an
+3. **Add coverage visibility (6.6).** Publish frontend/backend coverage in CI without an
    arbitrary global threshold.
-5. **Close Firestore deployment assurance (6.5)** once the production project and
+4. **Close Firestore deployment assurance (6.5)** once the production project and
    deployment owner are known.
-6. **Revisit fatigue fusion (6.7) only after evidence exists.** Production `max()` remains
+5. **Revisit fatigue fusion (6.7) only after evidence exists.** Production `max()` remains
    valid unless a documented failure mode and a contract-safe candidate justify a change.
 
-Phase 6.1 baseline ownership is complete in this PR and is no longer part of the remaining
-work list.
+Phase 6.1 (baseline ownership) and 6.2 (both Phase 5 correctness carryovers) are complete
+in this PR and are no longer part of the remaining work list.

@@ -28,6 +28,8 @@ const AVAILABILITY: ResolvedAvailability = {
     availableEquipment: ['free_weights', 'indoor_bike', 'treadmill', 'cable_machine', 'pullup_bar'],
     fixedActivities: [],
     reservedCapacityCost: 0,
+    reservedCapacityCostProfile: { ...ZERO_DIMS },
+    environmentOverride: null,
 };
 
 const PREFERENCES: UserPreferences = {

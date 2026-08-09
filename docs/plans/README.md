@@ -68,12 +68,13 @@ all-`Ready` table became unusable.
 | 3 | [One ranking path](./phase-3-single-ranking-path.md) | **Implemented** | — | — | F3, F4, F5 |
 | 4 | [Objective credit V2](./phase-4-objective-credit-v2.md) | **Implemented** | — | — | F7, F8, F12 |
 | 5 | [Sequence planning](./phase-5-sequence-planning.md) | **Implemented** | — | — | the cutover proper |
-| 6 | [Evidence-driven calibration & operational assurance](./phase-6-evidence-and-operational-assurance.md) | **In progress** | **6.2, 6.6** | 6.5 needs Firebase owner/project; 6.7 needs 6.3–6.4 evidence | remaining F11, F12, F15; Phase 5.6/5.3 carryover gaps |
+| 6 | [Evidence-driven calibration & operational assurance](./phase-6-evidence-and-operational-assurance.md) | **In progress** | **6.3, 6.6** | 6.5 needs Firebase owner/project; 6.7 needs 6.3–6.4 evidence | remaining F11, F12, F15 |
 
-Phases 0–5 are complete; Phase 6 has started with 6.1 baseline ownership implemented in
-PR #17. The next priority is the two Phase 5 correctness carryovers in 6.2, before any
-fatigue-policy calibration. Phase 5.1 remains a measured but non-production beam-search
-prototype; the live planner is still greedy.
+Phases 0–5 are complete; Phase 6 has started with 6.1 baseline ownership and 6.2 (both
+Phase 5 correctness carryovers) implemented in PR #17, which bumped `POLICY_VERSION` to
+`2026-08-phase6-correctness-carryovers-v1`. The next priority is 6.3's scenario input
+contract, before any fatigue-policy calibration. Phase 5.1 remains a measured but
+non-production beam-search prototype; the live planner is still greedy.
 
 ---
 

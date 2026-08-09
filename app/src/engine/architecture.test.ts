@@ -114,6 +114,103 @@ describe('Architecture & Phased Engine Integration', () => {
             expect(resolveAvailability('2026-08-10', null, [], withBike).availableEquipment).toContain('indoor_bike');
             expect(resolveAvailability('2026-08-11', null, [], withBike).availableEquipment).toContain('indoor_bike');
         });
+
+        it('D6-C: a fixed activity missing expectedCost reserves zero load, never an invented default', () => {
+            const fixedActivities = [
+                {
+                    id: 'unknown_cost', userId: 'athlete-1', title: 'Casual bike commute', date: '2026-08-12', durationMin: 20,
+                    isCompleted: false, fixed: true, environment: 'outdoor' as const, equipment: [],
+                    createdAt: '2026-08-01T00:00:00Z', updatedAt: '2026-08-01T00:00:00Z',
+                },
+            ];
+            const availability = resolveAvailability('2026-08-12', null, fixedActivities, testContext());
+            expect(availability.reservedCapacityCost).toBe(0);
+            expect(availability.reservedCapacityCostProfile).toEqual({
+                systemic: 0, cardiovascular: 0, lowerBody: 0, upperBody: 0, impactTissue: 0, neuromuscular: 0,
+            });
+            // Time is still reserved regardless -- only the fabricated fatigue default is
+            // gone. 2026-08-12 is a Wednesday: weekday budget is 45 (testTrainingSettings).
+            expect(availability.maxTimeMinutes).toBe(45 - 20);
+        });
+
+        it('sums reservedCapacityCostProfile across every authored dimension and every uncompleted activity that day', () => {
+            const fixedActivities = [
+                {
+                    id: 'a', userId: 'athlete-1', title: 'Football', date: '2026-08-12', durationMin: 60,
+                    isCompleted: false, expectedCost: { systemic: 0.4, lowerBody: 0.5, impactTissue: 0.3 },
+                    fixed: true, environment: 'outdoor' as const, equipment: [],
+                    createdAt: '2026-08-01T00:00:00Z', updatedAt: '2026-08-01T00:00:00Z',
+                },
+                {
+                    id: 'b', userId: 'athlete-1', title: 'Long walk', date: '2026-08-12', durationMin: 30,
+                    isCompleted: false, expectedCost: { systemic: 0.1, lowerBody: 0.1 },
+                    fixed: false, environment: 'outdoor' as const, equipment: [],
+                    createdAt: '2026-08-01T00:00:00Z', updatedAt: '2026-08-01T00:00:00Z',
+                },
+                // Completed activities never reserve capacity -- their load already reached
+                // the athlete's real completed-training ledger elsewhere.
+                {
+                    id: 'c', userId: 'athlete-1', title: 'Already done', date: '2026-08-12', durationMin: 45,
+                    isCompleted: true, expectedCost: { systemic: 0.9 },
+                    fixed: true, environment: 'outdoor' as const, equipment: [],
+                    createdAt: '2026-08-01T00:00:00Z', updatedAt: '2026-08-01T00:00:00Z',
+                },
+            ];
+            const availability = resolveAvailability('2026-08-12', null, fixedActivities, testContext());
+            expect(availability.reservedCapacityCostProfile).toEqual({
+                systemic: 0.5, cardiovascular: 0, lowerBody: 0.6, upperBody: 0, impactTissue: 0.3, neuromuscular: 0,
+            });
+            expect(availability.reservedCapacityCost).toBe(0.5); // compatibility scalar == .systemic
+        });
+
+        it("D6-B: a fixed activity's own environment/equipment never restrict a separate session on the same date without an explicit override", () => {
+            const outdoorFootball = [
+                {
+                    id: 'football', userId: 'athlete-1', title: 'Football', date: '2026-08-12', durationMin: 60,
+                    isCompleted: false, fixed: true, environment: 'outdoor' as const, equipment: ['boots'],
+                    createdAt: '2026-08-01T00:00:00Z', updatedAt: '2026-08-01T00:00:00Z',
+                },
+            ];
+            const withBike = testContext({ hasIndoorBike: true });
+            const availability = resolveAvailability('2026-08-12', null, outdoorFootball, withBike);
+            expect(availability.environmentOverride).toBeNull();
+            expect(availability.availableEquipment).toContain('indoor_bike');
+        });
+
+        it('an explicit availabilityContextOverride restricts the day-wide environment and intersects equipment', () => {
+            const travelDay = [
+                {
+                    id: 'travel', userId: 'athlete-1', title: 'Away game trip', date: '2026-08-12', durationMin: 60,
+                    isCompleted: false, fixed: true, environment: 'outdoor' as const, equipment: [],
+                    availabilityContextOverride: { environment: 'indoor' as const, equipment: ['indoor_bike'] },
+                    createdAt: '2026-08-01T00:00:00Z', updatedAt: '2026-08-01T00:00:00Z',
+                },
+            ];
+            const withFullKit = testContext({ hasIndoorBike: true, hasFreeWeights: true, hasCableMachine: true, hasTreadmill: true });
+            const availability = resolveAvailability('2026-08-12', null, travelDay, withFullKit);
+            expect(availability.environmentOverride).toBe('indoor');
+            expect(availability.availableEquipment.sort()).toEqual(['indoor_bike']);
+        });
+
+        it('intersects equipment across several same-day availabilityContextOverrides -- most restrictive wins', () => {
+            const twoOverrides = [
+                {
+                    id: 'a', userId: 'athlete-1', title: 'A', date: '2026-08-12', durationMin: 10,
+                    isCompleted: false, fixed: true, environment: 'either' as const, equipment: [],
+                    availabilityContextOverride: { equipment: ['indoor_bike', 'free_weights'] },
+                    createdAt: '2026-08-01T00:00:00Z', updatedAt: '2026-08-01T00:00:00Z',
+                },
+                {
+                    id: 'b', userId: 'athlete-1', title: 'B', date: '2026-08-12', durationMin: 10,
+                    isCompleted: false, fixed: true, environment: 'either' as const, equipment: [],
+                    availabilityContextOverride: { equipment: ['indoor_bike'] },
+                    createdAt: '2026-08-01T00:00:00Z', updatedAt: '2026-08-01T00:00:00Z',
+                },
+            ];
+            const withFullKit = testContext({ hasIndoorBike: true, hasFreeWeights: true });
+            const availability = resolveAvailability('2026-08-12', null, twoOverrides, withFullKit);
+            expect(availability.availableEquipment).toEqual(['indoor_bike']);
+        });
     });
 
     describe('Phase 2: Events & Periodization', () => {

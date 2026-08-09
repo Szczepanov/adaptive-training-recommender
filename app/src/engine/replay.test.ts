@@ -43,6 +43,16 @@ describe('recommendation audit replay', () => {
         });
     });
 
+    it('treats the Phase 5 sequence-planning policy as audit-only now that Phase 6.2 has superseded it', () => {
+        const record = auditedRecommendation();
+        record.recommendationAudit!.policyVersion = '2026-08-phase5-sequence-planning-v1';
+        expect(replayRecommendationAudit(record)).toEqual({
+            reproducible: false,
+            policyMatchesCurrent: false,
+            errors: ['Historical policy version 2026-08-phase5-sequence-planning-v1 is intentionally audit-only and cannot be replayed by this build.'],
+        });
+    });
+
     it('rejects an unknown policy version distinctly from a known historical policy', () => {
         const record = auditedRecommendation();
         record.recommendationAudit!.policyVersion = 'unknown-policy';

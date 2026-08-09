@@ -26,7 +26,7 @@ export interface PlannedObjectiveCredit {
     earnedCredit: number;
 }
 import { resolveAvailability } from './schedule';
-import { isTemplatePhaseEligible, evaluatePeriodizationPhase, resolveMultiEventObjectives, type DroppedContributorObjective } from './periodization';
+import { isTemplatePhaseEligible, evaluatePeriodizationPhase, resolveMultiEventObjectives, type DroppedContributorObjective, type PeriodizationResult } from './periodization';
 import { eligibleTemplates } from './eligibility';
 import { addDaysToLocalDateString, getDayDiff } from '../utils/localDate';
 import {
@@ -530,6 +530,99 @@ export function prepareWeekAheadPlanSeed(
     };
 }
 
+interface ObjectiveCreditSnapshot {
+    completedCredit: number;
+    projectedCredit: number;
+    completedExposures: number;
+}
+
+function snapshotObjectiveCredit(objective: WeeklyObjective): ObjectiveCreditSnapshot {
+    return {
+        completedCredit: objective.completedCredit ?? objective.completedExposures,
+        projectedCredit: objective.projectedCredit ?? 0,
+        completedExposures: objective.completedExposures,
+    };
+}
+
+/**
+ * Phase 6.2a / D6-A: re-resolves which objectives are admissible for `date` from scratch --
+ * mirroring resolveTrainingIntent's own construction (generic-vs-plan-derived branching via
+ * generateWeeklyObjectives, then resolveMultiEventObjectives for contributors) -- instead of
+ * carrying the `todayDate`-seeded set unchanged through the whole horizon (the gap
+ * planner.ts's per-day loop used to document but not fix).
+ *
+ * The credit LEDGER (completedCredit/projectedCredit/completedExposures) is never
+ * recomputed from history here -- only the objective DEFINITION (title, qualification,
+ * targetStimulus, priority, requiredCredit, window) is refreshed, then the existing
+ * ledger is carried onto it by `ObjectiveKey`, never by generated id (ids are an
+ * implementation detail -- see periodization.ts's own comment on this). A key that drops
+ * out has its last known credit remembered in `creditMemory` so a later re-entry within
+ * the SAME projection restores it instead of restarting at zero; a key this projection has
+ * never seen starts at zero, same as generating fresh.
+ */
+export function reconcileObjectivesForDate(
+    microcycle: MicrocycleState,
+    events: UserEvent[],
+    date: string,
+    todayDate: string,
+    periodization: PeriodizationResult,
+    creditMemory: Map<WeeklyObjective['key'], ObjectiveCreditSnapshot>,
+): { microcycle: MicrocycleState; droppedContributorObjectives: DroppedContributorObjective[] } {
+    // Phase 5's own scope boundary: only the generic days-to-event objective set gains
+    // contributor demand (see resolveMultiEventObjectives's doc comment); generateWeeklyObjectives
+    // already branches to the plan-derived block schedule when one is authored for this event.
+    const planDefinitionForDate = resolvePlanDefinitionForEvent(periodization.focusEvent);
+    const skeleton = generateWeeklyObjectives(periodization.phase, todayDate, periodization.focusEvent, planDefinitionForDate, date);
+    const fresh = resolveMultiEventObjectives(events, date, periodization, skeleton.objectives);
+
+    const existingByKey = new Map(microcycle.objectives.map(objective => [objective.key, objective]));
+    const freshKeys = new Set(fresh.objectives.map(objective => objective.key));
+
+    // Objectives no longer admissible today: remember their credit before they're dropped
+    // from the live set, so a later re-entry this same projection can restore it (D6-A).
+    microcycle.objectives.forEach(objective => {
+        if (!freshKeys.has(objective.key)) {
+            creditMemory.set(objective.key, snapshotObjectiveCredit(objective));
+        }
+    });
+
+    const objectives = fresh.objectives.map(definition => {
+        const existing = existingByKey.get(definition.key);
+        const carried = existing ? snapshotObjectiveCredit(existing) : creditMemory.get(definition.key);
+        if (!carried) return definition; // a key this projection has never seen: start at zero
+        return { ...definition, ...carried };
+    });
+
+    return {
+        microcycle: { ...microcycle, objectives },
+        droppedContributorObjectives: fresh.droppedContributorObjectives,
+    };
+}
+
+/** Phase 6.2a: `resolveMultiEventObjectives` reports every currently-inadmissible
+ *  contributor objective on every day it stays inadmissible, not just the day it first
+ *  transitioned -- otherwise a 12-day taper would log the same drop reason a dozen times.
+ *  Tracks which (eventId, objectiveKey) pairs are dropped *as of the last processed day* so
+ *  only a genuine transition (admissible -> inadmissible) is appended to the trace; a pair
+ *  that becomes admissible again and later drops once more is treated as a new transition. */
+function accumulateNewDrops(
+    accumulated: DroppedContributorObjective[],
+    currentlyDropped: Set<string>,
+    freshDrops: DroppedContributorObjective[],
+): void {
+    const dropKey = (d: DroppedContributorObjective) => `${d.eventId}:${d.objectiveKey}`;
+    const freshKeys = new Set(freshDrops.map(dropKey));
+
+    freshDrops.forEach(drop => {
+        if (!currentlyDropped.has(dropKey(drop))) {
+            accumulated.push(drop);
+        }
+    });
+
+    currentlyDropped.clear();
+    freshKeys.forEach(key => currentlyDropped.add(key));
+}
+
 export function generateWeekAheadPlan(
     todayReadiness: DailyReadiness,
     context: UserContext,
@@ -556,6 +649,15 @@ export function generateWeekAheadPlan(
     const objectiveCredits: PlannedObjectiveCredit[] = [];
 
     const anchors = resolveWeeklyAnchors(todayDate, totalDays, events, fixedActivities, context, tomorrowRec?.template.category, tomorrowRec?.template.modality);
+
+    // Phase 6.2a: per-key credit memory (see reconcileObjectivesForDate) and an
+    // append-only drop trace seeded from the seed date's own resolution, deduped so a
+    // taper that stays active for the whole horizon logs one dated entry, not one per day.
+    const creditMemory = new Map<WeeklyObjective['key'], ObjectiveCreditSnapshot>();
+    const droppedContributorObjectives: DroppedContributorObjective[] = [...(seed.droppedContributorObjectives ?? [])];
+    const currentlyDroppedPairs = new Set<string>(
+        droppedContributorObjectives.map(d => `${d.eventId}:${d.objectiveKey}`)
+    );
 
     type DerivedPlanningCredit = {
         objective: WeeklyObjective;
@@ -605,11 +707,80 @@ export function generateWeekAheadPlan(
         externalFatigue = applyCompletedSessionLoad(externalFatigue, date, enrichedCostProfile(template.id));
     };
 
+    /**
+     * Phase 6.2b / D6-B, D6-C: at the end of `date`, folds every uncompleted fixed
+     * activity scheduled that day into the same ledgers a chosen template uses -- its
+     * authored `expectedCost` becomes real (not merely reserved) load for tomorrow's
+     * fatigue projection, and its authored `expectedStimulus`, if any, can resolve an
+     * objective through the same canonical credit primitive as a structured exposure
+     * (`deriveObjectiveCreditFromProfile`). A missing `expectedCost`/`expectedStimulus`
+     * contributes zero, never an invented default. A `FixedActivity` carries no
+     * `SessionTemplate.modality`, so a modality-scoped objective correctly fails closed
+     * here exactly as it would for any other exposure of unknown modality (stimulus.ts) --
+     * only modality-agnostic objectives (e.g. `strength_maintenance`) can be credited by
+     * one. Completed activities are skipped: their load already reached the athlete's real
+     * completed-training ledger elsewhere, so projecting them again here would double it.
+     */
+    const applyFixedActivityExposures = (date: string) => {
+        const dayActivities = fixedActivities.filter(a => a.date === date && !a.isCompleted);
+        if (dayActivities.length === 0) return;
+
+        const costProfile = dayActivities.reduce((sum, activity) => {
+            const cost = activity.expectedCost;
+            if (!cost) return sum;
+            return {
+                systemic: sum.systemic + (cost.systemic ?? 0),
+                cardiovascular: sum.cardiovascular + (cost.cardiovascular ?? 0),
+                lowerBody: sum.lowerBody + (cost.lowerBody ?? 0),
+                upperBody: sum.upperBody + (cost.upperBody ?? 0),
+                impactTissue: sum.impactTissue + (cost.impactTissue ?? 0),
+                neuromuscular: sum.neuromuscular + (cost.neuromuscular ?? 0),
+            };
+        }, ZERO_COST);
+        externalFatigue = applyCompletedSessionLoad(externalFatigue, date, costProfile);
+
+        dayActivities.forEach(activity => {
+            if (!activity.expectedStimulus) return;
+            const stimulus: WorkoutStimulusProfile = { ...ZERO_STIMULUS, ...activity.expectedStimulus };
+            const derivedCredits: DerivedPlanningCredit[] = getUnresolvedObjectives(microcycle, true).flatMap(objective => {
+                const credit = deriveObjectiveCreditFromProfile(objective, stimulus);
+                return credit.qualifies && credit.earnedCredit > 0
+                    ? [{ objective, earnedCredit: credit.earnedCredit }]
+                    : [];
+            });
+            if (derivedCredits.length === 0) return;
+
+            const projected = applyProjectedObjectiveCredits(
+                microcycle,
+                derivedCredits.map(item => ({ objectiveId: item.objective.id, earnedCredit: item.earnedCredit })),
+            );
+            const allocationById = new Map(projected.allocations.map(item => [item.objectiveId, item.earnedCredit]));
+            derivedCredits.forEach(({ objective }) => {
+                const allocated = allocationById.get(objective.id) ?? 0;
+                if (allocated <= 0) return;
+                objectiveCredits.push({
+                    date,
+                    objectiveKey: objective.key,
+                    objectiveTitle: objective.title,
+                    templateId: activity.id,
+                    templateTitle: activity.title,
+                    modality: 'None',
+                    earnedCredit: allocated,
+                });
+            });
+            microcycle = projected.microcycle;
+        });
+    };
+
     applyPick(todayDate, todayRec.template);
+    applyFixedActivityExposures(todayDate);
 
     if (tomorrowRec) {
         const tomorrowDate = addDaysToLocalDateString(todayDate, 1);
         const tomorrowPeriodization = evaluatePeriodizationPhase(events, tomorrowDate);
+        const tomorrowReconciled = reconcileObjectivesForDate(microcycle, events, tomorrowDate, todayDate, tomorrowPeriodization, creditMemory);
+        microcycle = tomorrowReconciled.microcycle;
+        accumulateNewDrops(droppedContributorObjectives, currentlyDroppedPairs, tomorrowReconciled.droppedContributorObjectives);
         const tomorrowCredits = creditingObjectivesFor(tomorrowRec.template);
         resultDays.push({
             date: tomorrowDate,
@@ -622,25 +793,26 @@ export function generateWeekAheadPlan(
             addressesObjectives: tomorrowCredits.map(item => item.objective.title),
         });
         applyPick(tomorrowDate, tomorrowRec.template, tomorrowCredits);
+        applyFixedActivityExposures(tomorrowDate);
     }
 
     for (let offset = resultDays.length + 1; offset <= totalDays; offset++) {
         const date = addDaysToLocalDateString(todayDate, offset);
         // Recomputed per day for template eligibility (isTemplatePhaseEligible below) and
-        // fatigue/anchor logic, but NOT for the objective SET itself: `microcycle.objectives`
-        // (including which Phase 5.6 contributor objectives survived resolveMultiEventObjectives)
-        // was seeded once at todayDate by resolveTrainingIntent/prepareWeekAheadPlanSeed and
-        // is carried unchanged through every day of this loop. A contributor/authority
-        // taper-window transition that falls strictly inside the horizon (e.g. the
-        // authority enters its 14-day taper on day 2 of a 7-day plan, or a contributor
-        // enters its own 35-day contribution window mid-horizon) is therefore not reflected
-        // in which objectives are admissible on days after the transition -- a known,
-        // recorded gap (not silently unnoticed), deliberately not addressed in the same
-        // change that first wired Phase 5.6 into the live path: fixing it requires deciding
-        // how to handle an objective's already-accrued mid-week credit when its
-        // admissibility changes, which is a product question, not just an engineering one.
+        // fatigue/anchor logic. Phase 6.2a: the objective SET itself is now ALSO
+        // re-resolved per day (reconcileObjectivesForDate below), rather than carrying the
+        // `todayDate`-seeded set unchanged through the whole horizon -- a taper
+        // authority/contributor window transition that falls strictly inside the horizon
+        // (e.g. the authority enters its 14-day taper on day 3 of a 7-day plan) now changes
+        // which objectives are admissible starting the day it actually happens, with
+        // already-accrued credit for a still-relevant key carried forward rather than lost
+        // (D6-A).
         const periodization = evaluatePeriodizationPhase(events, date);
         const availability = resolveAvailability(date, null, fixedActivities, context);
+
+        const reconciled = reconcileObjectivesForDate(microcycle, events, date, todayDate, periodization, creditMemory);
+        microcycle = reconciled.microcycle;
+        accumulateNewDrops(droppedContributorObjectives, currentlyDroppedPairs, reconciled.droppedContributorObjectives);
 
         const rankingFatigue = projectFatigueForRankingDate(
             externalFatigue,
@@ -648,13 +820,27 @@ export function generateWeekAheadPlan(
             internalStrainAsOf,
             date,
         );
+        // Phase 6.2b: fold today's reserved (not-yet-happened) fixed-activity load into the
+        // fatigue signal used for THIS DAY's ranking/gating only -- externalFatigue itself
+        // (the carried-forward ledger) is untouched here, so this never marks the load as
+        // already completed before the activity occurs (D6-B/6.2b item 2). Its cost only
+        // becomes real, carried-forward load at the end of the day, via
+        // applyFixedActivityExposures below.
+        const rankingFatigueForDate: FatigueState = {
+            ...rankingFatigue,
+            combinedFatigue: combineMax(rankingFatigue.combinedFatigue, availability.reservedCapacityCostProfile),
+        };
 
         const unresolved = getUnresolvedObjectives(microcycle, true);
 
+        // Phase 6.2b / D6-B: an explicit day-wide availabilityContextOverride (e.g. a true
+        // travel day) restricts which environment is reachable; a fixed activity's own
+        // environment never does this on its own -- see resolveAvailability/D6-B.
         const eligible = eligibleTemplates(ENRICHED_TEMPLATES, context, availability.maxTimeMinutes, date)
-            .filter(t => isTemplatePhaseEligible(t, periodization));
+            .filter(t => isTemplatePhaseEligible(t, periodization))
+            .filter(t => !availability.environmentOverride || t.environment === 'either' || t.environment === availability.environmentOverride);
 
-        const peakFatigue = maxFatigueDimension(rankingFatigue.combinedFatigue);
+        const peakFatigue = maxFatigueDimension(rankingFatigueForDate.combinedFatigue);
         const fatigueGated = eligible.filter(t => {
             if (peakFatigue >= PROJECTED_FATIGUE_RECOVER_THRESHOLD) {
                 return t.category === 'Rest' || t.category === 'Mobility/Recovery';
@@ -698,7 +884,7 @@ export function generateWeekAheadPlan(
         const optContext = buildOptimizationContext(
             {
                 unresolvedObjectives: unresolved,
-                fatigue: rankingFatigue,
+                fatigue: rankingFatigueForDate,
                 periodization,
                 history: projectedHistory,
                 plannedDose: resolvePlannedDoseForDate(
@@ -719,7 +905,12 @@ export function generateWeekAheadPlan(
             fatigueGated,
             optContext.unresolvedObjectives,
             optContext.fatigueState,
-            optContext.availability,
+            // Phase 6.2b: use THIS loop's own availability (resolved with the real
+            // fixedActivities) rather than optContext.availability, which
+            // buildOptimizationContext resolves with an empty fixed-activity list -- the
+            // day-context equipment/time gates below must see the same day the pre-filter
+            // above already accounted for.
+            availability,
             optContext.injuryConstraints,
             optContext.preferences,
             optContext.options
@@ -753,6 +944,7 @@ export function generateWeekAheadPlan(
         const pickCredits = creditingObjectivesFor(pick.template);
         const addressed = pickCredits.map(item => item.objective.title);
         applyPick(date, pick.template, pickCredits);
+        applyFixedActivityExposures(date);
 
         resultDays.push({
             date,
@@ -781,7 +973,7 @@ export function generateWeekAheadPlan(
         days: resultDays,
         objectiveCredits,
         microcycleObjectives: microcycle.objectives ?? [],
-        droppedContributorObjectives: seed.droppedContributorObjectives ?? [],
+        droppedContributorObjectives,
     };
 }
 

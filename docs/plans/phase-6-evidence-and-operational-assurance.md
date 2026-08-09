@@ -23,7 +23,7 @@ with coefficient tuning.
 1. **6.1 — Baseline ownership**: make the existing harness safe to run. **Implemented in
    this PR.**
 2. **6.2 — Close the two Phase 5 correctness carryovers**: fix behavior that can change a
-   real recommendation before adding more calibration machinery.
+   real recommendation before adding more calibration machinery. **Implemented.**
 3. **6.3 — Expand the deterministic scenario input contract and targeted cases** so the
    fixed behavior is permanently exercised.
 4. **6.4 — Add decision traces and calibration reports**. This is the F11 evidence layer;
@@ -48,7 +48,7 @@ Status legend: `[ ]` not started · `[-]` in progress · `[x]` finished.
 | Task | Status | Blocked by | Outcome | Primary files |
 |---|:--:|---|---|---|
 | 6.1 | `[x]` | — | Scenario runs cannot mutate the committed baseline; reviewed baseline update is explicit | `scripts/simulate-scenarios.mjs`, `scripts/simulate-diff.mjs`, `scripts/simulate-update-baseline.mjs`, `package.json` |
-| 6.2 | `[ ]` | — | Close Phase 5.6 mid-horizon objective drift and Phase 5.3 fixed-activity projection semantics | `planner.ts`, `periodization.ts`, `microcycle.ts`, `schedule.ts`, `models.ts`, tests |
+| 6.2 | `[x]` | — | Closed Phase 5.6 mid-horizon objective drift and Phase 5.3 fixed-activity projection semantics; `POLICY_VERSION` bumped to `2026-08-phase6-correctness-carryovers-v1` | `planner.ts`, `periodization.ts`, `schedule.ts`, `models.ts`, `policy.ts`, `planner.test.ts`, `architecture.test.ts`, `replay.test.ts`, `scenarios.test.ts` |
 | 6.3 | `[ ]` | 6.2 interface decisions | Scenario harness can represent the real boundaries added in Phases 4–5 and permanently exercises them | `simulation/scenarios.ts`, `simulation/analyze.ts`, `scenarios.test.ts`, integration tests |
 | 6.4 | `[ ]` | 6.3 | Produce daily decision traces and reproducible trigger-frequency/calibration reports without auto-tuning | `simulation/analyze.ts`, new calibration/report script, `docs/analysis/` |
 | 6.5 | `[ ]` | production Firebase project + deployment owner | Detect drift between repository rules and deployed rules | `.github/workflows/`, Firebase config, `docs/ops/` |
@@ -142,10 +142,17 @@ array.
 
 ---
 
-## `[ ]` 6.2 — Close Phase 5 correctness carryovers
+## `[x]` 6.2 — Close Phase 5 correctness carryovers
 
 This task is intentionally before calibration. Both sub-items affect what the live planner
 can recommend.
+
+> Landed as one PR rather than the two separate PRs (6B/6C) suggested under "Recommended
+> PR slicing" below -- 6.2a and 6.2b touch overlapping code (`planner.ts`'s per-day loop,
+> `ResolvedAvailability`) closely enough that splitting them would have meant threading one
+> half's plumbing through the other's review. Both are covered by the single
+> `POLICY_VERSION` bump (`2026-08-phase6-correctness-carryovers-v1`) and the same semantic
+> diff below.
 
 ### 6.2a — Re-resolve multi-event objectives across the forecast horizon
 
@@ -198,6 +205,27 @@ dropped if the plan were generated fresh on day 3.
 Generating the week on day 1 and inspecting day N yields the same objective admissibility
 as generating a fresh plan on day N from the equivalent projected history.
 
+**Delivered as:** `reconcileObjectivesForDate` (new, `planner.ts`) rebuilds the day's
+objective definition via `generateWeeklyObjectives` + `resolveMultiEventObjectives` --
+exactly what a fresh plan on that date would produce, respecting the existing plan-derived
+vs generic scope boundary -- then reconciles it onto the running microcycle by
+`ObjectiveKey`: a survived key keeps its `completedCredit`/`projectedCredit`, a dropped
+key's credit is cached in a per-projection `creditMemory` map (restored if the same key
+re-enters later in the same horizon, per D6-A), and a genuinely new key starts at zero.
+Called before ranking on every day the loop itself picks a template (today's/tomorrow's
+externally-supplied recs are unaffected, since this function doesn't choose them). A
+`DroppedContributorObjective.date` field (new) records the actual transition date, and
+`accumulateNewDrops` dedupes so a taper that stays active for the rest of the horizon logs
+one dated trace entry, not one per remaining day. This also transitively fixes the
+*same-event* Build→Specificity/taper transitions the original Phase 5.6 comment didn't
+single out -- the fix re-resolves on any periodization change, not only multi-event ones,
+which is what moved several scenarios' `threshold_quality` weekly target down once a
+mid-week taper correctly stops demanding it (see the reviewed baseline update). Tests:
+`planner.test.ts` "Phase 6.2a" describe block (day-3 taper drop with dated trace, day-4
+contribution-window entry, credit preserved across a definition change, credit restored on
+re-entry) plus the pre-existing seed-level `periodization.test.ts`/`planner.test.ts`
+coverage, all still green.
+
 ### 6.2b — Treat fixed activities as projected exposures, not just calendar blockers
 
 #### Current behavior
@@ -246,6 +274,31 @@ missing would become an undocumented decision heuristic if wired into ranking.
 A booked training event shapes both the day around it and the following day through its
 explicitly authored expected dose, while venue metadata cannot accidentally over-restrict
 an unrelated session.
+
+**Delivered as:** `schedule.ts`'s `ResolvedAvailability` gained
+`reservedCapacityCostProfile` (dimensional; `calculateReservedCapacityProfile` sums only
+authored `expectedCost` fields, D6-C removes the old `?? 0.2` default) and
+`environmentOverride`/equipment-intersection from an explicit
+`FixedActivity.availabilityContextOverride` (D6-B; the activity's own `environment`/
+`equipment` never restrict another session by themselves). `reservedCapacityCost` stays as
+a `.systemic`-derived compatibility scalar. `planner.ts`'s loop now folds the day's
+`reservedCapacityCostProfile` into the fatigue used for *that day's ranking only* (never
+into the carried-forward `externalFatigue` ledger, so it's never marked complete before it
+happens), filters candidates by `environmentOverride`, and passes its own
+`fixedActivities`-aware `availability` into `rankCandidates` instead of
+`buildOptimizationContext`'s internal no-fixed-activities recompute (a latent wiring gap
+that made the day-context equipment override otherwise unenforceable). A new
+`applyFixedActivityExposures` closure applies each uncompleted fixed activity's
+`expectedCost` to next-day external fatigue and `expectedStimulus` to objective credit
+through `deriveObjectiveCreditFromProfile` (no `SessionTemplate.modality`, so
+modality-scoped objectives correctly fail closed, matching stimulus.ts's existing
+unknown-modality contract) after today's, tomorrow's, and every projected day's pick.
+Completed activities are excluded from every one of these paths, so their load is never
+projected twice. Tests: `architecture.test.ts` (D6-C zero fallback, dimensional summation,
+D6-B non-restriction, `availabilityContextOverride` equipment intersection and multi-
+override intersection) and `planner.test.ts` "Phase 6.2b" describe block (next-day fatigue
+delta, completed-activity no-op, stimulus credit via the canonical primitive, zero-fallback
+at the plan level, environment-override gating an actual pick).
 
 ---
 
@@ -480,11 +533,11 @@ The project has either an evidence-backed replacement or an evidence-backed reas
 
 - [x] Normal scenario generation cannot overwrite the committed semantic baseline.
 - [x] Baseline update is a separately named, explicitly reviewed operation.
-- [ ] Multi-event objective admissibility is date-correct across a 7-day horizon and
+- [x] Multi-event objective admissibility is date-correct across a 7-day horizon and
       preserves already-earned credit.
-- [ ] Fixed activities affect time, projected objective credit, same-day capacity, and
+- [x] Fixed activities affect time, projected objective credit, same-day capacity, and
       adjacent-day fatigue exactly once using explicit authored dose.
-- [ ] Fixed-activity venue metadata cannot accidentally become a whole-day equipment
+- [x] Fixed-activity venue metadata cannot accidentally become a whole-day equipment
       restriction; true travel/day restrictions have explicit semantics.
 - [ ] The scenario harness supports multiple events, initial history, fixed activities,
       and date-level readiness.
@@ -509,13 +562,14 @@ Do not land all of Phase 6 as one giant change.
 
 1. **PR 6A — baseline ownership** — the 6.1 work already started here; no engine behavior
    change.
-2. **PR 6B — multi-event horizon correctness** — 6.2a only; policy-version bump required.
-3. **PR 6C — fixed-activity projected exposure** — 6.2b only; policy-version bump required.
-4. **PR 6D — scenario input contract + targeted cases** — 6.3.
-5. **PR 6E — trace + calibration report** — 6.4.
-6. **PR 6F — coverage reporting** — 6.6; can run in parallel with 6D/6E.
-7. **PR 6G — Firestore drift** — 6.5 after ownership/access decision.
-8. **PR 6H — fatigue experiment** — 6.7 only if evidence makes it necessary.
+2. ~~PR 6B — multi-event horizon correctness (6.2a only)~~ / ~~PR 6C — fixed-activity
+   projected exposure (6.2b only)~~ — **landed together** instead of split; see the note
+   under 6.2 above for why. `POLICY_VERSION` bumped once for both.
+3. **PR 6D — scenario input contract + targeted cases** — 6.3.
+4. **PR 6E — trace + calibration report** — 6.4.
+5. **PR 6F — coverage reporting** — 6.6; can run in parallel with 6D/6E.
+6. **PR 6G — Firestore drift** — 6.5 after ownership/access decision.
+7. **PR 6H — fatigue experiment** — 6.7 only if evidence makes it necessary.
 
 Each behavior-changing PR must include the semantic diff in its description and explain
 why every observed change is intended.
