@@ -25,7 +25,7 @@ controls are not represented as finished work.
 | F7 — inconsistent credit models | Closed | ADR-0014 and `stimulus.ts` establish the fractional ledger; compatibility credit is documented as fallback only. |
 | F8 — incomplete stimulus vocabulary | Closed | Canonical axes are validated at the persistence boundary and consumed downstream. |
 | F9 — two selection paths | Closed | `evaluateReadinessAndSafetyEnvelope` is the shared readiness boundary; the live selection path is the optimizer. |
-| F10 — undocumented policy / frozen version | Closed | ADR-0010, ADR-0011, and ADR-0014 document the policy surfaces. This audit found that PR #16 had not bumped `POLICY_VERSION`; commit `06c4684` identifies Phase 5 policy and marks the preceding version audit-only. `check-policy-drift.mjs` now passes against the PR merge base. |
+| F10 — undocumented policy / frozen version | Closed | ADR-0010, ADR-0011, and ADR-0014 document the policy surfaces. The merged Phase 5 work sets `POLICY_VERSION` to `2026-08-phase5-sequence-planning-v1` and marks the preceding version audit-only; this branch adds replay regression coverage for that classification. `check-policy-drift.mjs` passes against `main`. |
 | F11 — calibration record and decision-quality gate | Partial | Phase 0 adds blocking coaching invariants, aggregate scenario bounds, a committed semantic baseline, and CI execution. The requested representative calibration dataset and `calibrate.ts` trigger-frequency report do not exist. |
 | F12 — fatigue saturation, fusion, ordering | Partial | History is sorted/asserted and raw external load remains unsaturated. The tested fusion comparison deliberately retains `max()`; its masking limitation remains a documented modelling question rather than a resolved claim. |
 | F13 — documentation drift | Closed | The architecture reference documents the live engine, current ADRs are indexed, and `AGENTS.md` reflects schema and module inventory. |
@@ -38,12 +38,12 @@ controls are not represented as finished work.
 
 | Check | Result |
 |---|---|
-| `npm run check` | Passed: TypeScript, ESLint, 473 unit tests (25 skipped), and workout validation. |
-| `npm run test:rules` | Passed: 25 Firestore emulator tests. |
+| `npm run check` | Passed: TypeScript, ESLint, 486 unit tests (26 skipped), and workout validation. |
+| `npm run test:rules` | Passed: 26 Firestore emulator tests. |
 | `npm run simulate:scenarios` | Passed: 11 scenarios completed and the aggregate gate passed. |
 | `npm run compare:sequence-search` | Both greedy and beam search had zero constraint and golden-week violations; the production decision to retain greedy remains documented in ADR-0015. |
 | `uv run pytest`, `uv run ruff check .`, `uv run mypy src/garmin_sync` | Passed: 86 Python tests, lint, and type checking. |
-| `node app/scripts/check-policy-drift.mjs <PR-base-SHA>` | Passed after the Phase 5 policy-version correction. |
+| `node app/scripts/check-policy-drift.mjs <PR-base-SHA>` | Passed after rebasing onto `main`; this branch changes no decision-affecting engine files. |
 
 `simulate:diff` is intentionally not listed as independent verification here: running
 `simulate:scenarios` writes the current output to the baseline file first. The committed
