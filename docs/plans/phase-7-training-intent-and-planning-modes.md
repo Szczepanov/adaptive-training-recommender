@@ -86,7 +86,6 @@ export interface TrainingIntentProfile {
   /** D-ORG: persisted, but only 'auto' is consumed by the engine today. */
   organizationPreference: 'auto' | 'linear' | 'undulating' | 'block';
   conservativeBias?: boolean;
-  preferredRecoveryStyle?: UserPreferences['preferredRecoveryStyle'];
   schemaVersion: number;
   createdAt: string;
   updatedAt: string;
@@ -100,24 +99,28 @@ Then, following the `plan_blocks` precedent end to end:
 
 * `engine/validation.ts` — `validateTrainingIntentProfile`, alongside
   `validateAuthoredPlanBlock`. Enforce `minSessions <= targetSessions <= maxSessions`,
-  bounds `1..14`, minute bounds `0..480`, no duplicate modality in
-  `modalityPreferences`, and `priorities` free of duplicates.
+  finite integer bounds `1..14` for all three session counts, minute bounds `0..480`, no
+  duplicate modality in `modalityPreferences`, and `priorities` free of duplicates.
 * `services/trainingIntentProfileService.ts` — copy `planBlockService.ts`'s
   `DataState` read / validate-before-write structure at
   `users/{userId}/training_intent/profile` (a fixed doc id, like
-  `preferences/profile`, not a collection).
+  `preferences/profile`, not a collection). The write contract repeats the finite-integer
+  session-count check before persistence.
 * `app/firestore.rules` — a `hasValidTrainingIntentProfile(userId)` helper plus the
   `match /users/{userId}/training_intent/profile` block, modelled on
-  `plan_blocks`: `keepsOwnership`, immutable `createdAt`, numeric bounds the rules
+  `plan_blocks`: `keepsOwnership`, immutable `createdAt`, integer session-count and numeric bounds the rules
   language can actually express (scalar comparisons; list contents cannot be iterated —
   the same limitation already documented for `FixedActivity.equipment`).
 * `engine/composer.ts` — add the profile to the `Promise.allSettled` batch and to
-  `DailyDecisionInput` + `sourceStates`. **Absent profile is not an error**: it resolves
-  to the documented default (7.3), the same way `preferences` already tolerates `null`.
+  `DailyDecisionInput` + `sourceStates`. `preferredRecoveryStyle` stays exclusively on
+  `UserPreferences`: the composer continues to load it from `preferences/profile` and
+  never reads, merges, serializes, or persists it through `TrainingIntentProfile`.
+  **Absent profile is not an error**: it follows 7.2's legacy-compatible mode resolution.
 
 **Done when:** a profile round-trips through the service; `npm run test:rules` covers
-owner-read, cross-user-denied, bad-range-denied, and `createdAt`-mutation-denied; the
-composer returns a `DailyDecisionInput` with the profile present and with it absent.
+owner-read, cross-user-denied, fractional/invalid-range-denied, and
+`createdAt`-mutation-denied; the composer returns a `DailyDecisionInput` with the profile
+present and with it absent, while recovery style always comes from `UserPreferences`.
 
 ---
 
@@ -141,17 +144,21 @@ export function resolvePlanningContext(
 ): PlanningContext;
 ```
 
-Per **D-MODE**: `event_directed` only when the profile says so **and**
-`periodization.focusEvent` is non-null. An `event_directed` profile whose events have all
-passed resolves to `evergreen` — no fake event, no residual taper.
+Per **D-MODE**: `event_directed` only when a profile says so **and**
+`periodization.focusEvent?.category === 'cycling_event'`. An `event_directed` profile
+whose event is passed, cancelled, unsupported, or absent resolves to `evergreen` — no
+fake event, no residual taper. A missing profile is a compatibility case: active supported
+cycling events resolve to `event_directed`; every other profile-less case resolves to the
+conservative evergreen default.
 
 `resolveTrainingIntent` gains the profile as a parameter and carries the resolved
 `PlanningContext` on its returned `TrainingIntent`, so `rules.ts`, `planner.ts` and
 `sequenceSearch.ts` read one resolved value instead of re-deriving from `focusEvent`.
 
-**Done when:** `planningMode.test.ts` covers all four combinations of profile mode ×
-event presence, plus the passed-event and cancelled-event fallbacks; no call site
-outside `planningMode.ts` newly branches on `focusEvent === null` for mode purposes.
+**Done when:** `planningMode.test.ts` covers profile mode × supported-cycling,
+non-cycling, and absent-event combinations; passed/cancelled fallbacks; and both
+profile-less compatibility cases. No call site outside `planningMode.ts` newly branches
+on `focusEvent === null` for mode purposes.
 
 ---
 
@@ -164,6 +171,7 @@ outside `planningMode.ts` newly branches on `focusEvent === null` for mode purpo
 ```ts
 export const EVERGREEN_POLICY_VERSION = 'evergreen-allocation-v1';
 export interface WeeklyBudget {
+  minSessions: number; targetSessions: number; maxSessions: number;
   enduranceSlots: number; strengthSlots: number;
   multiComponentSlots: number; recoverySlots: number;
   qualitySlotCap: number;   // hard-session ceiling for the week
@@ -175,11 +183,14 @@ export function resolveWeeklyBudget(
 export function evergreenObjectives(budget: WeeklyBudget, windowStartDate: string): WeeklyObjective[];
 ```
 
-`resolveWeeklyBudget` implements the D-CAP allocation table off `targetSessions`, tilted by
-the first priority. `minSessions` sets `must_have` counts; `targetSessions` sets
-`should_have`; `maxSessions` caps. Every constant lives in one exported, commented table in
-this file — per D-GATE/F11, an uncited constant scattered across modules is the practice
-this repo already rejected.
+`resolveWeeklyBudget` copies the validated `minSessions`, `targetSessions`, and
+`maxSessions` into the returned budget before applying the D-CAP allocation table off
+`targetSessions`, tilted by the first priority. `evergreenObjectives` and
+`buildEvergreenPlanDefinition` consume that one budget: the former derives `must_have` /
+`should_have` objectives, and the latter derives coverage minimum/target counts. Neither
+may reread raw profile counts. Every allocation constant lives in one exported, commented
+table in this file — per D-GATE/F11, an uncited constant scattered across modules is the
+practice this repo already rejected.
 
 `generateWeeklyObjectives` (`microcycle.ts`) gains an evergreen branch **before** the
 `objectivesFromDemand` call, selected by `PlanningContext.mode`. The existing plan-derived
@@ -190,9 +201,10 @@ and demand-derived branches are untouched.
 eventless day.
 
 **Done when:** for `targetSessions` 2/3/4/5/6 the derived objective set matches the D-CAP
-table; a 2-session athlete is never issued 4 required exposures; an eventless athlete's
-objectives are independent of `DEFAULT_BASE_DEMAND` (mutating that constant in a test
-changes nothing for them).
+table; a 2-session athlete is never issued 4 required exposures; objective and coverage
+tests observe the same budget session counts; and an eventless athlete's objectives are
+independent of `DEFAULT_BASE_DEMAND` (mutating that constant in a test changes nothing for
+them).
 
 ---
 
@@ -251,8 +263,8 @@ assertion passes unmodified except for the added descriptor argument.
   the substitution error ADR-0016 was written to stop.
 * Add `buildEvergreenPlanDefinition(profile, asOfDate)` to `planSchedule.ts`: one rolling
   7-day `general` block, `volumeScale`/`intensityScale` from the resolved budget,
-  objectives from `evergreenObjectives`, `coverageMinimumSessions` from `minSessions` and
-  `coverageTargetSessions` from `targetSessions`.
+  objectives from `evergreenObjectives`, and coverage minimum/target sessions from that
+  same budget's `minSessions`/`targetSessions` values.
 * `resolvePlanDefinitionForEvent` becomes `resolvePlanDefinition(planningContext, authoredBlocks)`,
   returning the cycling plan for an event-directed cycling day and the evergreen plan
   otherwise. Authored travel overlays must keep working in **both** modes — the source
@@ -298,23 +310,32 @@ Two small independent fixes (G7, G5):
   fourth soft list in `rankCandidates`. `'avoid'` maps to the existing
   `avoidedModalities`; `'love'`/`'prefer'` to `preferredModalities`.
 
-**Done when:** a 5-star dated `general_target` goal produces `taperActive === false` at
-every offset; an `unavailable` modality appears in no candidate set, including the
-hard-constraint fallback path in `rulesHardConstraintFallback.test.ts`.
+**Done when:** a 5-star dated `general_target` goal **without an explicit
+`EventTaperSpec.startDate`** produces `taperActive === false` at every offset; a companion
+test proves an explicit start date still activates tapering; and an `unavailable` modality
+appears in no candidate set, including the hard-constraint fallback path in
+`rulesHardConstraintFallback.test.ts`.
 
 ---
 
 ### 7.8 `[ ]` Seed defaults, policy version, scenarios, baseline
 
-* **Default profile** (7.1's "absent is not an error"): `planningMode: 'evergreen'`,
-  `priorities: ['balanced_performance']`, `weeklyCommitment: { min 2, target 3, max 4 }`,
-  minutes from existing `UserPreferences.defaultWeekdayTimeMin` / `defaultWeekendTimeMin`
-  when present. Defined once, in `evergreenStrategy.ts`, exported for tests.
+* **Default profile** (7.1's "absent is not an error"): the in-memory evergreen default is
+  `planningMode: 'evergreen'`, `priorities: ['balanced_performance']`,
+  `weeklyCommitment: { min 2, target 3, max 4 }`, with minutes from existing
+  `UserPreferences.defaultWeekdayTimeMin` / `defaultWeekendTimeMin` when present. Defined
+  once in `evergreenStrategy.ts` and exported for tests. `planningMode.ts` applies the
+  separate compatibility override for a profile-less athlete with an active supported
+  cycling event; it must not persist a profile merely to preserve that existing path.
 * **Seed from existing goals** (G4): when no profile exists, derive first-pass priorities
   from active non-dated `UserGoal.domain` values (`strength → strength_muscle`,
-  `endurance → endurance`, `general_fitness / weight_loss → health`). This is a **display
-  and default-seeding** mapping surfaced for confirmation in the UI — it must not silently
-  become a persisted profile the athlete never saw.
+  `endurance → endurance`, `general_fitness / weight_loss → health`). Filter unsupported
+  domains, deduplicate after mapping, then order by goal priority descending, `createdAt`
+  ascending, and stable goal id ascending. If no supported mapping remains, use
+  `['balanced_performance']`; otherwise the ordered suggestions replace that fallback.
+  This is a **display and default-seeding** mapping only: it pre-fills a profile form and
+  becomes input to `resolveWeeklyBudget` only after the athlete confirms it. It must not
+  silently persist or alter the profile-less engine default.
 * **`POLICY_VERSION`** → `2026-08-training-intent-modes-v1`; push
   `2026-08-authored-travel-blocks-v1` onto `HISTORICAL_POLICY_VERSIONS`. Verify with
   `node scripts/check-policy-drift.mjs <base-sha>`.
@@ -327,9 +348,11 @@ hard-constraint fallback path in `rulesHardConstraintFallback.test.ts`.
   movement is a Phase 7B regression, not a recalibration. Do not bless a new
   `docs/analysis/simulation-baseline.json` before Phase 7A's criteria pass.
 
-**Done when:** the diff shows zero change on every pre-existing scenario, the new evergreen
-scenarios produce no `qualityWarnings` or `constraintViolations`, and the policy-drift
-guard passes.
+**Done when:** the diff shows zero change on every pre-existing scenario, including a
+profile-less active cycling-event fixture; `planningMode.test.ts` covers that compatibility
+case; goal-priority suggestion tests cover deduplication/tie-breaking/fallback; the new
+evergreen scenarios produce no `qualityWarnings` or `constraintViolations`; and the
+policy-drift guard passes.
 
 ---
 
@@ -374,7 +397,7 @@ architecture doc's description matches `planningMode.ts` and `evergreenStrategy.
 - [ ] An eventless athlete's weekly targets change when `targetSessions` changes.
 - [ ] `coverageNeedTierForTemplate` is no longer a constant `3` for eventless athletes.
 - [ ] `taperActive` is false on every eventless day and on every dated `general_target`
-      goal without an explicit `EventTaperSpec`.
+      goal without an explicit `EventTaperSpec.startDate`.
 - [ ] `simulate:diff` shows **zero** change on all pre-existing event-directed scenarios.
 - [ ] `SEPTEMBER_CYCLING_EVENT_SESSION_COVERAGE` is byte-identical.
 - [ ] `npm run check` and `npm run test:rules` green; policy-drift guard passes.

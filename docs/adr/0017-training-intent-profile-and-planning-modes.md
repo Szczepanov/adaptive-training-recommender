@@ -48,9 +48,16 @@ A new persisted `TrainingIntentProfile.planningMode` records the athlete's state
 The engine resolves an **effective** mode per evaluation date:
 
 * `event_directed` only when the profile selects it **and**
-  `evaluatePeriodizationPhase` returns a non-null `focusEvent` for that date;
+  `evaluatePeriodizationPhase` returns a non-null `focusEvent` whose category is the
+  currently supported `cycling_event` plan; a running, strength, triathlon, or general
+  focus event resolves to `evergreen` until it has its own event-plan contract;
 * `evergreen` otherwise — including an `event_directed` profile whose events have all
   passed or been cancelled.
+
+For a legacy athlete with no profile, resolve an active supported cycling focus event as
+`event_directed`; resolve every other case as `evergreen`. This compatibility default
+preserves the already-calibrated cycling path while a profile-less athlete without such an
+event receives the new evergreen default.
 
 No fake event is constructed in `evergreen` mode. `DEFAULT_BASE_DEMAND` stops being the
 eventless strategy input and is retained only as the Base-phase demand blend for a real
@@ -127,8 +134,9 @@ doc comment naming the other. No rename, because `TrainingIntent` is referenced 
   bump becomes non-replayable by the current build (the existing, deliberate contract in
   `policy.ts` `HISTORICAL_POLICY_VERSIONS`).
 * Evergreen decisions become sensitive to a new input the athlete may not have supplied.
-  The profile therefore needs a documented, conservative default, and the engine must
-  behave sanely with no profile at all — this is the principal migration risk.
+  The profile therefore needs a documented, conservative default, while the no-profile
+  compatibility rule must preserve active supported cycling-event behaviour — this is the
+  principal migration risk.
 * Two coverage sets means two calibration surfaces. The September set's semantics are
   frozen by ADR-0016 and the [macrocycle v5 contract](../macrocycle-v5.md); the evergreen
   set starts uncalibrated and must not be presented as evidence-derived.
