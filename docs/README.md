@@ -65,7 +65,7 @@ Architectural choices, system invariants, and technical trade-offs are documente
 * [**ADR-0014: Objective Credit V2 & Honest Delivered Load**](./adr/0014-objective-credit-v2-and-honest-load.md) — Fractional credit, canonical stimulus axes, delivered cost, and the deferred fatigue-fusion decision.
 * [**ADR-0015: Sequence Planning — Bounded Beam Search Prototype, Adoption Deferred**](./adr/0015-sequence-planning-and-session-role-model.md) — Phase 5.1's beam-search prototype, its comparison data against the production greedy planner, and why adoption is deferred rather than shipped or rejected.
 * [**ADR-0016: Adaptation Credit & Weekly Coverage**](./adr/0016-adaptation-credit-and-weekly-coverage.md) — Separates physiological adaptation credit from exact authored weekly programming-role coverage.
-* [**ADR-0017: Training Intent Profile & First-Class Planning Modes**](./adr/0017-training-intent-profile-and-planning-modes.md) — Proposed evergreen/capacity contract that preserves structured and demand-derived event paths (Phase 7B).
+* [**ADR-0017: Training Intent Profile & First-Class Planning Modes**](./adr/0017-training-intent-profile-and-planning-modes.md) — Proposed evidence-to-dose-to-capacity Evergreen contract that preserves structured and demand-derived event paths (Phase 7B).
 * [**ADR-0018: Weekly Allocation, Safe Role Reservations & Explicit Misses**](./adr/0018-weekly-allocation-and-role-reservations.md) — Proposed production-greedy allocation contract for preserving safe, required weekly roles after PR #17.
 
 Reserved for work sequenced in [`docs/plans/`](./plans/), written with their phase:
@@ -94,7 +94,7 @@ How agreed changes get made. Mutable, status-tracked, and expected to go stale �
 * [**Phase 5: Sequence planning**](./plans/phase-5-sequence-planning.md) — Bounded search, fixed activities, tissue state, evidence hierarchy.
 * [**Phase 6: Evidence-driven calibration & operational assurance**](./plans/phase-6-evidence-and-operational-assurance.md) — Scenario telemetry, calibration evidence, and Firestore-rule deployment assurance.
 * [**Phase 7A: Weekly allocation & safe role reservations**](./plans/phase-7-weekly-allocation-and-role-reservations.md) — The PR #17 follow-up: reserve eligible required roles, protect them from support work, and report safety-forced misses.
-* [**Phase 7B: Training intent, capacity & planning modes**](./plans/phase-7-training-intent-and-planning-modes.md) — Separate evergreen/non-event planning proposal.
+* [**Phase 7B: Training intent, capacity & planning modes**](./plans/phase-7-training-intent-and-planning-modes.md) — Evergreen evidence-to-dose-to-capacity planning proposal.
 
 ---
 

@@ -69,30 +69,82 @@ No fake event is constructed in `evergreen` mode. `DEFAULT_BASE_DEMAND` stops be
 eventless strategy input and is retained only as the Base-phase demand blend for a real
 event more than 84 days out (`evaluatePeriodizationPhase`'s existing `blendDemand` call).
 
-### D-CAP — weekly capacity is the sizing authority for derived targets
+### D-DOSE — evidence-derived adaptation dose precedes session packing
+
+For Evergreen, policy resolution is ordered as **goal/event context + inferred
+`AthleteTrainingState` + evidence policy → adaptation-dose requirements → real
+capacity/availability feasibility → preference-compatible implementation → weekly role
+packing → day-to-day readiness/history adaptation**. A session is a container for dose, not
+the source of a physiological requirement.
+
+`resolveEvidenceBackedStrategy` is pure and returns independently-derived minimum, target,
+and optional `AdaptationDoseRequirement`s. A requirement states its adaptation, dose unit
+(for example aerobic minutes, resistance exposure/volume proxy, or high-intensity
+exposure), dose envelope, priority, applicability, and substitution policy. Its provenance
+is executable policy metadata: citation/source id, population, outcome, evidence strength,
+applicability conditions, authority class (`guideline_floor`,
+`outcome_supported_default`, `conditional_prior`, or `product_heuristic`), policy version,
+and review date. The metadata is carried per requirement; an Evergreen coverage set is not
+globally labelled “evidence-backed”.
+
+`AthleteTrainingState` is inferred from bounded completed/history data where available:
+recent weekly frequency and duration, recent strength/aerobic/quality exposure,
+consistency/training-age proxy, tolerated load and progression trend, and relevant
+sport-specific history. Its conservative `unknown` state is an explicit policy input, not
+an assertion that every athlete has the same training background. Readiness remains an
+execution modifier after this policy resolution; it is not substituted for training status.
+
+Safety, injury, hard medical restrictions, and feasibility cannot be overridden.
+Goal/event specificity selects the required adaptation; evidence defines its dose envelope;
+real capacity determines feasibility; preferences choose only among implementations allowed
+by the requirement's substitution policy; readiness/history can modify the selected day;
+product-ranking heuristics decide last. A general-health athlete may substitute an
+equivalent disliked modality. A marathon athlete who makes running unavailable does not get
+cycling credited as marathon-specific preparation: retain transferable work, emit a typed
+`goal_constraint_conflict`/specificity shortfall, and state the trade-off. Preference may
+choose a feasible lower-efficacy implementation only where that policy explicitly permits
+it; it never manufactures coverage or overrides safety.
+
+### D-CAP — real capacity constrains dose packing; it does not define dose
 
 `TrainingIntentProfile.weeklyCommitment` (`minSessions`, `targetSessions`, `maxSessions`)
-is persisted human input. Session-duration defaults remain execution preferences owned by
-`UserPreferences` (D-OWNERSHIP). Derived objective counts and coverage minimums are a
-**pure function** of capacity plus stated priorities under a versioned policy table —
-never persisted, recomputed on every read, in the same way `deriveGoalCategory` already
-treats goal horizon.
+is persisted human input. `UserPreferences` remains the duration owner (D-OWNERSHIP), and
+the resolver combines both authorities plus availability windows into
+`ResolvedTrainingCapacity`: session cardinality, weekday/weekend minutes, usable date
+windows, and estimated target-weekly minutes. This allows the documented minute-based
+evidence floor to be assessed without duplicating duration in the profile.
 
-The starting allocation table (2 → two multi-component sessions; 3 → 2+1 by goal; 4 → 2+2;
-5 → 2+3 or 3+2; 6 → 3 strength + 3 endurance; 7+ → advanced) is recorded as **product
-policy, not scientific law**. It is a defensible default consistent with WHO/ACSM
-population guidance, and it is expected to be recalibrated. Volume-equated 2-vs-3 weekly
-resistance-training frequency evidence is the specific reason a third strength day is
-treated as a distribution decision rather than a requirement.
+The physiological minimum is derived by D-DOSE independently of declared capacity.
+`minSessions` is the athlete's guaranteed **packing** capacity, not the definition of a
+scientific minimum; `targetSessions` is the preferred packing capacity; `maxSessions` is
+available only to optional/stretch work. If minimum dose cannot fit safely inside real
+minutes/windows and `minSessions`, return a typed `minimum_dose_shortfall` and the safest,
+highest-value feasible subset. Never silently lower the dose requirement, invent a combined
+session, or manufacture cross-role credit.
 
-`minSessions` is the capacity within which all derived **required** role occurrences must
-fit; `targetSessions` is the capacity for required plus target coverage; and `maxSessions`
-is available only to optional/stretch work. Derivation must fail visibly with a
-minimum-dose shortfall when an authored requirement cannot fit, not silently manufacture
-cross-role credit. One session may earn several adaptation credits, but it may earn several
-programming roles only when an exact authored coverage identity grants each key. A
-multi-component session is a real authored session, never a fictional way to collapse
-separate strength and endurance requirements.
+Zero or missing weekday/weekend duration is never a usable duration for a required session.
+New `UserPreferences` writes require finite positive minutes. At read time a known,
+versioned pre-Phase-7 default may be materialised only when its provenance is explicit;
+otherwise that day type is `time_capacity_unavailable`, excluded from packing, and included
+in the shortfall explanation. The planner never persists or schedules a zero-minute
+session.
+
+The 2→6-session allocation table is retained solely as a low-confidence **packing
+fallback/tie-breaker** after D-DOSE, real capacity, and exact eligible implementations are
+known. It is product policy, not scientific law. Volume-equated 2-vs-3 weekly
+resistance-training frequency evidence is why a third strength day is a distribution choice,
+not an outcome requirement.
+
+Packing generates required, target, and optional role occurrences from the corresponding
+dose requirements. A physical session may bundle multiple programming roles only when one
+exact authored `PlanSessionCoverage` mapping grants all of those keys for the same template
+or workout identity; otherwise distinct strength/endurance requirements remain distinct
+occurrences. Adaptation credit may fan out more broadly, but cannot create programming-role
+coverage. The canonical occurrence identity is coverage-set id, plan-window bounds, phase,
+coverage key, authored session identity, and zero-based occurrence ordinal in that stable
+order; the authored session identity is the stable `PlanSessionCoverage` record id, not a
+chosen candidate. It is independent of candidate filtering or projected coverage.
+ADR-0018 consumes this exact mapping.
 
 ### D-COVSET — coverage is a generic plan registry, not an event-shaped module constant
 
@@ -125,6 +177,16 @@ Phase 7 does not duplicate or merge those fields. If it needs an explicit hard
 `unavailable` modality, it evolves `UserPreferences` and maps that field into the existing
 hard restriction path; it does not add a competing modality model to the profile.
 
+The write boundary is an allowlist: `TrainingIntentProfile` rejects execution-preference
+fields, while `UserPreferences` is the only write source for them. At mixed-version reads,
+the valid `UserPreferences` value always wins; any duplicate execution field found in a
+profile is ignored, produces a `legacy_profile_preference_ignored` diagnostic, and is never
+copied back or merged. No automatic backfill can safely infer the intent of a conflicting
+duplicate. A subsequent owner-authorised profile write sanitises the profile to its
+allowlisted shape; missing `UserPreferences` uses its existing versioned default/fallback,
+not a profile duplicate. This preserves the target ownership rule without a destructive
+silent migration.
+
 ### D-ORG — persist only the organisation the engine can execute
 
 `organizationPreference` is persisted as the only valid value, `'auto'`. The schema is
@@ -132,6 +194,16 @@ widened only in the increment that implements another organisation. The engine m
 accept persisted data that intentionally makes normal recommendation generation fail.
 If product research needs to collect a future preference first, it uses a separate,
 non-operative `requestedOrganization` field rather than changing the resolved policy.
+
+Both client validation and `hasValidTrainingIntentProfile` reject every other value at the
+write boundary; Firestore rules additionally allow only the profile's declared field set.
+At the read boundary, a record that is otherwise valid except for a legacy unsupported
+organisation resolves `organizationPreference` to `'auto'` and emits
+`organization_preference_recovered` with the rejected value. A record with any other
+invalid profile field is quarantined as `DataState.INVALID`, emits
+`training_intent_profile_invalid`, and follows the no-profile compatibility path rather
+than crashing recommendation generation. Neither recovery path writes back automatically;
+an owner action can inspect and replace the invalid record.
 
 ### D-TAPERSCOPE — taper requires a real event, and priority alone is not one
 

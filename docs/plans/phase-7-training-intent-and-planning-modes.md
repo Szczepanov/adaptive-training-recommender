@@ -6,7 +6,7 @@
 * **Unlocks:** evergreen (non-event) athletes as a supported population; a reachable
   coverage ledger outside cycling events; capacity-sized weekly targets
 * **Decisions:** [ADR-0017](../adr/0017-training-intent-profile-and-planning-modes.md)
-  (D-MODE, D-CAP, D-COVSET, D-OWNERSHIP, D-ORG, D-TAPERSCOPE, D-INTENTNAME)
+  (D-MODE, D-DOSE, D-CAP, D-COVSET, D-OWNERSHIP, D-ORG, D-TAPERSCOPE, D-INTENTNAME)
 * **Source analysis:** [2026-08-10 training-intent and periodization architecture analysis](../analysis/2026-08-10-training-intent-periodization-architecture.md)
 
 > **Scope separation (2026-08-10):** the PR #17 semantic-baseline follow-up identified
@@ -17,9 +17,10 @@
 
 ## Goal
 
-Make continuous (evergreen) training a first-class planning mode sized by the athlete's
-stated intent and real weekly capacity, instead of a fabricated demand vector — without
-changing any behaviour for the event-directed cycling athlete that Phases 2–6 calibrated.
+Make continuous (evergreen) training a first-class planning mode that derives an
+evidence-backed adaptation dose, then packs it into the athlete's real capacity and stated
+preferences, instead of a fabricated demand vector — without changing any behaviour for
+the event-directed athlete that Phases 2–6 calibrated.
 
 ---
 
@@ -27,7 +28,8 @@ changing any behaviour for the event-directed cycling athlete that Phases 2–6 
 
 1. ADR-0017 accepted. Work items 7.1–7.4 encode its decisions and should not start while
    D-MODE or D-COVSET are still open.
-2. `cd app && npm run check` green on `codex/phase-0-5-completion-audit`.
+2. `cd app && npm run check` green against merged `main` commit `34ddc30` (the immutable
+   Phase 7 baseline); later policy-drift checks use that same base sha.
 3. A `simulate:diff` baseline exists. **7.8 must not bless a new baseline before
    Phase 7A's allocation criteria pass** — it owns the existing event-directed semantic
    blocker, and folding it into an evergreen diff would make both unreadable.
@@ -95,8 +97,10 @@ Then, following the `plan_blocks` precedent end to end:
 * `engine/validation.ts` — `validateTrainingIntentProfile`, alongside
   `validateAuthoredPlanBlock`. Enforce `minSessions <= targetSessions <= maxSessions`,
   finite integer bounds `1..14` for all three session counts, `organizationPreference ===
-  'auto'`, and priorities free of duplicates. Session-duration, modality, recovery, and
-  conservative-bias validation remain exclusively in `validateUserPreferences`.
+  'auto'`, the two-value `planningMode` enum, priorities free of duplicates, and the exact
+  declared profile field set. Session-duration, modality, recovery, and conservative-bias
+  validation remain exclusively in `validateUserPreferences`; its newly written duration
+  values must be finite positive integers, never zero.
 * `services/trainingIntentProfileService.ts` — copy `planBlockService.ts`'s
   `DataState` read / validate-before-write structure at
   `users/{userId}/training_intent/profile` (a fixed doc id, like
@@ -105,17 +109,25 @@ Then, following the `plan_blocks` precedent end to end:
 * `app/firestore.rules` — a `hasValidTrainingIntentProfile(userId)` helper plus the
   `match /users/{userId}/training_intent/profile` block, modelled on
   `plan_blocks`: `keepsOwnership`, immutable `createdAt`, integer session-count and
-  scalar bounds the rules language can actually express. The existing preferences rule is
-  extended separately for hard-unavailable modalities.
+  scalar bounds the rules language can actually express, `planningMode in
+  ['evergreen', 'event_directed']`, `organizationPreference == 'auto'`, and an exact
+  allowlist of profile keys. The existing preferences rule is extended separately for
+  positive duration and hard-unavailable modalities. Direct Firestore writes must not be
+  able to bypass the service validator.
 * `engine/composer.ts` — add the profile to the `Promise.allSettled` batch and to
   `DailyDecisionInput` + `sourceStates`. `preferredRecoveryStyle` stays exclusively on
   `UserPreferences`: the composer continues to load it from `preferences/profile` and
   never reads, merges, serializes, or persists it through `TrainingIntentProfile`.
   **Absent profile is not an error**: it follows 7.2's legacy-compatible mode resolution.
+  On read, ignore any legacy execution-preference fields embedded in a profile and emit the
+  ADR-0017 diagnostic; recover an otherwise valid legacy unsupported organisation to
+  `'auto'` with a diagnostic; quarantine any other invalid profile as `DataState.INVALID`
+  and use the no-profile compatibility path. Neither read path writes data back.
 
 **Done when:** a profile round-trips through the service; `npm run test:rules` covers
 owner-read, cross-user-denied, fractional/invalid-range-denied, and
-`createdAt`-mutation-denied; the composer returns a `DailyDecisionInput` with the profile
+`createdAt`-mutation-denied, plus unsupported planning mode/organisation and extraneous
+profile field denied writes; the composer returns a `DailyDecisionInput` with the profile
 present and with it absent, while all execution preferences always come from
 `UserPreferences`.
 
@@ -163,62 +175,118 @@ outside `planningMode.ts` newly branches on `focusEvent === null` for mode purpo
 
 ---
 
-### 7.3 `[ ]` Derive the evergreen strategy from capacity and priorities
+### 7.3 `[ ]` Resolve dose first, then capacity and weekly packing
 
-**Current:** `DEFAULT_BASE_DEMAND` is the eventless strategy input, sized by nothing (G1, G2).
+**Current:** `DEFAULT_BASE_DEMAND` is the eventless strategy input, sized by nothing
+(G1, G2). `UserPreferences` has per-day duration defaults, but no proposed strategy API
+consumes them; the old proposed `targetSessions + first priority -> allocation table`
+pipeline would therefore make a cited packing heuristic the source of prescription.
 
-**Change:** add `engine/evergreenStrategy.ts`, a pure module with no I/O:
+**Change:** add pure `engine/evergreenStrategy.ts` and `engine/trainingCapacity.ts` modules
+with no I/O. They are versioned policy resolution, not a second rules engine.
+
+#### 7.3a Resolve evidence-backed adaptation/dose requirements
 
 ```ts
-export const EVERGREEN_POLICY_VERSION = 'evergreen-allocation-v1';
-export interface WeeklyBudget {
-  minSessions: number; targetSessions: number; maxSessions: number;
-  enduranceSlots: number; strengthSlots: number;
-  multiComponentSlots: number; recoverySlots: number;
-  qualitySlotCap: number;   // hard-session ceiling for the week
+export interface EvidenceProvenance {
+  sourceId: string; population: string; outcome: string;
+  confidence: 'high' | 'medium' | 'low';
+  applicability: string[];
+  authority: 'guideline_floor' | 'outcome_supported_default'
+    | 'conditional_prior' | 'product_heuristic';
+  policyVersion: string; reviewedOn: string;
 }
-export function resolveWeeklyBudget(
-  commitment: TrainingIntentProfile['weeklyCommitment'],
-  priorities: TrainingPriority[],
-): WeeklyBudget;
-export function evergreenObjectives(budget: WeeklyBudget, windowStartDate: string): WeeklyObjective[];
+export interface AdaptationDoseRequirement {
+  adaptation: AdaptationKey; minimum: DoseTarget | null; target: DoseRange;
+  priority: 'required' | 'target' | 'optional';
+  substitutionPolicy: SubstitutionPolicy; evidence: EvidenceProvenance;
+}
+export interface EvidenceBackedStrategy {
+  requirements: AdaptationDoseRequirement[];
+  hardSessionCap?: number; warnings: PolicyWarning[];
+}
+export function resolveEvidenceBackedStrategy(
+  goalOrEvent: GoalOrEventContext,
+  athleteState: AthleteTrainingState,
+): EvidenceBackedStrategy;
 ```
 
-`resolveWeeklyBudget` copies the validated `minSessions`, `targetSessions`, and
-`maxSessions` into the returned budget before applying the D-CAP allocation table off
-`targetSessions`, tilted by the first priority. `evergreenObjectives` and
-`buildEvergreenPlanDefinition` consume that one budget: the former derives `must_have` /
-`should_have` objectives, and the latter derives coverage minimum/target counts. Neither
-may reread raw profile counts. Every allocation constant lives in one exported, commented
-table in this file — per D-GATE/F11, an uncited constant scattered across modules is the
-practice this repo already rejected. Each constant also carries the evidence/provenance
-classification in the [source analysis](../analysis/2026-08-10-training-intent-periodization-architecture.md):
-source, population, outcome, confidence, and whether it is an evidence floor or a product
-packing heuristic.
+`AthleteTrainingState` is inferred from bounded completed-history/Garmin data: recent
+weekly duration and frequency, strength/aerobic/quality exposure, consistency and
+training-age proxy, tolerated load/progression trend, and sport-specific history. An
+explicit conservative `unknown` fallback is required. Readiness modifies daily execution
+only after this strategy exists. Every rule carries the per-requirement provenance contract
+from ADR-0017 D-DOSE; coverage descriptors themselves are not blanket “evidence-backed”.
 
-The cardinality contract is explicit: all required role occurrences must fit in
-`minSessions`; required plus target coverage must fit in `targetSessions`; only optional
-work may use capacity through `maxSessions`. A session can fan out to multiple adaptation
-objectives, but can satisfy multiple programming roles only through exact authored coverage
-identity. If the policy cannot pack the required occurrences, return an explicit
-minimum-dose shortfall rather than inventing a combined strength/endurance session or
-silently dropping a role. Because `minSessions >= 1`, `UserPreferences` weekday/weekend
-default duration must remain a finite positive value; absence is represented by the
-existing preference fallback, never a persisted zero-minute session.
+#### 7.3b Resolve capacity from the two existing owners
+
+```ts
+export interface ResolvedTrainingCapacity {
+  minSessions: number; targetSessions: number; maxSessions: number;
+  weekdayMinutes: number | null; weekendMinutes: number | null;
+  usableWindows: ResolvedAvailabilityWindow[];
+  estimatedTargetWeeklyMinutes: number;
+}
+export function resolveTrainingCapacity(
+  commitment: TrainingIntentProfile['weeklyCommitment'],
+  preferences: UserPreferences,
+  availability: readonly AvailabilityWindow[],
+): ResolvedTrainingCapacity;
+```
+
+This is consumption, not duplicated ownership: profile supplies session cardinality;
+`UserPreferences` supplies duration; schedule/fixed activities supply usable windows. New
+preference writes reject zero or non-finite duration. At read time, only a known,
+versioned legacy default may fill a missing duration; otherwise the affected day type is
+`time_capacity_unavailable`, has no usable window, and cannot receive a required session.
+`estimatedTargetWeeklyMinutes` sums only usable date windows. No zero-minute session is
+created or persisted.
+
+#### 7.3c Pack strategy into exact session roles
+
+```ts
+export interface WeeklyBudget {
+  capacity: ResolvedTrainingCapacity;
+  requirements: AdaptationDoseRequirement[];
+  requiredRoles: PackedRoleOccurrence[];
+  targetRoles: PackedRoleOccurrence[];
+  optionalRoles: PackedRoleOccurrence[];
+  shortfalls: PolicyWarning[];
+}
+export function packWeeklyDose(
+  strategy: EvidenceBackedStrategy,
+  capacity: ResolvedTrainingCapacity,
+  coverage: CoverageSetDescriptor,
+): WeeklyBudget;
+```
+
+Packing maps independently-derived dose to exact eligible workout/template identities and
+only then to roles. Required roles must fit within `minSessions` and usable minutes/windows;
+required plus target roles within `targetSessions`; optional work alone may use capacity to
+`maxSessions`. A session can fan out to adaptation credit, but may bundle programming roles
+only where one authored `PlanSessionCoverage` identity grants every key. Otherwise distinct
+strength/endurance requirements stay distinct. If an evidence/goal minimum cannot fit,
+emit `minimum_dose_shortfall` and retain the safest, highest-value feasible subset.
+
+The old 2-to-6 session table remains in one exported, commented table, but only as a
+low-confidence packing fallback/tie-breaker between otherwise valid packings. It cannot
+derive a physiological minimum or conceal a dose/capacity shortfall. Preference chooses
+among the requirement's permitted substitutions; a sport-specific unavailable modality
+emits `goal_constraint_conflict` rather than fictitious equivalent credit.
 
 `generateWeeklyObjectives` (`microcycle.ts`) gains an evergreen branch **before** the
-`objectivesFromDemand` call, selected by `PlanningContext.mode`. The existing plan-derived
-and demand-derived branches are untouched.
+`objectivesFromDemand` call, selected by `PlanningContext.mode`, and consumes the packed
+budget rather than raw profile counts. The existing plan-derived and demand-derived
+branches are untouched. `objectivesFromDemand` keeps `DEFAULT_BASE_DEMAND` only for a real
+event more than 84 days out (`evaluatePeriodizationPhase`'s existing `blendDemand`); it is
+never an eventless input.
 
-`objectivesFromDemand` keeps `DEFAULT_BASE_DEMAND` only for a real event >84 days out
-(`evaluatePeriodizationPhase`'s existing `blendDemand`); it is no longer reachable from an
-eventless day.
-
-**Done when:** for `targetSessions` 2/3/4/5/6 the derived objective set matches the D-CAP
-table; a 2-session athlete is never issued 4 required exposures; objective and coverage
-tests observe the same budget session counts; and an eventless athlete's objectives are
-independent of `DEFAULT_BASE_DEMAND` (mutating that constant in a test changes nothing for
-them).
+**Done when:** a short/long duration athlete with identical session counts produces
+different feasibility/shortfall results; `AthleteTrainingState.unknown` is conservative and
+history-derived state can alter a conditional prior; every scientific rule has complete
+provenance; the 2-to-6 table breaks only packing ties; required/target/optional roles obey
+the cardinality and exact-identity invariants; and mutating `DEFAULT_BASE_DEMAND` changes
+nothing for an eventless athlete.
 
 ---
 
@@ -282,24 +350,26 @@ assertion passes unmodified except for the added descriptor argument.
   workouts, or add a true easy continuous-run workout to `workouts/catalog/`. **Prefer
   adding the workout** — crediting a walk–run as full aerobic volume would repeat exactly
   the substitution error ADR-0016 was written to stop.
-* Add `buildEvergreenPlanDefinition(profile, budget, asOfDate)` to `planSchedule.ts`: one rolling
-  7-day `general` block, `volumeScale`/`intensityScale` from the resolved budget,
-  objectives from `evergreenObjectives`, and coverage minimum/target sessions from that
-  same budget's `minSessions`/`targetSessions` values.
+* Add `buildEvergreenPlanDefinition(strategy, capacity, packedBudget, asOfDate)` to
+  `planSchedule.ts`: one rolling 7-day `general` block, dose/objectives from the packed
+  strategy, and coverage minimum/target sessions from its required/target roles. It must
+  not derive a dose from raw session counts.
 * `resolvePlanDefinitionForEvent` remains the structured-plan capability resolver.
   `resolvePlanDefinition(planningContext, authoredBlocks)` returns the cycling plan only
   for `eventStrategy: 'structured_plan'`, returns the evergreen plan only for effective
   evergreen mode, and returns `null` for `eventStrategy: 'demand_derived'` so the existing
-  demand-derived event path remains authoritative. Authored travel overlays must keep
-  working in all applicable paths — the source
-  analysis is explicit that fixed activities and authored plan blocks are planning-mode
-  agnostic, and `buildCyclingEventPlan`'s overlay-first block ordering is the behaviour to
-  preserve.
+  demand-derived event path remains authoritative. Move authored travel overlays and fixed
+  activities into a shared `applyPlanningOverlays` step that runs **before** plan-specific
+  construction/ranking for structured, demand-derived-null, and evergreen paths. It takes
+  the resolved `PlanningContext`, date, authored blocks, and fixed activities, returns the
+  same constrained availability/intent overlay for every path, and preserves current
+  overlay-first ordering. No null plan-definition path may skip an authored constraint.
 
 **Done when:** an eventless athlete produces a non-empty `CoverageState`;
 `coverageNeedTierForTemplate` returns a value other than `3` for them; the four
 `macrocycleContract.test.ts` / `goldenWeek.test.ts` event-directed expectations are
-unchanged.
+unchanged; fixtures prove that a travel overlay and a fixed activity constrain both a
+demand-derived event and an evergreen week before candidate ranking.
 
 ---
 
@@ -312,8 +382,8 @@ unchanged.
 exhaustive (`const _exhaustive: never = objDef.key`), so the compiler will name every site
 that must handle it — that is the point of adding the key rather than overloading
 `strength_maintenance`. Event-directed paths continue to emit `strength_maintenance`;
-only `evergreenObjectives` emits the new key, and only when a strength-leaning priority is
-first.
+only the packed Evergreen strategy emits the new key, and only when its evidence-backed
+strength requirement is applicable.
 
 **Done when:** `npm run check` is green with no `as` casts added at the switch sites; an
 `endurance`-priority evergreen athlete never receives `strength_development`.
@@ -364,7 +434,7 @@ the preference-schema portion stays with 7.1 because it changes persisted owners
   ascending, and stable goal id ascending. If no supported mapping remains, use
   `['balanced_performance']`; otherwise the ordered suggestions replace that fallback.
   This is a **display and default-seeding** mapping only: it pre-fills a profile form and
-  becomes input to `resolveWeeklyBudget` only after the athlete confirms it. It must not
+  becomes input to `resolveEvidenceBackedStrategy` only after the athlete confirms it. It must not
   silently persist or alter the profile-less engine default.
 * **`POLICY_VERSION`** → `2026-08-training-intent-modes-v1`; push
   `2026-08-authored-travel-blocks-v1` onto `HISTORICAL_POLICY_VERSIONS`. Verify with
@@ -381,9 +451,10 @@ the preference-schema portion stays with 7.1 because it changes persisted owners
 **Done when:** the diff shows zero change on every pre-existing scenario, including
 profile-less cycling, running, triathlon, strength, and general-event fixtures;
 `planningMode.test.ts` covers structured-plan/demand-derived/evergreen capability states;
-goal-priority suggestion tests cover deduplication/tie-breaking/fallback; capacity tests
-cover explicit shortfall and exact multi-role identity; the new evergreen scenarios produce
-no `qualityWarnings` or `constraintViolations`; and the policy-drift guard passes.
+goal-priority suggestion tests cover deduplication/tie-breaking/fallback; strategy and
+capacity tests cover provenance, training-state inputs, time-aware shortfall, and exact
+multi-role identity; the new evergreen scenarios produce no `qualityWarnings` or
+`constraintViolations`; and the policy-drift guard passes.
 
 ---
 
@@ -411,12 +482,14 @@ architecture doc's description matches `planningMode.ts` and `evergreenStrategy.
 | File | Behaviour asserted |
 |---|---|
 | `engine/planningMode.test.ts` | explicit/legacy mode resolution; cycling structured-plan and running/triathlon/strength/general demand-derived strategy; passed/cancelled fallback; no residual taper |
-| `engine/evergreenStrategy.test.ts` | D-CAP table for `targetSessions` 2–6; required/target/optional cardinality invariants; explicit minimum-dose shortfall; `DEFAULT_BASE_DEMAND` is not an input |
+| `engine/evergreenStrategy.test.ts` | evidence-backed dose precedes packing; complete provenance; `unknown`/history-derived athlete state; 2–6 table only breaks valid-packing ties; `DEFAULT_BASE_DEMAND` is not an input |
+| `engine/trainingCapacity.test.ts` | session counts plus weekday/weekend minutes/windows form real capacity; zero/missing duration is unavailable or versioned fallback; explicit time-aware minimum-dose shortfall |
 | `engine/evergreenCoverage.test.ts` | evergreen athlete gets non-empty `CoverageState`; a recovery spin never satisfies `aerobic_volume` (ADR-0016 invariant, re-asserted for the new set) |
 | `engine/coverageSets.test.ts` | generic plan-coverage descriptors validate; the September set's entries are unchanged (snapshot) |
 | `engine/taperPolicy.test.ts` (extend) | 5-star `general_target` → no taper; cycling A race-week rule unchanged |
-| `engine/validation.test.ts` (extend) | profile range/ordering/duplicate rejection; positive preference durations and hard-unavailable modality validation |
-| `emulator/firestoreRules.emulator.test.ts` (extend) | `training_intent/profile` owner-only, immutable `createdAt`, out-of-range rejected |
+| `engine/validation.test.ts` (extend) | profile range/ordering/duplicate and enum/field-allowlist rejection; positive preference durations and hard-unavailable modality validation; invalid read recovery diagnostics |
+| `emulator/firestoreRules.emulator.test.ts` (extend) | `training_intent/profile` owner-only, immutable `createdAt`, out-of-range, unsupported planning-mode/organisation, and extraneous-field writes rejected |
+| `engine/planningOverlays.test.ts` | authored travel/fixed-activity overlays apply before ranking in structured, demand-derived, and evergreen paths |
 | `services/trainingIntentProfileService.test.ts` | `DataState` mapping for AVAILABLE / MISSING / INVALID / UNAVAILABLE |
 | `engine/scenarios.test.ts` (extend) | the three evergreen scenarios run clean |
 
@@ -426,7 +499,8 @@ architecture doc's description matches `planningMode.ts` and `evergreenStrategy.
 
 - [ ] An athlete with no events and no profile receives a coherent week from documented
       defaults — no crash, no empty candidate set, no fabricated event.
-- [ ] An eventless athlete's weekly targets change when `targetSessions` changes.
+- [ ] An eventless athlete's dose requirement is derived before packing; identical session
+      counts with materially different usable minutes can produce different shortfalls.
 - [ ] `coverageNeedTierForTemplate` is no longer a constant `3` for eventless athletes.
 - [ ] `taperActive` is false on every eventless day and on every dated `general_target`
       goal without an explicit `EventTaperSpec.startDate`.
@@ -434,8 +508,12 @@ architecture doc's description matches `planningMode.ts` and `evergreenStrategy.
 - [ ] `SEPTEMBER_CYCLING_EVENT_SESSION_COVERAGE` is byte-identical.
 - [ ] `TrainingIntentProfile` and `UserPreferences` each have one documented field
       ownership; no composer merge can create conflicting live preferences.
-- [ ] Required occurrences fit the declared minimum capacity or yield an explicit
-      minimum-dose shortfall; no fictional cross-role credit is created.
+- [ ] Required occurrences fit real minutes/windows and declared minimum packing capacity,
+      or yield an explicit `minimum_dose_shortfall`; no fictional cross-role credit is
+      created.
+- [ ] Every evidence-authoritative dose rule has source, population, outcome, confidence,
+      applicability, authority class, policy version, and review date; product packing
+      heuristics are distinguishable from those rules.
 - [ ] `npm run check` and `npm run test:rules` green; policy-drift guard passes.
 - [ ] No engine module outside `planningMode.ts` derives planning mode from
       `focusEvent === null`.
@@ -477,9 +555,10 @@ Every item is independently revertible. 7.1 and 7.7 land value without 7.3–7.5
 ## Docs to update
 
 * [ADR-0017](../adr/0017-training-intent-profile-and-planning-modes.md) — accept before 7.1.
-* `docs/architecture/recommendation-engine.md` — mode/strategy resolution, preference
-  ownership, and generic coverage registry.
-* `docs/plans/README.md` — Phase 7B row; D-MODE / D-CAP / D-COVSET / D-OWNERSHIP / D-ORG / D-TAPERSCOPE
+* `docs/architecture/recommendation-engine.md` — evidence-to-dose-to-capacity-to-packing
+  flow, mode/strategy resolution, preference ownership, overlays, and generic coverage
+  registry.
+* `docs/plans/README.md` — Phase 7B row; D-MODE / D-DOSE / D-CAP / D-COVSET / D-OWNERSHIP / D-ORG / D-TAPERSCOPE
   in the decision register.
 * `docs/macrocycle-v5.md` — no change. It is the event-directed contract and stays that.
 
@@ -491,7 +570,7 @@ Every item is independently revertible. 7.1 and 7.7 land value without 7.3–7.5
 |---|:--:|---|---|
 | 7.1 Persist `TrainingIntentProfile` | `[ ]` | ADR-0017 | Round-trips; rules tests green |
 | 7.2 Effective planning mode and event strategy | `[ ]` | 7.1 | Existing events keep event-directed structured/demand-derived paths |
-| 7.3 Evergreen strategy from capacity | `[ ]` | 7.1, 7.2 | Targets and roles obey min/target/max capacity invariants |
+| 7.3 Evidence dose → capacity → role packing | `[ ]` | 7.1, 7.2 | Dose provenance, time-aware capacity, and exact roles yield transparent shortfalls |
 | 7.4 Generic plan-coverage registry | `[ ]` | ADR-0017 | Both descriptors validate; September set byte-identical |
 | 7.5 Evergreen coverage + plan definition | `[ ]` | 7.3, 7.4 | Non-empty `CoverageState` eventless |
 | 7.6 `strength_development` key | `[ ]` | 7.3 | Exhaustive switches handled, no casts |

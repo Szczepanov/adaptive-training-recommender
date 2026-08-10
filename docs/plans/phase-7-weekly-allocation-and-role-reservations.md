@@ -48,12 +48,25 @@ forecast role occurrence or a reason it could not be placed.
 
 **Change:** add a pure `engine/weeklyAllocation.ts` domain module. Define:
 
-* `RequiredRoleOccurrence`: a stable id, coverage key, label, active-plan window, and
-  exact eligible template/workout identities for one remaining *minimum* session.
-* `RoleReservation`: occurrence id, selected date/template identity, and whether it was
-  preserved or moved.
-* `WeeklyRoleAllocationOutcome`: `reserved`, `fulfilled`, `moved`, or `missed`, with a
-  typed miss reason. Do not use free-text reasons for logic.
+* `RequiredRoleOccurrence`: immutable `id`, coverage-set id, coverage key, authored session
+  identity, plan phase, active-plan-window start/end, zero-based occurrence ordinal, label,
+  and exact eligible template/workout identities for one remaining *minimum* session.
+  Derive its id by canonical serialization of `coverageSetId | windowStart | windowEnd |
+  phase | coverageKey | authoredSessionIdentity | ordinal`; canonical-sort those fields
+  before enumeration. `authoredSessionIdentity` is the stable coverage-record identity, not
+  a selected candidate. The id is independent of candidate filtering and projected coverage.
+  Deduplicate by this same identity, not by title/modality or selection order.
+* `RoleReservation`: occurrence id, nullable nominated date, selected date/template or
+  workout identity, and `wasMoved`. A single exact `PlanSessionCoverage` identity may
+  reserve a bundled set of its explicitly granted role keys; no inferred or merely similar
+  coverage can bundle roles, and separate identities are not artificially split.
+* `WeeklyRoleAllocationOutcome`: mutually exclusive `reserved`, `fulfilled`, `missed`, or
+  `unresolved_search_budget`, plus `wasMoved` annotation (not a terminal `moved` status).
+  Valid lifecycle is unallocated -> reserved -> fulfilled/missed, unallocated -> missed,
+  or reserved -> reserved after reallocation with `wasMoved: true`. A terminal miss has
+  primary reason `no_exact_candidate`, `hard_safety_or_recovery`, `projected_fatigue`,
+  `fixed_seed`, or `no_conflict_free_date`, with optional observed blockers. Budget
+  exhaustion is never converted to a safety miss or free-text reason.
 * `WeeklyRoleAllocationReport`, added to `planner.ts` `WeekAheadPlan`.
 
 Derive occurrence count from `WeeklyCoverageRequirement.minimumSessions` minus exact,
@@ -64,8 +77,10 @@ the exact coverage keys already granted by `coverage.ts`; no modality/category i
 is introduced.
 
 **Done when:** `weeklyAllocation.test.ts` proves that a two-session required role creates
-two distinct occurrence ids, completed/projected occurrences reduce the count
-idempotently, and target-only/recovery-only requirements do not reserve a training date.
+two distinct deterministic occurrence ids, completed/projected occurrences reduce the
+count idempotently without changing remaining ids, target-only/recovery-only requirements
+do not reserve a training date, and the simulator/UI consume the same serialized outcome
+rather than reconstructing status or reason.
 
 ### 7A.2 `[ ]` Extract one projected-date evaluation seam
 
@@ -106,22 +121,37 @@ over all utility-ranked workout sequences:
    fatigue/history transition before recursing;
 4. retain the jointly feasible solution that fulfils the most occurrences.
 
+Its one `WeeklyAllocationSearchBudget` is: seven forecast dates, at most 14 occurrences,
+four canonically ordered exact date/template candidates per occurrence, depth at most the
+examined occurrence count, and 1,024 projected-state-transition nodes. Count a node before
+the transition (including a rejection); sorting/root setup costs no nodes. Prune only when
+current fulfilled plus remaining occurrences cannot beat the best known cardinality, and
+retain equality for stable tie-breaks. If any cap is reached, return the deterministic
+best-known jointly feasible partial allocation and mark all unproven remainders
+`unresolved_search_budget`, never `missed`. A candidate list larger than the per-occurrence
+cap itself triggers that status for unexamined alternatives. There is no wall-clock result
+cut-off: p95 <=50 ms and p99 <=100 ms on the fixed live-sized fixture are performance gates,
+not non-deterministic planning semantics.
+
 When more than one jointly feasible solution has equal cardinality, use this stable order:
 
 1. earliest active-plan-window end date;
 2. fewest remaining feasible dates for the occurrence;
 3. authored coverage key, then template id, then date.
 
-This order is a deterministic allocation tie-break, not a coaching-benefit score. A role
-with no feasible branch is immediately recorded as missed with its observed reason; it is
-never converted to an arbitrary template. Existing anchor dates are candidate preferences
-only: a reservation may use another safe date and must report that move.
+This order is a deterministic allocation tie-break, not a coaching-benefit score. Only a
+role exhausted within the declared search domain is recorded as missed with an observed
+reason; a budget-truncated role is unresolved. Neither is converted to an arbitrary
+template. Existing anchor dates are candidate preferences only: a reservation may use
+another safe date and must report that move.
 
 **Done when:** tests cover competing roles for one date, multiple occurrences of one role,
 a role that must move off an anchor nomination, and a no-branch safety exclusion. A
 regression proves two assignments individually feasible from the seed state but jointly
 infeasible after the first state transition; the solver must not reserve both. All
-reservations contain only exact eligible identities and never violate a hard gate.
+reservations contain only exact eligible identities and never violate a hard gate. Cap
+tests prove identical input yields the same best-known partial result and a typed unresolved
+outcome; performance fixtures meet the p95/p99 gates.
 
 ### 7A.4 `[ ]` Protect reservations while retaining greedy day selection
 
@@ -134,20 +164,23 @@ opportunity; the loop discovers that only after it has selected the support day.
 * On a reserved date, rank only candidates that fulfil the reserved occurrence. If the
   dynamic state makes them unsafe, recompute the remaining matching and move the
   occurrence when possible.
-* On an unreserved date, simulate each otherwise accepted supporting candidate through
-  the shared helper. Exclude it only when it reduces the maximum achievable stateful
-  required-role reservation count or invalidates an earlier-deadline reservation. This is the
-  ADR-0018 bounded viability check.
+* On an unreserved date, simulate each otherwise accepted supporting candidate **and
+  discretionary Rest** through the shared helper and the same `WeeklyAllocationSearchBudget`.
+  Exclude it when it reduces the maximum achievable stateful required-role reservation count,
+  invalidates an earlier-deadline reservation, or exhausts budget before proving preservation.
+  This is the ADR-0018 bounded viability check.
 * If a role becomes impossible, select the normal safe fallback (including Rest-first in
-  recover tier) and emit the typed miss. Never force a session, lower a fatigue threshold,
-  or choose Mobility/Recovery merely to reduce a miss count.
+  recover tier) and emit the typed miss. A true recover-tier Rest selection is not subject
+  to viability veto: safety wins, remaining reservations are recomputed, and its loss is
+  safety-attributed. Never force a session, lower a fatigue threshold, or choose
+  Mobility/Recovery merely to reduce a miss count.
 * Remove or generalise the narrow `beganAfterHardRaceSpecificExposure` fallback only when
   its escaped-case protection is subsumed by a dedicated allocation regression test.
 
 **Done when:** a low-cost/full-body support candidate may be selected when another safe
 quality/event-specific allocation remains, but is rejected when it would destroy the
-last one. A hard recovery ceiling produces a `missed` outcome and Rest rather than an
-unsafe training pick.
+last one; the same is true of discretionary Rest. A hard recovery ceiling produces a
+safety-attributed `missed` outcome and Rest rather than an unsafe training pick.
 
 ### 7A.5 `[ ]` Surface allocation evidence in simulator and week-ahead UI
 
@@ -196,7 +229,7 @@ semantic baseline is updated only after the acceptance criteria below pass in re
   minimum role: sustained quality, event-specific cycling, true aerobic volume, and
   primary strength.
 - [ ] A fresh athlete never misses such a role solely because a discretionary support or
-  Rest selection consumed its last safe opportunity.
+  discretionary Rest selection consumed its last safe opportunity.
 - [ ] A persistently stressed athlete may have more recovery than a healthy trajectory;
   any missed required role is explicit and safety/feasibility-attributed.
 - [ ] Acute stress followed by healthy readiness still regains projected train-tier days.
@@ -220,9 +253,10 @@ semantic baseline is updated only after the acceptance criteria below pass in re
 
 ## Risks and rollback
 
-* **Latency:** Measure one live-sized `generateWeekAheadPlanWithIntent` call and the
-  scenario suite before/after. If repeated viability checks exceed the agreed budget,
-  cache pure date evaluation/search inputs; do not silently switch to beam search.
+* **Latency:** The semantic node/depth/date/candidate caps above bound search; the fixed
+  live-sized fixture must meet p95 <=50 ms and p99 <=100 ms. If it does not, cache pure
+  date-evaluation/search inputs or reduce an explicitly reviewed cap; do not silently
+  switch to beam search or wall-clock-dependent allocation.
 * **Over-constrained plans:** Reservations apply only to minimum authored roles and only
   while an exact safe matching exists. If they crowd out legitimate support work, inspect
   the allocation report and adjust the authored coverage requirement in a separately

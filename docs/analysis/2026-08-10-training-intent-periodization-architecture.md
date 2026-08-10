@@ -60,18 +60,33 @@ conservative bias would create contradictory valid states and a permanent merge 
 Hard modality unavailability should extend the existing preference model and reuse the
 hard restriction path.
 
-### Capacity needs a ledger contract
+### Science policy must precede capacity and packing
 
-The useful meaning of a `min / target / max` schedule is:
+The evidence cited here is expressed primarily as dose dimensions (minutes, volume,
+frequency/exposure, intensity, progression, and specificity), not application session
+counts. The proposed implementation therefore resolves **goal/event context + inferred
+training state + evidence policy → adaptation-dose requirements → real time/session/window
+capacity → preference-compatible implementation → exact weekly role packing →
+readiness/history execution adaptation**.
 
-* minimum required roles fit within `minSessions`;
-* required plus target roles fit within `targetSessions`;
-* optional/stretch work alone uses the remaining capacity through `maxSessions`.
+`AthleteTrainingState` should be inferred conservatively from existing completed history:
+recent weekly duration/frequency, strength/aerobic/quality exposure, consistency/training
+age proxy, tolerated load/progression, and sport-specific history. It must have an explicit
+unknown fallback. Readiness is a daily execution modifier, not a substitute for that prior.
 
-When this cannot be packed, the result is a minimum-dose shortfall. It is not evidence to
-manufacture a combined session or to credit unrelated work as coverage. The initial
-2–6-session table is consequently a documented product heuristic, not a universal
-physiology prescription.
+The useful meaning of a `min / target / max` schedule is capacity, not a physiological
+definition:
+
+* evidence/goal minimums are independently derived, then packed into `minSessions` plus
+  usable time/windows;
+* required plus target coverage fits `targetSessions` and real time where feasible;
+* optional/stretch work alone uses capacity through `maxSessions`.
+
+When dose cannot be packed, the result is a typed minimum-dose or goal-specificity
+shortfall. It is not evidence to manufacture a combined session, credit unrelated work as
+coverage, or lower the underlying minimum to the user's session count. The initial
+2–6-session table is consequently a low-confidence product packing heuristic, never the
+source of an adaptation requirement.
 
 ### Stateful feasibility is required for Phase 7A
 
@@ -82,6 +97,14 @@ the jointly achievable role count. The smallest correct solver is a bounded dete
 search over required role occurrences only, applying the existing projected-date evaluator
 after every tentative assignment. It is distinct from ADR-0015's whole-horizon utility
 beam search.
+
+The measurable reservation invariant is a seven-date horizon, at most 14 required
+occurrences, at most four canonically sorted exact candidates per occurrence, depth at most
+the occurrence count, and 1,024 projected-state-transition nodes. The same budget applies
+to every support/Rest viability check. Pruning can discard only a branch unable to beat the
+best known fulfilled count; a cap returns the deterministic best-known partial result with
+`unresolved_search_budget`, never a false infeasibility miss. A p95 <=50 ms / p99 <=100 ms
+fixture budget is operational only; wall-clock time is not a semantic cut-off.
 
 ## Initial policy evidence and provenance
 
@@ -96,10 +119,12 @@ prescription.
 | Frequency as session packing | [Volume-equated hypertrophy frequency meta-analysis](https://pubmed.ncbi.nlm.nih.gov/30558493/) | Healthy adults in resistance training; frequency's hypertrophy effect is not meaningful when volume is equated. | Medium: supports treating a third strength day as a distribution/preference choice, not a required outcome rule. |
 | Initial 2–6 session allocation table | Repository product policy | Capacity packing of required/target/optional roles. | Low as scientific evidence: versioned heuristic only, to be calibrated against explicit minimum-dose shortfall, adherence, readiness, and outcome evidence. |
 
-Each implementation constant must retain this classification in its policy table: source,
-population, outcome, confidence, and whether it is an evidence floor or a packing
-heuristic. The UI must communicate a capacity/preference trade-off or minimum-dose
-shortfall rather than silently claiming scientific certainty.
+Each implementation rule that claims scientific authority must retain: source,
+population, outcome, confidence, applicability conditions, authority class
+(`guideline_floor`, `outcome_supported_default`, `conditional_prior`, or
+`product_heuristic`), policy version, and review date. The UI must communicate a
+capacity/preference trade-off or minimum-dose shortfall rather than silently claiming
+scientific certainty.
 
 ## Follow-up
 
