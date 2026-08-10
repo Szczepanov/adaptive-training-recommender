@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { preferencesService } from '../services/preferencesService';
-import type { UserPreferences, RecoveryStyle, TimeOfDay, ExplanationVerbosity } from '../engine/models';
+import { trainingIntentProfileService } from '../services/trainingIntentProfileService';
+import { DEFAULT_TRAINING_INTENT_PROFILE } from '../engine/evergreenStrategy';
+import type { UserPreferences, RecoveryStyle, TimeOfDay, ExplanationVerbosity, PlanningMode, TrainingIntentProfile, TrainingPriority } from '../engine/models';
 import { CANONICAL_MODALITIES } from '../utils/modalities';
 import { getErrorMessage } from '../utils/errors';
 import './Preferences.css';
@@ -10,8 +12,28 @@ interface PreferencesProps {
   onNavigate?: (screen: 'home' | 'checkin' | 'goals' | 'constraints' | 'preferences') => void;
 }
 
+type TrainingIntentProfileDraft = Omit<TrainingIntentProfile, 'userId' | 'createdAt' | 'updatedAt'>;
+
+function defaultTrainingIntentProfile(): TrainingIntentProfileDraft {
+  return {
+    ...DEFAULT_TRAINING_INTENT_PROFILE,
+    priorities: [...DEFAULT_TRAINING_INTENT_PROFILE.priorities],
+    weeklyCommitment: { ...DEFAULT_TRAINING_INTENT_PROFILE.weeklyCommitment },
+  };
+}
+
+const TRAINING_PRIORITY_OPTIONS: Array<{ value: TrainingPriority; label: string }> = [
+  { value: 'health', label: 'Health and energy' },
+  { value: 'balanced_performance', label: 'Balanced fitness' },
+  { value: 'endurance', label: 'Endurance' },
+  { value: 'strength_muscle', label: 'Strength and muscle' },
+  { value: 'speed_power', label: 'Speed and power' },
+  { value: 'sport_readiness', label: 'Sport readiness' },
+];
+
 export function Preferences({ userId }: PreferencesProps) {
   const [preferences, setPreferences] = useState<UserPreferences | null>(null);
+  const [trainingIntentProfile, setTrainingIntentProfile] = useState<TrainingIntentProfileDraft>(defaultTrainingIntentProfile);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -20,7 +42,10 @@ export function Preferences({ userId }: PreferencesProps) {
   const loadPreferences = useCallback(async () => {
     try {
       setLoading(true);
-      const prefs = await preferencesService.getPreferences(userId);
+      const [prefs, profileState] = await Promise.all([
+        preferencesService.getPreferences(userId),
+        trainingIntentProfileService.getProfileState(userId),
+      ]);
       
       if (!prefs) {
         // Initialize with defaults
@@ -28,6 +53,18 @@ export function Preferences({ userId }: PreferencesProps) {
         setPreferences(defaults);
       } else {
         setPreferences(prefs);
+      }
+      if (profileState.status === 'AVAILABLE') {
+        setTrainingIntentProfile({
+          planningMode: profileState.data.planningMode,
+          priorities: profileState.data.priorities,
+          weeklyCommitment: profileState.data.weeklyCommitment,
+          organizationPreference: profileState.data.organizationPreference,
+          schemaVersion: profileState.data.schemaVersion,
+        });
+      } else {
+        setTrainingIntentProfile(defaultTrainingIntentProfile());
+        if (profileState.status !== 'MISSING') setError('Training intent could not be loaded. Defaults are shown, but saving may fail until the service is available.');
       }
     } catch (err) {
       console.error('Error loading preferences:', err);
@@ -47,7 +84,10 @@ export function Preferences({ userId }: PreferencesProps) {
     try {
       setSaving(true);
       setError(null);
-      await preferencesService.upsertPreferences(userId, preferences);
+      await Promise.all([
+        preferencesService.upsertPreferences(userId, preferences),
+        trainingIntentProfileService.upsert(userId, trainingIntentProfile),
+      ]);
       setHasChanges(false);
     } catch (err: unknown) {
       setError(getErrorMessage(err) || 'Failed to save preferences');
@@ -209,6 +249,51 @@ export function Preferences({ userId }: PreferencesProps) {
     updatePreference('avoidedModalities', updated);
   };
 
+  const updateTrainingIntentProfile = (update: Partial<TrainingIntentProfileDraft>) => {
+    setTrainingIntentProfile(current => ({ ...current, ...update }));
+    setHasChanges(true);
+  };
+
+  const updateWeeklyCommitment = (key: keyof TrainingIntentProfileDraft['weeklyCommitment'], value: number) => {
+    updateTrainingIntentProfile({
+      weeklyCommitment: { ...trainingIntentProfile.weeklyCommitment, [key]: value },
+    });
+  };
+
+  const toggleTrainingPriority = (priority: TrainingPriority) => {
+    const priorities = trainingIntentProfile.priorities.includes(priority)
+      ? trainingIntentProfile.priorities.filter(item => item !== priority)
+      : [...trainingIntentProfile.priorities, priority];
+    updateTrainingIntentProfile({ priorities });
+  };
+
+  const moveTrainingPriority = (priority: TrainingPriority, direction: -1 | 1) => {
+    const index = trainingIntentProfile.priorities.indexOf(priority);
+    const nextIndex = index + direction;
+    if (index < 0 || nextIndex < 0 || nextIndex >= trainingIntentProfile.priorities.length) return;
+    const priorities = [...trainingIntentProfile.priorities];
+    [priorities[index], priorities[nextIndex]] = [priorities[nextIndex], priorities[index]];
+    updateTrainingIntentProfile({ priorities });
+  };
+
+  const addUnavailableModality = (modality: NonNullable<UserPreferences['unavailableModalities']>[number]) => {
+    if (!preferences || !modality) return;
+    const unavailableModalities = preferences.unavailableModalities ?? [];
+    if (unavailableModalities.includes(modality)) return;
+    setPreferences({
+      ...preferences,
+      unavailableModalities: [...unavailableModalities, modality],
+      preferredModalities: preferences.preferredModalities.filter(item => item !== modality),
+      avoidedModalities: preferences.avoidedModalities.filter(item => item !== modality),
+    });
+    setHasChanges(true);
+  };
+
+  const removeUnavailableModality = (modality: NonNullable<UserPreferences['unavailableModalities']>[number]) => {
+    if (!preferences) return;
+    updatePreference('unavailableModalities', (preferences.unavailableModalities ?? []).filter(item => item !== modality));
+  };
+
   if (loading) {
     return (
       <div className="preferences-container">
@@ -251,6 +336,77 @@ export function Preferences({ userId }: PreferencesProps) {
       )}
 
       <div className="preferences-content">
+        <div className="preference-section">
+          <h2>Training Plan</h2>
+          <p className="preference-desc">
+            Set the kind of training you want to organize. These are planning inputs, not a promise of a fixed workout every day.
+          </p>
+          <div className="units-grid">
+            <div className="unit-group">
+              <label htmlFor="planning-mode">Planning mode</label>
+              <select
+                id="planning-mode"
+                value={trainingIntentProfile.planningMode}
+                onChange={(event) => updateTrainingIntentProfile({ planningMode: event.target.value as PlanningMode })}
+              >
+                <option value="evergreen">Continuous training</option>
+                <option value="event_directed">Follow scheduled events</option>
+              </select>
+            </div>
+          </div>
+          <p className="preference-desc">Priorities, in order. Select only the outcomes you want this plan to emphasize.</p>
+          <div className="priority-options" role="group" aria-label="Training priorities">
+            {TRAINING_PRIORITY_OPTIONS.map(option => (
+              <label key={option.value} className="priority-option">
+                <input
+                  type="checkbox"
+                  checked={trainingIntentProfile.priorities.includes(option.value)}
+                  onChange={() => toggleTrainingPriority(option.value)}
+                />
+                <span>{option.label}</span>
+              </label>
+            ))}
+          </div>
+          {trainingIntentProfile.priorities.length > 0 && (
+            <div className="priority-order" aria-label="Selected priority order">
+              <span>Priority order:</span>
+              {trainingIntentProfile.priorities.map((priority, index) => {
+                const label = TRAINING_PRIORITY_OPTIONS.find(option => option.value === priority)?.label ?? priority;
+                return (
+                  <span key={priority} className="priority-order-item">
+                    {label}
+                    <button type="button" onClick={() => moveTrainingPriority(priority, -1)} disabled={index === 0} aria-label={`Move ${label} earlier`}>↑</button>
+                    <button type="button" onClick={() => moveTrainingPriority(priority, 1)} disabled={index === trainingIntentProfile.priorities.length - 1} aria-label={`Move ${label} later`}>↓</button>
+                  </span>
+                );
+              })}
+            </div>
+          )}
+          <p className="preference-desc">Weekly session range</p>
+          <div className="time-inputs">
+            {([
+              ['minSessions', 'Minimum'],
+              ['targetSessions', 'Typical'],
+              ['maxSessions', 'Maximum'],
+            ] as const).map(([key, label]) => (
+              <div key={key} className="time-input-group">
+                <label htmlFor={`sessions-${key}`}>{label}</label>
+                <div className="time-input">
+                  <input
+                    id={`sessions-${key}`}
+                    type="number"
+                    min="1"
+                    max="14"
+                    value={trainingIntentProfile.weeklyCommitment[key]}
+                    onChange={(event) => updateWeeklyCommitment(key, Number(event.target.value))}
+                  />
+                  <span>sessions</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
         {/* Preferred Training Types */}
         <div className="preference-section">
           <h2>Training I Enjoy</h2>
@@ -317,6 +473,39 @@ export function Preferences({ userId }: PreferencesProps) {
             >
               Add Custom
             </button>
+          </div>
+        </div>
+
+        <div className="preference-section">
+          <h2>Unavailable Training Types</h2>
+          <p className="preference-desc">
+            Hard exclusions: these activities will not be offered, even when they would otherwise fit the plan.
+          </p>
+          <div className="modality-select-group">
+            <select
+              value=""
+              onChange={(event) => {
+                if (event.target.value) {
+                  addUnavailableModality(event.target.value as NonNullable<UserPreferences['unavailableModalities']>[number]);
+                  event.target.value = '';
+                }
+              }}
+            >
+              <option value="">+ Add unavailable training type...</option>
+              {CANONICAL_MODALITIES.map(item => (
+                <option key={item.value} value={item.value} disabled={(preferences.unavailableModalities ?? []).includes(item.value as NonNullable<UserPreferences['unavailableModalities']>[number])}>
+                  {item.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="modality-list">
+            {(preferences.unavailableModalities ?? []).map(modality => (
+              <div key={modality} className="modality-chip unavailable">
+                <span>{modality}</span>
+                <button type="button" aria-label={`Remove ${modality} from unavailable`} onClick={() => removeUnavailableModality(modality)}>×</button>
+              </div>
+            ))}
           </div>
         </div>
 

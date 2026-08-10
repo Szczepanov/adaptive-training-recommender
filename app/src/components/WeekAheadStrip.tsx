@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { WeekAheadDay, WeekAheadPlan } from '../engine/planner';
-import type { NextDayPotentialPlan } from '../engine/models';
+import type { NextDayPotentialPlan, TrainingIntentProfile } from '../engine/models';
 import './WeekAheadStrip.css';
 
 interface WeekAheadStripProps {
@@ -8,6 +8,7 @@ interface WeekAheadStripProps {
   nextDayPlan?: NextDayPotentialPlan | null;
   selectedTier?: 'green' | 'yellow' | 'red';
   onSelectTier?: (tier: 'green' | 'yellow' | 'red') => void;
+  trainingIntentProfile?: TrainingIntentProfile | null;
 }
 
 const MODALITY_ICON: Record<string, string> = {
@@ -41,13 +42,19 @@ function weekdayLabel(dateStr: string): string {
   return WEEKDAY_FORMATTER.format(new Date(dateStr + 'T00:00:00Z'));
 }
 
-export function WeekAheadStrip({ plan, nextDayPlan, selectedTier = 'green', onSelectTier }: WeekAheadStripProps) {
+export function WeekAheadStrip({ plan, nextDayPlan, selectedTier = 'green', onSelectTier, trainingIntentProfile }: WeekAheadStripProps) {
   const [selectedIndex, setSelectedIndex] = useState(0);
 
   if (!plan || plan.days.length === 0) return null;
 
   const safeIndex = Math.min(selectedIndex, plan.days.length - 1);
   const selected = plan.days[safeIndex];
+  const openObjective = plan.microcycleObjectives.find(objective =>
+    (objective.completedCredit ?? objective.completedExposures) < (objective.requiredCredit ?? objective.targetExposures),
+  );
+  const evergreenWeekPurpose = trainingIntentProfile?.planningMode === 'evergreen'
+    ? `${trainingIntentProfile.weeklyCommitment.targetSessions} typical sessions${openObjective ? `; ${openObjective.title} is still open` : ''}.`
+    : null;
   // ADR-0018 D-MISS: forecast evidence rendered straight from the shared allocation
   // report, never rebuilt from the selected recommendations, and never presented as
   // completed training.
@@ -125,6 +132,10 @@ export function WeekAheadStrip({ plan, nextDayPlan, selectedTier = 'green', onSe
           </button>
         ))}
       </div>
+
+      {evergreenWeekPurpose && (
+        <p className="week-purpose">Week purpose: {evergreenWeekPurpose}</p>
+      )}
 
       <div className={`week-ahead-detail confidence-${selected.confidence}`}>
         <div className="detail-header">

@@ -3,7 +3,8 @@ import { buildEvergreenPlanDefinition } from './planSchedule';
 import type { EvidenceBackedStrategy } from './evergreenStrategy';
 import type { ResolvedTrainingCapacity } from './trainingCapacity';
 import type { WeeklyBudget } from './weeklyDosePacking';
-import { buildCoverageState } from './coverage';
+import { buildCoverageState, coverageNeedTierForTemplate } from './coverage';
+import { ENRICHED_TEMPLATES } from './templates';
 
 const strategy: EvidenceBackedStrategy = {
     requirements: [{ adaptation: 'aerobic_endurance', priority: 'required', floor: { dose: { unit: 'minutes', value: 150 }, semantics: 'guideline_recommended_minimum' }, target: { unit: 'minutes', minimum: 150, target: 150, maximum: 300 }, substitutionPolicy: { equivalentModalitiesAllowed: true, permittedModalities: ['Cycling'] }, evidence: { sourceId: 'test', population: 'test', outcome: 'test', confidence: 'high', applicability: [], authority: 'guideline_target', policyVersion: 'test', reviewedOn: '2026-08-10' } }], warnings: [],
@@ -27,6 +28,9 @@ describe('evergreen plan definition', () => {
         const state = buildCoverageState(result.data, '2026-08-12');
         expect(state).toMatchObject({ phase: 'general', coverageSetId: 'evergreen_general' });
         expect(state.requirements.map(requirement => requirement.key)).toContain('aerobic_volume');
+        const zone2 = ENRICHED_TEMPLATES.find(template => template.id === 'end_easy_01');
+        if (!zone2) throw new Error('Zone 2 template fixture missing');
+        expect(coverageNeedTierForTemplate(state, zone2)).not.toBe(3);
     });
 
     it('uses strength_development only for a packed evergreen strength requirement', () => {

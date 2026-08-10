@@ -7,6 +7,7 @@ import { evaluatePeriodizationPhase, resolveMultiEventObjectives, type DroppedCo
 import { resolvePlanDefinitionForEvent, type PlanDefinition } from './planSchedule';
 import { addDaysToLocalDateString } from '../utils/localDate';
 import { resolvePlanningContext, type PlanningContext } from './planningMode';
+import { applyPlanningOverlays } from './planningOverlays';
 
 export type PlannedRecoveryReason = 
   | 'scheduled_recovery'   // Prescribed microcycle rest day
@@ -149,13 +150,13 @@ export async function resolveTrainingIntent(
     const microcycle: MicrocycleState = { ...builtMicrocycle, objectives: multiEventResolution.objectives };
     const unresolvedObjectives = getUnresolvedObjectives(microcycle);
     const fatigue = buildFatigueStateFromHistory(history, computeInternalResponseStrain(readiness), date);
-    const plannedDose = resolvePlannedDoseForDate(
+    const plannedDose = applyPlanningOverlays(resolvePlannedDoseForDate(
         periodization.phase,
         microcycle.objectives,
         unresolvedObjectives,
         planDefinition,
         date,
-    );
+    ), date, authoredPlanBlocks, planDefinition);
     return {
         planningContext, periodization, unresolvedObjectives, plannedDose, fatigue, history, historySnapshot, microcycle,
         droppedContributorObjectives: multiEventResolution.droppedContributorObjectives,

@@ -638,6 +638,7 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
             nextDayPlan={nextDayPlan}
             selectedTier={selectedNextDayTier}
             onSelectTier={setSelectedNextDayTier}
+            trainingIntentProfile={decisionInput?.trainingIntentProfile}
           />
         </div>
 

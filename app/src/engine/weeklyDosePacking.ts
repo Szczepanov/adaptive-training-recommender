@@ -2,6 +2,7 @@ import type { AdaptationDoseRequirement, AdaptationKey, EvidenceBackedStrategy }
 import type { ResolvedTrainingCapacity } from './trainingCapacity';
 import { EVERGREEN_GENERAL_COVERAGE_SET } from '../workouts/event-plan';
 import { WORKOUTS } from '../workouts/catalog';
+import { getDayDiff } from '../utils/localDate';
 
 export interface CoverageRoleDescriptor {
     /** Stable authored identity; never a category/modality similarity match. */
@@ -15,6 +16,20 @@ export interface CoverageSetDescriptor {
     id: string;
     roles: readonly CoverageRoleDescriptor[];
 }
+
+/**
+ * Legacy 2-to-6-session product policy. It is deliberately a placement preference,
+ * not a dose rule: D-DOSE and actual usable capacity remain authoritative. The value is
+ * consulted only after two candidate roles deliver the same dose in otherwise valid
+ * windows, to prefer a less-clustered week. Counts above six use the six-session row.
+ */
+export const LEGACY_SESSION_COUNT_TIE_BREAKER = {
+    2: { preferredSpacingDays: 3 },
+    3: { preferredSpacingDays: 2 },
+    4: { preferredSpacingDays: 1 },
+    5: { preferredSpacingDays: 1 },
+    6: { preferredSpacingDays: 1 },
+} as const;
 
 function minimumDuration(workoutIds: readonly string[]): number {
     return Math.min(...workoutIds.map(id => WORKOUTS.find(workout => workout.id === id)?.duration.minimumMin ?? Number.POSITIVE_INFINITY));
@@ -68,14 +83,25 @@ function desiredDose(requirement: AdaptationDoseRequirement): number {
     return requirement.floor?.dose.value ?? requirement.target.target;
 }
 
-function rolePermitsRequirement(role: CoverageRoleDescriptor, requirement: AdaptationDoseRequirement): boolean {
+function permittedWorkoutIds(role: CoverageRoleDescriptor, requirement: AdaptationDoseRequirement): string[] {
     const permitted = new Set(requirement.substitutionPolicy.permittedModalities.map(modality => modality.toLowerCase()));
-    return role.exactWorkoutIds.some(workoutId => {
+    return role.exactWorkoutIds.filter(workoutId => {
         const modality = WORKOUTS.find(workout => workout.id === workoutId)?.modality;
         if (!modality) return false;
         const canonical = modality === 'cross_training' ? 'other' : modality;
         return permitted.has(canonical);
     });
+}
+
+function placementTieBreakerPenalty(
+    date: string,
+    packed: readonly MutableOccurrence[],
+    targetSessions: number,
+): number {
+    if (packed.length === 0) return 0;
+    const row = LEGACY_SESSION_COUNT_TIE_BREAKER[Math.min(6, Math.max(2, targetSessions)) as 2 | 3 | 4 | 5 | 6];
+    const nearestSessionDays = Math.min(...packed.map(occurrence => Math.abs(getDayDiff(date, occurrence.date))));
+    return Math.max(0, row.preferredSpacingDays - nearestSessionDays);
 }
 
 function warningFor(requirement: AdaptationDoseRequirement, delivered: number): PackingWarning | null {
@@ -116,7 +142,7 @@ export function packWeeklyDose(
 
     for (const requirement of requirements) {
         const adaptationCandidates = coverage.roles.filter(role => role.adaptations.includes(requirement.adaptation));
-        const candidates = adaptationCandidates.filter(role => rolePermitsRequirement(role, requirement));
+        const candidates = adaptationCandidates.filter(role => permittedWorkoutIds(role, requirement).length > 0);
         if (candidates.length === 0) {
             const code = adaptationCandidates.length > 0 ? 'goal_constraint_conflict' : 'no_exact_eligible_role';
             shortfalls.push({ code, adaptation: requirement.adaptation, message: code === 'goal_constraint_conflict'
@@ -134,7 +160,13 @@ export function packWeeklyDose(
             const assignment = candidates
                 .flatMap(role => slots.filter(slot => !slot.used && slot.availableMinutes >= role.durationMinutes)
                     .map(slot => ({ role, slot })))
-                .sort((left, right) => right.role.durationMinutes - left.role.durationMinutes || left.role.id.localeCompare(right.role.id))[0];
+                .sort((left, right) =>
+                    right.role.durationMinutes - left.role.durationMinutes
+                    || placementTieBreakerPenalty(left.slot.date, packed, capacity.targetSessions)
+                        - placementTieBreakerPenalty(right.slot.date, packed, capacity.targetSessions)
+                    || left.role.id.localeCompare(right.role.id)
+                    || left.slot.date.localeCompare(right.slot.date),
+                )[0];
             if (!assignment) break;
             assignment.slot.used = true;
             const occurrence: MutableOccurrence = {
@@ -142,7 +174,7 @@ export function packWeeklyDose(
                 coverageSetId: coverage.id,
                 coverageRoleId: assignment.role.id,
                 date: assignment.slot.date,
-                exactWorkoutIds: assignment.role.exactWorkoutIds,
+                exactWorkoutIds: permittedWorkoutIds(assignment.role, requirement),
                 adaptations: assignment.role.adaptations,
                 priority: requirement.priority,
                 descriptor: assignment.role,

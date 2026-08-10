@@ -17,6 +17,12 @@
   margin-bottom: 1rem;
 }
 
+.week-purpose {
+  margin: -0.25rem 0 1rem;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+}
+
 .tier-selector {
   display: flex;
   align-items: center;

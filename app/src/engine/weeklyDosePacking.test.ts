@@ -35,7 +35,9 @@ describe('weekly dose packing', () => {
         const tooShort = packWeeklyDose(healthStrategy, capacity(45, 3), coverage);
         const enoughTime = packWeeklyDose(healthStrategy, capacity(60, 3), coverage);
         expect(tooShort.requiredRoles).toHaveLength(0);
+        expect(tooShort.shortfalls.map(warning => warning.code)).toEqual(['below_guideline_range']);
         expect(enoughTime.requiredRoles).toHaveLength(3);
+        expect(enoughTime.shortfalls).toEqual([]);
     });
 
     it('does not fabricate cross-modality credit when the exact role conflicts with the requirement', () => {
@@ -46,5 +48,63 @@ describe('weekly dose packing', () => {
         const budget = packWeeklyDose(runningOnly, capacity(60, 2), coverage);
         expect(budget.requiredRoles).toEqual([]);
         expect(budget.shortfalls).toEqual([expect.objectContaining({ code: 'goal_constraint_conflict', adaptation: 'aerobic_endurance' })]);
+    });
+
+    it('keeps only permitted exact workout identities when a role has valid substitutions', () => {
+        const runningOnly = {
+            ...healthStrategy,
+            requirements: [{ ...healthStrategy.requirements[0], substitutionPolicy: { equivalentModalitiesAllowed: true, permittedModalities: ['Running'] } }],
+        };
+        const mixedCoverage: CoverageSetDescriptor = {
+            id: 'mixed-modalities',
+            roles: [{ id: 'aerobic', adaptations: ['aerobic_endurance'], exactWorkoutIds: ['cycling_zone2_standard_01', 'running_easy_continuous_01'], durationMinutes: 60 }],
+        };
+        const budget = packWeeklyDose(runningOnly, capacity(60, 2), mixedCoverage);
+        expect(budget.requiredRoles.map(role => role.exactWorkoutIds)).toEqual([
+            ['running_easy_continuous_01'],
+            ['running_easy_continuous_01'],
+        ]);
+    });
+
+    it('keeps required, target, and optional roles inside their respective session ceilings', () => {
+        const strategy: EvidenceBackedStrategy = {
+            requirements: [
+                { ...healthStrategy.requirements[0], target: { unit: 'minutes', minimum: 120, target: 120, maximum: 120 } },
+                { ...healthStrategy.requirements[0], adaptation: 'strength', priority: 'target', floor: null, target: { unit: 'sessions', minimum: 1, target: 1, maximum: 1 }, substitutionPolicy: { equivalentModalitiesAllowed: false, permittedModalities: ['Strength'] } },
+                { ...healthStrategy.requirements[0], adaptation: 'high_intensity', priority: 'optional', floor: null, target: { unit: 'sessions', minimum: 0, target: 1, maximum: 1 }, substitutionPolicy: { equivalentModalitiesAllowed: false, permittedModalities: ['Cycling'] } },
+            ], warnings: [],
+        };
+        const roles: CoverageSetDescriptor = {
+            id: 'cardinality-test',
+            roles: [
+                { id: 'aerobic', adaptations: ['aerobic_endurance'], exactWorkoutIds: ['cycling_zone2_standard_01'], durationMinutes: 60 },
+                { id: 'strength', adaptations: ['strength'], exactWorkoutIds: ['strength_full_body_maintenance_01'], durationMinutes: 45 },
+                { id: 'quality', adaptations: ['high_intensity'], exactWorkoutIds: ['cycling_controlled_threshold_4x8_01'], durationMinutes: 45 },
+            ],
+        };
+        const fourSessionCapacity = { ...capacity(60, 4), minSessions: 2, targetSessions: 3, maxSessions: 4 };
+        const budget = packWeeklyDose(strategy, fourSessionCapacity, roles);
+        expect(budget.requiredRoles).toHaveLength(2);
+        expect(budget.targetRoles).toHaveLength(1);
+        expect(budget.optionalRoles).toHaveLength(1);
+        expect(new Set([...budget.requiredRoles, ...budget.targetRoles, ...budget.optionalRoles].map(role => role.date)).size).toBe(4);
+    });
+
+    it('uses the 2-to-6-session policy only to break equal-dose placement ties', () => {
+        const evenlyViable = {
+            ...capacity(60, 2),
+            usableWindows: [
+                { date: '2026-08-10', availableMinutes: 60 },
+                { date: '2026-08-12', availableMinutes: 60 },
+                { date: '2026-08-13', availableMinutes: 60 },
+            ],
+        };
+        const budget = packWeeklyDose({
+            ...healthStrategy,
+            requirements: [{ ...healthStrategy.requirements[0], floor: null, target: { unit: 'minutes', minimum: 120, target: 120, maximum: 120 } }],
+        }, evenlyViable, coverage);
+
+        expect(budget.requiredRoles.map(role => role.date)).toEqual(['2026-08-10', '2026-08-13']);
+        expect(budget.shortfalls).toEqual([]);
     });
 });

@@ -36,6 +36,7 @@ import { resolveAvailability } from './schedule';
 import { workoutForTemplate } from '../workouts/prescription';
 import { resolveEvergreenPlan } from './evergreenPlanning';
 import { buildCoverageState } from './coverage';
+import { applyPlanningOverlays } from './planningOverlays';
 
 function pickTemplate(options: SessionTemplate[], seedDate: string): SessionTemplate | undefined {
     if (options.length === 0) return undefined;
@@ -311,7 +312,12 @@ export async function evaluateTrainingWithIntent(
             ...intent,
             microcycle: evergreen.microcycle,
             unresolvedObjectives,
-            plannedDose: resolvePlannedDoseForDate(intent.periodization.phase, evergreen.microcycle.objectives, unresolvedObjectives, evergreen.planDefinition, date),
+            plannedDose: applyPlanningOverlays(
+                resolvePlannedDoseForDate(intent.periodization.phase, evergreen.microcycle.objectives, unresolvedObjectives, evergreen.planDefinition, date),
+                date,
+                authoredPlanBlocks,
+                evergreen.planDefinition,
+            ),
         };
     }
 

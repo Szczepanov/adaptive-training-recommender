@@ -1,6 +1,6 @@
 # Phase 7B — Training intent, capacity, and first-class planning modes
 
-* **Status:** `Approved`
+* **Status:** `Implemented`
 * **Blocked by:** none; Phase 7A's reviewed semantic baseline is complete.
 * **Unlocks:** evergreen (non-event) athletes as a supported population; a reachable
   coverage ledger outside cycling events; capacity-sized weekly targets
@@ -174,22 +174,21 @@ outside `planningMode.ts` newly branches on `focusEvent === null` for mode purpo
 
 ---
 
-### 7.3 `[-]` Resolve dose first, then capacity and weekly packing
+### 7.3 `[x]` Resolve dose first, then capacity and weekly packing
 
-**Status (2026-08-10): In progress.** `evergreenStrategy.ts`,
-`trainingCapacity.ts`, and `weeklyDosePacking.ts` now resolve provenance-backed dose,
-time-aware capacity, exact-role packing, typed guideline shortfalls, and
-`goal_constraint_conflict` instead of inventing a cross-modality substitution. The
-remaining work is to complete the cardinality/tie-breaker contract and the full
-contradictory-history diagnostics before this item can be marked finished.
+**Implemented (2026-08-10).** `evergreenStrategy.ts`, `trainingCapacity.ts`, and
+`weeklyDosePacking.ts` resolve provenance-backed dose, time-aware capacity, exact-role
+packing, typed guideline shortfalls, and `goal_constraint_conflict` without inventing a
+cross-modality substitution. The exported 2-to-6 session table is limited to placement
+ties between equal-dose feasible candidates; it cannot derive dose or suppress a shortfall.
 
-**Current:** `DEFAULT_BASE_DEMAND` is the eventless strategy input, sized by nothing
-(G1, G2). `UserPreferences` has per-day duration defaults, but no proposed strategy API
-consumes them; the old proposed `targetSessions + first priority -> allocation table`
-pipeline would therefore make a cited packing heuristic the source of prescription.
+**Historical context:** `DEFAULT_BASE_DEMAND` was the eventless strategy input, sized by
+nothing (G1, G2). The implemented flow now takes per-day duration from
+`UserPreferences` and never lets session count or the packing tie-breaker define dose.
 
-**Change:** add pure `engine/evergreenStrategy.ts` and `engine/trainingCapacity.ts` modules
-with no I/O. They are versioned policy resolution, not a second rules engine.
+**Implemented components:** pure `engine/evergreenStrategy.ts` and
+`engine/trainingCapacity.ts` modules with no I/O. They are versioned policy resolution,
+not a second rules engine.
 
 #### 7.3a Resolve evidence-backed adaptation/dose requirements
 
@@ -357,17 +356,19 @@ assertion passes unmodified except for the added descriptor argument.
 
 ---
 
-### 7.5 `[-]` An evergreen coverage set and a plan definition to carry it
+### 7.5 `[x]` An evergreen coverage set and a plan definition to carry it
 
-**Status (2026-08-10): In progress.** The `general` coverage descriptor, rolling plan
-definition, descriptor-scoped role lookup, and non-empty eventless `CoverageState` are
-implemented. Evergreen aerobic coverage now has separate cycling and true continuous-run
-workout identities; walk-run remains non-equivalent. The shared planning-overlay contract
-and its demand-derived/evergreen fixtures remain before this item can be marked finished.
+**Implemented (2026-08-10).** The `general` coverage descriptor, rolling plan definition,
+descriptor-scoped role lookup, and non-empty eventless `CoverageState` are implemented.
+Evergreen aerobic coverage has distinct cycling and continuous-run workout identities; a
+walk-run remains non-equivalent. `applyPlanningOverlays` applies authored travel scales
+without double-scaling structured authored blocks, and fixed activities constrain schedule
+availability before selection. Acceptance fixtures cover both demand-derived and evergreen
+ranking paths.
 
-**Current:** coverage only exists for a cycling event (G3, G10).
+**Historical context:** coverage previously existed only for a cycling event (G3, G10).
 
-**Change:**
+**Implemented scope:**
 
 * Add `EVERGREEN_SESSION_COVERAGE` under a new `PlanPhase` member `'general'`
   (`evergreen` has no build/peak/taper arc — reusing `build` would make ADR-0016's
@@ -465,7 +466,7 @@ the preference-schema portion stays with 7.1 because it changes persisted owners
   This is a **display and default-seeding** mapping only: it pre-fills a profile form and
   becomes input to `resolveEvidenceBackedStrategy` only after the athlete confirms it. It must not
   silently persist or alter the profile-less engine default.
-* **`POLICY_VERSION`** → `2026-08-evergreen-packing-v1`; retain
+* **`POLICY_VERSION`** → `2026-08-planning-overlays-v1`; retain
   `2026-08-training-intent-modes-v1` and `2026-08-authored-travel-blocks-v1` in
   `HISTORICAL_POLICY_VERSIONS`. Verify with
   `node scripts/check-policy-drift.mjs <base-sha>`.
@@ -488,19 +489,16 @@ multi-role identity; the new evergreen scenarios produce no `qualityWarnings` or
 
 ---
 
-### 7.9 `[ ]` Surfaces and docs
+### 7.9 `[x]` Surfaces and docs
 
-* `components/Preferences.tsx` — an intent section: mode, priorities (ordered, plain
-  language — **never** "aerobic/anaerobic session counts", per the source analysis's
-  taxonomy finding), and min/typical/max sessions. Keep duration and modality controls in
-  their existing `UserPreferences` surface; add only the hard-unavailable modality option
-  there. Reuse `TrainingSettings.tsx`'s existing save/validate pattern.
-* `components/Home.tsx` — the weekly strip should state what the week is *for* in evergreen
-  mode ("2 of 3 typical sessions; strength role still open"), not a days-to-event count it
-  does not have.
-* `docs/architecture/recommendation-engine.md` — document the mode resolution and the two
-  coverage sets.
-* `docs/plans/README.md` — update the Phase 7B row and the ADR-0017 decision-register entries.
+**Implemented (2026-08-10).** `Preferences.tsx` reads and saves the separate
+`TrainingIntentProfile`, exposes continuous/event-directed mode, ordered plain-language
+priorities, and minimum/typical/maximum weekly sessions. Duration stays on
+`UserPreferences`; the same surface now exposes hard unavailable modalities. The weekly
+strip states an evergreen week's purpose and any open objective rather than implying a
+days-to-event countdown. The architecture reference now documents planning authority,
+capacity-to-packing flow, both coverage descriptors, and shared overlays; the plan index
+records Phase 7B as implemented.
 
 **Done when:** a profile can be created, edited and read back through the UI, and the
 architecture doc's description matches `planningMode.ts` and `evergreenStrategy.ts`.
@@ -603,10 +601,10 @@ Every item is independently revertible. 7.1 and 7.7 land value without 7.3–7.5
 |---|:--:|---|---|
 | 7.1 Persist `TrainingIntentProfile` | `[x]` | ADR-0017 | Round-trips; rules tests green |
 | 7.2 Effective planning mode and event strategy | `[x]` | 7.1 | Existing events keep event-directed structured/demand-derived paths |
-| 7.3 Evidence dose → capacity → role packing | `[-]` | 7.1, 7.2 | Dose provenance, time-aware capacity, and exact roles yield transparent shortfalls |
+| 7.3 Evidence dose → capacity → role packing | `[x]` | 7.1, 7.2 | Dose provenance, time-aware capacity, and exact roles yield transparent shortfalls |
 | 7.4 Generic plan-coverage registry | `[x]` | ADR-0017 | Both descriptors validate; September set byte-identical |
-| 7.5 Evergreen coverage + plan definition | `[-]` | 7.3, 7.4 | Non-empty `CoverageState` eventless |
+| 7.5 Evergreen coverage + plan definition | `[x]` | 7.3, 7.4 | Non-empty `CoverageState` eventless |
 | 7.6 `strength_development` key | `[x]` | 7.3 | Exhaustive switches handled, no casts |
 | 7.7 Taper containment + hard exclusions | `[x]` | — | 5-star `general_target` → no taper |
 | 7.8 Defaults, policy version, scenarios | `[x]` | 7.1–7.6 | Zero diff on existing scenarios |
-| 7.9 Surfaces and docs | `[ ]` | 7.1–7.7 | Profile editable; arch doc matches code |
+| 7.9 Surfaces and docs | `[x]` | 7.1–7.7 | Profile editable; arch doc matches code |

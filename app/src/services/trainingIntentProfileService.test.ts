@@ -48,6 +48,26 @@ describe('TrainingIntentProfile persistence boundary', () => {
         expect(state).toMatchObject({ status: 'AVAILABLE', data: { userId: 'u1', planningMode: 'evergreen' } });
     });
 
+    it('edits an existing profile while preserving its creation timestamp, then reads the edit back', async () => {
+        firestore.getDoc.mockResolvedValue({ exists: () => true, data: () => profile });
+        const service = new TrainingIntentProfileService();
+        const saved = await service.upsert('u1', {
+            planningMode: 'event_directed', priorities: ['endurance', 'strength_muscle'],
+            weeklyCommitment: { minSessions: 3, targetSessions: 4, maxSessions: 5 },
+            organizationPreference: 'auto', schemaVersion: 1,
+        });
+        expect(saved).toMatchObject({
+            userId: 'u1', planningMode: 'event_directed', priorities: ['endurance', 'strength_muscle'],
+            weeklyCommitment: { minSessions: 3, targetSessions: 4, maxSessions: 5 },
+            createdAt: profile.createdAt,
+        });
+
+        firestore.getDoc.mockResolvedValue({ exists: () => true, data: () => saved });
+        await expect(service.getProfileState('u1')).resolves.toMatchObject({
+            status: 'AVAILABLE', data: { planningMode: 'event_directed', weeklyCommitment: { targetSessions: 4 } },
+        });
+    });
+
     it('fails closed for malformed persisted documents', async () => {
         firestore.getDoc.mockResolvedValue({ exists: () => true, data: () => ({ ...profile, planningMode: 'unsupported' }) });
         await expect(new TrainingIntentProfileService().getProfileState('u1')).resolves.toMatchObject({ status: 'INVALID' });

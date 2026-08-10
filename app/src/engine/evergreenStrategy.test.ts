@@ -31,4 +31,14 @@ describe('evergreen evidence-backed strategy', () => {
         const strategy = resolveEvidenceBackedStrategy({ priorities: ['endurance'] }, inferAthleteTrainingState([], 7));
         expect(strategy.requirements.map(requirement => requirement.adaptation)).not.toContain('strength');
     });
+
+    it('treats conflicting structured modality and recorded session type as conservative evidence', () => {
+        const conflicting: CompletedExposure = {
+            ...exposure(60), modality: 'Cycling', trainingRecordLike: { type: 'Strength session', duration_min: 60, training_effect: 0, intensity_tag: '' },
+        };
+        const state = inferAthleteTrainingState(Array.from({ length: 12 }, () => conflicting), 28);
+        const strategy = resolveEvidenceBackedStrategy({ priorities: ['endurance'] }, state);
+        expect(state).toMatchObject({ trainingAgeProxy: 'unknown', inference: { dataQuality: 'conflicting', diagnostics: [{ code: 'conflicting_history' }] } });
+        expect(strategy.requirements.map(requirement => requirement.adaptation)).not.toContain('high_intensity');
+    });
 });

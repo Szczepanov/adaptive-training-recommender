@@ -41,6 +41,37 @@ Asynchronous; resolves training intent from completed/adherence history first. P
 
 ---
 
+## Planning authority and coverage sets (`planningMode.ts`, `evergreenPlanning.ts`)
+
+`resolvePlanningContext` is the single authority for planning mode. A persisted
+`TrainingIntentProfile` supplies the athlete-owned mode, ordered priorities, and weekly
+minimum/typical/maximum session commitment; `UserPreferences` remains the owner of
+weekday/weekend duration and hard unavailable modalities.
+
+An eligible event remains event-directed for profile-less athletes, preserving the legacy
+path. An explicit `event_directed` profile uses an eligible event when present. Otherwise
+the effective mode is `evergreen`: it has no focus event and no event strategy, even if an
+event record exists. Event-directed cycling uses `structured_plan`; running, triathlon,
+strength, and general events retain `demand_derived` planning.
+
+For evergreen mode, `resolveEvergreenPlan` combines bounded completed history with the
+profile and real schedule availability. `resolveEvidenceBackedStrategy` establishes dose
+requirements before `resolveTrainingCapacity` and `packWeeklyDose` map them to exact
+workout identities. The legacy 2-to-6-session table is only an equal-dose placement
+tie-breaker; it does not set a physiological requirement or hide a capacity shortfall.
+
+The coverage registry has two descriptors. `september_cycling_event` is the frozen,
+event-directed cycling contract. `evergreen_general` is a rolling seven-day `general`
+descriptor with modality-specific exact identities, including a continuous easy run that
+is distinct from walk-run. `buildCoverageState` receives the descriptor from the active
+plan, so the coverage tier is meaningful for eventless athletes too.
+
+Authored travel blocks scale planned dose through `applyPlanningOverlays` across
+structured, demand-derived, and evergreen paths. Fixed activities retain schedule
+ownership and constrain availability before candidates are selected.
+
+---
+
 ## Module map
 
 ```text

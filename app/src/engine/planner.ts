@@ -62,6 +62,7 @@ import { resolvePlanDefinitionForEvent, type PlanDefinition } from './planSchedu
 import { deriveObjectiveCreditFromProfile } from './stimulus';
 import { buildCoverageState, coverageNeedTierForTemplate, workoutIdForTemplateId } from './coverage';
 import { resolveEvergreenPlan } from './evergreenPlanning';
+import { applyPlanningOverlays } from './planningOverlays';
 import {
     allocationSurvives,
     attachExactEligibleIdentities,
@@ -444,13 +445,13 @@ export function evaluateProjectedDate(
             fatigue: rankingFatigue,
             periodization,
             history: state.projectedHistory,
-            plannedDose: resolvePlannedDoseForDate(
+            plannedDose: applyPlanningOverlays(resolvePlannedDoseForDate(
                 periodization.phase,
                 state.microcycle.objectives,
                 unresolved,
                 planDefinition,
                 date,
-            ),
+            ), date, shared.authoredPlanBlocks, planDefinition),
         },
         shared.context,
         shared.preferences,

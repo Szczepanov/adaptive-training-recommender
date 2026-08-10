@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { evaluateTraining, evaluateTrainingWithIntent, evaluateNextDayPlanWithIntent } from './rules';
 import { resolveTrainingIntent } from './trainingIntent';
-import type { AuthoredPlanBlock, DailyReadiness, FixedActivity, TrainingIntentProfile, UserContext, UserEvent } from './models';
+import type { AuthoredPlanBlock, DailyReadiness, FixedActivity, TrainingIntentProfile, UserContext, UserEvent, UserPreferences } from './models';
 import type { TrainingHistoryProvider } from './trainingHistory';
 
 const fixtureHistory: TrainingHistoryProvider = { reconstruct: async () => [] };
@@ -25,11 +25,20 @@ const roadRace: UserEvent = {
     id: 'a-road-race', title: 'Autumn Road Race', date: '2026-09-13', priority: 'A', lifecycle: 'scheduled', category: 'cycling_event',
     demandProfile: { aerobicEndurance: 0.8, thresholdPower: 0.9, vo2MaxPower: 0.7, repeatedSurges: 0.9, sprintPower: 0.5, fatigueResistance: 0.9, neuromuscular: 0.5 },
 };
+const runningRace: UserEvent = {
+    ...roadRace, id: 'a-running-race', title: 'Autumn Marathon', category: 'running_race',
+};
 
 const evergreenProfile: TrainingIntentProfile = {
     userId: 'u1', planningMode: 'evergreen', priorities: ['balanced_performance'],
     weeklyCommitment: { minSessions: 2, targetSessions: 3, maxSessions: 4 },
     organizationPreference: 'auto', schemaVersion: 1, createdAt: '', updatedAt: '',
+};
+const evergreenPreferences: UserPreferences = {
+    userId: 'u1', preferredRecoveryStyle: 'mixed', defaultWeekdayTimeMin: 60, defaultWeekendTimeMin: 60,
+    preferredTimeOfDay: 'flexible', preferredModalities: [], deprioritizedModalities: [], avoidedModalities: [],
+    explanationVerbosity: 'detailed', conservativeBias: false, preferredUnits: { distance: 'km', weight: 'kg', temperature: 'celsius' },
+    schemaVersion: 1, createdAt: '', updatedAt: '',
 };
 
 // Event-relative fixture: literal dates here are test inputs only. Runtime block dates are
@@ -120,6 +129,46 @@ describe('ADR-0012/0016 explicit event-relative PlanDefinition wiring', () => {
         expect(intent.plannedDose).toEqual({ volume: 0.6, intensity: 0.5 });
         expect(intent.microcycle.objectives.map(objective => objective.key).sort()).toEqual(['strength_maintenance', 'zone2_aerobic']);
     });
+
+    it('applies the same authored travel overlay to demand-derived and evergreen intent without a structured plan', async () => {
+        const travel: AuthoredPlanBlock = {
+            id: 'shared-trip', userId: 'u1', eventId: null, phase: 'travel',
+            startDate: '2026-08-10', endDate: '2026-08-12', volumeScale: 0.6, intensityScale: 0.5,
+            createdAt: '', updatedAt: '',
+        };
+        const demandDerivedBase = await resolveTrainingIntent('u1', [runningRace], '2026-08-11', readiness(), 7, fixtureHistory);
+        const demandDerivedTravel = await resolveTrainingIntent('u1', [runningRace], '2026-08-11', readiness(), 7, fixtureHistory, undefined, [travel]);
+        const evergreenBase = await resolveTrainingIntent('u1', [roadRace], '2026-08-11', readiness(), 7, fixtureHistory, undefined, [], evergreenProfile);
+        const evergreenTravel = await resolveTrainingIntent('u1', [roadRace], '2026-08-11', readiness(), 7, fixtureHistory, undefined, [travel], evergreenProfile);
+
+        expect(demandDerivedTravel.planningContext.eventStrategy).toBe('demand_derived');
+        expect(demandDerivedTravel.plannedDose).toEqual({
+            volume: demandDerivedBase.plannedDose.volume * 0.6,
+            intensity: demandDerivedBase.plannedDose.intensity * 0.5,
+        });
+        expect(evergreenTravel.plannedDose).toEqual({
+            volume: evergreenBase.plannedDose.volume * 0.6,
+            intensity: evergreenBase.plannedDose.intensity * 0.5,
+        });
+    });
+
+    it('applies authored travel intensity constraints before ranking for demand-derived and evergreen paths', async () => {
+        const travel: AuthoredPlanBlock = {
+            id: 'ranking-trip', userId: 'u1', eventId: null, phase: 'travel',
+            startDate: '2026-08-10', endDate: '2026-08-12', volumeScale: 0.6, intensityScale: 0.5,
+            createdAt: '', updatedAt: '',
+        };
+        const recommendations = await Promise.all([
+            evaluateTrainingWithIntent('u1', readiness(), context(), [runningRace], '2026-08-11', undefined, fixtureHistory, undefined, [], [travel]),
+            evaluateTrainingWithIntent('u1', readiness(), context(), [roadRace], '2026-08-11', undefined, fixtureHistory, undefined, [], [travel], evergreenProfile, evergreenPreferences),
+        ]);
+
+        for (const recommendation of recommendations) {
+            expect(recommendation.plannedDose?.intensity).toBeLessThan(0.8);
+            expect(recommendation.decisionTrace?.candidateScores.find(candidate => candidate.templateId === 'end_hard_01')?.excludedReasons)
+                .toContain('INTENSITY_SCALE_INADMISSIBLE');
+        }
+    });
 });
 
 describe('Phase 6.2b -- fixed activities affect the live day-0/day-1 selection, not just the week-ahead forecast', () => {
@@ -139,6 +188,19 @@ describe('Phase 6.2b -- fixed activities affect the live day-0/day-1 selection, 
 
         expect(['Rest', 'Mobility/Recovery']).not.toContain(withoutTravel.template.category);
         expect(['Rest', 'Mobility/Recovery']).toContain(withTravel.template.category);
+    });
+
+    it('applies a fixed travel-day capacity constraint before selection for demand-derived and evergreen paths', async () => {
+        const input = readiness({ timeAvailable: 90 });
+        const travelDay = fixedActivity({ id: 'shared-travel-day', date: '2026-08-11', durationMin: 20, availabilityOverride: 20 });
+        const recommendations = await Promise.all([
+            evaluateTrainingWithIntent('u1', input, context(), [runningRace], '2026-08-11', undefined, fixtureHistory, undefined, [travelDay]),
+            evaluateTrainingWithIntent('u1', input, context(), [roadRace], '2026-08-11', undefined, fixtureHistory, undefined, [travelDay], [], evergreenProfile, evergreenPreferences),
+        ]);
+
+        for (const recommendation of recommendations) {
+            expect(recommendation.template.id).toBe('rest_01');
+        }
     });
 
     it("a booked fixed activity on TODAY that already resolves strength_maintenance lowers a same-day Strength candidate's utility (stimulus credited before ranking, not after)", async () => {

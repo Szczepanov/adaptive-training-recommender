@@ -126,6 +126,15 @@ function hasAny(text: string, terms: readonly string[]): boolean {
     return terms.some(term => normalized.includes(term));
 }
 
+function hasConflictingStructuralEvidence(exposure: CompletedExposure): boolean {
+    if (!exposure.modality) return false;
+    const label = exposure.trainingRecordLike.type;
+    const strengthLabel = hasAny(label, ['strength', 'weight', 'lifting', 'resistance']);
+    const enduranceLabel = hasAny(label, ['cycling', 'running', 'aerobic', 'endurance', 'zone 2']);
+    return (strengthLabel && ['Cycling', 'Running', 'Field'].includes(exposure.modality))
+        || (enduranceLabel && exposure.modality === 'Strength');
+}
+
 /** Infer only recent observed training state. This deliberately never claims literal
  * training age: sparse or ambiguous history remains `unknown` and cannot unlock a
  * conditional high-intensity prior. */
@@ -149,6 +158,16 @@ export function inferAthleteTrainingState(
             highIntensitySessions: total.highIntensitySessions + Number(highIntensity),
         };
     }, { sessionCount: 0, totalMinutes: 0, aerobicSessions: 0, strengthSessions: 0, highIntensitySessions: 0 });
+
+    if (exposures.some(hasConflictingStructuralEvidence)) {
+        return {
+            recentExposure, trainingAgeProxy: 'unknown',
+            inference: {
+                dataQuality: 'conflicting', observedWindowDays,
+                diagnostics: [{ code: 'conflicting_history', message: 'Recent history contains incompatible recorded modality and session-type evidence; conditional training priors are withheld.' }],
+            },
+        };
+    }
 
     if (observedWindowDays < 14) {
         return {

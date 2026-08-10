@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { generateWeekAheadPlanWithIntent } from './planner';
 import { TEMPLATES } from './templates';
+import { DEFAULT_BASE_DEMAND } from './periodization';
 import type { DailyReadiness, Recommendation, TrainingIntentProfile, UserContext, UserEvent, UserPreferences } from './models';
 import type { TrainingHistoryProvider } from './trainingHistory';
 
@@ -21,5 +22,26 @@ describe('evergreen week-ahead integration', () => {
         expect(plan.microcycleObjectives.map(objective => objective.key)).toContain('zone2_aerobic');
         expect(plan.microcycleObjectives.map(objective => objective.key)).not.toContain('race_specific_endurance');
         expect(plan.allocationReport.outcomes.some(outcome => outcome.occurrence.coverageSetId === 'evergreen_general')).toBe(true);
+    });
+
+    it('does not take eventless evergreen objectives from DEFAULT_BASE_DEMAND', async () => {
+        const baseline = await generateWeekAheadPlanWithIntent('u1', readiness, context, preferences, [], '2026-08-10', today, null, { days: 6 }, history, undefined, profile);
+        const originalDemand = { ...DEFAULT_BASE_DEMAND };
+        try {
+            Object.assign(DEFAULT_BASE_DEMAND, {
+                aerobicEndurance: 0,
+                thresholdPower: 1,
+                vo2MaxPower: 1,
+                repeatedSurges: 1,
+                sprintPower: 1,
+                fatigueResistance: 1,
+                neuromuscular: 1,
+            });
+            const mutated = await generateWeekAheadPlanWithIntent('u1', readiness, context, preferences, [], '2026-08-10', today, null, { days: 6 }, history, undefined, profile);
+            expect(mutated.microcycleObjectives).toEqual(baseline.microcycleObjectives);
+            expect(mutated.allocationReport.outcomes).toEqual(baseline.allocationReport.outcomes);
+        } finally {
+            Object.assign(DEFAULT_BASE_DEMAND, originalDemand);
+        }
     });
 });
