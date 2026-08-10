@@ -11,6 +11,14 @@ const ownerId = 'athlete-a';
 const otherUserId = 'athlete-b';
 const recommendationPath = `users/${ownerId}/daily_recommendations/2026-08-07`;
 const fixedActivityPath = `users/${ownerId}/fixed_activities/activity-1`;
+const goalPath = `users/${ownerId}/goals/goal-1`;
+
+function validGoal() {
+    return {
+        userId: ownerId, title: 'Road race', targetDate: '2026-09-13', eventCategory: 'cycling_event',
+        taper: { startDate: '2026-09-07' }, createdAt: '2026-08-01T00:00:00Z', updatedAt: '2026-08-01T00:00:00Z',
+    };
+}
 
 function validFixedActivity() {
     return {
@@ -105,6 +113,12 @@ emulatorDescribe('Firestore security rules', () => {
         const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
         await assertFails(setDoc(doc(ownerDb, `users/${ownerId}/activities/garmin-1`), { date: '2026-08-07' }));
         await assertFails(setDoc(doc(ownerDb, `users/${ownerId}/daily_recovery_snapshots/2026-08-07`), { date: '2026-08-07' }));
+    });
+
+    it('allows a well-formed goal taper and rejects a malformed taper object', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertSucceeds(setDoc(doc(ownerDb, goalPath), validGoal()));
+        await assertFails(setDoc(doc(ownerDb, `${goalPath}-bad`), { ...validGoal(), taper: { startDate: 123 } }));
     });
 
     it('rejects a recommendation whose user or date disagrees with its path', async () => {

@@ -148,7 +148,7 @@ describe('resolveMultiEventObjectives (Phase 5.6)', () => {
     });
 
     it('a contributor threshold_quality objective inside the authority\'s taper window is dropped with its reason recorded', () => {
-        const aEvent = event({ id: 'a-event', date: '2026-08-15', priority: 'A', demandProfile: cyclingDemand }); // 7 days out -- tapering
+        const aEvent = event({ id: 'a-event', date: '2026-08-15', priority: 'A', taper: { startDate: '2026-08-08' }, demandProfile: cyclingDemand }); // explicit taper starts today
         const bEvent = event({ id: 'b-event', date: '2026-08-25', priority: 'B', demandProfile: { ...cyclingDemand, thresholdPower: 0.9, vo2MaxPower: 0, repeatedSurges: 0 } });
         const currentDate = '2026-08-08';
 

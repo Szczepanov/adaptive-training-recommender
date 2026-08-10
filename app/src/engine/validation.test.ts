@@ -136,6 +136,19 @@ describe('validateGoal', () => {
         expect(result.isValid).toBe(true);
         expect(result.data?.timing?.confirmedDate).toBe('2026-09-19');
     });
+
+    it('accepts an authored taper start only for a dated event before its planning date', () => {
+        const valid = validateGoal({
+            ...baseFields, targetDate: '2026-09-13', eventCategory: 'cycling_event',
+            taper: { startDate: '2026-09-07' },
+        });
+        expect(valid.data?.taper).toEqual({ startDate: '2026-09-07' });
+        const invalid = validateGoal({
+            ...baseFields, targetDate: '2026-09-13', eventCategory: 'cycling_event',
+            taper: { startDate: '2026-09-13' },
+        });
+        expect(invalid.errors.some(error => error.field === 'taper')).toBe(true);
+    });
 });
 
 describe('validateRecommendation', () => {

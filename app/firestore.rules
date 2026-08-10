@@ -21,6 +21,14 @@ service cloud.firestore {
         && date.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$');
     }
 
+    function hasValidGoalTaper() {
+      return !('taper' in request.resource.data)
+        || (request.resource.data.taper is map
+          && request.resource.data.taper.keys().hasOnly(['startDate'])
+          && request.resource.data.taper.startDate is string
+          && request.resource.data.taper.startDate.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$'));
+    }
+
     function hasValidAdherence(adherence) {
       return adherence is map
         && adherence.keys().hasOnly(['respondedAt', 'followed', 'actualModality', 'actualDurationMin', 'skipped', 'notes'])
@@ -140,8 +148,8 @@ service cloud.firestore {
 
     match /users/{userId}/goals/{goalId} {
       allow read: if isOwner(userId);
-      allow create: if hasOwnedUserId(userId);
-      allow update: if keepsOwnership(userId) && request.resource.data.createdAt == resource.data.createdAt;
+      allow create: if hasOwnedUserId(userId) && hasValidGoalTaper();
+      allow update: if keepsOwnership(userId) && request.resource.data.createdAt == resource.data.createdAt && hasValidGoalTaper();
       allow delete: if isOwner(userId);
     }
 

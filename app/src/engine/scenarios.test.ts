@@ -70,10 +70,9 @@ describe('cycling_criterium_A -- qualification and anchor stress test', () => {
     it('generates and resolves the cycling-scoped surge objective in every non-taper chained week', async () => {
         const result = await getResult('cycling_criterium_A');
         const surge = result.objectiveResolution.find(o => o.key === 'surge_repeatability');
-        // The event-relative plan now enters the A-event taper for the final chained week.
-        // Surge development is not a taper objective, so three generated/resolved weeks is
-        // the correct contract rather than the old literal-calendar four-week assumption.
-        expect(surge).toMatchObject({ timesGenerated: 3, timesResolved: 3 });
+        // The default cycling taper starts in race week, so all four chained weeks retain
+        // the peak surge role for this event date.
+        expect(surge).toMatchObject({ timesGenerated: 4, timesResolved: 4 });
     });
 
     it('distinguishes rolling objective fulfillment from exact calendar-block exposure', async () => {

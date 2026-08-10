@@ -20,6 +20,7 @@ const septemberCyclingEvent: UserEvent = {
     priority: 'A',
     lifecycle: 'scheduled',
     category: 'cycling_event',
+    taper: { startDate: '2026-09-06' },
     demandProfile: {
         aerobicEndurance: 0.8,
         thresholdPower: 0.8,

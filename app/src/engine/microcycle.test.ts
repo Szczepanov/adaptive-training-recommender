@@ -183,7 +183,7 @@ describe('evidence hierarchy confidence weighting (Phase 5.5)', () => {
 
 describe('taper as an explicit contract (Phase 5.7)', () => {
   const aCyclingEvent = (): UserEvent => ({
-    id: 'race', title: 'A-Priority Road Race', date: '2026-08-14', priority: 'A', lifecycle: 'scheduled', category: 'cycling_event',
+    id: 'race', title: 'A-Priority Road Race', date: '2026-08-14', priority: 'A', lifecycle: 'scheduled', category: 'cycling_event', taper: { startDate: '2026-08-07' },
     demandProfile: { aerobicEndurance: 0.7, thresholdPower: 0.6, vo2MaxPower: 0.4, repeatedSurges: 0.7, sprintPower: 0.2, fatigueResistance: 0.85, neuromuscular: 0.3 },
   });
 
@@ -231,7 +231,7 @@ describe('taper as an explicit contract (Phase 5.7)', () => {
   it('plan-derived: the event-relative cycling plan requests taper_sharpening and race_week_strength coverage during its taper block', async () => {
     const { buildSeptemberCyclingEventPlan } = await import('./planSchedule.ts');
     const septemberEvent: UserEvent = {
-      id: 'sep-event-1', title: 'September Cycling Event', date: '2026-09-20', priority: 'A', lifecycle: 'scheduled', category: 'cycling_event',
+      id: 'sep-event-1', title: 'September Cycling Event', date: '2026-09-20', priority: 'A', lifecycle: 'scheduled', category: 'cycling_event', taper: { startDate: '2026-09-06' },
       demandProfile: { aerobicEndurance: 0.8, thresholdPower: 0.8, vo2MaxPower: 0.7, repeatedSurges: 0.7, sprintPower: 0.3, fatigueResistance: 0.8, neuromuscular: 0.3 },
     };
     const planState = buildSeptemberCyclingEventPlan(septemberEvent);
@@ -372,6 +372,7 @@ describe('Task 1.2 / F2 Garmin objective crediting', () => {
 describe('Task 2.2 PlanDefinition & PlanSchedule', () => {
   const septemberEvent: UserEvent = {
     id: 'sep-event-1', title: 'September Cycling Event', date: '2026-09-20', priority: 'A', lifecycle: 'scheduled', category: 'cycling_event',
+    taper: { startDate: '2026-09-06' },
     demandProfile: { aerobicEndurance: 0.8, thresholdPower: 0.8, vo2MaxPower: 0.7, repeatedSurges: 0.7, sprintPower: 0.3, fatigueResistance: 0.8, neuromuscular: 0.3 },
   };
 
@@ -465,7 +466,7 @@ describe('Task 2.2 PlanDefinition & PlanSchedule', () => {
       const { resolvePlanDefinitionForEvent } = await import('./planSchedule.ts');
       expect(resolvePlanDefinitionForEvent(null)).toBeNull();
       expect(resolvePlanDefinitionForEvent({ ...septemberEvent, category: 'running_race' })).toBeNull();
-      const future = resolvePlanDefinitionForEvent({ ...septemberEvent, date: '2027-09-20' });
+      const future = resolvePlanDefinitionForEvent({ ...septemberEvent, date: '2027-09-20', taper: undefined });
       expect(future).not.toBeNull();
       expect(future?.blocks.find(block => block.id === 'block_race')?.startDate).toBe('2027-09-20');
     });

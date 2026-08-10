@@ -208,6 +208,13 @@ export interface UserEvent {
     category: 'running_race' | 'cycling_event' | 'triathlon' | 'strength_meet' | 'general_target';
     demandProfile: EventDemandProfile;
     timing?: EventTiming;
+    taper?: EventTaperSpec;
+}
+
+/** Optional user-authored taper start for a dated event. Without it, taperPolicy.ts
+ * supplies the sport/priority default. */
+export interface EventTaperSpec {
+    startDate: string;
 }
 
 export type ObjectiveKey = 
@@ -750,6 +757,8 @@ export interface UserGoal {
      *  date is a single write that sets both confirmedDate and planningDate together --
      *  see validateEventTiming's invariant above. */
     timing?: EventTiming | null;
+    /** Optional explicit taper start for this event. */
+    taper?: EventTaperSpec | null;
     schemaVersion: number;
     createdAt: string;
     updatedAt: string;

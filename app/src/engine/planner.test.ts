@@ -9,6 +9,7 @@ import { resolveAvailability } from './schedule';
 import { ENRICHED_TEMPLATES } from './templates';
 import { generateWeeklyObjectives } from './microcycle';
 import { evaluatePeriodizationPhase } from './periodization';
+import { addDaysToLocalDateString } from '../utils/localDate';
 
 // --- Fixtures (mirrors rules.test.ts's pattern) -----------------------------
 
@@ -231,6 +232,7 @@ describe('generateWeekAheadPlan', () => {
         const { readiness, todayRec, tomorrowRec } = buildTodayAndTomorrow(context);
         const event: UserEvent = {
             id: 'a-event', title: 'A event', date: '2026-08-22', priority: 'A', lifecycle: 'scheduled', category: 'cycling_event',
+            taper: { startDate: '2026-08-08' },
             demandProfile: { aerobicEndurance: 0.8, thresholdPower: 0.75, vo2MaxPower: 0.4, repeatedSurges: 0.6, sprintPower: 0.3, fatigueResistance: 0.8, neuromuscular: 0.3 },
         };
 
@@ -441,6 +443,7 @@ function weeklyTrainingSettings(overrides: Partial<TrainingSettings['defaults']>
 
 const cyclingEvent = (daysOut: string): UserEvent => ({
     id: 'e1', title: 'Gran Fondo', date: daysOut, priority: 'A', lifecycle: 'scheduled', category: 'cycling_event',
+    taper: { startDate: addDaysToLocalDateString(daysOut, -14) },
     demandProfile: { aerobicEndurance: 0.8, thresholdPower: 0.75, vo2MaxPower: 0.7, repeatedSurges: 0.7, sprintPower: 0.3, fatigueResistance: 0.8, neuromuscular: 0.3 },
 });
 

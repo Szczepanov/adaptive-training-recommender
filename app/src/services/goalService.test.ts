@@ -90,6 +90,18 @@ describe('GoalService persistence shape', () => {
         expect(payload.timing).toEqual(timing);
     });
 
+    it('persists and clears an authored event taper with the other event-only fields', async () => {
+        const service = new GoalService();
+        await service.createGoal('u1', { ...eventGoal, taper: { startDate: '2026-09-07' } });
+        expect((firestore.addDoc.mock.calls[0][1] as Record<string, unknown>).taper).toEqual({ startDate: '2026-09-07' });
+
+        firestore.getDoc.mockResolvedValue({
+            exists: () => true, data: () => ({ ...eventGoal, taper: { startDate: '2026-09-07' } }), id: eventGoal.id,
+        });
+        await service.updateGoal('u1', eventGoal.id, { taper: null });
+        expect((firestore.setDoc.mock.calls.at(-1)![1] as Record<string, unknown>).taper).toBe(firestore.deleteMarker);
+    });
+
     it('removes timing when a dated event becomes a plain dated goal', async () => {
         const service = new GoalService();
         const timing = { earliestDate: '2026-09-05', latestDate: '2026-09-20', planningDate: '2026-09-05' };

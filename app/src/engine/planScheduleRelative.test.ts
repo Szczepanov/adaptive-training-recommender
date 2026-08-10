@@ -29,10 +29,10 @@ describe('Phase 6.2c event-relative cycling PlanDefinition', () => {
         });
         expect(byId.get('block_peak')).toMatchObject({
             startDate: addDaysToLocalDateString(target.date, -35),
-            endDate: addDaysToLocalDateString(target.date, -15),
+            endDate: '2026-09-06',
         });
         expect(byId.get('block_taper')).toMatchObject({
-            startDate: addDaysToLocalDateString(target.date, -14),
+            startDate: '2026-09-07',
             endDate: addDaysToLocalDateString(target.date, -1),
         });
         expect(byId.get('block_race')?.startDate).toBe(target.date);

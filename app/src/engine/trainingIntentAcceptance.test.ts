@@ -29,7 +29,7 @@ const roadRace: UserEvent = {
 // Event-relative fixture: literal dates here are test inputs only. Runtime block dates are
 // derived from each event's own planning date by buildCyclingEventPlan.
 const cyclingPlanFixture: UserEvent = {
-    id: 'cycling-plan-fixture', title: 'Cycling Event Fixture', date: '2026-09-20', priority: 'A', lifecycle: 'scheduled', category: 'cycling_event',
+    id: 'cycling-plan-fixture', title: 'Cycling Event Fixture', date: '2026-09-20', priority: 'A', lifecycle: 'scheduled', category: 'cycling_event', taper: { startDate: '2026-09-06' },
     demandProfile: { aerobicEndurance: 0.8, thresholdPower: 0.8, vo2MaxPower: 0.7, repeatedSurges: 0.7, sprintPower: 0.3, fatigueResistance: 0.8, neuromuscular: 0.3 },
 };
 

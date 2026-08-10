@@ -38,6 +38,7 @@ function storedGoalPayload(goal: UserGoal): DocumentData {
         // timing (ADR-0012 Task 2.3) is event-only too -- same rule as eventCategory/
         // eventPreset/eventLifecycle above.
         delete payload.timing;
+        delete payload.taper;
     }
     return payload;
 }
@@ -53,8 +54,12 @@ function updatedGoalPayload(goal: UserGoal): DocumentData {
         payload.eventPreset = deleteField();
         payload.eventLifecycle = deleteField();
         payload.timing = deleteField();
+        payload.taper = deleteField();
     } else if (!goal.timing) {
         payload.timing = deleteField();
+        if (!goal.taper) payload.taper = deleteField();
+    } else if (!goal.taper) {
+        payload.taper = deleteField();
     }
     return payload;
 }

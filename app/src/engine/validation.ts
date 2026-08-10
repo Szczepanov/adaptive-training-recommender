@@ -19,6 +19,7 @@ import type {
     GoalStatus,
     UserEvent,
     EventTiming,
+    EventTaperSpec,
     ConstraintType,
     ConstraintSeverity,
     ConstraintCategory,
@@ -429,6 +430,18 @@ export function validateGoal(raw: any): ValidationResult<UserGoal> {
         }
     }
 
+    const rawTaper: EventTaperSpec | null = raw.taper !== undefined && raw.taper !== null ? raw.taper : null;
+    if (rawTaper !== null) {
+        const planningDate = rawTiming?.planningDate ?? rawTargetDate;
+        if (!rawTargetDate || !rawEventCategory) {
+            errors.push({ field: 'taper', message: 'Taper requires a dated event category' });
+        } else if (typeof rawTaper.startDate !== 'string' || !isValidDate(rawTaper.startDate)) {
+            errors.push({ field: 'taper', message: 'Taper start date must be a valid date (YYYY-MM-DD)' });
+        } else if (planningDate && rawTaper.startDate >= planningDate) {
+            errors.push({ field: 'taper', message: 'Taper start date must precede the planned event date' });
+        }
+    }
+
     if (raw.targetOutcome !== undefined) {
         const outcome = normalizeEmptyToNull(raw.targetOutcome);
         if (outcome !== null && typeof outcome !== 'string') {
@@ -469,6 +482,7 @@ export function validateGoal(raw: any): ValidationResult<UserGoal> {
                 ...(rawTiming.confirmedDate ? { confirmedDate: rawTiming.confirmedDate } : {}),
             }
         } : {}),
+        ...(rawTaper ? { taper: { startDate: rawTaper.startDate } } : {}),
         schemaVersion: raw.schemaVersion ?? 1,
         createdAt: raw.createdAt || new Date().toISOString(),
         updatedAt: new Date().toISOString()

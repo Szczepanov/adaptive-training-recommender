@@ -2,6 +2,7 @@ import type { EventPlanCoverageKey, EventPlanPhase, EventPlanSessionCoverage } f
 import { SEPTEMBER_CYCLING_EVENT_SESSION_COVERAGE } from '../workouts/event-plan.ts';
 import type { DataIssue, DataState } from './dataState.ts';
 import type { ObjectiveKey, ObjectivePriority, UserEvent } from './models.ts';
+import { resolveEventTaper } from './taperPolicy';
 import { addDaysToLocalDateString } from '../utils/localDate.ts';
 
 // Named PlanSessionRole (not SessionRole) to avoid colliding with the unrelated
@@ -173,8 +174,8 @@ function developmentalObjectives(
  */
 export function buildCyclingEventPlan(event: UserEvent): DataState<PlanDefinition> {
   const raceDate = eventPlanningDate(event);
-  const taperDays = event.priority === 'A' ? 14 : event.priority === 'B' ? 5 : 0;
-  const peakEnd = addDaysToLocalDateString(raceDate, -(taperDays > 0 ? taperDays + 1 : 1));
+  const taper = resolveEventTaper(event);
+  const peakEnd = taper ? addDaysToLocalDateString(taper.startDate, -1) : addDaysToLocalDateString(raceDate, -1);
 
   const blocks: PlanBlock[] = [
     {
@@ -191,11 +192,11 @@ export function buildCyclingEventPlan(event: UserEvent): DataState<PlanDefinitio
     },
   ];
 
-  if (taperDays > 0) {
+  if (taper) {
     blocks.push({
       id: 'block_taper', phase: 'taper',
-      startDate: addDaysToLocalDateString(raceDate, -taperDays),
-      endDate: addDaysToLocalDateString(raceDate, -1),
+      startDate: taper.startDate,
+      endDate: taper.endDate,
       volumeScale: 0.6, intensityScale: 1.0,
     });
   }
@@ -214,7 +215,7 @@ export function buildCyclingEventPlan(event: UserEvent): DataState<PlanDefinitio
     ...developmentalObjectives('block_peak', event),
   ];
 
-  if (taperDays > 0) {
+  if (taper) {
     objectives.push(
       {
         key: 'zone2_aerobic', coverageKey: 'aerobic_volume', blockId: 'block_taper',

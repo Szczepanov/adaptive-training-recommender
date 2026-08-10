@@ -529,9 +529,10 @@ describe('Architecture & Phased Engine Integration', () => {
 
     describe('Phase 6: Race-Specific Endurance phase-gating', () => {
         const raceSpecificIds = ['end_race_specific_01', 'end_race_sim_01', 'end_taper_sharpen_01', 'end_pre_race_openers_01'];
-        const cyclingEvent = (date: string): UserEvent => ({
+        const cyclingEvent = (date: string, taper?: UserEvent['taper']): UserEvent => ({
             id: 'c1', title: 'Road Race', date, priority: 'A', lifecycle: 'scheduled', category: 'cycling_event',
             demandProfile: { aerobicEndurance: 0.8, thresholdPower: 0.8, vo2MaxPower: 0.6, repeatedSurges: 0.5, sprintPower: 0.3, fatigueResistance: 0.7, neuromuscular: 0.4 },
+            ...(taper ? { taper } : {}),
         });
 
         it('excludes every Race-Specific Endurance template when no focus event governs the day', () => {
@@ -542,8 +543,8 @@ describe('Architecture & Phased Engine Integration', () => {
         it('progresses eligibility from event-specific endurance -> race simulation -> taper sharpening -> pre-race openers as the event approaches', () => {
             const buildPhase = evaluatePeriodizationPhase([cyclingEvent('2026-09-16')], '2026-08-07');
             const specificityPhase = evaluatePeriodizationPhase([cyclingEvent('2026-08-27')], '2026-08-07');
-            const taperPhase = evaluatePeriodizationPhase([cyclingEvent('2026-08-14')], '2026-08-07');
-            const finalDays = evaluatePeriodizationPhase([cyclingEvent('2026-08-09')], '2026-08-07');
+            const taperPhase = evaluatePeriodizationPhase([cyclingEvent('2026-08-14', { startDate: '2026-08-07' })], '2026-08-07');
+            const finalDays = evaluatePeriodizationPhase([cyclingEvent('2026-08-09', { startDate: '2026-08-07' })], '2026-08-07');
             const eligible = (result: typeof buildPhase, id: string) => isTemplatePhaseEligible(ENRICHED_TEMPLATES.find(t => t.id === id)!, result);
             expect(eligible(buildPhase, 'end_race_specific_01')).toBe(true);
             expect(eligible(buildPhase, 'end_race_sim_01')).toBe(false);
