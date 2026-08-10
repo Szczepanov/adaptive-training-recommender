@@ -20,6 +20,7 @@ export interface AnchorWeekResult {
 }
 export interface ScenarioResult {
     scenarioId: string; label: string; description: string; weeksSimulated: number; totalDays: number;
+    tags: readonly string[];
     categoryDistribution: Partial<Record<SessionTemplate['category'], number>>;
     modalityDistribution: Partial<Record<SessionTemplate['modality'], number>>;
     restOrRecoveryDayCount: number; restOrRecoveryDayPct: number;
@@ -140,7 +141,9 @@ function computeMetrics(
         });
         return { weekIndex, fatigueTierDayCounts: weekFatigueTiers, restOrRecoveryDayCount: weekRestOrRecoveryDays };
     });
-    const isCyclingRelevantEvent = scenario.event?.category === 'cycling_event' || scenario.event?.category === 'triathlon';
+    const scenarioEvents = scenario.events ?? (scenario.event ? [scenario.event] : []);
+    const primaryEvent = scenarioEvents[0] ?? null;
+    const isCyclingRelevantEvent = primaryEvent?.category === 'cycling_event' || primaryEvent?.category === 'triathlon';
     const anchorScopeNote = isCyclingRelevantEvent ? null :
         'Anchor-day nomination only requires SOME focus event (Race-Specific Endurance templates\' phaseEligibility.requiresFocusEvent doesn\'t check event category), so a nomination can appear even here -- but the optimizer\'s event-priority penalty for non-matching modalities makes it unlikely to actually win the day\'s pick. Treat eventSpecificAnchorHit/qualityAnchorHit, not the raw nomination, as the meaningful signal for non-cycling scenarios.';
 
@@ -161,14 +164,14 @@ function computeMetrics(
     if (anchorPlacementDrift > 0) qualityWarnings.push(`Event-specific exposure occurred off the nominated anchor date in ${anchorPlacementDrift} week(s).`);
     if (trainTierRestOrRecoveryCount > 0) qualityWarnings.push(`Rest or mobility selected on ${trainTierRestOrRecoveryCount} projected train-tier day(s).`);
     if (!isEvergreen && maxConsecutiveSameTemplateStreakAcrossWeeks >= 4) qualityWarnings.push(`Same-template streak reached ${maxConsecutiveSameTemplateStreakAcrossWeeks} days.`);
-    if (scenario.event?.category === 'triathlon') qualityWarnings.push('Triathlon capability is partial: the engine has no Swimming modality or swim objective/catalog support.');
-    if (scenario.event?.category === 'strength_meet') qualityWarnings.push('Strength-meet capability is partial: one generic weekly strength-maintenance objective cannot represent competition-lift programming.');
+    if (primaryEvent?.category === 'triathlon') qualityWarnings.push('Triathlon capability is partial: the engine has no Swimming modality or swim objective/catalog support.');
+    if (primaryEvent?.category === 'strength_meet') qualityWarnings.push('Strength-meet capability is partial: one generic weekly strength-maintenance objective cannot represent competition-lift programming.');
     const unexplainedMisses = allocationReports.flatMap(item => item.report.outcomes)
         .filter(outcome => outcome.status === 'missed' && !outcome.reason);
     if (unexplainedMisses.length > 0) qualityWarnings.push(`Required-role allocation misses without a typed reason: ${unexplainedMisses.map(item => item.occurrence.id).join(', ')}.`);
 
     return {
-        scenarioId: scenario.id, label: scenario.label, description: scenario.description, weeksSimulated: scenario.weeks, totalDays: allDays.length,
+        scenarioId: scenario.id, label: scenario.label, description: scenario.description, tags: scenario.tags ?? [], weeksSimulated: scenario.weeks, totalDays: allDays.length,
         categoryDistribution, modalityDistribution, restOrRecoveryDayCount,
         restOrRecoveryDayPct: allDays.length > 0 ? Math.round((restOrRecoveryDayCount / allDays.length) * 1000) / 10 : 0,
         maxConsecutiveSameTemplateStreakWithinCall, maxConsecutiveSameTemplateStreakAcrossWeeks,
@@ -181,7 +184,8 @@ function computeMetrics(
 type WeekAheadPlanGenerator = typeof generateWeekAheadPlanWithIntent;
 
 export async function runScenario(scenario: AthleteScenario, planGenerator: WeekAheadPlanGenerator = generateWeekAheadPlanWithIntent): Promise<ScenarioResult> {
-    const events = scenario.event ? [scenario.event] : [];
+    const events = [...(scenario.events ?? (scenario.event ? [scenario.event] : []))];
+    const fixedActivities = scenario.fixedActivities ?? [];
     const accumulatedHistory: CompletedExposure[] = [...(scenario.initialHistory ?? [])];
     const historyProvider: TrainingHistoryProvider = {
         reconstruct: async (_userId, throughDateExclusive, windowDays) => {
@@ -198,25 +202,25 @@ export async function runScenario(scenario: AthleteScenario, planGenerator: Week
     let currentDate = scenario.startDate;
 
     for (let week = 0; week < scenario.weeks; week++) {
-        const readiness = scenario.readinessForWeek(week);
+        const readiness = scenario.readinessForDate?.(currentDate, week) ?? scenario.readinessForWeek(week);
         const todayRec = await evaluateTrainingWithIntent(
             'sim-user', readiness, scenario.context, events, currentDate, undefined, historyProvider,
-            null, [], [], scenario.trainingIntentProfile ?? null, scenario.preferences ?? null,
+            null, fixedActivities, [], scenario.trainingIntentProfile ?? null, scenario.preferences ?? null,
         );
         const nextDayPlan = await evaluateNextDayPlanWithIntent(
             'sim-user', events, readiness, scenario.context, currentDate, todayRec, historyProvider,
-            null, [], [], scenario.trainingIntentProfile ?? null, scenario.preferences ?? null,
+            null, fixedActivities, [], scenario.trainingIntentProfile ?? null, scenario.preferences ?? null,
         );
         const tomorrowRec = nextDayPlan.branches.yellow.recommendation;
 
         const plan = await planGenerator(
             'sim-user', readiness, scenario.context, scenario.preferences ?? null, events, currentDate, todayRec, tomorrowRec,
-            { days: 6 }, historyProvider, null, scenario.trainingIntentProfile ?? null,
+            { days: 6, fixedActivities }, historyProvider, null, scenario.trainingIntentProfile ?? null,
         );
         const todayPhase = evaluatePeriodizationPhase(events, currentDate).phase.phaseName;
         const simulatedDays: WeekAheadDay[] = [recommendationAsDay(currentDate, todayRec, todayPhase), ...plan.days];
 
-        const anchors = resolveWeeklyAnchors(currentDate, 6, events, [], scenario.context, tomorrowRec.template.category, tomorrowRec.template.modality);
+        const anchors = resolveWeeklyAnchors(currentDate, 6, events, fixedActivities, scenario.context, tomorrowRec.template.category, tomorrowRec.template.modality);
         const findPick = (date: string | null) => date ? simulatedDays.find(d => d.date === date) ?? null : null;
         const eventSpecificExposureDates = simulatedDays.filter(day => day.template.modality === 'Cycling' && day.template.category === 'Race-Specific Endurance').map(day => day.date);
         anchorWeeks.push({

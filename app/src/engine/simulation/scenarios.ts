@@ -8,6 +8,7 @@ import type {
     UserEvent,
     UserPreferences,
     SessionTemplate,
+    FixedActivity,
 } from '../models';
 import type { CompletedExposure } from '../trainingHistory';
 import { resolveDemandProfile } from '../eventPresets';
@@ -25,7 +26,10 @@ export interface AthleteScenario {
     label: string;
     description: string;
     context: UserContext;
-    event: UserEvent | null;
+    /** Legacy single-event shorthand retained for existing fixtures. `events` is the
+     * authoritative multi-event input when supplied. */
+    event?: UserEvent | null;
+    events?: readonly UserEvent[];
     /** Explicit profile scenarios exercise evergreen ownership without changing the
      * profile-less event-directed fixtures used by the committed baseline. */
     trainingIntentProfile?: TrainingIntentProfile | null;
@@ -35,10 +39,16 @@ export interface AthleteScenario {
      * 6.3 needs this to reproduce failures that depend on yesterday's real training rather
      * than only on a synthetic readiness counter. */
     initialHistory?: CompletedExposure[];
+    /** User-authored commitments passed through every day-0/day-1/week-ahead decision. */
+    fixedActivities?: FixedActivity[];
+    /** Optional policy-report grouping; assertions remain independently classified. */
+    tags?: readonly string[];
     /** Simulated 7-day windows, chained (not one large `days:` call -- see analyze.ts for
      *  why: the anchor-day pre-pass only nominates once per call). */
     weeks: number;
     readinessForWeek: (weekIndex: number) => DailyReadiness;
+    /** Date-level deterministic override for the decision at each chained week start. */
+    readinessForDate?: (date: string, weekIndex: number) => DailyReadiness;
 }
 
 function trainingSettings(overrides: Partial<TrainingSettings['equipment']> = {}, defaults: Partial<TrainingSettings['defaults']> = {}): TrainingSettings {
@@ -126,6 +136,14 @@ function eventOn(
         date: addDaysToLocalDateString(START_DATE, daysOut),
         priority, lifecycle: 'scheduled', category,
         demandProfile: resolveDemandProfile(category, preset),
+    };
+}
+
+function fixedActivity(overrides: Partial<FixedActivity> & Pick<FixedActivity, 'id' | 'date'>): FixedActivity {
+    return {
+        userId: 'sim-user', title: 'Scheduled activity', durationMin: 60, fixed: true,
+        environment: 'either', equipment: [], isCompleted: false, createdAt: '', updatedAt: '',
+        ...overrides,
     };
 }
 
@@ -297,6 +315,106 @@ export const SCENARIOS: AthleteScenario[] = [
         },
         startDate: '2026-03-02',
         weeks: 1,
+        readinessForWeek: () => stableReadiness(),
+    },
+    {
+        id: 'multi_event_taper_conflict_static',
+        label: 'Multi-event taper conflict already active',
+        description: 'An A-priority cycling authority is already tapering on day one while a later running contributor remains relevant. This guards one governing taper authority with multiple demand contributors.',
+        context: context({ indoor_bike: true, free_weights: true, treadmill: true }, ['Cycling', 'Running']),
+        events: [
+            eventOn('multi-static-authority', 9, 'cycling_event', 'road_race', 'A'),
+            eventOn('multi-static-contributor', 24, 'running_race', 'marathon', 'B'),
+        ],
+        startDate: START_DATE, weeks: 1, tags: ['multi-event', 'taper'],
+        readinessForWeek: () => stableReadiness(),
+    },
+    {
+        id: 'multi_event_taper_conflict_mid_horizon',
+        label: 'Multi-event taper conflict mid-horizon',
+        description: 'The A-priority cycling taper begins inside the seven-day forecast, so future objectives must re-resolve on the transition date without revoking earlier credit.',
+        context: context({ indoor_bike: true, free_weights: true, treadmill: true }, ['Cycling', 'Running']),
+        events: [
+            eventOn('multi-mid-authority', 18, 'cycling_event', 'road_race', 'A'),
+            eventOn('multi-mid-contributor', 26, 'running_race', 'marathon', 'B'),
+        ],
+        startDate: START_DATE, weeks: 1, tags: ['multi-event', 'taper', 'transition'],
+        readinessForWeek: () => stableReadiness(),
+    },
+    {
+        id: 'fixed_football_midweek',
+        label: 'Booked football session midweek',
+        description: 'A scheduled field session has explicit stimulus and cost. The planner must reserve its time and apply its load once while leaving other day context unchanged.',
+        context: context({ indoor_bike: true, free_weights: true }, ['Cycling']),
+        event: eventOn('fixed-football-event', 40, 'cycling_event', 'criterium', 'A'),
+        fixedActivities: [fixedActivity({
+            id: 'football-midweek', date: '2026-08-10', title: 'Football match', durationMin: 90,
+            environment: 'outdoor', equipment: [], expectedStimulus: { aerobicEndurance: 0.7, repeatedSurges: 0.7 },
+            expectedCost: { systemic: 0.7, cardiovascular: 0.8, lowerBody: 0.6, impactTissue: 0.6, neuromuscular: 0.5 },
+        })],
+        startDate: START_DATE, weeks: 1, tags: ['fixed-activity'],
+        readinessForWeek: () => stableReadiness(),
+    },
+    {
+        id: 'travel_day_context_override',
+        label: 'Travel day with day-wide context override',
+        description: 'A travel commitment deliberately restricts the whole day to a short indoor-bike window; it is distinct from an activity venue and exercises explicit availability context.',
+        context: context({ indoor_bike: true, free_weights: true }, ['Cycling']),
+        event: eventOn('travel-context-event', 40, 'cycling_event', 'road_race', 'A'),
+        fixedActivities: [fixedActivity({
+            id: 'travel-context', date: '2026-08-09', title: 'Travel day', durationMin: 15, availabilityOverride: 45,
+            availabilityContextOverride: { environment: 'indoor', equipment: ['indoor_bike'] },
+        })],
+        startDate: START_DATE, weeks: 1, tags: ['fixed-activity', 'travel'],
+        readinessForWeek: () => stableReadiness(),
+    },
+    {
+        id: 'external_load_green_readiness',
+        label: 'High external load despite green readiness',
+        description: 'A hard cycling exposure yesterday is paired with nominally green wearable and subjective signals. The external-load path must remain visible to planning rather than being erased by the check-in.',
+        context: context({ indoor_bike: true, free_weights: true }, ['Cycling']),
+        event: eventOn('external-load-event', 40, 'cycling_event', 'criterium', 'A'),
+        initialHistory: [{
+            occurrenceKey: 'scenario:external-load:hard:2026-08-06', date: '2026-08-06', templateId: 'end_hard_02',
+            workoutId: 'cycling_vo2_6x3_01', modality: 'Cycling', category: 'Hard Endurance', stimulusConfidence: 'exact',
+            stimulusProfile: { aerobicEndurance: 0.6, thresholdPower: 0.8, vo2MaxPower: 0.9, repeatedSurges: 1, sprintPower: 0.3, fatigueResistance: 0.6, maxStrength: 0, hypertrophy: 0 },
+            costProfile: { systemic: 0.8, cardiovascular: 0.9, lowerBody: 0.5, upperBody: 0, impactTissue: 0.1, neuromuscular: 0.5 },
+            trainingRecordLike: { type: 'Cycling VO2 intervals', duration_min: 60, training_effect: 0, intensity_tag: 'hard' },
+        }],
+        startDate: START_DATE, weeks: 1, tags: ['fatigue', 'external-load'],
+        readinessForWeek: () => stableReadiness({ readiness: 8, sleepQuality: 8, fatigue: 2, soreness: 2, stress: 2, motivation: 8 }),
+    },
+    {
+        id: 'readiness_crash_then_return',
+        label: 'Readiness crash then return',
+        description: 'Date-level readiness starts with a clear crash and returns to green at the next chained decision, proving the date-level scenario contract rather than a weekly-only fixture.',
+        context: context({ indoor_bike: true, free_weights: true }, ['Cycling']),
+        event: eventOn('readiness-crash-event', 40, 'cycling_event', 'criterium', 'A'),
+        startDate: START_DATE, weeks: 2, tags: ['fatigue', 'readiness'],
+        readinessForWeek: () => stableReadiness(),
+        readinessForDate: (_date, weekIndex) => weekIndex === 0
+            ? stableReadiness({ readiness: 2, sleepQuality: 2, fatigue: 9, soreness: 8, stress: 9, motivation: 2 }, { sleep_score: 50, sleep_duration_min: 300, rhr_delta: 8, hrv_delta: -18, body_battery_wake: 20 })
+            : stableReadiness({ readiness: 8, sleepQuality: 8, fatigue: 2, soreness: 2, stress: 2, motivation: 8 }, { sleep_score: 92, sleep_duration_min: 500, rhr_delta: -4, hrv_delta: 15, body_battery_wake: 95 }),
+    },
+    {
+        id: 'inferred_partial_completion',
+        label: 'Inferred and partial completion evidence',
+        description: 'History combines exact, Garmin-inferred, and abbreviated evidence so scenario reports retain the evidence boundary instead of treating every past exposure as full completion.',
+        context: context({ indoor_bike: true, free_weights: true }, ['Cycling']),
+        event: eventOn('inferred-partial-event', 40, 'cycling_event', 'road_race', 'A'),
+        initialHistory: [
+            {
+                occurrenceKey: 'scenario:completion:exact:2026-08-05', date: '2026-08-05', templateId: 'end_easy_01', workoutId: 'cycling_zone2_standard_01', modality: 'Cycling', category: 'Easy Endurance', stimulusConfidence: 'exact',
+                stimulusProfile: { aerobicEndurance: 0.8, thresholdPower: 0.2, vo2MaxPower: 0, repeatedSurges: 0, sprintPower: 0, fatigueResistance: 0.2, maxStrength: 0, hypertrophy: 0 }, costProfile: { systemic: 0.3, cardiovascular: 0.3, lowerBody: 0.2, upperBody: 0, impactTissue: 0, neuromuscular: 0.1 },
+                trainingRecordLike: { type: 'Cycling endurance', duration_min: 60, training_effect: 0, intensity_tag: 'easy' },
+            },
+            {
+                occurrenceKey: 'scenario:completion:inferred:2026-08-06', date: '2026-08-06', modality: 'Cycling', category: 'Moderate Endurance', stimulusConfidence: 'inferred',
+                stimulusProfile: { aerobicEndurance: 0.7, thresholdPower: 0.8, vo2MaxPower: 0.2, repeatedSurges: 0.3, sprintPower: 0, fatigueResistance: 0.5, maxStrength: 0, hypertrophy: 0 }, costProfile: { systemic: 0.45, cardiovascular: 0.5, lowerBody: 0.3, upperBody: 0, impactTissue: 0, neuromuscular: 0.2 },
+                trainingRecordLike: { type: 'Garmin tempo ride', duration_min: 25, training_effect: 0, intensity_tag: 'moderate' },
+            },
+        ],
+        startDate: START_DATE, weeks: 1, tags: ['evidence', 'partial-completion'],
         readinessForWeek: () => stableReadiness(),
     },
     {

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { SCENARIOS } from './simulation/scenarios';
 import { runAllScenarios, runScenario, type ScenarioResult } from './simulation/analyze';
 
@@ -248,5 +248,49 @@ describe('no_event_base_phase -- control baseline', () => {
         expect(keys).toContain('threshold_quality');
         expect(keys).toContain('zone2_aerobic');
         expect(keys).toContain('strength_maintenance');
+    });
+});
+
+describe('Phase 6.3 scenario input contract', () => {
+    it('runs multi-event fixtures from the plural event input rather than the legacy shorthand', async () => {
+        for (const scenarioId of ['multi_event_taper_conflict_static', 'multi_event_taper_conflict_mid_horizon']) {
+            const scenario = SCENARIOS.find(item => item.id === scenarioId);
+            if (!scenario) throw new Error(`Missing ${scenarioId}`);
+            expect(scenario.event).toBeUndefined();
+            expect(scenario.events).toHaveLength(2);
+            const result = await getResult(scenarioId);
+            expect(result.tags).toContain('multi-event');
+            expect(result.totalDays).toBe(7);
+        }
+    });
+
+    it('routes authored fixed activities into the same live scenario path without a constraint bypass', async () => {
+        for (const scenarioId of ['fixed_football_midweek', 'travel_day_context_override']) {
+            const scenario = SCENARIOS.find(item => item.id === scenarioId);
+            if (!scenario) throw new Error(`Missing ${scenarioId}`);
+            expect(scenario.fixedActivities).toHaveLength(1);
+            const result = await getResult(scenarioId);
+            expect(result.tags).toContain('fixed-activity');
+            expect(result.constraintViolations).toEqual([]);
+        }
+    });
+
+    it('uses date-level readiness at each chained simulation decision', async () => {
+        const scenario = SCENARIOS.find(item => item.id === 'readiness_crash_then_return');
+        if (!scenario?.readinessForDate) throw new Error('Date-level readiness scenario is missing');
+        const readinessForDate = vi.fn(scenario.readinessForDate);
+        const result = await runScenario({ ...scenario, readinessForDate });
+        expect(readinessForDate).toHaveBeenNthCalledWith(1, '2026-08-07', 0);
+        expect(readinessForDate).toHaveBeenNthCalledWith(2, '2026-08-14', 1);
+        expect(result.weekSummaries[0].fatigueTierDayCounts.recover).toBeGreaterThan(0);
+        expect(result.weekSummaries[1].fatigueTierDayCounts.train).toBeGreaterThan(0);
+    });
+
+    it('keeps external-load and lower-confidence completion fixtures in the shared suite', async () => {
+        for (const scenarioId of ['external_load_green_readiness', 'inferred_partial_completion']) {
+            const result = await getResult(scenarioId);
+            expect(result.totalDays).toBe(7);
+            expect(result.constraintViolations).toEqual([]);
+        }
     });
 });

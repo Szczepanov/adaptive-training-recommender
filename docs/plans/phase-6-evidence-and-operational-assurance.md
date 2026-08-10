@@ -50,7 +50,7 @@ Status legend: `[ ]` not started · `[-]` in progress · `[x]` finished.
 | 6.1 | `[x]` | — | Scenario runs cannot mutate the committed baseline; reviewed baseline update is explicit | `scripts/simulate-scenarios.mjs`, `scripts/simulate-diff.mjs`, `scripts/simulate-update-baseline.mjs`, `package.json` |
 | 6.2 | `[x]` | — | Closed Phase 5.6 mid-horizon objective drift and Phase 5.3 fixed-activity projection semantics, including the live day-0/day-1 path, not only the week-ahead forecast; `POLICY_VERSION` bumped to `2026-08-phase6-correctness-carryovers-v1` | `planner.ts`, `periodization.ts`, `schedule.ts`, `models.ts`, `policy.ts`, `optimizer.ts`, `rules.ts`, `sequenceSearch.ts`, `validation.ts`, `firestore.rules`, `components/Home.tsx`, plus corresponding tests |
 | 6.2c | `[-]` | recovery/rest calibration finding below | Separated physiological adaptation credit from weekly programming-role coverage (ADR-0016); exact catalog identity for coverage and fixed-activity credit; event-relative cycling `PlanDefinition`; today's pick projected into tomorrow's intent. Code/tests complete and green; the reviewed semantic-diff acceptance step is **blocked** by an unexplained rest/recovery spike (see [phase-6-2c plan](./phase-6-2c-recommendation-quality-and-weekly-coverage.md) §9/§10 and [ADR-0016](../adr/0016-adaptation-credit-and-weekly-coverage.md)) | `coverage.ts`, `coverageNeedTierForTemplate` wiring in `optimizer.ts`, `planSchedule.ts` (event-relative), `rules.ts` (today→tomorrow projection), `fixedActivityIdentity.ts`, plus corresponding tests |
-| 6.3 | `[ ]` | 6.2 interface decisions | Scenario harness can represent the real boundaries added in Phases 4–5 and permanently exercises them | `simulation/scenarios.ts`, `simulation/analyze.ts`, `scenarios.test.ts`, integration tests |
+| 6.3 | `[x]` | 6.2 interface decisions | Scenario harness can represent the real boundaries added in Phases 4–5 and permanently exercises them | `simulation/scenarios.ts`, `simulation/analyze.ts`, `scenarios.test.ts`, integration tests |
 | 6.4 | `[ ]` | 6.3 | Produce daily decision traces and reproducible trigger-frequency/calibration reports without auto-tuning | `simulation/analyze.ts`, new calibration/report script, `docs/analysis/` |
 | 6.5 | `[ ]` | production Firebase project + deployment owner | Detect drift between repository rules and deployed rules | `.github/workflows/`, Firebase config, `docs/ops/` |
 | 6.6 | `[ ]` | — | Publish frontend/backend coverage as review evidence without a vanity global threshold | `app/package.json`, `pyproject.toml`, `.github/workflows/ci.yml` |
@@ -359,9 +359,16 @@ redundant-same-day-work ordering regression), and `trainingIntentAcceptance.test
 
 ---
 
-## `[ ]` 6.3 — Scenario input contract and targeted regression set
+## `[x]` 6.3 — Scenario input contract and targeted regression set
 
-### Input contract
+**Implemented (2026-08-10).** The shared deterministic harness accepts plural events,
+seeded history, fixed activities, scenario tags, and date-level readiness. It passes those
+inputs through the live day-0, day-1, anchor, and week-ahead paths. The regression corpus
+now includes static and mid-horizon multi-event taper boundaries, football and travel
+commitments, external-load versus green readiness, readiness crash/recovery, inferred and
+partial completion evidence, and the prior Specificity escaped case.
+
+### Implemented input contract
 
 Extend `AthleteScenario` compatibly:
 
@@ -380,7 +387,7 @@ emit observations.
 Keep all dates as Europe/Warsaw calendar-date strings and use
 `addDaysToLocalDateString`; never derive fixture dates through UTC serialization.
 
-### Targeted cases
+### Deterministic targeted cases
 
 Keep the existing 11 scenarios as controls and add at least these deterministic cases:
 
