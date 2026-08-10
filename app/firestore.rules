@@ -306,10 +306,18 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    function hasValidUnavailableModalities(data) {
+      return !('unavailableModalities' in data)
+        || (data.unavailableModalities is list
+          && data.unavailableModalities.size() <= 6
+          && data.unavailableModalities.hasOnly(['Running', 'Cycling', 'Strength', 'Field', 'Mobility', 'Cross Training']));
+    }
+
     match /users/{userId}/preferences/profile {
       allow read: if isOwner(userId);
-      allow create: if hasOwnedUserId(userId);
-      allow update: if keepsOwnership(userId) && request.resource.data.createdAt == resource.data.createdAt;
+      allow create: if hasOwnedUserId(userId) && hasValidUnavailableModalities(request.resource.data);
+      allow update: if keepsOwnership(userId) && request.resource.data.createdAt == resource.data.createdAt
+        && hasValidUnavailableModalities(request.resource.data);
       allow delete: if false;
     }
 

@@ -153,6 +153,10 @@ export function mapContextFromGoalsAndTrainingSettings(
     const dateStr = today ?? getLocalDateString();
     const effectiveInjuries = resolveEffectiveInjuryConstraints(trainingSettings.injuries, todaysCheckin?.tissueResponses, dateStr);
     const resolvedInjuries = resolveInjuryRestrictions(effectiveInjuries, dateStr);
+    const restrictedModalities = Array.from(new Set([
+        ...resolvedInjuries.restrictedModalities,
+        ...(preferences?.unavailableModalities ?? []),
+    ]));
 
     return {
         goals: {
@@ -165,7 +169,7 @@ export function mapContextFromGoalsAndTrainingSettings(
             hasFreeWeights: trainingSettings.equipment.free_weights,
             hasTreadmill: trainingSettings.equipment.treadmill,
             hasIndoorBike: trainingSettings.equipment.indoor_bike,
-            restrictedModalities: resolvedInjuries.restrictedModalities,
+            restrictedModalities,
             impliedGuardrails: resolvedInjuries.impliedGuardrails,
             restrictedCategories: resolvedInjuries.restrictedCategories,
             maxTimeMinutes: trainingSettings.defaults.weekdayMaxMinutes ?? trainingSettings.defaults.weekendMaxMinutes ?? DEFAULT_MAX_TIME_MINUTES,

@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import type { TrainingIntentProfile, UserEvent } from './models';
+import type { TrainingIntentProfile, UserEvent, UserGoal } from './models';
 import { evaluatePeriodizationPhase } from './periodization';
 import { resolveDemandProfile } from './eventPresets';
-import { resolvePlanningContext } from './planningMode';
+import { resolvePlanningContext, suggestTrainingPriorities } from './planningMode';
 
 function profile(mode: TrainingIntentProfile['planningMode']): TrainingIntentProfile {
     return {
@@ -39,5 +39,36 @@ describe('ADR-0017 planning mode resolution', () => {
         const withoutEvent = resolvePlanningContext(null, evaluatePeriodizationPhase([], '2026-08-10'), '2026-08-10');
         expect(withEvent).toMatchObject({ mode: 'evergreen', focusEvent: null, eventStrategy: null });
         expect(withoutEvent).toMatchObject({ mode: 'evergreen', focusEvent: null, eventStrategy: null });
+    });
+});
+
+describe('training intent profile suggestions', () => {
+    function goal(overrides: Partial<UserGoal & { id: string }>): UserGoal & { id: string } {
+        return {
+            id: 'goal-default', userId: 'u1', category: 'long-term', domain: 'other', title: 'Goal', description: null,
+            priority: 3, status: 'active', targetDate: null, schemaVersion: 1, createdAt: '2026-01-01', updatedAt: '',
+            ...overrides,
+        };
+    }
+
+    it('maps, deduplicates, and orders active open-ended goals deterministically', () => {
+        const suggestions = suggestTrainingPriorities([
+            goal({ id: 'later-strength', domain: 'strength', priority: 5, createdAt: '2026-02-01' }),
+            goal({ id: 'earlier-endurance', domain: 'endurance', priority: 5, createdAt: '2026-01-01' }),
+            goal({ id: 'duplicate-health', domain: 'weight_loss', priority: 4 }),
+            goal({ id: 'first-health', domain: 'general_fitness', priority: 4, createdAt: '2026-01-01' }),
+            goal({ id: 'dated', domain: 'strength', priority: 5, targetDate: '2026-10-01' }),
+            goal({ id: 'paused', domain: 'endurance', status: 'paused' }),
+        ]);
+
+        expect(suggestions).toEqual(['endurance', 'strength_muscle', 'health']);
+    });
+
+    it('falls back when no supported active, open-ended goal exists', () => {
+        expect(suggestTrainingPriorities([
+            goal({ domain: 'mobility' }),
+            goal({ domain: 'strength', status: 'completed' }),
+            goal({ domain: 'endurance', targetDate: '2026-10-01' }),
+        ])).toEqual(['balanced_performance']);
     });
 });

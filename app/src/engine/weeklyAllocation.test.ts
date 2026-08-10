@@ -12,6 +12,7 @@ import {
     type RequiredRoleOccurrence,
 } from './weeklyAllocation';
 import type { SessionTemplate } from './models';
+import { ENRICHED_TEMPLATES } from './templates';
 
 const DATES = ['2026-08-11', '2026-08-12', '2026-08-13', '2026-08-14'];
 
@@ -80,6 +81,17 @@ function stubEvaluator(rules: StubRules, dates: readonly string[] = DATES): Allo
 }
 
 describe('ADR-0018 required role occurrences', () => {
+    it('resolves exact candidate identities from an evergreen coverage descriptor', () => {
+        const occurrence: RequiredRoleOccurrence = {
+            id: 'evergreen-aerobic', coverageSetId: 'evergreen_general', coverageKey: 'aerobic_volume',
+            authoredSessionIdentity: 'evergreen_general:aerobic_volume', phase: 'general',
+            windowStart: '2026-08-01', windowEnd: '2026-08-07', ordinal: 0, label: 'Aerobic',
+            eligibleTemplateIds: [], eligibleWorkoutIds: [],
+        };
+
+        expect(attachExactEligibleIdentities([occurrence], ENRICHED_TEMPLATES)[0].eligibleTemplateIds).toContain('end_easy_01');
+    });
+
     it('creates deterministic distinct ids carrying the canonical identity fields', () => {
         const first = deriveRequiredRoleOccurrences(coverageState());
         const second = deriveRequiredRoleOccurrences(coverageState());

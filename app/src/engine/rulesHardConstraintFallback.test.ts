@@ -21,8 +21,9 @@ vi.mock('./optimizer', async () => {
 });
 
 import { evaluateTrainingWithIntent } from './rules';
+import { rankCandidates } from './optimizer';
 
-function context(): UserContext {
+function context(restrictedModalities: UserContext['constraints']['restrictedModalities'] = []): UserContext {
     return {
         goals: { shortTerm: '', midTerm: '', longTerm: '' },
         constraints: {
@@ -30,7 +31,7 @@ function context(): UserContext {
             hasFreeWeights: true,
             hasTreadmill: false,
             hasIndoorBike: true,
-            restrictedModalities: [],
+            restrictedModalities,
             maxTimeMinutes: 90,
         },
         preferences: {
@@ -106,5 +107,26 @@ describe('evaluateTrainingWithIntent hard-constraint fallback', () => {
         expect(recommendation.decisionTrace?.candidateScores.every(candidate =>
             candidate.excludedReasons.includes('QUALITY_SPACING_VIOLATION')
         )).toBe(true);
+    });
+
+    it('keeps an unavailable modality out of the ranked set before failing closed', async () => {
+        vi.mocked(rankCandidates).mockClear();
+
+        const recommendation = await evaluateTrainingWithIntent(
+            'review-user',
+            { subjective: subjective(), objective: objective() },
+            // mapContextFromGoalsAndTrainingSettings places persisted unavailable modalities
+            // here, alongside injury-derived hard restrictions.
+            context(['Cycling']),
+            [],
+            '2026-03-02',
+            undefined,
+            emptyHistoryProvider,
+        );
+
+        const rankedCandidates = vi.mocked(rankCandidates).mock.calls[0]?.[0] ?? [];
+        expect(rankedCandidates.some(candidate => candidate.modality === 'Cycling')).toBe(false);
+        expect(recommendation.template.modality).not.toBe('Cycling');
+        expect(recommendation.mode).toBe('recover');
     });
 });

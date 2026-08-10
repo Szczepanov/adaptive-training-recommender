@@ -694,6 +694,15 @@ export function validatePreferences(raw: any): ValidationResult<UserPreferences>
         }
     }
 
+    if (raw.unavailableModalities !== undefined) {
+        const validUnavailableModalities = ['Running', 'Cycling', 'Strength', 'Field', 'Mobility', 'Cross Training'];
+        if (!Array.isArray(raw.unavailableModalities)) {
+            errors.push({ field: 'unavailableModalities', message: 'Unavailable modalities must be an array' });
+        } else if (!raw.unavailableModalities.every((m: any) => validUnavailableModalities.includes(m))) {
+            errors.push({ field: 'unavailableModalities', message: 'Unavailable modalities must be supported canonical modalities' });
+        }
+    }
+
     // Explanation verbosity validation
     const validVerbosity: ExplanationVerbosity[] = ['brief', 'detailed', 'technical'];
     if (!raw.explanationVerbosity || !validVerbosity.includes(raw.explanationVerbosity)) {
@@ -793,6 +802,7 @@ export function validatePreferences(raw: any): ValidationResult<UserPreferences>
         preferredModalities: raw.preferredModalities,
         deprioritizedModalities: raw.deprioritizedModalities ?? [],
         avoidedModalities: raw.avoidedModalities,
+        unavailableModalities: raw.unavailableModalities ?? [],
         explanationVerbosity: raw.explanationVerbosity,
         conservativeBias: raw.conservativeBias ?? false,
         preferredUnits: raw.preferredUnits,

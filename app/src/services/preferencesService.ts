@@ -60,6 +60,7 @@ export class PreferencesService {
                 preferredModalities: existingPrefs?.preferredModalities ?? [],
                 deprioritizedModalities: existingPrefs?.deprioritizedModalities ?? [],
                 avoidedModalities: existingPrefs?.avoidedModalities ?? [],
+                unavailableModalities: existingPrefs?.unavailableModalities ?? [],
                 explanationVerbosity: existingPrefs?.explanationVerbosity ?? 'detailed',
                 conservativeBias: existingPrefs?.conservativeBias ?? false,
                 preferredUnits: existingPrefs?.preferredUnits ?? {
@@ -107,6 +108,7 @@ export class PreferencesService {
             preferredModalities: ['Running', 'Cycling', 'Strength'],
             deprioritizedModalities: [],
             avoidedModalities: [],
+            unavailableModalities: [],
             explanationVerbosity: 'detailed',
             conservativeBias: false,
             preferredUnits: {

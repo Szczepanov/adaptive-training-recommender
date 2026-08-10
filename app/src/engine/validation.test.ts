@@ -1,5 +1,19 @@
 import { describe, it, expect } from 'vitest';
-import { isValidDate, validateRecommendation, validateAdherenceUpdate, validateGoal, validateFixedActivity, validateCheckin, validateAuthoredPlanBlock } from './validation';
+import { isValidDate, validateRecommendation, validateAdherenceUpdate, validateGoal, validateFixedActivity, validateCheckin, validateAuthoredPlanBlock, validatePreferences } from './validation';
+
+describe('validatePreferences unavailable modalities', () => {
+    const valid = {
+        userId: 'u1', preferredRecoveryStyle: 'mixed', defaultWeekdayTimeMin: 45, defaultWeekendTimeMin: 60,
+        preferredTimeOfDay: 'flexible', preferredModalities: [], avoidedModalities: [],
+        explanationVerbosity: 'detailed', conservativeBias: false,
+        preferredUnits: { distance: 'km', weight: 'kg', temperature: 'celsius' },
+    };
+
+    it('persists canonical hard exclusions and rejects unsupported values', () => {
+        expect(validatePreferences({ ...valid, unavailableModalities: ['Cycling'] }).data?.unavailableModalities).toEqual(['Cycling']);
+        expect(validatePreferences({ ...valid, unavailableModalities: ['None'] }).isValid).toBe(false);
+    });
+});
 
 describe('isValidDate', () => {
     it('rejects impossible calendar dates rather than normalizing them', () => {

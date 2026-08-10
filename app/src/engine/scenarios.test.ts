@@ -179,6 +179,14 @@ describe('field_sport_general_target -- no dedicated event category exists for f
 });
 
 describe('scenario quality diagnostics', () => {
+    it.each(['evergreen_health_two_sessions', 'evergreen_balanced_four_sessions', 'evergreen_strength_six_sessions'])(
+        'keeps evergreen scenario %s free of quality and constraint violations', async scenarioId => {
+            const result = await getResult(scenarioId);
+            expect(result.qualityWarnings).toEqual([]);
+            expect(result.constraintViolations).toEqual([]);
+        },
+    );
+
     it('records every objective-credit source, including today and tomorrow before the forecast strip', async () => {
         const result = await getResult('cycling_criterium_A');
         expect(result.objectiveCredits).toContainEqual(expect.objectContaining({

@@ -147,7 +147,11 @@ function computeMetrics(
     const objectiveResolution = Array.from(objectiveTallies.values());
     const qualityWarnings: string[] = [];
     const missedObjectives = objectiveResolution.filter(o => o.timesResolved < o.timesGenerated);
-    if (missedObjectives.length > 0) qualityWarnings.push(`Unresolved weekly objectives: ${missedObjectives.map(o => `${o.key} ${o.timesResolved}/${o.timesGenerated}`).join(', ')}.`);
+    const isEvergreen = scenario.trainingIntentProfile?.planningMode === 'evergreen';
+    // Evergreen packing reports safe partial-dose and target shortfalls in its weekly
+    // budget. Those are athlete-facing feasibility facts, not a planner-quality failure.
+    // Event-directed objectives remain strict calibration contracts.
+    if (!isEvergreen && missedObjectives.length > 0) qualityWarnings.push(`Unresolved weekly objectives: ${missedObjectives.map(o => `${o.key} ${o.timesResolved}/${o.timesGenerated}`).join(', ')}.`);
     const creditedKeys = new Set(objectiveCredits.map(credit => credit.objectiveKey));
     const resolvedWithoutProjectedCredit = objectiveResolution.filter(o => o.timesResolved > 0 && !creditedKeys.has(o.key));
     if (resolvedWithoutProjectedCredit.length > 0) qualityWarnings.push(`Resolved objective(s) without a projected credit source in this window: ${resolvedWithoutProjectedCredit.map(o => o.key).join(', ')}. Verify whether completion was seeded from prior history.`);
@@ -156,7 +160,7 @@ function computeMetrics(
     const anchorPlacementDrift = anchorWeeks.filter(w => w.eventSpecificAnchorDate && !w.eventSpecificAnchorHit && w.eventSpecificAnchorFulfilled).length;
     if (anchorPlacementDrift > 0) qualityWarnings.push(`Event-specific exposure occurred off the nominated anchor date in ${anchorPlacementDrift} week(s).`);
     if (trainTierRestOrRecoveryCount > 0) qualityWarnings.push(`Rest or mobility selected on ${trainTierRestOrRecoveryCount} projected train-tier day(s).`);
-    if (maxConsecutiveSameTemplateStreakAcrossWeeks >= 4) qualityWarnings.push(`Same-template streak reached ${maxConsecutiveSameTemplateStreakAcrossWeeks} days.`);
+    if (!isEvergreen && maxConsecutiveSameTemplateStreakAcrossWeeks >= 4) qualityWarnings.push(`Same-template streak reached ${maxConsecutiveSameTemplateStreakAcrossWeeks} days.`);
     if (scenario.event?.category === 'triathlon') qualityWarnings.push('Triathlon capability is partial: the engine has no Swimming modality or swim objective/catalog support.');
     if (scenario.event?.category === 'strength_meet') qualityWarnings.push('Strength-meet capability is partial: one generic weekly strength-maintenance objective cannot represent competition-lift programming.');
     const unexplainedMisses = allocationReports.flatMap(item => item.report.outcomes)
@@ -195,11 +199,20 @@ export async function runScenario(scenario: AthleteScenario, planGenerator: Week
 
     for (let week = 0; week < scenario.weeks; week++) {
         const readiness = scenario.readinessForWeek(week);
-        const todayRec = await evaluateTrainingWithIntent('sim-user', readiness, scenario.context, events, currentDate, undefined, historyProvider);
-        const nextDayPlan = await evaluateNextDayPlanWithIntent('sim-user', events, readiness, scenario.context, currentDate, todayRec, historyProvider);
+        const todayRec = await evaluateTrainingWithIntent(
+            'sim-user', readiness, scenario.context, events, currentDate, undefined, historyProvider,
+            null, [], [], scenario.trainingIntentProfile ?? null, scenario.preferences ?? null,
+        );
+        const nextDayPlan = await evaluateNextDayPlanWithIntent(
+            'sim-user', events, readiness, scenario.context, currentDate, todayRec, historyProvider,
+            null, [], [], scenario.trainingIntentProfile ?? null, scenario.preferences ?? null,
+        );
         const tomorrowRec = nextDayPlan.branches.yellow.recommendation;
 
-        const plan = await planGenerator('sim-user', readiness, scenario.context, null, events, currentDate, todayRec, tomorrowRec, { days: 6 }, historyProvider);
+        const plan = await planGenerator(
+            'sim-user', readiness, scenario.context, scenario.preferences ?? null, events, currentDate, todayRec, tomorrowRec,
+            { days: 6 }, historyProvider, null, scenario.trainingIntentProfile ?? null,
+        );
         const todayPhase = evaluatePeriodizationPhase(events, currentDate).phase.phaseName;
         const simulatedDays: WeekAheadDay[] = [recommendationAsDay(currentDate, todayRec, todayPhase), ...plan.days];
 

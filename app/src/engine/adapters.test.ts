@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { mapContextFromGoalsAndTrainingSettings } from './adapters';
-import type { DailySubjectiveCheckin, TrainingSettings } from './models';
+import type { DailySubjectiveCheckin, TrainingSettings, UserPreferences } from './models';
 
 function testTrainingSettings(overrides: Partial<TrainingSettings> = {}): TrainingSettings {
     return {
@@ -29,6 +29,19 @@ function testCheckin(overrides: Partial<DailySubjectiveCheckin> = {}): DailySubj
 }
 
 describe('mapContextFromGoalsAndTrainingSettings (Phase 5.4 tissue response wiring)', () => {
+    it('turns persisted unavailable modalities into hard engine restrictions', () => {
+        const preferences: UserPreferences = {
+            userId: 'athlete', preferredRecoveryStyle: 'mixed', defaultWeekdayTimeMin: 45, defaultWeekendTimeMin: 60,
+            preferredTimeOfDay: 'flexible', preferredModalities: [], deprioritizedModalities: [], avoidedModalities: [],
+            unavailableModalities: ['Cycling'], explanationVerbosity: 'detailed', conservativeBias: false,
+            preferredUnits: { distance: 'km', weight: 'kg', temperature: 'celsius' }, schemaVersion: 1,
+            createdAt: '', updatedAt: '',
+        };
+
+        const context = mapContextFromGoalsAndTrainingSettings([], testTrainingSettings(), preferences, '2026-08-08');
+        expect(context.constraints.restrictedModalities).toContain('Cycling');
+    });
+
     it("threads today's tissue response into the injury gate, tightening a monitor-only knee constraint", () => {
         const settings = testTrainingSettings({ injuries: [{ region: 'knee', severity: 'monitor' }] });
         const checkin = testCheckin({

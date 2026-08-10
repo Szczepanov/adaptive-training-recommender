@@ -1,5 +1,13 @@
 import type { CompletedExposure } from './trainingHistory';
-import type { TrainingPriority } from './models';
+import type { TrainingIntentProfile, TrainingPriority } from './models';
+
+/** The one in-memory default for an athlete who has not yet saved an intent profile.
+ * It is deliberately not persisted by planning-mode resolution. */
+export const DEFAULT_TRAINING_INTENT_PROFILE: Omit<TrainingIntentProfile, 'userId' | 'createdAt' | 'updatedAt'> = {
+    planningMode: 'evergreen', priorities: ['balanced_performance'],
+    weeklyCommitment: { minSessions: 2, targetSessions: 3, maxSessions: 4 },
+    organizationPreference: 'auto', schemaVersion: 1,
+};
 
 export type AdaptationKey = 'aerobic_endurance' | 'strength' | 'high_intensity';
 export type DoseUnit = 'minutes' | 'sessions';

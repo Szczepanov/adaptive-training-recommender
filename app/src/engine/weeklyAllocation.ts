@@ -1,4 +1,4 @@
-import type { PlanCoverageKey, PlanPhase } from '../workouts/event-plan';
+import { coverageSetFor, type CoverageSetId, type PlanCoverageKey, type PlanPhase } from '../workouts/event-plan';
 import type { SessionTemplate } from './models';
 import {
     authoredSessionIdentityFor,
@@ -19,7 +19,7 @@ import {
  */
 export interface RequiredRoleOccurrence {
     id: string;
-    coverageSetId: string;
+    coverageSetId: CoverageSetId;
     coverageKey: PlanCoverageKey;
     /** Stable `EventPlanSessionCoverage` record identity, never a selected candidate. */
     authoredSessionIdentity: string;
@@ -172,7 +172,7 @@ export function attachExactEligibleIdentities(
 ): RequiredRoleOccurrence[] {
     return occurrences.map(occurrence => {
         const eligibleTemplateIds = templates
-            .filter(template => coverageKeysForTemplate(template, occurrence.phase).includes(occurrence.coverageKey))
+            .filter(template => coverageKeysForTemplate(template, occurrence.phase, coverageSetFor(occurrence.coverageSetId)).includes(occurrence.coverageKey))
             .map(template => template.id)
             .sort();
         return {

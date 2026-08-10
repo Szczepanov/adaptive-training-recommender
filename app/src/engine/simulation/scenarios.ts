@@ -3,8 +3,10 @@ import type {
     EngineObjectiveInput,
     SubjectiveInput,
     TrainingSettings,
+    TrainingIntentProfile,
     UserContext,
     UserEvent,
+    UserPreferences,
     SessionTemplate,
 } from '../models';
 import type { CompletedExposure } from '../trainingHistory';
@@ -24,6 +26,10 @@ export interface AthleteScenario {
     description: string;
     context: UserContext;
     event: UserEvent | null;
+    /** Explicit profile scenarios exercise evergreen ownership without changing the
+     * profile-less event-directed fixtures used by the committed baseline. */
+    trainingIntentProfile?: TrainingIntentProfile | null;
+    preferences?: UserPreferences | null;
     startDate: string;
     /** Optional deterministic history seeded before the first simulated decision. Phase
      * 6.3 needs this to reproduce failures that depend on yesterday's real training rather
@@ -86,6 +92,26 @@ function stableReadiness(overrides: Partial<SubjectiveInput> = {}, objectiveOver
     return { subjective, objective };
 }
 
+function evergreenProfile(
+    priorities: TrainingIntentProfile['priorities'],
+    weeklyCommitment: TrainingIntentProfile['weeklyCommitment'],
+): TrainingIntentProfile {
+    return {
+        userId: 'sim-user', planningMode: 'evergreen', priorities, weeklyCommitment,
+        organizationPreference: 'auto', schemaVersion: 1, createdAt: '', updatedAt: '',
+    };
+}
+
+function preferences(weekdayMinutes: number, weekendMinutes: number): UserPreferences {
+    return {
+        userId: 'sim-user', preferredRecoveryStyle: 'mixed', defaultWeekdayTimeMin: weekdayMinutes,
+        defaultWeekendTimeMin: weekendMinutes, preferredTimeOfDay: 'flexible', preferredModalities: [],
+        deprioritizedModalities: [], avoidedModalities: [], unavailableModalities: [], explanationVerbosity: 'detailed',
+        conservativeBias: false, preferredUnits: { distance: 'km', weight: 'kg', temperature: 'celsius' },
+        schemaVersion: 1, createdAt: '', updatedAt: '',
+    };
+}
+
 const START_DATE = '2026-08-07';
 
 function eventOn(
@@ -104,6 +130,33 @@ function eventOn(
 }
 
 export const SCENARIOS: AthleteScenario[] = [
+    {
+        id: 'evergreen_health_two_sessions',
+        label: 'Evergreen health priority (2 sessions)',
+        description: 'A compact health-priority week proves the evergreen path handles a realistic lower commitment without inventing event authority.',
+        context: context({ indoor_bike: true, free_weights: true }, ['Cycling', 'Strength']), event: null,
+        trainingIntentProfile: evergreenProfile(['health'], { minSessions: 2, targetSessions: 2, maxSessions: 2 }),
+        preferences: preferences(60, 60), startDate: START_DATE, weeks: 2,
+        readinessForWeek: () => stableReadiness(),
+    },
+    {
+        id: 'evergreen_balanced_four_sessions',
+        label: 'Evergreen balanced performance (4 sessions)',
+        description: 'A balanced four-session athlete exercises aerobic and strength roles under the evergreen coverage set.',
+        context: context({ indoor_bike: true, free_weights: true }, ['Cycling', 'Strength']), event: null,
+        trainingIntentProfile: evergreenProfile(['balanced_performance'], { minSessions: 3, targetSessions: 4, maxSessions: 4 }),
+        preferences: preferences(75, 90), startDate: START_DATE, weeks: 2,
+        readinessForWeek: () => stableReadiness(),
+    },
+    {
+        id: 'evergreen_strength_six_sessions',
+        label: 'Evergreen strength-leaning (6 sessions)',
+        description: 'A higher-frequency strength athlete confirms the dedicated development objective survives weekly planning.',
+        context: context({ free_weights: true, cable_machine: true, indoor_bike: true }, ['Strength', 'Cycling']), event: null,
+        trainingIntentProfile: evergreenProfile(['strength_muscle', 'balanced_performance'], { minSessions: 4, targetSessions: 6, maxSessions: 6 }),
+        preferences: preferences(60, 90), startDate: START_DATE, weeks: 2,
+        readinessForWeek: () => stableReadiness(),
+    },
     {
         id: 'cycling_gran_fondo_A',
         label: 'Cycling A-event (gran fondo, 40 days out)',

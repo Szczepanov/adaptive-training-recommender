@@ -406,7 +406,7 @@ strength requirement is applicable.
 
 ---
 
-### 7.7 `[ ]` Contain taper to real events, and honour hard modality exclusions
+### 7.7 `[x]` Contain taper to real events, and honour hard modality exclusions
 
 Two small independent fixes (G7, G5):
 
@@ -433,7 +433,7 @@ the preference-schema portion stays with 7.1 because it changes persisted owners
 
 ---
 
-### 7.8 `[ ]` Seed defaults, policy version, scenarios, baseline
+### 7.8 `[x]` Seed defaults, policy version, scenarios, baseline
 
 * **Default profile** (7.1's "absent is not an error"): the in-memory evergreen default is
   `planningMode: 'evergreen'`, `priorities: ['balanced_performance']`,
@@ -452,8 +452,9 @@ the preference-schema portion stays with 7.1 because it changes persisted owners
   This is a **display and default-seeding** mapping only: it pre-fills a profile form and
   becomes input to `resolveEvidenceBackedStrategy` only after the athlete confirms it. It must not
   silently persist or alter the profile-less engine default.
-* **`POLICY_VERSION`** → `2026-08-training-intent-modes-v1`; push
-  `2026-08-authored-travel-blocks-v1` onto `HISTORICAL_POLICY_VERSIONS`. Verify with
+* **`POLICY_VERSION`** → `2026-08-training-intent-safety-v1`; retain
+  `2026-08-training-intent-modes-v1` and `2026-08-authored-travel-blocks-v1` in
+  `HISTORICAL_POLICY_VERSIONS`. Verify with
   `node scripts/check-policy-drift.mjs <base-sha>`.
 * **Scenarios**: add evergreen athletes to `engine/simulation/scenarios.ts` — at minimum a
   2-session health-priority athlete, a 4-session balanced athlete, and a 6-session
@@ -593,6 +594,6 @@ Every item is independently revertible. 7.1 and 7.7 land value without 7.3–7.5
 | 7.4 Generic plan-coverage registry | `[x]` | ADR-0017 | Both descriptors validate; September set byte-identical |
 | 7.5 Evergreen coverage + plan definition | `[-]` | 7.3, 7.4 | Non-empty `CoverageState` eventless |
 | 7.6 `strength_development` key | `[x]` | 7.3 | Exhaustive switches handled, no casts |
-| 7.7 Taper containment + hard exclusions | `[ ]` | — | 5-star `general_target` → no taper |
-| 7.8 Defaults, policy version, scenarios | `[ ]` | 7.1–7.6 | Zero diff on existing scenarios |
+| 7.7 Taper containment + hard exclusions | `[x]` | — | 5-star `general_target` → no taper |
+| 7.8 Defaults, policy version, scenarios | `[x]` | 7.1–7.6 | Zero diff on existing scenarios |
 | 7.9 Surfaces and docs | `[ ]` | 7.1–7.7 | Profile editable; arch doc matches code |

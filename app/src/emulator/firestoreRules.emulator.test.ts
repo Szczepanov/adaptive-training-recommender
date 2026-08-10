@@ -13,6 +13,7 @@ const recommendationPath = `users/${ownerId}/daily_recommendations/2026-08-07`;
 const fixedActivityPath = `users/${ownerId}/fixed_activities/activity-1`;
 const planBlockPath = `users/${ownerId}/plan_blocks/trip-august`;
 const trainingIntentProfilePath = `users/${ownerId}/training_intent/profile`;
+const preferencesPath = `users/${ownerId}/preferences/profile`;
 const goalPath = `users/${ownerId}/goals/goal-1`;
 
 function validGoal() {
@@ -52,6 +53,13 @@ function validTrainingIntentProfile() {
         userId: ownerId, planningMode: 'evergreen', priorities: ['health'],
         weeklyCommitment: { minSessions: 2, targetSessions: 3, maxSessions: 4 },
         organizationPreference: 'auto', schemaVersion: 1,
+        createdAt: '2026-08-01T00:00:00Z', updatedAt: '2026-08-01T00:00:00Z',
+    };
+}
+
+function validPreferences() {
+    return {
+        userId: ownerId, unavailableModalities: ['Cycling'],
         createdAt: '2026-08-01T00:00:00Z', updatedAt: '2026-08-01T00:00:00Z',
     };
 }
@@ -414,6 +422,14 @@ emulatorDescribe('Firestore security rules', () => {
         const otherDb = testEnvironment.authenticatedContext(otherUserId).firestore();
         await assertFails(getDoc(doc(otherDb, planBlockPath)));
         await assertFails(setDoc(doc(otherDb, `users/${otherUserId}/plan_blocks/forged`), validPlanBlock()));
+    });
+
+    it('allows canonical unavailable modalities and rejects unsupported values', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertSucceeds(setDoc(doc(ownerDb, preferencesPath), validPreferences()));
+        await assertFails(setDoc(doc(ownerDb, preferencesPath), {
+            ...validPreferences(), unavailableModalities: ['None'],
+        }));
     });
 
     it('enforces ownership, integer capacity, exact shape and immutable creation time for training intent profiles', async () => {

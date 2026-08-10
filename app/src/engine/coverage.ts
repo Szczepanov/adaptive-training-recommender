@@ -1,4 +1,4 @@
-import type { CoverageSetDescriptor, EventPlanCoverageKey, EventPlanRequirement, PlanCoverageKey, PlanPhase } from '../workouts/event-plan';
+import type { CoverageSetDescriptor, CoverageSetId, EventPlanCoverageKey, EventPlanRequirement, PlanCoverageKey, PlanPhase } from '../workouts/event-plan';
 import { coverageSetFor, SEPTEMBER_CYCLING_EVENT_COVERAGE_SET } from '../workouts/event-plan';
 import { WORKOUTS } from '../workouts/catalog';
 import { workoutForTemplate } from '../workouts/prescription';
@@ -61,7 +61,7 @@ export interface CoverageState {
     /** Which authored coverage set these requirements came from. ADR-0018 D-MISS makes it
      * part of a role occurrence's canonical identity; ADR-0017 D-COVSET will turn it into
      * a registry lookup rather than today's single module constant. */
-    coverageSetId: string | null;
+    coverageSetId: CoverageSetId | null;
     /** Descriptor authority used for exact identity lookup. */
     descriptor?: CoverageSetDescriptor | null;
     requirements: WeeklyCoverageRequirement[];

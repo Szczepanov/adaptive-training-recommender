@@ -1,6 +1,7 @@
-import type { PlanningMode, TrainingIntentProfile, UserEvent } from './models';
+import type { PlanningMode, TrainingIntentProfile, TrainingPriority, UserEvent, UserGoal } from './models';
 import type { PeriodizationResult } from './periodization';
 import { resolvePlanDefinitionForEvent } from './planSchedule';
+import { DEFAULT_TRAINING_INTENT_PROFILE } from './evergreenStrategy';
 
 export interface PlanningContext {
     mode: PlanningMode;
@@ -10,11 +11,30 @@ export interface PlanningContext {
     eventStrategy: 'structured_plan' | 'demand_derived' | null;
 }
 
-export const DEFAULT_TRAINING_INTENT_PROFILE: Omit<TrainingIntentProfile, 'userId' | 'createdAt' | 'updatedAt'> = {
-    planningMode: 'evergreen', priorities: ['balanced_performance'],
-    weeklyCommitment: { minSessions: 2, targetSessions: 3, maxSessions: 4 },
-    organizationPreference: 'auto', schemaVersion: 1,
+export { DEFAULT_TRAINING_INTENT_PROFILE } from './evergreenStrategy';
+
+type GoalForPrioritySuggestion = UserGoal & { id?: string };
+
+const GOAL_DOMAIN_PRIORITY: Partial<Record<UserGoal['domain'], TrainingPriority>> = {
+    strength: 'strength_muscle',
+    endurance: 'endurance',
+    general_fitness: 'health',
+    weight_loss: 'health',
 };
+
+/** Produces form-seeding suggestions only. Profile-less engine evaluation continues to
+ * use DEFAULT_TRAINING_INTENT_PROFILE until the athlete confirms a saved profile. */
+export function suggestTrainingPriorities(goals: readonly GoalForPrioritySuggestion[]): TrainingPriority[] {
+    const ordered = goals
+        .filter(goal => goal.status === 'active' && !goal.targetDate)
+        .map(goal => ({ goal, priority: GOAL_DOMAIN_PRIORITY[goal.domain] }))
+        .filter((item): item is { goal: GoalForPrioritySuggestion; priority: TrainingPriority } => item.priority !== undefined)
+        .sort((left, right) => right.goal.priority - left.goal.priority
+            || (left.goal.createdAt ?? '').localeCompare(right.goal.createdAt ?? '')
+            || (left.goal.id ?? left.goal.title).localeCompare(right.goal.id ?? right.goal.title));
+    const suggestions = Array.from(new Set(ordered.map(item => item.priority)));
+    return suggestions.length > 0 ? suggestions : ['balanced_performance'];
+}
 
 function fallbackProfile(profile: TrainingIntentProfile | null): TrainingIntentProfile {
     if (profile) return profile;

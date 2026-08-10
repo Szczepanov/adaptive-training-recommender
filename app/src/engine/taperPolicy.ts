@@ -26,7 +26,9 @@ export function resolveEventTaper(event: UserEvent): ResolvedTaper | null {
         const minimumThreeDays = addDaysToLocalDateString(raceDate, -3);
         startDate = weekAligned < minimumThreeDays ? weekAligned : minimumThreeDays;
     }
-    if (!startDate) {
+    // General targets are dated goals, not competitions. A star rating must not turn one
+    // into a synthetic taper; they taper only when the athlete supplied an authored date.
+    if (!startDate && event.category !== 'general_target') {
         const legacyDays = event.priority === 'A' ? 14 : event.priority === 'B' ? 5 : 0;
         startDate = legacyDays > 0 ? addDaysToLocalDateString(raceDate, -legacyDays) : null;
     }

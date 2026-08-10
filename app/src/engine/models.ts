@@ -912,6 +912,9 @@ export interface UserPreferences {
     preferredModalities: string[]; // e.g., ['Running', 'Cycling', 'Strength']
     deprioritizedModalities: string[]; // Canonical Phase 4 name
     avoidedModalities: string[]; // e.g., ['Running']
+    /** Hard exclusion: the modality is unavailable and must not enter any candidate set.
+     * Optional only for backward-compatible reads of pre-7.7 preference documents. */
+    unavailableModalities?: Exclude<SessionTemplate['modality'], 'None'>[];
     // UI/Explanation preferences
     explanationVerbosity: 'brief' | 'detailed' | 'technical';
     conservativeBias: boolean;
