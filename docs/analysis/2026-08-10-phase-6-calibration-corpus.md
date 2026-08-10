@@ -45,3 +45,18 @@ This is deterministic policy-regression evidence, not physiological or clinical
 calibration. A frequently activated rule is a review signal, not a recommendation to change
 a threshold. Any later policy change must follow the Phase 6.4 policy-change evidence note
 requirements in the Phase 6 plan, including its own dated analysis and rollback condition.
+
+## Phase 6.7 preliminary fatigue-fusion review
+
+The first review ran the 24 scenarios / 413 decision traces through the production `max`
+fusion policy. The external-load-versus-green-readiness case preserved approximately 0.50
+systemic external fatigue on its first decision and selected an easy, rather than hard,
+session. The corpus reported zero hard-constraint violations.
+
+Eight lower-body trace-days had raw external load above the clamped `1.0` ceiling (and a
+small number of other-axis saturations). That is an observable saturation boundary, but it
+did not produce a safety, objective, or recovery-spacing contract failure in this corpus.
+An additive fusion would also risk double-counting an internal response that already reflects
+the same external training. There is therefore no evidence-backed candidate to promote yet;
+production remains on `max(external, internal)` and Phase 6.7 stays in progress pending a
+reproducible undesirable trajectory.
