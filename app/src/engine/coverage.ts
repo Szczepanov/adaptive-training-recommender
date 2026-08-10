@@ -1,5 +1,5 @@
-import type { EventPlanCoverageKey, EventPlanPhase, EventPlanRequirement } from '../workouts/event-plan';
-import { SEPTEMBER_CYCLING_EVENT_COVERAGE_SET_ID, SEPTEMBER_CYCLING_EVENT_SESSION_COVERAGE } from '../workouts/event-plan';
+import type { CoverageSetDescriptor, EventPlanCoverageKey, EventPlanRequirement, PlanCoverageKey, PlanPhase } from '../workouts/event-plan';
+import { coverageSetFor, SEPTEMBER_CYCLING_EVENT_COVERAGE_SET } from '../workouts/event-plan';
 import { WORKOUTS } from '../workouts/catalog';
 import { workoutForTemplate } from '../workouts/prescription';
 import type { ObjectivePriority, SessionTemplate } from './models';
@@ -32,7 +32,7 @@ export type CoverageCreditSource = 'completed' | 'projected' | 'fixed_activity';
 export interface CoverageCredit {
     occurrenceKey: string;
     date: string;
-    coverageKey: EventPlanCoverageKey;
+    coverageKey: PlanCoverageKey;
     source: CoverageCreditSource;
     templateId?: string;
     workoutId?: string;
@@ -40,7 +40,7 @@ export interface CoverageCredit {
 
 export interface WeeklyCoverageRequirement {
     id: string;
-    key: EventPlanCoverageKey;
+    key: PlanCoverageKey;
     label: string;
     requirement: EventPlanRequirement;
     minimumSessions: number;
@@ -56,12 +56,14 @@ export interface WeeklyCoverageRequirement {
 
 export interface CoverageState {
     asOfDate: string;
-    phase: EventPlanPhase | null;
+    phase: PlanPhase | null;
     activeBlockId: string | null;
     /** Which authored coverage set these requirements came from. ADR-0018 D-MISS makes it
      * part of a role occurrence's canonical identity; ADR-0017 D-COVSET will turn it into
      * a registry lookup rather than today's single module constant. */
     coverageSetId: string | null;
+    /** Descriptor authority used for exact identity lookup. */
+    descriptor?: CoverageSetDescriptor | null;
     requirements: WeeklyCoverageRequirement[];
 }
 
@@ -69,10 +71,6 @@ export interface CoverageHistoryEntry extends ExposureIdentity {
     date: string;
     source?: CoverageCreditSource;
 }
-
-const COVERAGE_BY_KEY = new Map(
-    SEPTEMBER_CYCLING_EVENT_SESSION_COVERAGE.map(item => [item.key, item]),
-);
 
 const ANCHOR_TIMED_COVERAGE_KEYS = new Set<EventPlanCoverageKey>([
     'sustained_quality',
@@ -104,12 +102,13 @@ export function workoutIdForTemplateId(templateId: string | undefined): string |
 
 export function coverageKeysForExposure(
     identity: ExposureIdentity,
-    phase: EventPlanPhase | null,
-): EventPlanCoverageKey[] {
+    phase: PlanPhase | null,
+    descriptor: CoverageSetDescriptor = SEPTEMBER_CYCLING_EVENT_COVERAGE_SET,
+): PlanCoverageKey[] {
     if (!phase) return [];
     const workoutId = identity.workoutId ?? workoutIdForTemplateId(identity.templateId);
     if (!workoutId) return [];
-    return SEPTEMBER_CYCLING_EVENT_SESSION_COVERAGE
+    return descriptor.coverage
         .filter(item => item.phases.includes(phase) && item.workoutIds.includes(workoutId))
         .filter(item => {
             if (item.key !== 'aerobic_volume') return true;
@@ -124,14 +123,15 @@ export function coverageKeysForExposure(
 
 export function coverageKeysForTemplate(
     template: SessionTemplate,
-    phase: EventPlanPhase | null,
-): EventPlanCoverageKey[] {
+    phase: PlanPhase | null,
+    descriptor: CoverageSetDescriptor = SEPTEMBER_CYCLING_EVENT_COVERAGE_SET,
+): PlanCoverageKey[] {
     return coverageKeysForExposure({
         templateId: template.id,
         modality: template.modality,
         category: template.category,
         durationMin: template.durationMin,
-    }, phase);
+    }, phase, descriptor);
 }
 
 function laterDate(left: string, right: string): string {
@@ -149,8 +149,9 @@ function occurrenceKeyFor(exposure: CoverageHistoryEntry, resolvedWorkoutId: str
 }
 
 function newRequirement(args: {
+    descriptor: CoverageSetDescriptor;
     blockId: string;
-    key: EventPlanCoverageKey;
+    key: PlanCoverageKey;
     minimumSessions: number;
     targetSessions: number;
     priority: ObjectivePriority;
@@ -159,7 +160,7 @@ function newRequirement(args: {
     windowEnd: string;
     index: number;
 }): WeeklyCoverageRequirement | null {
-    const coverage = COVERAGE_BY_KEY.get(args.key);
+    const coverage = args.descriptor.coverage.find(item => item.key === args.key);
     if (!coverage) return null;
     return {
         id: `coverage_${args.blockId}_${args.key}_${args.index}`,
@@ -182,10 +183,11 @@ export function buildCoverageState(
     planDefinition: PlanDefinition | null | undefined,
     asOfDate: string,
     history: readonly CoverageHistoryEntry[] = [],
+    descriptor: CoverageSetDescriptor | null = planDefinition ? coverageSetFor(planDefinition.coverageSetId) : null,
 ): CoverageState {
     const block = activePlanBlock(planDefinition, asOfDate);
-    if (!planDefinition || !block) {
-        return { asOfDate, phase: null, activeBlockId: null, coverageSetId: null, requirements: [] };
+    if (!planDefinition || !block || !descriptor) {
+        return { asOfDate, phase: null, activeBlockId: null, coverageSetId: null, descriptor: null, requirements: [] };
     }
 
     const rollingWindowDays = 7;
@@ -194,10 +196,10 @@ export function buildCoverageState(
     const rollingStart = addDaysToLocalDateString(asOfDate, -rollingWindowDays);
     const windowStart = laterDate(block.startDate, rollingStart);
     const activeDefinitions = planDefinition.objectives.filter(definition => definition.blockId === block.id);
-    const requirementsByKey = new Map<EventPlanCoverageKey, WeeklyCoverageRequirement>();
+    const requirementsByKey = new Map<PlanCoverageKey, WeeklyCoverageRequirement>();
 
     activeDefinitions.forEach((definition, index) => {
-        const coverage = COVERAGE_BY_KEY.get(definition.coverageKey);
+        const coverage = descriptor.coverage.find(item => item.key === definition.coverageKey);
         if (!coverage || !coverage.phases.includes(block.phase)) return;
         const minimumSessions = Math.max(0, definition.coverageMinimumSessions
             ?? (definition.priority === 'must_have' ? Math.min(1, definition.requiredCredit) : 0));
@@ -214,6 +216,7 @@ export function buildCoverageState(
             return;
         }
         const requirement = newRequirement({
+            descriptor,
             blockId: block.id,
             key: definition.coverageKey,
             minimumSessions,
@@ -227,11 +230,12 @@ export function buildCoverageState(
         if (requirement) requirementsByKey.set(definition.coverageKey, requirement);
     });
 
-    const recoveryCoverage = COVERAGE_BY_KEY.get('recovery_or_rest');
+    const recoveryCoverage = descriptor.coverage.find(item => item.key === 'recovery_or_rest');
     if (recoveryCoverage?.requirement === 'required'
         && recoveryCoverage.phases.includes(block.phase)
         && !requirementsByKey.has('recovery_or_rest')) {
         const recoveryRequirement = newRequirement({
+            descriptor,
             blockId: block.id,
             key: 'recovery_or_rest',
             minimumSessions: 1,
@@ -253,7 +257,7 @@ export function buildCoverageState(
         if (seenOccurrences.has(occurrenceKey)) continue;
         seenOccurrences.add(occurrenceKey);
 
-        const keys = coverageKeysForExposure(exposure, block.phase);
+        const keys = coverageKeysForExposure(exposure, block.phase, descriptor);
         for (const key of keys) {
             const requirement = requirementsByKey.get(key);
             if (!requirement) continue;
@@ -275,7 +279,8 @@ export function buildCoverageState(
         asOfDate,
         phase: block.phase,
         activeBlockId: block.id,
-        coverageSetId: SEPTEMBER_CYCLING_EVENT_COVERAGE_SET_ID,
+        coverageSetId: descriptor.id,
+        descriptor,
         requirements: Array.from(requirementsByKey.values()),
     };
 }
@@ -312,10 +317,10 @@ export function coverageNeedTierForTemplate(
     template: SessionTemplate,
     anchorRole: 'event-specific' | 'quality' | null = null,
 ): 0 | 1 | 2 | 3 {
-    const keys = coverageKeysForTemplate(template, state.phase);
+    const keys = state.descriptor ? coverageKeysForTemplate(template, state.phase, state.descriptor) : [];
     if (keys.length === 0) return 3;
 
-    const anchorKey: EventPlanCoverageKey | null = anchorRole === 'event-specific'
+    const anchorKey: PlanCoverageKey | null = anchorRole === 'event-specific'
         ? 'outdoor_event_specific'
         : anchorRole === 'quality' ? 'sustained_quality' : null;
 

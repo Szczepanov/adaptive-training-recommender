@@ -1,9 +1,12 @@
-import type { EventPlanCoverageKey, EventPlanPhase, EventPlanSessionCoverage } from '../workouts/event-plan.ts';
-import { SEPTEMBER_CYCLING_EVENT_SESSION_COVERAGE } from '../workouts/event-plan.ts';
+import type { CoverageSetId, PlanCoverageKey, PlanPhase, PlanSessionCoverage } from '../workouts/event-plan.ts';
+import { EVERGREEN_GENERAL_COVERAGE_SET, SEPTEMBER_CYCLING_EVENT_COVERAGE_SET, SEPTEMBER_CYCLING_EVENT_SESSION_COVERAGE } from '../workouts/event-plan.ts';
 import type { DataIssue, DataState } from './dataState.ts';
 import type { AuthoredPlanBlock, ObjectiveKey, ObjectivePriority, UserEvent } from './models.ts';
 import { resolveEventTaper } from './taperPolicy';
 import { addDaysToLocalDateString } from '../utils/localDate.ts';
+import type { EvidenceBackedStrategy, AdaptationKey } from './evergreenStrategy.ts';
+import type { ResolvedTrainingCapacity } from './trainingCapacity.ts';
+import type { WeeklyBudget } from './weeklyDosePacking.ts';
 
 // Named PlanSessionRole (not SessionRole) to avoid colliding with the unrelated
 // SessionRole type in models.ts ('anchor' | 'supporting' | 'recovery').
@@ -11,7 +14,7 @@ export type PlanSessionRole = 'primary_developmental' | 'secondary_support' | 't
 
 export interface PlanBlock {
   id: string;
-  phase: EventPlanPhase;
+  phase: PlanPhase;
   startDate: string;
   endDate: string;
   volumeScale: number;
@@ -20,7 +23,7 @@ export interface PlanBlock {
 
 export interface PlanObjectiveDefinition {
   key: ObjectiveKey;
-  coverageKey: EventPlanCoverageKey;
+  coverageKey: PlanCoverageKey;
   blockId: string;
   requiredCredit: number;
   priority: ObjectivePriority;
@@ -43,18 +46,20 @@ export interface SequencingRule {
 export interface PlanDefinition {
   id: string;
   eventId: string;
+  coverageSetId: CoverageSetId;
   blocks: PlanBlock[];
   objectives: PlanObjectiveDefinition[];
   sequencingRules: SequencingRule[];
 }
 
 export function buildPlanDefinition(
-  coverage: EventPlanSessionCoverage[],
+  coverage: readonly PlanSessionCoverage[],
   blockSchedule: PlanBlock[],
   event: UserEvent,
   objectives: PlanObjectiveDefinition[] = [],
   sequencingRules: SequencingRule[] = [],
-  id: string = `plan_${event.id}`
+  id: string = `plan_${event.id}`,
+  coverageSetId: CoverageSetId = SEPTEMBER_CYCLING_EVENT_COVERAGE_SET.id,
 ): DataState<PlanDefinition> {
   const issues: DataIssue[] = [];
 
@@ -121,7 +126,7 @@ export function buildPlanDefinition(
   return {
     status: 'AVAILABLE',
     revision: null,
-    data: { id, eventId: event.id, blocks: blockSchedule, objectives, sequencingRules },
+    data: { id, eventId: event.id, coverageSetId, blocks: blockSchedule, objectives, sequencingRules },
   };
 }
 
@@ -260,6 +265,64 @@ export function buildCyclingEventPlan(event: UserEvent, authoredBlocks: readonly
 /** Backward-compatible name retained for tests/docs written around the original fixture. */
 export function buildSeptemberCyclingEventPlan(event: UserEvent): DataState<PlanDefinition> {
   return buildCyclingEventPlan(event);
+}
+
+const EVERGREEN_OBJECTIVE_BY_ADAPTATION: Record<AdaptationKey, {
+  key: ObjectiveKey;
+  coverageKey: PlanCoverageKey;
+  priority: ObjectivePriority;
+}> = {
+  aerobic_endurance: { key: 'zone2_aerobic', coverageKey: 'aerobic_volume', priority: 'must_have' },
+  strength: { key: 'strength_maintenance', coverageKey: 'primary_strength', priority: 'must_have' },
+  high_intensity: { key: 'vo2_max', coverageKey: 'sustained_quality', priority: 'nice_to_have' },
+};
+
+/** Builds the rolling, non-event plan from already-resolved evidence, capacity, and exact
+ * packed roles. Neither raw profile session counts nor DEFAULT_BASE_DEMAND participate
+ * here. Shortfalls stay on the WeeklyBudget so the caller can explain a safe partial
+ * plan without inventing unschedulable coverage requirements. */
+export function buildEvergreenPlanDefinition(
+  strategy: EvidenceBackedStrategy,
+  capacity: ResolvedTrainingCapacity,
+  packedBudget: WeeklyBudget,
+  asOfDate: string,
+): DataState<PlanDefinition> {
+  void strategy;
+  void capacity;
+  const allRoles = [...packedBudget.requiredRoles, ...packedBudget.targetRoles, ...packedBudget.optionalRoles];
+  const countByAdaptation = new Map<AdaptationKey, number>();
+  allRoles.forEach(role => role.adaptations.forEach(adaptation =>
+    countByAdaptation.set(adaptation, (countByAdaptation.get(adaptation) ?? 0) + 1)
+  ));
+  const objectives: PlanObjectiveDefinition[] = packedBudget.requirements.flatMap(requirement => {
+    const mapping = EVERGREEN_OBJECTIVE_BY_ADAPTATION[requirement.adaptation];
+    const count = countByAdaptation.get(requirement.adaptation) ?? 0;
+    if (!mapping || count === 0) return [];
+    const requiredCount = allRoles.filter(role => role.priority === 'required' && role.adaptations.includes(requirement.adaptation)).length;
+    return [{
+      key: mapping.key,
+      coverageKey: mapping.coverageKey,
+      blockId: 'block_general',
+      requiredCredit: count,
+      priority: mapping.priority,
+      role: requirement.priority === 'required' ? 'primary_developmental' : 'secondary_support',
+      coverageMinimumSessions: requiredCount,
+      coverageTargetSessions: count,
+    }];
+  });
+  const block: PlanBlock = {
+    id: 'block_general', phase: 'general', startDate: asOfDate,
+    endDate: addDaysToLocalDateString(asOfDate, 6), volumeScale: 1, intensityScale: 1,
+  };
+  return buildPlanDefinition(
+    EVERGREEN_GENERAL_COVERAGE_SET.coverage,
+    [block],
+    { id: 'evergreen_general' } as UserEvent,
+    objectives,
+    [],
+    'plan_evergreen_general',
+    EVERGREEN_GENERAL_COVERAGE_SET.id,
+  );
 }
 
 /** Every scheduled cycling event receives the richer authored plan, relative to its own

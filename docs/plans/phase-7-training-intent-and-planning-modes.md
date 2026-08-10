@@ -306,7 +306,7 @@ mutating `DEFAULT_BASE_DEMAND` changes nothing for an eventless athlete.
 
 ---
 
-### 7.4 `[ ]` Generalize the plan-coverage vocabulary, then build its registry
+### 7.4 `[x]` Generalize the plan-coverage vocabulary, then build its registry
 
 **Current:** `coverage.ts` imports `SEPTEMBER_CYCLING_EVENT_SESSION_COVERAGE` at module
 scope and builds `COVERAGE_BY_KEY` from it; `planSchedule.ts` passes the same constant to
@@ -350,7 +350,7 @@ assertion passes unmodified except for the added descriptor argument.
 
 ---
 
-### 7.5 `[ ]` An evergreen coverage set and a plan definition to carry it
+### 7.5 `[-]` An evergreen coverage set and a plan definition to carry it
 
 **Current:** coverage only exists for a cycling event (G3, G10).
 
@@ -590,8 +590,8 @@ Every item is independently revertible. 7.1 and 7.7 land value without 7.3–7.5
 | 7.1 Persist `TrainingIntentProfile` | `[x]` | ADR-0017 | Round-trips; rules tests green |
 | 7.2 Effective planning mode and event strategy | `[x]` | 7.1 | Existing events keep event-directed structured/demand-derived paths |
 | 7.3 Evidence dose → capacity → role packing | `[-]` | 7.1, 7.2 | Dose provenance, time-aware capacity, and exact roles yield transparent shortfalls |
-| 7.4 Generic plan-coverage registry | `[ ]` | ADR-0017 | Both descriptors validate; September set byte-identical |
-| 7.5 Evergreen coverage + plan definition | `[ ]` | 7.3, 7.4 | Non-empty `CoverageState` eventless |
+| 7.4 Generic plan-coverage registry | `[x]` | ADR-0017 | Both descriptors validate; September set byte-identical |
+| 7.5 Evergreen coverage + plan definition | `[-]` | 7.3, 7.4 | Non-empty `CoverageState` eventless |
 | 7.6 `strength_development` key | `[ ]` | 7.3 | Exhaustive switches handled, no casts |
 | 7.7 Taper containment + hard exclusions | `[ ]` | — | 5-star `general_target` → no taper |
 | 7.8 Defaults, policy version, scenarios | `[ ]` | 7.1–7.6 | Zero diff on existing scenarios |

@@ -1,4 +1,4 @@
-import type { EventPlanCoverageKey, EventPlanPhase } from '../workouts/event-plan';
+import type { PlanCoverageKey, PlanPhase } from '../workouts/event-plan';
 import type { SessionTemplate } from './models';
 import {
     authoredSessionIdentityFor,
@@ -20,10 +20,10 @@ import {
 export interface RequiredRoleOccurrence {
     id: string;
     coverageSetId: string;
-    coverageKey: EventPlanCoverageKey;
+    coverageKey: PlanCoverageKey;
     /** Stable `EventPlanSessionCoverage` record identity, never a selected candidate. */
     authoredSessionIdentity: string;
-    phase: EventPlanPhase;
+    phase: PlanPhase;
     windowStart: string;
     windowEnd: string;
     ordinal: number;

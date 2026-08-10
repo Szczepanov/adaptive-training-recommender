@@ -1,9 +1,11 @@
 import type { WorkoutDefinition } from './models.ts';
 
-export type EventPlanPhase = 'build' | 'travel' | 'peak' | 'taper' | 'race' | 'recovery';
-export type EventPlanRequirement = 'required' | 'optional' | 'conditional';
+/** Generic planning vocabulary. The September cycling set is merely its first
+ * descriptor; evergreen adds the `general` phase in Phase 7.5. */
+export type PlanPhase = 'build' | 'travel' | 'peak' | 'taper' | 'race' | 'recovery' | 'general';
+export type PlanRequirement = 'required' | 'optional' | 'conditional';
 
-export type EventPlanCoverageKey =
+export type PlanCoverageKey =
   | 'aerobic_volume'
   | 'recovery_spin'
   | 'sustained_quality'
@@ -23,13 +25,31 @@ export type EventPlanCoverageKey =
   | 'race_week_strength'
   | 'race_day';
 
-export interface EventPlanSessionCoverage {
-  key: EventPlanCoverageKey;
+export interface PlanSessionCoverage {
+  key: PlanCoverageKey;
   label: string;
-  phases: EventPlanPhase[];
-  requirement: EventPlanRequirement;
+  phases: PlanPhase[];
+  requirement: PlanRequirement;
   workoutIds: string[];
   notes: string;
+}
+
+/** @deprecated Use the generic Plan* vocabulary. Retained while existing consumers
+ * migrate without changing the frozen September descriptor. */
+export type EventPlanPhase = Exclude<PlanPhase, 'general'>;
+/** @deprecated Use PlanRequirement. */
+export type EventPlanRequirement = PlanRequirement;
+/** @deprecated Use PlanCoverageKey. */
+export type EventPlanCoverageKey = PlanCoverageKey;
+/** @deprecated Use PlanSessionCoverage. */
+export type EventPlanSessionCoverage = PlanSessionCoverage;
+
+export type CoverageSetId = 'september_cycling_event' | 'evergreen_general';
+export interface CoverageSetDescriptor {
+  id: CoverageSetId;
+  coverage: readonly PlanSessionCoverage[];
+  requiredKeys: readonly PlanCoverageKey[];
+  phases: readonly PlanPhase[];
 }
 
 /** Stable id of the one authored coverage set that exists today. ADR-0017 D-COVSET turns
@@ -37,7 +57,7 @@ export interface EventPlanSessionCoverage {
  * occurrence's canonical identity. */
 export const SEPTEMBER_CYCLING_EVENT_COVERAGE_SET_ID = 'september_cycling_event';
 
-export const SEPTEMBER_CYCLING_EVENT_SESSION_COVERAGE: EventPlanSessionCoverage[] = [
+export const SEPTEMBER_CYCLING_EVENT_SESSION_COVERAGE: PlanSessionCoverage[] = [
   { key: 'aerobic_volume', label: 'Easy Zone 2 aerobic volume', phases: ['build', 'travel', 'peak', 'taper', 'recovery'], requirement: 'required', workoutIds: ['cycling_zone2_standard_01'], notes: 'Counts only the authored Zone 2 prescription at or above its catalog minimum duration; a recovery spin never replaces this floor.' },
   { key: 'recovery_spin', label: 'Optional recovery spin', phases: ['build', 'travel', 'peak', 'taper', 'recovery'], requirement: 'optional', workoutIds: ['cycling_recovery_spin_01'], notes: 'Useful active recovery, but never aerobic-volume coverage.' },
   { key: 'sustained_quality', label: 'Controlled threshold, over-under or longer aerobic-power work', phases: ['build', 'peak'], requirement: 'required', workoutIds: ['cycling_controlled_threshold_4x8_01', 'cycling_over_under_3x12_01', 'cycling_vo2_6x3_01', 'cycling_vo2_variable_01', 'cycling_vo2_short_30_15_01'], notes: 'Choose interval count, duration and recovery from the generic parameter ranges; the default 6x3 aerobic-power prescription belongs to this role too.' },
@@ -58,14 +78,14 @@ export const SEPTEMBER_CYCLING_EVENT_SESSION_COVERAGE: EventPlanSessionCoverage[
   { key: 'race_day', label: 'September cycling event', phases: ['race'], requirement: 'required', workoutIds: ['cycling_race_day_01'], notes: 'Represents warm-up, variable race execution and the planned fatigued finish.' }
 ];
 
-const requiredCoverageKeys: EventPlanCoverageKey[] = [
+const requiredCoverageKeys: PlanCoverageKey[] = [
   'aerobic_volume', 'sustained_quality', 'short_surges', 'gap_closing',
   'outdoor_event_specific', 'primary_strength', 'recovery_or_rest',
   'travel_aerobic', 'travel_strength', 'taper_sharpening',
   'pre_race_openers', 'race_week_strength', 'race_day'
 ];
 
-const phaseRestrictedCoverage: Partial<Record<EventPlanCoverageKey, EventPlanPhase[]>> = {
+const phaseRestrictedCoverage: Partial<Record<PlanCoverageKey, EventPlanPhase[]>> = {
   travel_aerobic: ['travel'],
   travel_strength: ['travel'],
   taper_sharpening: ['taper'],
@@ -74,20 +94,58 @@ const phaseRestrictedCoverage: Partial<Record<EventPlanCoverageKey, EventPlanPha
   race_day: ['race']
 };
 
-function samePhases(actual: EventPlanPhase[], expected: EventPlanPhase[]): boolean {
+export const SEPTEMBER_CYCLING_EVENT_COVERAGE_SET: CoverageSetDescriptor = {
+  id: SEPTEMBER_CYCLING_EVENT_COVERAGE_SET_ID,
+  coverage: SEPTEMBER_CYCLING_EVENT_SESSION_COVERAGE,
+  requiredKeys: requiredCoverageKeys,
+  phases: ['build', 'travel', 'peak', 'taper', 'race', 'recovery'],
+};
+
+/** Starting product policy for non-event training. This descriptor is intentionally
+ * separate from the evidence metadata in evergreenStrategy.ts: it maps exact workout
+ * identities to programming roles and makes no blanket scientific claim. */
+export const EVERGREEN_SESSION_COVERAGE: PlanSessionCoverage[] = [
+  { key: 'aerobic_volume', label: 'Continuous aerobic volume', phases: ['general'], requirement: 'required', workoutIds: ['cycling_zone2_standard_01'], notes: 'Counts only an authored continuous aerobic prescription at or above its catalog minimum duration.' },
+  { key: 'sustained_quality', label: 'Optional sustained quality', phases: ['general'], requirement: 'optional', workoutIds: ['cycling_controlled_threshold_4x8_01', 'running_tempo_01'], notes: 'Optional performance work; it is introduced only by an eligible evidence-backed strategy.' },
+  { key: 'primary_strength', label: 'Primary full-body strength', phases: ['general'], requirement: 'required', workoutIds: ['strength_full_body_maintenance_01'], notes: 'Exact full-body resistance exposure for the strength role.' },
+  { key: 'compact_strength', label: 'Compact strength support', phases: ['general'], requirement: 'optional', workoutIds: ['strength_compact_power_01'], notes: 'Optional lower-time resistance alternative; never silently replaces a required full-body role.' },
+  { key: 'recovery_or_rest', label: 'Recovery or rest', phases: ['general'], requirement: 'required', workoutIds: ['recovery_mobility_tissue_01', 'rest_complete_01'], notes: 'Supports recovery choices without creating aerobic or strength credit.' },
+  { key: 'upper_body_trunk', label: 'Upper-body and trunk support', phases: ['general'], requirement: 'conditional', workoutIds: ['strength_upper_body_trunk_01'], notes: 'Conditional alternative when lower-body loading is inappropriate.' },
+  { key: 'walk_run', label: 'Optional walk-run', phases: ['general'], requirement: 'optional', workoutIds: ['running_walk_run_01'], notes: 'A distinct low-impact entry; it is not credited as full continuous aerobic volume.' },
+];
+
+export const EVERGREEN_GENERAL_COVERAGE_SET: CoverageSetDescriptor = {
+  id: 'evergreen_general',
+  coverage: EVERGREEN_SESSION_COVERAGE,
+  requiredKeys: ['aerobic_volume', 'primary_strength', 'recovery_or_rest'],
+  phases: ['general'],
+};
+
+/** Registry authority for coverage lookup. Its single entry is intentionally not a
+ * behavioural change; Phase 7.5 adds the peer evergreen descriptor. */
+export const COVERAGE_SETS: Record<CoverageSetId, CoverageSetDescriptor> = {
+  [SEPTEMBER_CYCLING_EVENT_COVERAGE_SET_ID]: SEPTEMBER_CYCLING_EVENT_COVERAGE_SET,
+  evergreen_general: EVERGREEN_GENERAL_COVERAGE_SET,
+};
+
+export function coverageSetFor(id: CoverageSetId): CoverageSetDescriptor {
+  return COVERAGE_SETS[id];
+}
+
+function samePhases(actual: readonly PlanPhase[], expected: readonly PlanPhase[]): boolean {
   return actual.length === expected.length && expected.every((phase) => actual.includes(phase));
 }
 
-export function validateEventPlanCoverage(
+export function validatePlanCoverage(
   workouts: WorkoutDefinition[],
-  coverage: EventPlanSessionCoverage[] = SEPTEMBER_CYCLING_EVENT_SESSION_COVERAGE
+  descriptor: CoverageSetDescriptor,
 ): string[] {
   const errors: string[] = [];
   const workoutById = new Map(workouts.map((workout) => [workout.id, workout]));
-  const coverageKeys = new Set<EventPlanCoverageKey>();
+  const coverageKeys = new Set<PlanCoverageKey>();
 
-  for (const item of coverage) {
-    if (coverageKeys.has(item.key)) errors.push(`Duplicate event-plan coverage key: ${item.key}`);
+  for (const item of descriptor.coverage) {
+    if (coverageKeys.has(item.key)) errors.push(`Duplicate plan coverage key: ${item.key}`);
     coverageKeys.add(item.key);
     if (!item.label.trim()) errors.push(`${item.key}: label is required`);
     if (!item.notes.trim()) errors.push(`${item.key}: notes are required`);
@@ -96,9 +154,11 @@ export function validateEventPlanCoverage(
     if (item.workoutIds.length === 0) errors.push(`${item.key}: at least one workout is required`);
     if (new Set(item.workoutIds).size !== item.workoutIds.length) errors.push(`${item.key}: duplicate workout mapping`);
 
-    const restrictedPhases = phaseRestrictedCoverage[item.key];
-    if (restrictedPhases && !samePhases(item.phases, restrictedPhases)) errors.push(`${item.key}: must be restricted to ${restrictedPhases.join(', ')}`);
-    if (item.key === 'field_maintenance' && item.phases.some((phase) => phase === 'taper' || phase === 'race' || phase === 'recovery')) errors.push('field_maintenance: cannot be scheduled in taper or race phases');
+    if (descriptor.id === SEPTEMBER_CYCLING_EVENT_COVERAGE_SET_ID) {
+      const restrictedPhases = phaseRestrictedCoverage[item.key];
+      if (restrictedPhases && !samePhases(item.phases, restrictedPhases)) errors.push(`${item.key}: must be restricted to ${restrictedPhases.join(', ')}`);
+      if (item.key === 'field_maintenance' && item.phases.some((phase) => phase === 'taper' || phase === 'race' || phase === 'recovery')) errors.push('field_maintenance: cannot be scheduled in taper or race phases');
+    }
 
     for (const workoutId of item.workoutIds) {
       const workout = workoutById.get(workoutId);
@@ -107,13 +167,25 @@ export function validateEventPlanCoverage(
     }
   }
 
-  for (const requiredKey of requiredCoverageKeys) if (!coverageKeys.has(requiredKey)) errors.push(`Missing required event-plan coverage key: ${requiredKey}`);
+  for (const requiredKey of descriptor.requiredKeys) if (!coverageKeys.has(requiredKey)) errors.push(`Missing required plan coverage key: ${requiredKey}`);
 
-  for (const phase of ['build', 'travel', 'peak', 'taper', 'race', 'recovery'] as EventPlanPhase[]) {
-    const phaseCoverage = coverage.filter((item) => item.phases.includes(phase));
+  for (const phase of descriptor.phases) {
+    const phaseCoverage = descriptor.coverage.filter((item) => item.phases.includes(phase));
     if (phaseCoverage.length === 0) errors.push(`No workout coverage declared for phase: ${phase}`);
     if (!phaseCoverage.some((item) => item.requirement === 'required')) errors.push(`No required workout coverage declared for phase: ${phase}`);
   }
 
   return errors;
+}
+
+/** @deprecated Compatibility wrapper for callers that still supply only the September
+ * coverage array. New code validates an explicit descriptor. */
+export function validateEventPlanCoverage(
+  workouts: WorkoutDefinition[],
+  coverage: EventPlanSessionCoverage[] = SEPTEMBER_CYCLING_EVENT_SESSION_COVERAGE,
+): string[] {
+  return validatePlanCoverage(workouts, {
+    ...SEPTEMBER_CYCLING_EVENT_COVERAGE_SET,
+    coverage,
+  });
 }
