@@ -273,7 +273,7 @@ const EVERGREEN_OBJECTIVE_BY_ADAPTATION: Record<AdaptationKey, {
   priority: ObjectivePriority;
 }> = {
   aerobic_endurance: { key: 'zone2_aerobic', coverageKey: 'aerobic_volume', priority: 'must_have' },
-  strength: { key: 'strength_maintenance', coverageKey: 'primary_strength', priority: 'must_have' },
+  strength: { key: 'strength_development', coverageKey: 'primary_strength', priority: 'must_have' },
   high_intensity: { key: 'vo2_max', coverageKey: 'sustained_quality', priority: 'nice_to_have' },
 };
 

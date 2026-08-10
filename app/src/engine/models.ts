@@ -260,6 +260,7 @@ export type ObjectiveKey =
   | 'surge_repeatability' 
   | 'zone2_aerobic' 
   | 'strength_maintenance' 
+  | 'strength_development'
   | 'race_specific_endurance' 
   | 'vo2_max';
 

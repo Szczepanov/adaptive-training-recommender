@@ -28,4 +28,17 @@ describe('evergreen plan definition', () => {
         expect(state).toMatchObject({ phase: 'general', coverageSetId: 'evergreen_general' });
         expect(state.requirements.map(requirement => requirement.key)).toContain('aerobic_volume');
     });
+
+    it('uses strength_development only for a packed evergreen strength requirement', () => {
+        const strengthRequirement = {
+            ...strategy.requirements[0], adaptation: 'strength' as const, target: { unit: 'sessions' as const, minimum: 2, target: 2, maximum: 3 },
+        };
+        const strengthBudget: WeeklyBudget = {
+            ...budget, requirements: [strengthRequirement],
+            requiredRoles: [{ id: 'evergreen_general:primary_strength:0', coverageSetId: 'evergreen_general', coverageRoleId: 'primary_strength', date: '2026-08-10', exactWorkoutIds: ['strength_full_body_maintenance_01'], adaptations: ['strength'], priority: 'required' }],
+        };
+        const result = buildEvergreenPlanDefinition({ ...strategy, requirements: [strengthRequirement] }, capacity, strengthBudget, '2026-08-10');
+        expect(result.status).toBe('AVAILABLE');
+        if (result.status === 'AVAILABLE') expect(result.data.objectives.map(objective => objective.key)).toEqual(['strength_development']);
+    });
 });

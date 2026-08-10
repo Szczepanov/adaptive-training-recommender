@@ -14,6 +14,7 @@ import type {
     FixedActivity,
     AuthoredPlanBlock,
     TrainingIntentProfile,
+    UserPreferences,
     WorkoutCostProfile,
     WorkoutStimulusProfile,
 } from './models';
@@ -23,7 +24,7 @@ import { buildOptimizationContext, rankCandidates, resolveRecoveryStyle } from '
 import { addDaysToLocalDateString } from '../utils/localDate';
 import type { CompletedExposure, TrainingHistoryProvider } from './trainingHistory';
 import type { TrainingHistorySnapshot } from './trainingHistorySnapshot';
-import { resolveTrainingIntent } from './trainingIntent';
+import { resolvePlannedDoseForDate, resolveTrainingIntent } from './trainingIntent';
 import { POLICY_VERSION } from './policy';
 import { resolveExecutionDose } from './dose';
 import { isTemplatePhaseEligible } from './periodization';
@@ -33,6 +34,8 @@ import { getUnresolvedObjectives } from './microcycle';
 import { applyCompletedSessionLoad } from './fatigue';
 import { resolveAvailability } from './schedule';
 import { workoutForTemplate } from '../workouts/prescription';
+import { resolveEvergreenPlan } from './evergreenPlanning';
+import { buildCoverageState } from './coverage';
 
 function pickTemplate(options: SessionTemplate[], seedDate: string): SessionTemplate | undefined {
     if (options.length === 0) return undefined;
@@ -293,10 +296,24 @@ export async function evaluateTrainingWithIntent(
     fixedActivities: FixedActivity[] = [],
     authoredPlanBlocks: readonly AuthoredPlanBlock[] = [],
     trainingIntentProfile: TrainingIntentProfile | null = null,
+    preferences: UserPreferences | null = null,
 ): Promise<Recommendation> {
     const envelopeState = evaluateReadinessAndSafetyEnvelope(readiness, context, date, previousMode);
     const { mode, envelopes, telemetry } = envelopeState;
     let intent = await resolveTrainingIntent(userId, events, date, readiness, 7, historyProvider, preparedHistorySnapshot, authoredPlanBlocks, trainingIntentProfile);
+    const evergreen = resolveEvergreenPlan(
+        intent.planningContext, intent.periodization.phase, intent.history, intent.historySnapshot,
+        preferences, context, date, fixedActivities,
+    );
+    if (evergreen) {
+        const unresolvedObjectives = getUnresolvedObjectives(evergreen.microcycle);
+        intent = {
+            ...intent,
+            microcycle: evergreen.microcycle,
+            unresolvedObjectives,
+            plannedDose: resolvePlannedDoseForDate(intent.periodization.phase, evergreen.microcycle.objectives, unresolvedObjectives, evergreen.planDefinition, date),
+        };
+    }
 
     const todaysFixedActivities = fixedActivities.filter(a => a.date === date && !a.isCompleted);
     if (todaysFixedActivities.length > 0) {
@@ -323,9 +340,12 @@ export async function evaluateTrainingWithIntent(
     const optContext = buildOptimizationContext(
         { ...intent, fatigue: rankingFatigue },
         context,
-        context.preferences,
+        preferences ?? context.preferences,
         date,
-        { resolveMinimumDaysAfterHardLowerBody, resolvedAvailability: availability, fatigueTier: mode, authoredPlanBlocks },
+        {
+            resolveMinimumDaysAfterHardLowerBody, resolvedAvailability: availability, fatigueTier: mode, authoredPlanBlocks,
+            ...(evergreen ? { coverageState: buildCoverageState(evergreen.planDefinition, date) } : {}),
+        },
         fixedActivities,
     );
     const rankingResult = rankCandidates(
@@ -633,6 +653,7 @@ export async function evaluateNextDayPlanWithIntent(
     fixedActivities: FixedActivity[] = [],
     authoredPlanBlocks: readonly AuthoredPlanBlock[] = [],
     trainingIntentProfile: TrainingIntentProfile | null = null,
+    preferences: UserPreferences | null = null,
 ): Promise<NextDayPotentialPlan> {
     const scenarios = buildNextDayScenarios(todayReadiness, context, todayDate, todayRec);
     const projectedProvider = await projectedProviderForTomorrow(
@@ -640,7 +661,7 @@ export async function evaluateNextDayPlanWithIntent(
     );
     const evaluate = async (scenario: NextDayScenario) => evaluatedBranch(
         scenario,
-        await evaluateTrainingWithIntent(userId, scenario.readiness, context, events, scenarios.date, todayRec.mode, projectedProvider, null, fixedActivities, authoredPlanBlocks, trainingIntentProfile),
+        await evaluateTrainingWithIntent(userId, scenario.readiness, context, events, scenarios.date, todayRec.mode, projectedProvider, null, fixedActivities, authoredPlanBlocks, trainingIntentProfile, preferences),
     );
     const [green, yellow, red] = await Promise.all([
         evaluate(scenarios.scenarios.green), evaluate(scenarios.scenarios.yellow), evaluate(scenarios.scenarios.red),

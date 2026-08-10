@@ -88,6 +88,10 @@ export function generateWeeklyObjectives(
                     title = isTaperBlock ? TAPER_STRENGTH_PRIMER_TITLE : 'Strength & Neuromuscular Maintenance';
                     targetStimulus = isTaperBlock ? TAPER_STRENGTH_TARGET_STIMULUS : { maxStrength: 0.7, hypertrophy: 0.5 };
                     break;
+                case 'strength_development':
+                    title = 'Strength Development';
+                    targetStimulus = { maxStrength: 0.7, hypertrophy: 0.7 };
+                    break;
                 case 'race_specific_endurance':
                     if (isTaperBlock) {
                         title = TAPER_SHARPENING_TITLE;
@@ -182,7 +186,7 @@ export function updateMicrocycleProgress(
             matched = true;
         } else if (obj.key === 'zone2_aerobic' && (actType.includes('easy') || actType.includes('endurance') || actType.includes('zone 2') || actType.includes('running') || actType.includes('cycling'))) {
             matched = true;
-        } else if (obj.key === 'strength_maintenance' && (actType.includes('strength') || actType.includes('weight') || actType.includes('lifting'))) {
+        } else if ((obj.key === 'strength_maintenance' || obj.key === 'strength_development') && (actType.includes('strength') || actType.includes('weight') || actType.includes('lifting'))) {
             matched = true;
         }
 

@@ -58,12 +58,10 @@ import {
 import { ENRICHED_TEMPLATES } from './templates';
 import { resolveMinimumDaysAfterHardLowerBody } from './planningCandidate';
 import { resolvePlannedDoseForDate, resolveTrainingIntent } from './trainingIntent';
-import { buildEvergreenPlanDefinition, resolvePlanDefinitionForEvent, type PlanDefinition } from './planSchedule';
+import { resolvePlanDefinitionForEvent, type PlanDefinition } from './planSchedule';
 import { deriveObjectiveCreditFromProfile } from './stimulus';
 import { buildCoverageState, coverageNeedTierForTemplate, workoutIdForTemplateId } from './coverage';
-import { inferAthleteTrainingState, resolveEvidenceBackedStrategy } from './evergreenStrategy';
-import { resolveTrainingCapacity } from './trainingCapacity';
-import { EVERGREEN_PACKING_COVERAGE, packWeeklyDose } from './weeklyDosePacking';
+import { resolveEvergreenPlan } from './evergreenPlanning';
 import {
     allocationSurvives,
     attachExactEligibleIdentities,
@@ -1361,24 +1359,10 @@ export async function generateWeekAheadPlanWithIntent(
     trainingIntentProfile: TrainingIntentProfile | null = null,
 ): Promise<WeekAheadPlan> {
     const intent = await resolveTrainingIntent(userId, events, todayDate, todayReadiness, 7, historyProvider, preparedHistorySnapshot, options.authoredPlanBlocks, trainingIntentProfile);
-    const evergreenPlan = (() => {
-        if (intent.planningContext.mode !== 'evergreen' || !preferences) return null;
-        const availability = Array.from({ length: Math.max(1, options.days ?? 7) }, (_, index) => {
-            const date = addDaysToLocalDateString(todayDate, index);
-            return { date, maxTimeMinutes: resolveAvailability(date, null, options.fixedActivities ?? [], context).maxTimeMinutes };
-        });
-        const capacity = resolveTrainingCapacity(intent.planningContext.profile.weeklyCommitment, preferences, availability);
-        const strategy = resolveEvidenceBackedStrategy(
-            { priorities: intent.planningContext.profile.priorities },
-            inferAthleteTrainingState(intent.history, intent.historySnapshot?.windowDays ?? 0),
-        );
-        const budget = packWeeklyDose(strategy, capacity, EVERGREEN_PACKING_COVERAGE);
-        const result = buildEvergreenPlanDefinition(strategy, capacity, budget, todayDate);
-        return result.status === 'AVAILABLE' ? result.data : null;
-    })();
-    const evergreenMicrocycle = evergreenPlan
-        ? buildMicrocycleState(intent.periodization.phase, addDaysToLocalDateString(todayDate, -7), intent.history, null, evergreenPlan, todayDate)
-        : intent.microcycle;
+    const evergreen = resolveEvergreenPlan(
+        intent.planningContext, intent.periodization.phase, intent.history, intent.historySnapshot,
+        preferences, context, todayDate, options.fixedActivities ?? [], options.days ?? 7,
+    );
     return generateWeekAheadPlan(
         todayReadiness,
         context,
@@ -1387,11 +1371,11 @@ export async function generateWeekAheadPlanWithIntent(
         todayRec,
         tomorrowRec,
         {
-            microcycle: evergreenMicrocycle,
+            microcycle: evergreen?.microcycle ?? intent.microcycle,
             fatigue: intent.fatigue,
             trailingHistory: trailingHistoryFromCompletedExposures(intent.history, todayDate),
             droppedContributorObjectives: intent.droppedContributorObjectives,
         },
-        { ...options, events: intent.planningContext.mode === 'event_directed' ? events : [], ...(evergreenPlan ? { planDefinition: evergreenPlan } : {}) },
+        { ...options, events: intent.planningContext.mode === 'event_directed' ? events : [], ...(evergreen ? { planDefinition: evergreen.planDefinition } : {}) },
     );
 }

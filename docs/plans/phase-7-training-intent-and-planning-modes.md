@@ -389,7 +389,7 @@ demand-derived event and an evergreen week before candidate ranking.
 
 ---
 
-### 7.6 `[ ]` Objective vocabulary for strength development
+### 7.6 `[x]` Objective vocabulary for strength development
 
 **Current:** only `strength_maintenance` exists (G6).
 
@@ -592,7 +592,7 @@ Every item is independently revertible. 7.1 and 7.7 land value without 7.3–7.5
 | 7.3 Evidence dose → capacity → role packing | `[-]` | 7.1, 7.2 | Dose provenance, time-aware capacity, and exact roles yield transparent shortfalls |
 | 7.4 Generic plan-coverage registry | `[x]` | ADR-0017 | Both descriptors validate; September set byte-identical |
 | 7.5 Evergreen coverage + plan definition | `[-]` | 7.3, 7.4 | Non-empty `CoverageState` eventless |
-| 7.6 `strength_development` key | `[ ]` | 7.3 | Exhaustive switches handled, no casts |
+| 7.6 `strength_development` key | `[x]` | 7.3 | Exhaustive switches handled, no casts |
 | 7.7 Taper containment + hard exclusions | `[ ]` | — | 5-star `general_target` → no taper |
 | 7.8 Defaults, policy version, scenarios | `[ ]` | 7.1–7.6 | Zero diff on existing scenarios |
 | 7.9 Surfaces and docs | `[ ]` | 7.1–7.7 | Profile editable; arch doc matches code |

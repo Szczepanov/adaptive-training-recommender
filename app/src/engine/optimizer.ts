@@ -475,7 +475,7 @@ export function rankCandidates(
     const rawHistory = options.recentHistory ?? [];
     const targetDate = options.date ?? getLocalDateString();
     const history = normalizeHistory(rawHistory, targetDate);
-    const isStrengthResolved = !unresolvedObjectives.some(o => o.key === 'strength_maintenance');
+    const isStrengthResolved = !unresolvedObjectives.some(o => o.key === 'strength_maintenance' || o.key === 'strength_development');
     const coverageState = options.coverageState;
     const recoveryStyle = preferences.preferredRecoveryStyle ?? 'mixed';
     const recoveryPreferenceTierFor = (template: SessionTemplate): 0 | 1 => {
@@ -532,7 +532,7 @@ export function rankCandidates(
             const satisfiesUnresolvedObjective = unresolvedObjectives.some(obj =>
                 obj.qualification?.allowedModalities
                     ? obj.qualification.allowedModalities.includes(template.modality)
-                    : (template.modality === 'Strength' && obj.key === 'strength_maintenance')
+                    : (template.modality === 'Strength' && (obj.key === 'strength_maintenance' || obj.key === 'strength_development'))
             );
             const eventPriorityApplies = !categoryLower.includes('strength') || satisfiesUnresolvedObjective || fulfilsNominatedAnchor;
             if (matchesEvent && eventPriorityApplies) benefit *= focusEvent.priority === 'A' ? 1.40 : 1.25;

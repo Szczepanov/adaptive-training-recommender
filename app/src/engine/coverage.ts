@@ -72,6 +72,19 @@ export interface CoverageHistoryEntry extends ExposureIdentity {
     source?: CoverageCreditSource;
 }
 
+/** Descriptor-scoped lookup keeps the registry generic without reintroducing the old
+ * module-level September-only map. The planner calls this in its inner allocation loop. */
+const COVERAGE_BY_DESCRIPTOR = new WeakMap<CoverageSetDescriptor, Map<PlanCoverageKey, CoverageSetDescriptor['coverage'][number]>>();
+
+function coverageFor(descriptor: CoverageSetDescriptor, key: PlanCoverageKey) {
+    let byKey = COVERAGE_BY_DESCRIPTOR.get(descriptor);
+    if (!byKey) {
+        byKey = new Map(descriptor.coverage.map(item => [item.key, item]));
+        COVERAGE_BY_DESCRIPTOR.set(descriptor, byKey);
+    }
+    return byKey.get(key);
+}
+
 const ANCHOR_TIMED_COVERAGE_KEYS = new Set<EventPlanCoverageKey>([
     'sustained_quality',
     'outdoor_event_specific',
@@ -160,7 +173,7 @@ function newRequirement(args: {
     windowEnd: string;
     index: number;
 }): WeeklyCoverageRequirement | null {
-    const coverage = args.descriptor.coverage.find(item => item.key === args.key);
+    const coverage = coverageFor(args.descriptor, args.key);
     if (!coverage) return null;
     return {
         id: `coverage_${args.blockId}_${args.key}_${args.index}`,
@@ -199,7 +212,7 @@ export function buildCoverageState(
     const requirementsByKey = new Map<PlanCoverageKey, WeeklyCoverageRequirement>();
 
     activeDefinitions.forEach((definition, index) => {
-        const coverage = descriptor.coverage.find(item => item.key === definition.coverageKey);
+        const coverage = coverageFor(descriptor, definition.coverageKey);
         if (!coverage || !coverage.phases.includes(block.phase)) return;
         const minimumSessions = Math.max(0, definition.coverageMinimumSessions
             ?? (definition.priority === 'must_have' ? Math.min(1, definition.requiredCredit) : 0));
@@ -230,7 +243,7 @@ export function buildCoverageState(
         if (requirement) requirementsByKey.set(definition.coverageKey, requirement);
     });
 
-    const recoveryCoverage = descriptor.coverage.find(item => item.key === 'recovery_or_rest');
+    const recoveryCoverage = coverageFor(descriptor, 'recovery_or_rest');
     if (recoveryCoverage?.requirement === 'required'
         && recoveryCoverage.phases.includes(block.phase)
         && !requirementsByKey.has('recovery_or_rest')) {

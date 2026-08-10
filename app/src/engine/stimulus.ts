@@ -200,6 +200,7 @@ export function deriveObjectiveCreditFromProfile(
             rawStimulusContribution = stimulus.vo2MaxPower;
             break;
         case 'strength_maintenance':
+        case 'strength_development':
             rawStimulusContribution = Math.max(stimulus.maxStrength, stimulus.hypertrophy);
             break;
         case 'race_specific_endurance':
@@ -217,7 +218,7 @@ export function deriveObjectiveCreditFromProfile(
     }
 
     let durationRatio = 1;
-    if (objective.key !== 'strength_maintenance'
+    if (objective.key !== 'strength_maintenance' && objective.key !== 'strength_development'
         && dose.plannedDurationMin !== undefined
         && dose.completedDurationMin !== undefined) {
         const planned = dose.plannedDurationMin;

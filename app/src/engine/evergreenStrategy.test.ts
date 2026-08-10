@@ -26,4 +26,9 @@ describe('evergreen evidence-backed strategy', () => {
             expect(requirement.evidence).toMatchObject({ sourceId: expect.any(String), population: expect.any(String), outcome: expect.any(String), policyVersion: expect.any(String), reviewedOn: expect.any(String) });
         });
     });
+
+    it('does not manufacture strength development for an endurance-only priority', () => {
+        const strategy = resolveEvidenceBackedStrategy({ priorities: ['endurance'] }, inferAthleteTrainingState([], 7));
+        expect(strategy.requirements.map(requirement => requirement.adaptation)).not.toContain('strength');
+    });
 });
