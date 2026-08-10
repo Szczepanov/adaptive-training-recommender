@@ -196,7 +196,7 @@ present a forecast miss as completed training or a recommendation-audit event.
 **Done when:** a deterministic fixture produces one moved and one safety-forced missed
 role; report JSON/Markdown and the UI fixture expose the same occurrence ids/statuses.
 
-### 7A.6 `[ ]` Add acceptance regressions, review policy impact, and update documentation
+### 7A.6 `[x]` Add acceptance regressions, review policy impact, and update documentation
 
 **Current:** scenario tests measure objectives and anchor hits but not complete required
 coverage allocation. The committed semantic baseline is deliberately unreviewed.
@@ -223,13 +223,10 @@ coverage allocation. The committed semantic baseline is deliberately unreviewed.
 `npm run simulate:diff`, and `node scripts/check-policy-drift.mjs <base-sha>` pass. The
 semantic baseline is updated only after the acceptance criteria below pass in review.
 
-**Status:** the code, tests, policy bump and documentation are landed; the item stays open
-because its final step is the *reviewed* baseline workflow.
-`docs/analysis/simulation-baseline.json` is deliberately still the pre-PR-#17 file, so
-`simulate:diff` reports both the unreviewed PR #17 rest-first movement and this
-increment's allocation correction. The isolated 7A delta, measured against `main` at
-`0fa2a45`, touches only the cycling event-directed scenarios: every non-cycling scenario
-(which has no authored coverage plan, therefore no role occurrences) is unchanged.
+**Status:** completed. The focused allocation, scenario, policy-drift and Firestore-rule
+suites passed; the reviewed workflow refreshed
+`docs/analysis/simulation-baseline.json`. The baseline now includes PR #17's rest-first
+movement and this increment's allocation correction.
 
 ## Acceptance criteria
 
@@ -247,7 +244,7 @@ increment's allocation correction. The isolated 7A delta, measured against `main
   emulator-rule violation is introduced.
 - [x] Greedy remains the production path; ADR-0015's beam-search adoption status is
   unchanged.
-- [ ] Reviewed semantic-baseline acceptance (the one remaining human gate).
+- [x] Reviewed semantic-baseline acceptance.
 
 ## Task board
 
@@ -258,7 +255,7 @@ increment's allocation correction. The isolated 7A delta, measured against `main
 | 7A.3 Stateful reservation search | `[x]` | 7A.1–7A.2 | Jointly feasible reservations preserve exact identities and report no-branch roles |
 | 7A.4 Greedy reservation protection | `[x]` | 7A.2–7A.3 | Support cannot reduce viable required-role allocation |
 | 7A.5 Simulator and UI evidence | `[x]` | 7A.1, 7A.4 | Moved/missed outcome is visible consistently |
-| 7A.6 Regression, policy, and docs review | `[ ]` | 7A.1–7A.5 | Acceptance suite and reviewed-baseline workflow pass |
+| 7A.6 Regression, policy, and docs review | `[x]` | 7A.1–7A.5 | Acceptance suite and reviewed-baseline workflow pass |
 
 ## Risks and rollback
 
