@@ -58,9 +58,12 @@ import {
 import { ENRICHED_TEMPLATES } from './templates';
 import { resolveMinimumDaysAfterHardLowerBody } from './planningCandidate';
 import { resolvePlannedDoseForDate, resolveTrainingIntent } from './trainingIntent';
-import { resolvePlanDefinitionForEvent } from './planSchedule';
+import { buildEvergreenPlanDefinition, resolvePlanDefinitionForEvent, type PlanDefinition } from './planSchedule';
 import { deriveObjectiveCreditFromProfile } from './stimulus';
-import { coverageNeedTierForTemplate, workoutIdForTemplateId } from './coverage';
+import { buildCoverageState, coverageNeedTierForTemplate, workoutIdForTemplateId } from './coverage';
+import { inferAthleteTrainingState, resolveEvidenceBackedStrategy } from './evergreenStrategy';
+import { resolveTrainingCapacity } from './trainingCapacity';
+import { EVERGREEN_PACKING_COVERAGE, packWeeklyDose } from './weeklyDosePacking';
 import {
     allocationSurvives,
     attachExactEligibleIdentities,
@@ -122,6 +125,7 @@ export interface WeekAheadOptions {
     events?: UserEvent[];
     fixedActivities?: FixedActivity[];
     authoredPlanBlocks?: readonly AuthoredPlanBlock[];
+    planDefinition?: PlanDefinition | null;
 }
 
 const ZERO_COST: WorkoutCostProfile = {
@@ -370,6 +374,7 @@ export interface ProjectedDatePlanningContext {
     anchors: WeeklyAnchors;
     internalStrain: DimensionalFatigue;
     internalStrainAsOf: string;
+    planDefinition?: PlanDefinition | null;
 }
 
 export interface ProjectedDateState {
@@ -434,7 +439,7 @@ export function evaluateProjectedDate(
         || isAdjacentDate(date, shared.anchors.qualityAnchorDate);
 
     const unresolved = getUnresolvedObjectives(state.microcycle, true);
-    const planDefinition = resolvePlanDefinitionForEvent(periodization.focusEvent, shared.authoredPlanBlocks);
+    const planDefinition = shared.planDefinition ?? resolvePlanDefinitionForEvent(periodization.focusEvent, shared.authoredPlanBlocks);
     const optimizationContext = buildOptimizationContext(
         {
             unresolvedObjectives: unresolved,
@@ -452,7 +457,11 @@ export function evaluateProjectedDate(
         shared.context,
         shared.preferences,
         date,
-        { anchorRole, adjacentToAnchor, resolveMinimumDaysAfterHardLowerBody, fatigueTier, authoredPlanBlocks: shared.authoredPlanBlocks },
+        {
+            anchorRole, adjacentToAnchor, resolveMinimumDaysAfterHardLowerBody, fatigueTier,
+            authoredPlanBlocks: shared.authoredPlanBlocks,
+            ...(shared.planDefinition ? { coverageState: buildCoverageState(planDefinition, date) } : {}),
+        },
         shared.fixedActivities,
     );
 
@@ -712,8 +721,9 @@ export function reconcileObjectivesForDate(
     creditMemory: Map<WeeklyObjective['key'], ObjectiveCreditSnapshot>,
     priorExposures: readonly ProjectionExposure[] = [],
     authoredPlanBlocks: readonly AuthoredPlanBlock[] = [],
+    planDefinition?: PlanDefinition | null,
 ): { microcycle: MicrocycleState; droppedContributorObjectives: DroppedContributorObjective[] } {
-    const planDefinitionForDate = resolvePlanDefinitionForEvent(periodization.focusEvent, authoredPlanBlocks);
+    const planDefinitionForDate = planDefinition ?? resolvePlanDefinitionForEvent(periodization.focusEvent, authoredPlanBlocks);
     const skeleton = generateWeeklyObjectives(periodization.phase, todayDate, periodization.focusEvent, planDefinitionForDate, date);
     const fresh = resolveMultiEventObjectives(events, date, periodization, skeleton.objectives);
 
@@ -866,10 +876,11 @@ export function generateWeekAheadPlan(
     const events = options.events ?? [];
     const fixedActivities = options.fixedActivities ?? [];
     const authoredPlanBlocks = options.authoredPlanBlocks ?? [];
+    const suppliedPlanDefinition = options.planDefinition ?? null;
     const effectivePreferences = preferences ?? { ...NEUTRAL_PREFERENCES, preferredRecoveryStyle: resolveRecoveryStyle(context) };
 
     const periodizationToday = evaluatePeriodizationPhase(events, todayDate);
-    let microcycle: MicrocycleState = seed.microcycle ?? generateWeeklyObjectives(periodizationToday.phase, todayDate, periodizationToday.focusEvent);
+    let microcycle: MicrocycleState = seed.microcycle ?? generateWeeklyObjectives(periodizationToday.phase, todayDate, periodizationToday.focusEvent, suppliedPlanDefinition, todayDate);
     const internalStrain: DimensionalFatigue = seed.fatigue?.internalResponseStrain ?? { systemic: 0, cardiovascular: 0, lowerBody: 0, upperBody: 0, impactTissue: 0, neuromuscular: 0 };
     const internalStrainAsOf = todayDate;
     let externalFatigue: FatigueState = seed.fatigue?.externalLoadFatigue ? seed.fatigue : createEmptyFatigue(todayDate);
@@ -983,7 +994,7 @@ export function generateWeekAheadPlan(
     if (tomorrowRec) {
         const tomorrowDate = addDaysToLocalDateString(todayDate, 1);
         const tomorrowPeriodization = evaluatePeriodizationPhase(events, tomorrowDate);
-        const tomorrowReconciled = reconcileObjectivesForDate(microcycle, events, tomorrowDate, todayDate, tomorrowPeriodization, creditMemory, projectionExposures, authoredPlanBlocks);
+        const tomorrowReconciled = reconcileObjectivesForDate(microcycle, events, tomorrowDate, todayDate, tomorrowPeriodization, creditMemory, projectionExposures, authoredPlanBlocks, suppliedPlanDefinition);
         microcycle = tomorrowReconciled.microcycle;
         accumulateNewDrops(droppedContributorObjectives, currentlyDroppedPairs, tomorrowReconciled.droppedContributorObjectives);
         applyFixedActivityStimulus(tomorrowDate);
@@ -1011,6 +1022,7 @@ export function generateWeekAheadPlan(
         anchors,
         internalStrain,
         internalStrainAsOf,
+        planDefinition: suppliedPlanDefinition,
     };
 
     const historyEntryFor = (date: string, template: SessionTemplate): RecentHistoryEntry => ({
@@ -1128,7 +1140,7 @@ export function generateWeekAheadPlan(
         const date = addDaysToLocalDateString(todayDate, offset);
         const periodization = evaluatePeriodizationPhase(events, date);
 
-        const reconciled = reconcileObjectivesForDate(microcycle, events, date, todayDate, periodization, creditMemory, projectionExposures, authoredPlanBlocks);
+        const reconciled = reconcileObjectivesForDate(microcycle, events, date, todayDate, periodization, creditMemory, projectionExposures, authoredPlanBlocks, suppliedPlanDefinition);
         microcycle = reconciled.microcycle;
         accumulateNewDrops(droppedContributorObjectives, currentlyDroppedPairs, reconciled.droppedContributorObjectives);
         applyFixedActivityStimulus(date);
@@ -1349,6 +1361,24 @@ export async function generateWeekAheadPlanWithIntent(
     trainingIntentProfile: TrainingIntentProfile | null = null,
 ): Promise<WeekAheadPlan> {
     const intent = await resolveTrainingIntent(userId, events, todayDate, todayReadiness, 7, historyProvider, preparedHistorySnapshot, options.authoredPlanBlocks, trainingIntentProfile);
+    const evergreenPlan = (() => {
+        if (intent.planningContext.mode !== 'evergreen' || !preferences) return null;
+        const availability = Array.from({ length: Math.max(1, options.days ?? 7) }, (_, index) => {
+            const date = addDaysToLocalDateString(todayDate, index);
+            return { date, maxTimeMinutes: resolveAvailability(date, null, options.fixedActivities ?? [], context).maxTimeMinutes };
+        });
+        const capacity = resolveTrainingCapacity(intent.planningContext.profile.weeklyCommitment, preferences, availability);
+        const strategy = resolveEvidenceBackedStrategy(
+            { priorities: intent.planningContext.profile.priorities },
+            inferAthleteTrainingState(intent.history, intent.historySnapshot?.windowDays ?? 0),
+        );
+        const budget = packWeeklyDose(strategy, capacity, EVERGREEN_PACKING_COVERAGE);
+        const result = buildEvergreenPlanDefinition(strategy, capacity, budget, todayDate);
+        return result.status === 'AVAILABLE' ? result.data : null;
+    })();
+    const evergreenMicrocycle = evergreenPlan
+        ? buildMicrocycleState(intent.periodization.phase, addDaysToLocalDateString(todayDate, -7), intent.history, null, evergreenPlan, todayDate)
+        : intent.microcycle;
     return generateWeekAheadPlan(
         todayReadiness,
         context,
@@ -1357,11 +1387,11 @@ export async function generateWeekAheadPlanWithIntent(
         todayRec,
         tomorrowRec,
         {
-            microcycle: intent.microcycle,
+            microcycle: evergreenMicrocycle,
             fatigue: intent.fatigue,
             trailingHistory: trailingHistoryFromCompletedExposures(intent.history, todayDate),
             droppedContributorObjectives: intent.droppedContributorObjectives,
         },
-        { ...options, events: intent.planningContext.mode === 'event_directed' ? events : [] },
+        { ...options, events: intent.planningContext.mode === 'event_directed' ? events : [], ...(evergreenPlan ? { planDefinition: evergreenPlan } : {}) },
     );
 }

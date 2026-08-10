@@ -1,5 +1,7 @@
 import type { AdaptationDoseRequirement, AdaptationKey, EvidenceBackedStrategy } from './evergreenStrategy';
 import type { ResolvedTrainingCapacity } from './trainingCapacity';
+import { EVERGREEN_GENERAL_COVERAGE_SET } from '../workouts/event-plan';
+import { WORKOUTS } from '../workouts/catalog';
 
 export interface CoverageRoleDescriptor {
     /** Stable authored identity; never a category/modality similarity match. */
@@ -13,6 +15,21 @@ export interface CoverageSetDescriptor {
     id: string;
     roles: readonly CoverageRoleDescriptor[];
 }
+
+function minimumDuration(workoutIds: readonly string[]): number {
+    return Math.min(...workoutIds.map(id => WORKOUTS.find(workout => workout.id === id)?.duration.minimumMin ?? Number.POSITIVE_INFINITY));
+}
+
+/** Exact adapter from the evergreen programming descriptor to the dose packer's
+ * adaptation roles. Walk-run is intentionally excluded from aerobic-volume credit. */
+export const EVERGREEN_PACKING_COVERAGE: CoverageSetDescriptor = {
+    id: EVERGREEN_GENERAL_COVERAGE_SET.id,
+    roles: [
+        { id: 'aerobic_volume', adaptations: ['aerobic_endurance'], exactWorkoutIds: EVERGREEN_GENERAL_COVERAGE_SET.coverage.find(item => item.key === 'aerobic_volume')!.workoutIds, durationMinutes: minimumDuration(EVERGREEN_GENERAL_COVERAGE_SET.coverage.find(item => item.key === 'aerobic_volume')!.workoutIds) },
+        { id: 'primary_strength', adaptations: ['strength'], exactWorkoutIds: EVERGREEN_GENERAL_COVERAGE_SET.coverage.find(item => item.key === 'primary_strength')!.workoutIds, durationMinutes: minimumDuration(EVERGREEN_GENERAL_COVERAGE_SET.coverage.find(item => item.key === 'primary_strength')!.workoutIds) },
+        { id: 'sustained_quality', adaptations: ['high_intensity'], exactWorkoutIds: EVERGREEN_GENERAL_COVERAGE_SET.coverage.find(item => item.key === 'sustained_quality')!.workoutIds, durationMinutes: minimumDuration(EVERGREEN_GENERAL_COVERAGE_SET.coverage.find(item => item.key === 'sustained_quality')!.workoutIds) },
+    ],
+};
 
 export interface PackedRoleOccurrence {
     id: string;
