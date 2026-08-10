@@ -65,7 +65,7 @@ Architectural choices, system invariants, and technical trade-offs are documente
 * [**ADR-0014: Objective Credit V2 & Honest Delivered Load**](./adr/0014-objective-credit-v2-and-honest-load.md) — Fractional credit, canonical stimulus axes, delivered cost, and the deferred fatigue-fusion decision.
 * [**ADR-0015: Sequence Planning — Bounded Beam Search Prototype, Adoption Deferred**](./adr/0015-sequence-planning-and-session-role-model.md) — Phase 5.1's beam-search prototype, its comparison data against the production greedy planner, and why adoption is deferred rather than shipped or rejected.
 * [**ADR-0016: Adaptation Credit & Weekly Coverage**](./adr/0016-adaptation-credit-and-weekly-coverage.md) — Separates physiological adaptation credit from exact authored weekly programming-role coverage.
-* [**ADR-0017: Training Intent Profile & First-Class Planning Modes**](./adr/0017-training-intent-profile-and-planning-modes.md) — Proposed evergreen/non-event planning and capacity contract (Phase 7B).
+* [**ADR-0017: Training Intent Profile & First-Class Planning Modes**](./adr/0017-training-intent-profile-and-planning-modes.md) — Proposed evergreen/capacity contract that preserves structured and demand-derived event paths (Phase 7B).
 * [**ADR-0018: Weekly Allocation, Safe Role Reservations & Explicit Misses**](./adr/0018-weekly-allocation-and-role-reservations.md) — Proposed production-greedy allocation contract for preserving safe, required weekly roles after PR #17.
 
 Reserved for work sequenced in [`docs/plans/`](./plans/), written with their phase:
@@ -79,6 +79,7 @@ Point-in-time assessments of the system as built, including gaps between documen
 * [**2026-08-08 Codebase, Docs & Decision Review**](./analysis/2026-08-08-architecture-review.md) — Full-repository review with a sequenced remediation plan.
 * [**2026-08-09 Phase 0–5 completion review**](./analysis/2026-08-09-phase-0-5-completion-review.md) — Current reconciliation of the remediation plans, verification evidence, and remaining calibration/process work.
 * [**2026-08-10 PR #17 semantic-baseline follow-up**](./analysis/2026-08-10-pr17-semantic-baseline-follow-up.md) — Evidence, rejected calibration candidates, and the remaining sequence-level acceptance work.
+* [**2026-08-10 Training-intent & periodization architecture analysis**](./analysis/2026-08-10-training-intent-periodization-architecture.md) — Evidence for Phase 7A/7B mode, preference-ownership, capacity, and stateful-allocation proposals.
 
 ---
 

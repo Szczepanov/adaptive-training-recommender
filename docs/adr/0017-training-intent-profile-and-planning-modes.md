@@ -3,7 +3,7 @@
 * **Status:** Proposed
 * **Date:** 2026-08-10
 * **Deciders:** Core Engineering Team / repository owner
-* **Source analysis:** `training_intent_periodization_architecture_analysis.md` (2026-08-10, checked against PR #17 head `21a22a1`)
+* **Source analysis:** [2026-08-10 training-intent and periodization architecture analysis](../analysis/2026-08-10-training-intent-periodization-architecture.md) (verified against merged `main` at `34ddc30`)
 
 ## Context
 
@@ -42,22 +42,28 @@ an execution layer.
 
 ## Decision
 
-### D-MODE — `evergreen` and `event_directed` are first-class planning modes
+### D-MODE — planning mode is distinct from event-plan capability
 
 A new persisted `TrainingIntentProfile.planningMode` records the athlete's stated intent.
 The engine resolves an **effective** mode per evaluation date:
 
-* `event_directed` only when the profile selects it **and**
-  `evaluatePeriodizationPhase` returns a non-null `focusEvent` whose category is the
-  currently supported `cycling_event` plan; a running, strength, triathlon, or general
-  focus event resolves to `evergreen` until it has its own event-plan contract;
+* `event_directed` when the profile selects it **and** `evaluatePeriodizationPhase` returns
+  an eligible non-null `focusEvent`, irrespective of the event category;
 * `evergreen` otherwise — including an `event_directed` profile whose events have all
   passed or been cancelled.
 
-For a legacy athlete with no profile, resolve an active supported cycling focus event as
-`event_directed`; resolve every other case as `evergreen`. This compatibility default
-preserves the already-calibrated cycling path while a profile-less athlete without such an
-event receives the new evergreen default.
+`PlanningContext` also carries an explicit engine capability, separate from the athlete's
+mode: `structured_plan` when `resolvePlanDefinitionForEvent` returns a plan (today, the
+cycling event plan) and `demand_derived` for every other eligible event. Thus a runner,
+triathlete, strength athlete, or general target remains event-directed on the existing
+demand-derived path; adding a sport-specific coverage plan later is additive, not a mode
+redefinition.
+
+For a legacy athlete with no profile, resolve any eligible focus event as `event_directed`;
+resolve no-focus-event cases as `evergreen`. An explicit evergreen profile remains
+evergreen even when an event exists. This compatibility default preserves every existing
+event-directed scenario while the profile-less eventless athlete receives the new
+evergreen default.
 
 No fake event is constructed in `evergreen` mode. `DEFAULT_BASE_DEMAND` stops being the
 eventless strategy input and is retained only as the Base-phase demand blend for a real
@@ -65,11 +71,12 @@ event more than 84 days out (`evaluatePeriodizationPhase`'s existing `blendDeman
 
 ### D-CAP — weekly capacity is the sizing authority for derived targets
 
-`TrainingIntentProfile.weeklyCommitment` (`minSessions`, `targetSessions`, `maxSessions`,
-`defaultWeekdayMinutes`, `defaultWeekendMinutes`) is persisted human input. Derived
-objective counts and coverage minimums are a **pure function** of capacity plus stated
-priorities under a versioned policy table — never persisted, recomputed on every read, in
-the same way `deriveGoalCategory` already treats goal horizon.
+`TrainingIntentProfile.weeklyCommitment` (`minSessions`, `targetSessions`, `maxSessions`)
+is persisted human input. Session-duration defaults remain execution preferences owned by
+`UserPreferences` (D-OWNERSHIP). Derived objective counts and coverage minimums are a
+**pure function** of capacity plus stated priorities under a versioned policy table —
+never persisted, recomputed on every read, in the same way `deriveGoalCategory` already
+treats goal horizon.
 
 The starting allocation table (2 → two multi-component sessions; 3 → 2+1 by goal; 4 → 2+2;
 5 → 2+3 or 3+2; 6 → 3 strength + 3 endurance; 7+ → advanced) is recorded as **product
@@ -78,7 +85,16 @@ population guidance, and it is expected to be recalibrated. Volume-equated 2-vs-
 resistance-training frequency evidence is the specific reason a third strength day is
 treated as a distribution decision rather than a requirement.
 
-### D-COVSET — the coverage catalog is a registry, not a module constant
+`minSessions` is the capacity within which all derived **required** role occurrences must
+fit; `targetSessions` is the capacity for required plus target coverage; and `maxSessions`
+is available only to optional/stretch work. Derivation must fail visibly with a
+minimum-dose shortfall when an authored requirement cannot fit, not silently manufacture
+cross-role credit. One session may earn several adaptation credits, but it may earn several
+programming roles only when an exact authored coverage identity grants each key. A
+multi-component session is a real authored session, never a fictional way to collapse
+separate strength and endurance requirements.
+
+### D-COVSET — coverage is a generic plan registry, not an event-shaped module constant
 
 `coverage.ts` currently imports `SEPTEMBER_CYCLING_EVENT_SESSION_COVERAGE` at module scope
 and builds `COVERAGE_BY_KEY` from it. That makes one athlete's September road race the
@@ -86,17 +102,36 @@ only coverage vocabulary the engine can express. Coverage becomes a **named set*
 from the active planning context, with the September set retained unchanged as the
 event-directed cycling set and a new evergreen set added alongside it.
 
-`validateEventPlanCoverage`'s required-key and per-phase expectations move onto the set
-descriptor, because an evergreen set structurally has no `race` or `taper` phase and today's
-validator would reject it.
+Replace the event-named vocabulary with `PlanCoverageKey`, `PlanSessionCoverage`, and
+`PlanPhase`, retaining temporary deprecated aliases only where needed for a safe migration.
+`validatePlanCoverage` takes a descriptor-specific phase/key contract, because an
+evergreen set structurally has no `race` or `taper` phase and today's validator would
+reject it. The September cycling set becomes one descriptor; evergreen is another peer,
+not an event-shaped exception.
 
-### D-ORG — Auto/Adaptive Hybrid is the only shipped organisation, named explicitly
+This is a terminology migration, not a change to the accepted phase semantics in D-PHASE:
+event-plan `PlanPhase` values retain the current `EventPlanPhase` meaning, and
+`PhaseWeights.phaseName` remains a derived display label.
 
-`organizationPreference` is persisted with `'auto'` as the default and `'linear'`,
-`'undulating'`, `'block'` accepted but **not yet consumed by the engine**, which must fail
-loudly (a typed exhaustive switch) rather than silently ignore a stored value. The
-comparative evidence does not support forcing a novice to choose a model, and it does not
-support us shipping three untested organisations to look complete.
+### D-OWNERSHIP — one persisted authority owns each preference field
+
+`TrainingIntentProfile` owns durable planning intent only: `planningMode`, ordered
+priorities, weekly `minSessions`/`targetSessions`/`maxSessions`, and the resolved
+organisation policy. `UserPreferences` remains the sole authority for session-duration
+defaults, time of day, modality preference/exclusion, recovery style, conservative bias,
+recovery margin, verbosity, and units.
+
+Phase 7 does not duplicate or merge those fields. If it needs an explicit hard
+`unavailable` modality, it evolves `UserPreferences` and maps that field into the existing
+hard restriction path; it does not add a competing modality model to the profile.
+
+### D-ORG — persist only the organisation the engine can execute
+
+`organizationPreference` is persisted as the only valid value, `'auto'`. The schema is
+widened only in the increment that implements another organisation. The engine must never
+accept persisted data that intentionally makes normal recommendation generation fail.
+If product research needs to collect a future preference first, it uses a separate,
+non-operative `requestedOrganization` field rather than changing the resolved policy.
 
 ### D-TAPERSCOPE — taper requires a real event, and priority alone is not one
 
@@ -135,7 +170,7 @@ doc comment naming the other. No rename, because `TrainingIntent` is referenced 
   `policy.ts` `HISTORICAL_POLICY_VERSIONS`).
 * Evergreen decisions become sensitive to a new input the athlete may not have supplied.
   The profile therefore needs a documented, conservative default, while the no-profile
-  compatibility rule must preserve active supported cycling-event behaviour — this is the
+  compatibility rule must preserve every active event-directed behaviour — this is the
   principal migration risk.
 * Two coverage sets means two calibration surfaces. The September set's semantics are
   frozen by ADR-0016 and the [macrocycle v5 contract](../macrocycle-v5.md); the evergreen

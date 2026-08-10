@@ -90,30 +90,38 @@ and focused tests show the helper rejects the same candidate/reasons as
 `rankCandidates` for time, equipment, injury, phase, intensity, spacing, anchor
 protection, and recover/modify fatigue ceilings.
 
-### 7A.3 `[ ]` Reserve feasible required occurrences deterministically
+### 7A.3 `[ ]` Reserve jointly feasible required occurrences deterministically
 
 **Current:** `resolveWeeklyAnchors` can nominate two dates but does not allocate coverage
 roles, account for multiple occurrences, or distinguish a nomination from a feasible
 session.
 
-**Change:** add `resolveWeeklyRoleReservations` in `weeklyAllocation.ts`. For every
-unseeded forecast date, obtain candidate-role edges only from 7A.2's accepted candidates.
-Choose a one-session-per-date, maximum-cardinality matching for required occurrences.
-When more than one matching has equal cardinality, use this stable order:
+**Change:** add `resolveWeeklyRoleReservations` in `weeklyAllocation.ts`. It is a bounded,
+deterministic DFS/backtracking search over **minimum required role occurrences only**, not
+over all utility-ranked workout sequences:
+
+1. start with today's/tomorrow's immutable seed state;
+2. choose the remaining occurrence with fewest accepted exact candidate assignments;
+3. try date/template assignments in deterministic order, applying 7A.2's actual projected
+   fatigue/history transition before recursing;
+4. retain the jointly feasible solution that fulfils the most occurrences.
+
+When more than one jointly feasible solution has equal cardinality, use this stable order:
 
 1. earliest active-plan-window end date;
 2. fewest remaining feasible dates for the occurrence;
 3. authored coverage key, then template id, then date.
 
 This order is a deterministic allocation tie-break, not a coaching-benefit score. A role
-with no edge is immediately recorded as missed with its observed reason; it is never
-converted to an arbitrary template. Existing anchor dates are candidate preferences only:
-a reservation may use another safe date and must report that move.
+with no feasible branch is immediately recorded as missed with its observed reason; it is
+never converted to an arbitrary template. Existing anchor dates are candidate preferences
+only: a reservation may use another safe date and must report that move.
 
-**Done when:** tests cover competing roles for one date, multiple occurrences of one
-role, a role that must move off an anchor nomination, and a no-edge safety exclusion.
-They assert that reservations contain only exact eligible identities and never violate a
-hard gate.
+**Done when:** tests cover competing roles for one date, multiple occurrences of one role,
+a role that must move off an anchor nomination, and a no-branch safety exclusion. A
+regression proves two assignments individually feasible from the seed state but jointly
+infeasible after the first state transition; the solver must not reserve both. All
+reservations contain only exact eligible identities and never violate a hard gate.
 
 ### 7A.4 `[ ]` Protect reservations while retaining greedy day selection
 
@@ -127,8 +135,8 @@ opportunity; the loop discovers that only after it has selected the support day.
   dynamic state makes them unsafe, recompute the remaining matching and move the
   occurrence when possible.
 * On an unreserved date, simulate each otherwise accepted supporting candidate through
-  the shared helper. Exclude it only when it reduces the maximum achievable required-role
-  matching cardinality or invalidates an earlier-deadline reservation. This is the
+  the shared helper. Exclude it only when it reduces the maximum achievable stateful
+  required-role reservation count or invalidates an earlier-deadline reservation. This is the
   ADR-0018 bounded viability check.
 * If a role becomes impossible, select the normal safe fallback (including Rest-first in
   recover tier) and emit the typed miss. Never force a session, lower a fatigue threshold,
@@ -205,7 +213,7 @@ semantic baseline is updated only after the acceptance criteria below pass in re
 |---|:---:|---|---|
 | 7A.1 Allocation inputs and outcomes | `[ ]` | ADR-0018 | Exact minimum-role occurrences and typed outcomes are unit-tested |
 | 7A.2 Shared projected-date evaluation | `[ ]` | 7A.1 | Allocation and greedy use the same hard-gate path |
-| 7A.3 Deterministic reservation matching | `[ ]` | 7A.1–7A.2 | Matching preserves exact identities and reports no-edge roles |
+| 7A.3 Stateful reservation search | `[ ]` | 7A.1–7A.2 | Jointly feasible reservations preserve exact identities and report no-branch roles |
 | 7A.4 Greedy reservation protection | `[ ]` | 7A.2–7A.3 | Support cannot reduce viable required-role allocation |
 | 7A.5 Simulator and UI evidence | `[ ]` | 7A.1, 7A.4 | Moved/missed outcome is visible consistently |
 | 7A.6 Regression, policy, and docs review | `[ ]` | 7A.1–7A.5 | Acceptance suite and reviewed-baseline workflow pass |
@@ -214,7 +222,7 @@ semantic baseline is updated only after the acceptance criteria below pass in re
 
 * **Latency:** Measure one live-sized `generateWeekAheadPlanWithIntent` call and the
   scenario suite before/after. If repeated viability checks exceed the agreed budget,
-  cache pure date evaluation/matching inputs; do not silently switch to beam search.
+  cache pure date evaluation/search inputs; do not silently switch to beam search.
 * **Over-constrained plans:** Reservations apply only to minimum authored roles and only
   while an exact safe matching exists. If they crowd out legitimate support work, inspect
   the allocation report and adjust the authored coverage requirement in a separately

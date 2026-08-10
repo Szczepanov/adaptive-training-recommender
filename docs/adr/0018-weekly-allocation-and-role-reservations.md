@@ -36,11 +36,15 @@ currently active coverage roles and their exact catalogue identities. Target-onl
 generic adaptation credit, display title, modality, and category do not create a
 reservation.
 
-The allocator chooses a deterministic, one-session-per-date matching between those role
-occurrences and feasible candidate dates. It maximises the number of required occurrences
-that can be represented; deterministic ties use the requirement's deadline/date and
-stable role/template identifiers. `recovery_or_rest` remains satisfied by the existing
-coverage ledger and recovery policy; it does not reserve a discretionary training date.
+The allocator chooses a deterministic, stateful, one-session-per-date reservation search.
+Starting from immutable today/tomorrow seeds, it chooses the most constrained remaining
+occurrence, tries exact candidate date/template assignments in stable order, applies the
+real projected state transition, and recurses. It maximises fulfilled required occurrences;
+deterministic ties use the requirement's deadline/date and stable role/template identifiers.
+This proves that the selected reservation set is jointly feasible under fatigue, spacing,
+anchor protection, and projected history rather than merely connecting individually
+feasible date edges. `recovery_or_rest` remains satisfied by the existing coverage ledger
+and recovery policy; it does not reserve a discretionary training date.
 
 Today's and tomorrow's selected recommendations are immutable seeds, not candidates to
 be rewritten. Their coverage and fatigue effects are applied before allocation. A seed may
@@ -54,15 +58,15 @@ phase, planned-intensity, injury, recovery/spacing, and fatigue-tier filtering p
 
 After every selected forecast day, remaining reservations are recalculated against the
 new projected fatigue and history. On a reserved date the planner selects a candidate that
-fulfils that reserved occurrence. A safe role may move to a later feasible date; it is not
-lost merely because its original nominated/allocated date changed.
+fulfils that reserved occurrence. A safe role may move to a later jointly feasible date;
+it is not lost merely because its original nominated/allocated date changed.
 
 ### D-SUPPORT — supporting work may not destroy all safe allocations
 
 On an unreserved date, a supporting candidate is admissible only if applying its projected
-cost/history preserves the maximum achievable required-role matching cardinality and any
-earlier-deadline reservation it would otherwise invalidate. This is a bounded one-step
-viability check, not horizon-wide utility search.
+cost/history preserves the maximum achievable **stateful** required-role reservation count
+and any earlier-deadline reservation it would otherwise invalidate. This is a bounded
+one-step viability check, not horizon-wide utility search.
 It prevents a reduced-dose strength/support session from consuming the only safe quality
 or event-specific opportunity, while continuing to permit it whenever another safe
 allocation remains.
@@ -98,7 +102,7 @@ planner; it neither imports the beam-search wrapper nor changes its adoption sta
 
 ### Negative
 
-* Repeated feasibility/matching calculations add bounded planner work and need a measured
+* Repeated feasibility/search calculations add bounded planner work and need a measured
   latency budget.
 * Reservation metadata is another forecast surface that must stay aligned with the actual
   selected days and simulator output.
