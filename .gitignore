@@ -216,3 +216,5 @@ sleep_daily_sample.json
 hrv_range_sample.json
 *.cache*
 *cache*
+
+node_modules/

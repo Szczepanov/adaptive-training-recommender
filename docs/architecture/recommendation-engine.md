@@ -516,8 +516,26 @@ comparison data and reasoning. Greedy (`generateWeekAheadPlan`) remains the live
 
 ## Verification & audit tooling
 
+### Coverage visibility (`test:coverage` / `pytest --cov`)
+
+`cd app && npm run test:coverage` emits terminal, JSON, and HTML V8 coverage reports to
+`app/artifacts/coverage/frontend/`. `uv run pytest --cov=garmin_sync --cov-report=term-missing
+--cov-report=xml:artifacts/coverage/python/coverage.xml` emits backend terminal and XML
+coverage reports. CI uploads both directories as review artifacts without a global coverage
+threshold; engine behavior contracts remain the decision-quality gate.
+
 ### Multi-week scenario simulation (`simulate:scenarios`)
 Executed via `cd app && npm run simulate:scenarios`. Runs synthetic athlete scenarios across multi-week spans to audit engine periodization, fractional objective fulfillment, fatigue decay curves, anchor placements, modality coverage, and constraint safety. Outputs `report.json` and `report.md` to `app/artifacts/simulation-reports/latest/`.
+
+### Calibration evidence (`simulate:calibrate`)
+
+Executed via `cd app && npm run simulate:calibrate`. It reruns the same bounded synthetic
+corpus and writes compact per-day decision traces plus per-scenario and aggregate trigger
+frequencies to `app/artifacts/calibration-reports/latest/`. Traces retain canonical template
+and objective identifiers, derived fatigue/cost/stimulus vectors, gate codes, and optimizer
+scores; they intentionally exclude raw Garmin payloads, free-text check-ins, and Firebase
+exports. This is policy-regression evidence, not clinical calibration, and the report makes
+no automatic threshold recommendation.
 
 ### Recommendation decision replay (`replay:recommendation`)
 Executed via `cd app && npm run replay:recommendation -- <audit.json>`. Accepts a JSON snapshot of a historical recommendation and passes it into `replayRecommendationAudit()` ([`app/src/engine/replay.ts`](../../app/src/engine/replay.ts)). The current policy version can be verified for reproducibility. Known historical policy versions remain auditable but are explicitly rejected as executable replay unless that historical decision function is bundled in a future build.

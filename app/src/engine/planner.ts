@@ -99,6 +99,23 @@ export interface WeekAheadDay {
         selectedCostPenalty: number;
         bestBenefitTemplateId: string;
         bestBenefitScore: number;
+        fatigue?: FatigueState;
+        activeObjectives?: Array<{
+            key: WeeklyObjective['key'];
+            completedCredit: number;
+            projectedCredit: number;
+            requiredCredit: number;
+        }>;
+        contributorObjectiveChanges?: {
+            added: WeeklyObjective['key'][];
+            dropped: WeeklyObjective['key'][];
+        };
+        fixedActivity?: {
+            count: number;
+            cost: WorkoutCostProfile;
+            stimulus: WorkoutStimulusProfile;
+        };
+        rejectionCounts?: Record<string, number>;
     };
 }
 
@@ -141,6 +158,29 @@ const ZERO_STIMULUS: WorkoutStimulusProfile = {
     maxStrength: 0,
     hypertrophy: 0,
 };
+
+function fixedActivityTraceForDate(fixedActivities: FixedActivity[], date: string): {
+    count: number;
+    cost: WorkoutCostProfile;
+    stimulus: WorkoutStimulusProfile;
+} {
+    const activities = fixedActivities.filter(activity => activity.date === date && !activity.isCompleted);
+    const cost = fixedActivityCostProfileForDate(activities, date);
+    const stimulus = activities.reduce<WorkoutStimulusProfile>((sum, activity) => {
+        const expected = activity.expectedStimulus ?? {};
+        return {
+            aerobicEndurance: sum.aerobicEndurance + (expected.aerobicEndurance ?? 0),
+            thresholdPower: sum.thresholdPower + (expected.thresholdPower ?? 0),
+            vo2MaxPower: sum.vo2MaxPower + (expected.vo2MaxPower ?? 0),
+            repeatedSurges: sum.repeatedSurges + (expected.repeatedSurges ?? 0),
+            sprintPower: sum.sprintPower + (expected.sprintPower ?? 0),
+            fatigueResistance: sum.fatigueResistance + (expected.fatigueResistance ?? 0),
+            maxStrength: sum.maxStrength + (expected.maxStrength ?? 0),
+            hypertrophy: sum.hypertrophy + (expected.hypertrophy ?? 0),
+        };
+    }, ZERO_STIMULUS);
+    return { count: activities.length, cost, stimulus };
+}
 
 function combineMax(a: DimensionalFatigue, b: DimensionalFatigue): DimensionalFatigue {
     return {
@@ -529,6 +569,18 @@ export function projectedDateOutcomeFrom(evaluation: ProjectedDateEvaluation): P
     };
     PROJECTED_DATE_OUTCOMES.set(evaluation, outcome);
     return outcome;
+}
+
+function rejectionCountsFor(evaluation: ProjectedDateEvaluation): Record<string, number> {
+    const outcome = projectedDateOutcomeFrom(evaluation);
+    const counts: Record<string, number> = {};
+    outcome.exclusionReasons.forEach(reasons => reasons.forEach(reason => {
+        counts[reason] = (counts[reason] ?? 0) + 1;
+    }));
+    outcome.fatigueExcludedTemplateIds.forEach(() => {
+        counts.PROJECTED_FATIGUE_GATE = (counts.PROJECTED_FATIGUE_GATE ?? 0) + 1;
+    });
+    return counts;
 }
 
 export function projectTrailingHistory(
@@ -1139,6 +1191,7 @@ export function generateWeekAheadPlan(
         const date = addDaysToLocalDateString(todayDate, offset);
         const periodization = evaluatePeriodizationPhase(events, date);
 
+        const priorObjectiveKeys = new Set(microcycle.objectives.map(objective => objective.key));
         const reconciled = reconcileObjectivesForDate(microcycle, events, date, todayDate, periodization, creditMemory, projectionExposures, authoredPlanBlocks, suppliedPlanDefinition);
         microcycle = reconciled.microcycle;
         accumulateNewDrops(droppedContributorObjectives, currentlyDroppedPairs, reconciled.droppedContributorObjectives);
@@ -1163,7 +1216,7 @@ export function generateWeekAheadPlan(
         const reservation = allocation.reservationsByDate.get(date);
 
         const evaluation = projectedEvaluation(date, []);
-        const { anchorRole, eligible, fatigueGated, peakFatigue, fatigueTier, optimizationContext: optContext } = evaluation;
+        const { anchorRole, eligible, fatigueGated, peakFatigue, fatigueTier, rankingFatigue, optimizationContext: optContext } = evaluation;
 
         // If a required developmental role is temporarily excluded by the projected
         // fatigue ceiling, do not spend the recovery opportunity on unrelated work.
@@ -1303,6 +1356,21 @@ export function generateWeekAheadPlan(
                 selectedCostPenalty: pick.costPenalty,
                 bestBenefitTemplateId: bestBenefit.template.id,
                 bestBenefitScore: bestBenefit.benefitScore,
+                fatigue: rankingFatigue,
+                activeObjectives: microcycle.objectives.map(objective => ({
+                    key: objective.key,
+                    completedCredit: objective.completedCredit ?? objective.completedExposures,
+                    projectedCredit: objective.projectedCredit ?? 0,
+                    requiredCredit: objective.requiredCredit ?? objective.targetExposures,
+                })),
+                contributorObjectiveChanges: {
+                    added: microcycle.objectives.filter(objective => !priorObjectiveKeys.has(objective.key)).map(objective => objective.key),
+                    dropped: reconciled.droppedContributorObjectives
+                        .filter(objective => objective.date === date)
+                        .map(objective => objective.objectiveKey),
+                },
+                fixedActivity: fixedActivityTraceForDate(fixedActivities, date),
+                rejectionCounts: rejectionCountsFor(evaluation),
             },
         });
     }

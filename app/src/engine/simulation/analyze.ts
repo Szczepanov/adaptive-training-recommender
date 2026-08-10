@@ -1,4 +1,4 @@
-import type { EquipmentKey, Recommendation, SessionTemplate, UserContext, WorkoutCostProfile } from '../models';
+import type { DimensionalFatigue, EquipmentKey, Recommendation, SessionTemplate, UserContext, WorkoutCostProfile, WorkoutStimulusProfile } from '../models';
 import { evaluateNextDayPlanWithIntent, evaluateTrainingWithIntent } from '../rules';
 import { generateWeekAheadPlanWithIntent, resolveWeeklyAnchors, type WeekAheadDay } from '../planner';
 import type { CompletedExposure, TrainingHistoryProvider } from '../trainingHistory';
@@ -10,6 +10,8 @@ import { SCENARIOS } from './scenarios';
 import type { WeeklyRoleAllocationReport } from '../weeklyAllocation';
 
 const ZERO_COST: WorkoutCostProfile = { systemic: 0, cardiovascular: 0, lowerBody: 0, upperBody: 0, impactTissue: 0, neuromuscular: 0 };
+const ZERO_STIMULUS: WorkoutStimulusProfile = { aerobicEndurance: 0, thresholdPower: 0, vo2MaxPower: 0, repeatedSurges: 0, sprintPower: 0, fatigueResistance: 0, maxStrength: 0, hypertrophy: 0 };
+const ZERO_FATIGUE: DimensionalFatigue = { systemic: 0, cardiovascular: 0, lowerBody: 0, upperBody: 0, impactTissue: 0, neuromuscular: 0 };
 
 export interface ObjectiveTally { key: string; timesGenerated: number; timesResolved: number; }
 export interface ObjectiveCredit { weekIndex: number; date: string; objectiveKey: string; objectiveTitle: string; templateId: string; templateTitle: string; modality: SessionTemplate['modality']; }
@@ -17,6 +19,36 @@ export interface UtilityDiagnosticsSummary { fragileSelectionCount: number; lowe
 export interface AnchorWeekResult {
     weekIndex: number; weekStartDate: string; eventSpecificAnchorDate: string | null; qualityAnchorDate: string | null;
     eventSpecificAnchorHit: boolean | null; eventSpecificExposureDates: string[]; eventSpecificAnchorFulfilled: boolean | null; qualityAnchorHit: boolean | null;
+}
+export interface ScenarioDecisionTrace {
+    weekIndex: number;
+    date: string;
+    readinessTier: 'train' | 'modify' | 'recover';
+    mode: 'train' | 'modify' | 'recover';
+    selected: {
+        templateId: string;
+        category: SessionTemplate['category'];
+        modality: SessionTemplate['modality'];
+        projectedCost: WorkoutCostProfile;
+    };
+    fatigue: {
+        rawExternalLoad: DimensionalFatigue;
+        clampedExternalLoad: DimensionalFatigue;
+        internalResponse: DimensionalFatigue;
+        combined: DimensionalFatigue;
+    };
+    activeObjectives: Array<{ key: string; completedCredit: number; projectedCredit: number; requiredCredit: number }>;
+    contributorObjectiveChanges: { added: string[]; dropped: string[] };
+    fixedActivity: { count: number; cost: WorkoutCostProfile; stimulus: WorkoutStimulusProfile };
+    rejectionCounts: Record<string, number>;
+    utility: {
+        top: number;
+        runnerUp: number | null;
+        bestBenefitTemplateId: string | null;
+        bestBenefitScore: number | null;
+        selectedBenefitScore: number | null;
+        selectedVsBestBenefitGap: number | null;
+    };
 }
 export interface ScenarioResult {
     scenarioId: string; label: string; description: string; weeksSimulated: number; totalDays: number;
@@ -29,6 +61,7 @@ export interface ScenarioResult {
     qualityWarnings: string[]; anchorWeeks: AnchorWeekResult[]; anchorScopeNote: string | null;
     fatigueTierDayCounts: { train: number; modify: number; recover: number }; constraintViolations: string[];
     allocationReports: Array<{ weekIndex: number; report: WeeklyRoleAllocationReport }>;
+    decisionTraces: ScenarioDecisionTrace[];
     weekSummaries: Array<{
         weekIndex: number;
         fatigueTierDayCounts: { train: number; modify: number; recover: number };
@@ -52,6 +85,80 @@ function recommendationAsDay(date: string, recommendation: Recommendation, phase
     return {
         date, dayOffset: 0, confidence: 'provisional', phaseName, template: recommendation.template,
         mode: recommendation.mode === 'recover' ? 'recover' : 'train', rationale: recommendation.rationale, addressesObjectives: [],
+    };
+}
+
+function rejectionCounts(candidates: readonly { excludedReasons: string[] }[]): Record<string, number> {
+    const counts: Record<string, number> = {};
+    candidates.forEach(candidate => candidate.excludedReasons.forEach(reason => {
+        counts[reason] = (counts[reason] ?? 0) + 1;
+    }));
+    return counts;
+}
+
+function traceFromRecommendation(weekIndex: number, date: string, recommendation: Recommendation): ScenarioDecisionTrace {
+    const calibration = recommendation.decisionTrace?.calibration;
+    const candidates = recommendation.decisionTrace?.candidateScores ?? [];
+    const accepted = candidates.filter(candidate => candidate.excludedReasons.length === 0)
+        .sort((left, right) => right.utilityScore - left.utilityScore);
+    const selectedCandidate = candidates.find(candidate => candidate.templateId === recommendation.template.id);
+    const bestBenefit = [...accepted].sort((left, right) => (right.benefitScore ?? -Infinity) - (left.benefitScore ?? -Infinity))[0];
+    const selectedBenefitScore = selectedCandidate?.benefitScore ?? null;
+    const bestBenefitScore = bestBenefit?.benefitScore ?? null;
+    return {
+        weekIndex, date, readinessTier: recommendation.mode, mode: recommendation.mode,
+        selected: {
+            templateId: recommendation.template.id,
+            category: recommendation.template.category,
+            modality: recommendation.template.modality,
+            projectedCost: recommendation.template.costProfile ?? ZERO_COST,
+        },
+        fatigue: calibration?.fatigue ?? {
+            rawExternalLoad: ZERO_FATIGUE, clampedExternalLoad: ZERO_FATIGUE,
+            internalResponse: ZERO_FATIGUE, combined: ZERO_FATIGUE,
+        },
+        activeObjectives: calibration?.activeObjectives ?? [],
+        contributorObjectiveChanges: {
+            added: [],
+            dropped: recommendation.decisionTrace?.droppedContributorObjectives.map(objective => objective.objectiveKey) ?? [],
+        },
+        fixedActivity: calibration?.fixedActivity ?? { count: 0, cost: ZERO_COST, stimulus: ZERO_STIMULUS },
+        rejectionCounts: rejectionCounts(candidates),
+        utility: {
+            top: selectedCandidate?.utilityScore ?? 0,
+            runnerUp: accepted.filter(candidate => candidate.templateId !== recommendation.template.id)[0]?.utilityScore ?? null,
+            bestBenefitTemplateId: bestBenefit?.templateId ?? null,
+            bestBenefitScore,
+            selectedBenefitScore,
+            selectedVsBestBenefitGap: bestBenefitScore === null || selectedBenefitScore === null ? null : bestBenefitScore - selectedBenefitScore,
+        },
+    };
+}
+
+function traceFromForecastDay(weekIndex: number, day: WeekAheadDay): ScenarioDecisionTrace {
+    const diagnostics = day.diagnostics;
+    if (!diagnostics) throw new Error(`Expected forecast diagnostics for ${day.date}.`);
+    return {
+        weekIndex, date: day.date, readinessTier: diagnostics.fatigueTier, mode: diagnostics.fatigueTier,
+        selected: { templateId: day.template.id, category: day.template.category, modality: day.template.modality, projectedCost: day.template.costProfile ?? ZERO_COST },
+        fatigue: {
+            rawExternalLoad: diagnostics.fatigue?.rawExternalLoadFatigue ?? diagnostics.fatigue?.externalLoadFatigue ?? ZERO_FATIGUE,
+            clampedExternalLoad: diagnostics.fatigue?.externalLoadFatigue ?? ZERO_FATIGUE,
+            internalResponse: diagnostics.fatigue?.internalResponseStrain ?? ZERO_FATIGUE,
+            combined: diagnostics.fatigue?.combinedFatigue ?? ZERO_FATIGUE,
+        },
+        activeObjectives: diagnostics.activeObjectives ?? [],
+        contributorObjectiveChanges: diagnostics.contributorObjectiveChanges ?? { added: [], dropped: [] },
+        fixedActivity: diagnostics.fixedActivity ?? { count: 0, cost: ZERO_COST, stimulus: ZERO_STIMULUS },
+        rejectionCounts: diagnostics.rejectionCounts ?? {},
+        utility: {
+            top: diagnostics.topUtilityScore,
+            runnerUp: diagnostics.runnerUpUtilityScore,
+            bestBenefitTemplateId: diagnostics.bestBenefitTemplateId,
+            bestBenefitScore: diagnostics.bestBenefitScore,
+            selectedBenefitScore: diagnostics.selectedBenefitScore,
+            selectedVsBestBenefitGap: diagnostics.bestBenefitScore - diagnostics.selectedBenefitScore,
+        },
     };
 }
 
@@ -93,6 +200,7 @@ function computeMetrics(
     objectiveTallies: Map<string, ObjectiveTally>,
     objectiveCredits: ObjectiveCredit[],
     allocationReports: Array<{ weekIndex: number; report: WeeklyRoleAllocationReport }>,
+    decisionTraces: ScenarioDecisionTrace[],
 ): ScenarioResult {
     const allDays = weeklyDays.flat();
     const categoryDistribution: Partial<Record<SessionTemplate['category'], number>> = {};
@@ -177,7 +285,7 @@ function computeMetrics(
         maxConsecutiveSameTemplateStreakWithinCall, maxConsecutiveSameTemplateStreakAcrossWeeks,
         objectiveResolution, objectiveCredits,
         utilityDiagnostics: { fragileSelectionCount, lowerBenefitSelectionCount, trainTierRestOrRecoveryCount },
-        qualityWarnings, anchorWeeks, anchorScopeNote, fatigueTierDayCounts, constraintViolations, allocationReports, weekSummaries,
+        qualityWarnings, anchorWeeks, anchorScopeNote, fatigueTierDayCounts, constraintViolations, allocationReports, decisionTraces, weekSummaries,
     };
 }
 
@@ -199,6 +307,7 @@ export async function runScenario(scenario: AthleteScenario, planGenerator: Week
     const objectiveTallies = new Map<string, ObjectiveTally>();
     const objectiveCredits: ObjectiveCredit[] = [];
     const allocationReports: Array<{ weekIndex: number; report: WeeklyRoleAllocationReport }> = [];
+    const decisionTraces: ScenarioDecisionTrace[] = [];
     let currentDate = scenario.startDate;
 
     for (let week = 0; week < scenario.weeks; week++) {
@@ -219,6 +328,11 @@ export async function runScenario(scenario: AthleteScenario, planGenerator: Week
         );
         const todayPhase = evaluatePeriodizationPhase(events, currentDate).phase.phaseName;
         const simulatedDays: WeekAheadDay[] = [recommendationAsDay(currentDate, todayRec, todayPhase), ...plan.days];
+        decisionTraces.push(
+            traceFromRecommendation(week, currentDate, todayRec),
+            traceFromRecommendation(week, addDaysToLocalDateString(currentDate, 1), tomorrowRec),
+            ...plan.days.filter(day => day.dayOffset > 1).map(day => traceFromForecastDay(week, day)),
+        );
 
         const anchors = resolveWeeklyAnchors(currentDate, 6, events, fixedActivities, scenario.context, tomorrowRec.template.category, tomorrowRec.template.modality);
         const findPick = (date: string | null) => date ? simulatedDays.find(d => d.date === date) ?? null : null;
@@ -244,12 +358,104 @@ export async function runScenario(scenario: AthleteScenario, planGenerator: Week
         });
         currentDate = addDaysToLocalDateString(currentDate, 7);
     }
-    return computeMetrics(scenario, weeklyDays, anchorWeeks, objectiveTallies, objectiveCredits, allocationReports);
+    return computeMetrics(scenario, weeklyDays, anchorWeeks, objectiveTallies, objectiveCredits, allocationReports, decisionTraces);
 }
 
 export interface SimulationReport { commit: string; capturedAt: string; engineVersion: string; policyVersion: string; scenarios: ScenarioResult[]; preferenceSensitivity: PreferenceSensitivityResult[]; readinessSensitivity: ReadinessSensitivityResult[]; }
 export interface PreferenceSensitivityResult { preferredModality: string; preferredScenarioId: string; baselineScenarioId: string; changedPlannedDays: number; summary: string; }
 export interface ReadinessSensitivityResult { trajectory: 'fresh' | 'stressed'; scenarioId: string; baselineScenarioId: string; changedPlannedDays: number; restOrRecoveryDayDelta: number; raceSpecificExposureDelta: number; summary: string; }
+export interface CalibrationScenarioSummary {
+    scenarioId: string;
+    label: string;
+    tags: readonly string[];
+    modeCounts: { train: number; modify: number; recover: number };
+    fatigueTierCounts: { train: number; modify: number; recover: number };
+    rejectionCounts: Record<string, number>;
+    recoverySelections: number;
+    objectives: { created: number; resolved: number; missed: number };
+    fragileTopTwoSelections: number;
+    fixedActivityActivations: number;
+    contributorTransitions: { added: number; dropped: number };
+}
+export interface CalibrationReport {
+    evidenceType: 'synthetic policy-regression evidence; not clinical calibration';
+    generatedFrom: { scenarioCount: number; totalDays: number };
+    scenarios: CalibrationScenarioSummary[];
+    aggregate: Omit<CalibrationScenarioSummary, 'scenarioId' | 'label' | 'tags'>;
+}
+
+function emptyTierCounts(): { train: number; modify: number; recover: number } {
+    return { train: 0, modify: 0, recover: 0 };
+}
+
+function mergeCounts(target: Record<string, number>, source: Record<string, number>): void {
+    Object.entries(source).forEach(([key, value]) => { target[key] = (target[key] ?? 0) + value; });
+}
+
+function calibrationSummary(result: ScenarioResult): CalibrationScenarioSummary {
+    const modeCounts = emptyTierCounts();
+    const fatigueTierCounts = emptyTierCounts();
+    const rejectionCounts: Record<string, number> = {};
+    let recoverySelections = 0;
+    let fixedActivityActivations = 0;
+    let added = 0;
+    let dropped = 0;
+    result.decisionTraces.forEach(trace => {
+        modeCounts[trace.readinessTier] += 1;
+        fatigueTierCounts[trace.readinessTier] += 1;
+        mergeCounts(rejectionCounts, trace.rejectionCounts);
+        if (trace.selected.category === 'Rest' || trace.selected.category === 'Mobility/Recovery') recoverySelections += 1;
+        fixedActivityActivations += trace.fixedActivity.count;
+        added += trace.contributorObjectiveChanges.added.length;
+        dropped += trace.contributorObjectiveChanges.dropped.length;
+    });
+    const objectives = result.objectiveResolution.reduce((total, objective) => ({
+        created: total.created + objective.timesGenerated,
+        resolved: total.resolved + objective.timesResolved,
+        missed: total.missed + Math.max(0, objective.timesGenerated - objective.timesResolved),
+    }), { created: 0, resolved: 0, missed: 0 });
+    return {
+        scenarioId: result.scenarioId, label: result.label, tags: result.tags,
+        modeCounts, fatigueTierCounts, rejectionCounts, recoverySelections, objectives,
+        fragileTopTwoSelections: result.utilityDiagnostics.fragileSelectionCount,
+        fixedActivityActivations, contributorTransitions: { added, dropped },
+    };
+}
+
+/** Produces review evidence from the bounded synthetic corpus. It intentionally makes no
+ * threshold recommendation: rule frequency is not physiological calibration. */
+export function buildCalibrationReport(report: SimulationReport): CalibrationReport {
+    const scenarios = report.scenarios.map(calibrationSummary);
+    const aggregate: Omit<CalibrationScenarioSummary, 'scenarioId' | 'label' | 'tags'> = {
+        modeCounts: emptyTierCounts(),
+        fatigueTierCounts: emptyTierCounts(),
+        rejectionCounts: {},
+        recoverySelections: 0,
+        objectives: { created: 0, resolved: 0, missed: 0 },
+        fragileTopTwoSelections: 0,
+        fixedActivityActivations: 0,
+        contributorTransitions: { added: 0, dropped: 0 },
+    };
+    scenarios.forEach(scenario => {
+        (Object.keys(aggregate.modeCounts) as (keyof typeof aggregate.modeCounts)[])
+            .forEach(tier => { aggregate.modeCounts[tier] += scenario.modeCounts[tier]; aggregate.fatigueTierCounts[tier] += scenario.fatigueTierCounts[tier]; });
+        mergeCounts(aggregate.rejectionCounts, scenario.rejectionCounts);
+        aggregate.recoverySelections += scenario.recoverySelections;
+        aggregate.objectives.created += scenario.objectives.created;
+        aggregate.objectives.resolved += scenario.objectives.resolved;
+        aggregate.objectives.missed += scenario.objectives.missed;
+        aggregate.fragileTopTwoSelections += scenario.fragileTopTwoSelections;
+        aggregate.fixedActivityActivations += scenario.fixedActivityActivations;
+        aggregate.contributorTransitions.added += scenario.contributorTransitions.added;
+        aggregate.contributorTransitions.dropped += scenario.contributorTransitions.dropped;
+    });
+    return {
+        evidenceType: 'synthetic policy-regression evidence; not clinical calibration',
+        generatedFrom: { scenarioCount: scenarios.length, totalDays: report.scenarios.reduce((total, scenario) => total + scenario.totalDays, 0) },
+        scenarios,
+        aggregate,
+    };
+}
 
 function distributionDifference(preferred: Partial<Record<SessionTemplate['modality'], number>>, baseline: Partial<Record<SessionTemplate['modality'], number>>): number {
     const modalities = new Set([...Object.keys(preferred), ...Object.keys(baseline)]);

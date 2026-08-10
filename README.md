@@ -123,6 +123,9 @@ uv sync
 # Run pytest test suite
 uv run pytest
 
+# Generate backend coverage (terminal summary + XML artifact)
+uv run pytest --cov=garmin_sync --cov-report=term-missing --cov-report=xml:artifacts/coverage/python/coverage.xml
+
 # Authenticate Garmin account locally
 uv run python scripts/bootstrap_garmin_tokens.py
 

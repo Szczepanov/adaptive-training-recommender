@@ -51,9 +51,9 @@ Status legend: `[ ]` not started · `[-]` in progress · `[x]` finished.
 | 6.2 | `[x]` | — | Closed Phase 5.6 mid-horizon objective drift and Phase 5.3 fixed-activity projection semantics, including the live day-0/day-1 path, not only the week-ahead forecast; `POLICY_VERSION` bumped to `2026-08-phase6-correctness-carryovers-v1` | `planner.ts`, `periodization.ts`, `schedule.ts`, `models.ts`, `policy.ts`, `optimizer.ts`, `rules.ts`, `sequenceSearch.ts`, `validation.ts`, `firestore.rules`, `components/Home.tsx`, plus corresponding tests |
 | 6.2c | `[-]` | recovery/rest calibration finding below | Separated physiological adaptation credit from weekly programming-role coverage (ADR-0016); exact catalog identity for coverage and fixed-activity credit; event-relative cycling `PlanDefinition`; today's pick projected into tomorrow's intent. Code/tests complete and green; the reviewed semantic-diff acceptance step is **blocked** by an unexplained rest/recovery spike (see [phase-6-2c plan](./phase-6-2c-recommendation-quality-and-weekly-coverage.md) §9/§10 and [ADR-0016](../adr/0016-adaptation-credit-and-weekly-coverage.md)) | `coverage.ts`, `coverageNeedTierForTemplate` wiring in `optimizer.ts`, `planSchedule.ts` (event-relative), `rules.ts` (today→tomorrow projection), `fixedActivityIdentity.ts`, plus corresponding tests |
 | 6.3 | `[x]` | 6.2 interface decisions | Scenario harness can represent the real boundaries added in Phases 4–5 and permanently exercises them | `simulation/scenarios.ts`, `simulation/analyze.ts`, `scenarios.test.ts`, integration tests |
-| 6.4 | `[ ]` | 6.3 | Produce daily decision traces and reproducible trigger-frequency/calibration reports without auto-tuning | `simulation/analyze.ts`, new calibration/report script, `docs/analysis/` |
+| 6.4 | `[x]` | 6.3 | Daily derived traces and reproducible descriptive calibration reports, without auto-tuning | `simulation/analyze.ts`, `scripts/simulate-calibrate.mjs`, `docs/analysis/` |
 | 6.5 | `[ ]` | production Firebase project + deployment owner | Detect drift between repository rules and deployed rules | `.github/workflows/`, Firebase config, `docs/ops/` |
-| 6.6 | `[ ]` | — | Publish frontend/backend coverage as review evidence without a vanity global threshold | `app/package.json`, `pyproject.toml`, `.github/workflows/ci.yml` |
+| 6.6 | `[x]` | — | Frontend/backend coverage reports are published as review evidence without a global threshold | `app/vite.config.ts`, `app/package.json`, `pyproject.toml`, `.github/workflows/ci.yml` |
 | 6.7 | `[ ]` | evidence review from 6.3–6.4 | Adopt a fatigue-fusion change only if evidence justifies one; retaining `max()` is valid completion | `engine/fatigue.ts`, simulation-only comparison code, ADR/analysis docs |
 
 ---
@@ -426,7 +426,18 @@ observations unless a product/coaching decision explicitly promotes them to cont
 
 ---
 
-## `[ ]` 6.4 — Decision traces and calibration evidence (F11)
+## `[x]` 6.4 — Decision traces and calibration evidence (F11)
+
+**Implemented (2026-08-10).** `runScenario` now emits one compact `decisionTraces` entry
+for every simulated day. The trace contains canonical selection data, derived fatigue and
+fixed-activity profiles, objective-credit state and contributor transitions, gate-code
+counts, and optimizer diagnostics; raw activity records, wearable payloads, free-text, and
+Firebase exports are excluded. `npm run simulate:calibrate` runs the shared 24-case
+synthetic corpus and writes per-scenario and aggregate trigger-frequency evidence to the
+gitignored `app/artifacts/calibration-reports/latest/` directory. The command and report
+explicitly state that they are descriptive policy-regression evidence, not clinical
+calibration, and make no threshold recommendation. See
+[`2026-08-10-phase-6-calibration-corpus.md`](../analysis/2026-08-10-phase-6-calibration-corpus.md).
 
 ### Daily trace
 
@@ -542,7 +553,14 @@ mismatch is detected and remediated.
 
 ---
 
-## `[ ]` 6.6 — Coverage visibility, not a vanity gate (F15)
+## `[x]` 6.6 — Coverage visibility, not a vanity gate (F15)
+
+**Implemented (2026-08-10).** Frontend `npm run test:coverage` uses the Vitest V8 provider
+and writes terminal, JSON, and HTML reports to `app/artifacts/coverage/frontend/`. Backend
+coverage uses `pytest-cov` to emit a terminal missing-line report and
+`artifacts/coverage/python/coverage.xml`. CI runs both coverage commands and uploads the
+two report directories as artifacts on every PR/push, including failure paths. No global
+coverage threshold was added; behavior contracts remain the release authority.
 
 ### Change
 
@@ -611,16 +629,16 @@ The project has either an evidence-backed replacement or an evidence-backed reas
       adjacent-day fatigue exactly once using explicit authored dose.
 - [x] Fixed-activity venue metadata cannot accidentally become a whole-day equipment
       restriction; true travel/day restrictions have explicit semantics.
-- [ ] The scenario harness supports multiple events, initial history, fixed activities,
+- [x] The scenario harness supports multiple events, initial history, fixed activities,
       and date-level readiness.
 - [ ] Safety/policy contracts are separated from observational distribution metrics.
-- [ ] Daily traces explain readiness, load, objectives, fixed activities, gates, and
+- [x] Daily traces explain readiness, load, objectives, fixed activities, gates, and
       optimizer diagnostics.
-- [ ] A deterministic synthetic calibration corpus and trigger-frequency report exist and
+- [x] A deterministic synthetic calibration corpus and trigger-frequency report exist and
       are clearly labelled non-clinical.
 - [ ] Firestore deployed-rule ownership and drift detection are documented and implemented
       once production ownership is known.
-- [ ] Frontend/backend coverage summaries are available in CI without an arbitrary global
+- [x] Frontend/backend coverage summaries are available in CI without an arbitrary global
       threshold.
 - [ ] Any adopted fatigue-policy change has evidence, an ADR, a policy-version bump, a
       reviewed baseline update, and a rollback condition.

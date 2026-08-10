@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { SCENARIOS } from './simulation/scenarios';
-import { runAllScenarios, runScenario, type ScenarioResult } from './simulation/analyze';
+import { buildCalibrationReport, runAllScenarios, runScenario, type ScenarioResult } from './simulation/analyze';
 
 /**
  * Regression coverage for the recommendation engine across sport/event types, built on
@@ -292,5 +292,29 @@ describe('Phase 6.3 scenario input contract', () => {
             expect(result.totalDays).toBe(7);
             expect(result.constraintViolations).toEqual([]);
         }
+    });
+});
+
+describe('Phase 6.4 calibration evidence', () => {
+    it('emits one compact, derived trace per simulated day without raw activity records', async () => {
+        const result = await getResult('fixed_football_midweek');
+        expect(result.decisionTraces).toHaveLength(result.totalDays);
+        expect(result.decisionTraces).toContainEqual(expect.objectContaining({
+            date: '2026-08-10',
+            selected: expect.objectContaining({ templateId: expect.any(String), projectedCost: expect.any(Object) }),
+            fatigue: expect.objectContaining({ rawExternalLoad: expect.any(Object), combined: expect.any(Object) }),
+            fixedActivity: expect.objectContaining({ count: 1 }),
+        }));
+        expect(JSON.stringify(result.decisionTraces)).not.toContain('trainingRecordLike');
+    });
+
+    it('aggregates modes, gates, objectives, fixed activities, and contributor transitions descriptively', async () => {
+        const calibration = buildCalibrationReport(await runAllScenarios());
+        expect(calibration.evidenceType).toContain('not clinical calibration');
+        expect(calibration.scenarios).toHaveLength(SCENARIOS.length);
+        expect(calibration.aggregate.modeCounts.train + calibration.aggregate.modeCounts.modify + calibration.aggregate.modeCounts.recover)
+            .toBe(calibration.generatedFrom.totalDays);
+        expect(calibration.aggregate.fixedActivityActivations).toBeGreaterThan(0);
+        expect(calibration.aggregate.objectives.created).toBeGreaterThan(0);
     });
 });

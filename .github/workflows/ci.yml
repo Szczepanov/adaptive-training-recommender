@@ -35,8 +35,18 @@ jobs:
       - name: Type check Python with mypy
         run: uv run mypy src/garmin_sync
 
-      - name: Run pytest
-        run: uv run pytest
+      - name: Run pytest with coverage summary
+        run: |
+          mkdir -p artifacts/coverage/python
+          uv run pytest --cov=garmin_sync --cov-report=term-missing --cov-report=xml:artifacts/coverage/python/coverage.xml
+
+      - name: Upload Python coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-coverage
+          path: artifacts/coverage/python
+          if-no-files-found: warn
 
       - name: Python dependency audit
         run: uvx pip-audit
@@ -86,6 +96,17 @@ jobs:
 
       - name: Run frontend test suite
         run: npm test
+
+      - name: Generate frontend coverage report
+        run: npm run test:coverage
+
+      - name: Upload frontend coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-coverage
+          path: app/artifacts/coverage/frontend
+          if-no-files-found: warn
 
       - name: Run Firestore security-rule emulator suite
         run: npm run test:rules

@@ -418,6 +418,18 @@ export const SCENARIOS: AthleteScenario[] = [
         readinessForWeek: () => stableReadiness(),
     },
     {
+        id: 'reduced_time_equipment_limited_borderline',
+        label: 'Borderline readiness with reduced time and limited equipment',
+        description: 'A 30-minute weekday ceiling and no bike/treadmill exercise the time and equipment gates at the modify boundary without an event-specific plan masking those constraints.',
+        context: context({ free_weights: true }, [], [], { weekdayMaxMinutes: 30, weekendMaxMinutes: 45 }),
+        event: null,
+        startDate: START_DATE, weeks: 1, tags: ['readiness', 'time-limit', 'equipment-limit'],
+        readinessForWeek: () => stableReadiness(
+            { readiness: 5, sleepQuality: 5, fatigue: 6, soreness: 6, stress: 5, motivation: 5, timeAvailable: 30 },
+            { sleep_score: 68, sleep_duration_min: 420, rhr_delta: 3, hrv_delta: -4, body_battery_wake: 62 },
+        ),
+    },
+    {
         id: 'cycling_specificity_after_hard_race_specific',
         label: 'Cycling Specificity after hard race-specific day -1',
         description: 'Phase 6.3 escaped-case regression: start exactly 35 days from an A-priority road race with a hard event-specific ride in completed history yesterday. Immediate recovery is allowed, but the next rolling week must still preserve distinct easy-aerobic, sustained-quality and renewed event-specific functions rather than collapse into technical/recovery filler.',

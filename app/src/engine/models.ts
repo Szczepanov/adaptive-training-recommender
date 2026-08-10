@@ -550,12 +550,35 @@ export interface Recommendation {
             templateId: string;
             utilityScore: number;
             excludedReasons: string[];
+            benefitScore?: number;
+            costPenalty?: number;
         }>;
         /** Phase 5.6: contributor objectives dropped from this decision's microcycle
          *  because they fell inadmissible during the taper authority's taper window -- see
          *  periodization.ts resolveMultiEventObjectives. Empty in the overwhelmingly
          *  common single-or-no-event case. */
         droppedContributorObjectives: DroppedContributorObjective[];
+        /** Compact simulator-only evidence. It excludes raw wearable payloads and
+         * check-in text; provenance.ts does not persist it in RecommendationAudit. */
+        calibration?: {
+            fatigue: {
+                rawExternalLoad: DimensionalFatigue;
+                clampedExternalLoad: DimensionalFatigue;
+                internalResponse: DimensionalFatigue;
+                combined: DimensionalFatigue;
+            };
+            activeObjectives: Array<{
+                key: ObjectiveKey;
+                completedCredit: number;
+                projectedCredit: number;
+                requiredCredit: number;
+            }>;
+            fixedActivity: {
+                count: number;
+                cost: WorkoutCostProfile;
+                stimulus: WorkoutStimulusProfile;
+            };
+        };
     };
 }
 

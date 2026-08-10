@@ -17,6 +17,7 @@ import type {
     UserPreferences,
     WorkoutCostProfile,
     WorkoutStimulusProfile,
+    FatigueState,
 } from './models';
 import { TEMPLATES, ENRICHED_TEMPLATES } from './templates';
 import { eligibleTemplates, evaluateTemplateEligibility, resolveMaximumSessionMinutes } from './eligibility';
@@ -48,6 +49,36 @@ function pickTemplate(options: SessionTemplate[], seedDate: string): SessionTemp
 
 function clamp(value: number, min: number, max: number): number {
     return Math.max(min, Math.min(max, value));
+}
+
+function calibrationTrace(
+    intent: Awaited<ReturnType<typeof resolveTrainingIntent>>,
+    rankingFatigue: FatigueState,
+    fixedActivities: FixedActivity[],
+    date: string,
+) {
+    const todayActivities = fixedActivities.filter(activity => activity.date === date && !activity.isCompleted);
+    const cost: WorkoutCostProfile = { systemic: 0, cardiovascular: 0, lowerBody: 0, upperBody: 0, impactTissue: 0, neuromuscular: 0 };
+    const stimulus: WorkoutStimulusProfile = { aerobicEndurance: 0, thresholdPower: 0, vo2MaxPower: 0, repeatedSurges: 0, sprintPower: 0, fatigueResistance: 0, maxStrength: 0, hypertrophy: 0 };
+    todayActivities.forEach(activity => {
+        (Object.keys(cost) as (keyof WorkoutCostProfile)[]).forEach(key => { cost[key] += activity.expectedCost?.[key] ?? 0; });
+        (Object.keys(stimulus) as (keyof WorkoutStimulusProfile)[]).forEach(key => { stimulus[key] += activity.expectedStimulus?.[key] ?? 0; });
+    });
+    return {
+        fatigue: {
+            rawExternalLoad: rankingFatigue.rawExternalLoadFatigue ?? rankingFatigue.externalLoadFatigue,
+            clampedExternalLoad: rankingFatigue.externalLoadFatigue,
+            internalResponse: rankingFatigue.internalResponseStrain,
+            combined: rankingFatigue.combinedFatigue,
+        },
+        activeObjectives: intent.microcycle.objectives.map(objective => ({
+            key: objective.key,
+            completedCredit: objective.completedCredit ?? objective.completedExposures,
+            projectedCredit: objective.projectedCredit ?? 0,
+            requiredCredit: objective.requiredCredit ?? objective.targetExposures,
+        })),
+        fixedActivity: { count: todayActivities.length, cost, stimulus },
+    };
 }
 
 function modalityMatches(templateModality: string, wanted: string): boolean {
@@ -363,6 +394,7 @@ export async function evaluateTrainingWithIntent(
         optContext.preferences,
         optContext.options,
     );
+    const calibration = calibrationTrace(intent, rankingFatigue, fixedActivities, date);
     const phaseContext = intent.periodization.focusEvent
         ? `${intent.periodization.daysToEvent} days out from ${intent.periodization.focusEvent.title}, ${intent.periodization.phase.phaseName} phase.`
         : `${intent.periodization.phase.phaseName} phase.`;
@@ -378,8 +410,9 @@ export async function evaluateTrainingWithIntent(
             mode: 'recover', envelopes, telemetry,
             decisionTrace: {
                 policyVersion: POLICY_VERSION,
-                candidateScores: rankingResult.all.map(candidate => ({ templateId: candidate.template.id, utilityScore: candidate.utilityScore, excludedReasons: candidate.excludedReasons })),
+                candidateScores: rankingResult.all.map(candidate => ({ templateId: candidate.template.id, utilityScore: candidate.utilityScore, benefitScore: candidate.benefitScore, costPenalty: candidate.costPenalty, excludedReasons: candidate.excludedReasons })),
                 droppedContributorObjectives: intent.droppedContributorObjectives,
+                calibration,
             },
         };
     }
@@ -391,8 +424,9 @@ export async function evaluateTrainingWithIntent(
         mode, envelopes, telemetry,
         decisionTrace: {
             policyVersion: POLICY_VERSION,
-            candidateScores: rankingResult.all.map(candidate => ({ templateId: candidate.template.id, utilityScore: candidate.utilityScore, excludedReasons: candidate.excludedReasons })),
+            candidateScores: rankingResult.all.map(candidate => ({ templateId: candidate.template.id, utilityScore: candidate.utilityScore, benefitScore: candidate.benefitScore, costPenalty: candidate.costPenalty, excludedReasons: candidate.excludedReasons })),
             droppedContributorObjectives: intent.droppedContributorObjectives,
+            calibration,
         },
     };
 }
