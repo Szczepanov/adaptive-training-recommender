@@ -1,6 +1,6 @@
 # ADR-0018: Weekly Allocation, Safe Role Reservations, and Explicit Misses
 
-* **Status:** Proposed
+* **Status:** Accepted
 * **Date:** 2026-08-10
 * **Deciders:** Core Engineering Team / repository owner
 * **Source analysis:** [PR #17 semantic-baseline follow-up](../analysis/2026-08-10-pr17-semantic-baseline-follow-up.md)

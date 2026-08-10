@@ -1,6 +1,6 @@
 # ADR-0017: Training Intent Profile and First-Class Planning Modes
 
-* **Status:** Proposed
+* **Status:** Accepted
 * **Date:** 2026-08-10
 * **Deciders:** Core Engineering Team / repository owner
 * **Source analysis:** [2026-08-10 training-intent and periodization architecture analysis](../analysis/2026-08-10-training-intent-periodization-architecture.md) (verified against merged `main` at `34ddc30`)
