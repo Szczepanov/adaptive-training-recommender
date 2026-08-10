@@ -70,6 +70,7 @@ all-`Ready` table became unusable.
 | 5 | [Sequence planning](./phase-5-sequence-planning.md) | **Implemented** | — | — | the cutover proper |
 | 6 | [Evidence-driven calibration & operational assurance](./phase-6-evidence-and-operational-assurance.md) | **In progress** | **6.3, 6.6** | 6.5 needs Firebase owner/project; 6.7 needs 6.3–6.4 evidence; 6.2c's baseline acceptance is blocked (see below) | remaining F11, F12, F15 |
 | 6.2c | [Recommendation quality & weekly coverage](./phase-6-2c-recommendation-quality-and-weekly-coverage.md) | **In progress** | none | reviewed rest/recovery-spike finding (§9/§10 of the plan) | separates adaptation credit from weekly programming-role coverage; not an original review finding |
+| 7 | [Training intent, capacity & planning modes](./phase-7-training-intent-and-planning-modes.md) | **Draft** | none | [ADR-0017](../adr/0017-training-intent-profile-and-planning-modes.md) acceptance; 7.8's baseline bless also waits on 6.2c | evergreen (non-event) athletes; capacity-sized targets; coverage reachable outside cycling events — not an original review finding |
 
 Phases 0–5 are complete; Phase 6 has started with 6.1 baseline ownership and 6.2 (both
 Phase 5 correctness carryovers) implemented in PR #17, which bumped `POLICY_VERSION` to
@@ -109,6 +110,11 @@ this table exists so none of them has to be rediscovered by reading six document
 | **D-BEAM** | Beam search is approved to be **built and measured**, not to be shipped regardless of result | [5 increment order](./phase-5-sequence-planning.md) | Whether it beats greedy is empirical; "it didn't" is a valid, useful outcome |
 | **D-LIFE** | Recommendations become append-only revisions; decision fields immutable *per revision* | [1.3](./phase-1-live-defects.md) | Same-day recomputation is a real second decision; naive field-pinning would reject it and leave the audit contradicting the UI |
 | **D-RECOV** | `EventPlanPhase` gains a canonical `recovery` member | [2.1 D1](./phase-2-plan-intent-authority.md) | Mapping `Post-Event Recovery → build` would make fitness-developing objectives eligible during recovery |
+| **D-MODE** | `evergreen` and `event_directed` are first-class planning modes; no fake event | [ADR-0017](../adr/0017-training-intent-profile-and-planning-modes.md) | `DEFAULT_BASE_DEMAND` is a fabricated event, and it sizes every eventless athlete's week identically |
+| **D-CAP** | Weekly session capacity is persisted human input; targets are derived from it | [ADR-0017](../adr/0017-training-intent-profile-and-planning-modes.md) | Nothing in the schema knows whether the athlete trains twice or six times a week |
+| **D-COVSET** | The coverage catalog becomes a named registry, not a module constant | [ADR-0017](../adr/0017-training-intent-profile-and-planning-modes.md) | One athlete's September road race is currently the only coverage vocabulary the engine can express |
+| **D-ORG** | Only Auto/Adaptive Hybrid ships; linear/undulating/block are persisted, not consumed | [ADR-0017](../adr/0017-training-intent-profile-and-planning-modes.md) | Comparative periodization evidence is mixed; shipping three untested organisations buys nothing |
+| **D-TAPERSCOPE** | Taper requires a real event; a star rating is not one | [ADR-0017](../adr/0017-training-intent-profile-and-planning-modes.md) | `deriveEventPriority(5) → 'A'` currently grants a dated `general_target` goal a 14-day taper |
 
 Five of these — **D-KWD**, **D-GATE**, **D-LIFE**, **D-RECOV**, and the withdrawal inside
 **D-FUSE** — correct errors in earlier drafts and came out of PR #5 review rounds rather
