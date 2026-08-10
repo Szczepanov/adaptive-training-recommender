@@ -32,7 +32,8 @@ import type {
     TrainingEnvironment,
     BodyRegion,
     RegionTissueResponse,
-    TissueResponseLevel
+    TissueResponseLevel,
+    AuthoredPlanBlock
 } from './models';
 import { validateEventTiming, BODY_REGIONS, TISSUE_LEVELS } from './models';
 import { deriveGoalCategory } from './periodization';
@@ -1142,4 +1143,21 @@ export function validateAdherenceUpdate(raw: any): ValidationResult<DailyRecomme
     };
 
     return { isValid: true, data: adherence, errors: [] };
+}
+
+export function validateAuthoredPlanBlock(raw: any): ValidationResult<AuthoredPlanBlock> {
+    const errors: ValidationError[] = [];
+    if (!raw.userId || typeof raw.userId !== 'string') errors.push({ field: 'userId', message: 'User ID is required' });
+    if (raw.phase !== 'travel') errors.push({ field: 'phase', message: 'Only explicit travel blocks are supported' });
+    if (!isValidDate(raw.startDate) || !isValidDate(raw.endDate) || raw.startDate > raw.endDate) errors.push({ field: 'dates', message: 'Travel block dates must be valid and ordered' });
+    if (typeof raw.volumeScale !== 'number' || raw.volumeScale < 0 || raw.volumeScale > 1) errors.push({ field: 'volumeScale', message: 'Volume scale must be between 0 and 1' });
+    if (typeof raw.intensityScale !== 'number' || raw.intensityScale < 0 || raw.intensityScale > 1) errors.push({ field: 'intensityScale', message: 'Intensity scale must be between 0 and 1' });
+    if (raw.eventId !== undefined && raw.eventId !== null && typeof raw.eventId !== 'string') errors.push({ field: 'eventId', message: 'Event ID must be a string or empty' });
+    if (errors.length > 0) return { isValid: false, errors };
+    const now = new Date().toISOString();
+    return { isValid: true, errors: [], data: {
+        id: typeof raw.id === 'string' ? raw.id : '', userId: raw.userId, phase: 'travel', startDate: raw.startDate, endDate: raw.endDate,
+        volumeScale: raw.volumeScale, intensityScale: raw.intensityScale, ...(raw.eventId ? { eventId: raw.eventId } : {}),
+        createdAt: typeof raw.createdAt === 'string' ? raw.createdAt : now, updatedAt: now,
+    } };
 }

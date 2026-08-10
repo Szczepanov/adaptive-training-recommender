@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isValidDate, validateRecommendation, validateAdherenceUpdate, validateGoal, validateFixedActivity, validateCheckin } from './validation';
+import { isValidDate, validateRecommendation, validateAdherenceUpdate, validateGoal, validateFixedActivity, validateCheckin, validateAuthoredPlanBlock } from './validation';
 
 describe('isValidDate', () => {
     it('rejects impossible calendar dates rather than normalizing them', () => {
@@ -360,6 +360,25 @@ describe('validateFixedActivity', () => {
             expect(result.isValid).toBe(false);
             expect(result.errors.some(e => e.field === 'availabilityContextOverride.equipment')).toBe(true);
         });
+    });
+});
+
+describe('validateAuthoredPlanBlock', () => {
+    const travel = {
+        userId: 'u1', phase: 'travel', startDate: '2026-08-19', endDate: '2026-08-22',
+        volumeScale: 0.6, intensityScale: 0.5,
+    };
+
+    it('accepts an explicit, correctly ordered travel range', () => {
+        const result = validateAuthoredPlanBlock(travel);
+        expect(result.isValid).toBe(true);
+        expect(result.data).toMatchObject({ phase: 'travel', startDate: '2026-08-19', endDate: '2026-08-22' });
+    });
+
+    it('rejects impossible or inverted date ranges and out-of-contract dose', () => {
+        expect(validateAuthoredPlanBlock({ ...travel, endDate: '2026-08-18' }).isValid).toBe(false);
+        expect(validateAuthoredPlanBlock({ ...travel, startDate: '2026-02-30' }).isValid).toBe(false);
+        expect(validateAuthoredPlanBlock({ ...travel, intensityScale: 1.1 }).isValid).toBe(false);
     });
 });
 

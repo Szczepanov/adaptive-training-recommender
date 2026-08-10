@@ -1,6 +1,7 @@
 import type {
     FatigueState,
     FixedActivity,
+    AuthoredPlanBlock,
     IntensityClass,
     PlannedDose,
     SessionHistoryEntry,
@@ -73,6 +74,8 @@ export interface OptimizationOptions {
     fatigueTier?: 'train' | 'modify' | 'recover';
     /** Phase 5.2: per-workout hard-lower-body spacing. */
     resolveMinimumDaysAfterHardLowerBody?: (templateId: string) => number | undefined;
+    /** Explicit, user-authored date overlays applied to the focus event plan. */
+    authoredPlanBlocks?: readonly AuthoredPlanBlock[];
 }
 
 export interface OptimizationContext {
@@ -424,7 +427,7 @@ export function buildOptimizationContext(
 
     const focusEvent = options.focusEvent ?? intent.periodization?.focusEvent ?? null;
     const coverageState = options.coverageState ?? buildCoverageState(
-        resolvePlanDefinitionForEvent(focusEvent),
+        resolvePlanDefinitionForEvent(focusEvent, options.authoredPlanBlocks),
         date,
         rawHistory.flatMap(entry => entry.date && entry.templateId
             ? [{ date: entry.date, templateId: entry.templateId, ...(typeof (entry as Record<string, unknown>).durationMin === 'number'

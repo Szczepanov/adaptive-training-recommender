@@ -1,4 +1,4 @@
-import type { DailyReadiness, FatigueState, MicrocycleState, PlannedDose, UserEvent, WeeklyObjective } from './models';
+import type { AuthoredPlanBlock, DailyReadiness, FatigueState, MicrocycleState, PlannedDose, UserEvent, WeeklyObjective } from './models';
 import { computeInternalResponseStrain, buildFatigueStateFromHistory } from './fatigue';
 import { buildMicrocycleState, getUnresolvedObjectives } from './microcycle';
 import type { CompletedExposure, TrainingHistoryProvider } from './trainingHistory';
@@ -109,13 +109,14 @@ export async function resolveTrainingIntent(
     windowDays: number = 7,
     historyProvider?: TrainingHistoryProvider,
     preparedHistorySnapshot?: TrainingHistorySnapshot | null,
+    authoredPlanBlocks: readonly AuthoredPlanBlock[] = [],
 ): Promise<TrainingIntent> {
     const periodization = evaluatePeriodizationPhase(events, date);
     const historySnapshot = preparedHistorySnapshot
         ?? await prepareTrainingHistorySnapshot(userId, date, windowDays, historyProvider);
     const provider = historyProvider ?? (await import('./firestoreTrainingHistory')).firestoreTrainingHistoryProvider;
     const history = historySnapshot?.exposures ?? await provider.reconstruct(userId, date, windowDays);
-    const planDefinition = resolvePlanDefinitionForEvent(periodization.focusEvent);
+    const planDefinition = resolvePlanDefinitionForEvent(periodization.focusEvent, authoredPlanBlocks);
     const builtMicrocycle = buildMicrocycleState(
         periodization.phase,
         addDaysToLocalDateString(date, -windowDays),

@@ -246,6 +246,33 @@ service cloud.firestore {
       allow delete: if isOwner(userId);
     }
 
+    // Explicit calendar overlays are user-authored. They cannot be inferred from event
+    // metadata, and their date range/dose contract is deliberately tight because it is
+    // consumed directly by Path B planning.
+    function hasValidPlanBlock(userId) {
+      let data = request.resource.data;
+      return hasOwnedUserId(userId)
+        && data.keys().hasOnly(['userId', 'eventId', 'phase', 'startDate', 'endDate', 'volumeScale', 'intensityScale', 'createdAt', 'updatedAt'])
+        && data.keys().hasAll(['userId', 'phase', 'startDate', 'endDate', 'volumeScale', 'intensityScale', 'createdAt', 'updatedAt'])
+        && data.phase == 'travel'
+        && isValidActivityDate(data.startDate)
+        && isValidActivityDate(data.endDate)
+        && data.startDate <= data.endDate
+        && data.volumeScale is number && data.volumeScale >= 0 && data.volumeScale <= 1
+        && data.intensityScale is number && data.intensityScale >= 0 && data.intensityScale <= 1
+        && (!('eventId' in data) || data.eventId is string)
+        && data.createdAt is string && data.updatedAt is string;
+    }
+
+    match /users/{userId}/plan_blocks/{blockId} {
+      allow read: if isOwner(userId);
+      allow create: if hasValidPlanBlock(userId);
+      allow update: if hasValidPlanBlock(userId)
+        && keepsOwnership(userId)
+        && request.resource.data.createdAt == resource.data.createdAt;
+      allow delete: if isOwner(userId);
+    }
+
     match /users/{userId}/constraints/{constraintId} {
       allow read: if isOwner(userId);
       allow write: if false;

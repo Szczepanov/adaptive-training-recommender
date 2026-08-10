@@ -201,6 +201,17 @@ contract is finite `volume ∈ [0,1]`, `intensity ∈ [0,1.2]`.
 
 Recommendation provenance persists both planned and execution dose when available.
 
+### Authored travel overlays
+
+Travel is an explicit, user-owned `AuthoredPlanBlock`, persisted at
+`users/{userId}/plan_blocks/{blockId}`. `planBlockService.ts` validates the date range and
+the independent `0..1` volume/intensity scales on both reads and writes; `firestore.rules`
+enforces the same owner-scoped shape. `Home.tsx` supplies available blocks to today's,
+tomorrow's, and week-ahead Path B calls. An active travel block takes precedence over its
+overlapping derived event block, so it owns both its planned dose and its exactly declared
+weekly objectives (aerobic volume plus maintenance strength); it is never inferred from an
+event title, venue, or fixed activity.
+
 ### Taper as an explicit contract (Phase 5.7, `microcycle.ts`, `periodization.ts`, `planSchedule.ts`)
 
 Before this, `taperActive`/`volumeScale` reduced volume, but nothing represented "preserve

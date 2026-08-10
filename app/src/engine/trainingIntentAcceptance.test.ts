@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { evaluateTraining, evaluateTrainingWithIntent, evaluateNextDayPlanWithIntent } from './rules';
 import { resolveTrainingIntent } from './trainingIntent';
-import type { DailyReadiness, FixedActivity, UserContext, UserEvent } from './models';
+import type { AuthoredPlanBlock, DailyReadiness, FixedActivity, UserContext, UserEvent } from './models';
 import type { TrainingHistoryProvider } from './trainingHistory';
 
 const fixtureHistory: TrainingHistoryProvider = { reconstruct: async () => [] };
@@ -91,6 +91,18 @@ describe('ADR-0012/0016 explicit event-relative PlanDefinition wiring', () => {
         expect(build.plannedDose).toEqual({ volume: 1.0, intensity: 0.9 });
         expect(specificity.plannedDose).toEqual({ volume: 1.0, intensity: 1.1 });
         expect(taper.plannedDose).toEqual({ volume: 0.6, intensity: 1.0 });
+    });
+
+    it('uses an explicit persisted travel range as the active plan block and exposes its two required roles', async () => {
+        const travel: AuthoredPlanBlock = {
+            id: 'trip-august', userId: 'u1', eventId: roadRace.id, phase: 'travel',
+            startDate: '2026-08-19', endDate: '2026-08-22', volumeScale: 0.6, intensityScale: 0.5,
+            createdAt: '2026-08-01T00:00:00Z', updatedAt: '2026-08-01T00:00:00Z',
+        };
+        const intent = await resolveTrainingIntent('u1', [roadRace], '2026-08-20', readiness(), 7, fixtureHistory, undefined, [travel]);
+
+        expect(intent.plannedDose).toEqual({ volume: 0.6, intensity: 0.5 });
+        expect(intent.microcycle.objectives.map(objective => objective.key).sort()).toEqual(['strength_maintenance', 'zone2_aerobic']);
     });
 });
 

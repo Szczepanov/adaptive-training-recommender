@@ -1,5 +1,6 @@
 import type {
     DailyReadiness,
+    AuthoredPlanBlock,
     DimensionalFatigue,
     FatigueState,
     FixedActivity,
@@ -101,6 +102,7 @@ export interface WeekAheadOptions {
     days?: number;
     events?: UserEvent[];
     fixedActivities?: FixedActivity[];
+    authoredPlanBlocks?: readonly AuthoredPlanBlock[];
 }
 
 const ZERO_COST: WorkoutCostProfile = {
@@ -518,8 +520,9 @@ export function reconcileObjectivesForDate(
     periodization: PeriodizationResult,
     creditMemory: Map<WeeklyObjective['key'], ObjectiveCreditSnapshot>,
     priorExposures: readonly ProjectionExposure[] = [],
+    authoredPlanBlocks: readonly AuthoredPlanBlock[] = [],
 ): { microcycle: MicrocycleState; droppedContributorObjectives: DroppedContributorObjective[] } {
-    const planDefinitionForDate = resolvePlanDefinitionForEvent(periodization.focusEvent);
+    const planDefinitionForDate = resolvePlanDefinitionForEvent(periodization.focusEvent, authoredPlanBlocks);
     const skeleton = generateWeeklyObjectives(periodization.phase, todayDate, periodization.focusEvent, planDefinitionForDate, date);
     const fresh = resolveMultiEventObjectives(events, date, periodization, skeleton.objectives);
 
@@ -671,6 +674,7 @@ export function generateWeekAheadPlan(
     const totalDays = Math.max(1, options.days ?? 7);
     const events = options.events ?? [];
     const fixedActivities = options.fixedActivities ?? [];
+    const authoredPlanBlocks = options.authoredPlanBlocks ?? [];
     const effectivePreferences = preferences ?? { ...NEUTRAL_PREFERENCES, preferredRecoveryStyle: resolveRecoveryStyle(context) };
 
     const periodizationToday = evaluatePeriodizationPhase(events, todayDate);
@@ -787,7 +791,7 @@ export function generateWeekAheadPlan(
     if (tomorrowRec) {
         const tomorrowDate = addDaysToLocalDateString(todayDate, 1);
         const tomorrowPeriodization = evaluatePeriodizationPhase(events, tomorrowDate);
-        const tomorrowReconciled = reconcileObjectivesForDate(microcycle, events, tomorrowDate, todayDate, tomorrowPeriodization, creditMemory, projectionExposures);
+        const tomorrowReconciled = reconcileObjectivesForDate(microcycle, events, tomorrowDate, todayDate, tomorrowPeriodization, creditMemory, projectionExposures, authoredPlanBlocks);
         microcycle = tomorrowReconciled.microcycle;
         accumulateNewDrops(droppedContributorObjectives, currentlyDroppedPairs, tomorrowReconciled.droppedContributorObjectives);
         applyFixedActivityStimulus(tomorrowDate);
@@ -811,7 +815,7 @@ export function generateWeekAheadPlan(
         const periodization = evaluatePeriodizationPhase(events, date);
         const availability = resolveAvailability(date, null, fixedActivities, context);
 
-        const reconciled = reconcileObjectivesForDate(microcycle, events, date, todayDate, periodization, creditMemory, projectionExposures);
+        const reconciled = reconcileObjectivesForDate(microcycle, events, date, todayDate, periodization, creditMemory, projectionExposures, authoredPlanBlocks);
         microcycle = reconciled.microcycle;
         accumulateNewDrops(droppedContributorObjectives, currentlyDroppedPairs, reconciled.droppedContributorObjectives);
         applyFixedActivityStimulus(date);
@@ -875,7 +879,7 @@ export function generateWeekAheadPlan(
             })),
         ];
 
-        const planDefinition = resolvePlanDefinitionForEvent(periodization.focusEvent);
+        const planDefinition = resolvePlanDefinitionForEvent(periodization.focusEvent, authoredPlanBlocks);
         const optContext = buildOptimizationContext(
             {
                 unresolvedObjectives: unresolved,
@@ -893,7 +897,7 @@ export function generateWeekAheadPlan(
             context,
             effectivePreferences,
             date,
-            { anchorRole, adjacentToAnchor, resolveMinimumDaysAfterHardLowerBody, fatigueTier: fatigueTierFor(peakFatigue) },
+            { anchorRole, adjacentToAnchor, resolveMinimumDaysAfterHardLowerBody, fatigueTier: fatigueTierFor(peakFatigue), authoredPlanBlocks },
             fixedActivities,
         );
 
@@ -997,7 +1001,7 @@ export async function generateWeekAheadPlanWithIntent(
     historyProvider?: TrainingHistoryProvider,
     preparedHistorySnapshot?: TrainingHistorySnapshot | null,
 ): Promise<WeekAheadPlan> {
-    const intent = await resolveTrainingIntent(userId, events, todayDate, todayReadiness, 7, historyProvider, preparedHistorySnapshot);
+    const intent = await resolveTrainingIntent(userId, events, todayDate, todayReadiness, 7, historyProvider, preparedHistorySnapshot, options.authoredPlanBlocks);
     return generateWeekAheadPlan(
         todayReadiness,
         context,

@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { evaluateNextDayPlan, evaluateTraining } from './rules';
+import { evaluateNextDayPlan, evaluateTraining, evaluateTrainingWithIntent } from './rules';
 import { mapContextFromGoalsAndTrainingSettings } from './adapters';
 import { generateWeekAheadPlan, generateWeekAheadPlanWithIntent, prepareWeekAheadPlanSeed, projectTrailingHistory, reconcileObjectivesForDate, resolveWeeklyAnchors, type ProjectionExposure } from './planner';
-import type { DailyReadiness, EngineObjectiveInput, FatigueState, FixedActivity, SubjectiveInput, TrainingSettings, UserContext, UserEvent, UserPreferences } from './models';
+import { resolveTrainingIntent } from './trainingIntent';
+import type { AuthoredPlanBlock, DailyReadiness, EngineObjectiveInput, FatigueState, FixedActivity, SubjectiveInput, TrainingSettings, UserContext, UserEvent, UserPreferences } from './models';
 import type { CompletedExposure, TrainingHistoryProvider } from './trainingHistory';
 import { rankCandidatesByUtility } from './optimizer';
 import { resolveAvailability } from './schedule';
@@ -815,6 +816,34 @@ describe('Phase 6.2a -- reconcileObjectivesForDate (mid-horizon multi-event re-r
         const restored = reconcileObjectivesForDate(dropped.microcycle, [bEvent], '2026-08-10', '2026-08-07', day3NoAuthority, creditMemory);
         const restoredObjective = restored.microcycle.objectives.find(o => o.key === 'threshold_quality');
         expect(restoredObjective?.completedCredit).toBe(0.7);
+    });
+});
+
+describe('Authored travel overlay acceptance', () => {
+    it('plans one aerobic and one maintenance-strength exposure for 19–22 August without hard/maximal work', async () => {
+        const context = baseContext({ hasIndoorBike: true });
+        const readiness: DailyReadiness = { subjective: neutralSubjective(), objective: quietObjective() };
+        const event: UserEvent = {
+            id: 'road-race', title: 'September Road Race', date: '2026-09-13', priority: 'A', lifecycle: 'scheduled', category: 'cycling_event',
+            demandProfile: { aerobicEndurance: 0.8, thresholdPower: 0.9, vo2MaxPower: 0.7, repeatedSurges: 0.9, sprintPower: 0.5, fatigueResistance: 0.9, neuromuscular: 0.5 },
+        };
+        const travel: AuthoredPlanBlock = {
+            id: 'trip-august', userId: 'u1', eventId: event.id, phase: 'travel', startDate: '2026-08-19', endDate: '2026-08-22',
+            volumeScale: 0.6, intensityScale: 0.5, createdAt: '2026-08-01T00:00:00Z', updatedAt: '2026-08-01T00:00:00Z',
+        };
+        const history = { reconstruct: async () => [] };
+        const todayRec = await evaluateTrainingWithIntent('u1', readiness, context, [event], '2026-08-18', undefined, history, undefined, [], [travel]);
+        const intent = await resolveTrainingIntent('u1', [event], '2026-08-18', readiness, 7, history, undefined, [travel]);
+        const plan = generateWeekAheadPlan(
+            readiness, context, null, '2026-08-18', todayRec, null,
+            { microcycle: intent.microcycle, fatigue: intent.fatigue, trailingHistory: [] },
+            { days: 4, events: [event], authoredPlanBlocks: [travel] },
+        );
+
+        expect(plan.days.map(day => day.date)).toEqual(['2026-08-19', '2026-08-20', '2026-08-21', '2026-08-22']);
+        expect(plan.days.some(day => day.template.modality === 'Cycling' && day.template.category === 'Easy Endurance')).toBe(true);
+        expect(plan.days.some(day => day.template.modality === 'Strength' && day.template.category === 'Full-body Strength')).toBe(true);
+        expect(plan.days.some(day => ['Hard Endurance', 'Race-Specific Endurance', 'Power Maintenance'].includes(day.template.category))).toBe(false);
     });
 });
 

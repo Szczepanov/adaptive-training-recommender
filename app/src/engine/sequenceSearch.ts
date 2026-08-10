@@ -229,7 +229,7 @@ export function beamSearchWeekAheadPlan(
         const date = addDaysToLocalDateString(todayDate, offset);
         const periodization = evaluatePeriodizationPhase(events, date);
         const availability = resolveAvailability(date, null, fixedActivities, context);
-        const planDefinition = resolvePlanDefinitionForEvent(periodization.focusEvent);
+        const planDefinition = resolvePlanDefinitionForEvent(periodization.focusEvent, options.authoredPlanBlocks);
 
         const nextGeneration: SearchBranch[] = [];
 
@@ -276,7 +276,7 @@ export function beamSearchWeekAheadPlan(
                     plannedDose: resolvePlannedDoseForDate(periodization.phase, branch.microcycle.objectives, unresolved, planDefinition, date),
                 },
                 context, effectivePreferences, date,
-                { anchorRole, adjacentToAnchor, resolveMinimumDaysAfterHardLowerBody, fatigueTier: fatigueTierFor(peakFatigue) },
+                { anchorRole, adjacentToAnchor, resolveMinimumDaysAfterHardLowerBody, fatigueTier: fatigueTierFor(peakFatigue), authoredPlanBlocks: options.authoredPlanBlocks },
                 fixedActivities,
             );
 
@@ -369,7 +369,7 @@ export async function generateWeekAheadPlanWithIntentBeamSearch(
     beamWidth: number = DEFAULT_BEAM_WIDTH,
     candidatesPerDay: number = DEFAULT_CANDIDATES_PER_DAY
 ): Promise<WeekAheadPlan> {
-    const intent = await resolveTrainingIntent(userId, events, todayDate, todayReadiness, 7, historyProvider, preparedHistorySnapshot);
+    const intent = await resolveTrainingIntent(userId, events, todayDate, todayReadiness, 7, historyProvider, preparedHistorySnapshot, options.authoredPlanBlocks);
     const result = beamSearchWeekAheadPlan(
         context,
         preferences,
