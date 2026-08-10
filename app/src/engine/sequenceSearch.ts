@@ -20,7 +20,7 @@ import { eligibleTemplates } from './eligibility';
 import { addDaysToLocalDateString } from '../utils/localDate';
 import { applyCompletedSessionLoad, createEmptyFatigue } from './fatigue';
 import { generateWeeklyObjectives, getUnresolvedObjectives } from './microcycle';
-import { buildOptimizationContext, rankCandidates, type RecentHistoryEntry } from './optimizer';
+import { buildOptimizationContext, rankCandidates, resolveRecoveryStyle, type RecentHistoryEntry } from './optimizer';
 import { coverageNeedTierForTemplate } from './coverage';
 import { ENRICHED_TEMPLATES } from './templates';
 import { resolvePlanDefinitionForEvent } from './planSchedule';
@@ -108,7 +108,7 @@ export function beamSearchWeekAheadPlan(
     const totalDays = Math.max(1, options.days ?? 7);
     const events = options.events ?? [];
     const fixedActivities = options.fixedActivities ?? [];
-    const effectivePreferences = preferences ?? NEUTRAL_PREFERENCES;
+    const effectivePreferences = preferences ?? { ...NEUTRAL_PREFERENCES, preferredRecoveryStyle: resolveRecoveryStyle(context) };
 
     const periodizationToday = evaluatePeriodizationPhase(events, todayDate);
     const initialMicrocycle: MicrocycleState = seed.microcycle ?? generateWeeklyObjectives(periodizationToday.phase, todayDate, periodizationToday.focusEvent);
@@ -275,7 +275,7 @@ export function beamSearchWeekAheadPlan(
                     plannedDose: resolvePlannedDoseForDate(periodization.phase, branch.microcycle.objectives, unresolved, planDefinition, date),
                 },
                 context, effectivePreferences, date,
-                { anchorRole, adjacentToAnchor, resolveMinimumDaysAfterHardLowerBody },
+                { anchorRole, adjacentToAnchor, resolveMinimumDaysAfterHardLowerBody, fatigueTier: fatigueTierFor(peakFatigue) },
                 fixedActivities,
             );
 

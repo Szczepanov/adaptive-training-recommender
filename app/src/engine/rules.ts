@@ -17,7 +17,7 @@ import type {
 } from './models';
 import { TEMPLATES, ENRICHED_TEMPLATES } from './templates';
 import { eligibleTemplates, evaluateTemplateEligibility, resolveMaximumSessionMinutes } from './eligibility';
-import { buildOptimizationContext, rankCandidates } from './optimizer';
+import { buildOptimizationContext, rankCandidates, resolveRecoveryStyle } from './optimizer';
 import { addDaysToLocalDateString } from '../utils/localDate';
 import type { CompletedExposure, TrainingHistoryProvider } from './trainingHistory';
 import type { TrainingHistorySnapshot } from './trainingHistorySnapshot';
@@ -231,9 +231,11 @@ export function evaluateTraining(
         const preferenceResult = applyModalityPreference(recoverOptions, recoverOptions, subjective.preferredModalityToday);
         modalityNote = preferenceResult.note;
         let rankedRecoverOptions = rankByModalityPreference(preferenceResult.options, context.preferences.preferredModalities, context.preferences.deprioritizedModalities);
-        if (context.trainingSettings?.preferences.preferActiveRecovery) {
-            rankedRecoverOptions = [...rankedRecoverOptions].sort((a, b) => Number(b.category === 'Mobility/Recovery') - Number(a.category === 'Mobility/Recovery'));
-        }
+        const recoveryStyle = resolveRecoveryStyle(context);
+        rankedRecoverOptions = [...rankedRecoverOptions].sort((a, b) => {
+            const preferredCategory = recoveryStyle === 'active' ? 'Mobility/Recovery' : 'Rest';
+            return Number(b.category === preferredCategory) - Number(a.category === preferredCategory);
+        });
         if (rankedRecoverOptions.length > 0) selectedTemplate = pickTemplate(rankedRecoverOptions, date)!;
         if (alreadyTrainedOverride) {
             const loggedSession = objective.today_training;
@@ -319,7 +321,7 @@ export async function evaluateTrainingWithIntent(
         context,
         context.preferences,
         date,
-        { resolveMinimumDaysAfterHardLowerBody, resolvedAvailability: availability },
+        { resolveMinimumDaysAfterHardLowerBody, resolvedAvailability: availability, fatigueTier: mode },
         fixedActivities,
     );
     const rankingResult = rankCandidates(

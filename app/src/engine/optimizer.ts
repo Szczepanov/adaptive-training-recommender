@@ -31,6 +31,8 @@ export interface RankedCandidate {
     /** Phase 6.2c / ADR-0016: ordinal weekly-role urgency. Hard gates have already
      * rejected inadmissible candidates before this tier participates in sorting. */
     coverageNeedTier: 0 | 1 | 2 | 3;
+    /** W3 / macrocycle-v5: deterministic recovery ordering on recover-tier days. */
+    recoveryPreferenceTier: 0 | 1;
     rationale: string;
     excludedReasons: string[];
 }
@@ -66,6 +68,8 @@ export interface OptimizationOptions {
      * booked work. Otherwise buildOptimizationContext derives it from exact recent-history
      * template identity and the event-relative PlanDefinition. */
     coverageState?: CoverageState;
+    /** W3: projected fatigue band for ordinal recovery preference. Defaults to train. */
+    fatigueTier?: 'train' | 'modify' | 'recover';
     /** Phase 5.2: per-workout hard-lower-body spacing. */
     resolveMinimumDaysAfterHardLowerBody?: (templateId: string) => number | undefined;
 }
@@ -112,6 +116,17 @@ const BENEFIT_TIE_BAND = 0.05;
 export const ANCHOR_HISTORY_CATEGORIES: SessionTemplate['category'][] = [
     'Hard Endurance', 'Race-Specific Endurance', 'Full-body Strength',
 ];
+
+/** UserPreferences is the engine-facing recovery authority. The legacy boolean is only a
+ * compatibility fallback for callers without an explicit preference record. */
+export function resolveRecoveryStyle(
+    context: UserContext,
+    explicitStyle?: UserPreferences['preferredRecoveryStyle'] | null,
+): UserPreferences['preferredRecoveryStyle'] {
+    if (explicitStyle) return explicitStyle;
+    if (context.preferences.preferredRecoveryStyle) return context.preferences.preferredRecoveryStyle;
+    return context.trainingSettings?.preferences.preferActiveRecovery === true ? 'active' : 'mixed';
+}
 
 export function candidateMatchesAnchorRole(
     template: SessionTemplate,
@@ -366,7 +381,11 @@ export function buildOptimizationContext(
     const basePrefs = preferences ? { ...DEFAULT_PREFERENCES, ...preferences } : contextPrefs;
     const userId = (context.trainingSettings?.userId && context.trainingSettings.userId !== '')
         ? context.trainingSettings.userId : (basePrefs.userId ?? '');
-    const effectivePreferences: UserPreferences = { ...basePrefs, userId };
+    const effectivePreferences: UserPreferences = {
+        ...basePrefs,
+        preferredRecoveryStyle: resolveRecoveryStyle(context, preferences?.preferredRecoveryStyle),
+        userId,
+    };
 
     const availability = options.resolvedAvailability ?? resolveAvailability(date, null, fixedActivities, context);
     const injuryConstraints = context.constraints?.restrictedModalities ?? [];
@@ -416,6 +435,7 @@ export function buildOptimizationContext(
             anchorRole: options.anchorRole ?? null,
             adjacentToAnchor: options.adjacentToAnchor ?? false,
             coverageState,
+            fatigueTier: options.fatigueTier ?? 'train',
             ...(intent.plannedDose ? { plannedDose: intent.plannedDose } : {}),
             ...(options.resolvedAvailability ? { resolvedAvailability: options.resolvedAvailability } : {}),
             ...(options.resolveMinimumDaysAfterHardLowerBody ? { resolveMinimumDaysAfterHardLowerBody: options.resolveMinimumDaysAfterHardLowerBody } : {}),
@@ -442,6 +462,15 @@ export function rankCandidates(
     const history = normalizeHistory(rawHistory, targetDate);
     const isStrengthResolved = !unresolvedObjectives.some(o => o.key === 'strength_maintenance');
     const coverageState = options.coverageState;
+    const recoveryStyle = preferences.preferredRecoveryStyle ?? 'mixed';
+    const recoveryPreferenceTierFor = (template: SessionTemplate): 0 | 1 => {
+        if ((options.fatigueTier ?? 'train') !== 'recover') return 0;
+        if (template.category !== 'Rest' && template.category !== 'Mobility/Recovery') return 0;
+        if (recoveryStyle === 'active') return template.category === 'Mobility/Recovery' ? 0 : 1;
+        // v5.0: mixed is deliberately rest-first when already in the recover band; active
+        // movement remains available but must not sustain the recovery gate by default.
+        return template.category === 'Rest' ? 0 : 1;
+    };
 
     const accepted: RankedCandidate[] = [];
     const rejected: RankedCandidate[] = [];
@@ -475,6 +504,7 @@ export function rankCandidates(
         const coverageNeedTier = coverageState
             ? coverageNeedTierForTemplate(coverageState, template, options.anchorRole ?? null)
             : 3;
+        const recoveryPreferenceTier = recoveryPreferenceTierFor(template);
 
         if (focusEvent && (focusEvent.priority === 'A' || focusEvent.priority === 'B')) {
             const categoryLower = focusEvent.category.toLowerCase();
@@ -504,7 +534,7 @@ export function rankCandidates(
 
         if (excludedReasons.length > 0) {
             const item: RankedCandidate = {
-                template, benefitScore: benefit, costPenalty, utilityScore: 0, coverageNeedTier,
+                template, benefitScore: benefit, costPenalty, utilityScore: 0, coverageNeedTier, recoveryPreferenceTier,
                 rationale: `Excluded by hard constraint(s): ${excludedReasons.join(', ')}.`, excludedReasons,
             };
             rejected.push(item);
@@ -545,7 +575,7 @@ export function rankCandidates(
             rationale += ` (Event-modality coverage: ${template.modality} has no exposure in the rolling 6-day history.)`;
         }
 
-        const item: RankedCandidate = { template, benefitScore: benefit, costPenalty, utilityScore: utility, coverageNeedTier, rationale, excludedReasons: [] };
+        const item: RankedCandidate = { template, benefitScore: benefit, costPenalty, utilityScore: utility, coverageNeedTier, recoveryPreferenceTier, rationale, excludedReasons: [] };
         accepted.push(item);
         all.push(item);
     });
@@ -562,6 +592,8 @@ export function rankCandidates(
     accepted.sort((a, b) => {
         const coverageDiff = a.coverageNeedTier - b.coverageNeedTier;
         if (coverageDiff !== 0) return coverageDiff;
+        const recoveryPreferenceDiff = a.recoveryPreferenceTier - b.recoveryPreferenceTier;
+        if (recoveryPreferenceDiff !== 0) return recoveryPreferenceDiff;
         const tierDiff = getBenefitTier(a) - getBenefitTier(b);
         if (tierDiff !== 0) return tierDiff;
         return b.utilityScore - a.utilityScore;
@@ -572,6 +604,7 @@ export function rankCandidates(
         const topBenefitTier = getBenefitTier(topCandidate);
         const nearEquivalents = accepted.filter(c =>
             c.coverageNeedTier === topCandidate.coverageNeedTier &&
+            c.recoveryPreferenceTier === topCandidate.recoveryPreferenceTier &&
             getBenefitTier(c) === topBenefitTier &&
             c.template.category === topCandidate.template.category &&
             (c.template.modality === topCandidate.template.modality ||

@@ -100,6 +100,9 @@ export interface UserContext {
         conservativeBias: boolean;
         /** Renamed semantic preferred field: tunes borderline decision boundaries. */
         extraRecoveryMargin?: boolean;
+        /** Engine-facing recovery-style authority from UserPreferences. Legacy training settings
+         * may only supply a fallback when no explicit preference record exists. */
+        preferredRecoveryStyle?: UserPreferences['preferredRecoveryStyle'];
     };
     /** Optional only for legacy engine callers; composed recommendations always provide it. */
     trainingSettings?: TrainingSettings;

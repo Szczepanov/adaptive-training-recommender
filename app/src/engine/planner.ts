@@ -49,6 +49,7 @@ import {
     buildOptimizationContext,
     candidateMatchesAnchorRole,
     rankCandidates,
+    resolveRecoveryStyle,
 } from './optimizer';
 import { ENRICHED_TEMPLATES } from './templates';
 import { resolveMinimumDaysAfterHardLowerBody } from './planningCandidate';
@@ -663,7 +664,7 @@ export function generateWeekAheadPlan(
     const totalDays = Math.max(1, options.days ?? 7);
     const events = options.events ?? [];
     const fixedActivities = options.fixedActivities ?? [];
-    const effectivePreferences = preferences ?? NEUTRAL_PREFERENCES;
+    const effectivePreferences = preferences ?? { ...NEUTRAL_PREFERENCES, preferredRecoveryStyle: resolveRecoveryStyle(context) };
 
     const periodizationToday = evaluatePeriodizationPhase(events, todayDate);
     let microcycle: MicrocycleState = seed.microcycle ?? generateWeeklyObjectives(periodizationToday.phase, todayDate, periodizationToday.focusEvent);
@@ -883,7 +884,7 @@ export function generateWeekAheadPlan(
             context,
             effectivePreferences,
             date,
-            { anchorRole, adjacentToAnchor, resolveMinimumDaysAfterHardLowerBody },
+            { anchorRole, adjacentToAnchor, resolveMinimumDaysAfterHardLowerBody, fatigueTier: fatigueTierFor(peakFatigue) },
             fixedActivities,
         );
 
