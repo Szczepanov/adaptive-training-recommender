@@ -31,9 +31,10 @@ design; current code remains authoritative.
    must not change the current cycling, running, triathlon, strength, or general event
    scenarios merely because a rich coverage plan is unavailable for one category.
 4. **Capacity is cardinality, not a promise of invented sessions.** Required role
-   occurrences must fit the stated minimum capacity or produce a transparent shortfall.
-   A session can fan out across adaptation credit, but only explicit authored mappings can
-   award multiple programming roles.
+   occurrences must fit stated capacity or produce a transparent, semantics-preserving
+   shortfall; a guideline lower bound is not automatically a biological minimum. A session
+   can fan out across adaptation credit, but only explicit authored mappings can award
+   multiple programming roles.
 5. **Forecast allocation is not completed training.** Projection diagnostics must not
    mutate completion credit or replace recommendation provenance.
 
@@ -71,8 +72,10 @@ readiness/history execution adaptation**.
 
 `AthleteTrainingState` should be inferred conservatively from existing completed history:
 recent weekly duration/frequency, strength/aerobic/quality exposure, consistency/training
-age proxy, tolerated load/progression, and sport-specific history. It must have an explicit
-unknown fallback. Readiness is a daily execution modifier, not a substitute for that prior.
+age proxy, tolerated load/progression, and sport-specific history. It must expose observed
+history coverage, inference data quality, and diagnostics. This is not a literal training-
+age claim; sparse or contradictory history must fall back toward `unknown`. Readiness is a
+daily execution modifier, not a substitute for that prior.
 
 The useful meaning of a `min / target / max` schedule is capacity, not a physiological
 definition:
@@ -82,11 +85,15 @@ definition:
 * required plus target coverage fits `targetSessions` and real time where feasible;
 * optional/stretch work alone uses capacity through `maxSessions`.
 
-When dose cannot be packed, the result is a typed minimum-dose or goal-specificity
-shortfall. It is not evidence to manufacture a combined session, credit unrelated work as
-coverage, or lower the underlying minimum to the user's session count. The initial
-2–6-session table is consequently a low-confidence product packing heuristic, never the
-source of an adaptation requirement.
+When dose cannot be packed, the result preserves the requirement's semantics. Under a
+population guideline range, 120 minutes of a 150–300-minute target is
+`below_guideline_range` (or `guideline_target_shortfall`), not proof that benefit is zero
+or a physiological failure. `goal_requirement_shortfall` applies to unmet
+specificity/performance requirements; `minimum_dose_shortfall` is reserved for a genuine
+evidence-supported minimum. No result justifies manufacturing a combined session, crediting
+unrelated work as coverage, or lowering an underlying requirement to the user's session
+count. The initial 2–6-session table is consequently a low-confidence product packing
+heuristic, never the source of an adaptation requirement.
 
 ### Stateful feasibility is required for Phase 7A
 
@@ -114,14 +121,14 @@ prescription.
 
 | Initial policy rule | Source | Population and outcome | Confidence / use in the engine |
 |---|---|---|---|
-| Health-priority floor | [WHO physical-activity guidance](https://www.who.int/initiatives/behealthy/physical-activity) | General adults; 150–300 minutes moderate aerobic activity (or equivalent) and muscle strengthening on 2+ days/week for health benefit. | High for a population health floor; it is not evidence for a fixed number of app sessions or a performance plan. |
+| Health-priority guideline target | [WHO physical-activity guidance](https://www.who.int/initiatives/behealthy/physical-activity) | General adults; 150–300 minutes moderate aerobic activity (or equivalent) and muscle strengthening on 2+ days/week for health benefit. | High for a population guideline range, not a biological no-benefit threshold. Below-range dose remains meaningful and is reported separately from a true minimum-dose failure. |
 | Strength/hypertrophy dose | [ACSM 2026 resistance-training position-stand overview](https://acsm.org/science-spotlight-acsm-releases-new-position-stand-on-resistance-training/) | Healthy adults; resistance-training prescription for muscle function, hypertrophy, and performance. | Medium for outcome-specific dose framing; Phase 7 must retain population/training-status caveats rather than map it directly to one universal weekly template. |
 | Frequency as session packing | [Volume-equated hypertrophy frequency meta-analysis](https://pubmed.ncbi.nlm.nih.gov/30558493/) | Healthy adults in resistance training; frequency's hypertrophy effect is not meaningful when volume is equated. | Medium: supports treating a third strength day as a distribution/preference choice, not a required outcome rule. |
 | Initial 2–6 session allocation table | Repository product policy | Capacity packing of required/target/optional roles. | Low as scientific evidence: versioned heuristic only, to be calibrated against explicit minimum-dose shortfall, adherence, readiness, and outcome evidence. |
 
 Each implementation rule that claims scientific authority must retain: source,
 population, outcome, confidence, applicability conditions, authority class
-(`guideline_floor`, `outcome_supported_default`, `conditional_prior`, or
+(`guideline_target`, `outcome_supported_default`, `conditional_prior`, or
 `product_heuristic`), policy version, and review date. The UI must communicate a
 capacity/preference trade-off or minimum-dose shortfall rather than silently claiming
 scientific certainty.

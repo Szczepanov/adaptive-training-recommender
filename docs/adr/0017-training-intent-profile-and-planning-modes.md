@@ -77,12 +77,16 @@ capacity/availability feasibility → preference-compatible implementation → w
 packing → day-to-day readiness/history adaptation**. A session is a container for dose, not
 the source of a physiological requirement.
 
-`resolveEvidenceBackedStrategy` is pure and returns independently-derived minimum, target,
+`resolveEvidenceBackedStrategy` is pure and returns independently-derived floor, target,
 and optional `AdaptationDoseRequirement`s. A requirement states its adaptation, dose unit
 (for example aerobic minutes, resistance exposure/volume proxy, or high-intensity
-exposure), dose envelope, priority, applicability, and substitution policy. Its provenance
-is executable policy metadata: citation/source id, population, outcome, evidence strength,
-applicability conditions, authority class (`guideline_floor`,
+exposure), dose envelope, floor semantics, priority, applicability, and substitution
+policy. A floor is explicitly one of `guideline_recommended_minimum`,
+`goal_required_minimum`, or `evidence_supported_minimum`; its lower number is never
+implicitly presented as a universal biological threshold.
+
+Its provenance is executable policy metadata: citation/source id, population, outcome,
+evidence strength, applicability conditions, authority class (`guideline_target`,
 `outcome_supported_default`, `conditional_prior`, or `product_heuristic`), policy version,
 and review date. The metadata is carried per requirement; an Evergreen coverage set is not
 globally labelled “evidence-backed”.
@@ -90,9 +94,12 @@ globally labelled “evidence-backed”.
 `AthleteTrainingState` is inferred from bounded completed/history data where available:
 recent weekly frequency and duration, recent strength/aerobic/quality exposure,
 consistency/training-age proxy, tolerated load and progression trend, and relevant
-sport-specific history. Its conservative `unknown` state is an explicit policy input, not
-an assertion that every athlete has the same training background. Readiness remains an
-execution modifier after this policy resolution; it is not substituted for training status.
+sport-specific history. It also carries inference data quality (`high`, `limited`,
+`insufficient`, or `conflicting`), observed-history coverage, and diagnostics. This is a
+recent-training-state inference, not a claim to know literal training age. When quality is
+limited, insufficient, or conflicting, conditional priors must shrink toward the
+conservative `unknown` state. Readiness remains an execution modifier after this policy
+resolution; it is not substituted for training status.
 
 Safety, injury, hard medical restrictions, and feasibility cannot be overridden.
 Goal/event specificity selects the required adaptation; evidence defines its dose envelope;
@@ -104,6 +111,14 @@ cycling credited as marathon-specific preparation: retain transferable work, emi
 `goal_constraint_conflict`/specificity shortfall, and state the trade-off. Preference may
 choose a feasible lower-efficacy implementation only where that policy explicitly permits
 it; it never manufactures coverage or overrides safety.
+
+For a public-health guideline range, lower-than-recommended dose is reported as
+`below_guideline_range` or `guideline_target_shortfall`, never as evidence that benefit is
+zero or that a biological minimum failed. The best safe feasible dose is still prescribed
+and its dose-response trade-off explained. `goal_requirement_shortfall` applies when a
+specificity/performance requirement materially prevents the stated goal; the stricter
+`minimum_dose_shortfall` applies only to an `evidence_supported_minimum`, never merely to
+the lower bound of a population guideline.
 
 ### D-CAP — real capacity constrains dose packing; it does not define dose
 
@@ -117,10 +132,10 @@ evidence floor to be assessed without duplicating duration in the profile.
 The physiological minimum is derived by D-DOSE independently of declared capacity.
 `minSessions` is the athlete's guaranteed **packing** capacity, not the definition of a
 scientific minimum; `targetSessions` is the preferred packing capacity; `maxSessions` is
-available only to optional/stretch work. If minimum dose cannot fit safely inside real
-minutes/windows and `minSessions`, return a typed `minimum_dose_shortfall` and the safest,
-highest-value feasible subset. Never silently lower the dose requirement, invent a combined
-session, or manufacture cross-role credit.
+available only to optional/stretch work. If a floor or target cannot fit safely inside real
+minutes/windows and `minSessions`, preserve its D-DOSE shortfall semantics and return the
+safest, highest-value feasible subset. Never silently lower the requirement, invent a
+combined session, or manufacture cross-role credit.
 
 Zero or missing weekday/weekend duration is never a usable duration for a required session.
 New `UserPreferences` writes require finite positive minutes. At read time a known,

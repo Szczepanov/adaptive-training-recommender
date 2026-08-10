@@ -192,14 +192,23 @@ export interface EvidenceProvenance {
   sourceId: string; population: string; outcome: string;
   confidence: 'high' | 'medium' | 'low';
   applicability: string[];
-  authority: 'guideline_floor' | 'outcome_supported_default'
+  authority: 'guideline_target' | 'outcome_supported_default'
     | 'conditional_prior' | 'product_heuristic';
   policyVersion: string; reviewedOn: string;
 }
 export interface AdaptationDoseRequirement {
-  adaptation: AdaptationKey; minimum: DoseTarget | null; target: DoseRange;
+  adaptation: AdaptationKey;
+  floor: { dose: DoseTarget; semantics: 'guideline_recommended_minimum'
+    | 'goal_required_minimum' | 'evidence_supported_minimum' } | null;
+  target: DoseRange;
   priority: 'required' | 'target' | 'optional';
   substitutionPolicy: SubstitutionPolicy; evidence: EvidenceProvenance;
+}
+export interface AthleteTrainingState {
+  recentExposure: RecentTrainingExposure;
+  trainingAgeProxy: 'unknown' | 'developing' | 'established';
+  inference: { dataQuality: 'high' | 'limited' | 'insufficient' | 'conflicting';
+    observedWindowDays: number; diagnostics: InferenceDiagnostic[] };
 }
 export interface EvidenceBackedStrategy {
   requirements: AdaptationDoseRequirement[];
@@ -212,11 +221,14 @@ export function resolveEvidenceBackedStrategy(
 ```
 
 `AthleteTrainingState` is inferred from bounded completed-history/Garmin data: recent
-weekly duration and frequency, strength/aerobic/quality exposure, consistency and
-training-age proxy, tolerated load/progression trend, and sport-specific history. An
-explicit conservative `unknown` fallback is required. Readiness modifies daily execution
-only after this strategy exists. Every rule carries the per-requirement provenance contract
-from ADR-0017 D-DOSE; coverage descriptors themselves are not blanket “evidence-backed”.
+weekly duration and frequency, strength/aerobic/quality exposure, consistency and a
+training-age **proxy**, tolerated load/progression trend, and sport-specific history. It
+carries observed-window coverage, data quality, and inference diagnostics; it must never
+claim literal training age. An explicit conservative `unknown` fallback is required, and
+limited/insufficient/conflicting evidence shrinks conditional priors toward it. Readiness
+modifies daily execution only after this strategy exists. Every rule carries the
+per-requirement provenance contract from ADR-0017 D-DOSE; coverage descriptors themselves
+are not blanket “evidence-backed”.
 
 #### 7.3b Resolve capacity from the two existing owners
 
@@ -265,8 +277,11 @@ only then to roles. Required roles must fit within `minSessions` and usable minu
 required plus target roles within `targetSessions`; optional work alone may use capacity to
 `maxSessions`. A session can fan out to adaptation credit, but may bundle programming roles
 only where one authored `PlanSessionCoverage` identity grants every key. Otherwise distinct
-strength/endurance requirements stay distinct. If an evidence/goal minimum cannot fit,
-emit `minimum_dose_shortfall` and retain the safest, highest-value feasible subset.
+strength/endurance requirements stay distinct. Preserve floor semantics during packing:
+under a population guideline range emit `below_guideline_range` or
+`guideline_target_shortfall` while prescribing the best safe feasible dose; emit
+`goal_requirement_shortfall` for unmet goal-specific requirements; reserve
+`minimum_dose_shortfall` for an actual `evidence_supported_minimum` only.
 
 The old 2-to-6 session table remains in one exported, commented table, but only as a
 low-confidence packing fallback/tie-breaker between otherwise valid packings. It cannot
@@ -282,11 +297,13 @@ event more than 84 days out (`evaluatePeriodizationPhase`'s existing `blendDeman
 never an eventless input.
 
 **Done when:** a short/long duration athlete with identical session counts produces
-different feasibility/shortfall results; `AthleteTrainingState.unknown` is conservative and
-history-derived state can alter a conditional prior; every scientific rule has complete
-provenance; the 2-to-6 table breaks only packing ties; required/target/optional roles obey
-the cardinality and exact-identity invariants; and mutating `DEFAULT_BASE_DEMAND` changes
-nothing for an eventless athlete.
+different feasibility/shortfall results; an athlete limited to 120 weekly health-priority
+minutes receives a safe partial-dose plan and `below_guideline_range`, not
+`minimum_dose_shortfall`; `AthleteTrainingState.unknown` is conservative and sparse or
+contradictory history has explicit data-quality diagnostics and cannot promote a conditional
+prior; every scientific rule has complete provenance; the 2-to-6 table breaks only packing
+ties; required/target/optional roles obey the cardinality and exact-identity invariants; and
+mutating `DEFAULT_BASE_DEMAND` changes nothing for an eventless athlete.
 
 ---
 
@@ -482,8 +499,8 @@ architecture doc's description matches `planningMode.ts` and `evergreenStrategy.
 | File | Behaviour asserted |
 |---|---|
 | `engine/planningMode.test.ts` | explicit/legacy mode resolution; cycling structured-plan and running/triathlon/strength/general demand-derived strategy; passed/cancelled fallback; no residual taper |
-| `engine/evergreenStrategy.test.ts` | evidence-backed dose precedes packing; complete provenance; `unknown`/history-derived athlete state; 2–6 table only breaks valid-packing ties; `DEFAULT_BASE_DEMAND` is not an input |
-| `engine/trainingCapacity.test.ts` | session counts plus weekday/weekend minutes/windows form real capacity; zero/missing duration is unavailable or versioned fallback; explicit time-aware minimum-dose shortfall |
+| `engine/evergreenStrategy.test.ts` | evidence-backed dose precedes packing; complete provenance and floor semantics; `unknown`/data-quality-qualified athlete state; 2–6 table only breaks valid-packing ties; `DEFAULT_BASE_DEMAND` is not an input |
+| `engine/trainingCapacity.test.ts` | session counts plus weekday/weekend minutes/windows form real capacity; zero/missing duration is unavailable or versioned fallback; 120-minute health case is below-guideline, while true goal/evidence floors retain distinct shortfalls |
 | `engine/evergreenCoverage.test.ts` | evergreen athlete gets non-empty `CoverageState`; a recovery spin never satisfies `aerobic_volume` (ADR-0016 invariant, re-asserted for the new set) |
 | `engine/coverageSets.test.ts` | generic plan-coverage descriptors validate; the September set's entries are unchanged (snapshot) |
 | `engine/taperPolicy.test.ts` (extend) | 5-star `general_target` → no taper; cycling A race-week rule unchanged |
@@ -509,8 +526,11 @@ architecture doc's description matches `planningMode.ts` and `evergreenStrategy.
 - [ ] `TrainingIntentProfile` and `UserPreferences` each have one documented field
       ownership; no composer merge can create conflicting live preferences.
 - [ ] Required occurrences fit real minutes/windows and declared minimum packing capacity,
-      or yield an explicit `minimum_dose_shortfall`; no fictional cross-role credit is
-      created.
+      or yield semantics-preserving `below_guideline_range`,
+      `guideline_target_shortfall`, `goal_requirement_shortfall`, or
+      `minimum_dose_shortfall`; no fictional cross-role credit is created.
+- [ ] A public-health guideline lower bound is never rendered as a biological no-benefit
+      threshold; safe partial dose and its dose-response trade-off remain visible.
 - [ ] Every evidence-authoritative dose rule has source, population, outcome, confidence,
       applicability, authority class, policy version, and review date; product packing
       heuristics are distinguishable from those rules.
