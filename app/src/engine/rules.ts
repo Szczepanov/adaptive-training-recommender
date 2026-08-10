@@ -13,6 +13,7 @@ import type {
     UserEvent,
     FixedActivity,
     AuthoredPlanBlock,
+    TrainingIntentProfile,
     WorkoutCostProfile,
     WorkoutStimulusProfile,
 } from './models';
@@ -291,10 +292,11 @@ export async function evaluateTrainingWithIntent(
     preparedHistorySnapshot?: TrainingHistorySnapshot | null,
     fixedActivities: FixedActivity[] = [],
     authoredPlanBlocks: readonly AuthoredPlanBlock[] = [],
+    trainingIntentProfile: TrainingIntentProfile | null = null,
 ): Promise<Recommendation> {
     const envelopeState = evaluateReadinessAndSafetyEnvelope(readiness, context, date, previousMode);
     const { mode, envelopes, telemetry } = envelopeState;
-    let intent = await resolveTrainingIntent(userId, events, date, readiness, 7, historyProvider, preparedHistorySnapshot, authoredPlanBlocks);
+    let intent = await resolveTrainingIntent(userId, events, date, readiness, 7, historyProvider, preparedHistorySnapshot, authoredPlanBlocks, trainingIntentProfile);
 
     const todaysFixedActivities = fixedActivities.filter(a => a.date === date && !a.isCompleted);
     if (todaysFixedActivities.length > 0) {
@@ -630,6 +632,7 @@ export async function evaluateNextDayPlanWithIntent(
     preparedHistorySnapshot?: TrainingHistorySnapshot | null,
     fixedActivities: FixedActivity[] = [],
     authoredPlanBlocks: readonly AuthoredPlanBlock[] = [],
+    trainingIntentProfile: TrainingIntentProfile | null = null,
 ): Promise<NextDayPotentialPlan> {
     const scenarios = buildNextDayScenarios(todayReadiness, context, todayDate, todayRec);
     const projectedProvider = await projectedProviderForTomorrow(
@@ -637,7 +640,7 @@ export async function evaluateNextDayPlanWithIntent(
     );
     const evaluate = async (scenario: NextDayScenario) => evaluatedBranch(
         scenario,
-        await evaluateTrainingWithIntent(userId, scenario.readiness, context, events, scenarios.date, todayRec.mode, projectedProvider, null, fixedActivities, authoredPlanBlocks),
+        await evaluateTrainingWithIntent(userId, scenario.readiness, context, events, scenarios.date, todayRec.mode, projectedProvider, null, fixedActivities, authoredPlanBlocks, trainingIntentProfile),
     );
     const [green, yellow, red] = await Promise.all([
         evaluate(scenarios.scenarios.green), evaluate(scenarios.scenarios.yellow), evaluate(scenarios.scenarios.red),

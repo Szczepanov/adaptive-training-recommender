@@ -232,6 +232,29 @@ export interface AuthoredPlanBlock {
     updatedAt: string;
 }
 
+export type PlanningMode = 'evergreen' | 'event_directed';
+export type TrainingPriority =
+    | 'health' | 'balanced_performance' | 'endurance'
+    | 'strength_muscle' | 'speed_power' | 'sport_readiness';
+
+/** Persisted athlete-owned planning inputs. This is deliberately distinct from
+ * `trainingIntent.ts`'s per-decision `TrainingIntent`, which resolves these inputs with
+ * history and readiness for one date and is never persisted as this profile. */
+export interface TrainingIntentProfile {
+    userId: string;
+    planningMode: PlanningMode;
+    priorities: TrainingPriority[];
+    weeklyCommitment: {
+        minSessions: number;
+        targetSessions: number;
+        maxSessions: number;
+    };
+    organizationPreference: 'auto';
+    schemaVersion: number;
+    createdAt: string;
+    updatedAt: string;
+}
+
 export type ObjectiveKey = 
   | 'threshold_quality' 
   | 'surge_repeatability' 
@@ -915,6 +938,8 @@ export interface DailyDecisionInput {
     activeGoals: UserGoal[]; // Only goals with status === 'active'
     trainingSettings: TrainingSettings;
     preferences: UserPreferences | null;
+    /** Absent is a supported legacy-compatible input; mode resolution supplies defaults. */
+    trainingIntentProfile: TrainingIntentProfile | null;
     /** Statuses keep unavailable/corrupt data distinct from a genuinely absent record. */
     sourceStates?: {
         recoverySnapshot: DataStateSummary;
@@ -922,6 +947,7 @@ export interface DailyDecisionInput {
         activeGoals: DataStateSummary;
         trainingSettings: DataStateSummary;
         preferences: DataStateSummary;
+        trainingIntentProfile: DataStateSummary;
     };
     // Data quality flags
     dataQuality: {

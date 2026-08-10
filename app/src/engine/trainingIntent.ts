@@ -1,4 +1,4 @@
-import type { AuthoredPlanBlock, DailyReadiness, FatigueState, MicrocycleState, PlannedDose, UserEvent, WeeklyObjective } from './models';
+import type { AuthoredPlanBlock, DailyReadiness, FatigueState, MicrocycleState, PlannedDose, TrainingIntentProfile, UserEvent, WeeklyObjective } from './models';
 import { computeInternalResponseStrain, buildFatigueStateFromHistory } from './fatigue';
 import { buildMicrocycleState, getUnresolvedObjectives } from './microcycle';
 import type { CompletedExposure, TrainingHistoryProvider } from './trainingHistory';
@@ -6,6 +6,7 @@ import type { TrainingHistorySnapshot } from './trainingHistorySnapshot';
 import { evaluatePeriodizationPhase, resolveMultiEventObjectives, type DroppedContributorObjective, type PeriodizationResult } from './periodization';
 import { resolvePlanDefinitionForEvent, type PlanDefinition } from './planSchedule';
 import { addDaysToLocalDateString } from '../utils/localDate';
+import { resolvePlanningContext, type PlanningContext } from './planningMode';
 
 export type PlannedRecoveryReason = 
   | 'scheduled_recovery'   // Prescribed microcycle rest day
@@ -17,6 +18,9 @@ export type ExecutionModifier =
   | 'safety_constraint';
 
 export interface TrainingIntent {
+    /** Per-decision resolved context; distinct from the persisted `TrainingIntentProfile`,
+     * which is durable athlete input rather than a computed decision result. */
+    planningContext: PlanningContext;
     periodization: PeriodizationResult;
     unresolvedObjectives: WeeklyObjective[];
     plannedDose: PlannedDose;
@@ -110,8 +114,17 @@ export async function resolveTrainingIntent(
     historyProvider?: TrainingHistoryProvider,
     preparedHistorySnapshot?: TrainingHistorySnapshot | null,
     authoredPlanBlocks: readonly AuthoredPlanBlock[] = [],
+    trainingIntentProfile: TrainingIntentProfile | null = null,
 ): Promise<TrainingIntent> {
-    const periodization = evaluatePeriodizationPhase(events, date);
+    const eventPeriodization = evaluatePeriodizationPhase(events, date);
+    const planningContext = resolvePlanningContext(trainingIntentProfile, eventPeriodization, date);
+    // PlanningContext is the sole authority for whether event periodization applies.
+    // The profile-less event path retains the prior result exactly; an explicit evergreen
+    // profile intentionally receives the existing no-event baseline until its dedicated
+    // evergreen coverage policy arrives in Phase 7.5.
+    const periodization = planningContext.mode === 'event_directed'
+        ? eventPeriodization
+        : evaluatePeriodizationPhase([], date);
     const historySnapshot = preparedHistorySnapshot
         ?? await prepareTrainingHistorySnapshot(userId, date, windowDays, historyProvider);
     const provider = historyProvider ?? (await import('./firestoreTrainingHistory')).firestoreTrainingHistoryProvider;
@@ -144,7 +157,7 @@ export async function resolveTrainingIntent(
         date,
     );
     return {
-        periodization, unresolvedObjectives, plannedDose, fatigue, history, historySnapshot, microcycle,
+        planningContext, periodization, unresolvedObjectives, plannedDose, fatigue, history, historySnapshot, microcycle,
         droppedContributorObjectives: multiEventResolution.droppedContributorObjectives,
     };
 }

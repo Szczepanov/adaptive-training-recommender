@@ -231,7 +231,7 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
         setHistorySnapshot(preparedSnapshot);
         const baseRecommendation = await evaluateTrainingWithIntent(
           userId, { subjective, objective }, context, events, input.date, yesterdayRec?.mode, undefined, preparedSnapshot,
-          todayAndTomorrowFixedActivities, todayAndTomorrowPlanBlocks,
+          todayAndTomorrowFixedActivities, todayAndTomorrowPlanBlocks, input.trainingIntentProfile,
         );
         if (!isCurrent()) return;
         const recommendationWithPrescription = {
@@ -246,7 +246,7 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
 
         const tomorrowPlan = await evaluateNextDayPlanWithIntent(
           userId, events, { subjective, objective }, forecastContext, input.date, todayRec, undefined, preparedSnapshot,
-          todayAndTomorrowFixedActivities, todayAndTomorrowPlanBlocks,
+          todayAndTomorrowFixedActivities, todayAndTomorrowPlanBlocks, input.trainingIntentProfile,
         );
         if (!isCurrent()) return;
         setNextDayPlan(tomorrowPlan);
@@ -464,6 +464,7 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
       { days: WEEK_AHEAD_DAYS, fixedActivities, authoredPlanBlocks },
       undefined,
       historySnapshot,
+      decisionInput.trainingIntentProfile,
     ).then(plan => {
       if (!cancelled) setWeekAheadPlan(plan);
     }).catch(err => {

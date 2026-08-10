@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { evaluateTraining, evaluateTrainingWithIntent, evaluateNextDayPlanWithIntent } from './rules';
 import { resolveTrainingIntent } from './trainingIntent';
-import type { AuthoredPlanBlock, DailyReadiness, FixedActivity, UserContext, UserEvent } from './models';
+import type { AuthoredPlanBlock, DailyReadiness, FixedActivity, TrainingIntentProfile, UserContext, UserEvent } from './models';
 import type { TrainingHistoryProvider } from './trainingHistory';
 
 const fixtureHistory: TrainingHistoryProvider = { reconstruct: async () => [] };
@@ -26,6 +26,12 @@ const roadRace: UserEvent = {
     demandProfile: { aerobicEndurance: 0.8, thresholdPower: 0.9, vo2MaxPower: 0.7, repeatedSurges: 0.9, sprintPower: 0.5, fatigueResistance: 0.9, neuromuscular: 0.5 },
 };
 
+const evergreenProfile: TrainingIntentProfile = {
+    userId: 'u1', planningMode: 'evergreen', priorities: ['balanced_performance'],
+    weeklyCommitment: { minSessions: 2, targetSessions: 3, maxSessions: 4 },
+    organizationPreference: 'auto', schemaVersion: 1, createdAt: '', updatedAt: '',
+};
+
 // Event-relative fixture: literal dates here are test inputs only. Runtime block dates are
 // derived from each event's own planning date by buildCyclingEventPlan.
 const cyclingPlanFixture: UserEvent = {
@@ -34,6 +40,16 @@ const cyclingPlanFixture: UserEvent = {
 };
 
 describe('day-0 event-intent acceptance', () => {
+    it('uses the resolved evergreen context to suppress event authority without changing profile-less event behavior', async () => {
+        const legacy = await resolveTrainingIntent('u1', [roadRace], '2026-08-07', readiness(), 7, fixtureHistory);
+        const evergreen = await resolveTrainingIntent('u1', [roadRace], '2026-08-07', readiness(), 7, fixtureHistory, undefined, [], evergreenProfile);
+
+        expect(legacy.planningContext).toMatchObject({ mode: 'event_directed', eventStrategy: 'structured_plan', focusEvent: { id: roadRace.id } });
+        expect(legacy.periodization.focusEvent?.id).toBe(roadRace.id);
+        expect(evergreen.planningContext).toMatchObject({ mode: 'evergreen', focusEvent: null, eventStrategy: null });
+        expect(evergreen.periodization.focusEvent).toBeNull();
+    });
+
     it('changes the healthy day-0 selection for an A-priority road race and starts with an unmet explicit weekly role rather than forcing intensity immediately', async () => {
         const input = readiness();
         const baseline = await evaluateTrainingWithIntent('u1', input, context(), [], '2026-08-07', undefined, fixtureHistory);

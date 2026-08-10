@@ -9,6 +9,7 @@ import type {
     UserContext,
     UserEvent,
     UserPreferences,
+    TrainingIntentProfile,
     WeeklyObjective,
 } from './models';
 import type { TrainingHistoryProvider } from './trainingHistory';
@@ -366,10 +367,11 @@ export async function generateWeekAheadPlanWithIntentBeamSearch(
     options: WeekAheadOptions = {},
     historyProvider?: TrainingHistoryProvider,
     preparedHistorySnapshot?: TrainingHistorySnapshot | null,
+    trainingIntentProfile: TrainingIntentProfile | null = null,
     beamWidth: number = DEFAULT_BEAM_WIDTH,
-    candidatesPerDay: number = DEFAULT_CANDIDATES_PER_DAY
+    candidatesPerDay: number = DEFAULT_CANDIDATES_PER_DAY,
 ): Promise<WeekAheadPlan> {
-    const intent = await resolveTrainingIntent(userId, events, todayDate, todayReadiness, 7, historyProvider, preparedHistorySnapshot, options.authoredPlanBlocks);
+    const intent = await resolveTrainingIntent(userId, events, todayDate, todayReadiness, 7, historyProvider, preparedHistorySnapshot, options.authoredPlanBlocks, trainingIntentProfile);
     const result = beamSearchWeekAheadPlan(
         context,
         preferences,
@@ -382,7 +384,7 @@ export async function generateWeekAheadPlanWithIntentBeamSearch(
             trailingHistory: trailingHistoryFromCompletedExposures(intent.history, todayDate),
             droppedContributorObjectives: intent.droppedContributorObjectives,
         },
-        { ...options, events },
+        { ...options, events: intent.planningContext.mode === 'event_directed' ? events : [] },
         beamWidth,
         candidatesPerDay
     );

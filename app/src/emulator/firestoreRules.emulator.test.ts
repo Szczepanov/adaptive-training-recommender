@@ -12,6 +12,7 @@ const otherUserId = 'athlete-b';
 const recommendationPath = `users/${ownerId}/daily_recommendations/2026-08-07`;
 const fixedActivityPath = `users/${ownerId}/fixed_activities/activity-1`;
 const planBlockPath = `users/${ownerId}/plan_blocks/trip-august`;
+const trainingIntentProfilePath = `users/${ownerId}/training_intent/profile`;
 const goalPath = `users/${ownerId}/goals/goal-1`;
 
 function validGoal() {
@@ -42,6 +43,15 @@ function validPlanBlock() {
     return {
         userId: ownerId, eventId: 'road-race', phase: 'travel', startDate: '2026-08-19', endDate: '2026-08-22',
         volumeScale: 0.6, intensityScale: 0.5,
+        createdAt: '2026-08-01T00:00:00Z', updatedAt: '2026-08-01T00:00:00Z',
+    };
+}
+
+function validTrainingIntentProfile() {
+    return {
+        userId: ownerId, planningMode: 'evergreen', priorities: ['health'],
+        weeklyCommitment: { minSessions: 2, targetSessions: 3, maxSessions: 4 },
+        organizationPreference: 'auto', schemaVersion: 1,
         createdAt: '2026-08-01T00:00:00Z', updatedAt: '2026-08-01T00:00:00Z',
     };
 }
@@ -404,6 +414,24 @@ emulatorDescribe('Firestore security rules', () => {
         const otherDb = testEnvironment.authenticatedContext(otherUserId).firestore();
         await assertFails(getDoc(doc(otherDb, planBlockPath)));
         await assertFails(setDoc(doc(otherDb, `users/${otherUserId}/plan_blocks/forged`), validPlanBlock()));
+    });
+
+    it('enforces ownership, integer capacity, exact shape and immutable creation time for training intent profiles', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        const valid = validTrainingIntentProfile();
+        await expect(assertSucceeds(setDoc(doc(ownerDb, trainingIntentProfilePath), valid))).resolves.toBeUndefined();
+        await assertFails(setDoc(doc(ownerDb, `${trainingIntentProfilePath}-fractional`), {
+            ...valid, weeklyCommitment: { ...valid.weeklyCommitment, targetSessions: 2.5 },
+        }));
+        await assertFails(setDoc(doc(ownerDb, `${trainingIntentProfilePath}-range`), {
+            ...valid, weeklyCommitment: { minSessions: 4, targetSessions: 3, maxSessions: 4 },
+        }));
+        await assertFails(setDoc(doc(ownerDb, `${trainingIntentProfilePath}-mode`), { ...valid, planningMode: 'unsupported' }));
+        await assertFails(setDoc(doc(ownerDb, `${trainingIntentProfilePath}-org`), { ...valid, organizationPreference: 'manual' }));
+        await assertFails(setDoc(doc(ownerDb, `${trainingIntentProfilePath}-extra-field`), { ...valid, surprise: true }));
+        await assertFails(setDoc(doc(ownerDb, trainingIntentProfilePath), { ...valid, createdAt: '2099-01-01T00:00:00Z' }, { merge: true }));
+        const otherDb = testEnvironment.authenticatedContext(otherUserId).firestore();
+        await assertFails(getDoc(doc(otherDb, trainingIntentProfilePath)));
     });
 
     it('rejects re-saving the same decision with a different audit than what is stored', async () => {

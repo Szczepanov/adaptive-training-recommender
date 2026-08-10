@@ -1,8 +1,7 @@
 # Phase 7B — Training intent, capacity, and first-class planning modes
 
-* **Status:** `Draft`
-* **Blocked by:** ADR-0017 acceptance; any semantic-baseline review follows Phase 7A's
-  allocation acceptance criteria.
+* **Status:** `Approved`
+* **Blocked by:** none; Phase 7A's reviewed semantic baseline is complete.
 * **Unlocks:** evergreen (non-event) athletes as a supported population; a reachable
   coverage ledger outside cycling events; capacity-sized weekly targets
 * **Decisions:** [ADR-0017](../adr/0017-training-intent-profile-and-planning-modes.md)
@@ -59,7 +58,7 @@ G1–G3 are the structural ones. G4–G10 are each small and independently landa
 
 ## Work items
 
-### 7.1 `[ ]` Persist `TrainingIntentProfile`
+### 7.1 `[x]` Persist `TrainingIntentProfile`
 
 **Current:** no persisted record of planning mode, priorities, or weekly capacity (G2).
 
@@ -133,7 +132,7 @@ present and with it absent, while all execution preferences always come from
 
 ---
 
-### 7.2 `[ ]` Resolve the effective planning mode
+### 7.2 `[x]` Resolve the effective planning mode
 
 **Current:** mode is not a concept; eventlessness is expressed as `focusEvent === null`
 scattered across `trainingIntent.ts`, `optimizer.ts`, `planner.ts` and `rules.ts` (G1).
@@ -588,8 +587,8 @@ Every item is independently revertible. 7.1 and 7.7 land value without 7.3–7.5
 
 | Item | Status | Depends on | Done when |
 |---|:--:|---|---|
-| 7.1 Persist `TrainingIntentProfile` | `[ ]` | ADR-0017 | Round-trips; rules tests green |
-| 7.2 Effective planning mode and event strategy | `[ ]` | 7.1 | Existing events keep event-directed structured/demand-derived paths |
+| 7.1 Persist `TrainingIntentProfile` | `[x]` | ADR-0017 | Round-trips; rules tests green |
+| 7.2 Effective planning mode and event strategy | `[x]` | 7.1 | Existing events keep event-directed structured/demand-derived paths |
 | 7.3 Evidence dose → capacity → role packing | `[ ]` | 7.1, 7.2 | Dose provenance, time-aware capacity, and exact roles yield transparent shortfalls |
 | 7.4 Generic plan-coverage registry | `[ ]` | ADR-0017 | Both descriptors validate; September set byte-identical |
 | 7.5 Evergreen coverage + plan definition | `[ ]` | 7.3, 7.4 | Non-empty `CoverageState` eventless |

@@ -179,6 +179,7 @@ function buildFixture(overrides: Partial<Pick<VisualFixture, 'settings' | 'prefe
       activeGoals: fixtureGoals,
       trainingSettings: fixtureSettings,
       preferences: fixturePreferences,
+      trainingIntentProfile: null,
       dataQuality: {
         hasRecoverySnapshot: fixtureRecovery !== null,
         hasSubjectiveCheckin: fixtureCheckin !== null,

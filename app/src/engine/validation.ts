@@ -33,7 +33,10 @@ import type {
     BodyRegion,
     RegionTissueResponse,
     TissueResponseLevel,
-    AuthoredPlanBlock
+    AuthoredPlanBlock,
+    TrainingIntentProfile,
+    PlanningMode,
+    TrainingPriority,
 } from './models';
 import { validateEventTiming, BODY_REGIONS, TISSUE_LEVELS } from './models';
 import { deriveGoalCategory } from './periodization';
@@ -629,17 +632,17 @@ export function validatePreferences(raw: any): ValidationResult<UserPreferences>
     }
 
     // Time preferences validation
-    if (!isInRange(raw.defaultWeekdayTimeMin, 0, 1440) || !Number.isInteger(raw.defaultWeekdayTimeMin)) {
+    if (!isInRange(raw.defaultWeekdayTimeMin, 1, 1440) || !Number.isInteger(raw.defaultWeekdayTimeMin)) {
         errors.push({
             field: 'defaultWeekdayTimeMin',
-            message: 'Default weekday time must be a whole number between 0 and 1440 minutes'
+            message: 'Default weekday time must be a whole number between 1 and 1440 minutes'
         });
     }
 
-    if (!isInRange(raw.defaultWeekendTimeMin, 0, 1440) || !Number.isInteger(raw.defaultWeekendTimeMin)) {
+    if (!isInRange(raw.defaultWeekendTimeMin, 1, 1440) || !Number.isInteger(raw.defaultWeekendTimeMin)) {
         errors.push({
             field: 'defaultWeekendTimeMin',
-            message: 'Default weekend time must be a whole number between 0 and 1440 minutes'
+            message: 'Default weekend time must be a whole number between 1 and 1440 minutes'
         });
     }
 
@@ -1160,4 +1163,46 @@ export function validateAuthoredPlanBlock(raw: any): ValidationResult<AuthoredPl
         volumeScale: raw.volumeScale, intensityScale: raw.intensityScale, ...(raw.eventId ? { eventId: raw.eventId } : {}),
         createdAt: typeof raw.createdAt === 'string' ? raw.createdAt : now, updatedAt: now,
     } };
+}
+
+const TRAINING_INTENT_PROFILE_KEYS = [
+    'userId', 'planningMode', 'priorities', 'weeklyCommitment', 'organizationPreference',
+    'schemaVersion', 'createdAt', 'updatedAt',
+] as const;
+const TRAINING_PRIORITIES: TrainingPriority[] = [
+    'health', 'balanced_performance', 'endurance', 'strength_muscle', 'speed_power', 'sport_readiness',
+];
+
+/** Strict boundary for `users/{userId}/training_intent/profile`. Per-day duration and
+ * execution preferences intentionally remain validated by `validatePreferences`. */
+export function validateTrainingIntentProfile(raw: any): ValidationResult<TrainingIntentProfile> {
+    const errors: ValidationError[] = [];
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { isValid: false, errors: [{ field: 'profile', message: 'Profile must be an object' }] };
+    const keys = Object.keys(raw);
+    const extra = keys.filter(key => !(TRAINING_INTENT_PROFILE_KEYS as readonly string[]).includes(key));
+    const missing = TRAINING_INTENT_PROFILE_KEYS.filter(key => !(key in raw));
+    if (extra.length) errors.push({ field: 'profile', message: `Unrecognized profile field(s): ${extra.join(', ')}` });
+    if (missing.length) errors.push({ field: 'profile', message: `Missing profile field(s): ${missing.join(', ')}` });
+    if (typeof raw.userId !== 'string' || !raw.userId) errors.push({ field: 'userId', message: 'User ID is required' });
+    if (!(['evergreen', 'event_directed'] as PlanningMode[]).includes(raw.planningMode)) errors.push({ field: 'planningMode', message: 'Planning mode must be evergreen or event_directed' });
+    if (!Array.isArray(raw.priorities) || raw.priorities.some((priority: unknown) => !TRAINING_PRIORITIES.includes(priority as TrainingPriority))
+        || new Set(raw.priorities).size !== raw.priorities.length) {
+        errors.push({ field: 'priorities', message: 'Priorities must be unique supported values' });
+    }
+    const commitment = raw.weeklyCommitment;
+    if (!commitment || typeof commitment !== 'object' || Array.isArray(commitment)
+        || Object.keys(commitment).length !== 3 || !['minSessions', 'targetSessions', 'maxSessions'].every(key => key in commitment)) {
+        errors.push({ field: 'weeklyCommitment', message: 'Weekly commitment must contain exactly minSessions, targetSessions and maxSessions' });
+    } else {
+        const values = [commitment.minSessions, commitment.targetSessions, commitment.maxSessions];
+        if (values.some(value => !Number.isInteger(value) || value < 1 || value > 14)
+            || commitment.minSessions > commitment.targetSessions || commitment.targetSessions > commitment.maxSessions) {
+            errors.push({ field: 'weeklyCommitment', message: 'Session counts must be integers 1..14 with min <= target <= max' });
+        }
+    }
+    if (raw.organizationPreference !== 'auto') errors.push({ field: 'organizationPreference', message: 'Only auto organization is supported' });
+    if (!Number.isInteger(raw.schemaVersion) || raw.schemaVersion < 1) errors.push({ field: 'schemaVersion', message: 'Schema version must be a positive integer' });
+    if (typeof raw.createdAt !== 'string' || typeof raw.updatedAt !== 'string') errors.push({ field: 'timestamps', message: 'createdAt and updatedAt must be strings' });
+    if (errors.length > 0) return { isValid: false, errors };
+    return { isValid: true, errors: [], data: raw as TrainingIntentProfile };
 }

@@ -273,6 +273,34 @@ service cloud.firestore {
       allow delete: if isOwner(userId);
     }
 
+    function hasValidTrainingIntentProfile(userId) {
+      let data = request.resource.data;
+      let commitment = data.weeklyCommitment;
+      return hasOwnedUserId(userId)
+        && data.keys().hasOnly(['userId', 'planningMode', 'priorities', 'weeklyCommitment', 'organizationPreference', 'schemaVersion', 'createdAt', 'updatedAt'])
+        && data.keys().hasAll(['userId', 'planningMode', 'priorities', 'weeklyCommitment', 'organizationPreference', 'schemaVersion', 'createdAt', 'updatedAt'])
+        && data.planningMode in ['evergreen', 'event_directed']
+        && data.priorities is list && data.priorities.size() <= 6
+        && data.weeklyCommitment is map
+        && commitment.keys().hasOnly(['minSessions', 'targetSessions', 'maxSessions'])
+        && commitment.keys().hasAll(['minSessions', 'targetSessions', 'maxSessions'])
+        && commitment.minSessions is int && commitment.minSessions >= 1 && commitment.minSessions <= 14
+        && commitment.targetSessions is int && commitment.targetSessions >= commitment.minSessions && commitment.targetSessions <= 14
+        && commitment.maxSessions is int && commitment.maxSessions >= commitment.targetSessions && commitment.maxSessions <= 14
+        && data.organizationPreference == 'auto'
+        && data.schemaVersion is int && data.schemaVersion >= 1
+        && data.createdAt is string && data.updatedAt is string;
+    }
+
+    match /users/{userId}/training_intent/profile {
+      allow read: if isOwner(userId);
+      allow create: if hasValidTrainingIntentProfile(userId);
+      allow update: if hasValidTrainingIntentProfile(userId)
+        && keepsOwnership(userId)
+        && request.resource.data.createdAt == resource.data.createdAt;
+      allow delete: if isOwner(userId);
+    }
+
     match /users/{userId}/constraints/{constraintId} {
       allow read: if isOwner(userId);
       allow write: if false;

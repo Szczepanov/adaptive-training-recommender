@@ -71,7 +71,7 @@ all-`Ready` table became unusable.
 | 6 | [Evidence-driven calibration & operational assurance](./phase-6-evidence-and-operational-assurance.md) | **In progress** | **6.3, 6.6** | 6.5 needs Firebase owner/project; 6.7 needs 6.3–6.4 evidence; 6.2c's baseline acceptance is blocked (see below) | remaining F11, F12, F15 |
 | 6.2c | [Recommendation quality & weekly coverage](./phase-6-2c-recommendation-quality-and-weekly-coverage.md) | **In progress** | none | reviewed rest/recovery-spike finding (§9/§10 of the plan) | separates adaptation credit from weekly programming-role coverage; not an original review finding |
 | 7A | [Weekly allocation & safe role reservations](./phase-7-weekly-allocation-and-role-reservations.md) | **Implemented** (7A.6 open) | none | reviewed semantic-baseline acceptance only | resolves PR #17's healthy/fresh cycling role-coverage failure without recalibrating recovery |
-| 7B | [Training intent, capacity & planning modes](./phase-7-training-intent-and-planning-modes.md) | **Draft** | none | [ADR-0017](../adr/0017-training-intent-profile-and-planning-modes.md) acceptance; its baseline work follows 7A | evidence-derived Evergreen dose packed into real capacity, while preserving structured and demand-derived event planning — not an original review finding |
+| 7B | [Training intent, capacity & planning modes](./phase-7-training-intent-and-planning-modes.md) | **Approved** | none | none | evidence-derived Evergreen dose packed into real capacity, while preserving structured and demand-derived event planning — not an original review finding |
 
 Phases 0–5 are complete; Phase 6 has started with 6.1 baseline ownership and 6.2 (both
 Phase 5 correctness carryovers) implemented in PR #17, which bumped `POLICY_VERSION` to

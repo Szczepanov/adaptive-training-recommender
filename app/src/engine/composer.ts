@@ -1,10 +1,11 @@
-import type { DailyDecisionInput, DailyRecoverySnapshot, DailySubjectiveCheckin, TrainingSettings, UserGoal, UserPreferences } from './models';
+import type { DailyDecisionInput, DailyRecoverySnapshot, DailySubjectiveCheckin, TrainingIntentProfile, TrainingSettings, UserGoal, UserPreferences } from './models';
 import type { DataState } from './dataState';
 import { checkinService } from '../services/checkinService';
 import { goalService } from '../services/goalService';
 import { trainingSettingsService } from '../services/trainingSettingsService';
 import { preferencesService } from '../services/preferencesService';
 import { recoverySnapshotService } from '../services/recoverySnapshotService';
+import { trainingIntentProfileService } from '../services/trainingIntentProfileService';
 import { getLocalDateString } from '../utils/localDate';
 
 export class DecisionComposer {
@@ -21,7 +22,8 @@ export class DecisionComposer {
                 checkinService.getCheckinState(userId, targetDate),
                 goalService.getActiveGoalsState(userId),
                 trainingSettingsService.getTrainingSettingsState(userId),
-                preferencesService.getPreferencesState(userId)
+                preferencesService.getPreferencesState(userId),
+                trainingIntentProfileService.getProfileState(userId),
             ] as const);
 
             const unavailable = <T>(operation: string): DataState<T> => ({ status: 'UNAVAILABLE', operation, retryable: true });
@@ -46,6 +48,10 @@ export class DecisionComposer {
             const trainingSettings = trainingSettingsState.data;
             const preferencesState = results[4].status === 'fulfilled' ? results[4].value : unavailable<UserPreferences>('read preferences');
             const preferences = preferencesState.status === 'AVAILABLE' ? preferencesState.data : null;
+            const trainingIntentProfileState = results[5].status === 'fulfilled'
+                ? results[5].value
+                : unavailable<TrainingIntentProfile>('read training intent profile');
+            const trainingIntentProfile = trainingIntentProfileState.status === 'AVAILABLE' ? trainingIntentProfileState.data : null;
             const sourceStates = {
                 recoverySnapshot: recoveryState.status === 'AVAILABLE' ? { status: 'AVAILABLE' as const, revision: recoveryState.revision } : recoveryState,
                 subjectiveCheckin: checkinState.status === 'AVAILABLE' ? { status: 'AVAILABLE' as const, revision: checkinState.revision } : checkinState,
@@ -54,12 +60,15 @@ export class DecisionComposer {
                 preferences: preferencesState.status === 'AVAILABLE'
                     ? { status: 'AVAILABLE' as const, revision: preferencesState.revision }
                     : preferencesState,
+                trainingIntentProfile: trainingIntentProfileState.status === 'AVAILABLE'
+                    ? { status: 'AVAILABLE' as const, revision: trainingIntentProfileState.revision }
+                    : trainingIntentProfileState,
             };
 
             // Log permission errors for debugging
             results.forEach((result, index) => {
                 if (result.status === 'rejected') {
-                    const serviceNames = ['recoverySnapshot', 'checkinService', 'goalService', 'trainingSettingsService', 'preferencesService'];
+                    const serviceNames = ['recoverySnapshot', 'checkinService', 'goalService', 'trainingSettingsService', 'preferencesService', 'trainingIntentProfileService'];
                     console.warn(`${serviceNames[index]} failed:`, result.reason);
                     
                     // If it's a permission error, provide a helpful message
@@ -86,6 +95,7 @@ export class DecisionComposer {
                 activeGoals,
                 trainingSettings,
                 preferences,
+                trainingIntentProfile,
                 sourceStates,
                 dataQuality
             };

@@ -12,6 +12,7 @@ import type {
     UserContext,
     UserEvent,
     UserPreferences,
+    TrainingIntentProfile,
     WeeklyObjective,
     WorkoutCostProfile,
     WorkoutStimulusProfile,
@@ -1345,8 +1346,9 @@ export async function generateWeekAheadPlanWithIntent(
     options: WeekAheadOptions = {},
     historyProvider?: TrainingHistoryProvider,
     preparedHistorySnapshot?: TrainingHistorySnapshot | null,
+    trainingIntentProfile: TrainingIntentProfile | null = null,
 ): Promise<WeekAheadPlan> {
-    const intent = await resolveTrainingIntent(userId, events, todayDate, todayReadiness, 7, historyProvider, preparedHistorySnapshot, options.authoredPlanBlocks);
+    const intent = await resolveTrainingIntent(userId, events, todayDate, todayReadiness, 7, historyProvider, preparedHistorySnapshot, options.authoredPlanBlocks, trainingIntentProfile);
     return generateWeekAheadPlan(
         todayReadiness,
         context,
@@ -1360,6 +1362,6 @@ export async function generateWeekAheadPlanWithIntent(
             trailingHistory: trailingHistoryFromCompletedExposures(intent.history, todayDate),
             droppedContributorObjectives: intent.droppedContributorObjectives,
         },
-        { ...options, events },
+        { ...options, events: intent.planningContext.mode === 'event_directed' ? events : [] },
     );
 }
