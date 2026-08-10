@@ -257,12 +257,13 @@ export function beamSearchWeekAheadPlan(
                     date: todayDate, templateId: todayRec.template.id, category: todayRec.template.category,
                     modality: todayRec.template.modality, role: realizedSessionRole(todayDate, todayRec.template, anchors),
                     systemicCost: todayRec.template.systemicCost, lowerBodyCost: todayRec.template.costProfile?.lowerBody ?? 0,
+                    durationMin: todayRec.template.durationMin,
                     type: todayRec.template.title,
                 },
                 ...[...confirmedDays, ...branch.days].map(d => ({
                     date: d.date, templateId: d.template.id, category: d.template.category, modality: d.template.modality,
                     role: realizedSessionRole(d.date, d.template, anchors), systemicCost: d.template.systemicCost,
-                    lowerBodyCost: d.template.costProfile?.lowerBody ?? 0, type: d.template.title,
+                    lowerBodyCost: d.template.costProfile?.lowerBody ?? 0, durationMin: d.template.durationMin, type: d.template.title,
                 })),
             ];
 

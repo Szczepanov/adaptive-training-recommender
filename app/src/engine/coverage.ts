@@ -1,5 +1,6 @@
 import type { EventPlanCoverageKey, EventPlanPhase, EventPlanRequirement } from '../workouts/event-plan';
 import { SEPTEMBER_CYCLING_EVENT_SESSION_COVERAGE } from '../workouts/event-plan';
+import { WORKOUTS } from '../workouts/catalog';
 import { workoutForTemplate } from '../workouts/prescription';
 import type { ObjectivePriority, SessionTemplate } from './models';
 import type { PlanDefinition } from './planSchedule';
@@ -19,6 +20,9 @@ export interface ExposureIdentity {
     occurrenceKey?: string;
     templateId?: string;
     workoutId?: string;
+    /** Exact completed or projected duration. Coverage that requires a real aerobic dose
+     * fails closed when this evidence is unavailable or below the catalog minimum. */
+    durationMin?: number;
     modality?: SessionTemplate['modality'];
     category?: SessionTemplate['category'];
 }
@@ -79,7 +83,7 @@ const DEFERRED_SUPPORT_COVERAGE_KEYS = new Set<EventPlanCoverageKey>([
  * missed hard role. Primary strength remains a tier-1 required role, but it cannot veto
  * the next feasible cycling-quality repair. */
 const HARD_ROLE_REPAIR_PREREQUISITES = new Set<EventPlanCoverageKey>([
-    'easy_aerobic',
+    'aerobic_volume',
 ]);
 
 export function workoutIdForTemplateId(templateId: string | undefined): string | undefined {
@@ -96,6 +100,14 @@ export function coverageKeysForExposure(
     if (!workoutId) return [];
     return SEPTEMBER_CYCLING_EVENT_SESSION_COVERAGE
         .filter(item => item.phases.includes(phase) && item.workoutIds.includes(workoutId))
+        .filter(item => {
+            if (item.key !== 'aerobic_volume') return true;
+            const minimumDuration = WORKOUTS.find(workout => workout.id === workoutId)?.duration.minimumMin;
+            return typeof minimumDuration === 'number'
+                && typeof identity.durationMin === 'number'
+                && Number.isFinite(identity.durationMin)
+                && identity.durationMin >= minimumDuration;
+        })
         .map(item => item.key);
 }
 
@@ -107,6 +119,7 @@ export function coverageKeysForTemplate(
         templateId: template.id,
         modality: template.modality,
         category: template.category,
+        durationMin: template.durationMin,
     }, phase);
 }
 
@@ -165,7 +178,9 @@ export function buildCoverageState(
     }
 
     const rollingWindowDays = 7;
-    const rollingStart = addDaysToLocalDateString(asOfDate, -(rollingWindowDays - 1));
+    // `asOfDate` is exclusive, so the preceding seven calendar dates start seven days
+    // back (not six). This keeps a full seven completed/projected exposures eligible.
+    const rollingStart = addDaysToLocalDateString(asOfDate, -rollingWindowDays);
     const windowStart = laterDate(block.startDate, rollingStart);
     const activeDefinitions = planDefinition.objectives.filter(definition => definition.blockId === block.id);
     const requirementsByKey = new Map<EventPlanCoverageKey, WeeklyCoverageRequirement>();

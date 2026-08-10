@@ -7,7 +7,12 @@ import { evaluatePeriodizationPhase } from './periodization';
 import { creditObjectivesFromStimulus, generateWeeklyObjectives } from './microcycle';
 import { createEmptyFatigue } from './fatigue';
 import { generateWeekAheadPlan } from './planner';
-import { coverageKeysForTemplate } from './coverage';
+import {
+    buildCoverageState,
+    coverageKeysForTemplate,
+    getUnfulfilledRequiredCoverage,
+    getUnfulfilledTargetCoverage,
+} from './coverage';
 import { addDaysToLocalDateString, getDayDiff } from '../utils/localDate';
 
 const TODAY = '2026-08-09';
@@ -127,15 +132,30 @@ describe('escaped coaching contract: Specificity after hard race-specific day -1
             { days: 7, events: [focusEvent] },
         );
 
+        const coverageAsOfDate = addDaysToLocalDateString(TODAY, 8);
+        const coverageState = buildCoverageState(
+            planState.data,
+            coverageAsOfDate,
+            week.days.map(day => ({
+                date: day.date,
+                templateId: day.template.id,
+                durationMin: day.template.durationMin,
+                source: 'projected' as const,
+            })),
+        );
+        if (!coverageState.phase) throw new Error('expected an active authored coverage block');
+        const aerobicVolume = coverageState.requirements.find(item => item.key === 'aerobic_volume');
+        expect(aerobicVolume).toMatchObject({ minimumSessions: 1, targetSessions: 2 });
+
         const coverageByDay = week.days.map(day => ({
             date: day.date,
-            keys: coverageKeysForTemplate(day.template, 'peak'),
+            keys: coverageKeysForTemplate(day.template, coverageState.phase),
             template: day.template,
         }));
         const sequence = coverageByDay
             .map(day => `${day.date}:${day.template.id}:${day.template.category}[${day.keys.join(',')}]`)
             .join(' | ');
-        expect(coverageByDay.some(day => day.keys.includes('easy_aerobic')), sequence).toBe(true);
+        expect(coverageByDay.some(day => day.keys.includes('aerobic_volume')), sequence).toBe(true);
         expect(coverageByDay.some(day => day.keys.includes('sustained_quality')), sequence).toBe(true);
         expect(coverageByDay.some(day => day.keys.includes('outdoor_event_specific')), sequence).toBe(true);
 
@@ -150,5 +170,12 @@ describe('escaped coaching contract: Specificity after hard race-specific day -1
         const technicalCount = week.days.filter(day => day.template.category === 'Technical Skill').length;
         const mobilityCount = week.days.filter(day => day.template.category === 'Mobility/Recovery').length;
         expect(technicalCount + mobilityCount, sequence).toBeLessThan(week.days.length);
+
+        const unresolvedMinimum = getUnfulfilledRequiredCoverage(coverageState).map(item => item.key);
+        const unresolvedTarget = getUnfulfilledTargetCoverage(coverageState).map(item => item.key);
+        expect(unresolvedMinimum, sequence).not.toContain('aerobic_volume');
+        expect(unresolvedMinimum, sequence).not.toContain('sustained_quality');
+        expect(unresolvedMinimum, sequence).not.toContain('outdoor_event_specific');
+        expect(unresolvedTarget, sequence).toContain('aerobic_volume');
     });
 });

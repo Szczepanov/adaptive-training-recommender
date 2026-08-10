@@ -60,7 +60,7 @@ describe('Phase 6.2c event-relative cycling PlanDefinition', () => {
         for (const blockId of ['block_build', 'block_peak']) {
             const defs = result.data.objectives.filter(item => item.blockId === blockId);
             const byCoverage = new Map(defs.map(item => [item.coverageKey, item]));
-            expect(byCoverage.get('easy_aerobic')).toMatchObject({ coverageMinimumSessions: 1, coverageTargetSessions: 2 });
+            expect(byCoverage.get('aerobic_volume')).toMatchObject({ coverageMinimumSessions: 1, coverageTargetSessions: 2 });
             expect(byCoverage.get('sustained_quality')?.coverageMinimumSessions).toBe(1);
             expect(byCoverage.get('outdoor_event_specific')?.coverageMinimumSessions).toBe(1);
             expect(byCoverage.get('primary_strength')?.coverageMinimumSessions).toBe(1);

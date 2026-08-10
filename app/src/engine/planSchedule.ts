@@ -131,7 +131,7 @@ function developmentalObjectives(
 ): PlanObjectiveDefinition[] {
   const objectives: PlanObjectiveDefinition[] = [
     {
-      key: 'zone2_aerobic', coverageKey: 'easy_aerobic', blockId,
+      key: 'zone2_aerobic', coverageKey: 'aerobic_volume', blockId,
       requiredCredit: blockId === 'block_build' ? 2 : 1,
       priority: 'must_have', role: 'primary_developmental',
       coverageMinimumSessions: 1, coverageTargetSessions: 2,
@@ -217,7 +217,7 @@ export function buildCyclingEventPlan(event: UserEvent): DataState<PlanDefinitio
   if (taperDays > 0) {
     objectives.push(
       {
-        key: 'zone2_aerobic', coverageKey: 'easy_aerobic', blockId: 'block_taper',
+        key: 'zone2_aerobic', coverageKey: 'aerobic_volume', blockId: 'block_taper',
         requiredCredit: 1, priority: 'must_have', role: 'primary_developmental',
         coverageMinimumSessions: 1, coverageTargetSessions: 1,
       },

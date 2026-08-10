@@ -338,6 +338,10 @@ export function projectTrailingHistory(
         const completedDate = 'completedDate' in e && typeof e.completedDate === 'string' ? e.completedDate : undefined;
         const rec = e as Record<string, unknown>;
         const recordType = rec.trainingRecordLike && typeof rec.trainingRecordLike === 'object' && 'type' in (rec.trainingRecordLike as object) ? (rec.trainingRecordLike as { type?: string }).type : undefined;
+        const recordDurationMin = rec.trainingRecordLike && typeof rec.trainingRecordLike === 'object'
+            && typeof (rec.trainingRecordLike as { duration_min?: unknown }).duration_min === 'number'
+            ? (rec.trainingRecordLike as { duration_min: number }).duration_min
+            : undefined;
         const costProf = rec.costProfile && typeof rec.costProfile === 'object' ? rec.costProfile as Record<string, number> : undefined;
         const systemic = costProf?.systemic;
 
@@ -352,6 +356,8 @@ export function projectTrailingHistory(
         if ('role' in e && e.role) item.role = e.role;
         if ('templateId' in e && e.templateId) item.templateId = e.templateId;
         if ('lowerBodyCost' in e && typeof e.lowerBodyCost === 'number') item.lowerBodyCost = e.lowerBodyCost;
+        if ('durationMin' in e && typeof e.durationMin === 'number') item.durationMin = e.durationMin;
+        else if (recordDurationMin !== undefined) item.durationMin = recordDurationMin;
         return item;
     });
 }
@@ -367,6 +373,7 @@ export function trailingHistoryFromCompletedExposures(
         category: e.category,
         systemicCost: e.costProfile?.systemic ?? 0,
         lowerBodyCost: e.costProfile?.lowerBody ?? 0,
+        durationMin: e.trainingRecordLike.duration_min,
     }));
 }
 
@@ -852,6 +859,7 @@ export function generateWeekAheadPlan(
                 role: realizedSessionRole(todayDate, todayRec.template, anchors),
                 systemicCost: todayRec.template.systemicCost,
                 lowerBodyCost: todayRec.template.costProfile?.lowerBody ?? 0,
+                durationMin: todayRec.template.durationMin,
                 type: todayRec.template.title,
             },
             ...resultDays.map(d => ({
@@ -862,6 +870,7 @@ export function generateWeekAheadPlan(
                 role: realizedSessionRole(d.date, d.template, anchors),
                 systemicCost: d.template.systemicCost,
                 lowerBodyCost: d.template.costProfile?.lowerBody ?? 0,
+                durationMin: d.template.durationMin,
                 type: d.template.title,
             })),
         ];

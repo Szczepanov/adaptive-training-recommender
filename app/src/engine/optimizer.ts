@@ -52,6 +52,7 @@ export interface RecentHistoryEntry {
     role?: SessionRole;
     systemicCost?: number;
     lowerBodyCost?: number;
+    durationMin?: number;
 }
 
 export interface OptimizationOptions {
@@ -395,6 +396,10 @@ export function buildOptimizationContext(
         const rec = e as Record<string, unknown>;
         const recType = rec.trainingRecordLike && typeof rec.trainingRecordLike === 'object' && 'type' in (rec.trainingRecordLike as object)
             ? (rec.trainingRecordLike as { type?: string }).type : undefined;
+        const recordDurationMin = rec.trainingRecordLike && typeof rec.trainingRecordLike === 'object'
+            && typeof (rec.trainingRecordLike as { duration_min?: unknown }).duration_min === 'number'
+            ? (rec.trainingRecordLike as { duration_min: number }).duration_min
+            : undefined;
         const costProf = rec.costProfile && typeof rec.costProfile === 'object' ? rec.costProfile as Record<string, number> : undefined;
         const systemic = costProf?.systemic;
         const lowerBody = costProf?.lowerBody;
@@ -408,6 +413,11 @@ export function buildOptimizationContext(
             role: e.role,
             systemicCost: e.systemicCost ?? systemic ?? 0,
             lowerBodyCost: ('lowerBodyCost' in e && typeof e.lowerBodyCost === 'number') ? e.lowerBodyCost : (lowerBody ?? 0),
+            ...((typeof (e as Record<string, unknown>).durationMin === 'number') || recordDurationMin !== undefined
+                ? { durationMin: typeof (e as Record<string, unknown>).durationMin === 'number'
+                    ? (e as Record<string, number>).durationMin
+                    : recordDurationMin }
+                : {}),
             type: entryType ?? recType,
         };
     });
@@ -417,7 +427,9 @@ export function buildOptimizationContext(
         resolvePlanDefinitionForEvent(focusEvent),
         date,
         rawHistory.flatMap(entry => entry.date && entry.templateId
-            ? [{ date: entry.date, templateId: entry.templateId }]
+            ? [{ date: entry.date, templateId: entry.templateId, ...(typeof (entry as Record<string, unknown>).durationMin === 'number'
+                ? { durationMin: (entry as Record<string, number>).durationMin }
+                : {}) }]
             : []),
     );
 

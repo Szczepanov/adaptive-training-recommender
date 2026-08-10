@@ -27,17 +27,19 @@ describe('ADR-0016 coverage occurrence idempotency', () => {
                 occurrenceKey: 'recommendation:2026-08-18',
                 date: '2026-08-18',
                 templateId: 'end_easy_01',
+                durationMin: 60,
                 source: 'projected',
             },
             {
                 occurrenceKey: 'recommendation:2026-08-18',
                 date: '2026-08-18',
                 templateId: 'end_easy_01',
+                durationMin: 60,
                 source: 'completed',
             },
         ]);
 
-        const easy = state.requirements.find(item => item.key === 'easy_aerobic');
+        const easy = state.requirements.find(item => item.key === 'aerobic_volume');
         expect(easy).toBeDefined();
         expect((easy?.completedSessions ?? 0) + (easy?.projectedSessions ?? 0)).toBe(1);
         expect(easy?.credits).toHaveLength(1);
@@ -50,17 +52,19 @@ describe('ADR-0016 coverage occurrence idempotency', () => {
                 occurrenceKey: 'recommendation:2026-08-18',
                 date: '2026-08-18',
                 templateId: 'end_easy_01',
+                durationMin: 60,
                 source: 'completed',
             },
             {
                 occurrenceKey: 'recommendation:2026-08-19',
                 date: '2026-08-19',
                 templateId: 'end_easy_01',
+                durationMin: 60,
                 source: 'completed',
             },
         ]);
 
-        const easy = state.requirements.find(item => item.key === 'easy_aerobic');
+        const easy = state.requirements.find(item => item.key === 'aerobic_volume');
         expect(easy?.completedSessions).toBe(2);
         expect(easy?.credits.map(item => item.occurrenceKey).sort()).toEqual([
             'recommendation:2026-08-18',

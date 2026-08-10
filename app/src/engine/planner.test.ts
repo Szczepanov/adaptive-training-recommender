@@ -281,9 +281,13 @@ describe('generateWeekAheadPlan', () => {
             trainingRecordLike: { type: 'hard Cycling threshold', duration_min: 45, training_effect: 3, intensity_tag: 'hard' },
         }];
 
-        expect(projectTrailingHistory(history)).toEqual([{ date: '2026-08-05', type: 'hard Cycling threshold', systemicCost: 0.8 }]);
+        expect(projectTrailingHistory(history)).toEqual([{
+            date: '2026-08-05', type: 'hard Cycling threshold', systemicCost: 0.8, durationMin: 45,
+        }]);
         expect(prepareWeekAheadPlanSeed(readiness, [], '2026-08-07', history).trailingHistory)
-            .toEqual([{ date: '2026-08-05', type: 'hard Cycling threshold', systemicCost: 0.8 }]);
+            .toEqual([{
+                date: '2026-08-05', type: 'hard Cycling threshold', systemicCost: 0.8, durationMin: 45,
+            }]);
     });
 
     it('suppresses a hard Cycling candidate at a fresh plan boundary when real trailing history has two hard Cycling days', () => {

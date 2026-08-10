@@ -31,7 +31,7 @@ describe('Phase 6.2c fixed-activity exact identity', () => {
             category: 'Easy Endurance',
             exactCatalogIdentity: true,
         });
-        expect(coverageKeysForExposure(identity ?? {}, 'peak')).toContain('easy_aerobic');
+        expect(coverageKeysForExposure({ ...identity, durationMin: 60 }, 'peak')).toContain('aerobic_volume');
     });
 
     it('fails closed when supplied template and workout ids disagree', () => {
