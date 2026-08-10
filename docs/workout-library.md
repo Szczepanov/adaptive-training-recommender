@@ -41,7 +41,7 @@ When a reference is absent, the displayed plan stays relative: RPE/RIR takes pre
 
 ## Source of the catalogue
 
-The catalogue is grounded in the active Sustained Multidirectional Field Macrocycle v5.0 and covers the complete path to the September cycling event:
+The catalogue is grounded in the active [Sustained Multidirectional Field Macrocycle v5.0](./macrocycle-v5.md) and covers the complete path to the September cycling event. The macrocycle is the source of truth for the authored taper branches, Zone-2 floor, and travel-week prescription; catalog entries remain reusable rather than date-bound.
 
 - cycling Zone 2 and recovery riding;
 - controlled threshold and over-under work;

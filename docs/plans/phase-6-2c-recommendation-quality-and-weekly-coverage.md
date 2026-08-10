@@ -2,6 +2,7 @@
 
 * **Status:** Code and tests implemented and green on PR #17; architecture decision accepted in ADR-0016. Semantic-baseline acceptance is **blocked** on an unexplained rest/recovery-share spike -- see §9's "Root-cause finding" and §10.
 * **Architecture contract:** [`docs/adr/0016-adaptation-credit-and-weekly-coverage.md`](../adr/0016-adaptation-credit-and-weekly-coverage.md).
+* **Coaching source authority:** [`docs/macrocycle-v5.md`](../macrocycle-v5.md).
 * **Behavior change:** yes; `POLICY_VERSION` is bumped and semantic changes must be reviewed before baseline mutation/merge.
 * **Runtime calendar rule:** cycling plan blocks are derived from `event.timing?.planningDate ?? event.date`; there is no literal September race date in planning authority.
 * **Regression-fixture rule:** test dates may be fixed for determinism, but fixtures must be synthetic and **relative-date-based** in what they assert.
@@ -12,7 +13,7 @@
 
 Represent **physiological adaptation credit** and **weekly programming-role fulfillment** as different concepts.
 
-A hard race-specific cycling session may legitimately earn aerobic, threshold, fatigue-resistance, and surge adaptation. That does **not** mean it fulfilled a required `easy_aerobic` or `sustained_quality` programming role. The weekly plan must be able to preserve distinct easy aerobic, sustained quality, event-specific, strength, and recovery functions while existing safety/readiness/spacing gates remain authoritative.
+A hard race-specific cycling session may legitimately earn aerobic, threshold, fatigue-resistance, and surge adaptation. That does **not** mean it fulfilled a required `aerobic_volume` or `sustained_quality` programming role. The weekly plan must be able to preserve distinct aerobic-volume, sustained-quality, event-specific, strength, and recovery functions while existing safety/readiness/spacing gates remain authoritative.
 
 The escaped case that motivated this increment is now a named contract: `cycling_specificity_after_hard_race_specific` — an A-priority cycling event in Specificity with exact hard Race-Specific Cycling history on day -1.
 

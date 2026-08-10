@@ -14,7 +14,7 @@ and `threshold_quality`, after which low-cost technical/recovery sessions can do
 rest of the week.
 
 The workout catalog already declares a different concept in `workouts/event-plan.ts`:
-explicit programming roles such as `easy_aerobic`, `sustained_quality`,
+explicit programming roles such as `aerobic_volume`, `sustained_quality`,
 `outdoor_event_specific`, and `primary_strength`. Those roles are not equivalent to
 stimulus axes.
 
@@ -22,6 +22,10 @@ The escaped case that forced the decision was an A-priority cycling athlete in S
 a hard race-specific ride on day -1 was followed by a rolling week dominated by one more
 race-specific session plus Pedalling Economy and Yoga/Mobility. Immediate recovery after
 the hard ride was defensible; the whole-week collapse was not.
+
+The active [macrocycle v5 source](../macrocycle-v5.md) supplies the coaching contract for
+the true Zone-2 floor, race-week taper branches, and authored travel prescription that
+this decision must preserve.
 
 ## Decision
 
