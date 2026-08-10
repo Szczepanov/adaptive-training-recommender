@@ -182,6 +182,13 @@ describe('scenario quality diagnostics', () => {
         expect(stressedCredit).toBeLessThanOrEqual(baselineCredit * 1.2);
     });
 
+    it('clears an acute high-fatigue trajectory into train-tier days after a healthy check-in', async () => {
+        const result = await getResult('cycling_criterium_recovery_clear_A');
+        expect(result.weekSummaries).toHaveLength(2);
+        expect(result.weekSummaries[0].fatigueTierDayCounts.recover).toBeGreaterThan(0);
+        expect(result.weekSummaries[1].fatigueTierDayCounts.train).toBeGreaterThan(0);
+    });
+
     it('surfaces coach-quality failures separately from hard constraint violations', async () => {
         const result = await getResult('triathlon_olympic_A');
         expect(result.constraintViolations).toEqual([]);

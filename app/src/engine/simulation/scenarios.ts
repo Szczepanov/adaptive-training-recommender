@@ -151,6 +151,24 @@ export const SCENARIOS: AthleteScenario[] = [
         ),
     },
     {
+        id: 'cycling_criterium_recovery_clear_A',
+        label: 'Cycling A-event (criterium, acute stress then recovery)',
+        description: 'A high-fatigue check-in is followed by a healthy check-in one week later. The second decision window must contain train-tier days, proving the fatigue projection clears rather than holding the athlete in recover indefinitely after acute stress.',
+        context: context({ indoor_bike: true, free_weights: true }, ['Cycling']),
+        event: eventOn('e-criterium-recovery-clear', 40, 'cycling_event', 'criterium', 'A'),
+        startDate: START_DATE,
+        weeks: 2,
+        readinessForWeek: (weekIndex) => weekIndex === 0
+            ? stableReadiness(
+                { readiness: 3, sleepQuality: 3, fatigue: 8, soreness: 8, stress: 8, motivation: 3 },
+                { sleep_score: 55, sleep_duration_min: 330, rhr: 58, rhr_7d_avg: 50, rhr_delta: 8, hrv_last_night: 32, hrv_weekly_avg: 50, hrv_delta: -18, body_battery_wake: 35 },
+            )
+            : stableReadiness(
+                { readiness: 8, sleepQuality: 8, fatigue: 2, soreness: 2, stress: 2, motivation: 8 },
+                { sleep_score: 92, sleep_duration_min: 500, rhr: 46, rhr_7d_avg: 50, rhr_delta: -4, hrv_last_night: 65, hrv_weekly_avg: 50, hrv_delta: 15, body_battery_wake: 95 },
+            ),
+    },
+    {
         id: 'running_marathon_A',
         label: 'Running A-event (marathon, 40 days out)',
         description: 'No indoor bike -- verifies the plan never leans on Cycling equipment the athlete does not own, and that running-relevant templates dominate a running-focused build.',

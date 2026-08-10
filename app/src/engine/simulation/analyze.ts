@@ -26,6 +26,11 @@ export interface ScenarioResult {
     objectiveResolution: ObjectiveTally[]; objectiveCredits: ObjectiveCredit[]; utilityDiagnostics: UtilityDiagnosticsSummary;
     qualityWarnings: string[]; anchorWeeks: AnchorWeekResult[]; anchorScopeNote: string | null;
     fatigueTierDayCounts: { train: number; modify: number; recover: number }; constraintViolations: string[];
+    weekSummaries: Array<{
+        weekIndex: number;
+        fatigueTierDayCounts: { train: number; modify: number; recover: number };
+        restOrRecoveryDayCount: number;
+    }>;
 }
 
 function equipmentSatisfied(context: UserContext, required: EquipmentKey[]): boolean {
@@ -123,6 +128,15 @@ function computeMetrics(
 
     const maxConsecutiveSameTemplateStreakWithinCall = Math.max(0, ...weeklyDays.map(longestStreak));
     const maxConsecutiveSameTemplateStreakAcrossWeeks = longestStreak(allDays);
+    const weekSummaries = weeklyDays.map((days, weekIndex) => {
+        const weekFatigueTiers = { train: 0, modify: 0, recover: 0 };
+        let weekRestOrRecoveryDays = 0;
+        days.forEach(day => {
+            if (day.template.category === 'Rest' || day.template.category === 'Mobility/Recovery') weekRestOrRecoveryDays += 1;
+            if (day.diagnostics) weekFatigueTiers[day.diagnostics.fatigueTier] += 1;
+        });
+        return { weekIndex, fatigueTierDayCounts: weekFatigueTiers, restOrRecoveryDayCount: weekRestOrRecoveryDays };
+    });
     const isCyclingRelevantEvent = scenario.event?.category === 'cycling_event' || scenario.event?.category === 'triathlon';
     const anchorScopeNote = isCyclingRelevantEvent ? null :
         'Anchor-day nomination only requires SOME focus event (Race-Specific Endurance templates\' phaseEligibility.requiresFocusEvent doesn\'t check event category), so a nomination can appear even here -- but the optimizer\'s event-priority penalty for non-matching modalities makes it unlikely to actually win the day\'s pick. Treat eventSpecificAnchorHit/qualityAnchorHit, not the raw nomination, as the meaningful signal for non-cycling scenarios.';
@@ -150,7 +164,7 @@ function computeMetrics(
         maxConsecutiveSameTemplateStreakWithinCall, maxConsecutiveSameTemplateStreakAcrossWeeks,
         objectiveResolution, objectiveCredits,
         utilityDiagnostics: { fragileSelectionCount, lowerBenefitSelectionCount, trainTierRestOrRecoveryCount },
-        qualityWarnings, anchorWeeks, anchorScopeNote, fatigueTierDayCounts, constraintViolations,
+        qualityWarnings, anchorWeeks, anchorScopeNote, fatigueTierDayCounts, constraintViolations, weekSummaries,
     };
 }
 
