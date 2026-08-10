@@ -1,13 +1,19 @@
-# Phase 7 — Training intent, capacity, and first-class planning modes
+# Phase 7B — Training intent, capacity, and first-class planning modes
 
 * **Status:** `Draft`
-* **Blocked by:** ADR-0017 acceptance; 7.8's baseline bless is additionally blocked by the
-  6.2c rest/recovery-share finding (see [phase-6-2c](./phase-6-2c-recommendation-quality-and-weekly-coverage.md) §9/§10)
+* **Blocked by:** ADR-0017 acceptance; any semantic-baseline review follows Phase 7A's
+  allocation acceptance criteria.
 * **Unlocks:** evergreen (non-event) athletes as a supported population; a reachable
   coverage ledger outside cycling events; capacity-sized weekly targets
 * **Decisions:** [ADR-0017](../adr/0017-training-intent-profile-and-planning-modes.md)
   (D-MODE, D-CAP, D-COVSET, D-ORG, D-TAPERSCOPE, D-INTENTNAME)
 * **Source analysis:** `training_intent_periodization_architecture_analysis.md`, 2026-08-10
+
+> **Scope separation (2026-08-10):** the PR #17 semantic-baseline follow-up identified
+> an immediate weekly-allocation defect in the existing event-directed cycling path. That
+> work is [Phase 7A](./phase-7-weekly-allocation-and-role-reservations.md), governed by
+> ADR-0018. This proposal remains the separate, future evergreen/capacity initiative; it
+> must not be used to change or bless the PR #17 semantic baseline.
 
 ## Goal
 
@@ -22,9 +28,9 @@ changing any behaviour for the event-directed cycling athlete that Phases 2–6 
 1. ADR-0017 accepted. Work items 7.1–7.4 encode its decisions and should not start while
    D-MODE or D-COVSET are still open.
 2. `cd app && npm run check` green on `codex/phase-0-5-completion-audit`.
-3. A `simulate:diff` baseline exists. **7.8 must not bless a new baseline while 6.2c's
-   rest/recovery-share finding is open** — that finding is a pre-existing fatigue-model
-   interaction, and folding it into a Phase 7 diff would make both unreadable.
+3. A `simulate:diff` baseline exists. **7.8 must not bless a new baseline before
+   Phase 7A's allocation criteria pass** — it owns the existing event-directed semantic
+   blocker, and folding it into an evergreen diff would make both unreadable.
 
 ---
 
@@ -317,9 +323,9 @@ hard-constraint fallback path in `rulesHardConstraintFallback.test.ts`.
   strength-leaning athlete. Without these the diff cannot show whether evergreen behaviour
   is sane, only that event-directed behaviour is unchanged.
 * **Baseline**: run `npm run simulate:diff`. **Event-directed scenarios must be
-  byte-identical.** Any movement there is a Phase 7 regression, not a recalibration. Do not
-  bless a new `docs/analysis/simulation-baseline.json` while the 6.2c rest/recovery-share
-  finding is open.
+  byte-identical except for the reviewed Phase 7A allocation correction.** Any other
+  movement is a Phase 7B regression, not a recalibration. Do not bless a new
+  `docs/analysis/simulation-baseline.json` before Phase 7A's criteria pass.
 
 **Done when:** the diff shows zero change on every pre-existing scenario, the new evergreen
 scenarios produce no `qualityWarnings` or `constraintViolations`, and the policy-drift
@@ -338,7 +344,7 @@ guard passes.
   does not have.
 * `docs/architecture/recommendation-engine.md` — document the mode resolution and the two
   coverage sets.
-* `docs/plans/README.md` — add the Phase 7 row and the ADR-0017 decision-register entries.
+* `docs/plans/README.md` — update the Phase 7B row and the ADR-0017 decision-register entries.
 
 **Done when:** a profile can be created, edited and read back through the UI, and the
 architecture doc's description matches `planningMode.ts` and `evergreenStrategy.ts`.
@@ -411,7 +417,7 @@ Every item is independently revertible. 7.1 and 7.7 land value without 7.3–7.5
 
 * [ADR-0017](../adr/0017-training-intent-profile-and-planning-modes.md) — accept before 7.1.
 * `docs/architecture/recommendation-engine.md` — mode resolution, coverage registry.
-* `docs/plans/README.md` — Phase 7 row; D-MODE / D-CAP / D-COVSET / D-ORG / D-TAPERSCOPE
+* `docs/plans/README.md` — Phase 7B row; D-MODE / D-CAP / D-COVSET / D-ORG / D-TAPERSCOPE
   in the decision register.
 * `docs/macrocycle-v5.md` — no change. It is the event-directed contract and stays that.
 

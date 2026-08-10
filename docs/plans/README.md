@@ -70,24 +70,19 @@ all-`Ready` table became unusable.
 | 5 | [Sequence planning](./phase-5-sequence-planning.md) | **Implemented** | — | — | the cutover proper |
 | 6 | [Evidence-driven calibration & operational assurance](./phase-6-evidence-and-operational-assurance.md) | **In progress** | **6.3, 6.6** | 6.5 needs Firebase owner/project; 6.7 needs 6.3–6.4 evidence; 6.2c's baseline acceptance is blocked (see below) | remaining F11, F12, F15 |
 | 6.2c | [Recommendation quality & weekly coverage](./phase-6-2c-recommendation-quality-and-weekly-coverage.md) | **In progress** | none | reviewed rest/recovery-spike finding (§9/§10 of the plan) | separates adaptation credit from weekly programming-role coverage; not an original review finding |
-| 7 | [Training intent, capacity & planning modes](./phase-7-training-intent-and-planning-modes.md) | **Draft** | none | [ADR-0017](../adr/0017-training-intent-profile-and-planning-modes.md) acceptance; 7.8's baseline bless also waits on 6.2c | evergreen (non-event) athletes; capacity-sized targets; coverage reachable outside cycling events — not an original review finding |
+| 7A | [Weekly allocation & safe role reservations](./phase-7-weekly-allocation-and-role-reservations.md) | **Draft** | none | [ADR-0018](../adr/0018-weekly-allocation-and-role-reservations.md) acceptance; reviewed semantic-baseline criteria | resolves PR #17's healthy/fresh cycling role-coverage failure without recalibrating recovery |
+| 7B | [Training intent, capacity & planning modes](./phase-7-training-intent-and-planning-modes.md) | **Draft** | none | [ADR-0017](../adr/0017-training-intent-profile-and-planning-modes.md) acceptance; its baseline work follows 7A | evergreen (non-event) athletes; capacity-sized targets; coverage reachable outside cycling events — not an original review finding |
 
 Phases 0–5 are complete; Phase 6 has started with 6.1 baseline ownership and 6.2 (both
 Phase 5 correctness carryovers) implemented in PR #17, which bumped `POLICY_VERSION` to
 `2026-08-phase6-correctness-carryovers-v1`. 6.2c (adaptation-credit/weekly-coverage
 separation, [ADR-0016](../adr/0016-adaptation-credit-and-weekly-coverage.md)) followed to
 close a further review finding; its code and dedicated contract tests are complete and
-green, but its own plan (§9/§10) blocks blessing the semantic baseline on an unexplained
-rest/recovery-share spike (14–43% → 50% in several healthy cycling scenarios) surfaced by
-`simulate:diff` -- exactly the pattern its own rollback conditions name. This looks like a
-pre-existing fatigue-model interaction (`Mobility/Recovery`'s non-zero cost profile
-narrowly outscoring zero-cost `Rest` in `calculateStimulusBenefit`, so a multi-day recover
-stretch keeps adding cost instead of decaying) newly exposed by 6.2c's coverage-driven day
-selection, not a logic bug in 6.2c itself -- see the phase-6-2c plan for detail. The next
-priority is resolving that finding (a targeted, evidence-reviewed fix, or explicit
-deferral to 6.7) before updating the baseline, then 6.3's scenario input contract. Phase
-5.1 remains a measured but non-production beam-search prototype; the live planner is
-still greedy.
+green. PR #17's follow-up narrowed the semantic-baseline blocker: recover-tier behaviour
+is correct, but the greedy planner can lose eligible cycling roles after supporting work
+is seeded. [Phase 7A](./phase-7-weekly-allocation-and-role-reservations.md) now owns that
+explicit allocation/reservation contract. The Phase 5.1 beam-search prototype remains
+measured but non-production; the live planner stays greedy until ADR-0015 is revisited.
 
 ---
 
@@ -110,11 +105,24 @@ this table exists so none of them has to be rediscovered by reading six document
 | **D-BEAM** | Beam search is approved to be **built and measured**, not to be shipped regardless of result | [5 increment order](./phase-5-sequence-planning.md) | Whether it beats greedy is empirical; "it didn't" is a valid, useful outcome |
 | **D-LIFE** | Recommendations become append-only revisions; decision fields immutable *per revision* | [1.3](./phase-1-live-defects.md) | Same-day recomputation is a real second decision; naive field-pinning would reject it and leave the audit contradicting the UI |
 | **D-RECOV** | `EventPlanPhase` gains a canonical `recovery` member | [2.1 D1](./phase-2-plan-intent-authority.md) | Mapping `Post-Event Recovery → build` would make fitness-developing objectives eligible during recovery |
+
+### Proposed decisions awaiting acceptance
+
+These decisions are intentionally **not** part of the accepted register above. Their
+plans remain Draft and must not be implemented until the linked ADR is accepted.
+
+| ID | Proposal | Where | One-line reason |
+|---|---|---|---|
 | **D-MODE** | `evergreen` and `event_directed` are first-class planning modes; no fake event | [ADR-0017](../adr/0017-training-intent-profile-and-planning-modes.md) | `DEFAULT_BASE_DEMAND` is a fabricated event, and it sizes every eventless athlete's week identically |
 | **D-CAP** | Weekly session capacity is persisted human input; targets are derived from it | [ADR-0017](../adr/0017-training-intent-profile-and-planning-modes.md) | Nothing in the schema knows whether the athlete trains twice or six times a week |
 | **D-COVSET** | The coverage catalog becomes a named registry, not a module constant | [ADR-0017](../adr/0017-training-intent-profile-and-planning-modes.md) | One athlete's September road race is currently the only coverage vocabulary the engine can express |
 | **D-ORG** | Only Auto/Adaptive Hybrid ships; linear/undulating/block are persisted, not consumed | [ADR-0017](../adr/0017-training-intent-profile-and-planning-modes.md) | Comparative periodization evidence is mixed; shipping three untested organisations buys nothing |
 | **D-TAPERSCOPE** | Taper requires a real event; a star rating is not one | [ADR-0017](../adr/0017-training-intent-profile-and-planning-modes.md) | `deriveEventPriority(5) → 'A'` currently grants a dated `general_target` goal a 14-day taper |
+| **D-RESERVE** | Allocate exact, eligible minimum coverage roles before support work | [ADR-0018](../adr/0018-weekly-allocation-and-role-reservations.md) | Anchor modifiers cannot preserve a future role opportunity in a greedy loop |
+| **D-FEASIBILITY** | Reuse production eligibility and revalidate reservations after every pick | [ADR-0018](../adr/0018-weekly-allocation-and-role-reservations.md) | A second planner would drift from safety, spacing, and fatigue gates |
+| **D-SUPPORT** | Supporting work may not destroy the last safe allocation | [ADR-0018](../adr/0018-weekly-allocation-and-role-reservations.md) | Reduced-dose support is useful only when it preserves required role opportunity |
+| **D-MISS** | Forecast required-role misses are typed, first-class diagnostics | [ADR-0018](../adr/0018-weekly-allocation-and-role-reservations.md) | Safety-forced omission must be distinguishable from a scheduling defect |
+| **D-NO-BEAM** | Keep production greedy; do not treat this fix as beam-search adoption | [ADR-0018](../adr/0018-weekly-allocation-and-role-reservations.md) | ADR-0015 deferred adoption for measured latency and coaching-review reasons |
 
 Five of these — **D-KWD**, **D-GATE**, **D-LIFE**, **D-RECOV**, and the withdrawal inside
 **D-FUSE** — correct errors in earlier drafts and came out of PR #5 review rounds rather
