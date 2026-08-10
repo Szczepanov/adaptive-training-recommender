@@ -35,9 +35,11 @@ import {
     createEmptyFatigue,
     applyCompletedSessionLoad,
     buildFatigueStateFromHistory,
+    combineFatigue,
     computeInternalResponseStrain,
     decayFatigue,
 } from './fatigue';
+import type { FatigueFusionPolicy } from './fatigue';
 import {
     buildMicrocycleState,
     creditObjectivesFromStimulus,
@@ -142,6 +144,8 @@ export interface WeekAheadOptions {
     fixedActivities?: FixedActivity[];
     authoredPlanBlocks?: readonly AuthoredPlanBlock[];
     planDefinition?: PlanDefinition | null;
+    /** Simulation-only fatigue comparison. Live callers use the default `max`. */
+    fatigueFusionPolicy?: FatigueFusionPolicy;
 }
 
 const ZERO_COST: WorkoutCostProfile = {
@@ -182,22 +186,12 @@ function fixedActivityTraceForDate(fixedActivities: FixedActivity[], date: strin
     return { count: activities.length, cost, stimulus };
 }
 
-function combineMax(a: DimensionalFatigue, b: DimensionalFatigue): DimensionalFatigue {
-    return {
-        systemic: Math.max(a.systemic, b.systemic),
-        cardiovascular: Math.max(a.cardiovascular, b.cardiovascular),
-        lowerBody: Math.max(a.lowerBody, b.lowerBody),
-        upperBody: Math.max(a.upperBody, b.upperBody),
-        impactTissue: Math.max(a.impactTissue, b.impactTissue),
-        neuromuscular: Math.max(a.neuromuscular, b.neuromuscular),
-    };
-}
-
 export function projectFatigueForRankingDate(
     externalFatigue: FatigueState,
     internalStrain: DimensionalFatigue,
     internalStrainAsOf: string,
     date: string,
+    fatigueFusionPolicy: FatigueFusionPolicy = 'max',
 ): FatigueState {
     const externalHours = Math.max(0, getDayDiff(date, externalFatigue.lastUpdatedDate) * 24);
     const internalHours = Math.max(0, getDayDiff(date, internalStrainAsOf) * 24);
@@ -207,7 +201,7 @@ export function projectFatigueForRankingDate(
         lastUpdatedDate: date,
         externalLoadFatigue: decayedExternal,
         internalResponseStrain: decayedInternal,
-        combinedFatigue: combineMax(decayedExternal, decayedInternal),
+        combinedFatigue: combineFatigue(decayedExternal, decayedInternal, fatigueFusionPolicy),
     };
 }
 
@@ -413,6 +407,7 @@ export interface ProjectedDatePlanningContext {
     anchors: WeeklyAnchors;
     internalStrain: DimensionalFatigue;
     internalStrainAsOf: string;
+    fatigueFusionPolicy?: FatigueFusionPolicy;
     planDefinition?: PlanDefinition | null;
 }
 
@@ -451,9 +446,10 @@ export function evaluateProjectedDate(
     const availability = resolveAvailability(date, null, shared.fixedActivities, shared.context);
 
     const rankingFatigue = applyCompletedSessionLoad(
-        projectFatigueForRankingDate(state.externalFatigue, shared.internalStrain, shared.internalStrainAsOf, date),
+        projectFatigueForRankingDate(state.externalFatigue, shared.internalStrain, shared.internalStrainAsOf, date, shared.fatigueFusionPolicy ?? 'max'),
         date,
         availability.reservedCapacityCostProfile,
+        shared.fatigueFusionPolicy ?? 'max',
     );
     const peakFatigue = maxFatigueDimension(rankingFatigue.combinedFatigue);
     const fatigueTier = fatigueTierFor(peakFatigue);
@@ -928,6 +924,7 @@ export function generateWeekAheadPlan(
     const fixedActivities = options.fixedActivities ?? [];
     const authoredPlanBlocks = options.authoredPlanBlocks ?? [];
     const suppliedPlanDefinition = options.planDefinition ?? null;
+    const fatigueFusionPolicy = options.fatigueFusionPolicy ?? 'max';
     const effectivePreferences = preferences ?? { ...NEUTRAL_PREFERENCES, preferredRecoveryStyle: resolveRecoveryStyle(context) };
 
     const periodizationToday = evaluatePeriodizationPhase(events, todayDate);
@@ -1000,7 +997,7 @@ export function generateWeekAheadPlan(
             });
         });
         microcycle = projected.microcycle;
-        externalFatigue = applyCompletedSessionLoad(externalFatigue, date, enrichedCostProfile(template.id));
+        externalFatigue = applyCompletedSessionLoad(externalFatigue, date, enrichedCostProfile(template.id), fatigueFusionPolicy);
         projectionExposures.push({
             occurrenceKey,
             date,
@@ -1035,7 +1032,7 @@ export function generateWeekAheadPlan(
         });
         if (freshActivities.length === 0) return;
         const costProfile = fixedActivityCostProfileForDate(freshActivities, date);
-        externalFatigue = applyCompletedSessionLoad(externalFatigue, date, costProfile);
+        externalFatigue = applyCompletedSessionLoad(externalFatigue, date, costProfile, fatigueFusionPolicy);
     };
 
     applyFixedActivityStimulus(todayDate);
@@ -1073,6 +1070,7 @@ export function generateWeekAheadPlan(
         anchors,
         internalStrain,
         internalStrainAsOf,
+        fatigueFusionPolicy,
         planDefinition: suppliedPlanDefinition,
     };
 
@@ -1142,7 +1140,7 @@ export function generateWeekAheadPlan(
         });
         const fatigue = loads
             .sort((left, right) => left.date.localeCompare(right.date))
-            .reduce((state, load) => applyCompletedSessionLoad(state, load.date, load.cost), externalFatigue);
+            .reduce((state, load) => applyCompletedSessionLoad(state, load.date, load.cost, fatigueFusionPolicy), externalFatigue);
         const evaluation = evaluateProjectedDate(
             date,
             { microcycle, externalFatigue: fatigue, projectedHistory: history },
@@ -1427,7 +1425,8 @@ export async function generateWeekAheadPlanWithIntent(
     preparedHistorySnapshot?: TrainingHistorySnapshot | null,
     trainingIntentProfile: TrainingIntentProfile | null = null,
 ): Promise<WeekAheadPlan> {
-    const intent = await resolveTrainingIntent(userId, events, todayDate, todayReadiness, 7, historyProvider, preparedHistorySnapshot, options.authoredPlanBlocks, trainingIntentProfile);
+    const fatigueFusionPolicy = options.fatigueFusionPolicy ?? 'max';
+    const intent = await resolveTrainingIntent(userId, events, todayDate, todayReadiness, 7, historyProvider, preparedHistorySnapshot, options.authoredPlanBlocks, trainingIntentProfile, fatigueFusionPolicy);
     const evergreen = resolveEvergreenPlan(
         intent.planningContext, intent.periodization.phase, intent.history, intent.historySnapshot,
         preferences, context, todayDate, options.fixedActivities ?? [], options.days ?? 7,
@@ -1445,6 +1444,6 @@ export async function generateWeekAheadPlanWithIntent(
             trailingHistory: trailingHistoryFromCompletedExposures(intent.history, todayDate),
             droppedContributorObjectives: intent.droppedContributorObjectives,
         },
-        { ...options, events: intent.planningContext.mode === 'event_directed' ? events : [], ...(evergreen ? { planDefinition: evergreen.planDefinition } : {}) },
+        { ...options, fatigueFusionPolicy, events: intent.planningContext.mode === 'event_directed' ? events : [], ...(evergreen ? { planDefinition: evergreen.planDefinition } : {}) },
     );
 }

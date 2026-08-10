@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { SCENARIOS } from './simulation/scenarios';
-import { buildCalibrationReport, runAllScenarios, runScenario, type ScenarioResult } from './simulation/analyze';
+import { buildCalibrationReport, runAllScenarios, runFatigueFusionComparison, runScenario, type ScenarioResult } from './simulation/analyze';
 
 /**
  * Regression coverage for the recommendation engine across sport/event types, built on
@@ -316,5 +316,17 @@ describe('Phase 6.4 calibration evidence', () => {
             .toBe(calibration.generatedFrom.totalDays);
         expect(calibration.aggregate.fixedActivityActivations).toBeGreaterThan(0);
         expect(calibration.aggregate.objectives.created).toBeGreaterThan(0);
+    });
+});
+
+describe('Phase 6.7 fatigue-fusion evidence gate', () => {
+    it('runs the real planner under a simulation-only additive comparator without weakening constraints', async () => {
+        const scenario = SCENARIOS.find(item => item.id === 'external_load_green_readiness');
+        if (!scenario) throw new Error('External-load scenario missing');
+        const comparison = await runFatigueFusionComparison([scenario]);
+        expect(comparison.baselinePolicy).toBe('max');
+        expect(comparison.candidatePolicy).toBe('additive');
+        expect(comparison.aggregate.increasedPeakFatigueDays).toBeGreaterThan(0);
+        expect(comparison.aggregate.constraintViolationDelta).toBe(0);
     });
 });

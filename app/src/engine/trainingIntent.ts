@@ -1,5 +1,5 @@
 import type { AuthoredPlanBlock, DailyReadiness, FatigueState, MicrocycleState, PlannedDose, TrainingIntentProfile, UserEvent, WeeklyObjective } from './models';
-import { computeInternalResponseStrain, buildFatigueStateFromHistory } from './fatigue';
+import { computeInternalResponseStrain, buildFatigueStateFromHistory, type FatigueFusionPolicy } from './fatigue';
 import { buildMicrocycleState, getUnresolvedObjectives } from './microcycle';
 import type { CompletedExposure, TrainingHistoryProvider } from './trainingHistory';
 import type { TrainingHistorySnapshot } from './trainingHistorySnapshot';
@@ -116,6 +116,7 @@ export async function resolveTrainingIntent(
     preparedHistorySnapshot?: TrainingHistorySnapshot | null,
     authoredPlanBlocks: readonly AuthoredPlanBlock[] = [],
     trainingIntentProfile: TrainingIntentProfile | null = null,
+    fatigueFusionPolicy: FatigueFusionPolicy = 'max',
 ): Promise<TrainingIntent> {
     const eventPeriodization = evaluatePeriodizationPhase(events, date);
     const planningContext = resolvePlanningContext(trainingIntentProfile, eventPeriodization, date);
@@ -149,7 +150,7 @@ export async function resolveTrainingIntent(
     const multiEventResolution = resolveMultiEventObjectives(events, date, periodization, builtMicrocycle.objectives);
     const microcycle: MicrocycleState = { ...builtMicrocycle, objectives: multiEventResolution.objectives };
     const unresolvedObjectives = getUnresolvedObjectives(microcycle);
-    const fatigue = buildFatigueStateFromHistory(history, computeInternalResponseStrain(readiness), date);
+    const fatigue = buildFatigueStateFromHistory(history, computeInternalResponseStrain(readiness), date, fatigueFusionPolicy);
     const plannedDose = applyPlanningOverlays(resolvePlannedDoseForDate(
         periodization.phase,
         microcycle.objectives,

@@ -15,6 +15,35 @@ export const DECAY_HALF_LIVES_HOURS: Record<keyof DimensionalFatigue, number> = 
     neuromuscular: 36,
 };
 
+/** Production remains on `max`. The additive option is accepted only by the simulation
+ * harness so a fatigue-policy experiment cannot reach a live recommendation by accident. */
+export type FatigueFusionPolicy = 'max' | 'additive';
+
+export function combineFatigue(
+    external: DimensionalFatigue,
+    internal: DimensionalFatigue,
+    policy: FatigueFusionPolicy = 'max',
+): DimensionalFatigue {
+    if (policy === 'additive') {
+        return {
+            systemic: Math.min(1, external.systemic + internal.systemic),
+            cardiovascular: Math.min(1, external.cardiovascular + internal.cardiovascular),
+            lowerBody: Math.min(1, external.lowerBody + internal.lowerBody),
+            upperBody: Math.min(1, external.upperBody + internal.upperBody),
+            impactTissue: Math.min(1, external.impactTissue + internal.impactTissue),
+            neuromuscular: Math.min(1, external.neuromuscular + internal.neuromuscular),
+        };
+    }
+    return {
+        systemic: Math.max(external.systemic, internal.systemic),
+        cardiovascular: Math.max(external.cardiovascular, internal.cardiovascular),
+        lowerBody: Math.max(external.lowerBody, internal.lowerBody),
+        upperBody: Math.max(external.upperBody, internal.upperBody),
+        impactTissue: Math.max(external.impactTissue, internal.impactTissue),
+        neuromuscular: Math.max(external.neuromuscular, internal.neuromuscular),
+    };
+}
+
 export function createEmptyFatigue(dateStr: string): FatigueState {
     const zero: DimensionalFatigue = {
         systemic: 0,
@@ -90,7 +119,8 @@ export function computeInternalResponseStrain(readiness: DailyReadiness): Dimens
 export function applyCompletedSessionLoad(
     currentState: FatigueState,
     completedDateStr: string,
-    costProfile: WorkoutCostProfile
+    costProfile: WorkoutCostProfile,
+    fusionPolicy: FatigueFusionPolicy = 'max',
 ): FatigueState {
     // 1. Calculate hours between last update and completed session date
     const d1 = new Date(currentState.lastUpdatedDate + 'T00:00:00');
@@ -122,15 +152,7 @@ export function applyCompletedSessionLoad(
         neuromuscular: Math.min(1, rawExternal.neuromuscular),
     };
 
-    // 4. Combined fatigue = max(externalLoad, internalResponse)
-    const combined: DimensionalFatigue = {
-        systemic: Math.max(newExternal.systemic, currentState.internalResponseStrain.systemic),
-        cardiovascular: Math.max(newExternal.cardiovascular, currentState.internalResponseStrain.cardiovascular),
-        lowerBody: Math.max(newExternal.lowerBody, currentState.internalResponseStrain.lowerBody),
-        upperBody: Math.max(newExternal.upperBody, currentState.internalResponseStrain.upperBody),
-        impactTissue: Math.max(newExternal.impactTissue, currentState.internalResponseStrain.impactTissue),
-        neuromuscular: Math.max(newExternal.neuromuscular, currentState.internalResponseStrain.neuromuscular),
-    };
+    const combined = combineFatigue(newExternal, currentState.internalResponseStrain, fusionPolicy);
 
     return {
         lastUpdatedDate: completedDateStr,
@@ -147,7 +169,8 @@ export function applyCompletedSessionLoad(
 export function buildFatigueStateFromHistory(
     history: CompletedExposure[],
     internalStrain: DimensionalFatigue,
-    asOfDate: string
+    asOfDate: string,
+    fusionPolicy: FatigueFusionPolicy = 'max',
 ): FatigueState {
     let sortedHistory = history;
     // Assert chronological ordering invariant; sort if out of order to prevent silent mis-decay
@@ -161,17 +184,10 @@ export function buildFatigueStateFromHistory(
 
     const emptyCost: WorkoutCostProfile = { systemic: 0, cardiovascular: 0, lowerBody: 0, upperBody: 0, impactTissue: 0, neuromuscular: 0 };
     const replayed = sortedHistory.reduce(
-        (state, exposure) => applyCompletedSessionLoad(state, exposure.date, exposure.costProfile),
+        (state, exposure) => applyCompletedSessionLoad(state, exposure.date, exposure.costProfile, fusionPolicy),
         createEmptyFatigue(sortedHistory[0]?.date ?? asOfDate)
     );
-    const decayed = applyCompletedSessionLoad(replayed, asOfDate, emptyCost);
-    const combined: DimensionalFatigue = {
-        systemic: Math.max(decayed.externalLoadFatigue.systemic, internalStrain.systemic),
-        cardiovascular: Math.max(decayed.externalLoadFatigue.cardiovascular, internalStrain.cardiovascular),
-        lowerBody: Math.max(decayed.externalLoadFatigue.lowerBody, internalStrain.lowerBody),
-        upperBody: Math.max(decayed.externalLoadFatigue.upperBody, internalStrain.upperBody),
-        impactTissue: Math.max(decayed.externalLoadFatigue.impactTissue, internalStrain.impactTissue),
-        neuromuscular: Math.max(decayed.externalLoadFatigue.neuromuscular, internalStrain.neuromuscular),
-    };
+    const decayed = applyCompletedSessionLoad(replayed, asOfDate, emptyCost, fusionPolicy);
+    const combined = combineFatigue(decayed.externalLoadFatigue, internalStrain, fusionPolicy);
     return { ...decayed, lastUpdatedDate: asOfDate, internalResponseStrain: internalStrain, combinedFatigue: combined };
 }

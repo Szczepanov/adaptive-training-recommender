@@ -8,6 +8,7 @@ import { workoutForTemplate } from '../../workouts/prescription';
 import type { AthleteScenario } from './scenarios';
 import { SCENARIOS } from './scenarios';
 import type { WeeklyRoleAllocationReport } from '../weeklyAllocation';
+import type { FatigueFusionPolicy } from '../fatigue';
 
 const ZERO_COST: WorkoutCostProfile = { systemic: 0, cardiovascular: 0, lowerBody: 0, upperBody: 0, impactTissue: 0, neuromuscular: 0 };
 const ZERO_STIMULUS: WorkoutStimulusProfile = { aerobicEndurance: 0, thresholdPower: 0, vo2MaxPower: 0, repeatedSurges: 0, sprintPower: 0, fatigueResistance: 0, maxStrength: 0, hypertrophy: 0 };
@@ -291,9 +292,19 @@ function computeMetrics(
 
 type WeekAheadPlanGenerator = typeof generateWeekAheadPlanWithIntent;
 
-export async function runScenario(scenario: AthleteScenario, planGenerator: WeekAheadPlanGenerator = generateWeekAheadPlanWithIntent): Promise<ScenarioResult> {
+export interface SimulationRunOptions {
+    /** Only the simulation harness may override this. Production entry points use `max`. */
+    fatigueFusionPolicy?: FatigueFusionPolicy;
+}
+
+export async function runScenario(
+    scenario: AthleteScenario,
+    planGenerator: WeekAheadPlanGenerator = generateWeekAheadPlanWithIntent,
+    options: SimulationRunOptions = {},
+): Promise<ScenarioResult> {
     const events = [...(scenario.events ?? (scenario.event ? [scenario.event] : []))];
     const fixedActivities = scenario.fixedActivities ?? [];
+    const fatigueFusionPolicy = options.fatigueFusionPolicy ?? 'max';
     const accumulatedHistory: CompletedExposure[] = [...(scenario.initialHistory ?? [])];
     const historyProvider: TrainingHistoryProvider = {
         reconstruct: async (_userId, throughDateExclusive, windowDays) => {
@@ -314,17 +325,17 @@ export async function runScenario(scenario: AthleteScenario, planGenerator: Week
         const readiness = scenario.readinessForDate?.(currentDate, week) ?? scenario.readinessForWeek(week);
         const todayRec = await evaluateTrainingWithIntent(
             'sim-user', readiness, scenario.context, events, currentDate, undefined, historyProvider,
-            null, fixedActivities, [], scenario.trainingIntentProfile ?? null, scenario.preferences ?? null,
+            null, fixedActivities, [], scenario.trainingIntentProfile ?? null, scenario.preferences ?? null, fatigueFusionPolicy,
         );
         const nextDayPlan = await evaluateNextDayPlanWithIntent(
             'sim-user', events, readiness, scenario.context, currentDate, todayRec, historyProvider,
-            null, fixedActivities, [], scenario.trainingIntentProfile ?? null, scenario.preferences ?? null,
+            null, fixedActivities, [], scenario.trainingIntentProfile ?? null, scenario.preferences ?? null, fatigueFusionPolicy,
         );
         const tomorrowRec = nextDayPlan.branches.yellow.recommendation;
 
         const plan = await planGenerator(
             'sim-user', readiness, scenario.context, scenario.preferences ?? null, events, currentDate, todayRec, tomorrowRec,
-            { days: 6, fixedActivities }, historyProvider, null, scenario.trainingIntentProfile ?? null,
+            { days: 6, fixedActivities, fatigueFusionPolicy }, historyProvider, null, scenario.trainingIntentProfile ?? null,
         );
         const todayPhase = evaluatePeriodizationPhase(events, currentDate).phase.phaseName;
         const simulatedDays: WeekAheadDay[] = [recommendationAsDay(currentDate, todayRec, todayPhase), ...plan.days];
@@ -382,6 +393,23 @@ export interface CalibrationReport {
     generatedFrom: { scenarioCount: number; totalDays: number };
     scenarios: CalibrationScenarioSummary[];
     aggregate: Omit<CalibrationScenarioSummary, 'scenarioId' | 'label' | 'tags'>;
+}
+export interface FatigueFusionScenarioComparison {
+    scenarioId: string;
+    changedSelections: number;
+    increasedPeakFatigueDays: number;
+    recoverySelectionDelta: number;
+    restOrRecoveryDayDelta: number;
+    objectiveMissDelta: number;
+    constraintViolationDelta: number;
+}
+export interface FatigueFusionComparison {
+    baselinePolicy: 'max';
+    candidatePolicy: 'additive';
+    baselineRuntimeMs: number;
+    candidateRuntimeMs: number;
+    scenarios: FatigueFusionScenarioComparison[];
+    aggregate: Omit<FatigueFusionScenarioComparison, 'scenarioId'>;
 }
 
 function emptyTierCounts(): { train: number; modify: number; recover: number } {
@@ -457,6 +485,61 @@ export function buildCalibrationReport(report: SimulationReport): CalibrationRep
     };
 }
 
+function peak(trace: ScenarioDecisionTrace): number {
+    return Math.max(...Object.values(trace.fatigue.combined));
+}
+
+function objectiveMisses(result: ScenarioResult): number {
+    return result.objectiveResolution.reduce((total, objective) => total + Math.max(0, objective.timesGenerated - objective.timesResolved), 0);
+}
+
+/** Runs the unchanged production planner twice; the only altered input is the explicitly
+ * simulation-only fatigue fusion policy. */
+export async function runFatigueFusionComparison(
+    scenarios: AthleteScenario[] = SCENARIOS,
+): Promise<FatigueFusionComparison> {
+    const baselineStarted = performance.now();
+    const baseline = await runAllScenarios(scenarios, 'simulation', { fatigueFusionPolicy: 'max' });
+    const baselineRuntimeMs = performance.now() - baselineStarted;
+    const candidateStarted = performance.now();
+    const candidate = await runAllScenarios(scenarios, 'simulation', { fatigueFusionPolicy: 'additive' });
+    const candidateRuntimeMs = performance.now() - candidateStarted;
+    const baselineById = new Map(baseline.scenarios.map(result => [result.scenarioId, result]));
+    const summaries = candidate.scenarios.map(next => {
+        const current = baselineById.get(next.scenarioId);
+        if (!current) throw new Error(`Missing max-policy result for ${next.scenarioId}.`);
+        const candidateTraces = new Map(next.decisionTraces.map(trace => [trace.date, trace]));
+        let changedSelections = 0;
+        let increasedPeakFatigueDays = 0;
+        current.decisionTraces.forEach(trace => {
+            const compared = candidateTraces.get(trace.date);
+            if (!compared) return;
+            if (trace.selected.templateId !== compared.selected.templateId) changedSelections += 1;
+            if (peak(compared) > peak(trace)) increasedPeakFatigueDays += 1;
+        });
+        const currentCalibration = calibrationSummary(current);
+        const nextCalibration = calibrationSummary(next);
+        return {
+            scenarioId: next.scenarioId,
+            changedSelections,
+            increasedPeakFatigueDays,
+            recoverySelectionDelta: nextCalibration.recoverySelections - currentCalibration.recoverySelections,
+            restOrRecoveryDayDelta: next.restOrRecoveryDayCount - current.restOrRecoveryDayCount,
+            objectiveMissDelta: objectiveMisses(next) - objectiveMisses(current),
+            constraintViolationDelta: next.constraintViolations.length - current.constraintViolations.length,
+        };
+    });
+    const aggregate = summaries.reduce<Omit<FatigueFusionScenarioComparison, 'scenarioId'>>((total, summary) => ({
+        changedSelections: total.changedSelections + summary.changedSelections,
+        increasedPeakFatigueDays: total.increasedPeakFatigueDays + summary.increasedPeakFatigueDays,
+        recoverySelectionDelta: total.recoverySelectionDelta + summary.recoverySelectionDelta,
+        restOrRecoveryDayDelta: total.restOrRecoveryDayDelta + summary.restOrRecoveryDayDelta,
+        objectiveMissDelta: total.objectiveMissDelta + summary.objectiveMissDelta,
+        constraintViolationDelta: total.constraintViolationDelta + summary.constraintViolationDelta,
+    }), { changedSelections: 0, increasedPeakFatigueDays: 0, recoverySelectionDelta: 0, restOrRecoveryDayDelta: 0, objectiveMissDelta: 0, constraintViolationDelta: 0 });
+    return { baselinePolicy: 'max', candidatePolicy: 'additive', baselineRuntimeMs, candidateRuntimeMs, scenarios: summaries, aggregate };
+}
+
 function distributionDifference(preferred: Partial<Record<SessionTemplate['modality'], number>>, baseline: Partial<Record<SessionTemplate['modality'], number>>): number {
     const modalities = new Set([...Object.keys(preferred), ...Object.keys(baseline)]);
     return Array.from(modalities).reduce((sum, modality) => sum + Math.abs((preferred[modality as SessionTemplate['modality']] ?? 0) - (baseline[modality as SessionTemplate['modality']] ?? 0)), 0) / 2;
@@ -488,9 +571,13 @@ function evaluateReadinessSensitivity(results: ScenarioResult[]): ReadinessSensi
     });
 }
 
-export async function runAllScenarios(scenarios: AthleteScenario[] = SCENARIOS, commit = 'unknown'): Promise<SimulationReport> {
+export async function runAllScenarios(
+    scenarios: AthleteScenario[] = SCENARIOS,
+    commit = 'unknown',
+    options: SimulationRunOptions = {},
+): Promise<SimulationReport> {
     const results: ScenarioResult[] = [];
-    for (const scenario of scenarios) results.push(await runScenario(scenario));
+    for (const scenario of scenarios) results.push(await runScenario(scenario, generateWeekAheadPlanWithIntent, options));
     return {
         commit, capturedAt: new Date().toISOString(), engineVersion: 'v2', policyVersion: '2026.08.x', scenarios: results,
         preferenceSensitivity: evaluatePreferenceSensitivity(results), readinessSensitivity: evaluateReadinessSensitivity(results),

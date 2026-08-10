@@ -537,6 +537,14 @@ scores; they intentionally exclude raw Garmin payloads, free-text check-ins, and
 exports. This is policy-regression evidence, not clinical calibration, and the report makes
 no automatic threshold recommendation.
 
+### Fatigue-fusion comparison (`simulate:fatigue-fusion`)
+
+Executed via `cd app && npm run simulate:fatigue-fusion`. It runs the real planner and
+hard gates under production `max` and simulation-only bounded-additive fusion, then compares
+fatigue trajectories, selections, recovery, objective misses, constraint violations, and
+runtime. The selector is unavailable to live callers; the current evidence retains `max`
+because additive increases recovery and objective misses without a safety benefit.
+
 ### Recommendation decision replay (`replay:recommendation`)
 Executed via `cd app && npm run replay:recommendation -- <audit.json>`. Accepts a JSON snapshot of a historical recommendation and passes it into `replayRecommendationAudit()` ([`app/src/engine/replay.ts`](../../app/src/engine/replay.ts)). The current policy version can be verified for reproducibility. Known historical policy versions remain auditable but are explicitly rejected as executable replay unless that historical decision function is bundled in a future build.
 

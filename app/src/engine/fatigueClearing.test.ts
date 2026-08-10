@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { DimensionalFatigue, FatigueState, UserPreferences } from './models';
 import type { ResolvedAvailability } from './schedule';
-import { decayFatigue } from './fatigue';
+import { combineFatigue, decayFatigue } from './fatigue';
 import { ENRICHED_TEMPLATES } from './templates';
 import { rankCandidates } from './optimizer';
 import { workoutForTemplate } from '../workouts/prescription';
@@ -33,6 +33,13 @@ function preferences(style: UserPreferences['preferredRecoveryStyle']): UserPref
 }
 
 describe('macrocycle v5 recovery and strength contracts', () => {
+    it('keeps max fusion as the default and exposes additive fusion only as an explicit selector', () => {
+        const external = { ...ZERO, systemic: 0.45, lowerBody: 0.5 };
+        const internal = { ...ZERO, systemic: 0.3, lowerBody: 0.4 };
+        expect(combineFatigue(external, internal)).toMatchObject({ systemic: 0.45, lowerBody: 0.5 });
+        expect(combineFatigue(external, internal, 'additive')).toMatchObject({ systemic: 0.75, lowerBody: 0.9 });
+    });
+
     it('prefers complete rest for passive/mixed recover-tier days and active recovery only when explicitly active', () => {
         const rest = ENRICHED_TEMPLATES.find(template => template.id === 'rest_01');
         const mobility = ENRICHED_TEMPLATES.find(template => template.id === 'mob_01');

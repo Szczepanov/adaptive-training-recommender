@@ -32,7 +32,7 @@ import { isTemplatePhaseEligible } from './periodization';
 import { resolveMinimumDaysAfterHardLowerBody } from './planningCandidate';
 import { applyFixedActivityStimulusCredit } from './planner';
 import { getUnresolvedObjectives } from './microcycle';
-import { applyCompletedSessionLoad } from './fatigue';
+import { applyCompletedSessionLoad, type FatigueFusionPolicy } from './fatigue';
 import { resolveAvailability } from './schedule';
 import { workoutForTemplate } from '../workouts/prescription';
 import { resolveEvergreenPlan } from './evergreenPlanning';
@@ -329,10 +329,11 @@ export async function evaluateTrainingWithIntent(
     authoredPlanBlocks: readonly AuthoredPlanBlock[] = [],
     trainingIntentProfile: TrainingIntentProfile | null = null,
     preferences: UserPreferences | null = null,
+    fatigueFusionPolicy: FatigueFusionPolicy = 'max',
 ): Promise<Recommendation> {
     const envelopeState = evaluateReadinessAndSafetyEnvelope(readiness, context, date, previousMode);
     const { mode, envelopes, telemetry } = envelopeState;
-    let intent = await resolveTrainingIntent(userId, events, date, readiness, 7, historyProvider, preparedHistorySnapshot, authoredPlanBlocks, trainingIntentProfile);
+    let intent = await resolveTrainingIntent(userId, events, date, readiness, 7, historyProvider, preparedHistorySnapshot, authoredPlanBlocks, trainingIntentProfile, fatigueFusionPolicy);
     const evergreen = resolveEvergreenPlan(
         intent.planningContext, intent.periodization.phase, intent.history, intent.historySnapshot,
         preferences, context, date, fixedActivities,
@@ -373,7 +374,7 @@ export async function evaluateTrainingWithIntent(
         .filter(template => isTemplatePhaseEligible(template, intent.periodization))
         .filter(template => !availability.environmentOverride || template.environment === 'either' || template.environment === availability.environmentOverride);
 
-    const rankingFatigue = applyCompletedSessionLoad(intent.fatigue, date, availability.reservedCapacityCostProfile);
+    const rankingFatigue = applyCompletedSessionLoad(intent.fatigue, date, availability.reservedCapacityCostProfile, fatigueFusionPolicy);
     const optContext = buildOptimizationContext(
         { ...intent, fatigue: rankingFatigue },
         context,
@@ -694,6 +695,7 @@ export async function evaluateNextDayPlanWithIntent(
     authoredPlanBlocks: readonly AuthoredPlanBlock[] = [],
     trainingIntentProfile: TrainingIntentProfile | null = null,
     preferences: UserPreferences | null = null,
+    fatigueFusionPolicy: FatigueFusionPolicy = 'max',
 ): Promise<NextDayPotentialPlan> {
     const scenarios = buildNextDayScenarios(todayReadiness, context, todayDate, todayRec);
     const projectedProvider = await projectedProviderForTomorrow(
@@ -701,7 +703,7 @@ export async function evaluateNextDayPlanWithIntent(
     );
     const evaluate = async (scenario: NextDayScenario) => evaluatedBranch(
         scenario,
-        await evaluateTrainingWithIntent(userId, scenario.readiness, context, events, scenarios.date, todayRec.mode, projectedProvider, null, fixedActivities, authoredPlanBlocks, trainingIntentProfile, preferences),
+        await evaluateTrainingWithIntent(userId, scenario.readiness, context, events, scenarios.date, todayRec.mode, projectedProvider, null, fixedActivities, authoredPlanBlocks, trainingIntentProfile, preferences, fatigueFusionPolicy),
     );
     const [green, yellow, red] = await Promise.all([
         evaluate(scenarios.scenarios.green), evaluate(scenarios.scenarios.yellow), evaluate(scenarios.scenarios.red),

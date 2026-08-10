@@ -54,9 +54,17 @@ systemic external fatigue on its first decision and selected an easy, rather tha
 session. The corpus reported zero hard-constraint violations.
 
 Eight lower-body trace-days had raw external load above the clamped `1.0` ceiling (and a
-small number of other-axis saturations). That is an observable saturation boundary, but it
-did not produce a safety, objective, or recovery-spacing contract failure in this corpus.
-An additive fusion would also risk double-counting an internal response that already reflects
-the same external training. There is therefore no evidence-backed candidate to promote yet;
-production remains on `max(external, internal)` and Phase 6.7 stays in progress pending a
-reproducible undesirable trajectory.
+small number of other-axis saturations). This supplied the reproducible boundary for a
+simulation-only comparator, run with `npm run simulate:fatigue-fusion`.
+
+The comparator runs the real planner and hard gates twice, changing only fusion from `max`
+to bounded additive. Across all 24 cases, additive increased peak fatigue on 299 days,
+changed 167 selections, added 21 rest/recovery days, and produced seven additional objective
+misses. It produced no reduction in hard-constraint violations (both policies had zero).
+
+**Decision:** retain `max(external, internal)` in production. Additive fusion has the known
+double-counting risk—internal response can already reflect external work—and this corpus
+shows more missed objectives and recovery without a safety or contract benefit. No ADR,
+policy-version bump, or baseline update is warranted because production behavior did not
+change. Reopen this decision only for a new candidate with a concrete safety/objective
+advantage and a rollback condition.

@@ -54,7 +54,7 @@ Status legend: `[ ]` not started · `[-]` in progress · `[x]` finished.
 | 6.4 | `[x]` | 6.3 | Daily derived traces and reproducible descriptive calibration reports, without auto-tuning | `simulation/analyze.ts`, `scripts/simulate-calibrate.mjs`, `docs/analysis/` |
 | 6.5 | `[ ]` | production Firebase project + deployment owner | Detect drift between repository rules and deployed rules | `.github/workflows/`, Firebase config, `docs/ops/` |
 | 6.6 | `[x]` | — | Frontend/backend coverage reports are published as review evidence without a global threshold | `app/vite.config.ts`, `app/package.json`, `pyproject.toml`, `.github/workflows/ci.yml` |
-| 6.7 | `[-]` | reproducible undesirable trajectory | Evidence review found no contract failure in the 24-case corpus; production remains `max()` pending a justified simulation candidate | `engine/fatigue.ts`, simulation-only comparison code, ADR/analysis docs |
+| 6.7 | `[x]` | — | Simulation-only additive comparison increased recovery and objective misses without a safety benefit; production retains `max()` | `fatigue.ts`, simulation-only comparison code, analysis docs |
 
 ---
 
@@ -583,14 +583,15 @@ or replacing behavior-based contracts.
 
 ---
 
-## `[-]` 6.7 — Fatigue-fusion evidence gate (F12)
+## `[x]` 6.7 — Fatigue-fusion evidence gate (F12)
 
-**Evidence review started (2026-08-10).** The completed 24-case corpus contains 413 daily
-traces. The high-external-load/green-readiness case remains conservative and the corpus has
-no hard-constraint violations. Raw lower-body load crosses the clamped ceiling on eight
-trace-days, but no safety, objective, or spacing contract breach was observed. Because an
-additive fusion could double-count an internal response to the same external work, there is
-no evidence-backed candidate to simulate or adopt yet. Production remains on `max()`; see
+**Implemented (2026-08-10).** The simulation-only `additive` selector runs through the
+real planner, hard gates, and 24-case corpus via `npm run simulate:fatigue-fusion`; live
+callers retain the default `max` selector. Additive increased peak fatigue on 299 days,
+changed 167 selections, added 21 recovery days, and created seven additional objective
+misses without reducing hard-constraint violations. The evidence-backed decision is to keep
+production `max(external, internal)`. No policy version or ADR changed because no production
+decision logic changed; see
 [`2026-08-10-phase-6-calibration-corpus.md`](../analysis/2026-08-10-phase-6-calibration-corpus.md).
 
 Production remains on `max(external, internal)` until this task proves a reason to change.

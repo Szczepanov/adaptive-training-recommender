@@ -14,6 +14,7 @@
     "validate:workouts": "node --experimental-strip-types scripts/validate-workouts.ts",
     "simulate:scenarios": "node scripts/simulate-scenarios.mjs",
     "simulate:calibrate": "node scripts/simulate-calibrate.mjs",
+    "simulate:fatigue-fusion": "node scripts/simulate-fatigue-fusion.mjs",
     "simulate:diff": "node scripts/simulate-diff.mjs",
     "simulate:update-baseline": "node scripts/simulate-update-baseline.mjs",
     "compare:sequence-search": "node scripts/compare-sequence-search.mjs",
