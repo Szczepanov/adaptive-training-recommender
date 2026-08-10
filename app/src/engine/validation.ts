@@ -19,6 +19,7 @@ import type {
     GoalStatus,
     UserEvent,
     EventTiming,
+    EventTaperSpec,
     ConstraintType,
     ConstraintSeverity,
     ConstraintCategory,
@@ -31,7 +32,8 @@ import type {
     TrainingEnvironment,
     BodyRegion,
     RegionTissueResponse,
-    TissueResponseLevel
+    TissueResponseLevel,
+    AuthoredPlanBlock
 } from './models';
 import { validateEventTiming, BODY_REGIONS, TISSUE_LEVELS } from './models';
 import { deriveGoalCategory } from './periodization';
@@ -429,6 +431,18 @@ export function validateGoal(raw: any): ValidationResult<UserGoal> {
         }
     }
 
+    const rawTaper: EventTaperSpec | null = raw.taper !== undefined && raw.taper !== null ? raw.taper : null;
+    if (rawTaper !== null) {
+        const planningDate = rawTiming?.planningDate ?? rawTargetDate;
+        if (!rawTargetDate || !rawEventCategory) {
+            errors.push({ field: 'taper', message: 'Taper requires a dated event category' });
+        } else if (typeof rawTaper.startDate !== 'string' || !isValidDate(rawTaper.startDate)) {
+            errors.push({ field: 'taper', message: 'Taper start date must be a valid date (YYYY-MM-DD)' });
+        } else if (planningDate && rawTaper.startDate >= planningDate) {
+            errors.push({ field: 'taper', message: 'Taper start date must precede the planned event date' });
+        }
+    }
+
     if (raw.targetOutcome !== undefined) {
         const outcome = normalizeEmptyToNull(raw.targetOutcome);
         if (outcome !== null && typeof outcome !== 'string') {
@@ -469,6 +483,7 @@ export function validateGoal(raw: any): ValidationResult<UserGoal> {
                 ...(rawTiming.confirmedDate ? { confirmedDate: rawTiming.confirmedDate } : {}),
             }
         } : {}),
+        ...(rawTaper ? { taper: { startDate: rawTaper.startDate } } : {}),
         schemaVersion: raw.schemaVersion ?? 1,
         createdAt: raw.createdAt || new Date().toISOString(),
         updatedAt: new Date().toISOString()
@@ -835,6 +850,52 @@ function validateProfileMap<K extends string>(
     return result;
 }
 
+/** Phase 6.2b / D6-B: a TRUE day-wide restriction, deliberately separate from and
+ *  independently validated from the activity's own `environment`/`equipment` above --
+ *  see FixedActivity's own doc comment in models.ts. Mirrors firestore.rules'
+ *  hasValidAvailabilityContextOverride, which this must stay aligned with. */
+function validateAvailabilityContextOverride(
+    raw: any,
+    errors: ValidationError[]
+): FixedActivity['availabilityContextOverride'] | undefined {
+    if (raw === undefined || raw === null) return undefined;
+    if (typeof raw !== 'object' || Array.isArray(raw)) {
+        errors.push({ field: 'availabilityContextOverride', message: 'availabilityContextOverride must be an object' });
+        return undefined;
+    }
+    const allowedKeys = ['environment', 'equipment'];
+    const extraKeys = Object.keys(raw).filter(key => !allowedKeys.includes(key));
+    if (extraKeys.length > 0) {
+        errors.push({ field: 'availabilityContextOverride', message: `availabilityContextOverride has unrecognized key(s): ${extraKeys.join(', ')}` });
+    }
+
+    let environment: TrainingEnvironment | undefined;
+    if (raw.environment !== undefined) {
+        if (!TRAINING_ENVIRONMENTS.includes(raw.environment)) {
+            errors.push({ field: 'availabilityContextOverride.environment', message: `environment must be one of: ${TRAINING_ENVIRONMENTS.join(', ')}` });
+        } else {
+            environment = raw.environment;
+        }
+    }
+
+    let equipment: string[] | undefined;
+    if (raw.equipment !== undefined) {
+        if (!Array.isArray(raw.equipment) || raw.equipment.length > MAX_EQUIPMENT_ITEMS) {
+            errors.push({ field: 'availabilityContextOverride.equipment', message: `equipment must be a list of at most ${MAX_EQUIPMENT_ITEMS} items` });
+        } else if (raw.equipment.some((item: unknown) => typeof item !== 'string' || item.length > MAX_EQUIPMENT_ITEM_LENGTH)) {
+            errors.push({ field: 'availabilityContextOverride.equipment', message: `Every equipment item must be a string of at most ${MAX_EQUIPMENT_ITEM_LENGTH} characters` });
+        } else {
+            equipment = raw.equipment;
+        }
+    }
+
+    if (environment === undefined && equipment === undefined) return undefined;
+    return {
+        ...(environment !== undefined ? { environment } : {}),
+        ...(equipment !== undefined ? { equipment } : {}),
+    };
+}
+
 export function validateFixedActivity(raw: any): ValidationResult<FixedActivity> {
     const errors: ValidationError[] = [];
 
@@ -885,6 +946,7 @@ export function validateFixedActivity(raw: any): ValidationResult<FixedActivity>
 
     const expectedStimulus = validateProfileMap(raw.expectedStimulus, STIMULUS_AXES, 'expectedStimulus', errors);
     const expectedCost = validateProfileMap(raw.expectedCost, COST_DIMENSIONS, 'expectedCost', errors);
+    const availabilityContextOverride = validateAvailabilityContextOverride(raw.availabilityContextOverride, errors);
 
     if (errors.length > 0) {
         return { isValid: false, errors };
@@ -904,6 +966,7 @@ export function validateFixedActivity(raw: any): ValidationResult<FixedActivity>
         ...(expectedStimulus && Object.keys(expectedStimulus).length > 0 ? { expectedStimulus } : {}),
         ...(expectedCost && Object.keys(expectedCost).length > 0 ? { expectedCost } : {}),
         ...(typeof raw.availabilityOverride === 'number' ? { availabilityOverride: raw.availabilityOverride } : {}),
+        ...(availabilityContextOverride ? { availabilityContextOverride } : {}),
         createdAt: raw.createdAt || new Date().toISOString(),
         updatedAt: new Date().toISOString(),
     };
@@ -1080,4 +1143,21 @@ export function validateAdherenceUpdate(raw: any): ValidationResult<DailyRecomme
     };
 
     return { isValid: true, data: adherence, errors: [] };
+}
+
+export function validateAuthoredPlanBlock(raw: any): ValidationResult<AuthoredPlanBlock> {
+    const errors: ValidationError[] = [];
+    if (!raw.userId || typeof raw.userId !== 'string') errors.push({ field: 'userId', message: 'User ID is required' });
+    if (raw.phase !== 'travel') errors.push({ field: 'phase', message: 'Only explicit travel blocks are supported' });
+    if (!isValidDate(raw.startDate) || !isValidDate(raw.endDate) || raw.startDate > raw.endDate) errors.push({ field: 'dates', message: 'Travel block dates must be valid and ordered' });
+    if (typeof raw.volumeScale !== 'number' || raw.volumeScale < 0 || raw.volumeScale > 1) errors.push({ field: 'volumeScale', message: 'Volume scale must be between 0 and 1' });
+    if (typeof raw.intensityScale !== 'number' || raw.intensityScale < 0 || raw.intensityScale > 1) errors.push({ field: 'intensityScale', message: 'Intensity scale must be between 0 and 1' });
+    if (raw.eventId !== undefined && raw.eventId !== null && typeof raw.eventId !== 'string') errors.push({ field: 'eventId', message: 'Event ID must be a string or empty' });
+    if (errors.length > 0) return { isValid: false, errors };
+    const now = new Date().toISOString();
+    return { isValid: true, errors: [], data: {
+        id: typeof raw.id === 'string' ? raw.id : '', userId: raw.userId, phase: 'travel', startDate: raw.startDate, endDate: raw.endDate,
+        volumeScale: raw.volumeScale, intensityScale: raw.intensityScale, ...(raw.eventId ? { eventId: raw.eventId } : {}),
+        createdAt: typeof raw.createdAt === 'string' ? raw.createdAt : now, updatedAt: now,
+    } };
 }

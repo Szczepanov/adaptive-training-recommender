@@ -8,10 +8,11 @@ import type { TrainingHistorySnapshot } from '../engine/trainingHistorySnapshot'
 import { buildRecommendationAudit } from '../engine/provenance';
 import { evaluatePeriodizationPhase, getDaysToEvent } from '../engine/periodization';
 import { resolveExecutionDose } from '../engine/dose';
-import type { DailyDecisionInput, Recommendation, NextDayPotentialPlan, DailyRecommendation, FixedActivity } from '../engine/models';
+import type { AuthoredPlanBlock, DailyDecisionInput, Recommendation, NextDayPotentialPlan, DailyRecommendation, FixedActivity } from '../engine/models';
 import type { DataState } from '../engine/dataState';
 import { recommendationService } from '../services/recommendationService';
 import { fixedActivityService } from '../services/fixedActivityService';
+import { planBlockService } from '../services/planBlockService';
 import { getPreviousLocalDateString, addDaysToLocalDateString } from '../utils/localDate';
 import { getPrescriptionLegend, resolveWorkoutPrescription } from '../workouts';
 import type { WorkoutPrescription } from '../workouts';
@@ -181,6 +182,33 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
           : null
       );
 
+      // Phase 6.2b: today's and tomorrow's own fixed activities must affect the actual
+      // live pick and provisional plan (availability/fatigue/objective credit), not just
+      // the separately-fetched week-ahead forecast strip below. Unlike that forecast read
+      // (which fails closed on a non-AVAILABLE state -- silently treating it as "no
+      // commitments" over a 7-day horizon someone plans around), the live day-0/day-1
+      // decision fails OPEN to an empty list here: this is one day's already-interactive
+      // recommendation, not an unattended multi-day schedule, and a temporary read failure
+      // should not block it entirely -- same tradeoff already made for `yesterdayRec` above.
+      const todayAndTomorrowFixedActivities = await fixedActivityService
+        .getActivitiesInRange(userId, input.date, addDaysToLocalDateString(input.date, 1))
+        .catch(err => {
+          console.warn('Failed to load fixed activities for today/tomorrow:', err);
+          return [];
+        });
+      const todayAndTomorrowPlanBlocks = await planBlockService
+        .getBlocksInRangeState(userId, input.date, addDaysToLocalDateString(input.date, 1))
+        .then(state => {
+          if (state.status === 'AVAILABLE') return state.data;
+          console.warn(`Failed to load authored plan blocks for today/tomorrow: ${state.status}`);
+          return [];
+        })
+        .catch(err => {
+          console.warn('Failed to load authored plan blocks for today/tomorrow:', err);
+          return [];
+        });
+      if (!isCurrent()) return;
+
       const safetyStatus = getMinimumSafetyCheckinStatus(input.subjectiveCheckin);
       if (input.recoverySnapshot && canGenerateNormalRecommendation(safetyStatus)) {
         const objective = mapSnapshotToEngineInput(input.recoverySnapshot);
@@ -203,6 +231,7 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
         setHistorySnapshot(preparedSnapshot);
         const baseRecommendation = await evaluateTrainingWithIntent(
           userId, { subjective, objective }, context, events, input.date, yesterdayRec?.mode, undefined, preparedSnapshot,
+          todayAndTomorrowFixedActivities, todayAndTomorrowPlanBlocks,
         );
         if (!isCurrent()) return;
         const recommendationWithPrescription = {
@@ -217,6 +246,7 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
 
         const tomorrowPlan = await evaluateNextDayPlanWithIntent(
           userId, events, { subjective, objective }, forecastContext, input.date, todayRec, undefined, preparedSnapshot,
+          todayAndTomorrowFixedActivities, todayAndTomorrowPlanBlocks,
         );
         if (!isCurrent()) return;
         setNextDayPlan(tomorrowPlan);
@@ -376,6 +406,26 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
     () => (fixedActivitiesState.status === 'AVAILABLE' ? fixedActivitiesState.data : []),
     [fixedActivitiesState]
   );
+  const [planBlocksState, setPlanBlocksState] = useState<DataState<AuthoredPlanBlock[]>>({ status: 'AVAILABLE', data: [], revision: null });
+  useEffect(() => {
+    let cancelled = false;
+    if (!decisionInput) {
+      setPlanBlocksState({ status: 'AVAILABLE', data: [], revision: null });
+      return () => { cancelled = true; };
+    }
+    const endDate = addDaysToLocalDateString(decisionInput.date, WEEK_AHEAD_DAYS);
+    planBlockService.getBlocksInRangeState(userId, decisionInput.date, endDate)
+      .then(state => { if (!cancelled) setPlanBlocksState(state); })
+      .catch(err => {
+        console.warn('Failed to load authored plan blocks:', err);
+        if (!cancelled) setPlanBlocksState({ status: 'UNAVAILABLE', operation: 'read plan blocks', retryable: true });
+      });
+    return () => { cancelled = true; };
+  }, [userId, decisionInput]);
+  const authoredPlanBlocks = useMemo(
+    () => (planBlocksState.status === 'AVAILABLE' ? planBlocksState.data : []),
+    [planBlocksState]
+  );
 
   // The production planner reads adherence history once, so it must run outside render.
   // Cancellation ensures a prior user/date/goals/check-in/settings state cannot replace
@@ -388,13 +438,13 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
       setWeekAheadPlan(null);
       return () => { cancelled = true; };
     }
-    if (fixedActivitiesState.status !== 'AVAILABLE') {
+    if (fixedActivitiesState.status !== 'AVAILABLE' || planBlocksState.status !== 'AVAILABLE') {
       // Do not generate a week-ahead plan on an INVALID/UNAVAILABLE fixed-activities read
       // -- silently treating that as "no commitments this week" (what the plain-array
       // convenience wrapper would have done) could schedule straight through a real,
       // merely-unreadable commitment. WeekAheadStrip already renders nothing for a null
       // plan, matching how every other week-ahead precondition above fails closed.
-      console.warn(`Skipping week-ahead plan generation: fixed activities read is ${fixedActivitiesState.status}, not AVAILABLE.`);
+      console.warn(`Skipping week-ahead plan generation: fixed activities=${fixedActivitiesState.status}, plan blocks=${planBlocksState.status}; both must be AVAILABLE.`);
       setWeekAheadPlan(null);
       return () => { cancelled = true; };
     }
@@ -411,7 +461,7 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
       decisionInput.date,
       activeRec,
       tomorrowRec,
-      { days: WEEK_AHEAD_DAYS, fixedActivities },
+      { days: WEEK_AHEAD_DAYS, fixedActivities, authoredPlanBlocks },
       undefined,
       historySnapshot,
     ).then(plan => {
@@ -423,7 +473,7 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
       }
     });
     return () => { cancelled = true; };
-  }, [userId, forecastEngineInputs, decisionInput, activeRec, canGenerateNormalPlan, nextDayPlan, selectedNextDayTier, eventPeriodization, historySnapshot, fixedActivitiesState, fixedActivities]);
+  }, [userId, forecastEngineInputs, decisionInput, activeRec, canGenerateNormalPlan, nextDayPlan, selectedNextDayTier, eventPeriodization, historySnapshot, fixedActivitiesState, fixedActivities, planBlocksState, authoredPlanBlocks]);
 
   if (loading) {
     return (

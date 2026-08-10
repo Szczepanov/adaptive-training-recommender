@@ -1,11 +1,14 @@
 # Phase 3 — One ranking path, lexicographically ordered
 
-* **Status:** Ready — F5 resolution decided 2026-08-08 (see 3.4)
-* **Depends on:** Phase 0 (**hard** — this phase changes ranking behaviour and is
-  unmeasurable without the invariant suite), ADR-0012 from Phase 2
+* **Status:** Implemented
+* **Blocked by:** nothing outstanding
 * **Unlocks:** Phase 5 (sequence search needs a coherent scoring layer to sit on)
 * **Addresses:** F3, F4, F5
 * **Rough effort:** 3–4 days
+
+> **Historical implementation record.** All work items and acceptance criteria below
+> were verified as delivered on 2026-08-09. They are retained for rationale and are
+> not instructions for new work.
 
 ---
 
@@ -21,18 +24,17 @@ Update the marker on the work-item heading **and** this table in the same commit
 | 3.3 | `[x]` | One `buildOptimizationContext` shared by both call sites (F4) | `app/src/engine/rules.ts`, `planner.ts` |
 | 3.4 | `[x]` | Next-day tier selector; stop hardcoding the green branch (F5) | `app/src/components/Home.tsx`, `WeekAheadStrip.tsx`, `app/src/engine/planner.ts` |
 
-**Every task here changes recommendations for existing users.** Phase 0's invariant suite
-must be green and its semantic diff read in review before any of these merge. The
-definition of done for 3.1 is the Phase-0 golden-week assertion flipping from
-`it.fails` to passing.
+Every task here changed recommendations for existing users. Phase 0's invariant suite
+was green and its semantic diff was reviewed before merge; 3.1's golden-week assertion
+was promoted from expected-failing to passing.
 
 ---
 
-## Goal
+## Completed outcome
 
-Replace modality-repetition suppression with explicit recovery and role constraints,
-make both optimizer call sites agree, and stop the week-ahead strip assuming tomorrow is
-always green.
+Modality-repetition suppression was replaced with explicit recovery and role constraints,
+both optimizer call sites share a context builder, and the week-ahead strip honors the
+selected next-day tier.
 
 ---
 

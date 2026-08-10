@@ -201,6 +201,17 @@ contract is finite `volume ∈ [0,1]`, `intensity ∈ [0,1.2]`.
 
 Recommendation provenance persists both planned and execution dose when available.
 
+### Authored travel overlays
+
+Travel is an explicit, user-owned `AuthoredPlanBlock`, persisted at
+`users/{userId}/plan_blocks/{blockId}`. `planBlockService.ts` validates the date range and
+the independent `0..1` volume/intensity scales on both reads and writes; `firestore.rules`
+enforces the same owner-scoped shape. `Home.tsx` supplies available blocks to today's,
+tomorrow's, and week-ahead Path B calls. An active travel block takes precedence over its
+overlapping derived event block, so it owns both its planned dose and its exactly declared
+weekly objectives (aerobic volume plus maintenance strength); it is never inferred from an
+event title, venue, or fixed activity.
+
 ### Taper as an explicit contract (Phase 5.7, `microcycle.ts`, `periodization.ts`, `planSchedule.ts`)
 
 Before this, `taperActive`/`volumeScale` reduced volume, but nothing represented "preserve
@@ -372,21 +383,47 @@ Forecast recommendations never mutate completed credit. They accumulate in
 The planner's `objectiveCredits` display is derived from the same V2 objective-credit
 function used by the live ledger, not the old `stimulusCoverage >= 0.6` model.
 
-### Fixed activities (Phase 5.3)
+### Fixed activities (Phase 5.3, projected exposures since Phase 6.2b)
 
 `FixedActivity` (external commitments -- a booked class, a match, travel) is persisted at
 `users/{userId}/fixed_activities/{activityId}` via `fixedActivityService.ts`, the same
 user-owned/validated-at-the-rule pattern as `goals` (ADR-0002). `Home.tsx` reads the
-current week's activities and passes them into `WeekAheadOptions.fixedActivities`, which
-`resolveWeeklyAnchors`/`resolveAvailability` (`schedule.ts`) already consumed -- the gap
-this closed was the absent Firestore source, not the consuming logic. An
+current week's activities for the week-ahead strip (`WeekAheadOptions.fixedActivities`)
+and, separately, today's/tomorrow's activities for the live/next-day decision
+(`evaluateTrainingWithIntent`/`evaluateNextDayPlanWithIntent`) -- a booked or travel
+commitment on today or tomorrow affects the actual pick, not only the forecast strip. An
 `availabilityOverride` on an activity caps that day's whole training budget (e.g. a travel
 day) before the activity's own `durationMin` is deducted; several overrides on the same
-day take the most restrictive. `fixed` (movable vs immovable) is captured now but not yet
+day take the most restrictive. `fixed` (movable vs immovable) is captured but not yet
 consumed -- it becomes load-bearing once sequence search (5.1/5.2) can reason about
-shifting a movable placeholder. See
+shifting a movable placeholder.
+
+**An activity's own `environment`/`equipment` describe only that activity, never the whole
+day (D6-B).** A football match at an outdoor field does not imply a separate same-day
+session must also be outdoor or football-equipped. A true day-wide restriction (a travel
+day where every session that day really is stuck at a hotel gym) is a separate, explicit
+`availabilityContextOverride: { environment?, equipment? }` field, validated independently
+in `validation.ts`/`firestore.rules` and consumed by `resolveAvailability` (intersecting
+owned equipment, restricting environment) and, in the planner loop and the live path
+alike, by filtering candidates whose own `environment` conflicts with it.
+
+**Booked activities are projected exposures, not just calendar blockers (Phase 6.2b).**
+`resolveAvailability` returns a dimensional `reservedCapacityCostProfile`, summed only from
+activities' explicitly authored `expectedCost` -- a missing value contributes zero, never
+an invented default (D6-C). Same-day ranking sees this reservation (additively fused onto
+projected fatigue via `applyCompletedSessionLoad`, not `max()`, so it cannot be masked by
+already-elevated fatigue) without marking the load as already completed. An activity's
+`expectedStimulus`, if present, is credited against unresolved objectives through the same
+canonical credit primitive as a structured exposure (`deriveObjectiveCreditFromProfile`)
+*before* that day's own candidate is ranked -- crediting it afterward would let the
+optimizer separately prescribe redundant work for an objective the booked activity already
+covers. At the end of the day, the activity's cost becomes real (not merely reserved) load
+for the following day's fatigue projection. Completed activities are excluded from all of
+this so their load is never projected a second time. See
+[docs/plans/phase-6-evidence-and-operational-assurance.md](../plans/phase-6-evidence-and-operational-assurance.md)
+6.2b for the full change description, decisions D6-B/D6-C/D6-D, and test list; see
 [docs/plans/phase-5-sequence-planning.md](../plans/phase-5-sequence-planning.md) 5.3 for
-the full storage/validation contract.
+the original storage/validation contract.
 
 ### Bounded sequence search prototype (Phase 5.1, `sequenceSearch.ts`) -- not live
 

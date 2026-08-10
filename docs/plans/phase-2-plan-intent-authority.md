@@ -1,11 +1,15 @@
 # Phase 2 — Plan intent is the planning authority
 
-* **Status:** Finished (ADR-0012, PlanDefinition, EventTiming, envelope extraction implemented and verified 2026-08-08; production wiring for both PlanDefinition and EventTiming, plus date-window scoping, added in PR review the same day — see ADR-0012 §7)
-* **Depends on:** Phase 1 (do not migrate onto an unwired safety gate)
+* **Status:** Implemented (ADR-0012, `PlanDefinition`, `EventTiming`, and envelope extraction were implemented and verified 2026-08-08; production wiring and date-window scoping landed in review the same day — see ADR-0012 §7)
+* **Blocked by:** nothing outstanding
 * **Unlocks:** Phases 3, 4, 5
 * **Addresses:** F16, F17, F9
 * **Rough effort:** 2 days for the ADR, 4–6 days for the `PlanDefinition` model
 * **Primary artifact:** **ADR-0012**
+
+> **Historical implementation record.** All work items and acceptance criteria below
+> were verified as delivered on 2026-08-09. They are retained for rationale and are
+> not instructions for new work.
 
 ---
 
@@ -21,27 +25,26 @@ Update the marker on the work-item heading **and** this table in the same commit
 | 2.3 | `[x]` | `EventTiming` with validated date ordering for unconfirmed events | `app/src/engine/models.ts`, `periodization.ts`, `persistence/parsers/*` |
 | 2.4 | `[x]` | Extract `evaluateReadinessAndSafetyEnvelope`; collapse Path A / Path B (F9) | `app/src/engine/rules.ts`, `planner.ts` |
 
-**2.1 gates the rest.** Do not start 2.2 before the ADR is accepted — the domain objects
-are the ADR's output, and building them first inverts the dependency this phase exists to
-establish.
+Historically, 2.1 gated the other tasks: ADR-0012 was accepted before the domain objects
+were implemented.
 
 ---
 
-## Goal
+## Completed outcome
 
-Establish that an explicit training plan — not generic days-to-event arithmetic — is the
-authority on what a given date should develop, and give that plan a representation the
-engine actually reads.
+An explicit training plan is the authority for its active date window and is read by the
+production engine; generic days-to-event arithmetic remains a fallback where no authored
+plan applies.
 
-## The problem in one paragraph
+## Pre-implementation state (historical — resolved by 2.1/2.2)
 
-`app/src/workouts/event-plan.ts` encodes the real macrocycle: 17 coverage entries with
+`app/src/workouts/event-plan.ts` encoded the real macrocycle: 17 coverage entries with
 phases (`build | travel | peak | taper | race`), requirement tiers, workout IDs and
-coaching notes. **Its only consumer is `app/scripts/validate-workouts.ts`** (F16). The
-live planner instead reduces the plan to five generic rolling objectives and re-derives
-phase from `daysToEvent`, producing a `PhaseWeights` whose `intensityScale` is read by
-nobody and whose `volumeScale` feeds a single multiplier (F17). Two phase vocabularies
-exist with no mapping between them.
+coaching notes. **Its only consumer was `app/scripts/validate-workouts.ts`** (F16). The
+live planner instead reduced the plan to five generic rolling objectives and re-derived
+phase from `daysToEvent`, producing a `PhaseWeights` whose `intensityScale` was read by
+nobody and whose `volumeScale` fed a single multiplier (F17). Two phase vocabularies
+existed with no mapping between them.
 
 ## Acceptance criteria
 
@@ -145,10 +148,10 @@ Until Phase 4.4 lands, `intensityScale` stays written-and-unread. That is accept
 *because it is now a scheduled commitment with a named consumer*, which is the state F17
 objects to it lacking.
 
-## `[ ]` 2.2 — `PlanDefinition`: make the event plan executable
+## `[x]` 2.2 — `PlanDefinition`: make the event plan executable
 
-Generalise `event-plan.ts` from a September-specific coverage list into a plan the engine
-consumes. **Do not make the domain September-specific.**
+`event-plan.ts` was generalised from a September-specific coverage list into a plan the
+engine consumes. **The domain was kept event-agnostic, not September-specific.**
 
 ```ts
 export interface PlanDefinition {

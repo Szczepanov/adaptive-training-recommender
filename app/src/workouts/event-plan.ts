@@ -4,7 +4,8 @@ export type EventPlanPhase = 'build' | 'travel' | 'peak' | 'taper' | 'race' | 'r
 export type EventPlanRequirement = 'required' | 'optional' | 'conditional';
 
 export type EventPlanCoverageKey =
-  | 'easy_aerobic'
+  | 'aerobic_volume'
+  | 'recovery_spin'
   | 'sustained_quality'
   | 'short_surges'
   | 'gap_closing'
@@ -32,8 +33,9 @@ export interface EventPlanSessionCoverage {
 }
 
 export const SEPTEMBER_CYCLING_EVENT_SESSION_COVERAGE: EventPlanSessionCoverage[] = [
-  { key: 'easy_aerobic', label: 'Easy Zone 2 or recovery cycling', phases: ['build', 'travel', 'peak', 'taper', 'recovery'], requirement: 'required', workoutIds: ['cycling_zone2_standard_01', 'cycling_recovery_spin_01'], notes: 'Adjust duration from short recovery riding to longer aerobic volume.' },
-  { key: 'sustained_quality', label: 'Controlled threshold or over-under work', phases: ['build', 'peak'], requirement: 'required', workoutIds: ['cycling_controlled_threshold_4x8_01', 'cycling_over_under_3x12_01', 'cycling_vo2_variable_01', 'cycling_vo2_short_30_15_01'], notes: 'Choose interval count, duration and recovery from the generic parameter ranges.' },
+  { key: 'aerobic_volume', label: 'Easy Zone 2 aerobic volume', phases: ['build', 'travel', 'peak', 'taper', 'recovery'], requirement: 'required', workoutIds: ['cycling_zone2_standard_01'], notes: 'Counts only the authored Zone 2 prescription at or above its catalog minimum duration; a recovery spin never replaces this floor.' },
+  { key: 'recovery_spin', label: 'Optional recovery spin', phases: ['build', 'travel', 'peak', 'taper', 'recovery'], requirement: 'optional', workoutIds: ['cycling_recovery_spin_01'], notes: 'Useful active recovery, but never aerobic-volume coverage.' },
+  { key: 'sustained_quality', label: 'Controlled threshold, over-under or longer aerobic-power work', phases: ['build', 'peak'], requirement: 'required', workoutIds: ['cycling_controlled_threshold_4x8_01', 'cycling_over_under_3x12_01', 'cycling_vo2_6x3_01', 'cycling_vo2_variable_01', 'cycling_vo2_short_30_15_01'], notes: 'Choose interval count, duration and recovery from the generic parameter ranges; the default 6x3 aerobic-power prescription belongs to this role too.' },
   { key: 'short_surges', label: 'Repeated short accelerations', phases: ['build', 'peak'], requirement: 'required', workoutIds: ['cycling_short_surges_10x20_01', 'cycling_event_specific_endurance_01'], notes: 'Covers wheel-holding and position changes without requiring maximal sprint testing.' },
   { key: 'gap_closing', label: 'Longer gap-closing efforts', phases: ['build', 'peak'], requirement: 'required', workoutIds: ['cycling_gap_closing_01', 'cycling_race_simulation_50_01'], notes: 'Adjust efforts within the event-relevant 30-second to 3-minute range.' },
   { key: 'outdoor_event_specific', label: 'Outdoor event-specific endurance ride', phases: ['build', 'peak'], requirement: 'required', workoutIds: ['cycling_event_specific_endurance_01', 'cycling_race_simulation_50_01'], notes: 'Combines endurance, continued pedalling after surges, positioning practice and a late finish.' },
@@ -52,7 +54,7 @@ export const SEPTEMBER_CYCLING_EVENT_SESSION_COVERAGE: EventPlanSessionCoverage[
 ];
 
 const requiredCoverageKeys: EventPlanCoverageKey[] = [
-  'easy_aerobic', 'sustained_quality', 'short_surges', 'gap_closing',
+  'aerobic_volume', 'sustained_quality', 'short_surges', 'gap_closing',
   'outdoor_event_specific', 'primary_strength', 'recovery_or_rest',
   'travel_aerobic', 'travel_strength', 'taper_sharpening',
   'pre_race_openers', 'race_week_strength', 'race_day'

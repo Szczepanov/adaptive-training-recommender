@@ -380,6 +380,21 @@ export const TEMPLATES: SessionTemplate[] = [
         }
     },
     {
+        id: "str_full_03",
+        category: "Full-body Strength",
+        modality: "Strength",
+        durationMin: 30,
+        durationMax: 45,
+        title: "Reduced Full-body Strength Maintenance",
+        description: "Peak-build maintenance dose that preserves force and upper-body/trunk work while staying inside the modify systemic-cost ceiling.",
+        requiredEquipment: ["free_weights"],
+        environment: 'either', safetyTags: ['avoid_heavy_lower_body', 'avoid_heavy_spinal_loading'],
+        systemicCost: 0.45,
+        objectiveTransferable: false,
+        stimulusProfile: { aerobicEndurance: 0, thresholdPower: 0, vo2MaxPower: 0, repeatedSurges: 0.1, sprintPower: 0.1, fatigueResistance: 0.1, maxStrength: 0.7, hypertrophy: 0.4 },
+        costProfile: { systemic: 0.45, cardiovascular: 0.2, lowerBody: 0.45, upperBody: 0.5, impactTissue: 0.2, neuromuscular: 0.55 }
+    },
+    {
         id: "str_full_02",
         category: "Full-body Strength",
         modality: "Strength",

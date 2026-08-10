@@ -50,8 +50,10 @@ These implement the way forward in
 [`docs/analysis/2026-08-08-architecture-review.md`](../analysis/2026-08-08-architecture-review.md)
 §7.5. Finding IDs (`F1`, `F16`, …) refer to that document.
 
-All six are **design-approved** as of 2026-08-08 — every open choice is decided and
-recorded in the register below.
+Phases 0–5 are **implemented** as verified on 2026-08-09; Phase 6 is now **In progress**.
+The Phase 0–5 task boards are historical implementation records; the
+[follow-up analysis](../analysis/2026-08-09-phase-0-5-completion-review.md) records
+which original findings are fully closed and which remain ongoing work.
 
 `Status` is a single plan-level lifecycle value from the table above. Because a plan can
 be part-startable, **which work items are unblocked is a separate column** — `Ready` at
@@ -60,25 +62,31 @@ all-`Ready` table became unusable.
 
 | # | Plan | Status | Startable items | Blocked by | Addresses |
 |---|---|---|---|---|---|
-| 0 | [Instrumentation & developer baseline](./phase-0-instrumentation.md) | **Ready** | all | — | F11, F14, F15, part of F10 |
-| 1 | [Live defects](./phase-1-live-defects.md) | Approved | **1.1, 1.3** | 1.2 needs Phase 0 | F1, F2, F6 |
-| 2 | [Plan intent is the planning authority](./phase-2-plan-intent-authority.md) | Approved | none | Phase 1 | F16, F17, F9 |
-| 3 | [One ranking path](./phase-3-single-ranking-path.md) | Approved | none | Phase 0; ADR-0012, which Phase 2 task 2.1 writes — it does not exist yet | F3, F4, F5 |
-| 4 | [Objective credit V2](./phase-4-objective-credit-v2.md) | Approved | none | Phase 0, Phase 2 | F7, F8, F12 |
-| 5 | [Sequence planning](./phase-5-sequence-planning.md) | Approved | none | Phases 0–4 | the cutover proper |
+| 0 | [Instrumentation & developer baseline](./phase-0-instrumentation.md) | **Implemented** | — | — | F11, F14, F15, part of F10 |
+| 1 | [Live defects](./phase-1-live-defects.md) | **Implemented** | — | — | F1, F2, F6 |
+| 2 | [Plan intent is the planning authority](./phase-2-plan-intent-authority.md) | **Implemented** | — | — | F16, F17, F9 |
+| 3 | [One ranking path](./phase-3-single-ranking-path.md) | **Implemented** | — | — | F3, F4, F5 |
+| 4 | [Objective credit V2](./phase-4-objective-credit-v2.md) | **Implemented** | — | — | F7, F8, F12 |
+| 5 | [Sequence planning](./phase-5-sequence-planning.md) | **Implemented** | — | — | the cutover proper |
+| 6 | [Evidence-driven calibration & operational assurance](./phase-6-evidence-and-operational-assurance.md) | **In progress** | **6.3, 6.6** | 6.5 needs Firebase owner/project; 6.7 needs 6.3–6.4 evidence; 6.2c's baseline acceptance is blocked (see below) | remaining F11, F12, F15 |
+| 6.2c | [Recommendation quality & weekly coverage](./phase-6-2c-recommendation-quality-and-weekly-coverage.md) | **In progress** | none | reviewed rest/recovery-spike finding (§9/§10 of the plan) | separates adaptation credit from weekly programming-role coverage; not an original review finding |
 
-**Start here: two plans and three work items** — all of Phase 0, plus Phase 1 items 1.1
-and 1.3. Nothing else is unblocked today.
-
-**Phase 0 gates Phases 3–5 and Phase 1.2.** It builds the only instrument that can tell
-whether a heuristic change improved or degraded the plan — so any item that changes
-decision behaviour needs it first. Phase 1.2 changes objective crediting for every
-existing user, which is exactly that category, despite the rest of Phase 1 being
-independent.
-
-Phase 5 is approved as a *sequenced destination* (see its increment order), not as the
-next thing to build — and 5.1 specifically is approved to be **measured**, not shipped
-unconditionally.
+Phases 0–5 are complete; Phase 6 has started with 6.1 baseline ownership and 6.2 (both
+Phase 5 correctness carryovers) implemented in PR #17, which bumped `POLICY_VERSION` to
+`2026-08-phase6-correctness-carryovers-v1`. 6.2c (adaptation-credit/weekly-coverage
+separation, [ADR-0016](../adr/0016-adaptation-credit-and-weekly-coverage.md)) followed to
+close a further review finding; its code and dedicated contract tests are complete and
+green, but its own plan (§9/§10) blocks blessing the semantic baseline on an unexplained
+rest/recovery-share spike (14–43% → 50% in several healthy cycling scenarios) surfaced by
+`simulate:diff` -- exactly the pattern its own rollback conditions name. This looks like a
+pre-existing fatigue-model interaction (`Mobility/Recovery`'s non-zero cost profile
+narrowly outscoring zero-cost `Rest` in `calculateStimulusBenefit`, so a multi-day recover
+stretch keeps adding cost instead of decaying) newly exposed by 6.2c's coverage-driven day
+selection, not a logic bug in 6.2c itself -- see the phase-6-2c plan for detail. The next
+priority is resolving that finding (a targeted, evidence-reviewed fix, or explicit
+deferral to 6.7) before updating the baseline, then 6.3's scenario input contract. Phase
+5.1 remains a measured but non-production beam-search prototype; the live planner is
+still greedy.
 
 ---
 

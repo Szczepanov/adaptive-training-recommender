@@ -7,6 +7,7 @@ import type {
     UserEvent,
     SessionTemplate,
 } from '../models';
+import type { CompletedExposure } from '../trainingHistory';
 import { resolveDemandProfile } from '../eventPresets';
 import { addDaysToLocalDateString } from '../../utils/localDate';
 
@@ -20,13 +21,14 @@ import { addDaysToLocalDateString } from '../../utils/localDate';
 export interface AthleteScenario {
     id: string;
     label: string;
-    /** Shown verbatim in the generated report -- self-documenting, especially for
-     *  scenarios that exist specifically to record a known engine limitation rather than
-     *  to prove ideal behavior. */
     description: string;
     context: UserContext;
     event: UserEvent | null;
     startDate: string;
+    /** Optional deterministic history seeded before the first simulated decision. Phase
+     * 6.3 needs this to reproduce failures that depend on yesterday's real training rather
+     * than only on a synthetic readiness counter. */
+    initialHistory?: CompletedExposure[];
     /** Simulated 7-day windows, chained (not one large `days:` call -- see analyze.ts for
      *  why: the anchor-day pre-pass only nominates once per call). */
     weeks: number;
@@ -67,10 +69,6 @@ function context(
     };
 }
 
-/** Moderate, stable readiness -- not maximally green -- so day-0 picks reflect a normal
- *  week rather than an artificially extreme hash-selected pick (see this session's
- *  earlier finding: a maximally green readiness can land on the single hardest available
- *  option, which is realistic sometimes but not representative as a *default* fixture). */
 function stableReadiness(overrides: Partial<SubjectiveInput> = {}, objectiveOverrides: Partial<EngineObjectiveInput> = {}): DailyReadiness {
     const subjective: SubjectiveInput = {
         readiness: 6, sleepQuality: 6, fatigue: 4, soreness: 4, stress: 4, motivation: 6,
@@ -119,7 +117,7 @@ export const SCENARIOS: AthleteScenario[] = [
     {
         id: 'cycling_criterium_A',
         label: 'Cycling A-event (criterium, 40 days out)',
-        description: 'Qualification and anchor stress test: criterium demand reliably creates surge_repeatability across the chained horizon. Broad or non-cycling templates must not resolve that race-specific objective; anchor-hit outcomes are tracked separately because this change deliberately does not alter optimizer ranking policy.',
+        description: 'Qualification and anchor stress test: criterium demand reliably creates surge_repeatability across the chained horizon. Broad or non-cycling templates must not resolve that race-specific objective; anchor-hit outcomes are tracked separately.',
         context: context({ indoor_bike: true, free_weights: true }, ['Cycling']),
         event: eventOn('e-criterium', 40, 'cycling_event', 'criterium', 'A'),
         startDate: START_DATE,
@@ -153,6 +151,24 @@ export const SCENARIOS: AthleteScenario[] = [
         ),
     },
     {
+        id: 'cycling_criterium_recovery_clear_A',
+        label: 'Cycling A-event (criterium, acute stress then recovery)',
+        description: 'A high-fatigue check-in is followed by a healthy check-in one week later. The second decision window must contain train-tier days, proving the fatigue projection clears rather than holding the athlete in recover indefinitely after acute stress.',
+        context: context({ indoor_bike: true, free_weights: true }, ['Cycling']),
+        event: eventOn('e-criterium-recovery-clear', 40, 'cycling_event', 'criterium', 'A'),
+        startDate: START_DATE,
+        weeks: 2,
+        readinessForWeek: (weekIndex) => weekIndex === 0
+            ? stableReadiness(
+                { readiness: 3, sleepQuality: 3, fatigue: 8, soreness: 8, stress: 8, motivation: 3 },
+                { sleep_score: 55, sleep_duration_min: 330, rhr: 58, rhr_7d_avg: 50, rhr_delta: 8, hrv_last_night: 32, hrv_weekly_avg: 50, hrv_delta: -18, body_battery_wake: 35 },
+            )
+            : stableReadiness(
+                { readiness: 8, sleepQuality: 8, fatigue: 2, soreness: 2, stress: 2, motivation: 8 },
+                { sleep_score: 92, sleep_duration_min: 500, rhr: 46, rhr_7d_avg: 50, rhr_delta: -4, hrv_last_night: 65, hrv_weekly_avg: 50, hrv_delta: 15, body_battery_wake: 95 },
+            ),
+    },
+    {
         id: 'running_marathon_A',
         label: 'Running A-event (marathon, 40 days out)',
         description: 'No indoor bike -- verifies the plan never leans on Cycling equipment the athlete does not own, and that running-relevant templates dominate a running-focused build.',
@@ -165,7 +181,7 @@ export const SCENARIOS: AthleteScenario[] = [
     {
         id: 'triathlon_olympic_A',
         label: 'Triathlon A-event (olympic, 40 days out)',
-        description: 'Regression coverage for the category-substring bug fixed this session (optimizer.ts Patch 2): both Cycling and Running should be boosted, never penalized, for a triathlon focus event.',
+        description: 'Regression coverage for the category-substring bug: both Cycling and Running should be boosted, never penalized, for a triathlon focus event.',
         context: context({ indoor_bike: true, free_weights: true, treadmill: true }, ['Cycling', 'Running']),
         event: eventOn('e-tri', 40, 'triathlon', 'olympic', 'A'),
         startDate: START_DATE,
@@ -175,7 +191,7 @@ export const SCENARIOS: AthleteScenario[] = [
     {
         id: 'strength_meet_powerlifting_B',
         label: 'Strength B-event (powerlifting meet, 30 days out)',
-        description: 'Documents a known engine limitation, not ideal behavior: microcycle.ts\'s generateWeeklyObjectives always generates exactly one strength_maintenance objective per rolling window regardless of how strength-dominant the demand profile is. A real powerlifting block should call for materially more weekly strength volume than this. Left unfixed deliberately -- needs its own design work on how strength volume should scale with demand.',
+        description: 'Documents a known engine limitation, not ideal behavior: the current generic weekly strength-maintenance objective does not represent full competition-lift programming.',
         context: context({ cable_machine: true, free_weights: true, pullup_bar: true }, ['Strength']),
         event: eventOn('e-strength', 30, 'strength_meet', 'powerlifting', 'B'),
         startDate: START_DATE,
@@ -185,7 +201,7 @@ export const SCENARIOS: AthleteScenario[] = [
     {
         id: 'general_target_generic',
         label: 'General target, C-priority (low-stakes goal, 50 days out)',
-        description: 'A goal exists but never drives a taper (C-priority) and uses the generic demand preset, which is numerically close to the default Base demand -- expected to behave close to the no-event baseline. Exercises the "goal present but not governing" path distinctly from true Base phase.',
+        description: 'A goal exists but never drives a taper (C-priority) and uses the generic demand preset, which is numerically close to the default Base demand -- expected to behave close to the no-event baseline.',
         context: context({ free_weights: true }, []),
         event: eventOn('e-general', 50, 'general_target', 'generic', 'C'),
         startDate: START_DATE,
@@ -195,7 +211,7 @@ export const SCENARIOS: AthleteScenario[] = [
     {
         id: 'field_sport_general_target',
         label: 'Field/team-sport-focused athlete (no event)',
-        description: 'There is no dedicated UserEvent category for field/team sports (the union is running_race | cycling_event | triathlon | strength_meet | general_target) -- this scenario runs with no event at all and an explicit Field preference, to see how reachable Field Maintenance actually is over a 4-week horizon on its own. Field Maintenance is intent-optimizer-only (Path B) by earlier design (its 2-day lower-body-spacing rule can\'t be enforced on the readiness-only path).',
+        description: 'There is no dedicated UserEvent category for field/team sports; this scenario runs with no event and an explicit Field preference to measure reachability of Field Maintenance.',
         context: context({ free_weights: true }, ['Field']),
         event: null,
         startDate: START_DATE,
@@ -205,7 +221,7 @@ export const SCENARIOS: AthleteScenario[] = [
     {
         id: 'no_event_base_phase',
         label: 'No event at all (pure Base phase baseline)',
-        description: 'Control scenario: no goals, no events, moderate equipment. Everything should stay in Base phase for the whole horizon; used to sanity-check the harness itself and provide a comparison baseline for every other scenario\'s metrics.',
+        description: 'Control scenario: no goals, no events, moderate equipment. Everything should stay in Base phase for the whole horizon.',
         context: context({ free_weights: true }, []),
         event: null,
         startDate: START_DATE,
@@ -214,7 +230,7 @@ export const SCENARIOS: AthleteScenario[] = [
     },
     {
         id: 'cycling_a_event_build_week',
-        label: 'Cycling A-event (Build phase, fixed 2026-03-02)',
+        label: 'Cycling A-event (Build phase, fixed fixture date)',
         description: 'Golden coaching-contract scenario. 60 days to A-event (Build phase), 1 week strip. Tests key cycling quality spacing, anchor protection, event modality frequency, objective resolution, and rest day presence.',
         context: context({ indoor_bike: true, free_weights: true }, ['Cycling'], [], { weekdayMaxMinutes: 60, weekendMaxMinutes: 150 }),
         event: {
@@ -229,5 +245,59 @@ export const SCENARIOS: AthleteScenario[] = [
         startDate: '2026-03-02',
         weeks: 1,
         readinessForWeek: () => stableReadiness(),
+    },
+    {
+        id: 'cycling_specificity_after_hard_race_specific',
+        label: 'Cycling Specificity after hard race-specific day -1',
+        description: 'Phase 6.3 escaped-case regression: start exactly 35 days from an A-priority road race with a hard event-specific ride in completed history yesterday. Immediate recovery is allowed, but the next rolling week must still preserve distinct easy-aerobic, sustained-quality and renewed event-specific functions rather than collapse into technical/recovery filler.',
+        context: context({ indoor_bike: true, free_weights: true }, ['Cycling'], [], { weekdayMaxMinutes: 90, weekendMaxMinutes: 150 }),
+        event: {
+            id: 'e-specificity-escaped',
+            title: 'cycling_event (road_race)',
+            date: '2026-09-13',
+            priority: 'A',
+            lifecycle: 'scheduled',
+            category: 'cycling_event',
+            demandProfile: resolveDemandProfile('cycling_event', 'road_race'),
+        },
+        startDate: '2026-08-09',
+        initialHistory: [{
+            occurrenceKey: 'scenario:specificity:hard-race-specific:2026-08-08',
+            date: '2026-08-08',
+            templateId: 'end_race_specific_01',
+            workoutId: 'cycling_event_specific_endurance_01',
+            modality: 'Cycling',
+            category: 'Race-Specific Endurance',
+            stimulusConfidence: 'exact',
+            stimulusProfile: {
+                aerobicEndurance: 0.8,
+                thresholdPower: 0.4,
+                vo2MaxPower: 0.4,
+                repeatedSurges: 0.6,
+                sprintPower: 0.1,
+                fatigueResistance: 0.7,
+                maxStrength: 0,
+                hypertrophy: 0,
+            },
+            costProfile: {
+                systemic: 0.55,
+                cardiovascular: 0.6,
+                lowerBody: 0.35,
+                upperBody: 0.1,
+                impactTissue: 0.15,
+                neuromuscular: 0.3,
+            },
+            trainingRecordLike: {
+                type: 'Cycling Race-Specific Endurance',
+                duration_min: 90,
+                training_effect: 0,
+                intensity_tag: 'hard',
+            },
+        }],
+        weeks: 1,
+        readinessForWeek: () => stableReadiness(
+            { readiness: 8, sleepQuality: 8, fatigue: 2, soreness: 2, stress: 2, motivation: 8, timeAvailable: 120 },
+            { last_3_days_hard_sessions_count: 1, sleep_score: 88, sleep_duration_min: 480, body_battery_wake: 90 },
+        ),
     },
 ];

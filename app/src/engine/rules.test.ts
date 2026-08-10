@@ -124,10 +124,10 @@ describe('modify-mode systemic cost gating', () => {
             categoriesSeen.add(rec.template.category);
         }
         expect(categoriesSeen.has('Upper-body Strength')).toBe(true);
-        // The higher-cost categories modify is meant to exclude should still never appear.
+        expect(categoriesSeen.has('Full-body Strength')).toBe(true); // str_full_03 is intentionally modify-admissible.
+        // The genuinely high-cost categories remain excluded; the gate is a cost contract, not a category ban.
         expect(categoriesSeen.has('Hard Endurance')).toBe(false);
         expect(categoriesSeen.has('Lower-body Strength')).toBe(false);
-        expect(categoriesSeen.has('Full-body Strength')).toBe(false);
         expect(categoriesSeen.has('Moderate Endurance')).toBe(false);
     });
 
@@ -171,7 +171,7 @@ describe('modality preferences', () => {
         expect(rec.rationale).not.toContain("don't support it");
     });
 
-    it('narrows a modify-day Strength ask to an in-ceiling strength variant, not Lower/Full-body', () => {
+    it('narrows a modify-day Strength ask to an in-ceiling strength variant, including reduced Full-body maintenance', () => {
         const objective = quietObjective({ hrv_delta: -12, hrv_delta_28d: -12, rhr_delta: 5, rhr_delta_28d: 5 });
         for (let i = 1; i <= 14; i++) {
             const date = `2026-08-${String(i).padStart(2, '0')}`;
@@ -180,7 +180,9 @@ describe('modality preferences', () => {
                 baseContext(), date
             );
             expect(rec.mode).toBe('modify');
-            expect(['Upper-body Strength', 'Power Maintenance']).toContain(rec.template.category);
+            expect(rec.template.modality).toBe('Strength');
+            expect(rec.template.systemicCost).toBeLessThanOrEqual(0.5);
+            expect(['Upper-body Strength', 'Power Maintenance', 'Full-body Strength']).toContain(rec.template.category);
         }
     });
 

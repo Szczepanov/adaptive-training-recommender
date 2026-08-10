@@ -1,12 +1,14 @@
 # Phase 1 — Live defects
 
-* **Status:** **Ready** for 1.1 and 1.3 · **Approved (blocked)** for 1.2
-* **Blocked by:** *per work item* —
-  **1.1 (F1 injuries)** nothing · **1.3 (F6 rules ratchet)** nothing ·
-  **1.2 (F2 objective credit)** requires Phase 0's invariant + credit-regression harness
+* **Status:** Implemented
+* **Blocked by:** nothing outstanding
 * **Unlocks:** a correct foundation for the Phase 2–5 cutover
 * **Addresses:** F1, F2, F6
 * **Rough effort:** 3–4 days
+
+> **Historical implementation record.** All work items and acceptance criteria below
+> were verified as delivered on 2026-08-09. They are retained for rationale and are
+> not instructions for new work.
 
 ---
 
@@ -21,19 +23,18 @@ Update the marker on the work-item heading **and** this table in the same commit
 | 1.2 | `[x]` | **Phase 0** | Recognised Garmin sessions earn objective credit from an inferred stimulus vector (F2) | `app/src/engine/completedTraining.ts`, `microcycle.ts`, `trainingHistory.ts` |
 | 1.3 | `[x]` | — | Append-only recommendation revisions; decision fields immutable per revision (F6) | `app/firestore.rules`, `app/src/services/recommendationService.ts`, `app/src/components/Home.tsx`, `app/src/emulator/firestoreRules.emulator.test.ts` |
 
-1.1 and 1.3 are independent of each other and of Phase 0 — either can start today.
-**1.2 must not start before Phase 0**: it changes objective crediting for every existing
-user, and its constants cannot be chosen without the credit-regression harness.
+Historically, 1.1 and 1.3 were independent, while 1.2 waited for Phase 0's
+credit-regression harness. That prerequisite was satisfied before 1.2 landed.
 
 ---
 
-## Goal
+## Completed outcome
 
-Fix the three defects where the system's actual behaviour differs from its documented
-behaviour for a real user today: an injury gate with no data source, measured training
-that earns no objective credit, and audit records a client can rewrite.
+The three defects were corrected: injury constraints have a production data path,
+measured training earns objective credit, and recommendation decision records are
+revisioned and protected from client rewrite.
 
-## Why this cannot wait for the architecture work
+## Historical rationale
 
 The Phase 2–5 cutover migrates onto whatever foundation exists. Migrating onto an unwired
 safety gate and rewritable audit evidence carries both defects forward and makes them
@@ -43,7 +44,7 @@ harder to see, because they will then be spread across a larger surface.
 
 ## `[x]` 1.1 — F1: give injury constraints a real data path
 
-### Current state
+### Pre-implementation state (historical — resolved by 1.1)
 
 `app/src/engine/adapters.ts` — `mapContextFromGoalsAndTrainingSettings`, the only production constructor of `UserContext` —
 hardcodes `injuries: []`. Everything downstream is therefore dead in production:
@@ -183,7 +184,7 @@ parallel. `rules.ts` and `optimizer.ts` migrate to the resolved lists in the sam
 A test must assert both evaluation paths derive identical restrictions from one settings
 object.
 
-### Work items
+### Work items (historical checklist — completed)
 
 1. `models.ts` — add `BodyRegion`, `InjuryConstraint`, and `TrainingSettings.injuries?: InjuryConstraint[]`.
 2. `injuryPolicy.ts` — the pure resolver above, fully unit-tested. No Firebase, no I/O.
@@ -206,7 +207,7 @@ object.
 9. `firestore.rules` — validate the `injuries` array shape (bounded length, enum region,
    enum severity, optional ISO date string).
 
-### Tests
+### Tests (added)
 
 * `injuryPolicy.test.ts` — full region × severity table, plus expiry behaviour.
 * `rules.test.ts` — an `exclude` achilles injury removes every `Running` template on the
@@ -227,7 +228,7 @@ object.
 > before that harness exists — see "Constants are illustrative" below for why that is not
 > a formality.
 
-### Current state
+### Current state (historical — resolved by 1.2)
 
 Verified empirically: three Garmin activities in the rolling window (120 min hard ride,
 60 min strength, 90 min moderate ride) leave every objective at `0/target`.
@@ -265,7 +266,7 @@ The correct framing:
 3. Keyword matching is **legacy last-resort compatibility only** — for genuinely
    unrecognised activity types with no other signal. It should shrink over time, not grow.
 
-### Fix
+### Fix (as delivered)
 
 **(a) Make "unknown" distinguishable from "zero".**
 In `completedEventToExposure`, attach `stimulusProfile` only when the vector carries
@@ -350,7 +351,7 @@ Fix (b) makes Garmin rides start resolving objectives. That lowers `urgency` in
 `resolveTrainingIntent`, which lowers `plannedDose`, which changes `executionDose`.
 **Re-run the Phase 0 invariant suite and read the semantic diff before merging.**
 
-### Tests
+### Tests (added)
 
 * `completedTraining.test.ts` — a Garmin-only cycling event produces a non-zero stimulus
   profile with `stimulusConfidence: 'inferred'`.
@@ -374,7 +375,7 @@ Fix (b) makes Garmin rides start resolving objectives. That lowers `urgency` in
 
 ## `[x]` 1.3 — F6: make recommendation records actually immutable
 
-### Current state
+### Current state (historical — resolved by 1.3)
 
 `app/firestore.rules` comments the document as "audit evidence and intentionally
 immutable", but `allow update` pins only `createdAt`. A client may rewrite `templateId`,
@@ -473,7 +474,7 @@ is not a gap — a client that never writes simply leaves the record unchanged.
 **`prescription` is decision evidence** and must be pinned per revision alongside the
 other decision fields — the earlier `decisionFieldsUnchanged()` sketch omitted it.
 
-### Fix
+### Fix (as delivered)
 
 Once (B) is chosen, add these helpers to the `daily_recommendations` update rule:
 
@@ -509,7 +510,7 @@ Verify against `recommendationService.saveRecommendation`'s `setDoc(..., { merge
 semantics before landing — `merge: true` means `request.resource.data` is the merged
 result, so unmentioned fields compare equal, which is what these rules assume.
 
-### Tests (extend `src/emulator/firestoreRules.emulator.test.ts`)
+### Tests (added, extend `src/emulator/firestoreRules.emulator.test.ts`)
 
 * rejects an update that changes `templateId` **without** the matching archive write
 * rejects a decision change whose archive document exists but has **mismatched** fields
@@ -533,19 +534,19 @@ rule-test count so a silently-shrinking suite is caught.
 
 ## Acceptance criteria
 
-- [ ] `injuries: []` no longer appears in `adapters.ts`; an active injury changes the
+- [x] `injuries: []` no longer appears in `adapters.ts`; an active injury changes the
       recommendation on the readiness path, the intent path, and all 7 projected days
-- [ ] `safetyRestrictedModalityCount` is non-zero in a persisted audit when an injury is active
-- [ ] `RUNNING_INJURY_PATTERN` deleted
-- [ ] three Garmin-only sessions resolve at least two weekly objectives
-- [ ] the inversion is gone: a *recognised* Garmin session earns credit from its inferred
+- [x] `safetyRestrictedModalityCount` is non-zero in a persisted audit when an injury is active
+- [x] `RUNNING_INJURY_PATTERN` deleted
+- [x] three Garmin-only sessions resolve at least two weekly objectives
+- [x] the inversion is gone: a *recognised* Garmin session earns credit from its inferred
       structured stimulus (`stimulusConfidence: 'inferred'`), and an *unrecognised* one
       produces no structured profile (`'unknown'`) while retaining whatever legacy
       fallback credit it earns today. "No structured profile" must not be read as "no
       credit" — the two outcomes are asserted by separate tests
-- [ ] emulator suite covers field tampering, schema downgrade, audit removal, and the
+- [x] emulator suite covers field tampering, schema downgrade, audit removal, and the
       three legal-update cases
-- [ ] simulation baseline regenerated and the delta reviewed in the PR description
+- [x] simulation baseline regenerated and the delta reviewed in the PR description
 
 ## Risks & rollback
 

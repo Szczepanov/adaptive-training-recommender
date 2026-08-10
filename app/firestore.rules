@@ -21,6 +21,14 @@ service cloud.firestore {
         && date.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$');
     }
 
+    function hasValidGoalTaper() {
+      return !('taper' in request.resource.data)
+        || (request.resource.data.taper is map
+          && request.resource.data.taper.keys().hasOnly(['startDate'])
+          && request.resource.data.taper.startDate is string
+          && request.resource.data.taper.startDate.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$'));
+    }
+
     function hasValidAdherence(adherence) {
       return adherence is map
         && adherence.keys().hasOnly(['respondedAt', 'followed', 'actualModality', 'actualDurationMin', 'skipped', 'notes'])
@@ -95,11 +103,6 @@ service cloud.firestore {
       return request.resource.data.schemaVersion >= resource.data.schemaVersion;
     }
 
-    // Freezes the audit only for the *current* decision: an update that keeps
-    // templateId/mode/rationale/etc. unchanged must not silently swap out the audit that
-    // explains that decision. A genuine decision change (gated by the revision-increment +
-    // archivesPriorRevision() branch below) legitimately needs its own new audit -- that's
-    // what makes each archived revision's audit describe the revision it belongs to.
     function auditWriteOnce() {
       return !('recommendationAudit' in resource.data)
         || !decisionFieldsUnchanged()
@@ -133,7 +136,6 @@ service cloud.firestore {
         && (!('recommendationAudit' in resource.data) || (('recommendationAudit' in prior) && prior.recommendationAudit == resource.data.recommendationAudit));
     }
 
-    // Legacy collections are permanently disabled after the user-scoped migration.
     match /daily_recovery_snapshot/{date} { allow read, write: if false; }
     match /daily_subjective_checkin/{document=**} { allow read, write: if false; }
 
@@ -146,23 +148,16 @@ service cloud.firestore {
 
     match /users/{userId}/goals/{goalId} {
       allow read: if isOwner(userId);
-      allow create: if hasOwnedUserId(userId);
-      allow update: if keepsOwnership(userId) && request.resource.data.createdAt == resource.data.createdAt;
+      allow create: if hasOwnedUserId(userId) && hasValidGoalTaper();
+      allow update: if keepsOwnership(userId) && request.resource.data.createdAt == resource.data.createdAt && hasValidGoalTaper();
       allow delete: if isOwner(userId);
     }
 
-    // --- Fixed activities (Phase 5.3) ---
-    // See docs/plans/phase-5-sequence-planning.md 5.3 for the full storage contract this
-    // must stay aligned with (models.ts FixedActivity, validation.ts validateFixedActivity).
-
+    // --- Fixed activities (Phase 5.3 + Phase 6 exact identity) ---
     function isValidActivityDate(date) {
       return date is string && date.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$') && isRealCalendarDate(date.split('-'));
     }
 
-    // Rejects a date that merely matches YYYY-MM-DD shape but isn't a real calendar date
-    // (e.g. 2026-02-30) -- matches validation.ts's isValidDate, which does full calendar
-    // validation client-side. A direct authenticated write bypassing validation.ts must not
-    // be able to persist a date the client-side layer would have rejected.
     function isRealCalendarDate(parts) {
       let year = int(parts[0]);
       let month = int(parts[1]);
@@ -174,17 +169,10 @@ service cloud.firestore {
       return month >= 1 && month <= 12 && day >= 1 && day <= daysInMonth;
     }
 
-    // A single reusable "is this map entry, if present, a 0..1 number" check -- shared by
-    // both expectedStimulus and expectedCost below, since both are just differently-keyed
-    // instances of the same 0..1 axis-map shape.
     function hasValidAxisValue(m, key) {
       return !(key in m) || (m[key] is number && m[key] >= 0 && m[key] <= 1);
     }
 
-    // Firestore rules cannot loop over an arbitrary-length map, so every recognized axis
-    // is checked by name -- this is only tractable because the canonical axis set is
-    // small and fixed (WorkoutStimulusProfile has exactly 8 axes; keep this list and
-    // models.ts in sync when a axis is added).
     function hasValidExpectedStimulus(m) {
       return m is map
         && m.keys().hasOnly(['aerobicEndurance', 'thresholdPower', 'vo2MaxPower', 'repeatedSurges', 'sprintPower', 'fatigueResistance', 'maxStrength', 'hypertrophy'])
@@ -199,7 +187,6 @@ service cloud.firestore {
         && hasValidAxisValue(m, 'hypertrophy');
     }
 
-    // Same rationale as above -- WorkoutCostProfile has exactly 6 dimensions.
     function hasValidExpectedCost(m) {
       return m is map
         && m.keys().hasOnly(['systemic', 'cardiovascular', 'lowerBody', 'upperBody', 'impactTissue', 'neuromuscular'])
@@ -212,19 +199,26 @@ service cloud.firestore {
         && hasValidAxisValue(m, 'neuromuscular');
     }
 
-    // Bounds equipment by length and item count only. Firestore rules cannot iterate a
-    // list to type-check each item, so per-item type/length (string, <= 50 chars) is
-    // enforced client-side by validation.ts's validateFixedActivity, not by this rule --
-    // stated explicitly per the 5.3 plan rather than left for a reader to assume covered.
     function hasValidEquipmentList(list) {
       return list is list && list.size() <= 20;
+    }
+
+    function hasValidAvailabilityContextOverride(m) {
+      return m is map
+        && m.keys().hasOnly(['environment', 'equipment'])
+        && (!('environment' in m) || m.environment in ['indoor', 'outdoor', 'either'])
+        && (!('equipment' in m) || hasValidEquipmentList(m.equipment));
+    }
+
+    function hasValidOptionalCatalogId(data, key) {
+      return !(key in data) || (data[key] is string && data[key].size() > 0 && data[key].size() <= 120);
     }
 
     function hasValidFixedActivity(userId) {
       let data = request.resource.data;
       return hasOwnedUserId(userId)
         && isValidActivityDate(data.date)
-        && data.keys().hasOnly(['userId', 'title', 'date', 'startTime', 'durationMin', 'fixed', 'expectedStimulus', 'expectedCost', 'environment', 'equipment', 'availabilityOverride', 'isCompleted', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['userId', 'title', 'date', 'startTime', 'durationMin', 'fixed', 'expectedStimulus', 'expectedCost', 'environment', 'equipment', 'availabilityOverride', 'availabilityContextOverride', 'templateId', 'workoutId', 'isCompleted', 'createdAt', 'updatedAt'])
         && data.keys().hasAll(['userId', 'title', 'date', 'durationMin', 'fixed', 'environment', 'isCompleted', 'createdAt', 'updatedAt'])
         && data.title is string && data.title.size() <= 200
         && data.durationMin is int && data.durationMin > 0 && data.durationMin <= 1440
@@ -237,7 +231,10 @@ service cloud.firestore {
         && (!('expectedStimulus' in data) || hasValidExpectedStimulus(data.expectedStimulus))
         && (!('expectedCost' in data) || hasValidExpectedCost(data.expectedCost))
         && (!('equipment' in data) || hasValidEquipmentList(data.equipment))
-        && (!('availabilityOverride' in data) || (data.availabilityOverride is number && data.availabilityOverride >= 0 && data.availabilityOverride <= 1440));
+        && (!('availabilityOverride' in data) || (data.availabilityOverride is number && data.availabilityOverride >= 0 && data.availabilityOverride <= 1440))
+        && (!('availabilityContextOverride' in data) || hasValidAvailabilityContextOverride(data.availabilityContextOverride))
+        && hasValidOptionalCatalogId(data, 'templateId')
+        && hasValidOptionalCatalogId(data, 'workoutId');
     }
 
     match /users/{userId}/fixed_activities/{activityId} {
@@ -249,7 +246,33 @@ service cloud.firestore {
       allow delete: if isOwner(userId);
     }
 
-    // Legacy constraints are retained solely for one-time migration reads.
+    // Explicit calendar overlays are user-authored. They cannot be inferred from event
+    // metadata, and their date range/dose contract is deliberately tight because it is
+    // consumed directly by Path B planning.
+    function hasValidPlanBlock(userId) {
+      let data = request.resource.data;
+      return hasOwnedUserId(userId)
+        && data.keys().hasOnly(['userId', 'eventId', 'phase', 'startDate', 'endDate', 'volumeScale', 'intensityScale', 'createdAt', 'updatedAt'])
+        && data.keys().hasAll(['userId', 'phase', 'startDate', 'endDate', 'volumeScale', 'intensityScale', 'createdAt', 'updatedAt'])
+        && data.phase == 'travel'
+        && isValidActivityDate(data.startDate)
+        && isValidActivityDate(data.endDate)
+        && data.startDate <= data.endDate
+        && data.volumeScale is number && data.volumeScale >= 0 && data.volumeScale <= 1
+        && data.intensityScale is number && data.intensityScale >= 0 && data.intensityScale <= 1
+        && (!('eventId' in data) || data.eventId is string)
+        && data.createdAt is string && data.updatedAt is string;
+    }
+
+    match /users/{userId}/plan_blocks/{blockId} {
+      allow read: if isOwner(userId);
+      allow create: if hasValidPlanBlock(userId);
+      allow update: if hasValidPlanBlock(userId)
+        && keepsOwnership(userId)
+        && request.resource.data.createdAt == resource.data.createdAt;
+      allow delete: if isOwner(userId);
+    }
+
     match /users/{userId}/constraints/{constraintId} {
       allow read: if isOwner(userId);
       allow write: if false;
@@ -278,7 +301,6 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // Admin backend only: the browser may read but can never forge wearable facts.
     match /users/{userId}/daily_recovery_snapshots/{date} {
       allow read: if isOwner(userId);
       allow write: if false;

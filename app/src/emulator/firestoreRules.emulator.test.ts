@@ -11,6 +11,15 @@ const ownerId = 'athlete-a';
 const otherUserId = 'athlete-b';
 const recommendationPath = `users/${ownerId}/daily_recommendations/2026-08-07`;
 const fixedActivityPath = `users/${ownerId}/fixed_activities/activity-1`;
+const planBlockPath = `users/${ownerId}/plan_blocks/trip-august`;
+const goalPath = `users/${ownerId}/goals/goal-1`;
+
+function validGoal() {
+    return {
+        userId: ownerId, title: 'Road race', targetDate: '2026-09-13', eventCategory: 'cycling_event',
+        taper: { startDate: '2026-09-07' }, createdAt: '2026-08-01T00:00:00Z', updatedAt: '2026-08-01T00:00:00Z',
+    };
+}
 
 function validFixedActivity() {
     return {
@@ -26,6 +35,14 @@ function validFixedActivity() {
         isCompleted: false,
         createdAt: '2026-08-01T00:00:00Z',
         updatedAt: '2026-08-01T00:00:00Z',
+    };
+}
+
+function validPlanBlock() {
+    return {
+        userId: ownerId, eventId: 'road-race', phase: 'travel', startDate: '2026-08-19', endDate: '2026-08-22',
+        volumeScale: 0.6, intensityScale: 0.5,
+        createdAt: '2026-08-01T00:00:00Z', updatedAt: '2026-08-01T00:00:00Z',
     };
 }
 
@@ -105,6 +122,12 @@ emulatorDescribe('Firestore security rules', () => {
         const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
         await assertFails(setDoc(doc(ownerDb, `users/${ownerId}/activities/garmin-1`), { date: '2026-08-07' }));
         await assertFails(setDoc(doc(ownerDb, `users/${ownerId}/daily_recovery_snapshots/2026-08-07`), { date: '2026-08-07' }));
+    });
+
+    it('allows a well-formed goal taper and rejects a malformed taper object', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertSucceeds(setDoc(doc(ownerDb, goalPath), validGoal()));
+        await assertFails(setDoc(doc(ownerDb, `${goalPath}-bad`), { ...validGoal(), taper: { startDate: 123 } }));
     });
 
     it('rejects a recommendation whose user or date disagrees with its path', async () => {
@@ -305,6 +328,30 @@ emulatorDescribe('Firestore security rules', () => {
         await assertFails(setDoc(doc(ownerDb, fixedActivityPath), { ...validFixedActivity(), equipment: Array.from({ length: 21 }, (_, i) => `item-${i}`) }));
     });
 
+    it('allows a fixed activity with a valid availabilityContextOverride (Phase 6.2b / D6-B)', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await expect(assertSucceeds(setDoc(doc(ownerDb, fixedActivityPath), {
+            ...validFixedActivity(),
+            availabilityContextOverride: { environment: 'indoor', equipment: ['indoor_bike'] },
+        }))).resolves.toBeUndefined();
+    });
+
+    it('rejects a fixed activity with an unknown environment inside availabilityContextOverride', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertFails(setDoc(doc(ownerDb, fixedActivityPath), {
+            ...validFixedActivity(),
+            availabilityContextOverride: { environment: 'space' },
+        }));
+    });
+
+    it('rejects a fixed activity with an unrecognized key inside availabilityContextOverride', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertFails(setDoc(doc(ownerDb, fixedActivityPath), {
+            ...validFixedActivity(),
+            availabilityContextOverride: { environment: 'indoor', extra: true },
+        }));
+    });
+
     it('rejects a fixed activity with a malformed date', async () => {
         const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
         await assertFails(setDoc(doc(ownerDb, fixedActivityPath), { ...validFixedActivity(), date: '08/12/2026' }));
@@ -340,6 +387,23 @@ emulatorDescribe('Firestore security rules', () => {
         const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
         await expect(assertSucceeds(setDoc(doc(ownerDb, fixedActivityPath), { ...validFixedActivity(), isCompleted: true }, { merge: true }))).resolves.toBeUndefined();
         await expect(assertSucceeds(deleteDoc(doc(ownerDb, fixedActivityPath)))).resolves.toBeUndefined();
+    });
+
+    it('allows an owner to create a valid authored travel plan block and rejects malformed ranges or doses', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await expect(assertSucceeds(setDoc(doc(ownerDb, planBlockPath), validPlanBlock()))).resolves.toBeUndefined();
+        await assertFails(setDoc(doc(ownerDb, `${planBlockPath}-inverted`), { ...validPlanBlock(), endDate: '2026-08-18' }));
+        await assertFails(setDoc(doc(ownerDb, `${planBlockPath}-impossible`), { ...validPlanBlock(), startDate: '2026-02-30' }));
+        await assertFails(setDoc(doc(ownerDb, `${planBlockPath}-dose`), { ...validPlanBlock(), intensityScale: 1.1 }));
+    });
+
+    it('rejects cross-user authored plan block access and forged ownership', async () => {
+        await testEnvironment.withSecurityRulesDisabled(async context => {
+            await setDoc(doc(context.firestore(), planBlockPath), validPlanBlock());
+        });
+        const otherDb = testEnvironment.authenticatedContext(otherUserId).firestore();
+        await assertFails(getDoc(doc(otherDb, planBlockPath)));
+        await assertFails(setDoc(doc(otherDb, `users/${otherUserId}/plan_blocks/forged`), validPlanBlock()));
     });
 
     it('rejects re-saving the same decision with a different audit than what is stored', async () => {

@@ -7,6 +7,10 @@
 * **Addresses:** F7, F8, F12
 * **Rough effort:** 4–5 days
 
+> **Historical implementation record.** All work items and acceptance criteria below
+> were verified as delivered on 2026-08-09. They are retained for rationale and are
+> not instructions for new work.
+
 ---
 
 ## Task board

@@ -10,7 +10,7 @@ export const STRENGTH_WORKOUTS: WorkoutDefinition[] = [
     duration: { defaultMin: 60, minimumMin: 18, maximumMin: 70 },
     loadProfile: { cardiovascular: 2, muscular: 4, mechanical: 3, eccentric: 3, coordination: 4, recoveryHours: 48 },
     eligibility: { minimumReadiness: 6, maximumSoreness: 6, minimumDaysAfterHardLowerBody: 1, forbiddenPainFlags: ['knee_swelling', 'worsening_achilles_pain'] },
-    equipment: ['barbell', 'rack', 'bench', 'pullup_bar', 'bodyweight'], contraindicationTags: ['knee_swelling'],
+    equipment: ['barbell', 'rack', 'bench', 'pullup_bar', 'bodyweight'], contraindicationTags: ['knee_swelling'], engineTemplateIds: ['str_full_01', 'str_full_03'],
     blocks: [
       { id: 'activation', name: 'Power activation', role: 'activation', steps: [
         repsStep('power_clean', 'hang_power_clean', 'Hang power clean', 3, { sets: 4, restAfterSec: 120, target: { type: 'reps_in_reserve', min: 4, max: 6 }, notes: ['Fast and crisp', 'Stop if speed drops'] })

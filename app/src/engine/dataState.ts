@@ -10,7 +10,7 @@ export interface DataIssue {
 }
 
 export type DataState<T> =
-    | { status: 'AVAILABLE'; data: T; revision: string | null }
+    | { status: 'AVAILABLE'; data: T; revision: string | null; issues?: DataIssue[] }
     | { status: 'MISSING' }
     | { status: 'INVALID'; issues: DataIssue[] }
     | { status: 'UNAVAILABLE'; operation: string; retryable: boolean };

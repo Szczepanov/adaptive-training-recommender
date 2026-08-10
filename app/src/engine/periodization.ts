@@ -11,6 +11,7 @@ import type {
     UserGoal,
     WeeklyObjective,
 } from './models';
+import { resolveEventTaper } from './taperPolicy';
 // Re-exported for existing importers (e.g. planner.ts, trainingIntent.ts) -- the
 // canonical type definitions live in models.ts (see its own comment) so
 // decisionTrace/RecommendationAudit there can reference them without a circular import.
@@ -311,12 +312,10 @@ export function evaluatePeriodizationPhase(
             phase = basePhase;
         }
     } else {
-        // Taper threshold: A-Events taper up to 14 days, B-Events up to 5 days,
-        // C-Events train through.
-        const taperWindowDays = focusEvent.priority === 'A' ? 14 : (focusEvent.priority === 'B' ? 5 : 0);
+        const taper = resolveEventTaper(focusEvent);
 
-        if (taperWindowDays > 0 && daysToEvent <= taperWindowDays) {
-            const taperProgress = 1 - (daysToEvent / taperWindowDays);
+        if (taper && currentDateStr >= taper.startDate) {
+            const taperProgress = 1 - (daysToEvent / taper.durationDays);
             phase = {
                 phaseName: 'Peak/Taper',
                 targetDemandVector: focusEvent.demandProfile,
@@ -435,6 +434,7 @@ export function goalToUserEvent(goal: UserGoal & { id?: string }): UserEvent | n
         // (see validation.ts) -- not re-validated here, same trust boundary as every
         // other already-typed UserGoal field this function reads.
         ...(goal.timing ? { timing: goal.timing } : {}),
+        ...(goal.taper ? { taper: goal.taper } : {}),
     };
 }
 
@@ -540,6 +540,7 @@ export function resolveMultiEventObjectives(
                     objectiveKey: objective.key,
                     reason: 'inadmissible_during_taper',
                     message: `${event.title}'s ${objective.title} session was dropped because it fell in ${authorityResult.focusEvent?.title ?? 'the governing event'}'s taper window.`,
+                    date: currentDateStr,
                 });
                 continue;
             }

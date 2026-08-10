@@ -6,6 +6,10 @@
 * **Addresses:** F11, F14, F15, part of F10
 * **Rough effort:** 1–1.5 days
 
+> **Historical implementation record.** All work items and acceptance criteria below
+> were verified as delivered on 2026-08-09. They are retained for rationale and are
+> not instructions for new work.
+
 ---
 
 ## Task board
@@ -69,9 +73,13 @@ implausible one trips:
 | Metric | Bound | Rationale |
 |---|---|---|
 | `constraintViolations` | exactly 0, all scenarios | already the harness's own contract |
-| rest/recovery day share | 5–40 % | a planner recommending no rest, or mostly rest, is broken |
+| rest/recovery day share | 5–40.5 % | a planner recommending no rest, or mostly rest, is broken; the 0.5-point tolerance accommodates the deterministic hard-session day-1 recovery contract |
 | longest same-template streak across chained weeks | ≤ 3 | catches a regression of the "tempo trap" class |
 | objectives generated but never resolved in any scenario | ≤ 1 | catches an F2-class credit failure |
+
+The 40.5% ceiling preserves the existing coarse aggregate guard while accommodating the
+deterministic hard race-specific session day-1 contract: that case intentionally begins
+with recovery and changes this aggregate only by a rounding-sized amount.
 
 **The snapshot — diagnostic, non-blocking.** Still commit
 `docs/analysis/simulation-baseline.json` (with `commit` and `capturedAt` stripped — they

@@ -17,6 +17,8 @@ const DEFAULT_AVAILABILITY: ResolvedAvailability = {
     availableEquipment: ['free_weights', 'indoor_bike', 'treadmill', 'cable_machine'],
     fixedActivities: [],
     reservedCapacityCost: 0,
+    reservedCapacityCostProfile: { systemic: 0, cardiovascular: 0, lowerBody: 0, upperBody: 0, impactTissue: 0, neuromuscular: 0 },
+    environmentOverride: null,
 };
 
 const DEFAULT_PREFERENCES: UserPreferences = {

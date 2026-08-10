@@ -411,6 +411,7 @@ function GoalModal({ goal, onSave, onClose }: GoalModalProps) {
     eventCategory: goal?.eventCategory || '' as UserEvent['category'] | '',
     eventPreset: goal?.eventPreset || '',
     eventLifecycle: goal?.eventLifecycle || 'scheduled' as NonNullable<UserGoal['eventLifecycle']>,
+    taperStartDate: goal?.taper?.startDate || '',
     targetOutcome: goal?.targetOutcome || '',
     targetMetric: goal?.targetMetric || '',
     targetValue: goal?.targetValue || '',
@@ -478,6 +479,7 @@ function GoalModal({ goal, onSave, onClose }: GoalModalProps) {
       eventCategory: isDatedEvent ? (formData.eventCategory as UserEvent['category']) : null,
       eventPreset: isDatedEvent ? (formData.eventPreset || null) : null,
       eventLifecycle: isDatedEvent ? formData.eventLifecycle : undefined,
+      taper: isDatedEvent && formData.taperStartDate ? { startDate: formData.taperStartDate } : null,
     };
 
     onSave(data);
@@ -615,6 +617,16 @@ function GoalModal({ goal, onSave, onClose }: GoalModalProps) {
                 Taper class: <strong>{deriveEventPriority(formData.priority)}</strong>
                 {' '}(from priority, below — 5★ = A, 3-4★ = B, 1-2★ = C)
               </p>
+
+              <div className="form-group">
+                <label>Custom taper start (optional)</label>
+                <input
+                  type="date"
+                  value={formData.taperStartDate}
+                  onChange={(e) => setFormData({...formData, taperStartDate: e.target.value})}
+                />
+                <p className="field-hint">Leave blank to use the event policy. A custom date must be before the planned event.</p>
+              </div>
 
               {goal && (
                 <div className="form-group">

@@ -91,7 +91,9 @@ jobs:
         run: npm run test:rules
 
       - name: Run simulation scenarios & aggregate bounds gate
-        run: npm run simulate:scenarios
+        run: |
+          npm run simulate:scenarios
+          git diff --exit-code -- ../docs/analysis/simulation-baseline.json
 
       - name: Report simulation semantic diff
         run: npm run simulate:diff

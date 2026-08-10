@@ -20,6 +20,7 @@ const septemberCyclingEvent: UserEvent = {
     priority: 'A',
     lifecycle: 'scheduled',
     category: 'cycling_event',
+    taper: { startDate: '2026-09-06' },
     demandProfile: {
         aerobicEndurance: 0.8,
         thresholdPower: 0.8,
@@ -56,19 +57,22 @@ function objective(overrides: Partial<WeeklyObjective> = {}): WeeklyObjective {
 }
 
 describe('Phase 4 review fixes', () => {
-    it('uses exact authored travel/taper dose scales in explicit-plan mode', () => {
+    it('uses exact authored event-relative peak/taper dose scales in explicit-plan mode', () => {
         const planState = buildSeptemberCyclingEventPlan(septemberCyclingEvent);
         expect(planState.status).toBe('AVAILABLE');
-        if (planState.status !== 'AVAILABLE') throw new Error('Expected September plan');
+        if (planState.status !== 'AVAILABLE') throw new Error('Expected cycling plan');
 
         const genericPhase = { volumeScale: 1.1, intensityScale: 1.1 };
         const objectives = [objective()];
         const unresolved = [...objectives];
 
+        // 2026-08-26 is inside the event-relative Specificity/peak block for a 2026-09-20 A event.
         expect(resolvePlannedDoseForDate(genericPhase, objectives, unresolved, planState.data, '2026-08-26'))
-            .toEqual({ volume: 0.6, intensity: 0.8 });
+            .toEqual({ volume: 1.0, intensity: 1.1 });
+        // 2026-09-10 is inside the 14-day A-event taper. Travel is no longer fabricated
+        // from race date; a real travel constraint is an explicit availability/plan overlay.
         expect(resolvePlannedDoseForDate(genericPhase, objectives, unresolved, planState.data, '2026-09-10'))
-            .toEqual({ volume: 0.5, intensity: 1.0 });
+            .toEqual({ volume: 0.6, intensity: 1.0 });
     });
 
     it('makes endurance objective credit sensitive to delivered duration', () => {

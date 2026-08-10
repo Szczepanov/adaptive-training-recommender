@@ -5,11 +5,22 @@ import { createServer } from 'vite';
 const baselinePath = resolve('../docs/analysis/simulation-baseline.json');
 
 if (!existsSync(baselinePath)) {
-  console.error(`Baseline file not found at ${baselinePath}. Run simulation and commit baseline first.`);
+  console.error(`Baseline file not found at ${baselinePath}. Create it only after review with npm run simulate:update-baseline -- --reviewed.`);
   process.exit(1);
 }
 
-const baseline = JSON.parse(readFileSync(baselinePath, 'utf8'));
+let baseline;
+try {
+  baseline = JSON.parse(readFileSync(baselinePath, 'utf8'));
+} catch (error) {
+  console.error(`Baseline file at ${baselinePath} is malformed JSON: ${error instanceof Error ? error.message : String(error)}`);
+  process.exit(1);
+}
+
+if (!baseline || !Array.isArray(baseline.scenarios)) {
+  console.error(`Baseline file at ${baselinePath} does not contain a scenarios array.`);
+  process.exit(1);
+}
 
 const server = await createServer({
   configFile: false,
@@ -108,9 +119,6 @@ for (const baseScenario of baseline.scenarios) {
   }
 
   // 6. Objective Credits -- which sessions actually earned credit, not just the tally.
-  // Compares the full set (date/objectiveKey/templateId), so a same-count-but-different-
-  // day/template change (e.g. a different session resolving the same objective) is
-  // still caught, not just a change in total resolution counts (#5 above).
   const creditKey = (c) => `${c.weekIndex}|${c.date}|${c.objectiveKey}|${c.templateId}`;
   const baseCreditKeys = new Set(baseScenario.objectiveCredits.map(creditKey));
   const curCreditKeys = new Set(curScenario.objectiveCredits.map(creditKey));
@@ -130,17 +138,14 @@ for (const baseScenario of baseline.scenarios) {
     diffs.push(`  Utility diagnostics: ${utilDiffs.join(', ')}`);
   }
 
-  // 8. Quality warnings -- coaching-quality concerns (ADR-0012 review: this field can
-  // change (e.g. anchor-hit rate improving) without any of the other numeric metrics
-  // above catching it, since it's derived from anchorWeeks/objective state, not from the
-  // distributions this script already compares.
+  // 8. Quality warnings
   const baseWarnings = [...baseScenario.qualityWarnings].sort();
   const curWarnings = [...curScenario.qualityWarnings].sort();
   if (JSON.stringify(baseWarnings) !== JSON.stringify(curWarnings)) {
     diffs.push(`  Quality warnings: [${baseWarnings.join(' | ')}] -> [${curWarnings.join(' | ')}]`);
   }
 
-  // 9. Anchor weeks -- whether the weekly-anchor pre-pass nomination actually landed.
+  // 9. Anchor weeks
   const anchorKey = (w) => `${w.weekIndex}|${w.eventSpecificAnchorDate}|${w.qualityAnchorDate}|${w.eventSpecificAnchorHit}|${w.eventSpecificAnchorFulfilled}|${w.qualityAnchorHit}`;
   const baseAnchorKeys = baseScenario.anchorWeeks.map(anchorKey);
   const curAnchorKeys = curScenario.anchorWeeks.map(anchorKey);
@@ -171,12 +176,7 @@ for (const curScenario of current.scenarios) {
   }
 }
 
-// 11. Readiness sensitivity (fresh/stressed trajectories vs baseline) and preference
-// sensitivity (declared modality preference vs matched baseline) are top-level report
-// fields, not per-scenario -- a real change here (e.g. a stressed trajectory training
-// MORE than baseline) would otherwise never be caught by the per-scenario comparisons
-// above, since those only compare each scenario against ITS OWN prior run, never against
-// another scenario the way readinessSensitivity/preferenceSensitivity do.
+// 11. Readiness/preference sensitivity are top-level report fields.
 const sensitivityKey = (r) => JSON.stringify(r);
 const baseReadiness = (baseline.readinessSensitivity ?? []).map(sensitivityKey);
 const curReadiness = (current.readinessSensitivity ?? []).map(sensitivityKey);

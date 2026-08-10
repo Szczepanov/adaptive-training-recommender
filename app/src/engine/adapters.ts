@@ -175,6 +175,7 @@ export function mapContextFromGoalsAndTrainingSettings(
             deprioritizedModalities: preferences?.deprioritizedModalities ?? preferences?.avoidedModalities ?? [],
             preferredModalities: preferences?.preferredModalities ?? [],
             conservativeBias: preferences?.conservativeBias ?? false,
+            preferredRecoveryStyle: preferences?.preferredRecoveryStyle,
         },
         trainingSettings,
     };
