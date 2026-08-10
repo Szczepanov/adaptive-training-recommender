@@ -12,6 +12,8 @@ dist
 dist-ssr
 artifacts/visual-review/
 artifacts/simulation-reports/
+artifacts/calibration-reports/
+artifacts/coverage/
 artifacts/sequence-search-comparison/
 test-results/
 playwright-report/
