@@ -1,5 +1,5 @@
 import type { EventPlanCoverageKey, EventPlanPhase, EventPlanRequirement } from '../workouts/event-plan';
-import { SEPTEMBER_CYCLING_EVENT_SESSION_COVERAGE } from '../workouts/event-plan';
+import { SEPTEMBER_CYCLING_EVENT_COVERAGE_SET_ID, SEPTEMBER_CYCLING_EVENT_SESSION_COVERAGE } from '../workouts/event-plan';
 import { WORKOUTS } from '../workouts/catalog';
 import { workoutForTemplate } from '../workouts/prescription';
 import type { ObjectivePriority, SessionTemplate } from './models';
@@ -58,6 +58,10 @@ export interface CoverageState {
     asOfDate: string;
     phase: EventPlanPhase | null;
     activeBlockId: string | null;
+    /** Which authored coverage set these requirements came from. ADR-0018 D-MISS makes it
+     * part of a role occurrence's canonical identity; ADR-0017 D-COVSET will turn it into
+     * a registry lookup rather than today's single module constant. */
+    coverageSetId: string | null;
     requirements: WeeklyCoverageRequirement[];
 }
 
@@ -85,6 +89,13 @@ const DEFERRED_SUPPORT_COVERAGE_KEYS = new Set<EventPlanCoverageKey>([
 const HARD_ROLE_REPAIR_PREREQUISITES = new Set<EventPlanCoverageKey>([
     'aerobic_volume',
 ]);
+
+/** Stable identity of one authored `EventPlanSessionCoverage` record. Coverage keys are
+ * unique within a set, so the pair is the record's primary key; it is deliberately not a
+ * chosen template, workout or candidate. */
+export function authoredSessionIdentityFor(coverageSetId: string, key: EventPlanCoverageKey): string {
+    return `${coverageSetId}:${key}`;
+}
 
 export function workoutIdForTemplateId(templateId: string | undefined): string | undefined {
     if (!templateId) return undefined;
@@ -174,7 +185,7 @@ export function buildCoverageState(
 ): CoverageState {
     const block = activePlanBlock(planDefinition, asOfDate);
     if (!planDefinition || !block) {
-        return { asOfDate, phase: null, activeBlockId: null, requirements: [] };
+        return { asOfDate, phase: null, activeBlockId: null, coverageSetId: null, requirements: [] };
     }
 
     const rollingWindowDays = 7;
@@ -264,6 +275,7 @@ export function buildCoverageState(
         asOfDate,
         phase: block.phase,
         activeBlockId: block.id,
+        coverageSetId: SEPTEMBER_CYCLING_EVENT_COVERAGE_SET_ID,
         requirements: Array.from(requirementsByKey.values()),
     };
 }

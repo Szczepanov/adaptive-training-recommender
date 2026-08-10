@@ -392,5 +392,6 @@ export async function generateWeekAheadPlanWithIntentBeamSearch(
         objectiveCredits: result.objectiveCredits,
         microcycleObjectives: result.microcycleObjectives,
         droppedContributorObjectives: intent.droppedContributorObjectives,
+        allocationReport: { outcomes: [] },
     };
 }

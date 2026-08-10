@@ -45,6 +45,8 @@ import {
     projectCompatibilityExposures,
 } from './microcycle';
 import {
+    type OptimizationContext,
+    type RankCandidatesResult,
     type RecentHistoryEntry,
     ANCHOR_HISTORY_CATEGORIES,
     buildOptimizationContext,
@@ -57,7 +59,21 @@ import { resolveMinimumDaysAfterHardLowerBody } from './planningCandidate';
 import { resolvePlannedDoseForDate, resolveTrainingIntent } from './trainingIntent';
 import { resolvePlanDefinitionForEvent } from './planSchedule';
 import { deriveObjectiveCreditFromProfile } from './stimulus';
-import { coverageNeedTierForTemplate } from './coverage';
+import { coverageNeedTierForTemplate, workoutIdForTemplateId } from './coverage';
+import {
+    allocationSurvives,
+    attachExactEligibleIdentities,
+    deriveRequiredRoleOccurrences,
+    occurrenceForTemplate,
+    resolveWeeklyRoleReservations,
+    WEEKLY_ALLOCATION_SEARCH_BUDGET,
+    type AllocationAssignment,
+    type AllocationDateEvaluator,
+    type ProjectedDateOutcome,
+    type WeeklyRoleAllocationOutcome,
+    type WeeklyRoleAllocationReport,
+    type WeeklyRoleMissReason,
+} from './weeklyAllocation';
 import type { CompletedExposure, TrainingHistoryProvider } from './trainingHistory';
 import type { TrainingHistorySnapshot } from './trainingHistorySnapshot';
 import { resolveFixedActivityIdentity } from './fixedActivityIdentity';
@@ -89,6 +105,8 @@ export interface WeekAheadPlan {
     objectiveCredits: PlannedObjectiveCredit[];
     microcycleObjectives: WeeklyObjective[];
     droppedContributorObjectives: DroppedContributorObjective[];
+    /** ADR-0018 forecast-only evidence. This is not completed training or audit data. */
+    allocationReport: WeeklyRoleAllocationReport;
 }
 
 export interface WeekAheadPlanSeed {
@@ -333,6 +351,177 @@ export function resolveWeeklyAnchors(
     return { eventSpecificAnchorDate, qualityAnchorDate };
 }
 
+/**
+ * Phase 7A.2 -- the single projected-date evaluation seam.
+ *
+ * `generateWeekAheadPlan`'s greedy loop and `weeklyAllocation.ts`'s reservation search
+ * both go through this function, so there is exactly one availability / phase / fatigue-
+ * tier / intensity / injury / spacing path. Copying any of it into the allocator would
+ * create a second policy path that drifts from the production hard gates (ADR-0018
+ * D-FEASIBILITY).
+ */
+export interface ProjectedDatePlanningContext {
+    context: UserContext;
+    preferences: UserPreferences;
+    events: UserEvent[];
+    fixedActivities: FixedActivity[];
+    authoredPlanBlocks: readonly AuthoredPlanBlock[];
+    anchors: WeeklyAnchors;
+    internalStrain: DimensionalFatigue;
+    internalStrainAsOf: string;
+}
+
+export interface ProjectedDateState {
+    /** Objective state. Candidate *acceptance* never depends on it -- `rankCandidates`
+     * uses unresolved objectives for benefit only -- so the allocator may safely hold it
+     * frozen at pre-pass time while the greedy loop advances it. */
+    microcycle: MicrocycleState;
+    externalFatigue: FatigueState;
+    projectedHistory: (RecentHistoryEntry | SessionHistoryEntry)[];
+}
+
+export interface ProjectedDateEvaluation {
+    date: string;
+    periodization: PeriodizationResult;
+    availability: ReturnType<typeof resolveAvailability>;
+    rankingFatigue: FatigueState;
+    peakFatigue: number;
+    fatigueTier: 'train' | 'modify' | 'recover';
+    anchorRole: 'event-specific' | 'quality' | null;
+    adjacentToAnchor: boolean;
+    /** Survives availability, equipment, phase and environment gating. */
+    eligible: SessionTemplate[];
+    /** `eligible` after the projected fatigue ceiling. */
+    fatigueGated: SessionTemplate[];
+    optimizationContext: OptimizationContext;
+    rank(candidates: readonly SessionTemplate[]): RankCandidatesResult;
+}
+
+export function evaluateProjectedDate(
+    date: string,
+    state: ProjectedDateState,
+    shared: ProjectedDatePlanningContext,
+): ProjectedDateEvaluation {
+    const periodization = evaluatePeriodizationPhase(shared.events, date);
+    const availability = resolveAvailability(date, null, shared.fixedActivities, shared.context);
+
+    const rankingFatigue = applyCompletedSessionLoad(
+        projectFatigueForRankingDate(state.externalFatigue, shared.internalStrain, shared.internalStrainAsOf, date),
+        date,
+        availability.reservedCapacityCostProfile,
+    );
+    const peakFatigue = maxFatigueDimension(rankingFatigue.combinedFatigue);
+    const fatigueTier = fatigueTierFor(peakFatigue);
+
+    const eligible = eligibleTemplates(ENRICHED_TEMPLATES, shared.context, availability.maxTimeMinutes, date)
+        .filter(t => isTemplatePhaseEligible(t, periodization))
+        .filter(t => !availability.environmentOverride || t.environment === 'either' || t.environment === availability.environmentOverride);
+
+    const fatigueGated = eligible.filter(t => {
+        if (peakFatigue >= PROJECTED_FATIGUE_RECOVER_THRESHOLD) {
+            return t.category === 'Rest' || t.category === 'Mobility/Recovery';
+        }
+        if (peakFatigue >= PROJECTED_FATIGUE_MODIFY_THRESHOLD) {
+            return t.systemicCost <= PROJECTED_MODIFY_MAX_SYSTEMIC_COST;
+        }
+        return true;
+    });
+
+    const anchorRole = date === shared.anchors.eventSpecificAnchorDate ? 'event-specific' as const
+        : date === shared.anchors.qualityAnchorDate ? 'quality' as const : null;
+    const adjacentToAnchor = isAdjacentDate(date, shared.anchors.eventSpecificAnchorDate)
+        || isAdjacentDate(date, shared.anchors.qualityAnchorDate);
+
+    const unresolved = getUnresolvedObjectives(state.microcycle, true);
+    const planDefinition = resolvePlanDefinitionForEvent(periodization.focusEvent, shared.authoredPlanBlocks);
+    const optimizationContext = buildOptimizationContext(
+        {
+            unresolvedObjectives: unresolved,
+            fatigue: rankingFatigue,
+            periodization,
+            history: state.projectedHistory,
+            plannedDose: resolvePlannedDoseForDate(
+                periodization.phase,
+                state.microcycle.objectives,
+                unresolved,
+                planDefinition,
+                date,
+            ),
+        },
+        shared.context,
+        shared.preferences,
+        date,
+        { anchorRole, adjacentToAnchor, resolveMinimumDaysAfterHardLowerBody, fatigueTier, authoredPlanBlocks: shared.authoredPlanBlocks },
+        shared.fixedActivities,
+    );
+
+    // The greedy loop and the allocator frequently rank the same candidate set for one
+    // date (typically the whole fatigue-gated set); memoising keeps that a single pass.
+    const rankings = new Map<string, RankCandidatesResult>();
+
+    return {
+        date,
+        periodization,
+        availability,
+        rankingFatigue,
+        peakFatigue,
+        fatigueTier,
+        anchorRole,
+        adjacentToAnchor,
+        eligible,
+        fatigueGated,
+        optimizationContext,
+        rank: (candidates: readonly SessionTemplate[]) => {
+            const key = candidates.map(template => template.id).join(',');
+            const cached = rankings.get(key);
+            if (cached) return cached;
+            const result = rankCandidates(
+                [...candidates],
+                optimizationContext.unresolvedObjectives,
+                optimizationContext.fatigueState,
+                optimizationContext.availability,
+                optimizationContext.injuryConstraints,
+                optimizationContext.preferences,
+                optimizationContext.options,
+            );
+            rankings.set(key, result);
+            return result;
+        },
+    };
+}
+
+/** Reason recorded for a template the date-level gates removed before ranking could see
+ * it (time budget, equipment, phase or environment). */
+const NOT_ELIGIBLE_ON_DATE = 'NOT_ELIGIBLE_ON_DATE';
+
+const PROJECTED_DATE_OUTCOMES = new WeakMap<ProjectedDateEvaluation, ProjectedDateOutcome>();
+
+/** Project the accepted/rejected identity sets the allocator reasons over, from one
+ * evaluation of the shared seam. */
+export function projectedDateOutcomeFrom(evaluation: ProjectedDateEvaluation): ProjectedDateOutcome {
+    const memoized = PROJECTED_DATE_OUTCOMES.get(evaluation);
+    if (memoized) return memoized;
+    const ranking = evaluation.rank(evaluation.fatigueGated);
+    const eligibleIds = new Set(evaluation.eligible.map(template => template.id));
+    const gatedIds = new Set(evaluation.fatigueGated.map(template => template.id));
+    const exclusionReasons = new Map<string, readonly string[]>();
+    ranking.rejected.forEach(candidate => exclusionReasons.set(candidate.template.id, candidate.excludedReasons));
+    ENRICHED_TEMPLATES.forEach(template => {
+        if (!eligibleIds.has(template.id)) exclusionReasons.set(template.id, [NOT_ELIGIBLE_ON_DATE]);
+    });
+    const outcome: ProjectedDateOutcome = {
+        date: evaluation.date,
+        fatigueTier: evaluation.fatigueTier,
+        acceptedTemplateIds: ranking.accepted.map(candidate => candidate.template.id),
+        fatigueExcludedTemplateIds: evaluation.eligible
+            .filter(template => !gatedIds.has(template.id))
+            .map(template => template.id),
+        exclusionReasons,
+    };
+    PROJECTED_DATE_OUTCOMES.set(evaluation, outcome);
+    return outcome;
+}
+
 export function projectTrailingHistory(
     history: (RecentHistoryEntry | SessionHistoryEntry)[]
 ): (RecentHistoryEntry | SessionHistoryEntry)[] {
@@ -488,6 +677,7 @@ export interface ProjectionExposure {
     workoutId?: string;
     modality?: SessionTemplate['modality'];
     category?: SessionTemplate['category'];
+    durationMin?: number;
 }
 
 function backfillCreditFromPriorExposures(
@@ -755,6 +945,7 @@ export function generateWeekAheadPlan(
             templateId: template.id,
             modality: template.modality,
             category: template.category,
+            durationMin: template.durationMin,
         });
     };
 
@@ -810,96 +1001,157 @@ export function generateWeekAheadPlan(
         applyFixedActivityCost(tomorrowDate);
     }
 
+    const sharedProjection: ProjectedDatePlanningContext = {
+        context,
+        preferences: effectivePreferences,
+        events,
+        fixedActivities,
+        authoredPlanBlocks,
+        anchors,
+        internalStrain,
+        internalStrainAsOf,
+    };
+
+    const historyEntryFor = (date: string, template: SessionTemplate): RecentHistoryEntry => ({
+        date,
+        templateId: template.id,
+        category: template.category,
+        modality: template.modality,
+        role: realizedSessionRole(date, template, anchors),
+        systemicCost: template.systemicCost,
+        lowerBodyCost: template.costProfile?.lowerBody ?? 0,
+        durationMin: template.durationMin,
+        type: template.title,
+    });
+
+    const liveProjectedHistory = (): (RecentHistoryEntry | SessionHistoryEntry)[] => [
+        ...(seed.trailingHistory ?? []),
+        historyEntryFor(todayDate, todayRec.template),
+        ...resultDays.map(day => historyEntryFor(day.date, day.template)),
+    ];
+
+    const forecastDatesFrom = (startOffset: number): string[] => {
+        const dates: string[] = [];
+        for (let offset = startOffset; offset <= totalDays; offset++) dates.push(addDaysToLocalDateString(todayDate, offset));
+        return dates;
+    };
+
+    /**
+     * One cache for every projected-date evaluation in this call, shared by the greedy
+     * loop, the after-every-day reservation recomputation and each D-SUPPORT viability
+     * check. `resultDays.length` is an exact version of the planner's live state:
+     * microcycle, fatigue and projected history all advance together, once per greedy
+     * iteration. Without it the same untouched dates would be re-ranked from scratch.
+     */
+    const evaluationCache = new Map<string, ProjectedDateEvaluation>();
+
+    /**
+     * The allocator's view of the world: the planner's *live* projected state plus a set
+     * of tentative assignments, replayed in real date order through the shared
+     * `evaluateProjectedDate` seam. Rebuilding in date order (rather than mutating along
+     * the search path) is what makes the search order-independent and its evaluations
+     * safely cacheable.
+     */
+    const projectedEvaluation = (date: string, applied: readonly AllocationAssignment[]): ProjectedDateEvaluation => {
+        const cacheKey = [
+            resultDays.length,
+            externalFatigue.lastUpdatedDate,
+            date,
+            applied.map(item => `${item.date}:${item.templateId}`).sort().join(','),
+        ].join('#');
+        const cached = evaluationCache.get(cacheKey);
+        if (cached) return cached;
+        const history = liveProjectedHistory();
+        const loads: Array<{ date: string; cost: WorkoutCostProfile }> = [];
+        fixedActivities
+            .filter(activity => !activity.isCompleted && activity.expectedCost
+                && activity.date > externalFatigue.lastUpdatedDate && activity.date < date)
+            .forEach(activity => loads.push({
+                date: activity.date,
+                cost: fixedActivityCostProfileForDate([activity], activity.date),
+            }));
+        applied.forEach(item => {
+            const template = ENRICHED_TEMPLATES.find(candidate => candidate.id === item.templateId);
+            if (!template) return;
+            loads.push({ date: item.date, cost: enrichedCostProfile(item.templateId) });
+            history.push(historyEntryFor(item.date, template));
+        });
+        const fatigue = loads
+            .sort((left, right) => left.date.localeCompare(right.date))
+            .reduce((state, load) => applyCompletedSessionLoad(state, load.date, load.cost), externalFatigue);
+        const evaluation = evaluateProjectedDate(
+            date,
+            { microcycle, externalFatigue: fatigue, projectedHistory: history },
+            sharedProjection,
+        );
+        evaluationCache.set(cacheKey, evaluation);
+        return evaluation;
+    };
+
+    const allocationEvaluator = (
+        forecastDates: string[],
+        extra: readonly AllocationAssignment[] = [],
+    ): AllocationDateEvaluator => ({
+        forecastDates,
+        evaluate: (assignments, date) => projectedDateOutcomeFrom(
+            projectedEvaluation(date, [...extra, ...assignments].filter(item => item.date < date)),
+        ),
+    });
+
+    // Reserve remaining *authored minimum* roles before the greedy loop has a chance to
+    // spend their only convenient date on supporting work. The reservation deliberately
+    // starts after the immutable today/tomorrow seeds; it never rewrites either decision.
+    const firstForecastOffset = resultDays.length + 1;
+    const seedDates = new Set(resultDays.map(day => day.date).concat(todayDate));
+    const allocationOccurrences = attachExactEligibleIdentities(
+        deriveRequiredRoleOccurrences(
+            projectedEvaluation(addDaysToLocalDateString(todayDate, firstForecastOffset), []).optimizationContext.coverageState,
+        ),
+        ENRICHED_TEMPLATES,
+    );
+
+    let allocation = resolveWeeklyRoleReservations(
+        allocationOccurrences,
+        allocationEvaluator(forecastDatesFrom(firstForecastOffset)),
+        { unavailableDates: seedDates },
+    );
+    /** First nomination per occurrence, so a later safe relocation reports `wasMoved`
+     * against the same occurrence id rather than looking like a new role. */
+    const nominatedDates = new Map<string, string | null>(
+        allocation.outcomes.map(outcome => [outcome.occurrence.id, outcome.reservation.assignedDate]),
+    );
+    const settledOutcomes = new Map<string, WeeklyRoleAllocationOutcome>();
+    const displacementReasons = new Map<string, WeeklyRoleMissReason>();
+
     for (let offset = resultDays.length + 1; offset <= totalDays; offset++) {
         const date = addDaysToLocalDateString(todayDate, offset);
         const periodization = evaluatePeriodizationPhase(events, date);
-        const availability = resolveAvailability(date, null, fixedActivities, context);
 
         const reconciled = reconcileObjectivesForDate(microcycle, events, date, todayDate, periodization, creditMemory, projectionExposures, authoredPlanBlocks);
         microcycle = reconciled.microcycle;
         accumulateNewDrops(droppedContributorObjectives, currentlyDroppedPairs, reconciled.droppedContributorObjectives);
         applyFixedActivityStimulus(date);
 
-        const rankingFatigue = projectFatigueForRankingDate(
-            externalFatigue,
-            internalStrain,
-            internalStrainAsOf,
-            date,
+        // ADR-0018 D-FEASIBILITY: remaining reservations are recalculated against the new
+        // projected fatigue/history after every selected forecast day, so a safe role can
+        // move to a later jointly feasible date instead of being lost with its nomination.
+        const pendingOccurrences = allocationOccurrences.filter(occurrence => !settledOutcomes.has(occurrence.id));
+        allocation = resolveWeeklyRoleReservations(
+            pendingOccurrences,
+            allocationEvaluator(forecastDatesFrom(offset)),
+            { nominatedDates },
         );
-        const rankingFatigueForDate: FatigueState = applyCompletedSessionLoad(
-            rankingFatigue,
-            date,
-            availability.reservedCapacityCostProfile,
-        );
-
-        const unresolved = getUnresolvedObjectives(microcycle, true);
-        const eligible = eligibleTemplates(ENRICHED_TEMPLATES, context, availability.maxTimeMinutes, date)
-            .filter(t => isTemplatePhaseEligible(t, periodization))
-            .filter(t => !availability.environmentOverride || t.environment === 'either' || t.environment === availability.environmentOverride);
-
-        const peakFatigue = maxFatigueDimension(rankingFatigueForDate.combinedFatigue);
-        const fatigueGated = eligible.filter(t => {
-            if (peakFatigue >= PROJECTED_FATIGUE_RECOVER_THRESHOLD) {
-                return t.category === 'Rest' || t.category === 'Mobility/Recovery';
+        // A role first reserved mid-horizon records that date as its nomination, so a
+        // later safe relocation is reported as a move of the same occurrence.
+        allocation.outcomes.forEach(outcome => {
+            if (!nominatedDates.get(outcome.occurrence.id) && outcome.reservation.assignedDate) {
+                nominatedDates.set(outcome.occurrence.id, outcome.reservation.assignedDate);
             }
-            if (peakFatigue >= PROJECTED_FATIGUE_MODIFY_THRESHOLD) {
-                return t.systemicCost <= PROJECTED_MODIFY_MAX_SYSTEMIC_COST;
-            }
-            return true;
         });
+        const reservation = allocation.reservationsByDate.get(date);
 
-        const anchorRole = date === anchors.eventSpecificAnchorDate ? 'event-specific'
-            : date === anchors.qualityAnchorDate ? 'quality' : null;
-        const adjacentToAnchor = isAdjacentDate(date, anchors.eventSpecificAnchorDate)
-            || isAdjacentDate(date, anchors.qualityAnchorDate);
-
-        const projectedHistory: (RecentHistoryEntry | SessionHistoryEntry)[] = [
-            ...(seed.trailingHistory ?? []),
-            {
-                date: todayDate,
-                templateId: todayRec.template.id,
-                category: todayRec.template.category,
-                modality: todayRec.template.modality,
-                role: realizedSessionRole(todayDate, todayRec.template, anchors),
-                systemicCost: todayRec.template.systemicCost,
-                lowerBodyCost: todayRec.template.costProfile?.lowerBody ?? 0,
-                durationMin: todayRec.template.durationMin,
-                type: todayRec.template.title,
-            },
-            ...resultDays.map(d => ({
-                date: d.date,
-                templateId: d.template.id,
-                category: d.template.category,
-                modality: d.template.modality,
-                role: realizedSessionRole(d.date, d.template, anchors),
-                systemicCost: d.template.systemicCost,
-                lowerBodyCost: d.template.costProfile?.lowerBody ?? 0,
-                durationMin: d.template.durationMin,
-                type: d.template.title,
-            })),
-        ];
-
-        const planDefinition = resolvePlanDefinitionForEvent(periodization.focusEvent, authoredPlanBlocks);
-        const optContext = buildOptimizationContext(
-            {
-                unresolvedObjectives: unresolved,
-                fatigue: rankingFatigueForDate,
-                periodization,
-                history: projectedHistory,
-                plannedDose: resolvePlannedDoseForDate(
-                    periodization.phase,
-                    microcycle.objectives,
-                    unresolved,
-                    planDefinition,
-                    date,
-                ),
-            },
-            context,
-            effectivePreferences,
-            date,
-            { anchorRole, adjacentToAnchor, resolveMinimumDaysAfterHardLowerBody, fatigueTier: fatigueTierFor(peakFatigue), authoredPlanBlocks },
-            fixedActivities,
-        );
+        const evaluation = projectedEvaluation(date, []);
+        const { anchorRole, eligible, fatigueGated, peakFatigue, fatigueTier, optimizationContext: optContext } = evaluation;
 
         // If a required developmental role is temporarily excluded by the projected
         // fatigue ceiling, do not spend the recovery opportunity on unrelated work.
@@ -912,19 +1164,19 @@ export function generateWeekAheadPlan(
                 || template.category === 'Moderate Endurance')
             && coverageNeedTierForTemplate(optContext.coverageState, template, anchorRole) <= 1
         );
-        const rankingCandidates = hasFatigueGatedRequiredCoverage
+        let rankingCandidates = hasFatigueGatedRequiredCoverage
             ? fatigueGated.filter(template => template.category === 'Rest' || template.category === 'Mobility/Recovery')
             : fatigueGated;
 
-        const rankingResult = rankCandidates(
-            rankingCandidates,
-            optContext.unresolvedObjectives,
-            optContext.fatigueState,
-            optContext.availability,
-            optContext.injuryConstraints,
-            optContext.preferences,
-            optContext.options
-        );
+        // On a reserved date, rank only the candidates that fulfil the reserved occurrence.
+        // If the dynamic state has made all of them unsafe, fall back to the ordinary set:
+        // safety wins and the next recomputation relocates or terminally misses the role.
+        const exactReserved = reservation
+            ? rankingCandidates.filter(template => reservation.occurrence.eligibleTemplateIds.includes(template.id))
+            : [];
+        if (reservation && exactReserved.length > 0) rankingCandidates = exactReserved;
+
+        const rankingResult = evaluation.rank(rankingCandidates);
         const ranked = rankingResult.accepted;
 
         const restFallback: SessionTemplate = ENRICHED_TEMPLATES.find(t => t.category === 'Rest') ?? {
@@ -941,7 +1193,7 @@ export function generateWeekAheadPlan(
             systemicCost: 0,
         };
 
-        const pick = ranked[0] ?? {
+        const fallbackPick = {
             template: restFallback,
             utilityScore: 0,
             benefitScore: 0,
@@ -950,12 +1202,76 @@ export function generateWeekAheadPlan(
             rationale: 'Fallback rest day.',
         };
 
+        // ADR-0018 D-SUPPORT: on an unreserved date a discretionary supporting session --
+        // and a discretionary Rest, which consumes the date just as surely -- is admissible
+        // only while it preserves the maximum achievable stateful reservation count. A true
+        // recover-tier selection is exempt: safety outranks role fulfilment, and the loss is
+        // then attributed to recovery rather than to discretionary scheduling.
+        const incumbentAssignments = [...allocation.reservationsByDate.entries()]
+            .map(([reservedDate, item]) => ({ date: reservedDate, templateId: item.templateId }));
+        const preservesAllocation = (template: SessionTemplate): boolean => {
+            const evaluator = allocationEvaluator(forecastDatesFrom(offset + 1), [{ date, templateId: template.id }]);
+            if (allocationSurvives(incumbentAssignments, evaluator)) return true;
+            // The incumbent broke, so an equal-cardinality alternative must be searched for
+            // before this candidate is refused. Budget exhaustion is not proof of
+            // preservation, so it is not admitted either.
+            const selfFulfils = occurrenceForTemplate(pendingOccurrences, template).length > 0 ? 1 : 0;
+            const after = resolveWeeklyRoleReservations(
+                pendingOccurrences.filter(occurrence => occurrenceForTemplate([occurrence], template).length === 0),
+                evaluator,
+                { nominatedDates },
+            );
+            return !after.budgetExhausted && after.fulfilledCount + selfFulfils >= allocation.fulfilledCount;
+        };
+        const viabilityApplies = !reservation && fatigueTier !== 'recover' && allocation.fulfilledCount > 0 && ranked.length > 1;
+        const pick = (viabilityApplies
+            ? ranked.slice(0, WEEKLY_ALLOCATION_SEARCH_BUDGET.maxCandidatesPerOccurrence)
+                .find(candidate => preservesAllocation(candidate.template))
+            : undefined)
+            ?? ranked[0] ?? fallbackPick;
+
         const bestBenefit = [...(ranked.length > 0 ? ranked : [{ template: restFallback, benefitScore: 0 }])].sort((a, b) => b.benefitScore - a.benefitScore)[0];
 
         const pickCredits = creditingObjectivesFor(pick.template);
         const addressed = pickCredits.map(item => item.objective.title);
         applyPick(date, pick.template, pickCredits);
         applyFixedActivityCost(date);
+
+        // A selected exact session fulfils every coverage role its authored identity
+        // explicitly grants -- the catalogue's real bundles, never a modality/category
+        // equivalence -- but at most one occurrence per key, so one ride cannot silently
+        // clear two occurrences of the same authored requirement.
+        const fulfilledKeys = new Set<string>();
+        occurrenceForTemplate(pendingOccurrences, pick.template)
+            .sort((left, right) => left.coverageKey.localeCompare(right.coverageKey) || left.ordinal - right.ordinal)
+            .forEach(occurrence => {
+                if (fulfilledKeys.has(occurrence.coverageKey)) return;
+                fulfilledKeys.add(occurrence.coverageKey);
+                const nominated = nominatedDates.get(occurrence.id) ?? null;
+                const prior = allocation.outcomes.find(outcome => outcome.occurrence.id === occurrence.id);
+                settledOutcomes.set(occurrence.id, {
+                    occurrence,
+                    reservation: {
+                        occurrenceId: occurrence.id,
+                        nominatedDate: nominated,
+                        assignedDate: date,
+                        templateId: pick.template.id,
+                        workoutId: workoutIdForTemplateId(pick.template.id) ?? null,
+                        wasMoved: nominated !== null && nominated !== date,
+                    },
+                    status: 'fulfilled',
+                    ...(prior?.observedBlockers ? { observedBlockers: prior.observedBlockers } : {}),
+                });
+            });
+
+        if (reservation && !settledOutcomes.has(reservation.occurrence.id)) {
+            displacementReasons.set(
+                reservation.occurrence.id,
+                exactReserved.length === 0
+                    ? (fatigueTier === 'recover' ? 'hard_safety_or_recovery' : fatigueTier === 'modify' ? 'projected_fatigue' : 'hard_safety_or_recovery')
+                    : 'no_conflict_free_date',
+            );
+        }
 
         resultDays.push({
             date,
@@ -968,7 +1284,7 @@ export function generateWeekAheadPlan(
             addressesObjectives: addressed,
             diagnostics: {
                 peakFatigue,
-                fatigueTier: fatigueTierFor(peakFatigue),
+                fatigueTier,
                 topUtilityScore: pick.utilityScore,
                 runnerUpUtilityScore: ranked[1]?.utilityScore ?? null,
                 selectedBenefitScore: pick.benefitScore,
@@ -979,12 +1295,41 @@ export function generateWeekAheadPlan(
         });
     }
 
+    // A reservation that survived to the end of the horizon without being selected is only
+    // a terminal miss when the loop actually observed why it was lost; otherwise it stays
+    // `unresolved_search_budget`, never a fabricated safety attribution.
+    const finalOutcomes: WeeklyRoleAllocationOutcome[] = allocationOccurrences.map(occurrence => {
+        const settled = settledOutcomes.get(occurrence.id);
+        if (settled) return settled;
+        const latest = allocation.outcomes.find(outcome => outcome.occurrence.id === occurrence.id);
+        if (!latest) {
+            return {
+                occurrence,
+                reservation: {
+                    occurrenceId: occurrence.id,
+                    nominatedDate: nominatedDates.get(occurrence.id) ?? null,
+                    assignedDate: null, templateId: null, workoutId: null, wasMoved: false,
+                },
+                status: 'unresolved_search_budget' as const,
+            };
+        }
+        if (latest.status !== 'reserved') return latest;
+        const reason = displacementReasons.get(occurrence.id);
+        const reservation = { ...latest.reservation, assignedDate: null, templateId: null, workoutId: null };
+        return reason
+            ? { ...latest, reservation, status: 'missed' as const, reason }
+            : { ...latest, reservation, status: 'unresolved_search_budget' as const };
+    });
+
     return {
         startDate: addDaysToLocalDateString(todayDate, 1),
         days: resultDays,
         objectiveCredits,
         microcycleObjectives: microcycle.objectives ?? [],
         droppedContributorObjectives,
+        allocationReport: {
+            outcomes: finalOutcomes.sort((left, right) => left.occurrence.id.localeCompare(right.occurrence.id)),
+        },
     };
 }
 

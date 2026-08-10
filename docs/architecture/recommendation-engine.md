@@ -87,7 +87,7 @@ Asynchronous; resolves training intent from completed/adherence history first. P
 | `optimizer.ts` | Candidate ranking: objective benefit vs cost, plus named timing/preference modifiers |
 | `trainingIntent.ts` | Composes periodization + objectives + fatigue + planned dose |
 | `dose.ts` | Validates and intersects planned dose with the clinical ceiling and athlete adjustment |
-| `planner.ts` | Rolling 7-day projection, projected-credit ledger and weekly anchor pre-pass |
+| `planner.ts` / `weeklyAllocation.ts` | Rolling 7-day projection, projected-credit ledger, exact-role reservation evidence and weekly anchor preferences |
 | `provenance.ts` / `replay.ts` | Audit construction and current-policy verification; historical policies are audit-only |
 
 ---
@@ -382,6 +382,46 @@ Forecast recommendations never mutate completed credit. They accumulate in
 `completedCredit + projectedCredit`, while live unresolved state ignores projected credit.
 The planner's `objectiveCredits` display is derived from the same V2 objective-credit
 function used by the live ledger, not the old `stimulusCoverage >= 0.6` model.
+
+### Required weekly-role reservations (ADR-0018)
+
+Weekly anchors remain preferences. `weeklyAllocation.ts` adds a separate, exact-identity
+ledger for still-unfulfilled authored *minimum* roles, and allocates them before the greedy
+loop can spend their only safe date on supporting work.
+
+**One hard-gate path.** `planner.ts` exports `evaluateProjectedDate`, the single seam that
+resolves availability, phase eligibility, environment, the projected fatigue tier, planned
+dose, injury and spacing for one forecast date. The greedy day loop and the allocator both
+call it, so the allocator is not a second rules engine: it never re-implements
+`PROJECTED_FATIGUE_*` filtering or `rankCandidates` acceptance.
+
+**Bounded stateful search.** `resolveWeeklyRoleReservations` is a deterministic
+backtracking search over required role occurrences only. It enumerates exact eligible
+date/template candidates from the least-loaded (root) state, then re-proves every tentative
+assignment against the *actual* projected fatigue/history transition of the assignments
+accumulated so far -- so two dates that are individually feasible but conflict after the
+first pick cannot both be reserved. Its one `WeeklyAllocationSearchBudget` is seven dates,
+14 occurrences, four canonically ordered candidates per occurrence and 1,024
+state-transition nodes. Reaching a cap returns the best-known jointly feasible partial
+allocation and marks the remainder `unresolved_search_budget` -- never a safety miss.
+Wall-clock time is not a semantic cut-off; p95 ≤50 ms / p99 ≤100 ms on the live-sized
+fixture is an operational gate only.
+
+**Protection during greedy selection.** Reservations are recomputed after every selected
+forecast day. On a reserved date the planner ranks only candidates that fulfil that
+occurrence; if the dynamic state has made them unsafe, safety wins and the role relocates
+or is reported. On an unreserved date a discretionary supporting candidate -- and a
+discretionary Rest, which consumes the date just as surely -- is admitted only while the
+incumbent allocation still survives its projected cost. A true recover-tier selection is
+exempt: Rest-first outranks role fulfilment and the loss is attributed to recovery.
+
+Outcomes are typed (`reserved`, `fulfilled`, `missed`, `unresolved_search_budget`) with
+`wasMoved` as an annotation rather than a status, and are surfaced unchanged through
+`WeekAheadPlan.allocationReport` to the simulator report and the week-ahead UI. They are
+forecast evidence: never completed training, and never a substitute for the persisted
+recommendation audit. `recovery_or_rest` stays on the coverage ledger but does not reserve
+a training date. The production planner remains greedy; the Phase 5.1 beam-search prototype
+is not part of this path.
 
 ### Fixed activities (Phase 5.3, projected exposures since Phase 6.2b)
 

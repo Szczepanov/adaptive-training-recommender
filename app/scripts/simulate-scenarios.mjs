@@ -46,6 +46,25 @@ function fmtObjectiveCredits(credits) {
     .join('; ') || '(none)';
 }
 
+/** ADR-0018 D-MISS: rendered straight from the shared allocation report, never rebuilt
+ * from the selected recommendations, so the simulator, the UI and the JSON agree on the
+ * same occurrence ids and statuses. */
+function fmtRoleAllocation(result) {
+  const outcomes = (result.allocationReports ?? []).flatMap((item) =>
+    item.report.outcomes.map((outcome) => ({ weekIndex: item.weekIndex, ...outcome })));
+  if (outcomes.length === 0) return 'no authored minimum roles in scope';
+  const counts = outcomes.reduce((tally, outcome) => {
+    tally[outcome.status] = (tally[outcome.status] ?? 0) + 1;
+    return tally;
+  }, {});
+  const summary = Object.entries(counts).map(([status, count]) => `${status} ${count}`).join(', ');
+  const notable = outcomes
+    .filter((outcome) => outcome.status !== 'fulfilled' || outcome.reservation.wasMoved)
+    .map((outcome) => `w${outcome.weekIndex} ${outcome.occurrence.coverageKey}#${outcome.occurrence.ordinal}`
+      + ` -> ${outcome.status}${outcome.reason ? ` (${outcome.reason})` : ''}${outcome.reservation.wasMoved ? ' [moved]' : ''}`);
+  return notable.length === 0 ? summary : `${summary}; ${notable.join('; ')}`;
+}
+
 function scenarioSection(result) {
   const lines = [];
   lines.push(`### ${result.label}`);
@@ -62,6 +81,7 @@ function scenarioSection(result) {
   lines.push(`- **Objective-credit sources:** ${fmtObjectiveCredits(result.objectiveCredits)}`);
   lines.push(`- **Optimizer diagnostics:** fragile top-two selections ${result.utilityDiagnostics.fragileSelectionCount}; lower-benefit choice selected ${result.utilityDiagnostics.lowerBenefitSelectionCount}; train-tier Rest/Mobility selections ${result.utilityDiagnostics.trainTierRestOrRecoveryCount}`);
   lines.push(`- **Anchor days:** ${fmtAnchors(result)}`);
+  lines.push(`- **Required-role allocation (forecast only):** ${fmtRoleAllocation(result)}`);
   if (result.anchorScopeNote) lines.push(`  - *Scope note: ${result.anchorScopeNote}*`);
   lines.push(`- **Constraint violations:** ${result.constraintViolations.length === 0 ? 'none' : result.constraintViolations.join('; ')}`);
   lines.push(`- **Quality warnings:** ${result.qualityWarnings.length === 0 ? 'none' : result.qualityWarnings.join(' ')}`);

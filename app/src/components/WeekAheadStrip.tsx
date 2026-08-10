@@ -48,6 +48,25 @@ export function WeekAheadStrip({ plan, nextDayPlan, selectedTier = 'green', onSe
 
   const safeIndex = Math.min(selectedIndex, plan.days.length - 1);
   const selected = plan.days[safeIndex];
+  // ADR-0018 D-MISS: forecast evidence rendered straight from the shared allocation
+  // report, never rebuilt from the selected recommendations, and never presented as
+  // completed training.
+  const allocationEvidence = plan.allocationReport.outcomes.filter(outcome =>
+    outcome.reservation.assignedDate === selected.date || outcome.reservation.nominatedDate === selected.date,
+  );
+  const allocationNote = (outcome: (typeof allocationEvidence)[number]): string => {
+    const { label } = outcome.occurrence;
+    switch (outcome.status) {
+      case 'fulfilled':
+        return `Weekly role covered: ${label}${outcome.reservation.wasMoved ? ' (moved to this safe date)' : ''}.`;
+      case 'missed':
+        return `Weekly role could not be scheduled safely: ${label} (${outcome.reason?.replaceAll('_', ' ') ?? 'unknown reason'}).`;
+      case 'reserved':
+        return `Weekly role reserved: ${label}.`;
+      default:
+        return `Weekly role still being worked out: ${label}.`;
+    }
+  };
 
   return (
     <div className="dashboard-card week-ahead-card">
@@ -126,6 +145,9 @@ export function WeekAheadStrip({ plan, nextDayPlan, selectedTier = 'green', onSe
             🎯 Works toward: {selected.addressesObjectives.join(', ')}
           </p>
         )}
+        {allocationEvidence.map(outcome => (
+          <p key={outcome.occurrence.id} className="detail-allocation">{allocationNote(outcome)}</p>
+        ))}
         {selected.confidence === 'projected' && (
           <p className="detail-caveat">
             ⚠️ This far out there&apos;s no real recovery data yet -- treat this as the likely

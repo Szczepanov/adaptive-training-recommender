@@ -32,6 +32,11 @@ export interface EventPlanSessionCoverage {
   notes: string;
 }
 
+/** Stable id of the one authored coverage set that exists today. ADR-0017 D-COVSET turns
+ * this into a registry key; ADR-0018 D-MISS already needs it as part of a role
+ * occurrence's canonical identity. */
+export const SEPTEMBER_CYCLING_EVENT_COVERAGE_SET_ID = 'september_cycling_event';
+
 export const SEPTEMBER_CYCLING_EVENT_SESSION_COVERAGE: EventPlanSessionCoverage[] = [
   { key: 'aerobic_volume', label: 'Easy Zone 2 aerobic volume', phases: ['build', 'travel', 'peak', 'taper', 'recovery'], requirement: 'required', workoutIds: ['cycling_zone2_standard_01'], notes: 'Counts only the authored Zone 2 prescription at or above its catalog minimum duration; a recovery spin never replaces this floor.' },
   { key: 'recovery_spin', label: 'Optional recovery spin', phases: ['build', 'travel', 'peak', 'taper', 'recovery'], requirement: 'optional', workoutIds: ['cycling_recovery_spin_01'], notes: 'Useful active recovery, but never aerobic-volume coverage.' },

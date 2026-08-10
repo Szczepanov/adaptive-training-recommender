@@ -1,8 +1,8 @@
 # Phase 7A — Weekly allocation and safe role reservations
 
-* **Status:** `Draft`
-* **Blocked by:** ADR-0018 acceptance. Baseline review is additionally blocked until this
-  plan's acceptance criteria pass; PR #17's current semantic baseline remains unchanged.
+* **Status:** `Approved`
+* **Blocked by:** Baseline review remains blocked until this plan's acceptance criteria
+  pass; PR #17's current semantic baseline remains unchanged.
 * **Unlocks:** reviewed semantic-baseline acceptance for healthy/fresh cycling scenarios;
   explicit explanation of safety-forced weekly-role misses.
 * **Decision:** [ADR-0018](../adr/0018-weekly-allocation-and-role-reservations.md)
@@ -40,7 +40,7 @@ fresh cycling scenarios despite available capacity.
 
 ## Work items
 
-### 7A.1 `[ ]` Define allocation inputs and outcomes
+### 7A.1 `[x]` Define allocation inputs and outcomes
 
 **Current:** `CoverageState` knows requirements and `WeekAheadPlan` reports only selected
 days, objective credits, and dropped contributor objectives. Neither represents a
@@ -82,7 +82,7 @@ count idempotently without changing remaining ids, target-only/recovery-only req
 do not reserve a training date, and the simulator/UI consume the same serialized outcome
 rather than reconstructing status or reason.
 
-### 7A.2 `[ ]` Extract one projected-date evaluation seam
+### 7A.2 `[x]` Extract one projected-date evaluation seam
 
 **Current:** `generateWeekAheadPlan` locally combines availability, phase eligibility,
 reserved fixed-activity cost, fatigue-tier filtering, projected history, planned dose,
@@ -105,7 +105,7 @@ and focused tests show the helper rejects the same candidate/reasons as
 `rankCandidates` for time, equipment, injury, phase, intensity, spacing, anchor
 protection, and recover/modify fatigue ceilings.
 
-### 7A.3 `[ ]` Reserve jointly feasible required occurrences deterministically
+### 7A.3 `[x]` Reserve jointly feasible required occurrences deterministically
 
 **Current:** `resolveWeeklyAnchors` can nominate two dates but does not allocate coverage
 roles, account for multiple occurrences, or distinguish a nomination from a feasible
@@ -153,7 +153,7 @@ reservations contain only exact eligible identities and never violate a hard gat
 tests prove identical input yields the same best-known partial result and a typed unresolved
 outcome; performance fixtures meet the p95/p99 gates.
 
-### 7A.4 `[ ]` Protect reservations while retaining greedy day selection
+### 7A.4 `[x]` Protect reservations while retaining greedy day selection
 
 **Current:** a locally useful support candidate can remove the only later safe role
 opportunity; the loop discovers that only after it has selected the support day.
@@ -182,7 +182,7 @@ quality/event-specific allocation remains, but is rejected when it would destroy
 last one; the same is true of discretionary Rest. A hard recovery ceiling produces a
 safety-attributed `missed` outcome and Rest rather than an unsafe training pick.
 
-### 7A.5 `[ ]` Surface allocation evidence in simulator and week-ahead UI
+### 7A.5 `[x]` Surface allocation evidence in simulator and week-ahead UI
 
 **Current:** `simulation/analyze.ts` can report missed anchor nominations but cannot say
 whether a required role was feasible, reserved, moved, fulfilled, or safety-forced out.
@@ -223,32 +223,41 @@ coverage allocation. The committed semantic baseline is deliberately unreviewed.
 `npm run simulate:diff`, and `node scripts/check-policy-drift.mjs <base-sha>` pass. The
 semantic baseline is updated only after the acceptance criteria below pass in review.
 
+**Status:** the code, tests, policy bump and documentation are landed; the item stays open
+because its final step is the *reviewed* baseline workflow.
+`docs/analysis/simulation-baseline.json` is deliberately still the pre-PR-#17 file, so
+`simulate:diff` reports both the unreviewed PR #17 rest-first movement and this
+increment's allocation correction. The isolated 7A delta, measured against `main` at
+`0fa2a45`, touches only the cycling event-directed scenarios: every non-cycling scenario
+(which has no authored coverage plan, therefore no role occurrences) is unchanged.
+
 ## Acceptance criteria
 
-- [ ] Normal and fresh cycling Build/Specificity windows fulfil every eligible authored
+- [x] Normal and fresh cycling Build/Specificity windows fulfil every eligible authored
   minimum role: sustained quality, event-specific cycling, true aerobic volume, and
   primary strength.
-- [ ] A fresh athlete never misses such a role solely because a discretionary support or
+- [x] A fresh athlete never misses such a role solely because a discretionary support or
   discretionary Rest selection consumed its last safe opportunity.
-- [ ] A persistently stressed athlete may have more recovery than a healthy trajectory;
+- [x] A persistently stressed athlete may have more recovery than a healthy trajectory;
   any missed required role is explicit and safety/feasibility-attributed.
-- [ ] Acute stress followed by healthy readiness still regains projected train-tier days.
-- [ ] Modify-tier work remains observable where safe/productive; it is not created by
+- [x] Acute stress followed by healthy readiness still regains projected train-tier days.
+- [x] Modify-tier work remains observable where safe/productive; it is not created by
   lowering the recover threshold or by making rest share an objective.
-- [ ] No new spacing, anchor-protection, injury, equipment, phase, intensity, or
+- [x] No new spacing, anchor-protection, injury, equipment, phase, intensity, or
   emulator-rule violation is introduced.
-- [ ] Greedy remains the production path; ADR-0015's beam-search adoption status is
+- [x] Greedy remains the production path; ADR-0015's beam-search adoption status is
   unchanged.
+- [ ] Reviewed semantic-baseline acceptance (the one remaining human gate).
 
 ## Task board
 
 | Item | Status | Depends on | Done when |
 |---|:---:|---|---|
-| 7A.1 Allocation inputs and outcomes | `[ ]` | ADR-0018 | Exact minimum-role occurrences and typed outcomes are unit-tested |
-| 7A.2 Shared projected-date evaluation | `[ ]` | 7A.1 | Allocation and greedy use the same hard-gate path |
-| 7A.3 Stateful reservation search | `[ ]` | 7A.1–7A.2 | Jointly feasible reservations preserve exact identities and report no-branch roles |
-| 7A.4 Greedy reservation protection | `[ ]` | 7A.2–7A.3 | Support cannot reduce viable required-role allocation |
-| 7A.5 Simulator and UI evidence | `[ ]` | 7A.1, 7A.4 | Moved/missed outcome is visible consistently |
+| 7A.1 Allocation inputs and outcomes | `[x]` | ADR-0018 | Exact minimum-role occurrences and typed outcomes are unit-tested |
+| 7A.2 Shared projected-date evaluation | `[x]` | 7A.1 | Allocation and greedy use the same hard-gate path |
+| 7A.3 Stateful reservation search | `[x]` | 7A.1–7A.2 | Jointly feasible reservations preserve exact identities and report no-branch roles |
+| 7A.4 Greedy reservation protection | `[x]` | 7A.2–7A.3 | Support cannot reduce viable required-role allocation |
+| 7A.5 Simulator and UI evidence | `[x]` | 7A.1, 7A.4 | Moved/missed outcome is visible consistently |
 | 7A.6 Regression, policy, and docs review | `[ ]` | 7A.1–7A.5 | Acceptance suite and reviewed-baseline workflow pass |
 
 ## Risks and rollback

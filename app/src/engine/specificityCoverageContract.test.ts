@@ -176,6 +176,11 @@ describe('escaped coaching contract: Specificity after hard race-specific day -1
         expect(unresolvedMinimum, sequence).not.toContain('aerobic_volume');
         expect(unresolvedMinimum, sequence).not.toContain('sustained_quality');
         expect(unresolvedMinimum, sequence).not.toContain('outdoor_event_specific');
-        expect(unresolvedTarget, sequence).toContain('aerobic_volume');
+        // Before ADR-0018 the escaped case recovered its *minimum* roles but still ended
+        // the week one short of the authored two-session aerobic-volume target, because
+        // support work had already taken the second usable easy day. Reserving the exact
+        // roles first leaves that day available, so the target is now fully met.
+        expect(unresolvedTarget, sequence).not.toContain('aerobic_volume');
+        expect(unresolvedTarget, sequence).not.toContain('sustained_quality');
     });
 });

@@ -7,6 +7,7 @@ import { addDaysToLocalDateString } from '../../utils/localDate';
 import { workoutForTemplate } from '../../workouts/prescription';
 import type { AthleteScenario } from './scenarios';
 import { SCENARIOS } from './scenarios';
+import type { WeeklyRoleAllocationReport } from '../weeklyAllocation';
 
 const ZERO_COST: WorkoutCostProfile = { systemic: 0, cardiovascular: 0, lowerBody: 0, upperBody: 0, impactTissue: 0, neuromuscular: 0 };
 
@@ -26,6 +27,7 @@ export interface ScenarioResult {
     objectiveResolution: ObjectiveTally[]; objectiveCredits: ObjectiveCredit[]; utilityDiagnostics: UtilityDiagnosticsSummary;
     qualityWarnings: string[]; anchorWeeks: AnchorWeekResult[]; anchorScopeNote: string | null;
     fatigueTierDayCounts: { train: number; modify: number; recover: number }; constraintViolations: string[];
+    allocationReports: Array<{ weekIndex: number; report: WeeklyRoleAllocationReport }>;
     weekSummaries: Array<{
         weekIndex: number;
         fatigueTierDayCounts: { train: number; modify: number; recover: number };
@@ -89,6 +91,7 @@ function computeMetrics(
     anchorWeeks: AnchorWeekResult[],
     objectiveTallies: Map<string, ObjectiveTally>,
     objectiveCredits: ObjectiveCredit[],
+    allocationReports: Array<{ weekIndex: number; report: WeeklyRoleAllocationReport }>,
 ): ScenarioResult {
     const allDays = weeklyDays.flat();
     const categoryDistribution: Partial<Record<SessionTemplate['category'], number>> = {};
@@ -156,6 +159,9 @@ function computeMetrics(
     if (maxConsecutiveSameTemplateStreakAcrossWeeks >= 4) qualityWarnings.push(`Same-template streak reached ${maxConsecutiveSameTemplateStreakAcrossWeeks} days.`);
     if (scenario.event?.category === 'triathlon') qualityWarnings.push('Triathlon capability is partial: the engine has no Swimming modality or swim objective/catalog support.');
     if (scenario.event?.category === 'strength_meet') qualityWarnings.push('Strength-meet capability is partial: one generic weekly strength-maintenance objective cannot represent competition-lift programming.');
+    const unexplainedMisses = allocationReports.flatMap(item => item.report.outcomes)
+        .filter(outcome => outcome.status === 'missed' && !outcome.reason);
+    if (unexplainedMisses.length > 0) qualityWarnings.push(`Required-role allocation misses without a typed reason: ${unexplainedMisses.map(item => item.occurrence.id).join(', ')}.`);
 
     return {
         scenarioId: scenario.id, label: scenario.label, description: scenario.description, weeksSimulated: scenario.weeks, totalDays: allDays.length,
@@ -164,7 +170,7 @@ function computeMetrics(
         maxConsecutiveSameTemplateStreakWithinCall, maxConsecutiveSameTemplateStreakAcrossWeeks,
         objectiveResolution, objectiveCredits,
         utilityDiagnostics: { fragileSelectionCount, lowerBenefitSelectionCount, trainTierRestOrRecoveryCount },
-        qualityWarnings, anchorWeeks, anchorScopeNote, fatigueTierDayCounts, constraintViolations, weekSummaries,
+        qualityWarnings, anchorWeeks, anchorScopeNote, fatigueTierDayCounts, constraintViolations, allocationReports, weekSummaries,
     };
 }
 
@@ -184,6 +190,7 @@ export async function runScenario(scenario: AthleteScenario, planGenerator: Week
     const anchorWeeks: AnchorWeekResult[] = [];
     const objectiveTallies = new Map<string, ObjectiveTally>();
     const objectiveCredits: ObjectiveCredit[] = [];
+    const allocationReports: Array<{ weekIndex: number; report: WeeklyRoleAllocationReport }> = [];
     let currentDate = scenario.startDate;
 
     for (let week = 0; week < scenario.weeks; week++) {
@@ -208,6 +215,7 @@ export async function runScenario(scenario: AthleteScenario, planGenerator: Week
         });
 
         weeklyDays.push(simulatedDays);
+        allocationReports.push({ weekIndex: week, report: plan.allocationReport });
         plan.objectiveCredits.forEach(credit => objectiveCredits.push({ weekIndex: week, ...credit }));
         simulatedDays.forEach(day => accumulatedHistory.push(toCompletedExposure(day)));
 
@@ -219,7 +227,7 @@ export async function runScenario(scenario: AthleteScenario, planGenerator: Week
         });
         currentDate = addDaysToLocalDateString(currentDate, 7);
     }
-    return computeMetrics(scenario, weeklyDays, anchorWeeks, objectiveTallies, objectiveCredits);
+    return computeMetrics(scenario, weeklyDays, anchorWeeks, objectiveTallies, objectiveCredits, allocationReports);
 }
 
 export interface SimulationReport { commit: string; capturedAt: string; engineVersion: string; policyVersion: string; scenarios: ScenarioResult[]; preferenceSensitivity: PreferenceSensitivityResult[]; readinessSensitivity: ReadinessSensitivityResult[]; }

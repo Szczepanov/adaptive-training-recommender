@@ -19,11 +19,12 @@ async function getResult(scenarioId: string): Promise<ScenarioResult> {
     return result;
 }
 
-function objectiveCreditTotal(result: ScenarioResult, objectiveKey: string): number {
-    const raw = result.objectiveCredits
-        .filter(credit => credit.objectiveKey === objectiveKey)
-        .reduce((sum, credit) => sum + ((credit as typeof credit & { earnedCredit?: number }).earnedCredit ?? 0), 0);
-    return Math.round(raw * 100) / 100;
+function raceSpecificExposures(result: ScenarioResult): number {
+    return result.objectiveCredits.filter(credit => credit.objectiveKey === 'race_specific_endurance').length;
+}
+
+function resolvedWeeks(result: ScenarioResult, objectiveKey: string): number {
+    return result.objectiveResolution.find(item => item.key === objectiveKey)?.timesResolved ?? 0;
 }
 
 describe.each(SCENARIOS)('cross-scenario invariants: $label', (scenario) => {
@@ -40,6 +41,22 @@ describe.each(SCENARIOS)('cross-scenario invariants: $label', (scenario) => {
     it('produces the expected number of days with no crash', async () => {
         const result = await getResult(scenario.id);
         expect(result.totalDays).toBe(scenario.weeks * 7);
+    });
+
+    it('never records a required-role miss without a typed safety/feasibility reason', async () => {
+        const result = await getResult(scenario.id);
+        const missed = result.allocationReports.flatMap(item => item.report.outcomes)
+            .filter(outcome => outcome.status === 'missed');
+        expect(missed.filter(outcome => outcome.reason === undefined)).toEqual([]);
+    });
+
+    it('never leaves a forecast reservation dangling on the reported week', async () => {
+        const result = await getResult(scenario.id);
+        // `reserved` is a *current* forecast assignment. Once the horizon is planned it
+        // must have resolved to fulfilled / missed / unresolved (ADR-0018 D-MISS).
+        const outcomes = result.allocationReports.flatMap(item => item.report.outcomes);
+        expect(outcomes.filter(outcome => outcome.status === 'reserved')).toEqual([]);
+        expect(outcomes.every(outcome => outcome.reservation.occurrenceId === outcome.occurrence.id)).toBe(true);
     });
 });
 
@@ -88,16 +105,24 @@ describe('cycling_criterium_A -- qualification and anchor stress test', () => {
         // below remains the decision-bearing contract.
         expect(hits).toBeGreaterThanOrEqual(0);
         expect(hits).toBeLessThanOrEqual(nominated);
-        // The fourth nominated week begins the event taper, where the authored contract
-        // replaces the peak outdoor role with taper sharpening rather than a full race
-        // simulation. Three peak-block fulfilments are therefore the correct invariant.
-        expect(calendarBlockFulfilled).toBe(3);
-        // W3 rest-first clearing can leave the generic rolling adaptation key at 3/4;
-        // exact programming-role coverage is the hard authority. W1/W2 add the stronger
-        // macrocycle date/role contracts for peak and taper rather than preserving this
-        // legacy aggregate-credit count.
-        expect(raceSpecificObjective).toMatchObject({ timesGenerated: 4, timesResolved: 3 });
+        // ADR-0018 reserves the exact role before support work, so all four rolling
+        // windows now retain a safe event-specific exposure (an anchor remains only a
+        // nomination, not a hard appointment).
+        expect(calendarBlockFulfilled).toBe(4);
+        expect(raceSpecificObjective).toMatchObject({ timesGenerated: 4, timesResolved: 4 });
         expect(result.qualityWarnings.some(warning => warning.startsWith('Event-specific exposure occurred off the nominated anchor date'))).toBe(true);
+    });
+
+    it('fulfils every eligible authored minimum role in its healthy Build/Specificity weeks', async () => {
+        const result = await getResult('cycling_criterium_A');
+        const outcomes = result.allocationReports.flatMap(item => item.report.outcomes);
+        const keysSeen = new Set(outcomes.map(outcome => outcome.occurrence.coverageKey));
+        expect(keysSeen.size).toBeGreaterThan(0);
+        const unfulfilled = outcomes.filter(outcome => outcome.status !== 'fulfilled');
+        // A healthy athlete may still lose a role to a hard safety gate, but never to a
+        // discretionary support/Rest pick that quietly consumed its last opportunity.
+        expect(unfulfilled.map(outcome => outcome.reason ?? outcome.status))
+            .not.toContain('no_conflict_free_date');
     });
 });
 
@@ -173,13 +198,20 @@ describe('scenario quality diagnostics', () => {
         expect(report.readinessSensitivity.map(result => result.trajectory)).toEqual(['fresh', 'stressed']);
     });
 
-    it('sustained stress adds recovery and does not earn meaningfully more race-specific objective credit than baseline', async () => {
+    it('sustained stress adds recovery and records any required-role loss with a typed safety/feasibility reason', async () => {
         const baseline = await getResult('cycling_criterium_A');
         const stressed = await getResult('cycling_criterium_stressed_A');
         expect(stressed.restOrRecoveryDayCount).toBeGreaterThanOrEqual(baseline.restOrRecoveryDayCount);
-        const baselineCredit = objectiveCreditTotal(baseline, 'race_specific_endurance');
-        const stressedCredit = objectiveCreditTotal(stressed, 'race_specific_endurance');
-        expect(stressedCredit).toBeLessThanOrEqual(baselineCredit * 1.2);
+        // Extra recovery must not become extra hard work. Measured as race-specific
+        // *exposures* and resolved weeks, not as summed objective credit: credit is the
+        // remaining requirement, so a healthier athlete whose completed history already
+        // covers the objective legitimately earns a smaller projected number per session.
+        expect(raceSpecificExposures(stressed)).toBeLessThanOrEqual(raceSpecificExposures(baseline));
+        expect(resolvedWeeks(stressed, 'race_specific_endurance'))
+            .toBeLessThanOrEqual(resolvedWeeks(baseline, 'race_specific_endurance'));
+        const missed = stressed.allocationReports.flatMap(item => item.report.outcomes)
+            .filter(outcome => outcome.status === 'missed');
+        expect(missed.every(outcome => outcome.reason !== undefined)).toBe(true);
     });
 
     it('clears an acute high-fatigue trajectory into train-tier days after a healthy check-in', async () => {
