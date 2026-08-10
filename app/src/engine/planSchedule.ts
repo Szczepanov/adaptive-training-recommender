@@ -1,7 +1,7 @@
 import type { EventPlanCoverageKey, EventPlanPhase, EventPlanSessionCoverage } from '../workouts/event-plan.ts';
 import { SEPTEMBER_CYCLING_EVENT_SESSION_COVERAGE } from '../workouts/event-plan.ts';
 import type { DataIssue, DataState } from './dataState.ts';
-import type { ObjectiveKey, ObjectivePriority, UserEvent } from './models.ts';
+import type { AuthoredPlanBlock, ObjectiveKey, ObjectivePriority, UserEvent } from './models.ts';
 import { resolveEventTaper } from './taperPolicy';
 import { addDaysToLocalDateString } from '../utils/localDate.ts';
 
@@ -71,7 +71,10 @@ export function buildPlanDefinition(
 
   const sortedBlocks = [...blockSchedule].sort((a, b) => a.startDate.localeCompare(b.startDate));
   for (let i = 0; i < sortedBlocks.length - 1; i++) {
-    if (sortedBlocks[i].endDate >= sortedBlocks[i + 1].startDate) {
+    // An explicit travel overlay intentionally supersedes the derived block beneath it;
+    // all active-block consumers preserve author order, where overlays come first.
+    if (sortedBlocks[i].endDate >= sortedBlocks[i + 1].startDate
+      && sortedBlocks[i].phase !== 'travel' && sortedBlocks[i + 1].phase !== 'travel') {
       issues.push({
         code: 'OVERLAPPING_BLOCKS',
         field: `blocks.${sortedBlocks[i].id}`,
@@ -172,12 +175,21 @@ function developmentalObjectives(
  * Travel is deliberately NOT fabricated here; it is an explicit availability/day-context
  * overlay (or an explicitly authored plan block) rather than a property of every event.
  */
-export function buildCyclingEventPlan(event: UserEvent): DataState<PlanDefinition> {
+export function buildCyclingEventPlan(event: UserEvent, authoredBlocks: readonly AuthoredPlanBlock[] = []): DataState<PlanDefinition> {
   const raceDate = eventPlanningDate(event);
   const taper = resolveEventTaper(event);
   const peakEnd = taper ? addDaysToLocalDateString(taper.startDate, -1) : addDaysToLocalDateString(raceDate, -1);
 
+  const travelBlocks: PlanBlock[] = authoredBlocks
+    .filter(block => block.phase === 'travel' && (!block.eventId || block.eventId === event.id))
+    .map(block => ({
+      id: `authored_${block.id}`, phase: 'travel' as const, startDate: block.startDate, endDate: block.endDate,
+      volumeScale: block.volumeScale, intensityScale: block.intensityScale,
+    }));
+  // Authored blocks are first so their dates override a derived build/peak block in every
+  // consumer that resolves the active block by ordered lookup.
   const blocks: PlanBlock[] = [
+    ...travelBlocks,
     {
       id: 'block_build', phase: 'build',
       startDate: addDaysToLocalDateString(raceDate, -84),
@@ -215,6 +227,13 @@ export function buildCyclingEventPlan(event: UserEvent): DataState<PlanDefinitio
     ...developmentalObjectives('block_peak', event),
   ];
 
+  for (const block of travelBlocks) {
+    objectives.push(
+      { key: 'zone2_aerobic', coverageKey: 'travel_aerobic', blockId: block.id, requiredCredit: 1, priority: 'must_have', role: 'primary_developmental', coverageMinimumSessions: 1, coverageTargetSessions: 1 },
+      { key: 'strength_maintenance', coverageKey: 'travel_strength', blockId: block.id, requiredCredit: 1, priority: 'must_have', role: 'secondary_support', coverageMinimumSessions: 1, coverageTargetSessions: 1 },
+    );
+  }
+
   if (taper) {
     objectives.push(
       {
@@ -245,8 +264,8 @@ export function buildSeptemberCyclingEventPlan(event: UserEvent): DataState<Plan
 
 /** Every scheduled cycling event receives the richer authored plan, relative to its own
  * planning date. Other event categories keep the generic demand-derived path. */
-export function resolvePlanDefinitionForEvent(event: UserEvent | null): PlanDefinition | null {
+export function resolvePlanDefinitionForEvent(event: UserEvent | null, authoredBlocks: readonly AuthoredPlanBlock[] = []): PlanDefinition | null {
   if (!event || event.category !== 'cycling_event') return null;
-  const result = buildCyclingEventPlan(event);
+  const result = buildCyclingEventPlan(event, authoredBlocks);
   return result.status === 'AVAILABLE' ? result.data : null;
 }

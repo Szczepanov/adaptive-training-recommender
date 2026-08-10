@@ -217,6 +217,21 @@ export interface EventTaperSpec {
     startDate: string;
 }
 
+/** A user-authored calendar overlay. Travel is intentionally explicit: no event date or
+ * activity venue can fabricate one. These blocks are stored under the owning user. */
+export interface AuthoredPlanBlock {
+    id: string;
+    userId: string;
+    eventId?: string | null;
+    phase: 'travel';
+    startDate: string;
+    endDate: string;
+    volumeScale: number;
+    intensityScale: number;
+    createdAt: string;
+    updatedAt: string;
+}
+
 export type ObjectiveKey = 
   | 'threshold_quality' 
   | 'surge_repeatability' 
