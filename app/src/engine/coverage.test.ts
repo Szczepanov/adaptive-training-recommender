@@ -12,7 +12,7 @@ import {
 } from './coverage';
 import type { SessionTemplate, UserEvent } from './models';
 import { addDaysToLocalDateString } from '../utils/localDate';
-import type { EventPlanCoverageKey, EventPlanPhase } from '../workouts/event-plan';
+import { EVERGREEN_GENERAL_COVERAGE_SET, type EventPlanCoverageKey, type EventPlanPhase } from '../workouts/event-plan';
 
 function templateForCoverage(key: EventPlanCoverageKey, phase: EventPlanPhase): SessionTemplate {
     const template = ENRICHED_TEMPLATES.find(item => coverageKeysForTemplate(item, phase).includes(key));
@@ -33,6 +33,11 @@ function cyclingEvent(date = '2026-09-13'): UserEvent {
 }
 
 describe('Phase 6.2c explicit weekly coverage', () => {
+    it('credits a true continuous run, while keeping walk-run distinct, for evergreen aerobic volume', () => {
+        expect(coverageKeysForExposure({ workoutId: 'running_easy_continuous_01', durationMin: 40 }, 'general', EVERGREEN_GENERAL_COVERAGE_SET)).toContain('aerobic_volume');
+        expect(coverageKeysForExposure({ workoutId: 'running_walk_run_01', durationMin: 40 }, 'general', EVERGREEN_GENERAL_COVERAGE_SET)).not.toContain('aerobic_volume');
+    });
+
     it('maps exact authored workout identity, never overlapping stimulus', () => {
         expect(coverageKeysForExposure({ workoutId: 'cycling_zone2_standard_01', durationMin: 60 }, 'peak')).toContain('aerobic_volume');
         expect(coverageKeysForExposure({ workoutId: 'cycling_zone2_standard_01', durationMin: 20 }, 'peak')).not.toContain('aerobic_volume');

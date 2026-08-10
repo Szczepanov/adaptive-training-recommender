@@ -108,5 +108,28 @@ export const BUILD_SUPPORT_WORKOUTS: WorkoutDefinition[] = [
     garmin: { exportable: true, supportedSport: 'running' },
     tags: ['optional', 'adjustable', 'flat_route', 'impact_exposure'],
     sourceNotes: ['Matches the optional once-every-7–10-days walk-run rule and is removed first if it compromises cycling or lower-tissue recovery.']
+  },
+  {
+    id: 'running_easy_continuous_01', version: 1, status: 'active',
+    name: 'Easy Continuous Base Run',
+    description: 'A continuous, conversational easy run that supplies true aerobic volume without treating walk-run exposure as equivalent.',
+    modality: 'running', category: 'easy_endurance', objectives: ['aerobic_base'],
+    duration: { defaultMin: 40, minimumMin: 30, maximumMin: 70 },
+    loadProfile: { cardiovascular: 2, muscular: 2, mechanical: 3, eccentric: 3, coordination: 1, recoveryHours: 24 },
+    eligibility: { minimumReadiness: 5, maximumSoreness: 5, minimumDaysAfterHardLowerBody: 1, forbiddenPainFlags: ['knee_swelling', 'worsening_achilles_pain', 'painful_braking'] },
+    equipment: [], contraindicationTags: ['knee_swelling', 'worsening_achilles_pain'], engineTemplateIds: ['end_easy_02'],
+    blocks: [
+      { id: 'warmup', name: 'Warm-up', role: 'warmup', steps: [timeStep('easy_run_warmup', 'easy_continuous_run', 'Easy jog', 600, { target: { type: 'rpe', min: 1, max: 2 } })] },
+      { id: 'main', name: 'Continuous aerobic run', role: 'main', steps: [timeStep('easy_run_main', 'easy_continuous_run', 'Conversational continuous running', 1800, { target: { type: 'rpe', min: 2, max: 3 }, notes: ['Flat predictable route', 'No surges or fast finish', 'Walk or stop if form changes'] })] },
+      { id: 'cooldown', name: 'Cool-down', role: 'cooldown', steps: [timeStep('easy_run_cooldown', 'easy_continuous_run', 'Easy jog or walk', 300, { target: { type: 'rpe', min: 1, max: 2 } })] },
+    ],
+    variants: [
+      { id: 'full', targetDurationMin: 40, loadMultiplier: 1, rationale: 'Use the complete continuous easy-run dose.', stepOverrides: [] },
+      { id: 'reduced', targetDurationMin: 30, loadMultiplier: 0.7, rationale: 'Shorten continuous running while preserving its aerobic purpose.', stepOverrides: [{ stepId: 'easy_run_main', durationSeconds: 1200 }] },
+      { id: 'return_to_training', targetDurationMin: 30, loadMultiplier: 0.6, rationale: 'Use a deliberately short, conversational continuous run only when tissue response is normal.', stepOverrides: [{ stepId: 'easy_run_main', durationSeconds: 1200 }] },
+    ],
+    parameters: [], regressions: ['running_walk_run_01'], progressions: ['running_tempo_01'], substitutions: [],
+    garmin: { exportable: true, supportedSport: 'running' }, tags: ['running', 'continuous', 'aerobic_base'],
+    sourceNotes: ['Provides the exact continuous-running identity required for evergreen aerobic-volume coverage; walk-run remains a separate low-impact exposure.'],
   }
 ];

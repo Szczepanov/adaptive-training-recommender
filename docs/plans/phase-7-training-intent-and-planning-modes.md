@@ -176,6 +176,13 @@ outside `planningMode.ts` newly branches on `focusEvent === null` for mode purpo
 
 ### 7.3 `[-]` Resolve dose first, then capacity and weekly packing
 
+**Status (2026-08-10): In progress.** `evergreenStrategy.ts`,
+`trainingCapacity.ts`, and `weeklyDosePacking.ts` now resolve provenance-backed dose,
+time-aware capacity, exact-role packing, typed guideline shortfalls, and
+`goal_constraint_conflict` instead of inventing a cross-modality substitution. The
+remaining work is to complete the cardinality/tie-breaker contract and the full
+contradictory-history diagnostics before this item can be marked finished.
+
 **Current:** `DEFAULT_BASE_DEMAND` is the eventless strategy input, sized by nothing
 (G1, G2). `UserPreferences` has per-day duration defaults, but no proposed strategy API
 consumes them; the old proposed `targetSessions + first priority -> allocation table`
@@ -352,6 +359,12 @@ assertion passes unmodified except for the added descriptor argument.
 
 ### 7.5 `[-]` An evergreen coverage set and a plan definition to carry it
 
+**Status (2026-08-10): In progress.** The `general` coverage descriptor, rolling plan
+definition, descriptor-scoped role lookup, and non-empty eventless `CoverageState` are
+implemented. Evergreen aerobic coverage now has separate cycling and true continuous-run
+workout identities; walk-run remains non-equivalent. The shared planning-overlay contract
+and its demand-derived/evergreen fixtures remain before this item can be marked finished.
+
 **Current:** coverage only exists for a cycling event (G3, G10).
 
 **Change:**
@@ -452,7 +465,7 @@ the preference-schema portion stays with 7.1 because it changes persisted owners
   This is a **display and default-seeding** mapping only: it pre-fills a profile form and
   becomes input to `resolveEvidenceBackedStrategy` only after the athlete confirms it. It must not
   silently persist or alter the profile-less engine default.
-* **`POLICY_VERSION`** → `2026-08-training-intent-safety-v1`; retain
+* **`POLICY_VERSION`** → `2026-08-evergreen-packing-v1`; retain
   `2026-08-training-intent-modes-v1` and `2026-08-authored-travel-blocks-v1` in
   `HISTORICAL_POLICY_VERSIONS`. Verify with
   `node scripts/check-policy-drift.mjs <base-sha>`.

@@ -37,4 +37,14 @@ describe('weekly dose packing', () => {
         expect(tooShort.requiredRoles).toHaveLength(0);
         expect(enoughTime.requiredRoles).toHaveLength(3);
     });
+
+    it('does not fabricate cross-modality credit when the exact role conflicts with the requirement', () => {
+        const runningOnly = {
+            ...healthStrategy,
+            requirements: [{ ...healthStrategy.requirements[0], substitutionPolicy: { equivalentModalitiesAllowed: false, permittedModalities: ['Running'] } }],
+        };
+        const budget = packWeeklyDose(runningOnly, capacity(60, 2), coverage);
+        expect(budget.requiredRoles).toEqual([]);
+        expect(budget.shortfalls).toEqual([expect.objectContaining({ code: 'goal_constraint_conflict', adaptation: 'aerobic_endurance' })]);
+    });
 });

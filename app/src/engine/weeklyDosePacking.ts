@@ -42,7 +42,7 @@ export interface PackedRoleOccurrence {
 }
 
 export interface PackingWarning {
-    code: 'below_guideline_range' | 'guideline_target_shortfall' | 'goal_requirement_shortfall' | 'minimum_dose_shortfall' | 'no_exact_eligible_role';
+    code: 'below_guideline_range' | 'guideline_target_shortfall' | 'goal_requirement_shortfall' | 'minimum_dose_shortfall' | 'no_exact_eligible_role' | 'goal_constraint_conflict';
     adaptation: AdaptationKey;
     message: string;
 }
@@ -66,6 +66,16 @@ function doseFor(role: CoverageRoleDescriptor, requirement: AdaptationDoseRequir
 
 function desiredDose(requirement: AdaptationDoseRequirement): number {
     return requirement.floor?.dose.value ?? requirement.target.target;
+}
+
+function rolePermitsRequirement(role: CoverageRoleDescriptor, requirement: AdaptationDoseRequirement): boolean {
+    const permitted = new Set(requirement.substitutionPolicy.permittedModalities.map(modality => modality.toLowerCase()));
+    return role.exactWorkoutIds.some(workoutId => {
+        const modality = WORKOUTS.find(workout => workout.id === workoutId)?.modality;
+        if (!modality) return false;
+        const canonical = modality === 'cross_training' ? 'other' : modality;
+        return permitted.has(canonical);
+    });
 }
 
 function warningFor(requirement: AdaptationDoseRequirement, delivered: number): PackingWarning | null {
@@ -105,9 +115,13 @@ export function packWeeklyDose(
     });
 
     for (const requirement of requirements) {
-        const candidates = coverage.roles.filter(role => role.adaptations.includes(requirement.adaptation));
+        const adaptationCandidates = coverage.roles.filter(role => role.adaptations.includes(requirement.adaptation));
+        const candidates = adaptationCandidates.filter(role => rolePermitsRequirement(role, requirement));
         if (candidates.length === 0) {
-            shortfalls.push({ code: 'no_exact_eligible_role', adaptation: requirement.adaptation, message: `No exact authored role can satisfy ${requirement.adaptation}.` });
+            const code = adaptationCandidates.length > 0 ? 'goal_constraint_conflict' : 'no_exact_eligible_role';
+            shortfalls.push({ code, adaptation: requirement.adaptation, message: code === 'goal_constraint_conflict'
+                ? `The available exact roles cannot satisfy ${requirement.adaptation} within its permitted modalities.`
+                : `No exact authored role can satisfy ${requirement.adaptation}.` });
             continue;
         }
         let delivered = packed

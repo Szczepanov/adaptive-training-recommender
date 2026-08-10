@@ -105,7 +105,7 @@ export const SEPTEMBER_CYCLING_EVENT_COVERAGE_SET: CoverageSetDescriptor = {
  * separate from the evidence metadata in evergreenStrategy.ts: it maps exact workout
  * identities to programming roles and makes no blanket scientific claim. */
 export const EVERGREEN_SESSION_COVERAGE: PlanSessionCoverage[] = [
-  { key: 'aerobic_volume', label: 'Continuous aerobic volume', phases: ['general'], requirement: 'required', workoutIds: ['cycling_zone2_standard_01'], notes: 'Counts only an authored continuous aerobic prescription at or above its catalog minimum duration.' },
+  { key: 'aerobic_volume', label: 'Continuous aerobic volume', phases: ['general'], requirement: 'required', workoutIds: ['cycling_zone2_standard_01', 'running_easy_continuous_01'], notes: 'Counts only an authored continuous aerobic prescription at or above its catalog minimum duration; walk-run is not equivalent.' },
   { key: 'sustained_quality', label: 'Optional sustained quality', phases: ['general'], requirement: 'optional', workoutIds: ['cycling_controlled_threshold_4x8_01', 'running_tempo_01'], notes: 'Optional performance work; it is introduced only by an eligible evidence-backed strategy.' },
   { key: 'primary_strength', label: 'Primary full-body strength', phases: ['general'], requirement: 'required', workoutIds: ['strength_full_body_maintenance_01'], notes: 'Exact full-body resistance exposure for the strength role.' },
   { key: 'compact_strength', label: 'Compact strength support', phases: ['general'], requirement: 'optional', workoutIds: ['strength_compact_power_01'], notes: 'Optional lower-time resistance alternative; never silently replaces a required full-body role.' },
