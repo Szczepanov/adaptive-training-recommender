@@ -174,7 +174,7 @@ outside `planningMode.ts` newly branches on `focusEvent === null` for mode purpo
 
 ---
 
-### 7.3 `[ ]` Resolve dose first, then capacity and weekly packing
+### 7.3 `[-]` Resolve dose first, then capacity and weekly packing
 
 **Current:** `DEFAULT_BASE_DEMAND` is the eventless strategy input, sized by nothing
 (G1, G2). `UserPreferences` has per-day duration defaults, but no proposed strategy API
@@ -589,7 +589,7 @@ Every item is independently revertible. 7.1 and 7.7 land value without 7.3–7.5
 |---|:--:|---|---|
 | 7.1 Persist `TrainingIntentProfile` | `[x]` | ADR-0017 | Round-trips; rules tests green |
 | 7.2 Effective planning mode and event strategy | `[x]` | 7.1 | Existing events keep event-directed structured/demand-derived paths |
-| 7.3 Evidence dose → capacity → role packing | `[ ]` | 7.1, 7.2 | Dose provenance, time-aware capacity, and exact roles yield transparent shortfalls |
+| 7.3 Evidence dose → capacity → role packing | `[-]` | 7.1, 7.2 | Dose provenance, time-aware capacity, and exact roles yield transparent shortfalls |
 | 7.4 Generic plan-coverage registry | `[ ]` | ADR-0017 | Both descriptors validate; September set byte-identical |
 | 7.5 Evergreen coverage + plan definition | `[ ]` | 7.3, 7.4 | Non-empty `CoverageState` eventless |
 | 7.6 `strength_development` key | `[ ]` | 7.3 | Exhaustive switches handled, no casts |
