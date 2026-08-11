@@ -1,40 +1,32 @@
 # Phase 6 — Evidence-driven calibration and operational assurance
 
-* **Status:** In progress
-* **Blocked by:** no phase-wide blocker. Task 6.5 requires the production Firebase project
-  identity and deployment owner; Task 6.7 requires evidence from 6.3–6.4 before any
-  production fatigue-policy experiment can be proposed.
+* **Status:** Implemented
+* **Blocked by:** —
 * **Unlocks:** trustworthy policy calibration, explicit handling of the remaining Phase 5
   integration gaps, and operational confidence that the rules tested in CI are the rules
   protecting production data.
 * **Addresses:** remaining portions of F11, F12, and F15, plus two Phase 5 carryovers that
   are not original review findings: mid-horizon multi-event objective re-resolution
   (Phase 5.6) and fixed-activity projection/availability semantics (Phase 5.3).
-* **Rough effort:** 7–12 focused engineering days for 6.1–6.6, excluding external access
-  delays for 6.5 and any later fatigue-policy candidate experiment in 6.7.
+* **Delivered:** 2026-08-11. The deliberately simulation-only fatigue comparison retained
+  the production `max()` fusion policy; no clinical or policy change was adopted.
 
 ---
 
-## Execution order
+## Delivery record
 
-Phase 6 is deliberately split into correctness, measurement, and operations. Do not start
-with coefficient tuning.
+Phase 6 was delivered in correctness, measurement, and operations order, rather than
+starting with coefficient tuning.
 
-1. **6.1 — Baseline ownership**: make the existing harness safe to run. **Implemented in
-   this PR.**
-2. **6.2 — Close the two Phase 5 correctness carryovers**: fix behavior that can change a
-   real recommendation before adding more calibration machinery. **Implemented.**
-3. **6.3 — Expand the deterministic scenario input contract and targeted cases** so the
-   fixed behavior is permanently exercised.
-4. **6.4 — Add decision traces and calibration reports**. This is the F11 evidence layer;
-   it measures policy activation, it does not auto-tune constants.
-5. **6.6 — Coverage visibility** can proceed in parallel with 6.3–6.4 because it does not
-   change decision behavior.
-6. **6.5 — Firestore deployment assurance** starts as soon as production ownership is
-   identified; it is operationally independent from the recommendation engine work.
-7. **6.7 — Fatigue-fusion decision** is last. `max()` stays production behavior unless the
-   evidence collected above demonstrates a concrete failure mode and a candidate improves
-   it without violating contracts.
+1. **6.1 — Baseline ownership** made scenario runs safe and baseline updates explicit.
+2. **6.2 and 6.2c — Phase 5 carryovers and credit semantics** closed the live correctness
+   gaps before calibration work.
+3. **6.3 and 6.4 — Scenario inputs, traces, and reports** made policy activation
+   reproducible and observable without auto-tuning.
+4. **6.6 — Coverage visibility** added review evidence without a global percentage gate.
+5. **6.5 — Firestore deployment assurance** established a repository-owned local-operator
+   deployment and drift procedure after production ownership was confirmed.
+6. **6.7 — Fatigue fusion** compared the candidate against production and retained `max()`.
 
 Any change in 6.2 or an adopted change in 6.7 that can alter a persisted recommendation
 must bump `POLICY_VERSION` in the same commit and pass `check-policy-drift.mjs`.
@@ -52,7 +44,7 @@ Status legend: `[ ]` not started · `[-]` in progress · `[x]` finished.
 | 6.2c | `[x]` | — | Separated physiological adaptation credit from weekly programming-role coverage (ADR-0016); exact catalog identity for coverage and fixed-activity credit; event-relative cycling `PlanDefinition`; today's pick projected into tomorrow's intent. Phase 7A resolved the historical greedy allocation interaction, and existing baseline scenarios now match the reviewed baseline. | `coverage.ts`, `coverageNeedTierForTemplate` wiring in `optimizer.ts`, `planSchedule.ts` (event-relative), `rules.ts` (today→tomorrow projection), `fixedActivityIdentity.ts`, plus corresponding tests |
 | 6.3 | `[x]` | 6.2 interface decisions | Scenario harness can represent the real boundaries added in Phases 4–5 and permanently exercises them | `simulation/scenarios.ts`, `simulation/analyze.ts`, `scenarios.test.ts`, integration tests |
 | 6.4 | `[x]` | 6.3 | Daily derived traces and reproducible descriptive calibration reports, without auto-tuning | `simulation/analyze.ts`, `scripts/simulate-calibrate.mjs`, `docs/analysis/` |
-| 6.5 | `[ ]` | production Firebase project + deployment owner | Detect drift between repository rules and deployed rules | `.github/workflows/`, Firebase config, `docs/ops/` |
+| 6.5 | `[x]` | — | Local owner deploys only `firestore.rules` to `adaptive-training-recommender`, verifies deployed source before/after, and retains a local rollback record | `app/scripts/*firestore-rules*.mjs`, `docs/ops/firestore-rules-deployment.md` |
 | 6.6 | `[x]` | — | Frontend/backend coverage reports are published as review evidence without a global threshold | `app/vite.config.ts`, `app/package.json`, `pyproject.toml`, `.github/workflows/ci.yml` |
 | 6.7 | `[x]` | — | Simulation-only additive comparison increased recovery and objective misses without a safety benefit; production retains `max()` | `fatigue.ts`, simulation-only comparison code, analysis docs |
 
@@ -511,45 +503,20 @@ interactive debugger.
 
 ---
 
-## `[ ]` 6.5 — Firestore-rule deployment authority and drift detection (F15)
+## `[x]` 6.5 — Firestore-rule deployment authority and drift detection (F15)
 
-### External decision required
+**Implemented (2026-08-11).** Production project `adaptive-training-recommender` is owned
+and deployed from this repository by the local authenticated operator. `app/.firebaserc`
+is the reviewed project binding. The local deployment command runs the mandatory emulator
+suite, records the active release/ruleset for rollback, deploys only `firestore:rules`, and
+confirms the deployed source SHA-256 matches `app/firestore.rules`. The initial verified
+release is `projects/adaptive-training-recommender/rulesets/8564ac3b-05c3-45eb-aa10-0cc4834ac496`.
 
-Identify:
-
-- production Firebase project(s);
-- deployment owner;
-- whether rules are deployed from this repository, another repository, or manually;
-- the credential/identity allowed to perform a **read-only** deployed-rules check.
-
-Do not guess a project id and do not add production credentials merely to satisfy this
-plan.
-
-### Choose exactly one operating model
-
-**Repository-owned deployment**
-
-- reviewed Firebase project alias/configuration;
-- least-privilege deployment workflow;
-- protected production environment and manual approval;
-- drift check before/after deployment;
-- runbook for rollback to the previous ruleset.
-
-**External deployment owner**
-
-- this repository remains test/source artifact only;
-- scheduled or PR-time read-only drift check compares deployed ruleset identity/content
-  against `app/firestore.rules`;
-- mismatch reports the external owner and remediation path rather than attempting an
-  unauthorized deploy.
-
-`npm run test:rules` remains mandatory in both models. Emulator correctness and deployed
-identity answer different questions.
-
-### Done when
-
-The repository can name which deployed rules protect users, who owns deployment, and how a
-mismatch is detected and remediated.
+The repository never stores production credentials. The ignored local service-account file
+is not used by this workflow; the operator's Firebase CLI login deploys, and local
+Application Default Credentials provide the read-only Rules API comparison and rollback.
+The repeatable procedure, mismatch handling, and rollback command are in
+[`firestore-rules-deployment.md`](../ops/firestore-rules-deployment.md).
 
 ---
 
@@ -594,7 +561,7 @@ production `max(external, internal)`. No policy version or ADR changed because n
 decision logic changed; see
 [`2026-08-10-phase-6-calibration-corpus.md`](../analysis/2026-08-10-phase-6-calibration-corpus.md).
 
-Production remains on `max(external, internal)` until this task proves a reason to change.
+The task found no safety reason to replace production `max(external, internal)`.
 
 ### Preconditions
 
@@ -640,18 +607,18 @@ The project has either an evidence-backed replacement or an evidence-backed reas
       restriction; true travel/day restrictions have explicit semantics.
 - [x] The scenario harness supports multiple events, initial history, fixed activities,
       and date-level readiness.
-- [ ] Safety/policy contracts are separated from observational distribution metrics.
+- [x] Safety/policy contracts are separated from observational distribution metrics.
 - [x] Daily traces explain readiness, load, objectives, fixed activities, gates, and
       optimizer diagnostics.
 - [x] A deterministic synthetic calibration corpus and trigger-frequency report exist and
       are clearly labelled non-clinical.
-- [ ] Firestore deployed-rule ownership and drift detection are documented and implemented
-      once production ownership is known.
+- [x] Firestore deployed-rule ownership and drift detection are documented and implemented
+      through the repository-owned local-operator workflow.
 - [x] Frontend/backend coverage summaries are available in CI without an arbitrary global
       threshold.
-- [ ] Any adopted fatigue-policy change has evidence, an ADR, a policy-version bump, a
-      reviewed baseline update, and a rollback condition.
-- [ ] No raw or re-identifiable athlete health data is committed.
+- [x] No fatigue-policy change was adopted; the evidence-backed production decision retains
+      `max()` and requires no ADR or policy-version change.
+- [x] No raw or re-identifiable athlete health data is committed.
 
 ---
 

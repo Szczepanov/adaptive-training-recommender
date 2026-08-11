@@ -54,6 +54,9 @@ All scripts defined in `package.json` are organized below by feature domain:
 | `npm run test:coverage` | Code coverage report | Executes Vitest V8 coverage and writes terminal, JSON, and HTML reports to `artifacts/coverage/frontend/`. |
 | `npm run test:rules` | Firestore security rules test | Launches Firebase local emulator with `--only firestore` and executes security rules unit tests (`test:rules:emulator`). |
 | `npm run test:rules:emulator` | Direct rules test | Executes Vitest directly against `src/emulator/firestoreRules.emulator.test.ts` (called internally by `test:rules`). |
+| `npm run firestore:rules:drift` | Production rules comparison | Reads the deployed default Firestore ruleset through local Application Default Credentials and fails if its source differs from `firestore.rules`. |
+| `npm run firestore:rules:deploy -- --confirm` | Production rules deployment | Runs emulator tests, saves rollback metadata locally, deploys only `firestore:rules`, then verifies the deployed source. See `docs/ops/firestore-rules-deployment.md`. |
+| `npm run firestore:rules:rollback -- --backup <file> --confirm` | Production rules rollback | Restores the release to the ruleset recorded by a previous local deployment. |
 
 ### 4. Engine Simulation & Decision Audit
 

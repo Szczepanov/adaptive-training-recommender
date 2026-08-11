@@ -68,21 +68,19 @@ all-`Ready` table became unusable.
 | 3 | [One ranking path](./phase-3-single-ranking-path.md) | **Implemented** | — | — | F3, F4, F5 |
 | 4 | [Objective credit V2](./phase-4-objective-credit-v2.md) | **Implemented** | — | — | F7, F8, F12 |
 | 5 | [Sequence planning](./phase-5-sequence-planning.md) | **Implemented** | — | — | the cutover proper |
-| 6 | [Evidence-driven calibration & operational assurance](./phase-6-evidence-and-operational-assurance.md) | **In progress** | none | 6.5 needs Firebase owner/project | remaining F11, F12, F15 |
+| 6 | [Evidence-driven calibration & operational assurance](./phase-6-evidence-and-operational-assurance.md) | **Implemented** | none | none | remaining F11, F12, F15 |
 | 6.2c | [Recommendation quality & weekly coverage](./phase-6-2c-recommendation-quality-and-weekly-coverage.md) | **Implemented** | none | none | separates adaptation credit from weekly programming-role coverage; not an original review finding |
 | 7A | [Weekly allocation & safe role reservations](./phase-7-weekly-allocation-and-role-reservations.md) | **Implemented** | none | none | resolves PR #17's healthy/fresh cycling role-coverage failure without recalibrating recovery |
 | 7B | [Training intent, capacity & planning modes](./phase-7-training-intent-and-planning-modes.md) | **Implemented** | none | none | evidence-derived Evergreen dose packed into real capacity, while preserving structured and demand-derived event planning — not an original review finding |
 
-Phases 0–5 are complete; Phase 6 has started with 6.1 baseline ownership and 6.2 (both
-Phase 5 correctness carryovers) implemented in PR #17, which bumped `POLICY_VERSION` to
-`2026-08-phase6-correctness-carryovers-v1`. 6.2c (adaptation-credit/weekly-coverage
-separation, [ADR-0016](../adr/0016-adaptation-credit-and-weekly-coverage.md)) followed to
-close a further review finding; its code and dedicated contract tests are complete and
-green. [Phase 7A](./phase-7-weekly-allocation-and-role-reservations.md) implemented the
+Phases 0–6 are implemented. Phase 6 delivered explicit scenario evidence, calibration
+traces, coverage visibility, a verified repository-owned local Firestore-rules deployment
+and rollback procedure, and an evidence-backed decision to retain production fatigue
+fusion. [Phase 7A](./phase-7-weekly-allocation-and-role-reservations.md) implemented the
 explicit allocation/reservation contract that resolved the historical greedy role-loss and
 recovery-share interaction; the affected cycling scenarios now match the reviewed baseline.
-The Phase 5.1 beam-search prototype remains
-measured but non-production; the live planner stays greedy until ADR-0015 is revisited.
+The Phase 5.1 beam-search prototype remains measured but non-production; the live planner
+stays greedy until ADR-0015 is revisited.
 
 ---
 

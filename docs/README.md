@@ -112,6 +112,7 @@ Operational manuals and operational procedures:
 
 * [**GCP Cloud Run & Cloud Scheduler Deployment**](./ops/cloud-run-deployment.md) — Packaging Docker images, GCS token store management, Cloud Run jobs, and Cloud Scheduler setups.
 * [**Data Backfill, Audit & Offline Rebuild**](./ops/data-backfill-and-rebuild.md) — Executing historical backfills, data completeness audits, and offline raw payload rebuilds.
+* [**Firestore Rules Deployment**](./ops/firestore-rules-deployment.md) — Local repository-owned deployment, deployed-source drift checks, and ruleset rollback.
 
 ---
 
