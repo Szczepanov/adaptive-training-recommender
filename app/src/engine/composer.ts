@@ -337,16 +337,12 @@ if (import.meta.env.DEV && typeof window !== 'undefined') {
         
         try {
             const input = await decisionComposer.composeDailyDecisionInput(userId, date);
-            console.log('Daily Decision Input:', input);
-            console.log('JSON Export:', JSON.stringify(input, null, 2));
             
             // Validate
-            const validation = await decisionComposer.validateDecisionInput(input);
-            console.log('Validation:', validation);
+            await decisionComposer.validateDecisionInput(input);
             
             // Check readiness
-            const readiness = await decisionComposer.isDataReadyForRecommendations(userId, date);
-            console.log('Data Readiness:', readiness);
+            await decisionComposer.isDataReadyForRecommendations(userId, date);
             
             return input;
         } catch (error) {
