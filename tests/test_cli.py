@@ -1,4 +1,5 @@
 import sys
+from typing import Any, Generator
 from unittest.mock import patch
 
 import pytest
@@ -10,9 +11,6 @@ from garmin_sync.cli import (
     run_daily_sync,
     run_rebuild_cmd,
 )
-
-
-from typing import Any, Generator
 
 
 @pytest.fixture
