@@ -298,13 +298,23 @@ function toDisplayStep(
   };
 }
 
+const workoutMapCache = new WeakMap<WorkoutDefinition[], Map<string, WorkoutDefinition>>();
+
 export function workoutForTemplate(templateId: string, workouts: WorkoutDefinition[] = WORKOUTS): WorkoutDefinition | undefined {
   const matching = workouts
     .filter((workout) => workout.status === 'active' && !workout.manualOnly && workout.engineTemplateIds?.includes(templateId))
     .sort((a, b) => (a.engineTemplatePriority ?? 1) - (b.engineTemplatePriority ?? 1));
   if (matching.length > 0) return matching[0];
   const fallbackId = FALLBACK_TEMPLATE_TO_WORKOUT[templateId];
-  return fallbackId ? workouts.find((workout) => workout.id === fallbackId && workout.status === 'active') : undefined;
+  if (!fallbackId) return undefined;
+
+  let map = workoutMapCache.get(workouts);
+  if (!map) {
+    map = new Map(workouts.map(w => [w.id, w]));
+    workoutMapCache.set(workouts, map);
+  }
+  const workout = map.get(fallbackId);
+  return workout?.status === 'active' ? workout : undefined;
 }
 
 function parseSetsFromLabel(label?: string, summary?: string): number | undefined {
