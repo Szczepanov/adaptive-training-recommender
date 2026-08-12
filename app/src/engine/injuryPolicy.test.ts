@@ -245,7 +245,7 @@ describe('injuryPolicy', () => {
 
         it('keeps every same-region base constraint, not just the highest-severity one, and tightens each independently', () => {
             // Two standing knee constraints: a general monitor plus an explicit
-            // modality-specific limit. A collapse-to-one-per-region bug would silently
+            // modality-specific limit. A collapse-to-one-per-region regression would silently
             // drop one of these, along with its restrictedModalities.
             const baseInjuries: InjuryConstraint[] = [
                 { region: 'knee', severity: 'monitor', note: 'general knee caution' },
