@@ -1,0 +1,163 @@
+import React, { useRef, useEffect } from 'react';
+import type { Screen } from '../types/navigation';
+import { getAuthInstance } from '../firebase';
+
+interface MobileNavProps {
+  screen: Screen;
+  handleNavigate: (screen: Screen) => void;
+  loadDecisionInput: () => void;
+  mobileMoreOpen: boolean;
+  setMobileMoreOpen: React.Dispatch<React.SetStateAction<boolean>>;
+}
+
+export const MobileNav: React.FC<MobileNavProps> = ({ screen, handleNavigate, loadDecisionInput, mobileMoreOpen, setMobileMoreOpen }) => {
+  const mobileMoreBtnRef = useRef<HTMLButtonElement>(null);
+  const mobileDrawerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (mobileMoreOpen) {
+      document.body.style.overflow = 'hidden';
+      const closeBtn = mobileDrawerRef.current?.querySelector<HTMLButtonElement>('.close-drawer-btn');
+      closeBtn?.focus();
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [mobileMoreOpen]);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        if (mobileMoreOpen) {
+          setMobileMoreOpen(false);
+          mobileMoreBtnRef.current?.focus();
+        }
+      }
+      if (mobileMoreOpen && event.key === 'Tab' && mobileDrawerRef.current) {
+        const focusables = Array.from(
+          mobileDrawerRef.current.querySelectorAll<HTMLElement>('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')
+        );
+        if (focusables.length === 0) return;
+        const first = focusables[0];
+        const last = focusables[focusables.length - 1];
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault();
+          last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first.focus();
+        }
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [mobileMoreOpen, setMobileMoreOpen]);
+
+  const handleLogout = async () => {
+    const { signOut } = await import('firebase/auth');
+    await signOut(getAuthInstance());
+  };
+
+  return (
+    <>
+      <nav className="bottom-nav">
+        <button
+          className={`nav-item ${screen === 'home' ? 'active' : ''}`}
+          onClick={() => handleNavigate('home')}
+        >
+          <span className="nav-icon">🏠</span>
+          <span className="nav-label">Home</span>
+        </button>
+
+        <button
+          className={`nav-item ${screen === 'checkin' ? 'active' : ''}`}
+          onClick={() => handleNavigate('checkin')}
+        >
+          <span className="nav-icon">✓</span>
+          <span className="nav-label">Check-in</span>
+        </button>
+
+        <button
+          className={`nav-item ${screen === 'goals' ? 'active' : ''}`}
+          onClick={() => handleNavigate('goals')}
+        >
+          <span className="nav-icon">🎯</span>
+          <span className="nav-label">Goals</span>
+        </button>
+
+        <button
+          ref={mobileMoreBtnRef}
+          className={`nav-item ${['constraints', 'preferences', 'data'].includes(screen) ? 'active' : ''}`}
+          onClick={() => setMobileMoreOpen((isOpen) => !isOpen)}
+          aria-expanded={mobileMoreOpen}
+          aria-haspopup="dialog"
+        >
+          <span className="nav-icon">⋯</span>
+          <span className="nav-label">More</span>
+        </button>
+      </nav>
+
+      {mobileMoreOpen && (
+        <div className="mobile-more-overlay" onClick={() => setMobileMoreOpen(false)}>
+          <div ref={mobileDrawerRef} className="mobile-more-drawer" role="dialog" aria-modal="true" aria-labelledby="mobile-more-title" onClick={(e) => e.stopPropagation()}>
+            <div className="drawer-header">
+              <h3 id="mobile-more-title">Navigation & Settings</h3>
+              <button className="close-drawer-btn" onClick={() => setMobileMoreOpen(false)} aria-label="Close navigation and settings">✕</button>
+            </div>
+            <div className="drawer-items">
+              <button
+                className={`drawer-item ${screen === 'data' ? 'active' : ''}`}
+                onClick={() => {
+                  loadDecisionInput();
+                  handleNavigate('data');
+                }}
+              >
+                <span className="item-icon">📊</span>
+                <div className="item-text">
+                  <span className="item-title">Detailed Data</span>
+                  <span className="item-sub">View analytics and snapshot telemetry</span>
+                </div>
+              </button>
+
+              <button
+                className={`drawer-item ${screen === 'constraints' ? 'active' : ''}`}
+                onClick={() => handleNavigate('constraints')}
+              >
+                <span className="item-icon">⚠️</span>
+                <div className="item-text">
+                  <span className="item-title">Training Setup</span>
+                  <span className="item-sub">Manage physical cautions & equipment</span>
+                </div>
+              </button>
+
+              <button
+                className={`drawer-item ${screen === 'preferences' ? 'active' : ''}`}
+                onClick={() => handleNavigate('preferences')}
+              >
+                <span className="item-icon">⚙️</span>
+                <div className="item-text">
+                  <span className="item-title">Coach Preferences</span>
+                  <span className="item-sub">Configure modalities & strain caps</span>
+                </div>
+              </button>
+
+              <div className="drawer-divider" />
+
+              <button className="drawer-item logout" onClick={handleLogout}>
+                <span className="item-icon">🚪</span>
+                <div className="item-text">
+                  <span className="item-title">Sign Out</span>
+                </div>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+};
