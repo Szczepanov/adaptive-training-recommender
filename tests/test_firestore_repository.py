@@ -9,6 +9,7 @@ def test_firestore_repository_rejects_default_user():
     with pytest.raises(ValueError, match="requires a valid non-default user_id"):
         FirestoreRecoveryRepository(user_id="default_user")
 
+
 def test_firestore_repository_upsert_path_and_user_validation():
     mock_db = MagicMock()
     doc_ref = MagicMock()
@@ -28,6 +29,7 @@ def test_firestore_repository_upsert_path_and_user_validation():
     assert saved_data["userId"] == "real_uid_456"
     assert "createdAt" in saved_data
     assert "updatedAt" in saved_data
+
 
 def test_firestore_repository_user_mismatch_raises_error():
     mock_db = MagicMock()

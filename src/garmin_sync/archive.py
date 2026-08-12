@@ -113,7 +113,9 @@ class LocalRawArchiveStore:
                 try:
                     meta = json.loads(existing.read_text())
                     if meta.get("payloadSha256") == payload_hash:
-                        logger.debug(f"Skipping archive for {endpoint}/{logical_date}: identical payload already archived.")
+                        logger.debug(
+                            f"Skipping archive for {endpoint}/{logical_date}: identical payload already archived."
+                        )
                         return None
                 except Exception:
                     continue
@@ -154,7 +156,11 @@ class LocalRawArchiveStore:
             return set()
         found: set[str] = set()
         for date_dir in endpoint_dir.glob("*/*/*"):
-            if date_dir.is_dir() and start_date <= date_dir.name <= end_date and any(date_dir.glob("*.json.gz")):
+            if (
+                date_dir.is_dir()
+                and start_date <= date_dir.name <= end_date
+                and any(date_dir.glob("*.json.gz"))
+            ):
                 found.add(date_dir.name)
         return found
 
@@ -168,6 +174,7 @@ class GcsRawArchiveStore:
 
     def _client(self) -> Any:
         from google.cloud import storage  # type: ignore[attr-defined]
+
         return storage.Client()
 
     def archive(
@@ -186,8 +193,13 @@ class GcsRawArchiveStore:
             payload_hash = _payload_sha256(payload)
 
             for existing_blob in client.list_blobs(bucket, prefix=f"{object_dir}/"):
-                if existing_blob.metadata and existing_blob.metadata.get("payloadSha256") == payload_hash:
-                    logger.debug(f"Skipping GCS archive for {endpoint}/{logical_date}: identical payload already archived.")
+                if (
+                    existing_blob.metadata
+                    and existing_blob.metadata.get("payloadSha256") == payload_hash
+                ):
+                    logger.debug(
+                        f"Skipping GCS archive for {endpoint}/{logical_date}: identical payload already archived."
+                    )
                     return None
 
             object_path = f"{object_dir}/{sync_run_id}.json.gz"
@@ -205,7 +217,9 @@ class GcsRawArchiveStore:
             compressed = gzip.compress(body)
             blob.content_encoding = "gzip"
             blob.upload_from_string(compressed, content_type="application/json")
-            logger.info(f"Archived {endpoint}/{logical_date} -> gs://{self.bucket_name}/{object_path}")
+            logger.info(
+                f"Archived {endpoint}/{logical_date} -> gs://{self.bucket_name}/{object_path}"
+            )
             return object_path
         except Exception as e:
             logger.error(f"Failed to archive {endpoint}/{logical_date} to GCS: {e}")
@@ -256,6 +270,8 @@ def create_archive_store(
         return NullArchiveStore()
     if store_type.lower() == "gcs":
         if not bucket_name:
-            raise ValueError("GCS archive store requested but no bucket configured (GARMIN_ARCHIVE_BUCKET/GARMIN_TOKEN_BUCKET).")
+            raise ValueError(
+                "GCS archive store requested but no bucket configured (GARMIN_ARCHIVE_BUCKET/GARMIN_TOKEN_BUCKET)."
+            )
         return GcsRawArchiveStore(bucket_name=bucket_name, prefix=prefix)
     return LocalRawArchiveStore(base_dir=local_dir, prefix=prefix)

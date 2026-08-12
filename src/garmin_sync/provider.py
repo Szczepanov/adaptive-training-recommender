@@ -1,6 +1,7 @@
 """Provider-neutral boundary the rest of the application (GarminSyncService, and
 eventually the recommendation engine) depends on instead of any single vendor's client.
 A second provider (real or fake-for-tests) only needs to satisfy WearableProvider."""
+
 from dataclasses import dataclass
 from typing import Any, Protocol
 
@@ -25,8 +26,11 @@ class ProviderFetchResult:
     archive) can persist provider-specific data verbatim without the WearableProvider
     boundary itself leaking provider-specific parsing -- callers never inspect
     raw_payloads, only pass them through to archive.py."""
+
     canonical: CanonicalDailyMetrics
-    raw_payloads: dict[str, Any]  # keys: "stats", "stats_fallback", "sleep", "sleep_fallback", "hrv"
+    raw_payloads: dict[
+        str, Any
+    ]  # keys: "stats", "stats_fallback", "sleep", "sleep_fallback", "hrv"
 
 
 @dataclass
@@ -38,6 +42,7 @@ class ProviderActivitiesResult:
 @dataclass
 class ProviderPerformanceTargetsResult:
     """Current, profile-level targets and their untouched provider payloads."""
+
     canonical: CanonicalPerformanceTargets
     raw_payloads: dict[str, Any]
 
@@ -45,7 +50,9 @@ class ProviderPerformanceTargetsResult:
 class WearableProvider(Protocol):
     capabilities: ProviderCapabilities
 
-    def fetch_daily_metrics(self, target_date_iso: str, yesterday_iso: str) -> ProviderFetchResult: ...
+    def fetch_daily_metrics(
+        self, target_date_iso: str, yesterday_iso: str
+    ) -> ProviderFetchResult: ...
 
     def fetch_activities(
         self,

@@ -53,27 +53,33 @@ def test_garmin_target_import_preserves_manual_targets_and_prior_partial_imports
     # The Firebase decorator normally retries real transactions; the fake is enough to
     # exercise the transaction body and inspect its atomic payload deterministically.
     monkeypatch.setattr("garmin_sync.firestore_repository.firestore.transactional", lambda fn: fn)
-    db = _Db({
-        "userId": "u1",
-        "performanceProfile": {
-            "ftpWatts": 280,
-            "lthrBpm": 165,
-            "targetSources": {"ftpWatts": "manual", "lthrBpm": "garmin"},
-            "garmin": {"thresholdPaceSecPerKm": 275, "fetchedAt": "old"},
-        },
-    })
+    db = _Db(
+        {
+            "userId": "u1",
+            "performanceProfile": {
+                "ftpWatts": 280,
+                "lthrBpm": 165,
+                "targetSources": {"ftpWatts": "manual", "lthrBpm": "garmin"},
+                "garmin": {"thresholdPaceSecPerKm": 275, "fetchedAt": "old"},
+            },
+        }
+    )
     repository = FirestoreRecoveryRepository(user_id="u1", db=db)
 
-    repository.upsert_garmin_performance_targets(CanonicalPerformanceTargets(
-        cycling_ftp_watts=250,
-        running_lthr_bpm=170,
-    ))
+    repository.upsert_garmin_performance_targets(
+        CanonicalPerformanceTargets(
+            cycling_ftp_watts=250,
+            running_lthr_bpm=170,
+        )
+    )
 
     profile = db.profile.data["performanceProfile"]
     assert profile["ftpWatts"] == 280  # manual always wins
     assert profile["lthrBpm"] == 170  # Garmin-owned value refreshes
     assert profile["garmin"]["ftpWatts"] == 250
-    assert profile["garmin"]["thresholdPaceSecPerKm"] == 275  # partial response retains prior import
+    assert (
+        profile["garmin"]["thresholdPaceSecPerKm"] == 275
+    )  # partial response retains prior import
     assert profile["targetSources"]["ftpWatts"] == "manual"
 
 

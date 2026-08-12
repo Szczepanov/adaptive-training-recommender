@@ -56,8 +56,13 @@ class FakeTestProvider:
 class TargetAwareFakeProvider(FakeTestProvider):
     def fetch_performance_targets(self) -> ProviderPerformanceTargetsResult:
         return ProviderPerformanceTargetsResult(
-            canonical=CanonicalPerformanceTargets(cycling_ftp_watts=250, running_threshold_pace_sec_per_km=270, running_lthr_bpm=170),
-            raw_payloads={"cycling_ftp": {"functionalThresholdPower": 250}, "lactate_threshold": {"speed_and_heart_rate": {"speed": 0.27}}},
+            canonical=CanonicalPerformanceTargets(
+                cycling_ftp_watts=250, running_threshold_pace_sec_per_km=270, running_lthr_bpm=170
+            ),
+            raw_payloads={
+                "cycling_ftp": {"functionalThresholdPower": 250},
+                "lactate_threshold": {"speed_and_heart_rate": {"speed": 0.27}},
+            },
         )
 
 
@@ -130,9 +135,13 @@ def test_live_sync_imports_current_targets_but_non_garmin_providers_need_not_sup
     repo = MagicMock()
     repo.is_fresh.return_value = False
     repo.get_historical_snapshots.return_value = {}
-    service = GarminSyncService(settings=settings, repository=repo, provider=TargetAwareFakeProvider())
+    service = GarminSyncService(
+        settings=settings, repository=repo, provider=TargetAwareFakeProvider()
+    )
 
-    assert service.sync_daily(target_date_str="2026-08-06", force=True, resync_lookback_days=0) is True
+    assert (
+        service.sync_daily(target_date_str="2026-08-06", force=True, resync_lookback_days=0) is True
+    )
 
     imported = repo.upsert_garmin_performance_targets.call_args.args[0]
     assert imported.cycling_ftp_watts == 250
@@ -150,6 +159,7 @@ def test_sync_service_skips_when_fresh():
     assert result is True
     mock_repo.is_fresh.assert_called_once_with("2026-08-06", 60)
 
+
 def test_sync_service_forces_refresh():
     settings = Settings(app_user_id="test_uid_789")
     mock_repo = MagicMock()
@@ -158,7 +168,9 @@ def test_sync_service_forces_refresh():
 
     mock_client = MagicMock()
     mock_client.get_stats.return_value = {"restingHeartRate": 55, "totalSteps": 10000}
-    mock_client.get_sleep_data.return_value = {"dailySleepDTO": {"sleepScores": {"overall": {"value": 80}}}}
+    mock_client.get_sleep_data.return_value = {
+        "dailySleepDTO": {"sleepScores": {"overall": {"value": 80}}}
+    }
     mock_client.get_hrv_data.return_value = {"hrvSummary": {"lastNightAvg": 65}}
     mock_client.get_activities_window.return_value = []
 
@@ -225,7 +237,9 @@ def test_sync_service_computes_sleep_score_delta():
 
     mock_client = MagicMock()
     mock_client.get_stats.return_value = {"restingHeartRate": 55, "totalSteps": 10000}
-    mock_client.get_sleep_data.return_value = {"dailySleepDTO": {"sleepScores": {"overall": {"value": 90}}}}
+    mock_client.get_sleep_data.return_value = {
+        "dailySleepDTO": {"sleepScores": {"overall": {"value": 90}}}
+    }
     mock_client.get_hrv_data.return_value = {"hrvSummary": {"lastNightAvg": 65}}
     mock_client.get_activities_window.return_value = []
 
@@ -247,14 +261,18 @@ def test_backfill_seeds_prehistory_from_firestore():
 
     # Create 28 days of prehistory (2026-07-01 -> 2026-07-28)
     prehistory_snapshots = {
-        f"2026-07-{(i+1):02d}": {"raw": {"restingHr": 50, "sleepScore": 80, "hrvOvernightAvg": 60}}
+        f"2026-07-{(i + 1):02d}": {
+            "raw": {"restingHr": 50, "sleepScore": 80, "hrvOvernightAvg": 60}
+        }
         for i in range(28)
     }
     mock_repo.get_historical_snapshots.return_value = prehistory_snapshots
 
     mock_client = MagicMock()
     mock_client.get_stats.return_value = {"restingHeartRate": 50, "totalSteps": 10000}
-    mock_client.get_sleep_data.return_value = {"dailySleepDTO": {"sleepScores": {"overall": {"value": 80}}}}
+    mock_client.get_sleep_data.return_value = {
+        "dailySleepDTO": {"sleepScores": {"overall": {"value": 80}}}
+    }
     mock_client.get_hrv_data.return_value = {"hrvSummary": {"lastNightAvg": 60}}
     mock_client.get_activities_window.return_value = []
 
@@ -282,7 +300,9 @@ def test_sync_service_fetches_activities_through_today_for_same_day_detection():
 
     mock_client = MagicMock()
     mock_client.get_stats.return_value = {"restingHeartRate": 55, "totalSteps": 10000}
-    mock_client.get_sleep_data.return_value = {"dailySleepDTO": {"sleepScores": {"overall": {"value": 80}}}}
+    mock_client.get_sleep_data.return_value = {
+        "dailySleepDTO": {"sleepScores": {"overall": {"value": 80}}}
+    }
     mock_client.get_hrv_data.return_value = {"hrvSummary": {"lastNightAvg": 65}}
     mock_client.get_activities_window.return_value = [
         {
@@ -316,7 +336,9 @@ def test_sync_service_skips_archiving_activity_with_missing_id():
 
     mock_client = MagicMock()
     mock_client.get_stats.return_value = {"restingHeartRate": 55, "totalSteps": 10000}
-    mock_client.get_sleep_data.return_value = {"dailySleepDTO": {"sleepScores": {"overall": {"value": 80}}}}
+    mock_client.get_sleep_data.return_value = {
+        "dailySleepDTO": {"sleepScores": {"overall": {"value": 80}}}
+    }
     mock_client.get_hrv_data.return_value = {"hrvSummary": {"lastNightAvg": 65}}
     mock_client.get_activities_window.return_value = [
         {
@@ -373,12 +395,16 @@ def test_sync_service_survives_a_failed_enrichment_fetch():
 
     mock_client = MagicMock()
     mock_client.get_stats.return_value = {"restingHeartRate": 55, "totalSteps": 10000}
-    mock_client.get_sleep_data.return_value = {"dailySleepDTO": {"sleepScores": {"overall": {"value": 80}}}}
+    mock_client.get_sleep_data.return_value = {
+        "dailySleepDTO": {"sleepScores": {"overall": {"value": 80}}}
+    }
     mock_client.get_hrv_data.return_value = {"hrvSummary": {"lastNightAvg": 65}}
     mock_client.get_activities_window.return_value = []
     mock_client.get_stress_data.return_value = {"avgStressLevel": 30, "maxStressLevel": 80}
     mock_client.get_body_battery.return_value = [{"charged": 70, "drained": 60}]
-    mock_client.get_training_readiness.return_value = [{"score": 65, "level": "HIGH", "feedbackLong": "OK"}]
+    mock_client.get_training_readiness.return_value = [
+        {"score": 65, "level": "HIGH", "feedbackLong": "OK"}
+    ]
     mock_client.get_training_status.side_effect = RuntimeError("training status endpoint down")
 
     service = GarminSyncService(settings=settings, repository=mock_repo, garmin_client=mock_client)
@@ -414,7 +440,9 @@ def test_sync_service_does_not_serve_stale_cache_across_repeated_force_runs():
         {"restingHeartRate": 61, "totalSteps": 9500},  # 2nd call: target date (updated)
         {"restingHeartRate": 60, "totalSteps": 9300},  # 2nd call: D-1 fallback
     ]
-    mock_client.get_sleep_data.return_value = {"dailySleepDTO": {"sleepScores": {"overall": {"value": 80}}}}
+    mock_client.get_sleep_data.return_value = {
+        "dailySleepDTO": {"sleepScores": {"overall": {"value": 80}}}
+    }
     mock_client.get_hrv_data.return_value = {"hrvSummary": {"lastNightAvg": 65}}
     mock_client.get_activities_window.return_value = []
 
@@ -521,7 +549,9 @@ def test_sync_service_lookback_failure_does_not_hide_primary_success_but_reports
                 raise RuntimeError("transient Garmin error on lookback date")
             return super().fetch_daily_metrics(target_date_iso, yesterday_iso)
 
-    service = GarminSyncService(settings=settings, repository=mock_repo, provider=FlakyLookbackProvider())
+    service = GarminSyncService(
+        settings=settings, repository=mock_repo, provider=FlakyLookbackProvider()
+    )
     result = service.sync_daily(target_date_str="2026-08-06", force=False)
 
     assert result is False
@@ -544,10 +574,12 @@ def test_sync_service_builds_target_snapshot_after_lookback_dates_are_corrected(
     repo.snapshots["2026-08-03"] = {"raw": {"restingHr": 50.0}}
     repo.snapshots["2026-08-02"] = {"raw": {"restingHr": 50.0}}
 
-    provider = DateAwareFakeProvider({
-        "2026-08-06": 70.0,  # target date's own value (excluded from its own baseline)
-        "2026-08-05": 60.0,  # D-1's corrected value, as returned by the lookback resync
-    })
+    provider = DateAwareFakeProvider(
+        {
+            "2026-08-06": 70.0,  # target date's own value (excluded from its own baseline)
+            "2026-08-05": 60.0,  # D-1's corrected value, as returned by the lookback resync
+        }
+    )
 
     service = GarminSyncService(settings=settings, repository=repo, provider=provider)
     result = service.sync_daily(target_date_str="2026-08-06", force=False)

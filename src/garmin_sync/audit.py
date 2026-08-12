@@ -53,7 +53,9 @@ def run_audit(
     archived_per_endpoint: dict[str, set[str]] = {}
 
     for endpoint in REQUIRED_ARCHIVE_ENDPOINTS:
-        archived_per_endpoint[endpoint] = archive_store.list_archived_dates(endpoint, start_iso, end_iso)
+        archived_per_endpoint[endpoint] = archive_store.list_archived_dates(
+            endpoint, start_iso, end_iso
+        )
 
     for target_date in expected_dates:
         date_iso = get_date_string(target_date)
@@ -72,7 +74,10 @@ def run_audit(
     rebuildable_dates = sum(
         1
         for target_date in expected_dates
-        if all(get_date_string(target_date) in archived_per_endpoint[e] for e in REQUIRED_ARCHIVE_ENDPOINTS)
+        if all(
+            get_date_string(target_date) in archived_per_endpoint[e]
+            for e in REQUIRED_ARCHIVE_ENDPOINTS
+        )
     )
     raw_payloads_archived = sum(len(dates) for dates in archived_per_endpoint.values())
 
@@ -113,6 +118,10 @@ def format_report(report: AuditReport) -> str:
         lines.append("Raw archive:                  disabled (GARMIN_ARCHIVE_ENABLED=false)")
     if report.missing_snapshots:
         preview = ", ".join(report.missing_snapshots[:10])
-        more = f" (+{len(report.missing_snapshots) - 10} more)" if len(report.missing_snapshots) > 10 else ""
+        more = (
+            f" (+{len(report.missing_snapshots) - 10} more)"
+            if len(report.missing_snapshots) > 10
+            else ""
+        )
         lines.append(f"\nMissing dates: {preview}{more}")
     return "\n".join(lines)

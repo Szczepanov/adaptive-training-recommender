@@ -66,16 +66,28 @@ def test_build_snapshot_deterministic_yesterday_activity_selection():
     derived = DerivedMetrics()
     activities = [
         CanonicalActivity(
-            activity_id="101", date="2026-08-05", type="other",
-            duration_min=30, duration_seconds=1800,
-            training_effect_aerobic=1.0, training_effect_anaerobic=0.0,
-            average_hr=None, training_load=10.0, intensity_tag="moderate/easy",
+            activity_id="101",
+            date="2026-08-05",
+            type="other",
+            duration_min=30,
+            duration_seconds=1800,
+            training_effect_aerobic=1.0,
+            training_effect_anaerobic=0.0,
+            average_hr=None,
+            training_load=10.0,
+            intensity_tag="moderate/easy",
         ),
         CanonicalActivity(
-            activity_id="102", date="2026-08-05", type="running",
-            duration_min=40, duration_seconds=2400,
-            training_effect_aerobic=3.8, training_effect_anaerobic=0.0,
-            average_hr=None, training_load=120.0, intensity_tag="hard",
+            activity_id="102",
+            date="2026-08-05",
+            type="running",
+            duration_min=40,
+            duration_seconds=2400,
+            training_effect_aerobic=3.8,
+            training_effect_anaerobic=0.0,
+            average_hr=None,
+            training_load=120.0,
+            intensity_tag="hard",
         ),
     ]
     canonical = CanonicalDailyMetrics(date="2026-08-06")
@@ -106,17 +118,29 @@ def test_build_snapshot_populates_today_training_from_same_day_activity():
     activities = [
         # Yesterday's easy session
         CanonicalActivity(
-            activity_id="201", date="2026-08-05", type="cycling",
-            duration_min=30, duration_seconds=1800,
-            training_effect_aerobic=1.5, training_effect_anaerobic=0.0,
-            average_hr=None, training_load=15.0, intensity_tag="moderate/easy",
+            activity_id="201",
+            date="2026-08-05",
+            type="cycling",
+            duration_min=30,
+            duration_seconds=1800,
+            training_effect_aerobic=1.5,
+            training_effect_anaerobic=0.0,
+            average_hr=None,
+            training_load=15.0,
+            intensity_tag="moderate/easy",
         ),
         # Today's hard interval session (already uploaded by the time sync ran)
         CanonicalActivity(
-            activity_id="202", date="2026-08-06", type="running",
-            duration_min=45, duration_seconds=2700,
-            training_effect_aerobic=4.2, training_effect_anaerobic=0.5,
-            average_hr=160, training_load=140.0, intensity_tag="hard",
+            activity_id="202",
+            date="2026-08-06",
+            type="running",
+            duration_min=45,
+            duration_seconds=2700,
+            training_effect_aerobic=4.2,
+            training_effect_anaerobic=0.5,
+            average_hr=160,
+            training_load=140.0,
+            intensity_tag="hard",
         ),
     ]
     canonical = CanonicalDailyMetrics(date="2026-08-06")
@@ -156,10 +180,16 @@ def test_build_snapshot_today_training_is_none_when_no_same_day_activity():
     derived = DerivedMetrics()
     activities = [
         CanonicalActivity(
-            activity_id="301", date="2026-08-05", type="running",
-            duration_min=40, duration_seconds=2400,
-            training_effect_aerobic=3.8, training_effect_anaerobic=0.0,
-            average_hr=None, training_load=120.0, intensity_tag="hard",
+            activity_id="301",
+            date="2026-08-05",
+            type="running",
+            duration_min=40,
+            duration_seconds=2400,
+            training_effect_aerobic=3.8,
+            training_effect_anaerobic=0.0,
+            average_hr=None,
+            training_load=120.0,
+            intensity_tag="hard",
         ),
     ]
     canonical = CanonicalDailyMetrics(date="2026-08-06")
@@ -182,16 +212,28 @@ def test_build_snapshot_activity_missing_id_does_not_win_primary_tie_break():
     activities = [
         # Identical load/training-effect/duration to the one below, but no activityId.
         CanonicalActivity(
-            activity_id=None, date="2026-08-05", type="cycling",
-            duration_min=30, duration_seconds=1800,
-            training_effect_aerobic=2.0, training_effect_anaerobic=0.0,
-            average_hr=None, training_load=50.0, intensity_tag="moderate/easy",
+            activity_id=None,
+            date="2026-08-05",
+            type="cycling",
+            duration_min=30,
+            duration_seconds=1800,
+            training_effect_aerobic=2.0,
+            training_effect_anaerobic=0.0,
+            average_hr=None,
+            training_load=50.0,
+            intensity_tag="moderate/easy",
         ),
         CanonicalActivity(
-            activity_id="777", date="2026-08-05", type="running",
-            duration_min=30, duration_seconds=1800,
-            training_effect_aerobic=2.0, training_effect_anaerobic=0.0,
-            average_hr=None, training_load=50.0, intensity_tag="moderate/easy",
+            activity_id="777",
+            date="2026-08-05",
+            type="running",
+            duration_min=30,
+            duration_seconds=1800,
+            training_effect_aerobic=2.0,
+            training_effect_anaerobic=0.0,
+            average_hr=None,
+            training_load=50.0,
+            intensity_tag="moderate/easy",
         ),
     ]
     canonical = CanonicalDailyMetrics(date="2026-08-06")
@@ -239,10 +281,16 @@ def test_build_snapshot_activities_through_iso_override():
 
 def test_normalize_activity_maps_canonical_fields():
     activity = CanonicalActivity(
-        activity_id="999", date="2026-08-05", type="running",
-        duration_min=40, duration_seconds=2400,
-        training_effect_aerobic=3.8, training_effect_anaerobic=1.2,
-        average_hr=150, training_load=120.0, intensity_tag="hard",
+        activity_id="999",
+        date="2026-08-05",
+        type="running",
+        duration_min=40,
+        duration_seconds=2400,
+        training_effect_aerobic=3.8,
+        training_effect_anaerobic=1.2,
+        average_hr=150,
+        training_load=120.0,
+        intensity_tag="hard",
     )
 
     normalized = normalize_activity(activity, sync_run_id="run-abc")
@@ -272,7 +320,9 @@ def test_build_snapshot_populates_metric_enrichment_fields():
         date="2026-08-06",
         stress=CanonicalStress(avg=43, max=100),
         body_battery=CanonicalBodyBattery(charged=75, drained=84, change=-9),
-        training_readiness=CanonicalTrainingReadiness(score=59, level="MODERATE", feedback="MOD_HRV_LOW"),
+        training_readiness=CanonicalTrainingReadiness(
+            score=59, level="MODERATE", feedback="MOD_HRV_LOW"
+        ),
         training_status=CanonicalTrainingStatus(
             status_phrase="STRAINED_1",
             acute_training_load=137,

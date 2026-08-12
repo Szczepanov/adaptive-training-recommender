@@ -1,4 +1,5 @@
 """Entry point for `python -m garmin_sync <sync|backfill> [...]`."""
+
 import sys
 
 from .cli import main

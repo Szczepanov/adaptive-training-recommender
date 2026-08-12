@@ -65,7 +65,9 @@ class GarminSyncService:
         if self.garmin_client is not None:
             return self.garmin_client
 
-        logger.info(f"Restoring Garmin tokens via store backend '{self.settings.garmin_token_store}'...")
+        logger.info(
+            f"Restoring Garmin tokens via store backend '{self.settings.garmin_token_store}'..."
+        )
         self.token_store.restore(self.token_file_path)
 
         wrapper = GarminClientWrapper(
@@ -97,20 +99,34 @@ class GarminSyncService:
         self.provider = GarminProviderAdapter(self._init_garmin_client())
         return self.provider
 
-    def _archive_raw(self, endpoint: str, logical_date: str, payload: Any, sync_run_id: str) -> None:
+    def _archive_raw(
+        self, endpoint: str, logical_date: str, payload: Any, sync_run_id: str
+    ) -> None:
         """No-op when archiving is disabled (NullArchiveStore)."""
-        self.archive_store.archive(endpoint, logical_date, payload, sync_run_id, self.garminconnect_version)
+        self.archive_store.archive(
+            endpoint, logical_date, payload, sync_run_id, self.garminconnect_version
+        )
 
-    def _archive_daily_payloads(self, raw_payloads: dict[str, Any], target_iso: str, yesterday_iso: str, sync_run_id: str) -> None:
+    def _archive_daily_payloads(
+        self, raw_payloads: dict[str, Any], target_iso: str, yesterday_iso: str, sync_run_id: str
+    ) -> None:
         """Archive the stats/sleep/hrv (+ fallback) payloads a fetch_daily_metrics call
         returned, remapping the fallback keys back to their real endpoint name and D-1
         logical date. Shared by sync_daily and backfill so they can't drift apart."""
         for endpoint, payload in raw_payloads.items():
-            logical_date = yesterday_iso if endpoint in ("stats_fallback", "sleep_fallback") else target_iso
-            archive_endpoint = "stats" if endpoint == "stats_fallback" else ("sleep" if endpoint == "sleep_fallback" else endpoint)
+            logical_date = (
+                yesterday_iso if endpoint in ("stats_fallback", "sleep_fallback") else target_iso
+            )
+            archive_endpoint = (
+                "stats"
+                if endpoint == "stats_fallback"
+                else ("sleep" if endpoint == "sleep_fallback" else endpoint)
+            )
             self._archive_raw(archive_endpoint, logical_date, payload, sync_run_id)
 
-    def _archive_activities(self, canonical_activities: list[CanonicalActivity], sync_run_id: str) -> None:
+    def _archive_activities(
+        self, canonical_activities: list[CanonicalActivity], sync_run_id: str
+    ) -> None:
         """Write a normalized standalone record per activity to users/{userId}/activities/.
         Safe to call unconditionally (no-op for an empty list). Activities without a
         Garmin activityId are skipped rather than written under a shared placeholder
@@ -119,9 +135,13 @@ class GarminSyncService:
             if activity.activity_id is None:
                 logger.warning("Skipping activity with no activityId (cannot archive safely).")
                 continue
-            self.repository.upsert_activity(activity.activity_id, normalize_activity(activity, sync_run_id))
+            self.repository.upsert_activity(
+                activity.activity_id, normalize_activity(activity, sync_run_id)
+            )
 
-    def _seed_prehistory(self, raw_memory_store: dict[str, dict[str, Any]], range_start: Any) -> None:
+    def _seed_prehistory(
+        self, raw_memory_store: dict[str, dict[str, Any]], range_start: Any
+    ) -> None:
         """Seed raw_memory_store with up to 28 days of existing Firestore history before
         range_start, so the first dates of a backfill/rebuild range get real 7d/28d
         baselines instead of starting cold (Fix B)."""
@@ -180,7 +200,9 @@ class GarminSyncService:
         (no staleness check -- callers decide whether a date is worth fetching).
         Shared by sync_daily's primary target-date sync and its D-1..D-N lookback
         resync (see sync_daily) so they can never drift apart."""
-        logger.info(f"Starting daily Garmin sync for user=<UID-redacted> date={target_iso} (tz={self.settings.app_timezone})...")
+        logger.info(
+            f"Starting daily Garmin sync for user=<UID-redacted> date={target_iso} (tz={self.settings.app_timezone})..."
+        )
 
         provider = self._init_provider()
         # A service (and its lazily-created provider) can be reused across multiple
@@ -194,7 +216,9 @@ class GarminSyncService:
 
         logger.info(f"[{target_iso}] Fetching stats, sleep, and HRV...")
         daily_result = provider.fetch_daily_metrics(target_iso, yesterday_iso)
-        self._archive_daily_payloads(daily_result.raw_payloads, target_iso, yesterday_iso, sync_run_id)
+        self._archive_daily_payloads(
+            daily_result.raw_payloads, target_iso, yesterday_iso, sync_run_id
+        )
 
         # Upper bound includes target_iso (not just yesterday) so a same-day activity --
         # already uploaded to Garmin by the time this sync runs -- is captured as
@@ -207,8 +231,12 @@ class GarminSyncService:
             if daily_result.canonical.heart_rate_zones
             else None
         )
-        logger.info(f"[{target_iso}] Fetching activities window ({three_days_ago_iso} -> {target_iso})...")
-        activities_result = provider.fetch_activities(three_days_ago_iso, target_iso, zone4_floor=zone4_floor)
+        logger.info(
+            f"[{target_iso}] Fetching activities window ({three_days_ago_iso} -> {target_iso})..."
+        )
+        activities_result = provider.fetch_activities(
+            three_days_ago_iso, target_iso, zone4_floor=zone4_floor
+        )
         self._archive_raw("activities", target_iso, activities_result.raw_payload, sync_run_id)
         self._archive_activities(activities_result.canonical, sync_run_id)
 
@@ -263,7 +291,9 @@ class GarminSyncService:
         except Exception as e:
             # Performance targets enrich prescription but are never allowed to make a
             # recovery snapshot fail after its core data was safely persisted.
-            logger.warning(f"[{target_iso}] Garmin performance-target import failed, continuing: {e}")
+            logger.warning(
+                f"[{target_iso}] Garmin performance-target import failed, continuing: {e}"
+            )
 
     def sync_daily(
         self,
@@ -288,27 +318,37 @@ class GarminSyncService:
         corrected D-1..D-N values have already landed there, or its own baselines would
         silently bake in the pre-resync (stale) history instead.
         """
-        target_date = parse_date_string(target_date_str) if target_date_str else local_today(self.settings.app_timezone)
+        target_date = (
+            parse_date_string(target_date_str)
+            if target_date_str
+            else local_today(self.settings.app_timezone)
+        )
         target_iso = get_date_string(target_date)
 
         # Staleness check gates the whole operation (target date + lookback resync) --
         # a retriggered run within the staleness window is a no-op, not a chance to
         # re-hit the lookback dates too.
-        if not force and self.repository.is_fresh(target_iso, self.settings.garmin_staleness_minutes):
+        if not force and self.repository.is_fresh(
+            target_iso, self.settings.garmin_staleness_minutes
+        ):
             logger.info(
                 f"Snapshot for {target_iso} is fresh (< {self.settings.garmin_staleness_minutes}m). Skipping Garmin fetch."
             )
             return True
 
         lookback_days = (
-            self.settings.garmin_resync_lookback_days if resync_lookback_days is None else resync_lookback_days
+            self.settings.garmin_resync_lookback_days
+            if resync_lookback_days is None
+            else resync_lookback_days
         )
         ok = True
 
         def _process_lookback(i: int) -> bool:
             lookback_date = n_days_ago(target_date, i)
             lookback_iso = get_date_string(lookback_date)
-            logger.info(f"Revisiting D-{i} ({lookback_iso}) to pick up any late-arriving Garmin data...")
+            logger.info(
+                f"Revisiting D-{i} ({lookback_iso}) to pick up any late-arriving Garmin data..."
+            )
             try:
                 return self._fetch_and_store_date(lookback_date, lookback_iso)
             except Exception as e:
@@ -317,9 +357,14 @@ class GarminSyncService:
 
         if lookback_days > 0:
             import concurrent.futures
+
             # max_workers limited to a reasonable number to avoid too many parallel API calls
-            with concurrent.futures.ThreadPoolExecutor(max_workers=min(lookback_days, 10)) as executor:
-                futures = [executor.submit(_process_lookback, i) for i in range(lookback_days, 0, -1)]
+            with concurrent.futures.ThreadPoolExecutor(
+                max_workers=min(lookback_days, 10)
+            ) as executor:
+                futures = [
+                    executor.submit(_process_lookback, i) for i in range(lookback_days, 0, -1)
+                ]
                 for future in concurrent.futures.as_completed(futures):
                     if not future.result():
                         ok = False
@@ -393,13 +438,17 @@ class GarminSyncService:
                 existing = self.repository.get_snapshot(target_iso)
                 if existing and existing.get("raw"):
                     raw_memory_store[target_iso] = existing["raw"]
-                    logger.info(f"[{target_iso}] Loaded existing snapshot from Firestore. Skipping Garmin API fetch.")
+                    logger.info(
+                        f"[{target_iso}] Loaded existing snapshot from Firestore. Skipping Garmin API fetch."
+                    )
                     continue
 
             try:
                 yesterday_iso = get_date_string(n_days_ago(target_date, 1))
                 daily_result = provider.fetch_daily_metrics(target_iso, yesterday_iso)
-                self._archive_daily_payloads(daily_result.raw_payloads, target_iso, yesterday_iso, run_id)
+                self._archive_daily_payloads(
+                    daily_result.raw_payloads, target_iso, yesterday_iso, run_id
+                )
 
                 # Archive the per-date-relevant activities slice (not the whole batch) so
                 # a single date can be rebuilt independently from its own archive entry.
@@ -407,7 +456,8 @@ class GarminSyncService:
                 # sync_daily window and preserve that date's own todayTraining on rebuild.
                 three_days_ago_iso = get_date_string(n_days_ago(target_date, 3))
                 date_activities_raw = [
-                    a for a in all_activities_raw
+                    a
+                    for a in all_activities_raw
                     if three_days_ago_iso <= a.get("startTimeLocal", "")[:10] <= target_iso
                 ]
                 self._archive_raw("activities", target_iso, date_activities_raw, run_id)
@@ -456,7 +506,9 @@ class GarminSyncService:
             logger.error("Rebuild target date range is empty.")
             return False
 
-        logger.info(f"Starting offline rebuild for range {start_date_str} -> {end_date_str} ({len(target_dates)} dates)...")
+        logger.info(
+            f"Starting offline rebuild for range {start_date_str} -> {end_date_str} ({len(target_dates)} dates)..."
+        )
 
         raw_memory_store: dict[str, dict[str, Any]] = {}
         self._seed_prehistory(raw_memory_store, start_d)
@@ -483,7 +535,9 @@ class GarminSyncService:
                 continue
 
             stats_fallback = self.archive_store.load("stats", yesterday_iso)
-            sleep_fallback = self.archive_store.load("sleep", yesterday_iso) if not raw_sleep else None
+            sleep_fallback = (
+                self.archive_store.load("sleep", yesterday_iso) if not raw_sleep else None
+            )
 
             # Metric enrichment (stress/body battery/training readiness/training status)
             # is best-effort here, unlike the four required payloads above -- it wasn't
@@ -511,9 +565,7 @@ class GarminSyncService:
                     heart_rate_zones=heart_rate_zones,
                 )
                 zone4_floor = (
-                    canonical.heart_rate_zones.zone4_floor
-                    if canonical.heart_rate_zones
-                    else None
+                    canonical.heart_rate_zones.zone4_floor if canonical.heart_rate_zones else None
                 )
                 canonical_activities = canonicalize_activities(
                     raw_activities, zone4_floor=zone4_floor
@@ -538,7 +590,9 @@ class GarminSyncService:
                 logger.error(f"[{target_iso}] Rebuild failed: {e}")
                 skipped_dates.append(target_iso)
 
-        logger.info(f"Rebuild finished: {len(rebuilt_dates)} rebuilt, {len(skipped_dates)} skipped/not rebuildable.")
+        logger.info(
+            f"Rebuild finished: {len(rebuilt_dates)} rebuilt, {len(skipped_dates)} skipped/not rebuildable."
+        )
         if skipped_dates:
             logger.warning(f"Skipped dates: {skipped_dates}")
         return len(rebuilt_dates) > 0

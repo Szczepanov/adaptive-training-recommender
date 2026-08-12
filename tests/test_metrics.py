@@ -14,20 +14,24 @@ def test_calculate_average_thresholds():
     assert calculate_average(values, 4) is None
     assert calculate_average(values, 3) == 85.0
 
+
 def test_calculate_delta():
     assert calculate_delta(80, 75.0) == 5.0
     assert calculate_delta(50, 52.0) == -2.0
     assert calculate_delta(None, 75.0) is None
     assert calculate_delta(80, None) is None
 
+
 def test_calculate_stdev_thresholds():
     values = [40, 42, None, 44, 46]  # 4 valid values
     assert calculate_stdev(values, 5) is None
     assert calculate_stdev(values, 4) == statistics.pstdev([40, 42, 44, 46])
 
+
 def test_calculate_stdev_matches_population_stdev():
     values = [10, 12, 14, 16, 18, 20]
     assert calculate_stdev(values, 3) == statistics.pstdev(values)
+
 
 def test_compute_derived_metrics_excludes_current_day():
     window_7d = [
@@ -47,6 +51,7 @@ def test_compute_derived_metrics_excludes_current_day():
     assert derived.deltas.sleepScoreVs7d == 7.0
     assert derived.deltas.restingHrVs7d == -3.5  # 48 - 51.5 = -3.5
 
+
 def test_compute_derived_metrics_includes_28d_stdev():
     window_7d = [
         {"sleepScore": 80, "restingHr": 50, "hrvOvernightAvg": 60, "respirationAvg": 14.0},
@@ -63,6 +68,7 @@ def test_compute_derived_metrics_includes_28d_stdev():
     assert derived.hrv28dStdev == expected_hrv_sd
     assert derived.restingHr28dStdev == round(statistics.pstdev([50, 52, 51, 53] * 4), 1)
     assert derived.sleepScore28dStdev == round(statistics.pstdev([80, 82, 84, 86] * 4), 1)
+
 
 def test_compute_derived_metrics_stdev_none_below_min_required():
     # Only 10 valid points in the 28d window -- below the 14-point minimum.
