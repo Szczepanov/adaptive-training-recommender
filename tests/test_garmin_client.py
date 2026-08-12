@@ -74,3 +74,9 @@ def test_login_credential_mode_requires_email_and_password(tmp_path):
 
     with pytest.raises(RuntimeError, match="GARMIN_EMAIL"):
         wrapper.login_with_tokens_or_credentials(token_file)
+
+
+def test_get_sleep_data_unauthenticated():
+    wrapper = GarminClientWrapper(allow_credential_login=False)
+    with pytest.raises(RuntimeError, match="Garmin client is not authenticated. Call login first."):
+        wrapper.get_sleep_data("2023-10-10")
