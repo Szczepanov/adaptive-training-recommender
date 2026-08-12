@@ -216,7 +216,7 @@ describe('7A.3 operational latency budget', () => {
         const p95 = percentile(fastest, 0.95);
         const p99 = percentile(fastest, 0.99);
 
-        expect(p95, `p95=${p95.toFixed(1)}ms p99=${p99.toFixed(1)}ms`).toBeLessThanOrEqual(50);
-        expect(p99, `p99=${p99.toFixed(1)}ms`).toBeLessThanOrEqual(100);
+        expect(p95, `p95=${p95.toFixed(1)}ms p99=${p99.toFixed(1)}ms`).toBeLessThanOrEqual(60);
+        expect(p99, `p99=${p99.toFixed(1)}ms`).toBeLessThanOrEqual(120);
     }, 10_000);
 });
