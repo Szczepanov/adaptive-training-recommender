@@ -5,6 +5,7 @@ future non-Garmin adapter can populate these same dataclasses. Today they're exa
 the fields already extracted from Garmin -- nothing invented, nothing added that no
 provider actually supplies yet.
 """
+
 from dataclasses import dataclass
 
 
@@ -46,6 +47,7 @@ class CanonicalHeartRateZones:
     real personalization input rather than an estimate. zone4_floor is Garmin's own
     threshold/hard boundary for this person, consumed by classify_activity_intensity
     to personalize hard-session classification."""
+
     resting_hr_used: int | None = None
     max_hr_used: int | None = None
     zone4_floor: int | None = None
@@ -60,6 +62,7 @@ class CanonicalPerformanceTargets:
     travel separately from ``CanonicalDailyMetrics`` so historical rebuilds cannot
     mistake today's configured FTP/threshold for a past-day observation.
     """
+
     cycling_ftp_watts: int | None = None
     running_threshold_pace_sec_per_km: int | None = None
     running_lthr_bpm: int | None = None

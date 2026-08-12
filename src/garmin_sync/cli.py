@@ -15,8 +15,15 @@ logger = logging.getLogger("garmin_sync")
 
 def run_daily_sync(args: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run daily Garmin recovery ingestion.")
-    parser.add_argument("--date", type=str, default=None, help="Target date YYYY-MM-DD (default local today in Warsaw)")
-    parser.add_argument("--force", action="store_true", help="Force refresh even if snapshot is fresh")
+    parser.add_argument(
+        "--date",
+        type=str,
+        default=None,
+        help="Target date YYYY-MM-DD (default local today in Warsaw)",
+    )
+    parser.add_argument(
+        "--force", action="store_true", help="Force refresh even if snapshot is fresh"
+    )
     parser.add_argument(
         "--resync-days",
         type=int,
@@ -42,7 +49,9 @@ def run_daily_sync(args: list[str] | None = None) -> int:
 
 def run_backfill(args: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run historical Garmin backfill.")
-    parser.add_argument("--days", type=int, default=56, help="Number of days to backfill (default 56)")
+    parser.add_argument(
+        "--days", type=int, default=56, help="Number of days to backfill (default 56)"
+    )
     parser.add_argument("--start-date", type=str, default=None, help="Start date YYYY-MM-DD")
     parser.add_argument("--end-date", type=str, default=None, help="End date YYYY-MM-DD")
     parser.add_argument("--force", action="store_true", help="Force re-fetching existing records")
@@ -64,15 +73,27 @@ def run_backfill(args: list[str] | None = None) -> int:
 
 
 def run_audit_cmd(args: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Report Garmin sync completeness (GarminDB-style audit).")
-    parser.add_argument("--days", type=int, default=90, help="Number of trailing days to audit (default 90)")
-    parser.add_argument("--end-date", type=str, default=None, help="End date YYYY-MM-DD (default local today)")
+    parser = argparse.ArgumentParser(
+        description="Report Garmin sync completeness (GarminDB-style audit)."
+    )
+    parser.add_argument(
+        "--days", type=int, default=90, help="Number of trailing days to audit (default 90)"
+    )
+    parser.add_argument(
+        "--end-date", type=str, default=None, help="End date YYYY-MM-DD (default local today)"
+    )
     parsed_args = parser.parse_args(args)
 
     try:
         settings = load_settings()
         service = GarminSyncService(settings)
-        report = run_audit(settings, service.repository, service.archive_store, days=parsed_args.days, end_date_str=parsed_args.end_date)
+        report = run_audit(
+            settings,
+            service.repository,
+            service.archive_store,
+            days=parsed_args.days,
+            end_date_str=parsed_args.end_date,
+        )
         print(format_report(report))
         return 0
     except Exception as e:
@@ -81,7 +102,9 @@ def run_audit_cmd(args: list[str] | None = None) -> int:
 
 
 def run_rebuild_cmd(args: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Rebuild Firestore snapshots from the raw archive, offline (no Garmin calls).")
+    parser = argparse.ArgumentParser(
+        description="Rebuild Firestore snapshots from the raw archive, offline (no Garmin calls)."
+    )
     parser.add_argument("--start-date", type=str, required=True, help="Start date YYYY-MM-DD")
     parser.add_argument("--end-date", type=str, required=True, help="End date YYYY-MM-DD")
     parsed_args = parser.parse_args(args)
@@ -114,18 +137,28 @@ def main() -> int:
     # Backfill subcommand
     backfill_parser = subparsers.add_parser("backfill", help="Run historical backfill")
     backfill_parser.add_argument("--days", type=int, default=56, help="Number of days to backfill")
-    backfill_parser.add_argument("--start-date", type=str, default=None, help="Start date YYYY-MM-DD")
+    backfill_parser.add_argument(
+        "--start-date", type=str, default=None, help="Start date YYYY-MM-DD"
+    )
     backfill_parser.add_argument("--end-date", type=str, default=None, help="End date YYYY-MM-DD")
     backfill_parser.add_argument("--force", action="store_true", help="Force re-fetch")
 
     # Audit subcommand
     audit_parser = subparsers.add_parser("audit", help="Report sync completeness")
-    audit_parser.add_argument("--days", type=int, default=90, help="Number of trailing days to audit")
-    audit_parser.add_argument("--end-date", type=str, default=None, help="End date YYYY-MM-DD (default local today)")
+    audit_parser.add_argument(
+        "--days", type=int, default=90, help="Number of trailing days to audit"
+    )
+    audit_parser.add_argument(
+        "--end-date", type=str, default=None, help="End date YYYY-MM-DD (default local today)"
+    )
 
     # Rebuild subcommand
-    rebuild_parser = subparsers.add_parser("rebuild", help="Rebuild snapshots from the raw archive, offline")
-    rebuild_parser.add_argument("--start-date", type=str, required=True, help="Start date YYYY-MM-DD")
+    rebuild_parser = subparsers.add_parser(
+        "rebuild", help="Rebuild snapshots from the raw archive, offline"
+    )
+    rebuild_parser.add_argument(
+        "--start-date", type=str, required=True, help="Start date YYYY-MM-DD"
+    )
     rebuild_parser.add_argument("--end-date", type=str, required=True, help="End date YYYY-MM-DD")
 
     args = parser.parse_args()

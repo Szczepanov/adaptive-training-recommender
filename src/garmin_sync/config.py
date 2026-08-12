@@ -73,7 +73,9 @@ def load_settings(env_file: str | None = None) -> Settings:
     tz = os.getenv("APP_TIMEZONE", "Europe/Warsaw").strip()
     email = os.getenv("GARMIN_EMAIL")
     password = os.getenv("GARMIN_PASSWORD")
-    token_path = os.getenv("GARMIN_TOKEN_PATH", os.getenv("GARMIN_TOKENS", ".garmin_tokens/garmin_tokens.json")).strip()
+    token_path = os.getenv(
+        "GARMIN_TOKEN_PATH", os.getenv("GARMIN_TOKENS", ".garmin_tokens/garmin_tokens.json")
+    ).strip()
     token_store = os.getenv("GARMIN_TOKEN_STORE", "local").strip().lower()
     project_id = os.getenv("GCP_PROJECT_ID")
     bucket = os.getenv("GARMIN_TOKEN_BUCKET")
@@ -83,7 +85,11 @@ def load_settings(env_file: str | None = None) -> Settings:
     retry_min_wait = float(os.getenv("GARMIN_RETRY_MIN_WAIT", "1.0"))
     retry_max_wait = float(os.getenv("GARMIN_RETRY_MAX_WAIT", "10.0"))
     verify_login = os.getenv("GARMIN_VERIFY_LOGIN", "true").lower() in ("true", "1", "yes")
-    allow_credential_login = os.getenv("GARMIN_ALLOW_CREDENTIAL_LOGIN", "false").lower() in ("true", "1", "yes")
+    allow_credential_login = os.getenv("GARMIN_ALLOW_CREDENTIAL_LOGIN", "false").lower() in (
+        "true",
+        "1",
+        "yes",
+    )
     staleness = int(os.getenv("GARMIN_STALENESS_MINUTES", "60"))
     resync_lookback_days = int(os.getenv("GARMIN_RESYNC_LOOKBACK_DAYS", "1"))
     firebase_cred = os.getenv("FIREBASE_CREDENTIALS_PATH")

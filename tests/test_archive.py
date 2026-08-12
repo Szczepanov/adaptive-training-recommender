@@ -77,5 +77,6 @@ def test_create_archive_store_disabled_returns_null_store():
 
 def test_create_archive_store_gcs_requires_bucket():
     import pytest
+
     with pytest.raises(ValueError, match="bucket"):
         create_archive_store(enabled=True, store_type="gcs", bucket_name=None)

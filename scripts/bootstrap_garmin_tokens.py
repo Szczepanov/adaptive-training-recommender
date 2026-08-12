@@ -1,6 +1,7 @@
 """
 Helper utility to authenticate Garmin credentials locally and upload initial token JSON file to GCS.
 """
+
 import argparse
 import sys
 from pathlib import Path
@@ -33,10 +34,15 @@ def bootstrap(bucket_name: str | None = None, object_name: str = "garmin/garmin_
     gcs_store.persist(local_file)
     print("Token bootstrap completed successfully!")
 
+
 def main():
     parser = argparse.ArgumentParser(description="Bootstrap Garmin OAuth tokens to GCS.")
-    parser.add_argument("--bucket", type=str, default=None, help="GCS bucket name for token storage")
-    parser.add_argument("--object", type=str, default="garmin/garmin_tokens.json", help="GCS object name")
+    parser.add_argument(
+        "--bucket", type=str, default=None, help="GCS bucket name for token storage"
+    )
+    parser.add_argument(
+        "--object", type=str, default="garmin/garmin_tokens.json", help="GCS object name"
+    )
     args = parser.parse_args()
 
     try:
@@ -44,6 +50,7 @@ def main():
     except Exception as e:
         print(f"Bootstrap failed: {e}")
         sys.exit(1)
+
 
 if __name__ == "__main__":
     main()

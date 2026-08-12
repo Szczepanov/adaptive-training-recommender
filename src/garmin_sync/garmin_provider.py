@@ -2,6 +2,7 @@
 codebase allowed to know Garmin Connect response shapes (dailySleepDTO, sleepScores,
 hrvSummary, activityType, etc.) -- everything downstream (mapper.py, service.py, the
 recommendation engine) operates on canonical.py types only."""
+
 import logging
 from typing import Any, Callable
 
@@ -27,7 +28,9 @@ from .provider import (
 logger = logging.getLogger(__name__)
 
 
-def extract_sleep_metrics(sleep_obj: dict[str, Any]) -> tuple[int | float | None, int | None, float | None]:
+def extract_sleep_metrics(
+    sleep_obj: dict[str, Any],
+) -> tuple[int | float | None, int | None, float | None]:
     """Extract (sleep_score, sleep_sec, avg_resp) from a raw Garmin sleep response.
     Handles both known Garmin response shapes (nested dailySleepDTO.sleepScores.overall
     and top-level overallSleepScore)."""
@@ -37,12 +40,18 @@ def extract_sleep_metrics(sleep_obj: dict[str, Any]) -> tuple[int | float | None
     daily_sleep = sleep_obj.get("dailySleepDTO", {})
     scores = daily_sleep.get("sleepScores", {}) or sleep_obj.get("overallSleepScore", {})
 
-    sleep_score = scores.get("overall", {}).get("value") if isinstance(scores.get("overall"), dict) else scores.get("value")
+    sleep_score = (
+        scores.get("overall", {}).get("value")
+        if isinstance(scores.get("overall"), dict)
+        else scores.get("value")
+    )
     if sleep_score is None and isinstance(daily_sleep.get("sleepQualityScore"), (int, float)):
         sleep_score = daily_sleep.get("sleepQualityScore")
 
     sleep_sec = daily_sleep.get("sleepTimeSeconds") or sleep_obj.get("totalSleepSeconds")
-    avg_resp = daily_sleep.get("averageRespirationValue") or sleep_obj.get("averageRespirationValue")
+    avg_resp = daily_sleep.get("averageRespirationValue") or sleep_obj.get(
+        "averageRespirationValue"
+    )
 
     return sleep_score, sleep_sec, avg_resp
 
@@ -50,10 +59,14 @@ def extract_sleep_metrics(sleep_obj: dict[str, Any]) -> tuple[int | float | None
 def _canonicalize_stress(stress_today: dict[str, Any] | None) -> CanonicalStress | None:
     if not stress_today:
         return None
-    return CanonicalStress(avg=stress_today.get("avgStressLevel"), max=stress_today.get("maxStressLevel"))
+    return CanonicalStress(
+        avg=stress_today.get("avgStressLevel"), max=stress_today.get("maxStressLevel")
+    )
 
 
-def _canonicalize_body_battery(body_battery_today: list[dict[str, Any]] | None) -> CanonicalBodyBattery | None:
+def _canonicalize_body_battery(
+    body_battery_today: list[dict[str, Any]] | None,
+) -> CanonicalBodyBattery | None:
     """get_body_battery(date, date) returns a list (one entry per requested day)."""
     if not body_battery_today:
         return None
@@ -64,7 +77,9 @@ def _canonicalize_body_battery(body_battery_today: list[dict[str, Any]] | None) 
     return CanonicalBodyBattery(charged=charged, drained=drained, change=change)
 
 
-def _canonicalize_training_readiness(readings: list[dict[str, Any]] | None) -> CanonicalTrainingReadiness | None:
+def _canonicalize_training_readiness(
+    readings: list[dict[str, Any]] | None,
+) -> CanonicalTrainingReadiness | None:
     """get_training_readiness(date) returns multiple intraday readings (the device
     re-evaluates through the day); readings[0] is the newest per the observed API
     ordering -- used as the day's representative value."""
@@ -78,13 +93,17 @@ def _canonicalize_training_readiness(readings: list[dict[str, Any]] | None) -> C
     )
 
 
-def _canonicalize_training_status(training_status_today: dict[str, Any] | None) -> CanonicalTrainingStatus | None:
+def _canonicalize_training_status(
+    training_status_today: dict[str, Any] | None,
+) -> CanonicalTrainingStatus | None:
     """Deeply nested and device-ID-keyed -- every level extracted defensively, since a
     missing device/metric must degrade to None fields, never a KeyError."""
     if not training_status_today:
         return None
 
-    status_data = (training_status_today.get("mostRecentTrainingStatus") or {}).get("latestTrainingStatusData") or {}
+    status_data = (training_status_today.get("mostRecentTrainingStatus") or {}).get(
+        "latestTrainingStatusData"
+    ) or {}
     device_status: dict[str, Any] = next(iter(status_data.values()), {}) if status_data else {}
     acute_load_dto = device_status.get("acuteTrainingLoadDTO") or {}
 
@@ -103,7 +122,9 @@ def _canonicalize_training_status(training_status_today: dict[str, Any] | None) 
     )
 
 
-def _canonicalize_heart_rate_zones(zones_list: list[dict[str, Any]] | None) -> CanonicalHeartRateZones | None:
+def _canonicalize_heart_rate_zones(
+    zones_list: list[dict[str, Any]] | None,
+) -> CanonicalHeartRateZones | None:
     """get_heart_rate_zones() returns one entry per sport profile (DEFAULT, RUNNING,
     CYCLING, ...); DEFAULT is used as the single representative value -- extracted
     defensively (never assume the shape/type Garmin actually returned), matching
@@ -111,7 +132,9 @@ def _canonicalize_heart_rate_zones(zones_list: list[dict[str, Any]] | None) -> C
     if not isinstance(zones_list, list) or not zones_list:
         return None
 
-    default_entry = next((z for z in zones_list if isinstance(z, dict) and z.get("sport") == "DEFAULT"), None)
+    default_entry = next(
+        (z for z in zones_list if isinstance(z, dict) and z.get("sport") == "DEFAULT"), None
+    )
     entry = default_entry or (zones_list[0] if isinstance(zones_list[0], dict) else None)
     if entry is None:
         return None
@@ -152,9 +175,19 @@ def canonicalize_performance_targets(
     is substituted.
     """
     ftp_data = _first_mapping(cycling_ftp)
-    ftp = next((_first_positive_number(ftp_data.get(key)) for key in (
-        "functionalThresholdPower", "ftp", "value", "power",
-    ) if _first_positive_number(ftp_data.get(key)) is not None), None)
+    ftp = next(
+        (
+            _first_positive_number(ftp_data.get(key))
+            for key in (
+                "functionalThresholdPower",
+                "ftp",
+                "value",
+                "power",
+            )
+            if _first_positive_number(ftp_data.get(key)) is not None
+        ),
+        None,
+    )
 
     threshold_root = lactate_threshold if isinstance(lactate_threshold, dict) else {}
     threshold_data = _first_mapping(threshold_root.get("speed_and_heart_rate"))
@@ -165,14 +198,29 @@ def canonicalize_performance_targets(
     # would produce a 52:38/km value and reject the real target as implausible.
     pace = (
         int(1000 * threshold_pace_sec_per_metre)
-        if threshold_pace_sec_per_metre is not None and 75 <= 1000 * threshold_pace_sec_per_metre <= 1200
+        if threshold_pace_sec_per_metre is not None
+        and 75 <= 1000 * threshold_pace_sec_per_metre <= 1200
         else None
     )
     lthr = _first_positive_number(threshold_data.get("heartRate"))
 
     if lthr is None and isinstance(heart_rate_zones, list):
-        running = next((zone for zone in heart_rate_zones if isinstance(zone, dict) and zone.get("sport") == "RUNNING"), None)
-        default = next((zone for zone in heart_rate_zones if isinstance(zone, dict) and zone.get("sport") == "DEFAULT"), None)
+        running = next(
+            (
+                zone
+                for zone in heart_rate_zones
+                if isinstance(zone, dict) and zone.get("sport") == "RUNNING"
+            ),
+            None,
+        )
+        default = next(
+            (
+                zone
+                for zone in heart_rate_zones
+                if isinstance(zone, dict) and zone.get("sport") == "DEFAULT"
+            ),
+            None,
+        )
         fallback = running or default
         if fallback:
             lthr = _first_positive_number(fallback.get("lactateThresholdHeartRateUsed"))
@@ -181,9 +229,15 @@ def canonicalize_performance_targets(
         cycling_ftp_watts=round(ftp) if ftp is not None else None,
         running_threshold_pace_sec_per_km=pace,
         running_lthr_bpm=round(lthr) if lthr is not None else None,
-        ftp_measured_at=ftp_data.get("calendarDate") if isinstance(ftp_data.get("calendarDate"), str) else None,
-        threshold_measured_at=threshold_data.get("calendarDate") if isinstance(threshold_data.get("calendarDate"), str) else None,
-        lthr_measured_at=threshold_data.get("calendarDate") if isinstance(threshold_data.get("calendarDate"), str) else None,
+        ftp_measured_at=ftp_data.get("calendarDate")
+        if isinstance(ftp_data.get("calendarDate"), str)
+        else None,
+        threshold_measured_at=threshold_data.get("calendarDate")
+        if isinstance(threshold_data.get("calendarDate"), str)
+        else None,
+        lthr_measured_at=threshold_data.get("calendarDate")
+        if isinstance(threshold_data.get("calendarDate"), str)
+        else None,
     )
 
 
@@ -272,7 +326,9 @@ def canonicalize_activities(
     return [_canonicalize_activity(act, zone4_floor=zone4_floor) for act in raw_activities]
 
 
-def _canonicalize_activity(act: dict[str, Any], zone4_floor: int | None = None) -> CanonicalActivity:
+def _canonicalize_activity(
+    act: dict[str, Any], zone4_floor: int | None = None
+) -> CanonicalActivity:
     te_aero = float(act.get("aerobicTrainingEffect", 0.0) or 0.0)
     te_anaero = float(act.get("anaerobicTrainingEffect", 0.0) or 0.0)
     avg_hr = act.get("averageHeartRate")
@@ -281,7 +337,9 @@ def _canonicalize_activity(act: dict[str, Any], zone4_floor: int | None = None) 
     # only consulting aerobic TE (as the pre-canonical-layer code did) would silently
     # under-count those sessions as "hard" for last3DaysHardSessionsCount purposes. See
     # tests/test_garmin_provider.py for the discriminating case this covers.
-    _, intensity_tag = classify_activity_intensity(max(te_aero, te_anaero), avg_hr, zone4_floor=zone4_floor)
+    _, intensity_tag = classify_activity_intensity(
+        max(te_aero, te_anaero), avg_hr, zone4_floor=zone4_floor
+    )
     duration_sec = act.get("duration", 0)
 
     raw_activity_id = act.get("activityId")
@@ -352,7 +410,9 @@ class GarminProviderAdapter:
         try:
             return fetch_fn()
         except Exception as e:
-            logger.warning(f"Enrichment fetch '{name}' failed for this sync, continuing without it: {e}")
+            logger.warning(
+                f"Enrichment fetch '{name}' failed for this sync, continuing without it: {e}"
+            )
             return None
 
     def fetch_daily_metrics(self, target_date_iso: str, yesterday_iso: str) -> ProviderFetchResult:
@@ -366,14 +426,24 @@ class GarminProviderAdapter:
 
         hrv_today = self.client.get_hrv_data(target_date_iso)
 
-        stress_today = self._fetch_enrichment("stress", lambda: self.client.get_stress_data(target_date_iso))
-        body_battery_today = self._fetch_enrichment("body_battery", lambda: self.client.get_body_battery(target_date_iso))
-        training_readiness_today = self._fetch_enrichment("training_readiness", lambda: self.client.get_training_readiness(target_date_iso))
-        training_status_today = self._fetch_enrichment("training_status", lambda: self.client.get_training_status(target_date_iso))
+        stress_today = self._fetch_enrichment(
+            "stress", lambda: self.client.get_stress_data(target_date_iso)
+        )
+        body_battery_today = self._fetch_enrichment(
+            "body_battery", lambda: self.client.get_body_battery(target_date_iso)
+        )
+        training_readiness_today = self._fetch_enrichment(
+            "training_readiness", lambda: self.client.get_training_readiness(target_date_iso)
+        )
+        training_status_today = self._fetch_enrichment(
+            "training_status", lambda: self.client.get_training_status(target_date_iso)
+        )
         # Not actually date-scoped (a profile setting, not per-day telemetry) but fetched
         # on the same daily cadence as the other enrichment endpoints for simplicity --
         # see GarminClientWrapper.get_heart_rate_zones.
-        heart_rate_zones = self._fetch_enrichment("heart_rate_zones", lambda: self.client.get_heart_rate_zones())
+        heart_rate_zones = self._fetch_enrichment(
+            "heart_rate_zones", lambda: self.client.get_heart_rate_zones()
+        )
         if isinstance(heart_rate_zones, list):
             self._heart_rate_zones_cache = heart_rate_zones
 
@@ -420,7 +490,9 @@ class GarminProviderAdapter:
         the athlete *now*, so the service never calls it during backfills/rebuilds.
         """
         cycling_ftp = self._fetch_enrichment("cycling_ftp", self.client.get_cycling_ftp)
-        lactate_threshold = self._fetch_enrichment("lactate_threshold", self.client.get_lactate_threshold)
+        lactate_threshold = self._fetch_enrichment(
+            "lactate_threshold", self.client.get_lactate_threshold
+        )
         zones = self._heart_rate_zones_cache
         if zones is None:
             fetched = self._fetch_enrichment("heart_rate_zones", self.client.get_heart_rate_zones)

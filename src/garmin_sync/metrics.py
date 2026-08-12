@@ -56,7 +56,7 @@ def classify_activity_intensity(
         if (zone4_floor is not None and zone4_floor > 0)
         else HARD_SESSION_MIN_AVERAGE_HR
     )
-    is_hard = (te >= HARD_SESSION_MIN_TRAINING_EFFECT or avg_hr >= hr_threshold)
+    is_hard = te >= HARD_SESSION_MIN_TRAINING_EFFECT or avg_hr >= hr_threshold
     intensity_tag = "hard" if is_hard else "moderate/easy"
     return is_hard, intensity_tag
 

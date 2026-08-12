@@ -45,7 +45,9 @@ def test_canonicalize_from_raw_fallback_consistency():
     stats_today = {}  # missing RHR
     stats_fallback = {"restingHeartRate": 50, "totalSteps": 12000}
     sleep_today = {}  # missing sleep
-    sleep_fallback = {"dailySleepDTO": {"sleepScores": {"overall": {"value": 78}}, "sleepTimeSeconds": 28800}}
+    sleep_fallback = {
+        "dailySleepDTO": {"sleepScores": {"overall": {"value": 78}}, "sleepTimeSeconds": 28800}
+    }
     hrv_today = {"hrvSummary": {"lastNightAvg": 62, "status": "BALANCED"}}
 
     canonical = canonicalize_from_raw(
@@ -67,23 +69,27 @@ def test_canonicalize_from_raw_fallback_consistency():
 
 
 def test_extract_sleep_metrics_handles_nested_and_fallback_shapes():
-    nested = {"dailySleepDTO": {"sleepScores": {"overall": {"value": 90}}, "sleepTimeSeconds": 25000}}
+    nested = {
+        "dailySleepDTO": {"sleepScores": {"overall": {"value": 90}}, "sleepTimeSeconds": 25000}
+    }
     assert extract_sleep_metrics(nested) == (90, 25000, None)
     assert extract_sleep_metrics({}) == (None, None, None)
     assert extract_sleep_metrics(None) == (None, None, None)
 
 
 def test_canonicalize_activities_maps_fields_and_intensity():
-    raw = [{
-        "activityId": 999,
-        "startTimeLocal": "2026-08-05T18:00:00",
-        "activityType": {"typeKey": "running"},
-        "duration": 2400,
-        "aerobicTrainingEffect": 3.8,
-        "anaerobicTrainingEffect": 1.2,
-        "averageHeartRate": 150,
-        "activityTrainingLoad": 120.0,
-    }]
+    raw = [
+        {
+            "activityId": 999,
+            "startTimeLocal": "2026-08-05T18:00:00",
+            "activityType": {"typeKey": "running"},
+            "duration": 2400,
+            "aerobicTrainingEffect": 3.8,
+            "anaerobicTrainingEffect": 1.2,
+            "averageHeartRate": 150,
+            "activityTrainingLoad": 120.0,
+        }
+    ]
 
     canonical = canonicalize_activities(raw)
 
@@ -105,16 +111,18 @@ def test_canonicalize_activities_uses_anaerobic_training_effect_for_hard_classif
     """A strength/interval session can be a hard stimulus through anaerobic load alone
     even when its aerobic training effect stays below the threshold on its own -- the
     discriminating case for using max(aerobic, anaerobic) rather than aerobic-only."""
-    raw = [{
-        "activityId": 1000,
-        "startTimeLocal": "2026-08-05T18:00:00",
-        "activityType": {"typeKey": "strength_training"},
-        "duration": 1800,
-        "aerobicTrainingEffect": 2.0,
-        "anaerobicTrainingEffect": 3.5,
-        "averageHeartRate": 140,
-        "activityTrainingLoad": 80.0,
-    }]
+    raw = [
+        {
+            "activityId": 1000,
+            "startTimeLocal": "2026-08-05T18:00:00",
+            "activityType": {"typeKey": "strength_training"},
+            "duration": 1800,
+            "aerobicTrainingEffect": 2.0,
+            "anaerobicTrainingEffect": 3.5,
+            "averageHeartRate": 140,
+            "activityTrainingLoad": 80.0,
+        }
+    ]
 
     act = canonicalize_activities(raw)[0]
 
@@ -122,16 +130,18 @@ def test_canonicalize_activities_uses_anaerobic_training_effect_for_hard_classif
 
 
 def test_canonicalize_activities_uses_zone4_floor():
-    raw = [{
-        "activityId": 1001,
-        "startTimeLocal": "2026-08-05T18:00:00",
-        "activityType": {"typeKey": "running"},
-        "duration": 1800,
-        "aerobicTrainingEffect": 2.0,
-        "anaerobicTrainingEffect": 1.0,
-        "averageHeartRate": 148,
-        "activityTrainingLoad": 60.0,
-    }]
+    raw = [
+        {
+            "activityId": 1001,
+            "startTimeLocal": "2026-08-05T18:00:00",
+            "activityType": {"typeKey": "running"},
+            "duration": 1800,
+            "aerobicTrainingEffect": 2.0,
+            "anaerobicTrainingEffect": 1.0,
+            "averageHeartRate": 148,
+            "activityTrainingLoad": 60.0,
+        }
+    ]
 
     # Without zone4_floor (defaults to 145), avg_hr=148 is classified as hard
     act_default = canonicalize_activities(raw)[0]
@@ -147,12 +157,14 @@ def test_canonicalize_activities_handles_missing_activity_id():
     upload) must canonicalize to activity_id=None rather than a shared placeholder
     string, so callers can skip archiving it instead of colliding with another such
     activity."""
-    raw = [{
-        "startTimeLocal": "2026-08-05T18:00:00",
-        "activityType": {"typeKey": "running"},
-        "duration": 1200,
-        "aerobicTrainingEffect": 1.0,
-    }]
+    raw = [
+        {
+            "startTimeLocal": "2026-08-05T18:00:00",
+            "activityType": {"typeKey": "running"},
+            "duration": 1200,
+            "aerobicTrainingEffect": 1.0,
+        }
+    ]
 
     act = canonicalize_activities(raw)[0]
 
@@ -182,16 +194,25 @@ def test_provider_adapter_reuses_cached_stats_and_sleep_across_overlapping_dates
     # overlapping calls -- without caching this would be 4 calls (2 per call), since
     # 08-06 is fetched once as "today" and again as the next call's "yesterday".
     assert mock_client.get_stats.call_count == 3
-    assert {c.args[0] for c in mock_client.get_stats.call_args_list} == {"2026-08-05", "2026-08-06", "2026-08-07"}
+    assert {c.args[0] for c in mock_client.get_stats.call_args_list} == {
+        "2026-08-05",
+        "2026-08-06",
+        "2026-08-07",
+    }
 
     # Same reasoning applies to sleep: get_sleep_data(target) always fires, and (since
     # sleep_today is empty here) get_sleep_data(yesterday_iso) fires for the fallback too
     # -- caching must dedup that fallback call the same way it dedups get_stats.
     assert mock_client.get_sleep_data.call_count == 3
-    assert {c.args[0] for c in mock_client.get_sleep_data.call_args_list} == {"2026-08-05", "2026-08-06", "2026-08-07"}
+    assert {c.args[0] for c in mock_client.get_sleep_data.call_args_list} == {
+        "2026-08-05",
+        "2026-08-06",
+        "2026-08-07",
+    }
 
 
 # --- Metric enrichment (item 4) ---------------------------------------------------
+
 
 def test_canonicalize_from_raw_populates_stress_body_battery_readiness_status():
     """Real-shape fixtures (captured from a live account) round-trip into the 4 new
@@ -287,6 +308,7 @@ def test_canonicalize_training_status_handles_missing_device_data_gracefully():
 
 # --- Heart rate zones -----------------------------------------------------------
 
+
 def test_canonicalize_from_raw_populates_heart_rate_zones_from_default_sport():
     with open(FIXTURES_DIR / "stats.json") as f:
         stats = json.load(f)
@@ -298,8 +320,13 @@ def test_canonicalize_from_raw_populates_heart_rate_zones_from_default_sport():
         zones = json.load(f)
 
     canonical = canonicalize_from_raw(
-        stats_today=stats, stats_fallback=None, sleep_today=sleep, sleep_fallback=None, hrv_today=hrv,
-        target_date_iso="2026-08-06", yesterday_iso="2026-08-05",
+        stats_today=stats,
+        stats_fallback=None,
+        sleep_today=sleep,
+        sleep_fallback=None,
+        hrv_today=hrv,
+        target_date_iso="2026-08-06",
+        yesterday_iso="2026-08-05",
         heart_rate_zones=zones,
     )
 
@@ -315,9 +342,16 @@ def test_canonicalize_from_raw_populates_heart_rate_zones_from_default_sport():
 def test_canonicalize_heart_rate_zones_falls_back_to_first_entry_without_default():
     from garmin_sync.garmin_provider import _canonicalize_heart_rate_zones
 
-    result = _canonicalize_heart_rate_zones([
-        {"sport": "RUNNING", "restingHeartRateUsed": 50, "maxHeartRateUsed": 190, "zone4Floor": 150},
-    ])
+    result = _canonicalize_heart_rate_zones(
+        [
+            {
+                "sport": "RUNNING",
+                "restingHeartRateUsed": 50,
+                "maxHeartRateUsed": 190,
+                "zone4Floor": 150,
+            },
+        ]
+    )
     assert result is not None
     assert result.sport == "RUNNING"
     assert result.max_hr_used == 190
@@ -331,7 +365,9 @@ def test_canonicalize_heart_rate_zones_handles_missing_or_malformed_input_gracef
     # A non-list (e.g. an unconfigured Mock return value in a test double, or a
     # malformed API response) must degrade to None, never raise.
     assert _canonicalize_heart_rate_zones("not a list") is None  # type: ignore[arg-type]
-    assert _canonicalize_heart_rate_zones([{"unexpected": "shape"}]) is not None  # degrades to all-None fields, not an error
+    assert (
+        _canonicalize_heart_rate_zones([{"unexpected": "shape"}]) is not None
+    )  # degrades to all-None fields, not an error
     degraded = _canonicalize_heart_rate_zones([{"unexpected": "shape"}])
     assert degraded.max_hr_used is None
 
@@ -341,8 +377,13 @@ def test_canonicalize_from_raw_heart_rate_zones_absent_when_not_provided():
         stats = json.load(f)
 
     canonical = canonicalize_from_raw(
-        stats_today=stats, stats_fallback=None, sleep_today={}, sleep_fallback=None, hrv_today={},
-        target_date_iso="2026-08-06", yesterday_iso="2026-08-05",
+        stats_today=stats,
+        stats_fallback=None,
+        sleep_today={},
+        sleep_fallback=None,
+        hrv_today={},
+        target_date_iso="2026-08-06",
+        yesterday_iso="2026-08-05",
     )
     assert canonical.heart_rate_zones is None
 
@@ -355,7 +396,9 @@ def test_fetch_daily_metrics_survives_unconfigured_heart_rate_zones_mock():
     payload."""
     mock_client = MagicMock()
     mock_client.get_stats.return_value = {"restingHeartRate": 50, "totalSteps": 9000}
-    mock_client.get_sleep_data.return_value = {"dailySleepDTO": {"sleepScores": {"overall": {"value": 80}}}}
+    mock_client.get_sleep_data.return_value = {
+        "dailySleepDTO": {"sleepScores": {"overall": {"value": 80}}}
+    }
     mock_client.get_hrv_data.return_value = {"hrvSummary": {"lastNightAvg": 60}}
 
     adapter = GarminProviderAdapter(mock_client)
@@ -370,6 +413,7 @@ def test_fetch_daily_metrics_survives_unconfigured_heart_rate_zones_mock():
 
 
 # --- Current performance targets -------------------------------------------------
+
 
 def test_canonicalize_performance_targets_maps_ftp_running_pace_and_lthr():
     from garmin_sync.garmin_provider import canonicalize_performance_targets
@@ -420,7 +464,9 @@ def test_canonicalize_performance_targets_rejects_invalid_values():
 
 def test_fetch_performance_targets_uses_cached_hr_zones_and_archivable_raw_payloads():
     mock_client = MagicMock()
-    mock_client.get_heart_rate_zones.return_value = [{"sport": "RUNNING", "lactateThresholdHeartRateUsed": 165}]
+    mock_client.get_heart_rate_zones.return_value = [
+        {"sport": "RUNNING", "lactateThresholdHeartRateUsed": 165}
+    ]
     mock_client.get_cycling_ftp.return_value = {"functionalThresholdPower": 250}
     mock_client.get_lactate_threshold.return_value = {"speed_and_heart_rate": {"speed": 0.25}}
     adapter = GarminProviderAdapter(mock_client)

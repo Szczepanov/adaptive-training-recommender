@@ -10,7 +10,11 @@ logger = logging.getLogger(__name__)
 
 def _validate_gcs_object_name(object_name: str) -> str:
     """Accept only a relative, non-traversing GCS object name."""
-    if not object_name or object_name.startswith("/") or any(part in {"", ".", ".."} for part in object_name.split("/")):
+    if (
+        not object_name
+        or object_name.startswith("/")
+        or any(part in {"", ".", ".."} for part in object_name.split("/"))
+    ):
         raise ValueError("GCS token object name must be a relative, non-traversing path.")
     return object_name
 
@@ -95,11 +99,15 @@ class GcsTokenStore:
             blob = bucket.blob(self.object_name)
 
             if not blob.exists():
-                logger.info(f"GCS token object 'gs://{self.bucket_name}/{self.object_name}' does not exist.")
+                logger.info(
+                    f"GCS token object 'gs://{self.bucket_name}/{self.object_name}' does not exist."
+                )
                 return False
 
             # A failed download must not leave a partial token at the active path.
-            with tempfile.NamedTemporaryFile(dir=dest_path.parent, prefix=".token-", delete=False) as temporary:
+            with tempfile.NamedTemporaryFile(
+                dir=dest_path.parent, prefix=".token-", delete=False
+            ) as temporary:
                 temporary_path = Path(temporary.name)
             try:
                 blob.download_to_filename(str(temporary_path))
@@ -117,7 +125,9 @@ class GcsTokenStore:
     def persist(self, source: Path) -> None:
         source_path = Path(source).expanduser().resolve()
         if not source_path.exists() or source_path.is_dir():
-            logger.warning(f"Source token file '{source_path}' does not exist. Skipping GCS upload.")
+            logger.warning(
+                f"Source token file '{source_path}' does not exist. Skipping GCS upload."
+            )
             return
 
         try:
@@ -132,7 +142,9 @@ class GcsTokenStore:
             blob = bucket.blob(self.object_name)
 
             blob.upload_from_filename(str(source_path))
-            logger.info(f"Successfully persisted refreshed token file to gs://{self.bucket_name}/{self.object_name}.")
+            logger.info(
+                f"Successfully persisted refreshed token file to gs://{self.bucket_name}/{self.object_name}."
+            )
         except Exception:
             logger.error("Failed to upload token file to GCS.")
 
@@ -146,5 +158,7 @@ def create_token_store(
     if store_type.lower() == "gcs":
         if not bucket_name:
             raise ValueError("GCS token store requested but bucket_name is not configured.")
-        return GcsTokenStore(bucket_name=bucket_name, object_name=object_name or "garmin/garmin_tokens.json")
+        return GcsTokenStore(
+            bucket_name=bucket_name, object_name=object_name or "garmin/garmin_tokens.json"
+        )
     return LocalTokenStore(local_path=local_path)

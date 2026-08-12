@@ -14,7 +14,9 @@ def init_firestore_client(credentials_path: str | None = None) -> Any:
     """Initialize Firebase Admin SDK and return Firestore client."""
     if not firebase_admin._apps:
         if credentials_path and os.path.exists(credentials_path):
-            logger.info(f"Initializing Firebase Admin with service account from '{credentials_path}'...")
+            logger.info(
+                f"Initializing Firebase Admin with service account from '{credentials_path}'..."
+            )
             cred = credentials.Certificate(credentials_path)
             firebase_admin.initialize_app(cred)
         else:
@@ -69,7 +71,9 @@ class FirestoreRecoveryRepository:
                 return data
             return None
         except Exception as e:
-            logger.warning(f"Error reading Firestore snapshot for user {self.user_id} date {date_iso}: {e}")
+            logger.warning(
+                f"Error reading Firestore snapshot for user {self.user_id} date {date_iso}: {e}"
+            )
             return None
 
     def is_fresh(self, date_iso: str, staleness_minutes: int = 60) -> bool:
@@ -78,7 +82,9 @@ class FirestoreRecoveryRepository:
         if not snapshot:
             return False
 
-        synced_at_str = snapshot.get("source", {}).get("garminSyncedAt") or snapshot.get("updatedAt")
+        synced_at_str = snapshot.get("source", {}).get("garminSyncedAt") or snapshot.get(
+            "updatedAt"
+        )
         if not synced_at_str:
             return False
 
@@ -110,9 +116,13 @@ class FirestoreRecoveryRepository:
         payload["updatedAt"] = now_iso
 
         doc_ref.set(payload, merge=True)
-        logger.info(f"Successfully saved user-scoped snapshot users/{self.user_id}/{self.collection_name}/{date_iso}.")
+        logger.info(
+            f"Successfully saved user-scoped snapshot users/{self.user_id}/{self.collection_name}/{date_iso}."
+        )
 
-    def get_historical_snapshots(self, start_date_iso: str, end_date_iso: str) -> dict[str, dict[str, Any]]:
+    def get_historical_snapshots(
+        self, start_date_iso: str, end_date_iso: str
+    ) -> dict[str, dict[str, Any]]:
         """Fetch historical snapshots in range [start_date_iso, end_date_iso]."""
         db = self._get_db()
         docs = (
@@ -154,7 +164,12 @@ class FirestoreRecoveryRepository:
         treated as manual on their first import.
         """
         db = self._get_db()
-        doc_ref = db.collection("users").document(self.user_id).collection("preferences").document("profile")
+        doc_ref = (
+            db.collection("users")
+            .document(self.user_id)
+            .collection("preferences")
+            .document("profile")
+        )
         now_iso = datetime.now(timezone.utc).isoformat()
         incoming = {
             "ftpWatts": targets.cycling_ftp_watts,
@@ -170,14 +185,22 @@ class FirestoreRecoveryRepository:
         @firestore.transactional
         def merge_targets(transaction: Any) -> None:
             snapshot = doc_ref.get(transaction=transaction)
-            existing: dict[str, Any] = cast(dict[str, Any], snapshot.to_dict() if snapshot.exists else {})
+            existing: dict[str, Any] = cast(
+                dict[str, Any], snapshot.to_dict() if snapshot.exists else {}
+            )
             raw_profile = existing.get("performanceProfile")
-            profile: dict[str, Any] = cast(dict[str, Any], raw_profile) if isinstance(raw_profile, dict) else {}
+            profile: dict[str, Any] = (
+                cast(dict[str, Any], raw_profile) if isinstance(raw_profile, dict) else {}
+            )
             raw_sources = profile.get("targetSources")
-            sources: dict[str, Any] = cast(dict[str, Any], raw_sources) if isinstance(raw_sources, dict) else {}
+            sources: dict[str, Any] = (
+                cast(dict[str, Any], raw_sources) if isinstance(raw_sources, dict) else {}
+            )
 
             raw_garmin = profile.get("garmin")
-            garmin: dict[str, Any] = cast(dict[str, Any], raw_garmin) if isinstance(raw_garmin, dict) else {}
+            garmin: dict[str, Any] = (
+                cast(dict[str, Any], raw_garmin) if isinstance(raw_garmin, dict) else {}
+            )
             # A partial Garmin response must not erase a previously successful import
             # for another target (for example, cycling FTP can be available while
             # running lactate threshold is not configured on the account).
@@ -213,24 +236,32 @@ class FirestoreRecoveryRepository:
             # created preferences.  Do not leave that first-run document partial: the
             # frontend treats an existing preferences record as complete.
             if not snapshot.exists:
-                payload.update({
-                    "preferredRecoveryStyle": "mixed",
-                    "defaultWeekdayTimeMin": 45,
-                    "defaultWeekendTimeMin": 60,
-                    "preferredTimeOfDay": "flexible",
-                    "preferredModalities": ["Running", "Cycling", "Strength"],
-                    "deprioritizedModalities": [],
-                    "avoidedModalities": [],
-                    "explanationVerbosity": "detailed",
-                    "conservativeBias": False,
-                    "preferredUnits": {"distance": "km", "weight": "kg", "temperature": "celsius"},
-                    "schemaVersion": 1,
-                    "createdAt": now_iso,
-                })
+                payload.update(
+                    {
+                        "preferredRecoveryStyle": "mixed",
+                        "defaultWeekdayTimeMin": 45,
+                        "defaultWeekendTimeMin": 60,
+                        "preferredTimeOfDay": "flexible",
+                        "preferredModalities": ["Running", "Cycling", "Strength"],
+                        "deprioritizedModalities": [],
+                        "avoidedModalities": [],
+                        "explanationVerbosity": "detailed",
+                        "conservativeBias": False,
+                        "preferredUnits": {
+                            "distance": "km",
+                            "weight": "kg",
+                            "temperature": "celsius",
+                        },
+                        "schemaVersion": 1,
+                        "createdAt": now_iso,
+                    }
+                )
             transaction.set(doc_ref, payload, merge=True)
 
         merge_targets(db.transaction())
-        logger.info("Updated Garmin performance targets in user-scoped preferences for user=<UID-redacted>.")
+        logger.info(
+            "Updated Garmin performance targets in user-scoped preferences for user=<UID-redacted>."
+        )
 
     def count_activities_in_range(self, start_date_iso: str, end_date_iso: str) -> int:
         """Count normalized activity records with date in [start_date_iso, end_date_iso]."""

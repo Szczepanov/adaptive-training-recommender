@@ -8,7 +8,13 @@ from garmin_sync.service import GarminSyncService
 
 def _seed_full_day(store: LocalRawArchiveStore, date_iso: str, run_id: str = "run-seed") -> None:
     store.archive("stats", date_iso, {"restingHeartRate": 50, "totalSteps": 9000}, run_id, "0.3.8")
-    store.archive("sleep", date_iso, {"dailySleepDTO": {"sleepScores": {"overall": {"value": 80}}}}, run_id, "0.3.8")
+    store.archive(
+        "sleep",
+        date_iso,
+        {"dailySleepDTO": {"sleepScores": {"overall": {"value": 80}}}},
+        run_id,
+        "0.3.8",
+    )
     store.archive("hrv", date_iso, {"hrvSummary": {"lastNightAvg": 60}}, run_id, "0.3.8")
     store.archive("activities", date_iso, [], run_id, "0.3.8")
 
