@@ -324,10 +324,17 @@ export class GoalService {
             const categories: GoalCategory[] = ['short-term', 'mid-term', 'long-term'];
             const result = {} as Record<GoalCategory, UserGoal | null>;
 
+            const allGoals = await this.listGoals(userId);
+            const activeGoals = allGoals.filter(g => g.status === 'active');
+
             for (const category of categories) {
-                const goals = await this.getGoalsByCategory(userId, category);
-                const activeGoals = goals.filter(g => g.status === 'active');
-                result[category] = activeGoals.length > 0 ? activeGoals[0] : null;
+                const categoryGoals = activeGoals
+                    .filter(g => g.category === category)
+                    .sort((a, b) => {
+                        if (b.priority !== a.priority) return b.priority - a.priority;
+                        return (b.createdAt ?? '').localeCompare(a.createdAt ?? '');
+                    });
+                result[category] = categoryGoals.length > 0 ? categoryGoals[0] : null;
             }
 
             return result;
