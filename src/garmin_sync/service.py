@@ -304,16 +304,25 @@ class GarminSyncService:
             self.settings.garmin_resync_lookback_days if resync_lookback_days is None else resync_lookback_days
         )
         ok = True
-        for i in range(max(lookback_days, 0), 0, -1):
+
+        def _process_lookback(i: int) -> bool:
             lookback_date = n_days_ago(target_date, i)
             lookback_iso = get_date_string(lookback_date)
             logger.info(f"Revisiting D-{i} ({lookback_iso}) to pick up any late-arriving Garmin data...")
             try:
-                if not self._fetch_and_store_date(lookback_date, lookback_iso):
-                    ok = False
+                return self._fetch_and_store_date(lookback_date, lookback_iso)
             except Exception as e:
                 logger.error(f"[{lookback_iso}] Lookback resync failed: {e}")
-                ok = False
+                return False
+
+        if lookback_days > 0:
+            import concurrent.futures
+            # max_workers limited to a reasonable number to avoid too many parallel API calls
+            with concurrent.futures.ThreadPoolExecutor(max_workers=min(lookback_days, 10)) as executor:
+                futures = [executor.submit(_process_lookback, i) for i in range(lookback_days, 0, -1)]
+                for future in concurrent.futures.as_completed(futures):
+                    if not future.result():
+                        ok = False
 
         # Target date is built last, after any lookback corrections above are already
         # persisted -- an exception here (unlike a lookback failure) propagates, as it

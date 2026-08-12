@@ -44,10 +44,10 @@ export class PreferencesService {
     /**
      * Create or update user preferences
      */
-    async upsertPreferences(userId: string, prefsData: Partial<UserPreferences>): Promise<UserPreferences> {
+    async upsertPreferences(userId: string, prefsData: Partial<UserPreferences>, existingPrefsArg?: UserPreferences | null): Promise<UserPreferences> {
         try {
             // Get existing preferences to merge with
-            const existingPrefs = await this.getPreferences(userId);
+            const existingPrefs = existingPrefsArg !== undefined ? existingPrefsArg : await this.getPreferences(userId);
             
             // Prepare data for validation
             const rawData = {
@@ -177,7 +177,7 @@ export class PreferencesService {
             updated.push(modality);
         }
 
-        return this.upsertPreferences(userId, { preferredModalities: updated });
+        return this.upsertPreferences(userId, { preferredModalities: updated }, prefs);
     }
 
     /**
@@ -190,7 +190,7 @@ export class PreferencesService {
         }
 
         const updated = prefs.preferredModalities.filter(m => m !== modality);
-        return this.upsertPreferences(userId, { preferredModalities: updated });
+        return this.upsertPreferences(userId, { preferredModalities: updated }, prefs);
     }
 
     /**
@@ -207,7 +207,7 @@ export class PreferencesService {
             updated.push(modality);
         }
 
-        return this.upsertPreferences(userId, { avoidedModalities: updated });
+        return this.upsertPreferences(userId, { avoidedModalities: updated }, prefs);
     }
 
     /**
@@ -220,7 +220,7 @@ export class PreferencesService {
         }
 
         const updated = prefs.avoidedModalities.filter(m => m !== modality);
-        return this.upsertPreferences(userId, { avoidedModalities: updated });
+        return this.upsertPreferences(userId, { avoidedModalities: updated }, prefs);
     }
 
     /**
@@ -254,7 +254,7 @@ export class PreferencesService {
             ...units
         };
 
-        return this.upsertPreferences(userId, { preferredUnits: updatedUnits });
+        return this.upsertPreferences(userId, { preferredUnits: updatedUnits }, prefs);
     }
 
     /**
