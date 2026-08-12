@@ -451,9 +451,10 @@ emulatorDescribe('Firestore security rules', () => {
     });
 
     it('rejects re-saving the same decision with a different audit than what is stored', async () => {
-        // If a client resent a freshly recomputed audit for an unchanged decision (the bug
-        // this guards against), the audit would differ only in evaluatedAt/etc. -- this must
+        // If a client resent a freshly recomputed audit for an unchanged decision,
+        // the audit would differ only in evaluatedAt/etc. -- this must
         // still be rejected, since decision fields (templateId/mode/rationale/...) are equal.
+        // This guards against overwriting the original audit on subsequent saves.
         await testEnvironment.withSecurityRulesDisabled(async context => {
             await setDoc(doc(context.firestore(), recommendationPath), { ...validRecommendation('2026-08-07T08:00:00Z'), revision: 1 });
         });
