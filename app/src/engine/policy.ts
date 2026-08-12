@@ -1,4 +1,4 @@
-/** Increment whenever a change can alter a persisted recommendation decision. */
+/** Increment whenever a change can alter a persisted recommendation decision. (Refactoring does not require a bump) */
 export const POLICY_VERSION = '2026-08-session-packing-tiebreaker-v1';
 
 /** Historical versions are intentionally not re-executed by this build. Their compact
