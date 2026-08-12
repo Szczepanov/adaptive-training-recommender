@@ -240,7 +240,7 @@ def test_sync_service_computes_sleep_score_delta():
 
 
 def test_backfill_seeds_prehistory_from_firestore():
-    """Regression test for Fix B: backfilling a range should seed raw_memory_store with
+    """Regression test: backfilling a range should seed raw_memory_store with
     historical Firestore snapshots from [start_d - 28d, start_d - 1d] so day 1 has ready baselines."""
     settings = Settings(app_user_id="test_uid_789")
     mock_repo = MagicMock()
