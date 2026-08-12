@@ -143,7 +143,7 @@ export function resolveEffectiveInjuryConstraints(
     const regionless = base.filter(injury => !injury.region);
     // Every same-region base constraint is kept -- a region can legitimately carry more
     // than one (e.g. a general limit plus a modality-specific exclude), each with its own
-    // restrictedModalities. Collapsing to a single "worst" constraint would silently drop
+    // restrictedModalities. Incorrectly collapsing to a single "worst" constraint would silently drop
     // the others' restrictedModalities.
     const byRegion = new Map<BodyRegion, InjuryConstraint[]>();
     for (const injury of base) {
