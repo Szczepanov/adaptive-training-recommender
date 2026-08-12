@@ -36,7 +36,7 @@ def run_daily_sync(args: list[str] | None = None) -> int:
         )
         return 0 if success else 1
     except Exception as e:
-        logger.error(f"Daily sync execution error: {e}")
+        logger.error(f"Daily sync execution error: {type(e).__name__}")
         return 1
 
 
@@ -59,7 +59,7 @@ def run_backfill(args: list[str] | None = None) -> int:
         )
         return 0 if success else 1
     except Exception as e:
-        logger.error(f"Backfill execution error: {e}")
+        logger.error(f"Backfill execution error: {type(e).__name__}")
         return 1
 
 
@@ -76,7 +76,7 @@ def run_audit_cmd(args: list[str] | None = None) -> int:
         print(format_report(report))
         return 0
     except Exception as e:
-        logger.error(f"Audit execution error: {e}")
+        logger.error(f"Audit execution error: {type(e).__name__}")
         return 1
 
 
@@ -92,7 +92,7 @@ def run_rebuild_cmd(args: list[str] | None = None) -> int:
         success = service.rebuild(parsed_args.start_date, parsed_args.end_date)
         return 0 if success else 1
     except Exception as e:
-        logger.error(f"Rebuild execution error: {e}")
+        logger.error(f"Rebuild execution error: {type(e).__name__}")
         return 1
 
 
