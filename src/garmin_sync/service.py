@@ -124,7 +124,7 @@ class GarminSyncService:
     def _seed_prehistory(self, raw_memory_store: dict[str, dict[str, Any]], range_start: Any) -> None:
         """Seed raw_memory_store with up to 28 days of existing Firestore history before
         range_start, so the first dates of a backfill/rebuild range get real 7d/28d
-        baselines instead of starting cold (Fix B)."""
+        baselines instead of starting cold."""
         pre_start_iso = get_date_string(n_days_ago(range_start, 28))
         pre_end_iso = get_date_string(n_days_ago(range_start, 1))
         logger.info(f"Seeding prehistory from Firestore ({pre_start_iso} -> {pre_end_iso})...")
@@ -143,7 +143,7 @@ class GarminSyncService:
     ) -> DailyRecoverySnapshot:
         """Shared derive -> map -> store pipeline. Single source of truth for how a
         snapshot is assembled from a date's canonical metrics, used by sync_daily,
-        backfill, and rebuild so they can never drift from each other (Fix A)."""
+        backfill, and rebuild so they can never drift from each other."""
         target_date = parse_date_string(target_iso)
         w7_start = get_date_string(n_days_ago(target_date, 7))
         w28_start = get_date_string(n_days_ago(target_date, 28))
@@ -215,11 +215,8 @@ class GarminSyncService:
         # Persist refreshed tokens after API calls
         self.token_store.persist(self.token_file_path)
 
-        # Load prior 28 days for baselines
-        start_28d = get_date_string(n_days_ago(target_date, 28))
-        prev_day = get_date_string(n_days_ago(target_date, 1))
-        history_docs = self.repository.get_historical_snapshots(start_28d, prev_day)
-        raw_memory_store = {k: v["raw"] for k, v in history_docs.items() if "raw" in v}
+        raw_memory_store: dict[str, dict[str, Any]] = {}
+        self._seed_prehistory(raw_memory_store, target_date)
 
         snapshot = self._build_and_store_snapshot(
             target_iso=target_iso,
@@ -374,7 +371,6 @@ class GarminSyncService:
         raw_memory_store: dict[str, dict[str, Any]] = {}
         failed_dates: list[str] = []
 
-        # Fix B: Seed prehistory from existing Firestore history prior to start_d
         self._seed_prehistory(raw_memory_store, start_d)
 
         for target_date in target_dates:
