@@ -1185,7 +1185,7 @@ export function generateWeekAheadPlan(
     const settledOutcomes = new Map<string, WeeklyRoleAllocationOutcome>();
     const displacementReasons = new Map<string, WeeklyRoleMissReason>();
 
-    for (let offset = resultDays.length + 1; offset <= totalDays; offset++) {
+    const evaluateForecastDate = (offset: number) => {
         const date = addDaysToLocalDateString(todayDate, offset);
         const periodization = evaluatePeriodizationPhase(events, date);
 
@@ -1371,6 +1371,10 @@ export function generateWeekAheadPlan(
                 rejectionCounts: rejectionCountsFor(evaluation),
             },
         });
+    };
+
+    for (let offset = resultDays.length + 1; offset <= totalDays; offset++) {
+        evaluateForecastDate(offset);
     }
 
     // A reservation that survived to the end of the horizon without being selected is only
