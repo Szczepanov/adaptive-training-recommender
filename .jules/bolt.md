@@ -1,0 +1,3 @@
+## 2026-08-08 - [Preventing Unnecessary Re-renders]
+**Learning:** In a complex React dashboard component (`Home.tsx`) with multiple independent interactive sections (e.g., Week Ahead Strip, Detailed Plan, Adherence Prompts), state updates in one section (like changing `selectedNextDayTier` or toggling `showWorkoutDetails`) cause the entire dashboard to re-render, including expensive sub-components like `DetailedTodayPlan`.
+**Action:** Use `React.memo` for pure presentation components that receive complex props but shouldn't re-render unless those specific props change. This isolates rendering costs in data-heavy views.
