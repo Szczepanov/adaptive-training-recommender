@@ -1053,9 +1053,23 @@ export function validateRecommendation(raw: any): ValidationResult<DailyRecommen
             && (audit.plannedDose === undefined || validDose(audit.plannedDose))
             && (audit.executionDose === undefined || validDose(audit.executionDose))
             && Array.isArray(audit.candidateScores)
+            // firestore.rules (hasValidRecommendationAudit) caps candidateScores at 64
+            // entries -- mirrored here so an oversized catalog fails validation locally
+            // with a clear message instead of surfacing as an opaque permission-denied.
+            && audit.candidateScores.length <= 64
             && audit.candidateScores.every((candidate: any) => candidate && typeof candidate.templateId === 'string'
                 && typeof candidate.utilityScore === 'number' && Number.isFinite(candidate.utilityScore)
-                && Array.isArray(candidate.excludedReasons) && candidate.excludedReasons.every((reason: any) => typeof reason === 'string'));
+                && Array.isArray(candidate.excludedReasons) && candidate.excludedReasons.every((reason: any) => typeof reason === 'string'))
+            && (audit.droppedContributorObjectives === undefined
+                || (Array.isArray(audit.droppedContributorObjectives)
+                    && audit.droppedContributorObjectives.length <= 64
+                    && audit.droppedContributorObjectives.every((objective: any) => objective
+                        && typeof objective.eventId === 'string'
+                        && typeof objective.eventTitle === 'string'
+                        && typeof objective.objectiveKey === 'string'
+                        && typeof objective.reason === 'string'
+                        && typeof objective.message === 'string'
+                        && typeof objective.date === 'string')));
         if (!validAudit) {
             errors.push({ field: 'recommendationAudit', message: 'Recommendation audit has an invalid shape' });
         } else {

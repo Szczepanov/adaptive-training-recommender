@@ -5,6 +5,7 @@ import { validateRecommendation, validateAdherenceUpdate } from '../engine/valid
 import type { DataIssue, DataState } from '../engine/dataState';
 import { parseDailyRecommendation } from '../persistence/parsers/trainingHistory';
 import { isPermissionDeniedError } from '../utils/errors';
+import { deepEqual } from '../utils/deepEqual';
 
 /**
  * Persists what the engine actually prescribed each day, and captures whether the user
@@ -16,6 +17,13 @@ import { isPermissionDeniedError } from '../utils/errors';
 export class RecommendationService {
     private readonly collectionPath = 'daily_recommendations';
 
+    // Guards against overlapping saveRecommendation calls for the same (userId, date):
+    // Home.tsx fires saveRecommendation unawaited from an effect, so a fast recompute
+    // (e.g. two loadDashboardData runs racing) can otherwise issue two concurrent
+    // read-then-write sequences against the same document, each computing revision/audit
+    // decisions from a getDoc snapshot the other has since invalidated.
+    private readonly inFlightSaves = new Map<string, Promise<DailyRecommendation | null>>();
+
     /**
      * Save (or re-save) the recommendation generated for a given date. Safe to call
      * every time the dashboard computes one -- merge:true means an already-answered
@@ -23,26 +31,50 @@ export class RecommendationService {
      * template/rationale for a date that hasn't changed is a no-op in effect.
      */
     async saveRecommendation(userId: string, date: string, rec: Recommendation): Promise<DailyRecommendation | null> {
+        const key = `${userId}:${date}`;
+        const previous = this.inFlightSaves.get(key) ?? Promise.resolve(null);
+        const run = previous.catch(() => null).then(() => this.saveRecommendationInternal(userId, date, rec));
+        this.inFlightSaves.set(key, run);
+        try {
+            return await run;
+        } finally {
+            if (this.inFlightSaves.get(key) === run) this.inFlightSaves.delete(key);
+        }
+    }
+
+    private async saveRecommendationInternal(userId: string, date: string, rec: Recommendation): Promise<DailyRecommendation | null> {
+        const docPath = `users/${userId}/${this.collectionPath}/${date}`;
+        let decisionChanged: boolean | undefined;
+        let priorRevision: number | undefined;
+        let nextRevision: number | undefined;
         try {
             const docRef = doc(getDb(), 'users', userId, this.collectionPath, date);
             const existingSnap = await getDoc(docRef);
             const existing = existingSnap.exists() ? existingSnap.data() as DailyRecommendation : undefined;
 
             const isNewDoc = !existing;
-            const priorRevision = existing ? (existing.revision ?? 1) : 1;
+            priorRevision = existing ? (existing.revision ?? 1) : 1;
 
-            const decisionChanged = existing !== undefined && (
+            // Declared `const` (not reassigned) so TypeScript's control-flow narrowing of
+            // `existing` inside `if (decisionChangedThisSave)` below still applies; the
+            // outer `decisionChanged` (assigned right after) exists only for diagnostics.
+            const decisionChangedThisSave = existing !== undefined && (
                 existing.templateId !== rec.template.id ||
                 existing.templateTitle !== rec.template.title ||
                 existing.category !== rec.template.category ||
                 existing.modality !== rec.template.modality ||
                 existing.mode !== rec.mode ||
                 existing.rationale !== rec.rationale ||
-                JSON.stringify(existing.prescription ?? null) !== JSON.stringify(rec.prescription ?? null)
+                // Firestore returns map fields in sorted key order, which does not match
+                // the construction order of a freshly-built prescription -- comparing via
+                // JSON.stringify would treat an unchanged, round-tripped prescription as
+                // "changed" and spuriously bump the revision (see deepEqual for detail).
+                !deepEqual(existing.prescription ?? null, rec.prescription ?? null)
             );
+            decisionChanged = decisionChangedThisSave;
 
-            const nextRevision = isNewDoc ? 1 : (decisionChanged ? priorRevision + 1 : priorRevision);
-            const recommendationAudit = rec.recommendationAudit && (isNewDoc || decisionChanged || !existing?.recommendationAudit)
+            nextRevision = isNewDoc ? 1 : (decisionChangedThisSave ? priorRevision + 1 : priorRevision);
+            const recommendationAudit = rec.recommendationAudit && (isNewDoc || decisionChangedThisSave || !existing?.recommendationAudit)
                 ? rec.recommendationAudit
                 : existing?.recommendationAudit;
 
@@ -83,7 +115,7 @@ export class RecommendationService {
                 ? { ...validated, prescription: deleteField() }
                 : validated;
 
-            if (decisionChanged) {
+            if (decisionChangedThisSave) {
                 const batch = writeBatch(getDb());
                 const archiveRef = doc(getDb(), 'users', userId, this.collectionPath, date, 'revisions', String(priorRevision));
                 const archiveData: Record<string, unknown> = {
@@ -110,10 +142,15 @@ export class RecommendationService {
             // Non-fatal by design: failing to persist a recommendation record shouldn't
             // block the dashboard from showing today's recommendation.
             if (isPermissionDeniedError(error)) {
-                console.warn('Permission denied saving recommendation.');
+                console.warn(
+                    `Permission denied saving recommendation at ${docPath} ` +
+                    `(decisionChanged=${decisionChanged}, priorRevision=${priorRevision}, nextRevision=${nextRevision}). ` +
+                    'Usually means the local read (cache or a blocked connection) disagreed with the server about ' +
+                    'whether the decision changed -- see firestore.rules decisionFieldsUnchanged()/auditWriteOnce().'
+                );
                 return null;
             }
-            console.error('Error saving recommendation:', error);
+            console.error(`Error saving recommendation at ${docPath}:`, error);
             return null;
         }
     }
