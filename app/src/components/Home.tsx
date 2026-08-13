@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef, memo } from 'react';
 import { decisionComposer } from '../engine/composer';
 import { evaluateTrainingWithIntent, evaluateNextDayPlanWithIntent, adjustSessionRecommendation } from '../engine/rules';
 import { mapSnapshotToEngineInput, mapCheckinToSubjectiveInput, mapContextFromGoalsAndTrainingSettings, mapGoalsToUserEvents } from '../engine/adapters';
@@ -44,7 +44,7 @@ function formatEventTiming(daysToEvent: number | null): string {
   return daysToEvent > 0 ? `In ${daysToEvent} days` : `${Math.abs(daysToEvent)} days ago`;
 }
 
-function DetailedTodayPlan({ prescription }: { prescription: WorkoutPrescription }) {
+const DetailedTodayPlan = memo(function DetailedTodayPlan({ prescription }: { prescription: WorkoutPrescription }) {
   return (
     <section className="detailed-plan" aria-label="Detailed training plan">
       <div className="detailed-plan-header">
@@ -104,7 +104,7 @@ function DetailedTodayPlan({ prescription }: { prescription: WorkoutPrescription
       <p className="plan-legend">{getPrescriptionLegend()}</p>
     </section>
   );
-}
+});
 
 export function Home({ userId, onNavigate, onViewData }: HomeProps) {
   const [decisionInput, setDecisionInput] = useState<DailyDecisionInput | null>(null);
