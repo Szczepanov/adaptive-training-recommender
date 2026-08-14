@@ -116,6 +116,10 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
   const [showWorkoutDetails, setShowWorkoutDetails] = useState(false);
   const [pendingAdherence, setPendingAdherence] = useState<{ date: string; recommendation: DailyRecommendation } | null>(null);
   const [historySnapshot, setHistorySnapshot] = useState<TrainingHistorySnapshot | null>(null);
+  // ⚡ Bolt Performance Optimization:
+  // Memoized callback to prevent passing new function references to AdherencePrompt on every render.
+  // Expected Impact: Ensures React.memo on AdherencePrompt works as intended.
+  const handlePendingAdherenceResolved = useCallback(() => setPendingAdherence(null), []);
   const dashboardRequest = useRef(0);
   const activeSettings = useMemo(() => {
     if (!decisionInput) return [];
@@ -666,7 +670,7 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
               userId={userId}
               date={pendingAdherence.date}
               recommendation={pendingAdherence.recommendation}
-              onResolved={() => setPendingAdherence(null)}
+              onResolved={handlePendingAdherenceResolved}
             />
           )}
 

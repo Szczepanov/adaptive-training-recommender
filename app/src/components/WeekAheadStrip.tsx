@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, memo } from 'react';
 import type { WeekAheadDay, WeekAheadPlan } from '../engine/planner';
 import type { NextDayPotentialPlan, TrainingIntentProfile } from '../engine/models';
 import './WeekAheadStrip.css';
@@ -42,7 +42,11 @@ function weekdayLabel(dateStr: string): string {
   return WEEKDAY_FORMATTER.format(new Date(dateStr + 'T00:00:00Z'));
 }
 
-export function WeekAheadStrip({ plan, nextDayPlan, selectedTier = 'green', onSelectTier, trainingIntentProfile }: WeekAheadStripProps) {
+// ⚡ Bolt Performance Optimization:
+// Wrapped WeekAheadStrip in React.memo to prevent unnecessary re-renders when the parent dashboard
+// state updates (e.g., toggling workout details).
+// Expected Impact: Prevents recalculation and re-rendering of the 7-day strip layout and logic.
+export const WeekAheadStrip = memo(function WeekAheadStrip({ plan, nextDayPlan, selectedTier = 'green', onSelectTier, trainingIntentProfile }: WeekAheadStripProps) {
   const [selectedIndex, setSelectedIndex] = useState(0);
 
   if (!plan || plan.days.length === 0) return null;
@@ -169,4 +173,4 @@ export function WeekAheadStrip({ plan, nextDayPlan, selectedTier = 'green', onSe
       </div>
     </div>
   );
-}
+});
