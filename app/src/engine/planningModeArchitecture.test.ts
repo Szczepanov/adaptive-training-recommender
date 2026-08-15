@@ -1,5 +1,5 @@
 import { readdirSync, readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as ts from 'typescript';
 import { describe, expect, it } from 'vitest';
@@ -8,12 +8,14 @@ const ENGINE_DIR = dirname(fileURLToPath(import.meta.url));
 const MODE_LITERALS = new Set(['evergreen', 'event_directed']);
 const DIRECT_PROFILE_BRANCH_ALLOWLIST = new Set(['planningMode.ts', 'validation.ts']);
 
-function productionEngineFiles(): string[] {
-    return readdirSync(ENGINE_DIR, { withFileTypes: true })
-        .filter(entry => entry.isFile()
-            && entry.name.endsWith('.ts')
-            && !entry.name.endsWith('.test.ts'))
-        .map(entry => entry.name)
+function productionEngineFiles(directory = ENGINE_DIR): string[] {
+    return readdirSync(directory, { withFileTypes: true })
+        .flatMap(entry => {
+            const absolutePath = join(directory, entry.name);
+            if (entry.isDirectory()) return productionEngineFiles(absolutePath);
+            if (!entry.isFile() || !entry.name.endsWith('.ts') || entry.name.endsWith('.test.ts')) return [];
+            return [absolutePath];
+        })
         .sort();
 }
 
@@ -65,14 +67,16 @@ describe('planning-mode architecture authority', () => {
     it('keeps effective planning-mode derivation inside planningMode.ts', () => {
         const violations: string[] = [];
 
-        for (const fileName of productionEngineFiles()) {
-            const sourceText = readFileSync(join(ENGINE_DIR, fileName), 'utf8');
+        for (const absolutePath of productionEngineFiles()) {
+            const fileName = relative(ENGINE_DIR, absolutePath).replaceAll('\\', '/');
+            const baseName = fileName.split('/').at(-1) ?? fileName;
+            const sourceText = readFileSync(absolutePath, 'utf8');
             const source = ts.createSourceFile(fileName, sourceText, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
 
             const visit = (node: ts.Node): void => {
                 // PlanningContext mode literals are authority output. Production code outside
                 // planningMode.ts may consume the resolved value, but must not construct it.
-                if (fileName !== 'planningMode.ts'
+                if (baseName !== 'planningMode.ts'
                     && ts.isPropertyAssignment(node)
                     && propertyName(node.name) === 'mode'
                     && ts.isStringLiteral(node.initializer)
@@ -82,7 +86,7 @@ describe('planning-mode architecture authority', () => {
 
                 // Persisted profile validation may inspect planningMode for schema validity;
                 // all behavioral branching on that field belongs to planningMode.ts.
-                if (!DIRECT_PROFILE_BRANCH_ALLOWLIST.has(fileName)) {
+                if (!DIRECT_PROFILE_BRANCH_ALLOWLIST.has(baseName)) {
                     const condition = branchCondition(node);
                     if (condition && subtreeContains(condition, isPlanningModeAccess)) {
                         violations.push(`${fileName}:${lineOf(source, node)} branches directly on TrainingIntentProfile.planningMode`);
@@ -96,7 +100,7 @@ describe('planning-mode architecture authority', () => {
                     : ts.isConditionalExpression(node)
                         ? node.condition
                         : null;
-                if (fileName !== 'planningMode.ts'
+                if (baseName !== 'planningMode.ts'
                     && focusCondition
                     && subtreeContains(focusCondition, isFocusEventAccess)
                     && containsModeLiteral(node)) {
