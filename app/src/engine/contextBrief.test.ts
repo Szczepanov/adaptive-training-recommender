@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildContextBrief, briefWindowStart, type ContextBriefInput } from './contextBrief';
+import { addDaysToLocalDateString } from '../utils/localDate';
 import type {
     DailyRecommendation,
     DailyRecoverySnapshot,
@@ -165,6 +166,69 @@ describe('buildContextBrief', () => {
         expect(text).toContain('Totals: 3 sessions · 195 min · 1 tagged hard.');
         expect(text).toContain('- 2026-08-09 → 2026-08-15: 2 sessions · 150 min · 1 hard');
         expect(text).toContain('- 2026-08-02 → 2026-08-08: 1 sessions · 45 min · 0 hard');
+    });
+
+    describe('subjective baseline', () => {
+        // `days` consecutive check-ins ending on `endDate`, so coverage is exactly `days`.
+        function run(endDate: string, days: number, overrides: (offset: number) => Partial<DailySubjectiveCheckin> = () => ({})) {
+            return Array.from({ length: days }, (_, offset) => {
+                const date = addDaysToLocalDateString(endDate, -offset);
+                return checkin(date, overrides(offset));
+            });
+        }
+
+        it('withholds the baseline below the minimum recorded-day count', () => {
+            const text = buildContextBrief(input({ checkins: run(AS_OF, 9) }));
+            expect(text).toContain('No 28-day subjective baseline: only 9 of 28 days recorded (minimum 10)');
+            expect(text).toContain('sparse baseline reads optimistically');
+            expect(text).not.toContain("trailing 28-day baseline");
+        });
+
+        it('shows the baseline once the minimum is met, with its coverage count', () => {
+            const text = buildContextBrief(input({ checkins: run(AS_OF, 10) }));
+            expect(text).toContain("trailing 28-day baseline (10 of 28 days recorded)");
+            expect(text).not.toContain('No 28-day subjective baseline');
+        });
+
+        it('caveats a baseline that is present but sparse, and drops the caveat when dense', () => {
+            const sparse = buildContextBrief(input({ checkins: run(AS_OF, 20) }));
+            const dense = buildContextBrief(input({ checkins: run(AS_OF, 28) }));
+            expect(sparse).toContain('rests on 20 of 28 days');
+            expect(dense).not.toContain('rests on');
+        });
+
+        it('counts distinct days, so duplicate records cannot inflate coverage', () => {
+            const duplicated = [...run(AS_OF, 9), ...run(AS_OF, 9)];
+            expect(duplicated).toHaveLength(18);
+            expect(buildContextBrief(input({ checkins: duplicated }))).toContain('only 9 of 28 days recorded');
+        });
+
+        it('reads a drop in readiness as worse and a drop in fatigue as better', () => {
+            // Recent 14 days: readiness 5 / fatigue 6. Older 14: readiness 8 / fatigue 2.
+            const checkins = run(AS_OF, 28, offset => offset < 14
+                ? { readiness: 5, fatigue: 6 }
+                : { readiness: 8, fatigue: 2 });
+            const text = buildContextBrief(input({ checkins }));
+            expect(text).toContain('Readiness: 5 vs 6.5 (-1.5, worse than baseline)');
+            expect(text).toContain('Fatigue: 6 vs 4 (+2, worse than baseline)');
+        });
+
+        it('reports an unchanged metric as flat rather than as a direction', () => {
+            const text = buildContextBrief(input({ checkins: run(AS_OF, 28) }));
+            expect(text).toContain('Readiness: 7 vs 7 (0, flat)');
+        });
+
+        it('excludes check-ins older than the baseline window', () => {
+            const checkins = [...run(AS_OF, 28), checkin('2026-07-01', { readiness: 1 })];
+            const text = buildContextBrief(input({ checkins }));
+            expect(text).toContain('(28 of 28 days recorded)');
+            expect(text).toContain('Readiness: 7 vs 7');
+        });
+
+        it('states which direction is favourable so deltas cannot be misread', () => {
+            expect(buildContextBrief(input({ checkins: run(AS_OF, 14) })))
+                .toContain('Higher is better for readiness, sleep quality and motivation; higher is worse for fatigue, soreness and mental stress.');
+        });
     });
 
     it('lists the dates on which pain or illness was flagged', () => {

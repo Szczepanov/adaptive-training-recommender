@@ -3,6 +3,7 @@ import {
     briefWindowStart,
     buildContextBrief,
     defaultBriefWindowDays,
+    SUBJECTIVE_BASELINE_DAYS,
     type ContextBriefInput,
 } from '../engine/contextBrief';
 import { addDaysToLocalDateString, getLocalDateString } from '../utils/localDate';
@@ -31,6 +32,8 @@ export class ContextBriefService {
     async build(userId: string, asOfDate?: string, windowDays: number = defaultBriefWindowDays()): Promise<ContextBriefResult> {
         const targetDate = asOfDate ?? getLocalDateString();
         const startDate = briefWindowStart(targetDate, windowDays);
+        const baselineDays = Math.max(SUBJECTIVE_BASELINE_DAYS, windowDays);
+        const baselineStart = briefWindowStart(targetDate, baselineDays);
         // Activity and recommendation range queries are end-exclusive; the brief window
         // is inclusive of targetDate, so the fetch reaches one day further.
         const throughExclusive = addDaysToLocalDateString(targetDate, 1);
@@ -44,7 +47,10 @@ export class ContextBriefService {
         const [snapshotResults, checkinResult, activityResult, recommendationResult, settingsResult, preferencesResult, intentResult] =
             await Promise.allSettled([
                 Promise.all(snapshotDates.map(date => recoverySnapshotService.getRecoverySnapshotByDate(userId, date))),
-                checkinService.getRecentCheckins(userId, windowDays),
+                // A date range, not getRecentCheckins' most-recent-N-documents: with gaps
+                // that returns a longer span than requested, which would make the
+                // baseline's coverage count meaningless (it would always look complete).
+                checkinService.getCheckinsInRange(userId, baselineStart, targetDate),
                 activityService.getActivitiesInRange(userId, startDate, throughExclusive),
                 recommendationService.getRecommendationsInRange(userId, startDate, throughExclusive),
                 trainingSettingsService.getTrainingSettingsState(userId),
@@ -90,6 +96,7 @@ export class ContextBriefService {
         const input: ContextBriefInput = {
             asOfDate: targetDate,
             windowDays,
+            subjectiveBaselineDays: baselineDays,
             snapshots,
             checkins,
             activities,

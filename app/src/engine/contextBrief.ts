@@ -14,8 +14,13 @@ import { addDaysToLocalDateString, getDayDiff } from '../utils/localDate';
 export interface ContextBriefInput {
     asOfDate: string;
     windowDays: number;
+    /** Trailing days used for the subjective baseline the window is compared against.
+     * Must be >= windowDays; `checkins` is expected to cover this full range, not just
+     * the window. Defaults to SUBJECTIVE_BASELINE_DAYS when omitted. */
+    subjectiveBaselineDays?: number;
     /** Any order; the builder sorts. Ascending by date is conventional. */
     snapshots: readonly DailyRecoverySnapshot[];
+    /** Covers `subjectiveBaselineDays`, not merely `windowDays` — the builder slices it. */
     checkins: readonly DailySubjectiveCheckin[];
     activities: readonly NormalizedGarminActivity[];
     recommendations: readonly DailyRecommendation[];
@@ -23,6 +28,27 @@ export interface ContextBriefInput {
     preferences: UserPreferences | null;
     intentProfile: TrainingIntentProfile | null;
 }
+
+/** Trailing days the subjective window average is compared against. Matches the 28-day
+ * horizon the objective baselines already use, so the two halves of the brief describe
+ * drift over the same period. */
+export const SUBJECTIVE_BASELINE_DAYS = 28;
+
+/**
+ * Minimum recorded days before a subjective baseline is shown at all.
+ *
+ * Unlike wearable data, check-ins only exist for days the athlete filled one in, and the
+ * missingness is not random -- check-ins are skipped disproportionately on disrupted
+ * days, which are disproportionately bad ones. A baseline computed from a sparse record
+ * is therefore biased optimistic by construction, which would make a genuine downward
+ * trend read as normal. Below this count the brief states the gap instead of showing a
+ * number that looks authoritative and is not.
+ */
+export const SUBJECTIVE_BASELINE_MIN_DAYS = 10;
+
+/** Above this count the baseline stands on its own; below it, it is shown with an
+ * explicit caveat rather than silently. */
+const SUBJECTIVE_BASELINE_SPARSE_BELOW = 21;
 
 const EQUIPMENT_LABEL: Record<string, string> = {
     free_weights: 'free weights',
@@ -193,16 +219,82 @@ function renderTraining(activities: readonly NormalizedGarminActivity[], asOfDat
     return lines;
 }
 
-function renderSubjective(checkins: readonly DailySubjectiveCheckin[], windowDays: number): string[] {
+const SUBJECTIVE_METRICS: ReadonlyArray<{
+    label: string;
+    read: (checkin: DailySubjectiveCheckin) => number | null;
+    higherIsBetter: boolean;
+}> = [
+    { label: 'Readiness', read: c => c.readiness, higherIsBetter: true },
+    { label: 'Sleep quality', read: c => c.sleepQuality, higherIsBetter: true },
+    { label: 'Motivation', read: c => c.motivation, higherIsBetter: true },
+    { label: 'Fatigue', read: c => c.fatigue, higherIsBetter: false },
+    { label: 'Soreness', read: c => c.soreness, higherIsBetter: false },
+    { label: 'Mental stress', read: c => c.mentalStress, higherIsBetter: false },
+];
+
+/** Compares the window average against the trailing baseline, gated on how many days the
+ * baseline actually rests on. Returns [] when the baseline is withheld. */
+function renderSubjectiveBaseline(
+    windowCheckins: readonly DailySubjectiveCheckin[],
+    baselineCheckins: readonly DailySubjectiveCheckin[],
+    baselineDays: number,
+): string[] {
+    const recordedDays = new Set(baselineCheckins.map(checkin => checkin.date)).size;
+    if (recordedDays < SUBJECTIVE_BASELINE_MIN_DAYS) {
+        return [
+            '',
+            `> No ${baselineDays}-day subjective baseline: only ${recordedDays} of ${baselineDays} days recorded `
+            + `(minimum ${SUBJECTIVE_BASELINE_MIN_DAYS}). Check-ins are skipped more often on disrupted days, so a `
+            + 'sparse baseline reads optimistically — treat the window averages above as absolute values, not as a trend.',
+        ];
+    }
+
+    const lines = [
+        '',
+        `Window average vs this athlete's own trailing ${baselineDays}-day baseline `
+        + `(${recordedDays} of ${baselineDays} days recorded):`,
+    ];
+    for (const metric of SUBJECTIVE_METRICS) {
+        const windowAvg = mean(windowCheckins.map(metric.read));
+        const baselineAvg = mean(baselineCheckins.map(metric.read));
+        if (windowAvg === null || baselineAvg === null) continue;
+        const delta = windowAvg - baselineAvg;
+        const direction = Math.abs(delta) < 0.05
+            ? 'flat'
+            : (delta > 0) === metric.higherIsBetter ? 'better than baseline' : 'worse than baseline';
+        lines.push(`- ${metric.label}: ${round(windowAvg)} vs ${round(baselineAvg)} (${signed(delta)}, ${direction})`);
+    }
+
+    if (recordedDays < SUBJECTIVE_BASELINE_SPARSE_BELOW) {
+        lines.push('');
+        lines.push(
+            `> The baseline above rests on ${recordedDays} of ${baselineDays} days. Missed check-ins cluster on `
+            + 'disrupted days, so it is likely a little optimistic; weight these deltas accordingly.',
+        );
+    }
+    return lines;
+}
+
+function renderSubjective(
+    checkins: readonly DailySubjectiveCheckin[],
+    baselineCheckins: readonly DailySubjectiveCheckin[],
+    windowDays: number,
+    baselineDays: number,
+): string[] {
     const lines: string[] = ['## 4. Subjective reports (self-scored each morning, 1–10)', ''];
     if (checkins.length === 0) {
         lines.push('No check-ins in this window.');
         return lines;
     }
 
+    lines.push('Higher is better for readiness, sleep quality and motivation; higher is worse for fatigue, soreness and mental stress.');
+    lines.push('');
     lines.push(`Averages across ${checkins.length} of ${windowDays} days:`);
     lines.push(`- Readiness ${round(mean(checkins.map(c => c.readiness)))} · fatigue ${round(mean(checkins.map(c => c.fatigue)))} · soreness ${round(mean(checkins.map(c => c.soreness)))}`);
     lines.push(`- Sleep quality ${round(mean(checkins.map(c => c.sleepQuality)))} · motivation ${round(mean(checkins.map(c => c.motivation)))} · mental stress ${round(mean(checkins.map(c => c.mentalStress)))}`);
+    lines.push(...renderSubjectiveBaseline(checkins, baselineCheckins, baselineDays));
+    lines.push('');
+    lines.push('Flags:');
 
     const painDays = checkins.filter(c => c.painOrInjury).map(c => c.date);
     const illnessDays = checkins.filter(c => c.illnessSymptoms).map(c => c.date);
@@ -273,8 +365,14 @@ export function buildContextBrief(input: ContextBriefInput): string {
         items.filter(item => withinWindow(item.date, startDate, asOfDate))
             .sort((a, b) => a.date.localeCompare(b.date));
 
+    const baselineDays = Math.max(input.subjectiveBaselineDays ?? SUBJECTIVE_BASELINE_DAYS, windowDays);
+    const baselineStart = addDaysToLocalDateString(asOfDate, -(baselineDays - 1));
+
     const snapshots = inWindow(input.snapshots);
     const checkins = inWindow(input.checkins);
+    const baselineCheckins = input.checkins
+        .filter(checkin => withinWindow(checkin.date, baselineStart, asOfDate))
+        .sort((a, b) => a.date.localeCompare(b.date));
     const activities = inWindow(input.activities);
     const recommendations = inWindow(input.recommendations);
 
@@ -288,7 +386,7 @@ export function buildContextBrief(input: ContextBriefInput): string {
         renderConstraints(input.trainingSettings, input.preferences),
         renderObjective(snapshots, windowDays),
         renderTraining(activities, asOfDate, windowDays),
-        renderSubjective(checkins, windowDays),
+        renderSubjective(checkins, baselineCheckins, windowDays, baselineDays),
         renderAdherence(recommendations),
         renderIntent(input.intentProfile),
         [
