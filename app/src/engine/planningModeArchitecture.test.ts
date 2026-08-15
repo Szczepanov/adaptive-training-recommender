@@ -5,7 +5,7 @@ import * as ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 
 const ENGINE_DIR = dirname(fileURLToPath(import.meta.url));
-const DIRECT_PROFILE_BRANCH_ALLOWLIST = new Set(['planningMode.ts', 'validation.ts']);
+const DIRECT_PROFILE_ACCESS_ALLOWLIST = new Set(['planningMode.ts', 'validation.ts']);
 
 function productionEngineFiles(directory = ENGINE_DIR): string[] {
     return readdirSync(directory, { withFileTypes: true })
@@ -83,13 +83,6 @@ function containsModeLiteral(node: ts.Node, modeLiterals: ReadonlySet<string>): 
     return subtreeContains(node, candidate => ts.isStringLiteral(candidate) && modeLiterals.has(candidate.text));
 }
 
-function branchCondition(node: ts.Node): ts.Expression | null {
-    if (ts.isIfStatement(node) || ts.isWhileStatement(node) || ts.isDoStatement(node)) return node.expression;
-    if (ts.isConditionalExpression(node)) return node.condition;
-    if (ts.isSwitchStatement(node)) return node.expression;
-    return null;
-}
-
 function lineOf(source: ts.SourceFile, node: ts.Node): number {
     return source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1;
 }
@@ -118,13 +111,12 @@ describe('planning-mode architecture authority', () => {
                     violations.push(`${fileName}:${lineOf(source, node)} constructs effective mode '${node.initializer.text}'`);
                 }
 
-                // Persisted profile validation may inspect planningMode for schema validity;
-                // all behavioral branching on that field belongs to planningMode.ts.
-                if (!DIRECT_PROFILE_BRANCH_ALLOWLIST.has(baseName)) {
-                    const condition = branchCondition(node);
-                    if (condition && subtreeContains(condition, isPlanningModeAccess)) {
-                        violations.push(`${fileName}:${lineOf(source, node)} branches directly on TrainingIntentProfile.planningMode`);
-                    }
+                // No engine module may even read the persisted profile's mode to make its own
+                // decision. validation.ts is the only non-authority exception because it checks
+                // the persisted schema rather than deriving runtime behavior. This also catches
+                // aliasing such as `const mode = profile.planningMode` before a later branch.
+                if (!DIRECT_PROFILE_ACCESS_ALLOWLIST.has(baseName) && isPlanningModeAccess(node)) {
+                    violations.push(`${fileName}:${lineOf(source, node)} reads TrainingIntentProfile.planningMode outside the authority`);
                 }
 
                 // A focus-event null/existence test must never be used outside the authority
