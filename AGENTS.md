@@ -94,9 +94,28 @@ app/src/engine/
   provenance.ts        # Builds the persisted RecommendationAudit
   replay.ts            # Verifies a persisted decision against its own audit
   policy.ts            # POLICY_VERSION -- bump when a decision-affecting change lands
-  stimulus.ts          # V2 fractional objective credit (scaffolding, not yet wired)
+  stimulus.ts          # V2 fractional objective credit; the live credit authority (ADR-0014).
+                       #   Consumed by microcycle.ts, planner.ts, completedTraining.ts
+  planningMode.ts      # THE single authority for effective planning mode (ADR-0017).
+                       #   No other module may derive mode
+  planSchedule.ts      # PlanDefinition / PlanBlock / plan objective definitions
+  planningOverlays.ts  # Authored travel overlays applied to planned dose (ADR-0012)
+  planningCandidate.ts # Planner <-> workout-library boundary; per-workout spacing data
+  coverage.ts          # Exact weekly programming-role coverage, distinct from credit (ADR-0016)
+  weeklyAllocation.ts  # Required weekly-role reservations & typed misses (ADR-0018)
+  evergreenPlanning.ts # Evergreen plan resolution entry point (ADR-0017)
+  evergreenStrategy.ts # Evidence-backed adaptation dose requirements
+  trainingCapacity.ts  # Real sessions/minutes/windows that bound dose packing
+  weeklyDosePacking.ts # Maps dose requirements onto exact workout identities
+  injuryPolicy.ts      # Structured injury constraints & tissue-response tightening
+  taperPolicy.ts       # Event taper window resolution
+  safetyCheckin.ts     # Minimum-safety check-in gate & provisional recommendation
+  sequenceSearch.ts    # Phase 5.1 beam-search prototype -- measured, NOT in any live path
   simulation/          # Scenario harness: runAllScenarios, decision-quality metrics
 ```
+
+This map is a routing aid, not a complete file listing. Where it disagrees with the
+directory, the directory wins.
 
 **Before changing engine behaviour**, read
 `docs/architecture/recommendation-engine.md` (the two selection paths) and the relevant

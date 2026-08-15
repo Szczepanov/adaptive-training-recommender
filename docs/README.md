@@ -69,8 +69,9 @@ Architectural choices, system invariants, and technical trade-offs are documente
 * [**ADR-0018: Weekly Allocation, Safe Role Reservations & Explicit Misses**](./adr/0018-weekly-allocation-and-role-reservations.md) — Accepted production-greedy allocation contract for preserving safe, required weekly roles after PR #17.
 * [**ADR-0019: Externally-Authored Plans & Session Adjudication**](./adr/0019-externally-authored-plans-and-session-adjudication.md) — *Proposed.* A third planning mode in which an imported plan owns selection and the engine owns safety, dose, and weekly critique.
 
-Reserved for work sequenced in [`docs/plans/`](./plans/), written with their phase:
-**0012** plan intent · **0013** structured injury constraints.
+**0013** (structured injury constraints) is reserved for work sequenced in
+[`docs/plans/`](./plans/) and will be written with its phase. ADR-0012 was written and is
+listed above; it is no longer reserved.
 
 ---
 
