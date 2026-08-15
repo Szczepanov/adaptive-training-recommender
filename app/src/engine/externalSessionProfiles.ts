@@ -1,8 +1,8 @@
 import { DEFAULT_COST_BY_MODALITY, DEFAULT_STIMULUS_BY_MODALITY } from './completedTraining';
 import type { GateableSession } from './eligibility';
 import type {
-    CompletedTrainingIntensity,
     ExternalPlanSession,
+    CompletedTrainingIntensity,
     ExternalSessionIntensity,
     ExternalSessionModality,
     SessionTemplate,
@@ -93,5 +93,50 @@ export function toGateableSession(session: ExternalPlanSession): GateableSession
         modality: MODALITY_BY_EXTERNAL[session.gating.modality],
         category: categoryFor(session),
         systemicCost: deriveExternalSessionProfiles(session).systemicCost,
+    };
+}
+
+/** Reserved id namespace for sessions that are not catalog templates. `prescription.ts`
+ * `workoutForTemplate` is deliberately left unaware of it: a synthetic id must never
+ * resolve to a catalog workout, and the UI reads `Recommendation.externalPrescription`
+ * instead (ADR-0019 D-SHIM). */
+export const EXTERNAL_TEMPLATE_ID_PREFIX = 'ext:';
+
+export function externalTemplateId(planId: string, revision: number, sessionId: string): string {
+    return `${EXTERNAL_TEMPLATE_ID_PREFIX}${planId}:${revision}:${sessionId}`;
+}
+
+export function isExternalTemplateId(templateId: string): boolean {
+    return templateId.startsWith(EXTERNAL_TEMPLATE_ID_PREFIX);
+}
+
+/**
+ * Adapts an imported session to a `SessionTemplate`-shaped record so persistence,
+ * provenance, replay and adherence keep working unchanged.
+ *
+ * This is the deliberate trade ADR-0019 D-SHIM records: `Recommendation.template` no
+ * longer always refers to a real catalog entry. The alternative -- widening it to a union
+ * -- is more honest in the type system and touches six modules. The reserved `ext:`
+ * namespace and `externalTemplateNeverInCatalog.test.ts` keep the two populations apart.
+ */
+export function toSyntheticTemplate(session: ExternalPlanSession, planId: string, revision: number): SessionTemplate {
+    const gateable = toGateableSession(session);
+    const profiles = deriveExternalSessionProfiles(session);
+    return {
+        id: externalTemplateId(planId, revision, session.id),
+        title: session.title,
+        description: session.prescription.summary,
+        category: gateable.category,
+        modality: gateable.modality,
+        durationMin: gateable.durationMin,
+        durationMax: gateable.durationMax,
+        requiredEquipment: [...gateable.requiredEquipment],
+        environment: gateable.environment,
+        safetyTags: [],
+        systemicCost: profiles.systemicCost,
+        costProfile: profiles.costProfile,
+        stimulusProfile: profiles.stimulusProfile,
+        // No phaseEligibility: an imported session's timing is owned by its own placement,
+        // not by the engine's event-relative phase gating.
     };
 }

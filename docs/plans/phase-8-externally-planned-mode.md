@@ -148,7 +148,7 @@ session can never return `scale`.
 
 ---
 
-### 8.4 Cost, stimulus, and the synthetic template shim `[-]`
+### 8.4 Cost, stimulus, and the synthetic template shim `[x]`
 
 **Current behaviour.** `completedTraining.ts` derives cost and stimulus for unmatched
 sessions via `DEFAULT_COST_BY_MODALITY` / `DEFAULT_STIMULUS_BY_MODALITY`, discounted through
@@ -174,7 +174,7 @@ credit as an exact catalog match, and no synthetic id reaches the `WORKOUTS` cat
 
 ---
 
-### 8.5 Placement resolution and rescheduling `[ ]`
+### 8.5 Placement resolution and rescheduling `[x]`
 
 **Current behaviour.** No placement layer exists.
 
@@ -382,8 +382,8 @@ gains an optional field.
 | 8.1 | Import contract, storage, validation | `[x]` | — |
 | 8.2 | Widen eligibility to `GateableSession` | `[x]` | — |
 | 8.3 | Session adjudication | `[x]` | — |
-| 8.4 | Cost, stimulus, synthetic shim | `[-]` | — (profiles landed with 8.3; shim and evidence rung outstanding) |
-| 8.5 | Placement and rescheduling | `[ ]` | 8.1 |
+| 8.4 | Cost, stimulus, synthetic shim | `[x]` | — |
+| 8.5 | Placement and rescheduling | `[x]` | — |
 | 8.6 | Planning-mode wiring | `[ ]` | 8.3, 8.4, 8.5 |
 | 8.7 | Weekly critique layer | `[ ]` | 8.6 |
 | 8.8 | Provenance and replay | `[ ]` | 8.6 |

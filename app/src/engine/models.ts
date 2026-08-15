@@ -669,6 +669,19 @@ export interface Recommendation {
     telemetry?: DecisionScoreTelemetry;
     /** Concrete, dated session instructions resolved from the selected template. */
     prescription?: WorkoutPrescription;
+    /** The imported session's own instructions, carried when the recommendation came from
+     * an externally-authored plan. `prescription` stays empty in that case: a synthetic
+     * template has no catalog workout to resolve, and inventing one would misattribute
+     * authored content to the catalog (ADR-0019 D-SHIM). */
+    externalPrescription?: {
+        planId: string;
+        revision: number;
+        sessionId: string;
+        title: string;
+        prescription: ExternalPrescription;
+        scaling?: ExternalSessionScaling;
+        isEvent?: boolean;
+    };
     /** Assigned at the composition boundary immediately before persistence. */
     recommendationAudit?: RecommendationAudit;
     /** Engine trace retained only long enough to create the compact persisted audit. */
@@ -1195,6 +1208,9 @@ export type EvidenceTier =
     | 'completedStructuredWorkout'
     | 'measuredEffort'
     | 'garminTrainingEffect'
+    /** An externally-authored session (ADR-0019 D-EXTTIER): structured and deliberate,
+     * but written against no catalog, so its stimulus is derived rather than authored. */
+    | 'authoredExternal'
     | 'durationIntensity'
     | 'athleteClassification'
     | 'genericModalityFallback';
