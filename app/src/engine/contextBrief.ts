@@ -103,7 +103,7 @@ function withinWindow(date: string, startDate: string, asOfDate: string): boolea
     return date >= startDate && date <= asOfDate;
 }
 
-function renderConstraints(settings: TrainingSettings | null, preferences: UserPreferences | null): string[] {
+function renderConstraints(settings: TrainingSettings | null, preferences: UserPreferences | null, asOfDate: string): string[] {
     const lines: string[] = ['## 1. Constraints', '', 'A session that violates any of these cannot be executed.', ''];
     if (!settings) {
         lines.push('- Training settings unavailable. Do not assume any equipment or absence of injury.');
@@ -118,7 +118,10 @@ function renderConstraints(settings: TrainingSettings | null, preferences: UserP
     const guardrails = Object.entries(settings.guardrails).filter(([, on]) => on).map(([key]) => GUARDRAIL_LABEL[key] ?? key);
     if (guardrails.length > 0) lines.push(`- Safety limits: ${guardrails.join('; ')}`);
 
-    const injuries = (settings.injuries ?? []).filter(injury => !injury.reviewBy || injury.reviewBy >= '0000');
+    // Same expiry rule as injuryPolicy.ts resolveEffectiveInjuryConstraints: an entry
+    // past its review date is ignored, not deleted. Listing an expired injury here would
+    // have the brief restrict a modality the engine itself no longer restricts.
+    const injuries = (settings.injuries ?? []).filter(injury => !injury.reviewBy || injury.reviewBy >= asOfDate);
     if (injuries.length > 0) {
         lines.push('- Injuries:');
         for (const injury of injuries) {
@@ -206,15 +209,21 @@ function renderTraining(activities: readonly NormalizedGarminActivity[], asOfDat
 
     // Rolling 7-day buckets ending on asOfDate, rather than ISO calendar weeks: the
     // athlete re-plans on an arbitrary weekday, so "the last 7 days" is the comparison
-    // that matters and it needs no week-numbering convention to interpret.
+    // that matters and it needs no week-numbering convention to interpret. The final
+    // bucket is clamped to the window start, so a window that is not a multiple of 7
+    // cannot report unmeasured days as measured-and-empty.
+    const windowStart = addDaysToLocalDateString(asOfDate, -(windowDays - 1));
     const bucketCount = Math.ceil(windowDays / 7);
     for (let bucket = 0; bucket < bucketCount; bucket++) {
         const bucketEnd = addDaysToLocalDateString(asOfDate, -7 * bucket);
-        const bucketStart = addDaysToLocalDateString(bucketEnd, -6);
+        const rawStart = addDaysToLocalDateString(bucketEnd, -6);
+        const bucketStart = rawStart < windowStart ? windowStart : rawStart;
         const inBucket = activities.filter(activity => withinWindow(activity.date, bucketStart, bucketEnd));
         const minutes = inBucket.reduce((sum, activity) => sum + (activity.durationMin ?? 0), 0);
         const hard = inBucket.filter(activity => activity.intensityTag === 'hard').length;
-        lines.push(`- ${bucketStart} → ${bucketEnd}: ${inBucket.length} sessions · ${minutes} min · ${hard} hard`);
+        const dayCount = getDayDiff(bucketEnd, bucketStart) + 1;
+        const span = dayCount === 7 ? '' : ` (${dayCount} days)`;
+        lines.push(`- ${bucketStart} → ${bucketEnd}${span}: ${inBucket.length} sessions · ${minutes} min · ${hard} hard`);
     }
     return lines;
 }
@@ -238,7 +247,19 @@ function renderSubjectiveBaseline(
     windowCheckins: readonly DailySubjectiveCheckin[],
     baselineCheckins: readonly DailySubjectiveCheckin[],
     baselineDays: number,
+    windowDays: number,
 ): string[] {
+    // With no days outside the window there is nothing to compare against: every delta
+    // would render as "flat" under a heading claiming a trailing-baseline comparison,
+    // which is worse than saying nothing.
+    if (baselineDays <= windowDays) {
+        return [
+            '',
+            `> No subjective baseline: the ${windowDays}-day window is not shorter than the ${baselineDays}-day `
+            + 'baseline period, so there is no prior history to compare it against.',
+        ];
+    }
+
     const recordedDays = new Set(baselineCheckins.map(checkin => checkin.date)).size;
     if (recordedDays < SUBJECTIVE_BASELINE_MIN_DAYS) {
         return [
@@ -252,7 +273,8 @@ function renderSubjectiveBaseline(
     const lines = [
         '',
         `Window average vs this athlete's own trailing ${baselineDays}-day baseline `
-        + `(${recordedDays} of ${baselineDays} days recorded):`,
+        + `(${recordedDays} of ${baselineDays} days recorded). The baseline period contains the window, `
+        + 'so a sustained change shows up here at roughly half its true size — read the direction, not the magnitude:',
     ];
     for (const metric of SUBJECTIVE_METRICS) {
         const windowAvg = mean(windowCheckins.map(metric.read));
@@ -292,7 +314,7 @@ function renderSubjective(
     lines.push(`Averages across ${checkins.length} of ${windowDays} days:`);
     lines.push(`- Readiness ${round(mean(checkins.map(c => c.readiness)))} · fatigue ${round(mean(checkins.map(c => c.fatigue)))} · soreness ${round(mean(checkins.map(c => c.soreness)))}`);
     lines.push(`- Sleep quality ${round(mean(checkins.map(c => c.sleepQuality)))} · motivation ${round(mean(checkins.map(c => c.motivation)))} · mental stress ${round(mean(checkins.map(c => c.mentalStress)))}`);
-    lines.push(...renderSubjectiveBaseline(checkins, baselineCheckins, baselineDays));
+    lines.push(...renderSubjectiveBaseline(checkins, baselineCheckins, baselineDays, windowDays));
     lines.push('');
     lines.push('Flags:');
 
@@ -365,7 +387,9 @@ export function buildContextBrief(input: ContextBriefInput): string {
         items.filter(item => withinWindow(item.date, startDate, asOfDate))
             .sort((a, b) => a.date.localeCompare(b.date));
 
-    const baselineDays = Math.max(input.subjectiveBaselineDays ?? SUBJECTIVE_BASELINE_DAYS, windowDays);
+    // Not clamped up to windowDays: a baseline equal to the window is meaningless, and
+    // renderSubjectiveBaseline says so rather than printing all-flat deltas.
+    const baselineDays = input.subjectiveBaselineDays ?? SUBJECTIVE_BASELINE_DAYS;
     const baselineStart = addDaysToLocalDateString(asOfDate, -(baselineDays - 1));
 
     const snapshots = inWindow(input.snapshots);
@@ -383,7 +407,7 @@ export function buildContextBrief(input: ContextBriefInput): string {
             `Window: ${startDate} → ${asOfDate} (${windowDays} days). All dates are Europe/Warsaw calendar dates.`,
             'Blank values ("—") mean not measured, not zero. This brief contains no raw device payloads.',
         ],
-        renderConstraints(input.trainingSettings, input.preferences),
+        renderConstraints(input.trainingSettings, input.preferences, asOfDate),
         renderObjective(snapshots, windowDays),
         renderTraining(activities, asOfDate, windowDays),
         renderSubjective(checkins, baselineCheckins, windowDays, baselineDays),

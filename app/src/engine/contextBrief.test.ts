@@ -122,6 +122,23 @@ describe('buildContextBrief', () => {
         expect(text).toContain('restricts Running');
     });
 
+    it('omits an injury whose review date has passed, matching injuryPolicy', () => {
+        const expired: TrainingSettings = {
+            ...settings,
+            injuries: [{ region: 'knee', severity: 'limit', restrictedModalities: ['Running'], reviewBy: '2026-08-14' }],
+        };
+        const text = buildContextBrief(input({ trainingSettings: expired }));
+        expect(text).not.toContain('knee — limit');
+        expect(text).not.toContain('Injuries:');
+    });
+
+    it('keeps an injury whose review date is today or later, and one with no review date', () => {
+        const dueToday: TrainingSettings = { ...settings, injuries: [{ region: 'knee', severity: 'limit', reviewBy: AS_OF }] };
+        const indefinite: TrainingSettings = { ...settings, injuries: [{ region: 'lower_back', severity: 'monitor' }] };
+        expect(buildContextBrief(input({ trainingSettings: dueToday }))).toContain('knee — limit');
+        expect(buildContextBrief(input({ trainingSettings: indefinite }))).toContain('lower_back — monitor');
+    });
+
     it('refuses to imply capability when training settings are unavailable', () => {
         const text = buildContextBrief(input({ trainingSettings: null }));
         expect(text).toContain('Do not assume any equipment or absence of injury');
@@ -166,6 +183,14 @@ describe('buildContextBrief', () => {
         expect(text).toContain('Totals: 3 sessions · 195 min · 1 tagged hard.');
         expect(text).toContain('- 2026-08-09 → 2026-08-15: 2 sessions · 150 min · 1 hard');
         expect(text).toContain('- 2026-08-02 → 2026-08-08: 1 sessions · 45 min · 0 hard');
+    });
+
+    it('clamps the final load bucket to the window instead of reporting unmeasured days as empty', () => {
+        // A 10-day window: the second bucket covers only 3 days, not a full 7.
+        const text = buildContextBrief(input({ windowDays: 10, activities: [activity('2026-08-07')] }));
+        expect(text).toContain('- 2026-08-09 → 2026-08-15: 0 sessions');
+        expect(text).toContain('- 2026-08-06 → 2026-08-08 (3 days): 1 sessions');
+        expect(text).not.toContain('2026-08-02 → 2026-08-08');
     });
 
     describe('subjective baseline', () => {
@@ -223,6 +248,19 @@ describe('buildContextBrief', () => {
             const text = buildContextBrief(input({ checkins }));
             expect(text).toContain('(28 of 28 days recorded)');
             expect(text).toContain('Readiness: 7 vs 7');
+        });
+
+        it('refuses a baseline that is not longer than the window rather than printing all-flat deltas', () => {
+            const text = buildContextBrief(input({
+                windowDays: 28, subjectiveBaselineDays: 28, checkins: run(AS_OF, 28),
+            }));
+            expect(text).toContain('No subjective baseline: the 28-day window is not shorter than the 28-day baseline period');
+            expect(text).not.toContain('flat)');
+        });
+
+        it('warns that the overlapping baseline halves the apparent size of a change', () => {
+            expect(buildContextBrief(input({ checkins: run(AS_OF, 28) })))
+                .toContain('read the direction, not the magnitude');
         });
 
         it('states which direction is favourable so deltas cannot be misread', () => {

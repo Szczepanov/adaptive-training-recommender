@@ -37,23 +37,32 @@ export function DataView({ decisionInput, userId }: DataViewProps) {
     return () => { cancelled = true; };
   }, [activeTab, userId, adherenceStats]);
 
+  const briefDate = decisionInput?.date;
   useEffect(() => {
-    if (activeTab !== 'brief' || brief) return;
+    // Keyed on the date the brief was built for, not merely on its presence: a scenario
+    // switch or a midnight rollover changes `briefDate`, and a presence-only guard would
+    // leave the previous day's brief and range on screen indefinitely.
+    // `briefDate` must be defined for the comparison to settle: passing undefined lets the
+    // service default to today, whose asOfDate would never equal undefined and would
+    // re-trigger this effect on every render.
+    if (activeTab !== 'brief' || !briefDate || brief?.asOfDate === briefDate) return;
     let cancelled = false;
-    contextBriefService.build(userId, decisionInput?.date)
+    contextBriefService.build(userId, briefDate)
       .then(result => { if (!cancelled) { setBrief(result); setBriefError(null); } })
       .catch(() => { if (!cancelled) setBriefError('Could not assemble the brief. Retry the dashboard refresh.'); });
     return () => { cancelled = true; };
-  }, [activeTab, userId, brief, decisionInput?.date]);
+  }, [activeTab, userId, brief?.asOfDate, briefDate]);
 
   const copyBrief = async () => {
     if (!brief) return;
     try {
       await navigator.clipboard.writeText(brief.text);
+      setBriefError(null);
       setBriefCopied(true);
       window.setTimeout(() => setBriefCopied(false), 2000);
     } catch {
       // Clipboard permission can be denied; the textarea below is always selectable.
+      setBriefCopied(false);
       setBriefError('Copy was blocked. Select the text below and copy it manually.');
     }
   };
