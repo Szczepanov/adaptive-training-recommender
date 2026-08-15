@@ -204,6 +204,51 @@ The app renders this and stores it; no gate reads it. `summary` is required, `st
 optional. `target` and `notes` are free text — this is where the specificity that
 `SessionTemplate` cannot express actually lives.
 
+#### Step duration is second-granular below two minutes
+
+A step carries **either** `durationMin` (integer minutes) **or** `durationSec` (integer
+seconds), never both; likewise `recoveryMin` / `recoverySec`. Use the seconds form for
+anything under two minutes.
+
+This exists because the first real generated plan needed it eight times and had no way to
+say so. Asked for minutes, the authoring AI improvised fractions — `0.5` for a 30-second
+VO2 rep, `0.25` for a 15-second sprint touch, `0.17` for a 10-second acceleration. Those
+are lossy in a way that matters: `0.17` minutes is 10.2 seconds and `0.33` is 19.8, so the
+intended 10s and 20s efforts cannot be recovered from the number. Cycling intervals are
+second-granular; a minutes-only step model cannot express the sport.
+
+```jsonc
+{ "name": "VO2 rep", "durationSec": 30, "recoverySec": 15,
+  "repeat": 10, "sets": 3, "setRecoveryMin": 4,
+  "target": "320–350 W, RPE 8" }
+```
+
+#### Repetition has two levels, because sessions do
+
+`repeat` and `recoveryMin`/`recoverySec` describe reps within a set. `sets` and
+`setRecoveryMin`/`setRecoverySec` describe sets within the step. Both optional; a step
+with only `repeat` is a single set.
+
+Without this, "3 sets of 10 × 30s/15s with 4 min between sets" has to be flattened to
+`repeat: 30` with the set structure buried in `notes` — which is what the first real plan
+did. A reader (or a UI) then renders "30 × 30s" straight through, which is a materially
+harder session than the one the author wrote.
+
+#### The app owns daily adjustment, so the plan should not
+
+Do not encode readiness rules — green/yellow/red policy, "skip quality work if HRV is
+down", "extend if fresh" — in `notes` or anywhere else. Adjudicating today's session
+against today's readiness is the application's job (ADR-0019 D-CANDIDATE), and a second
+policy in the plan can only agree with it by luck.
+
+The first real generated plan put a full autoregulation protocol in the top-level `notes`,
+unprompted. It is harmless free text, but two policies that can disagree is exactly the
+failure the import path exists to avoid.
+
+`notes` remains the right place for athlete and equipment context that the app genuinely
+does not know — which power meter is the reference, that wattage targets are anchors and
+RPE overrides them, which prior block this plan follows on from.
+
 ---
 
 ## Storage (proposed)
@@ -259,8 +304,11 @@ Paste this above the plan request when asking an AI to author or revise a plan.
 > - `objectives`: zero or more of `threshold_quality`, `surge_repeatability`,
 >   `zone2_aerobic`, `strength_maintenance`, `strength_development`,
 >   `race_specific_endurance`, `vo2_max`.
-> - `prescription`: `summary`, plus optional `steps` with `name`, `durationMin`, `target`,
->   and optional `repeat`, `recoveryMin`, `notes`.
+> - `prescription`: `summary`, plus optional `steps`. A step has `name`, `target`, and
+>   **either** `durationMin` (integer minutes) **or** `durationSec` (integer seconds) —
+>   use seconds for anything under two minutes. Optional: `repeat` and
+>   `recoveryMin`/`recoverySec` for reps within a set, `sets` and
+>   `setRecoveryMin`/`setRecoverySec` for sets within the step, and `notes`.
 > - `scaling`: `reducedSummary` (how to cut this session down while keeping its purpose),
 >   `reducedDurationMin`, `minimumUsefulDurationMin` (below this, skipping is better than
 >   a fragment), `fallback` (advisory author suggestion shown if the equipment or venue is
@@ -268,6 +316,11 @@ Paste this above the plan request when asking an AI to author or revise a plan.
 >
 > Do not include travel weeks, illness, or time off — those are handled separately by the
 > app's own calendar. Plan as if every scheduled day is available.
+>
+> Do not encode readiness or autoregulation rules anywhere, including `notes`. The app
+> adjudicates each session against that morning's data and owns all green/yellow/red
+> decisions. Use `notes` only for context the app cannot know: which power meter is the
+> reference, whether wattage targets or RPE take precedence, what block preceded this one.
 
 That last paragraph matters: without it an AI will helpfully invent a deload for a trip it
 was told about, and that dose reduction would then be applied twice — once by the plan and
@@ -289,9 +342,41 @@ alongside it. Each is cheap to revisit.
 | `objectives` optional vs. required | **Optional**, with coarse derivation when absent and a post-import prompt inviting confirmation. Requiring it hurts import reliability; omitting it silently would degrade the weekly critique to a guess — so the app asks rather than demands. |
 | Performance targets | **Free text** in this phase. Structured zones resolved against `AthletePerformanceProfile` are more useful downstream and materially less reliable to import; revisit once the loop works. |
 
+### Round-trip result (2026-08-15)
+
+The schema has now met a real generated plan: a 21-session, 4-week road-race peak block,
+authored from the prompt block below with no hand-editing.
+
+**Zero hard schema errors.** Every enum was correct. Rest days were omitted as instructed.
+`flexibility: fixed` was always paired with a `preferredDay`. No `reducedDurationMin`
+exceeded its session's `durationMax`. Every session carried a `scaling` block — the least
+conventional part of the contract, and the one most expected to be dropped.
+
+**D-RELDATE is validated.** The plan's relative placement resolved to the athlete's real
+race date exactly: `startDate` 2026-08-17 (a Monday, as required) plus week 4 Sunday lands
+on 2026-09-13. The AI had to get one date right and did; asked to compute twenty-one, it
+would very likely not have.
+
+**Three revisions came out of it**, all now folded into the sections above: second-granular
+step durations, two-level repetition, and an explicit instruction not to encode
+autoregulation policy. Each was invisible to review and obvious within one real plan.
+
 ### Still open
 
-**The schema has not yet met a real generated plan.** [Phase 8](./plans/phase-8-externally-planned-mode.md)
-makes one round-trip a precondition of its first work item, because a schema reviewed only
-by reading will be wrong in ways that review does not surface. Expect revision; the
-`schema` version tag exists for exactly that.
+**Is a target event a session?** The generated plan included the race itself as a session —
+`intensity: max`, `flexibility: fixed`, on the event date. The app already models events as
+`UserEvent`, which is what drives periodization and taper, so an imported race would be a
+second representation of the same thing. Two questions follow, and ADR-0019 does not answer
+either:
+
+* Should an imported session on an event date be adjudicated at all? Telling an athlete to
+  skip a race they have entered is not the same speech act as telling them to skip an
+  interval session.
+* Does the schema need an explicit marker (`isEvent`, or a `race` intensity/role) so the
+  app links the session to its `UserEvent` instead of treating it as prescribed training?
+
+**`reducedSummary` versus `fallback` is blurrier in practice than in the contract.** For its
+dress-rehearsal session the plan wrote, in `reducedSummary`, "do not perform a compromised
+full simulation — ride easily instead and retry later in the week." That is a substitution
+and a deferral, not a reduced dose. The distinction the schema draws between scaling down
+and doing something else does not survive contact with sessions whose value is all-or-nothing.
