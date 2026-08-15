@@ -46,9 +46,21 @@ export const SUBJECTIVE_BASELINE_DAYS = 28;
  */
 export const SUBJECTIVE_BASELINE_MIN_DAYS = 10;
 
-/** Above this count the baseline stands on its own; below it, it is shown with an
- * explicit caveat rather than silently. */
-const SUBJECTIVE_BASELINE_SPARSE_BELOW = 21;
+/** Coverage thresholds scale with the baseline period, because the service lengthens it
+ * for long windows (`max(28, windowDays * 2)`). Fixed day counts would silently relax:
+ * 21 recorded days is 75% of a 28-day baseline but only 38% of a 56-day one, and the
+ * absolute rule would print the longer, thinner baseline with no caveat at all. Both
+ * ratios are chosen to reproduce the documented 28-day behaviour exactly (10 and 21). */
+const SUBJECTIVE_BASELINE_MIN_RATIO = 10 / SUBJECTIVE_BASELINE_DAYS;
+const SUBJECTIVE_BASELINE_SPARSE_RATIO = 21 / SUBJECTIVE_BASELINE_DAYS;
+
+function minimumRecordedDays(baselineDays: number): number {
+    return Math.max(SUBJECTIVE_BASELINE_MIN_DAYS, Math.ceil(baselineDays * SUBJECTIVE_BASELINE_MIN_RATIO));
+}
+
+function sparseBelowDays(baselineDays: number): number {
+    return Math.ceil(baselineDays * SUBJECTIVE_BASELINE_SPARSE_RATIO);
+}
 
 const EQUIPMENT_LABEL: Record<string, string> = {
     free_weights: 'free weights',
@@ -267,15 +279,17 @@ function renderSubjectiveBaseline(
     const recordedDays = new Set(
         baselineCheckins.filter(checkin => checkin.dataQuality.isComplete).map(checkin => checkin.date),
     ).size;
-    if (recordedDays < SUBJECTIVE_BASELINE_MIN_DAYS) {
+    const minimumDays = minimumRecordedDays(baselineDays);
+    if (recordedDays < minimumDays) {
         return [
             '',
             `> No ${baselineDays}-day subjective baseline: only ${recordedDays} of ${baselineDays} days recorded `
-            + `(minimum ${SUBJECTIVE_BASELINE_MIN_DAYS}). Check-ins are skipped more often on disrupted days, so a `
+            + `(minimum ${minimumDays}). Check-ins are skipped more often on disrupted days, so a `
             + 'sparse baseline reads optimistically — treat the window averages above as absolute values, not as a trend.',
         ];
     }
 
+    const metricLines: string[] = [];
     const lines = [
         '',
         `Window average vs this athlete's own trailing ${baselineDays}-day baseline `
@@ -290,10 +304,21 @@ function renderSubjectiveBaseline(
         const direction = Math.abs(delta) < 0.05
             ? 'flat'
             : (delta > 0) === metric.higherIsBetter ? 'better than baseline' : 'worse than baseline';
-        lines.push(`- ${metric.label}: ${round(windowAvg)} vs ${round(baselineAvg)} (${signed(delta)}, ${direction})`);
+        metricLines.push(`- ${metric.label}: ${round(windowAvg)} vs ${round(baselineAvg)} (${signed(delta)}, ${direction})`);
     }
 
-    if (recordedDays < SUBJECTIVE_BASELINE_SPARSE_BELOW) {
+    // Every metric can be skipped when the window holds only safety-only partials, which
+    // would otherwise leave the heading promising a comparison and nothing beneath it.
+    if (metricLines.length === 0) {
+        return [
+            '',
+            `> No subjective baseline comparison: the ${baselineDays}-day history has enough recorded days, `
+            + 'but no metric is scored on both sides of the comparison.',
+        ];
+    }
+    lines.push(...metricLines);
+
+    if (recordedDays < sparseBelowDays(baselineDays)) {
         lines.push('');
         lines.push(
             `> The baseline above rests on ${recordedDays} of ${baselineDays} days. Missed check-ins cluster on `

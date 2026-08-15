@@ -59,7 +59,10 @@ export class ContextBriefService {
                 checkinService.getCheckinsInRange(userId, baselineStart, targetDate),
                 activityService.getActivitiesInRange(userId, startDate, throughExclusive),
                 recommendationService.getRecommendationsInRange(userId, startDate, throughExclusive),
-                trainingSettingsService.getTrainingSettingsState(userId),
+                // peek, not get: the brief is read-only and must not create a settings
+                // profile as a side effect of being looked at (DataView presents it as
+                // "generating it changes nothing").
+                trainingSettingsService.peekTrainingSettingsState(userId),
                 preferencesService.getPreferencesState(userId),
                 trainingIntentProfileService.getProfileState(userId),
             ] as const);

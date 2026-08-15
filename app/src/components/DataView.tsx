@@ -21,7 +21,10 @@ function describeSourceState(status: 'MISSING' | 'INVALID' | 'UNAVAILABLE'): str
 export function DataView({ decisionInput, userId }: DataViewProps) {
   const [activeTab, setActiveTab] = useState<'recovery' | 'checkin' | 'goals' | 'constraints' | 'preferences' | 'adherence' | 'brief'>('recovery');
   const [brief, setBrief] = useState<ContextBriefResult | null>(null);
-  const [briefError, setBriefError] = useState<string | null>(null);
+  // Tagged with the date it belongs to, so a failure for one date is not rendered
+  // against another. Deriving visibility this way avoids clearing state from inside
+  // the effect body, which react-hooks/set-state-in-effect correctly rejects.
+  const [briefError, setBriefError] = useState<{ date: string; message: string } | null>(null);
   const [briefCopied, setBriefCopied] = useState(false);
   // null doubles as "not loaded yet" -- once getAdherenceStats resolves it's always a
   // real (possibly all-zero) stats object, so this alone distinguishes loading from an
@@ -49,7 +52,15 @@ export function DataView({ decisionInput, userId }: DataViewProps) {
     let cancelled = false;
     contextBriefService.build(userId, briefDate)
       .then(result => { if (!cancelled) { setBrief(result); setBriefError(null); } })
-      .catch(() => { if (!cancelled) setBriefError('Could not assemble the brief. Retry the dashboard refresh.'); });
+      .catch(() => {
+        if (cancelled) return;
+        // Drop the stale result rather than leaving the previous date's brief and range on
+        // screen under an error banner -- Copy would otherwise hand the athlete yesterday's
+        // window while the page claims today's.
+        setBrief(null);
+        setBriefCopied(false);
+        setBriefError({ date: briefDate, message: 'Could not assemble the brief. Retry the dashboard refresh.' });
+      });
     return () => { cancelled = true; };
   }, [activeTab, userId, brief?.asOfDate, briefDate]);
 
@@ -63,7 +74,7 @@ export function DataView({ decisionInput, userId }: DataViewProps) {
     } catch {
       // Clipboard permission can be denied; the textarea below is always selectable.
       setBriefCopied(false);
-      setBriefError('Copy was blocked. Select the text below and copy it manually.');
+      setBriefError({ date: brief.asOfDate, message: 'Copy was blocked. Select the text below and copy it manually.' });
     }
   };
 
@@ -499,6 +510,8 @@ export function DataView({ decisionInput, userId }: DataViewProps) {
     </div>
   );
 
+  const visibleBriefError = briefError && briefError.date === briefDate ? briefError.message : null;
+
   const renderContextBrief = () => (
     <div className="data-section">
       <h3>Context brief</h3>
@@ -507,8 +520,8 @@ export function DataView({ decisionInput, userId }: DataViewProps) {
         training, subjective scores, and adherence — for pasting into an external planner.
         Read-only: generating it changes nothing.
       </p>
-      {briefError && <p className="data-state-notice">{briefError}</p>}
-      {!brief && !briefError && <p>Assembling...</p>}
+      {visibleBriefError && <p className="data-state-notice">{visibleBriefError}</p>}
+      {!brief && !visibleBriefError && <p>Assembling...</p>}
       {brief && (
         <>
           {brief.unavailableSources.length > 0 && (

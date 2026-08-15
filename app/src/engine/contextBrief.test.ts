@@ -263,6 +263,36 @@ describe('buildContextBrief', () => {
                 .toContain('read the direction, not the magnitude');
         });
 
+        it('scales the coverage thresholds with the baseline period', () => {
+            // 21 recorded days is 75% of a 28-day baseline but only 38% of a 56-day one.
+            const shortBaseline = buildContextBrief(input({ checkins: run(AS_OF, 21) }));
+            expect(shortBaseline).not.toContain('rests on');
+
+            const longBaseline = buildContextBrief(input({
+                windowDays: 14, subjectiveBaselineDays: 56, checkins: run(AS_OF, 21),
+            }));
+            expect(longBaseline).toContain('rests on 21 of 56 days');
+        });
+
+        it('raises the minimum recorded-day count for a longer baseline', () => {
+            const text = buildContextBrief(input({
+                windowDays: 14, subjectiveBaselineDays: 56, checkins: run(AS_OF, 19),
+            }));
+            expect(text).toContain('only 19 of 56 days recorded (minimum 20)');
+        });
+
+        it('never prints the comparison heading with no metric lines beneath it', () => {
+            // Enough recorded days to clear the gate, but every score is null, so every
+            // metric line is skipped.
+            const unscored = Array.from({ length: 14 }, (_, offset) => checkin(
+                addDaysToLocalDateString(AS_OF, -offset),
+                { readiness: null, sleepQuality: null, motivation: null, fatigue: null, soreness: null, mentalStress: null },
+            ));
+            const text = buildContextBrief(input({ checkins: unscored }));
+            expect(text).toContain('no metric is scored on both sides of the comparison');
+            expect(text).not.toContain('read the direction, not the magnitude');
+        });
+
         it('states which direction is favourable so deltas cannot be misread', () => {
             expect(buildContextBrief(input({ checkins: run(AS_OF, 14) })))
                 .toContain('Higher is better for readiness, sleep quality and motivation; higher is worse for fatigue, soreness and mental stress.');

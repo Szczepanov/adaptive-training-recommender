@@ -127,16 +127,32 @@ export class TrainingSettingsService {
         return doc(getDb(), 'users', userId, COLLECTION, DOCUMENT);
     }
 
-    async getTrainingSettingsState(userId: string): Promise<DataState<TrainingSettings>> {
+    /** Strictly read-only: a missing profile is reported `MISSING` rather than migrated
+     * into existence. Callers that merely *observe* settings must use this, so that
+     * looking at data cannot create it. `getTrainingSettingsState` layers the documented
+     * first-run migration on top. */
+    async peekTrainingSettingsState(userId: string): Promise<DataState<TrainingSettings>> {
         try {
             const snapshot = await getDoc(this.ref(userId));
-            if (snapshot.exists()) {
-                const parsed = parseTrainingSettings(snapshot.data(), userId);
-                if (!parsed) {
-                    return { status: 'INVALID', issues: [{ code: 'schema-validation-failed', documentPath: `users/${userId}/${COLLECTION}/${DOCUMENT}` }] };
-                }
-                return { status: 'AVAILABLE', data: parsed, revision: parsed.updatedAt };
+            if (!snapshot.exists()) return { status: 'MISSING' };
+            const parsed = parseTrainingSettings(snapshot.data(), userId);
+            if (!parsed) {
+                return { status: 'INVALID', issues: [{ code: 'schema-validation-failed', documentPath: `users/${userId}/${COLLECTION}/${DOCUMENT}` }] };
             }
+            return { status: 'AVAILABLE', data: parsed, revision: parsed.updatedAt };
+        } catch (error: unknown) {
+            return {
+                status: 'UNAVAILABLE',
+                operation: 'read training settings',
+                retryable: getErrorCode(error) !== 'permission-denied',
+            };
+        }
+    }
+
+    async getTrainingSettingsState(userId: string): Promise<DataState<TrainingSettings>> {
+        try {
+            const existing = await this.peekTrainingSettingsState(userId);
+            if (existing.status !== 'MISSING') return existing;
 
             // A missing settings profile is the documented first-run migration path,
             // not an unavailable source. Its write is still subject to Firestore rules.

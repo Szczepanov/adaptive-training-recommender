@@ -115,16 +115,22 @@ describe('planning-mode architecture authority', () => {
 
         for (const absolutePath of productionEngineFiles()) {
             const fileName = relative(SRC_DIR, absolutePath).replaceAll('\\', '/');
-            const baseName = fileName.split('/').at(-1) ?? fileName;
             const sourceText = readFileSync(absolutePath, 'utf8');
-            const source = ts.createSourceFile(fileName, sourceText, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+            // ScriptKind must follow the extension. Parsing a .tsx file as TS silently
+            // disables JSX parsing, so every expression inside a JSX attribute becomes
+            // invisible to the traversal below -- which would make the whole reason this
+            // scan was widened to components inert.
+            const source = ts.createSourceFile(
+                fileName, sourceText, ts.ScriptTarget.Latest, true,
+                fileName.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
+            );
 
             const visit = (node: ts.Node): void => {
                 // PlanningContext mode literals are authority output. Production code outside
                 // planningMode.ts may consume the resolved value, but must not construct it.
                 // Derive the literal set from PlanningMode itself so a future third mode is
                 // guarded automatically when the union widens.
-                if (baseName !== 'planningMode.ts'
+                if (fileName !== 'engine/planningMode.ts'
                     && ts.isPropertyAssignment(node)
                     && propertyName(node.name) === 'mode'
                     && ts.isStringLiteral(node.initializer)
@@ -147,7 +153,7 @@ describe('planning-mode architecture authority', () => {
                     : ts.isConditionalExpression(node)
                         ? node.condition
                         : null;
-                if (baseName !== 'planningMode.ts'
+                if (fileName !== 'engine/planningMode.ts'
                     && focusCondition
                     && subtreeContains(focusCondition, isFocusEventAccess)
                     && containsModeLiteral(node, modeLiterals)) {

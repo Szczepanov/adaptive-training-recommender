@@ -6,6 +6,7 @@ const services = vi.hoisted(() => ({
     getActivitiesInRange: vi.fn(),
     getRecommendationsInRange: vi.fn(),
     getTrainingSettingsState: vi.fn(),
+    peekTrainingSettingsState: vi.fn(),
     getPreferencesState: vi.fn(),
     getProfileState: vi.fn(),
 }));
@@ -14,7 +15,10 @@ vi.mock('./recoverySnapshotService', () => ({ recoverySnapshotService: { getReco
 vi.mock('./checkinService', () => ({ checkinService: { getCheckinsInRange: services.getCheckinsInRange } }));
 vi.mock('./activityService', () => ({ activityService: { getActivitiesInRange: services.getActivitiesInRange } }));
 vi.mock('./recommendationService', () => ({ recommendationService: { getRecommendationsInRange: services.getRecommendationsInRange } }));
-vi.mock('./trainingSettingsService', () => ({ trainingSettingsService: { getTrainingSettingsState: services.getTrainingSettingsState } }));
+vi.mock('./trainingSettingsService', () => ({ trainingSettingsService: {
+    getTrainingSettingsState: services.getTrainingSettingsState,
+    peekTrainingSettingsState: services.peekTrainingSettingsState,
+} }));
 vi.mock('./preferencesService', () => ({ preferencesService: { getPreferencesState: services.getPreferencesState } }));
 vi.mock('./trainingIntentProfileService', () => ({ trainingIntentProfileService: { getProfileState: services.getProfileState } }));
 
@@ -30,6 +34,7 @@ describe('ContextBriefService', () => {
         services.getActivitiesInRange.mockResolvedValue({ status: 'AVAILABLE', data: [], revision: null });
         services.getRecommendationsInRange.mockResolvedValue({ status: 'AVAILABLE', data: [], revision: null });
         services.getTrainingSettingsState.mockResolvedValue({ status: 'MISSING' });
+        services.peekTrainingSettingsState.mockResolvedValue({ status: 'MISSING' });
         services.getPreferencesState.mockResolvedValue({ status: 'MISSING' });
         services.getProfileState.mockResolvedValue({ status: 'MISSING' });
     });
@@ -89,6 +94,7 @@ describe('ContextBriefService', () => {
         services.getActivitiesInRange.mockRejectedValue(new Error('offline'));
         services.getRecommendationsInRange.mockRejectedValue(new Error('offline'));
         services.getTrainingSettingsState.mockRejectedValue(new Error('offline'));
+        services.peekTrainingSettingsState.mockRejectedValue(new Error('offline'));
         services.getPreferencesState.mockRejectedValue(new Error('offline'));
         services.getProfileState.mockRejectedValue(new Error('offline'));
 
@@ -97,5 +103,14 @@ describe('ContextBriefService', () => {
         expect(result.unavailableSources).toContain('recovery snapshots');
         expect(result.unavailableSources).toContain('training settings');
         expect(result.text).toContain('Do not assume any equipment or absence of injury');
+    });
+
+    it('never writes a training settings profile as a side effect of being read', async () => {
+        await new ContextBriefService().build('u1', AS_OF, 14);
+        // getTrainingSettingsState migrates a missing profile into existence with setDoc.
+        // The brief is presented to the athlete as read-only, so it must peek instead --
+        // opening a tab must not create data.
+        expect(services.peekTrainingSettingsState).toHaveBeenCalledWith('u1');
+        expect(services.getTrainingSettingsState).not.toHaveBeenCalled();
     });
 });
