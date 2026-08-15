@@ -37,7 +37,17 @@ import type {
     TrainingIntentProfile,
     PlanningMode,
     TrainingPriority,
+    EquipmentKey,
+    ObjectiveKey,
+    ExternalTrainingPlan,
+    ExternalSessionModality,
+    ExternalSessionIntensity,
+    ExternalSessionPriority,
+    ExternalPlacementFlexibility,
+    ExternalIfMissed,
+    ExternalWeekday,
 } from './models';
+import { EXTERNAL_PLAN_SCHEMA } from './models';
 import { validateEventTiming, BODY_REGIONS, TISSUE_LEVELS } from './models';
 import { deriveGoalCategory } from './periodization';
 import { EVENT_PRESETS } from './eventPresets';
@@ -1229,4 +1239,219 @@ export function validateTrainingIntentProfile(raw: any): ValidationResult<Traini
     if (typeof raw.createdAt !== 'string' || typeof raw.updatedAt !== 'string') errors.push({ field: 'timestamps', message: 'createdAt and updatedAt must be strings' });
     if (errors.length > 0) return { isValid: false, errors };
     return { isValid: true, errors: [], data: raw as TrainingIntentProfile };
+}
+
+// --- Externally-authored plans (ADR-0019, Phase 8.1) ---
+
+const EXTERNAL_MODALITIES: ExternalSessionModality[] = ['cycling', 'running', 'strength', 'field', 'mobility', 'cross_training'];
+const EXTERNAL_INTENSITIES: ExternalSessionIntensity[] = ['recovery', 'easy', 'moderate', 'hard', 'max'];
+const EXTERNAL_PRIORITIES: ExternalSessionPriority[] = ['key', 'supporting', 'optional'];
+const EXTERNAL_FLEXIBILITY: ExternalPlacementFlexibility[] = ['fixed', 'preferred', 'any_day'];
+const EXTERNAL_IF_MISSED: ExternalIfMissed[] = ['drop', 'reschedule_within_week', 'carry_forward'];
+const EXTERNAL_WEEKDAYS: ExternalWeekday[] = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+const EXTERNAL_EQUIPMENT: EquipmentKey[] = ['free_weights', 'cable_machine', 'treadmill', 'indoor_bike', 'pullup_bar'];
+const EXTERNAL_ENVIRONMENTS: TrainingEnvironment[] = ['indoor', 'outdoor', 'either'];
+const EXTERNAL_OBJECTIVES: ObjectiveKey[] = [
+    'threshold_quality', 'surge_repeatability', 'zone2_aerobic', 'strength_maintenance',
+    'strength_development', 'race_specific_endurance', 'vo2_max',
+];
+
+/** Bounds from the published contract: they keep the placement overlay a single small
+ * read and reject a runaway generation rather than storing it. */
+export const EXTERNAL_PLAN_MAX_WEEKS = 26;
+export const EXTERNAL_PLAN_MAX_SESSIONS = 120;
+
+const PLAN_KEYS = ['schema', 'planId', 'revision', 'title', 'startDate', 'weekCount', 'notes', 'sessions'];
+const SESSION_KEYS = ['id', 'title', 'priority', 'placement', 'gating', 'objectives', 'prescription', 'scaling', 'isEvent'];
+const PLACEMENT_KEYS = ['week', 'preferredDay', 'flexibility', 'ifMissed'];
+const GATING_KEYS = ['modality', 'intensity', 'durationMin', 'durationMax', 'environment', 'equipment'];
+const SCALING_KEYS = ['reducible', 'reducedSummary', 'reducedDurationMin', 'minimumUsefulDurationMin', 'fallback'];
+const STEP_KEYS = ['name', 'target', 'durationMin', 'durationSec', 'repeat', 'recoveryMin', 'recoverySec', 'sets', 'setRecoveryMin', 'setRecoverySec', 'notes'];
+
+function unknownKeys(raw: Record<string, unknown>, allowed: string[]): string[] {
+    return Object.keys(raw).filter(key => !allowed.includes(key));
+}
+
+function isPositiveInt(value: unknown, min: number, max: number): boolean {
+    return typeof value === 'number' && Number.isInteger(value) && value >= min && value <= max;
+}
+
+/** Monday-based weeks: the contract requires it so week/day placement resolves to real
+ * dates without the authoring AI doing calendar arithmetic (D-RELDATE). */
+function isMonday(date: string): boolean {
+    const [year, month, day] = date.split('-').map(Number);
+    return new Date(Date.UTC(year, month - 1, day)).getUTCDay() === 1;
+}
+
+function validateExternalStep(raw: any, path: string, errors: ValidationError[]): void {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+        errors.push({ field: path, message: 'Step must be an object' });
+        return;
+    }
+    const extra = unknownKeys(raw, STEP_KEYS);
+    if (extra.length) errors.push({ field: path, message: `Unrecognized step field(s): ${extra.join(', ')}` });
+    if (typeof raw.name !== 'string' || !raw.name) errors.push({ field: `${path}.name`, message: 'Step name is required' });
+
+    // Minutes XOR seconds, on each of the three duration pairs. Accepting both would make
+    // the effective duration ambiguous; accepting fractional minutes is what the contract
+    // added seconds to avoid.
+    for (const [minKey, secKey] of [['durationMin', 'durationSec'], ['recoveryMin', 'recoverySec'], ['setRecoveryMin', 'setRecoverySec']]) {
+        const hasMin = raw[minKey] !== undefined;
+        const hasSec = raw[secKey] !== undefined;
+        if (hasMin && hasSec) errors.push({ field: `${path}.${minKey}`, message: `Use ${minKey} or ${secKey}, not both` });
+        if (hasMin && !isPositiveInt(raw[minKey], 1, 600)) errors.push({ field: `${path}.${minKey}`, message: 'Minutes must be a whole number 1-600' });
+        if (hasSec && !isPositiveInt(raw[secKey], 1, 36000)) errors.push({ field: `${path}.${secKey}`, message: 'Seconds must be a whole number 1-36000' });
+    }
+    for (const key of ['repeat', 'sets']) {
+        if (raw[key] !== undefined && !isPositiveInt(raw[key], 1, 200)) {
+            errors.push({ field: `${path}.${key}`, message: `${key} must be a whole number 1-200` });
+        }
+    }
+    for (const key of ['target', 'notes']) {
+        if (raw[key] !== undefined && typeof raw[key] !== 'string') errors.push({ field: `${path}.${key}`, message: `${key} must be a string` });
+    }
+}
+
+function validateExternalSession(raw: any, index: number, weekCount: number, errors: ValidationError[]): void {
+    const path = `sessions[${index}]`;
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+        errors.push({ field: path, message: 'Session must be an object' });
+        return;
+    }
+    const extra = unknownKeys(raw, SESSION_KEYS);
+    if (extra.length) errors.push({ field: path, message: `Unrecognized session field(s): ${extra.join(', ')}` });
+    if (typeof raw.id !== 'string' || !raw.id) errors.push({ field: `${path}.id`, message: 'Session id is required' });
+    if (typeof raw.title !== 'string' || !raw.title) errors.push({ field: `${path}.title`, message: 'Session title is required' });
+    if (!EXTERNAL_PRIORITIES.includes(raw.priority)) errors.push({ field: `${path}.priority`, message: 'Unsupported priority' });
+    if (raw.isEvent !== undefined && typeof raw.isEvent !== 'boolean') errors.push({ field: `${path}.isEvent`, message: 'isEvent must be a boolean' });
+
+    const placement = raw.placement;
+    if (!placement || typeof placement !== 'object' || Array.isArray(placement)) {
+        errors.push({ field: `${path}.placement`, message: 'Placement is required' });
+    } else {
+        const placementExtra = unknownKeys(placement, PLACEMENT_KEYS);
+        if (placementExtra.length) errors.push({ field: `${path}.placement`, message: `Unrecognized placement field(s): ${placementExtra.join(', ')}` });
+        if (!isPositiveInt(placement.week, 1, weekCount)) errors.push({ field: `${path}.placement.week`, message: `Week must be 1-${weekCount}` });
+        if (placement.preferredDay !== undefined && !EXTERNAL_WEEKDAYS.includes(placement.preferredDay)) {
+            errors.push({ field: `${path}.placement.preferredDay`, message: 'Unsupported weekday' });
+        }
+        if (!EXTERNAL_FLEXIBILITY.includes(placement.flexibility)) errors.push({ field: `${path}.placement.flexibility`, message: 'Unsupported flexibility' });
+        if (!EXTERNAL_IF_MISSED.includes(placement.ifMissed)) errors.push({ field: `${path}.placement.ifMissed`, message: 'Unsupported ifMissed' });
+        if (placement.flexibility === 'fixed' && placement.preferredDay === undefined) {
+            errors.push({ field: `${path}.placement`, message: 'A fixed session must name a preferredDay' });
+        }
+        // D-EVENT: an event does not move, so it must be pinned to a day.
+        if (raw.isEvent === true && (placement.flexibility !== 'fixed' || placement.preferredDay === undefined)) {
+            errors.push({ field: `${path}.placement`, message: 'An event session must be fixed with a preferredDay' });
+        }
+    }
+
+    const gating = raw.gating;
+    if (!gating || typeof gating !== 'object' || Array.isArray(gating)) {
+        errors.push({ field: `${path}.gating`, message: 'Gating is required' });
+    } else {
+        const gatingExtra = unknownKeys(gating, GATING_KEYS);
+        if (gatingExtra.length) errors.push({ field: `${path}.gating`, message: `Unrecognized gating field(s): ${gatingExtra.join(', ')}` });
+        if (!EXTERNAL_MODALITIES.includes(gating.modality)) errors.push({ field: `${path}.gating.modality`, message: 'Unsupported modality' });
+        if (!EXTERNAL_INTENSITIES.includes(gating.intensity)) errors.push({ field: `${path}.gating.intensity`, message: 'Unsupported intensity' });
+        if (!EXTERNAL_ENVIRONMENTS.includes(gating.environment)) errors.push({ field: `${path}.gating.environment`, message: 'Unsupported environment' });
+        if (!isPositiveInt(gating.durationMin, 5, 360)) errors.push({ field: `${path}.gating.durationMin`, message: 'durationMin must be 5-360 whole minutes' });
+        if (!isPositiveInt(gating.durationMax, 5, 360)) errors.push({ field: `${path}.gating.durationMax`, message: 'durationMax must be 5-360 whole minutes' });
+        if (isPositiveInt(gating.durationMin, 5, 360) && isPositiveInt(gating.durationMax, 5, 360) && gating.durationMin > gating.durationMax) {
+            errors.push({ field: `${path}.gating`, message: 'durationMin must not exceed durationMax' });
+        }
+        if (!Array.isArray(gating.equipment) || gating.equipment.some((item: unknown) => !EXTERNAL_EQUIPMENT.includes(item as EquipmentKey))) {
+            errors.push({ field: `${path}.gating.equipment`, message: 'Equipment must be a list of supported keys' });
+        }
+    }
+
+    if (raw.objectives !== undefined) {
+        if (!Array.isArray(raw.objectives) || raw.objectives.some((item: unknown) => !EXTERNAL_OBJECTIVES.includes(item as ObjectiveKey))) {
+            errors.push({ field: `${path}.objectives`, message: 'Objectives must be supported objective keys' });
+        }
+    }
+
+    const prescription = raw.prescription;
+    if (!prescription || typeof prescription !== 'object' || Array.isArray(prescription)) {
+        errors.push({ field: `${path}.prescription`, message: 'Prescription is required' });
+    } else {
+        if (typeof prescription.summary !== 'string' || !prescription.summary) {
+            errors.push({ field: `${path}.prescription.summary`, message: 'Prescription summary is required' });
+        }
+        if (prescription.steps !== undefined) {
+            if (!Array.isArray(prescription.steps)) {
+                errors.push({ field: `${path}.prescription.steps`, message: 'Steps must be a list' });
+            } else {
+                prescription.steps.forEach((step: unknown, stepIndex: number) =>
+                    validateExternalStep(step, `${path}.prescription.steps[${stepIndex}]`, errors));
+            }
+        }
+    }
+
+    const scaling = raw.scaling;
+    if (scaling !== undefined) {
+        if (!scaling || typeof scaling !== 'object' || Array.isArray(scaling)) {
+            errors.push({ field: `${path}.scaling`, message: 'Scaling must be an object' });
+        } else {
+            const scalingExtra = unknownKeys(scaling, SCALING_KEYS);
+            if (scalingExtra.length) errors.push({ field: `${path}.scaling`, message: `Unrecognized scaling field(s): ${scalingExtra.join(', ')}` });
+            if (scaling.reducible !== undefined && typeof scaling.reducible !== 'boolean') {
+                errors.push({ field: `${path}.scaling.reducible`, message: 'reducible must be a boolean' });
+            }
+            for (const key of ['reducedDurationMin', 'minimumUsefulDurationMin']) {
+                if (scaling[key] !== undefined && !isPositiveInt(scaling[key], 1, 360)) {
+                    errors.push({ field: `${path}.scaling.${key}`, message: `${key} must be a whole number 1-360` });
+                }
+            }
+            for (const key of ['reducedSummary', 'fallback']) {
+                if (scaling[key] !== undefined && typeof scaling[key] !== 'string') {
+                    errors.push({ field: `${path}.scaling.${key}`, message: `${key} must be a string` });
+                }
+            }
+            // An irreducible session's reduction fields are never consulted
+            // (D-IRREDUCIBLE); carrying them invites an author to believe otherwise.
+            if (scaling.reducible === false && (scaling.reducedSummary !== undefined || scaling.reducedDurationMin !== undefined)) {
+                errors.push({ field: `${path}.scaling`, message: 'An irreducible session must not declare a reduced form' });
+            }
+        }
+    }
+}
+
+/** Strict boundary for an imported plan revision. Rejects the whole document rather than
+ * storing a partially-understood plan: a silently dropped session is a session the athlete
+ * believes was imported. */
+export function validateExternalTrainingPlan(raw: any): ValidationResult<ExternalTrainingPlan> {
+    const errors: ValidationError[] = [];
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+        return { isValid: false, errors: [{ field: 'plan', message: 'Plan must be an object' }] };
+    }
+    const extra = unknownKeys(raw, PLAN_KEYS);
+    if (extra.length) errors.push({ field: 'plan', message: `Unrecognized field(s): ${extra.join(', ')}` });
+
+    if (raw.schema !== EXTERNAL_PLAN_SCHEMA) errors.push({ field: 'schema', message: `Schema must be "${EXTERNAL_PLAN_SCHEMA}"` });
+    if (typeof raw.planId !== 'string' || !/^[a-z0-9-]{1,64}$/.test(raw.planId)) {
+        errors.push({ field: 'planId', message: 'planId must be a lowercase slug of 1-64 characters' });
+    }
+    if (!isPositiveInt(raw.revision, 1, 10000)) errors.push({ field: 'revision', message: 'revision must be a whole number >= 1' });
+    if (typeof raw.title !== 'string' || !raw.title) errors.push({ field: 'title', message: 'title is required' });
+    if (!isValidDate(raw.startDate)) errors.push({ field: 'startDate', message: 'startDate must be YYYY-MM-DD' });
+    else if (!isMonday(raw.startDate)) errors.push({ field: 'startDate', message: 'startDate must be a Monday' });
+    if (!isPositiveInt(raw.weekCount, 1, EXTERNAL_PLAN_MAX_WEEKS)) {
+        errors.push({ field: 'weekCount', message: `weekCount must be 1-${EXTERNAL_PLAN_MAX_WEEKS}` });
+    }
+    if (raw.notes !== undefined && typeof raw.notes !== 'string') errors.push({ field: 'notes', message: 'notes must be a string' });
+
+    if (!Array.isArray(raw.sessions) || raw.sessions.length === 0) {
+        errors.push({ field: 'sessions', message: 'At least one session is required' });
+    } else if (raw.sessions.length > EXTERNAL_PLAN_MAX_SESSIONS) {
+        errors.push({ field: 'sessions', message: `At most ${EXTERNAL_PLAN_MAX_SESSIONS} sessions are supported` });
+    } else {
+        const weekCount = isPositiveInt(raw.weekCount, 1, EXTERNAL_PLAN_MAX_WEEKS) ? raw.weekCount : EXTERNAL_PLAN_MAX_WEEKS;
+        raw.sessions.forEach((session: unknown, index: number) => validateExternalSession(session, index, weekCount, errors));
+        const ids = raw.sessions.map((session: any) => session?.id).filter((id: unknown) => typeof id === 'string');
+        if (new Set(ids).size !== ids.length) errors.push({ field: 'sessions', message: 'Session ids must be unique within the plan' });
+    }
+
+    if (errors.length > 0) return { isValid: false, errors };
+    return { isValid: true, errors: [], data: raw as ExternalTrainingPlan };
 }

@@ -264,6 +264,72 @@ service cloud.firestore {
         && data.createdAt is string && data.updatedAt is string;
     }
 
+    // Externally-authored plans (ADR-0019). A stored revision is immutable: create only,
+    // never update or delete, because a persisted decision's audit references its exact
+    // content hash and rewriting it would make that audit unverifiable (D-IMMUT).
+    // Rules bound shape and size only -- Firestore rules cannot iterate a session list, so
+    // per-session enum checking stays in validation.ts. Both layers are enforced.
+    function hasValidExternalPlanHeader(userId) {
+      let data = request.resource.data;
+      return hasOwnedUserId(userId)
+        && data.keys().hasOnly(['userId', 'planId', 'revision', 'title', 'startDate', 'weekCount', 'contentHash', 'importedAt', 'supersededFrom', 'updatedAt'])
+        && data.keys().hasAll(['userId', 'planId', 'revision', 'title', 'startDate', 'weekCount', 'contentHash', 'importedAt', 'updatedAt'])
+        && data.planId is string && data.planId.size() > 0 && data.planId.size() <= 64
+        && data.revision is int && data.revision >= 1
+        && data.title is string && data.title.size() <= 200
+        && isValidActivityDate(data.startDate)
+        && data.weekCount is int && data.weekCount >= 1 && data.weekCount <= 26
+        && data.contentHash is string && data.contentHash.size() == 64
+        && data.importedAt is string && data.updatedAt is string
+        && (!('supersededFrom' in data) || data.supersededFrom == null || isValidActivityDate(data.supersededFrom));
+    }
+
+    function hasValidExternalPlanRevision() {
+      let data = request.resource.data;
+      return data.keys().hasOnly(['schema', 'planId', 'revision', 'title', 'startDate', 'weekCount', 'notes', 'sessions'])
+        && data.keys().hasAll(['schema', 'planId', 'revision', 'title', 'startDate', 'weekCount', 'sessions'])
+        && data.schema == 'adaptive-training-recommender/external-plan@1'
+        && data.revision is int && data.revision >= 1
+        && isValidActivityDate(data.startDate)
+        && data.weekCount is int && data.weekCount >= 1 && data.weekCount <= 26
+        && data.sessions is list && data.sessions.size() >= 1 && data.sessions.size() <= 120;
+    }
+
+    function hasValidExternalPlanPlacement(userId) {
+      let data = request.resource.data;
+      return hasOwnedUserId(userId)
+        && data.keys().hasOnly(['userId', 'planId', 'revision', 'assignments', 'updatedAt'])
+        && data.keys().hasAll(['userId', 'planId', 'revision', 'assignments', 'updatedAt'])
+        && data.planId is string && data.planId.size() > 0 && data.planId.size() <= 64
+        && data.revision is int && data.revision >= 1
+        && data.assignments is list && data.assignments.size() <= 120
+        && data.updatedAt is string;
+    }
+
+    match /users/{userId}/external_plans/{planId} {
+      allow read: if isOwner(userId);
+      allow create: if hasValidExternalPlanHeader(userId);
+      allow update: if hasValidExternalPlanHeader(userId)
+        && keepsOwnership(userId)
+        && request.resource.data.planId == resource.data.planId
+        // A header only ever moves forward: it may point at a newer revision, never an
+        // older one, so the athlete cannot silently be returned to a superseded plan.
+        && request.resource.data.revision >= resource.data.revision;
+      allow delete: if isOwner(userId);
+
+      match /revisions/{revisionId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && hasValidExternalPlanRevision();
+        allow update, delete: if false;
+      }
+
+      match /placement/{placementId} {
+        allow read: if isOwner(userId);
+        allow create, update: if hasValidExternalPlanPlacement(userId);
+        allow delete: if isOwner(userId);
+      }
+    }
+
     match /users/{userId}/plan_blocks/{blockId} {
       allow read: if isOwner(userId);
       allow create: if hasValidPlanBlock(userId);

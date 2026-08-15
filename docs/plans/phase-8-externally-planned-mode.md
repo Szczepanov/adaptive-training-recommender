@@ -31,7 +31,7 @@ critiquing the imported one.
 
 ## Work items
 
-### 8.1 Import contract, storage, and validation `[ ]`
+### 8.1 Import contract, storage, and validation `[x]`
 
 **Current behaviour.** No representation of an externally-authored plan exists.
 
@@ -379,7 +379,7 @@ gains an optional field.
 
 | # | Task | Status | Blocked by |
 |---|---|:--:|---|
-| 8.1 | Import contract, storage, validation | `[ ]` | ADR-0019; schema round-trip precondition |
+| 8.1 | Import contract, storage, validation | `[x]` | — |
 | 8.2 | Widen eligibility to `GateableSession` | `[x]` | — |
 | 8.3 | Session adjudication | `[ ]` | 8.2 |
 | 8.4 | Cost, stimulus, synthetic shim | `[ ]` | 8.1 |

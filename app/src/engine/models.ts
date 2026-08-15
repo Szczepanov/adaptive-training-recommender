@@ -233,6 +233,134 @@ export interface AuthoredPlanBlock {
 }
 
 export type PlanningMode = 'evergreen' | 'event_directed';
+
+// --- Externally-authored plans (ADR-0019, Phase 8) ---
+
+export const EXTERNAL_PLAN_SCHEMA = 'adaptive-training-recommender/external-plan@1';
+
+export type ExternalSessionModality = 'cycling' | 'running' | 'strength' | 'field' | 'mobility' | 'cross_training';
+export type ExternalSessionIntensity = 'recovery' | 'easy' | 'moderate' | 'hard' | 'max';
+export type ExternalSessionPriority = 'key' | 'supporting' | 'optional';
+export type ExternalPlacementFlexibility = 'fixed' | 'preferred' | 'any_day';
+export type ExternalIfMissed = 'drop' | 'reschedule_within_week' | 'carry_forward';
+export type ExternalWeekday = 'monday' | 'tuesday' | 'wednesday' | 'thursday' | 'friday' | 'saturday' | 'sunday';
+
+/** A step carries EITHER minutes OR seconds, never both. Seconds exist because cycling
+ * intervals are second-granular and the first real generated plan improvised fractional
+ * minutes (0.17 for a 10s effort) that could not be read back accurately. */
+export interface ExternalPrescriptionStep {
+    name: string;
+    target?: string;
+    durationMin?: number;
+    durationSec?: number;
+    /** Reps within one set. */
+    repeat?: number;
+    recoveryMin?: number;
+    recoverySec?: number;
+    /** Sets within this step; absent means a single set. */
+    sets?: number;
+    setRecoveryMin?: number;
+    setRecoverySec?: number;
+    notes?: string;
+}
+
+/** Displayed verbatim; no gate reads it. */
+export interface ExternalPrescription {
+    summary: string;
+    steps?: ExternalPrescriptionStep[];
+}
+
+/** How the author wants the session cut down, and whether it can be cut down at all. */
+export interface ExternalSessionScaling {
+    /** D-IRREDUCIBLE: false means no useful reduced form exists — short-of-full readiness
+     * defers rather than prescribing a compromise. Absent is treated as true. */
+    reducible?: boolean;
+    reducedSummary?: string;
+    reducedDurationMin?: number;
+    minimumUsefulDurationMin?: number;
+    /** Advisory author text only. Never an executable substitute (D-CANDIDATE). */
+    fallback?: string;
+}
+
+export interface ExternalSessionPlacement {
+    week: number;
+    preferredDay?: ExternalWeekday;
+    flexibility: ExternalPlacementFlexibility;
+    ifMissed: ExternalIfMissed;
+}
+
+/** The fields the hard feasibility gates read. Structurally a `GateableSession` once
+ * adapted; `systemicCost` is deliberately absent because the schema does not accept a
+ * calibrated load figure from an authoring AI (D-EXTTIER). */
+export interface ExternalSessionGating {
+    modality: ExternalSessionModality;
+    intensity: ExternalSessionIntensity;
+    durationMin: number;
+    durationMax: number;
+    environment: TrainingEnvironment;
+    equipment: EquipmentKey[];
+}
+
+export interface ExternalPlanSession {
+    id: string;
+    title: string;
+    priority: ExternalSessionPriority;
+    placement: ExternalSessionPlacement;
+    gating: ExternalSessionGating;
+    objectives?: ObjectiveKey[];
+    prescription: ExternalPrescription;
+    scaling?: ExternalSessionScaling;
+    /** D-EVENT: the target event itself. Requires `flexibility: 'fixed'` and a
+     * `preferredDay`. Reconciled onto the FixedActivity contract and adjudicated for
+     * advice only — it can never be told to skip. */
+    isEvent?: boolean;
+}
+
+/** The imported artifact. Never edited in place once stored (D-IMMUT). */
+export interface ExternalTrainingPlan {
+    schema: typeof EXTERNAL_PLAN_SCHEMA;
+    planId: string;
+    revision: number;
+    title: string;
+    /** Monday of week 1, Warsaw-local (ADR-0003). The only absolute date in the plan. */
+    startDate: string;
+    weekCount: number;
+    notes?: string;
+    sessions: ExternalPlanSession[];
+}
+
+export type ExternalPlacementStatus = 'planned' | 'completed' | 'moved' | 'dropped' | 'superseded';
+
+export interface ExternalPlacementAssignment {
+    sessionId: string;
+    date: string;
+    status: ExternalPlacementStatus;
+}
+
+/** The mutable overlay. Rescheduling writes here, never to the stored revision. */
+export interface ExternalPlanPlacement {
+    userId: string;
+    planId: string;
+    revision: number;
+    assignments: ExternalPlacementAssignment[];
+    updatedAt: string;
+}
+
+/** Stored header for a plan across its revisions. */
+export interface ExternalPlanHeader {
+    userId: string;
+    planId: string;
+    revision: number;
+    title: string;
+    startDate: string;
+    weekCount: number;
+    /** SHA-256 over the canonical JSON of the stored revision (D-IMMUT). */
+    contentHash: string;
+    importedAt: string;
+    /** Date from which this revision supersedes the previous one. */
+    supersededFrom: string | null;
+    updatedAt: string;
+}
 export type TrainingPriority =
     | 'health' | 'balanced_performance' | 'endurance'
     | 'strength_muscle' | 'speed_power' | 'sport_readiness';

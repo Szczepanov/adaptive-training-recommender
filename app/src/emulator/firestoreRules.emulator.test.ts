@@ -15,6 +15,35 @@ const planBlockPath = `users/${ownerId}/plan_blocks/trip-august`;
 const trainingIntentProfilePath = `users/${ownerId}/training_intent/profile`;
 const preferencesPath = `users/${ownerId}/preferences/profile`;
 const goalPath = `users/${ownerId}/goals/goal-1`;
+const externalPlanPath = `users/${ownerId}/external_plans/autumn-block`;
+const externalRevisionPath = `${externalPlanPath}/revisions/1`;
+const externalPlacementPath = `${externalPlanPath}/placement/current`;
+
+function validExternalPlanHeader() {
+    return {
+        userId: ownerId, planId: 'autumn-block', revision: 1, title: '4-week block',
+        startDate: '2026-08-17', weekCount: 4,
+        contentHash: 'a'.repeat(64),
+        importedAt: '2026-08-15T06:00:00Z', supersededFrom: null, updatedAt: '2026-08-15T06:00:00Z',
+    };
+}
+
+function validExternalPlanRevision() {
+    return {
+        schema: 'adaptive-training-recommender/external-plan@1',
+        planId: 'autumn-block', revision: 1, title: '4-week block',
+        startDate: '2026-08-17', weekCount: 4,
+        sessions: [{ id: 'w1-a', title: 'Threshold', priority: 'key' }],
+    };
+}
+
+function validExternalPlacement() {
+    return {
+        userId: ownerId, planId: 'autumn-block', revision: 1,
+        assignments: [{ sessionId: 'w1-a', date: '2026-08-18', status: 'planned' }],
+        updatedAt: '2026-08-15T06:00:00Z',
+    };
+}
 
 function validGoal() {
     return {
@@ -422,6 +451,56 @@ emulatorDescribe('Firestore security rules', () => {
         const otherDb = testEnvironment.authenticatedContext(otherUserId).firestore();
         await assertFails(getDoc(doc(otherDb, planBlockPath)));
         await assertFails(setDoc(doc(otherDb, `users/${otherUserId}/plan_blocks/forged`), validPlanBlock()));
+    });
+
+    it('stores an external plan header, revision and placement for its owner', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertSucceeds(setDoc(doc(ownerDb, externalPlanPath), validExternalPlanHeader()));
+        await assertSucceeds(setDoc(doc(ownerDb, externalRevisionPath), validExternalPlanRevision()));
+        await assertSucceeds(setDoc(doc(ownerDb, externalPlacementPath), validExternalPlacement()));
+    });
+
+    it('makes a stored revision create-only, so an audited decision stays verifiable', async () => {
+        await testEnvironment.withSecurityRulesDisabled(async context => {
+            await setDoc(doc(context.firestore(), externalRevisionPath), validExternalPlanRevision());
+        });
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        // Even the owner cannot rewrite or remove a revision the content hash points at.
+        await assertFails(setDoc(doc(ownerDb, externalRevisionPath), { ...validExternalPlanRevision(), title: 'edited' }));
+        await assertFails(deleteDoc(doc(ownerDb, externalRevisionPath)));
+        await assertSucceeds(getDoc(doc(ownerDb, externalRevisionPath)));
+    });
+
+    it('refuses an external plan header that moves backwards to a superseded revision', async () => {
+        await testEnvironment.withSecurityRulesDisabled(async context => {
+            await setDoc(doc(context.firestore(), externalPlanPath), { ...validExternalPlanHeader(), revision: 3 });
+        });
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertFails(setDoc(doc(ownerDb, externalPlanPath), { ...validExternalPlanHeader(), revision: 2 }));
+        await assertSucceeds(setDoc(doc(ownerDb, externalPlanPath), { ...validExternalPlanHeader(), revision: 4 }));
+    });
+
+    it('rejects a malformed external plan header and an over-large revision', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertFails(setDoc(doc(ownerDb, externalPlanPath), { ...validExternalPlanHeader(), contentHash: 'short' }));
+        await assertFails(setDoc(doc(ownerDb, externalPlanPath), { ...validExternalPlanHeader(), weekCount: 27 }));
+        await assertFails(setDoc(doc(ownerDb, externalRevisionPath), {
+            ...validExternalPlanRevision(),
+            schema: 'adaptive-training-recommender/external-plan@2',
+        }));
+        await assertFails(setDoc(doc(ownerDb, externalRevisionPath), { ...validExternalPlanRevision(), sessions: [] }));
+    });
+
+    it('rejects cross-user external plan access and forged ownership', async () => {
+        await testEnvironment.withSecurityRulesDisabled(async context => {
+            await setDoc(doc(context.firestore(), externalPlanPath), validExternalPlanHeader());
+            await setDoc(doc(context.firestore(), externalRevisionPath), validExternalPlanRevision());
+        });
+        const otherDb = testEnvironment.authenticatedContext(otherUserId).firestore();
+        await assertFails(getDoc(doc(otherDb, externalPlanPath)));
+        await assertFails(getDoc(doc(otherDb, externalRevisionPath)));
+        await assertFails(setDoc(doc(otherDb, `users/${otherUserId}/external_plans/forged`), validExternalPlanHeader()));
+        await assertFails(setDoc(doc(otherDb, `users/${otherUserId}/external_plans/autumn-block/placement/current`), validExternalPlacement()));
     });
 
     it('allows canonical unavailable modalities and rejects unsupported values', async () => {
