@@ -1,4 +1,4 @@
-import type { DimensionalFatigue, EquipmentKey, PlanningMode, Recommendation, SessionTemplate, UserContext, WorkoutCostProfile, WorkoutStimulusProfile } from '../models';
+import type { DimensionalFatigue, EquipmentKey, Recommendation, SessionTemplate, UserContext, WorkoutCostProfile, WorkoutStimulusProfile } from '../models';
 import { evaluateNextDayPlanWithIntent, evaluateTrainingWithIntent } from '../rules';
 import { generateWeekAheadPlanWithIntent, resolveWeeklyAnchors, type WeekAheadDay } from '../planner';
 import type { CompletedExposure, TrainingHistoryProvider } from '../trainingHistory';
@@ -203,11 +203,6 @@ function computeMetrics(
     objectiveCredits: ObjectiveCredit[],
     allocationReports: Array<{ weekIndex: number; report: WeeklyRoleAllocationReport }>,
     decisionTraces: ScenarioDecisionTrace[],
-    /** The mode `resolvePlanningContext` actually resolved during the run (ADR-0017
-     * D-MODE), not the scenario's stated profile: an event_directed profile whose events
-     * have all passed is planned as evergreen, and grading it against strict
-     * event-directed objective contracts would emit false quality warnings. */
-    resolvedPlanningMode: PlanningMode,
 ): ScenarioResult {
     const allDays = weeklyDays.flat();
     const categoryDistribution: Partial<Record<SessionTemplate['category'], number>> = {};
@@ -256,7 +251,7 @@ function computeMetrics(
         });
         return { weekIndex, fatigueTierDayCounts: weekFatigueTiers, restOrRecoveryDayCount: weekRestOrRecoveryDays };
     });
-    const scenarioEvents = scenario.events ?? (scenario.event ? [scenario.event] : []);
+    const scenarioEvents = [...(scenario.events ?? (scenario.event ? [scenario.event] : []))];
     const primaryEvent = scenarioEvents[0] ?? null;
     const isCyclingRelevantEvent = primaryEvent?.category === 'cycling_event' || primaryEvent?.category === 'triathlon';
     const anchorScopeNote = isCyclingRelevantEvent ? null :
@@ -265,7 +260,12 @@ function computeMetrics(
     const objectiveResolution = Array.from(objectiveTallies.values());
     const qualityWarnings: string[] = [];
     const missedObjectives = objectiveResolution.filter(o => o.timesResolved < o.timesGenerated);
-    const isEvergreen = resolvedPlanningMode === 'evergreen';
+    const effectivePlanningMode = resolvePlanningContext(
+        scenario.trainingIntentProfile ?? null,
+        evaluatePeriodizationPhase(scenarioEvents, scenario.startDate),
+        scenario.startDate,
+    ).mode;
+    const isEvergreen = effectivePlanningMode === 'evergreen';
     // Evergreen packing reports safe partial-dose and target shortfalls in its weekly
     // budget. Those are athlete-facing feasibility facts, not a planner-quality failure.
     // Event-directed objectives remain strict calibration contracts.
@@ -312,10 +312,6 @@ export async function runScenario(
     const fixedActivities = scenario.fixedActivities ?? [];
     const fatigueFusionPolicy = options.fatigueFusionPolicy ?? 'max';
     const accumulatedHistory: CompletedExposure[] = [...(scenario.initialHistory ?? [])];
-    // Captured from the plans this run actually produced. Mode is re-resolved per week
-    // (an event can pass mid-scenario), so the last week's resolution is the one the
-    // final objective grading should be judged against.
-    let resolvedPlanningMode: PlanningMode = 'evergreen';
     const historyProvider: TrainingHistoryProvider = {
         reconstruct: async (_userId, throughDateExclusive, windowDays) => {
             const windowStart = addDaysToLocalDateString(throughDateExclusive, -windowDays);
@@ -347,15 +343,7 @@ export async function runScenario(
             'sim-user', readiness, scenario.context, scenario.preferences ?? null, events, currentDate, todayRec, tomorrowRec,
             { days: 6, fixedActivities, fatigueFusionPolicy }, historyProvider, null, scenario.trainingIntentProfile ?? null,
         );
-        // Resolved through the single authority (ADR-0017 D-MODE), not read off the
-        // scenario's stated profile: an event_directed scenario whose events have all
-        // passed is planned as evergreen, and grading it against strict event-directed
-        // objective contracts would emit false quality warnings.
-        const periodizationToday = evaluatePeriodizationPhase(events, currentDate);
-        resolvedPlanningMode = resolvePlanningContext(
-            scenario.trainingIntentProfile ?? null, periodizationToday, currentDate,
-        ).mode;
-        const todayPhase = periodizationToday.phase.phaseName;
+        const todayPhase = evaluatePeriodizationPhase(events, currentDate).phase.phaseName;
         const simulatedDays: WeekAheadDay[] = [recommendationAsDay(currentDate, todayRec, todayPhase), ...plan.days];
         decisionTraces.push(
             traceFromRecommendation(week, currentDate, todayRec),
@@ -387,7 +375,7 @@ export async function runScenario(
         });
         currentDate = addDaysToLocalDateString(currentDate, 7);
     }
-    return computeMetrics(scenario, weeklyDays, anchorWeeks, objectiveTallies, objectiveCredits, allocationReports, decisionTraces, resolvedPlanningMode);
+    return computeMetrics(scenario, weeklyDays, anchorWeeks, objectiveTallies, objectiveCredits, allocationReports, decisionTraces);
 }
 
 export interface SimulationReport { commit: string; capturedAt: string; engineVersion: string; policyVersion: string; scenarios: ScenarioResult[]; preferenceSensitivity: PreferenceSensitivityResult[]; readinessSensitivity: ReadinessSensitivityResult[]; }

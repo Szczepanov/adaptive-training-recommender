@@ -176,43 +176,51 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
       }
 
       const yesterday = getPreviousLocalDateString(input.date);
-      const yesterdayRec = await recommendationService.getRecommendation(userId, yesterday).catch(err => {
-        console.warn('Failed to load yesterday\'s recommendation:', err);
-        return null;
-      });
+
+      // ⚡ Bolt Performance Optimization:
+      // Executing independent asynchronous data fetching calls concurrently via Promise.all.
+      // Expected Impact: Reduces sequential blocking during loadDashboardData, saving overall dashboard loading time.
+      const [yesterdayRec, todayAndTomorrowFixedActivities, todayAndTomorrowPlanBlocks] = await Promise.all([
+        recommendationService.getRecommendation(userId, yesterday).catch(err => {
+          console.warn('Failed to load yesterday\'s recommendation:', err);
+          return null;
+        }),
+
+        // Phase 6.2b: today's and tomorrow's own fixed activities must affect the actual
+        // live pick and provisional plan (availability/fatigue/objective credit), not just
+        // the separately-fetched week-ahead forecast strip below. Unlike that forecast read
+        // (which fails closed on a non-AVAILABLE state -- silently treating it as "no
+        // commitments" over a 7-day horizon someone plans around), the live day-0/day-1
+        // decision fails OPEN to an empty list here: this is one day's already-interactive
+        // recommendation, not an unattended multi-day schedule, and a temporary read failure
+        // should not block it entirely -- same tradeoff already made for `yesterdayRec` above.
+        fixedActivityService
+          .getActivitiesInRange(userId, input.date, addDaysToLocalDateString(input.date, 1))
+          .catch(err => {
+            console.warn('Failed to load fixed activities for today/tomorrow:', err);
+            return [];
+          }),
+
+        planBlockService
+          .getBlocksInRangeState(userId, input.date, addDaysToLocalDateString(input.date, 1))
+          .then(state => {
+            if (state.status === 'AVAILABLE') return state.data;
+            console.warn(`Failed to load authored plan blocks for today/tomorrow: ${state.status}`);
+            return [];
+          })
+          .catch(err => {
+            console.warn('Failed to load authored plan blocks for today/tomorrow:', err);
+            return [];
+          })
+      ]);
+
       if (!isCurrent()) return;
+
       setPendingAdherence(
         yesterdayRec && yesterdayRec.adherence.respondedAt === null
           ? { date: yesterday, recommendation: yesterdayRec }
           : null
       );
-
-      // Phase 6.2b: today's and tomorrow's own fixed activities must affect the actual
-      // live pick and provisional plan (availability/fatigue/objective credit), not just
-      // the separately-fetched week-ahead forecast strip below. Unlike that forecast read
-      // (which fails closed on a non-AVAILABLE state -- silently treating it as "no
-      // commitments" over a 7-day horizon someone plans around), the live day-0/day-1
-      // decision fails OPEN to an empty list here: this is one day's already-interactive
-      // recommendation, not an unattended multi-day schedule, and a temporary read failure
-      // should not block it entirely -- same tradeoff already made for `yesterdayRec` above.
-      const todayAndTomorrowFixedActivities = await fixedActivityService
-        .getActivitiesInRange(userId, input.date, addDaysToLocalDateString(input.date, 1))
-        .catch(err => {
-          console.warn('Failed to load fixed activities for today/tomorrow:', err);
-          return [];
-        });
-      const todayAndTomorrowPlanBlocks = await planBlockService
-        .getBlocksInRangeState(userId, input.date, addDaysToLocalDateString(input.date, 1))
-        .then(state => {
-          if (state.status === 'AVAILABLE') return state.data;
-          console.warn(`Failed to load authored plan blocks for today/tomorrow: ${state.status}`);
-          return [];
-        })
-        .catch(err => {
-          console.warn('Failed to load authored plan blocks for today/tomorrow:', err);
-          return [];
-        });
-      if (!isCurrent()) return;
 
       const safetyStatus = getMinimumSafetyCheckinStatus(input.subjectiveCheckin);
       if (input.recoverySnapshot && canGenerateNormalRecommendation(safetyStatus)) {

@@ -2,6 +2,7 @@ import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { getDb } from '../firebase';
 import type { BodyRegion, SessionTemplate, TrainingSettings, UserConstraint } from '../engine/models';
 import type { DataState } from '../engine/dataState';
+import { CURRENT_TRAINING_SETTINGS_SCHEMA_VERSION, isSupportedTrainingSettingsSchemaVersion } from '../engine/trainingSettingsSchema';
 import { constraintService } from './constraintService';
 import { getErrorCode } from '../utils/errors';
 import { isValidDate } from '../engine/validation';
@@ -15,12 +16,6 @@ export type TrainingSettingsUpdate = {
     migration?: Partial<TrainingSettings['migration']>;
 };
 
-const SETTINGS_SCHEMA_VERSION = 3 as const;
-/** Every version this client can read. `firestore.rules` necessarily keeps its own copy of
- * this list; keep the two in step. Consumers must read this rather than repeating a
- * literal -- composer.ts's validator previously hard-coded `2` and so rejected every
- * document this service writes. */
-export const SUPPORTED_SETTINGS_SCHEMA_VERSIONS: readonly number[] = [2, 3];
 const COLLECTION = 'trainingSettings';
 const DOCUMENT = 'profile';
 const equipmentKeys = ['free_weights', 'cable_machine', 'treadmill', 'indoor_bike', 'pullup_bar'] as const;
@@ -35,7 +30,7 @@ function timestamp(): string {
 export function createDefaultTrainingSettings(userId: string, now = timestamp()): TrainingSettings {
     return {
         userId,
-        schemaVersion: SETTINGS_SCHEMA_VERSION,
+        schemaVersion: CURRENT_TRAINING_SETTINGS_SCHEMA_VERSION,
         equipment: { free_weights: false, cable_machine: false, treadmill: false, indoor_bike: false, pullup_bar: false },
         guardrails: { avoid_high_impact: false, avoid_heavy_lower_body: false, avoid_overhead_pressing: false, avoid_heavy_spinal_loading: false },
         injuries: [],
@@ -51,11 +46,11 @@ function isDuration(value: unknown): value is number | null {
     return value === null || (typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= 1440);
 }
 
-/** Parses storage data defensively so malformed user data never enters the engine. Accepts schema 2 or 3. */
+/** Parses storage data defensively so malformed user data never enters the engine. */
 export function parseTrainingSettings(raw: unknown, userId: string): TrainingSettings | null {
     if (!raw || typeof raw !== 'object') return null;
     const data = raw as Record<string, unknown>;
-    if (data.userId !== userId || typeof data.schemaVersion !== 'number' || !SUPPORTED_SETTINGS_SCHEMA_VERSIONS.includes(data.schemaVersion)) return null;
+    if (data.userId !== userId || !isSupportedTrainingSettingsSchemaVersion(data.schemaVersion)) return null;
     const equipment = data.equipment as Record<string, unknown> | undefined;
     const guardrails = data.guardrails as Record<string, unknown> | undefined;
     const defaults = data.defaults as Record<string, unknown> | undefined;
@@ -87,7 +82,7 @@ export function parseTrainingSettings(raw: unknown, userId: string): TrainingSet
 
     return {
         ...(data as unknown as TrainingSettings),
-        schemaVersion: SETTINGS_SCHEMA_VERSION,
+        schemaVersion: CURRENT_TRAINING_SETTINGS_SCHEMA_VERSION,
         injuries: (data.injuries as TrainingSettings['injuries']) ?? [],
     };
 }
@@ -114,7 +109,7 @@ export function migrateLegacyConstraints(userId: string, constraints: UserConstr
 function mergeSettings(current: TrainingSettings, update: TrainingSettingsUpdate): TrainingSettings {
     const next: TrainingSettings = {
         ...current,
-        schemaVersion: SETTINGS_SCHEMA_VERSION,
+        schemaVersion: CURRENT_TRAINING_SETTINGS_SCHEMA_VERSION,
         equipment: { ...current.equipment, ...update.equipment },
         guardrails: { ...current.guardrails, ...update.guardrails },
         injuries: update.injuries !== undefined ? update.injuries : current.injuries ?? [],
