@@ -72,6 +72,7 @@ all-`Ready` table became unusable.
 | 6.2c | [Recommendation quality & weekly coverage](./phase-6-2c-recommendation-quality-and-weekly-coverage.md) | **Implemented** | none | none | separates adaptation credit from weekly programming-role coverage; not an original review finding |
 | 7A | [Weekly allocation & safe role reservations](./phase-7-weekly-allocation-and-role-reservations.md) | **Implemented** | none | none | resolves PR #17's healthy/fresh cycling role-coverage failure without recalibrating recovery |
 | 7B | [Training intent, capacity & planning modes](./phase-7-training-intent-and-planning-modes.md) | **Implemented** | none | none | evidence-derived Evergreen dose packed into real capacity, while preserving structured and demand-derived event planning — not an original review finding |
+| 8 | [Externally-planned mode](./phase-8-externally-planned-mode.md) | **Draft** | 8.2 only | ADR-0019 acceptance; schema round-trip precondition | imports an externally-authored plan and narrows the engine to per-session adjudication plus weekly critique — not an original review finding |
 
 Phases 0–6 are implemented. Phase 6 delivered explicit scenario evidence, calibration
 traces, coverage visibility, a verified repository-owned local Firestore-rules deployment
@@ -124,6 +125,15 @@ plans remain Draft and must not be implemented until the linked ADR is accepted.
 | **D-SUPPORT** | Supporting work may not destroy the last safe allocation | [ADR-0018](../adr/0018-weekly-allocation-and-role-reservations.md) | Reduced-dose support is useful only when it preserves required role opportunity |
 | **D-MISS** | Forecast required-role misses are typed, first-class diagnostics | [ADR-0018](../adr/0018-weekly-allocation-and-role-reservations.md) | Safety-forced omission must be distinguishable from a scheduling defect |
 | **D-NO-BEAM** | Keep production greedy; do not treat this fix as beam-search adoption | [ADR-0018](../adr/0018-weekly-allocation-and-role-reservations.md) | ADR-0015 deferred adoption for measured latency and coaching-review reasons |
+| **D-EXT** | `externally_planned` is a third planning mode; the generated planner is retained as a labelled fallback | [ADR-0019](../adr/0019-externally-authored-plans-and-session-adjudication.md) | Selection and adjudication are already separate modules; only selection is being replaced |
+| **D-CANDIDATE** | An imported session is a candidate, never a prescription — every gate applies | [ADR-0019](../adr/0019-externally-authored-plans-and-session-adjudication.md) | It is the only thing the app does that reading the plan on a phone does not |
+| **D-SHIM** | Imported sessions reach the engine as synthetic templates, not by widening `Recommendation` to a union | [ADR-0019](../adr/0019-externally-authored-plans-and-session-adjudication.md) | Confines the change to one adapter instead of six modules, and keeps replay coherent |
+| **D-EXTTIER** | Imported sessions get an `authoredExternal` rung on the existing evidence ladder; no cost input is accepted | [ADR-0019](../adr/0019-externally-authored-plans-and-session-adjudication.md) | An AI asked for a calibrated load figure supplies a confident one, silently moving the `modify` ceiling |
+| **D-RELDATE** | Sessions carry week index and day preference; the plan header carries one absolute date | [ADR-0019](../adr/0019-externally-authored-plans-and-session-adjudication.md) | Removes calendar arithmetic from the authoring AI, where LLM plans most reliably fail |
+| **D-IMMUT** | The imported revision is immutable and content-hashed; placement is a separate overlay | [ADR-0019](../adr/0019-externally-authored-plans-and-session-adjudication.md) | ADR-0010 replay needs the exact bytes a decision was made from |
+| **D-NOTRAVEL** | Travel stays an `AuthoredPlanBlock` and is excluded from the import schema | [ADR-0019](../adr/0019-externally-authored-plans-and-session-adjudication.md) | Travel is the athlete's calendar; including it would apply the dose reduction twice |
+| **D-CRITIQUE** | The weekly planning machinery is repointed to advisory critique, not retired | [ADR-0019](../adr/0019-externally-authored-plans-and-session-adjudication.md) | An external AI holds no fatigue state or adherence history and cannot produce this |
+| **D-NOPARSE** | JSON import only; no in-app model call in this phase | [ADR-0019](../adr/0019-externally-authored-plans-and-session-adjudication.md) | A non-deterministic transform at the persistence boundary conflicts with ADR-0010 |
 
 Five of these — **D-KWD**, **D-GATE**, **D-LIFE**, **D-RECOV**, and the withdrawal inside
 **D-FUSE** — correct errors in earlier drafts and came out of PR #5 review rounds rather

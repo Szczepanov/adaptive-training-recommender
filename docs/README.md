@@ -67,6 +67,7 @@ Architectural choices, system invariants, and technical trade-offs are documente
 * [**ADR-0016: Adaptation Credit & Weekly Coverage**](./adr/0016-adaptation-credit-and-weekly-coverage.md) — Separates physiological adaptation credit from exact authored weekly programming-role coverage.
 * [**ADR-0017: Training Intent Profile & First-Class Planning Modes**](./adr/0017-training-intent-profile-and-planning-modes.md) — Accepted evidence-to-dose-to-capacity Evergreen contract that preserves structured and demand-derived event paths (Phase 7B).
 * [**ADR-0018: Weekly Allocation, Safe Role Reservations & Explicit Misses**](./adr/0018-weekly-allocation-and-role-reservations.md) — Accepted production-greedy allocation contract for preserving safe, required weekly roles after PR #17.
+* [**ADR-0019: Externally-Authored Plans & Session Adjudication**](./adr/0019-externally-authored-plans-and-session-adjudication.md) — *Proposed.* A third planning mode in which an imported plan owns selection and the engine owns safety, dose, and weekly critique.
 
 Reserved for work sequenced in [`docs/plans/`](./plans/), written with their phase:
 **0012** plan intent · **0013** structured injury constraints.
@@ -97,6 +98,7 @@ How agreed changes get made. Mutable, status-tracked, and expected to go stale �
 * [**Phase 6: Evidence-driven calibration & operational assurance**](./plans/phase-6-evidence-and-operational-assurance.md) — Scenario telemetry, calibration evidence, and Firestore-rule deployment assurance.
 * [**Phase 7A: Weekly allocation & safe role reservations**](./plans/phase-7-weekly-allocation-and-role-reservations.md) — The PR #17 follow-up: reserve eligible required roles, protect them from support work, and report safety-forced misses.
 * [**Phase 7B: Training intent, capacity & planning modes**](./plans/phase-7-training-intent-and-planning-modes.md) — Evergreen evidence-to-dose-to-capacity planning proposal.
+* [**Phase 8: Externally-planned mode**](./plans/phase-8-externally-planned-mode.md) — *Draft.* Import an externally-authored plan, adjudicate its sessions against daily readiness, and repoint the weekly machinery to critique.
 
 ---
 

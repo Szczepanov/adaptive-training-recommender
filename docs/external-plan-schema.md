@@ -271,10 +271,23 @@ again by the travel block.
 
 ---
 
-## Open questions for review
+## Resolved questions
 
-1. **Monday-based weeks** — assumed, to match the microcycle window. Confirm this matches how you think about a training week.
-2. **`weekCount ≤ 26` / `sessions ≤ 120`** — bounds chosen to keep the placement document a single small read. Too tight for how you'd actually use this?
-3. **Default supersession date** — today, or the start of the next week? Mid-week supersession is more responsive; next-week is less disruptive.
-4. **`objectives` optional vs. required** — optional protects import reliability, but every session that omits it degrades the weekly critique to a coarse guess.
-5. **Performance targets** — the schema keeps intensity as free text in `target` (`"100–105% FTP"`). The alternative is structured zones resolved against `AthletePerformanceProfile`, as the catalog does. Free text is far more reliable to import and far less useful downstream. Worth revisiting once the basic loop works.
+Settled in [ADR-0019](./adr/0019-externally-authored-plans-and-session-adjudication.md)
+§ *Resolved schema questions*, and repeated here so this document does not have to be read
+alongside it. Each is cheap to revisit.
+
+| Question | Resolution |
+|---|---|
+| Week boundaries | **Monday-based**, matching the rolling microcycle window. |
+| `weekCount ≤ 26` / `sessions ≤ 120` | Retained. Keeps the placement overlay a single small read. |
+| Default supersession date | **The evaluation date (today).** Deferring to next week would make mid-block corrections useless. |
+| `objectives` optional vs. required | **Optional**, with coarse derivation when absent and a post-import prompt inviting confirmation. Requiring it hurts import reliability; omitting it silently would degrade the weekly critique to a guess — so the app asks rather than demands. |
+| Performance targets | **Free text** in this phase. Structured zones resolved against `AthletePerformanceProfile` are more useful downstream and materially less reliable to import; revisit once the loop works. |
+
+### Still open
+
+**The schema has not yet met a real generated plan.** [Phase 8](./plans/phase-8-externally-planned-mode.md)
+makes one round-trip a precondition of its first work item, because a schema reviewed only
+by reading will be wrong in ways that review does not surface. Expect revision; the
+`schema` version tag exists for exactly that.
