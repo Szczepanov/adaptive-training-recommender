@@ -68,6 +68,7 @@ Architectural choices, system invariants, and technical trade-offs are documente
 * [**ADR-0017: Training Intent Profile & First-Class Planning Modes**](./adr/0017-training-intent-profile-and-planning-modes.md) — Accepted evidence-to-dose-to-capacity Evergreen contract that preserves structured and demand-derived event paths (Phase 7B).
 * [**ADR-0018: Weekly Allocation, Safe Role Reservations & Explicit Misses**](./adr/0018-weekly-allocation-and-role-reservations.md) — Accepted production-greedy allocation contract for preserving safe, required weekly roles after PR #17.
 * [**ADR-0019: Externally-Authored Plans & Session Adjudication**](./adr/0019-externally-authored-plans-and-session-adjudication.md) — *Proposed.* A third planning mode in which an imported plan owns selection and the engine owns safety, dose, and weekly critique.
+* [**ADR-0020: Subjective Baselines in Readiness Mode**](./adr/0020-subjective-baselines-in-readiness-mode.md) — *Proposed.* Self-normalised subjective drift as a tighten-only term, gated on check-in coverage, with coefficients deferred to calibration.
 
 **0013** (structured injury constraints) is reserved for work sequenced in
 [`docs/plans/`](./plans/) and will be written with its phase. ADR-0012 was written and is
