@@ -251,7 +251,7 @@ function computeMetrics(
         });
         return { weekIndex, fatigueTierDayCounts: weekFatigueTiers, restOrRecoveryDayCount: weekRestOrRecoveryDays };
     });
-    const scenarioEvents = scenario.events ?? (scenario.event ? [scenario.event] : []);
+    const scenarioEvents = [...(scenario.events ?? (scenario.event ? [scenario.event] : []))];
     const primaryEvent = scenarioEvents[0] ?? null;
     const isCyclingRelevantEvent = primaryEvent?.category === 'cycling_event' || primaryEvent?.category === 'triathlon';
     const anchorScopeNote = isCyclingRelevantEvent ? null :
