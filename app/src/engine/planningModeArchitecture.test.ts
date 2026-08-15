@@ -50,6 +50,13 @@ function containsModeLiteral(node: ts.Node): boolean {
     return subtreeContains(node, candidate => ts.isStringLiteral(candidate) && MODE_LITERALS.has(candidate.text));
 }
 
+function branchCondition(node: ts.Node): ts.Expression | null {
+    if (ts.isIfStatement(node) || ts.isWhileStatement(node) || ts.isDoStatement(node)) return node.expression;
+    if (ts.isConditionalExpression(node)) return node.condition;
+    if (ts.isSwitchStatement(node)) return node.expression;
+    return null;
+}
+
 function lineOf(source: ts.SourceFile, node: ts.Node): number {
     return source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1;
 }
@@ -76,11 +83,7 @@ describe('planning-mode architecture authority', () => {
                 // Persisted profile validation may inspect planningMode for schema validity;
                 // all behavioral branching on that field belongs to planningMode.ts.
                 if (!DIRECT_PROFILE_BRANCH_ALLOWLIST.has(fileName)) {
-                    const condition = ts.isIfStatement(node) || ts.isWhileStatement(node) || ts.isDoStatement(node)
-                        ? node.expression
-                        : ts.isConditionalExpression(node) || ts.isSwitchStatement(node)
-                            ? node.condition ?? node.expression
-                            : null;
+                    const condition = branchCondition(node);
                     if (condition && subtreeContains(condition, isPlanningModeAccess)) {
                         violations.push(`${fileName}:${lineOf(source, node)} branches directly on TrainingIntentProfile.planningMode`);
                     }
