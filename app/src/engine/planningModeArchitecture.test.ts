@@ -91,9 +91,14 @@ describe('planning-mode architecture authority', () => {
 
                 // A focus-event null/existence test must never be used outside the authority
                 // module to choose one of the effective planning-mode literals.
+                const focusCondition = ts.isIfStatement(node)
+                    ? node.expression
+                    : ts.isConditionalExpression(node)
+                        ? node.condition
+                        : null;
                 if (fileName !== 'planningMode.ts'
-                    && (ts.isIfStatement(node) || ts.isConditionalExpression(node))
-                    && subtreeContains(node.expression, isFocusEventAccess)
+                    && focusCondition
+                    && subtreeContains(focusCondition, isFocusEventAccess)
                     && containsModeLiteral(node)) {
                     violations.push(`${fileName}:${lineOf(source, node)} derives planning mode from focusEvent`);
                 }
