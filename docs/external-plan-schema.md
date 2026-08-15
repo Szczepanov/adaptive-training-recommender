@@ -182,7 +182,10 @@ prescription.
 `minimumUsefulDurationMin` is the floor below which the session stops being worth doing —
 under it, the verdict becomes `defer` or `skip` rather than a pointless fragment.
 `fallback` is free text shown when a hard gate (equipment, environment) excludes the
-session outright.
+session outright. It is **advisory author intent only**: it is never parsed into an
+executable substitute and never bypasses eligibility/safety. If the app offers an
+actionable alternative, that alternative is a separate structured candidate that must
+pass the normal gates independently.
 
 ### `objectives` — optional, but it unlocks the weekly critique
 
@@ -260,7 +263,8 @@ Paste this above the plan request when asking an AI to author or revise a plan.
 >   and optional `repeat`, `recoveryMin`, `notes`.
 > - `scaling`: `reducedSummary` (how to cut this session down while keeping its purpose),
 >   `reducedDurationMin`, `minimumUsefulDurationMin` (below this, skipping is better than
->   a fragment), `fallback` (what to do instead if the equipment or venue is unavailable).
+>   a fragment), `fallback` (advisory author suggestion shown if the equipment or venue is
+>   unavailable; it is not an executable substitute).
 >
 > Do not include travel weeks, illness, or time off — those are handled separately by the
 > app's own calendar. Plan as if every scheduled day is available.
