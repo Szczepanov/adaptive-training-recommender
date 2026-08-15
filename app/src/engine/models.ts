@@ -232,11 +232,22 @@ export interface AuthoredPlanBlock {
     updatedAt: string;
 }
 
-export type PlanningMode = 'evergreen' | 'event_directed';
+export type PlanningMode = 'evergreen' | 'event_directed' | 'externally_planned';
 
 // --- Externally-authored plans (ADR-0019, Phase 8) ---
 
 export const EXTERNAL_PLAN_SCHEMA = 'adaptive-training-recommender/external-plan@1';
+
+/** Structural mirror of `externalSession.ts`'s verdict, declared here so `Recommendation`
+ * does not import from the adjudicator (which imports models). */
+export interface ExternalSessionVerdictSummary {
+    decision: 'proceed' | 'scale' | 'defer' | 'skip' | 'advisory';
+    executionDose?: PlannedDose;
+    scaledSummary?: string;
+    fallbackSuggestion?: string;
+    gateFailures: string[];
+    rationale: string;
+}
 
 export type ExternalSessionModality = 'cycling' | 'running' | 'strength' | 'field' | 'mobility' | 'cross_training';
 export type ExternalSessionIntensity = 'recovery' | 'easy' | 'moderate' | 'hard' | 'max';
@@ -673,6 +684,9 @@ export interface Recommendation {
      * an externally-authored plan. `prescription` stays empty in that case: a synthetic
      * template has no catalog workout to resolve, and inventing one would misattribute
      * authored content to the catalog (ADR-0019 D-SHIM). */
+    /** The adjudication outcome for an imported session. Present with
+     * `externalPrescription`; the UI renders the decision, not just the session. */
+    externalVerdict?: ExternalSessionVerdictSummary;
     externalPrescription?: {
         planId: string;
         revision: number;

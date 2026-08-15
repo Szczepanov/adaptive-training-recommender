@@ -345,7 +345,7 @@ service cloud.firestore {
       return hasOwnedUserId(userId)
         && data.keys().hasOnly(['userId', 'planningMode', 'priorities', 'weeklyCommitment', 'organizationPreference', 'schemaVersion', 'createdAt', 'updatedAt'])
         && data.keys().hasAll(['userId', 'planningMode', 'priorities', 'weeklyCommitment', 'organizationPreference', 'schemaVersion', 'createdAt', 'updatedAt'])
-        && data.planningMode in ['evergreen', 'event_directed']
+        && data.planningMode in ['evergreen', 'event_directed', 'externally_planned']
         && data.priorities is list && data.priorities.size() <= 6
         && data.weeklyCommitment is map
         && commitment.keys().hasOnly(['minSessions', 'targetSessions', 'maxSessions'])

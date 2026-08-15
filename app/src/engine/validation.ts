@@ -1218,7 +1218,9 @@ export function validateTrainingIntentProfile(raw: any): ValidationResult<Traini
     if (extra.length) errors.push({ field: 'profile', message: `Unrecognized profile field(s): ${extra.join(', ')}` });
     if (missing.length) errors.push({ field: 'profile', message: `Missing profile field(s): ${missing.join(', ')}` });
     if (typeof raw.userId !== 'string' || !raw.userId) errors.push({ field: 'userId', message: 'User ID is required' });
-    if (!(['evergreen', 'event_directed'] as PlanningMode[]).includes(raw.planningMode)) errors.push({ field: 'planningMode', message: 'Planning mode must be evergreen or event_directed' });
+    if (!(['evergreen', 'event_directed', 'externally_planned'] as PlanningMode[]).includes(raw.planningMode)) {
+        errors.push({ field: 'planningMode', message: 'Planning mode must be evergreen, event_directed or externally_planned' });
+    }
     if (!Array.isArray(raw.priorities) || raw.priorities.some((priority: unknown) => !TRAINING_PRIORITIES.includes(priority as TrainingPriority))
         || new Set(raw.priorities).size !== raw.priorities.length) {
         errors.push({ field: 'priorities', message: 'Priorities must be unique supported values' });

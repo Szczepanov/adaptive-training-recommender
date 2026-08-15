@@ -30,6 +30,9 @@ import { POLICY_VERSION } from './policy';
 import { resolveExecutionDose } from './dose';
 import { isTemplatePhaseEligible } from './periodization';
 import { resolveMinimumDaysAfterHardLowerBody } from './planningCandidate';
+import { adjudicateExternalSession } from './externalSession';
+import { toSyntheticTemplate } from './externalSessionProfiles';
+import type { ExternalPlanSession } from './models';
 import { applyFixedActivityStimulusCredit } from './planner';
 import { getUnresolvedObjectives } from './microcycle';
 import { applyCompletedSessionLoad, type FatigueFusionPolicy } from './fatigue';
@@ -316,6 +319,60 @@ export function evaluateTraining(
     return { template: selectedTemplate, rationale, mode, envelopes, telemetry };
 }
 
+/** Identifies which imported session is placed on the evaluation date. */
+export interface ExternalPlanContext {
+    planId: string;
+    revision: number;
+    session: ExternalPlanSession;
+}
+
+/**
+ * Builds the recommendation for an imported session. The verdict decides what is shown;
+ * a non-actionable verdict yields the safe recovery template rather than a prescription,
+ * so a `skip`/`defer`/`advisory` day can never render as "do this".
+ */
+function adjudicatedExternalRecommendation(
+    externalPlan: ExternalPlanContext,
+    readiness: DailyReadiness,
+    context: UserContext,
+    envelopeState: ReturnType<typeof evaluateReadinessAndSafetyEnvelope>,
+    intent: Awaited<ReturnType<typeof resolveTrainingIntent>>,
+    date: string,
+): Recommendation {
+    const { session, planId, revision } = externalPlan;
+    const verdict = adjudicateExternalSession(session, readiness, context, envelopeState, intent.plannedDose, date);
+    const actionable = verdict.decision === 'proceed' || verdict.decision === 'scale' || verdict.decision === 'advisory';
+
+    const restTemplate = ENRICHED_TEMPLATES.find(template => template.category === 'Rest')
+        ?? TEMPLATES.find(template => template.category === 'Rest')
+        ?? TEMPLATES[0];
+
+    return {
+        template: actionable ? toSyntheticTemplate(session, planId, revision) : restTemplate,
+        plannedDose: intent.plannedDose,
+        ...(verdict.executionDose ? { executionDose: verdict.executionDose } : {}),
+        rationale: verdict.rationale,
+        // An excluded imported session is a recovery day in engine terms, so downstream
+        // load accounting does not credit training that was not prescribed.
+        mode: actionable ? envelopeState.mode : 'recover',
+        envelopes: envelopeState.envelopes,
+        telemetry: envelopeState.telemetry,
+        externalPrescription: {
+            planId, revision, sessionId: session.id, title: session.title,
+            prescription: session.prescription,
+            ...(session.scaling ? { scaling: session.scaling } : {}),
+            ...(session.isEvent ? { isEvent: true } : {}),
+        },
+        externalVerdict: verdict,
+        decisionTrace: {
+            policyVersion: POLICY_VERSION,
+            // Nothing was ranked: the plan's author selected, this engine adjudicated.
+            candidateScores: [],
+            droppedContributorObjectives: intent.droppedContributorObjectives,
+        },
+    };
+}
+
 export async function evaluateTrainingWithIntent(
     userId: string,
     readiness: DailyReadiness,
@@ -330,10 +387,19 @@ export async function evaluateTrainingWithIntent(
     trainingIntentProfile: TrainingIntentProfile | null = null,
     preferences: UserPreferences | null = null,
     fatigueFusionPolicy: FatigueFusionPolicy = 'max',
+    /** Present only in `externally_planned` mode with a session placed on `date`. */
+    externalPlan: ExternalPlanContext | null = null,
 ): Promise<Recommendation> {
     const envelopeState = evaluateReadinessAndSafetyEnvelope(readiness, context, date, previousMode);
     const { mode, envelopes, telemetry } = envelopeState;
     let intent = await resolveTrainingIntent(userId, events, date, readiness, 7, historyProvider, preparedHistorySnapshot, authoredPlanBlocks, trainingIntentProfile, fatigueFusionPolicy);
+
+    // ADR-0019 D-EXT: when an imported session is placed today, the plan's author owns
+    // selection and this engine owns adjudication. Intent is still fully resolved above --
+    // the weekly critique (8.7) consumes it, and the planned dose below comes from it.
+    if (externalPlan) {
+        return adjudicatedExternalRecommendation(externalPlan, readiness, context, envelopeState, intent, date);
+    }
     const evergreen = resolveEvergreenPlan(
         intent.planningContext, intent.periodization.phase, intent.history, intent.historySnapshot,
         preferences, context, date, fixedActivities,

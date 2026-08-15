@@ -1,4 +1,4 @@
-import type { PlanningMode, TrainingIntentProfile, TrainingPriority, UserEvent, UserGoal } from './models';
+import type { ExternalPlanSession, PlanningMode, TrainingIntentProfile, TrainingPriority, UserEvent, UserGoal } from './models';
 import type { PeriodizationResult } from './periodization';
 import { resolvePlanDefinitionForEvent } from './planSchedule';
 import { DEFAULT_TRAINING_INTENT_PROFILE } from './evergreenStrategy';
@@ -9,6 +9,12 @@ export interface PlanningContext {
     profile: TrainingIntentProfile;
     focusEvent: UserEvent | null;
     eventStrategy: 'structured_plan' | 'demand_derived' | null;
+    /** The imported session placed on this date, present only in `externally_planned`
+     * mode. Callers adjudicate it instead of ranking candidates (ADR-0019 D-EXT). */
+    externalSession: ExternalPlanSession | null;
+    /** True when the athlete selected `externally_planned` but no session is placed today,
+     * so the engine's own pick is standing in. Never silent: the caller labels it. */
+    externalFallback: boolean;
 }
 
 export { DEFAULT_TRAINING_INTENT_PROFILE } from './evergreenStrategy';
@@ -51,14 +57,35 @@ export function resolvePlanningContext(
     profile: TrainingIntentProfile | null,
     periodization: PeriodizationResult,
     date: string,
+    /** The imported session already placed on `date`, if any. Resolved by the caller
+     * through `externalPlacement.ts`; this function performs no placement itself. */
+    externalSession: ExternalPlanSession | null = null,
 ): PlanningContext {
     void date;
     const resolvedProfile = fallbackProfile(profile);
+
+    // D-EXT: externally-planned is effective only when the athlete chose it AND a session
+    // is actually placed today. Choosing the mode does not by itself suspend the engine --
+    // an unplanned day falls back to the athlete's underlying behaviour, labelled.
+    if (profile?.planningMode === 'externally_planned') {
+        if (externalSession) {
+            return {
+                mode: 'externally_planned', profile: resolvedProfile,
+                focusEvent: periodization.focusEvent, eventStrategy: null,
+                externalSession, externalFallback: false,
+            };
+        }
+        return {
+            mode: 'evergreen', profile: resolvedProfile, focusEvent: null, eventStrategy: null,
+            externalSession: null, externalFallback: true,
+        };
+    }
+
     const hasEligibleEvent = periodization.focusEvent !== null;
     // Legacy profiles did not exist: retain event-directed behavior whenever the old
     // event pipeline has a governing event, otherwise use the evergreen default.
     const eventDirected = hasEligibleEvent && (profile === null || profile.planningMode === 'event_directed');
-    if (!eventDirected) return { mode: 'evergreen', profile: resolvedProfile, focusEvent: null, eventStrategy: null };
+    if (!eventDirected) return { mode: 'evergreen', profile: resolvedProfile, focusEvent: null, eventStrategy: null, externalSession: null, externalFallback: false };
 
     const focusEvent = periodization.focusEvent!;
     return {
@@ -66,5 +93,7 @@ export function resolvePlanningContext(
         profile: resolvedProfile,
         focusEvent,
         eventStrategy: resolvePlanDefinitionForEvent(focusEvent) ? 'structured_plan' : 'demand_derived',
+        externalSession: null,
+        externalFallback: false,
     };
 }

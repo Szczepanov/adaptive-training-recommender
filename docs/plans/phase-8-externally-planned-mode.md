@@ -200,7 +200,7 @@ confirmation argument.
 
 ---
 
-### 8.6 Planning-mode wiring `[ ]`
+### 8.6 Planning-mode wiring `[x]`
 
 **Current behaviour.** `planningMode.ts` `resolvePlanningContext` resolves `evergreen` or
 `event_directed`. `rules.ts` `evaluateTrainingWithIntent` always ranks candidates.
@@ -384,7 +384,7 @@ gains an optional field.
 | 8.3 | Session adjudication | `[x]` | — |
 | 8.4 | Cost, stimulus, synthetic shim | `[x]` | — |
 | 8.5 | Placement and rescheduling | `[x]` | — |
-| 8.6 | Planning-mode wiring | `[ ]` | 8.3, 8.4, 8.5 |
+| 8.6 | Planning-mode wiring | `[x]` | — |
 | 8.7 | Weekly critique layer | `[ ]` | 8.6 |
 | 8.8 | Provenance and replay | `[ ]` | 8.6 |
 | 8.9 | UI | `[ ]` | 8.6 (import screen may start after 8.1) |
