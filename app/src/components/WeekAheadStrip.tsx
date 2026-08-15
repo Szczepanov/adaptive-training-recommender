@@ -1,6 +1,6 @@
 import { useState, memo } from 'react';
 import type { WeekAheadDay, WeekAheadPlan } from '../engine/planner';
-import type { NextDayPotentialPlan, TrainingIntentProfile } from '../engine/models';
+import type { NextDayPotentialPlan, PlanningMode, TrainingIntentProfile } from '../engine/models';
 import './WeekAheadStrip.css';
 
 interface WeekAheadStripProps {
@@ -9,6 +9,11 @@ interface WeekAheadStripProps {
   selectedTier?: 'green' | 'yellow' | 'red';
   onSelectTier?: (tier: 'green' | 'yellow' | 'red') => void;
   trainingIntentProfile?: TrainingIntentProfile | null;
+  /** The **effective** mode from `planningMode.ts` `resolvePlanningContext` (ADR-0017
+   * D-MODE) — not `trainingIntentProfile.planningMode`, which records stated intent. An
+   * event_directed profile whose events have all passed is planned as evergreen, and
+   * reading the persisted field would hide this week's purpose from exactly them. */
+  planningMode?: PlanningMode;
 }
 
 const MODALITY_ICON: Record<string, string> = {
@@ -46,7 +51,7 @@ function weekdayLabel(dateStr: string): string {
 // Wrapped WeekAheadStrip in React.memo to prevent unnecessary re-renders when the parent dashboard
 // state updates (e.g., toggling workout details).
 // Expected Impact: Prevents recalculation and re-rendering of the 7-day strip layout and logic.
-export const WeekAheadStrip = memo(function WeekAheadStrip({ plan, nextDayPlan, selectedTier = 'green', onSelectTier, trainingIntentProfile }: WeekAheadStripProps) {
+export const WeekAheadStrip = memo(function WeekAheadStrip({ plan, nextDayPlan, selectedTier = 'green', onSelectTier, trainingIntentProfile, planningMode }: WeekAheadStripProps) {
   const [selectedIndex, setSelectedIndex] = useState(0);
 
   if (!plan || plan.days.length === 0) return null;
@@ -56,10 +61,7 @@ export const WeekAheadStrip = memo(function WeekAheadStrip({ plan, nextDayPlan, 
   const openObjective = plan.microcycleObjectives.find(objective =>
     (objective.completedCredit ?? objective.completedExposures) < (objective.requiredCredit ?? objective.targetExposures),
   );
-  // The plan's resolved mode, not the profile's stated one (ADR-0017 D-MODE): an
-  // event_directed athlete whose events have all passed is planned as evergreen, and
-  // reading the persisted field would hide this week's purpose from exactly them.
-  const evergreenWeekPurpose = plan.planningMode === 'evergreen' && trainingIntentProfile
+  const evergreenWeekPurpose = planningMode === 'evergreen' && trainingIntentProfile
     ? `${trainingIntentProfile.weeklyCommitment.targetSessions} typical sessions${openObjective ? `; ${openObjective.title} is still open` : ''}.`
     : null;
   // ADR-0018 D-MISS: forecast evidence rendered straight from the shared allocation

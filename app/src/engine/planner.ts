@@ -16,7 +16,6 @@ import type {
     WeeklyObjective,
     WorkoutCostProfile,
     WorkoutStimulusProfile,
-    PlanningMode,
 } from './models';
 
 export interface PlannedObjectiveCredit {
@@ -130,11 +129,6 @@ export interface WeekAheadPlan {
     droppedContributorObjectives: DroppedContributorObjective[];
     /** ADR-0018 forecast-only evidence. This is not completed training or audit data. */
     allocationReport: WeeklyRoleAllocationReport;
-    /** The **effective** mode `planningMode.ts` resolved for this plan (ADR-0017 D-MODE),
-     * exposed so consumers never re-derive it from `TrainingIntentProfile.planningMode`.
-     * The persisted field is the athlete's stated intent, not the outcome: an
-     * `event_directed` profile whose events have all passed resolves to `evergreen`. */
-    planningMode: PlanningMode;
 }
 
 export interface WeekAheadPlanSeed {
@@ -152,11 +146,6 @@ export interface WeekAheadOptions {
     planDefinition?: PlanDefinition | null;
     /** Simulation-only fatigue comparison. Live callers use the default `max`. */
     fatigueFusionPolicy?: FatigueFusionPolicy;
-    /** The effective mode already resolved by `resolvePlanningContext`. Absent means the
-     * caller resolved no intent at all, which `resolvePlanningContext` itself would also
-     * answer `evergreen` for — it returns `event_directed` only when an eligible focus
-     * event exists, and this synchronous entry point has no events to resolve one from. */
-    planningMode?: PlanningMode;
 }
 
 const ZERO_COST: WorkoutCostProfile = {
@@ -1423,7 +1412,6 @@ export function generateWeekAheadPlan(
         allocationReport: {
             outcomes: finalOutcomes.sort((left, right) => left.occurrence.id.localeCompare(right.occurrence.id)),
         },
-        planningMode: options.planningMode ?? 'evergreen',
     };
 }
 
@@ -1460,6 +1448,6 @@ export async function generateWeekAheadPlanWithIntent(
             trailingHistory: trailingHistoryFromCompletedExposures(intent.history, todayDate),
             droppedContributorObjectives: intent.droppedContributorObjectives,
         },
-        { ...options, fatigueFusionPolicy, planningMode: intent.planningContext.mode, events: intent.planningContext.mode === 'event_directed' ? events : [], ...(evergreen ? { planDefinition: evergreen.planDefinition } : {}) },
+        { ...options, fatigueFusionPolicy, events: intent.planningContext.mode === 'event_directed' ? events : [], ...(evergreen ? { planDefinition: evergreen.planDefinition } : {}) },
     );
 }

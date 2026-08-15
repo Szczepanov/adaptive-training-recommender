@@ -3,6 +3,7 @@ import { evaluateNextDayPlanWithIntent, evaluateTrainingWithIntent } from '../ru
 import { generateWeekAheadPlanWithIntent, resolveWeeklyAnchors, type WeekAheadDay } from '../planner';
 import type { CompletedExposure, TrainingHistoryProvider } from '../trainingHistory';
 import { evaluatePeriodizationPhase } from '../periodization';
+import { resolvePlanningContext } from '../planningMode';
 import { addDaysToLocalDateString } from '../../utils/localDate';
 import { workoutForTemplate } from '../../workouts/prescription';
 import type { AthleteScenario } from './scenarios';
@@ -346,8 +347,15 @@ export async function runScenario(
             'sim-user', readiness, scenario.context, scenario.preferences ?? null, events, currentDate, todayRec, tomorrowRec,
             { days: 6, fixedActivities, fatigueFusionPolicy }, historyProvider, null, scenario.trainingIntentProfile ?? null,
         );
-        resolvedPlanningMode = plan.planningMode;
-        const todayPhase = evaluatePeriodizationPhase(events, currentDate).phase.phaseName;
+        // Resolved through the single authority (ADR-0017 D-MODE), not read off the
+        // scenario's stated profile: an event_directed scenario whose events have all
+        // passed is planned as evergreen, and grading it against strict event-directed
+        // objective contracts would emit false quality warnings.
+        const periodizationToday = evaluatePeriodizationPhase(events, currentDate);
+        resolvedPlanningMode = resolvePlanningContext(
+            scenario.trainingIntentProfile ?? null, periodizationToday, currentDate,
+        ).mode;
+        const todayPhase = periodizationToday.phase.phaseName;
         const simulatedDays: WeekAheadDay[] = [recommendationAsDay(currentDate, todayRec, todayPhase), ...plan.days];
         decisionTraces.push(
             traceFromRecommendation(week, currentDate, todayRec),

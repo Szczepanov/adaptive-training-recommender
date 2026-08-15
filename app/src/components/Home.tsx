@@ -7,6 +7,7 @@ import { prepareTrainingHistorySnapshot } from '../engine/trainingIntent';
 import type { TrainingHistorySnapshot } from '../engine/trainingHistorySnapshot';
 import { buildRecommendationAudit } from '../engine/provenance';
 import { evaluatePeriodizationPhase, getDaysToEvent } from '../engine/periodization';
+import { resolvePlanningContext } from '../engine/planningMode';
 import { resolveExecutionDose } from '../engine/dose';
 import type { AuthoredPlanBlock, DailyDecisionInput, Recommendation, NextDayPotentialPlan, DailyRecommendation, FixedActivity } from '../engine/models';
 import type { DataState } from '../engine/dataState';
@@ -376,6 +377,18 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
     };
   }, [decisionInput]);
 
+  // The EFFECTIVE planning mode, resolved through the single authority (ADR-0017 D-MODE)
+  // rather than read off TrainingIntentProfile.planningMode, which records stated intent:
+  // an event_directed profile whose events have all passed is planned as evergreen.
+  const resolvedPlanningMode = useMemo(() => {
+    if (!decisionInput || !eventPeriodization) return undefined;
+    return resolvePlanningContext(
+      decisionInput.trainingIntentProfile,
+      eventPeriodization.today,
+      decisionInput.date,
+    ).mode;
+  }, [decisionInput, eventPeriodization]);
+
   // Matches generateWeekAheadPlan's own WeekAheadOptions.days default (planner.ts) -- the
   // fixed-activity read below must cover the same horizon the planner actually walks.
   const WEEK_AHEAD_DAYS = 7;
@@ -643,6 +656,7 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
             selectedTier={selectedNextDayTier}
             onSelectTier={setSelectedNextDayTier}
             trainingIntentProfile={decisionInput?.trainingIntentProfile}
+            planningMode={resolvedPlanningMode}
           />
         </div>
 

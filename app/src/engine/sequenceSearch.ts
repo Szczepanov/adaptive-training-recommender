@@ -384,12 +384,11 @@ export async function generateWeekAheadPlanWithIntentBeamSearch(
             trailingHistory: trailingHistoryFromCompletedExposures(intent.history, todayDate),
             droppedContributorObjectives: intent.droppedContributorObjectives,
         },
-        { ...options, planningMode: intent.planningContext.mode, events: intent.planningContext.mode === 'event_directed' ? events : [] },
+        { ...options, events: intent.planningContext.mode === 'event_directed' ? events : [] },
         beamWidth,
         candidatesPerDay
     );
     return {
-        planningMode: intent.planningContext.mode,
         startDate: result.startDate,
         days: result.days,
         objectiveCredits: result.objectiveCredits,
