@@ -57,8 +57,10 @@ path, which is a far cheaper way to learn that than a fork.
 
 Every imported session passes `evaluateTemplateEligibility`, the safety envelope, the
 readiness mode ceiling, and the injury gate on exactly the terms a catalog template does.
-When a gate excludes it, the app states which gate and offers the scaled or substituted
-alternative. It never displays an unvetted session.
+When a gate excludes it, the app states which gate and may show the external author's
+free-text fallback as **advisory intent only**. Any actionable substitute is a separate,
+structured candidate that must pass the same normal safety and feasibility gates before it
+is displayed as executable. It never displays an unvetted session.
 
 This is the property that distinguishes the application from reading the plan off a phone,
 and it is not negotiable for the convenience of the import path.
