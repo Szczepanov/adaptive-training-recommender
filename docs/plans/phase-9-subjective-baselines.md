@@ -55,16 +55,19 @@ computeSubjectiveBaseline(
 
 Per metric: trailing 7-day average, trailing 28-day average, 28-day population stdev
 floored at `SUBJECTIVE_STDEV_FLOOR` (1.0 point, D-SUBJSD). `recordedDays` counts **distinct
-dates**, not documents. Returns `null` outright below `SUBJECTIVE_BASELINE_MIN_DAYS`
-(D-SUBJCOV) so no caller can accidentally consume a sub-threshold baseline.
+complete scored dates**, not documents. A partial minimum-safety check-in can still carry
+important pain/illness flags, but its null readiness dimensions are not observations of
+the subjective score vector and therefore cannot mature the baseline. Returns `null`
+outright below `SUBJECTIVE_BASELINE_MIN_DAYS` (D-SUBJCOV) so no caller can accidentally
+consume a sub-threshold baseline.
 
 Reuse the shape of `contextBrief.ts`'s existing coverage logic rather than inventing a
 second convention; the brief's `SUBJECTIVE_BASELINE_MIN_DAYS` and the engine's must be one
 exported constant, not two literals that can drift.
 
 **Done when** the function is pure, a sub-threshold history returns `null`, duplicate-date
-records cannot inflate `recordedDays`, and a zero-variance history yields the stdev floor
-rather than a division by zero.
+records and partial safety-only check-ins cannot inflate `recordedDays`, and a zero-variance
+history yields the stdev floor rather than a division by zero.
 
 ---
 
@@ -162,7 +165,7 @@ scale-use differences the whole ADR exists to correct:
 
 | Fixture | Shape | What it must prove |
 |---|---|---|
-| Habitual low reporter | Readiness ~4, fatigue ~6, flat | Is not held in `modify` indefinitely by absolute thresholds alone |
+| Habitual low reporter | Readiness ~3, fatigue ~7, flat | Drift does **not** relax an absolute-threshold `modify`; this quantifies the tighten-only rule's accepted false-positive trade-off |
 | Habitual high reporter | Readiness ~8, fatigue ~2, flat | Does not escape a real decline because the absolute floor is far away |
 | Slow drifter | Readiness 8 → 6 over three weeks, never crossing an absolute threshold | The case the term exists for: currently invisible, must become visible |
 | Noisy but stationary | Mean stable, day-to-day swing ±2 | Must **not** trigger — noise is not drift |
@@ -237,7 +240,7 @@ code is not what closes this task.
 
 | Area | Behaviour asserted |
 |---|---|
-| `subjectiveBaseline` | Sub-threshold coverage returns `null`; distinct-date counting; zero-variance yields the stdev floor, not a division by zero. |
+| `subjectiveBaseline` | Sub-threshold coverage returns `null`; distinct-date counting; partial safety-only check-ins do not count as scored coverage; zero-variance yields the stdev floor, not a division by zero. |
 | `rules` (property) | For any baseline input, `'drift'` never produces a *less* restrictive mode than `'off'`. This is D-SUBJFLOOR made mechanical. |
 | `rules` | Every absolute trigger fires identically under both policies. |
 | `rules` | A chronically elevated soreness baseline does not reduce that athlete's mode — the safety inversion the ADR exists to prevent. |
@@ -255,7 +258,7 @@ code is not what closes this task.
 - [ ] The property test proving drift can only tighten passes.
 - [ ] Every 9.5 fixture produces non-zero subjective stdev, verified in the 9.6 report.
 - [ ] The slow-drifter fixture shows a mode change under `'drift'` that `'off'` does not produce — if it does not, the term does nothing useful and 9.8 outcome 3 applies.
-- [ ] The chronically-sore fixture shows **no** relaxation under `'drift'`.
+- [ ] The habitual-low and chronically-sore fixtures show **no** relaxation under `'drift'`.
 - [ ] 9.8's outcome is recorded in ADR-0020 with its evidence.
 
 ## Risks & rollback
