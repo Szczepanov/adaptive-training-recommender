@@ -72,7 +72,7 @@ travel dates, and a travel change does not require re-importing the plan.
 | `schema` | yes | Exact literal. The version tag is how a future schema change stays detectable. |
 | `planId` | yes | Slug, 1–64 chars, `[a-z0-9-]`. Stable across revisions — this is what makes supersession work. |
 | `revision` | yes | Integer ≥ 1. Must exceed the stored revision for the same `planId`. |
-| `startDate` | yes | `YYYY-MM-DD`, must be a Monday, Warsaw-local. Weeks are Monday-based to match the microcycle window. |
+| `startDate` | yes | `YYYY-MM-DD`, must be a Monday, Warsaw-local. Monday gives the imported artifact deterministic conventional training weeks; it is not the engine's rolling microcycle boundary. Placement/critique code translates between them. |
 | `weekCount` | yes | 1–26. Rejects the runaway-generation case and bounds the placement document. |
 | `sessions` | yes | 1–120 entries. |
 
@@ -279,7 +279,7 @@ alongside it. Each is cheap to revisit.
 
 | Question | Resolution |
 |---|---|
-| Week boundaries | **Monday-based**, matching the rolling microcycle window. |
+| Week boundaries | **Monday-based** for the imported artifact. The engine's current microcycle is a rolling evaluation-date lookback, so placement and critique must translate between these windows rather than assuming they coincide. |
 | `weekCount ≤ 26` / `sessions ≤ 120` | Retained. Keeps the placement overlay a single small read. |
 | Default supersession date | **The evaluation date (today).** Deferring to next week would make mid-block corrections useless. |
 | `objectives` optional vs. required | **Optional**, with coarse derivation when absent and a post-import prompt inviting confirmation. Requiring it hurts import reliability; omitting it silently would degrade the weekly critique to a guess — so the app asks rather than demands. |
