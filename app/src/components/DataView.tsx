@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import type { DailyDecisionInput } from '../engine/models';
 import { recommendationService } from '../services/recommendationService';
+import { contextBriefService, type ContextBriefResult } from '../services/contextBriefService';
 import './DataView.css';
 
 interface DataViewProps {
@@ -18,7 +19,13 @@ function describeSourceState(status: 'MISSING' | 'INVALID' | 'UNAVAILABLE'): str
 }
 
 export function DataView({ decisionInput, userId }: DataViewProps) {
-  const [activeTab, setActiveTab] = useState<'recovery' | 'checkin' | 'goals' | 'constraints' | 'preferences' | 'adherence'>('recovery');
+  const [activeTab, setActiveTab] = useState<'recovery' | 'checkin' | 'goals' | 'constraints' | 'preferences' | 'adherence' | 'brief'>('recovery');
+  const [brief, setBrief] = useState<ContextBriefResult | null>(null);
+  // Tagged with the date it belongs to, so a failure for one date is not rendered
+  // against another. Deriving visibility this way avoids clearing state from inside
+  // the effect body, which react-hooks/set-state-in-effect correctly rejects.
+  const [briefError, setBriefError] = useState<{ date: string; message: string } | null>(null);
+  const [briefCopied, setBriefCopied] = useState(false);
   // null doubles as "not loaded yet" -- once getAdherenceStats resolves it's always a
   // real (possibly all-zero) stats object, so this alone distinguishes loading from an
   // answer of "nothing recorded yet" without a separate loading flag.
@@ -32,6 +39,44 @@ export function DataView({ decisionInput, userId }: DataViewProps) {
     });
     return () => { cancelled = true; };
   }, [activeTab, userId, adherenceStats]);
+
+  const briefDate = decisionInput?.date;
+  useEffect(() => {
+    // Keyed on the date the brief was built for, not merely on its presence: a scenario
+    // switch or a midnight rollover changes `briefDate`, and a presence-only guard would
+    // leave the previous day's brief and range on screen indefinitely.
+    // `briefDate` must be defined for the comparison to settle: passing undefined lets the
+    // service default to today, whose asOfDate would never equal undefined and would
+    // re-trigger this effect on every render.
+    if (activeTab !== 'brief' || !briefDate || brief?.asOfDate === briefDate) return;
+    let cancelled = false;
+    contextBriefService.build(userId, briefDate)
+      .then(result => { if (!cancelled) { setBrief(result); setBriefError(null); } })
+      .catch(() => {
+        if (cancelled) return;
+        // Drop the stale result rather than leaving the previous date's brief and range on
+        // screen under an error banner -- Copy would otherwise hand the athlete yesterday's
+        // window while the page claims today's.
+        setBrief(null);
+        setBriefCopied(false);
+        setBriefError({ date: briefDate, message: 'Could not assemble the brief. Retry the dashboard refresh.' });
+      });
+    return () => { cancelled = true; };
+  }, [activeTab, userId, brief?.asOfDate, briefDate]);
+
+  const copyBrief = async () => {
+    if (!brief) return;
+    try {
+      await navigator.clipboard.writeText(brief.text);
+      setBriefError(null);
+      setBriefCopied(true);
+      window.setTimeout(() => setBriefCopied(false), 2000);
+    } catch {
+      // Clipboard permission can be denied; the textarea below is always selectable.
+      setBriefCopied(false);
+      setBriefError({ date: brief.asOfDate, message: 'Copy was blocked. Select the text below and copy it manually.' });
+    }
+  };
 
   if (!decisionInput) {
     return (
@@ -465,6 +510,37 @@ export function DataView({ decisionInput, userId }: DataViewProps) {
     </div>
   );
 
+  const visibleBriefError = briefError && briefError.date === briefDate ? briefError.message : null;
+
+  const renderContextBrief = () => (
+    <div className="data-section">
+      <h3>Context brief</h3>
+      <p className="brief-intro">
+        A summary of the last {brief?.windowDays ?? 14} days — constraints, recovery trend, completed
+        training, subjective scores, and adherence — for pasting into an external planner.
+        Read-only: generating it changes nothing.
+      </p>
+      {visibleBriefError && <p className="data-state-notice">{visibleBriefError}</p>}
+      {!brief && !visibleBriefError && <p>Assembling...</p>}
+      {brief && (
+        <>
+          {brief.unavailableSources.length > 0 && (
+            <p className="data-state-notice">
+              Could not read: {brief.unavailableSources.join(', ')}. The brief below is incomplete.
+            </p>
+          )}
+          <div className="brief-actions">
+            <button className="brief-copy" onClick={copyBrief}>
+              {briefCopied ? 'Copied' : 'Copy to clipboard'}
+            </button>
+            <span className="brief-range">{brief.startDate} → {brief.asOfDate}</span>
+          </div>
+          <textarea className="brief-text" readOnly value={brief.text} rows={24} spellCheck={false} />
+        </>
+      )}
+    </div>
+  );
+
   const renderAdherenceData = () => (
     <div className="data-section">
       <h3>Adherence (last 30 days)</h3>
@@ -566,6 +642,12 @@ export function DataView({ decisionInput, userId }: DataViewProps) {
         >
           Adherence
         </button>
+        <button
+          className={activeTab === 'brief' ? 'active' : ''}
+          onClick={() => setActiveTab('brief')}
+        >
+          Context brief
+        </button>
       </div>
 
       <div className="data-view-content">
@@ -575,6 +657,7 @@ export function DataView({ decisionInput, userId }: DataViewProps) {
         {activeTab === 'constraints' && renderConstraintsData()}
         {activeTab === 'adherence' && renderAdherenceData()}
         {activeTab === 'preferences' && renderPreferencesData()}
+        {activeTab === 'brief' && renderContextBrief()}
       </div>
     </div>
   );

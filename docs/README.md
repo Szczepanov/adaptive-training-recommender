@@ -67,9 +67,12 @@ Architectural choices, system invariants, and technical trade-offs are documente
 * [**ADR-0016: Adaptation Credit & Weekly Coverage**](./adr/0016-adaptation-credit-and-weekly-coverage.md) — Separates physiological adaptation credit from exact authored weekly programming-role coverage.
 * [**ADR-0017: Training Intent Profile & First-Class Planning Modes**](./adr/0017-training-intent-profile-and-planning-modes.md) — Accepted evidence-to-dose-to-capacity Evergreen contract that preserves structured and demand-derived event paths (Phase 7B).
 * [**ADR-0018: Weekly Allocation, Safe Role Reservations & Explicit Misses**](./adr/0018-weekly-allocation-and-role-reservations.md) — Accepted production-greedy allocation contract for preserving safe, required weekly roles after PR #17.
+* [**ADR-0019: Externally-Authored Plans & Session Adjudication**](./adr/0019-externally-authored-plans-and-session-adjudication.md) — *Proposed.* A third planning mode in which an imported plan owns selection and the engine owns safety, dose, and weekly critique.
+* [**ADR-0020: Subjective Baselines in Readiness Mode**](./adr/0020-subjective-baselines-in-readiness-mode.md) — *Proposed.* Self-normalised subjective drift as a tighten-only term, gated on check-in coverage, with coefficients deferred to calibration.
 
-Reserved for work sequenced in [`docs/plans/`](./plans/), written with their phase:
-**0012** plan intent · **0013** structured injury constraints.
+**0013** (structured injury constraints) is reserved for work sequenced in
+[`docs/plans/`](./plans/) and will be written with its phase. ADR-0012 was written and is
+listed above; it is no longer reserved.
 
 ---
 
@@ -81,6 +84,7 @@ Point-in-time assessments of the system as built, including gaps between documen
 * [**2026-08-10 PR #17 semantic-baseline follow-up**](./analysis/2026-08-10-pr17-semantic-baseline-follow-up.md) — Evidence, rejected calibration candidates, and the remaining sequence-level acceptance work.
 * [**2026-08-10 Training-intent & periodization architecture analysis**](./analysis/2026-08-10-training-intent-periodization-architecture.md) — Evidence for Phase 7A/7B mode, preference-ownership, capacity, and stateful-allocation proposals.
 * [**2026-08-11 Phase 6 & 7 compliance review**](./analysis/2026-08-11-phase-6-7-compliance-review.md) — Code, test, simulation, deployment, and plan-status review of the delivered Phase 6 and Phase 7 work.
+* [**2026-08-15 Externally-authored plan feasibility**](./analysis/2026-08-15-externally-authored-plan-feasibility.md) — Structural assessment of importing an externally-authored training plan and narrowing the engine to per-session adjudication.
 
 ---
 
@@ -96,6 +100,8 @@ How agreed changes get made. Mutable, status-tracked, and expected to go stale �
 * [**Phase 6: Evidence-driven calibration & operational assurance**](./plans/phase-6-evidence-and-operational-assurance.md) — Scenario telemetry, calibration evidence, and Firestore-rule deployment assurance.
 * [**Phase 7A: Weekly allocation & safe role reservations**](./plans/phase-7-weekly-allocation-and-role-reservations.md) — The PR #17 follow-up: reserve eligible required roles, protect them from support work, and report safety-forced misses.
 * [**Phase 7B: Training intent, capacity & planning modes**](./plans/phase-7-training-intent-and-planning-modes.md) — Evergreen evidence-to-dose-to-capacity planning proposal.
+* [**Phase 8: Externally-planned mode**](./plans/phase-8-externally-planned-mode.md) — *Draft.* Import an externally-authored plan, adjudicate its sessions against daily readiness, and repoint the weekly machinery to critique.
+* [**Phase 9: Subjective baselines in readiness mode**](./plans/phase-9-subjective-baselines.md) — *Draft.* Build the tighten-only subjective drift term behind a default-off selector, give the corpus real subjective variance, then decide from evidence whether it ships.
 
 ---
 
@@ -105,6 +111,7 @@ In-depth technical design documents covering system subsystems:
 * [**Ingestion Pipeline Architecture**](./architecture/ingestion-pipeline.md) — Python Garmin API client, token persistence, baseline metrics calculation, and Firestore repository.
 * [**Recommendation Engine**](./architecture/recommendation-engine.md) — The two selection paths, module map, self-normalised strain scoring, `train`/`modify`/`recover` modes, candidate ranking, and the authority ordering.
 * [**Workout Library Architecture**](./workout-library.md) — Multi-layered workout definitions, variants, and September race event plan contract.
+* [**External Plan Import Schema**](./external-plan-schema.md) — *Proposed, not implemented.* JSON contract for importing an externally-authored plan, plus the placement/revision scheduling model.
 
 ---
 

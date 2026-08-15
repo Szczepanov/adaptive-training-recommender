@@ -5,14 +5,35 @@ import * as ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 
 const ENGINE_DIR = dirname(fileURLToPath(import.meta.url));
-const DIRECT_PROFILE_ACCESS_ALLOWLIST = new Set(['planningMode.ts', 'validation.ts']);
+/**
+ * Scans the whole application source, not only `engine/`. The rule this guard enforces is
+ * about *consumers* of the effective mode, and the consumers most likely to get it wrong
+ * are UI components — `WeekAheadStrip.tsx` branched on the persisted profile field and
+ * survived an engine-only scan, hiding the evergreen week purpose from precisely the
+ * event_directed athletes whose events had passed. `.tsx` is included for the same reason.
+ */
+const SRC_DIR = dirname(ENGINE_DIR);
+/**
+ * Paths relative to `src/`, not basenames — the scan now spans directories where a
+ * basename could collide. Each entry owns the persisted field itself rather than
+ * consuming the effective mode:
+ *   - the authority, and the validator that guards the stored value;
+ *   - the settings editor, which must read the athlete's *stated* intent in order to let
+ *     them change it. Reading the field to edit it is not deriving a mode from it.
+ */
+const DIRECT_PROFILE_ACCESS_ALLOWLIST = new Set([
+    'engine/planningMode.ts',
+    'engine/validation.ts',
+    'components/preferences/TrainingPlanSection.tsx',
+    'components/preferences/usePreferences.ts',
+]);
 
-function productionEngineFiles(directory = ENGINE_DIR): string[] {
+function productionEngineFiles(directory = SRC_DIR): string[] {
     return readdirSync(directory, { withFileTypes: true })
         .flatMap(entry => {
             const absolutePath = join(directory, entry.name);
             if (entry.isDirectory()) return productionEngineFiles(absolutePath);
-            if (!entry.isFile() || !entry.name.endsWith('.ts') || entry.name.endsWith('.test.ts')) return [];
+            if (!entry.isFile() || !/\.tsx?$/.test(entry.name) || /\.test\.tsx?$/.test(entry.name)) return [];
             return [absolutePath];
         })
         .sort();
@@ -88,22 +109,28 @@ function lineOf(source: ts.SourceFile, node: ts.Node): number {
 }
 
 describe('planning-mode architecture authority', () => {
-    it('keeps effective planning-mode derivation inside planningMode.ts', () => {
+    it('keeps effective planning-mode derivation inside planningMode.ts, across the whole app', () => {
         const violations: string[] = [];
         const modeLiterals = planningModeLiterals();
 
         for (const absolutePath of productionEngineFiles()) {
-            const fileName = relative(ENGINE_DIR, absolutePath).replaceAll('\\', '/');
-            const baseName = fileName.split('/').at(-1) ?? fileName;
+            const fileName = relative(SRC_DIR, absolutePath).replaceAll('\\', '/');
             const sourceText = readFileSync(absolutePath, 'utf8');
-            const source = ts.createSourceFile(fileName, sourceText, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+            // ScriptKind must follow the extension. Parsing a .tsx file as TS silently
+            // disables JSX parsing, so every expression inside a JSX attribute becomes
+            // invisible to the traversal below -- which would make the whole reason this
+            // scan was widened to components inert.
+            const source = ts.createSourceFile(
+                fileName, sourceText, ts.ScriptTarget.Latest, true,
+                fileName.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
+            );
 
             const visit = (node: ts.Node): void => {
                 // PlanningContext mode literals are authority output. Production code outside
                 // planningMode.ts may consume the resolved value, but must not construct it.
                 // Derive the literal set from PlanningMode itself so a future third mode is
                 // guarded automatically when the union widens.
-                if (baseName !== 'planningMode.ts'
+                if (fileName !== 'engine/planningMode.ts'
                     && ts.isPropertyAssignment(node)
                     && propertyName(node.name) === 'mode'
                     && ts.isStringLiteral(node.initializer)
@@ -115,7 +142,7 @@ describe('planning-mode architecture authority', () => {
                 // decision. validation.ts is the only non-authority exception because it checks
                 // the persisted schema rather than deriving runtime behavior. This also catches
                 // aliasing such as `const mode = profile.planningMode` before a later branch.
-                if (!DIRECT_PROFILE_ACCESS_ALLOWLIST.has(baseName) && isPlanningModeAccess(node)) {
+                if (!DIRECT_PROFILE_ACCESS_ALLOWLIST.has(fileName) && isPlanningModeAccess(node)) {
                     violations.push(`${fileName}:${lineOf(source, node)} reads TrainingIntentProfile.planningMode outside the authority`);
                 }
 
@@ -126,7 +153,7 @@ describe('planning-mode architecture authority', () => {
                     : ts.isConditionalExpression(node)
                         ? node.condition
                         : null;
-                if (baseName !== 'planningMode.ts'
+                if (fileName !== 'engine/planningMode.ts'
                     && focusCondition
                     && subtreeContains(focusCondition, isFocusEventAccess)
                     && containsModeLiteral(node, modeLiterals)) {

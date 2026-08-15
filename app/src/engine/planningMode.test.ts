@@ -71,4 +71,18 @@ describe('training intent profile suggestions', () => {
             goal({ domain: 'endurance', targetDate: '2026-10-01' }),
         ])).toEqual(['balanced_performance']);
     });
+
+    // Restored after the 52d4d21 merge: this was the only runtime proof that the
+    // persisted profile field and the effective mode can disagree, and the WeekAheadStrip
+    // and analyze.ts fixes both depend on exactly that. The architecture guard is a
+    // static scan and asserts nothing about behaviour.
+    it('resolves an event_directed profile with no eligible event to evergreen', () => {
+        const stated = profile('event_directed');
+        const context = resolvePlanningContext(stated, evaluatePeriodizationPhase([], '2026-08-10'), '2026-08-10');
+
+        expect(stated.planningMode).toBe('event_directed');
+        expect(context.mode).toBe('evergreen');
+        expect(context.focusEvent).toBeNull();
+        expect(context.eventStrategy).toBeNull();
+    });
 });
