@@ -59,6 +59,19 @@ describe('ContextBriefService', () => {
         expect(result.unavailableSources).toContain('recovery snapshots (2 day(s) unreadable)');
     });
 
+    it('omits malformed range-query check-ins instead of treating them as valid history', async () => {
+        services.getCheckinsInRange.mockResolvedValue([{
+            userId: 'u1',
+            date: AS_OF,
+            readiness: 'not-a-number',
+        }]);
+
+        const result = await new ContextBriefService().build('u1', AS_OF, 14);
+
+        expect(result.unavailableSources).toContain('subjective check-ins (1 invalid record(s) omitted)');
+        expect(result.text).toContain('No check-ins in this window.');
+    });
+
     it('reports a failed preferences read, because it owns a hard modality exclusion', async () => {
         services.getPreferencesState.mockResolvedValue({ status: 'UNAVAILABLE', operation: 'read preferences', retryable: true });
         const result = await new ContextBriefService().build('u1', AS_OF, 14);
