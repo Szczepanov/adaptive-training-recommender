@@ -46,6 +46,8 @@ import type {
     ExternalPlacementFlexibility,
     ExternalIfMissed,
     ExternalWeekday,
+    ExternalPlanPlacement,
+    ExternalPlacementStatus,
 } from './models';
 import { EXTERNAL_PLAN_SCHEMA } from './models';
 import { validateEventTiming, BODY_REGIONS, TISSUE_LEVELS } from './models';
@@ -1456,4 +1458,52 @@ export function validateExternalTrainingPlan(raw: any): ValidationResult<Externa
 
     if (errors.length > 0) return { isValid: false, errors };
     return { isValid: true, errors: [], data: raw as ExternalTrainingPlan };
+}
+
+const PLACEMENT_STATUSES: ExternalPlacementStatus[] = ['planned', 'completed', 'moved', 'dropped', 'superseded'];
+
+/** Strict boundary for the mutable half of an imported plan. `firestore.rules` can bound
+ * the assignment list's size but cannot iterate it, so without this the overlay -- which
+ * decides which session the athlete is shown on which day -- would be the one part of the
+ * feature validated at no layer at all. */
+export function validateExternalPlanPlacement(raw: any): ValidationResult<ExternalPlanPlacement> {
+    const errors: ValidationError[] = [];
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+        return { isValid: false, errors: [{ field: 'placement', message: 'Placement must be an object' }] };
+    }
+    const extra = unknownKeys(raw, ['userId', 'planId', 'revision', 'assignments', 'updatedAt']);
+    if (extra.length) errors.push({ field: 'placement', message: `Unrecognized field(s): ${extra.join(', ')}` });
+    if (typeof raw.userId !== 'string' || !raw.userId) errors.push({ field: 'userId', message: 'User ID is required' });
+    if (typeof raw.planId !== 'string' || !/^[a-z0-9-]{1,64}$/.test(raw.planId)) errors.push({ field: 'planId', message: 'planId must be a lowercase slug' });
+    if (!isPositiveInt(raw.revision, 1, 10000)) errors.push({ field: 'revision', message: 'revision must be a whole number >= 1' });
+    if (typeof raw.updatedAt !== 'string') errors.push({ field: 'updatedAt', message: 'updatedAt is required' });
+
+    if (!Array.isArray(raw.assignments)) {
+        errors.push({ field: 'assignments', message: 'assignments must be a list' });
+    } else if (raw.assignments.length > EXTERNAL_PLAN_MAX_SESSIONS) {
+        errors.push({ field: 'assignments', message: `At most ${EXTERNAL_PLAN_MAX_SESSIONS} assignments are supported` });
+    } else {
+        const seen = new Set<string>();
+        raw.assignments.forEach((assignment: any, index: number) => {
+            const path = `assignments[${index}]`;
+            if (!assignment || typeof assignment !== 'object' || Array.isArray(assignment)) {
+                errors.push({ field: path, message: 'Assignment must be an object' });
+                return;
+            }
+            const assignmentExtra = unknownKeys(assignment, ['sessionId', 'date', 'status']);
+            if (assignmentExtra.length) errors.push({ field: path, message: `Unrecognized field(s): ${assignmentExtra.join(', ')}` });
+            if (typeof assignment.sessionId !== 'string' || !assignment.sessionId) {
+                errors.push({ field: `${path}.sessionId`, message: 'sessionId is required' });
+            } else if (seen.has(assignment.sessionId)) {
+                errors.push({ field: `${path}.sessionId`, message: 'A session may hold at most one assignment' });
+            } else {
+                seen.add(assignment.sessionId);
+            }
+            if (!isValidDate(assignment.date)) errors.push({ field: `${path}.date`, message: 'date must be YYYY-MM-DD' });
+            if (!PLACEMENT_STATUSES.includes(assignment.status)) errors.push({ field: `${path}.status`, message: 'Unsupported status' });
+        });
+    }
+
+    if (errors.length > 0) return { isValid: false, errors };
+    return { isValid: true, errors: [], data: raw as ExternalPlanPlacement };
 }

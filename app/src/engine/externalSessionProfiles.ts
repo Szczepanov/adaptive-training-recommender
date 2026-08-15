@@ -2,6 +2,7 @@ import { DEFAULT_COST_BY_MODALITY, DEFAULT_STIMULUS_BY_MODALITY } from './comple
 import type { GateableSession } from './eligibility';
 import type {
     ExternalPlanSession,
+    GuardrailKey,
     CompletedTrainingIntensity,
     ExternalSessionIntensity,
     ExternalSessionModality,
@@ -79,17 +80,41 @@ export function deriveExternalSessionProfiles(session: ExternalPlanSession): Ext
  * `evaluateTemplateEligibility` on exactly the terms a catalog template does
  * (D-CANDIDATE). Nothing here selects, ranks, or scores.
  */
+/**
+ * Safety tags an imported session must be assumed to carry.
+ *
+ * `eligibility.ts` matches guardrails against `safetyTags` and nothing else. A manually
+ * set guardrail (an athlete who ticks "avoid high impact" with no injury behind it)
+ * produces no restricted modality or category at all, so leaving these empty would let an
+ * imported running session through a guardrail that excludes every equivalently-tagged
+ * catalog template — the exact asymmetry D-CANDIDATE forbids.
+ *
+ * The import contract has no safety-tag vocabulary and an authoring AI cannot be trusted
+ * to declare what its own session trips, so tags are inferred conservatively from modality
+ * and intensity. This over-excludes: a strength session that contains no overhead pressing
+ * is still withheld from an athlete avoiding it. That is the correct direction to be wrong
+ * in for a hard safety gate, and it is recoverable — the athlete can adjust the guardrail
+ * or the plan, whereas an unvetted session that hurt them is not.
+ */
+function inferredSafetyTags(session: ExternalPlanSession): GuardrailKey[] {
+    const { modality, intensity } = session.gating;
+    const tags: GuardrailKey[] = [];
+    if (modality === 'running' || modality === 'field') tags.push('avoid_high_impact');
+    // Loaded strength work: the three guardrails a barbell session can plausibly trip.
+    // Easy/recovery strength is left alone, so mobility-style sessions stay available.
+    if (modality === 'strength' && ['moderate', 'hard', 'max'].includes(intensity)) {
+        tags.push('avoid_heavy_lower_body', 'avoid_overhead_pressing', 'avoid_heavy_spinal_loading');
+    }
+    return tags;
+}
+
 export function toGateableSession(session: ExternalPlanSession): GateableSession {
     return {
         durationMin: session.gating.durationMin,
         durationMax: session.gating.durationMax,
         requiredEquipment: session.gating.equipment,
         environment: session.gating.environment,
-        // The import contract has no safety-tag vocabulary: an authoring AI cannot be
-        // trusted to declare which guardrails its session trips. Guardrails therefore act
-        // through the athlete's own restricted modalities and categories, which are
-        // athlete-owned, rather than through a tag the plan asserts about itself.
-        safetyTags: [],
+        safetyTags: inferredSafetyTags(session),
         modality: MODALITY_BY_EXTERNAL[session.gating.modality],
         category: categoryFor(session),
         systemicCost: deriveExternalSessionProfiles(session).systemicCost,

@@ -20,6 +20,13 @@ export interface PlacedSession {
     moved: boolean;
 }
 
+/** A session still holds its date unless it was dropped or superseded. `moved` is what
+ * `applyConfirmedProposal` writes for a reschedule, so treating only `planned` as
+ * occupying would let the next flexible session stack on top of a session just moved. */
+function occupiesDate(status: ExternalPlacementAssignment['status']): boolean {
+    return status !== 'dropped' && status !== 'superseded';
+}
+
 /** Dates already spoken for, so a re-placement does not stack two sessions on one day. */
 export interface PlacementOccupancy {
     fixedActivities?: readonly FixedActivity[];
@@ -77,14 +84,18 @@ export function resolvePlacement(
                 status: override.status,
                 moved: override.date !== impliedDate(plan, session),
             });
-            if (override.status === 'planned') taken.add(override.date);
+            if (occupiesDate(override.status) && override.date) taken.add(override.date);
             continue;
         }
 
         const wanted = impliedDate(plan, session);
         let date = wanted;
         if (session.placement.flexibility !== 'fixed' && taken.has(wanted)) {
-            const free = weekDates(plan, session.placement.week).find(candidate => !taken.has(candidate));
+            // Forward within the week first: moving a blocked Saturday session to Monday
+            // would schedule it in the past relative to where the plan put it.
+            const week = weekDates(plan, session.placement.week);
+            const free = week.find(candidate => candidate > wanted && !taken.has(candidate))
+                ?? week.find(candidate => !taken.has(candidate));
             if (free) date = free;
         }
         taken.add(date);
@@ -133,7 +144,12 @@ export function proposeReplacement(
     }
 
     const placed = resolvePlacement(plan, overlay, occupancy);
-    const taken = new Set(placed.filter(item => item.session.id !== missedSessionId && item.status === 'planned').map(item => item.date));
+    const taken = new Set([
+        ...placed.filter(item => item.session.id !== missedSessionId && occupiesDate(item.status)).map(item => item.date),
+        // Booked commitments block a proposal exactly as they block initial placement --
+        // otherwise a replacement can be proposed onto a match day.
+        ...(occupancy.fixedActivities ?? []).filter(activity => !activity.isCompleted).map(activity => activity.date),
+    ]);
 
     const withinWeek = weekDates(plan, session.placement.week).filter(date => date > missedDate && !taken.has(date));
     if (withinWeek.length > 0) {
@@ -182,8 +198,15 @@ export function applyConfirmedProposal(
 ): ExternalPlanPlacement {
     if (proposal.outcome === 'unresolved') return overlay;
     const others = overlay.assignments.filter(item => item.sessionId !== proposal.sessionId);
-    const updated: ExternalPlacementAssignment = proposal.outcome === 'dropped'
-        ? { sessionId: proposal.sessionId, date: overlay.assignments.find(item => item.sessionId === proposal.sessionId)?.date ?? '', status: 'dropped' }
-        : { sessionId: proposal.sessionId, date: proposal.date!, status: 'moved' };
-    return { ...overlay, assignments: [...others, updated] };
+    if (proposal.outcome === 'dropped') {
+        const existing = overlay.assignments.find(item => item.sessionId === proposal.sessionId);
+        // Without a prior entry there is no date to record. Writing an empty string would
+        // read back as a PlacedSession dated '', which sorts before every real date.
+        if (!existing) return overlay;
+        return { ...overlay, assignments: [...others, { ...existing, status: 'dropped' }] };
+    }
+    return {
+        ...overlay,
+        assignments: [...others, { sessionId: proposal.sessionId, date: proposal.date!, status: 'moved' }],
+    };
 }

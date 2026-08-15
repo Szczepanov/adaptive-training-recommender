@@ -57,10 +57,22 @@ describe('toGateableSession', () => {
         });
     });
 
-    it('claims no safety tags, because a plan cannot vouch for which guardrails it trips', () => {
-        // Guardrails act through the athlete's own restricted modalities and categories,
-        // which are athlete-owned, rather than through a tag the plan asserts about itself.
-        expect(toGateableSession(session('running', 'hard')).safetyTags).toEqual([]);
+    it('infers safety tags conservatively, because guardrails match nothing else', () => {
+        // eligibility.ts matches guardrails against safetyTags alone. A manually set
+        // guardrail produces no restricted modality or category, so an empty tag list
+        // would let an imported running session through a guardrail that excludes every
+        // equivalently-tagged catalog template -- the asymmetry D-CANDIDATE forbids.
+        expect(toGateableSession(session('running', 'hard')).safetyTags).toContain('avoid_high_impact');
+        expect(toGateableSession(session('field', 'moderate')).safetyTags).toContain('avoid_high_impact');
+        expect(toGateableSession(session('cycling', 'hard')).safetyTags).toEqual([]);
+    });
+
+    it('tags loaded strength work but leaves easy strength available', () => {
+        // Over-excluding is the correct direction to be wrong in for a hard safety gate,
+        // but it is scoped: a mobility-style easy session is not withheld.
+        const loaded = toGateableSession(session('strength', 'hard')).safetyTags;
+        expect(loaded).toEqual(expect.arrayContaining(['avoid_heavy_lower_body', 'avoid_overhead_pressing', 'avoid_heavy_spinal_loading']));
+        expect(toGateableSession(session('strength', 'easy')).safetyTags).toEqual([]);
     });
 
     it('assigns a recovery-intensity session to a recovery category', () => {

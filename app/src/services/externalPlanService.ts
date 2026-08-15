@@ -6,7 +6,7 @@ import type {
     ExternalTrainingPlan,
 } from '../engine/models';
 import type { DataIssue, DataState } from '../engine/dataState';
-import { validateExternalTrainingPlan } from '../engine/validation';
+import { validateExternalPlanPlacement, validateExternalTrainingPlan } from '../engine/validation';
 import { getErrorCode } from '../utils/errors';
 
 /** Stable ordering so the same document always hashes the same. `JSON.stringify` preserves
@@ -162,11 +162,21 @@ export class ExternalPlanService {
         try {
             const snapshot = await getDoc(this.placementRef(userId, planId));
             if (!snapshot.exists()) return { status: 'MISSING' };
-            const data = snapshot.data() as ExternalPlanPlacement;
-            if (data.userId !== userId) {
+            const parsed = validateExternalPlanPlacement(snapshot.data());
+            if (!parsed.isValid || !parsed.data) {
+                return {
+                    status: 'INVALID',
+                    issues: parsed.errors.map(error => ({
+                        code: 'schema-validation-failed',
+                        field: error.field,
+                        documentPath: `users/${userId}/external_plans/${planId}/placement/current`,
+                    })),
+                };
+            }
+            if (parsed.data.userId !== userId) {
                 return { status: 'INVALID', issues: [{ code: 'owner-mismatch', documentPath: `users/${userId}/external_plans/${planId}/placement/current` }] };
             }
-            return { status: 'AVAILABLE', data, revision: data.updatedAt };
+            return { status: 'AVAILABLE', data: parsed.data, revision: parsed.data.updatedAt };
         } catch (error: unknown) {
             return { status: 'UNAVAILABLE', operation: 'read external plan placement', retryable: getErrorCode(error) !== 'permission-denied' };
         }
@@ -175,6 +185,10 @@ export class ExternalPlanService {
     /** The overlay is the only mutable part of an imported plan. */
     async savePlacement(userId: string, placement: Omit<ExternalPlanPlacement, 'userId' | 'updatedAt'>): Promise<ExternalPlanPlacement> {
         const stored: ExternalPlanPlacement = { ...placement, userId, updatedAt: new Date().toISOString() };
+        const parsed = validateExternalPlanPlacement(stored);
+        if (!parsed.isValid) {
+            throw new Error(`Invalid placement overlay: ${parsed.errors.map(error => `${error.field}: ${error.message}`).join('; ')}`);
+        }
         await setDoc(this.placementRef(userId, placement.planId), stored as unknown as DocumentData);
         return stored;
     }

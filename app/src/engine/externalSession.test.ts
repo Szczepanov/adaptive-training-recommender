@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import {
     adjudicateExternalSession,
     EXTERNAL_MODIFY_MAX_SYSTEMIC_COST,
+    EXTERNAL_PLAN_TIER_SYSTEMIC_COST_CEILING,
     type ExternalSessionDecision,
 } from './externalSession';
 import { evaluateReadinessAndSafetyEnvelope } from './rules';
@@ -171,6 +172,25 @@ describe('adjudicateExternalSession', () => {
         expect(verdict.executionDose).toBeUndefined();
     });
 
+    it('applies the plan-tier ceiling even on a train-mode day', () => {
+        // A flat body battery caps the tier at Easy while readiness still reads green, so
+        // checking only the modify ceiling let a hard session through a day that excludes
+        // every equivalent catalog template.
+        const verdict = adjudicate(session({ scaling: { reducible: true, reducedSummary: 'half' } }), readiness({}, { body_battery_wake: 22 }));
+        expect(verdict.decision).not.toBe('proceed');
+    });
+
+    it('honours the minimum useful floor on the scale path, not only on proceed', () => {
+        // The scale branch is the one that actually cuts volume, so skipping the floor
+        // there let it prescribe below the author's declared minimum.
+        const verdict = adjudicate(
+            session({ scaling: { reducible: true, reducedSummary: 'half', minimumUsefulDurationMin: 55 } }),
+            readiness({ soreness: 7 }, { body_battery_wake: 22 }),
+        );
+        expect(verdict.decision).toBe('defer');
+        expect(verdict.rationale).toContain('minimum useful dose');
+    });
+
     it('leaves a low-cost session alone in modify mode', () => {
         const mobility = session({
             gating: { modality: 'mobility', intensity: 'easy', durationMin: 30, durationMax: 40, environment: 'either', equipment: [] },
@@ -267,8 +287,18 @@ describe('invariants that must hold for any input', () => {
     });
 });
 
-describe('modify-ceiling constant', () => {
-    it('matches rules.ts, which owns the real one', () => {
+describe('ceiling constants', () => {
+    it('the plan-tier ceiling matches rules.ts, which owns the real one', () => {
+        const rulesSource = readFileSync(join(import.meta.dirname, 'rules.ts'), 'utf8');
+        const block = rulesSource.match(/PLAN_TIER_SYSTEMIC_COST_CEILING[^=]*=\s*\{([^}]*)\}/);
+        expect(block, 'PLAN_TIER_SYSTEMIC_COST_CEILING not found in rules.ts').not.toBeNull();
+        for (const [tier, value] of Object.entries(EXTERNAL_PLAN_TIER_SYSTEMIC_COST_CEILING)) {
+            const expected = value === Infinity ? 'Infinity' : String(value);
+            expect(block![1], tier).toMatch(new RegExp(`${tier}:\\s*(${expected}|MODIFY_MAX_SYSTEMIC_COST)`));
+        }
+    });
+
+    it('the modify ceiling matches rules.ts, which owns the real one', () => {
         // Duplicated rather than imported so this module stays off the selection path, and
         // so exporting it would not drag rules.ts into check-policy-drift for a no-op edit.
         // Read from source instead, so the two cannot silently diverge.

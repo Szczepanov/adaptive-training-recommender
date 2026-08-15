@@ -87,6 +87,34 @@ describe('resolvePlacement', () => {
         const done = { ...fixedActivity(MONDAY), isCompleted: true };
         expect(resolvePlacement(plan([moveable]), null, { fixedActivities: [done] })[0].date).toBe(MONDAY);
     });
+
+    it('keeps a moved session holding its new date', () => {
+        // applyConfirmedProposal writes 'moved', so treating only 'planned' as occupying
+        // let the next flexible session stack on a session just rescheduled.
+        const moved = session('moved', { placement: { week: 1, preferredDay: 'monday', flexibility: 'preferred', ifMissed: 'drop' } });
+        const other = session('other', { placement: { week: 1, preferredDay: 'wednesday', flexibility: 'preferred', ifMissed: 'drop' } });
+        const placed = resolvePlacement(plan([moved, other]), overlay([{ sessionId: 'moved', date: '2026-08-19', status: 'moved' }]));
+
+        expect(placed.find(item => item.session.id === 'moved')!.date).toBe('2026-08-19');
+        expect(placed.find(item => item.session.id === 'other')!.date).not.toBe('2026-08-19');
+    });
+
+    it('frees the date of a dropped session', () => {
+        const dropped = session('dropped', { placement: { week: 1, preferredDay: 'monday', flexibility: 'preferred', ifMissed: 'drop' } });
+        const other = session('other', { placement: { week: 1, preferredDay: 'monday', flexibility: 'preferred', ifMissed: 'drop' } });
+        const placed = resolvePlacement(plan([dropped, other]), overlay([{ sessionId: 'dropped', date: MONDAY, status: 'dropped' }]));
+
+        expect(placed.find(item => item.session.id === 'other')!.date).toBe(MONDAY);
+    });
+
+    it('spreads forward within the week, never backwards into the past', () => {
+        const saturdayFixed = session('fixed', { placement: { week: 1, preferredDay: 'saturday', flexibility: 'fixed', ifMissed: 'drop' } });
+        const saturdayFlex = session('flex', { placement: { week: 1, preferredDay: 'saturday', flexibility: 'preferred', ifMissed: 'drop' } });
+        const placed = resolvePlacement(plan([saturdayFixed, saturdayFlex]), null);
+
+        // Saturday is 2026-08-22; the flexible session must not land on Monday the 17th.
+        expect(placed.find(item => item.session.id === 'flex')!.date).toBe('2026-08-23');
+    });
 });
 
 describe('proposeReplacement', () => {
@@ -138,6 +166,13 @@ describe('proposeReplacement', () => {
         expect(proposal.date).not.toBe('2026-08-18');
     });
 
+    it('does not propose a day a booked commitment already owns', () => {
+        const missed = session('missed', { placement: { week: 1, preferredDay: 'monday', flexibility: 'preferred', ifMissed: 'reschedule_within_week' } });
+        const proposal = proposeReplacement(plan([missed]), null, 'missed', MONDAY, { fixedActivities: [fixedActivity('2026-08-18')] });
+
+        expect(proposal.date).not.toBe('2026-08-18');
+    });
+
     it('reports an unknown session id rather than inventing a placement', () => {
         expect(proposeReplacement(plan([session('s1')]), null, 'ghost', MONDAY).outcome).toBe('unresolved');
     });
@@ -164,6 +199,16 @@ describe('confirmation is the only writer', () => {
 
         expect(applied.assignments).toHaveLength(1);
         expect(applied.assignments[0].status).toBe('dropped');
+    });
+
+    it('does not write an empty date when dropping a session with no prior entry', () => {
+        // An empty date reads back as a PlacedSession dated '', which sorts before every
+        // real date and would surface at the top of the week.
+        const empty = overlay([]);
+        const applied = applyConfirmedProposal(empty, { sessionId: 's1', outcome: 'dropped', rationale: 'x' });
+
+        expect(applied.assignments.every(item => item.date !== '')).toBe(true);
+        expect(applied).toBe(empty);
     });
 
     it('leaves the overlay alone for an unresolved proposal', () => {

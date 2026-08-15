@@ -2,12 +2,20 @@ import { resolveExecutionDose } from './dose';
 import { evaluateTemplateEligibility, type EligibilityReason } from './eligibility';
 import { toGateableSession } from './externalSessionProfiles';
 import type { evaluateReadinessAndSafetyEnvelope } from './rules';
-import type { DailyReadiness, ExternalPlanSession, PlannedDose, UserContext } from './models';
+import type { DailyReadiness, ExternalPlanSession, PlanEnvelope, PlannedDose, UserContext } from './models';
 
-/** Mirrors `rules.ts`'s own `modify` ceiling. Imported here as a literal rather than
- * exported from `rules.ts` so this module stays free of the selection path; the
- * `externalSessionCeiling.test.ts` guard asserts the two never drift. */
+/** Mirror `rules.ts`'s own ceilings. Duplicated rather than imported so this module stays
+ * off the selection path, and so exporting them would not drag a decision-affecting file
+ * into check-policy-drift for a no-op edit. `externalSession.test.ts` reads rules.ts source
+ * and asserts both never drift. */
 export const EXTERNAL_MODIFY_MAX_SYSTEMIC_COST = 0.5;
+
+/** The readiness/clinical tier ceiling `rules.ts` applies to every ranked candidate. An
+ * imported session must clear it too, or a costly session slips through on a low-tier day
+ * that would have excluded every equivalent catalog template (D-CANDIDATE). */
+export const EXTERNAL_PLAN_TIER_SYSTEMIC_COST_CEILING: Record<PlanEnvelope['maxAllowableTier'], number> = {
+    Rest: 0, Mobility: 0.15, Easy: 0.5, Moderate: 0.8, Hard: Infinity,
+};
 
 export type ExternalSessionDecision = 'proceed' | 'scale' | 'defer' | 'skip' | 'advisory';
 
@@ -31,6 +39,20 @@ type EnvelopeState = ReturnType<typeof evaluateReadinessAndSafetyEnvelope>;
 
 function isReducible(session: ExternalPlanSession): boolean {
     return session.scaling?.reducible !== false;
+}
+
+/** The author's own floor: below it, a fragment is worth less than moving the session. */
+function belowUsefulFloor(session: ExternalPlanSession, executionDose: PlannedDose): boolean {
+    const floor = session.scaling?.minimumUsefulDurationMin;
+    return floor !== undefined && session.gating.durationMin * executionDose.volume < floor;
+}
+
+function deferBelowFloor(session: ExternalPlanSession, gateFailures: EligibilityReason[]): ExternalSessionVerdict {
+    return {
+        decision: 'defer',
+        gateFailures,
+        rationale: `Today's ceiling would cut this below the ${session.scaling?.minimumUsefulDurationMin} minutes your plan calls the minimum useful dose. A fragment is worth less than moving it.`,
+    };
 }
 
 /**
@@ -137,9 +159,15 @@ export function adjudicateExternalSession(
             rationale: 'Today\'s ceiling leaves no training volume at all. Move this session.',
         };
     }
-    const exceedsModifyCeiling = mode === 'modify' && gateable.systemicCost > EXTERNAL_MODIFY_MAX_SYSTEMIC_COST;
+    // The plan tier is derived from clinical/readiness state independently of `mode`, so
+    // it can bite on a `train` day (a flat body battery caps the tier at Easy while
+    // readiness still reads green). Checking only the modify ceiling would let a hard
+    // imported session through a day that excludes every equivalent catalog template.
+    const tierCeiling = EXTERNAL_PLAN_TIER_SYSTEMIC_COST_CEILING[envelopes.plan.maxAllowableTier];
+    const exceedsCeiling = gateable.systemicCost > tierCeiling
+        || (mode === 'modify' && gateable.systemicCost > EXTERNAL_MODIFY_MAX_SYSTEMIC_COST);
 
-    if (exceedsModifyCeiling) {
+    if (exceedsCeiling) {
         // D-IRREDUCIBLE: the author said this session has no useful reduced form, so a
         // scaled prescription would be one they explicitly declined to write.
         if (!isReducible(session)) {
@@ -149,6 +177,10 @@ export function adjudicateExternalSession(
                 rationale: 'Readiness caps today\'s systemic load, and this session has no useful reduced form. Move it rather than doing a compromised version.',
             };
         }
+        // The floor applies here too, and this is the branch that actually cuts volume:
+        // checking it only on the proceed path let the scaled case prescribe below the
+        // author's declared minimum while a cheaper session on the same day deferred.
+        if (belowUsefulFloor(session, executionDose)) return deferBelowFloor(session, gateFailures);
         return {
             decision: 'scale',
             executionDose,
@@ -161,15 +193,7 @@ export function adjudicateExternalSession(
     }
 
     // ---- 4. Dose ---------------------------------------------------------------------
-    const floor = session.scaling?.minimumUsefulDurationMin;
-    const scaledDurationMin = session.gating.durationMin * executionDose.volume;
-    if (floor !== undefined && scaledDurationMin < floor) {
-        return {
-            decision: 'defer',
-            gateFailures,
-            rationale: `Today's ceiling would cut this below the ${floor} minutes your plan calls the minimum useful dose. A fragment is worth less than moving it.`,
-        };
-    }
+    if (belowUsefulFloor(session, executionDose)) return deferBelowFloor(session, gateFailures);
 
     return {
         decision: 'proceed',

@@ -114,6 +114,36 @@ describe('ExternalPlanService', () => {
         const offline = await new ExternalPlanService().getHeaderState('u1', 'autumn-block');
         expect(offline).toMatchObject({ status: 'UNAVAILABLE', retryable: true });
     });
+
+    it('validates the placement overlay on read, the only part rules cannot inspect', async () => {
+        // firestore.rules can bound the assignment list's size but cannot iterate it, so
+        // without this the mutable half of the plan is validated at no layer at all.
+        firestore.getDoc.mockResolvedValue({
+            exists: () => true,
+            data: () => ({ userId: 'u1', planId: 'autumn-block', revision: 1, updatedAt: 'now', assignments: [{ sessionId: 'a', date: 'not-a-date', status: 'planned' }] }),
+        });
+
+        const state = await new ExternalPlanService().getPlacementState('u1', 'autumn-block');
+        expect(state.status).toBe('INVALID');
+    });
+
+    it('refuses to write an invalid placement overlay', async () => {
+        await expect(new ExternalPlanService().savePlacement('u1', {
+            planId: 'autumn-block', revision: 1,
+            assignments: [{ sessionId: 'a', date: '2026-08-18', status: 'bogus' as never }],
+        })).rejects.toThrow(/Invalid placement overlay/);
+        expect(firestore.setDoc).not.toHaveBeenCalled();
+    });
+
+    it('rejects two assignments claiming the same session', async () => {
+        await expect(new ExternalPlanService().savePlacement('u1', {
+            planId: 'autumn-block', revision: 1,
+            assignments: [
+                { sessionId: 'a', date: '2026-08-18', status: 'planned' },
+                { sessionId: 'a', date: '2026-08-19', status: 'moved' },
+            ],
+        })).rejects.toThrow(/at most one assignment/);
+    });
 });
 
 describe('computeContentHash', () => {
