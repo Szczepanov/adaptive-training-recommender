@@ -3,6 +3,7 @@ import { evaluateNextDayPlanWithIntent, evaluateTrainingWithIntent } from '../ru
 import { generateWeekAheadPlanWithIntent, resolveWeeklyAnchors, type WeekAheadDay } from '../planner';
 import type { CompletedExposure, TrainingHistoryProvider } from '../trainingHistory';
 import { evaluatePeriodizationPhase } from '../periodization';
+import { resolvePlanningContext } from '../planningMode';
 import { addDaysToLocalDateString } from '../../utils/localDate';
 import { workoutForTemplate } from '../../workouts/prescription';
 import type { AthleteScenario } from './scenarios';
@@ -250,7 +251,7 @@ function computeMetrics(
         });
         return { weekIndex, fatigueTierDayCounts: weekFatigueTiers, restOrRecoveryDayCount: weekRestOrRecoveryDays };
     });
-    const scenarioEvents = scenario.events ?? (scenario.event ? [scenario.event] : []);
+    const scenarioEvents = [...(scenario.events ?? (scenario.event ? [scenario.event] : []))];
     const primaryEvent = scenarioEvents[0] ?? null;
     const isCyclingRelevantEvent = primaryEvent?.category === 'cycling_event' || primaryEvent?.category === 'triathlon';
     const anchorScopeNote = isCyclingRelevantEvent ? null :
@@ -259,7 +260,12 @@ function computeMetrics(
     const objectiveResolution = Array.from(objectiveTallies.values());
     const qualityWarnings: string[] = [];
     const missedObjectives = objectiveResolution.filter(o => o.timesResolved < o.timesGenerated);
-    const isEvergreen = scenario.trainingIntentProfile?.planningMode === 'evergreen';
+    const effectivePlanningMode = resolvePlanningContext(
+        scenario.trainingIntentProfile ?? null,
+        evaluatePeriodizationPhase(scenarioEvents, scenario.startDate),
+        scenario.startDate,
+    ).mode;
+    const isEvergreen = effectivePlanningMode === 'evergreen';
     // Evergreen packing reports safe partial-dose and target shortfalls in its weekly
     // budget. Those are athlete-facing feasibility facts, not a planner-quality failure.
     // Event-directed objectives remain strict calibration contracts.
