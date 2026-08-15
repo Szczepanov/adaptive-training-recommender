@@ -1,4 +1,4 @@
-import type { DailyRecoverySnapshot } from '../engine/models';
+import type { DailyRecoverySnapshot, DailySubjectiveCheckin } from '../engine/models';
 import {
     briefWindowStart,
     buildContextBrief,
@@ -6,6 +6,7 @@ import {
     SUBJECTIVE_BASELINE_DAYS,
     type ContextBriefInput,
 } from '../engine/contextBrief';
+import { parseSubjectiveCheckin } from '../persistence/parsers/decisionInputs';
 import { addDaysToLocalDateString, getLocalDateString } from '../utils/localDate';
 import { activityService } from './activityService';
 import { checkinService } from './checkinService';
@@ -76,8 +77,30 @@ export class ContextBriefService {
             unavailableSources.push('recovery snapshots');
         }
 
-        const checkins = checkinResult.status === 'fulfilled' ? checkinResult.value : [];
-        if (checkinResult.status !== 'fulfilled') unavailableSources.push('subjective check-ins');
+        // getCheckinsInRange predates the DataState-based history readers and returns raw
+        // Firestore documents cast as DailySubjectiveCheckin. Re-parse them here so one
+        // malformed historical record cannot silently turn a safety flag or readiness
+        // score into neutral input in a brief that may be handed to an external planner.
+        const checkins: DailySubjectiveCheckin[] = [];
+        if (checkinResult.status === 'fulfilled') {
+            let invalidCheckins = 0;
+            checkinResult.value.forEach((rawCheckin, index) => {
+                const rawDate = typeof rawCheckin?.date === 'string' ? rawCheckin.date : `invalid-${index}`;
+                const parsed = parseSubjectiveCheckin(
+                    rawCheckin,
+                    `users/${userId}/daily_subjective_checkins/${rawDate}`,
+                    userId,
+                    rawDate,
+                );
+                if (parsed.status === 'AVAILABLE') checkins.push(parsed.data);
+                else invalidCheckins += 1;
+            });
+            if (invalidCheckins > 0) {
+                unavailableSources.push(`subjective check-ins (${invalidCheckins} invalid record(s) omitted)`);
+            }
+        } else {
+            unavailableSources.push('subjective check-ins');
+        }
 
         const activities = activityResult.status === 'fulfilled' && activityResult.value.status === 'AVAILABLE'
             ? activityResult.value.data
