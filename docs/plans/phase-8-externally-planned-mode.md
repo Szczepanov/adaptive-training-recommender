@@ -1,7 +1,7 @@
 # Phase 8: Externally-planned mode
 
-* **Status:** Draft
-* **Blocked by:** [ADR-0019](../adr/0019-externally-authored-plans-and-session-adjudication.md) acceptance
+* **Status:** In progress
+* **Blocked by:** none — ADR-0019 accepted 2026-08-15
 * **Unlocks:** context-brief export (the adherence feedback loop); structured performance targets
 * **Source analysis:** [2026-08-15 externally-authored plan feasibility](../analysis/2026-08-15-externally-authored-plan-feasibility.md)
 * **Contract:** [External plan import schema](../external-plan-schema.md)
@@ -69,7 +69,7 @@ owner isolation and the create-only revision constraint.
 
 ---
 
-### 8.2 Widen the eligibility gate to a structural session interface `[ ]`
+### 8.2 Widen the eligibility gate to a structural session interface `[x]`
 
 **Current behaviour.** `eligibility.ts` `evaluateTemplateEligibility` and
 `eligibleTemplates` take `SessionTemplate` and read `durationMin`/`durationMax`,
@@ -380,7 +380,7 @@ gains an optional field.
 | # | Task | Status | Blocked by |
 |---|---|:--:|---|
 | 8.1 | Import contract, storage, validation | `[ ]` | ADR-0019; schema round-trip precondition |
-| 8.2 | Widen eligibility to `GateableSession` | `[ ]` | — |
+| 8.2 | Widen eligibility to `GateableSession` | `[x]` | — |
 | 8.3 | Session adjudication | `[ ]` | 8.2 |
 | 8.4 | Cost, stimulus, synthetic shim | `[ ]` | 8.1 |
 | 8.5 | Placement and rescheduling | `[ ]` | 8.1 |
