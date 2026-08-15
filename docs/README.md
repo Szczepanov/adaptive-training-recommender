@@ -106,6 +106,7 @@ In-depth technical design documents covering system subsystems:
 * [**Ingestion Pipeline Architecture**](./architecture/ingestion-pipeline.md) — Python Garmin API client, token persistence, baseline metrics calculation, and Firestore repository.
 * [**Recommendation Engine**](./architecture/recommendation-engine.md) — The two selection paths, module map, self-normalised strain scoring, `train`/`modify`/`recover` modes, candidate ranking, and the authority ordering.
 * [**Workout Library Architecture**](./workout-library.md) — Multi-layered workout definitions, variants, and September race event plan contract.
+* [**External Plan Import Schema**](./external-plan-schema.md) — *Proposed, not implemented.* JSON contract for importing an externally-authored plan, plus the placement/revision scheduling model.
 
 ---
 
