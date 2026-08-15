@@ -101,19 +101,26 @@ adjudicateExternalSession(
 ```
 
 `ExternalSessionVerdict` carries
-`{ decision: 'proceed' | 'scale' | 'substitute' | 'defer' | 'skip', executionDose?, scaledSummary?, substitute?, gateFailures: EligibilityReason[], rationale }`.
+`{ decision: 'proceed' | 'scale' | 'defer' | 'skip', executionDose?, scaledSummary?, fallbackSuggestion?, gateFailures: EligibilityReason[], rationale }`.
 
 Ordering follows the authority ordering in
 [`architecture/recommendation-engine.md`](../architecture/recommendation-engine.md) and adds
 nothing to it:
 
 1. clinical / safety gates → `skip` with the failing reason
-2. feasibility (`evaluateTemplateEligibility` via 8.2) → `substitute` when `scaling.fallback`
-   exists, else `skip`
+2. feasibility (`evaluateTemplateEligibility` via 8.2) → `skip`; copy
+   `scaling.fallback` to `fallbackSuggestion` when present, but keep it advisory only
 3. readiness mode ceiling → `recover` mode yields `defer` or `skip`; `modify` yields `scale`
    when the session exceeds `MODIFY_MAX_SYSTEMIC_COST`
 4. dose → `resolveExecutionDose` intersects planned dose with the clinical ceiling; when the
    result falls below `scaling.minimumUsefulDurationMin`, escalate `scale` → `defer`
+
+`scaling.fallback` is deliberately free text in the import contract, so it is **not a
+GateableSession and can never become an actionable substitute by itself**. If the product
+shows an alternative session after an external session is excluded, 8.6 obtains that
+alternative through the existing ranked recommendation path, which subjects it to the
+normal safety and feasibility gates and labels it as a fallback. The author text may be
+shown alongside the skip as intent/context, not as an instruction to execute.
 
 Reuse `evaluateReadinessAndSafetyEnvelope` and `resolveExecutionDose` **unchanged**. The
 function is pure and synchronous; it must not read Firestore.
@@ -121,8 +128,9 @@ function is pure and synchronous; it must not read Firestore.
 The `scale` decision uses the session's own authored `scaling.reducedSummary` rather than a
 duration multiplier — this is the external equivalent of the catalog's `DoseVariation`.
 
-**Done when** each of the five decisions is reachable and unit-tested at its boundary, the
-function performs no I/O, and a session failing a hard gate can never return `proceed`.
+**Done when** each of the four decisions is reachable and unit-tested at its boundary, the
+function performs no I/O, a session failing a hard gate can never return `proceed`, and a
+free-text fallback can never be returned as an actionable recommendation.
 
 ---
 
@@ -194,10 +202,15 @@ microcycle, and fatigue are consumed by 8.7.
 
 When the mode is selected but no session is placed for the date, fall back to the normal
 ranked pick and mark the recommendation as a fallback in its rationale. Never silent.
+When a placed external session is excluded and the UI needs an actionable alternative,
+invoke that same normal ranked path as a **separate labelled fallback**. Never promote the
+external plan's free-text `scaling.fallback` into a recommendation; the ranked alternative
+must survive the usual gates independently.
 
 **Done when** an athlete with no external plan is bit-identical to today (`simulate:diff`
-clean), a placed session produces an adjudicated recommendation, and an unplaced date
-produces a labelled fallback.
+clean), a placed session produces an adjudicated recommendation, an unplaced date produces
+a labelled fallback, and an excluded external session can only surface an actionable
+replacement that has passed the normal recommendation pipeline.
 
 ---
 
@@ -255,9 +268,10 @@ replay with a distinct hash-mismatch reason, and `check-policy-drift.mjs` passes
 * **Import screen** — paste JSON → validate → preview (weeks, sessions, gate conflicts
   against current settings) → confirm. On re-import of an existing `planId`, show a diff
   (added / removed / moved) before accepting supersession.
-* **Home** — today's imported session, its verdict banner (`proceed` / `scale` /
-  `substitute` / `defer` / `skip`), the failing gate in plain language when excluded, and
-  the `externalPrescription` detail.
+* **Home** — today's imported session, its verdict banner (`proceed` / `scale` / `defer` /
+  `skip`), the failing gate in plain language when excluded, and the
+  `externalPrescription` detail. A free-text fallback suggestion is visually advisory;
+  any actionable engine fallback is displayed separately and labelled as such.
 * **Week-ahead strip** — placed sessions plus 8.7 findings.
 * **Missed session** — the 8.5 proposal, with accept / choose another day / drop.
 * **Post-import prompt** — invite confirmation of derived `objectives` tags for sessions
@@ -267,7 +281,8 @@ Adherence is unchanged: `DailyRecommendation` already carries what the prompt ne
 the synthetic template id is persisted.
 
 **Done when** a plan can be imported, reviewed, and adjudicated daily without leaving the
-app, and an excluded session always shows which gate excluded it.
+app, an excluded session always shows which gate excluded it, and no free-text fallback is
+rendered as an executable session.
 
 ---
 
@@ -278,11 +293,11 @@ app, and an excluded session always shows which gate excluded it.
 | `validation` | Unknown field, bad enum, `startDate` not a Monday, `weekCount`/`sessions` over bounds, `durationMin > durationMax` all rejected with field-level errors. |
 | `firestore.rules` (emulator) | Cross-user read/write denied; revision documents create-only; placement writes keep ownership. |
 | `eligibility` | `GateableSession` widening is behaviour-neutral for every existing template. |
-| `externalSession` | Each of the five verdicts at its boundary; hard-gate failure can never yield `proceed`; below `minimumUsefulDurationMin` escalates to `defer`. |
+| `externalSession` | Each of the four verdicts at its boundary; hard-gate failure can never yield `proceed`; below `minimumUsefulDurationMin` escalates to `defer`; free-text fallback remains advisory. |
 | `externalSession` | Injury constraint and `painFlag` exclude an imported session exactly as they exclude a catalog template. |
 | `completedTraining` | `authoredExternal` credit is strictly below `exactPrescribedMatch` for the same session. |
 | `externalPlacement` | `fixed` never moves; `drop` never re-proposed; `carry_forward` crosses a week, `reschedule_within_week` does not; no write without confirmation. |
-| `planningMode` | External mode resolves only with a placed session; unplaced dates fall back and are labelled. |
+| `planningMode` | External mode resolves only with a placed session; unplaced or excluded dates use only a separately gated, labelled fallback when one is shown. |
 | `externalCritique` | Each finding type triggers on a fixture; no critique alters a verdict. |
 | `replay` | External decision replays reproducibly; mutated revision fails with hash mismatch. |
 | `architecture` | No production import of `externalSession.ts` from `optimizer.ts` or `planner.ts` — adjudication must not become a second ranking path. |
@@ -294,6 +309,7 @@ app, and an excluded session always shows which gate excluded it.
 - [ ] `npm run simulate:diff` reports no changed pre-existing baseline scenario.
 - [ ] A plan generated by the athlete's own AI from the published prompt block imports without hand-editing.
 - [ ] An imported session that fails a hard gate is never displayed as actionable, and names its failing gate.
+- [ ] A free-text imported fallback is never displayed as actionable; any actionable replacement has independently passed the normal gates.
 - [ ] An imported session receives strictly less objective credit than the same session as an exact catalog match.
 - [ ] A missed session produces a proposal, never a silent re-placement.
 - [ ] A re-import supersedes forward only; a previously adjudicated day's persisted recommendation and audit are byte-identical after it.
@@ -308,6 +324,7 @@ app, and an excluded session always shows which gate excluded it.
 | The schema does not survive contact with a real generated plan. | The precondition requires one before 8.1. Expect schema revision; the `schema` version tag exists for it. |
 | The synthetic shim leaks into the catalog and corrupts `validate:workouts`. | Reserved `ext:` namespace, an architecture test asserting no synthetic id reaches `WORKOUTS`, and `workoutForTemplate` deliberately left unaware of it (8.4). |
 | Adjudication drifts into a second ranking path. | Architecture test in the table above; `externalSession.ts` is pure and does no I/O. |
+| A free-text fallback bypasses eligibility/safety because it looks like a substitute. | It is advisory-only by contract; actionable replacements come from the separately gated normal recommendation path. |
 | Derived cost under-states a hard imported session, weakening the `modify` ceiling. | Derivation is conservative by construction; the fixture set must include a hard imported session on a `modify` day. |
 | The imported plan goes stale against adherence drift. | Accepted for this phase (ADR-0019 consequences). The context-brief export is the sequenced follow-up and should not be dropped. |
 

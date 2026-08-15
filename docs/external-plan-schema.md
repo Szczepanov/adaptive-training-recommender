@@ -72,7 +72,7 @@ travel dates, and a travel change does not require re-importing the plan.
 | `schema` | yes | Exact literal. The version tag is how a future schema change stays detectable. |
 | `planId` | yes | Slug, 1–64 chars, `[a-z0-9-]`. Stable across revisions — this is what makes supersession work. |
 | `revision` | yes | Integer ≥ 1. Must exceed the stored revision for the same `planId`. |
-| `startDate` | yes | `YYYY-MM-DD`, must be a Monday, Warsaw-local. Weeks are Monday-based to match the microcycle window. |
+| `startDate` | yes | `YYYY-MM-DD`, must be a Monday, Warsaw-local. Monday gives the imported artifact deterministic conventional training weeks; it is not the engine's rolling microcycle boundary. Placement/critique code translates between them. |
 | `weekCount` | yes | 1–26. Rejects the runaway-generation case and bounds the placement document. |
 | `sessions` | yes | 1–120 entries. |
 
@@ -182,7 +182,10 @@ prescription.
 `minimumUsefulDurationMin` is the floor below which the session stops being worth doing —
 under it, the verdict becomes `defer` or `skip` rather than a pointless fragment.
 `fallback` is free text shown when a hard gate (equipment, environment) excludes the
-session outright.
+session outright. It is **advisory author intent only**: it is never parsed into an
+executable substitute and never bypasses eligibility/safety. If the app offers an
+actionable alternative, that alternative is a separate structured candidate that must
+pass the normal gates independently.
 
 ### `objectives` — optional, but it unlocks the weekly critique
 
@@ -260,7 +263,8 @@ Paste this above the plan request when asking an AI to author or revise a plan.
 >   and optional `repeat`, `recoveryMin`, `notes`.
 > - `scaling`: `reducedSummary` (how to cut this session down while keeping its purpose),
 >   `reducedDurationMin`, `minimumUsefulDurationMin` (below this, skipping is better than
->   a fragment), `fallback` (what to do instead if the equipment or venue is unavailable).
+>   a fragment), `fallback` (advisory author suggestion shown if the equipment or venue is
+>   unavailable; it is not an executable substitute).
 >
 > Do not include travel weeks, illness, or time off — those are handled separately by the
 > app's own calendar. Plan as if every scheduled day is available.
@@ -279,7 +283,7 @@ alongside it. Each is cheap to revisit.
 
 | Question | Resolution |
 |---|---|
-| Week boundaries | **Monday-based**, matching the rolling microcycle window. |
+| Week boundaries | **Monday-based** for the imported artifact. The engine's current microcycle is a rolling evaluation-date lookback, so placement and critique must translate between these windows rather than assuming they coincide. |
 | `weekCount ≤ 26` / `sessions ≤ 120` | Retained. Keeps the placement overlay a single small read. |
 | Default supersession date | **The evaluation date (today).** Deferring to next week would make mid-block corrections useless. |
 | `objectives` optional vs. required | **Optional**, with coarse derivation when absent and a post-import prompt inviting confirmation. Requiring it hurts import reliability; omitting it silently would degrade the weekly critique to a guess — so the app asks rather than demands. |

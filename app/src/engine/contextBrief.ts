@@ -260,7 +260,13 @@ function renderSubjectiveBaseline(
         ];
     }
 
-    const recordedDays = new Set(baselineCheckins.map(checkin => checkin.date)).size;
+    // Minimum-safety/partial check-ins intentionally leave readiness dimensions null.
+    // Counting those documents would let safety-only submissions mature a baseline that
+    // rests on little or no scored history. Only complete check-ins satisfy the coverage
+    // floor; partial days still contribute their explicit safety flags elsewhere.
+    const recordedDays = new Set(
+        baselineCheckins.filter(checkin => checkin.dataQuality.isComplete).map(checkin => checkin.date),
+    ).size;
     if (recordedDays < SUBJECTIVE_BASELINE_MIN_DAYS) {
         return [
             '',
