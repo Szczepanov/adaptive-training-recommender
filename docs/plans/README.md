@@ -73,6 +73,7 @@ all-`Ready` table became unusable.
 | 7A | [Weekly allocation & safe role reservations](./phase-7-weekly-allocation-and-role-reservations.md) | **Implemented** | none | none | resolves PR #17's healthy/fresh cycling role-coverage failure without recalibrating recovery |
 | 7B | [Training intent, capacity & planning modes](./phase-7-training-intent-and-planning-modes.md) | **Implemented** | none | none | evidence-derived Evergreen dose packed into real capacity, while preserving structured and demand-derived event planning — not an original review finding |
 | 8 | [Externally-planned mode](./phase-8-externally-planned-mode.md) | **Draft** | 8.2 only | ADR-0019 acceptance; schema round-trip precondition | imports an externally-authored plan and narrows the engine to per-session adjudication plus weekly critique — not an original review finding |
+| 9 | [Subjective baselines in readiness mode](./phase-9-subjective-baselines.md) | **Draft** | 9.5 only | ADR-0020 acceptance | self-normalises subjective scores as a tighten-only drift term, measured behind a default-off selector before any ship decision — not an original review finding |
 
 Phases 0–6 are implemented. Phase 6 delivered explicit scenario evidence, calibration
 traces, coverage visibility, a verified repository-owned local Firestore-rules deployment
@@ -134,6 +135,12 @@ plans remain Draft and must not be implemented until the linked ADR is accepted.
 | **D-NOTRAVEL** | Travel stays an `AuthoredPlanBlock` and is excluded from the import schema | [ADR-0019](../adr/0019-externally-authored-plans-and-session-adjudication.md) | Travel is the athlete's calendar; including it would apply the dose reduction twice |
 | **D-CRITIQUE** | The weekly planning machinery is repointed to advisory critique, not retired | [ADR-0019](../adr/0019-externally-authored-plans-and-session-adjudication.md) | An external AI holds no fatigue state or adherence history and cannot produce this |
 | **D-NOPARSE** | JSON import only; no in-app model call in this phase | [ADR-0019](../adr/0019-externally-authored-plans-and-session-adjudication.md) | A non-deterministic transform at the persistence boundary conflicts with ADR-0010 |
+| **D-SUBJDRIFT** | The subjective term measures 7d-vs-28d drift only, never today | [ADR-0020](../adr/0020-subjective-baselines-in-readiness-mode.md) | Today's reading already enters unnormalised; an acute term would double-count the noisiest input |
+| **D-SUBJFLOOR** | Absolute subjective thresholds stay as hard floors; drift may only escalate | [ADR-0020](../adr/0020-subjective-baselines-in-readiness-mode.md) | A chronically elevated soreness baseline must never read as "normal, proceed" |
+| **D-SUBJCOV** | Below a coverage floor the drift term is exactly zero | [ADR-0020](../adr/0020-subjective-baselines-in-readiness-mode.md) | Check-in missingness is not random, so a sparse baseline is biased optimistic by construction |
+| **D-SUBJPURE** | Baselines arrive precomputed; the readiness evaluator stays pure and synchronous | [ADR-0020](../adr/0020-subjective-baselines-in-readiness-mode.md) | Objective baselines already arrive as data on the snapshot; subjective should not be the one that needs a history provider |
+| **D-SUBJANCHOR** | Never show the subjective baseline before a check-in is submitted | [ADR-0020](../adr/0020-subjective-baselines-in-readiness-mode.md) | `initialSubmittedAt`/`editedAfterWearableReveal` already record that pre-submission context contaminates a check-in |
+| **D-SUBJCAL** | Coefficients and the ship decision come from calibration, not from the ADR | [ADR-0020](../adr/0020-subjective-baselines-in-readiness-mode.md) | Same discipline as D-FUSE; "it changed nothing useful" is a valid outcome |
 
 Five of these — **D-KWD**, **D-GATE**, **D-LIFE**, **D-RECOV**, and the withdrawal inside
 **D-FUSE** — correct errors in earlier drafts and came out of PR #5 review rounds rather

@@ -101,6 +101,7 @@ How agreed changes get made. Mutable, status-tracked, and expected to go stale �
 * [**Phase 7A: Weekly allocation & safe role reservations**](./plans/phase-7-weekly-allocation-and-role-reservations.md) — The PR #17 follow-up: reserve eligible required roles, protect them from support work, and report safety-forced misses.
 * [**Phase 7B: Training intent, capacity & planning modes**](./plans/phase-7-training-intent-and-planning-modes.md) — Evergreen evidence-to-dose-to-capacity planning proposal.
 * [**Phase 8: Externally-planned mode**](./plans/phase-8-externally-planned-mode.md) — *Draft.* Import an externally-authored plan, adjudicate its sessions against daily readiness, and repoint the weekly machinery to critique.
+* [**Phase 9: Subjective baselines in readiness mode**](./plans/phase-9-subjective-baselines.md) — *Draft.* Build the tighten-only subjective drift term behind a default-off selector, give the corpus real subjective variance, then decide from evidence whether it ships.
 
 ---
 
