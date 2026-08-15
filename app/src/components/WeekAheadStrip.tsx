@@ -56,7 +56,10 @@ export const WeekAheadStrip = memo(function WeekAheadStrip({ plan, nextDayPlan, 
   const openObjective = plan.microcycleObjectives.find(objective =>
     (objective.completedCredit ?? objective.completedExposures) < (objective.requiredCredit ?? objective.targetExposures),
   );
-  const evergreenWeekPurpose = trainingIntentProfile?.planningMode === 'evergreen'
+  // The plan's resolved mode, not the profile's stated one (ADR-0017 D-MODE): an
+  // event_directed athlete whose events have all passed is planned as evergreen, and
+  // reading the persisted field would hide this week's purpose from exactly them.
+  const evergreenWeekPurpose = plan.planningMode === 'evergreen' && trainingIntentProfile
     ? `${trainingIntentProfile.weeklyCommitment.targetSessions} typical sessions${openObjective ? `; ${openObjective.title} is still open` : ''}.`
     : null;
   // ADR-0018 D-MISS: forecast evidence rendered straight from the shared allocation

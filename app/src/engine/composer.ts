@@ -2,7 +2,7 @@ import type { DailyDecisionInput, DailyRecoverySnapshot, DailySubjectiveCheckin,
 import type { DataState } from './dataState';
 import { checkinService } from '../services/checkinService';
 import { goalService } from '../services/goalService';
-import { trainingSettingsService } from '../services/trainingSettingsService';
+import { SUPPORTED_SETTINGS_SCHEMA_VERSIONS, trainingSettingsService } from '../services/trainingSettingsService';
 import { preferencesService } from '../services/preferencesService';
 import { recoverySnapshotService } from '../services/recoverySnapshotService';
 import { trainingIntentProfileService } from '../services/trainingIntentProfileService';
@@ -269,7 +269,9 @@ export class DecisionComposer {
         });
 
         if (input.trainingSettings.userId !== input.userId) errors.push('Training settings userId mismatch');
-        if (input.trainingSettings.schemaVersion !== 2) errors.push('Unsupported training settings schema');
+        if (!SUPPORTED_SETTINGS_SCHEMA_VERSIONS.includes(input.trainingSettings.schemaVersion)) {
+            errors.push(`Unsupported training settings schema (v${input.trainingSettings.schemaVersion})`);
+        }
 
         return {
             isValid: errors.length === 0,

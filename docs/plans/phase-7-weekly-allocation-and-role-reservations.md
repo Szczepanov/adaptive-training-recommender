@@ -1,6 +1,6 @@
 # Phase 7A — Weekly allocation and safe role reservations
 
-* **Status:** `Approved`
+* **Status:** `Implemented`
 * **Blocked by:** Baseline review remains blocked until this plan's acceptance criteria
   pass; PR #17's current semantic baseline remains unchanged.
 * **Unlocks:** reviewed semantic-baseline acceptance for healthy/fresh cycling scenarios;

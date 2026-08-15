@@ -436,13 +436,3 @@ export function defaultBriefWindowDays(): number {
 export function briefWindowStart(asOfDate: string, windowDays: number): string {
     return addDaysToLocalDateString(asOfDate, -(windowDays - 1));
 }
-
-/** Days of data actually present, for a UI freshness hint. */
-export function briefCoverageDays(input: ContextBriefInput): number {
-    const startDate = briefWindowStart(input.asOfDate, input.windowDays);
-    const dates = new Set<string>();
-    for (const snapshot of input.snapshots) {
-        if (withinWindow(snapshot.date, startDate, input.asOfDate)) dates.add(snapshot.date);
-    }
-    return Math.min(dates.size, getDayDiff(input.asOfDate, startDate) + 1);
-}

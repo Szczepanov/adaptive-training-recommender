@@ -16,6 +16,11 @@ export type TrainingSettingsUpdate = {
 };
 
 const SETTINGS_SCHEMA_VERSION = 3 as const;
+/** Every version this client can read. `firestore.rules` necessarily keeps its own copy of
+ * this list; keep the two in step. Consumers must read this rather than repeating a
+ * literal -- composer.ts's validator previously hard-coded `2` and so rejected every
+ * document this service writes. */
+export const SUPPORTED_SETTINGS_SCHEMA_VERSIONS: readonly number[] = [2, 3];
 const COLLECTION = 'trainingSettings';
 const DOCUMENT = 'profile';
 const equipmentKeys = ['free_weights', 'cable_machine', 'treadmill', 'indoor_bike', 'pullup_bar'] as const;
@@ -50,7 +55,7 @@ function isDuration(value: unknown): value is number | null {
 export function parseTrainingSettings(raw: unknown, userId: string): TrainingSettings | null {
     if (!raw || typeof raw !== 'object') return null;
     const data = raw as Record<string, unknown>;
-    if (data.userId !== userId || (data.schemaVersion !== 2 && data.schemaVersion !== 3)) return null;
+    if (data.userId !== userId || typeof data.schemaVersion !== 'number' || !SUPPORTED_SETTINGS_SCHEMA_VERSIONS.includes(data.schemaVersion)) return null;
     const equipment = data.equipment as Record<string, unknown> | undefined;
     const guardrails = data.guardrails as Record<string, unknown> | undefined;
     const defaults = data.defaults as Record<string, unknown> | undefined;
