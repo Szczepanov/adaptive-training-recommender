@@ -525,28 +525,34 @@ architecture doc's description matches `planningMode.ts` and `evergreenStrategy.
 
 ## Acceptance criteria
 
-- [ ] An athlete with no events and no profile receives a coherent week from documented
+Acceptance was rechecked against the 2026-08-11 Phase 6/7 compliance review and current
+source before closing the bookkeeping gap. These checks record the point-in-time delivered
+behaviour. The direct future-regression guards requested in issues #42 and #43 strengthen
+two of these contracts; their absence at the audit commit did not mean the inspected
+behaviour itself failed the criterion.
+
+- [x] An athlete with no events and no profile receives a coherent week from documented
       defaults — no crash, no empty candidate set, no fabricated event.
-- [ ] An eventless athlete's dose requirement is derived before packing; identical session
+- [x] An eventless athlete's dose requirement is derived before packing; identical session
       counts with materially different usable minutes can produce different shortfalls.
-- [ ] `coverageNeedTierForTemplate` is no longer a constant `3` for eventless athletes.
-- [ ] `taperActive` is false on every eventless day and on every dated `general_target`
+- [x] `coverageNeedTierForTemplate` is no longer a constant `3` for eventless athletes.
+- [x] `taperActive` is false on every eventless day and on every dated `general_target`
       goal without an explicit `EventTaperSpec.startDate`.
-- [ ] `simulate:diff` shows **zero** change on all pre-existing event-directed scenarios.
-- [ ] `SEPTEMBER_CYCLING_EVENT_SESSION_COVERAGE` is byte-identical.
-- [ ] `TrainingIntentProfile` and `UserPreferences` each have one documented field
+- [x] `simulate:diff` shows **zero** change on all pre-existing event-directed scenarios.
+- [x] `SEPTEMBER_CYCLING_EVENT_SESSION_COVERAGE` is byte-identical.
+- [x] `TrainingIntentProfile` and `UserPreferences` each have one documented field
       ownership; no composer merge can create conflicting live preferences.
-- [ ] Required occurrences fit real minutes/windows and declared minimum packing capacity,
+- [x] Required occurrences fit real minutes/windows and declared minimum packing capacity,
       or yield semantics-preserving `below_guideline_range`,
       `guideline_target_shortfall`, `goal_requirement_shortfall`, or
       `minimum_dose_shortfall`; no fictional cross-role credit is created.
-- [ ] A public-health guideline lower bound is never rendered as a biological no-benefit
+- [x] A public-health guideline lower bound is never rendered as a biological no-benefit
       threshold; safe partial dose and its dose-response trade-off remain visible.
-- [ ] Every evidence-authoritative dose rule has source, population, outcome, confidence,
+- [x] Every evidence-authoritative dose rule has source, population, outcome, confidence,
       applicability, authority class, policy version, and review date; product packing
       heuristics are distinguishable from those rules.
-- [ ] `npm run check` and `npm run test:rules` green; policy-drift guard passes.
-- [ ] No engine module outside `planningMode.ts` derives planning mode from
+- [x] `npm run check` and `npm run test:rules` green; policy-drift guard passes.
+- [x] No engine module outside `planningMode.ts` derives planning mode from
       `focusEvent === null`.
 
 ---
