@@ -155,7 +155,7 @@ Settled to unblock implementation; each is cheap to revisit.
 
 | Question | Decision | Reason |
 |---|---|---|
-| Week boundaries | Monday-based | Matches the rolling microcycle window. |
+| Week boundaries | Monday-based | Gives the authoring/import contract deterministic conventional training weeks. The engine's current microcycle is a rolling lookback anchored on the evaluation date, so the placement/critique adapter must translate between the two rather than treating them as the same window. |
 | `objectives` tagging | Optional, with coarse derivation when absent, and a post-import prompt inviting confirmation | Requiring it hurts import reliability; omitting it degrades the D-CRITIQUE layer to a guess, so the app should ask rather than demand. |
 | Performance targets | Free text (`"100–105% FTP"`) in this phase | Structured zones resolved against `AthletePerformanceProfile` are more useful downstream and materially less reliable to import. Revisit once the loop works. |
 | Plan bounds | `weekCount ≤ 26`, `sessions ≤ 120` | Keeps the placement overlay a single small read. |
