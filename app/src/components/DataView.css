@@ -196,3 +196,42 @@
     font-weight: 500;
   }
 }
+
+/* Context brief -- a paste-ready summary for an external planner. */
+.brief-intro {
+  color: var(--text-secondary, #666);
+  margin-bottom: 1rem;
+  max-width: 60ch;
+}
+
+.brief-actions {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.75rem;
+}
+
+.brief-copy {
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.brief-range {
+  font-size: 0.875rem;
+  color: var(--text-secondary, #666);
+}
+
+.brief-text {
+  width: 100%;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  padding: 0.75rem;
+  border-radius: 6px;
+  resize: vertical;
+  white-space: pre;
+  overflow-wrap: normal;
+  overflow-x: auto;
+}

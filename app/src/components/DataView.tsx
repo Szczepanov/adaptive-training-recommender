@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import type { DailyDecisionInput } from '../engine/models';
 import { recommendationService } from '../services/recommendationService';
+import { contextBriefService, type ContextBriefResult } from '../services/contextBriefService';
 import './DataView.css';
 
 interface DataViewProps {
@@ -18,7 +19,10 @@ function describeSourceState(status: 'MISSING' | 'INVALID' | 'UNAVAILABLE'): str
 }
 
 export function DataView({ decisionInput, userId }: DataViewProps) {
-  const [activeTab, setActiveTab] = useState<'recovery' | 'checkin' | 'goals' | 'constraints' | 'preferences' | 'adherence'>('recovery');
+  const [activeTab, setActiveTab] = useState<'recovery' | 'checkin' | 'goals' | 'constraints' | 'preferences' | 'adherence' | 'brief'>('recovery');
+  const [brief, setBrief] = useState<ContextBriefResult | null>(null);
+  const [briefError, setBriefError] = useState<string | null>(null);
+  const [briefCopied, setBriefCopied] = useState(false);
   // null doubles as "not loaded yet" -- once getAdherenceStats resolves it's always a
   // real (possibly all-zero) stats object, so this alone distinguishes loading from an
   // answer of "nothing recorded yet" without a separate loading flag.
@@ -32,6 +36,27 @@ export function DataView({ decisionInput, userId }: DataViewProps) {
     });
     return () => { cancelled = true; };
   }, [activeTab, userId, adherenceStats]);
+
+  useEffect(() => {
+    if (activeTab !== 'brief' || brief) return;
+    let cancelled = false;
+    contextBriefService.build(userId, decisionInput?.date)
+      .then(result => { if (!cancelled) { setBrief(result); setBriefError(null); } })
+      .catch(() => { if (!cancelled) setBriefError('Could not assemble the brief. Retry the dashboard refresh.'); });
+    return () => { cancelled = true; };
+  }, [activeTab, userId, brief, decisionInput?.date]);
+
+  const copyBrief = async () => {
+    if (!brief) return;
+    try {
+      await navigator.clipboard.writeText(brief.text);
+      setBriefCopied(true);
+      window.setTimeout(() => setBriefCopied(false), 2000);
+    } catch {
+      // Clipboard permission can be denied; the textarea below is always selectable.
+      setBriefError('Copy was blocked. Select the text below and copy it manually.');
+    }
+  };
 
   if (!decisionInput) {
     return (
@@ -465,6 +490,35 @@ export function DataView({ decisionInput, userId }: DataViewProps) {
     </div>
   );
 
+  const renderContextBrief = () => (
+    <div className="data-section">
+      <h3>Context brief</h3>
+      <p className="brief-intro">
+        A summary of the last {brief?.windowDays ?? 14} days — constraints, recovery trend, completed
+        training, subjective scores, and adherence — for pasting into an external planner.
+        Read-only: generating it changes nothing.
+      </p>
+      {briefError && <p className="data-state-notice">{briefError}</p>}
+      {!brief && !briefError && <p>Assembling...</p>}
+      {brief && (
+        <>
+          {brief.unavailableSources.length > 0 && (
+            <p className="data-state-notice">
+              Could not read: {brief.unavailableSources.join(', ')}. The brief below is incomplete.
+            </p>
+          )}
+          <div className="brief-actions">
+            <button className="brief-copy" onClick={copyBrief}>
+              {briefCopied ? 'Copied' : 'Copy to clipboard'}
+            </button>
+            <span className="brief-range">{brief.startDate} → {brief.asOfDate}</span>
+          </div>
+          <textarea className="brief-text" readOnly value={brief.text} rows={24} spellCheck={false} />
+        </>
+      )}
+    </div>
+  );
+
   const renderAdherenceData = () => (
     <div className="data-section">
       <h3>Adherence (last 30 days)</h3>
@@ -566,6 +620,12 @@ export function DataView({ decisionInput, userId }: DataViewProps) {
         >
           Adherence
         </button>
+        <button
+          className={activeTab === 'brief' ? 'active' : ''}
+          onClick={() => setActiveTab('brief')}
+        >
+          Context brief
+        </button>
       </div>
 
       <div className="data-view-content">
@@ -575,6 +635,7 @@ export function DataView({ decisionInput, userId }: DataViewProps) {
         {activeTab === 'constraints' && renderConstraintsData()}
         {activeTab === 'adherence' && renderAdherenceData()}
         {activeTab === 'preferences' && renderPreferencesData()}
+        {activeTab === 'brief' && renderContextBrief()}
       </div>
     </div>
   );
