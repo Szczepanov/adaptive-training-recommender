@@ -20,7 +20,11 @@ overallFatigueScore = (fatigue + soreness + (10−readiness) + (10−sleepQualit
 
 Nothing anywhere baselines subjective data. The argument that justified self-normalising HRV stops at the sensor boundary with no stated reason.
 
-The consequence is a personal-scale error in both directions. An athlete who habitually reports 4 on readiness sits permanently in `modify`; one who never reports below 7 never leaves `train`. Neither is getting the decision their own history supports. And a readiness average that has slid from 8 to 6 over three weeks — a real signal, and exactly the multi-day pattern ADR-0006 says predicts overreaching better than one noisy reading — is structurally invisible.
+The consequence is a personal-scale error in both directions. An athlete who habitually reports 4 on readiness sits permanently in `modify`; one who never reports below 7 never leaves `train`. And a readiness average that has slid from 8 to 6 over three weeks — a real signal, and exactly the multi-day pattern ADR-0006 says predicts overreaching better than one noisy reading — is structurally invisible.
+
+**This decision addresses only one of those two directions, and the asymmetry is deliberate.** D-SUBJFLOOR below makes the drift term tighten-only, so it can catch the habitual *high* reporter's real decline, but it can never lift the habitual *low* reporter out of a `modify` their absolute scores alone produced — that would require relaxation, which is exactly what the safety case forbids. The chronic pessimist stays over-restricted.
+
+That is an accepted, unfixed cost, not an oversight. Correcting it would mean letting a self-report baseline *earn* permission to train harder, and the same mechanism would then hand the chronically sore athlete a green light. Anyone revisiting this ADR should treat "the low reporter is still stuck" as a known outcome rather than a defect to patch, and reach for a different instrument — a scale-recalibration prompt, or a conversation about how the athlete uses the 1–10 range — rather than weakening the floor.
 
 ### What makes subjective data different
 
