@@ -135,10 +135,18 @@ gaps it spans more than N days and the D-SUBJCOV coverage count reads as complet
 it is not — the gate would silently always pass. This defect was found and fixed in the
 context brief; do not reintroduce it here.
 
+`getCheckinsInRange` currently returns raw Firestore documents through a type assertion.
+Do **not** feed that output directly to `computeSubjectiveBaseline`. Either introduce a
+validated range reader that applies `parseSubjectiveCheckin` to every record (and migrate
+the context brief to share it), or parse every record at this composition boundary. An
+invalid/user-mismatched record contributes nothing and is surfaced as a data-quality issue;
+it must never be coerced into neutral readiness values or counted toward baseline coverage.
+
 A failed read yields no baseline, which degrades to today's behaviour. It must not throw.
 
-**Done when** the baseline reaches the evaluator, a failed or sparse read leaves the
-decision unchanged, and the added query is bounded to one range read per decision.
+**Done when** the baseline reaches the evaluator, a failed, invalid, or sparse check-in
+range leaves the decision unchanged, invalid records cannot inflate coverage, and the added
+query is bounded to one range read per decision.
 
 ---
 
@@ -245,7 +253,7 @@ code is not what closes this task.
 | `rules` | Every absolute trigger fires identically under both policies. |
 | `rules` | A chronically elevated soreness baseline does not reduce that athlete's mode — the safety inversion the ADR exists to prevent. |
 | `rules` | `'off'` is bit-identical to pre-Phase-9 output on the committed corpus. |
-| `composer` | A failed or sparse check-in range read leaves the decision unchanged and does not throw. |
+| `composer` | A failed, invalid, or sparse check-in range leaves the decision unchanged and does not throw; invalid records do not count toward coverage. |
 | `architecture` | No production call site passes `'drift'`; the selector is simulation-only, mirroring the fatigue-fusion assertion. |
 | `replay` | An audit carrying baseline coverage and drift contribution replays reproducibly. |
 | `simulate:diff` | No changed pre-existing baseline scenario while the default is `'off'`. |
