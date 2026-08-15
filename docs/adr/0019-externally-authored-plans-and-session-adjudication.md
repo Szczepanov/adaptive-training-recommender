@@ -151,6 +151,65 @@ cost, and places a non-deterministic transform at the persistence boundary, whic
 with ADR-0010's replay contract. If built later it must parse *to* this schema and present
 the result for confirmation, never write directly.
 
+### D-EVENT — a target event is a commitment, not a prescribed session
+
+*Added 2026-08-15, from the first real round-trip: the generated plan included the race
+itself as a session (`intensity: max`, `flexibility: fixed`, on the event date).*
+
+An imported session may declare `isEvent: true`. It must also carry `flexibility: 'fixed'`
+and a `preferredDay` — an event does not move.
+
+**Such a session is reconciled onto the existing `FixedActivity` contract, not the
+prescribed-session path.** That contract already has exactly the right semantics and needs
+no new machinery: it occupies the day, caps availability, contributes its cost to the
+fatigue projection through `reservedCapacityCostProfile` without marking the load
+completed, credits stimulus against unresolved objectives before the day's own ranking, and
+is never itself "recommended". Building separate event-adjudication semantics would
+reimplement Phase 5.3/6.2b badly.
+
+**The event is adjudicated for advice, never for permission.** It cannot return `skip` or
+`defer`. Clinical flags — pain, injury, illness — are surfaced prominently and the failing
+gates are named, but the verdict class is `advisory` and the decision stays with the
+athlete. Telling someone to skip a race they have entered is not the same speech act as
+telling them to skip Tuesday's intervals, and the application does not have standing to
+make the first one in the imperative voice it uses for the second.
+
+**The import never creates the event.** An `isEvent` session whose resolved date has no
+matching `UserEvent` surfaces the mismatch and offers to link or create one; it does not
+silently fabricate a dated target, for the same reason travel stays an explicit
+`AuthoredPlanBlock` under D-NOTRAVEL. The athlete's calendar is authored, not inferred from
+a plan.
+
+The event session's `prescription` still displays — race warm-up and tactical guidance are
+useful content that `UserEvent` has nowhere to hold.
+
+### D-IRREDUCIBLE — some sessions have no useful reduced form
+
+*Added 2026-08-15, same source: the plan's dress-rehearsal `reducedSummary` read "do not
+perform a compromised full simulation — ride easily instead and retry later in the week",
+which is a deferral and a substitution, not a reduced dose.*
+
+`scaling` gains `reducible` (boolean, default `true`). When `false`, the session's value is
+all-or-nothing — a race simulation, a field test, a max-effort session — and
+`reducedSummary` / `reducedDurationMin` are not consulted at all. The verdict escalates
+`scale → defer` directly, and the session's own `ifMissed` governs re-placement.
+
+Without this the schema forces an author with an irreducible session to encode "do
+something easier instead" as a *scaled dose*, which the app would then prescribe as though
+it were the same session at lower volume. That is the precise inversion of what the author
+meant, and it arrived in the very first plan generated against the contract.
+
+This keeps three distinct ideas separate, which the original contract conflated into two:
+
+| Situation | Field | Verdict |
+|---|---|---|
+| Readiness is short of full, session scales | `reducedSummary`, `reducedDurationMin` | `scale` |
+| Readiness is short of full, session does not scale | `reducible: false` | `defer` |
+| Equipment or venue is unavailable | `fallback` (advisory text only) | `skip` + suggestion |
+
+`fallback` remains free text and remains non-actionable: an alternative the product actually
+offers comes through the ranked recommendation path, gated normally and labelled a fallback.
+
 ### Resolved schema questions
 
 Settled to unblock implementation; each is cheap to revisit.

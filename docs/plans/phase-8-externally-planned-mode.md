@@ -44,6 +44,10 @@ to `engine/models.ts` per the published schema. Add `validateExternalTrainingPla
 Add `services/externalPlanService.ts` following `planBlockService.ts` — `DataState` returns,
 owner check on every read, `INVALID` on schema failure rather than a silent skip.
 
+Validation must reject an `isEvent` session that is not `flexibility: 'fixed'` with a
+`preferredDay`, and must not silently create a `UserEvent` for one whose resolved date has
+none — the import surfaces the mismatch for the athlete to link or create (**D-EVENT**).
+
 Storage per ADR-0019:
 
 | Path | Contents |
@@ -104,7 +108,7 @@ adjudicateExternalSession(
 ```
 
 `ExternalSessionVerdict` carries
-`{ decision: 'proceed' | 'scale' | 'defer' | 'skip', executionDose?, scaledSummary?, fallbackSuggestion?, gateFailures: EligibilityReason[], rationale }`.
+`{ decision: 'proceed' | 'scale' | 'defer' | 'skip' | 'advisory', executionDose?, scaledSummary?, fallbackSuggestion?, gateFailures: EligibilityReason[], rationale }`.
 
 Ordering follows the authority ordering in
 [`architecture/recommendation-engine.md`](../architecture/recommendation-engine.md) and adds
@@ -117,6 +121,11 @@ nothing to it:
    when the session exceeds `MODIFY_MAX_SYSTEMIC_COST`
 4. dose → `resolveExecutionDose` intersects planned dose with the clinical ceiling; when the
    result falls below `scaling.minimumUsefulDurationMin`, escalate `scale` → `defer`
+
+An `isEvent: true` session short-circuits this ladder entirely (ADR-0019 **D-EVENT**): it
+returns `advisory` with the failing gates named and never `skip`/`defer`/`scale`. A
+session with `scaling.reducible === false` skips step 4's scaling branch and escalates
+straight to `defer` (**D-IRREDUCIBLE**) — `reducedSummary` is not consulted.
 
 `scaling.fallback` is deliberately free text in the import contract, so it is **not a
 GateableSession and can never become an actionable substitute by itself**. If the product
@@ -131,9 +140,11 @@ function is pure and synchronous; it must not read Firestore.
 The `scale` decision uses the session's own authored `scaling.reducedSummary` rather than a
 duration multiplier — this is the external equivalent of the catalog's `DoseVariation`.
 
-**Done when** each of the four decisions is reachable and unit-tested at its boundary, the
-function performs no I/O, a session failing a hard gate can never return `proceed`, and a
-free-text fallback can never be returned as an actionable recommendation.
+**Done when** each of the five decisions is reachable and unit-tested at its boundary, the
+function performs no I/O, a session failing a hard gate can never return `proceed`, a
+free-text fallback can never be returned as an actionable recommendation, an `isEvent`
+session can never return `skip` or `defer` under any readiness, and a `reducible: false`
+session can never return `scale`.
 
 ---
 
@@ -296,7 +307,9 @@ rendered as an executable session.
 | `validation` | Unknown field, bad enum, `startDate` not a Monday, `weekCount`/`sessions` over bounds, `durationMin > durationMax` all rejected with field-level errors. |
 | `firestore.rules` (emulator) | Cross-user read/write denied; revision documents create-only; placement writes keep ownership. |
 | `eligibility` | `GateableSession` widening is behaviour-neutral for every existing template. |
-| `externalSession` | Each of the four verdicts at its boundary; hard-gate failure can never yield `proceed`; below `minimumUsefulDurationMin` escalates to `defer`; free-text fallback remains advisory. |
+| `externalSession` | Each of the five verdicts at its boundary; hard-gate failure can never yield `proceed`; below `minimumUsefulDurationMin` escalates to `defer`; free-text fallback remains advisory. |
+| `externalSession` (property) | For **any** readiness input, an `isEvent` session returns `advisory` — never `skip`, `defer` or `scale` (D-EVENT). |
+| `externalSession` (property) | For **any** readiness input, a `reducible: false` session never returns `scale`, and its `reducedSummary` is never read (D-IRREDUCIBLE). |
 | `externalSession` | Injury constraint and `painFlag` exclude an imported session exactly as they exclude a catalog template. |
 | `completedTraining` | `authoredExternal` credit is strictly below `exactPrescribedMatch` for the same session. |
 | `externalPlacement` | `fixed` never moves; `drop` never re-proposed; `carry_forward` crosses a week, `reschedule_within_week` does not; no write without confirmation. |

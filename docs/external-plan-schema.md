@@ -119,11 +119,16 @@ engine treats an unplanned day as available — it does not need to be told to r
   },
 
   "scaling": {
+    "reducible": true,               // false = no useful reduced form; short-of-full defers
     "reducedSummary": "2×12 instead of 3×12, same targets.",
     "reducedDurationMin": 45,
     "minimumUsefulDurationMin": 40,
     "fallback": "If the trainer is unavailable, 60min steady Z2 outdoors instead."
-  }
+  },
+
+  // Only on the target event itself. Requires flexibility "fixed" and a preferredDay.
+  // The app links it to your UserEvent and advises rather than instructs.
+  "isEvent": false
 }
 ```
 
@@ -309,7 +314,12 @@ Paste this above the plan request when asking an AI to author or revise a plan.
 >   use seconds for anything under two minutes. Optional: `repeat` and
 >   `recoveryMin`/`recoverySec` for reps within a set, `sets` and
 >   `setRecoveryMin`/`setRecoverySec` for sets within the step, and `notes`.
-> - `scaling`: `reducedSummary` (how to cut this session down while keeping its purpose),
+> - `isEvent`: `true` only on the target event itself (a race, a test event). An event
+>   session must also use `flexibility: "fixed"` with a `preferredDay`. Do not mark
+>   ordinary hard sessions as events.
+> - `scaling`: `reducible` (`false` when the session has no useful reduced form — a race
+>   simulation, a test — in which case say so rather than inventing a compromised version),
+>   `reducedSummary` (how to cut this session down while keeping its purpose),
 >   `reducedDurationMin`, `minimumUsefulDurationMin` (below this, skipping is better than
 >   a fragment), `fallback` (advisory author suggestion shown if the equipment or venue is
 >   unavailable; it is not an executable substitute).
@@ -361,22 +371,26 @@ would very likely not have.
 step durations, two-level repetition, and an explicit instruction not to encode
 autoregulation policy. Each was invisible to review and obvious within one real plan.
 
-### Still open
+### Resolved from the round-trip
 
-**Is a target event a session?** The generated plan included the race itself as a session —
-`intensity: max`, `flexibility: fixed`, on the event date. The app already models events as
-`UserEvent`, which is what drives periodization and taper, so an imported race would be a
-second representation of the same thing. Two questions follow, and ADR-0019 does not answer
-either:
+**A target event is a commitment, not a prescribed session** (ADR-0019 **D-EVENT**). A
+session may declare `isEvent: true`; it must then also carry `flexibility: "fixed"` and a
+`preferredDay`. The app reconciles it onto the existing `FixedActivity` contract — it
+occupies the day, contributes cost to the fatigue projection, credits stimulus, and is
+never itself recommended. It is adjudicated **for advice only**: clinical flags are
+surfaced prominently, but it can never return `skip` or `defer`, because telling an athlete
+to skip a race they have entered is not the same speech act as telling them to skip
+Tuesday's intervals. If no `UserEvent` exists on the resolved date, the import offers to
+link or create one and never fabricates it silently.
 
-* Should an imported session on an event date be adjudicated at all? Telling an athlete to
-  skip a race they have entered is not the same speech act as telling them to skip an
-  interval session.
-* Does the schema need an explicit marker (`isEvent`, or a `race` intensity/role) so the
-  app links the session to its `UserEvent` instead of treating it as prescribed training?
+**Some sessions do not scale** (ADR-0019 **D-IRREDUCIBLE**). `scaling.reducible` (boolean,
+default `true`) declares it. When `false`, `reducedSummary` and `reducedDurationMin` are
+ignored entirely and a short-of-full readiness produces `defer` rather than a prescribed
+compromise, with `ifMissed` governing re-placement. This keeps three ideas apart that the
+original contract conflated into two:
 
-**`reducedSummary` versus `fallback` is blurrier in practice than in the contract.** For its
-dress-rehearsal session the plan wrote, in `reducedSummary`, "do not perform a compromised
-full simulation — ride easily instead and retry later in the week." That is a substitution
-and a deferral, not a reduced dose. The distinction the schema draws between scaling down
-and doing something else does not survive contact with sessions whose value is all-or-nothing.
+| Situation | Field | Verdict |
+|---|---|---|
+| Short of full, session scales | `reducedSummary`, `reducedDurationMin` | `scale` |
+| Short of full, session does not scale | `reducible: false` | `defer` |
+| Equipment or venue unavailable | `fallback` (advisory text only) | `skip` + suggestion |
