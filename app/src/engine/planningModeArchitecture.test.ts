@@ -5,7 +5,6 @@ import * as ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 
 const ENGINE_DIR = dirname(fileURLToPath(import.meta.url));
-const MODE_LITERALS = new Set(['evergreen', 'event_directed']);
 const DIRECT_PROFILE_BRANCH_ALLOWLIST = new Set(['planningMode.ts', 'validation.ts']);
 
 function productionEngineFiles(directory = ENGINE_DIR): string[] {
@@ -34,6 +33,38 @@ function subtreeContains(node: ts.Node, predicate: (candidate: ts.Node) => boole
     return found;
 }
 
+function planningModeLiterals(): Set<string> {
+    const modelsPath = join(ENGINE_DIR, 'models.ts');
+    const source = ts.createSourceFile(
+        'models.ts',
+        readFileSync(modelsPath, 'utf8'),
+        ts.ScriptTarget.Latest,
+        true,
+        ts.ScriptKind.TS,
+    );
+    const modes = new Set<string>();
+
+    const visit = (node: ts.Node): void => {
+        if (ts.isTypeAliasDeclaration(node) && node.name.text === 'PlanningMode') {
+            const collectLiteral = (candidate: ts.Node): void => {
+                if (ts.isLiteralTypeNode(candidate) && ts.isStringLiteral(candidate.literal)) {
+                    modes.add(candidate.literal.text);
+                }
+                candidate.forEachChild(collectLiteral);
+            };
+            collectLiteral(node.type);
+            return;
+        }
+        node.forEachChild(visit);
+    };
+    visit(source);
+
+    if (modes.size === 0) {
+        throw new Error('Architecture guard could not resolve PlanningMode literals from engine/models.ts');
+    }
+    return modes;
+}
+
 function isPlanningModeAccess(node: ts.Node): boolean {
     return (ts.isPropertyAccessExpression(node) && node.name.text === 'planningMode')
         || (ts.isElementAccessExpression(node)
@@ -48,8 +79,8 @@ function isFocusEventAccess(node: ts.Node): boolean {
             && node.argumentExpression.text === 'focusEvent');
 }
 
-function containsModeLiteral(node: ts.Node): boolean {
-    return subtreeContains(node, candidate => ts.isStringLiteral(candidate) && MODE_LITERALS.has(candidate.text));
+function containsModeLiteral(node: ts.Node, modeLiterals: ReadonlySet<string>): boolean {
+    return subtreeContains(node, candidate => ts.isStringLiteral(candidate) && modeLiterals.has(candidate.text));
 }
 
 function branchCondition(node: ts.Node): ts.Expression | null {
@@ -66,6 +97,7 @@ function lineOf(source: ts.SourceFile, node: ts.Node): number {
 describe('planning-mode architecture authority', () => {
     it('keeps effective planning-mode derivation inside planningMode.ts', () => {
         const violations: string[] = [];
+        const modeLiterals = planningModeLiterals();
 
         for (const absolutePath of productionEngineFiles()) {
             const fileName = relative(ENGINE_DIR, absolutePath).replaceAll('\\', '/');
@@ -76,11 +108,13 @@ describe('planning-mode architecture authority', () => {
             const visit = (node: ts.Node): void => {
                 // PlanningContext mode literals are authority output. Production code outside
                 // planningMode.ts may consume the resolved value, but must not construct it.
+                // Derive the literal set from PlanningMode itself so a future third mode is
+                // guarded automatically when the union widens.
                 if (baseName !== 'planningMode.ts'
                     && ts.isPropertyAssignment(node)
                     && propertyName(node.name) === 'mode'
                     && ts.isStringLiteral(node.initializer)
-                    && MODE_LITERALS.has(node.initializer.text)) {
+                    && modeLiterals.has(node.initializer.text)) {
                     violations.push(`${fileName}:${lineOf(source, node)} constructs effective mode '${node.initializer.text}'`);
                 }
 
@@ -103,7 +137,7 @@ describe('planning-mode architecture authority', () => {
                 if (baseName !== 'planningMode.ts'
                     && focusCondition
                     && subtreeContains(focusCondition, isFocusEventAccess)
-                    && containsModeLiteral(node)) {
+                    && containsModeLiteral(node, modeLiterals)) {
                     violations.push(`${fileName}:${lineOf(source, node)} derives planning mode from focusEvent`);
                 }
 
