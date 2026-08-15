@@ -525,29 +525,80 @@ architecture doc's description matches `planningMode.ts` and `evergreenStrategy.
 
 ## Acceptance criteria
 
-- [ ] An athlete with no events and no profile receives a coherent week from documented
+Rechecked individually against current source and fresh command output on 2026-08-15
+(commit `e6ca9c8`, resolving #41). Each box below cites the concrete evidence it stands on;
+none was bulk-converted.
+
+- [x] An athlete with no events and no profile receives a coherent week from documented
       defaults — no crash, no empty candidate set, no fabricated event.
-- [ ] An eventless athlete's dose requirement is derived before packing; identical session
+      `resolvePlanningContext` (`planningMode.ts`) routes a profile-less, event-less date to
+      `mode: 'evergreen'` with `DEFAULT_TRAINING_INTENT_PROFILE`; `evaluateTrainingWithIntent`
+      then calls `resolveEvergreenPlan`, which only needs `UserPreferences` (already required
+      at onboarding) to produce a real packed plan. Freshly run `evergreen_health_two_sessions`,
+      `evergreen_balanced_four_sessions`, and `evergreen_strength_six_sessions` each complete 14
+      simulated days with `qualityWarnings: []` and `constraintViolations: []`; `focusEvent`
+      stays `null` throughout (`trainingIntentAcceptance.test.ts`). Note: the older
+      profile-less-and-preferences-less `no_event_base_phase` control fixture deliberately keeps
+      the legacy demand-derived objective set (`zone2_aerobic`/`threshold_quality`/
+      `strength_maintenance`, `scenarios.test.ts`) rather than the new evergreen packing — that
+      is what keeps it a zero-diff fixture for the next criterion, not a gap in this one.
+- [x] An eventless athlete's dose requirement is derived before packing; identical session
       counts with materially different usable minutes can produce different shortfalls.
-- [ ] `coverageNeedTierForTemplate` is no longer a constant `3` for eventless athletes.
-- [ ] `taperActive` is false on every eventless day and on every dated `general_target`
+      `trainingCapacity.test.ts`: *"produces different usable-minute capacity for equal session
+      commitments"*; `weeklyDosePacking.test.ts`: *"uses duration windows, not only session
+      cardinality, when deciding feasibility."*
+- [x] `coverageNeedTierForTemplate` is no longer a constant `3` for eventless athletes.
+      `evergreenPlan.test.ts` asserts `expect(coverageNeedTierForTemplate(state, zone2)).not.toBe(3)`
+      directly against a built evergreen `CoverageState`.
+- [x] `taperActive` is false on every eventless day and on every dated `general_target`
       goal without an explicit `EventTaperSpec.startDate`.
-- [ ] `simulate:diff` shows **zero** change on all pre-existing event-directed scenarios.
-- [ ] `SEPTEMBER_CYCLING_EVENT_SESSION_COVERAGE` is byte-identical.
-- [ ] `TrainingIntentProfile` and `UserPreferences` each have one documented field
+      `taperPolicy.test.ts`: *"never infers a taper from priority for a general target"* checks
+      `taperActive === false` at five offsets across the horizon, with a companion case proving
+      an explicit `startDate` still activates tapering; the no-event default in
+      `periodization.ts` is `taperActive: false`.
+- [x] `simulate:diff` shows **zero** change on all pre-existing event-directed scenarios.
+      Ran fresh: output lists only `[NEW SCENARIO]` entries (the eleven Phase 6/7 additions,
+      including the three evergreen fixtures); no `[CHANGED]` line against the committed
+      baseline, exit code 0.
+- [x] `SEPTEMBER_CYCLING_EVENT_SESSION_COVERAGE` is byte-identical.
+      Diffed the constant's full 18-entry literal against the pre-Phase-7B commit (`34ddc30`):
+      the only change in the diff is the type annotation
+      (`EventPlanSessionCoverage[]` → `PlanSessionCoverage[]`, the 7.4 rename); every data line
+      is unchanged.
+- [x] `TrainingIntentProfile` and `UserPreferences` each have one documented field
       ownership; no composer merge can create conflicting live preferences.
-- [ ] Required occurrences fit real minutes/windows and declared minimum packing capacity,
+      `composer.ts` reads both through independent `Promise.allSettled` slots and carries them
+      as separate objects on `DailyDecisionInput`/`sourceStates` — neither is spread into or
+      merged with the other anywhere in the composition boundary.
+- [x] Required occurrences fit real minutes/windows and declared minimum packing capacity,
       or yield semantics-preserving `below_guideline_range`,
       `guideline_target_shortfall`, `goal_requirement_shortfall`, or
       `minimum_dose_shortfall`; no fictional cross-role credit is created.
-- [ ] A public-health guideline lower bound is never rendered as a biological no-benefit
+      `weeklyDosePacking.test.ts`: *"does not fabricate cross-modality credit when the exact
+      role conflicts with the requirement"*; *"keeps required, target, and optional roles inside
+      their respective session ceilings."*
+- [x] A public-health guideline lower bound is never rendered as a biological no-benefit
       threshold; safe partial dose and its dose-response trade-off remain visible.
-- [ ] Every evidence-authoritative dose rule has source, population, outcome, confidence,
+      `weeklyDosePacking.test.ts`: *"prescribes the best safe partial guideline dose rather than
+      calling it a minimum-dose failure."*
+- [x] Every evidence-authoritative dose rule has source, population, outcome, confidence,
       applicability, authority class, policy version, and review date; product packing
       heuristics are distinguishable from those rules.
-- [ ] `npm run check` and `npm run test:rules` green; policy-drift guard passes.
-- [ ] No engine module outside `planningMode.ts` derives planning mode from
+      `evergreenStrategy.test.ts`: *"carries complete provenance on every resolved
+      requirement."*
+- [x] `npm run check` and `npm run test:rules` green; policy-drift guard passes.
+      Ran fresh, all three: `npm run check` — 725 passed / 34 skipped, 0 failed; `npm run
+      test:rules` — 34/34 Firestore emulator tests passed; `check-policy-drift.mjs` against the
+      immutable Phase 7 baseline (`34ddc30`) reports `POLICY DRIFT CHECK PASSED: 5 engine
+      file(s) modified and POLICY_VERSION was correctly updated.`
+- [x] No engine module outside `planningMode.ts` derives planning mode from
       `focusEvent === null`.
+      Grepped `app/src/engine` for `focusEvent === null` / `focusEvent !== null`: the only match
+      is `planningMode.ts` itself (plus its own doc comment). Narrower note: issue #42 found and
+      is fixing (unmerged as of this check) two sites that instead branched on the *persisted*
+      `TrainingIntentProfile.planningMode` — a different variable from this criterion's literal
+      `focusEvent === null` wording, but the same authority concern in spirit. That fix lands
+      separately in #42/PR #44 and does not change the answer to this specific criterion.
 
 ---
 
