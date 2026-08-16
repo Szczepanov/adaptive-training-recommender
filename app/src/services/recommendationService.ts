@@ -58,9 +58,13 @@ export class RecommendationService {
             const isNewDoc = !existing;
             priorRevision = existing ? (existing.revision ?? 1) : 1;
             const engineVerdict = resolveEngineShadowVerdict(rec.mode, rec.externalVerdict?.decision);
-            const existingEngineVerdict = existing
-                ? (existing.engineVerdict ?? resolveEngineShadowVerdict(existing.mode))
-                : undefined;
+            // Legacy recommendations predate the exact five-value verdict. Their old exact
+            // value is unknowable, so the first Phase 9 write is metadata completion rather
+            // than a fabricated decision revision. Once the field exists, however, changing
+            // it changes the persisted decision evidence and must archive/bump like any other
+            // decision field. Firestore's decisionFieldsUnchanged() mirrors this distinction.
+            const exactVerdictChanged = existing?.engineVerdict !== undefined
+                && existing.engineVerdict !== engineVerdict;
 
             // Declared `const` (not reassigned) so TypeScript's control-flow narrowing of
             // `existing` inside `if (decisionChangedThisSave)` below still applies; the
@@ -71,7 +75,7 @@ export class RecommendationService {
                 existing.category !== rec.template.category ||
                 existing.modality !== rec.template.modality ||
                 existing.mode !== rec.mode ||
-                existingEngineVerdict !== engineVerdict ||
+                exactVerdictChanged ||
                 existing.rationale !== rec.rationale ||
                 // Firestore returns map fields in sorted key order, which does not match
                 // the construction order of a freshly-built prescription -- comparing via
