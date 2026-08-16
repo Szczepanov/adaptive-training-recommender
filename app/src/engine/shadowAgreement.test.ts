@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { allShadowVerdictPairs, classifyAgreement, type AgreementClass } from './shadowAgreement';
+import { allShadowVerdictPairs, classifyAgreement, resolveEngineShadowVerdict, type AgreementClass } from './shadowAgreement';
 import { SHADOW_VERDICTS, type ShadowVerdict } from './models';
 
 // Every ordered pair of the five ShadowVerdict values, with its expected class asserted
@@ -36,6 +36,20 @@ const EXPECTED: Array<[ShadowVerdict, ShadowVerdict, AgreementClass]> = [
     ['advisory', 'skip', 'incomparable'],
     ['advisory', 'advisory', 'incomparable'],
 ];
+
+describe('resolveEngineShadowVerdict', () => {
+    it('uses the mode ladder only when no exact imported-session verdict exists', () => {
+        expect(resolveEngineShadowVerdict('train')).toBe('proceed');
+        expect(resolveEngineShadowVerdict('modify')).toBe('scale');
+        expect(resolveEngineShadowVerdict('recover')).toBe('defer');
+    });
+
+    it.each(SHADOW_VERDICTS)('preserves exact imported-session decision %s regardless of three-value mode', verdict => {
+        expect(resolveEngineShadowVerdict('train', verdict)).toBe(verdict);
+        expect(resolveEngineShadowVerdict('modify', verdict)).toBe(verdict);
+        expect(resolveEngineShadowVerdict('recover', verdict)).toBe(verdict);
+    });
+});
 
 describe('classifyAgreement', () => {
     it('covers every ordered pair of the five ShadowVerdict values (5x5 = 25)', () => {
