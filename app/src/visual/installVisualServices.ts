@@ -16,7 +16,15 @@ import type { VisualFixture } from './fixtures';
  * against stable synthetic inputs without authenticating or reading Firestore.
  */
 export function installVisualServices(fixture: VisualFixture): void {
-  decisionComposer.composeDailyDecisionInput = async () => fixture.input;
+  // Phase 9.4: visual fixtures model canonical DailyDecisionInput, while the composer now
+  // returns a composition-only extension carrying transient subjective-history evidence.
+  // Visual review has no Firestore history source, so represent that honestly as missing
+  // rather than fabricating a baseline.
+  decisionComposer.composeDailyDecisionInput = async () => ({
+    ...fixture.input,
+    subjectiveBaseline: null,
+    subjectiveHistoryState: { status: 'MISSING' },
+  });
 
   checkinService.getCheckin = async () => fixture.checkin;
   checkinService.upsertTodayCheckin = async (_userId, update) => ({
