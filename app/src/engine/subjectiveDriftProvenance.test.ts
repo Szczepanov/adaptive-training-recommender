@@ -4,7 +4,7 @@ import { TEMPLATES } from './templates';
 import { POLICY_VERSION } from './policy';
 import { buildRecommendationAudit } from './provenance';
 import { buildTrainingHistorySnapshot } from './trainingHistorySnapshot';
-import type { SubjectiveDriftDecisionEvidence } from './subjectiveDriftEvidence';
+import type { SubjectiveDriftDecisionEvidence } from './simulation/subjectiveDriftEvidence';
 
 function snapshot() {
     return buildTrainingHistorySnapshot(
@@ -14,18 +14,12 @@ function snapshot() {
         '2026-08-16T08:00:00Z',
     );
 }
-
 function recommendation(): Recommendation {
     const template = TEMPLATES.find(item => item.category === 'Easy Endurance');
     if (!template) throw new Error('Test fixture requires an easy template');
     return {
-        template,
-        mode: 'modify',
-        rationale: 'Not part of normalized audit.',
-        envelopes: {
-            safety: { clinicalFlagActive: false, restrictedModalities: [] },
-            plan: { maxAllowableTier: 'Easy', taperActive: false },
-        },
+        template, mode: 'modify', rationale: 'Not part of normalized audit.',
+        envelopes: { safety: { clinicalFlagActive: false, restrictedModalities: [] }, plan: { maxAllowableTier: 'Easy', taperActive: false } },
         decisionTrace: {
             policyVersion: POLICY_VERSION,
             candidateScores: [{ templateId: template.id, utilityScore: 1, excludedReasons: [] }],
@@ -33,25 +27,11 @@ function recommendation(): Recommendation {
         },
     };
 }
-
 const evidence: SubjectiveDriftDecisionEvidence = {
-    estimatorId: 'subjective-baseline-v1-mean-stdev-7-28',
-    historyThroughDateExclusive: '2026-08-16',
-    recentRecordedDays: 6,
-    longRecordedDays: 23,
-    contribution: 1.25,
-    perMetricContributions: {
-        readiness: 0.25,
-        sleepQuality: 0.2,
-        fatigue: 0.3,
-        soreness: 0.25,
-        mentalStress: 0.15,
-        motivation: 0.1,
-    },
-    modeWithoutDrift: 'train',
-    modeWithDrift: 'modify',
-    decisionRelevant: true,
-    totalDecisionScoreWithDrift: 1.4,
+    estimatorId: 'subjective-baseline-v1-mean-stdev-7-28', historyThroughDateExclusive: '2026-08-16',
+    recentRecordedDays: 6, longRecordedDays: 23, contribution: 1.25,
+    perMetricContributions: { readiness: 0.25, sleepQuality: 0.2, fatigue: 0.3, soreness: 0.25, mentalStress: 0.15, motivation: 0.1 },
+    modeWithoutDrift: 'train', modeWithDrift: 'modify', decisionRelevant: true, totalDecisionScoreWithDrift: 1.4,
 };
 
 describe('Phase 9.7 recommendation audit', () => {
@@ -60,17 +40,12 @@ describe('Phase 9.7 recommendation audit', () => {
         expect(audit).not.toBeNull();
         expect(Object.keys(audit!)).not.toContain('subjectiveDrift');
     });
-
     it('stores only compact normalized drift provenance when evidence is explicitly supplied', () => {
         const audit = buildRecommendationAudit(recommendation(), snapshot(), '2026-08-16T09:00:00Z', evidence);
         expect(audit?.subjectiveDrift).toEqual({
-            estimatorId: evidence.estimatorId,
-            historyThroughDateExclusive: evidence.historyThroughDateExclusive,
-            recentRecordedDays: evidence.recentRecordedDays,
-            longRecordedDays: evidence.longRecordedDays,
-            contribution: evidence.contribution,
-            perMetricContributions: evidence.perMetricContributions,
-            decisionRelevant: true,
+            estimatorId: evidence.estimatorId, historyThroughDateExclusive: evidence.historyThroughDateExclusive,
+            recentRecordedDays: evidence.recentRecordedDays, longRecordedDays: evidence.longRecordedDays,
+            contribution: evidence.contribution, perMetricContributions: evidence.perMetricContributions, decisionRelevant: true,
         });
         const serialized = JSON.stringify(audit);
         expect(serialized).not.toContain('modeWithoutDrift');
