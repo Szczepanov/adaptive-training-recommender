@@ -46,6 +46,7 @@ describe('RecommendationService persistence', () => {
         vi.clearAllMocks();
         firestore.doc.mockReturnValue({ path: 'recommendation' });
         firestore.batch.commit.mockResolvedValue(undefined);
+        firestore.setDoc.mockResolvedValue(undefined);
     });
 
     it('deletes a removed prescription in the same revision/archive batch', async () => {
@@ -66,6 +67,76 @@ describe('RecommendationService persistence', () => {
         const updatedDocument = firestore.batch.set.mock.calls[1][1] as Record<string, unknown>;
         expect(updatedDocument.prescription).toBe(firestore.deleteMarker);
         expect(firestore.batch.commit).toHaveBeenCalledOnce();
+    });
+
+    it('persists the exact imported-event advisory verdict instead of collapsing it to train/proceed', async () => {
+        const template = TEMPLATES[0];
+        firestore.getDoc.mockResolvedValue({ exists: () => false });
+        const recommendation: Recommendation = {
+            template,
+            mode: 'train',
+            rationale: 'Event is a fixed commitment; advice only.',
+            externalVerdict: {
+                decision: 'advisory',
+                gateFailures: [],
+                rationale: 'Do not replace or cancel the target event.',
+            },
+        };
+
+        const saved = await new RecommendationService().saveRecommendation('athlete', '2026-08-07', recommendation);
+
+        expect(saved).not.toBeNull();
+        expect(firestore.setDoc).toHaveBeenCalledOnce();
+        const writeData = firestore.setDoc.mock.calls[0][1] as Record<string, unknown>;
+        expect(writeData.engineVerdict).toBe('advisory');
+        expect(writeData.mode).toBe('train');
+    });
+
+    it('backfills a logical verdict onto a legacy recommendation without manufacturing a decision revision', async () => {
+        const template = TEMPLATES[0];
+        const existing = {
+            userId: 'athlete', date: '2026-08-07', templateId: template.id, templateTitle: template.title,
+            category: template.category, modality: template.modality, mode: 'train', rationale: 'Keep it easy.',
+            schemaVersion: 1, revision: 1, createdAt: '2026-08-07T08:00:00.000Z', updatedAt: '2026-08-07T08:00:00.000Z',
+            adherence: { respondedAt: null, followed: null, actualModality: null, actualDurationMin: null, skipped: false, notes: null },
+        } as unknown as DailyRecommendation;
+        firestore.getDoc.mockResolvedValue({ exists: () => true, data: () => existing });
+        const recommendation: Recommendation = { template, mode: 'train', rationale: 'Keep it easy.' };
+
+        await new RecommendationService().saveRecommendation('athlete', '2026-08-07', recommendation);
+
+        expect(firestore.batch.set).not.toHaveBeenCalled();
+        expect(firestore.batch.commit).not.toHaveBeenCalled();
+        expect(firestore.setDoc).toHaveBeenCalledOnce();
+        const writeData = firestore.setDoc.mock.calls[0][1] as Record<string, unknown>;
+        expect(writeData.engineVerdict).toBe('proceed');
+        expect(writeData.revision).toBe(1);
+    });
+
+    it('treats an exact verdict change as a decision change even when template and three-value mode are unchanged', async () => {
+        const template = TEMPLATES[0];
+        const existing = {
+            userId: 'athlete', date: '2026-08-07', templateId: template.id, templateTitle: template.title,
+            category: template.category, modality: template.modality, mode: 'train', engineVerdict: 'proceed', rationale: 'Same visible recommendation.',
+            schemaVersion: 1, revision: 1, createdAt: '2026-08-07T08:00:00.000Z', updatedAt: '2026-08-07T08:00:00.000Z',
+            adherence: { respondedAt: null, followed: null, actualModality: null, actualDurationMin: null, skipped: false, notes: null },
+        };
+        firestore.getDoc.mockResolvedValue({ exists: () => true, data: () => existing });
+        const recommendation: Recommendation = {
+            template,
+            mode: 'train',
+            rationale: 'Same visible recommendation.',
+            externalVerdict: { decision: 'advisory', gateFailures: [], rationale: 'Event advice only.' },
+        };
+
+        await new RecommendationService().saveRecommendation('athlete', '2026-08-07', recommendation);
+
+        expect(firestore.batch.set).toHaveBeenCalledTimes(2);
+        const archive = firestore.batch.set.mock.calls[0][1] as Record<string, unknown>;
+        const current = firestore.batch.set.mock.calls[1][1] as Record<string, unknown>;
+        expect(archive.engineVerdict).toBe('proceed');
+        expect(current.engineVerdict).toBe('advisory');
+        expect(current.revision).toBe(2);
     });
 
     // Regression test for the bug reported as "Permission denied saving recommendation":
@@ -120,5 +191,6 @@ describe('RecommendationService persistence', () => {
         expect(firestore.setDoc).toHaveBeenCalledOnce();
         const [, writeData] = firestore.setDoc.mock.calls[0];
         expect((writeData as Record<string, unknown>).revision).toBe(1);
+        expect((writeData as Record<string, unknown>).engineVerdict).toBe('proceed');
     });
 });
