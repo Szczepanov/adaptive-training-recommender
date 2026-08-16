@@ -102,7 +102,9 @@ describe('DecisionComposer Phase 9.4 subjective baseline boundary', () => {
         expect(input.subjectiveBaseline?.historyThroughDateExclusive).toBe(date);
         expect(input.subjectiveBaseline?.recentRecordedDays).toBe(7);
         expect(input.subjectiveBaseline?.longRecordedDays).toBe(28);
-        expect(input.subjectiveHistoryState).toMatchObject({ status: 'AVAILABLE', revision: 'history-r1' });
+        expect(input.subjectiveHistoryState).toEqual({ status: 'AVAILABLE', revision: 'history-r1' });
+        expect(input.subjectiveHistoryIssues).toEqual([]);
+        expect(input).not.toHaveProperty('subjectiveHistoryState.data');
     });
 
     it('does not let an unavailable history read block ordinary decision-input composition', async () => {
@@ -112,23 +114,20 @@ describe('DecisionComposer Phase 9.4 subjective baseline boundary', () => {
         const input = await new DecisionComposer().composeDailyDecisionInput('u1', '2026-08-10');
         expect(input.subjectiveBaseline).toBeNull();
         expect(input.subjectiveHistoryState.status).toBe('UNAVAILABLE');
+        expect(input.subjectiveHistoryIssues).toEqual([]);
         expect(input.trainingSettings.userId).toBe('u1');
     });
 
-    it('uses valid rows while preserving row-level data-quality issues from the history service', async () => {
+    it('uses valid rows while preserving compact row-level data-quality issues', async () => {
         const date = '2026-08-10';
+        const issue = { code: 'invalid-checkin-field', documentPath: 'users/u1/daily_subjective_checkins/bad' };
         services.checkin.getCheckinsInRangeState.mockResolvedValue({
-            status: 'AVAILABLE',
-            data: matureHistory(date),
-            revision: 'history-r2',
-            issues: [{ code: 'invalid-checkin-field', documentPath: 'users/u1/daily_subjective_checkins/bad' }],
+            status: 'AVAILABLE', data: matureHistory(date), revision: 'history-r2', issues: [issue],
         });
         const input = await new DecisionComposer().composeDailyDecisionInput('u1', date);
         expect(input.subjectiveBaseline).not.toBeNull();
-        expect(input.subjectiveHistoryState.status).toBe('AVAILABLE');
-        if (input.subjectiveHistoryState.status === 'AVAILABLE') {
-            expect(input.subjectiveHistoryState.issues).toHaveLength(1);
-        }
+        expect(input.subjectiveHistoryState).toEqual({ status: 'AVAILABLE', revision: 'history-r2' });
+        expect(input.subjectiveHistoryIssues).toEqual([issue]);
     });
 
     it('returns no baseline for sparse valid history rather than fabricating a neutral baseline', async () => {
