@@ -427,10 +427,15 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
   }, [loadDashboardData]);
 
   // Phase 9.0.3: a new calendar day starts hidden again. DecisionJournalCard re-fetches
-  // and reports the new day's entry (if any) via onEntryChange on its own -- this only
-  // resets the click-driven half of the reveal gate.
+  // and reports the new day's entry (if any) via onEntryChange once its read resolves --
+  // but that read is async, so todaysJournalEntry must also be cleared here rather than
+  // left holding the previous day's entry. Otherwise a non-null entry from yesterday
+  // would make recommendationEffectivelyRevealed true for today until the new fetch
+  // completes, revealing today's recommendation before the athlete has had a chance to
+  // record (or decline to record) today's blind verdict.
   useEffect(() => {
     setRecommendationRevealed(false);
+    setTodaysJournalEntry(null);
   }, [decisionInput?.date]);
 
   const getDataCompleteness = () => {

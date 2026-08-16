@@ -49,7 +49,17 @@ export class DecisionJournalService {
         date: string,
         input: { externalVerdict: ShadowVerdict; externalNote?: string | null; sawEngineVerdictFirst: boolean },
     ): Promise<DecisionJournalEntry> {
-        const existing = await this.getEntry(userId, date);
+        // A read failure (offline, transient error) must not be treated the same as "no
+        // entry exists yet": doing so would re-derive sawEngineVerdictFirst/createdAt from
+        // this call's input on what is actually an edit, and firestore.rules' update guard
+        // (both fields immutable) would then reject the write outright -- a confusing
+        // generic "could not save" instead of a clear "couldn't confirm whether you already
+        // recorded today" retry prompt.
+        const existingState = await this.getEntryState(userId, date);
+        if (existingState.status === 'UNAVAILABLE') {
+            throw new Error("Could not confirm whether today's entry already exists; please try again");
+        }
+        const existing = existingState.status === 'AVAILABLE' ? existingState.data : null;
         const now = new Date().toISOString();
         const raw: Record<string, unknown> = {
             userId,
@@ -70,11 +80,17 @@ export class DecisionJournalService {
      * evening-only record with no external verdict is not a valid shadow-mode day.
      */
     async recordActualVerdict(userId: string, date: string, actualVerdict: ShadowVerdict): Promise<DecisionJournalEntry> {
-        const existing = await this.getEntry(userId, date);
-        if (!existing) {
+        // Same reasoning as recordMorningEntry: a read failure is not "no entry exists" --
+        // conflating them would tell the athlete to redo the morning entry when the real
+        // problem is a transient read error.
+        const existingState = await this.getEntryState(userId, date);
+        if (existingState.status === 'UNAVAILABLE') {
+            throw new Error("Could not confirm today's entry; please try again");
+        }
+        if (existingState.status !== 'AVAILABLE') {
             throw new Error(`No decision journal entry exists for ${date}; record the morning verdict first`);
         }
-        const raw: Record<string, unknown> = { ...existing, actualVerdict, updatedAt: new Date().toISOString() };
+        const raw: Record<string, unknown> = { ...existingState.data, actualVerdict, updatedAt: new Date().toISOString() };
         return this.write(userId, date, raw);
     }
 

@@ -144,6 +144,10 @@ export const DecisionJournalCard = memo(function DecisionJournalCard({
               className="text-input"
               value={externalNote}
               onChange={(e) => setExternalNote(e.target.value)}
+              // firestore.rules caps externalNote at 2000 chars; enforce it client-side too
+              // so a long note fails obviously here rather than as an opaque "could not
+              // save" after a round trip to Firestore.
+              maxLength={2000}
               placeholder="e.g. said take it easy, HRV was low"
             />
           </div>

@@ -33,6 +33,10 @@ function existingDoc(data: Record<string, unknown>) {
     firestore.getDoc.mockResolvedValueOnce({ exists: () => true, data: () => data });
 }
 
+function failingRead() {
+    firestore.getDoc.mockRejectedValueOnce(new Error('offline'));
+}
+
 describe('DecisionJournalService', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -93,6 +97,18 @@ describe('DecisionJournalService', () => {
             const payload = firestore.setDoc.mock.calls[0][1] as Record<string, unknown>;
             expect(payload.actualVerdict).toBe('skip');
         });
+
+        it('rejects with a distinct error on a transient read failure, rather than treating it as "no entry" and re-deriving locked fields', async () => {
+            failingRead();
+            const service = new DecisionJournalService();
+            await expect(service.recordMorningEntry(USER_ID, DATE, {
+                externalVerdict: 'proceed', sawEngineVerdictFirst: true,
+            })).rejects.toThrow(/could not confirm/i);
+            // Must not have attempted a write built from re-derived (wrong) locked fields --
+            // that write would only fail downstream against firestore.rules' immutability
+            // guard with a confusing generic error.
+            expect(firestore.setDoc).not.toHaveBeenCalled();
+        });
     });
 
     describe('recordActualVerdict', () => {
@@ -100,6 +116,13 @@ describe('DecisionJournalService', () => {
             missingDoc();
             const service = new DecisionJournalService();
             await expect(service.recordActualVerdict(USER_ID, DATE, 'scale')).rejects.toThrow(/record the morning verdict first/);
+            expect(firestore.setDoc).not.toHaveBeenCalled();
+        });
+
+        it('rejects with a distinct error on a transient read failure, rather than claiming no entry exists', async () => {
+            failingRead();
+            const service = new DecisionJournalService();
+            await expect(service.recordActualVerdict(USER_ID, DATE, 'scale')).rejects.toThrow(/could not confirm/i);
             expect(firestore.setDoc).not.toHaveBeenCalled();
         });
 
