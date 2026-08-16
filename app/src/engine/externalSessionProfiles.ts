@@ -127,6 +127,10 @@ export function deriveExternalSessionProfiles(session: ExternalPlanSession): Ext
  * current in-memory decision. It is deliberately not persisted: the athlete's UserEvent
  * remains the authored calendar record, while this adapter gives availability, fatigue and
  * objective-credit code the same shape they already understand.
+ *
+ * The transient `externalAuthoredIdentity` is the critical distinction from a catalog
+ * FixedActivity: modality/category are known, but the stimulus is inferred from the import
+ * contract, so fixed-activity objective credit must keep `authoredExternal` confidence.
  */
 export function externalEventAsFixedActivity(
     session: ExternalPlanSession,
@@ -137,6 +141,7 @@ export function externalEventAsFixedActivity(
 ): FixedActivity | null {
     if (!session.isEvent) return null;
     const profiles = deriveExternalSessionProfiles(session);
+    const gateable = toGateableSession(session);
     return {
         id: `external-event:${planId}:${revision}:${session.id}`,
         userId,
@@ -147,6 +152,11 @@ export function externalEventAsFixedActivity(
         durationMin: session.gating.durationMax,
         expectedCost: profiles.costProfile,
         expectedStimulus: profiles.stimulusProfile,
+        externalAuthoredIdentity: {
+            modality: gateable.modality,
+            category: gateable.category,
+            stimulusConfidence: 'inferred',
+        },
         fixed: true,
         environment: session.gating.environment,
         equipment: [...session.gating.equipment],
@@ -156,11 +166,6 @@ export function externalEventAsFixedActivity(
     };
 }
 
-/**
- * Adapts an imported session to the shape the hard feasibility gates read, so it passes
- * `evaluateTemplateEligibility` on exactly the terms a catalog template does
- * (D-CANDIDATE). Nothing here selects, ranks, or scores.
- */
 /**
  * Safety tags an imported session must be assumed to carry.
  *
@@ -189,6 +194,11 @@ function inferredSafetyTags(session: ExternalPlanSession): GuardrailKey[] {
     return tags;
 }
 
+/**
+ * Adapts an imported session to the shape the hard feasibility gates read, so it passes
+ * `evaluateTemplateEligibility` on exactly the terms a catalog template does
+ * (D-CANDIDATE). Nothing here selects, ranks, or scores.
+ */
 export function toGateableSession(session: ExternalPlanSession): GateableSession {
     return {
         durationMin: session.gating.durationMin,
