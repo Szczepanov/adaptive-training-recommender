@@ -793,7 +793,7 @@ describe('session adjustment engine', () => {
 
 // --- Phase 9.2: DailyReadiness carries an optional subjectiveBaseline field --------------
 
-function fixtureSubjectiveBaseline(overrides: Partial<Record<'readiness' | 'sleepQuality' | 'fatigue' | 'soreness' | 'mentalStress' | 'motivation', number>> = {}): SubjectiveBaseline {
+function fixtureSubjectiveBaseline(): SubjectiveBaseline {
     // A "worst case" baseline -- every metric drifted maximally adverse -- to make the
     // strongest possible case that attaching it changes nothing. If 9.2 accidentally wired
     // this into the mode calculation, this fixture would be the one most likely to expose it.
@@ -805,7 +805,7 @@ function fixtureSubjectiveBaseline(overrides: Partial<Record<'readiness' | 'slee
         longRecordedDays: 28,
         lastObservationDate: '2026-08-07',
         metrics: {
-            readiness: { ...adverseMetric, ...overrides },
+            readiness: adverseMetric,
             sleepQuality: adverseMetric,
             fatigue: adverseMetric,
             soreness: adverseMetric,
