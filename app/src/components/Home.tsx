@@ -9,13 +9,13 @@ import { buildRecommendationAudit } from '../engine/provenance';
 import { evaluatePeriodizationPhase, getDaysToEvent } from '../engine/periodization';
 import { resolvePlanningContext } from '../engine/planningMode';
 import { resolveExecutionDose } from '../engine/dose';
-import type { AuthoredPlanBlock, DailyDecisionInput, Recommendation, NextDayPotentialPlan, DailyRecommendation, DecisionJournalEntry, ExternalPlacementAssignment, ExternalPlanPlacement, FixedActivity } from '../engine/models';
+import type { AuthoredPlanBlock, DailyDecisionInput, Recommendation, NextDayPotentialPlan, DailyRecommendation, DecisionJournalEntry, ExternalPlacementAssignment, ExternalPlanPlacement, FixedActivity, ShadowVerdict } from '../engine/models';
 import type { DataState } from '../engine/dataState';
 import { recommendationService } from '../services/recommendationService';
 import { fixedActivityService } from '../services/fixedActivityService';
 import { planBlockService } from '../services/planBlockService';
 import { decisionJournalService } from '../services/decisionJournalService';
-import { deriveEngineVerdictFromMode } from '../engine/shadowLog';
+import { resolveEngineShadowVerdict } from '../engine/shadowAgreement';
 import { getPreviousLocalDateString, addDaysToLocalDateString } from '../utils/localDate';
 import { getPrescriptionLegend, resolveWorkoutPrescription } from '../workouts';
 import type { WorkoutPrescription } from '../workouts';
@@ -85,7 +85,6 @@ const DetailedTodayPlan = memo(function DetailedTodayPlan({ prescription }: { pr
               </div>
               <p className="plan-dose">{step.dose}{step.rest ? ` · ${step.rest}` : ''}</p>
 
-              {/* Step Targets */}
               {step.structuredTargets && step.structuredTargets.length > 0 ? (
                 <ul className="step-target-list">
                   {step.structuredTargets.map((t, idx) => (
@@ -103,7 +102,6 @@ const DetailedTodayPlan = memo(function DetailedTodayPlan({ prescription }: { pr
                 </ul>
               ) : null}
 
-              {/* Step Cues */}
               {step.cues && step.cues.length > 0 && (
                 <div className="step-cues-list">
                   {step.cues.map((cue, idx) => (
@@ -112,7 +110,6 @@ const DetailedTodayPlan = memo(function DetailedTodayPlan({ prescription }: { pr
                 </div>
               )}
 
-              {/* Step Stop Conditions */}
               {step.stopConditions && step.stopConditions.length > 0 && (
                 <div className="step-stop-conditions">
                   {step.stopConditions.map((cond, idx) => (
@@ -138,45 +135,30 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
   const [error, setError] = useState<string | null>(null);
   const [showWorkoutDetails, setShowWorkoutDetails] = useState(false);
   const [pendingAdherence, setPendingAdherence] = useState<{ date: string; recommendation: DailyRecommendation } | null>(null);
-  // Phase 9.0.3: today's recommendation content stays hidden until the athlete explicitly
-  // reveals it or a decision journal entry already exists for today (a returning athlete
-  // who already recorded blind shouldn't be re-hidden). This is the reveal gate
-  // sawEngineVerdictFirst is observed from, not self-reported.
   const [recommendationRevealed, setRecommendationRevealed] = useState(false);
   const [todaysJournalEntry, setTodaysJournalEntry] = useState<DecisionJournalEntry | null>(null);
   const [historySnapshot, setHistorySnapshot] = useState<TrainingHistorySnapshot | null>(null);
   const [activeExternalPlan, setActiveExternalPlan] = useState<ActiveExternalPlan | null>(null);
   const [externalWeekCritique, setExternalWeekCritique] = useState<ExternalWeekCritique | null>(null);
-  /** The same list `getActivePlanState` resolved placement against, so the missed-session
-   * proposal cannot compute a different placement than the one on screen. */
   const [planWeekFixedActivities, setPlanWeekFixedActivities] = useState<FixedActivity[]>([]);
   const [placementError, setPlacementError] = useState<string | null>(null);
-  // Read inside handlePendingAdherenceResolved instead of depending on pendingAdherence
-  // directly, so that callback's identity stays stable across renders (see the Bolt
-  // Performance Optimization note below) while still seeing the value current at the
-  // moment the athlete actually answers.
   const pendingAdherenceRef = useRef(pendingAdherence);
   useEffect(() => { pendingAdherenceRef.current = pendingAdherence; }, [pendingAdherence]);
 
-  // ⚡ Bolt Performance Optimization:
-  // Memoized callback to prevent passing new function references to AdherencePrompt on every render.
-  // Expected Impact: Ensures React.memo on AdherencePrompt works as intended.
   const handlePendingAdherenceResolved = useCallback((answer: AdherenceAnswer) => {
     const resolved = pendingAdherenceRef.current;
     setPendingAdherence(null);
-    // Phase 9.0.3 adherence alignment: "followed the plan as given" already answers
-    // yesterday's actualVerdict in the same vocabulary as the engine's own verdict --
-    // sync it onto an existing journal entry rather than forcing redundant double-entry.
-    // Only fills a gap: an explicit override the athlete already made on the journal card
-    // itself is never overwritten.
     if (answer.followed === true && resolved) {
       decisionJournalService.getEntry(userId, resolved.date)
         .then(existing => {
-          if (existing && !existing.actualVerdict) {
-            return decisionJournalService.recordActualVerdict(
-              userId, resolved.date, deriveEngineVerdictFromMode(resolved.recommendation.mode),
-            );
-          }
+          if (!existing || existing.actualVerdict) return;
+          const persisted = resolved.recommendation as DailyRecommendation & { engineVerdict?: ShadowVerdict };
+          const exactVerdict = persisted.engineVerdict ?? resolveEngineShadowVerdict(persisted.mode);
+          // `advisory` is explicitly a non-instruction. "I followed the recommendation"
+          // therefore cannot tell us which action actually happened on that day; asking the
+          // athlete to record the outcome is better than manufacturing one from a non-action.
+          if (exactVerdict === 'advisory') return;
+          return decisionJournalService.recordActualVerdict(userId, resolved.date, exactVerdict);
         })
         .catch(err => console.warn('Failed to sync decision journal actualVerdict from adherence:', err));
     }
@@ -205,8 +187,6 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
   );
   const canGenerateNormalPlan = canGenerateNormalRecommendation(minimumSafetyStatus);
 
-  /** Every branch that does not resolve an imported plan must clear it. A stale plan left
-   * on screen would render live reschedule buttons over a week nothing recomputed. */
   const clearExternalPlanState = useCallback(() => {
     setActiveExternalPlan(null);
     setExternalWeekCritique(null);
@@ -248,31 +228,17 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
       }
 
       const yesterday = getPreviousLocalDateString(input.date);
-
-      // ⚡ Bolt Performance Optimization:
-      // Executing independent asynchronous data fetching calls concurrently via Promise.all.
-      // Expected Impact: Reduces sequential blocking during loadDashboardData, saving overall dashboard loading time.
       const [yesterdayRec, todayAndTomorrowFixedActivities, todayAndTomorrowPlanBlocks] = await Promise.all([
         recommendationService.getRecommendation(userId, yesterday).catch(err => {
           console.warn('Failed to load yesterday\'s recommendation:', err);
           return null;
         }),
-
-        // Phase 6.2b: today's and tomorrow's own fixed activities must affect the actual
-        // live pick and provisional plan (availability/fatigue/objective credit), not just
-        // the separately-fetched week-ahead forecast strip below. Unlike that forecast read
-        // (which fails closed on a non-AVAILABLE state -- silently treating it as "no
-        // commitments" over a 7-day horizon someone plans around), the live day-0/day-1
-        // decision fails OPEN to an empty list here: this is one day's already-interactive
-        // recommendation, not an unattended multi-day schedule, and a temporary read failure
-        // should not block it entirely -- same tradeoff already made for `yesterdayRec` above.
         fixedActivityService
           .getActivitiesInRange(userId, input.date, addDaysToLocalDateString(input.date, 1))
           .catch(err => {
             console.warn('Failed to load fixed activities for today/tomorrow:', err);
             return [];
           }),
-
         planBlockService
           .getBlocksInRangeState(userId, input.date, addDaysToLocalDateString(input.date, 1))
           .then(state => {
@@ -299,13 +265,6 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
         const objective = mapSnapshotToEngineInput(input.recoverySnapshot);
         const subjective = mapCheckinToSubjectiveInput(input.subjectiveCheckin);
         const context = mapContextFromGoalsAndTrainingSettings(input.activeGoals, input.trainingSettings, input.preferences, input.date, input.subjectiveCheckin);
-        // injuryPolicy.ts's resolveEffectiveInjuryConstraints documents tissue-derived
-        // restrictions as a single TODAY-only decision (reviewBy: today, never persisted).
-        // `context` above bakes today's checkin into restrictedModalities/impliedGuardrails
-        // for `evaluateTrainingWithIntent` below, which is correct for today's own
-        // decision -- but tomorrow's provisional plan is a different day's decision, so it
-        // must not inherit it. `forecastContext` omits todaysCheckin, leaving only the
-        // athlete's standing InjuryConstraint[] in force.
         const forecastContext = mapContextFromGoalsAndTrainingSettings(input.activeGoals, input.trainingSettings, input.preferences, input.date, null);
         const events = mapGoalsToUserEvents(input.activeGoals);
         const preparedSnapshot = await prepareTrainingHistorySnapshot(userId, input.date);
@@ -315,14 +274,6 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
         }
         setHistorySnapshot(preparedSnapshot);
 
-        // ADR-0019: an imported plan owns selection on the days it covers. Resolved before
-        // the decision so the same placement drives today's adjudication and the week view.
-        //
-        // Placement spreads sessions around booked commitments across the *whole* plan week,
-        // so it needs the week's activities, not the two days the live decision reads. Giving
-        // it the shorter list made the resolved placement here disagree with the one the
-        // missed-session proposal computes from the week-long list, and under-charged the
-        // critique's fatigue projection for days 2-6.
         const planWeekStart = mondayOf(input.date);
         const planWeekActivitiesState = await fixedActivityService.getActivitiesInRangeState(
           userId, planWeekStart, addDaysToLocalDateString(planWeekStart, 6),
@@ -341,8 +292,6 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
         const activeExternal = activeExternalState.status === 'AVAILABLE' ? activeExternalState.data : null;
         setActiveExternalPlan(activeExternal);
         if (activeExternalState.status === 'INVALID' || activeExternalState.status === 'UNAVAILABLE') {
-          // Not fatal to the day -- the engine still recommends -- but the athlete must know
-          // their plan was not consulted rather than silently seeing a catalog pick.
           console.warn(`External plan could not be read (${activeExternalState.status}); today falls back to the ranked path.`);
         }
         const externalContext = activeExternal ? externalPlanContextForDate(activeExternal, input.date) : null;
@@ -363,8 +312,6 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
         };
         setRecommendation(todayRec);
 
-        // Weekly critique (ADR-0019 D-CRITIQUE): advisory review of the placed week, built
-        // from the same intent the decision above used. It cannot alter a verdict.
         if (activeExternal) {
           const intent = await resolveTrainingIntent(
             userId, events, input.date, { subjective, objective }, 7, undefined, preparedSnapshot,
@@ -399,9 +346,6 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
           console.warn('Failed to persist recommendation:', err)
         );
       } else if (input.recoverySnapshot && safetyStatus !== 'complete') {
-        // Unknown subjective safety state must not be converted to neutral values and
-        // passed through the ordinary optimizer. This fallback is never persisted as a
-        // normal training recommendation.
         setRecommendation(createProvisionalSafetyRecommendation(safetyStatus));
         setAdjustmentDirection(null);
         setNextDayPlan(null);
@@ -426,13 +370,6 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
     loadDashboardData();
   }, [loadDashboardData]);
 
-  // Phase 9.0.3: a new calendar day starts hidden again. DecisionJournalCard re-fetches
-  // and reports the new day's entry (if any) via onEntryChange once its read resolves --
-  // but that read is async, so todaysJournalEntry must also be cleared here rather than
-  // left holding the previous day's entry. Otherwise a non-null entry from yesterday
-  // would make recommendationEffectivelyRevealed true for today until the new fetch
-  // completes, revealing today's recommendation before the athlete has had a chance to
-  // record (or decline to record) today's blind verdict.
   useEffect(() => {
     setRecommendationRevealed(false);
     setTodaysJournalEntry(null);
@@ -440,14 +377,12 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
 
   const getDataCompleteness = () => {
     if (!decisionInput) return 0;
-    
     const { dataQuality } = decisionInput;
     const items = [
       dataQuality.hasRecoverySnapshot,
       dataQuality.hasSubjectiveCheckin,
       dataQuality.profileReady
     ];
-    
     const completed = items.filter(Boolean).length;
     return Math.round((completed / items.length) * 100);
   };
@@ -460,12 +395,6 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
     return { subjective, objective, context };
   }, [decisionInput]);
 
-  // Same subjective/objective inputs as `engineInputs`, but `context` omits today's
-  // checkin so its tissue-derived restrictions (single-day only, per
-  // injuryPolicy.ts's resolveEffectiveInjuryConstraints) don't leak into the week-ahead
-  // strip -- only the athlete's standing InjuryConstraint[] should constrain any of those
-  // future days. `engineInputs.context` remains correct for adjusting TODAY's own
-  // recommendation (computeAdjustedRecommendation below).
   const forecastEngineInputs = useMemo(() => {
     if (!decisionInput || !decisionInput.recoverySnapshot) return null;
     const subjective = mapCheckinToSubjectiveInput(decisionInput.subjectiveCheckin);
@@ -497,13 +426,6 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
     if (!canGenerateNormalPlan) return;
     setAdjustmentDirection(direction);
     if (!recommendation || !decisionInput) return;
-
-    // Persist the engine's original baseline (templateId/category/modality/rationale)
-    // untouched -- only `adjustment` records what the athlete chose on top of it. This
-    // keeps `daily_recommendations/{date}` an immutable record of what the algorithm
-    // actually prescribed, which is what adherence stats and future model calibration
-    // compare against; overwriting those fields with the adjusted variant would silently
-    // lose the baseline every time a session is adjusted. See recommendationService.ts.
     const adjusted = direction ? computeAdjustedRecommendation(direction) : null;
     recommendationService.saveRecommendation(userId, decisionInput.date, {
       ...recommendation,
@@ -518,17 +440,11 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
     [computeAdjustedRecommendation, adjustmentDirection]
   );
 
-  // Phase 9.0.3: today's engine verdict in the decision journal's shared ShadowVerdict
-  // vocabulary, and the reveal gate that decides whether the athlete has been shown it.
-  // An existing journal entry counts as already-revealed -- hiding the recommendation from
-  // a returning athlete who already recorded their own verdict serves no measurement
-  // purpose and would just be confusing.
-  const todaysEngineVerdict = activeRec && canGenerateNormalPlan ? deriveEngineVerdictFromMode(activeRec.mode) : null;
+  const todaysEngineVerdict = activeRec && canGenerateNormalPlan
+    ? resolveEngineShadowVerdict(activeRec.mode, activeRec.externalVerdict?.decision)
+    : null;
   const recommendationEffectivelyRevealed = recommendationRevealed || !!todaysJournalEntry;
 
-  // Goal events are evaluated independently for today and tomorrow: readiness-based
-  // recommendation selection still changes in Phase 3, but the week-ahead pipeline and
-  // upcoming-event UI must already use date-correct lifecycle/phase semantics.
   const eventPeriodization = useMemo(() => {
     if (!decisionInput) return null;
     const events = mapGoalsToUserEvents(decisionInput.activeGoals);
@@ -538,9 +454,6 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
     };
   }, [decisionInput]);
 
-  // The EFFECTIVE planning mode, resolved through the single authority (ADR-0017 D-MODE)
-  // rather than read off TrainingIntentProfile.planningMode, which records stated intent:
-  // an event_directed profile whose events have all passed is planned as evergreen.
   const resolvedPlanningMode = useMemo(() => {
     if (!decisionInput || !eventPeriodization) return undefined;
     return resolvePlanningContext(
@@ -550,20 +463,8 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
     ).mode;
   }, [decisionInput, eventPeriodization]);
 
-  // Matches generateWeekAheadPlan's own WeekAheadOptions.days default (planner.ts) -- the
-  // fixed-activity read below must cover the same horizon the planner actually walks.
   const WEEK_AHEAD_DAYS = 7;
 
-  // Fixed activities (Phase 5.3) persisted at users/{userId}/fixed_activities -- read
-  // once per user/date, same lifecycle as the other week-ahead inputs below.
-  //
-  // Uses the State-returning read, not the plain-array convenience wrapper: the wrapper
-  // deliberately collapses both INVALID (malformed documents) and UNAVAILABLE (read
-  // failure) into `[]`, which is correct for a "just show me what you have" UI list, but
-  // wrong for the planner path -- it would make the week-ahead generator interpret a
-  // failed or malformed read as "the athlete has no commitments this week" and schedule
-  // straight through a real (unreadable) evening football game or similar. The week-ahead
-  // effect below only runs generateWeekAheadPlanWithIntent once this state is AVAILABLE.
   const [fixedActivitiesState, setFixedActivitiesState] = useState<DataState<FixedActivity[]>>({ status: 'AVAILABLE', data: [], revision: null });
   useEffect(() => {
     let cancelled = false;
@@ -585,14 +486,9 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
     [fixedActivitiesState]
   );
 
-  // Placement writes for an imported plan. `proposeReplacement` only ever returns a
-  // proposal; this is the single path from a *confirmed* proposal to a stored overlay, and
-  // nothing here re-ranks or substitutes -- selection belongs to the plan's author.
   const handleProposeReplacement = useCallback((sessionId: string, missedDate: string): ReplacementProposal => {
     if (!activeExternalPlan) throw new Error('No imported plan is active.');
     return proposeReplacement(
-      // The same list the displayed placement was resolved against, and today, so a session
-      // noticed as missed several days late is never offered a date that has passed.
       activeExternalPlan.plan, activeExternalPlan.placement, sessionId, missedDate,
       { fixedActivities: planWeekFixedActivities },
       decisionInput?.date ?? missedDate,
@@ -609,8 +505,6 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
         assignments,
       });
     } catch (err) {
-      // The week on screen still shows the old placement, which is the truth: nothing was
-      // written. Saying so beats an unhandled rejection and a silently unchanged week.
       console.error('Failed to save external plan placement:', err);
       setPlacementError('That change could not be saved. Your plan is unchanged — check your connection and try again.');
       throw err;
@@ -656,9 +550,6 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
     [planBlocksState]
   );
 
-  // The production planner reads adherence history once, so it must run outside render.
-  // Cancellation ensures a prior user/date/goals/check-in/settings state cannot replace
-  // the forecast after a newer dashboard snapshot has been composed.
   const [selectedNextDayTier, setSelectedNextDayTier] = useState<'green' | 'yellow' | 'red'>('green');
   const [weekAheadPlan, setWeekAheadPlan] = useState<WeekAheadPlan | null>(null);
   useEffect(() => {
@@ -668,11 +559,6 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
       return () => { cancelled = true; };
     }
     if (fixedActivitiesState.status !== 'AVAILABLE' || planBlocksState.status !== 'AVAILABLE') {
-      // Do not generate a week-ahead plan on an INVALID/UNAVAILABLE fixed-activities read
-      // -- silently treating that as "no commitments this week" (what the plain-array
-      // convenience wrapper would have done) could schedule straight through a real,
-      // merely-unreadable commitment. WeekAheadStrip already renders nothing for a null
-      // plan, matching how every other week-ahead precondition above fails closed.
       console.warn(`Skipping week-ahead plan generation: fixed activities=${fixedActivitiesState.status}, plan blocks=${planBlocksState.status}; both must be AVAILABLE.`);
       setWeekAheadPlan(null);
       return () => { cancelled = true; };
@@ -748,9 +634,7 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
   return (
     <div className="home-container">
       <div className="home-dashboard-layout">
-        {/* Primary Main Content Column (~68%-70%) */}
         <div className="home-main-col">
-          {/* Today's Recommendation (Primary Output) */}
           <div className="dashboard-card recommendation-card">
             <div className="card-header">
               <h3>Today's Recommendation</h3>
@@ -762,9 +646,6 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
             </div>
             {activeRec ? (
               canGenerateNormalPlan && !recommendationEffectivelyRevealed ? (
-                // Phase 9.0.3: hidden until revealed or a journal entry already exists, so
-                // an athlete who wants to record their own plan's verdict first, blind, can
-                // -- see the Decision Journal card in the sidebar.
                 <div className="recommendation-hidden">
                   <p className="card-empty">Today's recommendation is ready.</p>
                   <button type="button" className="reveal-recommendation-btn" onClick={handleRevealRecommendation}>
@@ -819,7 +700,6 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
                   </>
                 )}
 
-                {/* Session Adjustment Controls */}
                 {canGenerateNormalPlan && <div className="adjustment-control-section">
                   <span className="adjustment-label">Adjust Today's Session Load:</span>
                   <div className="adjustment-button-group">
@@ -882,7 +762,6 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
             )}
           </div>
 
-          {/* Imported plan: the placed week and the engine's advisory review of it. */}
           {activeExternalPlan && decisionInput && (
             <ExternalPlanWeek
               planTitle={activeExternalPlan.plan.title}
@@ -898,7 +777,6 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
             />
           )}
 
-          {/* Rolling 7-Day Forecast (Independent adaptive engine projection) */}
           <WeekAheadStrip
             plan={weekAheadPlan}
             nextDayPlan={nextDayPlan}
@@ -909,9 +787,7 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
           />
         </div>
 
-        {/* Sidebar Context & Status Column (~30%-32%) */}
         <div className="home-sidebar-col">
-          {/* Profile Completeness Bar */}
           {completeness < 100 && (
             <div className="completeness-card dashboard-card">
               <div className="completeness-header">
@@ -927,7 +803,6 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
             </div>
           )}
 
-          {/* Adherence Prompt (for yesterday's recommendation, if unanswered) */}
           {pendingAdherence && (
             <AdherencePrompt
               userId={userId}
@@ -937,8 +812,6 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
             />
           )}
 
-          {/* Decision Journal (Phase 9.0): today's shadow-mode entry, reachable without
-              revealing the recommendation above. */}
           {decisionInput && (
             <DecisionJournalCard
               userId={userId}
@@ -949,9 +822,7 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
             />
           )}
 
-          {/* Actionable Status Cards */}
           <div className="sidebar-status-cards">
-            {/* Today's Recovery Card */}
             <div className="dashboard-card">
               <div className="card-header">
                 <h3>Today's Recovery</h3>
@@ -998,7 +869,6 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
               )}
             </div>
 
-            {/* Today's Check-in Card */}
             <div className="dashboard-card" onClick={() => onNavigate('checkin')}>
               <div className="card-header">
                 <h3>Today's Check-in</h3>
@@ -1026,7 +896,6 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
               )}
             </div>
 
-            {/* Event context */}
             <div className="dashboard-card" onClick={() => onNavigate('goals')}>
               <div className="card-header">
                 <h3>{periodizationToday?.focusEvent ? 'Focus Event' : 'Active Goals'}</h3>
@@ -1080,7 +949,6 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
               </div>
             ) : null}
 
-            {/* Training status */}
             <div className="dashboard-card" onClick={() => onNavigate('constraints')}>
               <div className="card-header">
                 <h3>Training Status</h3>
