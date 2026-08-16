@@ -10,7 +10,10 @@ import {
 import { evaluateReadinessAndSafetyEnvelope } from '../rules';
 import type { UserContext } from '../models';
 
-const DAYS = 28; // matches the 28-day baseline window the rest of Phase 9 uses
+const DAYS = 28; // matches the long reference window of Phase 9's first candidate estimator
+const SUBJECTIVE_METRICS = [
+    'readiness', 'sleepQuality', 'fatigue', 'soreness', 'stress', 'motivation',
+] as const satisfies readonly (keyof SubjectiveProfileDayValues)[];
 
 function minimalContext(): UserContext {
     return {
@@ -20,9 +23,9 @@ function minimalContext(): UserContext {
     };
 }
 
-/** Population stdev (not sample), matching D-SUBJSD's wording in ADR-0020. Local to this
- *  test rather than imported from a production module -- `computeSubjectiveBaseline`
- *  (Phase 9.1) does not exist yet, gated on ADR-0020 acceptance. */
+/** Population stdev used only to prove the synthetic fixtures are not flat. Phase 9's
+ * reference estimator may start with this statistic, but ADR-0020 deliberately leaves the
+ * final estimator/scaling choice to measurement rather than making it an architecture law. */
 function populationStdev(values: number[]): number {
     const mean = values.reduce((sum, v) => sum + v, 0) / values.length;
     const variance = values.reduce((sum, v) => sum + (v - mean) ** 2, 0) / values.length;
@@ -64,10 +67,12 @@ describe('subjectiveProfileDay', () => {
     });
 });
 
-describe('subjectiveProfileSeries: each profile has non-zero variance (9.5 done-when)', () => {
-    it.each(SUBJECTIVE_PROFILE_KINDS)('%s produces non-zero readiness stdev over 28 days', kind => {
-        const stdev = populationStdev(seriesOf(kind, 'readiness'));
-        expect(stdev).toBeGreaterThan(0);
+describe('subjectiveProfileSeries: each intended dimension has real variance (9.5 done-when)', () => {
+    it.each(SUBJECTIVE_PROFILE_KINDS)('%s produces non-zero variance on every subjective metric', kind => {
+        for (const metric of SUBJECTIVE_METRICS) {
+            const stdev = populationStdev(seriesOf(kind, metric));
+            expect(stdev, `${kind}.${metric} should not be flat`).toBeGreaterThan(0);
+        }
     });
 });
 
@@ -80,11 +85,11 @@ describe('habitual_low -- flat, chronically low', () => {
         expect(populationStdev(readiness)).toBeLessThan(1);
     });
 
-    it('is already at modify every day via the existing absolute floor -- D-SUBJFLOOR made mechanical', () => {
+    it('is exactly modify every day via the existing absolute floor -- D-SUBJFLOOR made mechanical', () => {
         const context = minimalContext();
         for (let day = 0; day < DAYS; day++) {
             const { mode } = evaluateReadinessAndSafetyEnvelope(subjectiveProfileReadiness('habitual_low', day), context);
-            expect(mode, `day ${day}`).not.toBe('train');
+            expect(mode, `day ${day}`).toBe('modify');
         }
     });
 });
@@ -158,11 +163,11 @@ describe('chronically_sore -- soreness baseline 7, stable', () => {
         expect(average(readiness)).toBeCloseTo(6, 0);
     });
 
-    it('never reads as normal/train -- the safety case the profile exists for', () => {
+    it('is exactly modify every day via the soreness absolute floor', () => {
         const context = minimalContext();
         for (let day = 0; day < DAYS; day++) {
             const { mode } = evaluateReadinessAndSafetyEnvelope(subjectiveProfileReadiness('chronically_sore', day), context);
-            expect(mode, `day ${day}`).not.toBe('train');
+            expect(mode, `day ${day}`).toBe('modify');
         }
     });
 });
