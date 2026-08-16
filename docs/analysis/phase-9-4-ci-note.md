@@ -1,0 +1,1 @@
+CI on this branch is the source of truth for typecheck, lint, unit/coverage, Firestore emulator, scenario semantic diff, production build, dependency audits, Python, and Docker. This file contains no evidence claim until the workflow completes.
