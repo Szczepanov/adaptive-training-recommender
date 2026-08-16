@@ -2,6 +2,7 @@ import { WORKOUTS } from '../workouts/catalog';
 import { workoutForTemplate } from '../workouts/prescription';
 import { ENRICHED_TEMPLATES } from './templates';
 import type { FixedActivity, SessionTemplate } from './models';
+import type { StimulusConfidence } from './stimulus';
 
 /**
  * Phase 6.2c / ADR-0016 integration boundary.
@@ -9,6 +10,11 @@ import type { FixedActivity, SessionTemplate } from './models';
  * FixedActivity predates exact catalog identity. These optional fields are persisted when
  * a booked activity is intended to behave like a known authored workout for scoped
  * stimulus and weekly-role credit.
+ *
+ * ADR-0019 adds one transient-only identity shape for an imported event. It is deliberately
+ * not a catalog link and is never persisted: the event plan knows its modality/category,
+ * but its stimulus was derived rather than authored against this catalog, so objective
+ * credit must retain `inferred` confidence instead of masquerading as exact.
  */
 declare module './models' {
     interface FixedActivity {
@@ -17,6 +23,12 @@ declare module './models' {
         /** Exact detailed workout identity. When both ids exist they must resolve to the
          * same prescription; otherwise identity fails closed. */
         workoutId?: string;
+        /** Transient ADR-0019 identity for an imported `isEvent` commitment. Never stored. */
+        externalAuthoredIdentity?: {
+            modality: SessionTemplate['modality'];
+            category: SessionTemplate['category'];
+            stimulusConfidence: 'inferred';
+        };
     }
 }
 
@@ -26,10 +38,10 @@ export interface ResolvedFixedActivityIdentity {
     workoutId: string;
     modality: SessionTemplate['modality'];
     category: SessionTemplate['category'];
-    /** False only for the legacy anonymous-stimulus compatibility case below. Such an
-     * occurrence can contribute to an objective that is genuinely modality/category
-     * agnostic, but its sentinel ids never map to event-plan coverage. */
+    /** False for legacy anonymous activities and externally-authored event commitments. */
     exactCatalogIdentity: boolean;
+    /** Defaults to exact when absent. External-authored events explicitly carry inferred. */
+    stimulusConfidence?: StimulusConfidence;
 }
 
 export function fixedActivityOccurrenceKey(activity: Pick<FixedActivity, 'id'>): string {
@@ -40,16 +52,33 @@ export function fixedActivityOccurrenceKey(activity: Pick<FixedActivity, 'id'>):
  * Resolve a fixed activity for objective-credit bookkeeping.
  *
  * - Supplied template/workout ids must resolve exactly and consistently.
- * - A legacy activity with neither id gets an unlinked sentinel identity. This preserves
- *   backward-compatible credit for genuinely unscoped objectives (for example generic
- *   strength maintenance), while modality-scoped cycling objectives fail because the
- *   modality is `None`, and weekly coverage fails because the sentinel workout id is not
- *   in the authored catalog mapping.
+ * - An imported event can carry transient modality/category identity plus inferred
+ *   confidence. This is sufficient for scoped objective credit but never for catalog
+ *   coverage, because its sentinel ids cannot resolve to a catalog workout.
+ * - A legacy activity with neither identity gets an unlinked sentinel. This preserves
+ *   backward-compatible credit for genuinely unscoped objectives while modality-scoped
+ *   objectives fail because its modality is `None`.
  * - No title/category heuristic is ever used.
  */
 export function resolveFixedActivityIdentity(activity: FixedActivity): ResolvedFixedActivityIdentity | null {
     const templateId = activity.templateId;
     const declaredWorkoutId = activity.workoutId;
+    const external = activity.externalAuthoredIdentity;
+
+    // An activity cannot claim both an exact catalog link and external-derived identity.
+    if (external && (templateId || declaredWorkoutId)) return null;
+    if (external) {
+        return {
+            occurrenceKey: fixedActivityOccurrenceKey(activity),
+            templateId: activity.id,
+            workoutId: `external:${activity.id}`,
+            modality: external.modality,
+            category: external.category,
+            exactCatalogIdentity: false,
+            stimulusConfidence: external.stimulusConfidence,
+        };
+    }
+
     if (!templateId && !declaredWorkoutId) {
         return {
             occurrenceKey: fixedActivityOccurrenceKey(activity),
@@ -77,8 +106,6 @@ export function resolveFixedActivityIdentity(activity: FixedActivity): ResolvedF
     }
 
     const workout = WORKOUTS.find(item => item.id === declaredWorkoutId && item.status === 'active' && !item.manualOnly);
-    // Resolve back through the same priority-ordered mapping the template-first path
-    // uses, so either persisted identifier shape reaches one canonical identity.
     const template = workout
         ? ENRICHED_TEMPLATES.find(candidate => workoutForTemplate(candidate.id)?.id === workout.id)
         : undefined;
@@ -94,7 +121,7 @@ export function resolveFixedActivityIdentity(activity: FixedActivity): ResolvedF
 }
 
 /** Persistence accepts an identity field only when it is a real catalog link; the legacy
- * anonymous sentinel exists solely inside the engine and is never written. */
+ * anonymous and external sentinels exist solely inside the engine and are never written. */
 export function hasExactFixedActivityCatalogIdentity(activity: FixedActivity): boolean {
     return resolveFixedActivityIdentity(activity)?.exactCatalogIdentity === true;
 }
