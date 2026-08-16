@@ -2,6 +2,7 @@
 
 * **Status:** Draft
 * **Blocked by:** [ADR-0020](../adr/0020-subjective-baselines-in-readiness-mode.md) acceptance
+* **Strongly preceded by:** [Phase 9.0](./phase-9-0-shadow-mode-and-decision-journal.md) — its shadow block turns 9.5 from inventing subjective variance into sampling the athlete's own
 * **Unlocks:** a decision on whether self-normalised subjective drift belongs in the mode gate at all
 * **Decisions:** ADR-0020 (D-SUBJDRIFT, D-SUBJADD, D-SUBJFLOOR, D-SUBJCOV, D-SUBJSD, D-SUBJPURE, D-SUBJANCHOR, D-SUBJCAL, D-SUBJAUDIT)
 
@@ -34,6 +35,10 @@ until a separate, evidence-backed decision flips it.
 * ADR-0020 accepted.
 * **9.5 must land before 9.6 is run.** Reading a comparison against the current corpus
   would produce a confidently wrong answer — see the work item for why.
+* **Phase 9.0's block should precede 9.5** where scheduling allows. It is not a hard
+  blocker — 9.5's invented profiles are still better than a constant — but a real 4–6 week
+  check-in record makes the profiles observed rather than assumed, and the calibration is
+  only as good as the variance it is measured against.
 
 ---
 
@@ -169,7 +174,20 @@ artefact of the fixtures, not evidence about the idea. It would close ADR-0020 a
 `Rejected` for entirely the wrong reason.
 
 **Change.** Extend the corpus with per-athlete *subjective scale profiles* — the personal
-scale-use differences the whole ADR exists to correct:
+scale-use differences the whole ADR exists to correct.
+
+**Preferred source: the Phase 9.0 block.** If
+[Phase 9.0](./phase-9-0-shadow-mode-and-decision-journal.md) has run, its export carries
+4–6 weeks of the athlete's real check-ins. Derive the profiles' *parameters* — baseline
+level per metric, day-to-day standard deviation, and the shape of any real drift — from
+that record instead of choosing them. The fixtures stay synthetic and deterministic, since
+the corpus must remain reproducible; what changes is that their numbers are observed rather
+than invented, and at least one of them is the athlete who will actually use the result.
+
+Without 9.0, the table below stands as written, and the limitation in the risk table
+("synthetic profiles measure fixtures rather than people") applies at full strength.
+
+The profiles to build either way:
 
 | Fixture | Shape | What it must prove |
 |---|---|---|
@@ -274,7 +292,7 @@ code is not what closes this task.
 | Risk | Mitigation |
 |---|---|
 | Calibrating against a zero-variance corpus produces a false "no signal". | 9.5 is a hard precondition of 9.6 and an acceptance criterion in its own right. |
-| Synthetic subjective profiles are invented, so the calibration measures fixtures rather than people. | Acknowledged and unavoidable: this is policy-regression evidence, not clinical validation — the same limitation `simulate:calibrate` already states about itself. The fixtures bound the *shape* of the effect, not its real-world magnitude. |
+| Synthetic subjective profiles are invented, so the calibration measures fixtures rather than people. | Narrowed, not removed, by running [Phase 9.0](./phase-9-0-shadow-mode-and-decision-journal.md) first: its block supplies observed parameters for the profiles. Beyond that it is unavoidable — this is policy-regression evidence, not clinical validation, the same limitation `simulate:calibrate` already states about itself. The fixtures bound the *shape* of the effect, not its real-world magnitude. |
 | The term tightens too readily and raises recovery share without benefit. | Exactly what 9.6 measures; that outcome is 9.8 option 3, and it is the same reason `max` was retained over additive fusion. |
 | Ordinal data treated as interval. | Recorded in ADR-0020 as an accepted compromise; bounded by the stdev floor and the ±2.0 cap. |
 
@@ -317,4 +335,6 @@ are additive and optional.
 
 9.5 is startable immediately and independently of the ADR — a corpus with realistic
 subjective variance is worth having whether or not the drift term ever ships, because
-every readiness-related scenario currently exercises a constant.
+every readiness-related scenario currently exercises a constant. Starting it *after*
+Phase 9.0's block is nonetheless better: the same work, with observed parameters instead of
+chosen ones.
