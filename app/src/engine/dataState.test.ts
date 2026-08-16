@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { summarizeDataState, DataState } from './dataState';
+import { summarizeDataState, type DataState } from './dataState';
 
 describe('summarizeDataState', () => {
     it('should summarize an AVAILABLE state by returning only status and revision', () => {
