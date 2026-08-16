@@ -83,24 +83,32 @@ function isShadowVerdict(value: unknown): boolean {
     return typeof value === 'string' && (SHADOW_VERDICTS as readonly string[]).includes(value);
 }
 
+const DECISION_JOURNAL_KEYS = new Set([
+    'userId', 'date', 'externalVerdict', 'externalNote', 'sawEngineVerdictFirst',
+    'actualVerdict', 'createdAt', 'updatedAt', 'schemaVersion',
+]);
+
 /** Validates a persisted `users/{userId}/decision_journal/{date}` document (Phase 9.0).
- *  Like `parseSubjectiveCheckin`, this checks the doc against the id it was read at
- *  (`userId`/`date`) rather than trusting the document body -- a cross-user or
- *  wrong-date record is a data-quality issue, never coerced into a neutral entry. Used by
- *  `decisionJournalService.ts` reads and by the 9.0.5 export, which must not let an
- *  invalid record silently contribute to the log. */
+ * This is deliberately stricter than a convenience cast: path ownership, exact schema,
+ * the closed key set and Firestore's note bound are all checked so a malformed record can
+ * never silently enter the shadow export as if it were valid evidence. */
 export function parseDecisionJournalEntry(raw: unknown, documentPath: string, userId: string, date: string): DataState<DecisionJournalEntry> {
     if (!isObject(raw)) return issue(documentPath, 'not-an-object');
     if (raw.userId !== userId) return issue(documentPath, 'user-id-mismatch', 'userId');
     if (raw.date !== date || typeof raw.date !== 'string' || !isValidDate(raw.date)) return issue(documentPath, 'invalid-date', 'date');
+    if (Object.keys(raw).some(key => !DECISION_JOURNAL_KEYS.has(key))) return issue(documentPath, 'unrecognized-field');
+    if (raw.schemaVersion !== 1) return issue(documentPath, 'unsupported-schema-version', 'schemaVersion');
     if (!isShadowVerdict(raw.externalVerdict)) return issue(documentPath, 'invalid-external-verdict', 'externalVerdict');
-    if (raw.externalNote !== undefined && typeof raw.externalNote !== 'string') return issue(documentPath, 'invalid-external-note', 'externalNote');
+    if (raw.externalNote !== undefined
+        && (typeof raw.externalNote !== 'string' || raw.externalNote.length > 2000)) {
+        return issue(documentPath, 'invalid-external-note', 'externalNote');
+    }
     if (typeof raw.sawEngineVerdictFirst !== 'boolean') return issue(documentPath, 'invalid-saw-engine-verdict-first', 'sawEngineVerdictFirst');
     if (raw.actualVerdict !== undefined && !isShadowVerdict(raw.actualVerdict)) return issue(documentPath, 'invalid-actual-verdict', 'actualVerdict');
     if (typeof raw.createdAt !== 'string' || typeof raw.updatedAt !== 'string') return issue(documentPath, 'invalid-timestamps');
     return {
         status: 'AVAILABLE',
         data: raw as unknown as DecisionJournalEntry,
-        revision: typeof raw.updatedAt === 'string' ? raw.updatedAt : null,
+        revision: raw.updatedAt,
     };
 }
