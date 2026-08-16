@@ -1,4 +1,3 @@
-import type { DailySubjectiveCheckin } from './models';
 import { addDaysToLocalDateString } from '../utils/localDate';
 
 /**
@@ -19,6 +18,14 @@ export const SUBJECTIVE_BASELINE_METRICS = [
     'readiness', 'sleepQuality', 'fatigue', 'soreness', 'mentalStress', 'motivation',
 ] as const;
 export type SubjectiveBaselineMetric = typeof SUBJECTIVE_BASELINE_METRICS[number];
+
+/** Minimal structural input for baseline computation. Keeping this independent of
+ * `models.ts` prevents the foundational engine model module from participating in a
+ * circular type dependency: `DailySubjectiveCheckin` is structurally assignable to this
+ * shape, but this pure calculator does not need the rest of that persistence/UI model. */
+export type SubjectiveCheckinForBaseline = {
+    date: string;
+} & Record<SubjectiveBaselineMetric, number | null>;
 
 export interface SubjectiveBaselinePolicy {
     /** Identifies which policy produced a `SubjectiveBaseline`, so a persisted audit or a
@@ -96,7 +103,7 @@ function populationStdev(values: readonly number[]): number {
  * authority here because it also requires non-subjective fields such as availability and
  * boolean flags. Missing `timeAvailableMin` must not erase an otherwise complete
  * subjective observation from the athlete's baseline history. */
-function hasCompleteSubjectiveScores(checkin: DailySubjectiveCheckin): boolean {
+function hasCompleteSubjectiveScores(checkin: SubjectiveCheckinForBaseline): boolean {
     return SUBJECTIVE_BASELINE_METRICS.every(metric => {
         const value = checkin[metric];
         return typeof value === 'number' && Number.isFinite(value) && value >= 1 && value <= 10;
@@ -134,11 +141,11 @@ function assertValidPolicy(policy: SubjectiveBaselinePolicy): void {
  * wins) so a data anomaly cannot inflate coverage or double-weight a date's value.
  */
 function windowedScoredCheckins(
-    checkins: readonly DailySubjectiveCheckin[],
+    checkins: readonly SubjectiveCheckinForBaseline[],
     windowStart: string,
     asOfDateExclusive: string,
-): Map<string, DailySubjectiveCheckin> {
-    const byDate = new Map<string, DailySubjectiveCheckin>();
+): Map<string, SubjectiveCheckinForBaseline> {
+    const byDate = new Map<string, SubjectiveCheckinForBaseline>();
     for (const checkin of checkins) {
         if (!hasCompleteSubjectiveScores(checkin)) continue;
         if (checkin.date < windowStart || checkin.date >= asOfDateExclusive) continue;
@@ -148,7 +155,7 @@ function windowedScoredCheckins(
 }
 
 export function computeSubjectiveBaseline(
-    checkins: readonly DailySubjectiveCheckin[],
+    checkins: readonly SubjectiveCheckinForBaseline[],
     asOfDate: string,
     policy: SubjectiveBaselinePolicy,
 ): SubjectiveBaseline | null {
