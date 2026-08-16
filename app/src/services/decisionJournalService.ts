@@ -6,6 +6,13 @@ import { validateDecisionJournalEntry } from '../engine/validation';
 import { parseDecisionJournalEntry } from '../persistence/parsers/decisionInputs';
 import { isPermissionDeniedError } from '../utils/errors';
 
+export interface DecisionJournalRangeResult {
+    entries: DecisionJournalEntry[];
+    /** Invalid persisted records are omitted from the rows but counted explicitly so the
+     * shadow readout cannot mistake malformed evidence for a genuinely missing day. */
+    invalidRecords: number;
+}
+
 /**
  * Storage for `users/{userId}/decision_journal/{date}` (Phase 9.0). This is the athlete's
  * own verdict, recorded to be *compared against* the engine's `daily_recommendations/{date}`
@@ -38,54 +45,59 @@ export class DecisionJournalService {
 
     /**
      * Morning write: records what the athlete's own planner said to do today, and locks
-     * `sawEngineVerdictFirst` from observed interaction (9.0.3's UI ordering). Creates the
-     * entry if absent. Calling this again the same day updates `externalVerdict` /
-     * `externalNote` but never re-derives `sawEngineVerdictFirst` or `createdAt` -- both are
-     * fixed at first write, mirroring the immutability `firestore.rules` enforces
-     * server-side.
+     * `sawEngineVerdictFirst` from observed interaction (9.0.3's UI ordering).
+     *
+     * This is deliberately CREATE-ONLY. Once the athlete records a blind verdict, the app
+     * reveals its own recommendation. Allowing the morning verdict or note to be edited
+     * after that reveal while keeping `sawEngineVerdictFirst === false` would manufacture
+     * apparently-unanchored evidence. Corrections therefore belong in the evening
+     * `actualVerdict`, not in a rewritten morning observation.
      */
     async recordMorningEntry(
         userId: string,
         date: string,
         input: { externalVerdict: ShadowVerdict; externalNote?: string | null; sawEngineVerdictFirst: boolean },
     ): Promise<DecisionJournalEntry> {
-        // A read failure (offline, transient error) must not be treated the same as "no
-        // entry exists yet": doing so would re-derive sawEngineVerdictFirst/createdAt from
-        // this call's input on what is actually an edit, and firestore.rules' update guard
-        // (both fields immutable) would then reject the write outright -- a confusing
-        // generic "could not save" instead of a clear "couldn't confirm whether you already
-        // recorded today" retry prompt.
         const existingState = await this.getEntryState(userId, date);
         if (existingState.status === 'UNAVAILABLE') {
             throw new Error("Could not confirm whether today's entry already exists; please try again");
         }
-        const existing = existingState.status === 'AVAILABLE' ? existingState.data : null;
+        if (existingState.status === 'INVALID') {
+            throw new Error("Today's stored decision journal entry is invalid; it must be repaired before recording new evidence");
+        }
+        if (existingState.status === 'AVAILABLE') {
+            throw new Error(`The morning verdict for ${date} is already recorded and cannot be rewritten after the engine may have been revealed`);
+        }
+        const externalNote = input.externalNote?.trim() || undefined;
+        if (externalNote && externalNote.length > 2000) {
+            throw new Error('Validation failed: externalNote must be 2000 characters or fewer');
+        }
         const now = new Date().toISOString();
         const raw: Record<string, unknown> = {
             userId,
             date,
             externalVerdict: input.externalVerdict,
-            ...(input.externalNote ? { externalNote: input.externalNote } : {}),
-            sawEngineVerdictFirst: existing ? existing.sawEngineVerdictFirst : input.sawEngineVerdictFirst,
-            ...(existing?.actualVerdict ? { actualVerdict: existing.actualVerdict } : {}),
-            createdAt: existing?.createdAt ?? now,
+            ...(externalNote ? { externalNote } : {}),
+            sawEngineVerdictFirst: input.sawEngineVerdictFirst,
+            createdAt: now,
             updatedAt: now,
+            schemaVersion: 1,
         };
         return this.write(userId, date, raw);
     }
 
     /**
      * Evening write: records or updates what the athlete actually did, in the same
-     * five-value vocabulary. Requires the morning entry to already exist -- an
+     * five-value vocabulary. Requires a valid morning entry to already exist -- an
      * evening-only record with no external verdict is not a valid shadow-mode day.
      */
     async recordActualVerdict(userId: string, date: string, actualVerdict: ShadowVerdict): Promise<DecisionJournalEntry> {
-        // Same reasoning as recordMorningEntry: a read failure is not "no entry exists" --
-        // conflating them would tell the athlete to redo the morning entry when the real
-        // problem is a transient read error.
         const existingState = await this.getEntryState(userId, date);
         if (existingState.status === 'UNAVAILABLE') {
             throw new Error("Could not confirm today's entry; please try again");
+        }
+        if (existingState.status === 'INVALID') {
+            throw new Error("Today's stored decision journal entry is invalid; it must be repaired before recording actual outcome");
         }
         if (existingState.status !== 'AVAILABLE') {
             throw new Error(`No decision journal entry exists for ${date}; record the morning verdict first`);
@@ -102,11 +114,9 @@ export class DecisionJournalService {
         }
         const validated = validation.data!;
 
-        // merge: true leaves an omitted key untouched rather than clearing it (same gotcha
-        // checkinService.upsertCheckin documents for tissueResponses) -- explicitly delete
-        // externalNote/actualVerdict when this write's own validated result doesn't carry
-        // them, so an edit that removes a note or is genuinely morning-only doesn't leave a
-        // stale value live in Firestore.
+        // merge: true leaves an omitted key untouched rather than clearing it. The create
+        // path has no prior document, while evening updates start from the full parsed
+        // morning entry. Keep the defensive deletes for malformed legacy/repair callers.
         const payload: Record<string, unknown> = { ...validated };
         if (!('externalNote' in validated)) payload.externalNote = deleteField();
         if (!('actualVerdict' in validated)) payload.actualVerdict = deleteField();
@@ -121,18 +131,21 @@ export class DecisionJournalService {
         await deleteDoc(docRef);
     }
 
-    /** Used by the 9.0.5 export. Invalid or foreign-owned records are dropped rather than
-     *  surfaced as a neutral entry -- see `parseDecisionJournalEntry`. */
-    async getEntriesInRange(userId: string, startDate: string, endDate: string): Promise<DecisionJournalEntry[]> {
+    /** Used by the 9.0.5 export. Invalid or foreign-owned records never become neutral
+     * rows, but their count is surfaced to the readout so omitted corruption is not
+     * confused with a genuine missing journal day. */
+    async getEntriesInRange(userId: string, startDate: string, endDate: string): Promise<DecisionJournalRangeResult> {
         const collRef = collection(getDb(), 'users', userId, this.collectionPath);
         const q = query(collRef, where('date', '>=', startDate), where('date', '<=', endDate), orderBy('date', 'asc'));
         const querySnapshot = await getDocs(q);
         const entries: DecisionJournalEntry[] = [];
+        let invalidRecords = 0;
         for (const docSnap of querySnapshot.docs) {
             const state = parseDecisionJournalEntry(docSnap.data(), docSnap.ref.path, userId, docSnap.id);
             if (state.status === 'AVAILABLE') entries.push(state.data);
+            else if (state.status === 'INVALID') invalidRecords += 1;
         }
-        return entries;
+        return { entries, invalidRecords };
     }
 }
 
