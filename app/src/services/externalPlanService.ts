@@ -104,6 +104,9 @@ export class ExternalPlanService {
             if (data.userId !== userId) {
                 return { status: 'INVALID', issues: [{ code: 'owner-mismatch', documentPath: `users/${userId}/external_plans/${planId}` }] };
             }
+            if (data.planId !== planId) {
+                return { status: 'INVALID', issues: [{ code: 'path-identity-mismatch', field: 'planId', documentPath: `users/${userId}/external_plans/${planId}` }] };
+            }
             return { status: 'AVAILABLE', data, revision: data.contentHash };
         } catch (error: unknown) {
             return { status: 'UNAVAILABLE', operation: 'read external plan header', retryable: getErrorCode(error) !== 'permission-denied' };
@@ -113,6 +116,7 @@ export class ExternalPlanService {
     /** Re-validates on read. A revision that no longer satisfies the contract -- because
      * the contract moved, or the document was tampered with -- is `INVALID`, never coerced. */
     async getRevisionState(userId: string, planId: string, revision: number): Promise<DataState<ExternalTrainingPlan>> {
+        const documentPath = `users/${userId}/external_plans/${planId}/revisions/${revision}`;
         try {
             const snapshot = await getDoc(this.revisionRef(userId, planId, revision));
             if (!snapshot.exists()) return { status: 'MISSING' };
@@ -123,8 +127,22 @@ export class ExternalPlanService {
                     issues: parsed.errors.map(error => ({
                         code: 'schema-validation-failed',
                         field: error.field,
-                        documentPath: `users/${userId}/external_plans/${planId}/revisions/${revision}`,
+                        documentPath,
                     })),
+                };
+            }
+            // The immutable revision's identity is part of replay provenance. A valid plan
+            // stored under the wrong path is still invalid evidence: trusting its internal
+            // identifiers would let the path requested by the audit and the bytes actually
+            // replayed disagree about which revision was adjudicated.
+            if (parsed.data.planId !== planId || parsed.data.revision !== revision) {
+                return {
+                    status: 'INVALID',
+                    issues: [{
+                        code: 'path-identity-mismatch',
+                        field: parsed.data.planId !== planId ? 'planId' : 'revision',
+                        documentPath,
+                    }],
                 };
             }
             return { status: 'AVAILABLE', data: parsed.data, revision: String(revision) };
@@ -159,6 +177,9 @@ export class ExternalPlanService {
             }
             if (parsed.data.userId !== userId) {
                 return { status: 'INVALID', issues: [{ code: 'owner-mismatch', documentPath: `users/${userId}/external_plans/${planId}/placement/current` }] };
+            }
+            if (parsed.data.planId !== planId) {
+                return { status: 'INVALID', issues: [{ code: 'path-identity-mismatch', field: 'planId', documentPath: `users/${userId}/external_plans/${planId}/placement/current` }] };
             }
             return { status: 'AVAILABLE', data: parsed.data, revision: parsed.data.updatedAt };
         } catch (error: unknown) {
