@@ -9,7 +9,7 @@
 
 `rules.ts` `evaluateReadinessAndSafetyEnvelope` applies two different philosophies to the two halves of the same readiness question.
 
-**Objective metrics are self-normalised.** `metricStrain` z-scores HRV, RHR, and sleep against the athlete's own trailing 7-day and 28-day baselines, divided by their own 28-day stdev, floored (HRV 3 ms, RHR 1.5 bpm, sleep 4 pts) and capped at ±2.0 per term. ADR-0006 argues this at length: fixed absolute thresholds cannot express "this person is drifting away from their own normal."
+**Objective metrics are self-normalised.** `metricStrain` compares HRV, RHR, and sleep with the athlete's own recent and longer baselines, scales the deviation by within-athlete variability, and only accumulates adverse movement. ADR-0006 argues this at length: fixed absolute thresholds cannot express "this person is drifting away from their own normal."
 
 **Subjective scores are used raw**, against fixed absolute cutoffs:
 
@@ -18,111 +18,182 @@ overallFatigueScore = (fatigue + soreness + (10−readiness) + (10−sleepQualit
   > 7 → recover        > 5 → modify        soreness > 6 → modify        fatigue > 8 → extremeFatigue
 ```
 
-Nothing anywhere baselines subjective data. The argument that justified self-normalising HRV stops at the sensor boundary with no stated reason.
+Nothing anywhere baselines subjective data. A persistent decline that stays on the same side of every absolute threshold is therefore invisible to the mode gate.
 
-The consequence is a personal-scale error in both directions. An athlete who habitually reports 4 on readiness sits permanently in `modify`; one who never reports below 7 never leaves `train`. And a readiness average that has slid from 8 to 6 over three weeks — a real signal, and exactly the multi-day pattern ADR-0006 says predicts overreaching better than one noisy reading — is structurally invisible.
+The personal-scale problem exists in both directions. An athlete who habitually reports low values can be over-restricted by absolute thresholds; an athlete who habitually reports high values can deteriorate materially before crossing them. **This ADR only allows the relative signal to act in the conservative direction.** It may detect adverse within-athlete drift earlier, but it may never use "normal for this athlete" to cancel an absolute warning.
 
-**This decision addresses only one of those two directions, and the asymmetry is deliberate.** D-SUBJFLOOR below makes the drift term tighten-only, so it can catch the habitual *high* reporter's real decline, but it can never lift the habitual *low* reporter out of a `modify` their absolute scores alone produced — that would require relaxation, which is exactly what the safety case forbids. The chronic pessimist stays over-restricted.
+That asymmetry is deliberate. Correcting the habitual-low reporter by relaxing an absolute trigger would use the same mechanism that could normalize chronic soreness or fatigue. If scale-use calibration later proves necessary, it needs a different instrument and a separate decision.
 
-That is an accepted, unfixed cost, not an oversight. Correcting it would mean letting a self-report baseline *earn* permission to train harder, and the same mechanism would then hand the chronically sore athlete a green light. Anyone revisiting this ADR should treat "the low reporter is still stuck" as a known outcome rather than a defect to patch, and reach for a different instrument — a scale-recalibration prompt, or a conversation about how the athlete uses the 1–10 range — rather than weakening the floor.
+### Evidence posture
+
+Subjective monitoring is useful enough to measure, but not precise enough to justify freezing one estimator by architecture alone.
+
+* Thorpe et al. found perceived fatigue sensitive to recent training-load fluctuations in elite soccer, while soreness and sleep quality were not consistently sensitive in the same cohort (PMID 27918668, DOI 10.1123/ijspp.2016-0433).
+* Fitzpatrick et al. found poor reliability for several subjective wellness items in elite youth soccer (PMID 31498220).
+* Pexa et al. found good/excellent test-retest reliability for short daily health surveys in collegiate athletes, but convergent validity differed by item and readiness related only weakly to the comparison measure (PMID 39947188, DOI 10.1123/jsr.2024-0321).
+* Marqués-Jiménez et al. found individualized wellness z-scores more informative than raw/team-normalized scores for some professional-soccer match outputs, but the explained external-load variance remained limited and the clearest signal was DOMS (PMID 39662485, DOI 10.1123/ijspp.2024-0249).
+
+The evidence supports **individualized interpretation as a hypothesis worth testing**, not a claim that 7-day/28-day z-scores, a particular coverage floor, or a fixed set of questionnaire items are established biological thresholds.
 
 ### What makes subjective data different
 
-Three properties distinguish it from wearable data and constrain any fix.
+Three properties constrain any fix.
 
-**It is ordinal, not interval.** The distance from 7 to 6 is not reliably the distance from 3 to 2. Mean and stdev are shakier here than on HRV in milliseconds.
+**It is ordinal or at best approximately interval.** A one-point change does not have a guaranteed constant physiological meaning across the 1–10 scale or across athletes. Means and standard deviations can be useful engineering summaries, but they are modelling assumptions, not natural units like milliseconds or beats per minute.
 
-**It can be contaminated by seeing its own history.** HRV cannot be gamed; a self-report shifts once the athlete is told what "normal" looks like. This repository already treats that as live: `DailySubjectiveCheckin` carries `initialSubmittedAt` and `editedAfterWearableReveal` specifically to record whether a check-in was revised after wearable data was shown.
+**It can be contaminated by context shown before reporting.** The repository already treats this as live: `DailySubjectiveCheckin` carries `initialSubmittedAt` and `editedAfterWearableReveal`. Showing the athlete their own baseline immediately before asking the same question can anchor the response in the same way.
 
-**Its missingness is not random.** Wearable data exists for every night the watch was worn; check-ins exist only for days the athlete completed one, and they are skipped disproportionately on disrupted days — which are disproportionately bad days. A baseline computed from a sparse record is therefore **biased optimistic by construction**, which would make a genuine decline read as normal. Objective baselines have no equivalent failure mode, and `dataQuality.baseline28dReady` is a maturity flag, not a selection-bias guard.
+**Missingness may be informative.** Check-ins are voluntary observations and missing days cannot be assumed representative of observed days. The direction of that bias is not known a priori, so sparse history must not be treated as a confidently representative baseline.
 
 ### The decisive constraint
 
-Normalisation cannot be allowed to *loosen* a decision. If an athlete's baseline soreness is 7 because they are chronically beaten up, a purely relative reading makes soreness 7 "normal, proceed" — the exact inversion of what a safety gate is for.
+Normalisation cannot be allowed to *loosen* a decision. If an athlete's soreness is chronically 7, a purely relative interpretation must not turn soreness 7 into "normal, proceed".
 
-This is not a new invariant to invent. `metricStrain` already clamps both its terms with `clamp(-z, 0, STRAIN_Z_CAP)`: a *better-than-baseline* HRV day contributes **zero** strain, never negative strain. Adverse-only accumulation is already how the objective side works. Extending it to subjective data is consistency with an existing invariant, not a special case carved out for it.
+This is consistent with the existing objective-side philosophy: favourable relative movement contributes no negative strain. Subjective drift therefore remains an **adverse-only additional signal** on top of the current absolute thresholds.
 
 ## Decision
 
-### D-SUBJDRIFT — the subjective term measures drift only, never today
+### D-SUBJHIST — today's check-in is never part of today's baseline
 
-The subjective contribution is computed from the **7-day average versus the 28-day average**. It does not include an acute today-versus-7-day term.
+For a decision on local date `D`, subjective history is bounded by:
 
-Today's reading already enters the decision at full weight and unnormalised through `overallFatigueScore` and the absolute triggers. Adding an acute normalised term would count the same reading twice and amplify exactly the noisiest input — one bad night, an argument, a late meal. The gap that absolute thresholds cannot see is the multi-day slide, so that is the only gap this term fills.
+```text
+throughDateExclusive = D
+```
 
-### D-SUBJADD — a separate additive term, floored at zero
+Only check-ins dated strictly before `D` may contribute to the baseline used for `D`.
 
-The result is a distinct `subjectiveDrift` score, not a modification of `objectiveStrain`, and it is floored at zero per metric exactly as `metricStrain` floors its own terms. A better-than-baseline trend contributes zero, never a discount.
+Today's subjective values already enter `overallFatigueScore` and the existing absolute triggers at full weight. Including today's observation in a recent or long baseline would partially count the same measurement twice while claiming to measure prior-state drift. The composition boundary and tests must enforce this exclusion explicitly.
 
-Keeping it separate preserves `DecisionScoreTelemetry`'s existing decomposition — objective strain, contextual penalties, and now subjective drift remain independently readable and must still reconcile arithmetically to the total.
+### D-SUBJDRIFT — measure persistent adverse within-athlete change, not an acute second copy of today
+
+The optional subjective term represents **persistent adverse movement in recent prior history relative to a longer prior reference**. It does not include a today-versus-baseline acute term.
+
+The architecture fixes that semantic shape; it does **not** freeze one statistical estimator. A 7-day recent mean versus 28-day reference mean, normalized by within-athlete variability, is the first reference candidate because it mirrors the existing objective-side decomposition and is easy to audit. Window lengths, scaling method, variance floor, cap, and metric participation remain experimental policy parameters under D-SUBJCAL.
+
+### D-SUBJADD — a separate adverse-only term
+
+The result is a distinct `subjectiveDrift` contribution, not a modification of `objectiveStrain`. Each participating component is floored at zero before aggregation: favourable relative movement cannot subtract from strain.
+
+Keeping it separate preserves `DecisionScoreTelemetry`'s decomposition — objective strain, contextual penalties, and subjective drift remain independently readable and must reconcile arithmetically to the total decision score.
 
 ### D-SUBJFLOOR — absolute thresholds remain hard floors
 
-Every existing absolute trigger stays exactly as it is: `overallFatigueScore > 7`, `> 5`, `soreness > 6`, `fatigue > 8`, `soreness > 8`, `painFlag`. The subjective drift term may only **escalate** `train → modify → recover`. No value of it may ever de-escalate a mode that an absolute trigger has already set.
+Every existing absolute subjective trigger stays authoritative: `overallFatigueScore > 7`, `> 5`, `soreness > 6`, `fatigue > 8`, `soreness > 8`, and `painFlag`.
 
-This must be structural — the drift term contributes to an accumulating score that is compared against thresholds, with no subtraction path — not merely a tested behaviour.
+Subjective drift may only escalate:
 
-### D-SUBJCOV — below a coverage floor the term is exactly zero
+```text
+train → modify → recover
+```
 
-The subjective baseline is computed only when at least **10 of the trailing 28 days** carry a recorded check-in, counted as distinct dates. Below that, `subjectiveDrift` is `0` and the decision is identical to today's.
+No baseline, estimator, coefficient, or favourable trend may de-escalate a mode already selected by an absolute trigger. This must be structural — no subtraction path exists — and covered by a property test.
 
-The failure direction matters: an absent baseline falls back to current behaviour, which is safe and already shipped. A sparse baseline would be confidently optimistic, which is not.
+### D-SUBJCOV — both recent-state and long-reference coverage must be adequate
 
-`10` is a starting value, subject to **D-SUBJCAL** like every other coefficient here.
+A single count such as "10 of 28" is insufficient. Ten observations concentrated at the beginning of a 28-day window can satisfy a long-window count while providing no evidence about the recent state the term is supposed to measure.
 
-### D-SUBJSD — stdev floor of one scale point
+Baseline eligibility therefore records and evaluates at least:
 
-Normalisation divides by the athlete's own 28-day stdev of that metric, floored at **1.0 point**. An athlete who reports the same value every day has zero variance; without a floor, a single one-point move produces an unbounded z-score. One point is the smallest movement the scale can express, which makes it the natural floor. Terms are capped at `STRAIN_Z_CAP` (2.0), matching the objective side.
+```text
+recentRecordedDays
+longRecordedDays
+lastObservationDate
+```
+
+and may additionally record a bounded gap diagnostic such as `maxGapDays` if Phase 9.6 shows it is useful.
+
+If either the recent-state estimate or the long-reference estimate lacks sufficient valid observations, `subjectiveDrift` is exactly `0` and production behaviour is unchanged. The exact recent/long window lengths and minimum counts are calibration parameters, not architectural constants.
+
+Only distinct, complete scored check-in dates count. Partial safety-only check-ins still carry their safety meaning but are not observations of the full subjective score vector.
+
+### D-SUBJEST — estimator details are versioned policy, not ADR invariants
+
+Phase 9 starts with a transparent **reference estimator** for measurement:
+
+* recent window: 7 prior calendar days;
+* long window: 28 prior calendar days;
+* compare recent and long location per metric;
+* normalize adverse movement by a bounded within-athlete variability estimate;
+* floor favourable movement at zero;
+* cap individual contributions before weighting.
+
+The initial implementation may use mean / population stdev with the existing objective-side style of a 1-point variability floor and `STRAIN_Z_CAP = 2.0`, but those numbers are **candidate policy**, not accepted physiological constants.
+
+Before a production ship decision, Phase 9.6 must report sensitivity to estimator choices that can materially change decisions: recent/long window length, coverage requirements, variability floor/cap, included metrics, and weighting. If observed data show strong outlier or discreteness sensitivity, the comparison must include a robust alternative (for example a median/rank-based variant) rather than assuming z-score arithmetic is uniquely correct.
 
 ### D-SUBJPURE — baselines arrive precomputed; the evaluator stays pure
 
-`evaluateReadinessAndSafetyEnvelope` remains pure and synchronous. Subjective baselines are computed at the composition boundary and passed in as data on `DailyReadiness`, exactly as objective baselines already arrive precomputed on `DailyRecoverySnapshot.derived`.
+`evaluateReadinessAndSafetyEnvelope` remains pure and synchronous. Subjective baseline data are computed at the composition boundary and passed on `DailyReadiness`, just as objective baseline facts already arrive precomputed.
 
-The evaluator must not gain a history provider, an async signature, or a Firestore read. `composer.ts` gains one bounded range query alongside its existing `Promise.allSettled` fan-out.
+The evaluator must not gain a history provider, async signature, or Firestore read. The composition boundary performs one bounded, validated date-range read ending at `D - 1`.
 
-The read must use a **date-range** query. `checkinService.getRecentCheckins` applies `limit(days)` to a date-ordered query and therefore returns the most recent N *documents*, not N *days* — with gaps it silently spans a longer period, which would make the D-SUBJCOV coverage count read as complete whenever it is not. This defect was found and fixed in the context brief; the same trap applies here.
+A read failure or invalid range degrades to **no subjective drift**, not fabricated neutral observations. Existing absolute safety logic still evaluates today's check-in normally.
 
 ### D-SUBJANCHOR — never show the baseline before the check-in is submitted
 
-Subjective baselines may be surfaced retrospectively — the Data view, the context brief, a trend chart. They must **not** appear anywhere in the check-in flow before submission, and the check-in form must not display the athlete's own prior scores for the fields being answered.
+Subjective baselines may be surfaced retrospectively — Data view, context brief, trend charts — but must not appear in the check-in flow before submission. The form must not show the athlete their prior values for the same questions while they are answering them.
 
-Telling someone what their normal is immediately before asking them to self-report corrupts the measurement. The existing `initialSubmittedAt` / `editedAfterWearableReveal` fields exist because this repository already decided that pre-submission context contaminates a check-in; this decision extends that to the athlete's own history.
+This is a measurement-integrity rule. If the athlete sees historical context first, the resulting response may be anchored by the system that later interprets it.
 
-### D-SUBJCAL — coefficients are an output of calibration, not an input to this ADR
+### D-SUBJCAL — simulation proves mechanics; prospective evidence is required to ship
 
-This ADR fixes the **structure and the safety rules**. It deliberately does not prescribe the per-metric weights, whether `motivation` and `mentalStress` participate at all, the drift multiplier, or the final value of the coverage floor.
+This ADR fixes **structure and safety rules**. It does not prescribe final per-metric weights, participating metrics, window lengths, coverage thresholds, variability floor/cap, drift multiplier, or final estimator.
 
-Those are set by running the change through `simulate:calibrate` and the scenario corpus and comparing mode-distribution shifts, recovery share, and constraint violations against the committed baseline — the same evidence discipline **D-FUSE** established when it refused to prescribe a fatigue-fusion formula in advance. A result showing the term changes nothing useful, or degrades recovery share, is a valid outcome that closes this ADR as `Rejected`.
+Phase 9.6 has two jobs:
 
-Two candidate questions the calibration should answer explicitly:
+1. **Synthetic/regression gate:** prove tighten-only behaviour, boundedness, stability under noisy/stationary fixtures, no policy drift while disabled, and acceptable effects on mode distribution, recovery share, objective misses, and constraints.
+2. **Estimator sensitivity:** show whether reasonable estimator/parameter choices materially change the conclusion.
 
-* Does `motivation` belong? It is already in `overallFatigueScore`, but it plausibly tracks life stress more than training tolerance, and a baselined motivation drift may add noise rather than signal.
-* Does the drift term need `CHRONIC_STRAIN_MULTIPLIER`'s ×1.5 treatment, or is subjective drift already slower-moving than its objective counterpart?
+Synthetic scenarios can reject an unsafe or pathological design, but **they cannot establish real-world predictive usefulness**. A production switch to subjective drift additionally requires prospective evidence from Phase 9.0's real check-in/shadow record (or an equivalent later prospective corpus). If that evidence is not yet adequate, Phase 9.8 may keep the feature off or defer the decision; it may not call a synthetic-only result sufficient evidence to ship.
 
-### D-SUBJAUDIT — coverage is persisted for replay
+Candidate questions include:
 
-`RecommendationAudit` gains the subjective baseline's coverage count and the resulting drift contribution. A decision that depended on a 28-day subjective window is not reproducible from an audit that does not record how many days that window actually held.
+* Which metrics contribute useful signal? `fatigue`, `soreness`, `sleepQuality`, `readiness`, `motivation`, and `stress` need not share weights or even all participate.
+* Does a slow drift term add information beyond today's absolute score and objective strain?
+* How sensitive are decisions to the reference estimator, window length, coverage floor, variability floor/cap, and any chronic multiplier?
+* Do disagreements in the Phase 9.0 shadow log concentrate on days where prior subjective history had already moved adversely?
 
-`POLICY_VERSION` is bumped and the outgoing value moves to `HISTORICAL_POLICY_VERSIONS`; `check-policy-drift.mjs` enforces this.
+A result showing no useful signal, excessive conservatism, or unstable estimator sensitivity is a valid outcome that leaves the feature off.
+
+### D-SUBJAUDIT — persist normalized drift provenance only when it can affect a decision
+
+If subjective drift is enabled for a deciding path, `RecommendationAudit` records compact normalized provenance sufficient to explain which policy produced the contribution without copying raw health history:
+
+```text
+estimatorId / estimatorPolicyVersion
+historyThroughDateExclusive
+recentRecordedDays
+longRecordedDays
+subjectiveDriftContribution
+perMetricContributions (normalized, optional but bounded)
+decisionRelevant
+```
+
+Raw historical subjective scores and free-text notes are not duplicated into the recommendation audit.
+
+A default-off implementation does **not** bump `POLICY_VERSION`, because it cannot alter a persisted decision. The policy version is bumped, and the outgoing value moved to `HISTORICAL_POLICY_VERSIONS`, only when the live/default deciding path changes so subjective drift can affect recommendations. This keeps ADR-0010's policy-version semantics intact.
 
 ## Consequences
 
-**Positive.** The personal-scale error is corrected in the only direction that is safe to correct it. Multi-day subjective slides become visible to the mode gate for the first time. The engine applies one philosophy to both halves of readiness instead of two. Telemetry gains a third independently readable component, and the existing rationale annotation for decision-relevant objective drift extends naturally to subjective drift.
+**Positive.** Persistent subjective deterioration can be tested without weakening today's safety floors. The architecture supports individualized interpretation while keeping the statistical estimator replaceable and auditable. Today's observation is causally separated from its prior-history baseline. Sparse recent history cannot masquerade as a mature baseline. Production adoption requires both regression safety and prospective evidence.
 
-**Negative.** A third term in a score that is already a sum of six contributions makes the mode decision harder to explain in one sentence, and the athlete-facing rationale will need care to avoid becoming a list. The composition boundary gains a query. Athletes with sparse check-in histories get no benefit at all — by design, but it means the feature is invisible until the habit is established.
+**Negative.** The composition boundary gains a validated history read and the system gains another telemetry component. Calibration becomes more involved because estimator sensitivity is part of the evidence, not just coefficient tuning. Athletes with insufficient recent or long-window coverage get no drift contribution by design.
 
-**Neutral.** Behaviour is unchanged for any athlete below the coverage floor, so rollout is naturally gradual and the blast radius on day one is zero.
+**Neutral.** While the selector is default-off, production decisions remain bit-identical and `POLICY_VERSION` remains unchanged.
 
-**Explicitly accepted risk.** Ordinal data is being treated as interval for the purpose of a z-score. The stdev floor and the ±2.0 cap bound the damage, and the tighten-only rule bounds the direction of it, but this is a real modelling compromise and is recorded as such rather than argued away.
+**Explicitly accepted modelling risk.** The reference estimator may treat ordinal 1–10 responses approximately as interval data. That is acceptable for an experimental, bounded candidate behind a disabled selector; it is not treated as a physiological truth, and production adoption depends on sensitivity plus prospective evidence.
 
 ## Alternatives considered
 
-**Fold subjective z-scores into `objectiveStrain`.** Simplest to implement and rejected on two grounds: a single combined score allows a favourable subjective trend to offset an adverse objective one, which is the loosening D-SUBJFLOOR forbids; and it destroys the telemetry decomposition that ADR-0006 built deliberately.
+**Fold subjective relative terms into `objectiveStrain`.** Rejected. It destroys decomposition and increases the risk that a future favourable subjective term is accidentally allowed to offset objective strain.
 
-**Replace the absolute thresholds with normalised ones.** The pure version of the idea, and the dangerous one — it is precisely the chronically-sore-athlete inversion. Rejected outright.
+**Replace the absolute thresholds with normalized ones.** Rejected. It creates the chronic-soreness inversion this ADR explicitly forbids.
 
-**Include an acute today-vs-7d subjective term.** Rejected under D-SUBJDRIFT: double-counts today's reading and amplifies the noisiest input.
+**Include an acute today-vs-history normalized term.** Rejected. Today's score is already evaluated raw; the history term exists to add prior multi-day context, not count today twice.
 
-**Do nothing; keep subjective baselines in the brief and the Data view only.** A legitimate outcome, and the one D-SUBJCAL selects if the calibration shows no useful signal. It is not chosen up front because the personal-scale error is real and currently uncorrected.
+**Fix 7d/28d z-scores, 10/28 coverage, and a 1-point SD floor as permanent ADR decisions.** Rejected. Those are plausible reference settings, but the available evidence does not establish them as universal physiological constants and the questionnaire items themselves have heterogeneous reliability/validity.
 
-**Ask the athlete to self-calibrate** ("what is a normal readiness day for you?"). Rejected: it is the same contaminated self-report the baseline exists to replace, gathered once and then stale.
+**Do nothing; keep subjective baselines informational only.** Remains a legitimate Phase 9.8 outcome if the candidate adds no useful prospective signal or materially worsens decision quality.
+
+**Ask the athlete once to define a normal score.** Rejected as the baseline authority: it is a single self-report that can become stale and does not solve day-to-day scale-use drift. A future scale-calibration UX could still be useful for habitual-low reporting, but it is separate from this tighten-only mechanism.
