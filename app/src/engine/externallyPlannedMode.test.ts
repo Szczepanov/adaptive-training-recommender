@@ -1,8 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
 
-// Each case here runs the whole asynchronous decision pipeline, and the two that fall
-// through to the ranked path score the full catalog. That is several seconds on a loaded
-// machine, so the 5s default makes this file flaky rather than fast.
 vi.setConfig({ testTimeout: 30_000 });
 import { evaluateTrainingWithIntent, type ExternalPlanContext } from './rules';
 import { resolvePlanningContext } from './planningMode';
@@ -10,8 +7,8 @@ import { evaluatePeriodizationPhase } from './periodization';
 import { isExternalTemplateId } from './externalSessionProfiles';
 import { validateTrainingIntentProfile } from './validation';
 import type {
-    AuthoredPlanBlock, DailyReadiness, EngineObjectiveInput, ExternalPlanSession,
-    SubjectiveInput, TrainingIntentProfile, TrainingSettings, UserContext,
+    AuthoredPlanBlock, DailyReadiness, EngineObjectiveInput, ExternalPlanSession, FixedActivity,
+    SubjectiveInput, TrainingIntentProfile, TrainingSettings, UserContext, UserEvent,
 } from './models';
 
 const DATE = '2026-08-18';
@@ -63,6 +60,14 @@ function session(overrides: Partial<ExternalPlanSession> = {}): ExternalPlanSess
     };
 }
 
+function fixedActivity(overrides: Partial<FixedActivity> = {}): FixedActivity {
+    return {
+        id: 'fixed', userId: 'u1', title: 'Booked commitment', date: DATE, durationMin: 45,
+        fixed: true, environment: 'either', equipment: [], isCompleted: false,
+        createdAt: '', updatedAt: '', ...overrides,
+    };
+}
+
 const externalPlan = (overrides: Partial<ExternalPlanSession> = {}): ExternalPlanContext =>
     ({ planId: 'autumn-block', revision: 1, session: session(overrides), contentHash: 'hash-of-revision-1' });
 
@@ -71,6 +76,16 @@ function profile(planningMode: TrainingIntentProfile['planningMode']): TrainingI
         userId: 'u1', planningMode, priorities: ['balanced_performance'],
         weeklyCommitment: { minSessions: 3, targetSessions: 4, maxSessions: 5 },
         organizationPreference: 'auto', schemaVersion: 1, createdAt: '', updatedAt: '',
+    };
+}
+
+function cyclingEvent(): UserEvent {
+    return {
+        id: 'race', title: 'Road Race', date: DATE, priority: 'A', lifecycle: 'scheduled', category: 'cycling_event',
+        demandProfile: {
+            aerobicEndurance: 0.9, thresholdPower: 0.8, vo2MaxPower: 0.5, repeatedSurges: 0.8,
+            sprintPower: 0.4, fatigueResistance: 0.9, neuromuscular: 0.4,
+        },
     };
 }
 
@@ -86,7 +101,6 @@ describe('resolvePlanningContext with externally_planned (D-EXT)', () => {
 
     it('falls back and flags it when the mode is selected but no session is placed', () => {
         const unplanned = resolvePlanningContext(profile('externally_planned'), noEvents, DATE, null);
-        // Choosing the mode does not suspend the engine on days the plan leaves empty.
         expect(unplanned.mode).toBe('evergreen');
         expect(unplanned.externalFallback).toBe(true);
     });
@@ -111,14 +125,16 @@ describe('evaluateTrainingWithIntent in externally_planned mode', () => {
         plan: ExternalPlanContext | null,
         r: DailyReadiness = readiness(),
         mode: TrainingIntentProfile['planningMode'] = 'externally_planned',
+        fixed: FixedActivity[] = [],
+        events: UserEvent[] = [],
     ) {
         return evaluateTrainingWithIntent(
-            'u1', r, context(), [], DATE, undefined, undefined, null, [], [],
+            'u1', r, context(), events, DATE, undefined, undefined, null, fixed, [],
             profile(mode), null, 'max', plan,
         );
     }
 
-    it('returns the imported session rather than a ranked catalog pick', async () => {
+    it('returns an ordinary imported session rather than a ranked catalog pick', async () => {
         const recommendation = await evaluate(externalPlan());
 
         expect(isExternalTemplateId(recommendation.template.id)).toBe(true);
@@ -127,15 +143,37 @@ describe('evaluateTrainingWithIntent in externally_planned mode', () => {
             planId: 'autumn-block', revision: 1, sessionId: 'w1-threshold',
         });
         expect(recommendation.externalVerdict?.decision).toBe('proceed');
-        // Which revision bytes produced this, so replay can verify against the same ones.
         expect(recommendation.decisionTrace?.externalPlan).toEqual({
             planId: 'autumn-block', revision: 1, sessionId: 'w1-threshold', contentHash: 'hash-of-revision-1',
         });
     });
 
-    it('ranks nothing, so the audit records no candidate scores', async () => {
+    it('ranks nothing for an ordinary external prescription', async () => {
         const recommendation = await evaluate(externalPlan());
         expect(recommendation.decisionTrace?.candidateScores).toEqual([]);
+    });
+
+    it('applies fixed-activity time to the imported session before calling it feasible', async () => {
+        const recommendation = await evaluate(
+            externalPlan(), readiness({ timeAvailable: 90 }), 'externally_planned', [fixedActivity({ durationMin: 45 })],
+        );
+
+        expect(recommendation.externalVerdict?.decision).toBe('skip');
+        expect(recommendation.externalVerdict?.gateFailures).toContain('time_limit');
+        expect(isExternalTemplateId(recommendation.template.id)).toBe(false);
+    });
+
+    it('applies day-wide environment overrides to imported sessions too', async () => {
+        const recommendation = await evaluate(
+            externalPlan({
+                gating: { modality: 'cycling', intensity: 'hard', durationMin: 60, durationMax: 75, environment: 'outdoor', equipment: [] },
+            }),
+            readiness(), 'externally_planned',
+            [fixedActivity({ durationMin: 0, availabilityContextOverride: { environment: 'indoor' } })],
+        );
+
+        expect(recommendation.externalVerdict?.decision).toBe('skip');
+        expect(recommendation.externalVerdict?.gateFailures).toContain('environment');
     });
 
     it('shows recovery, not a prescription, when the verdict is not actionable', async () => {
@@ -143,39 +181,63 @@ describe('evaluateTrainingWithIntent in externally_planned mode', () => {
         const recommendation = await evaluate(externalPlan(), exhausted);
 
         expect(recommendation.externalVerdict?.decision).toBe('defer');
-        // The imported session must not render as "do this" on a day it was excluded.
         expect(isExternalTemplateId(recommendation.template.id)).toBe(false);
         expect(recommendation.template.category).toBe('Rest');
         expect(recommendation.mode).toBe('recover');
-        // An excluded day is still an external decision and stays replayable as one.
         expect(recommendation.decisionTrace?.externalPlan?.sessionId).toBe('w1-threshold');
     });
 
-    it('keeps an event actionable and advisory even on a hard readiness day', async () => {
+    it('reconciles an event as a fixed commitment and never recommends the event template itself', async () => {
         const exhausted = readiness({ fatigue: 9, soreness: 9, readiness: 1, sleepQuality: 1, motivation: 1 });
         const recommendation = await evaluate(
-            externalPlan({ isEvent: true, placement: { week: 1, preferredDay: 'tuesday', flexibility: 'fixed', ifMissed: 'drop' } }),
+            externalPlan({
+                isEvent: true,
+                title: 'Road Race',
+                placement: { week: 1, preferredDay: 'tuesday', flexibility: 'fixed', ifMissed: 'drop' },
+                gating: { modality: 'cycling', intensity: 'max', durationMin: 50, durationMax: 60, environment: 'outdoor', equipment: [] },
+            }),
             exhausted,
         );
 
         expect(recommendation.externalVerdict?.decision).toBe('advisory');
-        expect(isExternalTemplateId(recommendation.template.id)).toBe(true);
         expect(recommendation.externalPrescription?.isEvent).toBe(true);
+        expect(isExternalTemplateId(recommendation.template.id)).toBe(false);
+        expect(recommendation.decisionTrace?.candidateScores.length ?? 0).toBeGreaterThan(0);
+        expect(recommendation.decisionTrace?.calibration?.fixedActivity.count).toBeGreaterThanOrEqual(1);
     });
 
-    it('still ranks a catalog pick when no session is placed today', async () => {
+    it('surfaces an imported event with no matching UserEvent instead of silently fabricating one', async () => {
+        const recommendation = await evaluate(externalPlan({
+            isEvent: true,
+            title: 'Road Race',
+            placement: { week: 1, preferredDay: 'tuesday', flexibility: 'fixed', ifMissed: 'drop' },
+            gating: { modality: 'cycling', intensity: 'max', durationMin: 50, durationMax: 60, environment: 'outdoor', equipment: [] },
+        }));
+        expect(recommendation.externalVerdict?.rationale).toContain('not linked to a matching target event in Goals');
+        expect(recommendation.externalVerdict?.rationale).toContain('Add or link it there');
+    });
+
+    it('recognises a matching authored UserEvent and omits the linkage warning', async () => {
+        const recommendation = await evaluate(externalPlan({
+            isEvent: true,
+            title: 'Road Race',
+            placement: { week: 1, preferredDay: 'tuesday', flexibility: 'fixed', ifMissed: 'drop' },
+            gating: { modality: 'cycling', intensity: 'max', durationMin: 50, durationMax: 60, environment: 'outdoor', equipment: [] },
+        }), readiness(), 'externally_planned', [], [cyclingEvent()]);
+        expect(recommendation.externalVerdict?.rationale).not.toContain('not linked');
+    });
+
+    it('still ranks a catalog pick when no session is placed today, and labels that fallback', async () => {
         const recommendation = await evaluate(null);
 
         expect(isExternalTemplateId(recommendation.template.id)).toBe(false);
         expect(recommendation.externalPrescription).toBeUndefined();
         expect(recommendation.decisionTrace?.candidateScores.length ?? 0).toBeGreaterThan(0);
         expect(recommendation.decisionTrace?.externalPlan).toBeUndefined();
+        expect(recommendation.rationale).toContain('External plan fallback');
     });
 
     it('applies a travel block\'s dose reduction exactly once (D-NOTRAVEL)', async () => {
-        // Travel is an AuthoredPlanBlock, deliberately outside the import schema. The
-        // reduction happens in resolveTrainingIntent; the adjudicator consumes that dose and
-        // must not reduce again, or a travel day silently halves twice.
         const travel: AuthoredPlanBlock = {
             id: 'trip', userId: 'u1', phase: 'travel',
             startDate: DATE, endDate: DATE, volumeScale: 0.5, intensityScale: 0.8,
@@ -189,8 +251,6 @@ describe('evaluateTrainingWithIntent in externally_planned mode', () => {
 
         expect(withTravel.plannedDose).toBeDefined();
         expect(withoutTravel.plannedDose).toBeDefined();
-        // Exactly the block's own scale, applied to the untravelled dose. Applying it twice
-        // would give 0.25x; not at all would give 1x.
         expect(withTravel.plannedDose!.volume)
             .toBeCloseTo(withoutTravel.plannedDose!.volume * travel.volumeScale, 6);
         expect(withTravel.executionDose!.volume)
@@ -198,8 +258,6 @@ describe('evaluateTrainingWithIntent in externally_planned mode', () => {
     });
 
     it('ignores a supplied external session for an athlete who did not choose the mode', async () => {
-        // Placement is the caller's job, so a caller bug could hand an external session to an
-        // evergreen athlete. Suspending the engine on that would be a silent mode switch.
         const recommendation = await evaluate(externalPlan(), readiness(), 'evergreen');
 
         expect(recommendation.externalPrescription).toBeUndefined();
