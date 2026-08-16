@@ -77,8 +77,6 @@ service cloud.firestore {
         && (!('executionDose' in audit) || hasValidDose(audit.executionDose))
         && audit.candidateScores is list && audit.candidateScores.size() <= 64
         && (!('droppedContributorObjectives' in audit) || (audit.droppedContributorObjectives is list && audit.droppedContributorObjectives.size() <= 64))
-        // ADR-0019: present exactly when an imported session was adjudicated. Validated
-        // rather than merely permitted -- it is what a replay verifies the decision against.
         && (!('externalPlan' in audit) || (
           audit.externalPlan is map
           && audit.externalPlan.keys().hasOnly(['planId', 'revision', 'sessionId', 'contentHash'])
@@ -93,13 +91,14 @@ service cloud.firestore {
     function hasValidRecommendation(userId, date) {
       return hasOwnedUserId(userId)
         && isDateDocument(date)
-        && request.resource.data.keys().hasOnly(['userId', 'date', 'templateId', 'templateTitle', 'category', 'modality', 'mode', 'rationale', 'schemaVersion', 'createdAt', 'updatedAt', 'adjustment', 'prescription', 'adherence', 'recommendationAudit', 'revision'])
+        && request.resource.data.keys().hasOnly(['userId', 'date', 'templateId', 'templateTitle', 'category', 'modality', 'mode', 'engineVerdict', 'rationale', 'schemaVersion', 'createdAt', 'updatedAt', 'adjustment', 'prescription', 'adherence', 'recommendationAudit', 'revision'])
         && request.resource.data.keys().hasAll(['userId', 'date', 'templateId', 'templateTitle', 'category', 'modality', 'mode', 'rationale', 'schemaVersion', 'createdAt', 'updatedAt', 'adherence'])
         && request.resource.data.templateId is string
         && request.resource.data.templateTitle is string
         && request.resource.data.category is string
         && request.resource.data.modality is string
         && request.resource.data.mode in ['train', 'modify', 'recover']
+        && (!('engineVerdict' in request.resource.data) || request.resource.data.engineVerdict in ['proceed', 'scale', 'defer', 'skip', 'advisory'])
         && request.resource.data.rationale is string
         && request.resource.data.createdAt is string
         && request.resource.data.updatedAt is string
@@ -126,6 +125,8 @@ service cloud.firestore {
         && request.resource.data.category == resource.data.category
         && request.resource.data.modality == resource.data.modality
         && request.resource.data.mode == resource.data.mode
+        && (!('engineVerdict' in resource.data)
+          || (('engineVerdict' in request.resource.data) && request.resource.data.engineVerdict == resource.data.engineVerdict))
         && request.resource.data.rationale == resource.data.rationale
         && (('prescription' in request.resource.data) == ('prescription' in resource.data))
         && (!('prescription' in resource.data)
@@ -143,6 +144,7 @@ service cloud.firestore {
         && prior.modality == resource.data.modality
         && prior.mode == resource.data.mode
         && prior.rationale == resource.data.rationale
+        && (!('engineVerdict' in resource.data) || (('engineVerdict' in prior) && prior.engineVerdict == resource.data.engineVerdict))
         && (!('prescription' in resource.data) || (('prescription' in prior) && prior.prescription == resource.data.prescription))
         && (!('recommendationAudit' in resource.data) || (('recommendationAudit' in prior) && prior.recommendationAudit == resource.data.recommendationAudit));
     }
@@ -157,6 +159,34 @@ service cloud.firestore {
       allow delete: if isOwner(userId);
     }
 
+    // --- Decision journal (Phase 9.0): immutable morning evidence plus an evening actual outcome.
+    function hasValidDecisionJournalEntry(userId, date) {
+      return hasOwnedUserId(userId)
+        && isDateDocument(date)
+        && request.resource.data.keys().hasOnly(['userId', 'date', 'externalVerdict', 'externalNote', 'sawEngineVerdictFirst', 'actualVerdict', 'createdAt', 'updatedAt', 'schemaVersion'])
+        && request.resource.data.keys().hasAll(['userId', 'date', 'externalVerdict', 'sawEngineVerdictFirst', 'createdAt', 'updatedAt', 'schemaVersion'])
+        && request.resource.data.externalVerdict in ['proceed', 'scale', 'defer', 'skip', 'advisory']
+        && (!('externalNote' in request.resource.data) || (request.resource.data.externalNote is string && request.resource.data.externalNote.size() <= 2000))
+        && request.resource.data.sawEngineVerdictFirst is bool
+        && (!('actualVerdict' in request.resource.data) || request.resource.data.actualVerdict in ['proceed', 'scale', 'defer', 'skip', 'advisory'])
+        && request.resource.data.createdAt is string
+        && request.resource.data.updatedAt is string
+        && request.resource.data.schemaVersion == 1;
+    }
+
+    match /users/{userId}/decision_journal/{date} {
+      allow read: if isOwner(userId);
+      allow create: if hasValidDecisionJournalEntry(userId, date);
+      allow update: if keepsOwnership(userId)
+        && hasValidDecisionJournalEntry(userId, date)
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.sawEngineVerdictFirst == resource.data.sawEngineVerdictFirst
+        && request.resource.data.externalVerdict == resource.data.externalVerdict
+        && (('externalNote' in request.resource.data) == ('externalNote' in resource.data))
+        && (!('externalNote' in resource.data) || request.resource.data.externalNote == resource.data.externalNote);
+      allow delete: if false;
+    }
+
     match /users/{userId}/goals/{goalId} {
       allow read: if isOwner(userId);
       allow create: if hasOwnedUserId(userId) && hasValidGoalTaper();
@@ -164,7 +194,6 @@ service cloud.firestore {
       allow delete: if isOwner(userId);
     }
 
-    // --- Fixed activities (Phase 5.3 + Phase 6 exact identity) ---
     function isValidActivityDate(date) {
       return date is string && date.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$') && isRealCalendarDate(date.split('-'));
     }
@@ -257,9 +286,6 @@ service cloud.firestore {
       allow delete: if isOwner(userId);
     }
 
-    // Explicit calendar overlays are user-authored. They cannot be inferred from event
-    // metadata, and their date range/dose contract is deliberately tight because it is
-    // consumed directly by Path B planning.
     function hasValidPlanBlock(userId) {
       let data = request.resource.data;
       return hasOwnedUserId(userId)
@@ -275,11 +301,6 @@ service cloud.firestore {
         && data.createdAt is string && data.updatedAt is string;
     }
 
-    // Externally-authored plans (ADR-0019). A stored revision is immutable: create only,
-    // never update or delete, because a persisted decision's audit references its exact
-    // content hash and rewriting it would make that audit unverifiable (D-IMMUT).
-    // Rules bound shape and size only -- Firestore rules cannot iterate a session list, so
-    // per-session enum checking stays in validation.ts. Both layers are enforced.
     function hasValidExternalPlanHeader(userId) {
       let data = request.resource.data;
       return hasOwnedUserId(userId)
@@ -323,8 +344,6 @@ service cloud.firestore {
       allow update: if hasValidExternalPlanHeader(userId)
         && keepsOwnership(userId)
         && request.resource.data.planId == resource.data.planId
-        // A header only ever moves forward: it may point at a newer revision, never an
-        // older one, so the athlete cannot silently be returned to a superseded plan.
         && request.resource.data.revision >= resource.data.revision;
       allow delete: if isOwner(userId);
 

@@ -18,6 +18,7 @@ const goalPath = `users/${ownerId}/goals/goal-1`;
 const externalPlanPath = `users/${ownerId}/external_plans/autumn-block`;
 const externalRevisionPath = `${externalPlanPath}/revisions/1`;
 const externalPlacementPath = `${externalPlanPath}/placement/current`;
+const decisionJournalPath = `users/${ownerId}/decision_journal/2026-08-07`;
 
 function validExternalPlanHeader() {
     return {
@@ -93,6 +94,15 @@ function validPreferences() {
     };
 }
 
+function validDecisionJournalEntry() {
+    return {
+        userId: ownerId, date: '2026-08-07',
+        externalVerdict: 'proceed', sawEngineVerdictFirst: false,
+        createdAt: '2026-08-07T06:00:00Z', updatedAt: '2026-08-07T06:00:00Z',
+        schemaVersion: 1,
+    };
+}
+
 function validRecommendation(auditEvaluatedAt = '2026-08-07T08:00:00Z') {
     return {
         userId: ownerId,
@@ -114,12 +124,6 @@ function validRecommendation(auditEvaluatedAt = '2026-08-07T08:00:00Z') {
             skipped: false,
             notes: null,
         },
-        // evaluatedAt is real-time in production (buildRecommendationAudit defaults to
-        // `new Date().toISOString()`), so two audits for the *same* decision are never
-        // byte-identical across separate saves. Tests that want to prove a same-decision
-        // resave is accepted must reuse one literal audit object across before/after, not
-        // call this factory twice -- calling it twice with different evaluatedAt values is
-        // exactly the real-world "different audit" case.
         recommendationAudit: {
             policyVersion: '2026-08-decision-provenance-v1',
             evaluatedAt: auditEvaluatedAt,
@@ -157,6 +161,13 @@ emulatorDescribe('Firestore security rules', () => {
         await expect(assertSucceeds(setDoc(doc(ownerDb, recommendationPath), validRecommendation()))).resolves.toBeUndefined();
     });
 
+    it('accepts a valid exact engine verdict and rejects an unsupported one', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertSucceeds(setDoc(doc(ownerDb, recommendationPath), { ...validRecommendation(), engineVerdict: 'advisory' }));
+        await testEnvironment.clearFirestore();
+        await assertFails(setDoc(doc(ownerDb, recommendationPath), { ...validRecommendation(), engineVerdict: 'maybe' }));
+    });
+
     it('rejects cross-user recommendation reads', async () => {
         await testEnvironment.withSecurityRulesDisabled(async context => {
             await setDoc(doc(context.firestore(), recommendationPath), validRecommendation());
@@ -188,9 +199,6 @@ emulatorDescribe('Firestore security rules', () => {
     });
 
     it('accepts an audit carrying external plan provenance, and rejects a malformed one', async () => {
-        // Every externally-planned day writes this field. Omitting it from the audit's
-        // hasOnly list denied the write outright, and Home only warns on a failed save --
-        // so the whole mode would have silently persisted nothing.
         const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
         const external = validRecommendation();
         external.recommendationAudit.externalPlan = {
@@ -306,11 +314,6 @@ emulatorDescribe('Firestore security rules', () => {
     });
 
     it('allows decision update with valid atomic batch archive write and a genuinely new audit', async () => {
-        // Regression guard: the archived audit and the new top-level audit must be
-        // DIFFERENT objects (as they always are in production -- evaluatedAt is real-time
-        // per decision). A test that reuses one literal audit for both would pass even if
-        // auditWriteOnce() wrongly froze the audit for the document's entire lifetime
-        // instead of just for the current (unchanged) decision.
         await testEnvironment.withSecurityRulesDisabled(async context => {
             await setDoc(doc(context.firestore(), recommendationPath), { ...validRecommendation('2026-08-07T08:00:00Z'), revision: 1 });
         });
@@ -342,9 +345,6 @@ emulatorDescribe('Firestore security rules', () => {
             await setDoc(doc(context.firestore(), recommendationPath), { ...original, revision: 1 });
         });
         const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
-        // Same decision fields, same revision, and -- critically -- the exact same audit
-        // object recommendationService.ts must preserve rather than resend a freshly
-        // recomputed one (see saveRecommendation()'s recommendationAudit condition).
         await expect(assertSucceeds(
             setDoc(doc(ownerDb, recommendationPath), { ...original, revision: 1 }, { merge: true }),
         )).resolves.toBeUndefined();
@@ -371,9 +371,7 @@ emulatorDescribe('Firestore security rules', () => {
         });
         const otherDb = testEnvironment.authenticatedContext(otherUserId).firestore();
         await assertFails(getDoc(doc(otherDb, fixedActivityPath)));
-        // Writing to the owner's document path as a different authenticated user.
         await assertFails(setDoc(doc(otherDb, fixedActivityPath), validFixedActivity()));
-        // Writing under otherUserId's own path but forging userId to the real owner's id.
         await assertFails(setDoc(doc(otherDb, `users/${otherUserId}/fixed_activities/activity-2`), { ...validFixedActivity(), userId: ownerId }));
     });
 
@@ -428,8 +426,6 @@ emulatorDescribe('Firestore security rules', () => {
     });
 
     it('rejects a fixed activity with a YYYY-MM-DD-shaped but calendar-impossible date', async () => {
-        // Regex-only shape validation would accept this; a direct authenticated write
-        // (bypassing validation.ts's client-side isValidDate) must still be rejected.
         const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
         await assertFails(setDoc(doc(ownerDb, fixedActivityPath), { ...validFixedActivity(), date: '2026-02-30' }));
     });
@@ -488,7 +484,6 @@ emulatorDescribe('Firestore security rules', () => {
             await setDoc(doc(context.firestore(), externalRevisionPath), validExternalPlanRevision());
         });
         const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
-        // Even the owner cannot rewrite or remove a revision the content hash points at.
         await assertFails(setDoc(doc(ownerDb, externalRevisionPath), { ...validExternalPlanRevision(), title: 'edited' }));
         await assertFails(deleteDoc(doc(ownerDb, externalRevisionPath)));
         await assertSucceeds(getDoc(doc(ownerDb, externalRevisionPath)));
@@ -563,9 +558,6 @@ emulatorDescribe('Firestore security rules', () => {
     });
 
     it('rejects re-saving the same decision with a different audit than what is stored', async () => {
-        // If a client resent a freshly recomputed audit for an unchanged decision (the bug
-        // this guards against), the audit would differ only in evaluatedAt/etc. -- this must
-        // still be rejected, since decision fields (templateId/mode/rationale/...) are equal.
         await testEnvironment.withSecurityRulesDisabled(async context => {
             await setDoc(doc(context.firestore(), recommendationPath), { ...validRecommendation('2026-08-07T08:00:00Z'), revision: 1 });
         });
@@ -573,5 +565,73 @@ emulatorDescribe('Firestore security rules', () => {
         await assertFails(
             setDoc(doc(ownerDb, recommendationPath), { ...validRecommendation('2026-08-07T09:30:00Z'), revision: 1 }, { merge: true }),
         );
+    });
+
+    // --- Decision journal (Phase 9.0.2) ---
+
+    it('allows an owner to create a well-formed decision journal entry', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await expect(assertSucceeds(setDoc(doc(ownerDb, decisionJournalPath), validDecisionJournalEntry()))).resolves.toBeUndefined();
+    });
+
+    it('rejects a malformed or foreign-owned decision journal entry', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertFails(setDoc(doc(ownerDb, `${decisionJournalPath}-bad-verdict`), {
+            ...validDecisionJournalEntry(), externalVerdict: 'maybe',
+        }));
+        await assertFails(setDoc(doc(ownerDb, `${decisionJournalPath}-extra-field`), {
+            ...validDecisionJournalEntry(), surprise: true,
+        }));
+        const withoutSawFirst: Record<string, unknown> = validDecisionJournalEntry();
+        delete withoutSawFirst.sawEngineVerdictFirst;
+        await assertFails(setDoc(doc(ownerDb, `${decisionJournalPath}-missing-field`), withoutSawFirst));
+        await assertFails(setDoc(doc(ownerDb, decisionJournalPath), { ...validDecisionJournalEntry(), date: '2026-08-08' }));
+        await assertFails(setDoc(doc(ownerDb, decisionJournalPath), { ...validDecisionJournalEntry(), userId: otherUserId }));
+        const otherDb = testEnvironment.authenticatedContext(otherUserId).firestore();
+        await assertFails(setDoc(
+            doc(otherDb, `users/${otherUserId}/decision_journal/2026-08-07`),
+            { ...validDecisionJournalEntry(), userId: ownerId },
+        ));
+    });
+
+    it('rejects cross-user decision journal reads and writes', async () => {
+        await testEnvironment.withSecurityRulesDisabled(async context => {
+            await setDoc(doc(context.firestore(), decisionJournalPath), validDecisionJournalEntry());
+        });
+        const otherDb = testEnvironment.authenticatedContext(otherUserId).firestore();
+        await assertFails(getDoc(doc(otherDb, decisionJournalPath)));
+        await assertFails(setDoc(doc(otherDb, decisionJournalPath), validDecisionJournalEntry(), { merge: true }));
+    });
+
+    it('allows the evening outcome update but rejects rewriting any morning observation field', async () => {
+        await testEnvironment.withSecurityRulesDisabled(async context => {
+            await setDoc(doc(context.firestore(), decisionJournalPath), validDecisionJournalEntry());
+        });
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+
+        await expect(assertSucceeds(setDoc(doc(ownerDb, decisionJournalPath), {
+            ...validDecisionJournalEntry(), actualVerdict: 'scale', updatedAt: '2026-08-07T20:00:00Z',
+        }))).resolves.toBeUndefined();
+
+        await assertFails(setDoc(doc(ownerDb, decisionJournalPath), {
+            ...validDecisionJournalEntry(), sawEngineVerdictFirst: true,
+        }));
+        await assertFails(setDoc(doc(ownerDb, decisionJournalPath), {
+            ...validDecisionJournalEntry(), externalVerdict: 'scale',
+        }));
+        await assertFails(setDoc(doc(ownerDb, decisionJournalPath), {
+            ...validDecisionJournalEntry(), externalNote: 'rewritten after reveal',
+        }));
+        await assertFails(setDoc(doc(ownerDb, decisionJournalPath), {
+            ...validDecisionJournalEntry(), createdAt: '2099-01-01T00:00:00Z',
+        }));
+    });
+
+    it('rejects deletion of decision journal evidence, including by its owner', async () => {
+        await testEnvironment.withSecurityRulesDisabled(async context => {
+            await setDoc(doc(context.firestore(), decisionJournalPath), validDecisionJournalEntry());
+        });
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertFails(deleteDoc(doc(ownerDb, decisionJournalPath)));
     });
 });

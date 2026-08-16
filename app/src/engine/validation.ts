@@ -48,8 +48,10 @@ import type {
     ExternalWeekday,
     ExternalPlanPlacement,
     ExternalPlacementStatus,
+    DecisionJournalEntry,
+    ShadowVerdict,
 } from './models';
-import { EXTERNAL_PLAN_SCHEMA } from './models';
+import { EXTERNAL_PLAN_SCHEMA, SHADOW_VERDICTS } from './models';
 import { validateEventTiming, BODY_REGIONS, TISSUE_LEVELS } from './models';
 import { deriveGoalCategory } from './periodization';
 import { EVENT_PRESETS } from './eventPresets';
@@ -272,6 +274,79 @@ export function validateCheckin(raw: any): ValidationResult<DailySubjectiveCheck
     };
 
     return { isValid: true, data: checkin, errors: [] };
+}
+
+// --- Decision journal (Phase 9.0) ---
+
+const DECISION_JOURNAL_KEYS = [
+    'userId', 'date', 'externalVerdict', 'externalNote', 'sawEngineVerdictFirst',
+    'actualVerdict', 'createdAt', 'updatedAt', 'schemaVersion',
+] as const;
+
+function isShadowVerdict(value: unknown): value is ShadowVerdict {
+    return typeof value === 'string' && (SHADOW_VERDICTS as readonly string[]).includes(value);
+}
+
+/** Strict boundary for `users/{userId}/decision_journal/{date}`, mirroring
+ *  `validateCheckin`'s shape but with a closed key set (as every other single-document
+ *  stored shape here, e.g. `validateTrainingIntentProfile`) -- this is evidence, and an
+ *  unrecognized field silently accepted here is a malformed record that would corrupt the
+ *  9.0.5 export rather than fail loudly. */
+export function validateDecisionJournalEntry(raw: any): ValidationResult<DecisionJournalEntry> {
+    const errors: ValidationError[] = [];
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+        return { isValid: false, errors: [{ field: 'entry', message: 'Entry must be an object' }] };
+    }
+
+    const extra = Object.keys(raw).filter(key => !(DECISION_JOURNAL_KEYS as readonly string[]).includes(key));
+    if (extra.length > 0) {
+        errors.push({ field: 'entry', message: `Unrecognized field(s): ${extra.join(', ')}` });
+    }
+
+    if (!raw.userId || typeof raw.userId !== 'string') {
+        errors.push({ field: 'userId', message: 'User ID is required' });
+    }
+    if (!raw.date || !isValidDate(raw.date)) {
+        errors.push({ field: 'date', message: 'Valid date (YYYY-MM-DD) is required' });
+    }
+    if (!isShadowVerdict(raw.externalVerdict)) {
+        errors.push({ field: 'externalVerdict', message: `externalVerdict must be one of: ${SHADOW_VERDICTS.join(', ')}` });
+    }
+    const externalNote = normalizeEmptyToNull(raw.externalNote);
+    if (externalNote !== null && typeof externalNote !== 'string') {
+        errors.push({ field: 'externalNote', message: 'externalNote must be a string or empty' });
+    }
+    if (typeof raw.sawEngineVerdictFirst !== 'boolean') {
+        errors.push({ field: 'sawEngineVerdictFirst', message: 'sawEngineVerdictFirst is required and must be a boolean' });
+    }
+    if (raw.actualVerdict !== undefined && raw.actualVerdict !== null && !isShadowVerdict(raw.actualVerdict)) {
+        errors.push({ field: 'actualVerdict', message: `actualVerdict must be one of: ${SHADOW_VERDICTS.join(', ')}` });
+    }
+    if (!raw.createdAt || typeof raw.createdAt !== 'string') {
+        errors.push({ field: 'createdAt', message: 'createdAt is required' });
+    }
+    if (!raw.updatedAt || typeof raw.updatedAt !== 'string') {
+        errors.push({ field: 'updatedAt', message: 'updatedAt is required' });
+    }
+    if (raw.schemaVersion !== undefined && raw.schemaVersion !== 1) {
+        errors.push({ field: 'schemaVersion', message: 'schemaVersion must be 1' });
+    }
+
+    if (errors.length > 0) return { isValid: false, errors };
+
+    const entry: DecisionJournalEntry = {
+        userId: raw.userId,
+        date: raw.date,
+        externalVerdict: raw.externalVerdict,
+        ...(externalNote !== null ? { externalNote } : {}),
+        sawEngineVerdictFirst: raw.sawEngineVerdictFirst,
+        ...(isShadowVerdict(raw.actualVerdict) ? { actualVerdict: raw.actualVerdict } : {}),
+        createdAt: raw.createdAt,
+        updatedAt: raw.updatedAt,
+        schemaVersion: 1,
+    };
+
+    return { isValid: true, data: entry, errors: [] };
 }
 
 // --- Data Quality Computation ---

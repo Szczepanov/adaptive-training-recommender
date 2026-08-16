@@ -1,8 +1,10 @@
-import type { DailyRecommendation, NormalizedGarminActivity } from '../../engine/models';
+import type { DailyRecommendation, NormalizedGarminActivity, ShadowVerdict } from '../../engine/models';
+import { SHADOW_VERDICTS } from '../../engine/models';
 import type { DataIssue, DataState } from '../../engine/dataState';
 import { validateRecommendation, isValidDate } from '../../engine/validation';
 
 type RawDocument = Record<string, unknown>;
+type RecommendationWithEngineVerdict = DailyRecommendation & { engineVerdict?: ShadowVerdict };
 
 function invalid(documentPath: string, code: string, field?: string, schemaVersion?: number): DataState<never> {
     const issue: DataIssue = { code, documentPath, ...(field ? { field } : {}), ...(schemaVersion !== undefined ? { schemaVersion } : {}) };
@@ -17,6 +19,10 @@ function optionalNonNegativeNumber(value: unknown): number | null | undefined {
     if (value === undefined) return undefined;
     if (value === null) return null;
     return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : undefined;
+}
+
+function isShadowVerdict(value: unknown): value is ShadowVerdict {
+    return typeof value === 'string' && (SHADOW_VERDICTS as readonly string[]).includes(value);
 }
 
 /** Parses only the backend's normalized activity contract. Schema-less records are a
@@ -68,12 +74,18 @@ export function parseNormalizedGarminActivity(
 }
 
 /** v1/v2/v3 persisted recommendations are accepted through the existing strict validator;
- * newer schemas must not silently enter the engine before an explicit migration exists. */
+ * newer schemas must not silently enter the engine before an explicit migration exists.
+ * Phase 9.0 adds one backward-compatible evidence-only field, `engineVerdict`, validated
+ * here because the historical recommendation validator intentionally owns only the v1-v3
+ * decision shape. */
 export function parseDailyRecommendation(raw: unknown, documentPath: string): DataState<DailyRecommendation> {
     if (!isObject(raw)) return invalid(documentPath, 'not-an-object');
     const schemaVersion = raw.schemaVersion;
     if (schemaVersion !== undefined && schemaVersion !== 1 && schemaVersion !== 2 && schemaVersion !== 3) {
         return invalid(documentPath, 'unsupported-schema-version', 'schemaVersion', typeof schemaVersion === 'number' ? schemaVersion : undefined);
+    }
+    if (raw.engineVerdict !== undefined && !isShadowVerdict(raw.engineVerdict)) {
+        return invalid(documentPath, 'invalid-engine-verdict', 'engineVerdict', typeof schemaVersion === 'number' ? schemaVersion : undefined);
     }
     const result = validateRecommendation(raw);
     if (!result.isValid || !result.data) {
@@ -82,5 +94,13 @@ export function parseDailyRecommendation(raw: unknown, documentPath: string): Da
             issues: result.errors.map(error => ({ code: 'schema-validation-failed', field: error.field, documentPath, ...(typeof schemaVersion === 'number' ? { schemaVersion } : {}) })),
         };
     }
-    return { status: 'AVAILABLE', data: result.data, revision: result.data.revision ? `r${result.data.revision}:${result.data.updatedAt}` : (result.data.updatedAt || null) };
+    const recommendation: RecommendationWithEngineVerdict = {
+        ...result.data,
+        ...(isShadowVerdict(raw.engineVerdict) ? { engineVerdict: raw.engineVerdict } : {}),
+    };
+    return {
+        status: 'AVAILABLE',
+        data: recommendation,
+        revision: recommendation.revision ? `r${recommendation.revision}:${recommendation.updatedAt}` : (recommendation.updatedAt || null),
+    };
 }
