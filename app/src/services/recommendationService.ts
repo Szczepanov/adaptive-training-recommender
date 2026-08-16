@@ -1,11 +1,14 @@
 import { collection, deleteField, doc, getDoc, getDocs, limit, orderBy, query, setDoc, where, writeBatch } from 'firebase/firestore';
 import { getDb } from '../firebase';
-import type { DailyRecommendation, Recommendation } from '../engine/models';
+import type { DailyRecommendation, Recommendation, ShadowVerdict } from '../engine/models';
+import { resolveEngineShadowVerdict } from '../engine/shadowAgreement';
 import { validateRecommendation, validateAdherenceUpdate } from '../engine/validation';
 import type { DataIssue, DataState } from '../engine/dataState';
 import { parseDailyRecommendation } from '../persistence/parsers/trainingHistory';
 import { isPermissionDeniedError } from '../utils/errors';
 import { deepEqual } from '../utils/deepEqual';
+
+type PersistedRecommendationWithVerdict = DailyRecommendation & { engineVerdict?: ShadowVerdict };
 
 /**
  * Persists what the engine actually prescribed each day, and captures whether the user
@@ -50,10 +53,14 @@ export class RecommendationService {
         try {
             const docRef = doc(getDb(), 'users', userId, this.collectionPath, date);
             const existingSnap = await getDoc(docRef);
-            const existing = existingSnap.exists() ? existingSnap.data() as DailyRecommendation : undefined;
+            const existing = existingSnap.exists() ? existingSnap.data() as PersistedRecommendationWithVerdict : undefined;
 
             const isNewDoc = !existing;
             priorRevision = existing ? (existing.revision ?? 1) : 1;
+            const engineVerdict = resolveEngineShadowVerdict(rec.mode, rec.externalVerdict?.decision);
+            const existingEngineVerdict = existing
+                ? (existing.engineVerdict ?? resolveEngineShadowVerdict(existing.mode))
+                : undefined;
 
             // Declared `const` (not reassigned) so TypeScript's control-flow narrowing of
             // `existing` inside `if (decisionChangedThisSave)` below still applies; the
@@ -64,6 +71,7 @@ export class RecommendationService {
                 existing.category !== rec.template.category ||
                 existing.modality !== rec.template.modality ||
                 existing.mode !== rec.mode ||
+                existingEngineVerdict !== engineVerdict ||
                 existing.rationale !== rec.rationale ||
                 // Firestore returns map fields in sorted key order, which does not match
                 // the construction order of a freshly-built prescription -- comparing via
@@ -110,7 +118,13 @@ export class RecommendationService {
                 return null;
             }
 
-            const validated = validation.data!;
+            // `engineVerdict` is evidence-only metadata added in Phase 9.0. It is kept
+            // outside validateRecommendation's historical v1-v3 shape so old documents
+            // remain backward-compatible; Firestore rules validate the optional enum.
+            // Persist the adjudicator's exact external decision when present instead of
+            // reconstructing it later from train/modify/recover (which cannot represent
+            // skip/advisory and is not equivalent on every imported-plan day).
+            const validated = { ...validation.data!, engineVerdict } as PersistedRecommendationWithVerdict;
             const writeData = !rec.prescription && existing?.prescription
                 ? { ...validated, prescription: deleteField() }
                 : validated;
@@ -127,6 +141,7 @@ export class RecommendationService {
                     mode: existing.mode,
                     rationale: existing.rationale,
                 };
+                if (existing.engineVerdict) archiveData.engineVerdict = existing.engineVerdict;
                 if (existing.prescription) archiveData.prescription = existing.prescription;
                 if (existing.recommendationAudit) archiveData.recommendationAudit = existing.recommendationAudit;
 
