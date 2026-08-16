@@ -5,8 +5,10 @@ import type {
     NormalizedGarminActivity,
     TrainingIntentProfile,
     TrainingSettings,
+    UserGoal,
     UserPreferences,
 } from './models';
+import { deriveEventPriority } from './periodization';
 import { addDaysToLocalDateString, getDayDiff } from '../utils/localDate';
 
 /** Everything the brief renders, already fetched. This module performs no I/O so the
@@ -27,6 +29,7 @@ export interface ContextBriefInput {
     trainingSettings: TrainingSettings | null;
     preferences: UserPreferences | null;
     intentProfile: TrainingIntentProfile | null;
+    goals?: readonly UserGoal[];
 }
 
 /** Trailing days the subjective window average is compared against. Matches the 28-day
@@ -201,6 +204,34 @@ function renderObjective(snapshots: readonly DailyRecoverySnapshot[], windowDays
     return lines;
 }
 
+const ACTIVITY_TYPE_LABELS: Record<string, string> = {
+    road_biking: 'Road cycling',
+    cycling: 'Cycling',
+    virtual_ride: 'Virtual cycling',
+    gravel_cycling: 'Gravel cycling',
+    mountain_biking: 'Mountain biking',
+    running: 'Running',
+    trail_running: 'Trail running',
+    treadmill_running: 'Treadmill',
+    strength_training: 'Strength',
+    cardio: 'Cardio',
+    soccer: 'Soccer',
+    swimming: 'Swimming',
+    lap_swimming: 'Swimming',
+    rowing: 'Rowing',
+    indoor_rowing: 'Indoor rowing',
+    walking: 'Walking',
+    hiking: 'Hiking',
+    yoga: 'Yoga',
+    pilates: 'Pilates',
+    mobility: 'Mobility',
+};
+
+function formatActivityType(typeKey: string): string {
+    if (ACTIVITY_TYPE_LABELS[typeKey]) return ACTIVITY_TYPE_LABELS[typeKey];
+    return typeKey.replace(/_/g, ' ');
+}
+
 function renderTraining(activities: readonly NormalizedGarminActivity[], asOfDate: string, windowDays: number): string[] {
     const lines: string[] = ['## 3. Completed training (recorded by the wearable)', ''];
     if (activities.length === 0) {
@@ -211,13 +242,29 @@ function renderTraining(activities: readonly NormalizedGarminActivity[], asOfDat
     lines.push('| Date | Type | Min | Load | Aerobic TE | Anaerobic TE | Avg HR | Intensity |');
     lines.push('|---|---|---|---|---|---|---|---|');
     for (const activity of activities) {
-        lines.push(`| ${activity.date} | ${activity.type} | ${activity.durationMin ?? '—'} | ${round(activity.activityTrainingLoad, 1)} | ${round(activity.trainingEffectAerobic, 1)} | ${round(activity.trainingEffectAnaerobic, 1)} | ${activity.averageHr ?? '—'} | ${activity.intensityTag} |`);
+        const typeLabel = formatActivityType(activity.type);
+        lines.push(`| ${activity.date} | ${typeLabel} | ${activity.durationMin ?? '—'} | ${round(activity.activityTrainingLoad, 1)} | ${round(activity.trainingEffectAerobic, 1)} | ${round(activity.trainingEffectAnaerobic, 1)} | ${activity.averageHr ?? '—'} | ${activity.intensityTag} |`);
     }
 
     const totalMinutes = activities.reduce((sum, activity) => sum + (activity.durationMin ?? 0), 0);
     const hardCount = activities.filter(activity => activity.intensityTag === 'hard').length;
     lines.push('');
     lines.push(`Totals: ${activities.length} sessions · ${totalMinutes} min · ${hardCount} tagged hard.`);
+
+    const modalityMinutes: Record<string, { sessions: number; minutes: number }> = {};
+    for (const act of activities) {
+        const label = formatActivityType(act.type);
+        if (!modalityMinutes[label]) modalityMinutes[label] = { sessions: 0, minutes: 0 };
+        modalityMinutes[label].sessions += 1;
+        modalityMinutes[label].minutes += act.durationMin ?? 0;
+    }
+    const breakdown = Object.entries(modalityMinutes)
+        .sort((a, b) => b[1].minutes - a[1].minutes)
+        .map(([sport, stat]) => `${sport}: ${stat.sessions} session${stat.sessions === 1 ? '' : 's'} (${stat.minutes} min)`)
+        .join(' · ');
+    if (breakdown) {
+        lines.push(`Discipline volume: ${breakdown}`);
+    }
 
     // Rolling 7-day buckets ending on asOfDate, rather than ISO calendar weeks: the
     // athlete re-plans on an arbitrary weekday, so "the last 7 days" is the comparison
@@ -348,7 +395,6 @@ function renderSubjective(
     lines.push(...renderSubjectiveBaseline(checkins, baselineCheckins, baselineDays, windowDays));
     lines.push('');
     lines.push('Flags:');
-
     const painDays = checkins.filter(c => c.painOrInjury).map(c => c.date);
     const illnessDays = checkins.filter(c => c.illnessSymptoms).map(c => c.date);
     const limitedDays = checkins.filter(c => c.unusuallyLimitedTime).map(c => c.date);
@@ -371,11 +417,10 @@ function renderAdherence(recommendations: readonly DailyRecommendation[]): strin
         lines.push('No recommendations recorded in this window.');
         return lines;
     }
-
-    const answered = recommendations.filter(rec => rec.adherence.respondedAt !== null);
-    const followed = answered.filter(rec => rec.adherence.followed === true);
-    const skipped = answered.filter(rec => rec.adherence.skipped);
-    const different = answered.filter(rec => rec.adherence.followed === false && !rec.adherence.skipped);
+    const answered = recommendations.filter(r => r.adherence.followed !== null || r.adherence.skipped);
+    const followed = recommendations.filter(r => r.adherence.followed === true);
+    const different = recommendations.filter(r => r.adherence.followed === false && !r.adherence.skipped);
+    const skipped = recommendations.filter(r => r.adherence.skipped);
 
     lines.push(`${recommendations.length} recommendations · ${answered.length} answered · ${recommendations.length - answered.length} unanswered.`);
     lines.push(`- Followed as prescribed: ${followed.length}`);
@@ -396,14 +441,28 @@ function renderAdherence(recommendations: readonly DailyRecommendation[]): strin
     return lines;
 }
 
-function renderIntent(profile: TrainingIntentProfile | null): string[] {
-    if (!profile) return [];
-    return [
-        '## 6. Stated training intent',
-        '',
-        `- Weekly session commitment: minimum ${profile.weeklyCommitment.minSessions}, typical ${profile.weeklyCommitment.targetSessions}, maximum ${profile.weeklyCommitment.maxSessions}`,
-        `- Priorities, in order: ${profile.priorities.join(' > ')}`,
-    ];
+function renderGoalsAndIntent(goals: readonly UserGoal[] | undefined, profile: TrainingIntentProfile | null, asOfDate: string): string[] {
+    const activeGoals = (goals ?? []).filter(g => g.status === 'active');
+    if (activeGoals.length === 0 && !profile) return [];
+    const lines: string[] = ['## 6. Goals & training intent', ''];
+    if (activeGoals.length > 0) {
+        lines.push('Target events & goals:');
+        for (const goal of activeGoals) {
+            const priorityTag = `Priority ${deriveEventPriority(goal.priority)}`;
+            const daysAway = goal.targetDate ? getDayDiff(goal.targetDate, asOfDate) : null;
+            const countdown = daysAway !== null ? `${daysAway} days away (${goal.targetDate})` : 'Open-ended';
+            const category = goal.category ? `Phase: ${goal.category}` : '';
+            const eventType = goal.eventCategory ? `Type: ${goal.eventCategory.replace(/_/g, ' ')}` : '';
+            const details = [priorityTag, countdown, eventType, category].filter(Boolean).join(' · ');
+            lines.push(`- **${goal.title}**: ${details}`);
+        }
+        if (profile) lines.push('');
+    }
+    if (profile) {
+        lines.push(`- Weekly session commitment: minimum ${profile.weeklyCommitment.minSessions}, typical ${profile.weeklyCommitment.targetSessions}, maximum ${profile.weeklyCommitment.maxSessions}`);
+        lines.push(`- Priorities, in order: ${profile.priorities.join(' > ')}`);
+    }
+    return lines;
 }
 
 /**
@@ -443,7 +502,7 @@ export function buildContextBrief(input: ContextBriefInput): string {
         renderTraining(activities, asOfDate, windowDays),
         renderSubjective(checkins, baselineCheckins, windowDays, baselineDays),
         renderAdherence(recommendations),
-        renderIntent(input.intentProfile),
+        renderGoalsAndIntent(input.goals, input.intentProfile, asOfDate),
         [
             '## Requested output',
             '',
@@ -452,6 +511,17 @@ export function buildContextBrief(input: ContextBriefInput): string {
             '',
             'Note that daily execution is adjusted separately against that morning\'s readiness, so',
             'plan the intended block rather than pre-emptively reducing it for anticipated fatigue.',
+            '',
+            '### Preferred output schema (compatible with 1-click plan import):',
+            'Output the recommended schedule as a series of day blocks formatted exactly as follows:',
+            '```markdown',
+            '### Day YYYY-MM-DD: <Session Name>',
+            '- Modality: <Cycling | Running | Strength | Mobility | Field | Cross Training>',
+            '- Duration: <minutes> min',
+            '- Intensity: <easy | moderate | hard>',
+            '- Objectives: <zone2 aerobic | threshold quality | surge repeatability | vo2 max | strength maintenance | strength development | race specific endurance> (or omit if recovery)',
+            '- Description: <Interval structure, target power/HR zones, or workout instructions>',
+            '```',
         ],
     ];
 

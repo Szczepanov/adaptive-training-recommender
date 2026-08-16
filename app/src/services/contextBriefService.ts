@@ -10,6 +10,7 @@ import { parseSubjectiveCheckin } from '../persistence/parsers/decisionInputs';
 import { addDaysToLocalDateString, getLocalDateString } from '../utils/localDate';
 import { activityService } from './activityService';
 import { checkinService } from './checkinService';
+import { goalService } from './goalService';
 import { preferencesService } from './preferencesService';
 import { recommendationService } from './recommendationService';
 import { recoverySnapshotService } from './recoverySnapshotService';
@@ -47,7 +48,7 @@ export class ContextBriefService {
             (_, offset) => addDaysToLocalDateString(startDate, offset),
         );
 
-        const [snapshotResults, checkinResult, activityResult, recommendationResult, settingsResult, preferencesResult, intentResult] =
+        const [snapshotResults, checkinResult, activityResult, recommendationResult, settingsResult, preferencesResult, intentResult, goalsResult] =
             await Promise.allSettled([
                 // getRecoverySnapshotByDate collapses UNAVAILABLE and MISSING to null, so a
                 // read outage would be indistinguishable from "no data that day" and the
@@ -65,6 +66,7 @@ export class ContextBriefService {
                 trainingSettingsService.peekTrainingSettingsState(userId),
                 preferencesService.getPreferencesState(userId),
                 trainingIntentProfileService.getProfileState(userId),
+                goalService.getActiveGoalsState(userId),
             ] as const);
 
         const snapshots: DailyRecoverySnapshot[] = [];
@@ -142,6 +144,10 @@ export class ContextBriefService {
             unavailableSources.push('training intent profile');
         }
 
+        const goals = goalsResult.status === 'fulfilled' && goalsResult.value.status === 'AVAILABLE'
+            ? goalsResult.value.data
+            : [];
+
         const input: ContextBriefInput = {
             asOfDate: targetDate,
             windowDays,
@@ -153,6 +159,7 @@ export class ContextBriefService {
             trainingSettings,
             preferences,
             intentProfile,
+            goals,
         };
 
         return {

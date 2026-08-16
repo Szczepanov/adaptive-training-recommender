@@ -328,6 +328,47 @@ describe('buildContextBrief', () => {
         expect(text).toContain('2026-08-12: prescribed Threshold intervals (train), did Running for 30 min');
     });
 
+    it('formats activity names cleanly and reports discipline volume breakdown', () => {
+        const text = buildContextBrief(input({
+            activities: [
+                activity('2026-08-14', { type: 'road_biking', durationMin: 90, intensityTag: 'hard' }),
+                activity('2026-08-12', { type: 'strength_training', durationMin: 45, intensityTag: 'easy' }),
+            ],
+        }));
+        expect(text).toContain('| Road cycling |');
+        expect(text).toContain('| Strength |');
+        expect(text).toContain('Discipline volume: Road cycling: 1 session (90 min) · Strength: 1 session (45 min)');
+    });
+
+    it('renders active target events with countdowns and priority', () => {
+        const text = buildContextBrief(input({
+            goals: [
+                {
+                    userId: 'u1',
+                    title: '13 September Road Race',
+                    targetDate: '2026-09-13',
+                    domain: 'endurance',
+                    category: 'short-term',
+                    priority: 5,
+                    status: 'active',
+                    eventCategory: 'cycling_event',
+                    schemaVersion: 1,
+                    createdAt: '2026-08-01T00:00:00Z',
+                    updatedAt: '2026-08-01T00:00:00Z',
+                },
+            ],
+        }));
+        expect(text).toContain('Target events & goals:');
+        expect(text).toContain('**13 September Road Race**: Priority A · 29 days away (2026-09-13) · Type: cycling event · Phase: short-term');
+    });
+
+    it('includes import-compatible markdown schema in requested output', () => {
+        const text = buildContextBrief(input());
+        expect(text).toContain('### Preferred output schema (compatible with 1-click plan import):');
+        expect(text).toContain('### Day YYYY-MM-DD: <Session Name>');
+        expect(text).toContain('- Modality: <Cycling | Running | Strength | Mobility | Field | Cross Training>');
+    });
+
     it('says a section is empty rather than omitting it', () => {
         const text = buildContextBrief(input());
         expect(text).toContain('No wearable data in this window.');
