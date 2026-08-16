@@ -75,6 +75,11 @@ describe('externalEventAsFixedActivity', () => {
         expect(fixed).toMatchObject({
             id: 'external-event:race-block:2:s1', userId: 'u1', date: '2026-08-23',
             durationMin: 60, fixed: true, environment: 'outdoor', isCompleted: false,
+            externalAuthoredIdentity: {
+                modality: 'Cycling',
+                category: 'Hard Endurance',
+                stimulusConfidence: 'inferred',
+            },
         });
         expect(fixed?.expectedCost?.systemic).toBeGreaterThan(0);
         expect(fixed?.expectedStimulus?.thresholdPower).toBeGreaterThan(0);
