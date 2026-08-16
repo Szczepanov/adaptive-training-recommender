@@ -13,7 +13,7 @@ import { externalPlanService, type ExternalPlanService } from './externalPlanSer
 export interface ActiveExternalPlan {
     header: ExternalPlanHeader;
     plan: ExternalTrainingPlan;
-    /** Null when the athlete has never rescheduled anything in this plan. */
+    /** Null when the athlete has never rescheduled anything in this revision. */
     placement: ExternalPlanPlacement | null;
     /** Every session resolved to a date, overlay applied. */
     placed: readonly PlacedSession[];
@@ -55,6 +55,11 @@ export function externalPlanContextForDate(active: ActiveExternalPlan, date: str
  * and the disagreement would surface as a session silently vanishing from the athlete's
  * day. When two plans overlap a date the most recently imported one wins, which is the
  * only ordering an athlete who just pasted a new block would expect.
+ *
+ * `supersededFrom` is also an effective-from boundary, not documentation: a newly imported
+ * revision must never be used to recompute a date before the athlete said it takes effect.
+ * Historical days already have persisted recommendations/audits, so before that boundary
+ * this resolver fails closed instead of rewriting history with newer bytes.
  */
 export class ActiveExternalPlanService {
     private readonly plans: ExternalPlanService;
@@ -79,6 +84,7 @@ export class ActiveExternalPlanService {
         const covering = headerStates
             .flatMap(state => (state.status === 'AVAILABLE' ? [state.data] : []))
             .filter(header => header.startDate <= date && date <= planEndDate(header))
+            .filter(header => header.supersededFrom === null || date >= header.supersededFrom)
             .sort((left, right) => right.importedAt.localeCompare(left.importedAt)
                 || right.planId.localeCompare(left.planId));
         if (covering.length === 0) return { status: 'MISSING' };
@@ -88,21 +94,15 @@ export class ActiveExternalPlanService {
         if (revision.status !== 'AVAILABLE') return revision;
 
         const placementState = await this.plans.getPlacementState(userId, header.planId);
-        // An INVALID or unreadable overlay is not "no overlay": ignoring it would resolve
-        // every session back to the date the plan implies, quietly undoing reschedules the
-        // athlete already confirmed.
+        // An INVALID or unreadable overlay is not "no overlay": ignoring malformed current
+        // placement could undo reschedules the athlete already confirmed.
         if (placementState.status === 'INVALID' || placementState.status === 'UNAVAILABLE') return placementState;
-        const placement = placementState.status === 'AVAILABLE' ? placementState.data : null;
-        if (placement && placement.revision !== header.revision) {
-            return {
-                status: 'INVALID',
-                issues: [{
-                    code: 'placement-revision-mismatch',
-                    field: 'revision',
-                    documentPath: `users/${userId}/external_plans/${header.planId}/placement/current`,
-                }],
-            };
-        }
+        // A valid overlay belonging to an older immutable revision is different: it is
+        // stale metadata, not a corrupt current overlay. Never apply it to newer plan bytes,
+        // but do not brick a fresh re-import either — the new revision starts unmodified.
+        const placement = placementState.status === 'AVAILABLE' && placementState.data.revision === header.revision
+            ? placementState.data
+            : null;
 
         return {
             status: 'AVAILABLE',
