@@ -48,10 +48,15 @@ const decisionAffectingFiles = [
   // profile derivation is included because the cost it produces feeds the ceilings.
   'app/src/engine/externalSession.ts',
   'app/src/engine/externalSessionProfiles.ts',
+  // ADR-0020: once subjective drift is enabled, the baseline estimator is part of the
+  // deciding function even though it lives outside rules.ts. Keep it guarded now so a
+  // later estimator change cannot silently retain an old live policy identity.
+  'app/src/engine/subjectiveBaseline.ts',
 ];
 
 const policyFile = 'app/src/engine/policy.ts';
 const rulesFile = 'app/src/engine/rules.ts';
+const subjectiveBaselineFile = 'app/src/engine/subjectiveBaseline.ts';
 const adr20File = 'docs/adr/0020-subjective-baselines-in-readiness-mode.md';
 const repoRoot = git(['rev-parse', '--show-toplevel']).trim();
 
@@ -82,17 +87,20 @@ const policyVersionChanged = basePolicyVersion !== currentPolicyVersion;
 /**
  * ADR-0020 explicitly requires a default-off implementation to keep the existing policy
  * identity because it cannot affect a persisted recommendation. This exception is narrow
- * and mechanical: only rules.ts may be the changed production source file, the evaluator
- * must still default the selector to 'off', and ADR-0020 must remain Accepted with its
- * no-bump rule. Any production call-site change therefore falls back to the normal version
- * bump requirement.
+ * and mechanical: changed decision files must be limited to the subjective-drift rules /
+ * baseline implementation, no other production source may change, the evaluator must still
+ * default the selector to 'off', and ADR-0020 must remain Accepted with its no-bump rule.
+ * Any production call-site change therefore falls back to the normal version-bump rule.
  */
 function isAcceptedDormantSubjectiveDriftChange() {
-  if (changedDecisionFiles.length !== 1 || changedDecisionFiles[0] !== rulesFile) return false;
+  const dormantDecisionFiles = new Set([rulesFile, subjectiveBaselineFile]);
+  if (changedDecisionFiles.length === 0 || !changedDecisionFiles.every((file) => dormantDecisionFiles.has(file))) {
+    return false;
+  }
 
   const changedProductionSources = changedFiles.filter((file) =>
     file.startsWith('app/src/')
-    && file !== rulesFile
+    && !dormantDecisionFiles.has(file)
     && !file.endsWith('.test.ts')
     && !file.includes('/simulation/')
   );
