@@ -1,4 +1,4 @@
-import { doc, getDoc, setDoc, deleteDoc, deleteField, collection, query, where, orderBy, getDocs } from 'firebase/firestore';
+import { doc, getDoc, setDoc, deleteField, collection, query, where, orderBy, getDocs } from 'firebase/firestore';
 import { getDb } from '../firebase';
 import type { DecisionJournalEntry, ShadowVerdict } from '../engine/models';
 import type { DataState } from '../engine/dataState';
@@ -19,6 +19,9 @@ export interface DecisionJournalRangeResult {
  * verdict -- never a second input to it. `engine/externalArchitecture.test.ts` enforces
  * that no module reachable from `rules.ts`, `optimizer.ts`, `planner.ts` or
  * `trainingIntent.ts` can import this file.
+ *
+ * Journal evidence is append-only at the day level: the morning observation cannot be
+ * edited or deleted after creation, and only the evening actual outcome may be updated.
  */
 export class DecisionJournalService {
     private readonly collectionPath = 'decision_journal';
@@ -124,11 +127,6 @@ export class DecisionJournalService {
         const docRef = doc(getDb(), 'users', userId, this.collectionPath, date);
         await setDoc(docRef, payload, { merge: true });
         return validated;
-    }
-
-    async deleteEntry(userId: string, date: string): Promise<void> {
-        const docRef = doc(getDb(), 'users', userId, this.collectionPath, date);
-        await deleteDoc(docRef);
     }
 
     /** Used by the 9.0.5 export. Invalid or foreign-owned records never become neutral
