@@ -76,9 +76,9 @@ describe('external plan path identity', () => {
     });
 });
 
-describe('active external placement revision integrity', () => {
-    it('does not apply a stale overlay to a newer immutable revision', async () => {
-        const stale = placement({ revision: 1 });
+describe('active external revision integrity', () => {
+    it('never applies a stale placement overlay to newer immutable revision bytes', async () => {
+        const stale = placement({ revision: 1, assignments: [{ sessionId: 'threshold', date: '2026-08-20', status: 'moved' }] });
         const currentHeader = header({ revision: 2 });
         const currentPlan = plan({ revision: 2 });
         const plans = {
@@ -89,8 +89,26 @@ describe('active external placement revision integrity', () => {
         } as unknown as ExternalPlanService;
 
         const state = await new ActiveExternalPlanService(plans).getActivePlanState('u1', '2026-08-18');
-        expect(state.status).toBe('INVALID');
-        if (state.status !== 'INVALID') throw new Error('unreachable');
-        expect(state.issues[0]).toMatchObject({ code: 'placement-revision-mismatch', field: 'revision' });
+        expect(state.status).toBe('AVAILABLE');
+        if (state.status !== 'AVAILABLE') throw new Error('unreachable');
+        expect(state.data.placement).toBeNull();
+        expect(state.data.placed.find(item => item.session.id === 'threshold')?.date).toBe('2026-08-18');
+    });
+
+    it('does not activate a newly imported revision before its supersededFrom boundary', async () => {
+        const futureHeader = header({ revision: 2, supersededFrom: '2026-08-20' });
+        const plans = {
+            listPlanIds: vi.fn(async () => ({ status: 'AVAILABLE', data: ['autumn-block'], revision: null } as DataState<string[]>)),
+            getHeaderState: vi.fn(async () => ({ status: 'AVAILABLE', data: futureHeader, revision: futureHeader.contentHash } as DataState<ExternalPlanHeader>)),
+            getRevisionState: vi.fn(async () => ({ status: 'AVAILABLE', data: plan({ revision: 2 }), revision: '2' } as DataState<ExternalTrainingPlan>)),
+            getPlacementState: vi.fn(async () => ({ status: 'MISSING' } as DataState<ExternalPlanPlacement>)),
+        } as unknown as ExternalPlanService;
+
+        const before = await new ActiveExternalPlanService(plans).getActivePlanState('u1', '2026-08-18');
+        expect(before.status).toBe('MISSING');
+        expect(plans.getRevisionState).not.toHaveBeenCalled();
+
+        const onBoundary = await new ActiveExternalPlanService(plans).getActivePlanState('u1', '2026-08-20');
+        expect(onBoundary.status).toBe('AVAILABLE');
     });
 });
