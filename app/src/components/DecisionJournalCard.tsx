@@ -9,9 +9,9 @@ interface DecisionJournalCardProps {
   /** The engine's own verdict for today, derived from the live recommendation. Null while
    *  none has been computed yet (loading, or no recovery data synced). */
   engineVerdict: ShadowVerdict | null;
-  /** Whether the athlete has already seen today's recommendation on this page load --
-   *  Home's reveal gate, read at submit time to lock `sawEngineVerdictFirst` from observed
-   *  interaction. Never asked as a self-report (Phase 9.0.3). */
+  /** Whether the athlete has already seen today's recommendation in the current Home
+   *  instance. The card additionally remembers that observed reveal across same-day
+   *  reloads so a refresh cannot manufacture a "blind" sample. */
   engineRevealed: boolean;
   /** Reports the loaded/updated entry so Home can also treat "an entry already exists" as
    *  reveal-equivalent -- a returning athlete who recorded blind earlier today shouldn't be
@@ -26,6 +26,33 @@ const VERDICT_LABELS: Record<ShadowVerdict, string> = {
   skip: 'Skip it',
   advisory: 'Your call',
 };
+
+const REVEAL_MARKER_PREFIX = 'adaptive-training:decision-journal:engine-revealed';
+
+function revealMarkerKey(userId: string, date: string): string {
+  return `${REVEAL_MARKER_PREFIX}:${userId}:${date}`;
+}
+
+function hasPersistedReveal(userId: string, date: string): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    return window.localStorage.getItem(revealMarkerKey(userId, date)) === '1';
+  } catch {
+    // Storage can be disabled. The current-page observed flag still works; failure to
+    // persist must never block the journal itself.
+    return false;
+  }
+}
+
+function persistReveal(userId: string, date: string): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(revealMarkerKey(userId, date), '1');
+  } catch {
+    // Evidence capture remains usable when browser storage is unavailable. The row can
+    // still be anchored correctly for the current page instance through engineRevealed.
+  }
+}
 
 /**
  * Phase 9.0.3: records today's shadow-mode entry -- what the athlete's own (non-app)
@@ -48,6 +75,10 @@ export const DecisionJournalCard = memo(function DecisionJournalCard({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [readBlocked, setReadBlocked] = useState(false);
+
+  useEffect(() => {
+    if (engineRevealed) persistReveal(userId, date);
+  }, [userId, date, engineRevealed]);
 
   useEffect(() => {
     let cancelled = false;
@@ -93,10 +124,14 @@ export const DecisionJournalCard = memo(function DecisionJournalCard({
     setSubmitting(true);
     setError(null);
     try {
+      // Re-read the marker at the moment of submission rather than relying only on React
+      // state. A same-day reload/navigation may have happened between the original reveal
+      // and this form; once observed, anchoring can only move from false -> true.
+      const sawEngineVerdictFirst = engineRevealed || hasPersistedReveal(userId, date);
       const saved = await decisionJournalService.recordMorningEntry(userId, date, {
         externalVerdict,
         externalNote: externalNote.trim() || undefined,
-        sawEngineVerdictFirst: engineRevealed,
+        sawEngineVerdictFirst,
       });
       setEntry(saved);
       onEntryChange(saved);
@@ -132,8 +167,10 @@ export const DecisionJournalCard = memo(function DecisionJournalCard({
     );
   }
 
-  // Whichever order the athlete chooses, this reflects it -- it is never asked.
-  const engineVerdictVisible = engineRevealed || !!entry;
+  // Whichever order the athlete chooses, this reflects it -- it is never asked. A prior
+  // same-day reveal remains a reveal even after navigation/reload.
+  const engineWasSeen = engineRevealed || hasPersistedReveal(userId, date);
+  const engineVerdictVisible = engineWasSeen || !!entry;
 
   return (
     <div className="dashboard-card decision-journal-card">
