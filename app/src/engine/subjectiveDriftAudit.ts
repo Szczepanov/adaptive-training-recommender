@@ -12,14 +12,21 @@ export interface SubjectiveDriftAudit {
     decisionRelevant: boolean;
 }
 
+/** Persisted RecommendationAudit is declared in the central models module. Augment it here
+ * rather than making foundational models import this audit helper; this file is already
+ * part of provenance/replay, and the optional field preserves the legacy v3 shape when
+ * subjective drift is absent. */
+declare module './models' {
+    interface RecommendationAudit {
+        subjectiveDrift?: SubjectiveDriftAudit;
+    }
+}
+
 /** Measurement code may carry additional counterfactual fields, but persistence strips
- * them by projecting onto SubjectiveDriftAudit. Keeping this structural type here lets
- * provenance remain independent of simulation modules. */
+ * them by projecting onto SubjectiveDriftAudit. */
 export type SubjectiveDriftAuditSource = SubjectiveDriftAudit & Record<string, unknown>;
 
-export function compactSubjectiveDriftAudit(
-    evidence: SubjectiveDriftAuditSource | null,
-): SubjectiveDriftAudit | null {
+export function compactSubjectiveDriftAudit(evidence: SubjectiveDriftAuditSource | null): SubjectiveDriftAudit | null {
     if (!evidence) return null;
     return {
         estimatorId: evidence.estimatorId,
@@ -32,39 +39,24 @@ export function compactSubjectiveDriftAudit(
     };
 }
 
-/**
- * Replay-side structural verification for normalized drift provenance. This deliberately
- * does not reconstruct an estimator from raw health data, because those data are
- * intentionally absent from the recommendation audit. Reproducible invariants are the
- * exclusive decision-date boundary, coverage sanity, canonical metric set,
- * finite/non-negative values, and component-total reconciliation.
- */
-export function subjectiveDriftAuditReplayErrors(
-    audit: unknown,
-    decisionDate: string,
-): string[] {
+/** Replay-side structural verification for normalized drift provenance. Raw health history
+ * is intentionally absent, so reproducible invariants are date boundary, coverage sanity,
+ * canonical metric set, finite/non-negative values, and arithmetic reconciliation. */
+export function subjectiveDriftAuditReplayErrors(audit: unknown, decisionDate: string): string[] {
     if (audit === undefined || audit === null) return [];
     if (typeof audit !== 'object' || Array.isArray(audit)) return ['Subjective drift audit is not an object.'];
 
     const errors: string[] = [];
     const record = audit as Record<string, unknown>;
-    if (typeof record.estimatorId !== 'string' || record.estimatorId.trim() === '') {
-        errors.push('Subjective drift audit estimatorId is invalid.');
-    }
-    if (record.historyThroughDateExclusive !== decisionDate) {
-        errors.push(`Subjective drift audit history boundary ${String(record.historyThroughDateExclusive)} does not equal decision date ${decisionDate}.`);
-    }
+    if (typeof record.estimatorId !== 'string' || record.estimatorId.trim() === '') errors.push('Subjective drift audit estimatorId is invalid.');
+    if (record.historyThroughDateExclusive !== decisionDate) errors.push(`Subjective drift audit history boundary ${String(record.historyThroughDateExclusive)} does not equal decision date ${decisionDate}.`);
     const recent = record.recentRecordedDays;
     const long = record.longRecordedDays;
     if (!Number.isInteger(recent) || (recent as number) < 0) errors.push('Subjective drift recent coverage is invalid.');
     if (!Number.isInteger(long) || (long as number) < 0) errors.push('Subjective drift long coverage is invalid.');
-    if (Number.isInteger(recent) && Number.isInteger(long) && (recent as number) > (long as number)) {
-        errors.push('Subjective drift recent coverage exceeds long coverage.');
-    }
+    if (Number.isInteger(recent) && Number.isInteger(long) && (recent as number) > (long as number)) errors.push('Subjective drift recent coverage exceeds long coverage.');
     if (typeof record.decisionRelevant !== 'boolean') errors.push('Subjective drift decisionRelevant is invalid.');
-    if (typeof record.contribution !== 'number' || !Number.isFinite(record.contribution) || record.contribution < 0) {
-        errors.push('Subjective drift total contribution is invalid.');
-    }
+    if (typeof record.contribution !== 'number' || !Number.isFinite(record.contribution) || record.contribution < 0) errors.push('Subjective drift total contribution is invalid.');
 
     const perMetric = record.perMetricContributions;
     if (!perMetric || typeof perMetric !== 'object' || Array.isArray(perMetric)) {
@@ -82,14 +74,10 @@ export function subjectiveDriftAuditReplayErrors(
     let sum = 0;
     for (const metric of SUBJECTIVE_BASELINE_METRICS) {
         const value = metricRecord[metric];
-        if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
-            errors.push(`Subjective drift contribution for ${metric} is invalid.`);
-        } else {
-            sum += value;
-        }
+        if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) errors.push(`Subjective drift contribution for ${metric} is invalid.`);
+        else sum += value;
     }
-    if (typeof record.contribution === 'number' && Number.isFinite(record.contribution)
-        && Math.abs(sum - record.contribution) > 1e-6) {
+    if (typeof record.contribution === 'number' && Number.isFinite(record.contribution) && Math.abs(sum - record.contribution) > 1e-6) {
         errors.push(`Subjective drift component sum ${sum} does not reconcile to total ${record.contribution}.`);
     }
     return errors;
