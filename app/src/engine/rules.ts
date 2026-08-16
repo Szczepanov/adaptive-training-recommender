@@ -386,8 +386,6 @@ function adjudicatedExternalRecommendation(
         plannedDose: intent.plannedDose,
         ...(verdict.executionDose ? { executionDose: verdict.executionDose } : {}),
         rationale: verdict.rationale,
-        // An excluded imported session is a recovery day in engine terms, so downstream
-        // load accounting does not credit training that was not prescribed.
         mode: actionable ? envelopeState.mode : 'recover',
         envelopes: envelopeState.envelopes,
         telemetry: envelopeState.telemetry,
@@ -395,7 +393,6 @@ function adjudicatedExternalRecommendation(
         externalVerdict: verdict,
         decisionTrace: {
             policyVersion: POLICY_VERSION,
-            // Nothing was ranked: the plan's author selected, this engine adjudicated.
             candidateScores: [],
             droppedContributorObjectives: intent.droppedContributorObjectives,
             externalPlan: { planId, revision, sessionId: session.id, contentHash },
@@ -417,7 +414,6 @@ export async function evaluateTrainingWithIntent(
     trainingIntentProfile: TrainingIntentProfile | null = null,
     preferences: UserPreferences | null = null,
     fatigueFusionPolicy: FatigueFusionPolicy = 'max',
-    /** Present only in `externally_planned` mode with a session placed on `date`. */
     externalPlan: ExternalPlanContext | null = null,
 ): Promise<Recommendation> {
     const envelopeState = evaluateReadinessAndSafetyEnvelope(readiness, context, date, previousMode);
@@ -430,11 +426,6 @@ export async function evaluateTrainingWithIntent(
         provenance: { planId: string; revision: number; sessionId: string; contentHash: string };
     } | null = null;
 
-    // ADR-0019 D-EXT/D-EVENT. An ordinary imported session owns selection and is
-    // adjudicated directly. An event is different: it is a commitment, not a prescribed
-    // session. Adjudicate it for advice, then reconcile its authored duration/load onto the
-    // existing FixedActivity contract and let the normal engine decide whether anything
-    // additional belongs on the day.
     if (externalPlan && intent.planningContext.externalFallback) {
         if (!externalPlan.session.isEvent) {
             return adjudicatedExternalRecommendation(externalPlan, readiness, context, envelopeState, intent, date, fixedActivities);
@@ -796,6 +787,69 @@ function fixedActivityProjection(activity: FixedActivity): CompletedExposure | n
     };
 }
 
+/**
+ * `evaluateTrainingWithIntent` may synthesize an in-memory FixedActivity for an imported
+ * target event. That object deliberately is not persisted and therefore is not in the
+ * caller's `fixedActivities` array when Home asks for tomorrow's forecast. The decision
+ * trace already records the aggregate fixed-activity profiles that today's ranking saw.
+ * Project only the positive delta between that trace and the caller-owned activities, so
+ * the event load survives into tomorrow without double-counting ordinary commitments.
+ */
+function unrepresentedFixedActivityProjection(
+    date: string,
+    rec: Recommendation,
+    fixedActivities: FixedActivity[],
+): CompletedExposure | null {
+    const trace = rec.decisionTrace?.calibration?.fixedActivity;
+    if (!trace) return null;
+    const represented = fixedActivities.filter(activity => activity.date === date && !activity.isCompleted);
+    if (trace.count <= represented.length) return null;
+
+    const representedCost = represented.reduce<WorkoutCostProfile>((sum, activity) => ({
+        systemic: sum.systemic + (activity.expectedCost?.systemic ?? 0),
+        cardiovascular: sum.cardiovascular + (activity.expectedCost?.cardiovascular ?? 0),
+        lowerBody: sum.lowerBody + (activity.expectedCost?.lowerBody ?? 0),
+        upperBody: sum.upperBody + (activity.expectedCost?.upperBody ?? 0),
+        impactTissue: sum.impactTissue + (activity.expectedCost?.impactTissue ?? 0),
+        neuromuscular: sum.neuromuscular + (activity.expectedCost?.neuromuscular ?? 0),
+    }), ZERO_COST);
+    const representedStimulus = represented.reduce<WorkoutStimulusProfile>((sum, activity) => ({
+        aerobicEndurance: sum.aerobicEndurance + (activity.expectedStimulus?.aerobicEndurance ?? 0),
+        thresholdPower: sum.thresholdPower + (activity.expectedStimulus?.thresholdPower ?? 0),
+        vo2MaxPower: sum.vo2MaxPower + (activity.expectedStimulus?.vo2MaxPower ?? 0),
+        repeatedSurges: sum.repeatedSurges + (activity.expectedStimulus?.repeatedSurges ?? 0),
+        sprintPower: sum.sprintPower + (activity.expectedStimulus?.sprintPower ?? 0),
+        fatigueResistance: sum.fatigueResistance + (activity.expectedStimulus?.fatigueResistance ?? 0),
+        maxStrength: sum.maxStrength + (activity.expectedStimulus?.maxStrength ?? 0),
+        hypertrophy: sum.hypertrophy + (activity.expectedStimulus?.hypertrophy ?? 0),
+    }), ZERO_STIMULUS);
+
+    const costProfile = Object.fromEntries(
+        (Object.keys(ZERO_COST) as (keyof WorkoutCostProfile)[])
+            .map(key => [key, Math.max(0, trace.cost[key] - representedCost[key])]),
+    ) as unknown as WorkoutCostProfile;
+    const stimulusProfile = Object.fromEntries(
+        (Object.keys(ZERO_STIMULUS) as (keyof WorkoutStimulusProfile)[])
+            .map(key => [key, Math.max(0, trace.stimulus[key] - representedStimulus[key])]),
+    ) as unknown as WorkoutStimulusProfile;
+    const hasCost = Object.values(costProfile).some(value => value > 0);
+    const hasStimulus = Object.values(stimulusProfile).some(value => value > 0);
+    if (!hasCost && !hasStimulus) return null;
+
+    return {
+        occurrenceKey: `decision-only-fixed:${date}`,
+        date,
+        costProfile,
+        ...(hasStimulus ? { stimulusProfile, stimulusConfidence: 'inferred' as const } : {}),
+        trainingRecordLike: {
+            type: rec.externalPrescription?.isEvent ? rec.externalPrescription.title : 'Decision-only fixed commitment',
+            duration_min: 0,
+            training_effect: 0,
+            intensity_tag: '',
+        },
+    };
+}
+
 async function projectedProviderForTomorrow(
     userId: string,
     tomorrowDate: string,
@@ -813,6 +867,7 @@ async function projectedProviderForTomorrow(
         const baseProvider = historyProvider ?? (await import('./firestoreTrainingHistory')).firestoreTrainingHistoryProvider;
         prior = await baseProvider.reconstruct(userId, tomorrowDate, 7);
     }
+    const unrepresentedFixed = unrepresentedFixedActivityProjection(todayDate, todayRec, fixedActivities);
     const projected = [
         ...prior.filter(exposure => exposure.date >= windowStart && exposure.date < tomorrowDate),
         recommendationProjection(todayDate, todayRec),
@@ -820,6 +875,7 @@ async function projectedProviderForTomorrow(
             const exposure = fixedActivityProjection(activity);
             return exposure ? [exposure] : [];
         }),
+        ...(unrepresentedFixed ? [unrepresentedFixed] : []),
     ].sort((a, b) => a.date.localeCompare(b.date));
 
     return {
