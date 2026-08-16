@@ -120,6 +120,7 @@ app/src/engine/
   externalPlanHash.ts  # Canonical SHA-256 of a stored revision; the replay anchor (D-IMMUT)
   sequenceSearch.ts    # Phase 5.1 beam-search prototype -- measured, NOT in any live path
   shadowAgreement.ts   # Phase 9.0: pure engine-vs-athlete verdict classifier (evidence only)
+  shadowLog.ts         # Phase 9.0: pure day-row joiner + CSV renderer for the export (evidence only)
   simulation/          # Scenario harness: runAllScenarios, decision-quality metrics
 ```
 

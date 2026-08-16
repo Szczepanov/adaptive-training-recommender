@@ -9,11 +9,13 @@ import { buildRecommendationAudit } from '../engine/provenance';
 import { evaluatePeriodizationPhase, getDaysToEvent } from '../engine/periodization';
 import { resolvePlanningContext } from '../engine/planningMode';
 import { resolveExecutionDose } from '../engine/dose';
-import type { AuthoredPlanBlock, DailyDecisionInput, Recommendation, NextDayPotentialPlan, DailyRecommendation, ExternalPlacementAssignment, ExternalPlanPlacement, FixedActivity } from '../engine/models';
+import type { AuthoredPlanBlock, DailyDecisionInput, Recommendation, NextDayPotentialPlan, DailyRecommendation, DecisionJournalEntry, ExternalPlacementAssignment, ExternalPlanPlacement, FixedActivity } from '../engine/models';
 import type { DataState } from '../engine/dataState';
 import { recommendationService } from '../services/recommendationService';
 import { fixedActivityService } from '../services/fixedActivityService';
 import { planBlockService } from '../services/planBlockService';
+import { decisionJournalService } from '../services/decisionJournalService';
+import { deriveEngineVerdictFromMode } from '../engine/shadowLog';
 import { getPreviousLocalDateString, addDaysToLocalDateString } from '../utils/localDate';
 import { getPrescriptionLegend, resolveWorkoutPrescription } from '../workouts';
 import type { WorkoutPrescription } from '../workouts';
@@ -29,7 +31,8 @@ import {
 import { externalPlanService } from '../services/externalPlanService';
 import { ExternalVerdictBanner } from './ExternalVerdictBanner';
 import { ExternalPlanWeek } from './ExternalPlanWeek';
-import { AdherencePrompt } from './AdherencePrompt';
+import { AdherencePrompt, type AdherenceAnswer } from './AdherencePrompt';
+import { DecisionJournalCard } from './DecisionJournalCard';
 import { MinimumSafetyCheckin } from './MinimumSafetyCheckin';
 import { WeekAheadStrip } from './WeekAheadStrip';
 import {
@@ -135,6 +138,12 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
   const [error, setError] = useState<string | null>(null);
   const [showWorkoutDetails, setShowWorkoutDetails] = useState(false);
   const [pendingAdherence, setPendingAdherence] = useState<{ date: string; recommendation: DailyRecommendation } | null>(null);
+  // Phase 9.0.3: today's recommendation content stays hidden until the athlete explicitly
+  // reveals it or a decision journal entry already exists for today (a returning athlete
+  // who already recorded blind shouldn't be re-hidden). This is the reveal gate
+  // sawEngineVerdictFirst is observed from, not self-reported.
+  const [recommendationRevealed, setRecommendationRevealed] = useState(false);
+  const [todaysJournalEntry, setTodaysJournalEntry] = useState<DecisionJournalEntry | null>(null);
   const [historySnapshot, setHistorySnapshot] = useState<TrainingHistorySnapshot | null>(null);
   const [activeExternalPlan, setActiveExternalPlan] = useState<ActiveExternalPlan | null>(null);
   const [externalWeekCritique, setExternalWeekCritique] = useState<ExternalWeekCritique | null>(null);
@@ -142,10 +151,38 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
    * proposal cannot compute a different placement than the one on screen. */
   const [planWeekFixedActivities, setPlanWeekFixedActivities] = useState<FixedActivity[]>([]);
   const [placementError, setPlacementError] = useState<string | null>(null);
+  // Read inside handlePendingAdherenceResolved instead of depending on pendingAdherence
+  // directly, so that callback's identity stays stable across renders (see the Bolt
+  // Performance Optimization note below) while still seeing the value current at the
+  // moment the athlete actually answers.
+  const pendingAdherenceRef = useRef(pendingAdherence);
+  useEffect(() => { pendingAdherenceRef.current = pendingAdherence; }, [pendingAdherence]);
+
   // ⚡ Bolt Performance Optimization:
   // Memoized callback to prevent passing new function references to AdherencePrompt on every render.
   // Expected Impact: Ensures React.memo on AdherencePrompt works as intended.
-  const handlePendingAdherenceResolved = useCallback(() => setPendingAdherence(null), []);
+  const handlePendingAdherenceResolved = useCallback((answer: AdherenceAnswer) => {
+    const resolved = pendingAdherenceRef.current;
+    setPendingAdherence(null);
+    // Phase 9.0.3 adherence alignment: "followed the plan as given" already answers
+    // yesterday's actualVerdict in the same vocabulary as the engine's own verdict --
+    // sync it onto an existing journal entry rather than forcing redundant double-entry.
+    // Only fills a gap: an explicit override the athlete already made on the journal card
+    // itself is never overwritten.
+    if (answer.followed === true && resolved) {
+      decisionJournalService.getEntry(userId, resolved.date)
+        .then(existing => {
+          if (existing && !existing.actualVerdict) {
+            return decisionJournalService.recordActualVerdict(
+              userId, resolved.date, deriveEngineVerdictFromMode(resolved.recommendation.mode),
+            );
+          }
+        })
+        .catch(err => console.warn('Failed to sync decision journal actualVerdict from adherence:', err));
+    }
+  }, [userId]);
+  const handleRevealRecommendation = useCallback(() => setRecommendationRevealed(true), []);
+  const handleJournalEntryChange = useCallback((entry: DecisionJournalEntry | null) => setTodaysJournalEntry(entry), []);
   const dashboardRequest = useRef(0);
   const activeSettings = useMemo(() => {
     if (!decisionInput) return [];
@@ -389,6 +426,13 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
     loadDashboardData();
   }, [loadDashboardData]);
 
+  // Phase 9.0.3: a new calendar day starts hidden again. DecisionJournalCard re-fetches
+  // and reports the new day's entry (if any) via onEntryChange on its own -- this only
+  // resets the click-driven half of the reveal gate.
+  useEffect(() => {
+    setRecommendationRevealed(false);
+  }, [decisionInput?.date]);
+
   const getDataCompleteness = () => {
     if (!decisionInput) return 0;
     
@@ -468,6 +512,14 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
     () => computeAdjustedRecommendation(adjustmentDirection),
     [computeAdjustedRecommendation, adjustmentDirection]
   );
+
+  // Phase 9.0.3: today's engine verdict in the decision journal's shared ShadowVerdict
+  // vocabulary, and the reveal gate that decides whether the athlete has been shown it.
+  // An existing journal entry counts as already-revealed -- hiding the recommendation from
+  // a returning athlete who already recorded their own verdict serves no measurement
+  // purpose and would just be confusing.
+  const todaysEngineVerdict = activeRec && canGenerateNormalPlan ? deriveEngineVerdictFromMode(activeRec.mode) : null;
+  const recommendationEffectivelyRevealed = recommendationRevealed || !!todaysJournalEntry;
 
   // Goal events are evaluated independently for today and tomorrow: readiness-based
   // recommendation selection still changes in Phase 3, but the week-ahead pipeline and
@@ -697,13 +749,27 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
           <div className="dashboard-card recommendation-card">
             <div className="card-header">
               <h3>Today's Recommendation</h3>
-              {activeRec && (
+              {activeRec && (!canGenerateNormalPlan || recommendationEffectivelyRevealed) && (
                 <span className={`status-badge mode-${activeRec.mode}`}>
                   {MODE_LABELS[activeRec.mode]}
                 </span>
               )}
             </div>
             {activeRec ? (
+              canGenerateNormalPlan && !recommendationEffectivelyRevealed ? (
+                // Phase 9.0.3: hidden until revealed or a journal entry already exists, so
+                // an athlete who wants to record their own plan's verdict first, blind, can
+                // -- see the Decision Journal card in the sidebar.
+                <div className="recommendation-hidden">
+                  <p className="card-empty">Today's recommendation is ready.</p>
+                  <button type="button" className="reveal-recommendation-btn" onClick={handleRevealRecommendation}>
+                    👁️ Reveal today's recommendation
+                  </button>
+                  <p className="reveal-hint">
+                    Recording your own plan's verdict first is what the Decision Journal card measures.
+                  </p>
+                </div>
+              ) : (
               <div className="recommendation-content">
                 {activeRec.externalPrescription && activeRec.externalVerdict && (
                   <ExternalVerdictBanner
@@ -799,6 +865,7 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
                   )}
                 </div>}
               </div>
+              )
             ) : (
               <p className="card-empty">
                 {!decisionInput?.dataQuality.hasRecoverySnapshot
@@ -862,6 +929,18 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
               date={pendingAdherence.date}
               recommendation={pendingAdherence.recommendation}
               onResolved={handlePendingAdherenceResolved}
+            />
+          )}
+
+          {/* Decision Journal (Phase 9.0): today's shadow-mode entry, reachable without
+              revealing the recommendation above. */}
+          {decisionInput && (
+            <DecisionJournalCard
+              userId={userId}
+              date={decisionInput.date}
+              engineVerdict={todaysEngineVerdict}
+              engineRevealed={recommendationEffectivelyRevealed}
+              onEntryChange={handleJournalEntryChange}
             />
           )}
 

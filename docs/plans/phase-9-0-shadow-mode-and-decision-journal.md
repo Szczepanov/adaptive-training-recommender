@@ -1,6 +1,7 @@
 # Phase 9.0: Shadow mode and the decision journal
 
-* **Status:** Draft
+* **Status:** In progress. 9.0.2-9.0.6 (code) are done; 9.0.1 (operational) is outstanding,
+  and 9.0.7/9.0.8 wait on it.
 * **Blocked by:** nothing in code. 9.0.1 (unattended ingestion) is an operational precondition.
 * **Unlocks:** a decision on whether to retire the manual AI daily loop, and a real
   subjective corpus for [Phase 9](./phase-9-subjective-baselines.md) 9.5
@@ -125,7 +126,7 @@ rejected, and the rules tests prove both.
 
 ---
 
-### 9.0.3 Journal entry UI `[ ]`
+### 9.0.3 Journal entry UI `[x]`
 
 **Change.** A card on Home, beside the adherence prompt, that records today's entry.
 
@@ -147,6 +148,17 @@ permitting an explicit override on the journal card if execution diverged from b
 **Done when.** An entry can be recorded before the engine's verdict is visible; recording
 after reveal is possible and flagged; and the flag reflects what actually happened rather
 than a checkbox the athlete ticks.
+
+**Implementation note.** The reveal gate lives on the "Today's Recommendation" card itself
+(`Home.tsx`'s `recommendationRevealed` state, gated whenever `canGenerateNormalPlan` is
+true) rather than inside `DecisionJournalCard`, so there is exactly one reveal control on
+the page, not two that could disagree. `DecisionJournalCard` sits beside `AdherencePrompt`
+in the sidebar, reads that gate, and both records `sawEngineVerdictFirst` from it at submit
+time and displays the engine's verdict inline once unlocked. An existing entry for today
+also counts as unlocked (a returning athlete who already recorded blind isn't re-hidden).
+`AdherencePrompt.tsx`'s `onResolved` now passes the answer through so `Home.tsx` can sync
+`actualVerdict` onto yesterday's entry when `followed === true` and no explicit override
+exists yet.
 
 ---
 
@@ -178,7 +190,7 @@ depend on how the reviewer eyeballed the table.
 
 ---
 
-### 9.0.5 Export `[ ]`
+### 9.0.5 Export `[x]`
 
 **Change.** Add `engine/shadowLog.ts` (pure renderer) and a service read, following the
 `contextBrief.ts` / `contextBriefService.ts` split exactly.
@@ -206,9 +218,18 @@ already makes about its coverage gate.
 **Done when.** A fixture of partial days round-trips with the gaps visible as gaps, and no
 identifier or raw wearable payload appears in the output.
 
+**Implementation note.** `engineVerdict` is a documented mode-based approximation:
+`daily_recommendations/{date}` retains only the three-value `mode`, not the specific
+`ExternalSessionDecision` an adjudicated day resolved to, so `deriveEngineVerdictFromMode`
+(in `shadowLog.ts`) can produce `proceed`/`scale`/`defer` but never `skip`/`advisory`. `skip`
+still classifies correctly on the conservatism ladder (tied with `defer`); `advisory` does
+not, since it sits outside the ladder entirely. Revisit if the 9.0.8 readout needs the
+distinction. `renderShadowLogCsv` is the human-readable form for 9.0.8; Phase 9.5's corpus
+should consume `buildShadowLog`'s row objects directly rather than parsing the CSV back.
+
 ---
 
-### 9.0.6 The journal cannot reach the engine `[ ]`
+### 9.0.6 The journal cannot reach the engine `[x]`
 
 **Change.** Extend the runtime-import-graph guard added for ADR-0019
 (`engine/externalArchitecture.test.ts`, or a sibling) so that no module reachable from
@@ -223,10 +244,9 @@ broken scan.
 
 **Done when.** The guard fails if a planted import is added, and passes otherwise.
 
-**Progress.** The `decisionJournalService.ts` half landed alongside 9.0.2: `rules.ts`,
-`optimizer.ts`, `planner.ts` and `trainingIntent.ts` are each asserted not to reach it, using
-the existing scanner and positive control. `shadowLog.ts` doesn't exist yet (9.0.5) — add it
-to the same `it.each` list when it does, rather than opening a second guard.
+**Progress.** Complete. `rules.ts`, `optimizer.ts`, `planner.ts` and `trainingIntent.ts` are
+each asserted not to reach `decisionJournalService.ts`, `engine/shadowLog.ts`, or
+`services/shadowLogService.ts`, using the existing scanner and positive control.
 
 ---
 
@@ -277,15 +297,18 @@ check-ins instead of inventing variance.
 
 ## Acceptance criteria
 
-- [ ] `cd app && npm run check` and `npm run test:rules` pass.
-- [ ] `npm run simulate:diff` reports no changed pre-existing baseline scenario. Nothing in
+- [x] `cd app && npm run check` and `npm run test:rules` pass.
+- [x] `npm run simulate:diff` reports no changed pre-existing baseline scenario. Nothing in
       this phase touches a decision path, so a change here is a bug in this phase.
-- [ ] `POLICY_VERSION` is **unchanged**. If it needs a bump, something in this phase reached
-      the decision path and 9.0.6 failed to catch it.
-- [ ] A planted import from `rules.ts` to the journal fails 9.0.6's guard.
-- [ ] The export contains no identifiers, raw wearable payloads, or free-text check-in notes
-      beyond the athlete's own journal note.
+- [x] `POLICY_VERSION` is **unchanged**. If it needs a bump, something in this phase reached
+      the decision path and 9.0.6 failed to catch it. (`check-policy-drift.mjs` passes.)
+- [x] A planted import from `rules.ts` to the journal fails 9.0.6's guard. (Verified via the
+      existing scanner's positive control, the same standard ADR-0019's identical guard
+      uses, rather than a literal planted-and-reverted import.)
+- [x] The export contains no identifiers, raw wearable payloads, or free-text check-in notes
+      beyond the athlete's own journal note. (Asserted in `shadowLog.test.ts`.)
 - [ ] The block's volume gates in 9.0.7 are met, or the shortfall is stated in the readout.
+      Not yet reachable: 9.0.1 (unattended ingestion) hasn't run.
 
 ## Risks
 
@@ -323,10 +346,10 @@ check-ins instead of inventing variance.
 |---|---|:--:|---|
 | 9.0.1 | Unattended ingestion | `[ ]` | — |
 | 9.0.2 | Journal model, validation, storage | `[x]` | — |
-| 9.0.3 | Journal entry UI | `[ ]` | 9.0.2 |
+| 9.0.3 | Journal entry UI | `[x]` | 9.0.2 |
 | 9.0.4 | Agreement classification | `[x]` | 9.0.2 |
-| 9.0.5 | Export | `[ ]` | 9.0.2, 9.0.4 |
-| 9.0.6 | Journal-cannot-reach-engine guard | `[ ]` (partial — `decisionJournalService.ts` covered, `shadowLog.ts` pending 9.0.5) | 9.0.2 |
+| 9.0.5 | Export | `[x]` | 9.0.2, 9.0.4 |
+| 9.0.6 | Journal-cannot-reach-engine guard | `[x]` | 9.0.2 |
 | 9.0.7 | Run the block | `[ ]` | 9.0.1, 9.0.3, 9.0.6 |
 | 9.0.8 | Readout and decision | `[ ]` | 9.0.7 |
 

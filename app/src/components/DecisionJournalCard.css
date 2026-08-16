@@ -1,0 +1,138 @@
+.decision-journal-card {
+  margin-bottom: 1.5rem;
+  cursor: default;
+  border: 1px solid rgba(129, 140, 248, 0.25);
+}
+
+.decision-journal-card:hover {
+  transform: none;
+}
+
+.journal-subtitle {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  margin: 0 0 1rem 0;
+}
+
+.journal-error {
+  color: #f87171;
+  font-size: 0.85rem;
+  margin: 0 0 0.75rem 0;
+}
+
+.journal-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.journal-form .form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.journal-form label,
+.journal-evening label {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.journal-form .select-input,
+.journal-form .text-input,
+.journal-evening .select-input {
+  background: var(--card-background);
+  color: var(--text-color);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.9rem;
+}
+
+.journal-form-actions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+}
+
+.journal-btn {
+  flex: 0 0 auto;
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid var(--border-color);
+  background: var(--card-background);
+  color: var(--text-color);
+  transition: all 0.2s;
+}
+
+.journal-btn:hover:not(:disabled) {
+  background: var(--hover-background);
+}
+
+.journal-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.journal-btn.primary {
+  border-color: rgba(129, 140, 248, 0.4);
+  color: #818cf8;
+}
+
+.journal-recorded {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-bottom: 0.75rem;
+}
+
+.journal-recorded-verdict {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.journal-anchoring {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.journal-recorded .journal-btn {
+  align-self: flex-start;
+}
+
+.journal-engine-verdict {
+  margin: 0.75rem 0;
+  padding-top: 0.75rem;
+  border-top: 1px dashed var(--border-color);
+}
+
+.journal-engine-verdict p {
+  margin: 0;
+  font-size: 0.85rem;
+}
+
+.journal-hidden {
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+.journal-evening {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding-top: 0.75rem;
+  border-top: 1px dashed var(--border-color);
+}
+
+.journal-evening-row {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.journal-evening-row .select-input {
+  flex: 1 1 auto;
+}

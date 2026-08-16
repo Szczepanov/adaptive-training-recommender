@@ -3,13 +3,16 @@ import { recommendationService } from '../services/recommendationService';
 import type { DailyRecommendation } from '../engine/models';
 import './AdherencePrompt.css';
 
+export type AdherenceAnswer = Parameters<typeof recommendationService.recordAdherence>[2];
+
 interface AdherencePromptProps {
   userId: string;
   date: string; // the date the recommendation being answered for was generated
   recommendation: DailyRecommendation;
-  /** Called once an answer has been recorded, so the parent can hide this prompt /
-   *  refresh adherence stats. */
-  onResolved: () => void;
+  /** Called once an answer has been recorded, so the parent can hide this prompt, refresh
+   *  adherence stats, and (Phase 9.0.3) sync the decision journal's `actualVerdict` when
+   *  the athlete followed the plan as given. */
+  onResolved: (answer: AdherenceAnswer) => void;
 }
 
 const MODALITY_OPTIONS = ['Running', 'Cycling', 'Strength', 'Mobility', 'Field', 'Cross Training', 'Other'];
@@ -31,7 +34,7 @@ export const AdherencePrompt = memo(function AdherencePrompt({ userId, date, rec
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const submit = async (answer: Parameters<typeof recommendationService.recordAdherence>[2]) => {
+  const submit = async (answer: AdherenceAnswer) => {
     setSubmitting(true);
     setError(null);
     try {
@@ -40,7 +43,7 @@ export const AdherencePrompt = memo(function AdherencePrompt({ userId, date, rec
         setError('Could not save your answer -- please try again.');
         return;
       }
-      onResolved();
+      onResolved(answer);
     } finally {
       setSubmitting(false);
     }
