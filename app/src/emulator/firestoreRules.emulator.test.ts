@@ -18,6 +18,7 @@ const goalPath = `users/${ownerId}/goals/goal-1`;
 const externalPlanPath = `users/${ownerId}/external_plans/autumn-block`;
 const externalRevisionPath = `${externalPlanPath}/revisions/1`;
 const externalPlacementPath = `${externalPlanPath}/placement/current`;
+const decisionJournalPath = `users/${ownerId}/decision_journal/2026-08-07`;
 
 function validExternalPlanHeader() {
     return {
@@ -90,6 +91,15 @@ function validPreferences() {
     return {
         userId: ownerId, unavailableModalities: ['Cycling'],
         createdAt: '2026-08-01T00:00:00Z', updatedAt: '2026-08-01T00:00:00Z',
+    };
+}
+
+function validDecisionJournalEntry() {
+    return {
+        userId: ownerId, date: '2026-08-07',
+        externalVerdict: 'proceed', sawEngineVerdictFirst: false,
+        createdAt: '2026-08-07T06:00:00Z', updatedAt: '2026-08-07T06:00:00Z',
+        schemaVersion: 1,
     };
 }
 
@@ -573,5 +583,76 @@ emulatorDescribe('Firestore security rules', () => {
         await assertFails(
             setDoc(doc(ownerDb, recommendationPath), { ...validRecommendation('2026-08-07T09:30:00Z'), revision: 1 }, { merge: true }),
         );
+    });
+
+    // --- Decision journal (Phase 9.0.2) ---
+
+    it('allows an owner to create a well-formed decision journal entry', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await expect(assertSucceeds(setDoc(doc(ownerDb, decisionJournalPath), validDecisionJournalEntry()))).resolves.toBeUndefined();
+    });
+
+    it('rejects a malformed or foreign-owned decision journal entry', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        // Unknown verdict value.
+        await assertFails(setDoc(doc(ownerDb, `${decisionJournalPath}-bad-verdict`), {
+            ...validDecisionJournalEntry(), externalVerdict: 'maybe',
+        }));
+        // Unrecognized field -- closed key set, this is evidence not a free-form document.
+        await assertFails(setDoc(doc(ownerDb, `${decisionJournalPath}-extra-field`), {
+            ...validDecisionJournalEntry(), surprise: true,
+        }));
+        // Missing required field.
+        const withoutSawFirst: Record<string, unknown> = validDecisionJournalEntry();
+        delete withoutSawFirst.sawEngineVerdictFirst;
+        await assertFails(setDoc(doc(ownerDb, `${decisionJournalPath}-missing-field`), withoutSawFirst));
+        // Document id / userId disagree with the path.
+        await assertFails(setDoc(doc(ownerDb, decisionJournalPath), { ...validDecisionJournalEntry(), date: '2026-08-08' }));
+        await assertFails(setDoc(doc(ownerDb, decisionJournalPath), { ...validDecisionJournalEntry(), userId: otherUserId }));
+        // Foreign-owned: writing under the other user's own path but forging userId.
+        const otherDb = testEnvironment.authenticatedContext(otherUserId).firestore();
+        await assertFails(setDoc(
+            doc(otherDb, `users/${otherUserId}/decision_journal/2026-08-07`),
+            { ...validDecisionJournalEntry(), userId: ownerId },
+        ));
+    });
+
+    it('rejects cross-user decision journal reads and writes', async () => {
+        await testEnvironment.withSecurityRulesDisabled(async context => {
+            await setDoc(doc(context.firestore(), decisionJournalPath), validDecisionJournalEntry());
+        });
+        const otherDb = testEnvironment.authenticatedContext(otherUserId).firestore();
+        await assertFails(getDoc(doc(otherDb, decisionJournalPath)));
+        await assertFails(setDoc(doc(otherDb, decisionJournalPath), validDecisionJournalEntry(), { merge: true }));
+    });
+
+    it('allows the evening update to record actualVerdict, and rejects tampering with sawEngineVerdictFirst or createdAt', async () => {
+        await testEnvironment.withSecurityRulesDisabled(async context => {
+            await setDoc(doc(context.firestore(), decisionJournalPath), validDecisionJournalEntry());
+        });
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+
+        // Legitimate evening write: adds actualVerdict, bumps updatedAt.
+        await expect(assertSucceeds(setDoc(doc(ownerDb, decisionJournalPath), {
+            ...validDecisionJournalEntry(), actualVerdict: 'scale', updatedAt: '2026-08-07T20:00:00Z',
+        }))).resolves.toBeUndefined();
+
+        // sawEngineVerdictFirst is the anchoring telemetry -- must be immutable on update.
+        await assertFails(setDoc(doc(ownerDb, decisionJournalPath), {
+            ...validDecisionJournalEntry(), sawEngineVerdictFirst: true,
+        }));
+
+        // createdAt is likewise immutable on update.
+        await assertFails(setDoc(doc(ownerDb, decisionJournalPath), {
+            ...validDecisionJournalEntry(), createdAt: '2099-01-01T00:00:00Z',
+        }));
+    });
+
+    it('allows an owner to delete their own decision journal entry', async () => {
+        await testEnvironment.withSecurityRulesDisabled(async context => {
+            await setDoc(doc(context.firestore(), decisionJournalPath), validDecisionJournalEntry());
+        });
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await expect(assertSucceeds(deleteDoc(doc(ownerDb, decisionJournalPath)))).resolves.toBeUndefined();
     });
 });

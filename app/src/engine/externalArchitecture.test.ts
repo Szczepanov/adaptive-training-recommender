@@ -136,3 +136,22 @@ describe('external adjudication is not a second selection path', () => {
         expect(importPath(graph, 'engine/externalCritique.ts', 'engine/optimizer.ts')).not.toBeNull();
     });
 });
+
+describe('the decision journal cannot reach the engine (Phase 9.0.6)', () => {
+    const graph = runtimeImportGraph();
+
+    // A journal the engine reads is evidence contaminated by its own effect -- the same
+    // one-way boundary D-CRITIQUE draws for the weekly critique, enforced structurally
+    // rather than by intention. `shadowLog.ts` (9.0.5) joins this list once it exists.
+    it.each(['engine/rules.ts', 'engine/optimizer.ts', 'engine/planner.ts', 'engine/trainingIntent.ts'])(
+        '%s never reaches services/decisionJournalService.ts at runtime',
+        selectionModule => {
+            expect(
+                importPath(graph, selectionModule, 'services/decisionJournalService.ts'),
+                'Phase 9.0.6: the decision journal is evidence collected to compare against the '
+                + 'engine, not a second input to it. No production selection or safety path may '
+                + 'import decisionJournalService.ts.',
+            ).toBeNull();
+        },
+    );
+});

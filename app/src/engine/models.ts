@@ -939,6 +939,49 @@ export interface DailySubjectiveCheckin {
     updatedAt: string;
 }
 
+// --- Phase 9.0: Shadow mode and the decision journal ---
+
+/** Deliberately the exact five values of `externalSession.ts`'s `ExternalSessionDecision`
+ *  -- see `docs/plans/phase-9-0-shadow-mode-and-decision-journal.md` 9.0.2. Duplicated
+ *  rather than imported, the same reasoning as `EXTERNAL_MODIFY_MAX_SYSTEMIC_COST`: this
+ *  keeps the journal's evidence-only types free of any dependency on the adjudication
+ *  path. `decisionJournal.test.ts` asserts the two lists never drift apart. The comparison
+ *  is only meaningful because both sides speak one vocabulary: do it, do it easier, move
+ *  it, skip it, your call. */
+export const SHADOW_VERDICTS = ['proceed', 'scale', 'defer', 'skip', 'advisory'] as const;
+export type ShadowVerdict = typeof SHADOW_VERDICTS[number];
+
+/**
+ * One document per day at `users/{userId}/decision_journal/{date}`, recording the
+ * athlete's own (non-engine) verdict alongside what actually happened, so the two can be
+ * compared against the engine's `daily_recommendations/{date}` verdict. Never read by any
+ * selection or safety path -- `engine/externalArchitecture.test.ts` enforces that
+ * structurally, the same one-way boundary D-CRITIQUE draws for the weekly critique.
+ *
+ * Mutation lifecycle:
+ * - Morning write (creation): sets `externalVerdict`, optional `externalNote`, and locks
+ *   `sawEngineVerdictFirst`.
+ * - Evening write (update): sets/updates `actualVerdict` and `updatedAt`.
+ * - `sawEngineVerdictFirst` and `createdAt` are immutable after creation (enforced by
+ *   `firestore.rules`) -- the whole point of the field is that it cannot be rewritten
+ *   after the fact.
+ */
+export interface DecisionJournalEntry {
+    userId: string;
+    date: string; // Warsaw-local, matches the recommendation doc id
+    /** What the athlete's own planner said to do today. */
+    externalVerdict: ShadowVerdict;
+    /** Free text, the athlete's own words. Never parsed. */
+    externalNote?: string;
+    /** Which the athlete saw first. The honest way to handle anchoring: measure it. */
+    sawEngineVerdictFirst: boolean;
+    /** What they actually did, in the same vocabulary. */
+    actualVerdict?: ShadowVerdict;
+    createdAt: string;
+    updatedAt: string;
+    schemaVersion: 1;
+}
+
 export interface UserGoal {
     userId: string;
     /** Time-horizon bucket. For a goal with a `targetDate`, this is DERIVED (see

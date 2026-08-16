@@ -73,7 +73,7 @@ backfilled window. A gap discovered mid-block is a confound, not a data point.
 
 ---
 
-### 9.0.2 Decision journal model, validation and storage `[ ]`
+### 9.0.2 Decision journal model, validation and storage `[x]`
 
 **Current behaviour.** The engine's verdict already persists —
 `users/{uid}/daily_recommendations/{date}` carries `mode`, `templateId`, `adherence` and
@@ -150,7 +150,7 @@ than a checkbox the athlete ticks.
 
 ---
 
-### 9.0.4 Agreement classification `[ ]`
+### 9.0.4 Agreement classification `[x]`
 
 **Change.** Add `engine/shadowAgreement.ts`, pure:
 
@@ -222,6 +222,11 @@ guard already carries a positive control so a passing result means absence rathe
 broken scan.
 
 **Done when.** The guard fails if a planted import is added, and passes otherwise.
+
+**Progress.** The `decisionJournalService.ts` half landed alongside 9.0.2: `rules.ts`,
+`optimizer.ts`, `planner.ts` and `trainingIntent.ts` are each asserted not to reach it, using
+the existing scanner and positive control. `shadowLog.ts` doesn't exist yet (9.0.5) — add it
+to the same `it.each` list when it does, rather than opening a second guard.
 
 ---
 
@@ -317,11 +322,11 @@ check-ins instead of inventing variance.
 | # | Task | Status | Blocked by |
 |---|---|:--:|---|
 | 9.0.1 | Unattended ingestion | `[ ]` | — |
-| 9.0.2 | Journal model, validation, storage | `[ ]` | — |
+| 9.0.2 | Journal model, validation, storage | `[x]` | — |
 | 9.0.3 | Journal entry UI | `[ ]` | 9.0.2 |
-| 9.0.4 | Agreement classification | `[ ]` | 9.0.2 |
+| 9.0.4 | Agreement classification | `[x]` | 9.0.2 |
 | 9.0.5 | Export | `[ ]` | 9.0.2, 9.0.4 |
-| 9.0.6 | Journal-cannot-reach-engine guard | `[ ]` | 9.0.2 |
+| 9.0.6 | Journal-cannot-reach-engine guard | `[ ]` (partial — `decisionJournalService.ts` covered, `shadowLog.ts` pending 9.0.5) | 9.0.2 |
 | 9.0.7 | Run the block | `[ ]` | 9.0.1, 9.0.3, 9.0.6 |
 | 9.0.8 | Readout and decision | `[ ]` | 9.0.7 |
 

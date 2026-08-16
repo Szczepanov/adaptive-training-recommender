@@ -1,5 +1,6 @@
 import type { DataState } from '../../engine/dataState';
-import type { DailyRecoverySnapshot, DailySubjectiveCheckin } from '../../engine/models';
+import type { DailyRecoverySnapshot, DailySubjectiveCheckin, DecisionJournalEntry } from '../../engine/models';
+import { SHADOW_VERDICTS } from '../../engine/models';
 import { isValidDate } from '../../engine/validation';
 
 type RawDocument = Record<string, unknown>;
@@ -74,6 +75,32 @@ export function parseSubjectiveCheckin(raw: unknown, documentPath: string, userI
     return {
         status: 'AVAILABLE',
         data: raw as unknown as DailySubjectiveCheckin,
+        revision: typeof raw.updatedAt === 'string' ? raw.updatedAt : null,
+    };
+}
+
+function isShadowVerdict(value: unknown): boolean {
+    return typeof value === 'string' && (SHADOW_VERDICTS as readonly string[]).includes(value);
+}
+
+/** Validates a persisted `users/{userId}/decision_journal/{date}` document (Phase 9.0).
+ *  Like `parseSubjectiveCheckin`, this checks the doc against the id it was read at
+ *  (`userId`/`date`) rather than trusting the document body -- a cross-user or
+ *  wrong-date record is a data-quality issue, never coerced into a neutral entry. Used by
+ *  `decisionJournalService.ts` reads and by the 9.0.5 export, which must not let an
+ *  invalid record silently contribute to the log. */
+export function parseDecisionJournalEntry(raw: unknown, documentPath: string, userId: string, date: string): DataState<DecisionJournalEntry> {
+    if (!isObject(raw)) return issue(documentPath, 'not-an-object');
+    if (raw.userId !== userId) return issue(documentPath, 'user-id-mismatch', 'userId');
+    if (raw.date !== date || typeof raw.date !== 'string' || !isValidDate(raw.date)) return issue(documentPath, 'invalid-date', 'date');
+    if (!isShadowVerdict(raw.externalVerdict)) return issue(documentPath, 'invalid-external-verdict', 'externalVerdict');
+    if (raw.externalNote !== undefined && typeof raw.externalNote !== 'string') return issue(documentPath, 'invalid-external-note', 'externalNote');
+    if (typeof raw.sawEngineVerdictFirst !== 'boolean') return issue(documentPath, 'invalid-saw-engine-verdict-first', 'sawEngineVerdictFirst');
+    if (raw.actualVerdict !== undefined && !isShadowVerdict(raw.actualVerdict)) return issue(documentPath, 'invalid-actual-verdict', 'actualVerdict');
+    if (typeof raw.createdAt !== 'string' || typeof raw.updatedAt !== 'string') return issue(documentPath, 'invalid-timestamps');
+    return {
+        status: 'AVAILABLE',
+        data: raw as unknown as DecisionJournalEntry,
         revision: typeof raw.updatedAt === 'string' ? raw.updatedAt : null,
     };
 }

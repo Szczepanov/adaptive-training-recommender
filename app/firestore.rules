@@ -157,6 +157,35 @@ service cloud.firestore {
       allow delete: if isOwner(userId);
     }
 
+    // --- Decision journal (Phase 9.0): the athlete's own verdict, recorded to be compared
+    // against the engine's daily_recommendations/{date} verdict, never read by it. Closed
+    // key set (this is evidence, not a free-form document) and immutable createdAt AND
+    // sawEngineVerdictFirst on update -- the whole point of sawEngineVerdictFirst is that it
+    // cannot be rewritten after the fact to erase anchoring.
+    function hasValidDecisionJournalEntry(userId, date) {
+      return hasOwnedUserId(userId)
+        && isDateDocument(date)
+        && request.resource.data.keys().hasOnly(['userId', 'date', 'externalVerdict', 'externalNote', 'sawEngineVerdictFirst', 'actualVerdict', 'createdAt', 'updatedAt', 'schemaVersion'])
+        && request.resource.data.keys().hasAll(['userId', 'date', 'externalVerdict', 'sawEngineVerdictFirst', 'createdAt', 'updatedAt', 'schemaVersion'])
+        && request.resource.data.externalVerdict in ['proceed', 'scale', 'defer', 'skip', 'advisory']
+        && (!('externalNote' in request.resource.data) || (request.resource.data.externalNote is string && request.resource.data.externalNote.size() <= 2000))
+        && request.resource.data.sawEngineVerdictFirst is bool
+        && (!('actualVerdict' in request.resource.data) || request.resource.data.actualVerdict in ['proceed', 'scale', 'defer', 'skip', 'advisory'])
+        && request.resource.data.createdAt is string
+        && request.resource.data.updatedAt is string
+        && request.resource.data.schemaVersion == 1;
+    }
+
+    match /users/{userId}/decision_journal/{date} {
+      allow read: if isOwner(userId);
+      allow create: if hasValidDecisionJournalEntry(userId, date);
+      allow update: if keepsOwnership(userId)
+        && hasValidDecisionJournalEntry(userId, date)
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.sawEngineVerdictFirst == resource.data.sawEngineVerdictFirst;
+      allow delete: if isOwner(userId);
+    }
+
     match /users/{userId}/goals/{goalId} {
       allow read: if isOwner(userId);
       allow create: if hasOwnedUserId(userId) && hasValidGoalTaper();
