@@ -80,3 +80,9 @@ def test_get_sleep_data_unauthenticated():
     wrapper = GarminClientWrapper(allow_credential_login=False)
     with pytest.raises(RuntimeError, match="Garmin client is not authenticated. Call login first."):
         wrapper.get_sleep_data("2023-10-10")
+
+
+def test_get_stats_unauthenticated():
+    wrapper = GarminClientWrapper(allow_credential_login=False)
+    with pytest.raises(RuntimeError, match="Garmin client is not authenticated. Call login first."):
+        wrapper.get_stats("2023-10-10")
