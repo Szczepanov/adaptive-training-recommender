@@ -14,7 +14,7 @@ function objective(): WeeklyObjective {
         completedExposures: 0,
         completedCredit: 0,
         projectedCredit: 0,
-        priority: 'required',
+        priority: 'must_have',
         targetStimulus: { aerobicEndurance: 1 },
         qualification: { allowedModalities: ['Cycling'] },
     };
