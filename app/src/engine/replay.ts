@@ -2,7 +2,7 @@ import type { DailyRecommendation, ExternalDecisionProvenance, ExternalTrainingP
 import { computeContentHash } from './externalPlanHash';
 import { externalTemplateId, isExternalTemplateId } from './externalSessionProfiles';
 import { isHistoricalPolicyVersion, POLICY_VERSION } from './policy';
-import { subjectiveDriftAuditReplayErrors } from './subjectiveDriftEvidence';
+import { subjectiveDriftAuditReplayErrors } from './subjectiveDriftAudit';
 
 export interface RecommendationReplayResult {
     reproducible: boolean;
@@ -10,16 +10,8 @@ export interface RecommendationReplayResult {
     errors: string[];
 }
 
-/**
- * The stored revision an external decision claims to have been made from, plus the hash
- * recomputed from it. The hash is supplied by the caller because `computeContentHash` is
- * async (WebCrypto) and this function stays synchronous for every existing caller — use
- * `replayRecommendationAuditAgainstRevision` to have it computed for you.
- */
 export interface ExternalRevisionEvidence {
     plan: ExternalTrainingPlan;
-    /** SHA-256 recomputed from `plan`. Never read from the audit — that would make the
-     * comparison below compare a value with itself. */
     contentHash: string;
 }
 
@@ -33,14 +25,9 @@ function rankedDecisionErrors(recommendation: DailyRecommendation): string[] {
     return [];
 }
 
-/**
- * Verifies that a v3 record is internally reproducible from its compact persisted audit.
- * Raw recovery payloads, raw subjective history, and free-text notes are neither required
- * nor accepted as replay inputs. Optional Phase 9 subjective-drift evidence is validated
- * only from the normalized invariants that are intentionally persisted: exclusive history
- * boundary, coverage, canonical component set, non-negativity, and arithmetic
- * reconciliation. Replay does not fabricate raw history to re-run the estimator.
- */
+/** Verifies compact v3 recommendation provenance without reconstructing intentionally
+ * omitted raw health history. Optional subjective-drift evidence is checked only against
+ * the normalized invariants that are reproducible from the audit itself. */
 export function replayRecommendationAudit(
     recommendation: DailyRecommendation,
     externalRevision: ExternalRevisionEvidence | null = null,
@@ -86,12 +73,10 @@ function externalDecisionErrors(
         errors.push(`External decision references plan ${provenance.planId} revision ${provenance.revision}, which was not supplied; it cannot be replayed without it.`);
         return errors;
     }
-
     if (externalRevision.plan.planId !== provenance.planId || externalRevision.plan.revision !== provenance.revision) {
         errors.push(`Supplied revision is ${externalRevision.plan.planId}@${externalRevision.plan.revision}, but the audit references ${provenance.planId}@${provenance.revision}.`);
         return errors;
     }
-
     if (externalRevision.contentHash !== provenance.contentHash) {
         errors.push(`Plan content hash mismatch: the audit recorded ${provenance.contentHash} but the supplied revision hashes to ${externalRevision.contentHash}. The stored revision has changed since this decision was made.`);
         return errors;
@@ -122,7 +107,6 @@ function externalDecisionErrors(
     if (isExternalTemplateId(recommendation.templateId) && recommendation.templateId !== expectedTemplateId) {
         errors.push(`Persisted template ${recommendation.templateId} does not match the audited external session ${expectedTemplateId}.`);
     }
-
     return errors;
 }
 
