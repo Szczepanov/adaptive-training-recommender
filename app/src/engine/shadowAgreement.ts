@@ -12,6 +12,23 @@ export type AgreementClass =
     | 'incomparable';
 
 /**
+ * Resolve the exact action the engine communicated in the shared shadow vocabulary.
+ * Imported-session adjudication wins when present: an event can be `advisory` while the
+ * surrounding ranked recommendation is `train`, and a feasibility exclusion can be
+ * `skip` while the fallback recommendation itself is train/recover. Falling back to mode
+ * is correct only when no imported-session verdict exists.
+ */
+export function resolveEngineShadowVerdict(
+    mode: 'train' | 'modify' | 'recover',
+    externalDecision?: ShadowVerdict | null,
+): ShadowVerdict {
+    if (externalDecision) return externalDecision;
+    if (mode === 'train') return 'proceed';
+    if (mode === 'modify') return 'scale';
+    return 'defer';
+}
+
+/**
  * Conservatism ladder: `proceed` > `scale` > `defer` ≈ `skip`. `defer` and `skip` are
  * equally conservative *about today* -- they differ in what happens to the session
  * afterward, which is a placement question, not a load question, so they classify as
