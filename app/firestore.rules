@@ -49,9 +49,35 @@ service cloud.firestore {
         && dose.intensity is number && dose.intensity >= 0 && dose.intensity <= 1.2;
     }
 
+    function hasValidSubjectiveDriftMetricMap(m) {
+      return m is map
+        && m.keys().hasOnly(['readiness', 'sleepQuality', 'fatigue', 'soreness', 'mentalStress', 'motivation'])
+        && m.keys().hasAll(['readiness', 'sleepQuality', 'fatigue', 'soreness', 'mentalStress', 'motivation'])
+        && m.readiness is number && m.readiness >= 0 && m.readiness <= 20
+        && m.sleepQuality is number && m.sleepQuality >= 0 && m.sleepQuality <= 20
+        && m.fatigue is number && m.fatigue >= 0 && m.fatigue <= 20
+        && m.soreness is number && m.soreness >= 0 && m.soreness <= 20
+        && m.mentalStress is number && m.mentalStress >= 0 && m.mentalStress <= 20
+        && m.motivation is number && m.motivation >= 0 && m.motivation <= 20;
+    }
+
+    function hasValidSubjectiveDriftAudit(drift) {
+      return drift is map
+        && drift.keys().hasOnly(['estimatorId', 'historyThroughDateExclusive', 'recentRecordedDays', 'longRecordedDays', 'contribution', 'perMetricContributions', 'decisionRelevant'])
+        && drift.keys().hasAll(['estimatorId', 'historyThroughDateExclusive', 'recentRecordedDays', 'longRecordedDays', 'contribution', 'perMetricContributions', 'decisionRelevant'])
+        && drift.estimatorId is string && drift.estimatorId.size() > 0 && drift.estimatorId.size() <= 120
+        && drift.historyThroughDateExclusive is string
+        && drift.historyThroughDateExclusive.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+        && drift.recentRecordedDays is int && drift.recentRecordedDays >= 0 && drift.recentRecordedDays <= 366
+        && drift.longRecordedDays is int && drift.longRecordedDays >= drift.recentRecordedDays && drift.longRecordedDays <= 366
+        && drift.contribution is number && drift.contribution >= 0 && drift.contribution <= 120
+        && hasValidSubjectiveDriftMetricMap(drift.perMetricContributions)
+        && drift.decisionRelevant is bool;
+    }
+
     function hasValidRecommendationAudit(audit) {
       return audit is map
-        && audit.keys().hasOnly(['policyVersion', 'evaluatedAt', 'decisionContextRevision', 'safetyStatus', 'history', 'envelope', 'plannedDose', 'executionDose', 'candidateScores', 'droppedContributorObjectives', 'externalPlan'])
+        && audit.keys().hasOnly(['policyVersion', 'evaluatedAt', 'decisionContextRevision', 'safetyStatus', 'history', 'envelope', 'plannedDose', 'executionDose', 'candidateScores', 'droppedContributorObjectives', 'externalPlan', 'subjectiveDrift'])
         && audit.keys().hasAll(['policyVersion', 'evaluatedAt', 'decisionContextRevision', 'safetyStatus', 'history', 'envelope', 'candidateScores'])
         && audit.policyVersion is string
         && audit.evaluatedAt is string
@@ -77,6 +103,7 @@ service cloud.firestore {
         && (!('executionDose' in audit) || hasValidDose(audit.executionDose))
         && audit.candidateScores is list && audit.candidateScores.size() <= 64
         && (!('droppedContributorObjectives' in audit) || (audit.droppedContributorObjectives is list && audit.droppedContributorObjectives.size() <= 64))
+        && (!('subjectiveDrift' in audit) || hasValidSubjectiveDriftAudit(audit.subjectiveDrift))
         && (!('externalPlan' in audit) || (
           audit.externalPlan is map
           && audit.externalPlan.keys().hasOnly(['planId', 'revision', 'sessionId', 'contentHash'])
@@ -159,7 +186,6 @@ service cloud.firestore {
       allow delete: if isOwner(userId);
     }
 
-    // --- Decision journal (Phase 9.0): immutable morning evidence plus an evening actual outcome.
     function hasValidDecisionJournalEntry(userId, date) {
       return hasOwnedUserId(userId)
         && isDateDocument(date)
