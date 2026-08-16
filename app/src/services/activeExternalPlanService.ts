@@ -93,6 +93,16 @@ export class ActiveExternalPlanService {
         // athlete already confirmed.
         if (placementState.status === 'INVALID' || placementState.status === 'UNAVAILABLE') return placementState;
         const placement = placementState.status === 'AVAILABLE' ? placementState.data : null;
+        if (placement && placement.revision !== header.revision) {
+            return {
+                status: 'INVALID',
+                issues: [{
+                    code: 'placement-revision-mismatch',
+                    field: 'revision',
+                    documentPath: `users/${userId}/external_plans/${header.planId}/placement/current`,
+                }],
+            };
+        }
 
         return {
             status: 'AVAILABLE',
