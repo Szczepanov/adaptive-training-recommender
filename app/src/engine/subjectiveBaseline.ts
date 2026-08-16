@@ -91,23 +91,56 @@ function populationStdev(values: readonly number[]): number {
     return Math.sqrt(variance);
 }
 
+/** ADR-0020's coverage unit is a "complete scored check-in date": all six subjective
+ * dimensions are present and usable. `dataQuality.isComplete` is intentionally NOT the
+ * authority here because it also requires non-subjective fields such as availability and
+ * boolean flags. Missing `timeAvailableMin` must not erase an otherwise complete
+ * subjective observation from the athlete's baseline history. */
+function hasCompleteSubjectiveScores(checkin: DailySubjectiveCheckin): boolean {
+    return SUBJECTIVE_BASELINE_METRICS.every(metric => {
+        const value = checkin[metric];
+        return typeof value === 'number' && Number.isFinite(value) && value >= 1 && value <= 10;
+    });
+}
+
+function assertValidPolicy(policy: SubjectiveBaselinePolicy): void {
+    const positiveInteger = (value: number) => Number.isInteger(value) && value > 0;
+    if (!policy.estimatorId.trim()) throw new RangeError('Subjective baseline policy requires a non-empty estimatorId.');
+    if (!positiveInteger(policy.recentWindowDays) || !positiveInteger(policy.longWindowDays)) {
+        throw new RangeError('Subjective baseline windows must be positive whole calendar-day counts.');
+    }
+    if (policy.recentWindowDays > policy.longWindowDays) {
+        throw new RangeError('Subjective baseline recentWindowDays cannot exceed longWindowDays.');
+    }
+    if (!positiveInteger(policy.minRecentRecordedDays) || policy.minRecentRecordedDays > policy.recentWindowDays) {
+        throw new RangeError('Subjective baseline minRecentRecordedDays must fit inside the recent window.');
+    }
+    if (!positiveInteger(policy.minLongRecordedDays) || policy.minLongRecordedDays > policy.longWindowDays) {
+        throw new RangeError('Subjective baseline minLongRecordedDays must fit inside the long window.');
+    }
+    if (!Number.isFinite(policy.variabilityFloor) || policy.variabilityFloor <= 0) {
+        throw new RangeError('Subjective baseline variabilityFloor must be finite and greater than zero.');
+    }
+    if (!Number.isFinite(policy.contributionCap) || policy.contributionCap <= 0) {
+        throw new RangeError('Subjective baseline contributionCap must be finite and greater than zero.');
+    }
+}
+
 /**
- * Distinct-date, complete-check-in-only history within `[windowStart, asOfDateExclusive)`.
- * Only `dataQuality.isComplete` check-ins count -- a partial minimum-safety check-in can
- * still carry pain/illness meaning for that day (see `safetyCheckin.ts`), but its null
- * subjective dimensions do not mature a baseline, the same convention `contextBrief.ts`'s
- * subjective section already uses. Duplicate documents for the same date collapse to one
- * entry (last one in `checkins` wins) so a data anomaly cannot inflate coverage or
- * double-weight a date's value in the mean.
+ * Distinct-date, complete-scored-history within `[windowStart, asOfDateExclusive)`.
+ * A partial minimum-safety check-in can still carry pain/illness meaning for that day,
+ * but a date only matures this baseline when all six subjective dimensions are scored.
+ * Duplicate documents for the same date collapse to one entry (last one in `checkins`
+ * wins) so a data anomaly cannot inflate coverage or double-weight a date's value.
  */
-function windowedCompleteCheckins(
+function windowedScoredCheckins(
     checkins: readonly DailySubjectiveCheckin[],
     windowStart: string,
     asOfDateExclusive: string,
 ): Map<string, DailySubjectiveCheckin> {
     const byDate = new Map<string, DailySubjectiveCheckin>();
     for (const checkin of checkins) {
-        if (!checkin.dataQuality.isComplete) continue;
+        if (!hasCompleteSubjectiveScores(checkin)) continue;
         if (checkin.date < windowStart || checkin.date >= asOfDateExclusive) continue;
         byDate.set(checkin.date, checkin);
     }
@@ -119,11 +152,13 @@ export function computeSubjectiveBaseline(
     asOfDate: string,
     policy: SubjectiveBaselinePolicy,
 ): SubjectiveBaseline | null {
+    assertValidPolicy(policy);
+
     const recentStart = addDaysToLocalDateString(asOfDate, -policy.recentWindowDays);
     const longStart = addDaysToLocalDateString(asOfDate, -policy.longWindowDays);
 
-    const recentByDate = windowedCompleteCheckins(checkins, recentStart, asOfDate);
-    const longByDate = windowedCompleteCheckins(checkins, longStart, asOfDate);
+    const recentByDate = windowedScoredCheckins(checkins, recentStart, asOfDate);
+    const longByDate = windowedScoredCheckins(checkins, longStart, asOfDate);
 
     // Recent and long coverage are checked separately (D-SUBJCOV): forcing one combined
     // count would let a long-window-only history pass as if the athlete had checked in
@@ -133,12 +168,8 @@ export function computeSubjectiveBaseline(
 
     const metrics = {} as Record<SubjectiveBaselineMetric, SubjectiveMetricBaseline>;
     for (const metric of SUBJECTIVE_BASELINE_METRICS) {
-        const recentValues = [...recentByDate.values()].map(c => c[metric]).filter((v): v is number => v !== null);
-        const longValues = [...longByDate.values()].map(c => c[metric]).filter((v): v is number => v !== null);
-        // Every counted day is a *complete* check-in (all six dimensions scored), so this
-        // can only be empty if the coverage checks above already returned null -- guarded
-        // defensively rather than assumed, since "complete" is data, not a type guarantee.
-        if (recentValues.length === 0 || longValues.length === 0) return null;
+        const recentValues = [...recentByDate.values()].map(c => c[metric] as number);
+        const longValues = [...longByDate.values()].map(c => c[metric] as number);
         metrics[metric] = {
             recentAvg: mean(recentValues),
             longAvg: mean(longValues),
@@ -146,12 +177,12 @@ export function computeSubjectiveBaseline(
         };
     }
 
-    // Any complete check-in strictly before asOfDate, not only the ones inside the long
-    // window -- an athlete who stopped checking in 40 days ago should report that as their
-    // last observation, not read as indistinguishable from never having checked in at all.
-    const priorComplete = checkins.filter(c => c.dataQuality.isComplete && c.date < asOfDate);
-    const lastObservationDate = priorComplete.length > 0
-        ? priorComplete.reduce((latest, c) => (c.date > latest ? c.date : latest), priorComplete[0].date)
+    // Any complete scored check-in strictly before asOfDate, not only the ones inside the
+    // long window. This is diagnostic provenance; coverage still comes only from the
+    // bounded recent/long windows above.
+    const priorScored = checkins.filter(c => hasCompleteSubjectiveScores(c) && c.date < asOfDate);
+    const lastObservationDate = priorScored.length > 0
+        ? priorScored.reduce((latest, c) => (c.date > latest ? c.date : latest), priorScored[0].date)
         : null;
 
     return {
