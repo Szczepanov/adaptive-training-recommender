@@ -1,5 +1,6 @@
 import type { DailyDecisionInput, DailyRecoverySnapshot, DailySubjectiveCheckin, TrainingIntentProfile, TrainingSettings, UserGoal, UserPreferences } from './models';
-import type { DataState } from './dataState';
+import type { DataIssue, DataState, DataStateSummary } from './dataState';
+import { summarizeDataState } from './dataState';
 import { isSupportedTrainingSettingsSchemaVersion } from './trainingSettingsSchema';
 import { computeSubjectiveBaseline, REFERENCE_SUBJECTIVE_BASELINE_POLICY, type SubjectiveBaseline } from './subjectiveBaseline';
 import { checkinService } from '../services/checkinService';
@@ -11,11 +12,13 @@ import { trainingIntentProfileService } from '../services/trainingIntentProfileS
 import { addDaysToLocalDateString, getLocalDateString } from '../utils/localDate';
 
 /** Composition-only extension. Subjective history is intentionally not part of the
- * persisted DailyDecisionInput contract; it is bounded transient evidence used to derive a
- * normalized baseline before the pure readiness evaluator is called (ADR-0020/D-SUBJPURE). */
+ * persisted DailyDecisionInput contract; raw historical check-ins remain local to this
+ * function and only normalized baseline evidence plus compact status/issues escape the
+ * composition boundary (ADR-0020/D-SUBJPURE/D-SUBJAUDIT). */
 export interface ComposedDailyDecisionInput extends DailyDecisionInput {
     subjectiveBaseline: SubjectiveBaseline | null;
-    subjectiveHistoryState: DataState<DailySubjectiveCheckin[]>;
+    subjectiveHistoryState: DataStateSummary;
+    subjectiveHistoryIssues: DataIssue[];
 }
 
 export class DecisionComposer {
@@ -35,8 +38,6 @@ export class DecisionComposer {
         );
         
         try {
-            // Use Promise.allSettled to handle individual service failures. The subjective
-            // history call is the single bounded historical query permitted by D-SUBJPURE.
             const results = await Promise.allSettled([
                 recoverySnapshotService.getRecoverySnapshotState(userId, targetDate),
                 checkinService.getCheckinState(userId, targetDate),
@@ -73,12 +74,18 @@ export class DecisionComposer {
                 ? results[5].value
                 : unavailable<TrainingIntentProfile>('read training intent profile');
             const trainingIntentProfile = trainingIntentProfileState.status === 'AVAILABLE' ? trainingIntentProfileState.data : null;
-            const subjectiveHistoryState: DataState<DailySubjectiveCheckin[]> = results[6].status === 'fulfilled'
+            const subjectiveHistoryRawState: DataState<DailySubjectiveCheckin[]> = results[6].status === 'fulfilled'
                 ? results[6].value
                 : unavailable<DailySubjectiveCheckin[]>('read subjective check-in history');
-            const subjectiveBaseline = subjectiveHistoryState.status === 'AVAILABLE'
-                ? computeSubjectiveBaseline(subjectiveHistoryState.data, targetDate, REFERENCE_SUBJECTIVE_BASELINE_POLICY)
+            const subjectiveBaseline = subjectiveHistoryRawState.status === 'AVAILABLE'
+                ? computeSubjectiveBaseline(subjectiveHistoryRawState.data, targetDate, REFERENCE_SUBJECTIVE_BASELINE_POLICY)
                 : null;
+            const subjectiveHistoryIssues = subjectiveHistoryRawState.status === 'AVAILABLE'
+                ? [...(subjectiveHistoryRawState.issues ?? [])]
+                : subjectiveHistoryRawState.status === 'INVALID'
+                    ? [...subjectiveHistoryRawState.issues]
+                    : [];
+            const subjectiveHistoryState = summarizeDataState(subjectiveHistoryRawState);
 
             const sourceStates = {
                 recoverySnapshot: recoveryState.status === 'AVAILABLE' ? { status: 'AVAILABLE' as const, revision: recoveryState.revision } : recoveryState,
@@ -93,23 +100,18 @@ export class DecisionComposer {
                     : trainingIntentProfileState,
             };
 
-            // Log permission/errors for debugging. A history failure is intentionally not a
-            // fatal decision-input failure; it means no relative subjective signal today.
             results.forEach((result, index) => {
                 if (result.status === 'rejected') {
                     const serviceNames = ['recoverySnapshot', 'checkinService', 'goalService', 'trainingSettingsService', 'preferencesService', 'trainingIntentProfileService', 'subjectiveHistory'];
                     console.warn(`${serviceNames[index]} failed:`, result.reason);
-                    
                     if (result.reason instanceof Error && result.reason.message.includes('Missing or insufficient permissions')) {
                         console.warn(`Permission denied for ${serviceNames[index]}. This may be due to missing Firebase security rules.`);
                     }
                 }
             });
-            if (subjectiveHistoryState.status === 'AVAILABLE' && subjectiveHistoryState.issues?.length) {
-                console.warn('Subjective history contains invalid rows excluded from the baseline:', subjectiveHistoryState.issues);
-            } else if (subjectiveHistoryState.status === 'INVALID') {
-                console.warn('Subjective history is invalid; relative subjective baseline disabled for this decision:', subjectiveHistoryState.issues);
-            } else if (subjectiveHistoryState.status === 'UNAVAILABLE') {
+            if (subjectiveHistoryIssues.length > 0) {
+                console.warn('Subjective history contains invalid rows excluded from the baseline:', subjectiveHistoryIssues);
+            } else if (subjectiveHistoryRawState.status === 'UNAVAILABLE') {
                 console.warn('Subjective history is unavailable; relative subjective baseline disabled for this decision.');
             }
 
@@ -120,7 +122,7 @@ export class DecisionComposer {
                 profileReady: preferences !== null
             };
 
-            const decisionInput: ComposedDailyDecisionInput = {
+            return {
                 userId,
                 date: targetDate,
                 recoverySnapshot,
@@ -133,34 +135,22 @@ export class DecisionComposer {
                 dataQuality,
                 subjectiveBaseline,
                 subjectiveHistoryState,
+                subjectiveHistoryIssues,
             };
-
-            return decisionInput;
         } catch (error) {
             console.error('Error composing daily decision input:', error);
             throw error;
         }
     }
 
-    /**
-     * Get decision inputs for a date range
-     */
-    async composeDecisionInputsInRange(
-        userId: string, 
-        startDate: string, 
-        endDate: string
-    ): Promise<ComposedDailyDecisionInput[]> {
+    async composeDecisionInputsInRange(userId: string, startDate: string, endDate: string): Promise<ComposedDailyDecisionInput[]> {
         try {
             const inputs: ComposedDailyDecisionInput[] = [];
             const start = new Date(startDate);
             const end = new Date(endDate);
-
             for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-                const dateStr = getLocalDateString(d);
-                const input = await this.composeDailyDecisionInput(userId, dateStr);
-                inputs.push(input);
+                inputs.push(await this.composeDailyDecisionInput(userId, getLocalDateString(d)));
             }
-
             return inputs;
         } catch (error) {
             console.error('Error composing decision inputs in range:', error);
@@ -168,17 +158,10 @@ export class DecisionComposer {
         }
     }
 
-    /**
-     * Get today's decision input with caching
-     */
     async getTodaysDecisionInput(userId: string): Promise<ComposedDailyDecisionInput> {
-        const today = getLocalDateString();
-        return this.composeDailyDecisionInput(userId, today);
+        return this.composeDailyDecisionInput(userId, getLocalDateString());
     }
 
-    /**
-     * Check if all required data is available for recommendations
-     */
     async isDataReadyForRecommendations(userId: string, date?: string): Promise<{
         isReady: boolean;
         missingItems: string[];
@@ -187,48 +170,26 @@ export class DecisionComposer {
         try {
             const input = await this.composeDailyDecisionInput(userId, date);
             const missingItems: string[] = [];
-
-            if (!input.dataQuality.hasRecoverySnapshot) {
-                missingItems.push('Recovery snapshot (Garmin data)');
-            }
-
+            if (!input.dataQuality.hasRecoverySnapshot) missingItems.push('Recovery snapshot (Garmin data)');
             if (!input.dataQuality.hasSubjectiveCheckin) {
                 missingItems.push('Daily subjective check-in');
             } else if (!input.dataQuality.subjectiveCheckinComplete) {
                 missingItems.push('Complete daily check-in (some fields left unanswered)');
             }
-
-            if (!input.dataQuality.profileReady) {
-                missingItems.push('User preferences');
-            }
-
-            return {
-                isReady: missingItems.length === 0,
-                missingItems,
-                dataQuality: input.dataQuality
-            };
+            if (!input.dataQuality.profileReady) missingItems.push('User preferences');
+            return { isReady: missingItems.length === 0, missingItems, dataQuality: input.dataQuality };
         } catch (error) {
             console.error('Error checking data readiness:', error);
             throw error;
         }
     }
 
-    /**
-     * Get data completeness percentage
-     */
     async getDataCompleteness(userId: string, date?: string): Promise<{
         percentage: number;
-        details: {
-            recoverySnapshot: boolean;
-            subjectiveCheckin: boolean;
-            preferences: boolean;
-            goals: boolean;
-            trainingSettings: boolean;
-        };
+        details: { recoverySnapshot: boolean; subjectiveCheckin: boolean; preferences: boolean; goals: boolean; trainingSettings: boolean };
     }> {
         try {
             const input = await this.composeDailyDecisionInput(userId, date);
-            
             const details = {
                 recoverySnapshot: input.dataQuality.hasRecoverySnapshot,
                 subjectiveCheckin: input.dataQuality.hasSubjectiveCheckin,
@@ -236,82 +197,42 @@ export class DecisionComposer {
                 goals: input.activeGoals.length > 0,
                 trainingSettings: input.trainingSettings.userId === input.userId
             };
-
             const trueCount = Object.values(details).filter(v => v).length;
-            const percentage = (trueCount / Object.keys(details).length) * 100;
-
-            return {
-                percentage: Math.round(percentage * 100) / 100,
-                details
-            };
+            return { percentage: Math.round((trueCount / Object.keys(details).length) * 10000) / 100, details };
         } catch (error) {
             console.error('Error calculating data completeness:', error);
             throw error;
         }
     }
 
-    /**
-     * Export decision input as JSON for debugging
-     */
+    /** Raw subjective-history rows never escape composeDailyDecisionInput, so this debug
+     * export can contain the normalized baseline/status but not the source history array. */
     async exportDecisionInput(userId: string, date?: string): Promise<string> {
         try {
-            const input = await this.composeDailyDecisionInput(userId, date);
-            return JSON.stringify(input, null, 2);
+            return JSON.stringify(await this.composeDailyDecisionInput(userId, date), null, 2);
         } catch (error) {
             console.error('Error exporting decision input:', error);
             throw error;
         }
     }
 
-    /**
-     * Validate decision input integrity
-     */
-    async validateDecisionInput(input: DailyDecisionInput): Promise<{
-        isValid: boolean;
-        errors: string[];
-    }> {
+    async validateDecisionInput(input: DailyDecisionInput): Promise<{ isValid: boolean; errors: string[] }> {
         const errors: string[] = [];
-
         if (!input.userId) errors.push('Missing userId');
         if (!input.date) errors.push('Missing date');
-
-        if (input.recoverySnapshot && input.recoverySnapshot.userId !== input.userId) {
-            errors.push('Recovery snapshot userId mismatch');
-        }
-
-        if (input.subjectiveCheckin && input.subjectiveCheckin.userId !== input.userId) {
-            errors.push('Subjective check-in userId mismatch');
-        }
-
-        if (input.subjectiveCheckin && input.subjectiveCheckin.date !== input.date) {
-            errors.push('Subjective check-in date mismatch');
-        }
-
-        if (input.preferences && input.preferences.userId !== input.userId) {
-            errors.push('Preferences userId mismatch');
-        }
-
+        if (input.recoverySnapshot && input.recoverySnapshot.userId !== input.userId) errors.push('Recovery snapshot userId mismatch');
+        if (input.subjectiveCheckin && input.subjectiveCheckin.userId !== input.userId) errors.push('Subjective check-in userId mismatch');
+        if (input.subjectiveCheckin && input.subjectiveCheckin.date !== input.date) errors.push('Subjective check-in date mismatch');
+        if (input.preferences && input.preferences.userId !== input.userId) errors.push('Preferences userId mismatch');
         input.activeGoals.forEach(goal => {
-            if (goal.userId !== input.userId) {
-                errors.push(`Goal ${goal.title} userId mismatch`);
-            }
-            if (goal.status !== 'active') {
-                errors.push(`Goal ${goal.title} is not active`);
-            }
+            if (goal.userId !== input.userId) errors.push(`Goal ${goal.title} userId mismatch`);
+            if (goal.status !== 'active') errors.push(`Goal ${goal.title} is not active`);
         });
-
         if (input.trainingSettings.userId !== input.userId) errors.push('Training settings userId mismatch');
         if (!isSupportedTrainingSettingsSchemaVersion(input.trainingSettings.schemaVersion)) errors.push('Unsupported training settings schema');
-
-        return {
-            isValid: errors.length === 0,
-            errors
-        };
+        return { isValid: errors.length === 0, errors };
     }
 
-    /**
-     * Get decision input summary for dashboard
-     */
     async getDecisionInputSummary(userId: string, date?: string): Promise<{
         hasData: boolean;
         readinessScore?: number;
@@ -324,20 +245,14 @@ export class DecisionComposer {
     }> {
         try {
             const input = await this.composeDailyDecisionInput(userId, date);
-            
             let readinessScore: number | undefined;
             if (input.subjectiveCheckin) {
                 const { readiness, sleepQuality, fatigue, soreness, mentalStress, motivation } = input.subjectiveCheckin;
-                const values = [readiness, sleepQuality, fatigue, soreness, mentalStress, motivation]
-                    .filter(v => v !== null) as number[];
-                if (values.length > 0) {
-                    readinessScore = values.reduce((a, b) => a + b, 0) / values.length;
-                }
+                const values = [readiness, sleepQuality, fatigue, soreness, mentalStress, motivation].filter(v => v !== null) as number[];
+                if (values.length > 0) readinessScore = values.reduce((a, b) => a + b, 0) / values.length;
             }
-
             const configuredEquipmentCount = Object.values(input.trainingSettings.equipment).filter(Boolean).length;
             const activeGuardrailsCount = Object.values(input.trainingSettings.guardrails).filter(Boolean).length;
-
             return {
                 hasData: input.dataQuality.hasRecoverySnapshot || input.dataQuality.hasSubjectiveCheckin,
                 readinessScore,
@@ -363,7 +278,6 @@ if (import.meta.env.DEV && typeof window !== 'undefined') {
             console.error('User ID required. Usage: __DEBUG_DECISION_INPUT__(userId, date?)');
             return;
         }
-        
         try {
             const input = await decisionComposer.composeDailyDecisionInput(userId, date);
             await decisionComposer.validateDecisionInput(input);
