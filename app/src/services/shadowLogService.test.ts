@@ -23,7 +23,7 @@ describe('ShadowLogService', () => {
         services.getRecoverySnapshotState.mockResolvedValue({ status: 'MISSING' });
         services.getCheckinsInRange.mockResolvedValue([]);
         services.getRecommendationsInRange.mockResolvedValue({ status: 'AVAILABLE', data: [], revision: null });
-        services.getEntriesInRange.mockResolvedValue([]);
+        services.getEntriesInRange.mockResolvedValue({ entries: [], invalidRecords: 0 });
     });
 
     it('reads the recommendation range end-exclusive one day past the inclusive endDate', async () => {
@@ -55,10 +55,10 @@ describe('ShadowLogService', () => {
             }],
             revision: null,
         });
-        services.getEntriesInRange.mockResolvedValue([{
+        services.getEntriesInRange.mockResolvedValue({ entries: [{
             userId: 'u1', date: '2026-08-15', externalVerdict: 'proceed', sawEngineVerdictFirst: false,
             createdAt: '', updatedAt: '', schemaVersion: 1,
-        }]);
+        }], invalidRecords: 0 });
 
         const result = await new ShadowLogService().build('u1', START, END);
         expect(result.rows).toHaveLength(1);
@@ -84,6 +84,12 @@ describe('ShadowLogService', () => {
         services.getCheckinsInRange.mockResolvedValue([{ userId: 'u1', date: '2026-08-15', readiness: 'not-a-number' }]);
         const result = await new ShadowLogService().build('u1', START, END);
         expect(result.unavailableSources).toContain('subjective check-ins (1 invalid record(s) omitted)');
+    });
+
+    it('reports invalid decision journal rows instead of silently turning them into missing days', async () => {
+        services.getEntriesInRange.mockResolvedValue({ entries: [], invalidRecords: 2 });
+        const result = await new ShadowLogService().build('u1', START, END);
+        expect(result.unavailableSources).toContain('decision journal (2 invalid record(s) omitted)');
     });
 
     it('reports a failed recommendation range read', async () => {
