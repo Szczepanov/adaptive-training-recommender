@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { deriveExternalSessionProfiles, toGateableSession } from './externalSessionProfiles';
+import { deriveExternalSessionProfiles, externalEventAsFixedActivity, toGateableSession } from './externalSessionProfiles';
 import { DEFAULT_COST_BY_MODALITY } from './completedTraining';
 import type { ExternalPlanSession, ExternalSessionIntensity, ExternalSessionModality } from './models';
 
@@ -14,18 +14,35 @@ function session(modality: ExternalSessionModality, intensity: ExternalSessionIn
 }
 
 describe('deriveExternalSessionProfiles', () => {
-    it('reuses the same table that costs an unmatched Garmin activity (D-EXTTIER)', () => {
+    it('keeps the existing modality/intensity fallback as the base model (D-EXTTIER)', () => {
         const derived = deriveExternalSessionProfiles(session('cycling', 'hard'));
-        expect(derived.costProfile).toEqual(DEFAULT_COST_BY_MODALITY.Cycling.hard);
-        expect(derived.systemicCost).toBe(DEFAULT_COST_BY_MODALITY.Cycling.hard.systemic);
+        expect(derived.costProfile.systemic).toBeGreaterThan(0);
+        expect(derived.costProfile.systemic).toBeLessThanOrEqual(1);
+        expect(DEFAULT_COST_BY_MODALITY.Cycling.hard.systemic)
+            .toBeGreaterThan(DEFAULT_COST_BY_MODALITY.Cycling.moderate.systemic);
+    });
+
+    it('uses authored duration instead of costing every same-intensity session identically', () => {
+        const short = deriveExternalSessionProfiles(session('cycling', 'hard', {
+            gating: { modality: 'cycling', intensity: 'hard', durationMin: 30, durationMax: 30, environment: 'either', equipment: [] },
+        }));
+        const long = deriveExternalSessionProfiles(session('cycling', 'hard', {
+            gating: { modality: 'cycling', intensity: 'hard', durationMin: 120, durationMax: 120, environment: 'either', equipment: [] },
+        }));
+
+        expect(short.systemicCost).toBeLessThan(long.systemicCost);
+        expect(short.stimulusProfile.thresholdPower).toBeLessThan(long.stimulusProfile.thresholdPower);
+        expect(long.systemicCost).toBeLessThanOrEqual(1);
+        expect(long.stimulusProfile.thresholdPower).toBeLessThanOrEqual(1);
     });
 
     it('collapses the two extra authored intensities conservatively', () => {
-        // recovery is never costed below the easy row, max never below the hard row.
-        expect(deriveExternalSessionProfiles(session('cycling', 'recovery')).costProfile)
-            .toEqual(DEFAULT_COST_BY_MODALITY.Cycling.easy);
-        expect(deriveExternalSessionProfiles(session('cycling', 'max')).costProfile)
-            .toEqual(DEFAULT_COST_BY_MODALITY.Cycling.hard);
+        const recovery = deriveExternalSessionProfiles(session('cycling', 'recovery')).systemicCost;
+        const easy = deriveExternalSessionProfiles(session('cycling', 'easy')).systemicCost;
+        const hard = deriveExternalSessionProfiles(session('cycling', 'hard')).systemicCost;
+        const max = deriveExternalSessionProfiles(session('cycling', 'max')).systemicCost;
+        expect(recovery).toBe(easy);
+        expect(max).toBe(hard);
     });
 
     it('increases systemic cost monotonically with authored intensity', () => {
@@ -46,6 +63,28 @@ describe('deriveExternalSessionProfiles', () => {
     });
 });
 
+describe('externalEventAsFixedActivity', () => {
+    it('reconciles an imported event onto the existing fixed-activity contract without persisting it', () => {
+        const event = session('cycling', 'max', {
+            isEvent: true,
+            placement: { week: 1, preferredDay: 'sunday', flexibility: 'fixed', ifMissed: 'drop' },
+            gating: { modality: 'cycling', intensity: 'max', durationMin: 50, durationMax: 60, environment: 'outdoor', equipment: [] },
+        });
+        const fixed = externalEventAsFixedActivity(event, 'race-block', 2, 'u1', '2026-08-23');
+
+        expect(fixed).toMatchObject({
+            id: 'external-event:race-block:2:s1', userId: 'u1', date: '2026-08-23',
+            durationMin: 60, fixed: true, environment: 'outdoor', isCompleted: false,
+        });
+        expect(fixed?.expectedCost?.systemic).toBeGreaterThan(0);
+        expect(fixed?.expectedStimulus?.thresholdPower).toBeGreaterThan(0);
+    });
+
+    it('does not turn an ordinary imported training session into a fixed activity', () => {
+        expect(externalEventAsFixedActivity(session('cycling', 'hard'), 'block', 1, 'u1', '2026-08-18')).toBeNull();
+    });
+});
+
 describe('toGateableSession', () => {
     it('carries the athlete-facing constraints the gates read', () => {
         const gateable = toGateableSession(session('strength', 'moderate', {
@@ -58,18 +97,12 @@ describe('toGateableSession', () => {
     });
 
     it('infers safety tags conservatively, because guardrails match nothing else', () => {
-        // eligibility.ts matches guardrails against safetyTags alone. A manually set
-        // guardrail produces no restricted modality or category, so an empty tag list
-        // would let an imported running session through a guardrail that excludes every
-        // equivalently-tagged catalog template -- the asymmetry D-CANDIDATE forbids.
         expect(toGateableSession(session('running', 'hard')).safetyTags).toContain('avoid_high_impact');
         expect(toGateableSession(session('field', 'moderate')).safetyTags).toContain('avoid_high_impact');
         expect(toGateableSession(session('cycling', 'hard')).safetyTags).toEqual([]);
     });
 
     it('tags loaded strength work but leaves easy strength available', () => {
-        // Over-excluding is the correct direction to be wrong in for a hard safety gate,
-        // but it is scoped: a mobility-style easy session is not withheld.
         const loaded = toGateableSession(session('strength', 'hard')).safetyTags;
         expect(loaded).toEqual(expect.arrayContaining(['avoid_heavy_lower_body', 'avoid_overhead_pressing', 'avoid_heavy_spinal_loading']));
         expect(toGateableSession(session('strength', 'easy')).safetyTags).toEqual([]);
