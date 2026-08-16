@@ -1,6 +1,6 @@
 # Phase 9: Subjective baselines in readiness mode
 
-* **Status:** In progress. ADR-0020 is Accepted; 9.5 and 9.1 are done. 9.2/9.3/9.4/9.6/9.7
+* **Status:** In progress. ADR-0020 is Accepted; 9.5, 9.1 and 9.2 are done. 9.3/9.4/9.6/9.7
   each still wait on an earlier item in this same plan, and 9.8 additionally needs Phase
   9.0's prospective evidence.
 * **Blocked by:** nothing at the plan level. Individual work items list their own blockers
@@ -137,7 +137,7 @@ consume it (9.3) -- `subjectiveBaseline.test.ts` exercises it standalone.
 
 ---
 
-### 9.2 Carry the baseline on `DailyReadiness` `[ ]`
+### 9.2 Carry the baseline on `DailyReadiness` `[x]`
 
 **Current behaviour.** `DailyReadiness` is `{ subjective, objective }`. Objective baselines
 arrive precomputed on `DailyRecoverySnapshot.derived`; subjective history has no equivalent.
@@ -150,6 +150,18 @@ or Firestore read (D-SUBJPURE).
 
 **Done when** the field exists, is optional, and the evaluator's purity/synchronous contract
 is otherwise unchanged.
+
+**Implementation note.** `DailyReadiness.subjectiveBaseline?: SubjectiveBaseline | null`
+added in `models.ts`. `rules.ts` itself is untouched -- `evaluateReadinessAndSafetyEnvelope`
+does not read the field yet, so `check-policy-drift.mjs` stays clean without a
+`POLICY_VERSION` bump. `rules.test.ts` proves the field is genuinely inert: attaching a
+deliberately worst-case-adverse fixture baseline to a `DailyReadiness` produces
+byte-identical output from `evaluateReadinessAndSafetyEnvelope` across the train/modify/
+recover mode bands, and the function's result is asserted non-`Promise` (still synchronous,
+D-SUBJPURE). `models.ts` importing the `SubjectiveBaseline` type from
+`subjectiveBaseline.ts` (which itself imports `DailySubjectiveCheckin` from `models.ts`) is
+a type-only cycle, erased entirely at compile time -- no runtime import edge, so it does not
+affect 9.0.6's import-graph guard or `check-policy-drift.mjs`'s file list.
 
 ---
 
@@ -410,7 +422,7 @@ make two different live policies share an identity.
 | # | Task | Status | Blocked by |
 |---|---|:--:|---|
 | 9.1 | Subjective baseline computation | `[x]` | ADR-0020 |
-| 9.2 | Carry the baseline on `DailyReadiness` | `[ ]` | 9.1 |
+| 9.2 | Carry the baseline on `DailyReadiness` | `[x]` | 9.1 |
 | 9.3 | Drift term behind a default-off selector | `[ ]` | 9.2 |
 | 9.4 | Composition boundary supplies the baseline | `[ ]` | 9.2 |
 | 9.5 | Scenario corpus subjective variance | `[x]` | — |

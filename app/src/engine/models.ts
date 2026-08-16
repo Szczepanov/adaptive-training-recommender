@@ -1,5 +1,6 @@
 import type { AthletePerformanceProfile, WorkoutPrescription } from '../workouts/models.ts';
 import type { DataIssue, DataState, DataStateSummary } from './dataState';
+import type { SubjectiveBaseline } from './subjectiveBaseline';
 
 // --- Engine Input Models ---
 export interface SubjectiveInput {
@@ -69,6 +70,16 @@ export interface EngineObjectiveInput {
 export interface DailyReadiness {
     subjective: SubjectiveInput;
     objective: EngineObjectiveInput;
+    /** Phase 9.2: the athlete's recent-vs-long subjective history (Phase 9.1), computed at
+     *  the composition boundary and handed in as data -- the same way objective baselines
+     *  already arrive precomputed on `derived.hrv7dAvg` and friends. Absent (undefined) or
+     *  `null` are both a supported "no relative subjective signal" input and preserve
+     *  today's behaviour exactly: nothing in `rules.ts` reads this field yet (Phase 9.3
+     *  adds the drift term that will, behind a default-off selector). Adding it here does
+     *  not give `evaluateReadinessAndSafetyEnvelope` a history provider, an async
+     *  signature, or a Firestore read (D-SUBJPURE) -- it stays exactly as pure and
+     *  synchronous as it already was. */
+    subjectiveBaseline?: SubjectiveBaseline | null;
 }
 
 export interface UserContext {

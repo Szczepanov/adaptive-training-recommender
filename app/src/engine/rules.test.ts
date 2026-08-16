@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { buildNextDayScenarios, evaluateTraining, evaluateNextDayPlan, evaluateNextDayPlanWithIntent, adjustSessionRecommendation, evaluateEnvelopes } from './rules';
+import { buildNextDayScenarios, evaluateTraining, evaluateNextDayPlan, evaluateNextDayPlanWithIntent, adjustSessionRecommendation, evaluateEnvelopes, evaluateReadinessAndSafetyEnvelope } from './rules';
 import type { TrainingHistoryProvider } from './trainingHistory';
 import type { DailyReadiness, UserContext, EngineObjectiveInput, SubjectiveInput, TrainingSettings } from './models';
+import type { SubjectiveBaseline } from './subjectiveBaseline';
 import { mapContextFromGoalsAndTrainingSettings } from './adapters';
 import { TEMPLATES } from './templates';
 
@@ -787,6 +788,70 @@ describe('session adjustment engine', () => {
         const rec = evaluateTraining(readiness, context, '2026-08-08');
         expect(rec.envelopes?.safety.restrictedModalities).toContain('Running');
         expect(rec.template.modality).not.toBe('Running');
+    });
+});
+
+// --- Phase 9.2: DailyReadiness carries an optional subjectiveBaseline field --------------
+
+function fixtureSubjectiveBaseline(overrides: Partial<Record<'readiness' | 'sleepQuality' | 'fatigue' | 'soreness' | 'mentalStress' | 'motivation', number>> = {}): SubjectiveBaseline {
+    // A "worst case" baseline -- every metric drifted maximally adverse -- to make the
+    // strongest possible case that attaching it changes nothing. If 9.2 accidentally wired
+    // this into the mode calculation, this fixture would be the one most likely to expose it.
+    const adverseMetric = { recentAvg: 2, longAvg: 8, variability: 1 };
+    return {
+        estimatorId: 'test-fixture-v1',
+        historyThroughDateExclusive: '2026-08-08',
+        recentRecordedDays: 7,
+        longRecordedDays: 28,
+        lastObservationDate: '2026-08-07',
+        metrics: {
+            readiness: { ...adverseMetric, ...overrides },
+            sleepQuality: adverseMetric,
+            fatigue: adverseMetric,
+            soreness: adverseMetric,
+            mentalStress: adverseMetric,
+            motivation: adverseMetric,
+        },
+    };
+}
+
+describe('Phase 9.2: DailyReadiness.subjectiveBaseline is optional and inert', () => {
+    it('evaluateReadinessAndSafetyEnvelope returns byte-identical output whether or not a baseline is attached', () => {
+        const context = baseContext();
+        const withoutBaseline: DailyReadiness = { subjective: neutralSubjective(), objective: quietObjective() };
+        const withBaseline: DailyReadiness = { ...withoutBaseline, subjectiveBaseline: fixtureSubjectiveBaseline() };
+
+        const resultWithout = evaluateReadinessAndSafetyEnvelope(withoutBaseline, context);
+        const resultWith = evaluateReadinessAndSafetyEnvelope(withBaseline, context);
+
+        expect(resultWith).toEqual(resultWithout);
+    });
+
+    it('remains true across every mode band (train/modify/recover), not only a neutral day', () => {
+        const context = baseContext();
+        const fixtures: DailyReadiness[] = [
+            { subjective: greenSubjective(), objective: quietObjective() }, // train
+            { subjective: neutralSubjective({ soreness: 7 }), objective: quietObjective() }, // modify (soreness > 6)
+            { subjective: neutralSubjective({ fatigue: 9, soreness: 9 }), objective: quietObjective() }, // recover
+        ];
+        for (const readiness of fixtures) {
+            const withoutBaseline = evaluateReadinessAndSafetyEnvelope(readiness, context);
+            const withBaseline = evaluateReadinessAndSafetyEnvelope({ ...readiness, subjectiveBaseline: fixtureSubjectiveBaseline() }, context);
+            expect(withBaseline).toEqual(withoutBaseline);
+        }
+    });
+
+    it('a DailyReadiness omitting subjectiveBaseline entirely still type-checks and evaluates (field is truly optional)', () => {
+        const readiness: DailyReadiness = { subjective: neutralSubjective(), objective: quietObjective() };
+        expect(readiness.subjectiveBaseline).toBeUndefined();
+        expect(() => evaluateReadinessAndSafetyEnvelope(readiness, baseContext())).not.toThrow();
+    });
+
+    it('evaluateReadinessAndSafetyEnvelope stays synchronous (D-SUBJPURE) -- no Promise, no async gap', () => {
+        const readiness: DailyReadiness = { subjective: neutralSubjective(), objective: quietObjective(), subjectiveBaseline: fixtureSubjectiveBaseline() };
+        const result = evaluateReadinessAndSafetyEnvelope(readiness, baseContext());
+        expect(result).not.toBeInstanceOf(Promise);
+        expect(typeof (result as unknown as { then?: unknown }).then).not.toBe('function');
     });
 });
 

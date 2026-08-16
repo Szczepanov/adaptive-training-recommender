@@ -101,7 +101,7 @@ How agreed changes get made. Mutable, status-tracked, and expected to go stale �
 * [**Phase 7B: Training intent, capacity & planning modes**](./plans/phase-7-training-intent-and-planning-modes.md) — Evergreen evidence-to-dose-to-capacity planning proposal.
 * [**Phase 8: Externally-planned mode**](./plans/phase-8-externally-planned-mode.md) — *Implemented.* Import an externally-authored plan, adjudicate its sessions against daily readiness, and repoint the weekly machinery to critique.
 * [**Phase 9.0: Shadow mode and the decision journal**](./plans/phase-9-0-shadow-mode-and-decision-journal.md) — *In progress.* Journal storage, UI, agreement classification, export and the engine-isolation guard are done; only the operational unattended-ingestion step and running the multi-week block itself remain.
-* [**Phase 9: Subjective baselines in readiness mode**](./plans/phase-9-subjective-baselines.md) — *In progress.* ADR-0020 accepted; the scenario corpus now has real subjective variance (9.5) and subjective baseline computation (9.1) is underway. Shipping stays gated on Phase 9.0's prospective evidence.
+* [**Phase 9: Subjective baselines in readiness mode**](./plans/phase-9-subjective-baselines.md) — *In progress.* ADR-0020 accepted; the scenario corpus has real subjective variance (9.5), the subjective baseline computation exists (9.1) and `DailyReadiness` can carry it (9.2), inert until the drift term (9.3) reads it. Shipping stays gated on Phase 9.0's prospective evidence.
 
 ---
 
