@@ -90,6 +90,18 @@ describe('external decision replay (ADR-0019 D-IMMUT)', () => {
         };
     }
 
+    function eventPlanRevision(): ExternalTrainingPlan {
+        const plan = planRevision();
+        plan.sessions[0] = {
+            ...plan.sessions[0],
+            title: 'Road Race',
+            isEvent: true,
+            placement: { week: 1, preferredDay: 'tuesday', flexibility: 'fixed', ifMissed: 'drop' },
+            gating: { modality: 'cycling', intensity: 'max', durationMin: 50, durationMax: 60, environment: 'outdoor', equipment: [] },
+        };
+        return plan;
+    }
+
     function externalRecommendation(): DailyRecommendation {
         const record = auditedRecommendation();
         record.templateId = externalTemplateId(PLAN_ID, 1, SESSION_ID);
@@ -102,12 +114,22 @@ describe('external decision replay (ADR-0019 D-IMMUT)', () => {
         return record;
     }
 
-    /** Stamps the audit with the hash the supplied revision actually produces, which is
-     * what a real import does. */
     async function withRealHash(plan: ExternalTrainingPlan): Promise<DailyRecommendation> {
         const { computeContentHash } = await import('./externalPlanHash');
         const record = externalRecommendation();
         record.recommendationAudit!.externalPlan!.contentHash = await computeContentHash(plan);
+        return record;
+    }
+
+    async function eventHybridRecommendation(plan: ExternalTrainingPlan): Promise<DailyRecommendation> {
+        const { computeContentHash } = await import('./externalPlanHash');
+        const record = auditedRecommendation();
+        record.recommendationAudit!.externalPlan = {
+            planId: PLAN_ID,
+            revision: 1,
+            sessionId: SESSION_ID,
+            contentHash: await computeContentHash(plan),
+        };
         return record;
     }
 
@@ -117,8 +139,33 @@ describe('external decision replay (ADR-0019 D-IMMUT)', () => {
             .toEqual({ reproducible: true, policyMatchesCurrent: true, errors: [] });
     });
 
+    it('replays an external event as provenance for a normally ranked catalog recommendation', async () => {
+        const plan = eventPlanRevision();
+        const record = await eventHybridRecommendation(plan);
+
+        expect(await replayRecommendationAuditAgainstRevision(record, plan))
+            .toEqual({ reproducible: true, policyMatchesCurrent: true, errors: [] });
+    });
+
+    it('still verifies highest-utility selection on an event-informed ranked decision', async () => {
+        const plan = eventPlanRevision();
+        const record = await eventHybridRecommendation(plan);
+        record.recommendationAudit!.candidateScores[1].utilityScore = 2;
+
+        expect((await replayRecommendationAuditAgainstRevision(record, plan)).errors)
+            .toContain('Persisted template was not the highest-utility audited candidate.');
+    });
+
+    it('rejects persisting an event itself as the recommended synthetic template', async () => {
+        const plan = eventPlanRevision();
+        const record = await eventHybridRecommendation(plan);
+        record.templateId = externalTemplateId(PLAN_ID, 1, SESSION_ID);
+
+        expect((await replayRecommendationAuditAgainstRevision(record, plan)).errors)
+            .toContain('An external event was persisted as the recommended template instead of as a fixed commitment.');
+    });
+
     it('fails with a distinct hash-mismatch reason when the stored revision was edited', async () => {
-        // The dangerous case: the same planId and the same revision number, different bytes.
         const original = planRevision();
         const mutated = planRevision();
         mutated.sessions[0].prescription = { summary: '5x8 at threshold.' };
@@ -148,8 +195,6 @@ describe('external decision replay (ADR-0019 D-IMMUT)', () => {
     });
 
     it('rejects a revision that hashes correctly but no longer contains the session', async () => {
-        // Only reachable if the hash was recorded from different content, so this is the
-        // belt to the hash's braces rather than a case the hash already covers.
         const plan = planRevision();
         const record = await withRealHash(plan);
         record.recommendationAudit!.externalPlan!.sessionId = 'w2-vo2';
@@ -158,13 +203,13 @@ describe('external decision replay (ADR-0019 D-IMMUT)', () => {
             .toContain('Session w2-vo2 is not present in plan autumn-block revision 1.');
     });
 
-    it('rejects an external audit that carries ranked candidates', async () => {
+    it('rejects ranked candidates on an ordinary externally selected session', async () => {
         const plan = planRevision();
         const record = await withRealHash(plan);
         record.recommendationAudit!.candidateScores = [{ templateId: 'easy_01', utilityScore: 1, excludedReasons: [] }];
 
         expect((await replayRecommendationAuditAgainstRevision(record, plan)).errors)
-            .toContain('An external decision audited ranked candidates, which no external decision produces.');
+            .toContain('An externally selected session audited ranked candidates, which that decision path must not produce.');
     });
 
     it('accepts the rest template a non-actionable verdict persists', async () => {
