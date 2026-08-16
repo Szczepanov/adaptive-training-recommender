@@ -1,11 +1,13 @@
 import { DEFAULT_COST_BY_MODALITY, DEFAULT_STIMULUS_BY_MODALITY } from './completedTraining';
 import type { GateableSession } from './eligibility';
+import { ENRICHED_TEMPLATES } from './templates';
 import type {
     ExternalPlanSession,
     GuardrailKey,
     CompletedTrainingIntensity,
     ExternalSessionIntensity,
     ExternalSessionModality,
+    FixedActivity,
     SessionTemplate,
     WorkoutCostProfile,
     WorkoutStimulusProfile,
@@ -56,10 +58,50 @@ export interface ExternalSessionProfiles {
     stimulusProfile: WorkoutStimulusProfile;
 }
 
+function catalogIntensity(template: SessionTemplate): CompletedTrainingIntensity {
+    const systemicCost = template.costProfile?.systemic ?? template.systemicCost;
+    if (systemicCost >= 0.55) return 'hard';
+    if (systemicCost >= 0.25) return 'moderate';
+    return 'easy';
+}
+
+function durationReferenceMin(range: Pick<ExternalPlanSession['gating'], 'durationMin' | 'durationMax'>): number {
+    return (range.durationMin + range.durationMax) / 2;
+}
+
+/**
+ * The fallback tables are calibrated against catalog-sized sessions, not against an
+ * abstract one-hour constant. Use the median duration of comparable catalog templates as
+ * the reference so duration enters the same coarse inference without adding a new magic
+ * number. This is still an estimate; every resulting stimulus is discounted at the
+ * `authoredExternal` evidence rung.
+ */
+function catalogDurationReferenceMin(
+    modality: SessionTemplate['modality'],
+    intensity: CompletedTrainingIntensity,
+): number | null {
+    const durations = ENRICHED_TEMPLATES
+        .filter(template => template.modality === modality && catalogIntensity(template) === intensity)
+        .map(template => (template.durationMin + template.durationMax) / 2)
+        .filter(duration => Number.isFinite(duration) && duration > 0)
+        .sort((left, right) => left - right);
+    return durations.length > 0 ? durations[Math.floor(durations.length / 2)] : null;
+}
+
+function scaleProfile<T extends Record<string, number>>(profile: T, factor: number): T {
+    return Object.fromEntries(
+        Object.entries(profile).map(([key, value]) => [key, Math.max(0, Math.min(1, value * factor))]),
+    ) as T;
+}
+
 /**
  * Derives load and adaptation profiles for an imported session from `modality` ×
- * `intensity`, reusing the same conservative fallbacks that already handle an unmatched
- * Garmin activity (ADR-0019 D-EXTTIER).
+ * `intensity` × authored duration, reusing the same conservative fallback tables that
+ * already handle an unmatched Garmin activity (ADR-0019 D-EXTTIER).
+ *
+ * Duration is relative to the median comparable catalog session. Short authored sessions
+ * therefore receive less inferred load/stimulus; longer ones receive more, with every axis
+ * clamped to the engine's existing 0..1 profile contract. No AI-supplied cost is accepted.
  *
  * The schema deliberately accepts no cost input: an AI asked for a calibrated 0–1 load
  * figure supplies a confident one, and it would silently move the `modify`-mode ceiling.
@@ -67,11 +109,50 @@ export interface ExternalSessionProfiles {
 export function deriveExternalSessionProfiles(session: ExternalPlanSession): ExternalSessionProfiles {
     const modality = MODALITY_BY_EXTERNAL[session.gating.modality];
     const intensity = INTENSITY_BY_EXTERNAL[session.gating.intensity];
-    const costProfile = DEFAULT_COST_BY_MODALITY[modality][intensity];
+    const baseCost = DEFAULT_COST_BY_MODALITY[modality][intensity];
+    const baseStimulus = DEFAULT_STIMULUS_BY_MODALITY[modality][intensity];
+    const referenceDuration = catalogDurationReferenceMin(modality, intensity);
+    const factor = referenceDuration === null ? 1 : durationReferenceMin(session.gating) / referenceDuration;
+    const costProfile = scaleProfile(baseCost, factor);
+    const stimulusProfile = scaleProfile(baseStimulus, factor);
     return {
         systemicCost: costProfile.systemic,
         costProfile,
-        stimulusProfile: DEFAULT_STIMULUS_BY_MODALITY[modality][intensity],
+        stimulusProfile,
+    };
+}
+
+/**
+ * Reconciles an imported target event onto the existing FixedActivity contract for the
+ * current in-memory decision. It is deliberately not persisted: the athlete's UserEvent
+ * remains the authored calendar record, while this adapter gives availability, fatigue and
+ * objective-credit code the same shape they already understand.
+ */
+export function externalEventAsFixedActivity(
+    session: ExternalPlanSession,
+    planId: string,
+    revision: number,
+    userId: string,
+    date: string,
+): FixedActivity | null {
+    if (!session.isEvent) return null;
+    const profiles = deriveExternalSessionProfiles(session);
+    return {
+        id: `external-event:${planId}:${revision}:${session.id}`,
+        userId,
+        title: session.title,
+        date,
+        // Reserve the authored upper bound so another recommendation never relies on time
+        // the event itself may legitimately consume.
+        durationMin: session.gating.durationMax,
+        expectedCost: profiles.costProfile,
+        expectedStimulus: profiles.stimulusProfile,
+        fixed: true,
+        environment: session.gating.environment,
+        equipment: [...session.gating.equipment],
+        isCompleted: false,
+        createdAt: '',
+        updatedAt: '',
     };
 }
 
