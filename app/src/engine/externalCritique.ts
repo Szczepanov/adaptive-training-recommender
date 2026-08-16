@@ -149,14 +149,18 @@ function perDateFindings(
     const fusionPolicy = input.fatigueFusionPolicy ?? 'max';
     const fixedActivities = [...(input.fixedActivities ?? [])];
     let carriedFatigue = input.fatigue;
-    const history: SessionHistoryEntry[] = normalizeHistory(
-        [...(input.trailingHistory ?? [])].filter(entry => !entry.date || entry.date < input.weekStartDate),
-        input.weekStartDate,
-    );
+    // Raw entries, normalised together below. `normalizeHistory` is what derives `role` and
+    // `intensityClass` from cost when they are absent, and every spacing rule in
+    // `evaluateRecoveryConstraints` reads those. Pushing the week's own sessions in
+    // un-normalised would silently exempt any imported session whose derived category is
+    // not itself an anchor category -- a hard field session, for one.
+    const rawHistory: (RecentHistoryEntry | SessionHistoryEntry)[] =
+        [...(input.trailingHistory ?? [])].filter(entry => !entry.date || entry.date < input.weekStartDate);
 
     for (const placed of inWeek) {
         const template = toSyntheticTemplate(placed.session, input.planId, input.revision);
         const profiles = deriveExternalSessionProfiles(placed.session);
+        const history = normalizeHistory(rawHistory, placed.date);
 
         // Same two steps as `evaluateProjectedDate`: decay to the date, then charge the
         // day's already-booked commitments before judging what the plan adds on top.
@@ -188,7 +192,7 @@ function perDateFindings(
             });
         }
 
-        history.push({
+        rawHistory.push({
             date: placed.date,
             templateId: template.id,
             category: template.category,

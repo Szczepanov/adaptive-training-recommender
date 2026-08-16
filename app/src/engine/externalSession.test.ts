@@ -191,6 +191,31 @@ describe('adjudicateExternalSession', () => {
         expect(verdict.rationale).toContain('minimum useful dose');
     });
 
+    it('actually cuts volume when it says scale, even at a tier that would not cut it', () => {
+        // resolveExecutionDose caps by readiness *tier*, which is derived independently of
+        // `mode`. A modify day at a high tier therefore leaves the planned volume untouched,
+        // and returning that under a `scale` verdict tells the athlete to do the reduced
+        // version while showing them the full prescription.
+        const proceeded = adjudicate(session(), readiness());
+        const scaled = adjudicate(session(), readiness({ soreness: 7 }));
+
+        expect(proceeded.decision).toBe('proceed');
+        expect(scaled.decision).toBe('scale');
+        expect(scaled.executionDose!.volume).toBeLessThan(proceeded.executionDose!.volume);
+    });
+
+    it('cuts to the author\'s own reduced duration when they gave one', () => {
+        const authored = session({
+            scaling: { reducible: true, reducedSummary: '2x12', reducedDurationMin: 30 },
+            gating: { modality: 'cycling', intensity: 'hard', durationMin: 60, durationMax: 75, environment: 'either', equipment: [] },
+        });
+        const proceeded = adjudicate(session(), readiness());
+        const scaled = adjudicate(authored, readiness({ soreness: 7 }));
+
+        // Their 30-of-60 halving, not a figure this engine invented.
+        expect(scaled.executionDose!.volume).toBeCloseTo(proceeded.executionDose!.volume * 0.5, 6);
+    });
+
     it('leaves a low-cost session alone in modify mode', () => {
         const mobility = session({
             gating: { modality: 'mobility', intensity: 'easy', durationMin: 30, durationMax: 40, environment: 'either', equipment: [] },

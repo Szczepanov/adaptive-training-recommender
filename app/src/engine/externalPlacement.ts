@@ -110,6 +110,10 @@ export type ReplacementOutcome = 'rescheduled' | 'dropped' | 'unresolved';
 export interface ReplacementProposal {
     sessionId: string;
     outcome: ReplacementOutcome;
+    /** The date the session was not done on. Carried so a confirmed `dropped` proposal has
+     * a date to record even when the plan has no overlay entry for this session yet --
+     * which is the common case, since an unmoved session lives only in the revision. */
+    missedDate: string;
     /** Present only for `rescheduled`. */
     date?: string;
     rationale: string;
@@ -129,15 +133,22 @@ export function proposeReplacement(
     missedSessionId: string,
     missedDate: string,
     occupancy: PlacementOccupancy = {},
+    /** Today. A replacement must never be proposed into the past, which `missedDate` alone
+     * cannot prevent: a session noticed as missed three days late would otherwise be
+     * offered a date that has already gone. Defaults to `missedDate` so a caller reporting
+     * a miss on the day it happened is unaffected. */
+    today: string = missedDate,
 ): ReplacementProposal {
+    const earliest = today > missedDate ? today : missedDate;
     const session = plan.sessions.find(item => item.id === missedSessionId);
     if (!session) {
-        return { sessionId: missedSessionId, outcome: 'unresolved', rationale: 'That session is not part of this plan revision.' };
+        return { sessionId: missedSessionId, missedDate, outcome: 'unresolved', rationale: 'That session is not part of this plan revision.' };
     }
 
     if (session.placement.ifMissed === 'drop') {
         return {
             sessionId: missedSessionId,
+            missedDate,
             outcome: 'dropped',
             rationale: 'Your plan marks this session as one to let go rather than chase.',
         };
@@ -151,10 +162,11 @@ export function proposeReplacement(
         ...(occupancy.fixedActivities ?? []).filter(activity => !activity.isCompleted).map(activity => activity.date),
     ]);
 
-    const withinWeek = weekDates(plan, session.placement.week).filter(date => date > missedDate && !taken.has(date));
+    const withinWeek = weekDates(plan, session.placement.week).filter(date => date > earliest && !taken.has(date));
     if (withinWeek.length > 0) {
         return {
             sessionId: missedSessionId,
+            missedDate,
             outcome: 'rescheduled',
             date: withinWeek[0],
             rationale: `Moved to ${withinWeek[0]}, the next free day in the same week.`,
@@ -164,6 +176,7 @@ export function proposeReplacement(
     if (session.placement.ifMissed === 'reschedule_within_week') {
         return {
             sessionId: missedSessionId,
+            missedDate,
             outcome: 'dropped',
             rationale: 'No free day is left in this session\'s own week, and your plan does not carry it forward.',
         };
@@ -171,11 +184,12 @@ export function proposeReplacement(
 
     // carry_forward: search onward across the rest of the plan, bounded by its own length.
     const lastDate = addDaysToLocalDateString(plan.startDate, plan.weekCount * 7 - 1);
-    for (let offset = 1; offset <= getDayDiff(lastDate, missedDate); offset++) {
-        const candidate = addDaysToLocalDateString(missedDate, offset);
+    for (let offset = 1; offset <= getDayDiff(lastDate, earliest); offset++) {
+        const candidate = addDaysToLocalDateString(earliest, offset);
         if (!taken.has(candidate)) {
             return {
                 sessionId: missedSessionId,
+                missedDate,
                 outcome: 'rescheduled',
                 date: candidate,
                 rationale: `Carried forward to ${candidate}, the next free day in the plan.`,
@@ -185,6 +199,7 @@ export function proposeReplacement(
 
     return {
         sessionId: missedSessionId,
+        missedDate,
         outcome: 'unresolved',
         rationale: 'No free day remains before this plan ends. Re-plan rather than forcing it in.',
     };
@@ -200,10 +215,14 @@ export function applyConfirmedProposal(
     const others = overlay.assignments.filter(item => item.sessionId !== proposal.sessionId);
     if (proposal.outcome === 'dropped') {
         const existing = overlay.assignments.find(item => item.sessionId === proposal.sessionId);
-        // Without a prior entry there is no date to record. Writing an empty string would
-        // read back as a PlacedSession dated '', which sorts before every real date.
-        if (!existing) return overlay;
-        return { ...overlay, assignments: [...others, { ...existing, status: 'dropped' }] };
+        // An unmoved session has no overlay entry at all -- the common case, since the
+        // overlay only records departures from the plan. `missedDate` supplies the date so
+        // the drop is recorded rather than silently discarded; writing an empty string
+        // instead would read back as a PlacedSession dated '', sorting before every real date.
+        return {
+            ...overlay,
+            assignments: [...others, { sessionId: proposal.sessionId, date: existing?.date ?? proposal.missedDate, status: 'dropped' }],
+        };
     }
     return {
         ...overlay,

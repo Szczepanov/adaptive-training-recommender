@@ -47,6 +47,37 @@ function belowUsefulFloor(session: ExternalPlanSession, executionDose: PlannedDo
     return floor !== undefined && session.gating.durationMin * executionDose.volume < floor;
 }
 
+/**
+ * The volume a session actually gets when today's systemic ceiling excludes it as written.
+ *
+ * `resolveExecutionDose` caps by readiness *tier* only, which is derived independently of
+ * `mode` — so a `modify` day at a Hard tier leaves the planned volume untouched. Returning
+ * that unchanged dose under a `scale` verdict would tell the athlete "do the reduced
+ * version" over the full prescription, which is the one thing a scale verdict must not do.
+ *
+ * Two candidate reductions, and the smaller wins:
+ *   - the author's own reduced form, as a fraction of the written duration. Their number,
+ *     not ours, whenever they supplied one;
+ *   - proportional relief: cut volume by however far the session overshoots the ceiling.
+ *     Cost is roughly linear in duration for a fixed intensity, so this is the reduction
+ *     that brings the day's load back to what it was allowed to be.
+ */
+function scaledExecutionDose(
+    session: ExternalPlanSession,
+    executionDose: PlannedDose,
+    systemicCost: number,
+    ceiling: number,
+): PlannedDose {
+    const proportional = systemicCost > 0 ? Math.min(1, ceiling / systemicCost) : 1;
+    const authored = session.scaling?.reducedDurationMin !== undefined && session.gating.durationMin > 0
+        ? Math.min(1, session.scaling.reducedDurationMin / session.gating.durationMin)
+        : 1;
+    return {
+        ...executionDose,
+        volume: Math.max(0, Math.min(executionDose.volume, executionDose.volume * Math.min(proportional, authored))),
+    };
+}
+
 function deferBelowFloor(session: ExternalPlanSession, gateFailures: EligibilityReason[]): ExternalSessionVerdict {
     return {
         decision: 'defer',
@@ -164,8 +195,8 @@ export function adjudicateExternalSession(
     // readiness still reads green). Checking only the modify ceiling would let a hard
     // imported session through a day that excludes every equivalent catalog template.
     const tierCeiling = EXTERNAL_PLAN_TIER_SYSTEMIC_COST_CEILING[envelopes.plan.maxAllowableTier];
-    const exceedsCeiling = gateable.systemicCost > tierCeiling
-        || (mode === 'modify' && gateable.systemicCost > EXTERNAL_MODIFY_MAX_SYSTEMIC_COST);
+    const ceiling = mode === 'modify' ? Math.min(tierCeiling, EXTERNAL_MODIFY_MAX_SYSTEMIC_COST) : tierCeiling;
+    const exceedsCeiling = gateable.systemicCost > ceiling;
 
     if (exceedsCeiling) {
         // D-IRREDUCIBLE: the author said this session has no useful reduced form, so a
@@ -177,13 +208,14 @@ export function adjudicateExternalSession(
                 rationale: 'Readiness caps today\'s systemic load, and this session has no useful reduced form. Move it rather than doing a compromised version.',
             };
         }
+        const scaledDose = scaledExecutionDose(session, executionDose, gateable.systemicCost, ceiling);
         // The floor applies here too, and this is the branch that actually cuts volume:
         // checking it only on the proceed path let the scaled case prescribe below the
         // author's declared minimum while a cheaper session on the same day deferred.
-        if (belowUsefulFloor(session, executionDose)) return deferBelowFloor(session, gateFailures);
+        if (belowUsefulFloor(session, scaledDose)) return deferBelowFloor(session, gateFailures);
         return {
             decision: 'scale',
-            executionDose,
+            executionDose: scaledDose,
             ...(session.scaling?.reducedSummary ? { scaledSummary: session.scaling.reducedSummary } : {}),
             gateFailures,
             rationale: session.scaling?.reducedSummary

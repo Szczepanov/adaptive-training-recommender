@@ -34,6 +34,9 @@ export interface ExternalPlanWeekProps {
     onConfirmReplacement: (proposal: ReplacementProposal) => void | Promise<void>;
     /** Free days in the same week, offered when the athlete rejects the proposed date. */
     onChooseDate: (sessionId: string, date: string) => void | Promise<void>;
+    /** Set when the last write failed. The week below still shows the stored placement,
+     * which is accurate — nothing was written. */
+    writeError?: string | null;
 }
 
 function findingsFor(critique: ExternalWeekCritique | null, date: string): ExternalCritiqueFinding[] {
@@ -54,7 +57,7 @@ function weekLevelFindings(critique: ExternalWeekCritique | null): ExternalCriti
  */
 export function ExternalPlanWeek({
     planTitle, weekStartDate, placed, critique, today,
-    onProposeReplacement, onConfirmReplacement, onChooseDate,
+    onProposeReplacement, onConfirmReplacement, onChooseDate, writeError = null,
 }: ExternalPlanWeekProps) {
     const [proposal, setProposal] = useState<ReplacementProposal | null>(null);
     const [choosingFor, setChoosingFor] = useState<string | null>(null);
@@ -87,6 +90,8 @@ export function ExternalPlanWeek({
                     <span className="provisional-tag">Your plan&apos;s own schedule — reviewed, never rewritten</span>
                 </div>
             </div>
+
+            {writeError && <p className="external-week-error" role="alert">{writeError}</p>}
 
             <ol className="external-week-list">
                 {days.map(date => {

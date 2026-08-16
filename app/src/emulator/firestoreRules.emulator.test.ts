@@ -131,8 +131,8 @@ function validRecommendation(auditEvaluatedAt = '2026-08-07T08:00:00Z') {
                 sourceStatuses: { activities: 'AVAILABLE', recommendations: 'AVAILABLE', manualTraining: 'MISSING' },
             },
             envelope: { safetyRestrictedModalityCount: 0, planMaxAllowableTier: 'Easy' },
-            candidateScores: [],
-        },
+            candidateScores: [] as unknown[],
+        } as Record<string, unknown>,
     };
 }
 
@@ -187,10 +187,33 @@ emulatorDescribe('Firestore security rules', () => {
         ));
     });
 
+    it('accepts an audit carrying external plan provenance, and rejects a malformed one', async () => {
+        // Every externally-planned day writes this field. Omitting it from the audit's
+        // hasOnly list denied the write outright, and Home only warns on a failed save --
+        // so the whole mode would have silently persisted nothing.
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        const external = validRecommendation();
+        external.recommendationAudit.externalPlan = {
+            planId: 'autumn-block', revision: 2, sessionId: 'w1-threshold', contentHash: 'a'.repeat(64),
+        };
+        await assertSucceeds(setDoc(doc(ownerDb, recommendationPath), external));
+
+        for (const broken of [
+            { planId: 'autumn-block', revision: 2, sessionId: 'w1-threshold' },
+            { planId: 'autumn-block', revision: 0, sessionId: 'w1-threshold', contentHash: 'abc' },
+            { planId: 'autumn-block', revision: '2', sessionId: 'w1-threshold', contentHash: 'abc' },
+            { planId: 'autumn-block', revision: 2, sessionId: 'w1-threshold', contentHash: 'abc', extra: true },
+        ]) {
+            const malformed = validRecommendation();
+            malformed.recommendationAudit.externalPlan = broken;
+            await assertFails(setDoc(doc(ownerDb, `${recommendationPath}`), malformed));
+        }
+    });
+
     it('rejects a v3 recommendation with a malformed audit', async () => {
         const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
         const malformed = validRecommendation();
-        malformed.recommendationAudit.history.sourceStatuses.activities = 'FORGED';
+        (malformed.recommendationAudit.history as { sourceStatuses: Record<string, string> }).sourceStatuses.activities = 'FORGED';
         await assertFails(setDoc(doc(ownerDb, recommendationPath), malformed));
     });
 

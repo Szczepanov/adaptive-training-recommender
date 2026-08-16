@@ -214,6 +214,23 @@ describe('recovery constraints', () => {
         expect(result.findings.find(item => item.rule === 'QUALITY_SPACING_VIOLATION')?.date).toBe(MONDAY);
     });
 
+    it('treats a hard session as anchor-grade from its cost, not only its category', () => {
+        // A hard field session is costed at 0.8 systemic but its derived category is
+        // "Field Maintenance", which is not in ANCHOR_HISTORY_CATEGORIES. Only
+        // normalizeHistory's cost-derived role makes it count as the prior anchor -- so a
+        // hard ride the next day has to be flagged.
+        const field: Partial<ExternalPlanSession> = {
+            gating: { modality: 'field', intensity: 'hard', durationMin: 90, durationMax: 100, environment: 'outdoor', equipment: [] },
+        };
+        const result = critiqueExternalWeek(input({
+            placed: [placed(MONDAY, { ...field, id: 'match' }), placed('2026-08-18', { id: 'ride' })],
+        }));
+
+        const finding = result.findings.find(item => item.rule === 'QUALITY_SPACING_VIOLATION');
+        expect(finding?.date).toBe('2026-08-18');
+        expect(finding?.sessionId).toBe('ride');
+    });
+
     it('leaves an adequately spaced week alone', () => {
         const result = critiqueExternalWeek(input({
             placed: [placed(MONDAY, { id: 'a' }), placed('2026-08-20', { id: 'b' }), placed('2026-08-23', { id: 'c' })],

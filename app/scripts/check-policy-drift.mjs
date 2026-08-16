@@ -37,6 +37,11 @@ const decisionAffectingFiles = [
   'app/src/engine/fatigue.ts',
   'app/src/engine/planner.ts',
   'app/src/engine/dose.ts',
+  // ADR-0019: adjudication decides what an externally-planned athlete is told to do, so a
+  // change here alters a persisted decision exactly as a change to rules.ts does. The
+  // profile derivation is included because the cost it produces feeds the ceilings.
+  'app/src/engine/externalSession.ts',
+  'app/src/engine/externalSessionProfiles.ts',
 ];
 
 const policyFile = 'app/src/engine/policy.ts';

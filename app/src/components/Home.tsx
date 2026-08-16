@@ -138,6 +138,10 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
   const [historySnapshot, setHistorySnapshot] = useState<TrainingHistorySnapshot | null>(null);
   const [activeExternalPlan, setActiveExternalPlan] = useState<ActiveExternalPlan | null>(null);
   const [externalWeekCritique, setExternalWeekCritique] = useState<ExternalWeekCritique | null>(null);
+  /** The same list `getActivePlanState` resolved placement against, so the missed-session
+   * proposal cannot compute a different placement than the one on screen. */
+  const [planWeekFixedActivities, setPlanWeekFixedActivities] = useState<FixedActivity[]>([]);
+  const [placementError, setPlacementError] = useState<string | null>(null);
   // ⚡ Bolt Performance Optimization:
   // Memoized callback to prevent passing new function references to AdherencePrompt on every render.
   // Expected Impact: Ensures React.memo on AdherencePrompt works as intended.
@@ -164,6 +168,14 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
   );
   const canGenerateNormalPlan = canGenerateNormalRecommendation(minimumSafetyStatus);
 
+  /** Every branch that does not resolve an imported plan must clear it. A stale plan left
+   * on screen would render live reschedule buttons over a week nothing recomputed. */
+  const clearExternalPlanState = useCallback(() => {
+    setActiveExternalPlan(null);
+    setExternalWeekCritique(null);
+    setPlanWeekFixedActivities([]);
+  }, []);
+
   const loadDashboardData = useCallback(async () => {
     const requestId = ++dashboardRequest.current;
     const isCurrent = () => requestId === dashboardRequest.current;
@@ -179,6 +191,7 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
       if (recoveryState && recoveryState.status !== 'AVAILABLE' && recoveryState.status !== 'MISSING') {
         setRecommendation(null);
         setNextDayPlan(null);
+        clearExternalPlanState();
         setError(recoveryState.status === 'UNAVAILABLE'
           ? 'Recovery data is temporarily unavailable. Please retry before generating a plan.'
           : 'Recovery data needs repair before generating a plan.');
@@ -190,6 +203,7 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
       if (decisionSourceFailure) {
         setRecommendation(null);
         setNextDayPlan(null);
+        clearExternalPlanState();
         setError(decisionSourceFailure.status === 'UNAVAILABLE'
           ? 'Decision inputs are temporarily unavailable. Please retry before generating a plan.'
           : 'Decision inputs need repair before generating a plan.');
@@ -266,8 +280,25 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
 
         // ADR-0019: an imported plan owns selection on the days it covers. Resolved before
         // the decision so the same placement drives today's adjudication and the week view.
+        //
+        // Placement spreads sessions around booked commitments across the *whole* plan week,
+        // so it needs the week's activities, not the two days the live decision reads. Giving
+        // it the shorter list made the resolved placement here disagree with the one the
+        // missed-session proposal computes from the week-long list, and under-charged the
+        // critique's fatigue projection for days 2-6.
+        const planWeekStart = mondayOf(input.date);
+        const planWeekActivitiesState = await fixedActivityService.getActivitiesInRangeState(
+          userId, planWeekStart, addDaysToLocalDateString(planWeekStart, 6),
+        );
+        if (!isCurrent()) return;
+        if (planWeekActivitiesState.status !== 'AVAILABLE') {
+          console.warn(`Fixed activities for the plan week could not be read (${planWeekActivitiesState.status}); placement falls back to the dates the plan itself implies.`);
+        }
+        const planWeekActivities = planWeekActivitiesState.status === 'AVAILABLE' ? planWeekActivitiesState.data : [];
+        setPlanWeekFixedActivities(planWeekActivities);
+
         const activeExternalState = await activeExternalPlanService.getActivePlanState(
-          userId, input.date, todayAndTomorrowFixedActivities,
+          userId, input.date, planWeekActivities,
         );
         if (!isCurrent()) return;
         const activeExternal = activeExternalState.status === 'AVAILABLE' ? activeExternalState.data : null;
@@ -314,7 +345,7 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
             internalStrainAsOf: input.date,
             weeklyCommitment: intent.planningContext.profile.weeklyCommitment,
             trailingHistory: trailingHistoryFromCompletedExposures(intent.history, input.date),
-            fixedActivities: todayAndTomorrowFixedActivities,
+            fixedActivities: planWeekActivities,
           }));
         } else {
           setExternalWeekCritique(null);
@@ -338,10 +369,12 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
         setAdjustmentDirection(null);
         setNextDayPlan(null);
         setHistorySnapshot(null);
+        clearExternalPlanState();
       } else {
         setRecommendation(null);
         setNextDayPlan(null);
         setHistorySnapshot(null);
+        clearExternalPlanState();
       }
     } catch (err) {
       if (!isCurrent()) return;
@@ -350,7 +383,7 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
     } finally {
       if (isCurrent()) setLoading(false);
     }
-  }, [userId]);
+  }, [userId, clearExternalPlanState]);
 
   useEffect(() => {
     loadDashboardData();
@@ -501,18 +534,30 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
   const handleProposeReplacement = useCallback((sessionId: string, missedDate: string): ReplacementProposal => {
     if (!activeExternalPlan) throw new Error('No imported plan is active.');
     return proposeReplacement(
+      // The same list the displayed placement was resolved against, and today, so a session
+      // noticed as missed several days late is never offered a date that has passed.
       activeExternalPlan.plan, activeExternalPlan.placement, sessionId, missedDate,
-      { fixedActivities },
+      { fixedActivities: planWeekFixedActivities },
+      decisionInput?.date ?? missedDate,
     );
-  }, [activeExternalPlan, fixedActivities]);
+  }, [activeExternalPlan, planWeekFixedActivities, decisionInput?.date]);
 
   const persistAssignments = useCallback(async (assignments: ExternalPlacementAssignment[]) => {
     if (!activeExternalPlan) return;
-    await externalPlanService.savePlacement(userId, {
-      planId: activeExternalPlan.plan.planId,
-      revision: activeExternalPlan.plan.revision,
-      assignments,
-    });
+    setPlacementError(null);
+    try {
+      await externalPlanService.savePlacement(userId, {
+        planId: activeExternalPlan.plan.planId,
+        revision: activeExternalPlan.plan.revision,
+        assignments,
+      });
+    } catch (err) {
+      // The week on screen still shows the old placement, which is the truth: nothing was
+      // written. Saying so beats an unhandled rejection and a silently unchanged week.
+      console.error('Failed to save external plan placement:', err);
+      setPlacementError('That change could not be saved. Your plan is unchanged — check your connection and try again.');
+      return;
+    }
     await loadDashboardData();
   }, [activeExternalPlan, userId, loadDashboardData]);
 
@@ -765,7 +810,10 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
             )}
           </div>
 
-          {/* Imported plan: the placed week and the engine's advisory review of it */}
+          {/* Imported plan: the placed week and the engine's advisory review of it.
+              It *replaces* the generated forecast below rather than sitting beside it --
+              two different weeks on one screen, one of them contradicting the plan the
+              athlete just imported, is worse than either alone. */}
           {activeExternalPlan && decisionInput && (
             <ExternalPlanWeek
               planTitle={activeExternalPlan.plan.title}
@@ -776,18 +824,21 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
               onProposeReplacement={handleProposeReplacement}
               onConfirmReplacement={handleConfirmReplacement}
               onChooseDate={handleChooseDate}
+              writeError={placementError}
             />
           )}
 
           {/* Rolling 7-Day Forecast */}
-          <WeekAheadStrip
-            plan={weekAheadPlan}
-            nextDayPlan={nextDayPlan}
-            selectedTier={selectedNextDayTier}
-            onSelectTier={setSelectedNextDayTier}
-            trainingIntentProfile={decisionInput?.trainingIntentProfile}
-            planningMode={resolvedPlanningMode}
-          />
+          {!activeExternalPlan && (
+            <WeekAheadStrip
+              plan={weekAheadPlan}
+              nextDayPlan={nextDayPlan}
+              selectedTier={selectedNextDayTier}
+              onSelectTier={setSelectedNextDayTier}
+              trainingIntentProfile={decisionInput?.trainingIntentProfile}
+              planningMode={resolvedPlanningMode}
+            />
+          )}
         </div>
 
         {/* Sidebar Context & Status Column (~30%-32%) */}

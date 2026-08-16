@@ -51,7 +51,7 @@ service cloud.firestore {
 
     function hasValidRecommendationAudit(audit) {
       return audit is map
-        && audit.keys().hasOnly(['policyVersion', 'evaluatedAt', 'decisionContextRevision', 'safetyStatus', 'history', 'envelope', 'plannedDose', 'executionDose', 'candidateScores', 'droppedContributorObjectives'])
+        && audit.keys().hasOnly(['policyVersion', 'evaluatedAt', 'decisionContextRevision', 'safetyStatus', 'history', 'envelope', 'plannedDose', 'executionDose', 'candidateScores', 'droppedContributorObjectives', 'externalPlan'])
         && audit.keys().hasAll(['policyVersion', 'evaluatedAt', 'decisionContextRevision', 'safetyStatus', 'history', 'envelope', 'candidateScores'])
         && audit.policyVersion is string
         && audit.evaluatedAt is string
@@ -76,7 +76,18 @@ service cloud.firestore {
         && (!('plannedDose' in audit) || hasValidDose(audit.plannedDose))
         && (!('executionDose' in audit) || hasValidDose(audit.executionDose))
         && audit.candidateScores is list && audit.candidateScores.size() <= 64
-        && (!('droppedContributorObjectives' in audit) || (audit.droppedContributorObjectives is list && audit.droppedContributorObjectives.size() <= 64));
+        && (!('droppedContributorObjectives' in audit) || (audit.droppedContributorObjectives is list && audit.droppedContributorObjectives.size() <= 64))
+        // ADR-0019: present exactly when an imported session was adjudicated. Validated
+        // rather than merely permitted -- it is what a replay verifies the decision against.
+        && (!('externalPlan' in audit) || (
+          audit.externalPlan is map
+          && audit.externalPlan.keys().hasOnly(['planId', 'revision', 'sessionId', 'contentHash'])
+          && audit.externalPlan.keys().hasAll(['planId', 'revision', 'sessionId', 'contentHash'])
+          && audit.externalPlan.planId is string && audit.externalPlan.planId.size() <= 64
+          && audit.externalPlan.revision is int && audit.externalPlan.revision >= 1
+          && audit.externalPlan.sessionId is string && audit.externalPlan.sessionId.size() <= 64
+          && audit.externalPlan.contentHash is string && audit.externalPlan.contentHash.size() <= 128
+        ));
     }
 
     function hasValidRecommendation(userId, date) {

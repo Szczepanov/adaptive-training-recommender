@@ -195,25 +195,43 @@ describe('confirmation is the only writer', () => {
 
     it('records a dropped session as dropped rather than removing it', () => {
         const stored = overlay([{ sessionId: 's1', date: MONDAY, status: 'planned' }]);
-        const applied = applyConfirmedProposal(stored, { sessionId: 's1', outcome: 'dropped', rationale: 'x' });
+        const applied = applyConfirmedProposal(stored, { sessionId: 's1', missedDate: MONDAY, outcome: 'dropped', rationale: 'x' });
 
         expect(applied.assignments).toHaveLength(1);
         expect(applied.assignments[0].status).toBe('dropped');
     });
 
-    it('does not write an empty date when dropping a session with no prior entry', () => {
-        // An empty date reads back as a PlacedSession dated '', which sorts before every
-        // real date and would surface at the top of the week.
+    it('records a drop for a session that has no overlay entry yet', () => {
+        // The common case: an unmoved session lives only in the revision, so the overlay has
+        // nothing to mark. Returning the overlay untouched would make "drop" a no-op that
+        // reappears on the next read, which is exactly what the athlete asked not to happen.
         const empty = overlay([]);
-        const applied = applyConfirmedProposal(empty, { sessionId: 's1', outcome: 'dropped', rationale: 'x' });
+        const applied = applyConfirmedProposal(empty, { sessionId: 's1', missedDate: MONDAY, outcome: 'dropped', rationale: 'x' });
 
+        expect(applied.assignments).toEqual([{ sessionId: 's1', date: MONDAY, status: 'dropped' }]);
+        // Still never an empty date, which would sort before every real date on the week view.
         expect(applied.assignments.every(item => item.date !== '')).toBe(true);
-        expect(applied).toBe(empty);
     });
 
     it('leaves the overlay alone for an unresolved proposal', () => {
         const stored = overlay([{ sessionId: 's1', date: MONDAY, status: 'planned' }]);
-        expect(applyConfirmedProposal(stored, { sessionId: 's1', outcome: 'unresolved', rationale: 'x' })).toBe(stored);
+        expect(applyConfirmedProposal(stored, { sessionId: 's1', missedDate: MONDAY, outcome: 'unresolved', rationale: 'x' })).toBe(stored);
+    });
+
+    it('never proposes a date that has already passed', () => {
+        // A miss noticed three days late must not be offered Tuesday. `missedDate` alone
+        // cannot express this -- only today can.
+        const late = session('s1', { placement: { week: 1, preferredDay: 'monday', flexibility: 'preferred', ifMissed: 'carry_forward' } });
+        const proposal = proposeReplacement(plan([late]), null, 's1', MONDAY, {}, '2026-08-20');
+
+        expect(proposal.outcome).toBe('rescheduled');
+        expect(proposal.date! > '2026-08-20').toBe(true);
+    });
+
+    it('carries the missed date on every proposal, whatever the outcome', () => {
+        const drop = session('s1', { placement: { week: 1, preferredDay: 'monday', flexibility: 'preferred', ifMissed: 'drop' } });
+        expect(proposeReplacement(plan([drop]), null, 's1', MONDAY).missedDate).toBe(MONDAY);
+        expect(proposeReplacement(plan([drop]), null, 'nope', MONDAY).missedDate).toBe(MONDAY);
     });
 
     it('never re-ranks or substitutes: the module imports nothing from the selection path', () => {
