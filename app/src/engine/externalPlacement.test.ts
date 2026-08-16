@@ -70,7 +70,6 @@ describe('resolvePlacement', () => {
         const b = session('b', { placement: { week: 1, preferredDay: 'monday', flexibility: 'fixed', ifMissed: 'drop' } });
         const placed = resolvePlacement(plan([a, b]), null);
 
-        // A genuine conflict the athlete should see, not one to paper over silently.
         expect(placed.every(item => item.date === MONDAY)).toBe(true);
         expect(placed.every(item => item.moved === false)).toBe(true);
     });
@@ -89,8 +88,6 @@ describe('resolvePlacement', () => {
     });
 
     it('keeps a moved session holding its new date', () => {
-        // applyConfirmedProposal writes 'moved', so treating only 'planned' as occupying
-        // let the next flexible session stack on a session just rescheduled.
         const moved = session('moved', { placement: { week: 1, preferredDay: 'monday', flexibility: 'preferred', ifMissed: 'drop' } });
         const other = session('other', { placement: { week: 1, preferredDay: 'wednesday', flexibility: 'preferred', ifMissed: 'drop' } });
         const placed = resolvePlacement(plan([moved, other]), overlay([{ sessionId: 'moved', date: '2026-08-19', status: 'moved' }]));
@@ -112,7 +109,6 @@ describe('resolvePlacement', () => {
         const saturdayFlex = session('flex', { placement: { week: 1, preferredDay: 'saturday', flexibility: 'preferred', ifMissed: 'drop' } });
         const placed = resolvePlacement(plan([saturdayFixed, saturdayFlex]), null);
 
-        // Saturday is 2026-08-22; the flexible session must not land on Monday the 17th.
         expect(placed.find(item => item.session.id === 'flex')!.date).toBe('2026-08-23');
     });
 });
@@ -189,7 +185,6 @@ describe('confirmation is the only writer', () => {
 
         const applied = applyConfirmedProposal(stored, proposal);
         expect(applied.assignments.find(item => item.sessionId === 's1')).toMatchObject({ date: '2026-08-18', status: 'moved' });
-        // The input overlay is still untouched.
         expect(JSON.stringify(stored)).toBe(snapshot);
     });
 
@@ -202,14 +197,10 @@ describe('confirmation is the only writer', () => {
     });
 
     it('records a drop for a session that has no overlay entry yet', () => {
-        // The common case: an unmoved session lives only in the revision, so the overlay has
-        // nothing to mark. Returning the overlay untouched would make "drop" a no-op that
-        // reappears on the next read, which is exactly what the athlete asked not to happen.
         const empty = overlay([]);
         const applied = applyConfirmedProposal(empty, { sessionId: 's1', missedDate: MONDAY, outcome: 'dropped', rationale: 'x' });
 
         expect(applied.assignments).toEqual([{ sessionId: 's1', date: MONDAY, status: 'dropped' }]);
-        // Still never an empty date, which would sort before every real date on the week view.
         expect(applied.assignments.every(item => item.date !== '')).toBe(true);
     });
 
@@ -218,14 +209,23 @@ describe('confirmation is the only writer', () => {
         expect(applyConfirmedProposal(stored, { sessionId: 's1', missedDate: MONDAY, outcome: 'unresolved', rationale: 'x' })).toBe(stored);
     });
 
-    it('never proposes a date that has already passed', () => {
-        // A miss noticed three days late must not be offered Tuesday. `missedDate` alone
-        // cannot express this -- only today can.
+    it('offers today when a miss is noticed late and today is still free', () => {
         const late = session('s1', { placement: { week: 1, preferredDay: 'monday', flexibility: 'preferred', ifMissed: 'carry_forward' } });
         const proposal = proposeReplacement(plan([late]), null, 's1', MONDAY, {}, '2026-08-20');
 
         expect(proposal.outcome).toBe('rescheduled');
-        expect(proposal.date! > '2026-08-20').toBe(true);
+        expect(proposal.date).toBe('2026-08-20');
+    });
+
+    it('skips today when today is already occupied, but still never proposes the past', () => {
+        const late = session('s1', { placement: { week: 1, preferredDay: 'monday', flexibility: 'preferred', ifMissed: 'carry_forward' } });
+        const proposal = proposeReplacement(
+            plan([late]), null, 's1', MONDAY,
+            { fixedActivities: [fixedActivity('2026-08-20')] }, '2026-08-20',
+        );
+
+        expect(proposal.outcome).toBe('rescheduled');
+        expect(proposal.date).toBe('2026-08-21');
     });
 
     it('carries the missed date on every proposal, whatever the outcome', () => {
