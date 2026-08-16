@@ -10,13 +10,14 @@ This note records the implementation boundary for ADR-0020 D-SUBJHIST / D-SUBJPU
 2. `CheckinService.getCheckinsInRangeState` queries a half-open range `[D-28, D)`; the decision date is never fetched.
 3. Every returned Firestore row is parsed with `parseSubjectiveCheckin`, including path ownership and date identity. Invalid rows are excluded and surfaced as `DataIssue`s rather than coerced into neutral observations.
 4. `computeSubjectiveBaseline` receives only the validated rows. Sparse history returns `null` under the estimator's independent recent/long coverage gates.
-5. The transient derived baseline is attached to today's `DailyReadiness` before `evaluateTrainingWithIntent` is called. Raw historical rows are not persisted into the recommendation/audit.
+5. Raw historical rows remain local to the composition function. The returned composed input exposes only the normalized `SubjectiveBaseline`, a compact history state/revision, and bounded `DataIssue`s; debug/export helpers therefore do not duplicate the raw history array.
+6. The transient derived baseline is attached to today's `DailyReadiness` before `evaluateTrainingWithIntent` is called. Recommendation persistence/audit does not receive raw historical rows.
 
 ## Failure semantics
 
 - empty/sparse history -> no baseline;
 - invalid-only history -> no baseline;
-- partially malformed history -> valid rows may still mature a baseline and the malformed rows remain visible as `DataIssue`s;
+- partially malformed history -> valid rows may still mature a baseline and the malformed rows remain visible as compact `DataIssue`s;
 - query/permission failure -> no baseline;
 - today's ordinary check-in and absolute safety logic continue normally in all of the above cases.
 
