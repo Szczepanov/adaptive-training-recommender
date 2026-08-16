@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 vi.setConfig({ testTimeout: 30_000 });
-import { evaluateTrainingWithIntent, type ExternalPlanContext } from './rules';
+import { evaluateNextDayPlanWithIntent, evaluateTrainingWithIntent, type ExternalPlanContext } from './rules';
 import { resolvePlanningContext } from './planningMode';
 import { evaluatePeriodizationPhase } from './periodization';
 import { isExternalTemplateId } from './externalSessionProfiles';
@@ -218,6 +218,33 @@ describe('evaluateTrainingWithIntent in externally_planned mode', () => {
         expect(isExternalTemplateId(recommendation.template.id)).toBe(false);
         expect(recommendation.decisionTrace?.candidateScores.length ?? 0).toBeGreaterThan(0);
         expect(recommendation.decisionTrace?.calibration?.fixedActivity.count).toBeGreaterThanOrEqual(1);
+    });
+
+    it('carries the in-memory event commitment into tomorrow without double-counting stored fixed activities', async () => {
+        const today = await evaluate(externalPlan({
+            isEvent: true,
+            title: 'Road Race',
+            placement: { week: 1, preferredDay: 'tuesday', flexibility: 'fixed', ifMissed: 'drop' },
+            gating: { modality: 'cycling', intensity: 'max', durationMin: 50, durationMax: 60, environment: 'outdoor', equipment: [] },
+        }));
+        const withoutDecisionOnlyFixed = structuredClone(today);
+        const fixedTrace = withoutDecisionOnlyFixed.decisionTrace?.calibration?.fixedActivity;
+        if (!fixedTrace) throw new Error('Expected fixed-activity calibration');
+        fixedTrace.count = 0;
+        fixedTrace.cost = { systemic: 0, cardiovascular: 0, lowerBody: 0, upperBody: 0, impactTissue: 0, neuromuscular: 0 };
+        fixedTrace.stimulus = { aerobicEndurance: 0, thresholdPower: 0, vo2MaxPower: 0, repeatedSurges: 0, sprintPower: 0, fatigueResistance: 0, maxStrength: 0, hypertrophy: 0 };
+
+        const withEvent = await evaluateNextDayPlanWithIntent(
+            'u1', [], readiness(), context(), DATE, today, undefined, EMPTY_HISTORY, [], [],
+            profile('externally_planned'), null, 'max',
+        );
+        const withoutEvent = await evaluateNextDayPlanWithIntent(
+            'u1', [], readiness(), context(), DATE, withoutDecisionOnlyFixed, undefined, EMPTY_HISTORY, [], [],
+            profile('externally_planned'), null, 'max',
+        );
+        const withSystemic = withEvent.branches.green.recommendation.decisionTrace?.calibration?.fatigue.rawExternalLoad.systemic ?? 0;
+        const withoutSystemic = withoutEvent.branches.green.recommendation.decisionTrace?.calibration?.fatigue.rawExternalLoad.systemic ?? 0;
+        expect(withSystemic).toBeGreaterThan(withoutSystemic);
     });
 
     it('surfaces an imported event with no matching UserEvent instead of silently fabricating one', async () => {
