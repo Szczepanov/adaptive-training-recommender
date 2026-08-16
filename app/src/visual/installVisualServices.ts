@@ -17,13 +17,13 @@ import type { VisualFixture } from './fixtures';
  */
 export function installVisualServices(fixture: VisualFixture): void {
   // Phase 9.4: visual fixtures model canonical DailyDecisionInput, while the composer now
-  // returns a composition-only extension carrying transient subjective-history evidence.
-  // Visual review has no Firestore history source, so represent that honestly as missing
-  // rather than fabricating a baseline.
+  // returns a composition-only extension carrying normalized/compact history evidence.
+  // Visual review has no Firestore history source, so represent that honestly as missing.
   decisionComposer.composeDailyDecisionInput = async () => ({
     ...fixture.input,
     subjectiveBaseline: null,
     subjectiveHistoryState: { status: 'MISSING' },
+    subjectiveHistoryIssues: [],
   });
 
   checkinService.getCheckin = async () => fixture.checkin;
@@ -52,9 +52,6 @@ export function installVisualServices(fixture: VisualFixture): void {
     migration: { ...fixture.settings.migration, ...update.migration },
   });
 
-  // ADR-0019. Without these the externally-planned screens would fall through to real
-  // Firestore reads, which fail closed to "no plan" and would capture the ranked path
-  // instead -- a screenshot of the wrong feature.
   fixedActivityService.getActivitiesInRangeState = async () => ({ status: 'AVAILABLE', data: [], revision: null });
   const plan = fixture.externalPlan;
   externalPlanService.listPlanIds = async () => (plan
