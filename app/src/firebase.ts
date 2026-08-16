@@ -1,5 +1,5 @@
 import { initializeApp, type FirebaseApp } from 'firebase/app';
-import { getFirestore, type Firestore } from 'firebase/firestore';
+import { initializeFirestore, getFirestore, type Firestore } from 'firebase/firestore';
 import { getAuth, type Auth } from 'firebase/auth';
 
 const firebaseConfig = {
@@ -19,7 +19,14 @@ export function getApp(): FirebaseApp {
 
 let _db: Firestore | undefined;
 export function getDb(): Firestore {
-  return (_db ??= getFirestore(getApp()));
+  if (!_db) {
+    try {
+      _db = initializeFirestore(getApp(), { ignoreUndefinedProperties: true });
+    } catch {
+      _db = getFirestore(getApp());
+    }
+  }
+  return _db;
 }
 
 let _auth: Auth | undefined;

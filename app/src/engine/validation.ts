@@ -1297,13 +1297,28 @@ function validateExternalStep(raw: any, path: string, errors: ValidationError[])
     if (typeof raw.name !== 'string' || !raw.name) errors.push({ field: `${path}.name`, message: 'Step name is required' });
 
     // Minutes XOR seconds, on each of the three duration pairs. Accepting both would make
-    // the effective duration ambiguous; accepting fractional minutes is what the contract
-    // added seconds to avoid.
+    // the effective duration ambiguous. If an authoring AI provides fractional minutes
+    // (e.g. 0.33 for 20s or 0.5 for 30s), auto-normalize it to seconds so the import is
+    // resilient without losing second-granularity.
     for (const [minKey, secKey] of [['durationMin', 'durationSec'], ['recoveryMin', 'recoverySec'], ['setRecoveryMin', 'setRecoverySec']]) {
         const hasMin = raw[minKey] !== undefined;
         const hasSec = raw[secKey] !== undefined;
         if (hasMin && hasSec) errors.push({ field: `${path}.${minKey}`, message: `Use ${minKey} or ${secKey}, not both` });
-        if (hasMin && !isPositiveInt(raw[minKey], 1, 600)) errors.push({ field: `${path}.${minKey}`, message: 'Minutes must be a whole number 1-600' });
+        if (hasMin && !hasSec) {
+            if (typeof raw[minKey] === 'number' && raw[minKey] > 0 && raw[minKey] <= 600) {
+                if (!Number.isInteger(raw[minKey])) {
+                    const coercedSec = Math.round(raw[minKey] * 60);
+                    if (coercedSec >= 1 && coercedSec <= 36000) {
+                        raw[secKey] = coercedSec;
+                        delete raw[minKey];
+                    } else {
+                        errors.push({ field: `${path}.${minKey}`, message: 'Duration must resolve to 1-36000 seconds' });
+                    }
+                }
+            } else {
+                errors.push({ field: `${path}.${minKey}`, message: 'Minutes must be a positive number 1-600' });
+            }
+        }
         if (hasSec && !isPositiveInt(raw[secKey], 1, 36000)) errors.push({ field: `${path}.${secKey}`, message: 'Seconds must be a whole number 1-36000' });
     }
     for (const key of ['repeat', 'sets']) {

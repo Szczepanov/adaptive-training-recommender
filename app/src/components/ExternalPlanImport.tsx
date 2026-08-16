@@ -34,6 +34,23 @@ function parseJson(text: string): { value: unknown } | { error: string } {
     }
 }
 
+const AI_PROMPT_TEMPLATE = `Output the plan as a single JSON document and nothing else. Follow this contract exactly.
+
+Top level: schema (literal "${EXTERNAL_PLAN_SCHEMA}"), planId (lowercase slug, unchanged between revisions of the same plan), revision (integer, increment when revising), title, startDate (the Monday week 1 begins, YYYY-MM-DD), weekCount, optional notes, and sessions.
+
+Do not compute calendar dates for sessions and do not include rest days. Each session has id, title, priority (key/supporting/optional), and:
+
+- placement: week (1-based), optional preferredDay (lowercase weekday), flexibility (fixed/preferred/any_day), ifMissed (drop/reschedule_within_week/carry_forward).
+- gating: modality (cycling/running/strength/field/mobility/cross_training), intensity (recovery/easy/moderate/hard/max), durationMin, durationMax (minutes), environment (indoor/outdoor/either), equipment (subset of free_weights, cable_machine, treadmill, indoor_bike, pullup_bar).
+- objectives: zero or more of threshold_quality, surge_repeatability, zone2_aerobic, strength_maintenance, strength_development, race_specific_endurance, vo2_max.
+- prescription: summary, plus optional steps. A step has name, target, and either durationMin (integer minutes) or durationSec (integer seconds) — use seconds for anything under two minutes (e.g. 10s, 20s, 30s). Optional: repeat and recoveryMin/recoverySec for reps within a set, sets and setRecoveryMin/setRecoverySec for sets within the step, and notes.
+- isEvent: true only on the target event itself (a race, a test event). An event session must also use flexibility: "fixed" with a preferredDay. Do not mark ordinary hard sessions as events.
+- scaling: reducible (false when the session has no useful reduced form — a race simulation, a test — in which case say so rather than inventing a compromised version), reducedSummary (how to cut this session down while keeping its purpose), reducedDurationMin, minimumUsefulDurationMin (below this, skipping is better than a fragment), fallback (advisory author suggestion shown if the equipment or venue is unavailable; it is not an executable substitute).
+
+Do not include travel weeks, illness, or time off — those are handled separately by the app's own calendar. Plan as if every scheduled day is available.
+
+Do not encode readiness or autoregulation rules anywhere, including notes. The app adjudicates each session against that morning's data and owns all green/yellow/red decisions. Use notes only for context the app cannot know: which power meter is the reference, whether wattage targets or RPE take precedence, what block preceded this one.`;
+
 /**
  * Paste → validate → preview → confirm.
  *
@@ -46,7 +63,18 @@ export function ExternalPlanImport({ userId, onImported }: ExternalPlanImportPro
     const [text, setText] = useState('');
     const [phase, setPhase] = useState<Phase>({ kind: 'editing' });
     const [objectiveEdits, setObjectiveEdits] = useState<Record<string, ObjectiveKey[]>>({});
+    const [promptCopied, setPromptCopied] = useState(false);
     const today = getLocalDateString();
+
+    const handleCopyPrompt = useCallback(async () => {
+        try {
+            await navigator.clipboard.writeText(AI_PROMPT_TEMPLATE);
+            setPromptCopied(true);
+            setTimeout(() => setPromptCopied(false), 2000);
+        } catch {
+            // Clipboard permission fallback
+        }
+    }, []);
 
     const handleTextChange = useCallback((next: string) => {
         setText(next);
@@ -86,11 +114,12 @@ export function ExternalPlanImport({ userId, onImported }: ExternalPlanImportPro
             onImported?.();
             return;
         }
+        const errorDetail = result.status === 'UNAVAILABLE' && result.message ? result.message : null;
         setPhase({
             kind: 'failed',
             message: result.status === 'INVALID'
                 ? `Rejected: ${result.issues.map(issue => `${issue.field ?? 'plan'} (${issue.code})`).join(', ')}`
-                : 'Could not reach storage. Nothing was written; try again.',
+                : `Could not reach storage${errorDetail ? `: ${errorDetail}` : ''}. Nothing was written; try again.`,
         });
     }, [userId, today, onImported]);
 
@@ -110,6 +139,27 @@ export function ExternalPlanImport({ userId, onImported }: ExternalPlanImportPro
                         <span className="provisional-tag">Paste the JSON your AI produced from the published prompt block</span>
                     </div>
                 </div>
+
+                <details className="external-import-prompt-guide">
+                    <summary>
+                        <span>Need the prompt template for your AI?</span>
+                    </summary>
+                    <div className="external-import-prompt-content">
+                        <div className="external-import-prompt-actions">
+                            <button
+                                type="button"
+                                className="external-import-secondary"
+                                onClick={handleCopyPrompt}
+                            >
+                                {promptCopied ? 'Copied prompt to clipboard!' : 'Copy AI prompt template'}
+                            </button>
+                            <span className="external-import-prompt-hint">
+                                Tip: For short intervals (e.g. 10s, 20s, 30s), use <code>durationSec: 20</code> instead of fractional minutes.
+                            </span>
+                        </div>
+                        <pre className="external-import-prompt-text">{AI_PROMPT_TEMPLATE}</pre>
+                    </div>
+                </details>
 
                 <textarea
                     className="external-import-input"

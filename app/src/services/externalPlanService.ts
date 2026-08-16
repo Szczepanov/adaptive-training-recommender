@@ -8,7 +8,7 @@ import type {
 import type { DataIssue, DataState } from '../engine/dataState';
 import { validateExternalPlanPlacement, validateExternalTrainingPlan } from '../engine/validation';
 import { computeContentHash } from '../engine/externalPlanHash';
-import { getErrorCode } from '../utils/errors';
+import { getErrorCode, getErrorMessage } from '../utils/errors';
 
 /** Re-exported so existing callers keep one import site. The implementation lives in
  * `engine/externalPlanHash.ts` because `replay.ts` verifies against it and must not pull
@@ -92,7 +92,13 @@ export class ExternalPlanService {
             await setDoc(this.headerRef(userId, plan.planId), header as unknown as DocumentData);
             return { status: 'AVAILABLE', data: { header, plan }, revision: header.contentHash };
         } catch (error: unknown) {
-            return { status: 'UNAVAILABLE', operation: 'import external plan', retryable: getErrorCode(error) !== 'permission-denied' };
+            console.error('[ExternalPlanService.import] Failed:', error);
+            return {
+                status: 'UNAVAILABLE',
+                operation: 'import external plan',
+                retryable: getErrorCode(error) !== 'permission-denied',
+                message: getErrorMessage(error),
+            };
         }
     }
 
@@ -109,7 +115,13 @@ export class ExternalPlanService {
             }
             return { status: 'AVAILABLE', data, revision: data.contentHash };
         } catch (error: unknown) {
-            return { status: 'UNAVAILABLE', operation: 'read external plan header', retryable: getErrorCode(error) !== 'permission-denied' };
+            console.error('[ExternalPlanService.getHeaderState] Failed:', error);
+            return {
+                status: 'UNAVAILABLE',
+                operation: 'read external plan header',
+                retryable: getErrorCode(error) !== 'permission-denied',
+                message: getErrorMessage(error),
+            };
         }
     }
 
