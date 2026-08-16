@@ -12,9 +12,9 @@ export interface ShadowLogResult {
     startDate: string;
     endDate: string; // inclusive
     /** Sources that could not be read for at least part of the range. Rows still render
-     *  for whatever was readable -- see `buildShadowLog`'s missingness argument -- but a
-     *  reviewer relying on this for 9.0.7's volume gates needs to know a gap here is a
-     *  read failure, not a genuine missing day. */
+     * for whatever was readable -- see `buildShadowLog`'s missingness argument -- but a
+     * reviewer relying on this for 9.0.7's volume gates needs to know a gap here is a
+     * read/validation failure, not a genuine missing day. */
     unavailableSources: string[];
 }
 
@@ -82,7 +82,10 @@ export class ShadowLogService {
 
         const journalByDate = new Map<string, DecisionJournalEntry>();
         if (journalResult.status === 'fulfilled') {
-            for (const entry of journalResult.value) journalByDate.set(entry.date, entry);
+            for (const entry of journalResult.value.entries) journalByDate.set(entry.date, entry);
+            if (journalResult.value.invalidRecords > 0) {
+                unavailableSources.push(`decision journal (${journalResult.value.invalidRecords} invalid record(s) omitted)`);
+            }
         } else {
             unavailableSources.push('decision journal');
         }
