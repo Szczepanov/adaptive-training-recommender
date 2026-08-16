@@ -88,10 +88,13 @@ function catalogDurationReferenceMin(
     return durations.length > 0 ? durations[Math.floor(durations.length / 2)] : null;
 }
 
-function scaleProfile<T extends Record<string, number>>(profile: T, factor: number): T {
+/** Structural profile interfaces intentionally do not expose a string index signature.
+ * `Object.entries` is safe here because every field in both supported profiles is numeric;
+ * keep the generic bound at `object` so the helper preserves those exact structural types. */
+function scaleProfile<T extends object>(profile: T, factor: number): T {
     return Object.fromEntries(
-        Object.entries(profile).map(([key, value]) => [key, Math.max(0, Math.min(1, value * factor))]),
-    ) as T;
+        Object.entries(profile).map(([key, value]) => [key, Math.max(0, Math.min(1, Number(value) * factor))]),
+    ) as unknown as T;
 }
 
 /**
