@@ -32,40 +32,64 @@ const VERDICT_LABELS: Record<ShadowVerdict, string> = {
  * planner said, and later what actually happened -- so it can be compared against the
  * engine's verdict. Deliberately has no path back into the engine: `externalArchitecture.test.ts`
  * (9.0.6) asserts no selection or safety module can import `decisionJournalService.ts`.
+ *
+ * The morning observation is create-only. After it is saved, Home is allowed to reveal the
+ * engine recommendation, so permitting a later edit would make an anchored rewrite look
+ * like an unanchored observation. Only the evening actual outcome remains editable.
  */
 export const DecisionJournalCard = memo(function DecisionJournalCard({
   userId, date, engineVerdict, engineRevealed, onEntryChange,
 }: DecisionJournalCardProps) {
   const [entry, setEntry] = useState<DecisionJournalEntry | null>(null);
   const [loaded, setLoaded] = useState(false);
-  const [editingMorning, setEditingMorning] = useState(false);
   const [externalVerdict, setExternalVerdict] = useState<ShadowVerdict>('proceed');
   const [externalNote, setExternalNote] = useState('');
   const [actualVerdict, setActualVerdict] = useState<ShadowVerdict | ''>('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [readBlocked, setReadBlocked] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     setLoaded(false);
-    setEditingMorning(false);
-    decisionJournalService.getEntry(userId, date)
-      .then(loadedEntry => {
+    setReadBlocked(false);
+    setError(null);
+    decisionJournalService.getEntryState(userId, date)
+      .then(state => {
         if (cancelled) return;
-        setEntry(loadedEntry);
-        setExternalVerdict(loadedEntry?.externalVerdict ?? 'proceed');
-        setExternalNote(loadedEntry?.externalNote ?? '');
-        setActualVerdict(loadedEntry?.actualVerdict ?? '');
-        onEntryChange(loadedEntry);
+        if (state.status === 'AVAILABLE') {
+          setEntry(state.data);
+          setExternalVerdict(state.data.externalVerdict);
+          setExternalNote(state.data.externalNote ?? '');
+          setActualVerdict(state.data.actualVerdict ?? '');
+          onEntryChange(state.data);
+          return;
+        }
+        setEntry(null);
+        setExternalVerdict('proceed');
+        setExternalNote('');
+        setActualVerdict('');
+        onEntryChange(null);
+        if (state.status === 'INVALID') {
+          setReadBlocked(true);
+          setError('Today’s stored journal entry is invalid. Do not overwrite it; repair the stored evidence first.');
+        } else if (state.status === 'UNAVAILABLE') {
+          setReadBlocked(true);
+          setError('Could not confirm whether today’s journal entry already exists. Please retry before recording.');
+        }
       })
       .catch(err => {
+        if (cancelled) return;
         console.warn('Failed to load decision journal entry:', err);
+        setReadBlocked(true);
+        setError('Could not load today’s journal entry. Please retry before recording.');
       })
       .finally(() => { if (!cancelled) setLoaded(true); });
     return () => { cancelled = true; };
   }, [userId, date, onEntryChange]);
 
   const submitMorning = async () => {
+    if (readBlocked) return;
     setSubmitting(true);
     setError(null);
     try {
@@ -76,17 +100,16 @@ export const DecisionJournalCard = memo(function DecisionJournalCard({
       });
       setEntry(saved);
       onEntryChange(saved);
-      setEditingMorning(false);
     } catch (err) {
       console.error('Failed to save decision journal entry:', err);
-      setError('Could not save your entry -- please try again.');
+      setError(err instanceof Error ? err.message : 'Could not save your entry -- please try again.');
     } finally {
       setSubmitting(false);
     }
   };
 
   const submitEvening = async () => {
-    if (!actualVerdict) return;
+    if (!actualVerdict || readBlocked) return;
     setSubmitting(true);
     setError(null);
     try {
@@ -95,7 +118,7 @@ export const DecisionJournalCard = memo(function DecisionJournalCard({
       onEntryChange(saved);
     } catch (err) {
       console.error('Failed to save what actually happened:', err);
-      setError('Could not save -- please try again.');
+      setError(err instanceof Error ? err.message : 'Could not save -- please try again.');
     } finally {
       setSubmitting(false);
     }
@@ -109,7 +132,6 @@ export const DecisionJournalCard = memo(function DecisionJournalCard({
     );
   }
 
-  const showMorningForm = !entry || editingMorning;
   // Whichever order the athlete chooses, this reflects it -- it is never asked.
   const engineVerdictVisible = engineRevealed || !!entry;
 
@@ -123,13 +145,14 @@ export const DecisionJournalCard = memo(function DecisionJournalCard({
 
       {error && <p className="journal-error">{error}</p>}
 
-      {showMorningForm ? (
+      {!entry ? (
         <div className="journal-form">
           <div className="form-group">
             <label>Today's verdict</label>
             <select
               className="select-input"
               value={externalVerdict}
+              disabled={readBlocked}
               onChange={(e) => setExternalVerdict(e.target.value as ShadowVerdict)}
             >
               {SHADOW_VERDICTS.map((verdict) => (
@@ -143,21 +166,14 @@ export const DecisionJournalCard = memo(function DecisionJournalCard({
               type="text"
               className="text-input"
               value={externalNote}
+              disabled={readBlocked}
               onChange={(e) => setExternalNote(e.target.value)}
-              // firestore.rules caps externalNote at 2000 chars; enforce it client-side too
-              // so a long note fails obviously here rather than as an opaque "could not
-              // save" after a round trip to Firestore.
               maxLength={2000}
               placeholder="e.g. said take it easy, HRV was low"
             />
           </div>
           <div className="journal-form-actions">
-            {entry && (
-              <button type="button" className="journal-btn secondary" disabled={submitting} onClick={() => setEditingMorning(false)}>
-                Cancel
-              </button>
-            )}
-            <button type="button" className="journal-btn primary" disabled={submitting} onClick={submitMorning}>
+            <button type="button" className="journal-btn primary" disabled={submitting || readBlocked} onClick={submitMorning}>
               Save
             </button>
           </div>
@@ -173,9 +189,7 @@ export const DecisionJournalCard = memo(function DecisionJournalCard({
               ? "Recorded after seeing today's recommendation"
               : "Recorded before seeing today's recommendation"}
           </p>
-          <button type="button" className="journal-btn secondary" disabled={submitting} onClick={() => setEditingMorning(true)}>
-            Edit
-          </button>
+          <p className="journal-locked">Morning verdict locked after recording so the anchoring record cannot be rewritten.</p>
         </div>
       )}
 
