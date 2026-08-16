@@ -6,12 +6,26 @@ import { resolvePlanningContext } from './planningMode';
 import { evaluatePeriodizationPhase } from './periodization';
 import { isExternalTemplateId } from './externalSessionProfiles';
 import { validateTrainingIntentProfile } from './validation';
+import type { TrainingHistorySnapshot } from './trainingHistorySnapshot';
 import type {
     AuthoredPlanBlock, DailyReadiness, EngineObjectiveInput, ExternalPlanSession, FixedActivity,
     SubjectiveInput, TrainingIntentProfile, TrainingSettings, UserContext, UserEvent,
 } from './models';
 
 const DATE = '2026-08-18';
+const EMPTY_HISTORY: TrainingHistorySnapshot = {
+    throughDateExclusive: DATE,
+    windowDays: 7,
+    completedEvents: [],
+    exposures: [],
+    sourceStates: {
+        activities: { status: 'AVAILABLE', revision: 'fixture' },
+        recommendations: { status: 'AVAILABLE', revision: 'fixture' },
+        manualTraining: { status: 'MISSING' },
+    },
+    generatedAt: '2026-08-18T05:00:00.000Z',
+    revision: 'history-fixture-empty',
+};
 
 function readiness(s: Partial<SubjectiveInput> = {}, o: Partial<EngineObjectiveInput> = {}): DailyReadiness {
     return {
@@ -129,7 +143,7 @@ describe('evaluateTrainingWithIntent in externally_planned mode', () => {
         events: UserEvent[] = [],
     ) {
         return evaluateTrainingWithIntent(
-            'u1', r, context(), events, DATE, undefined, undefined, null, fixed, [],
+            'u1', r, context(), events, DATE, undefined, undefined, EMPTY_HISTORY, fixed, [],
             profile(mode), null, 'max', plan,
         );
     }
@@ -244,7 +258,7 @@ describe('evaluateTrainingWithIntent in externally_planned mode', () => {
             createdAt: '', updatedAt: '',
         };
         const withTravel = await evaluateTrainingWithIntent(
-            'u1', readiness(), context(), [], DATE, undefined, undefined, null, [], [travel],
+            'u1', readiness(), context(), [], DATE, undefined, undefined, EMPTY_HISTORY, [], [travel],
             profile('externally_planned'), null, 'max', externalPlan(),
         );
         const withoutTravel = await evaluate(externalPlan());
