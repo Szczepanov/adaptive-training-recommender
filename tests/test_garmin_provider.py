@@ -147,9 +147,26 @@ def test_canonicalize_activities_uses_zone4_floor():
     act_default = canonicalize_activities(raw)[0]
     assert act_default.intensity_tag == "hard"
 
-    # With zone4_floor=152, avg_hr=148 is below zone4_floor, so classified as moderate/easy
+    # With zone4_floor=152, avg_hr=148 is below zone4_floor, so classified as moderate (TE 2.0)
     act_custom = canonicalize_activities(raw, zone4_floor=152)[0]
-    assert act_custom.intensity_tag == "moderate/easy"
+    assert act_custom.intensity_tag == "moderate"
+
+
+def test_canonicalize_activities_extracts_average_hr_from_average_hr_key():
+    raw = [
+        {
+            "activityId": 1001,
+            "startTimeLocal": "2026-08-05T18:00:00",
+            "activityType": {"typeKey": "cycling"},
+            "duration": 1800,
+            "aerobicTrainingEffect": 1.5,
+            "averageHR": 125,
+            "activityTrainingLoad": 15.0,
+        }
+    ]
+    act = canonicalize_activities(raw)[0]
+    assert act.average_hr == 125.0
+    assert act.intensity_tag == "easy"
 
 
 def test_canonicalize_activities_handles_missing_activity_id():

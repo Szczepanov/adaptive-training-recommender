@@ -6,9 +6,13 @@ def test_classify_activity_by_training_effect():
     assert is_hard is True
     assert tag == "hard"
 
-    is_hard_easy, tag_easy = classify_activity_intensity(training_effect=2.9, average_hr=130)
+    is_hard_mod, tag_mod = classify_activity_intensity(training_effect=2.9, average_hr=130)
+    assert is_hard_mod is False
+    assert tag_mod == "moderate"
+
+    is_hard_easy, tag_easy = classify_activity_intensity(training_effect=1.5, average_hr=120)
     assert is_hard_easy is False
-    assert tag_easy == "moderate/easy"
+    assert tag_easy == "easy"
 
 
 def test_classify_activity_by_average_hr():
@@ -18,14 +22,14 @@ def test_classify_activity_by_average_hr():
 
     is_hard_mod, tag_mod = classify_activity_intensity(training_effect=2.0, average_hr=144)
     assert is_hard_mod is False
-    assert tag_mod == "moderate/easy"
+    assert tag_mod == "moderate"
 
 
 def test_classify_activity_uses_custom_zone4_floor():
-    # HR=150 is below zone4_floor of 152, so it should be moderate/easy (TE < 3.0)
+    # HR=150 is below zone4_floor of 152, so it should be moderate (TE 2.0)
     is_hard, tag = classify_activity_intensity(training_effect=2.0, average_hr=150, zone4_floor=152)
     assert is_hard is False
-    assert tag == "moderate/easy"
+    assert tag == "moderate"
 
     # HR=152 meets zone4_floor of 152, so it should be hard
     is_hard, tag = classify_activity_intensity(training_effect=2.0, average_hr=152, zone4_floor=152)

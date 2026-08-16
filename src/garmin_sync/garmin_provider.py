@@ -331,7 +331,13 @@ def _canonicalize_activity(
 ) -> CanonicalActivity:
     te_aero = float(act.get("aerobicTrainingEffect", 0.0) or 0.0)
     te_anaero = float(act.get("anaerobicTrainingEffect", 0.0) or 0.0)
-    avg_hr = act.get("averageHeartRate")
+    raw_avg_hr = act.get("averageHR") or act.get("averageHeartRate") or act.get("avgHR")
+    avg_hr: float | None = None
+    if raw_avg_hr is not None:
+        try:
+            avg_hr = float(raw_avg_hr)
+        except (ValueError, TypeError):
+            avg_hr = None
     # Use whichever training effect is higher: an interval/strength session can be a hard
     # stimulus through anaerobic load alone even when its aerobic TE stays moderate, and
     # only consulting aerobic TE (as the pre-canonical-layer code did) would silently
