@@ -4,6 +4,7 @@ import { impliedDate } from '../engine/externalPlacement';
 import { EXTERNAL_PLAN_SCHEMA, type ExternalPlanHeader, type ExternalTrainingPlan, type ObjectiveKey } from '../engine/models';
 import { externalPlanService } from '../services/externalPlanService';
 import { getLocalDateString } from '../utils/localDate';
+import { diffPlans, type PlanDiffRow } from './externalPlanDiff';
 import './ExternalPlanImport.css';
 
 interface ExternalPlanImportProps {
@@ -33,75 +34,6 @@ function parseJson(text: string): { value: unknown } | { error: string } {
     }
 }
 
-export interface PlanDiffRow {
-    sessionId: string;
-    change: 'added' | 'removed' | 'changed';
-    detail: string;
-}
-
-function sameStringSet(left: readonly string[] | undefined, right: readonly string[] | undefined): boolean {
-    return JSON.stringify([...(left ?? [])].sort()) === JSON.stringify([...(right ?? [])].sort());
-}
-
-function sameStructuredValue(left: unknown, right: unknown): boolean {
-    return JSON.stringify(left ?? null) === JSON.stringify(right ?? null);
-}
-
-/**
- * What actually differs between the stored revision and the pasted one.
- *
- * A re-import is the athlete's AI having rethought the block, and accepting it blind is how
- * a session quietly disappears. The comparison is by stable session id and includes every
- * field that can change placement, feasibility, adjudication, objective credit, event
- * semantics or the prescription the athlete will execute. Pure metadata ordering (e.g.
- * equipment/objective array order) is intentionally ignored.
- */
-export function diffPlans(previous: ExternalTrainingPlan, next: ExternalTrainingPlan): PlanDiffRow[] {
-    const before = new Map(previous.sessions.map(session => [session.id, session]));
-    const after = new Map(next.sessions.map(session => [session.id, session]));
-    const rows: PlanDiffRow[] = [];
-
-    for (const [id, session] of before) {
-        if (!after.has(id)) rows.push({ sessionId: id, change: 'removed', detail: `“${session.title}” is no longer in the plan.` });
-    }
-    for (const [id, session] of after) {
-        const old = before.get(id);
-        if (!old) {
-            rows.push({ sessionId: id, change: 'added', detail: `“${session.title}” is new (week ${session.placement.week}).` });
-            continue;
-        }
-        const changes: string[] = [];
-        if (old.title !== session.title) changes.push(`renamed from “${old.title}”`);
-        if (old.priority !== session.priority) changes.push(`priority ${old.priority} → ${session.priority}`);
-        if (old.placement.week !== session.placement.week) changes.push(`moved from week ${old.placement.week} to ${session.placement.week}`);
-        if (old.placement.preferredDay !== session.placement.preferredDay) {
-            changes.push(`preferred day ${old.placement.preferredDay ?? 'none'} → ${session.placement.preferredDay ?? 'none'}`);
-        }
-        if (old.placement.flexibility !== session.placement.flexibility) {
-            changes.push(`flexibility ${old.placement.flexibility} → ${session.placement.flexibility}`);
-        }
-        if (old.placement.ifMissed !== session.placement.ifMissed) {
-            changes.push(`missed-session policy ${old.placement.ifMissed} → ${session.placement.ifMissed}`);
-        }
-        if (old.gating.intensity !== session.gating.intensity) changes.push(`intensity ${old.gating.intensity} → ${session.gating.intensity}`);
-        if (old.gating.modality !== session.gating.modality) changes.push(`modality ${old.gating.modality} → ${session.gating.modality}`);
-        if (old.gating.durationMin !== session.gating.durationMin || old.gating.durationMax !== session.gating.durationMax) {
-            changes.push(`duration ${old.gating.durationMin}–${old.gating.durationMax} → ${session.gating.durationMin}–${session.gating.durationMax} min`);
-        }
-        if (old.gating.environment !== session.gating.environment) {
-            changes.push(`environment ${old.gating.environment} → ${session.gating.environment}`);
-        }
-        if (!sameStringSet(old.gating.equipment, session.gating.equipment)) changes.push('required equipment changed');
-        if (!sameStringSet(old.objectives, session.objectives)) changes.push('objective tags changed');
-        if (!sameStructuredValue(old.scaling, session.scaling)) changes.push('scaling / fallback policy changed');
-        if (Boolean(old.isEvent) !== Boolean(session.isEvent)) changes.push(session.isEvent ? 'now marked as an event' : 'no longer marked as an event');
-        if (!sameStructuredValue(old.prescription, session.prescription)) changes.push('the prescription changed');
-        if (changes.length > 0) rows.push({ sessionId: id, change: 'changed', detail: `“${session.title}”: ${changes.join('; ')}.` });
-    }
-
-    return rows;
-}
-
 /**
  * Paste → validate → preview → confirm.
  *
@@ -116,9 +48,6 @@ export function ExternalPlanImport({ userId, onImported }: ExternalPlanImportPro
     const [objectiveEdits, setObjectiveEdits] = useState<Record<string, ObjectiveKey[]>>({});
     const today = getLocalDateString();
 
-    // A fresh paste invalidates whatever was previewed from the previous one. Done in the
-    // change handler rather than an effect: the reset is caused by the edit, not by state
-    // catching up with an external system.
     const handleTextChange = useCallback((next: string) => {
         setText(next);
         setPhase({ kind: 'editing' });
@@ -282,8 +211,6 @@ export function ExternalPlanImport({ userId, onImported }: ExternalPlanImportPro
                                     type="button"
                                     className="external-import-primary"
                                     onClick={() => {
-                                        // A stored revision is immutable, so tags are applied by importing the
-                                        // next revision rather than by editing this one in place.
                                         const tagged: ExternalTrainingPlan = {
                                             ...phase.plan,
                                             revision: phase.plan.revision + 1,
@@ -327,8 +254,6 @@ function usePreviousRevision(userId: string, phase: Phase): ExternalTrainingPlan
         return () => { cancelled = true; };
     }, [userId, key, planId, revision]);
 
-    // Tagged with the key it was loaded for, so a stale revision is never diffed against a
-    // newly pasted plan while the fetch for the current one is still in flight.
     return loaded !== null && loaded.key === key ? loaded.plan : null;
 }
 
