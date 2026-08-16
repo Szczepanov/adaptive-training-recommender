@@ -36,6 +36,7 @@ import type { ExternalPlanSession } from './models';
 import { applyFixedActivityStimulusCredit } from './planner';
 import { getUnresolvedObjectives } from './microcycle';
 import { applyCompletedSessionLoad, type FatigueFusionPolicy } from './fatigue';
+import { SUBJECTIVE_BASELINE_METRICS, type SubjectiveBaseline, type SubjectiveBaselineMetric } from './subjectiveBaseline';
 import { resolveAvailability } from './schedule';
 import { workoutForTemplate } from '../workouts/prescription';
 import { resolveEvergreenPlan } from './evergreenPlanning';
@@ -138,6 +139,71 @@ const STRAIN_MODIFY_THRESHOLD = 1.0;
 const STRAIN_RECOVER_THRESHOLD = 2.2;
 const MODIFY_MAX_SYSTEMIC_COST = 0.5;
 
+// --- Phase 9.3: subjective drift, behind a default-off selector ---------------------------
+
+/**
+ * `'off'` (the default at every production call site) is bit-identical to pre-Phase-9
+ * behaviour. The other member of this union is unreachable from production callers -- see
+ * `rules.test.ts`'s architecture guard -- and exists only for the 9.6 simulation
+ * comparison harness to measure. Mirrors `FatigueFusionPolicy`'s plumbing pattern: a
+ * selector threaded through the real evaluator, not a second implementation.
+ */
+export type SubjectiveDriftPolicy = 'off' | 'drift';
+
+/** Experimental per-metric weights (D-SUBJCAL: "fatigue, soreness, sleepQuality,
+ *  readiness, motivation, and stress need not share weights or even all participate").
+ *  Equal weighting is the reference starting point for 9.6 to challenge, not a considered
+ *  choice -- a weight of 0 excludes a metric from the aggregate entirely. */
+export type SubjectiveDriftWeights = Record<SubjectiveBaselineMetric, number>;
+
+export const REFERENCE_SUBJECTIVE_DRIFT_WEIGHTS: SubjectiveDriftWeights = {
+    readiness: 1, sleepQuality: 1, fatigue: 1, soreness: 1, mentalStress: 1, motivation: 1,
+};
+
+/** Adverse movement is signed positive for every metric regardless of scale direction --
+ *  duplicated from `contextBrief.ts`'s equivalent `higherIsBetter` table rather than
+ *  imported, the same reasoning `subjectiveBaseline.ts`'s own header comment gives for
+ *  keeping this module free of a dependency on the brief renderer. */
+const SUBJECTIVE_DRIFT_HIGHER_IS_BETTER: Record<SubjectiveBaselineMetric, boolean> = {
+    readiness: true, sleepQuality: true, motivation: true,
+    fatigue: false, soreness: false, mentalStress: false,
+};
+
+/**
+ * The 9.1 reference estimator's drift term (D-SUBJDRIFT / D-SUBJEST): recent-vs-long
+ * prior history only -- today never enters this comparison, `computeSubjectiveBaseline`
+ * already enforces that (D-SUBJHIST). Every per-metric contribution is floored at zero
+ * before weighting and summed -- there is structurally **no subtraction path** (D-SUBJADD):
+ * a `Math.max(weight, 0) * clamp(z, 0, cap)` term can only ever add to the total, for any
+ * baseline and any weight, including a hypothetical negative weight. `'off'` or a missing
+ * baseline (D-SUBJCOV: below-floor coverage already resolves to `null` in
+ * `computeSubjectiveBaseline`) both return exactly `0` -- no relative subjective signal is
+ * the same as today's behaviour, never a fabricated neutral value.
+ *
+ * The cap reuses `STRAIN_Z_CAP` -- matching `SubjectiveBaselinePolicy.contributionCap`'s
+ * reference value by convention (9.1's own comment), not by runtime reference: the
+ * baseline this function receives carries `estimatorId` for provenance, not the policy
+ * object that produced it. If 9.6 needs the cap to vary independently of `STRAIN_Z_CAP`,
+ * thread it explicitly rather than assuming this coupling.
+ */
+export function subjectiveDriftStrain(
+    baseline: SubjectiveBaseline | null | undefined,
+    policy: SubjectiveDriftPolicy,
+    weights: SubjectiveDriftWeights = REFERENCE_SUBJECTIVE_DRIFT_WEIGHTS,
+): number {
+    if (policy === 'off' || !baseline) return 0;
+    let total = 0;
+    for (const metric of SUBJECTIVE_BASELINE_METRICS) {
+        const { recentAvg, longAvg, variability } = baseline.metrics[metric];
+        const higherIsBetter = SUBJECTIVE_DRIFT_HIGHER_IS_BETTER[metric];
+        const adverseMovement = higherIsBetter ? (longAvg - recentAvg) : (recentAvg - longAvg);
+        const z = adverseMovement / variability;
+        const contribution = clamp(z, 0, STRAIN_Z_CAP);
+        total += Math.max(weights[metric], 0) * contribution;
+    }
+    return total;
+}
+
 function metricStrain(
     deltaVs7d: number | null,
     deltaVs28d: number | null,
@@ -164,7 +230,13 @@ export function evaluateReadinessAndSafetyEnvelope(
     readiness: DailyReadiness,
     context: UserContext,
     _date?: string,
-    previousMode?: 'train' | 'modify' | 'recover'
+    previousMode?: 'train' | 'modify' | 'recover',
+    /** Phase 9.3: defaults to `'off'` at every call site -- see `SubjectiveDriftPolicy`'s
+     *  doc comment. Only a future 9.6 comparison harness passes the other member of that union. */
+    subjectiveDriftPolicy: SubjectiveDriftPolicy = 'off',
+    /** Phase 9.3/D-SUBJCAL: experimental, not yet tuned. Only reachable by explicitly
+     *  passing a non-default value -- no production call site does. */
+    subjectiveDriftWeights: SubjectiveDriftWeights = REFERENCE_SUBJECTIVE_DRIFT_WEIGHTS
 ): {
     mode: 'train' | 'modify' | 'recover';
     envelopes: { safety: SafetyEnvelope; plan: PlanEnvelope };
@@ -201,11 +273,20 @@ export function evaluateReadinessAndSafetyEnvelope(
     const recentHardSessionsPenalty = recentHardSessionsCount >= 2 ? RECENT_HARD_SESSIONS_STRAIN : 0;
     const objectiveStrain = totalMetricStrain + sleepFloorPenalty + bodyBatteryDeficit + conservativeBias + recentHardSessionsPenalty;
 
+    // Phase 9.3 (D-SUBJADD): a separate, structurally non-negative contribution -- see
+    // subjectiveDriftStrain's own doc comment for why no baseline/weight can subtract from
+    // it. Under 'off' (every production call site today) this is always exactly 0, so
+    // strainForThresholds below is byte-identical to objectiveStrain and every absolute
+    // subjective trigger (overallFatigueScore/soreness, checked separately below) stays
+    // untouched either way (D-SUBJFLOOR).
+    const subjectiveDrift = subjectiveDriftStrain(readiness.subjectiveBaseline, subjectiveDriftPolicy, subjectiveDriftWeights);
+    const strainForThresholds = objectiveStrain + subjectiveDrift;
+
     const lowBodyBatteryRecovery = objective.body_battery_wake !== null && objective.body_battery_wake <= BODY_BATTERY_RECOVER_THRESHOLD;
-    const fatigueTriggeredRecover = overallFatigueScore > 7 || extremeFatigue || lowBodyBatteryRecovery || objectiveStrain >= STRAIN_RECOVER_THRESHOLD;
+    const fatigueTriggeredRecover = overallFatigueScore > 7 || extremeFatigue || lowBodyBatteryRecovery || strainForThresholds >= STRAIN_RECOVER_THRESHOLD;
     let mode: 'train' | 'modify' | 'recover' = fatigueTriggeredRecover
         ? 'recover'
-        : (overallFatigueScore > 5 || subjective.soreness > 6 || objectiveStrain >= STRAIN_MODIFY_THRESHOLD) ? 'modify' : 'train';
+        : (overallFatigueScore > 5 || subjective.soreness > 6 || strainForThresholds >= STRAIN_MODIFY_THRESHOLD) ? 'modify' : 'train';
 
     const strainWithoutDrift = objectiveStrain - totalMultiDayDrift;
     const counterfactualRecover = overallFatigueScore > 7 || extremeFatigue || strainWithoutDrift >= STRAIN_RECOVER_THRESHOLD;

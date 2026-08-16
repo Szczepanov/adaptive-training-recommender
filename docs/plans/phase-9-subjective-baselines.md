@@ -1,8 +1,9 @@
 # Phase 9: Subjective baselines in readiness mode
 
-* **Status:** In progress. ADR-0020 is Accepted; 9.5, 9.1 and 9.2 are done. 9.3/9.4/9.6/9.7
-  each still wait on an earlier item in this same plan, and 9.8 additionally needs Phase
-  9.0's prospective evidence.
+* **Status:** In progress. ADR-0020 is Accepted; 9.1, 9.2, 9.3 and 9.5 are done. 9.4 is
+  independently startable now; 9.6 needs both 9.3 (done) and 9.5 (done) and is now
+  startable too; 9.7 needs 9.3 (done) and is startable; 9.8 additionally needs Phase 9.0's
+  prospective evidence.
 * **Blocked by:** nothing at the plan level. Individual work items list their own blockers
   in the task board below.
 * **Strongly preceded by:** [Phase 9.0](./phase-9-0-shadow-mode-and-decision-journal.md) — its shadow block supplies the prospective evidence required before a production ship decision
@@ -165,7 +166,7 @@ affect 9.0.6's import-graph guard or `check-policy-drift.mjs`'s file list.
 
 ---
 
-### 9.3 The drift term, behind a default-off selector `[ ]`
+### 9.3 The drift term, behind a default-off selector `[x]`
 
 **Current behaviour.** `evaluateReadinessAndSafetyEnvelope` computes `objectiveStrain` from
 `metricStrain` plus contextual penalties, and derives mode from absolute subjective
@@ -196,6 +197,43 @@ restrictive mode.
 **Done when** `'off'` is bit-identical to current behaviour across the corpus,
 `'drift'` is unreachable from production callers, and a property test proves no possible
 baseline can lower the resulting mode.
+
+**Implementation note.** `subjectiveDriftStrain` (exported from `rules.ts`) implements the
+reference estimator exactly as specified: per metric, adverse movement is signed positive
+(duplicating `contextBrief.ts`'s `higherIsBetter` polarity table rather than importing it, for
+the same reason `subjectiveBaseline.ts` gives for staying free of that dependency), divided by
+the baseline's floored `variability`, floored at zero, capped at the existing `STRAIN_Z_CAP`
+(2.0) -- reusing that constant by convention with `SubjectiveBaselinePolicy.contributionCap`,
+not by runtime reference, since `SubjectiveBaseline` carries `estimatorId` for provenance but
+not the policy object itself; if 9.6 needs the cap to vary independently, thread it explicitly.
+`Math.max(weight, 0) * clamp(z, 0, cap)` per metric, summed, is structurally incapable of
+subtracting for any weight or baseline (D-SUBJADD) -- proved by an exhaustive unit sweep and by
+a 1,365-comparison property test across readiness fixtures, gaps, variabilities and weight sets
+(including an adversarial all-negative-weight configuration) asserting the resulting mode is
+never less restrictive under `'drift'` than under `'off'`.
+
+`evaluateReadinessAndSafetyEnvelope` gained two new trailing parameters --
+`subjectiveDriftPolicy: SubjectiveDriftPolicy = 'off'` and `subjectiveDriftWeights:
+SubjectiveDriftWeights = REFERENCE_SUBJECTIVE_DRIFT_WEIGHTS` -- both defaulted, so every
+existing call site is untouched and `'off'` stays bit-identical to pre-Phase-9 behaviour. The
+drift score augments only the local `strainForThresholds` used for mode selection; the existing
+`objectiveStrain`-based counterfactual/telemetry variables (`strainWithoutDrift`,
+`multiDayDriftIsDecisionRelevant`, `DecisionScoreTelemetry.totalDecisionScore`) are deliberately
+untouched -- extending telemetry to expose `subjectiveDrift` as its own reconciling component is
+9.7's job, not this item's. Threading the selector further, through
+`evaluateTrainingWithIntent`/`generateWeekAheadPlanWithIntent`/the composer, is likewise out of
+scope here -- 9.4 supplies the real baseline at the composition boundary, and 9.6 is what
+actually calls with `'drift'`. A source-scan architecture guard (regex over every non-test
+engine file outside `simulation/`) asserts no call site's literal argument value is `'drift'`,
+distinct from the `'off' | 'drift'` type declaration itself.
+
+`POLICY_VERSION` was bumped (`2026-08-subjective-drift-selector-v1`) even though no persisted
+decision changes under this version -- `check-policy-drift.mjs` requires a bump on any
+`rules.ts` touch with no exception for dormant, default-off code, and the `FatigueFusionPolicy`
+precedent (Phase 4) already established bumping in this situation rather than special-casing the
+gate. The version's comment in `policy.ts` records that every athlete's recommendation stays
+byte-identical to `2026-08-external-plan-provenance-v1`; the real cutover, if 9.8 ships subjective
+drift live, gets its own version.
 
 ---
 
@@ -423,7 +461,7 @@ make two different live policies share an identity.
 |---|---|:--:|---|
 | 9.1 | Subjective baseline computation | `[x]` | ADR-0020 |
 | 9.2 | Carry the baseline on `DailyReadiness` | `[x]` | 9.1 |
-| 9.3 | Drift term behind a default-off selector | `[ ]` | 9.2 |
+| 9.3 | Drift term behind a default-off selector | `[x]` | 9.2 |
 | 9.4 | Composition boundary supplies the baseline | `[ ]` | 9.2 |
 | 9.5 | Scenario corpus subjective variance | `[x]` | — |
 | 9.6 | Comparison harness + estimator sensitivity | `[ ]` | 9.3, 9.5 |
