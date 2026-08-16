@@ -162,7 +162,11 @@ export function proposeReplacement(
         ...(occupancy.fixedActivities ?? []).filter(activity => !activity.isCompleted).map(activity => activity.date),
     ]);
 
-    const withinWeek = weekDates(plan, session.placement.week).filter(date => date > earliest && !taken.has(date));
+    // If a miss is noticed later, today is a valid candidate when still in the same week.
+    // If the athlete reports the miss on the missed day itself, that date is not offered
+    // back to them: a replacement must still be strictly after the date they missed.
+    const withinWeek = weekDates(plan, session.placement.week)
+        .filter(date => date > missedDate && date >= earliest && !taken.has(date));
     if (withinWeek.length > 0) {
         return {
             sessionId: missedSessionId,
@@ -183,10 +187,12 @@ export function proposeReplacement(
     }
 
     // carry_forward: search onward across the rest of the plan, bounded by its own length.
+    // A late-reported miss may use today itself; a same-day report still starts tomorrow.
     const lastDate = addDaysToLocalDateString(plan.startDate, plan.weekCount * 7 - 1);
-    for (let offset = 1; offset <= getDayDiff(lastDate, earliest); offset++) {
+    const startOffset = earliest > missedDate ? 0 : 1;
+    for (let offset = startOffset; offset <= getDayDiff(lastDate, earliest); offset++) {
         const candidate = addDaysToLocalDateString(earliest, offset);
-        if (!taken.has(candidate)) {
+        if (candidate > missedDate && !taken.has(candidate)) {
             return {
                 sessionId: missedSessionId,
                 missedDate,
