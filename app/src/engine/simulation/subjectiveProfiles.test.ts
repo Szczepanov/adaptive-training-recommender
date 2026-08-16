@@ -152,6 +152,25 @@ describe('noisy_stationary -- stable mean, +/-2 day-to-day swing', () => {
             expect(mode, `day ${day}`).toBe('train');
         }
     });
+
+    it('stays under the modify threshold even at its analytic worst case, not merely for sampled days', () => {
+        // A day-index loop over DAYS only proves the invariant for whichever range happens
+        // to be tested -- it previously passed for days 0-27 while days 35/41/65 (all still
+        // well within a plausible extended horizon) crossed the threshold, because every
+        // metric shared the full +/-2 amplitude and an adversarial alignment of the
+        // pseudo-noise pushed overallFatigueScore's worst case to 6. Construct that worst
+        // case directly (not sampled from the generator) so this proves the bound holds for
+        // *every* dayIndex, by construction, rather than for the ones this test happens to
+        // iterate over.
+        const context = minimalContext();
+        const worstCase = subjectiveProfileReadiness('noisy_stationary', 0);
+        worstCase.subjective = {
+            ...worstCase.subjective,
+            readiness: 4, sleepQuality: 5.7, fatigue: 4.3, soreness: 4.3, motivation: 5.7,
+        };
+        const { mode } = evaluateReadinessAndSafetyEnvelope(worstCase, context);
+        expect(mode).toBe('train');
+    });
 });
 
 describe('chronically_sore -- soreness baseline 7, stable', () => {

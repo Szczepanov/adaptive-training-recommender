@@ -107,9 +107,22 @@ export function subjectiveProfileDay(kind: SubjectiveProfileKind, dayIndex: numb
             };
         }
         case 'noisy_stationary': {
-            const n = (offset: number) => jitter(4 + offset, dayIndex, 2);
+            // The documented +/-2 swing belongs to readiness, the athlete's own headline
+            // metric. The other five dimensions still need genuine non-zero variance (every
+            // metric must have real variance -- see the "each intended dimension" test), but
+            // NOT at the same +/-2 amplitude: overallFatigueScore's worst case is
+            // `4 + amplitude` when every contributing metric happens to land at its most
+            // adverse extreme on the same day. At amplitude 2 that worst case is 6, past the
+            // `> 5` modify threshold -- confirmed to actually occur (not just theoretically
+            // possible) at day indices 35/41/65 by direct simulation. A small 0.3 amplitude
+            // on the other five keeps the analytic worst case at 4.64, safely under the
+            // threshold for *every* dayIndex by construction, not merely for whichever range
+            // happens to be sampled or tested -- see subjectiveProfiles.test.ts's worst-case
+            // (not sampled) proof.
+            const readiness = clamp(6 + jitter(4.01, dayIndex, 2), 1, 10);
+            const n = (offset: number) => jitter(4 + offset, dayIndex, 0.3);
             return {
-                readiness: clamp(6 + n(0.01), 1, 10), sleepQuality: clamp(6 + n(0.02), 1, 10),
+                readiness, sleepQuality: clamp(6 + n(0.02), 1, 10),
                 fatigue: clamp(4 + n(0.03), 1, 10), soreness: clamp(4 + n(0.04), 1, 10),
                 stress: clamp(4 + n(0.05), 1, 10), motivation: clamp(6 + n(0.06), 1, 10),
             };
