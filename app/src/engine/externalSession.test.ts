@@ -225,6 +225,21 @@ describe('adjudicateExternalSession', () => {
     });
 });
 
+describe('rationales are written for a person, not a log', () => {
+    it('never prints a raw gate code, on any verdict that can carry one', () => {
+        const noTime = adjudicate(session(), readiness({ timeAvailable: 20 }));
+        const event = adjudicate(session({ isEvent: true }), readiness({ timeAvailable: 20 }));
+
+        for (const verdict of [noTime, event]) {
+            expect(verdict.gateFailures).toContain('time_limit');
+            // The structured codes stay on gateFailures for the UI and the audit; the prose
+            // must not leak them.
+            expect(verdict.rationale, verdict.decision).not.toMatch(/time_limit|safety_guardrail|restricted_modality|restricted_category/);
+            expect(verdict.rationale).toContain('less time available today');
+        }
+    });
+});
+
 describe('D-EVENT: an event is advised, never instructed', () => {
     const event = session({
         id: 'race', title: 'Road Race', isEvent: true,

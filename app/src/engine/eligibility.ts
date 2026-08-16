@@ -3,6 +3,32 @@ import type { EquipmentKey, SessionTemplate, TrainingSettings, TrainingEnvironme
 export type EligibilityReason = 'time_limit' | 'equipment' | 'environment' | 'safety_guardrail' | 'restricted_modality' | 'restricted_category';
 
 /**
+ * Plain language for each gate, as a clause that completes "excluded because ...".
+ *
+ * Lives beside the reasons themselves so the rationale an athlete reads and the sentence a
+ * component renders cannot drift into two different explanations of the same exclusion —
+ * and so no path prints the raw enum to a person.
+ */
+export const ELIGIBILITY_REASON_LABEL: Record<EligibilityReason, string> = {
+    time_limit: 'you have less time available today than this session needs',
+    equipment: 'the equipment this session needs is not available to you',
+    environment: 'today\'s environment does not match where this session has to happen',
+    safety_guardrail: 'one of your safety guardrails excludes this kind of work',
+    restricted_modality: 'this type of training is restricted for you today',
+    restricted_category: 'this category of session is restricted for you today',
+};
+
+/** Joins gate labels into one readable clause. Unknown codes degrade to a de-underscored
+ * form rather than being dropped: a missing explanation must not hide a real exclusion. */
+export function describeEligibilityReasons(reasons: readonly string[]): string {
+    const described = reasons.map(reason =>
+        ELIGIBILITY_REASON_LABEL[reason as EligibilityReason] ?? reason.replaceAll('_', ' '));
+    if (described.length === 0) return '';
+    if (described.length === 1) return described[0];
+    return `${described.slice(0, -1).join(', ')} and ${described[described.length - 1]}`;
+}
+
+/**
  * The minimum shape the hard feasibility gates read. `SessionTemplate` satisfies it
  * structurally, so widening these functions from `SessionTemplate` to `GateableSession`
  * changes no existing call site.

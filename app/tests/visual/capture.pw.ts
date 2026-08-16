@@ -9,6 +9,11 @@ const entriesPath = resolve(artifactDir, 'entries.ndjson');
 async function visitScenario(page: Page, scenario: VisualScenario): Promise<void> {
   await page.goto(`/visual.html?scenario=${scenario.id}`);
   await expect(page.locator(`[data-visual-scenario="${scenario.id}"]`)).toBeVisible();
+  // The scenario container mounts before the dashboard has resolved its decision. A fixed
+  // wait was enough while every screen took the same path; the externally-planned screen
+  // resolves the plan, adjudicates and critiques the week, and photographed as a "Loading
+  // dashboard..." placeholder. Wait for the placeholder to actually go.
+  await expect(page.locator('.loading-state')).toHaveCount(0, { timeout: 15_000 });
   await page.addStyleTag({ content: '*,*::before,*::after{animation:none!important;transition:none!important;caret-color:transparent!important}' });
   await page.waitForTimeout(300);
 }

@@ -1,3 +1,4 @@
+import { describeEligibilityReasons } from '../engine/eligibility';
 import type { ExternalPrescriptionStep, ExternalSessionVerdictSummary, Recommendation } from '../engine/models';
 import './ExternalVerdictBanner.css';
 
@@ -14,22 +15,11 @@ const DECISION_LABEL: Record<ExternalSessionVerdictSummary['decision'], string> 
     advisory: 'Your call',
 };
 
-/** Plain language for each hard gate, so an excluded session always says which one and why. */
-const GATE_EXPLANATION: Record<string, string> = {
-    time_limit: 'you have less time available today than this session needs',
-    equipment: 'the equipment this session needs is not available to you',
-    environment: 'today\'s environment does not match where this session has to happen',
-    safety_guardrail: 'one of your safety guardrails excludes this kind of work',
-    restricted_modality: 'this type of training is restricted for you today',
-    restricted_category: 'this category of session is restricted for you today',
-};
-
+/** The engine's own wording for each gate, so the banner and the persisted rationale cannot
+ * explain the same exclusion two different ways. */
 function gateSentence(gateFailures: readonly string[]): string | null {
     if (gateFailures.length === 0) return null;
-    const explained = gateFailures.map(gate => GATE_EXPLANATION[gate] ?? gate.replaceAll('_', ' '));
-    return explained.length === 1
-        ? `Excluded because ${explained[0]}.`
-        : `Excluded because ${explained.slice(0, -1).join(', ')} and ${explained[explained.length - 1]}.`;
+    return `Excluded because ${describeEligibilityReasons(gateFailures)}.`;
 }
 
 function stepTiming(step: ExternalPrescriptionStep): string | null {
@@ -55,7 +45,12 @@ function stepTiming(step: ExternalPrescriptionStep): string | null {
  */
 export function ExternalVerdictBanner({ prescription, verdict }: ExternalVerdictBannerProps) {
     const actionable = verdict.decision === 'proceed' || verdict.decision === 'scale' || verdict.decision === 'advisory';
-    const gate = gateSentence(verdict.gateFailures);
+    // `skip` and `advisory` rationales already name the gates in the same words, and the
+    // rationale is what the athlete reads twice (here and under "Why this today?"). Repeating
+    // it a third time in the same card is noise, not emphasis.
+    const gate = verdict.decision === 'skip' || verdict.decision === 'advisory'
+        ? null
+        : gateSentence(verdict.gateFailures);
     const steps = prescription.prescription.steps ?? [];
 
     return (

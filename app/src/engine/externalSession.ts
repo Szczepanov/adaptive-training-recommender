@@ -1,5 +1,5 @@
 import { resolveExecutionDose } from './dose';
-import { evaluateTemplateEligibility, type EligibilityReason } from './eligibility';
+import { describeEligibilityReasons, evaluateTemplateEligibility, type EligibilityReason } from './eligibility';
 import { toGateableSession } from './externalSessionProfiles';
 import type { evaluateReadinessAndSafetyEnvelope } from './rules';
 import type { DailyReadiness, ExternalPlanSession, PlanEnvelope, PlannedDose, UserContext } from './models';
@@ -126,7 +126,7 @@ export function adjudicateExternalSession(
         const concerns: string[] = [];
         if (envelopes.safety.clinicalFlagActive) concerns.push(envelopes.safety.clinicalReason ?? 'an active pain or injury flag');
         if (mode === 'recover') concerns.push('today\'s readiness would otherwise mandate recovery');
-        if (gateFailures.length > 0) concerns.push(`feasibility concerns: ${gateFailures.join(', ')}`);
+        if (gateFailures.length > 0) concerns.push(describeEligibilityReasons(gateFailures));
         return {
             decision: 'advisory',
             gateFailures,
@@ -152,7 +152,9 @@ export function adjudicateExternalSession(
             decision: 'skip',
             gateFailures,
             ...(session.scaling?.fallback ? { fallbackSuggestion: session.scaling.fallback } : {}),
-            rationale: `Today's constraints exclude this session (${gateFailures.join(', ')}). Your plan's note on what to do instead is shown for context; it has not been checked against today's constraints.`,
+            // The rationale is persisted and read by a person, so it names the gate in words.
+            // `gateFailures` still carries the machine-readable codes for the UI and audit.
+            rationale: `Today's constraints exclude this session: ${describeEligibilityReasons(gateFailures)}. Your plan's note on what to do instead is shown for context; it has not been checked against today's constraints.`,
         };
     }
 
