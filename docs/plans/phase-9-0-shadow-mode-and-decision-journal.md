@@ -62,8 +62,8 @@ Cloud Scheduler trigger. It is written, not necessarily running.
 
 **Change.** Operational, not code:
 
-1. Deploy the job and schedule it daily, early enough that the snapshot exists before the
-   morning check-in.
+1. Deploy the job and schedule it daily at `05:00 Europe/Warsaw` (`0 5 * * *`), early enough
+   that the snapshot exists before the morning check-in.
 2. `uv run python -m garmin_sync backfill --days 56` so the 28-day objective baselines are
    mature on day 1 rather than maturing during the measurement.
 3. `uv run python -m garmin_sync audit` over the block window; record the coverage result.
@@ -96,7 +96,8 @@ export interface DecisionJournalEntry {
     sawEngineVerdictFirst: boolean;
     /** What they actually did, in the same vocabulary. */
     actualVerdict?: ShadowVerdict;
-    recordedAt: string;
+    createdAt: string;
+    updatedAt: string;
     schemaVersion: 1;
 }
 ```
@@ -105,9 +106,19 @@ export interface DecisionJournalEntry {
 comparison is only meaningful if both sides speak one vocabulary, and these five already
 cover what a conversational planner says: do it, do it easier, move it, skip it, your call.
 
+**Mutation lifecycle:**
+- **Morning write (creation):** Records `externalVerdict`, optional `externalNote`, and
+  locks `sawEngineVerdictFirst` (determined from whether the athlete revealed the engine
+  recommendation prior to submission).
+- **Evening write (update):** Records or updates `actualVerdict` (or syncs from daily
+  adherence) and sets `updatedAt`.
+- **Immutability rule:** `sawEngineVerdictFirst` and `createdAt` cannot be modified on
+  update, preventing post-hoc rewriting of anchoring telemetry.
+
 Validation in `engine/validation.ts` (closed key set, as every other stored shape).
 Firestore rules owner-scoped, with `hasValidDecisionJournalEntry`, mirroring the
-`daily_subjective_checkins` block. Emulator tests including cross-user denial.
+`daily_subjective_checkins` block and enforcing immutable `sawEngineVerdictFirst` / `createdAt`
+on update. Emulator tests including cross-user denial and update-tampering rejection.
 
 **Done when.** A well-formed entry is accepted, a malformed or foreign-owned one is
 rejected, and the rules tests prove both.
@@ -127,6 +138,11 @@ Two ordering rules, both about not corrupting the evidence:
 
 The card shows the engine's verdict for the day only after an entry exists or the athlete
 explicitly reveals it.
+
+**Adherence alignment:** When the athlete answers the existing `AdherencePrompt.tsx`
+(`followed === true`), `actualVerdict` defaults naturally to the executed recommendation's
+verdict rather than forcing the athlete through redundant double-entry, while still
+permitting an explicit override on the journal card if execution diverged from both.
 
 **Done when.** An entry can be recorded before the engine's verdict is visible; recording
 after reveal is possible and flagged; and the flag reflects what actually happened rather
