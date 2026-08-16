@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { diffPlans } from './ExternalPlanImport';
+import { diffPlans } from './externalPlanDiff';
 import { EXTERNAL_PLAN_SCHEMA, type ExternalTrainingPlan } from '../engine/models';
 
 function plan(): ExternalTrainingPlan {
