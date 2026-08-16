@@ -96,10 +96,42 @@ describe('validateExternalTrainingPlan', () => {
         expect(firstError(plan({ startDate: '2026-08-18' }))).toContain('startDate must be a Monday');
     });
 
-    it('rejects the fractional minutes the round-trip produced, naming the step', () => {
-        // The pre-revision form: 0.5 min for a 30-second rep.
-        const raw = sessionWith({ prescription: { summary: 'x', steps: [{ name: 'VO2 rep', durationMin: 0.5, repeat: 30 }] } });
-        expect(firstError(raw)).toContain('steps[0].durationMin: Minutes must be a whole number');
+    it('auto-normalizes fractional minutes to seconds in step duration and recovery', () => {
+        const raw = sessionWith({
+            prescription: {
+                summary: 'Intervals',
+                steps: [
+                    { name: 'VO2 rep', durationMin: 0.33, recoveryMin: 0.25, repeat: 10, sets: 2, setRecoveryMin: 0.5 },
+                    { name: 'Sprint', durationMin: 0.17, recoverySec: 45 },
+                ],
+            },
+        });
+        const result = validateExternalTrainingPlan(raw);
+        expect(result.isValid).toBe(true);
+        expect(result.errors).toEqual([]);
+        const step1 = result.data?.sessions[0].prescription?.steps?.[0];
+        expect(step1?.durationSec).toBe(20);
+        expect(step1?.durationMin).toBeUndefined();
+        expect(step1?.recoverySec).toBe(15);
+        expect(step1?.recoveryMin).toBeUndefined();
+        expect(step1?.setRecoverySec).toBe(30);
+        expect(step1?.setRecoveryMin).toBeUndefined();
+
+        const step2 = result.data?.sessions[0].prescription?.steps?.[1];
+        expect(step2?.durationSec).toBe(10);
+        expect(step2?.durationMin).toBeUndefined();
+        expect(step2?.recoverySec).toBe(45);
+    });
+
+    it('rejects invalid or non-positive step duration minutes', () => {
+        const rawZero = sessionWith({ prescription: { summary: 'x', steps: [{ name: 'Rep', durationMin: 0 }] } });
+        expect(firstError(rawZero)).toContain('steps[0].durationMin: Minutes must be a positive number 1-600');
+
+        const rawNegative = sessionWith({ prescription: { summary: 'x', steps: [{ name: 'Rep', durationMin: -5 }] } });
+        expect(firstError(rawNegative)).toContain('steps[0].durationMin: Minutes must be a positive number 1-600');
+
+        const rawTooLarge = sessionWith({ prescription: { summary: 'x', steps: [{ name: 'Rep', durationMin: 700 }] } });
+        expect(firstError(rawTooLarge)).toContain('steps[0].durationMin: Minutes must be a positive number 1-600');
     });
 
     it('rejects a step declaring both minutes and seconds', () => {

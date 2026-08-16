@@ -4,6 +4,66 @@
   padding: 1rem;
 }
 
+.external-import-prompt-guide {
+  margin-bottom: 0.85rem;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 0.5rem 0.75rem;
+}
+
+.external-import-prompt-guide summary {
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: #93c5fd;
+  user-select: none;
+}
+
+.external-import-prompt-guide summary:hover {
+  color: #bfdbfe;
+}
+
+.external-import-prompt-content {
+  margin-top: 0.65rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.external-import-prompt-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.external-import-prompt-hint {
+  font-size: 0.78rem;
+  color: var(--text-secondary, #94a3b8);
+}
+
+.external-import-prompt-hint code {
+  background: rgba(0, 0, 0, 0.35);
+  padding: 0.1rem 0.3rem;
+  border-radius: 4px;
+}
+
+.external-import-prompt-text {
+  max-height: 220px;
+  overflow-y: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.78rem;
+  line-height: 1.4;
+  padding: 0.6rem 0.75rem;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: #e2e8f0;
+}
+
 .external-import-input {
   width: 100%;
   box-sizing: border-box;

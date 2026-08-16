@@ -216,11 +216,11 @@ seconds), never both; likewise `recoveryMin` / `recoverySec`. Use the seconds fo
 anything under two minutes.
 
 This exists because the first real generated plan needed it eight times and had no way to
-say so. Asked for minutes, the authoring AI improvised fractions — `0.5` for a 30-second
-VO2 rep, `0.25` for a 15-second sprint touch, `0.17` for a 10-second acceleration. Those
-are lossy in a way that matters: `0.17` minutes is 10.2 seconds and `0.33` is 19.8, so the
-intended 10s and 20s efforts cannot be recovered from the number. Cycling intervals are
-second-granular; a minutes-only step model cannot express the sport.
+say so. Asked for minutes, authoring AIs frequently improvise fractions — `0.5` for a 30-second
+VO2 rep, `0.25` for a 15-second sprint touch, `0.33` for a 20-second interval, `0.17` for a 10-second acceleration.
+To ensure robustness against AI idiosyncrasies, the import validator auto-normalizes fractional
+minutes (\(\text{min} \times 60\)) to integer seconds (`durationSec`, `recoverySec`, `setRecoverySec`)
+on import rather than rejecting the plan. Cycling intervals remain second-granular in the saved revision.
 
 ```jsonc
 { "name": "VO2 rep", "durationSec": 30, "recoverySec": 15,
