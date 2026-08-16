@@ -5,7 +5,9 @@ import type {
     DecisionJournalEntry,
     ShadowVerdict,
 } from './models';
-import { classifyAgreement, type AgreementClass } from './shadowAgreement';
+import { classifyAgreement, resolveEngineShadowVerdict, type AgreementClass } from './shadowAgreement';
+
+type PersistedRecommendationWithVerdict = DailyRecommendation & { engineVerdict?: ShadowVerdict };
 
 /**
  * Phase 9.0.5 export: joins the engine's persisted verdict, the athlete's own decision
@@ -18,9 +20,8 @@ import { classifyAgreement, type AgreementClass } from './shadowAgreement';
  */
 export interface ShadowLogRow {
     date: string;
-    /** Derived from `daily_recommendations/{date}.mode` -- see `deriveEngineVerdictFromMode`
-     *  for what this approximation can and cannot distinguish. Null when no recommendation
-     *  was persisted that day. */
+    /** Exact persisted engine action when available. Legacy recommendations written before
+     * Phase 9.0 fall back to the three-value mode mapping. */
     engineVerdict: ShadowVerdict | null;
     engineMode: DailyRecommendation['mode'] | null;
     externalVerdict: ShadowVerdict | null;
@@ -30,8 +31,8 @@ export interface ShadowLogRow {
     adherenceFollowed: boolean | null;
     actualDurationMin: number | null;
     /** Null whenever either side is missing -- classifyAgreement is total over the five
-     *  ShadowVerdict values, but a day with no engine or no external verdict has nothing
-     *  to compare. */
+     * ShadowVerdict values, but a day with no engine or no external verdict has nothing
+     * to compare. */
     agreement: AgreementClass | null;
     subjective: {
         readiness: number | null;
@@ -63,35 +64,28 @@ export interface ShadowLogDayInput {
     recoverySnapshot: DailyRecoverySnapshot | null;
 }
 
-/**
- * Mode-based approximation of the day's engine verdict. `daily_recommendations/{date}`
- * retains only the three-value `mode`, not the specific `ExternalSessionDecision` an
- * adjudicated day resolved to -- so this can produce `proceed`/`scale`/`defer` but never
- * `skip` or `advisory`. That is an accepted precision loss (no new persisted field), not a
- * silent one: it means an adjudicated `skip` or `advisory` day reads as its nearest mode
- * instead, which the conservatism ladder in `shadowAgreement.ts` still orders correctly
- * for `skip` (both `defer` and `skip` rank equally) but not for `advisory` (which sits
- * outside the ladder and would misclassify as comparable). Revisit if 9.0.8 needs the
- * distinction.
- */
+/** Legacy fallback for recommendations written before the exact Phase 9.0 verdict field
+ * existed. New writes persist `engineVerdict`; the fallback must not be used as a substitute
+ * for an imported-session `skip`/`advisory` decision when exact evidence is available. */
 export function deriveEngineVerdictFromMode(mode: DailyRecommendation['mode']): ShadowVerdict {
-    switch (mode) {
-        case 'train': return 'proceed';
-        case 'modify': return 'scale';
-        case 'recover': return 'defer';
-    }
+    return resolveEngineShadowVerdict(mode);
+}
+
+function persistedEngineVerdict(recommendation: DailyRecommendation): ShadowVerdict {
+    const persisted = recommendation as PersistedRecommendationWithVerdict;
+    return persisted.engineVerdict ?? deriveEngineVerdictFromMode(recommendation.mode);
 }
 
 /** Builds one row, or null when none of the three evidence sources (recommendation,
- *  journal entry, check-in) exist for the day -- the export omits the day entirely rather
- *  than emitting an all-null row for a date nothing touched. A day where exactly one or
- *  two sources exist still gets a row, with the rest visible as null: that gap is itself a
- *  finding (the day the athlete skipped the check-in), not something to silently drop. */
+ * journal entry, check-in) exist for the day -- the export omits the day entirely rather
+ * than emitting an all-null row for a date nothing touched. A day where exactly one or
+ * two sources exist still gets a row, with the rest visible as null: that gap is itself a
+ * finding (the day the athlete skipped the check-in), not something to silently drop. */
 export function buildShadowLogRow(input: ShadowLogDayInput): ShadowLogRow | null {
     const { date, recommendation, journalEntry, checkin, recoverySnapshot } = input;
     if (!recommendation && !journalEntry && !checkin) return null;
 
-    const engineVerdict = recommendation ? deriveEngineVerdictFromMode(recommendation.mode) : null;
+    const engineVerdict = recommendation ? persistedEngineVerdict(recommendation) : null;
     const externalVerdict = journalEntry?.externalVerdict ?? null;
     const agreement = engineVerdict !== null && externalVerdict !== null
         ? classifyAgreement(engineVerdict, externalVerdict)
@@ -132,7 +126,7 @@ export function buildShadowLogRow(input: ShadowLogDayInput): ShadowLogRow | null
 }
 
 /** `days` in any order; the output preserves that order (callers pass dates ascending by
- *  convention, same as `ContextBriefInput.snapshots`). */
+ * convention, same as `ContextBriefInput.snapshots`). */
 export function buildShadowLog(days: readonly ShadowLogDayInput[]): ShadowLogRow[] {
     const rows: ShadowLogRow[] = [];
     for (const day of days) {
@@ -178,10 +172,10 @@ function csvCell(value: string | number | boolean | null): string {
 }
 
 /** The 9.0.8 human readout's export format -- one row per day, gaps visible as empty
- *  cells rather than dropped columns, so a reviewer sees exactly what 9.0.7's acceptance
- *  gates require checking (coverage, anchoring split, disagreement rows) without a second
- *  tool. Phase 9.5's corpus consumes `buildShadowLog`'s rows directly instead of this
- *  text form. */
+ * cells rather than dropped columns, so a reviewer sees exactly what 9.0.7's acceptance
+ * gates require checking (coverage, anchoring split, disagreement rows) without a second
+ * tool. Phase 9.5's corpus consumes `buildShadowLog`'s rows directly instead of this
+ * text form. */
 export function renderShadowLogCsv(rows: readonly ShadowLogRow[]): string {
     const header = CSV_COLUMNS.map(column => column.header).join(',');
     const lines = rows.map(row => CSV_COLUMNS.map(column => csvCell(column.read(row))).join(','));
