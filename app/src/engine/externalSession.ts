@@ -2,6 +2,7 @@ import { resolveExecutionDose } from './dose';
 import { describeEligibilityReasons, evaluateTemplateEligibility, type EligibilityReason } from './eligibility';
 import { toGateableSession } from './externalSessionProfiles';
 import type { evaluateReadinessAndSafetyEnvelope } from './rules';
+import type { ResolvedAvailability } from './schedule';
 import type { DailyReadiness, ExternalPlanSession, PlanEnvelope, PlannedDose, UserContext } from './models';
 
 /** Mirror `rules.ts`'s own ceilings. Duplicated rather than imported so this module stays
@@ -86,6 +87,32 @@ function deferBelowFloor(session: ExternalPlanSession, gateFailures: Eligibility
     };
 }
 
+function pushReason(reasons: EligibilityReason[], reason: EligibilityReason): void {
+    if (!reasons.includes(reason)) reasons.push(reason);
+}
+
+/**
+ * `evaluateTemplateEligibility` owns the standing athlete constraints. The normal catalog
+ * path then narrows those constraints through `resolveAvailability` for this exact day
+ * (fixed-activity time, travel/hotel equipment and day-wide environment overrides). An
+ * imported session must consume that same resolved authority or it can pass a gate an
+ * equivalent catalog candidate fails.
+ */
+function applyResolvedAvailability(
+    session: ReturnType<typeof toGateableSession>,
+    availability: ResolvedAvailability | null,
+    reasons: EligibilityReason[],
+): void {
+    if (!availability) return;
+    if (session.durationMin > availability.maxTimeMinutes) pushReason(reasons, 'time_limit');
+    if (!session.requiredEquipment.every(item => availability.availableEquipment.includes(item))) pushReason(reasons, 'equipment');
+    if (availability.environmentOverride
+        && session.environment !== 'either'
+        && session.environment !== availability.environmentOverride) {
+        pushReason(reasons, 'environment');
+    }
+}
+
 /**
  * Decides what to do with one imported session on one day.
  *
@@ -93,6 +120,9 @@ function deferBelowFloor(session: ExternalPlanSession, gateFailures: Eligibility
  * `evaluateReadinessAndSafetyEnvelope`'s already-computed state and `resolveExecutionDose`
  * unchanged, so an imported session is adjudicated by exactly the pipeline that adjudicates
  * a catalog one (ADR-0019 D-CANDIDATE). It selects nothing and ranks nothing.
+ *
+ * `resolvedAvailability` is the normal schedule authority for this date. It is optional
+ * only for low-level/legacy callers; the intent-aware production path supplies it.
  *
  * The ladder follows `architecture/recommendation-engine.md`'s authority ordering and adds
  * no step to it:
@@ -111,15 +141,23 @@ export function adjudicateExternalSession(
     envelopeState: EnvelopeState,
     plannedDose: PlannedDose,
     date: string,
+    resolvedAvailability: ResolvedAvailability | null = null,
 ): ExternalSessionVerdict {
     const { mode, envelopes } = envelopeState;
     const gateable = toGateableSession(session);
-    const eligibility = evaluateTemplateEligibility(gateable, context, readiness.subjective.timeAvailable, date);
+    const eligibility = evaluateTemplateEligibility(
+        gateable,
+        context,
+        resolvedAvailability?.maxTimeMinutes ?? readiness.subjective.timeAvailable,
+        date,
+    );
 
     const safetyRestricted = envelopes.safety.restrictedModalities.includes(gateable.modality);
     const clinicalBlocked = envelopes.safety.clinicalFlagActive && safetyRestricted;
     const gateFailures: EligibilityReason[] = [...eligibility.reasons];
-    if (safetyRestricted && !gateFailures.includes('restricted_modality')) gateFailures.push('restricted_modality');
+    applyResolvedAvailability(gateable, resolvedAvailability, gateFailures);
+    if (safetyRestricted) pushReason(gateFailures, 'restricted_modality');
+    const feasible = gateFailures.length === 0;
 
     // ---- D-EVENT: an event is a commitment. Advise, never instruct. -------------------
     if (session.isEvent) {
@@ -147,7 +185,7 @@ export function adjudicateExternalSession(
     }
 
     // ---- 2. Feasibility --------------------------------------------------------------
-    if (!eligibility.eligible) {
+    if (!feasible) {
         return {
             decision: 'skip',
             gateFailures,
