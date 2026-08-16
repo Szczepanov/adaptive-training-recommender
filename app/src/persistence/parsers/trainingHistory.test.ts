@@ -37,4 +37,20 @@ describe('training-history persistence parsers', () => {
         expect(parseDailyRecommendation({ ...recommendation, schemaVersion: 4 }, 'users/u1/daily_recommendations/2026-08-06'))
             .toMatchObject({ status: 'INVALID', issues: [{ code: 'unsupported-schema-version', schemaVersion: 4 }] });
     });
+
+    it('preserves a valid exact Phase 9 engine verdict without changing the historical schema version', () => {
+        const parsed = parseDailyRecommendation(
+            { ...recommendation, engineVerdict: 'advisory' },
+            'users/u1/daily_recommendations/2026-08-06',
+        );
+        expect(parsed).toMatchObject({ status: 'AVAILABLE', data: { mode: 'train', engineVerdict: 'advisory', schemaVersion: 2 } });
+    });
+
+    it('rejects an invalid exact engine verdict instead of falling back to mode', () => {
+        const parsed = parseDailyRecommendation(
+            { ...recommendation, engineVerdict: 'maybe' },
+            'users/u1/daily_recommendations/2026-08-06',
+        );
+        expect(parsed).toMatchObject({ status: 'INVALID', issues: [{ code: 'invalid-engine-verdict', field: 'engineVerdict' }] });
+    });
 });
