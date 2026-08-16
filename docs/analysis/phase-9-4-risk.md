@@ -1,0 +1,3 @@
+# Phase 9.4 risk boundary
+
+The new read can fail without blocking today's recommendation because subjective drift is an optional relative signal. This does not weaken the required current-day check-in or any absolute fatigue/soreness/pain trigger. A future production activation of drift must revisit forecast and adjustment call sites so each decision date receives a baseline with the correct exclusive history boundary.
