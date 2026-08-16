@@ -2,43 +2,49 @@
 
 * **Status:** Draft
 * **Blocked by:** [ADR-0020](../adr/0020-subjective-baselines-in-readiness-mode.md) acceptance
-* **Strongly preceded by:** [Phase 9.0](./phase-9-0-shadow-mode-and-decision-journal.md) — its shadow block turns 9.5 from inventing subjective variance into sampling the athlete's own
-* **Unlocks:** a decision on whether self-normalised subjective drift belongs in the mode gate at all
-* **Decisions:** ADR-0020 (D-SUBJDRIFT, D-SUBJADD, D-SUBJFLOOR, D-SUBJCOV, D-SUBJSD, D-SUBJPURE, D-SUBJANCHOR, D-SUBJCAL, D-SUBJAUDIT)
+* **Strongly preceded by:** [Phase 9.0](./phase-9-0-shadow-mode-and-decision-journal.md) — its shadow block supplies the prospective evidence required before a production ship decision
+* **Unlocks:** a decision on whether adverse within-athlete subjective drift belongs in the mode gate at all
+* **Decisions:** ADR-0020 (D-SUBJHIST, D-SUBJDRIFT, D-SUBJADD, D-SUBJFLOOR, D-SUBJCOV, D-SUBJEST, D-SUBJPURE, D-SUBJANCHOR, D-SUBJCAL, D-SUBJAUDIT)
 
 ## Goal
 
-Build the self-normalised subjective drift term behind a simulation-only selector, extend
-the scenario corpus so the measurement can actually detect it, run the comparison, and
-then decide whether it ships. Shipping is **not** the goal of this plan; deciding is.
+Build an adverse-only subjective drift candidate behind a simulation-only selector, extend
+the scenario corpus so the measurement can detect it, compare reasonable estimator choices,
+and then decide whether the signal deserves prospective validation and eventual production
+use. Shipping is **not** the goal of this plan; deciding is.
 
 ## The chicken-and-egg, and how this plan resolves it
 
-D-SUBJCAL says the coefficients and the go/no-go come from calibration evidence. But
-calibration requires a working implementation. Building it and shipping it in one step
+D-SUBJCAL says estimator details, coefficients and the go/no-go come from evidence. But
+measurement requires a working implementation. Building it and shipping it in one step
 would make the ADR's evidence discipline decorative.
 
-The repository already solved this exact problem for fatigue fusion. `FatigueFusionPolicy`
-threads a `'max' | 'additive'` selector through `fatigue.ts` and `planner.ts`, defaulting
-to production behaviour at every call site, and `runFatigueFusionComparison` runs the real
-planner and hard gates under both. The additive selector has never been reachable by a
-live caller.
+The repository already solved this pattern for fatigue fusion. `FatigueFusionPolicy`
+threads a selector through the real planner while production keeps the established default,
+and the comparison harness measures the alternative without making it live.
 
-**Phase 9 follows that pattern exactly.** The drift term is implemented behind a
-`SubjectiveDriftPolicy` defaulting to `'off'`, so every production path is bit-identical
-until a separate, evidence-backed decision flips it.
+**Phase 9 follows that pattern.** Subjective drift is implemented behind a
+`SubjectiveDriftPolicy` defaulting to `'off'`, so production remains bit-identical until a
+separate reviewed decision changes the live default.
+
+The evidence has two levels:
+
+1. synthetic scenarios answer **is this mechanism safe, bounded and non-pathological?**;
+2. Phase 9.0's prospective real-athlete record answers **does it appear useful in the
+   workflow that would actually consume it?**
+
+Synthetic fixtures may reject the idea. They may not, by themselves, authorize shipping.
 
 ---
 
 ## Preconditions
 
 * ADR-0020 accepted.
-* **9.5 must land before 9.6 is run.** Reading a comparison against the current corpus
-  would produce a confidently wrong answer — see the work item for why.
-* **Phase 9.0's block should precede 9.5** where scheduling allows. It is not a hard
-  blocker — 9.5's invented profiles are still better than a constant — but a real 4–6 week
-  check-in record makes the profiles observed rather than assumed, and the calibration is
-  only as good as the variance it is measured against.
+* **9.5 must land before 9.6 is run.** A comparison against the old constant-subjective
+  corpus would be structurally unable to exercise drift.
+* **Phase 9.0 is not required to build 9.1–9.7**, but a production ship decision in 9.8
+  requires its prospective evidence (or an equivalent later prospective corpus). If that
+  evidence is not adequate, the selector stays off.
 
 ---
 
@@ -47,50 +53,85 @@ until a separate, evidence-backed decision flips it.
 ### 9.1 Subjective baseline computation `[ ]`
 
 **Current behaviour.** Nothing baselines subjective data. `mapCheckinToSubjectiveInput`
-maps one day's check-in to `SubjectiveInput` and nothing else reads check-in history.
+maps one day's check-in to `SubjectiveInput` and nothing else reads prior check-in history.
 
-**Change.** Add `engine/subjectiveBaseline.ts`, pure, exporting:
+**Change.** Add `engine/subjectiveBaseline.ts`, pure, with a versioned estimator policy:
 
 ```ts
+export interface SubjectiveBaselinePolicy {
+  estimatorId: string;
+  recentWindowDays: number;
+  longWindowDays: number;
+  minRecentRecordedDays: number;
+  minLongRecordedDays: number;
+  variabilityFloor: number;
+  contributionCap: number;
+}
+
 computeSubjectiveBaseline(
   checkins: readonly DailySubjectiveCheckin[],
   asOfDate: string,
-): SubjectiveBaseline   // { avg7d, avg28d, stdev28d, recordedDays } per metric, or null
+  policy: SubjectiveBaselinePolicy,
+): SubjectiveBaseline | null
 ```
 
-Per metric: trailing 7-day average, trailing 28-day average, 28-day population stdev
-floored at `SUBJECTIVE_STDEV_FLOOR` (1.0 point, D-SUBJSD). `recordedDays` counts **distinct
-complete scored dates**, not documents. A partial minimum-safety check-in can still carry
-important pain/illness flags, but its null readiness dimensions are not observations of
-the subjective score vector and therefore cannot mature the baseline. Returns `null`
-outright below `SUBJECTIVE_BASELINE_MIN_DAYS` (D-SUBJCOV) so no caller can accidentally
-consume a sub-threshold baseline.
+**D-SUBJHIST is load-bearing:** `asOfDate` is exclusive. A decision for date `D` may only
+use check-ins whose local date is `< D`. Today's submitted check-in never participates in
+the baseline used to interpret today.
 
-Reuse the shape of `contextBrief.ts`'s existing coverage logic rather than inventing a
-second convention; the brief's `SUBJECTIVE_BASELINE_MIN_DAYS` and the engine's must be one
-exported constant, not two literals that can drift.
+The first reference policy remains intentionally simple so 9.6 has a concrete candidate to
+measure:
 
-**Done when** the function is pure, a sub-threshold history returns `null`, duplicate-date
-records and partial safety-only check-ins cannot inflate `recordedDays`, and a zero-variance
-history yields the stdev floor rather than a division by zero.
+* 7 prior calendar days as the recent window;
+* 28 prior calendar days as the long reference;
+* mean location and population stdev;
+* 1.0-point variability floor;
+* per-component cap matching the existing `STRAIN_Z_CAP` (2.0).
+
+These are **reference candidate values, not ADR invariants** (D-SUBJEST). Coverage requires
+both a recent-window count and a long-window count; the exact minima are policy fields and
+must be included in 9.6 sensitivity analysis rather than disguised as physiological facts.
+
+`SubjectiveBaseline` records at least:
+
+```ts
+{
+  estimatorId: string;
+  historyThroughDateExclusive: string;
+  recentRecordedDays: number;
+  longRecordedDays: number;
+  lastObservationDate: string | null;
+  // per participating metric: recent location, long location, variability
+}
+```
+
+Only **distinct complete scored dates** count. A partial minimum-safety check-in can still
+carry pain/illness meaning for that day, but its null subjective dimensions do not mature a
+baseline.
+
+Reuse the context brief's coverage conventions where they truly match, but do not force one
+single `recordedDays` constant onto both recent-state and long-reference eligibility.
+
+**Done when** the function is pure; `asOfDate` is excluded by test; duplicate dates and
+partial safety-only check-ins cannot inflate either coverage count; zero-variance input is
+bounded by the policy floor; and either insufficient recent or insufficient long coverage
+returns `null`.
 
 ---
 
 ### 9.2 Carry the baseline on `DailyReadiness` `[ ]`
 
 **Current behaviour.** `DailyReadiness` is `{ subjective, objective }`. Objective baselines
-arrive precomputed on `DailyRecoverySnapshot.derived`; subjective has no equivalent.
+arrive precomputed on `DailyRecoverySnapshot.derived`; subjective history has no equivalent.
 
-**Change.** Add an optional `subjectiveBaseline?: SubjectiveBaseline | null` to
-`DailyReadiness`. Absent is a supported input and means "no baseline available", which is
-exactly today's behaviour.
+**Change.** Add optional `subjectiveBaseline?: SubjectiveBaseline | null` to
+`DailyReadiness`. Absent means no relative subjective signal and preserves today's behaviour.
 
-`evaluateReadinessAndSafetyEnvelope` must **not** gain a history provider, an async
-signature, or a Firestore read (D-SUBJPURE). It stays pure and synchronous; the baseline is
-data handed to it, the same way `derived.hrv7dAvg` already is.
+`evaluateReadinessAndSafetyEnvelope` must **not** gain a history provider, async signature,
+or Firestore read (D-SUBJPURE).
 
-**Done when** the field exists, is optional, and `evaluateReadinessAndSafetyEnvelope`'s
-signature is otherwise unchanged.
+**Done when** the field exists, is optional, and the evaluator's purity/synchronous contract
+is otherwise unchanged.
 
 ---
 
@@ -98,167 +139,187 @@ signature is otherwise unchanged.
 
 **Current behaviour.** `evaluateReadinessAndSafetyEnvelope` computes `objectiveStrain` from
 `metricStrain` plus contextual penalties, and derives mode from absolute subjective
-thresholds plus that strain.
+thresholds plus that score.
 
 **Change.** Add `SubjectiveDriftPolicy = 'off' | 'drift'`, defaulting to `'off'` at every
-call site, mirroring `FatigueFusionPolicy`'s plumbing through `rules.ts` and `planner.ts`.
+production call site, mirroring the fatigue-fusion measurement pattern.
 
-Under `'drift'`, compute a `subjectiveDrift` score:
+Under `'drift'`, the first **reference estimator** uses the 9.1 candidate baseline:
 
-* **7d vs 28d only.** No acute today-vs-7d term (D-SUBJDRIFT).
-* Per metric: `z = (avg7d − avg28d) / stdev28d`, signed so that adverse movement is
-  positive, then `clamp(adverse, 0, STRAIN_Z_CAP)` — the same floor-at-zero `metricStrain`
-  already applies, which is what makes the term structurally incapable of granting relief
-  (D-SUBJADD).
-* Summed with per-metric weights, added to the accumulating strain compared against
-  `STRAIN_MODIFY_THRESHOLD` / `STRAIN_RECOVER_THRESHOLD`.
+* compare recent prior history with longer prior history only — today is not in either;
+* sign each metric so adverse movement is positive;
+* normalize by the bounded variability estimate;
+* floor favourable movement at zero;
+* cap the component;
+* aggregate with experimental per-metric weights into a separate `subjectiveDrift` score;
+* add that non-negative score to the accumulating decision score compared with the existing
+  modify/recover thresholds.
+
+This 7/28 z-style arithmetic is the reference candidate for the harness, **not the accepted
+meaning of D-SUBJDRIFT**. The ADR only fixes persistent adverse within-athlete change and
+tighten-only direction; D-SUBJEST leaves windows/scaling/caps as policy choices.
 
 Every existing absolute trigger stays byte-identical (D-SUBJFLOOR). There must be **no
-subtraction path**: assert in review that no expression can reduce a strain total or
-de-escalate a mode already set by an absolute trigger.
+subtraction path**: no baseline can turn an absolute `modify`/`recover` into a less
+restrictive mode.
 
-Weights, the drift multiplier, and whether `motivation`/`mentalStress` participate are
-placeholders pending 9.6 — do not tune them by hand here (D-SUBJCAL).
-
-**Done when** `'off'` produces bit-identical output to today across the whole corpus
-(`simulate:diff` clean), `'drift'` is unreachable from any production caller, and a
-property test proves no baseline value can lower the resulting mode.
+**Done when** `'off'` is bit-identical to current behaviour across the corpus,
+`'drift'` is unreachable from production callers, and a property test proves no possible
+baseline can lower the resulting mode.
 
 ---
 
 ### 9.4 Composition boundary supplies the baseline `[ ]`
 
-**Current behaviour.** `composer.ts` fans out six reads via `Promise.allSettled`; check-ins
-are fetched for one date only.
+**Current behaviour.** `composer.ts` reads today's check-in only.
 
-**Change.** Add a seventh read for the trailing 28-day check-in range and pass
-`computeSubjectiveBaseline`'s result through `DailyReadiness`.
+**Change.** Add one bounded validated range read for prior subjective history. For decision
+date `D`, the read ends at `D - 1`; `D` itself is never fetched into the baseline window.
 
-Use **`checkinService.getCheckinsInRange`**, not `getRecentCheckins`. The latter applies
-`limit(days)` to a date-ordered query and returns the most recent N *documents*, so with
-gaps it spans more than N days and the D-SUBJCOV coverage count reads as complete whenever
-it is not — the gate would silently always pass. This defect was found and fixed in the
-context brief; do not reintroduce it here.
+Use a true date-range query, not `getRecentCheckins`: a document `limit(days)` is not a
+calendar-day window when there are gaps.
 
-`getCheckinsInRange` currently returns raw Firestore documents through a type assertion.
-Do **not** feed that output directly to `computeSubjectiveBaseline`. Either introduce a
-validated range reader that applies `parseSubjectiveCheckin` to every record (and migrate
-the context brief to share it), or parse every record at this composition boundary. An
-invalid/user-mismatched record contributes nothing and is surfaced as a data-quality issue;
-it must never be coerced into neutral readiness values or counted toward baseline coverage.
+Do **not** feed raw Firestore type assertions into `computeSubjectiveBaseline`. Every record
+must pass the same parser/ownership/date validation as a single check-in read. An invalid
+record contributes nothing to coverage and is surfaced as a data-quality issue rather than
+coerced into neutral values.
 
-A failed read yields no baseline, which degrades to today's behaviour. It must not throw.
+A failed or invalid range yields no subjective baseline and therefore zero subjective drift.
+Today's ordinary absolute safety logic still runs from today's valid check-in.
 
-**Done when** the baseline reaches the evaluator, a failed, invalid, or sparse check-in
-range leaves the decision unchanged, invalid records cannot inflate coverage, and the added
-query is bounded to one range read per decision.
+**Done when** the baseline reaches the evaluator, history is strictly `throughDateExclusive`,
+failed/invalid/sparse prior history leaves the decision unchanged, and the added history read
+is bounded to one range query per composed decision.
 
 ---
 
-### 9.5 Give the scenario corpus real subjective variance `[ ]`
+### 9.5 Give the scenario corpus real subjective variance `[x]`
 
 **This is the work item the measurement depends on, and it must land before 9.6.**
 
-**Current behaviour.** `scenarios.ts` `stableReadiness()` returns the same subjective values
-every day — `readiness: 6, sleepQuality: 6, fatigue: 4, soreness: 4, stress: 4,
-motivation: 6` — and almost every scenario uses it unmodified. The handful that differ
-(`healthy_fresh`, `high_fatigue`, `readiness_crash_then_return`) substitute a *different
-constant*, and `readinessForWeek` generates per week rather than per day.
+**Previous behaviour.** `scenarios.ts` supplied constant subjective values to almost every
+scenario, making every synthetic athlete's subjective variance effectively zero. Any
+relative drift candidate would therefore appear to do nothing for fixture reasons.
 
-So every synthetic athlete has **zero subjective variance**. Their 7-day and 28-day
-averages are identical, every z-score is exactly zero, and the drift term contributes
-nothing anywhere in the corpus.
-
-Running 9.6 against this corpus would report "no effect" — and that result would be an
-artefact of the fixtures, not evidence about the idea. It would close ADR-0020 as
-`Rejected` for entirely the wrong reason.
-
-**Change.** Extend the corpus with per-athlete *subjective scale profiles* — the personal
-scale-use differences the whole ADR exists to correct.
-
-**Preferred source: the Phase 9.0 block.** If
-[Phase 9.0](./phase-9-0-shadow-mode-and-decision-journal.md) has run, its export carries
-4–6 weeks of the athlete's real check-ins. Derive the profiles' *parameters* — baseline
-level per metric, day-to-day standard deviation, and the shape of any real drift — from
-that record instead of choosing them. The fixtures stay synthetic and deterministic, since
-the corpus must remain reproducible; what changes is that their numbers are observed rather
-than invented, and at least one of them is the athlete who will actually use the result.
-
-Without 9.0, the table below stands as written, and the limitation in the risk table
-("synthetic profiles measure fixtures rather than people") applies at full strength.
-
-The profiles to build either way:
+**Change.** Add deterministic per-athlete subjective scale-use profiles:
 
 | Fixture | Shape | What it must prove |
 |---|---|---|
-| Habitual low reporter | Readiness ~3, fatigue ~7, flat | Drift does **not** relax an absolute-threshold `modify`; this quantifies the tighten-only rule's accepted false-positive trade-off |
-| Habitual high reporter | Readiness ~8, fatigue ~2, flat | Does not escape a real decline because the absolute floor is far away |
-| Slow drifter | Readiness 8 → 6 over three weeks, never crossing an absolute threshold | The case the term exists for: currently invisible, must become visible |
-| Noisy but stationary | Mean stable, day-to-day swing ±2 | Must **not** trigger — noise is not drift |
-| Chronically sore | Soreness baseline 7, stable | The safety case: must not read as "normal, proceed" |
+| Habitual low reporter | Readiness ~3, fatigue ~7, flat | Relative history never relaxes an absolute-threshold `modify` |
+| Habitual high reporter | Readiness ~8, fatigue ~2, flat | A stable high reporter remains stable; future adverse drift can be tested without an absolute floor already firing |
+| Slow drifter | Readiness 8 → 6 over three weeks, never crossing an absolute threshold | Persistent deterioration exists for a drift candidate to detect |
+| Noisy but stationary | Mean stable, day-to-day swing ±2 | Noise is distinguishable from persistent drift |
+| Chronically sore | Soreness baseline ~7, stable | Relative normality never cancels the absolute soreness floor |
 
-This also requires a per-day subjective series rather than a per-week constant. Verify
-whether `readinessForDate` alone suffices, or whether `runScenario` must additionally seed
-a synthetic check-in history for `computeSubjectiveBaseline` to read — the harness supplies
-readiness per decision point, not a stored 28-day check-in series, and 9.1 needs the latter.
+**Preferred source later:** once Phase 9.0 has run, use the observed block to re-parameterize
+at least one deterministic profile. The current invented profiles remain useful policy
+fixtures, but they do not become real-athlete evidence merely because they resemble plausible
+behaviour.
 
-Because these are new scenarios, `simulate:diff` reports them as `[NEW SCENARIO]` and no
-committed baseline changes.
+**Implementation note.** `engine/simulation/subjectiveProfiles.ts` is daily-resolution and
+deterministic. `runScenario` still samples one decision per chained week, so the five new
+`subjective_*` scenarios sample days `0, 7, 14, 21`; `subjectiveProfiles.test.ts` exercises
+the full 28-day series directly. No stored check-in history is seeded yet because 9.1/9.4 do
+not exist; 9.4's integration tests will build validated historical check-in documents from
+the same deterministic series.
 
-**Done when** at least the five fixtures above exist, each produces non-zero subjective
-stdev, and the drifter's 7d/28d averages actually diverge over its span.
+Because these are new scenarios, `simulate:diff` reports `[NEW SCENARIO]` and no committed
+baseline changes.
+
+**Done when** all five profiles exist; every subjective dimension intended to be variable
+has non-zero variance; the slow drifter has a clear early/late shift; habitual-low and
+chronically-sore remain exactly `modify` under today's absolute logic; and habitual-high,
+slow-drifter and noisy-stationary remain `train` under today's logic.
 
 ---
 
-### 9.6 Comparison harness `[ ]`
+### 9.6 Comparison harness and estimator sensitivity `[ ]`
 
 **Change.** Add `runSubjectiveDriftComparison` to `simulation/analyze.ts` and
-`scripts/simulate-subjective-drift.mjs`, modelled directly on
-`runFatigueFusionComparison` / `simulate-fatigue-fusion.mjs`: run the real planner and hard
-gates under `'off'` and `'drift'`, and report per-scenario and aggregate deltas for changed
-selections, mode distribution, recovery share, rest/recovery days, objective misses, and
-constraint violations. Output to `artifacts/subjective-drift-reports/latest/` (gitignored).
+`scripts/simulate-subjective-drift.mjs`, modelled on the fatigue-fusion comparison. Run the
+real planner and hard gates under `'off'` and the reference `'drift'` candidate and report:
 
-The report must answer D-SUBJCAL's two open questions explicitly: does `motivation` add
-signal or noise, and does drift need `CHRONIC_STRAIN_MULTIPLIER`'s ×1.5 treatment.
+* changed selections and modes;
+* recovery/rest share;
+* objective misses and constraint violations;
+* each 9.5 profile separately;
+* the specific subjective components that contributed;
+* sensitivity to window length, recent/long coverage requirements, variability floor/cap,
+  participating metrics, weights, and any chronic multiplier.
 
-**Done when** the harness runs both policies through the production planner, the report
-distinguishes the five 9.5 fixtures individually, and it makes no automatic threshold
-recommendation.
+If the reference result is materially driven by outliers/discrete scale effects, add at
+least one robust alternative (for example a median/rank-based variant) before interpreting
+the result. The ADR intentionally does not pre-select the winner.
+
+The report must explicitly distinguish:
+
+**Synthetic safety/regression evidence** — can reject unsafe/pathological behaviour.
+
+**Real-world usefulness evidence** — cannot be established by these fixtures and comes from
+Phase 9.0/9.8.
+
+**Done when** the harness runs through production gates, the five fixtures are individually
+reported, reasonable estimator choices do not hide a materially different conclusion, and
+no automatic production recommendation is emitted.
 
 ---
 
 ### 9.7 Telemetry, audit and rationale `[ ]`
 
-**Change.** Add `subjectiveDrift` to `DecisionScoreTelemetry` as a third independently
-readable component that still reconciles arithmetically to the total. Add the baseline's
-`recordedDays` and the drift contribution to `RecommendationAudit` (D-SUBJAUDIT) — a
-decision that depended on a 28-day subjective window is not reproducible from an audit that
-omits how many days that window held.
+**Change.** Add `subjectiveDrift` to `DecisionScoreTelemetry` as a separately readable
+component that reconciles to the total.
 
-Extend the existing decision-relevant-drift rationale annotation (the objective equivalent
-already exists via `multiDayDriftIsDecisionRelevant`) to subjective drift, with the same
-counterfactual test: did this term change the mode?
+When drift is enabled for a deciding path, `RecommendationAudit` records compact normalized
+provenance (D-SUBJAUDIT), at least:
 
-**Done when** telemetry reconciles, `replay.ts` verifies an audit carrying the new fields,
-and the rationale mentions subjective drift only when it actually changed the decision.
+```text
+estimatorId / estimatorPolicyVersion
+historyThroughDateExclusive
+recentRecordedDays
+longRecordedDays
+subjectiveDriftContribution
+bounded per-metric contributions
+decisionRelevant
+```
+
+Do not copy raw historical subjective scores or free-text notes into the recommendation
+audit.
+
+Extend the existing decision-relevant-drift rationale annotation with the same
+counterfactual question: did subjective drift change the mode? Mention it to the athlete only
+when it actually mattered.
+
+**Done when** telemetry reconciles, replay verifies the normalized drift provenance, the
+audit remains compact/non-raw, and rationale is counterfactually decision-relevant.
 
 ---
 
-### 9.8 Go / no-go `[ ]`
+### 9.8 Prospective go / no-go `[ ]`
 
-**Change.** Read 9.6's report and take one of three outcomes, recording it in ADR-0020:
+A successful 9.6 is **necessary but not sufficient** to ship.
 
-1. **Ship** — flip the production default to `'drift'` with calibrated weights, bump
-   `POLICY_VERSION`, move the outgoing value to `HISTORICAL_POLICY_VERSIONS`, update the
-   committed simulation baseline in a separate reviewed commit.
-2. **Ship narrowed** — e.g. drift on soreness and readiness only, `motivation` dropped.
-3. **Reject** — mark ADR-0020 `Rejected`, keep subjective baselines in the brief and Data
-   view only, and leave `'off'` as the permanent default. **This is a valid, useful
-   outcome**, exactly as D-FUSE's negative result was.
+Read 9.6 together with Phase 9.0's prospective shadow/check-in record (or an equivalent later
+prospective corpus). Report whether engine/manual disagreements or actual-outcome differences
+concentrate on days where prior subjective history had already moved adversely, and whether
+the candidate would have improved or merely made the engine more conservative.
 
-**Done when** the outcome is recorded in the ADR with the evidence that produced it. Writing
-code is not what closes this task.
+Then record one of:
+
+1. **Ship** — prospective evidence supports the mechanism and a stable estimator; flip the
+   production default, bump `POLICY_VERSION`, move the outgoing value to
+   `HISTORICAL_POLICY_VERSIONS`, and update the simulation baseline in a separate reviewed
+   commit.
+2. **Ship narrowed** — e.g. only selected metrics/estimator settings are supported; document
+   exactly which evidence excluded the rest, then perform the same policy-version/baseline
+   cutover.
+3. **Reject / keep off** — no useful prospective signal, excessive conservatism, or unstable
+   estimator sensitivity. Mark ADR-0020 `Rejected` or record the narrowed no-ship outcome.
+
+If prospective evidence is insufficient, **do not complete 9.8**: leave the selector off and
+state that the decision is deferred. Synthetic fixtures alone are not a ship criterion.
+
+**Done when** the outcome is recorded in ADR-0020 with both simulation and prospective
+evidence. Writing code is not what closes this task.
 
 ---
 
@@ -266,55 +327,61 @@ code is not what closes this task.
 
 | Area | Behaviour asserted |
 |---|---|
-| `subjectiveBaseline` | Sub-threshold coverage returns `null`; distinct-date counting; partial safety-only check-ins do not count as scored coverage; zero-variance yields the stdev floor, not a division by zero. |
-| `rules` (property) | For any baseline input, `'drift'` never produces a *less* restrictive mode than `'off'`. This is D-SUBJFLOOR made mechanical. |
+| `subjectiveBaseline` | Decision date excluded; recent and long coverage tracked separately; duplicate dates/partial check-ins do not inflate coverage; bounded zero-variance handling. |
+| `rules` (property) | For any baseline input, `'drift'` never produces a less restrictive mode than `'off'`. |
 | `rules` | Every absolute trigger fires identically under both policies. |
-| `rules` | A chronically elevated soreness baseline does not reduce that athlete's mode — the safety inversion the ADR exists to prevent. |
+| `rules` | Chronically elevated soreness remains `modify`/`recover` regardless of relative normality. |
 | `rules` | `'off'` is bit-identical to pre-Phase-9 output on the committed corpus. |
-| `composer` | A failed, invalid, or sparse check-in range leaves the decision unchanged and does not throw; invalid records do not count toward coverage. |
-| `architecture` | No production call site passes `'drift'`; the selector is simulation-only, mirroring the fatigue-fusion assertion. |
-| `replay` | An audit carrying baseline coverage and drift contribution replays reproducibly. |
-| `simulate:diff` | No changed pre-existing baseline scenario while the default is `'off'`. |
+| `composer` | Range ends at `D - 1`; failed/invalid/sparse history leaves the decision unchanged; invalid records do not count. |
+| `architecture` | No production call site passes `'drift'`. |
+| `replay` | Audit carrying estimator id, exclusive history boundary, coverage and contribution replays coherently. |
+| `simulate:diff` | No changed pre-existing baseline scenario while default is `'off'`. |
 
 ## Acceptance criteria
 
 - [ ] `npm run check` and `npm run test:rules` pass.
-- [ ] `npm run simulate:diff` reports no changed pre-existing baseline scenario (9.5's fixtures appear as `[NEW SCENARIO]`).
-- [ ] `check-policy-drift.mjs` passes — no `POLICY_VERSION` bump while the default is `'off'`.
+- [ ] `npm run simulate:diff` reports no changed pre-existing baseline scenario (9.5 fixtures appear as `[NEW SCENARIO]`).
+- [ ] `check-policy-drift.mjs` passes — **no `POLICY_VERSION` bump while the live default is `'off'`**.
+- [ ] A history-leak regression proves date `D` never contributes to the baseline used for decision `D`.
 - [ ] The property test proving drift can only tighten passes.
-- [ ] Every 9.5 fixture produces non-zero subjective stdev, verified in the 9.6 report.
-- [ ] The slow-drifter fixture shows a mode change under `'drift'` that `'off'` does not produce — if it does not, the term does nothing useful and 9.8 outcome 3 applies.
-- [ ] The habitual-low and chronically-sore fixtures show **no** relaxation under `'drift'`.
-- [ ] 9.8's outcome is recorded in ADR-0020 with its evidence.
+- [ ] Every 9.5 fixture has the intended variance/absolute-mode properties.
+- [ ] The slow-drifter fixture is detectable by at least one measured drift candidate without noisy-stationary becoming pathologically restrictive; failure is valid evidence against the candidate.
+- [ ] 9.6 reports estimator/parameter sensitivity rather than presenting one arbitrary setting as physiological truth.
+- [ ] Habitual-low and chronically-sore show no relaxation under every measured candidate.
+- [ ] 9.8 does not ship from synthetic evidence alone; the final outcome cites prospective evidence or explicitly defers.
+- [ ] Any live/default decision change bumps `POLICY_VERSION` exactly at cutover, not when dormant code is introduced.
 
 ## Risks & rollback
 
 | Risk | Mitigation |
 |---|---|
-| Calibrating against a zero-variance corpus produces a false "no signal". | 9.5 is a hard precondition of 9.6 and an acceptance criterion in its own right. |
-| Synthetic subjective profiles are invented, so the calibration measures fixtures rather than people. | Narrowed, not removed, by running [Phase 9.0](./phase-9-0-shadow-mode-and-decision-journal.md) first: its block supplies observed parameters for the profiles. Beyond that it is unavoidable — this is policy-regression evidence, not clinical validation, the same limitation `simulate:calibrate` already states about itself. The fixtures bound the *shape* of the effect, not its real-world magnitude. |
-| The term tightens too readily and raises recovery share without benefit. | Exactly what 9.6 measures; that outcome is 9.8 option 3, and it is the same reason `max` was retained over additive fusion. |
-| Ordinal data treated as interval. | Recorded in ADR-0020 as an accepted compromise; bounded by the stdev floor and the ±2.0 cap. |
+| A zero-variance corpus produces a false "no signal". | 9.5 is a hard precondition of 9.6. |
+| Synthetic profiles measure fixtures, not people. | Treat 9.6 as safety/regression evidence only; require Phase 9.0 prospective evidence for production. |
+| Today's check-in leaks into today's baseline and is partly double-counted. | D-SUBJHIST uses `throughDateExclusive = D`; composer and baseline tests enforce it. |
+| Sparse long-window history hides missing recent state. | D-SUBJCOV requires recent and long coverage separately. |
+| Mean/stdev arithmetic is brittle on an ordinal/discrete scale. | Reference estimator is experimental; 9.6 reports sensitivity and adds a robust alternative if materially needed. |
+| The term tightens too readily and raises recovery share without useful signal. | 9.6 exposes the mechanical effect; 9.8 requires prospective usefulness before shipping. |
 
-**Rollback.** Until 9.8 flips the default, there is nothing to roll back — production is
-bit-identical. After a ship decision, reverting is a one-line default change plus a
-`POLICY_VERSION` restore; no persisted document shape changes, since the new audit fields
-are additive and optional.
+**Rollback.** Until 9.8 flips the live default, production is bit-identical and there is
+nothing behavioural to roll back. After a ship decision, reverting the default is a policy
+change and receives its own `POLICY_VERSION`; do not "restore" an old version string and
+make two different live policies share an identity.
 
 ## Out of scope
 
-* Surfacing subjective baselines anywhere in the check-in flow — forbidden by D-SUBJANCHOR.
-* Backfilling subjective history. It cannot be reconstructed, which is why D-SUBJCOV exists.
-* Reworking the corpus beyond what 9.5 needs.
-* Any change to objective strain, `metricStrain`, or the absolute thresholds.
-* Adopting beam search, revisiting fatigue fusion, or any other deferred decision this
-  plan's harness happens to touch.
+* Surfacing subjective baselines before check-in submission — forbidden by D-SUBJANCHOR.
+* Using subjective normalization to relax today's absolute thresholds.
+* Backfilling subjective history that was never recorded.
+* Treating synthetic scenarios as clinical validation.
+* Any change to objective strain, `metricStrain`, or the existing absolute subjective
+  thresholds in this phase.
+* Adopting beam search, revisiting fatigue fusion, or unrelated deferred decisions.
 
 ## Docs to update
 
-- [ ] ADR-0020 → `Accepted` before starting; → outcome recorded at 9.8.
-- [ ] `architecture/recommendation-engine.md` — the mode-selection section's strain formula gains a third component.
-- [ ] `AGENTS.md` — `engine/` map gains `subjectiveBaseline.ts`.
+- [ ] ADR-0020 → `Accepted` before starting 9.1–9.4/9.6–9.7; final outcome recorded at 9.8.
+- [ ] `architecture/recommendation-engine.md` — mode-selection formula gains the optional adverse subjective-drift component if shipped.
+- [ ] `AGENTS.md` — engine map gains `subjectiveBaseline.ts` once implemented.
 - [ ] `plans/README.md` — decision-register rows once ADR-0020 is accepted.
 - [ ] `docs/README.md` — index row.
 
@@ -328,13 +395,11 @@ are additive and optional.
 | 9.2 | Carry the baseline on `DailyReadiness` | `[ ]` | 9.1 |
 | 9.3 | Drift term behind a default-off selector | `[ ]` | 9.2 |
 | 9.4 | Composition boundary supplies the baseline | `[ ]` | 9.2 |
-| 9.5 | Scenario corpus subjective variance | `[ ]` | — |
-| 9.6 | Comparison harness | `[ ]` | 9.3, 9.5 |
+| 9.5 | Scenario corpus subjective variance | `[x]` | — |
+| 9.6 | Comparison harness + estimator sensitivity | `[ ]` | 9.3, 9.5 |
 | 9.7 | Telemetry, audit and rationale | `[ ]` | 9.3 |
-| 9.8 | Go / no-go | `[ ]` | 9.6 |
+| 9.8 | Prospective go / no-go | `[ ]` | 9.6, Phase 9.0 prospective evidence |
 
-9.5 is startable immediately and independently of the ADR — a corpus with realistic
-subjective variance is worth having whether or not the drift term ever ships, because
-every readiness-related scenario currently exercises a constant. Starting it *after*
-Phase 9.0's block is nonetheless better: the same work, with observed parameters instead of
-chosen ones.
+9.5 remains independently useful whether ADR-0020 ships or not: readiness scenarios should
+not all exercise a constant subjective vector. Its invented numbers are explicitly fixture
+evidence only until the prospective block can re-parameterize or challenge them.
