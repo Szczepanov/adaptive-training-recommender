@@ -3,9 +3,10 @@
 ## Scope
 
 This review covers every Architecture Decision Record currently present in `docs/adr/`
-(ADR-0001 through ADR-0020, with ADR-0013 absent), plus the mutable documentation surfaces
-that claim ADR status: `docs/README.md`, `docs/plans/README.md`, and the implemented Phase
-plans that establish whether a decision is still merely proposed.
+(ADR-0001 through ADR-0020; ADR-0013 was added retroactively during this review), plus the
+mutable documentation surfaces that claim ADR status: `docs/README.md`,
+`docs/plans/README.md`, and the implemented Phase plans that establish whether a decision
+is still merely proposed.
 
 The review asks four separate questions:
 
@@ -29,8 +30,9 @@ is not known.
 
 The important work is narrower:
 
-* **P1 — record the missing structured-injury decision as ADR-0013.** Phase 1 implemented a
-  safety-bearing architectural decision but the reserved ADR was never written.
+* **Resolved in this review — record structured injury constraints as ADR-0013.** Phase 1
+  implemented a safety-bearing architectural decision but the reserved ADR was never
+  written. ADR-0013 now records that existing decision retroactively without changing code.
 * **P1 — repair ADR status bookkeeping in mutable indexes.** `docs/plans/README.md` still
   places accepted/implemented ADR-0017, ADR-0018, ADR-0019 and now-accepted ADR-0020 under
   "Proposed decisions awaiting acceptance". `docs/README.md` omits ADR-0012 from the list
@@ -72,7 +74,7 @@ No other accepted ADR needs an emergency status change from this review.
 | 0010 | Accepted | **Keep** | Provenance/replay and fail-closed history semantics remain among the strongest repository invariants. |
 | 0011 | Accepted | **Keep, explicitly historical/partially displaced** | Do not mark wholly superseded: anchor/variety lower-tier behavior still exists. Higher-priority sequence safety/allocation has moved to later ADRs. |
 | 0012 | Accepted | **Keep** | Authority layering and lexicographic priority remain the architectural backbone. Missing from the docs index is a bookkeeping defect. |
-| 0013 | **Missing** | **Write retroactive ADR** | Structured `InjuryConstraint[]` was explicitly chosen and implemented in Phase 1. This is safety-bearing architecture and merits the reserved ADR number. |
+| 0013 | Accepted (retroactive record added 2026-08-16) | **Keep** | Records the already-implemented Phase 1 structured-injury authority and conservative mapping boundary. |
 | 0014 | Accepted | **Keep** | Strong evidence posture: one credit ledger, honest delivered load, and explicit statement that retained fatigue fusion is not validated merely because an alternative was worse. |
 | 0015 | Accepted | **Keep** | Correctly records a decision *not* to adopt measured beam search yet. Historical benchmark numbers should remain historical, not be read as current performance. |
 | 0016 | Accepted | **Keep** | Adaptation credit vs programming-role coverage is a clean separation of concepts. |
@@ -83,32 +85,27 @@ No other accepted ADR needs an emergency status change from this review.
 
 ---
 
-## Finding F-ADR-1 — ADR-0013 is missing even though its decision shipped
+## Finding F-ADR-1 — ADR-0013 was missing even though its decision shipped
 
-**Severity: P1 documentation / safety governance.**
+**Severity: P1 documentation / safety governance — resolved in this review.**
 
-`docs/README.md` says ADR-0013 is reserved for structured injury constraints. That work is
+`docs/README.md` said ADR-0013 was reserved for structured injury constraints. That work was
 not future work. Phase 1 is `Implemented`, and work item 1.1 records an explicit 2026-08-08
 decision for **Option B**: canonical structured `InjuryConstraint[]`, with a pure
 `resolveInjuryRestrictions` mapping into hard modality/category/guardrail restrictions.
 
-This is more deserving of an ADR than several lower-risk decisions already recorded:
+This is safety-bearing architecture because it changes the persisted safety schema,
+defines one source of truth for injury restrictions, separates injury from preference,
+defines expiry/review semantics, and deliberately chooses conservative engineering
+mappings with known limitations.
 
-* it changes a persisted safety schema;
-* it defines a single source of truth for injury restrictions;
-* it separates injury from preference;
-* it defines expiry/review semantics;
-* it deliberately chooses conservative engineering mappings and records their limitations.
+### Resolution
 
-### Recommendation
-
-Write ADR-0013 retroactively, following the precedent of ADR-0010 and ADR-0011. It should
-record the already-made decision rather than inventing new policy. The safest title is:
-
-> **ADR-0013: Structured Injury Constraints Are the Canonical Safety Input**
-
-It should explicitly state that region-to-restriction mappings are **conservative
-engineering policy, not medical diagnosis or individualized clinical advice**.
+[`ADR-0013`](../adr/0013-structured-injury-constraints.md) was added retroactively during
+this review, following the precedent of ADR-0010 and ADR-0011. It records the already-made
+Phase 1 decision and explicitly states that the region-to-restriction table is conservative
+product safety policy, **not** medical diagnosis, prognosis, or individualized clinical
+advice.
 
 ---
 
@@ -132,7 +129,7 @@ uses the plan index as the entry point for "what is startable today".
 `docs/README.md` has a second set of stale facts:
 
 * the ADR bullet list skips ADR-0012 even though the following paragraph says it is listed;
-* ADR-0013 is described as reserved future work though its underlying decision shipped;
+* ADR-0013 is described as reserved future work though the decision is now recorded;
 * ADR-0020 is still described as Proposed until the index is updated;
 * Phase 9.0 is described as Draft while the plan index says In progress;
 * the external-plan schema is described as "Proposed, not implemented" although the schema
@@ -142,8 +139,8 @@ uses the plan index as the entry point for "what is startable today".
 
 These are mutable indexes, so fix them directly rather than creating ADRs for them. Move
 ADR-0017/18/19/20 decisions into the accepted register (or replace the split register with
-one table carrying `Accepted/Proposed/Rejected` status). Add ADR-0012 to the docs index and
-replace the ADR-0013 reservation note once the retroactive ADR exists.
+one table carrying `Accepted/Proposed/Rejected` status). Add ADR-0012 and ADR-0013 to the
+docs index and update the stale plan/schema labels.
 
 ---
 
@@ -249,8 +246,8 @@ training-policy ADRs:
 * make safety fallbacks fail closed or return to already-shipped behavior;
 * avoid allowing relative normalization to erase absolute safety warnings.
 
-The WHO adult physical-activity guidance does support 150–300 minutes of moderate aerobic
-activity (or 75–150 vigorous-equivalent) plus muscle strengthening on 2+ days/week, while
+The WHO adult physical-activity guidance supports 150–300 minutes of moderate aerobic
+activity (or 75–150 vigorous-equivalent) plus muscle strengthening on 2+ days/week while
 also making clear that some activity is better than none. The 2026 ACSM resistance-training
 position stand (Currier et al., PMID 41843416, DOI 10.1249/MSS.0000000000003897) is
 appropriately treated in ADR-0017 as evidence informing dose/implementation rather than a
@@ -320,14 +317,13 @@ than an immutable physiological claim.
 
 ## Recommended follow-up order
 
-1. **Write retroactive ADR-0013** from the already-implemented Phase 1 D-INJ decision.
-2. **Repair `docs/README.md` and `docs/plans/README.md` status/index drift**, including
-   moving ADR-0017/18/19/20 out of the proposed register.
-3. **Add a non-diagnostic readiness statement to the living recommendation-engine
+1. **Repair `docs/README.md` and `docs/plans/README.md` status/index drift**, including
+   moving ADR-0017/18/19/20 out of the proposed register and indexing ADR-0012/0013.
+2. **Add a non-diagnostic readiness statement to the living recommendation-engine
    architecture** so readers do not inherit ADR-0006's overtraining wording.
-4. **Propose ADR-0021 for ADR amendment/supersession governance**; accept it only after
+3. **Propose ADR-0021 for ADR amendment/supersession governance**; accept it only after
    explicit owner review.
-5. Continue Phase 9 under accepted ADR-0020, keeping the drift selector default-off until
+4. Continue Phase 9 under accepted ADR-0020, keeping the drift selector default-off until
    the Phase 9 go/no-go evidence exists.
 
-No current code behavior was changed by this review.
+ADR-0013 was already added as part of this review. No code behavior was changed.
