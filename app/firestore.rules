@@ -77,8 +77,6 @@ service cloud.firestore {
         && (!('executionDose' in audit) || hasValidDose(audit.executionDose))
         && audit.candidateScores is list && audit.candidateScores.size() <= 64
         && (!('droppedContributorObjectives' in audit) || (audit.droppedContributorObjectives is list && audit.droppedContributorObjectives.size() <= 64))
-        // ADR-0019: present exactly when an imported session was adjudicated. Validated
-        // rather than merely permitted -- it is what a replay verifies the decision against.
         && (!('externalPlan' in audit) || (
           audit.externalPlan is map
           && audit.externalPlan.keys().hasOnly(['planId', 'revision', 'sessionId', 'contentHash'])
@@ -127,9 +125,6 @@ service cloud.firestore {
         && request.resource.data.category == resource.data.category
         && request.resource.data.modality == resource.data.modality
         && request.resource.data.mode == resource.data.mode
-        // Backward-compatible evidence addition: legacy recommendation docs do not have
-        // engineVerdict. Adding it is metadata completion, not a decision revision; once a
-        // doc has the exact verdict, however, it is immutable with that decision.
         && (!('engineVerdict' in resource.data)
           || (('engineVerdict' in request.resource.data) && request.resource.data.engineVerdict == resource.data.engineVerdict))
         && request.resource.data.rationale == resource.data.rationale
@@ -164,11 +159,7 @@ service cloud.firestore {
       allow delete: if isOwner(userId);
     }
 
-    // --- Decision journal (Phase 9.0): the athlete's own verdict, recorded to be compared
-    // against the engine's daily_recommendations/{date} verdict, never read by it. Closed
-    // key set (this is evidence, not a free-form document). The whole morning observation
-    // -- verdict, note, createdAt and anchoring flag -- is immutable after creation; only
-    // actualVerdict/updatedAt may change in the evening.
+    // --- Decision journal (Phase 9.0): immutable morning evidence plus an evening actual outcome.
     function hasValidDecisionJournalEntry(userId, date) {
       return hasOwnedUserId(userId)
         && isDateDocument(date)
@@ -193,7 +184,7 @@ service cloud.firestore {
         && request.resource.data.externalVerdict == resource.data.externalVerdict
         && (('externalNote' in request.resource.data) == ('externalNote' in resource.data))
         && (!('externalNote' in resource.data) || request.resource.data.externalNote == resource.data.externalNote);
-      allow delete: if isOwner(userId);
+      allow delete: if false;
     }
 
     match /users/{userId}/goals/{goalId} {
@@ -203,10 +194,10 @@ service cloud.firestore {
       allow delete: if isOwner(userId);
     }
 
-    // --- Fixed activities (Phase 5.3 + Phase 6 exact identity) ---
     function isValidActivityDate(date) {
       return date is string && date.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$') && isRealCalendarDate(date.split('-'));
     }
+
     function isRealCalendarDate(parts) {
       let year = int(parts[0]);
       let month = int(parts[1]);
@@ -295,9 +286,6 @@ service cloud.firestore {
       allow delete: if isOwner(userId);
     }
 
-    // Explicit calendar overlays are user-authored. They cannot be inferred from event
-    // metadata, and their date range/dose contract is deliberately tight because it is
-    // consumed directly by Path B planning.
     function hasValidPlanBlock(userId) {
       let data = request.resource.data;
       return hasOwnedUserId(userId)
@@ -313,11 +301,6 @@ service cloud.firestore {
         && data.createdAt is string && data.updatedAt is string;
     }
 
-    // Externally-authored plans (ADR-0019). A stored revision is immutable: create only,
-    // never update or delete, because a persisted decision's audit references its exact
-    // content hash and rewriting it would make that audit unverifiable (D-IMMUT).
-    // Rules bound shape and size only -- Firestore rules cannot iterate a session list, so
-    // per-session enum checking stays in validation.ts. Both layers are enforced.
     function hasValidExternalPlanHeader(userId) {
       let data = request.resource.data;
       return hasOwnedUserId(userId)
@@ -361,8 +344,6 @@ service cloud.firestore {
       allow update: if hasValidExternalPlanHeader(userId)
         && keepsOwnership(userId)
         && request.resource.data.planId == resource.data.planId
-        // A header only ever moves forward: it may point at a newer revision, never an
-        // older one, so the athlete cannot silently be returned to a superseded plan.
         && request.resource.data.revision >= resource.data.revision;
       allow delete: if isOwner(userId);
 
