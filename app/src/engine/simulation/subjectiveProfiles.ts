@@ -2,32 +2,24 @@ import type { DailyReadiness, EngineObjectiveInput, SubjectiveInput } from '../m
 
 /**
  * Phase 9.5: named subjective *scale-use* profiles -- the personal differences in how
- * athletes report their own readiness that ADR-0020's drift term exists to correct.
+ * athletes report their own readiness that ADR-0020's drift term exists to evaluate.
  *
  * `scenarios.ts`'s `stableReadiness()` returns the same six subjective values every call,
- * so every synthetic athlete in the corpus has zero subjective variance today: 7d and 28d
- * averages are identical everywhere, and a z-score-based drift term would read as exactly
- * zero on the whole corpus. Running 9.6's comparison against that corpus would report "no
- * effect" as an artefact of the fixtures, not evidence about the idea (see the plan's
- * "Why this comes before Phase 9" for the identical shadow-mode reasoning). These profiles
- * fix that without inventing a data source: the shapes are chosen to match the five rows
- * in `phase-9-subjective-baselines.md` 9.5's table.
+ * so the old synthetic corpus had effectively zero subjective variance. Any relative
+ * drift candidate would therefore read as "no effect" for fixture reasons rather than
+ * because the idea had been measured. These profiles add deterministic variance shapes
+ * matching the five rows in `phase-9-subjective-baselines.md` 9.5.
  *
  * Two consumers:
  *  - `scenarios.ts` samples `subjectiveProfileReadiness` once per chained decision point
- *    to drive the five `subjective_*` fixtures in `SCENARIOS` (`runScenario` only takes one
- *    reading per week -- see its `readinessForDate` doc comment -- so the day offset passed
- *    in is always a multiple of 7; the underlying generator is genuinely daily-resolution
- *    for the other consumer below).
+ *    to drive the five `subjective_*` fixtures in `SCENARIOS` (`runScenario` takes one
+ *    reading per week, so the day offset is a multiple of 7).
  *  - `subjectiveProfiles.test.ts` calls `subjectiveProfileSeries` to build a full daily
- *    series and assert each profile's shape (non-zero stdev, the drifter's early/late
- *    averages actually diverging, ...) independent of the weekly sampling cadence.
+ *    series and assert each profile's shape independent of that weekly harness cadence.
  *
- * `computeSubjectiveBaseline` (Phase 9.1) does not exist yet -- gated on ADR-0020
- * acceptance, per the plan's precondition -- so nothing here is wired into a real 7d/28d
- * baseline computation or into `DailyReadiness.subjectiveBaseline` (Phase 9.2, likewise
- * gated). This module only proves the *fixtures* have the variance shape 9.6 will need;
- * the real baseline math is 9.1's job once the ADR is accepted.
+ * `computeSubjectiveBaseline` (Phase 9.1) does not exist yet. This module proves only that
+ * the fixtures carry the variance/drift shapes future comparison candidates need; it does
+ * not choose the final estimator described by ADR-0020 D-SUBJEST.
  */
 
 export const SUBJECTIVE_PROFILE_KINDS = [
@@ -48,13 +40,18 @@ export interface SubjectiveProfileDayValues {
     motivation: number;
 }
 
-/** Deterministic, reproducible pseudo-noise in [0, 1) -- no `Math.random`, so a scenario
- *  run (and `simulate:diff`'s byte-for-byte comparison) stays identical run to run. A hash
- *  of `(seed, dayIndex)` rather than a smooth sine wave, so consecutive days don't look
- *  like a periodic wave -- real day-to-day variance has no period. */
+/** Deterministic pseudo-noise in [0, 1), built only from 32-bit integer arithmetic.
+ * Avoiding transcendental functions makes the fixture stable across JS engines/architectures
+ * as well as repeated runs, which is a better contract for byte-sensitive simulations. */
 function pseudoNoise(seed: number, dayIndex: number): number {
-    const x = Math.sin(seed * 12.9898 + dayIndex * 78.233) * 43758.5453;
-    return x - Math.floor(x);
+    const seedInt = Math.round(seed * 1000) | 0;
+    let x = (Math.imul(seedInt, 0x45d9f3b) ^ Math.imul(dayIndex + 1, 0x27d4eb2d)) >>> 0;
+    x ^= x >>> 16;
+    x = Math.imul(x, 0x7feb352d) >>> 0;
+    x ^= x >>> 15;
+    x = Math.imul(x, 0x846ca68b) >>> 0;
+    x ^= x >>> 16;
+    return (x >>> 0) / 0x1_0000_0000;
 }
 
 /** Signed noise in `[-amplitude, amplitude]`. */
@@ -67,16 +64,16 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 /**
- * One day's subjective values for `kind`, at `dayIndex` (0-based days since the *profile's*
- * own start -- not a calendar date). Every metric stays in `[1, 10]`.
+ * One day's subjective values for `kind`, at `dayIndex` (0-based days since the profile's
+ * own start, not a calendar date). Every metric stays in `[1, 10]`.
  *
  * | Profile | Shape | What it must prove |
  * |---|---|---|
- * | `habitual_low` | Readiness ~3, fatigue ~7, flat | Drift does not relax an absolute-threshold `modify` (D-SUBJFLOOR) -- soreness/fatigue already keep this athlete off `train` today, with no drift term involved. |
- * | `habitual_high` | Readiness ~8, fatigue ~2, flat | A high, flat baseline stays `train`; the far-away absolute floor is exactly why a real decline from here would need a drift term to catch early. |
- * | `slow_drifter` | Readiness 8 -> 6 over three weeks | The case the term exists for: currently invisible to every absolute threshold, must become visible to a 7d-vs-28d comparison. |
- * | `noisy_stationary` | Mean stable, day-to-day swing +/-2 | Must **not** read as decline -- noise is not drift. |
- * | `chronically_sore` | Soreness baseline 7, stable | The safety case: already forces `modify` via the existing `soreness > 6` absolute floor and must keep doing so, never habituating to "normal". |
+ * | `habitual_low` | Readiness ~3, fatigue ~7, flat | Relative history must not relax an absolute-threshold `modify` (D-SUBJFLOOR). |
+ * | `habitual_high` | Readiness ~8, fatigue ~2, flat | A high stable reporter remains `train`, leaving room for a future adverse-drift candidate to detect deterioration. |
+ * | `slow_drifter` | Readiness 8 -> 6 over three weeks | Persistent decline exists without crossing today's absolute thresholds. |
+ * | `noisy_stationary` | Mean stable, day-to-day swing +/-2 | Noise is not persistent drift. |
+ * | `chronically_sore` | Soreness baseline 7, stable | Relative normality must never cancel the existing `soreness > 6` absolute floor. |
  */
 export function subjectiveProfileDay(kind: SubjectiveProfileKind, dayIndex: number): SubjectiveProfileDayValues {
     switch (kind) {
@@ -97,15 +94,11 @@ export function subjectiveProfileDay(kind: SubjectiveProfileKind, dayIndex: numb
             };
         }
         case 'slow_drifter': {
-            // Linear decline over the first 21 days (three weeks), then holds at the
-            // decayed level -- it does not recover on its own. "Never crossing an absolute
-            // threshold" is asserted in subjectiveProfiles.test.ts and scenarios.test.ts,
-            // not assumed here.
             const driftDays = 21;
             const progress = clamp(dayIndex / driftDays, 0, 1);
-            const readiness = 8 - progress * 2; // 8 -> 6
-            const sleepQuality = 7 - progress * 1; // 7 -> 6
-            const motivation = 7 - progress * 1; // 7 -> 6
+            const readiness = 8 - progress * 2;
+            const sleepQuality = 7 - progress;
+            const motivation = 7 - progress;
             const n = (offset: number) => jitter(3 + offset, dayIndex, 0.2);
             return {
                 readiness: clamp(readiness + n(0.01), 1, 10), sleepQuality: clamp(sleepQuality + n(0.02), 1, 10),
@@ -139,13 +132,10 @@ export function subjectiveProfileSeries(kind: SubjectiveProfileKind, days: numbe
 
 /**
  * Adapts one day's profile values into a full `DailyReadiness`, using neutral objective
- * defaults so mode determination is driven by the subjective side alone -- the point of
- * this corpus is isolating subjective variance, not adding a second confound.
+ * defaults so mode determination is driven by the subjective side alone.
  *
- * Duplicates `scenarios.ts`'s `stableReadiness()` defaults rather than importing it: that
- * keeps this module free of any dependency on the scenario list, the same reasoning
- * `externalSession.ts` gives for duplicating `EXTERNAL_MODIFY_MAX_SYSTEMIC_COST` instead of
- * importing it from `rules.ts`.
+ * Duplicates `scenarios.ts`'s stable objective defaults rather than importing the scenario
+ * list, keeping this fixture module independent of the corpus definition.
  */
 export function subjectiveProfileReadiness(
     kind: SubjectiveProfileKind,
