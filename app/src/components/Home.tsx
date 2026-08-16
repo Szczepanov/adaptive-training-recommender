@@ -810,10 +810,7 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
             )}
           </div>
 
-          {/* Imported plan: the placed week and the engine's advisory review of it.
-              It *replaces* the generated forecast below rather than sitting beside it --
-              two different weeks on one screen, one of them contradicting the plan the
-              athlete just imported, is worse than either alone. */}
+          {/* Imported plan: the placed week and the engine's advisory review of it. */}
           {activeExternalPlan && decisionInput && (
             <ExternalPlanWeek
               planTitle={activeExternalPlan.plan.title}
@@ -829,17 +826,15 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
             />
           )}
 
-          {/* Rolling 7-Day Forecast */}
-          {!activeExternalPlan && (
-            <WeekAheadStrip
-              plan={weekAheadPlan}
-              nextDayPlan={nextDayPlan}
-              selectedTier={selectedNextDayTier}
-              onSelectTier={setSelectedNextDayTier}
-              trainingIntentProfile={decisionInput?.trainingIntentProfile}
-              planningMode={resolvedPlanningMode}
-            />
-          )}
+          {/* Rolling 7-Day Forecast (Independent adaptive engine projection) */}
+          <WeekAheadStrip
+            plan={weekAheadPlan}
+            nextDayPlan={nextDayPlan}
+            selectedTier={selectedNextDayTier}
+            onSelectTier={setSelectedNextDayTier}
+            trainingIntentProfile={decisionInput?.trainingIntentProfile}
+            planningMode={resolvedPlanningMode}
+          />
         </div>
 
         {/* Sidebar Context & Status Column (~30%-32%) */}
