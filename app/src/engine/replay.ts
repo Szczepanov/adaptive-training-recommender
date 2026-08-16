@@ -22,6 +22,16 @@ export interface ExternalRevisionEvidence {
     contentHash: string;
 }
 
+function rankedDecisionErrors(recommendation: DailyRecommendation): string[] {
+    const scores = recommendation.recommendationAudit!.candidateScores;
+    const selected = scores.find(candidate => candidate.templateId === recommendation.templateId);
+    if (!selected) return ['Persisted template is absent from the audited candidates.'];
+    if (scores.some(candidate => candidate.utilityScore > selected.utilityScore)) {
+        return ['Persisted template was not the highest-utility audited candidate.'];
+    }
+    return [];
+}
+
 /**
  * Verifies that a v3 record is internally reproducible from its compact persisted
  * audit. It intentionally validates normalized decision facts only; raw recovery
@@ -31,10 +41,13 @@ export interface ExternalRevisionEvidence {
  * bundle. Replaying one is rejected explicitly rather than silently interpreting its
  * facts under the current policy implementation.
  *
- * An external decision (ADR-0019) ranked nothing, so the highest-utility check below does
- * not apply to it. In its place the decision is verified against the plan revision it
- * names: without that revision it is *not* reproducible, and a hash mismatch is reported
- * as its own distinct failure rather than folded into a generic error.
+ * ADR-0019 now has two external-provenance shapes:
+ * - an externally selected training session ranks nothing and persists either its `ext:`
+ *   template or a non-actionable recovery template;
+ * - an `isEvent` session is a FixedActivity-style commitment, so the engine still ranks
+ *   any additional recommendation while retaining the event revision/hash as an input to
+ *   that decision.
+ * Replay verifies the relevant selection invariant for each shape.
  */
 export function replayRecommendationAudit(
     recommendation: DailyRecommendation,
@@ -61,12 +74,7 @@ export function replayRecommendationAudit(
         if (externalRevision) {
             errors.push('A plan revision was supplied for a decision that did not come from an external plan.');
         }
-        const selected = audit.candidateScores.find(candidate => candidate.templateId === recommendation.templateId);
-        if (!selected) {
-            errors.push('Persisted template is absent from the audited candidates.');
-        } else if (audit.candidateScores.some(candidate => candidate.utilityScore > selected.utilityScore)) {
-            errors.push('Persisted template was not the highest-utility audited candidate.');
-        }
+        errors.push(...rankedDecisionErrors(recommendation));
     }
 
     return { reproducible: errors.length === 0, policyMatchesCurrent, errors };
@@ -78,19 +86,6 @@ function externalDecisionErrors(
     externalRevision: ExternalRevisionEvidence | null,
 ): string[] {
     const errors: string[] = [];
-
-    // Selection belonged to the plan's author, so there is nothing to rank. A populated
-    // candidate list would mean a second selection path ran and went unrecorded.
-    if (recommendation.recommendationAudit!.candidateScores.length > 0) {
-        errors.push('An external decision audited ranked candidates, which no external decision produces.');
-    }
-
-    // A non-actionable verdict persists the rest template rather than the synthetic one,
-    // so an external decision legitimately carries either id -- but never a third.
-    const expectedTemplateId = externalTemplateId(provenance.planId, provenance.revision, provenance.sessionId);
-    if (isExternalTemplateId(recommendation.templateId) && recommendation.templateId !== expectedTemplateId) {
-        errors.push(`Persisted template ${recommendation.templateId} does not match the audited external session ${expectedTemplateId}.`);
-    }
 
     if (!externalRevision) {
         errors.push(`External decision references plan ${provenance.planId} revision ${provenance.revision}, which was not supplied; it cannot be replayed without it.`);
@@ -110,8 +105,37 @@ function externalDecisionErrors(
         return errors;
     }
 
-    if (!externalRevision.plan.sessions.some(session => session.id === provenance.sessionId)) {
+    const session = externalRevision.plan.sessions.find(item => item.id === provenance.sessionId);
+    if (!session) {
         errors.push(`Session ${provenance.sessionId} is not present in plan ${provenance.planId} revision ${provenance.revision}.`);
+        return errors;
+    }
+
+    if (session.isEvent) {
+        // D-EVENT: the event itself is never the selected template. Its provenance remains
+        // load-bearing because it changed availability/fatigue/stimulus before the normal
+        // ranking path chose the persisted catalog recommendation.
+        if (isExternalTemplateId(recommendation.templateId)) {
+            errors.push('An external event was persisted as the recommended template instead of as a fixed commitment.');
+            return errors;
+        }
+        if (recommendation.recommendationAudit!.candidateScores.length > 0) {
+            errors.push(...rankedDecisionErrors(recommendation));
+        }
+        return errors;
+    }
+
+    // Ordinary external sessions own selection, so ranking candidates here would mean a
+    // second selection path ran and went unrecorded.
+    if (recommendation.recommendationAudit!.candidateScores.length > 0) {
+        errors.push('An externally selected session audited ranked candidates, which that decision path must not produce.');
+    }
+
+    // A non-actionable verdict persists the rest template rather than the synthetic one,
+    // so an external decision legitimately carries either id -- but never another `ext:` id.
+    const expectedTemplateId = externalTemplateId(provenance.planId, provenance.revision, provenance.sessionId);
+    if (isExternalTemplateId(recommendation.templateId) && recommendation.templateId !== expectedTemplateId) {
+        errors.push(`Persisted template ${recommendation.templateId} does not match the audited external session ${expectedTemplateId}.`);
     }
 
     return errors;
