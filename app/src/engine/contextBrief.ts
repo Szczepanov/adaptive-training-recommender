@@ -211,7 +211,7 @@ function renderTraining(activities: readonly NormalizedGarminActivity[], asOfDat
     lines.push('| Date | Type | Min | Load | Aerobic TE | Anaerobic TE | Avg HR | Intensity |');
     lines.push('|---|---|---|---|---|---|---|---|');
     for (const activity of activities) {
-        lines.push(`| ${activity.date} | ${activity.type} | ${activity.durationMin ?? '—'} | ${activity.activityTrainingLoad ?? '—'} | ${activity.trainingEffectAerobic ?? '—'} | ${activity.trainingEffectAnaerobic ?? '—'} | ${activity.averageHr ?? '—'} | ${activity.intensityTag} |`);
+        lines.push(`| ${activity.date} | ${activity.type} | ${activity.durationMin ?? '—'} | ${round(activity.activityTrainingLoad, 1)} | ${round(activity.trainingEffectAerobic, 1)} | ${round(activity.trainingEffectAnaerobic, 1)} | ${activity.averageHr ?? '—'} | ${activity.intensityTag} |`);
     }
 
     const totalMinutes = activities.reduce((sum, activity) => sum + (activity.durationMin ?? 0), 0);
