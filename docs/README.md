@@ -85,6 +85,7 @@ Point-in-time assessments of the system as built, including gaps between documen
 * [**2026-08-10 Training-intent & periodization architecture analysis**](./analysis/2026-08-10-training-intent-periodization-architecture.md) — Evidence for Phase 7A/7B mode, preference-ownership, capacity, and stateful-allocation proposals.
 * [**2026-08-11 Phase 6 & 7 compliance review**](./analysis/2026-08-11-phase-6-7-compliance-review.md) — Code, test, simulation, deployment, and plan-status review of the delivered Phase 6 and Phase 7 work.
 * [**2026-08-15 Externally-authored plan feasibility**](./analysis/2026-08-15-externally-authored-plan-feasibility.md) — Structural assessment of importing an externally-authored training plan and narrowing the engine to per-session adjudication.
+* [**2026-08-16 Manual AI loop vs app adjudication**](./analysis/2026-08-16-manual-loop-vs-app-adjudication.md) — Whether the athlete's manual daily AI loop should be replaced by the app now that Phase 8 has landed. Verdict: shadow both for one block first; the subjective input is the one unmeasured path.
 
 ---
 
@@ -101,6 +102,7 @@ How agreed changes get made. Mutable, status-tracked, and expected to go stale �
 * [**Phase 7A: Weekly allocation & safe role reservations**](./plans/phase-7-weekly-allocation-and-role-reservations.md) — The PR #17 follow-up: reserve eligible required roles, protect them from support work, and report safety-forced misses.
 * [**Phase 7B: Training intent, capacity & planning modes**](./plans/phase-7-training-intent-and-planning-modes.md) — Evergreen evidence-to-dose-to-capacity planning proposal.
 * [**Phase 8: Externally-planned mode**](./plans/phase-8-externally-planned-mode.md) — *Implemented.* Import an externally-authored plan, adjudicate its sessions against daily readiness, and repoint the weekly machinery to critique.
+* [**Phase 9.0: Shadow mode and the decision journal**](./plans/phase-9-0-shadow-mode-and-decision-journal.md) — *Draft.* Run the app and the athlete's AI side by side for one block and record where they disagree; produces the real subjective corpus Phase 9 needs.
 * [**Phase 9: Subjective baselines in readiness mode**](./plans/phase-9-subjective-baselines.md) — *Draft.* Build the tighten-only subjective drift term behind a default-off selector, give the corpus real subjective variance, then decide from evidence whether it ships.
 
 ---
