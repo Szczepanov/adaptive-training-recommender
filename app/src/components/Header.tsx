@@ -102,6 +102,16 @@ export const Header: React.FC<HeaderProps> = ({ screen, handleNavigate, loadDeci
                   <span className="item-icon">📋</span> Import Training Plan
                 </button>
                 <button
+                  className={`dropdown-item ${screen === 'brief' ? 'active' : ''}`}
+                  onClick={() => {
+                    loadDecisionInput();
+                    handleNavigate('brief');
+                  }}
+                  role="menuitem"
+                >
+                  <span className="item-icon">📤</span> Export Context for AI
+                </button>
+                <button
                   className={`dropdown-item ${screen === 'constraints' ? 'active' : ''}`}
                   onClick={() => handleNavigate('constraints')}
                   role="menuitem"

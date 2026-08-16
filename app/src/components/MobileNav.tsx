@@ -136,6 +136,20 @@ export const MobileNav: React.FC<MobileNavProps> = ({ screen, handleNavigate, lo
               </button>
 
               <button
+                className={`drawer-item ${screen === 'brief' ? 'active' : ''}`}
+                onClick={() => {
+                  loadDecisionInput();
+                  handleNavigate('brief');
+                }}
+              >
+                <span className="item-icon">📤</span>
+                <div className="item-text">
+                  <span className="item-title">Export Context for AI</span>
+                  <span className="item-sub">Compile recent metrics & prompt for your AI</span>
+                </div>
+              </button>
+
+              <button
                 className={`drawer-item ${screen === 'constraints' ? 'active' : ''}`}
                 onClick={() => handleNavigate('constraints')}
               >

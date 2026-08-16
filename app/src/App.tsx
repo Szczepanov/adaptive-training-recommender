@@ -83,6 +83,15 @@ function App() {
             onBack={() => handleNavigate('home')}
           />
         )}
+
+        {screen === 'brief' && (
+          <DataView
+            decisionInput={decisionInput}
+            userId={userId!}
+            initialTab="brief"
+            onBack={() => handleNavigate('home')}
+          />
+        )}
         
         {screen === 'checkin' && (
           <DailyCheckin 

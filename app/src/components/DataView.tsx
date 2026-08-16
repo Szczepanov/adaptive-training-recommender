@@ -8,6 +8,7 @@ interface DataViewProps {
   decisionInput: DailyDecisionInput | null;
   userId: string;
   onBack: () => void;
+  initialTab?: 'recovery' | 'checkin' | 'goals' | 'constraints' | 'preferences' | 'adherence' | 'brief';
 }
 
 type AdherenceStats = Awaited<ReturnType<typeof recommendationService.getAdherenceStats>>;
@@ -18,8 +19,8 @@ function describeSourceState(status: 'MISSING' | 'INVALID' | 'UNAVAILABLE'): str
   return 'The data source is temporarily unavailable. Retry the dashboard refresh.';
 }
 
-export function DataView({ decisionInput, userId }: DataViewProps) {
-  const [activeTab, setActiveTab] = useState<'recovery' | 'checkin' | 'goals' | 'constraints' | 'preferences' | 'adherence' | 'brief'>('recovery');
+export function DataView({ decisionInput, userId, initialTab = 'recovery' }: DataViewProps) {
+  const [activeTab, setActiveTab] = useState<'recovery' | 'checkin' | 'goals' | 'constraints' | 'preferences' | 'adherence' | 'brief'>(initialTab);
   const [brief, setBrief] = useState<ContextBriefResult | null>(null);
   // Tagged with the date it belongs to, so a failure for one date is not rendered
   // against another. Deriving visibility this way avoids clearing state from inside

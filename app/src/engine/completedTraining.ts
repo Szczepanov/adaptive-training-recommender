@@ -91,10 +91,13 @@ function modalityFromActivityType(type: string): CompletedModality {
 }
 
 function intensityFromGarmin(activity: NormalizedGarminActivity): CompletedTrainingIntensity {
-    if (activity.intensityTag.toLowerCase() === 'hard') return 'hard';
+    const tag = activity.intensityTag.toLowerCase();
+    if (tag === 'hard') return 'hard';
+    if (tag === 'moderate') return 'moderate';
+    if (tag === 'easy') return 'easy';
     const trainingEffect = Math.max(activity.trainingEffectAerobic ?? 0, activity.trainingEffectAnaerobic ?? 0);
     if (trainingEffect >= 3) return 'hard';
-    if (trainingEffect >= 1.5) return 'moderate';
+    if (trainingEffect >= 2) return 'moderate';
     return trainingEffect > 0 ? 'easy' : 'unknown';
 }
 
