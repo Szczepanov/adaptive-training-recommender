@@ -1,8 +1,9 @@
 # Phase 9: Subjective baselines in readiness mode
 
-* **Status:** In progress. ADR-0020 is Accepted; 9.5, 9.1 and 9.2 are done. 9.3/9.4/9.6/9.7
-  each still wait on an earlier item in this same plan, and 9.8 additionally needs Phase
-  9.0's prospective evidence.
+* **Status:** In progress. ADR-0020 is Accepted; 9.1, 9.2, 9.3 and 9.5 are done. 9.4 is
+  independently startable now; 9.6 needs both 9.3 (done) and 9.5 (done) and is now
+  startable too; 9.7 needs 9.3 (done) and is startable; 9.8 additionally needs Phase 9.0's
+  prospective evidence.
 * **Blocked by:** nothing at the plan level. Individual work items list their own blockers
   in the task board below.
 * **Strongly preceded by:** [Phase 9.0](./phase-9-0-shadow-mode-and-decision-journal.md) — its shadow block supplies the prospective evidence required before a production ship decision
@@ -124,16 +125,22 @@ returns `null`.
 `SubjectiveBaselinePolicy`, `REFERENCE_SUBJECTIVE_BASELINE_POLICY` (7/28 windows, 1.0
 variability floor, 2.0 cap matching `STRAIN_Z_CAP` -- documented as a reference candidate,
 not an invariant, per D-SUBJEST), and `computeSubjectiveBaseline`. Coverage is deduplicated
-by date via a `Map`, counted separately for the recent and long windows, and both windows
-independently gate on `dataQuality.isComplete` so a partial minimum-safety check-in cannot
-mature either count. `historyThroughDateExclusive` restates the exclusive boundary on the
-output so a consumer never has to re-derive it. `minRecentRecordedDays`/`minLongRecordedDays`
-reuse `contextBrief.ts`'s existing ~36% coverage ratio (`SUBJECTIVE_BASELINE_MIN_DAYS` /
+by date via a `Map`, counted separately for the recent and long windows, and a date counts
+only when all six subjective dimensions are finite scores in the 1–10 range.
+`dataQuality.isComplete` is deliberately **not** the baseline authority because it also
+requires unrelated form/execution fields such as `timeAvailableMin`; missing one of those
+must not erase an otherwise complete subjective observation. Malformed estimator policies
+fail fast before they can produce impossible coverage or non-finite variability.
+`historyThroughDateExclusive` restates the exclusive boundary on the output so a consumer
+never has to re-derive it. `minRecentRecordedDays`/`minLongRecordedDays` reuse
+`contextBrief.ts`'s existing ~36% coverage ratio (`SUBJECTIVE_BASELINE_MIN_DAYS` /
 `SUBJECTIVE_BASELINE_DAYS`) as a starting point, duplicated rather than imported so this
-module -- which sits on the decision path once 9.2/9.3 land -- carries no dependency on the
-brief renderer. Not yet wired anywhere: `DailyReadiness` has no `subjectiveBaseline` field
-(9.2), nothing calls this from the composition boundary (9.4), and there is no drift term to
-consume it (9.3) -- `subjectiveBaseline.test.ts` exercises it standalone.
+module carries no dependency on the brief renderer. The calculator accepts the minimal
+structural `SubjectiveCheckinForBaseline` input rather than importing
+`DailySubjectiveCheckin`, so the foundational `models.ts` module is not part of a circular
+type dependency. `DailyReadiness` can now carry the result (9.2), and `rules.ts` consumes it
+only when the explicit default-off drift selector is exercised (9.3); the composition
+boundary still does not supply real history until 9.4.
 
 ---
 
@@ -152,20 +159,15 @@ or Firestore read (D-SUBJPURE).
 is otherwise unchanged.
 
 **Implementation note.** `DailyReadiness.subjectiveBaseline?: SubjectiveBaseline | null`
-added in `models.ts`. `rules.ts` itself is untouched -- `evaluateReadinessAndSafetyEnvelope`
-does not read the field yet, so `check-policy-drift.mjs` stays clean without a
-`POLICY_VERSION` bump. `rules.test.ts` proves the field is genuinely inert: attaching a
-deliberately worst-case-adverse fixture baseline to a `DailyReadiness` produces
-byte-identical output from `evaluateReadinessAndSafetyEnvelope` across the train/modify/
-recover mode bands, and the function's result is asserted non-`Promise` (still synchronous,
-D-SUBJPURE). `models.ts` importing the `SubjectiveBaseline` type from
-`subjectiveBaseline.ts` (which itself imports `DailySubjectiveCheckin` from `models.ts`) is
-a type-only cycle, erased entirely at compile time -- no runtime import edge, so it does not
-affect 9.0.6's import-graph guard or `check-policy-drift.mjs`'s file list.
+was added in `models.ts`. The 9.2 regression proved the field was inert before 9.3; the
+readiness evaluator remained pure and synchronous. After 9.3, `rules.ts` reads the field
+only behind the explicit `SubjectiveDriftPolicy` selector, whose production default remains
+`'off'`. `subjectiveBaseline.ts` no longer imports `DailySubjectiveCheckin`/`models.ts`, so
+the earlier type-only cycle has been removed rather than accepted as permanent structure.
 
 ---
 
-### 9.3 The drift term, behind a default-off selector `[ ]`
+### 9.3 The drift term, behind a default-off selector `[x]`
 
 **Current behaviour.** `evaluateReadinessAndSafetyEnvelope` computes `objectiveStrain` from
 `metricStrain` plus contextual penalties, and derives mode from absolute subjective
@@ -196,6 +198,47 @@ restrictive mode.
 **Done when** `'off'` is bit-identical to current behaviour across the corpus,
 `'drift'` is unreachable from production callers, and a property test proves no possible
 baseline can lower the resulting mode.
+
+**Implementation note.** `subjectiveDriftStrain` (exported from `rules.ts`) implements the
+reference estimator as specified: per metric, adverse movement is signed positive
+(duplicating `contextBrief.ts`'s `higherIsBetter` polarity table rather than importing it),
+divided by the baseline's floored `variability`, floored at zero, capped at the existing
+`STRAIN_Z_CAP` (2.0), weighted, and summed. The cap is a reference-candidate convention,
+not a runtime use of `SubjectiveBaselinePolicy.contributionCap`; 9.6 must thread any
+alternative cap explicitly rather than silently duplicating the formula. `Math.max(weight,
+0) * clamp(z, 0, cap)` is structurally incapable of subtracting for finite valid baseline
+inputs and weights (D-SUBJADD), and property coverage asserts that the resulting mode is
+never less restrictive under `'drift'` than under `'off'` across the tested readiness,
+gap, variability and weight sweep.
+
+`evaluateReadinessAndSafetyEnvelope` gained two new trailing parameters --
+`subjectiveDriftPolicy: SubjectiveDriftPolicy = 'off'` and `subjectiveDriftWeights:
+SubjectiveDriftWeights = REFERENCE_SUBJECTIVE_DRIFT_WEIGHTS` -- both defaulted, so every
+existing call site is untouched and `'off'` stays bit-identical to pre-Phase-9 behaviour. The
+drift score augments only the local `strainForThresholds` used for mode selection. The
+existing objective-only counterfactual/telemetry variables (`strainWithoutDrift`,
+`multiDayDriftIsDecisionRelevant`, `DecisionScoreTelemetry.totalDecisionScore`) remain
+unchanged until 9.7 adds a separately readable, reconciling subjective-drift component.
+Therefore 9.6 must not interpret today's `totalDecisionScore` as drift-inclusive and must not
+reimplement the arithmetic in a second path; it should consume/extend the canonical drift
+helper while 9.7 supplies the final telemetry/audit contract.
+
+Threading the selector further through `evaluateTrainingWithIntent`,
+`generateWeekAheadPlanWithIntent`, or the composer is out of scope here. 9.4 supplies real
+baseline history at the composition boundary, and 9.6 is the first intended caller that
+explicitly exercises `'drift'` for measurement. Existing tests additionally guard that the
+production default remains `'off'`.
+
+`POLICY_VERSION` deliberately remains `2026-08-external-plan-provenance-v1` while this
+implementation is dormant, exactly as D-SUBJAUDIT requires: default-off code cannot alter a
+persisted decision and therefore must not fabricate a new policy identity. The
+`check-policy-drift.mjs` guard now compares the actual base/head `POLICY_VERSION` values
+instead of merely checking whether `policy.ts` was touched. It permits this narrow ADR-0020
+default-off case only while no other production source is changed, and it now includes
+`subjectiveBaseline.ts` in the decision-affecting set so a future live estimator change
+cannot silently retain an old policy identity. If 9.8 later enables drift on the deciding
+path, that cutover gets the real version bump and moves the outgoing value into
+`HISTORICAL_POLICY_VERSIONS`.
 
 ---
 
@@ -249,8 +292,8 @@ behaviour.
 **Implementation note.** `engine/simulation/subjectiveProfiles.ts` is daily-resolution and
 deterministic. `runScenario` still samples one decision per chained week, so the five new
 `subjective_*` scenarios sample days `0, 7, 14, 21`; `subjectiveProfiles.test.ts` exercises
-the full 28-day series directly. No stored check-in history is seeded yet because 9.1/9.4 do
-not exist; 9.4's integration tests will build validated historical check-in documents from
+the full 28-day series directly. No stored check-in history is seeded yet because 9.4 has
+not landed; 9.4's integration tests will build validated historical check-in documents from
 the same deterministic series.
 
 Because these are new scenarios, `simulate:diff` reports `[NEW SCENARIO]` and no committed
@@ -423,7 +466,7 @@ make two different live policies share an identity.
 |---|---|:--:|---|
 | 9.1 | Subjective baseline computation | `[x]` | ADR-0020 |
 | 9.2 | Carry the baseline on `DailyReadiness` | `[x]` | 9.1 |
-| 9.3 | Drift term behind a default-off selector | `[ ]` | 9.2 |
+| 9.3 | Drift term behind a default-off selector | `[x]` | 9.2 |
 | 9.4 | Composition boundary supplies the baseline | `[ ]` | 9.2 |
 | 9.5 | Scenario corpus subjective variance | `[x]` | — |
 | 9.6 | Comparison harness + estimator sensitivity | `[ ]` | 9.3, 9.5 |

@@ -1,8 +1,13 @@
+import { readFileSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, it, expect } from 'vitest';
-import { buildNextDayScenarios, evaluateTraining, evaluateNextDayPlan, evaluateNextDayPlanWithIntent, adjustSessionRecommendation, evaluateEnvelopes, evaluateReadinessAndSafetyEnvelope } from './rules';
+import {
+    buildNextDayScenarios, evaluateTraining, evaluateNextDayPlan, evaluateNextDayPlanWithIntent, adjustSessionRecommendation, evaluateEnvelopes,
+    evaluateReadinessAndSafetyEnvelope, subjectiveDriftStrain, REFERENCE_SUBJECTIVE_DRIFT_WEIGHTS, type SubjectiveDriftWeights,
+} from './rules';
 import type { TrainingHistoryProvider } from './trainingHistory';
 import type { DailyReadiness, UserContext, EngineObjectiveInput, SubjectiveInput, TrainingSettings } from './models';
-import type { SubjectiveBaseline } from './subjectiveBaseline';
+import type { SubjectiveBaseline, SubjectiveBaselineMetric, SubjectiveMetricBaseline } from './subjectiveBaseline';
 import { mapContextFromGoalsAndTrainingSettings } from './adapters';
 import { TEMPLATES } from './templates';
 
@@ -852,6 +857,296 @@ describe('Phase 9.2: DailyReadiness.subjectiveBaseline is optional and inert', (
         const result = evaluateReadinessAndSafetyEnvelope(readiness, baseContext());
         expect(result).not.toBeInstanceOf(Promise);
         expect(typeof (result as unknown as { then?: unknown }).then).not.toBe('function');
+    });
+});
+
+// --- Phase 9.3: the drift term, behind a default-off selector ----------------------------
+
+const HIGHER_IS_BETTER: Record<SubjectiveBaselineMetric, boolean> = {
+    readiness: true, sleepQuality: true, motivation: true,
+    fatigue: false, soreness: false, mentalStress: false,
+};
+
+/** Every metric moved by exactly `gap` z-scores (variability fixed at 1, so gap == z) in
+ *  the ADVERSE direction for positive `gap`, or favourably for negative `gap`. `today` is
+ *  never part of this -- it is prior recent-vs-long history only (D-SUBJHIST). */
+function uniformDriftBaseline(gap: number, variability = 1): SubjectiveBaseline {
+    const metricFor = (higherIsBetter: boolean): SubjectiveMetricBaseline =>
+        higherIsBetter ? { recentAvg: 5 - gap, longAvg: 5, variability } : { recentAvg: 5 + gap, longAvg: 5, variability };
+    return {
+        estimatorId: 'test-uniform-drift-v1',
+        historyThroughDateExclusive: '2026-08-08',
+        recentRecordedDays: 7,
+        longRecordedDays: 28,
+        lastObservationDate: '2026-08-07',
+        metrics: {
+            readiness: metricFor(HIGHER_IS_BETTER.readiness),
+            sleepQuality: metricFor(HIGHER_IS_BETTER.sleepQuality),
+            motivation: metricFor(HIGHER_IS_BETTER.motivation),
+            fatigue: metricFor(HIGHER_IS_BETTER.fatigue),
+            soreness: metricFor(HIGHER_IS_BETTER.soreness),
+            mentalStress: metricFor(HIGHER_IS_BETTER.mentalStress),
+        },
+    };
+}
+
+/** A quiet-objective, exactly-neutral-subjective baseline that today sits at 'train' with
+ *  zero margin to spare (overallFatigueScore is exactly 5, not > 5; soreness is exactly 6,
+ *  not > 6) -- the most sensitive possible starting point for escalation tests. */
+function trainModeReadiness(): DailyReadiness {
+    return { subjective: neutralSubjective(), objective: quietObjective() };
+}
+
+const MODE_RANK = { train: 0, modify: 1, recover: 2 } as const;
+
+describe('Phase 9.3: subjective drift term', () => {
+    it('a "drift" policy with no attached baseline is identical to "off" -- no fabricated neutral signal', () => {
+        const context = baseContext();
+        const readiness = trainModeReadiness(); // subjectiveBaseline left undefined
+        const off = evaluateReadinessAndSafetyEnvelope(readiness, context, undefined, undefined, 'off');
+        const drift = evaluateReadinessAndSafetyEnvelope(readiness, context, undefined, undefined, 'drift');
+        expect(drift).toEqual(off);
+    });
+
+    it('genuine adverse drift can escalate train -> modify', () => {
+        const context = baseContext();
+        const readiness: DailyReadiness = { ...trainModeReadiness(), subjectiveBaseline: uniformDriftBaseline(0.3) };
+        const off = evaluateReadinessAndSafetyEnvelope(readiness, context, undefined, undefined, 'off');
+        const drift = evaluateReadinessAndSafetyEnvelope(readiness, context, undefined, undefined, 'drift');
+        expect(off.mode).toBe('train');
+        expect(drift.mode).toBe('modify');
+    });
+
+    it('strong enough adverse drift can escalate all the way to recover', () => {
+        const context = baseContext();
+        const readiness: DailyReadiness = { ...trainModeReadiness(), subjectiveBaseline: uniformDriftBaseline(0.5) };
+        const off = evaluateReadinessAndSafetyEnvelope(readiness, context, undefined, undefined, 'off');
+        const drift = evaluateReadinessAndSafetyEnvelope(readiness, context, undefined, undefined, 'drift');
+        expect(off.mode).toBe('train');
+        expect(drift.mode).toBe('recover');
+    });
+
+    it('every existing absolute trigger acts as a hard floor under "drift" -- never relaxed, only possibly escalated (D-SUBJFLOOR)', () => {
+        const context = baseContext();
+        const absoluteFixtures: DailyReadiness[] = [
+            { subjective: neutralSubjective({ soreness: 7 }), objective: quietObjective() }, // soreness > 6
+            { subjective: neutralSubjective({ fatigue: 9, soreness: 9 }), objective: quietObjective() }, // overallFatigueScore > 7
+            { subjective: neutralSubjective({ painFlag: true }), objective: quietObjective() }, // extremeFatigue via painFlag
+        ];
+        for (const base of absoluteFixtures) {
+            const off = evaluateReadinessAndSafetyEnvelope(base, context, undefined, undefined, 'off');
+            for (const gap of [-1, 0, 0.5, 3]) {
+                const readiness = { ...base, subjectiveBaseline: uniformDriftBaseline(gap) };
+                const drift = evaluateReadinessAndSafetyEnvelope(readiness, context, undefined, undefined, 'drift');
+                // D-SUBJFLOOR: an absolute trigger is a floor, not a ceiling -- drift is free
+                // to escalate past it (a large enough gap can push soreness>6's 'modify' floor
+                // on to 'recover'), so the only universal guarantee is never-less-restrictive.
+                expect(MODE_RANK[drift.mode], `gap=${gap}`).toBeGreaterThanOrEqual(MODE_RANK[off.mode]);
+                // With no adverse movement at all, the drift term contributes exactly zero
+                // (D-SUBJADD), so the floor holds byte-identically -- no escalation possible.
+                if (gap <= 0) expect(drift.mode, `gap=${gap}`).toBe(off.mode);
+            }
+        }
+    });
+
+    it('a favourable baseline contributes exactly zero -- floored at zero, not merely small (D-SUBJADD)', () => {
+        const context = baseContext();
+        const readiness: DailyReadiness = { ...trainModeReadiness(), subjectiveBaseline: uniformDriftBaseline(-5) };
+        const off = evaluateReadinessAndSafetyEnvelope(readiness, context, undefined, undefined, 'off');
+        const drift = evaluateReadinessAndSafetyEnvelope(readiness, context, undefined, undefined, 'drift');
+        expect(drift).toEqual(off);
+    });
+
+    it('a per-metric contribution is capped, so one extreme metric cannot dominate unboundedly', () => {
+        const context = baseContext();
+        // A single, wildly adverse metric (gap 100 with variability 1 -- an enormous z-score)
+        // should contribute no more than the capped 2.0 total from that metric, not ~100.
+        const extreme = uniformDriftBaseline(100);
+        extreme.metrics.readiness = { recentAvg: -95, longAvg: 5, variability: 1 };
+        for (const metric of ['sleepQuality', 'motivation', 'fatigue', 'soreness', 'mentalStress'] as const) {
+            extreme.metrics[metric] = { recentAvg: 5, longAvg: 5, variability: 1 }; // neutral, no contribution
+        }
+        const readiness: DailyReadiness = { ...trainModeReadiness(), subjectiveBaseline: extreme };
+        const drift = evaluateReadinessAndSafetyEnvelope(readiness, context, undefined, undefined, 'drift');
+        // If uncapped, a z-score of 100 would trivially push to recover from any starting
+        // point; capped at 2.0 it crosses modify (>=1.0) but not recover (<2.2).
+        expect(drift.mode).toBe('modify');
+    });
+
+    it('a metric weighted to zero does not contribute, threaded end-to-end through the evaluator', () => {
+        const context = baseContext();
+        const readiness: DailyReadiness = { ...trainModeReadiness(), subjectiveBaseline: uniformDriftBaseline(0.3) };
+        const allZero: SubjectiveDriftWeights = { readiness: 0, sleepQuality: 0, fatigue: 0, soreness: 0, mentalStress: 0, motivation: 0 };
+
+        const withDefaultWeights = evaluateReadinessAndSafetyEnvelope(readiness, context, undefined, undefined, 'drift');
+        const withZeroWeights = evaluateReadinessAndSafetyEnvelope(readiness, context, undefined, undefined, 'drift', allZero);
+
+        // gap=0.3 escalates train -> modify with the reference weights (see the earlier
+        // escalation test), but contributes nothing at all when every weight is zero.
+        expect(withDefaultWeights.mode).toBe('modify');
+        expect(withZeroWeights.mode).toBe('train');
+    });
+
+    it('a negative weight is clamped to zero rather than subtracting from the total (defense in depth for D-SUBJADD)', () => {
+        const context = baseContext();
+        const readiness: DailyReadiness = { ...trainModeReadiness(), subjectiveBaseline: uniformDriftBaseline(0.5) };
+        const negativeReadinessWeight: SubjectiveDriftWeights = { ...REFERENCE_SUBJECTIVE_DRIFT_WEIGHTS, readiness: -100 };
+
+        const withReferenceWeights = evaluateReadinessAndSafetyEnvelope(readiness, context, undefined, undefined, 'drift');
+        const withNegativeWeight = evaluateReadinessAndSafetyEnvelope(readiness, context, undefined, undefined, 'drift', negativeReadinessWeight);
+
+        // If a negative weight actually subtracted, a large-magnitude one would swing the
+        // total drift negative and pull the mode back toward train. It must not: the
+        // affected metric's contribution simply drops to zero, same as weighting it zero.
+        expect(MODE_RANK[withNegativeWeight.mode]).toBeGreaterThanOrEqual(MODE_RANK[withReferenceWeights.mode] - 0);
+        expect(subjectiveDriftStrain(readiness.subjectiveBaseline, 'drift', negativeReadinessWeight))
+            .toBeCloseTo(subjectiveDriftStrain(readiness.subjectiveBaseline, 'drift', { ...REFERENCE_SUBJECTIVE_DRIFT_WEIGHTS, readiness: 0 }), 10);
+    });
+});
+
+describe('subjectiveDriftStrain (unit)', () => {
+    it('returns exactly 0 for policy "off" regardless of baseline', () => {
+        expect(subjectiveDriftStrain(uniformDriftBaseline(50), 'off')).toBe(0);
+    });
+
+    it('returns exactly 0 for a null/undefined baseline under "drift"', () => {
+        expect(subjectiveDriftStrain(null, 'drift')).toBe(0);
+        expect(subjectiveDriftStrain(undefined, 'drift')).toBe(0);
+    });
+
+    it('is signed correctly per metric: adverse movement is positive regardless of scale polarity', () => {
+        // readiness declining (recentAvg < longAvg) is adverse; fatigue rising (recentAvg >
+        // longAvg) is also adverse -- both must contribute the same magnitude here.
+        const onlyReadinessAdverse = uniformDriftBaseline(0);
+        onlyReadinessAdverse.metrics.readiness = { recentAvg: 3, longAvg: 5, variability: 1 };
+        const onlyFatigueAdverse = uniformDriftBaseline(0);
+        onlyFatigueAdverse.metrics.fatigue = { recentAvg: 7, longAvg: 5, variability: 1 };
+
+        expect(subjectiveDriftStrain(onlyReadinessAdverse, 'drift')).toBeCloseTo(2, 10);
+        expect(subjectiveDriftStrain(onlyFatigueAdverse, 'drift')).toBeCloseTo(2, 10);
+    });
+
+    it('floors favourable movement at zero per metric, not just in aggregate', () => {
+        const mixed = uniformDriftBaseline(0);
+        mixed.metrics.readiness = { recentAvg: 9, longAvg: 5, variability: 1 }; // favourable (readiness rose)
+        mixed.metrics.fatigue = { recentAvg: 8, longAvg: 5, variability: 1 }; // adverse (fatigue rose), z=3 capped at 2
+        expect(subjectiveDriftStrain(mixed, 'drift')).toBeCloseTo(2, 10); // only fatigue's capped contribution
+    });
+
+    it('caps each metric at STRAIN_Z_CAP (2.0) before weighting, so one metric cannot dominate unboundedly', () => {
+        const extreme = uniformDriftBaseline(0);
+        extreme.metrics.readiness = { recentAvg: -995, longAvg: 5, variability: 1 }; // z = 1000, capped to 2
+        expect(subjectiveDriftStrain(extreme, 'drift')).toBeCloseTo(2, 10);
+    });
+
+    it('a zero-weighted metric contributes nothing even at an extreme z-score', () => {
+        const extreme = uniformDriftBaseline(0);
+        extreme.metrics.readiness = { recentAvg: -995, longAvg: 5, variability: 1 };
+        const zeroReadiness: SubjectiveDriftWeights = { ...REFERENCE_SUBJECTIVE_DRIFT_WEIGHTS, readiness: 0 };
+        expect(subjectiveDriftStrain(extreme, 'drift', zeroReadiness)).toBe(0);
+    });
+
+    it('a negative weight is clamped to zero (structural non-negativity, D-SUBJADD)', () => {
+        const baseline = uniformDriftBaseline(1);
+        const negative: SubjectiveDriftWeights = { ...REFERENCE_SUBJECTIVE_DRIFT_WEIGHTS, readiness: -50 };
+        const zeroed: SubjectiveDriftWeights = { ...REFERENCE_SUBJECTIVE_DRIFT_WEIGHTS, readiness: 0 };
+        expect(subjectiveDriftStrain(baseline, 'drift', negative)).toBeCloseTo(subjectiveDriftStrain(baseline, 'drift', zeroed), 10);
+    });
+
+    it('never returns a negative total, for any sign or magnitude of movement, weight, or variability', () => {
+        const gaps = [-1000, -10, -3, -1, -0.001, 0, 0.001, 1, 3, 10, 1000];
+        const variabilities = [0.001, 0.1, 1, 10, 1000];
+        const weightSets: SubjectiveDriftWeights[] = [
+            REFERENCE_SUBJECTIVE_DRIFT_WEIGHTS,
+            { readiness: 0, sleepQuality: 0, fatigue: 0, soreness: 0, mentalStress: 0, motivation: 0 },
+            { readiness: -5, sleepQuality: -5, fatigue: -5, soreness: -5, mentalStress: -5, motivation: -5 },
+            { readiness: 100, sleepQuality: 0, fatigue: 0, soreness: 0, mentalStress: 0, motivation: 0 },
+        ];
+        let evaluated = 0;
+        for (const gap of gaps) {
+            for (const variability of variabilities) {
+                const baseline = uniformDriftBaseline(gap, variability);
+                for (const weights of weightSets) {
+                    expect(subjectiveDriftStrain(baseline, 'drift', weights)).toBeGreaterThanOrEqual(0);
+                    evaluated += 1;
+                }
+            }
+        }
+        expect(evaluated).toBe(gaps.length * variabilities.length * weightSets.length);
+    });
+});
+
+describe('Phase 9.3: property -- "drift" is never less restrictive than "off"', () => {
+    it('holds for every readiness fixture, baseline shape and weight configuration swept', () => {
+        const context = baseContext();
+        const readinessFixtures: DailyReadiness[] = [
+            { subjective: greenSubjective(), objective: quietObjective() },
+            trainModeReadiness(),
+            { subjective: neutralSubjective({ soreness: 7 }), objective: quietObjective() },
+            { subjective: neutralSubjective({ fatigue: 6, soreness: 6 }), objective: quietObjective() },
+            { subjective: neutralSubjective({ fatigue: 9, soreness: 9 }), objective: quietObjective() },
+            { subjective: neutralSubjective({ painFlag: true }), objective: quietObjective() },
+            { subjective: neutralSubjective(), objective: quietObjective({ last_3_days_hard_sessions_count: 2 }) },
+        ];
+        const gaps = [-10, -3, -1, -0.5, 0, 0.001, 0.2, 0.5, 1, 2, 3, 10, 1000];
+        const weightSets: SubjectiveDriftWeights[] = [
+            REFERENCE_SUBJECTIVE_DRIFT_WEIGHTS,
+            { readiness: 0, sleepQuality: 0, fatigue: 0, soreness: 0, mentalStress: 0, motivation: 0 },
+            { readiness: 5, sleepQuality: 0, fatigue: 0, soreness: 0, mentalStress: 0, motivation: 0 },
+            { readiness: -5, sleepQuality: -5, fatigue: -5, soreness: -5, mentalStress: -5, motivation: -5 }, // adversarial: attempts subtraction
+            { readiness: 0.01, sleepQuality: 0.01, fatigue: 0.01, soreness: 0.01, mentalStress: 0.01, motivation: 0.01 },
+        ];
+
+        let comparisons = 0;
+        for (const base of readinessFixtures) {
+            const off = evaluateReadinessAndSafetyEnvelope(base, context, undefined, undefined, 'off');
+            for (const gap of gaps) {
+                for (const variability of [1, 0.1, 10]) {
+                    const readiness = { ...base, subjectiveBaseline: uniformDriftBaseline(gap, variability) };
+                    for (const weights of weightSets) {
+                        const drift = evaluateReadinessAndSafetyEnvelope(readiness, context, undefined, undefined, 'drift', weights);
+                        expect(MODE_RANK[drift.mode], `base=${JSON.stringify(base.subjective)} gap=${gap} variability=${variability} weights=${JSON.stringify(weights)}`)
+                            .toBeGreaterThanOrEqual(MODE_RANK[off.mode]);
+                        comparisons += 1;
+                    }
+                }
+            }
+        }
+        expect(comparisons).toBe(readinessFixtures.length * gaps.length * 3 * weightSets.length);
+        expect(comparisons).toBeGreaterThan(1000); // sanity: the sweep actually ran
+    });
+});
+
+describe('Phase 9.3: no production call site passes subjectiveDriftPolicy "drift"', () => {
+    // 'drift' is meant to be reachable only from a future 9.6 simulation comparison
+    // harness. A plain source scan (not the AST import-graph scanner externalArchitecture.test.ts
+    // uses -- that answers a different question, module reachability, not literal argument
+    // values) catches the straightforward case: nobody writes the literal string today.
+    const ENGINE_DIR = __dirname;
+
+    function productionFiles(directory = ENGINE_DIR): string[] {
+        return readdirSync(directory, { withFileTypes: true }).flatMap(entry => {
+            const absolutePath = join(directory, entry.name);
+            if (entry.isDirectory()) {
+                // engine/simulation/ is where 9.6 will legitimately reference 'drift'.
+                if (entry.name === 'simulation') return [];
+                return productionFiles(absolutePath);
+            }
+            if (!entry.isFile() || !/\.ts$/.test(entry.name) || /\.test\.ts$/.test(entry.name)) return [];
+            return [absolutePath];
+        });
+    }
+
+    it('no non-test engine file outside simulation/ contains the literal \'drift\' as a value', () => {
+        const offenders: string[] = [];
+        for (const file of productionFiles()) {
+            const source = readFileSync(file, 'utf8');
+            // Matches a quoted 'drift' that is not immediately preceded by "'off' | " -- i.e.
+            // not the SubjectiveDriftPolicy type declaration itself.
+            const valueUsage = source.match(/(?<!'off' \| )'drift'/g);
+            if (valueUsage) offenders.push(file);
+        }
+        expect(offenders).toEqual([]);
     });
 });
 
