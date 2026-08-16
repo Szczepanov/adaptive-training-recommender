@@ -8,7 +8,7 @@ import {
 import {
     buildSubjectiveDriftDecisionEvidence,
     type SubjectiveDriftDecisionEvidence,
-} from '../subjectiveDriftEvidence';
+} from './subjectiveDriftEvidence';
 import {
     REFERENCE_SUBJECTIVE_DRIFT_WEIGHTS,
     type SubjectiveDriftWeights,
@@ -72,54 +72,25 @@ const DEFAULT_CONTEXT: UserContext = {
         maxTimeMinutes: 90,
     },
     preferences: {
-        avoidedModalities: [],
-        deprioritizedModalities: [],
-        preferredModalities: [],
-        conservativeBias: false,
+        avoidedModalities: [], deprioritizedModalities: [], preferredModalities: [], conservativeBias: false,
     },
 };
 
 const HALF_WEIGHTS: SubjectiveDriftWeights = {
-    readiness: 0.5,
-    sleepQuality: 0.5,
-    fatigue: 0.5,
-    soreness: 0.5,
-    mentalStress: 0.5,
-    motivation: 0.5,
+    readiness: 0.5, sleepQuality: 0.5, fatigue: 0.5, soreness: 0.5, mentalStress: 0.5, motivation: 0.5,
 };
-
 const FATIGUE_SORENESS_ONLY: SubjectiveDriftWeights = {
-    readiness: 0,
-    sleepQuality: 0,
-    fatigue: 1,
-    soreness: 1,
-    mentalStress: 0,
-    motivation: 0,
+    readiness: 0, sleepQuality: 0, fatigue: 1, soreness: 1, mentalStress: 0, motivation: 0,
 };
 
-/**
- * Candidate sensitivity set, not a claim that any configuration is physiologically
- * preferred. These dimensions are deliberately limited to parameters the canonical Phase
- * 9.1/9.3 implementation can actually vary without duplicating estimator arithmetic.
- * Contribution-cap sensitivity remains a known 9.6b blocker because 9.3 currently binds
- * the canonical helper to `STRAIN_Z_CAP`; it must be threaded into that helper rather than
- * reimplemented in simulation code.
- */
 export const SUBJECTIVE_DRIFT_SENSITIVITY_CONFIGS: SubjectiveDriftSensitivityConfig[] = [
-    {
-        id: 'reference-7-28-equal',
-        baselinePolicy: REFERENCE_SUBJECTIVE_BASELINE_POLICY,
-        weights: REFERENCE_SUBJECTIVE_DRIFT_WEIGHTS,
-    },
+    { id: 'reference-7-28-equal', baselinePolicy: REFERENCE_SUBJECTIVE_BASELINE_POLICY, weights: REFERENCE_SUBJECTIVE_DRIFT_WEIGHTS },
     {
         id: 'short-5-21-equal',
         baselinePolicy: {
             ...REFERENCE_SUBJECTIVE_BASELINE_POLICY,
             estimatorId: 'sensitivity-mean-stdev-5-21',
-            recentWindowDays: 5,
-            longWindowDays: 21,
-            minRecentRecordedDays: 3,
-            minLongRecordedDays: 8,
+            recentWindowDays: 5, longWindowDays: 21, minRecentRecordedDays: 3, minLongRecordedDays: 8,
         },
         weights: REFERENCE_SUBJECTIVE_DRIFT_WEIGHTS,
     },
@@ -128,10 +99,7 @@ export const SUBJECTIVE_DRIFT_SENSITIVITY_CONFIGS: SubjectiveDriftSensitivityCon
         baselinePolicy: {
             ...REFERENCE_SUBJECTIVE_BASELINE_POLICY,
             estimatorId: 'sensitivity-mean-stdev-10-35',
-            recentWindowDays: 10,
-            longWindowDays: 35,
-            minRecentRecordedDays: 5,
-            minLongRecordedDays: 14,
+            recentWindowDays: 10, longWindowDays: 35, minRecentRecordedDays: 5, minLongRecordedDays: 14,
         },
         weights: REFERENCE_SUBJECTIVE_DRIFT_WEIGHTS,
     },
@@ -140,39 +108,22 @@ export const SUBJECTIVE_DRIFT_SENSITIVITY_CONFIGS: SubjectiveDriftSensitivityCon
         baselinePolicy: {
             ...REFERENCE_SUBJECTIVE_BASELINE_POLICY,
             estimatorId: 'sensitivity-mean-stdev-7-28-high-coverage',
-            minRecentRecordedDays: 6,
-            minLongRecordedDays: 20,
+            minRecentRecordedDays: 6, minLongRecordedDays: 20,
         },
         weights: REFERENCE_SUBJECTIVE_DRIFT_WEIGHTS,
     },
     {
         id: 'reference-floor-0.5',
-        baselinePolicy: {
-            ...REFERENCE_SUBJECTIVE_BASELINE_POLICY,
-            estimatorId: 'sensitivity-mean-stdev-7-28-floor-0.5',
-            variabilityFloor: 0.5,
-        },
+        baselinePolicy: { ...REFERENCE_SUBJECTIVE_BASELINE_POLICY, estimatorId: 'sensitivity-mean-stdev-7-28-floor-0.5', variabilityFloor: 0.5 },
         weights: REFERENCE_SUBJECTIVE_DRIFT_WEIGHTS,
     },
     {
         id: 'reference-floor-1.5',
-        baselinePolicy: {
-            ...REFERENCE_SUBJECTIVE_BASELINE_POLICY,
-            estimatorId: 'sensitivity-mean-stdev-7-28-floor-1.5',
-            variabilityFloor: 1.5,
-        },
+        baselinePolicy: { ...REFERENCE_SUBJECTIVE_BASELINE_POLICY, estimatorId: 'sensitivity-mean-stdev-7-28-floor-1.5', variabilityFloor: 1.5 },
         weights: REFERENCE_SUBJECTIVE_DRIFT_WEIGHTS,
     },
-    {
-        id: 'reference-half-weights',
-        baselinePolicy: REFERENCE_SUBJECTIVE_BASELINE_POLICY,
-        weights: HALF_WEIGHTS,
-    },
-    {
-        id: 'reference-fatigue-soreness-only',
-        baselinePolicy: REFERENCE_SUBJECTIVE_BASELINE_POLICY,
-        weights: FATIGUE_SORENESS_ONLY,
-    },
+    { id: 'reference-half-weights', baselinePolicy: REFERENCE_SUBJECTIVE_BASELINE_POLICY, weights: HALF_WEIGHTS },
+    { id: 'reference-fatigue-soreness-only', baselinePolicy: REFERENCE_SUBJECTIVE_BASELINE_POLICY, weights: FATIGUE_SORENESS_ONLY },
 ];
 
 function profileHistoryRow(kind: SubjectiveProfileKind, dayIndex: number, date: string): SubjectiveCheckinForBaseline {
@@ -187,24 +138,13 @@ function profileHistoryRow(kind: SubjectiveProfileKind, dayIndex: number, date: 
         motivation: values.motivation,
     };
 }
-
-function ratio(count: number, total: number): number {
-    return total === 0 ? 0 : count / total;
-}
-
-function summarizeRows(
-    profile: SubjectiveProfileKind,
-    configId: string,
-    rows: SubjectiveDriftComparisonDay[],
-): SubjectiveDriftProfileSummary {
+function ratio(count: number, total: number): number { return total === 0 ? 0 : count / total; }
+function summarizeRows(profile: SubjectiveProfileKind, configId: string, rows: SubjectiveDriftComparisonDay[]): SubjectiveDriftProfileSummary {
     const evidence = rows.flatMap(row => row.evidence ? [row.evidence] : []);
     const changed = evidence.filter(item => item.decisionRelevant);
     const contributions = evidence.map(item => item.contribution);
     return {
-        profile,
-        configId,
-        evaluatedDays: rows.length,
-        baselineAvailableDays: evidence.length,
+        profile, configId, evaluatedDays: rows.length, baselineAvailableDays: evidence.length,
         changedModeDays: changed.length,
         trainToModifyDays: changed.filter(item => item.modeWithoutDrift === 'train' && item.modeWithDrift === 'modify').length,
         trainToRecoverDays: changed.filter(item => item.modeWithoutDrift === 'train' && item.modeWithDrift === 'recover').length,
@@ -216,17 +156,9 @@ function summarizeRows(
     };
 }
 
-/**
- * Phase 9.6a answers the deliberately narrower question: how does the accepted tighten-only
- * readiness mechanism behave under deterministic subjective scale-use profiles and several
- * reasonable estimator/weight perturbations?
- *
- * It is **not** the final 9.6 planner gate. It does not rank workouts, project weekly
- * objectives, or exercise hard session eligibility. The final 9.6b must thread the selector
- * through `evaluateTrainingWithIntent` and run the real planner/hard gates. Keeping this
- * distinction in the report prevents readiness mechanics from being misrepresented as
- * training-plan quality evidence (D-SUBJCAL).
- */
+/** Readiness-mechanics comparison only. It deliberately does not claim planner quality or
+ * real-world predictive usefulness; final 9.6b must thread the policy through the real
+ * planner/hard-gate path. */
 export function runSubjectiveDriftMechanicsComparison(options: {
     startDate?: string;
     totalDays?: number;
@@ -264,18 +196,11 @@ export function runSubjectiveDriftMechanicsComparison(options: {
     const summaries: SubjectiveDriftProfileSummary[] = [];
     for (const profile of SUBJECTIVE_PROFILE_KINDS) {
         for (const config of configs) {
-            const rows = days.filter(row => row.profile === profile && row.configId === config.id);
-            summaries.push(summarizeRows(profile, config.id, rows));
+            summaries.push(summarizeRows(profile, config.id, days.filter(row => row.profile === profile && row.configId === config.id)));
         }
     }
-
     return {
-        startDate,
-        totalDays,
-        warmupDays,
-        configs,
-        days,
-        summaries,
+        startDate, totalDays, warmupDays, configs, days, summaries,
         scope: 'readiness-mechanics-only',
         limitations: [
             'Synthetic profiles test safety/mechanics; they do not establish real-world predictive usefulness.',
