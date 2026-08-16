@@ -2,13 +2,13 @@ import type { Recommendation, RecommendationAudit } from './models';
 import type { TrainingHistorySnapshot } from './trainingHistorySnapshot';
 import {
     compactSubjectiveDriftAudit,
-    type SubjectiveDriftDecisionEvidence,
-} from './subjectiveDriftEvidence';
+    type SubjectiveDriftAudit,
+    type SubjectiveDriftAuditSource,
+} from './subjectiveDriftAudit';
 
-export type SubjectiveDriftAudit = NonNullable<ReturnType<typeof compactSubjectiveDriftAudit>>;
 export type RecommendationAuditWithSubjectiveDrift = RecommendationAudit & {
     /** Present only when an explicitly measured/enabled subjective-drift path supplied
-     * evidence. Production-default `'off'` callers do not pass evidence and retain the
+     * normalized evidence. Production-default callers do not supply it and retain the
      * exact legacy audit shape. */
     subjectiveDrift?: SubjectiveDriftAudit;
 };
@@ -21,7 +21,7 @@ export function buildRecommendationAudit(
     recommendation: Recommendation,
     historySnapshot: TrainingHistorySnapshot,
     evaluatedAt = new Date().toISOString(),
-    subjectiveDriftEvidence: SubjectiveDriftDecisionEvidence | null = null,
+    subjectiveDriftEvidence: SubjectiveDriftAuditSource | null = null,
 ): RecommendationAuditWithSubjectiveDrift | null {
     const trace = recommendation.decisionTrace;
     const envelopes = recommendation.envelopes;
