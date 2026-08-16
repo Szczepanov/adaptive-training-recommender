@@ -27,8 +27,6 @@ vi.mock('../firebase', () => ({ getDb: vi.fn(() => ({})) }));
 
 import { RecommendationService } from './recommendationService';
 
-/** Simulates a Firestore round trip: map fields come back with keys sorted
- * alphabetically, regardless of the order they were written in. */
 function sortKeysDeep<T>(value: T): T {
     if (Array.isArray(value)) return value.map(sortKeysDeep) as unknown as T;
     if (value && typeof value === 'object') {
@@ -113,6 +111,31 @@ describe('RecommendationService persistence', () => {
         expect(writeData.revision).toBe(1);
     });
 
+    it('backfills advisory onto a legacy train row without fabricating a revision for evidence that was never stored exactly', async () => {
+        const template = TEMPLATES[0];
+        const existing = {
+            userId: 'athlete', date: '2026-08-07', templateId: template.id, templateTitle: template.title,
+            category: template.category, modality: template.modality, mode: 'train', rationale: 'Same visible recommendation.',
+            schemaVersion: 1, revision: 1, createdAt: '2026-08-07T08:00:00.000Z', updatedAt: '2026-08-07T08:00:00.000Z',
+            adherence: { respondedAt: null, followed: null, actualModality: null, actualDurationMin: null, skipped: false, notes: null },
+        } as unknown as DailyRecommendation;
+        firestore.getDoc.mockResolvedValue({ exists: () => true, data: () => existing });
+        const recommendation: Recommendation = {
+            template,
+            mode: 'train',
+            rationale: 'Same visible recommendation.',
+            externalVerdict: { decision: 'advisory', gateFailures: [], rationale: 'Event advice only.' },
+        };
+
+        await new RecommendationService().saveRecommendation('athlete', '2026-08-07', recommendation);
+
+        expect(firestore.batch.set).not.toHaveBeenCalled();
+        expect(firestore.batch.commit).not.toHaveBeenCalled();
+        const writeData = firestore.setDoc.mock.calls[0][1] as Record<string, unknown>;
+        expect(writeData.engineVerdict).toBe('advisory');
+        expect(writeData.revision).toBe(1);
+    });
+
     it('treats an exact verdict change as a decision change even when template and three-value mode are unchanged', async () => {
         const template = TEMPLATES[0];
         const existing = {
@@ -139,13 +162,6 @@ describe('RecommendationService persistence', () => {
         expect(current.revision).toBe(2);
     });
 
-    // Regression test for the bug reported as "Permission denied saving recommendation":
-    // Firestore returns map fields with keys sorted alphabetically, which does not match
-    // the construction order of a freshly-built prescription. Comparing via
-    // JSON.stringify (the prior implementation) treated an unchanged, round-tripped
-    // prescription as "changed" on every single save, spuriously bumping the revision
-    // and rewriting the audit -- both of which firestore.rules rejects for a decision
-    // that (by its own, order-insensitive comparison) never actually changed.
     it('does not treat an unchanged prescription as changed when Firestore returns its keys re-sorted', async () => {
         const template = TEMPLATES[0];
         const prescriptionAsConstructed = {
@@ -172,7 +188,6 @@ describe('RecommendationService persistence', () => {
             userId: 'athlete', date: '2026-08-07', templateId: template.id, templateTitle: template.title,
             category: template.category, modality: template.modality, mode: 'train', rationale: 'Keep it easy.',
             schemaVersion: 2, revision: 1, createdAt: '2026-08-07T08:00:00.000Z', updatedAt: '2026-08-07T08:00:00.000Z',
-            // What Firestore actually hands back on read: same content, keys sorted.
             prescription: sortKeysDeep(prescriptionAsConstructed),
             adherence: { respondedAt: null, followed: null, actualModality: null, actualDurationMin: null, skipped: false, notes: null },
         } as unknown as DailyRecommendation;
@@ -185,7 +200,6 @@ describe('RecommendationService persistence', () => {
 
         await new RecommendationService().saveRecommendation('athlete', '2026-08-07', recommendation);
 
-        // Unchanged decision -> single merge write, no revision bump, no archive batch.
         expect(firestore.batch.set).not.toHaveBeenCalled();
         expect(firestore.batch.commit).not.toHaveBeenCalled();
         expect(firestore.setDoc).toHaveBeenCalledOnce();
