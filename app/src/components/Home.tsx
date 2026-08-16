@@ -154,9 +154,6 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
           if (!existing || existing.actualVerdict) return;
           const persisted = resolved.recommendation as DailyRecommendation & { engineVerdict?: ShadowVerdict };
           const exactVerdict = persisted.engineVerdict ?? resolveEngineShadowVerdict(persisted.mode);
-          // `advisory` is explicitly a non-instruction. "I followed the recommendation"
-          // therefore cannot tell us which action actually happened on that day; asking the
-          // athlete to record the outcome is better than manufacturing one from a non-action.
           if (exactVerdict === 'advisory') return;
           return decisionJournalService.recordActualVerdict(userId, resolved.date, exactVerdict);
         })
@@ -297,7 +294,7 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
         const externalContext = activeExternal ? externalPlanContextForDate(activeExternal, input.date) : null;
 
         const baseRecommendation = await evaluateTrainingWithIntent(
-          userId, { subjective, objective }, context, events, input.date, yesterdayRec?.mode, undefined, preparedSnapshot,
+          userId, { subjective, objective, subjectiveBaseline: input.subjectiveBaseline }, context, events, input.date, yesterdayRec?.mode, undefined, preparedSnapshot,
           todayAndTomorrowFixedActivities, todayAndTomorrowPlanBlocks, input.trainingIntentProfile, input.preferences,
           'max', externalContext,
         );
