@@ -9,3 +9,7 @@
 ## 2026-08-15 - [Sequential Promises in React components]
 **Learning:** `loadDashboardData` originally awaited independent backend services sequentially, leading to an unnecessary dashboard load waterfall constraint.
 **Action:** Always scan for uncoupled `await` calls that can be grouped into a single `Promise.all` block. Especially when loading diverse domains of user data (like daily recommendations, fixed activities, and plan blocks) concurrently speeds up hydration without risking correctness.
+
+## 2026-08-16 - [O(n) Workout Lookups in Packing Algorithm]
+**Learning:** During weekly dose packing (`weeklyDosePacking.ts`), the algorithm repeatedly searched the `WORKOUTS` array using `WORKOUTS.find(...)` to locate workout definitions by their ID within inner loops (e.g., when checking `minimumDuration` or evaluating `permittedWorkoutIds`). This resulted in `O(n)` array scans on every iteration, creating an unnecessary performance bottleneck as the size of the workout catalog scales.
+**Action:** Precompute a `WORKOUTS_BY_ID` Map for `O(1)` access inside hot loops where frequent lookups are performed on static datasets, such as the `WORKOUTS` catalog.

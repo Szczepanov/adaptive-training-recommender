@@ -31,8 +31,13 @@ export const LEGACY_SESSION_COUNT_TIE_BREAKER = {
     6: { preferredSpacingDays: 1 },
 } as const;
 
+// ⚡ Bolt Performance Optimization:
+// Created a Map for O(1) workout lookups instead of O(n) array scans.
+// Expected Impact: Significantly speeds up minimum duration calculation and permitted workout filtering during weekly dose packing.
+const WORKOUTS_BY_ID = new Map(WORKOUTS.map(w => [w.id, w]));
+
 function minimumDuration(workoutIds: readonly string[]): number {
-    return Math.min(...workoutIds.map(id => WORKOUTS.find(workout => workout.id === id)?.duration.minimumMin ?? Number.POSITIVE_INFINITY));
+    return Math.min(...workoutIds.map(id => WORKOUTS_BY_ID.get(id)?.duration.minimumMin ?? Number.POSITIVE_INFINITY));
 }
 
 /** Exact adapter from the evergreen programming descriptor to the dose packer's
@@ -86,7 +91,7 @@ function desiredDose(requirement: AdaptationDoseRequirement): number {
 function permittedWorkoutIds(role: CoverageRoleDescriptor, requirement: AdaptationDoseRequirement): string[] {
     const permitted = new Set(requirement.substitutionPolicy.permittedModalities.map(modality => modality.toLowerCase()));
     return role.exactWorkoutIds.filter(workoutId => {
-        const modality = WORKOUTS.find(workout => workout.id === workoutId)?.modality;
+        const modality = WORKOUTS_BY_ID.get(workoutId)?.modality;
         if (!modality) return false;
         const canonical = modality === 'cross_training' ? 'other' : modality;
         return permitted.has(canonical);
