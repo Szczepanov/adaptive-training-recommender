@@ -7,6 +7,7 @@ import { Goals } from './components/Goals';
 import { TrainingSettings } from './components/TrainingSettings';
 import { Preferences } from './components/Preferences';
 import { DataView } from './components/DataView';
+import { ExternalPlanImport } from './components/ExternalPlanImport';
 import { decisionComposer } from './engine/composer';
 import type { DailyDecisionInput } from './engine/models';
 import type { Screen } from './types/navigation';
@@ -101,6 +102,17 @@ function App() {
         
         {screen === 'preferences' && (
           <Preferences userId={userId!} onNavigate={handleNavigate} />
+        )}
+
+        {screen === 'plan' && (
+          <ExternalPlanImport
+            userId={userId!}
+            onImported={() => {
+              // The imported plan changes what today's decision is made from, so the
+              // composed input has to be refetched rather than left stale behind the nav.
+              loadDecisionInput();
+            }}
+          />
         )}
       </main>
 

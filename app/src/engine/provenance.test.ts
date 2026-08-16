@@ -52,6 +52,39 @@ describe('recommendation provenance', () => {
         expect(JSON.stringify(audit)).not.toContain('This should never');
     });
 
+    it('carries external plan provenance verbatim, and omits the field entirely otherwise', () => {
+        const template = TEMPLATES.find(item => item.category === 'Rest');
+        if (!template) throw new Error('Test fixture requires a rest template');
+        const base: Recommendation = {
+            template,
+            mode: 'recover',
+            rationale: 'Adjudicated from an imported plan.',
+            envelopes: {
+                safety: { clinicalFlagActive: false, restrictedModalities: [] },
+                plan: { maxAllowableTier: 'Rest', taperActive: false },
+            },
+            decisionTrace: { policyVersion: POLICY_VERSION, candidateScores: [], droppedContributorObjectives: [] },
+        };
+        const snapshot = buildTrainingHistorySnapshot(
+            '2026-08-07', 7,
+            { status: 'AVAILABLE', revision: 'activities-r1', data: [] },
+            { status: 'AVAILABLE', revision: 'recommendations-r1', data: [] },
+            '2026-08-07T08:00:00Z',
+        );
+        const provenance = { planId: 'autumn-block', revision: 2, sessionId: 'w1-threshold', contentHash: 'abc123' };
+
+        const external = buildRecommendationAudit(
+            { ...base, decisionTrace: { ...base.decisionTrace!, externalPlan: provenance } },
+            snapshot, '2026-08-07T09:00:00Z',
+        );
+        expect(external!.externalPlan).toEqual(provenance);
+
+        // Absent rather than undefined: Firestore rejects an explicit undefined value, and
+        // an always-present key would make "was this external?" ambiguous on read.
+        const catalog = buildRecommendationAudit(base, snapshot, '2026-08-07T09:00:00Z');
+        expect(Object.keys(catalog!)).not.toContain('externalPlan');
+    });
+
     it('produces non-zero safetyRestrictedModalityCount in audit when an injury is active', () => {
         const template = TEMPLATES.find(item => item.category === 'Easy Endurance');
         if (!template) throw new Error('Test fixture requires an easy template');

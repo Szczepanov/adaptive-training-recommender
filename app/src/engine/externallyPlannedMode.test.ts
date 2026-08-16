@@ -1,11 +1,16 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+// Each case here runs the whole asynchronous decision pipeline, and the two that fall
+// through to the ranked path score the full catalog. That is several seconds on a loaded
+// machine, so the 5s default makes this file flaky rather than fast.
+vi.setConfig({ testTimeout: 30_000 });
 import { evaluateTrainingWithIntent, type ExternalPlanContext } from './rules';
 import { resolvePlanningContext } from './planningMode';
 import { evaluatePeriodizationPhase } from './periodization';
 import { isExternalTemplateId } from './externalSessionProfiles';
 import { validateTrainingIntentProfile } from './validation';
 import type {
-    DailyReadiness, EngineObjectiveInput, ExternalPlanSession,
+    AuthoredPlanBlock, DailyReadiness, EngineObjectiveInput, ExternalPlanSession,
     SubjectiveInput, TrainingIntentProfile, TrainingSettings, UserContext,
 } from './models';
 
@@ -59,7 +64,7 @@ function session(overrides: Partial<ExternalPlanSession> = {}): ExternalPlanSess
 }
 
 const externalPlan = (overrides: Partial<ExternalPlanSession> = {}): ExternalPlanContext =>
-    ({ planId: 'autumn-block', revision: 1, session: session(overrides) });
+    ({ planId: 'autumn-block', revision: 1, session: session(overrides), contentHash: 'hash-of-revision-1' });
 
 function profile(planningMode: TrainingIntentProfile['planningMode']): TrainingIntentProfile {
     return {
@@ -102,10 +107,14 @@ describe('resolvePlanningContext with externally_planned (D-EXT)', () => {
 });
 
 describe('evaluateTrainingWithIntent in externally_planned mode', () => {
-    async function evaluate(plan: ExternalPlanContext | null, r: DailyReadiness = readiness()) {
+    async function evaluate(
+        plan: ExternalPlanContext | null,
+        r: DailyReadiness = readiness(),
+        mode: TrainingIntentProfile['planningMode'] = 'externally_planned',
+    ) {
         return evaluateTrainingWithIntent(
             'u1', r, context(), [], DATE, undefined, undefined, null, [], [],
-            profile('externally_planned'), null, 'max', plan,
+            profile(mode), null, 'max', plan,
         );
     }
 
@@ -118,6 +127,10 @@ describe('evaluateTrainingWithIntent in externally_planned mode', () => {
             planId: 'autumn-block', revision: 1, sessionId: 'w1-threshold',
         });
         expect(recommendation.externalVerdict?.decision).toBe('proceed');
+        // Which revision bytes produced this, so replay can verify against the same ones.
+        expect(recommendation.decisionTrace?.externalPlan).toEqual({
+            planId: 'autumn-block', revision: 1, sessionId: 'w1-threshold', contentHash: 'hash-of-revision-1',
+        });
     });
 
     it('ranks nothing, so the audit records no candidate scores', async () => {
@@ -134,6 +147,8 @@ describe('evaluateTrainingWithIntent in externally_planned mode', () => {
         expect(isExternalTemplateId(recommendation.template.id)).toBe(false);
         expect(recommendation.template.category).toBe('Rest');
         expect(recommendation.mode).toBe('recover');
+        // An excluded day is still an external decision and stays replayable as one.
+        expect(recommendation.decisionTrace?.externalPlan?.sessionId).toBe('w1-threshold');
     });
 
     it('keeps an event actionable and advisory even on a hard readiness day', async () => {
@@ -154,5 +169,41 @@ describe('evaluateTrainingWithIntent in externally_planned mode', () => {
         expect(isExternalTemplateId(recommendation.template.id)).toBe(false);
         expect(recommendation.externalPrescription).toBeUndefined();
         expect(recommendation.decisionTrace?.candidateScores.length ?? 0).toBeGreaterThan(0);
+        expect(recommendation.decisionTrace?.externalPlan).toBeUndefined();
+    });
+
+    it('applies a travel block\'s dose reduction exactly once (D-NOTRAVEL)', async () => {
+        // Travel is an AuthoredPlanBlock, deliberately outside the import schema. The
+        // reduction happens in resolveTrainingIntent; the adjudicator consumes that dose and
+        // must not reduce again, or a travel day silently halves twice.
+        const travel: AuthoredPlanBlock = {
+            id: 'trip', userId: 'u1', phase: 'travel',
+            startDate: DATE, endDate: DATE, volumeScale: 0.5, intensityScale: 0.8,
+            createdAt: '', updatedAt: '',
+        };
+        const withTravel = await evaluateTrainingWithIntent(
+            'u1', readiness(), context(), [], DATE, undefined, undefined, null, [], [travel],
+            profile('externally_planned'), null, 'max', externalPlan(),
+        );
+        const withoutTravel = await evaluate(externalPlan());
+
+        expect(withTravel.plannedDose).toBeDefined();
+        expect(withoutTravel.plannedDose).toBeDefined();
+        // Exactly the block's own scale, applied to the untravelled dose. Applying it twice
+        // would give 0.25x; not at all would give 1x.
+        expect(withTravel.plannedDose!.volume)
+            .toBeCloseTo(withoutTravel.plannedDose!.volume * travel.volumeScale, 6);
+        expect(withTravel.executionDose!.volume)
+            .toBeCloseTo(Math.min(withTravel.plannedDose!.volume, withoutTravel.executionDose!.volume), 6);
+    });
+
+    it('ignores a supplied external session for an athlete who did not choose the mode', async () => {
+        // Placement is the caller's job, so a caller bug could hand an external session to an
+        // evergreen athlete. Suspending the engine on that would be a silent mode switch.
+        const recommendation = await evaluate(externalPlan(), readiness(), 'evergreen');
+
+        expect(recommendation.externalPrescription).toBeUndefined();
+        expect(recommendation.decisionTrace?.externalPlan).toBeUndefined();
+        expect(isExternalTemplateId(recommendation.template.id)).toBe(false);
     });
 });

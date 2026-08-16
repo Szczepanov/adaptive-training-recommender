@@ -1,0 +1,190 @@
+.external-week-card {
+  cursor: default;
+  margin-bottom: 2rem;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.external-week-card:hover {
+  transform: none;
+}
+
+.external-week-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.external-week-day {
+  display: grid;
+  grid-template-columns: 5.5rem 1fr;
+  gap: 0.6rem;
+  padding: 0.5rem 0.6rem;
+  border-radius: 8px;
+  border: 1px solid transparent;
+}
+
+.external-week-day.is-today {
+  background: rgba(96, 165, 250, 0.07);
+  border-color: rgba(96, 165, 250, 0.25);
+}
+
+.external-week-daylabel {
+  display: flex;
+  flex-direction: column;
+}
+
+.external-week-weekday {
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+.external-week-date {
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+}
+
+.external-week-daybody {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.external-week-empty {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.external-week-session {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.4rem 0.5rem;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.external-week-session.status-dropped,
+.external-week-session.status-superseded {
+  opacity: 0.5;
+  text-decoration: line-through;
+}
+
+.external-week-sessionbody {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+
+.external-week-title {
+  font-size: 0.88rem;
+  font-weight: 500;
+}
+
+.external-week-meta {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.external-week-missed-btn,
+.external-week-accept,
+.external-week-alt,
+.external-week-cancel,
+.external-week-daypicker button {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  color: inherit;
+  cursor: pointer;
+  font-size: 0.78rem;
+  padding: 0.3rem 0.6rem;
+}
+
+.external-week-missed-btn:hover,
+.external-week-accept:hover,
+.external-week-alt:hover,
+.external-week-cancel:hover,
+.external-week-daypicker button:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.external-week-accept {
+  border-color: rgba(52, 211, 153, 0.4);
+  color: #6ee7b7;
+}
+
+.external-week-finding {
+  margin: 0;
+  font-size: 0.79rem;
+  line-height: 1.45;
+  color: #fcd34d;
+}
+
+.external-week-review {
+  margin-top: 1rem;
+  padding: 0.75rem 0.85rem;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+}
+
+.external-week-review h4 {
+  margin: 0 0 0.4rem;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-secondary);
+}
+
+.external-week-review ul {
+  margin: 0;
+  padding-left: 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.85rem;
+  line-height: 1.45;
+}
+
+.external-week-review-caveat {
+  margin: 0.55rem 0 0;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+}
+
+.external-week-proposal {
+  margin-top: 1rem;
+  padding: 0.8rem 0.9rem;
+  border-radius: 8px;
+  background: rgba(251, 146, 60, 0.07);
+  border: 1px solid rgba(251, 146, 60, 0.25);
+}
+
+.external-week-proposal h4 {
+  margin: 0 0 0.35rem;
+  font-size: 0.9rem;
+}
+
+.external-week-proposal p {
+  margin: 0 0 0.6rem;
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
+.external-week-proposal-actions,
+.external-week-daypicker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.external-week-daypicker {
+  margin-top: 0.6rem;
+}

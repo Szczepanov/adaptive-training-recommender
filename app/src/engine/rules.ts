@@ -324,6 +324,9 @@ export interface ExternalPlanContext {
     planId: string;
     revision: number;
     session: ExternalPlanSession;
+    /** SHA-256 of the stored revision this session was read from (ADR-0019 D-IMMUT).
+     * Recorded on the decision audit so replay verifies against the same bytes. */
+    contentHash: string;
 }
 
 /**
@@ -339,7 +342,7 @@ function adjudicatedExternalRecommendation(
     intent: Awaited<ReturnType<typeof resolveTrainingIntent>>,
     date: string,
 ): Recommendation {
-    const { session, planId, revision } = externalPlan;
+    const { session, planId, revision, contentHash } = externalPlan;
     const verdict = adjudicateExternalSession(session, readiness, context, envelopeState, intent.plannedDose, date);
     const actionable = verdict.decision === 'proceed' || verdict.decision === 'scale' || verdict.decision === 'advisory';
 
@@ -369,6 +372,7 @@ function adjudicatedExternalRecommendation(
             // Nothing was ranked: the plan's author selected, this engine adjudicated.
             candidateScores: [],
             droppedContributorObjectives: intent.droppedContributorObjectives,
+            externalPlan: { planId, revision, sessionId: session.id, contentHash },
         },
     };
 }
@@ -397,7 +401,12 @@ export async function evaluateTrainingWithIntent(
     // ADR-0019 D-EXT: when an imported session is placed today, the plan's author owns
     // selection and this engine owns adjudication. Intent is still fully resolved above --
     // the weekly critique (8.7) consumes it, and the planned dose below comes from it.
-    if (externalPlan) {
+    // `externalFallback` is set by the authority exactly when the athlete selected
+    // externally_planned but no session was passed to it -- which is how resolveTrainingIntent
+    // resolves it, since placement is the caller's to do. Gating on it here means a caller
+    // that supplies an external session for an evergreen or event_directed athlete gets the
+    // normal ranked path, rather than silently suspending the engine (ADR-0017 D-MODE).
+    if (externalPlan && intent.planningContext.externalFallback) {
         return adjudicatedExternalRecommendation(externalPlan, readiness, context, envelopeState, intent, date);
     }
     const evergreen = resolveEvergreenPlan(

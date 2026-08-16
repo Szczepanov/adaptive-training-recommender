@@ -110,6 +110,14 @@ app/src/engine/
   injuryPolicy.ts      # Structured injury constraints & tissue-response tightening
   taperPolicy.ts       # Event taper window resolution
   safetyCheckin.ts     # Minimum-safety check-in gate & provisional recommendation
+  externalSession.ts   # Adjudicates ONE imported session on ONE day (ADR-0019). Pure;
+                       #   selects and ranks nothing, and no selection module may import it
+  externalSessionProfiles.ts # Imported session -> cost/stimulus/GateableSession/`ext:` shim
+  externalPlacement.ts # Imported plan -> dates; missed-session proposals (never writes
+                       #   without confirmation)
+  externalCritique.ts  # Advisory weekly review of a placed plan week. Cannot change a
+                       #   verdict, and cannot import externalSession.ts (D-CRITIQUE)
+  externalPlanHash.ts  # Canonical SHA-256 of a stored revision; the replay anchor (D-IMMUT)
   sequenceSearch.ts    # Phase 5.1 beam-search prototype -- measured, NOT in any live path
   simulation/          # Scenario harness: runAllScenarios, decision-quality metrics
 ```

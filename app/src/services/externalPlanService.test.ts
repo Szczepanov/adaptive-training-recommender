@@ -89,6 +89,23 @@ describe('ExternalPlanService', () => {
         );
     });
 
+    it('supersedes forward only, touching nothing a previously adjudicated day depends on', async () => {
+        firestore.getDoc.mockResolvedValue({ exists: () => true, data: () => ({ revision: 1 }) });
+
+        const result = await new ExternalPlanService().import('u1', plan({ revision: 2 }), '2026-08-20');
+        expect(result.status).toBe('AVAILABLE');
+
+        // Two writes, both additive: the new revision and the header pointer. Nothing under
+        // recommendations/ and no earlier revision is rewritten, so yesterday's persisted
+        // recommendation and its audit are byte-identical after this import.
+        expect(writtenPaths()).toEqual([
+            'users/u1/external_plans/autumn-block/revisions/2',
+            'users/u1/external_plans/autumn-block',
+        ]);
+        expect(writtenPaths().some(path => path.includes('/recommendations/'))).toBe(false);
+        expect(writtenPaths().some(path => path.endsWith('/revisions/1'))).toBe(false);
+    });
+
     it('re-validates a stored revision on read instead of trusting it', async () => {
         firestore.getDoc.mockResolvedValue({ exists: () => true, data: () => plan({ startDate: '2026-08-18' }) });
 

@@ -39,6 +39,32 @@ ENRICHED_TEMPLATES → eligibility → envelope + mode ceilings → phase eligib
 
 Asynchronous; resolves training intent from completed/adherence history first. Path B consumes `evaluateReadinessAndSafetyEnvelope` to obtain `mode`, `envelopes`, and `telemetry` directly, sharing the exact readiness calculation with Path A without running a discarded template selection (F9 resolved under ADR-0012).
 
+### Not a third selection path — adjudication (`externalSession.ts`, ADR-0019)
+
+`externally_planned` mode adds a second *entry point*, not a third selection path. The
+plan's author has already selected; the engine only adjudicates:
+
+```text
+placed imported session → GateableSession → same clinical/feasibility/ceiling/dose ladder
+                        → proceed | scale | defer | skip | advisory
+```
+
+Nothing is ranked, and `Recommendation.decisionTrace.candidateScores` is empty by
+construction. The authority ordering below is unchanged and gains no step — an imported
+session clears exactly the gates a catalog template clears, through the same
+`evaluateTemplateEligibility` and `resolveExecutionDose` calls, because
+`eligibility.ts` was widened to `GateableSession` rather than given a parallel path
+(D-CANDIDATE).
+
+Two short-circuits sit above the ladder: an `isEvent` session is always `advisory`
+(D-EVENT), and a `reducible: false` session defers instead of scaling (D-IRREDUCIBLE).
+
+`externalCritique.ts` reviews the placed week using the *selection* modules
+(`microcycle.ts`, `planner.ts`, `optimizer.ts`) and emits advisory findings only. It
+cannot import `externalSession.ts`, and `externalArchitecture.test.ts` enforces both that
+boundary and the absence of any runtime import from `optimizer.ts`/`planner.ts` into
+adjudication.
+
 ---
 
 ## Planning authority and coverage sets (`planningMode.ts`, `evergreenPlanning.ts`)
@@ -47,6 +73,11 @@ Asynchronous; resolves training intent from completed/adherence history first. P
 `TrainingIntentProfile` supplies the athlete-owned mode, ordered priorities, and weekly
 minimum/typical/maximum session commitment; `UserPreferences` remains the owner of
 weekday/weekend duration and hard unavailable modalities.
+
+`externally_planned` is effective only when the athlete selected it **and** a session is
+actually placed on the date. Choosing the mode does not by itself suspend the engine: an
+unplanned day resolves to `evergreen` with `externalFallback: true`, which the caller must
+label rather than present as an ordinary pick (ADR-0019 D-EXT).
 
 An eligible event remains event-directed for profile-less athletes, preserving the legacy
 path. An explicit `event_directed` profile uses an eligible event when present. Otherwise
@@ -548,6 +579,13 @@ because additive increases recovery and objective misses without a safety benefi
 ### Recommendation decision replay (`replay:recommendation`)
 Executed via `cd app && npm run replay:recommendation -- <audit.json>`. Accepts a JSON snapshot of a historical recommendation and passes it into `replayRecommendationAudit()` ([`app/src/engine/replay.ts`](../../app/src/engine/replay.ts)). The current policy version can be verified for reproducibility. Known historical policy versions remain auditable but are explicitly rejected as executable replay unless that historical decision function is bundled in a future build.
 
+An external decision (ADR-0019) ranked nothing, so the highest-utility check does not apply
+to it. Instead it is verified against the plan revision its audit names: pass the stored
+revision as a second argument (`-- <audit.json> <revision.json>`) and the script recomputes
+its SHA-256 through `externalPlanHash.ts`. Without the revision the decision is reported as
+**not reproducible** rather than quietly passing, and a revision whose content has changed
+under the same revision number fails with an explicit hash-mismatch reason (D-IMMUT).
+
 ### Sequence-search comparison (`compare:sequence-search`)
 Executed via `cd app && npm run compare:sequence-search`. Runs every scenario through both the production greedy planner and the Phase 5.1 beam-search prototype ([`app/src/engine/sequenceSearch.ts`](../../app/src/engine/sequenceSearch.ts)) using the identical `runScenario` harness, and reports the comparison (rest-day share, constraint violations, golden-week invariants, per-scenario deltas, timing). Outputs `comparison.json` to `app/artifacts/sequence-search-comparison/` (gitignored, regenerable). See [ADR-0015](../adr/0015-sequence-planning-and-session-role-model.md).
 
@@ -565,6 +603,8 @@ Executed via `cd app && npm run compare:sequence-search`. Runs every scenario th
 | [0011](../adr/0011-weekly-architecture-anchors.md) | Weekly anchors and ranking modifiers |
 | [0012](../adr/0012-plan-intent-authority.md) | Explicit plan authority and plan-side intent ownership |
 | [0014](../adr/0014-objective-credit-v2-and-honest-load.md) | Fractional credit V2, honest load, projected credit and fusion evidence |
+| [0017](../adr/0017-training-intent-profile-and-planning-modes.md) | `planningMode.ts` as the sole planning-mode authority |
+| [0019](../adr/0019-externally-authored-plans-and-session-adjudication.md) | Externally-authored plans, session adjudication, placement, critique and replay |
 
 Known divergences between these decisions and the code are tracked in
 [the 2026-08-08 review](../analysis/2026-08-08-architecture-review.md); remediation is

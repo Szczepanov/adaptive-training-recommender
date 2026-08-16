@@ -713,6 +713,9 @@ export interface Recommendation {
          *  periodization.ts resolveMultiEventObjectives. Empty in the overwhelmingly
          *  common single-or-no-event case. */
         droppedContributorObjectives: DroppedContributorObjective[];
+        /** Present exactly when an imported session was adjudicated. Carried to the
+         * persisted audit unchanged so replay can name the revision it must verify. */
+        externalPlan?: ExternalDecisionProvenance;
         /** Compact simulator-only evidence. It excludes raw wearable payloads and
          * check-in text; provenance.ts does not persist it in RecommendationAudit. */
         calibration?: {
@@ -1290,6 +1293,22 @@ export interface RecommendationAudit {
      *  DroppedContributorObjective's own doc comment. Empty in the overwhelmingly common
      *  single-or-no-event case. */
     droppedContributorObjectives: DroppedContributorObjective[];
+    /** Present exactly when the decision adjudicated an imported session (ADR-0019). */
+    externalPlan?: ExternalDecisionProvenance;
+}
+
+/**
+ * Identifies the exact stored bytes an external decision was made from (ADR-0019 D-IMMUT).
+ *
+ * `contentHash` is what makes the record falsifiable: a plan re-imported under the same
+ * `revision` number produces a different hash, so replay can refuse it instead of
+ * reproducing a decision against content that has quietly changed underneath it.
+ */
+export interface ExternalDecisionProvenance {
+    planId: string;
+    revision: number;
+    sessionId: string;
+    contentHash: string;
 }
 
 // --- Type Utilities ---

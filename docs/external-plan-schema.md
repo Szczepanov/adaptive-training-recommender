@@ -1,11 +1,11 @@
 # External training plan — import schema and scheduling model
 
-> **Status: proposed contract. Nothing in this document is implemented yet.**
-> It is the design input for the `externally_planned` planning mode assessed in
-> [`analysis/2026-08-15-externally-authored-plan-feasibility.md`](./analysis/2026-08-15-externally-authored-plan-feasibility.md).
-> Field names, storage paths, and validation rules are proposals for review, not a
-> description of current behaviour. Do not implement against this document until it is
-> accepted and a plan exists in [`plans/`](./plans/).
+> **Status: implemented contract.** Accepted in
+> [ADR-0019](./adr/0019-externally-authored-plans-and-session-adjudication.md) and built in
+> [Phase 8](./plans/phase-8-externally-planned-mode.md). Field names, storage paths, and
+> validation rules below describe current behaviour; `app/src/engine/validation.ts`
+> `validateExternalTrainingPlan` is the enforcing authority, and where the two disagree the
+> code wins. The round-trip against a real generated plan required no schema change.
 
 The athlete authors a training plan with a general-purpose AI, which emits JSON against
 the schema below. This application imports it, validates it at the persistence boundary,

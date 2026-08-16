@@ -23,7 +23,7 @@ export interface PlacedSession {
 /** A session still holds its date unless it was dropped or superseded. `moved` is what
  * `applyConfirmedProposal` writes for a reschedule, so treating only `planned` as
  * occupying would let the next flexible session stack on top of a session just moved. */
-function occupiesDate(status: ExternalPlacementAssignment['status']): boolean {
+export function occupiesDate(status: ExternalPlacementAssignment['status']): boolean {
     return status !== 'dropped' && status !== 'superseded';
 }
 

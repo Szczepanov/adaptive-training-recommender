@@ -2,14 +2,14 @@ import { useState, useEffect, useCallback, useMemo, useRef, memo } from 'react';
 import { decisionComposer } from '../engine/composer';
 import { evaluateTrainingWithIntent, evaluateNextDayPlanWithIntent, adjustSessionRecommendation } from '../engine/rules';
 import { mapSnapshotToEngineInput, mapCheckinToSubjectiveInput, mapContextFromGoalsAndTrainingSettings, mapGoalsToUserEvents } from '../engine/adapters';
-import { generateWeekAheadPlanWithIntent, type WeekAheadPlan } from '../engine/planner';
+import { generateWeekAheadPlanWithIntent, trailingHistoryFromCompletedExposures, type WeekAheadPlan } from '../engine/planner';
 import { prepareTrainingHistorySnapshot } from '../engine/trainingIntent';
 import type { TrainingHistorySnapshot } from '../engine/trainingHistorySnapshot';
 import { buildRecommendationAudit } from '../engine/provenance';
 import { evaluatePeriodizationPhase, getDaysToEvent } from '../engine/periodization';
 import { resolvePlanningContext } from '../engine/planningMode';
 import { resolveExecutionDose } from '../engine/dose';
-import type { AuthoredPlanBlock, DailyDecisionInput, Recommendation, NextDayPotentialPlan, DailyRecommendation, FixedActivity } from '../engine/models';
+import type { AuthoredPlanBlock, DailyDecisionInput, Recommendation, NextDayPotentialPlan, DailyRecommendation, ExternalPlacementAssignment, ExternalPlanPlacement, FixedActivity } from '../engine/models';
 import type { DataState } from '../engine/dataState';
 import { recommendationService } from '../services/recommendationService';
 import { fixedActivityService } from '../services/fixedActivityService';
@@ -17,6 +17,18 @@ import { planBlockService } from '../services/planBlockService';
 import { getPreviousLocalDateString, addDaysToLocalDateString } from '../utils/localDate';
 import { getPrescriptionLegend, resolveWorkoutPrescription } from '../workouts';
 import type { WorkoutPrescription } from '../workouts';
+import { resolveTrainingIntent } from '../engine/trainingIntent';
+import { computeInternalResponseStrain } from '../engine/fatigue';
+import { critiqueExternalWeek, type ExternalWeekCritique } from '../engine/externalCritique';
+import { applyConfirmedProposal, proposeReplacement, type ReplacementProposal } from '../engine/externalPlacement';
+import {
+  activeExternalPlanService,
+  externalPlanContextForDate,
+  type ActiveExternalPlan,
+} from '../services/activeExternalPlanService';
+import { externalPlanService } from '../services/externalPlanService';
+import { ExternalVerdictBanner } from './ExternalVerdictBanner';
+import { ExternalPlanWeek } from './ExternalPlanWeek';
 import { AdherencePrompt } from './AdherencePrompt';
 import { MinimumSafetyCheckin } from './MinimumSafetyCheckin';
 import { WeekAheadStrip } from './WeekAheadStrip';
@@ -38,6 +50,13 @@ const MODE_LABELS: Record<Recommendation['mode'], string> = {
   modify: 'Reduced load',
   recover: 'Recovery day',
 };
+
+/** Monday of the week containing `date`. Plan weeks are Monday-start by contract, and the
+ * critique reviews one plan week at a time. */
+function mondayOf(date: string): string {
+  const weekday = new Date(`${date}T00:00:00Z`).getUTCDay();
+  return addDaysToLocalDateString(date, -((weekday + 6) % 7));
+}
 
 function formatEventTiming(daysToEvent: number | null): string {
   if (daysToEvent === 0) return 'Today';
@@ -117,6 +136,8 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
   const [showWorkoutDetails, setShowWorkoutDetails] = useState(false);
   const [pendingAdherence, setPendingAdherence] = useState<{ date: string; recommendation: DailyRecommendation } | null>(null);
   const [historySnapshot, setHistorySnapshot] = useState<TrainingHistorySnapshot | null>(null);
+  const [activeExternalPlan, setActiveExternalPlan] = useState<ActiveExternalPlan | null>(null);
+  const [externalWeekCritique, setExternalWeekCritique] = useState<ExternalWeekCritique | null>(null);
   // ⚡ Bolt Performance Optimization:
   // Memoized callback to prevent passing new function references to AdherencePrompt on every render.
   // Expected Impact: Ensures React.memo on AdherencePrompt works as intended.
@@ -242,9 +263,26 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
           throw new Error('A revisioned training history snapshot is required for a normal recommendation.');
         }
         setHistorySnapshot(preparedSnapshot);
+
+        // ADR-0019: an imported plan owns selection on the days it covers. Resolved before
+        // the decision so the same placement drives today's adjudication and the week view.
+        const activeExternalState = await activeExternalPlanService.getActivePlanState(
+          userId, input.date, todayAndTomorrowFixedActivities,
+        );
+        if (!isCurrent()) return;
+        const activeExternal = activeExternalState.status === 'AVAILABLE' ? activeExternalState.data : null;
+        setActiveExternalPlan(activeExternal);
+        if (activeExternalState.status === 'INVALID' || activeExternalState.status === 'UNAVAILABLE') {
+          // Not fatal to the day -- the engine still recommends -- but the athlete must know
+          // their plan was not consulted rather than silently seeing a catalog pick.
+          console.warn(`External plan could not be read (${activeExternalState.status}); today falls back to the ranked path.`);
+        }
+        const externalContext = activeExternal ? externalPlanContextForDate(activeExternal, input.date) : null;
+
         const baseRecommendation = await evaluateTrainingWithIntent(
           userId, { subjective, objective }, context, events, input.date, yesterdayRec?.mode, undefined, preparedSnapshot,
           todayAndTomorrowFixedActivities, todayAndTomorrowPlanBlocks, input.trainingIntentProfile, input.preferences,
+          'max', externalContext,
         );
         if (!isCurrent()) return;
         const recommendationWithPrescription = {
@@ -256,6 +294,31 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
           recommendationAudit: buildRecommendationAudit(recommendationWithPrescription, preparedSnapshot) ?? undefined,
         };
         setRecommendation(todayRec);
+
+        // Weekly critique (ADR-0019 D-CRITIQUE): advisory review of the placed week, built
+        // from the same intent the decision above used. It cannot alter a verdict.
+        if (activeExternal) {
+          const intent = await resolveTrainingIntent(
+            userId, events, input.date, { subjective, objective }, 7, undefined, preparedSnapshot,
+            todayAndTomorrowPlanBlocks, input.trainingIntentProfile,
+          );
+          if (!isCurrent()) return;
+          setExternalWeekCritique(critiqueExternalWeek({
+            weekStartDate: mondayOf(input.date),
+            planId: activeExternal.plan.planId,
+            revision: activeExternal.plan.revision,
+            placed: activeExternal.placed,
+            microcycle: intent.microcycle,
+            fatigue: intent.fatigue,
+            internalStrain: computeInternalResponseStrain({ subjective, objective }),
+            internalStrainAsOf: input.date,
+            weeklyCommitment: intent.planningContext.profile.weeklyCommitment,
+            trailingHistory: trailingHistoryFromCompletedExposures(intent.history, input.date),
+            fixedActivities: todayAndTomorrowFixedActivities,
+          }));
+        } else {
+          setExternalWeekCritique(null);
+        }
 
         const tomorrowPlan = await evaluateNextDayPlanWithIntent(
           userId, events, { subjective, objective }, forecastContext, input.date, todayRec, undefined, preparedSnapshot,
@@ -431,6 +494,45 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
     () => (fixedActivitiesState.status === 'AVAILABLE' ? fixedActivitiesState.data : []),
     [fixedActivitiesState]
   );
+
+  // Placement writes for an imported plan. `proposeReplacement` only ever returns a
+  // proposal; this is the single path from a *confirmed* proposal to a stored overlay, and
+  // nothing here re-ranks or substitutes -- selection belongs to the plan's author.
+  const handleProposeReplacement = useCallback((sessionId: string, missedDate: string): ReplacementProposal => {
+    if (!activeExternalPlan) throw new Error('No imported plan is active.');
+    return proposeReplacement(
+      activeExternalPlan.plan, activeExternalPlan.placement, sessionId, missedDate,
+      { fixedActivities },
+    );
+  }, [activeExternalPlan, fixedActivities]);
+
+  const persistAssignments = useCallback(async (assignments: ExternalPlacementAssignment[]) => {
+    if (!activeExternalPlan) return;
+    await externalPlanService.savePlacement(userId, {
+      planId: activeExternalPlan.plan.planId,
+      revision: activeExternalPlan.plan.revision,
+      assignments,
+    });
+    await loadDashboardData();
+  }, [activeExternalPlan, userId, loadDashboardData]);
+
+  const handleConfirmReplacement = useCallback(async (proposal: ReplacementProposal) => {
+    if (!activeExternalPlan) return;
+    const overlay: ExternalPlanPlacement = activeExternalPlan.placement ?? {
+      userId, planId: activeExternalPlan.plan.planId, revision: activeExternalPlan.plan.revision,
+      assignments: [], updatedAt: '',
+    };
+    await persistAssignments(applyConfirmedProposal(overlay, proposal).assignments);
+  }, [activeExternalPlan, userId, persistAssignments]);
+
+  const handleChooseDate = useCallback(async (sessionId: string, date: string) => {
+    if (!activeExternalPlan) return;
+    const existing = activeExternalPlan.placement?.assignments ?? [];
+    await persistAssignments([
+      ...existing.filter(item => item.sessionId !== sessionId),
+      { sessionId, date, status: 'moved' },
+    ]);
+  }, [activeExternalPlan, persistAssignments]);
   const [planBlocksState, setPlanBlocksState] = useState<DataState<AuthoredPlanBlock[]>>({ status: 'AVAILABLE', data: [], revision: null });
   useEffect(() => {
     let cancelled = false;
@@ -558,6 +660,12 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
             </div>
             {activeRec ? (
               <div className="recommendation-content">
+                {activeRec.externalPrescription && activeRec.externalVerdict && (
+                  <ExternalVerdictBanner
+                    prescription={activeRec.externalPrescription}
+                    verdict={activeRec.externalVerdict}
+                  />
+                )}
                 <h4 className="recommendation-title">
                   {activeRec.template.title}
                   {activeRec.activeDose && (
@@ -656,6 +764,20 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
               </p>
             )}
           </div>
+
+          {/* Imported plan: the placed week and the engine's advisory review of it */}
+          {activeExternalPlan && decisionInput && (
+            <ExternalPlanWeek
+              planTitle={activeExternalPlan.plan.title}
+              weekStartDate={mondayOf(decisionInput.date)}
+              placed={activeExternalPlan.placed}
+              critique={externalWeekCritique}
+              today={decisionInput.date}
+              onProposeReplacement={handleProposeReplacement}
+              onConfirmReplacement={handleConfirmReplacement}
+              onChooseDate={handleChooseDate}
+            />
+          )}
 
           {/* Rolling 7-Day Forecast */}
           <WeekAheadStrip

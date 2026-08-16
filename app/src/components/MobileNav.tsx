@@ -92,7 +92,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({ screen, handleNavigate, lo
 
         <button
           ref={mobileMoreBtnRef}
-          className={`nav-item ${['constraints', 'preferences', 'data'].includes(screen) ? 'active' : ''}`}
+          className={`nav-item ${['constraints', 'preferences', 'data', 'plan'].includes(screen) ? 'active' : ''}`}
           onClick={() => setMobileMoreOpen((isOpen) => !isOpen)}
           aria-expanded={mobileMoreOpen}
           aria-haspopup="dialog"
@@ -121,6 +121,17 @@ export const MobileNav: React.FC<MobileNavProps> = ({ screen, handleNavigate, lo
                 <div className="item-text">
                   <span className="item-title">Detailed Data</span>
                   <span className="item-sub">View analytics and snapshot telemetry</span>
+                </div>
+              </button>
+
+              <button
+                className={`drawer-item ${screen === 'plan' ? 'active' : ''}`}
+                onClick={() => handleNavigate('plan')}
+              >
+                <span className="item-icon">📋</span>
+                <div className="item-text">
+                  <span className="item-title">Import Training Plan</span>
+                  <span className="item-sub">Paste a plan authored outside this app</span>
                 </div>
               </button>
 

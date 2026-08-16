@@ -83,7 +83,7 @@ export const Header: React.FC<HeaderProps> = ({ screen, handleNavigate, loadDeci
 
           <div className="more-menu-container" ref={desktopSettingsRef}>
             <button
-              className={`nav-link more-btn ${['constraints', 'preferences'].includes(screen) ? 'active' : ''}`}
+              className={`nav-link more-btn ${['constraints', 'preferences', 'plan'].includes(screen) ? 'active' : ''}`}
               onClick={() => setDesktopSettingsOpen((isOpen) => !isOpen)}
               aria-expanded={desktopSettingsOpen}
               aria-haspopup="menu"
@@ -94,6 +94,13 @@ export const Header: React.FC<HeaderProps> = ({ screen, handleNavigate, loadDeci
 
             {desktopSettingsOpen && (
               <div className="dropdown-menu" role="menu" aria-label="Settings">
+                <button
+                  className={`dropdown-item ${screen === 'plan' ? 'active' : ''}`}
+                  onClick={() => handleNavigate('plan')}
+                  role="menuitem"
+                >
+                  <span className="item-icon">📋</span> Import Training Plan
+                </button>
                 <button
                   className={`dropdown-item ${screen === 'constraints' ? 'active' : ''}`}
                   onClick={() => handleNavigate('constraints')}

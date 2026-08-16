@@ -72,7 +72,7 @@ all-`Ready` table became unusable.
 | 6.2c | [Recommendation quality & weekly coverage](./phase-6-2c-recommendation-quality-and-weekly-coverage.md) | **Implemented** | none | none | separates adaptation credit from weekly programming-role coverage; not an original review finding |
 | 7A | [Weekly allocation & safe role reservations](./phase-7-weekly-allocation-and-role-reservations.md) | **Implemented** | none | none | resolves PR #17's healthy/fresh cycling role-coverage failure without recalibrating recovery |
 | 7B | [Training intent, capacity & planning modes](./phase-7-training-intent-and-planning-modes.md) | **Implemented** | none | none | evidence-derived Evergreen dose packed into real capacity, while preserving structured and demand-derived event planning — not an original review finding |
-| 8 | [Externally-planned mode](./phase-8-externally-planned-mode.md) | **Draft** | 8.2 only | ADR-0019 acceptance; schema round-trip precondition | imports an externally-authored plan and narrows the engine to per-session adjudication plus weekly critique — not an original review finding |
+| 8 | [Externally-planned mode](./phase-8-externally-planned-mode.md) | **Implemented** | — | — | imports an externally-authored plan and narrows the engine to per-session adjudication plus weekly critique — not an original review finding |
 | 9 | [Subjective baselines in readiness mode](./phase-9-subjective-baselines.md) | **Draft** | 9.5 only | ADR-0020 acceptance | self-normalises subjective scores as a tighten-only drift term, measured behind a default-off selector before any ship decision — not an original review finding |
 
 Phases 0–6 are implemented. Phase 6 delivered explicit scenario evidence, calibration
