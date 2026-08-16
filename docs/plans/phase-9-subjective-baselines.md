@@ -1,7 +1,10 @@
 # Phase 9: Subjective baselines in readiness mode
 
-* **Status:** Draft
-* **Blocked by:** [ADR-0020](../adr/0020-subjective-baselines-in-readiness-mode.md) acceptance
+* **Status:** In progress. ADR-0020 is Accepted; 9.5, 9.1 and 9.2 are done. 9.3/9.4/9.6/9.7
+  each still wait on an earlier item in this same plan, and 9.8 additionally needs Phase
+  9.0's prospective evidence.
+* **Blocked by:** nothing at the plan level. Individual work items list their own blockers
+  in the task board below.
 * **Strongly preceded by:** [Phase 9.0](./phase-9-0-shadow-mode-and-decision-journal.md) — its shadow block supplies the prospective evidence required before a production ship decision
 * **Unlocks:** a decision on whether adverse within-athlete subjective drift belongs in the mode gate at all
 * **Decisions:** ADR-0020 (D-SUBJHIST, D-SUBJDRIFT, D-SUBJADD, D-SUBJFLOOR, D-SUBJCOV, D-SUBJEST, D-SUBJPURE, D-SUBJANCHOR, D-SUBJCAL, D-SUBJAUDIT)
@@ -50,7 +53,7 @@ Synthetic fixtures may reject the idea. They may not, by themselves, authorize s
 
 ## Work items
 
-### 9.1 Subjective baseline computation `[ ]`
+### 9.1 Subjective baseline computation `[x]`
 
 **Current behaviour.** Nothing baselines subjective data. `mapCheckinToSubjectiveInput`
 maps one day's check-in to `SubjectiveInput` and nothing else reads prior check-in history.
@@ -117,9 +120,24 @@ partial safety-only check-ins cannot inflate either coverage count; zero-varianc
 bounded by the policy floor; and either insufficient recent or insufficient long coverage
 returns `null`.
 
+**Implementation note.** `engine/subjectiveBaseline.ts` implements exactly this contract:
+`SubjectiveBaselinePolicy`, `REFERENCE_SUBJECTIVE_BASELINE_POLICY` (7/28 windows, 1.0
+variability floor, 2.0 cap matching `STRAIN_Z_CAP` -- documented as a reference candidate,
+not an invariant, per D-SUBJEST), and `computeSubjectiveBaseline`. Coverage is deduplicated
+by date via a `Map`, counted separately for the recent and long windows, and both windows
+independently gate on `dataQuality.isComplete` so a partial minimum-safety check-in cannot
+mature either count. `historyThroughDateExclusive` restates the exclusive boundary on the
+output so a consumer never has to re-derive it. `minRecentRecordedDays`/`minLongRecordedDays`
+reuse `contextBrief.ts`'s existing ~36% coverage ratio (`SUBJECTIVE_BASELINE_MIN_DAYS` /
+`SUBJECTIVE_BASELINE_DAYS`) as a starting point, duplicated rather than imported so this
+module -- which sits on the decision path once 9.2/9.3 land -- carries no dependency on the
+brief renderer. Not yet wired anywhere: `DailyReadiness` has no `subjectiveBaseline` field
+(9.2), nothing calls this from the composition boundary (9.4), and there is no drift term to
+consume it (9.3) -- `subjectiveBaseline.test.ts` exercises it standalone.
+
 ---
 
-### 9.2 Carry the baseline on `DailyReadiness` `[ ]`
+### 9.2 Carry the baseline on `DailyReadiness` `[x]`
 
 **Current behaviour.** `DailyReadiness` is `{ subjective, objective }`. Objective baselines
 arrive precomputed on `DailyRecoverySnapshot.derived`; subjective history has no equivalent.
@@ -132,6 +150,18 @@ or Firestore read (D-SUBJPURE).
 
 **Done when** the field exists, is optional, and the evaluator's purity/synchronous contract
 is otherwise unchanged.
+
+**Implementation note.** `DailyReadiness.subjectiveBaseline?: SubjectiveBaseline | null`
+added in `models.ts`. `rules.ts` itself is untouched -- `evaluateReadinessAndSafetyEnvelope`
+does not read the field yet, so `check-policy-drift.mjs` stays clean without a
+`POLICY_VERSION` bump. `rules.test.ts` proves the field is genuinely inert: attaching a
+deliberately worst-case-adverse fixture baseline to a `DailyReadiness` produces
+byte-identical output from `evaluateReadinessAndSafetyEnvelope` across the train/modify/
+recover mode bands, and the function's result is asserted non-`Promise` (still synchronous,
+D-SUBJPURE). `models.ts` importing the `SubjectiveBaseline` type from
+`subjectiveBaseline.ts` (which itself imports `DailySubjectiveCheckin` from `models.ts`) is
+a type-only cycle, erased entirely at compile time -- no runtime import edge, so it does not
+affect 9.0.6's import-graph guard or `check-policy-drift.mjs`'s file list.
 
 ---
 
@@ -379,11 +409,11 @@ make two different live policies share an identity.
 
 ## Docs to update
 
-- [ ] ADR-0020 → `Accepted` before starting 9.1–9.4/9.6–9.7; final outcome recorded at 9.8.
+- [x] ADR-0020 → `Accepted` before starting 9.1–9.4/9.6–9.7; final outcome recorded at 9.8.
 - [ ] `architecture/recommendation-engine.md` — mode-selection formula gains the optional adverse subjective-drift component if shipped.
-- [ ] `AGENTS.md` — engine map gains `subjectiveBaseline.ts` once implemented.
-- [ ] `plans/README.md` — decision-register rows once ADR-0020 is accepted.
-- [ ] `docs/README.md` — index row.
+- [x] `AGENTS.md` — engine map gains `subjectiveBaseline.ts` once implemented.
+- [x] `plans/README.md` — decision-register rows once ADR-0020 is accepted.
+- [x] `docs/README.md` — index row.
 
 ---
 
@@ -391,8 +421,8 @@ make two different live policies share an identity.
 
 | # | Task | Status | Blocked by |
 |---|---|:--:|---|
-| 9.1 | Subjective baseline computation | `[ ]` | ADR-0020 |
-| 9.2 | Carry the baseline on `DailyReadiness` | `[ ]` | 9.1 |
+| 9.1 | Subjective baseline computation | `[x]` | ADR-0020 |
+| 9.2 | Carry the baseline on `DailyReadiness` | `[x]` | 9.1 |
 | 9.3 | Drift term behind a default-off selector | `[ ]` | 9.2 |
 | 9.4 | Composition boundary supplies the baseline | `[ ]` | 9.2 |
 | 9.5 | Scenario corpus subjective variance | `[x]` | — |

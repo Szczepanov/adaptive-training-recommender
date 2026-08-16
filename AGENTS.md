@@ -121,6 +121,7 @@ app/src/engine/
   sequenceSearch.ts    # Phase 5.1 beam-search prototype -- measured, NOT in any live path
   shadowAgreement.ts   # Phase 9.0: pure engine-vs-athlete verdict classifier (evidence only)
   shadowLog.ts         # Phase 9.0: pure day-row joiner + CSV renderer for the export (evidence only)
+  subjectiveBaseline.ts # Phase 9.1: pure recent-vs-long subjective baseline (not yet wired into rules.ts)
   simulation/          # Scenario harness: runAllScenarios, decision-quality metrics
 ```
 
