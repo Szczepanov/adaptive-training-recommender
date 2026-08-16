@@ -9,6 +9,7 @@ const services = vi.hoisted(() => ({
     peekTrainingSettingsState: vi.fn(),
     getPreferencesState: vi.fn(),
     getProfileState: vi.fn(),
+    getActiveGoalsState: vi.fn(),
 }));
 
 vi.mock('./recoverySnapshotService', () => ({ recoverySnapshotService: { getRecoverySnapshotState: services.getRecoverySnapshotState } }));
@@ -21,6 +22,7 @@ vi.mock('./trainingSettingsService', () => ({ trainingSettingsService: {
 } }));
 vi.mock('./preferencesService', () => ({ preferencesService: { getPreferencesState: services.getPreferencesState } }));
 vi.mock('./trainingIntentProfileService', () => ({ trainingIntentProfileService: { getProfileState: services.getProfileState } }));
+vi.mock('./goalService', () => ({ goalService: { getActiveGoalsState: services.getActiveGoalsState } }));
 
 import { ContextBriefService } from './contextBriefService';
 
@@ -37,6 +39,7 @@ describe('ContextBriefService', () => {
         services.peekTrainingSettingsState.mockResolvedValue({ status: 'MISSING' });
         services.getPreferencesState.mockResolvedValue({ status: 'MISSING' });
         services.getProfileState.mockResolvedValue({ status: 'MISSING' });
+        services.getActiveGoalsState.mockResolvedValue({ status: 'MISSING' });
     });
 
     it('reads check-ins over a date range covering the full baseline, not just the window', async () => {
@@ -97,6 +100,7 @@ describe('ContextBriefService', () => {
         services.peekTrainingSettingsState.mockRejectedValue(new Error('offline'));
         services.getPreferencesState.mockRejectedValue(new Error('offline'));
         services.getProfileState.mockRejectedValue(new Error('offline'));
+        services.getActiveGoalsState.mockRejectedValue(new Error('offline'));
 
         const result = await new ContextBriefService().build('u1', AS_OF, 14);
         expect(result.text).toContain('# Training context brief');
