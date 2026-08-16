@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { buildShadowLog, buildShadowLogRow, deriveEngineVerdictFromMode, renderShadowLogCsv, type ShadowLogDayInput } from './shadowLog';
-import type { DailyRecommendation, DailyRecoverySnapshot, DailySubjectiveCheckin, DecisionJournalEntry } from './models';
+import type { DailyRecommendation, DailyRecoverySnapshot, DailySubjectiveCheckin, DecisionJournalEntry, ShadowVerdict } from './models';
 
 const DATE = '2026-08-16';
+type RecommendationWithVerdict = DailyRecommendation & { engineVerdict?: ShadowVerdict };
 
-function recommendation(overrides: Partial<DailyRecommendation> = {}): DailyRecommendation {
+function recommendation(overrides: Partial<RecommendationWithVerdict> = {}): RecommendationWithVerdict {
     return {
         userId: 'u1', date: DATE, templateId: 'easy_01', templateTitle: 'Easy Ride',
         category: 'Easy Endurance', modality: 'Cycling', mode: 'train', rationale: 'r',
@@ -58,7 +59,7 @@ function snapshot(overrides: Partial<DailyRecoverySnapshot> = {}): DailyRecovery
 }
 
 describe('deriveEngineVerdictFromMode', () => {
-    it('maps the three modes onto their ladder-equivalent ShadowVerdict', () => {
+    it('maps the three modes onto their legacy ladder-equivalent ShadowVerdict', () => {
         expect(deriveEngineVerdictFromMode('train')).toBe('proceed');
         expect(deriveEngineVerdictFromMode('modify')).toBe('scale');
         expect(deriveEngineVerdictFromMode('recover')).toBe('defer');
@@ -104,11 +105,33 @@ describe('buildShadowLogRow', () => {
     it('computes agreement when both engine and external verdicts are present', () => {
         const row = buildShadowLogRow({
             date: DATE,
-            recommendation: recommendation({ mode: 'recover' }), // -> defer
+            recommendation: recommendation({ mode: 'recover' }), // legacy fallback -> defer
             journalEntry: journalEntry({ externalVerdict: 'proceed' }),
             checkin: null, recoverySnapshot: null,
         });
         expect(row!.agreement).toBe('engine_more_conservative');
+    });
+
+    it('prefers the exact persisted advisory verdict over mode so an event stays incomparable', () => {
+        const row = buildShadowLogRow({
+            date: DATE,
+            recommendation: recommendation({ mode: 'train', engineVerdict: 'advisory' }),
+            journalEntry: journalEntry({ externalVerdict: 'proceed' }),
+            checkin: null, recoverySnapshot: null,
+        });
+        expect(row!.engineVerdict).toBe('advisory');
+        expect(row!.agreement).toBe('incomparable');
+    });
+
+    it('prefers an exact skip verdict over a fallback recovery mode', () => {
+        const row = buildShadowLogRow({
+            date: DATE,
+            recommendation: recommendation({ mode: 'recover', engineVerdict: 'skip' }),
+            journalEntry: journalEntry({ externalVerdict: 'defer' }),
+            checkin: null, recoverySnapshot: null,
+        });
+        expect(row!.engineVerdict).toBe('skip');
+        expect(row!.agreement).toBe('agree');
     });
 
     it('carries adherence, policyVersion and externalPlan.contentHash through from the recommendation', () => {
