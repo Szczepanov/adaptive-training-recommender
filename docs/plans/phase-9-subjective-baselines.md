@@ -155,7 +155,7 @@ query is bounded to one range read per decision.
 
 ---
 
-### 9.5 Give the scenario corpus real subjective variance `[ ]`
+### 9.5 Give the scenario corpus real subjective variance `[x]`
 
 **This is the work item the measurement depends on, and it must land before 9.6.**
 
@@ -207,6 +207,32 @@ committed baseline changes.
 
 **Done when** at least the five fixtures above exist, each produces non-zero subjective
 stdev, and the drifter's 7d/28d averages actually diverge over its span.
+
+**Implementation note (resolves the `readinessForDate` question above).** Built without the
+9.0 block having run, so the profiles are invented per the table, not observed — the
+"synthetic profiles measure fixtures rather than people" limitation applies at full
+strength; revisit with the block's export once 9.0.7 completes.
+
+`engine/simulation/subjectiveProfiles.ts` is a genuinely daily-resolution, deterministic
+generator (`subjectiveProfileDay(kind, dayIndex)`, no `Math.random` — a hashed sine, so
+`simulate:diff` stays byte-identical run to run). `runScenario` itself still takes only one
+reading per chained week (its documented cadence, unchanged by this work item), so the five
+new `subjective_*` `SCENARIOS` entries sample the generator at `weekIndex * 7` via
+`readinessForDate` — the underlying curve is daily, the harness's sampling of it is weekly.
+`subjectiveProfiles.test.ts` exercises the full daily series directly (independent of that
+weekly cadence) to assert each profile's stdev/drift shape, and asserts every profile's
+mode against `evaluateReadinessAndSafetyEnvelope` for all 28 days: `habitual_low` and
+`chronically_sore` never reach `train`, `habitual_high`, `slow_drifter` and
+`noisy_stationary` never leave it — the tighten-only floor made mechanical, today, with no
+drift term involved.
+
+**What this does not do, on purpose.** No synthetic `DailySubjectiveCheckin[]` history was
+seeded anywhere — there is nothing yet to read it. `computeSubjectiveBaseline` (9.1),
+`DailyReadiness.subjectiveBaseline` (9.2) and the composer's check-in-range read (9.4) are
+all still gated on ADR-0020 acceptance and were not built here. When 9.4 lands, its own
+integration test will need synthetic *stored* check-in documents (a different shape from
+this module's `DailyReadiness` output) — `subjectiveProfileSeries`'s per-day values are the
+natural source to build them from, but that wiring is 9.4's job, not this one's.
 
 ---
 
@@ -283,6 +309,8 @@ code is not what closes this task.
 - [ ] `check-policy-drift.mjs` passes — no `POLICY_VERSION` bump while the default is `'off'`.
 - [ ] The property test proving drift can only tighten passes.
 - [ ] Every 9.5 fixture produces non-zero subjective stdev, verified in the 9.6 report.
+      (Already proven directly in `subjectiveProfiles.test.ts`; this criterion asks for the
+      same fact restated by the 9.6 harness once it exists, not a second implementation.)
 - [ ] The slow-drifter fixture shows a mode change under `'drift'` that `'off'` does not produce — if it does not, the term does nothing useful and 9.8 outcome 3 applies.
 - [ ] The habitual-low and chronically-sore fixtures show **no** relaxation under `'drift'`.
 - [ ] 9.8's outcome is recorded in ADR-0020 with its evidence.
@@ -328,7 +356,7 @@ are additive and optional.
 | 9.2 | Carry the baseline on `DailyReadiness` | `[ ]` | 9.1 |
 | 9.3 | Drift term behind a default-off selector | `[ ]` | 9.2 |
 | 9.4 | Composition boundary supplies the baseline | `[ ]` | 9.2 |
-| 9.5 | Scenario corpus subjective variance | `[ ]` | — |
+| 9.5 | Scenario corpus subjective variance | `[x]` | — |
 | 9.6 | Comparison harness | `[ ]` | 9.3, 9.5 |
 | 9.7 | Telemetry, audit and rationale | `[ ]` | 9.3 |
 | 9.8 | Go / no-go | `[ ]` | 9.6 |

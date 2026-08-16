@@ -13,6 +13,7 @@ import type {
 import type { CompletedExposure } from '../trainingHistory';
 import { resolveDemandProfile } from '../eventPresets';
 import { addDaysToLocalDateString } from '../../utils/localDate';
+import { subjectiveProfileReadiness, SUBJECTIVE_PROFILE_KINDS, type SubjectiveProfileKind } from './subjectiveProfiles';
 
 /**
  * One named, reproducible athlete configuration the simulation harness runs the real
@@ -144,6 +145,51 @@ function fixedActivity(overrides: Partial<FixedActivity> & Pick<FixedActivity, '
         userId: 'sim-user', title: 'Scheduled activity', durationMin: 60, fixed: true,
         environment: 'either', equipment: [], isCompleted: false, createdAt: '', updatedAt: '',
         ...overrides,
+    };
+}
+
+const SUBJECTIVE_PROFILE_META: Record<SubjectiveProfileKind, { label: string; description: string }> = {
+    habitual_low: {
+        label: 'Subjective profile: habitual low reporter',
+        description: 'Phase 9.5: a flat, chronically low subjective reporter (readiness ~3, fatigue ~7). The existing absolute floor already keeps this athlete off `train`; the fixture proves a future drift term must not relax that (D-SUBJFLOOR).',
+    },
+    habitual_high: {
+        label: 'Subjective profile: habitual high reporter',
+        description: 'Phase 9.5: a flat, consistently high subjective reporter (readiness ~8, fatigue ~2). Stays `train` throughout -- the absolute floor is far away, which is exactly why a real decline from this baseline would need a drift term to catch early.',
+    },
+    slow_drifter: {
+        label: 'Subjective profile: slow drifter',
+        description: 'Phase 9.5: readiness declines from 8 to 6 over three weeks, then holds -- the case the drift term exists for. Currently invisible to every absolute threshold; must become visible to a 7d-vs-28d comparison.',
+    },
+    noisy_stationary: {
+        label: 'Subjective profile: noisy but stationary',
+        description: 'Phase 9.5: a stable mean with +/-2 day-to-day swing. Must never read as decline -- noise is not drift.',
+    },
+    chronically_sore: {
+        label: 'Subjective profile: chronically sore',
+        description: 'Phase 9.5: soreness holds at 7 (above the existing `soreness > 6` absolute floor) while everything else stays near-neutral. The safety case: already forces `modify` every day and must never habituate to "normal, proceed".',
+    },
+};
+
+/** Phase 9.5: one scenario per named subjective profile in `subjectiveProfiles.ts`.
+ *  `readinessForDate` samples the profile's genuinely daily-resolution generator at
+ *  `weekIndex * 7`, matching `runScenario`'s actual sampling cadence -- it takes one
+ *  reading per chained week, not one per calendar day (see its doc comment). `weeks: 4`
+ *  gives 28 days per fixture, matching the 28-day baseline window the rest of Phase 9 uses.
+ *  No event, minimal equipment/context, mirroring `no_event_base_phase` -- the point of
+ *  these fixtures is isolating subjective variance, not exercising event/equipment paths
+ *  already covered elsewhere in this corpus. */
+function subjectiveProfileScenario(kind: SubjectiveProfileKind): AthleteScenario {
+    const meta = SUBJECTIVE_PROFILE_META[kind];
+    return {
+        id: `subjective_${kind}`,
+        label: meta.label,
+        description: meta.description,
+        context: context({ free_weights: true }, []),
+        event: null,
+        startDate: START_DATE, weeks: 4, tags: ['subjective-profile'],
+        readinessForWeek: () => subjectiveProfileReadiness(kind, 0),
+        readinessForDate: (_date, weekIndex) => subjectiveProfileReadiness(kind, weekIndex * 7),
     };
 }
 
@@ -483,4 +529,5 @@ export const SCENARIOS: AthleteScenario[] = [
             { last_3_days_hard_sessions_count: 1, sleep_score: 88, sleep_duration_min: 480, body_battery_wake: 90 },
         ),
     },
+    ...SUBJECTIVE_PROFILE_KINDS.map(subjectiveProfileScenario),
 ];
