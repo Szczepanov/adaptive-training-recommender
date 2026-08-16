@@ -512,6 +512,16 @@ emulatorDescribe('Firestore security rules', () => {
             schema: 'adaptive-training-recommender/external-plan@2',
         }));
         await assertFails(setDoc(doc(ownerDb, externalRevisionPath), { ...validExternalPlanRevision(), sessions: [] }));
+        await assertFails(setDoc(doc(ownerDb, `users/${ownerId}/external_plans/autumn-block/revisions/4`), {
+            ...validExternalPlanRevision(),
+            revision: 3,
+        }));
+        await assertFails(setDoc(doc(ownerDb, `users/${ownerId}/external_plans/other-block/revisions/3`), {
+            ...validExternalPlanRevision(),
+            planId: 'autumn-block',
+        }));
+        await assertFails(setDoc(doc(ownerDb, `users/${ownerId}/external_plans/autumn-block/placement/stale`), validExternalPlacement()));
+        await assertFails(setDoc(doc(ownerDb, `users/${ownerId}/external_plans/other-block/placement/current`), validExternalPlacement()));
     });
 
     it('rejects cross-user external plan access and forged ownership', async () => {

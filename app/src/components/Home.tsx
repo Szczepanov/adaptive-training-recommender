@@ -556,7 +556,7 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
       // written. Saying so beats an unhandled rejection and a silently unchanged week.
       console.error('Failed to save external plan placement:', err);
       setPlacementError('That change could not be saved. Your plan is unchanged — check your connection and try again.');
-      return;
+      throw err;
     }
     await loadDashboardData();
   }, [activeExternalPlan, userId, loadDashboardData]);
@@ -821,6 +821,7 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
               placed={activeExternalPlan.placed}
               critique={externalWeekCritique}
               today={decisionInput.date}
+              fixedActivities={planWeekFixedActivities}
               onProposeReplacement={handleProposeReplacement}
               onConfirmReplacement={handleConfirmReplacement}
               onChooseDate={handleChooseDate}

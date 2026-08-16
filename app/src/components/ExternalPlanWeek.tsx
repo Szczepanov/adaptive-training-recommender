@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import type { ExternalCritiqueFinding, ExternalWeekCritique } from '../engine/externalCritique';
 import type { PlacedSession, ReplacementProposal } from '../engine/externalPlacement';
+import type { FixedActivity } from '../engine/models';
 import { addDaysToLocalDateString } from '../utils/localDate';
 import './ExternalPlanWeek.css';
 
@@ -28,6 +29,8 @@ export interface ExternalPlanWeekProps {
     placed: readonly PlacedSession[];
     critique: ExternalWeekCritique | null;
     today: string;
+    /** Active fixed activities in the week, used to exclude occupied days from the manual day picker. */
+    fixedActivities?: readonly FixedActivity[];
     /** Produces a proposal for a session that was not done. Never writes. */
     onProposeReplacement: (sessionId: string, missedDate: string) => ReplacementProposal;
     /** Called only after the athlete confirms; `date` is null for a drop. */
@@ -56,7 +59,7 @@ function weekLevelFindings(critique: ExternalWeekCritique | null): ExternalCriti
  * this screen moves a session on its own.
  */
 export function ExternalPlanWeek({
-    planTitle, weekStartDate, placed, critique, today,
+    planTitle, weekStartDate, placed, critique, today, fixedActivities,
     onProposeReplacement, onConfirmReplacement, onChooseDate, writeError = null,
 }: ExternalPlanWeekProps) {
     const [proposal, setProposal] = useState<ReplacementProposal | null>(null);
@@ -70,16 +73,40 @@ export function ExternalPlanWeek({
         () => placed.filter(item => item.date >= days[0] && item.date <= days[6]),
         [placed, days],
     );
-    const occupied = useMemo(
-        () => new Set(inWeek.filter(item => item.status !== 'dropped' && item.status !== 'superseded').map(item => item.date)),
-        [inWeek],
-    );
+    const occupied = useMemo(() => {
+        const inWeekOccupied = inWeek
+            .filter(item => item.status !== 'dropped' && item.status !== 'superseded')
+            .map(item => item.date);
+        const fixedOccupied = (fixedActivities ?? [])
+            .filter(activity => !activity.isCompleted && activity.date >= days[0] && activity.date <= days[6])
+            .map(activity => activity.date);
+        return new Set([...inWeekOccupied, ...fixedOccupied]);
+    }, [inWeek, fixedActivities, days]);
 
     const weekFindings = weekLevelFindings(critique);
 
     const startProposal = (sessionId: string, missedDate: string) => {
         setChoosingFor(null);
         setProposal(onProposeReplacement(sessionId, missedDate));
+    };
+
+    const handleConfirm = async (proposalToConfirm: ReplacementProposal) => {
+        try {
+            await onConfirmReplacement(proposalToConfirm);
+            setProposal(null);
+        } catch {
+            // Keep proposal open on error so athlete can retry or choose another option
+        }
+    };
+
+    const handleDateChoice = async (sessionId: string, date: string) => {
+        try {
+            await onChooseDate(sessionId, date);
+            setProposal(null);
+            setChoosingFor(null);
+        } catch {
+            // Keep choice open on error so athlete can retry
+        }
     };
 
     return (
@@ -116,13 +143,13 @@ export function ExternalPlanWeek({
                                                 {item.moved && ' (not where your plan first put it)'}
                                             </span>
                                         </div>
-                                        {(item.status === 'planned' || item.status === 'moved') && date < today && (
+                                        {(item.status === 'planned' || item.status === 'moved') && date <= today && (
                                             <button
                                                 type="button"
                                                 className="external-week-missed-btn"
                                                 onClick={() => startProposal(item.session.id, date)}
                                             >
-                                                Missed it
+                                                {date === today ? 'Reschedule' : 'Missed it'}
                                             </button>
                                         )}
                                     </div>
@@ -155,14 +182,14 @@ export function ExternalPlanWeek({
 
             {proposal && (
                 <section className="external-week-proposal" aria-label="Missed session proposal">
-                    <h4>Missed session</h4>
+                    <h4>{proposal.missedDate === today ? 'Reschedule session' : 'Missed session'}</h4>
                     <p>{proposal.rationale}</p>
                     <div className="external-week-proposal-actions">
                         {proposal.outcome !== 'unresolved' && (
                             <button
                                 type="button"
                                 className="external-week-accept"
-                                onClick={async () => { await onConfirmReplacement(proposal); setProposal(null); }}
+                                onClick={() => handleConfirm(proposal)}
                             >
                                 {proposal.outcome === 'dropped' ? 'Drop it' : `Move to ${proposal.date}`}
                             </button>
@@ -184,7 +211,7 @@ export function ExternalPlanWeek({
                                 <button
                                     key={date}
                                     type="button"
-                                    onClick={async () => { await onChooseDate(proposal.sessionId, date); setProposal(null); setChoosingFor(null); }}
+                                    onClick={() => handleDateChoice(proposal.sessionId, date)}
                                 >
                                     {weekdayLabel(date)} {date}
                                 </button>

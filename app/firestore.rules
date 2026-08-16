@@ -330,13 +330,18 @@ service cloud.firestore {
 
       match /revisions/{revisionId} {
         allow read: if isOwner(userId);
-        allow create: if isOwner(userId) && hasValidExternalPlanRevision();
+        allow create: if isOwner(userId)
+          && hasValidExternalPlanRevision()
+          && request.resource.data.planId == planId
+          && string(request.resource.data.revision) == revisionId;
         allow update, delete: if false;
       }
 
       match /placement/{placementId} {
         allow read: if isOwner(userId);
-        allow create, update: if hasValidExternalPlanPlacement(userId);
+        allow create, update: if hasValidExternalPlanPlacement(userId)
+          && placementId == 'current'
+          && request.resource.data.planId == planId;
         allow delete: if isOwner(userId);
       }
     }
