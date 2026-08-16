@@ -1,10 +1,13 @@
-import type {
-  DailyDecisionInput,
-  DailyRecoverySnapshot,
-  DailySubjectiveCheckin,
-  TrainingSettings,
-  UserGoal,
-  UserPreferences,
+import {
+  EXTERNAL_PLAN_SCHEMA,
+  type DailyDecisionInput,
+  type DailyRecoverySnapshot,
+  type DailySubjectiveCheckin,
+  type ExternalTrainingPlan,
+  type TrainingIntentProfile,
+  type TrainingSettings,
+  type UserGoal,
+  type UserPreferences,
 } from '../engine/models';
 
 export const VISUAL_USER_ID = 'visual-athlete';
@@ -28,6 +31,9 @@ export interface VisualFixture {
   preferences: UserPreferences;
   checkin: DailySubjectiveCheckin | null;
   recovery: DailyRecoverySnapshot | null;
+  /** An imported plan governing this date (ADR-0019). Absent for every other scenario, so
+   * the ordinary screens keep exercising the ranked path. */
+  externalPlan?: ExternalTrainingPlan;
 }
 
 const settings: TrainingSettings = {
@@ -158,7 +164,10 @@ const eventGoal: UserGoal & { id: string } = {
   updatedAt: TIMESTAMP,
 };
 
-function buildFixture(overrides: Partial<Pick<VisualFixture, 'settings' | 'preferences' | 'checkin' | 'recovery' | 'goals'>> = {}): VisualFixture {
+function buildFixture(
+  overrides: Partial<Pick<VisualFixture, 'settings' | 'preferences' | 'checkin' | 'recovery' | 'goals' | 'externalPlan'>> = {},
+  trainingIntentProfile: TrainingIntentProfile | null = null,
+): VisualFixture {
   const fixtureSettings = overrides.settings ?? settings;
   const fixturePreferences = overrides.preferences ?? preferences;
   const fixtureCheckin = overrides.checkin === undefined ? checkin : overrides.checkin;
@@ -171,6 +180,7 @@ function buildFixture(overrides: Partial<Pick<VisualFixture, 'settings' | 'prefe
     checkin: fixtureCheckin,
     recovery: fixtureRecovery,
     goals: fixtureGoals,
+    ...(overrides.externalPlan ? { externalPlan: overrides.externalPlan } : {}),
     input: {
       userId: VISUAL_USER_ID,
       date: VISUAL_DATE,
@@ -179,7 +189,7 @@ function buildFixture(overrides: Partial<Pick<VisualFixture, 'settings' | 'prefe
       activeGoals: fixtureGoals,
       trainingSettings: fixtureSettings,
       preferences: fixturePreferences,
-      trainingIntentProfile: null,
+      trainingIntentProfile,
       dataQuality: {
         hasRecoverySnapshot: fixtureRecovery !== null,
         hasSubjectiveCheckin: fixtureCheckin !== null,
@@ -228,7 +238,93 @@ const restrictedSettings: TrainingSettings = {
 
 const standardFixture = buildFixture();
 
+/** Monday of the week containing VISUAL_DATE (2026-09-12, a Saturday), so the imported
+ * plan's week 1 is the week on screen. */
+const EXTERNAL_PLAN_START = '2026-09-07';
+
+const externallyPlannedProfile: TrainingIntentProfile = {
+  userId: VISUAL_USER_ID,
+  planningMode: 'externally_planned',
+  priorities: ['endurance'],
+  weeklyCommitment: { minSessions: 4, targetSessions: 5, maxSessions: 6 },
+  organizationPreference: 'auto',
+  schemaVersion: 1,
+  createdAt: TIMESTAMP,
+  updatedAt: TIMESTAMP,
+};
+
+/** A short block in the shape a real generated plan takes: a key session on the review
+ * date, supporting work around it, and one session the author declared irreducible. */
+const importedPlan: ExternalTrainingPlan = {
+  schema: EXTERNAL_PLAN_SCHEMA,
+  planId: 'autumn-peak',
+  revision: 3,
+  title: 'Autumn peak block',
+  startDate: EXTERNAL_PLAN_START,
+  weekCount: 4,
+  sessions: [
+    {
+      id: 'w1-threshold',
+      title: 'Threshold 3x12',
+      priority: 'key',
+      placement: { week: 1, preferredDay: 'tuesday', flexibility: 'preferred', ifMissed: 'carry_forward' },
+      gating: { modality: 'cycling', intensity: 'hard', durationMin: 75, durationMax: 90, environment: 'either', equipment: [] },
+      objectives: ['threshold_quality'],
+      prescription: {
+        summary: '3x12 min at threshold, 6 min easy between.',
+        steps: [
+          { name: 'Warm-up', durationMin: 20, target: 'Zone 2, building' },
+          { name: 'Threshold block', durationMin: 12, sets: 3, setRecoveryMin: 6, target: '95-100% FTP' },
+          { name: 'Cool-down', durationMin: 10, target: 'Zone 1' },
+        ],
+      },
+      scaling: { reducible: true, reducedSummary: '2x12 instead of 3x12.', reducedDurationMin: 60, minimumUsefulDurationMin: 40, fallback: 'If the trainer is unavailable, a steady 60 min outdoors keeps the week honest.' },
+    },
+    {
+      id: 'w1-lift',
+      title: 'Heavy lower body',
+      priority: 'supporting',
+      placement: { week: 1, preferredDay: 'thursday', flexibility: 'preferred', ifMissed: 'drop' },
+      gating: { modality: 'strength', intensity: 'hard', durationMin: 50, durationMax: 60, environment: 'indoor', equipment: ['free_weights'] },
+      objectives: ['strength_maintenance'],
+      prescription: { summary: 'Squat 4x5, RDL 3x8, split squat 3x8.' },
+      scaling: { reducible: false },
+    },
+    {
+      id: 'w1-long',
+      title: 'Long endurance ride',
+      priority: 'key',
+      placement: { week: 1, preferredDay: 'saturday', flexibility: 'preferred', ifMissed: 'reschedule_within_week' },
+      gating: { modality: 'cycling', intensity: 'moderate', durationMin: 150, durationMax: 210, environment: 'outdoor', equipment: [] },
+      objectives: ['zone2_aerobic'],
+      prescription: { summary: '3 hours steady with 3x10 min tempo in the last hour.' },
+      scaling: { reducible: true, reducedSummary: 'Cut to 2 hours, keep one tempo block.', reducedDurationMin: 120, minimumUsefulDurationMin: 75 },
+    },
+    {
+      id: 'w1-spin',
+      title: 'Recovery spin',
+      priority: 'optional',
+      placement: { week: 1, preferredDay: 'sunday', flexibility: 'any_day', ifMissed: 'drop' },
+      gating: { modality: 'cycling', intensity: 'recovery', durationMin: 40, durationMax: 50, environment: 'either', equipment: [] },
+      prescription: { summary: 'Easy spin, nothing over 60% FTP.' },
+    },
+  ],
+};
+
+const externallyPlannedFixture = buildFixture({ externalPlan: importedPlan }, externallyPlannedProfile);
+
 export const VISUAL_SCENARIOS: VisualScenario[] = [
+  {
+    id: 'home-externally-planned',
+    title: 'Home — imported plan governs today',
+    screen: 'home',
+    expectedFocus: [
+      'The verdict leads, not the session: what to do today is unmistakable before the prescription.',
+      'The imported plan\'s own week replaces the generated forecast rather than sitting beside it.',
+      'Advisory critique reads as observation, never as an instruction or a blocked session.',
+    ],
+    fixture: externallyPlannedFixture,
+  },
   {
     id: 'home-normal-load',
     title: 'Home — normal load with target event',

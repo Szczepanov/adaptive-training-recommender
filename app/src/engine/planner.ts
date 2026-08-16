@@ -61,7 +61,7 @@ import { ENRICHED_TEMPLATES } from './templates';
 import { resolveMinimumDaysAfterHardLowerBody } from './planningCandidate';
 import { resolvePlannedDoseForDate, resolveTrainingIntent } from './trainingIntent';
 import { resolvePlanDefinitionForEvent, type PlanDefinition } from './planSchedule';
-import { deriveObjectiveCreditFromProfile } from './stimulus';
+import { deriveObjectiveCreditFromProfile, type StimulusConfidence } from './stimulus';
 import { buildCoverageState, coverageNeedTierForTemplate, workoutIdForTemplateId } from './coverage';
 import { resolveEvergreenPlan } from './evergreenPlanning';
 import { applyPlanningOverlays } from './planningOverlays';
@@ -735,6 +735,9 @@ export interface ProjectionExposure {
     modality?: SessionTemplate['modality'];
     category?: SessionTemplate['category'];
     durationMin?: number;
+    /** Evidence confidence for projected objective credit. Catalog projections remain exact;
+     * ADR-0019 external-authored event commitments carry inferred confidence. */
+    stimulusConfidence?: StimulusConfidence;
 }
 
 function backfillCreditFromPriorExposures(
@@ -751,7 +754,7 @@ function backfillCreditFromPriorExposures(
         const credit = deriveObjectiveCreditFromProfile(definition, exposure.stimulus, {}, {
             modality: exposure.modality,
             category: exposure.category,
-        });
+        }, exposure.stimulusConfidence ?? 'exact');
         if (credit.qualifies && credit.earnedCredit > 0) {
             total = Math.min(requiredCredit, total + credit.earnedCredit);
         }
@@ -809,10 +812,11 @@ export interface FixedActivityStimulusResult {
 }
 
 /**
- * A fixed activity may reserve time/cost without exact identity. Objective credit is more
- * demanding: expectedStimulus earns credit only when templateId/workoutId resolve to one
- * exact catalog prescription. This prevents both under-attribution of known cycling work
- * and over-attribution of untyped football/general activity to unqualified aerobic axes.
+ * A fixed activity may reserve time/cost without usable stimulus identity. Objective credit
+ * remains identity-scoped: exact catalog links earn exact credit; a transient ADR-0019
+ * external-authored event identity supplies known modality/category but keeps inferred
+ * confidence; legacy anonymous activities retain the unscoped sentinel and cannot satisfy
+ * modality/category-qualified objectives. No title/category heuristic is introduced.
  */
 export function applyFixedActivityStimulusCredit(
     microcycle: MicrocycleState,
@@ -831,6 +835,7 @@ export function applyFixedActivityStimulusCredit(
         seenOccurrences.add(identity.occurrenceKey);
 
         const stimulus: WorkoutStimulusProfile = { ...ZERO_STIMULUS, ...activity.expectedStimulus };
+        const stimulusConfidence = identity.stimulusConfidence ?? 'exact';
         exposures.push({
             occurrenceKey: identity.occurrenceKey,
             date,
@@ -839,13 +844,14 @@ export function applyFixedActivityStimulusCredit(
             workoutId: identity.workoutId,
             modality: identity.modality,
             category: identity.category,
+            stimulusConfidence,
         });
 
         const derivedCredits = getUnresolvedObjectives(nextMicrocycle, true).flatMap(objective => {
             const credit = deriveObjectiveCreditFromProfile(objective, stimulus, {}, {
                 modality: identity.modality,
                 category: identity.category,
-            });
+            }, stimulusConfidence);
             return credit.qualifies && credit.earnedCredit > 0
                 ? [{ objective, earnedCredit: credit.earnedCredit }]
                 : [];

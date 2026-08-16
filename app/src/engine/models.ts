@@ -232,7 +232,146 @@ export interface AuthoredPlanBlock {
     updatedAt: string;
 }
 
-export type PlanningMode = 'evergreen' | 'event_directed';
+export type PlanningMode = 'evergreen' | 'event_directed' | 'externally_planned';
+
+// --- Externally-authored plans (ADR-0019, Phase 8) ---
+
+export const EXTERNAL_PLAN_SCHEMA = 'adaptive-training-recommender/external-plan@1';
+
+/** Structural mirror of `externalSession.ts`'s verdict, declared here so `Recommendation`
+ * does not import from the adjudicator (which imports models). */
+export interface ExternalSessionVerdictSummary {
+    decision: 'proceed' | 'scale' | 'defer' | 'skip' | 'advisory';
+    executionDose?: PlannedDose;
+    scaledSummary?: string;
+    fallbackSuggestion?: string;
+    gateFailures: string[];
+    rationale: string;
+}
+
+export type ExternalSessionModality = 'cycling' | 'running' | 'strength' | 'field' | 'mobility' | 'cross_training';
+export type ExternalSessionIntensity = 'recovery' | 'easy' | 'moderate' | 'hard' | 'max';
+export type ExternalSessionPriority = 'key' | 'supporting' | 'optional';
+export type ExternalPlacementFlexibility = 'fixed' | 'preferred' | 'any_day';
+export type ExternalIfMissed = 'drop' | 'reschedule_within_week' | 'carry_forward';
+export type ExternalWeekday = 'monday' | 'tuesday' | 'wednesday' | 'thursday' | 'friday' | 'saturday' | 'sunday';
+
+/** A step carries EITHER minutes OR seconds, never both. Seconds exist because cycling
+ * intervals are second-granular and the first real generated plan improvised fractional
+ * minutes (0.17 for a 10s effort) that could not be read back accurately. */
+export interface ExternalPrescriptionStep {
+    name: string;
+    target?: string;
+    durationMin?: number;
+    durationSec?: number;
+    /** Reps within one set. */
+    repeat?: number;
+    recoveryMin?: number;
+    recoverySec?: number;
+    /** Sets within this step; absent means a single set. */
+    sets?: number;
+    setRecoveryMin?: number;
+    setRecoverySec?: number;
+    notes?: string;
+}
+
+/** Displayed verbatim; no gate reads it. */
+export interface ExternalPrescription {
+    summary: string;
+    steps?: ExternalPrescriptionStep[];
+}
+
+/** How the author wants the session cut down, and whether it can be cut down at all. */
+export interface ExternalSessionScaling {
+    /** D-IRREDUCIBLE: false means no useful reduced form exists — short-of-full readiness
+     * defers rather than prescribing a compromise. Absent is treated as true. */
+    reducible?: boolean;
+    reducedSummary?: string;
+    reducedDurationMin?: number;
+    minimumUsefulDurationMin?: number;
+    /** Advisory author text only. Never an executable substitute (D-CANDIDATE). */
+    fallback?: string;
+}
+
+export interface ExternalSessionPlacement {
+    week: number;
+    preferredDay?: ExternalWeekday;
+    flexibility: ExternalPlacementFlexibility;
+    ifMissed: ExternalIfMissed;
+}
+
+/** The fields the hard feasibility gates read. Structurally a `GateableSession` once
+ * adapted; `systemicCost` is deliberately absent because the schema does not accept a
+ * calibrated load figure from an authoring AI (D-EXTTIER). */
+export interface ExternalSessionGating {
+    modality: ExternalSessionModality;
+    intensity: ExternalSessionIntensity;
+    durationMin: number;
+    durationMax: number;
+    environment: TrainingEnvironment;
+    equipment: EquipmentKey[];
+}
+
+export interface ExternalPlanSession {
+    id: string;
+    title: string;
+    priority: ExternalSessionPriority;
+    placement: ExternalSessionPlacement;
+    gating: ExternalSessionGating;
+    objectives?: ObjectiveKey[];
+    prescription: ExternalPrescription;
+    scaling?: ExternalSessionScaling;
+    /** D-EVENT: the target event itself. Requires `flexibility: 'fixed'` and a
+     * `preferredDay`. Reconciled onto the FixedActivity contract and adjudicated for
+     * advice only — it can never be told to skip. */
+    isEvent?: boolean;
+}
+
+/** The imported artifact. Never edited in place once stored (D-IMMUT). */
+export interface ExternalTrainingPlan {
+    schema: typeof EXTERNAL_PLAN_SCHEMA;
+    planId: string;
+    revision: number;
+    title: string;
+    /** Monday of week 1, Warsaw-local (ADR-0003). The only absolute date in the plan. */
+    startDate: string;
+    weekCount: number;
+    notes?: string;
+    sessions: ExternalPlanSession[];
+}
+
+export type ExternalPlacementStatus = 'planned' | 'completed' | 'moved' | 'dropped' | 'superseded';
+
+export interface ExternalPlacementAssignment {
+    sessionId: string;
+    date: string;
+    status: ExternalPlacementStatus;
+}
+
+/** The mutable overlay. Rescheduling writes here, never to the stored revision. */
+export interface ExternalPlanPlacement {
+    userId: string;
+    planId: string;
+    revision: number;
+    assignments: ExternalPlacementAssignment[];
+    updatedAt: string;
+}
+
+/** Stored header for a plan across its revisions. */
+export interface ExternalPlanHeader {
+    userId: string;
+    planId: string;
+    revision: number;
+    title: string;
+    startDate: string;
+    weekCount: number;
+    /** SHA-256 over the canonical JSON of the stored revision (D-IMMUT). */
+    contentHash: string;
+    importedAt: string;
+    /** Date from which this revision supersedes the previous one. */
+    supersededFrom: string | null;
+    updatedAt: string;
+}
 export type TrainingPriority =
     | 'health' | 'balanced_performance' | 'endurance'
     | 'strength_muscle' | 'speed_power' | 'sport_readiness';
@@ -541,6 +680,22 @@ export interface Recommendation {
     telemetry?: DecisionScoreTelemetry;
     /** Concrete, dated session instructions resolved from the selected template. */
     prescription?: WorkoutPrescription;
+    /** The imported session's own instructions, carried when the recommendation came from
+     * an externally-authored plan. `prescription` stays empty in that case: a synthetic
+     * template has no catalog workout to resolve, and inventing one would misattribute
+     * authored content to the catalog (ADR-0019 D-SHIM). */
+    /** The adjudication outcome for an imported session. Present with
+     * `externalPrescription`; the UI renders the decision, not just the session. */
+    externalVerdict?: ExternalSessionVerdictSummary;
+    externalPrescription?: {
+        planId: string;
+        revision: number;
+        sessionId: string;
+        title: string;
+        prescription: ExternalPrescription;
+        scaling?: ExternalSessionScaling;
+        isEvent?: boolean;
+    };
     /** Assigned at the composition boundary immediately before persistence. */
     recommendationAudit?: RecommendationAudit;
     /** Engine trace retained only long enough to create the compact persisted audit. */
@@ -558,6 +713,9 @@ export interface Recommendation {
          *  periodization.ts resolveMultiEventObjectives. Empty in the overwhelmingly
          *  common single-or-no-event case. */
         droppedContributorObjectives: DroppedContributorObjective[];
+        /** Present exactly when an imported session was adjudicated. Carried to the
+         * persisted audit unchanged so replay can name the revision it must verify. */
+        externalPlan?: ExternalDecisionProvenance;
         /** Compact simulator-only evidence. It excludes raw wearable payloads and
          * check-in text; provenance.ts does not persist it in RecommendationAudit. */
         calibration?: {
@@ -1067,6 +1225,9 @@ export type EvidenceTier =
     | 'completedStructuredWorkout'
     | 'measuredEffort'
     | 'garminTrainingEffect'
+    /** An externally-authored session (ADR-0019 D-EXTTIER): structured and deliberate,
+     * but written against no catalog, so its stimulus is derived rather than authored. */
+    | 'authoredExternal'
     | 'durationIntensity'
     | 'athleteClassification'
     | 'genericModalityFallback';
@@ -1132,6 +1293,22 @@ export interface RecommendationAudit {
      *  DroppedContributorObjective's own doc comment. Empty in the overwhelmingly common
      *  single-or-no-event case. */
     droppedContributorObjectives: DroppedContributorObjective[];
+    /** Present exactly when the decision adjudicated an imported session (ADR-0019). */
+    externalPlan?: ExternalDecisionProvenance;
+}
+
+/**
+ * Identifies the exact stored bytes an external decision was made from (ADR-0019 D-IMMUT).
+ *
+ * `contentHash` is what makes the record falsifiable: a plan re-imported under the same
+ * `revision` number produces a different hash, so replay can refuse it instead of
+ * reproducing a decision against content that has quietly changed underneath it.
+ */
+export interface ExternalDecisionProvenance {
+    planId: string;
+    revision: number;
+    sessionId: string;
+    contentHash: string;
 }
 
 // --- Type Utilities ---

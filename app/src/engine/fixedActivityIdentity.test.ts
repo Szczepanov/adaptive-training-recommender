@@ -60,4 +60,37 @@ describe('Phase 6.2c fixed-activity exact identity', () => {
         expect(identity?.occurrenceKey).toBe('fixed:fixed-1');
         expect(coverageKeysForExposure(identity ?? {}, 'peak')).toEqual([]);
     });
+
+    it('resolves a transient external event with scoped inferred identity but never catalog coverage', () => {
+        const identity = resolveFixedActivityIdentity(activity({
+            id: 'external-event:block:1:race',
+            externalAuthoredIdentity: {
+                modality: 'Cycling',
+                category: 'Hard Endurance',
+                stimulusConfidence: 'inferred',
+            },
+        }));
+
+        expect(identity).toMatchObject({
+            occurrenceKey: 'fixed:external-event:block:1:race',
+            templateId: 'external-event:block:1:race',
+            workoutId: 'external:external-event:block:1:race',
+            modality: 'Cycling',
+            category: 'Hard Endurance',
+            exactCatalogIdentity: false,
+            stimulusConfidence: 'inferred',
+        });
+        expect(coverageKeysForExposure(identity ?? {}, 'peak')).toEqual([]);
+    });
+
+    it('fails closed if an activity claims exact catalog and external-derived identity at once', () => {
+        expect(resolveFixedActivityIdentity(activity({
+            templateId: 'end_easy_01',
+            externalAuthoredIdentity: {
+                modality: 'Cycling',
+                category: 'Easy Endurance',
+                stimulusConfidence: 'inferred',
+            },
+        }))).toBeNull();
+    });
 });

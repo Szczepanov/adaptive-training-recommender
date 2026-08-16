@@ -1,0 +1,276 @@
+import { resolveExecutionDose } from './dose';
+import { describeEligibilityReasons, evaluateTemplateEligibility, type EligibilityReason } from './eligibility';
+import { toGateableSession } from './externalSessionProfiles';
+import type { evaluateReadinessAndSafetyEnvelope } from './rules';
+import type { ResolvedAvailability } from './schedule';
+import type { DailyReadiness, ExternalPlanSession, PlanEnvelope, PlannedDose, UserContext } from './models';
+
+/** Mirror `rules.ts`'s own ceilings. Duplicated rather than imported so this module stays
+ * off the selection path, and so exporting them would not drag a decision-affecting file
+ * into check-policy-drift for a no-op edit. `externalSession.test.ts` reads rules.ts source
+ * and asserts both never drift. */
+export const EXTERNAL_MODIFY_MAX_SYSTEMIC_COST = 0.5;
+
+/** The readiness/clinical tier ceiling `rules.ts` applies to every ranked candidate. An
+ * imported session must clear it too, or a costly session slips through on a low-tier day
+ * that would have excluded every equivalent catalog template (D-CANDIDATE). */
+export const EXTERNAL_PLAN_TIER_SYSTEMIC_COST_CEILING: Record<PlanEnvelope['maxAllowableTier'], number> = {
+    Rest: 0, Mobility: 0.15, Easy: 0.5, Moderate: 0.8, Hard: Infinity,
+};
+
+export type ExternalSessionDecision = 'proceed' | 'scale' | 'defer' | 'skip' | 'advisory';
+
+export interface ExternalSessionVerdict {
+    decision: ExternalSessionDecision;
+    /** Present when the session is actionable (`proceed` / `scale`). */
+    executionDose?: PlannedDose;
+    /** The author's own reduced form, used instead of a blunt duration multiplier. */
+    scaledSummary?: string;
+    /**
+     * The author's free-text `scaling.fallback`, echoed for context when a feasibility
+     * gate excluded the session. Never an executable substitute (D-CANDIDATE) — an
+     * actionable alternative comes from the normal ranked path, gated and labelled.
+     */
+    fallbackSuggestion?: string;
+    gateFailures: EligibilityReason[];
+    rationale: string;
+}
+
+type EnvelopeState = ReturnType<typeof evaluateReadinessAndSafetyEnvelope>;
+
+function isReducible(session: ExternalPlanSession): boolean {
+    return session.scaling?.reducible !== false;
+}
+
+/** The author's own floor: below it, a fragment is worth less than moving the session. */
+function belowUsefulFloor(session: ExternalPlanSession, executionDose: PlannedDose): boolean {
+    const floor = session.scaling?.minimumUsefulDurationMin;
+    return floor !== undefined && session.gating.durationMin * executionDose.volume < floor;
+}
+
+/**
+ * The volume a session actually gets when today's systemic ceiling excludes it as written.
+ *
+ * `resolveExecutionDose` caps by readiness *tier* only, which is derived independently of
+ * `mode` — so a `modify` day at a Hard tier leaves the planned volume untouched. Returning
+ * that unchanged dose under a `scale` verdict would tell the athlete "do the reduced
+ * version" over the full prescription, which is the one thing a scale verdict must not do.
+ *
+ * Two candidate reductions, and the smaller wins:
+ *   - the author's own reduced form, as a fraction of the written duration. Their number,
+ *     not ours, whenever they supplied one;
+ *   - proportional relief: cut volume by however far the session overshoots the ceiling.
+ *     Cost is roughly linear in duration for a fixed intensity, so this is the reduction
+ *     that brings the day's load back to what it was allowed to be.
+ */
+function scaledExecutionDose(
+    session: ExternalPlanSession,
+    executionDose: PlannedDose,
+    systemicCost: number,
+    ceiling: number,
+): PlannedDose {
+    const proportional = systemicCost > 0 ? Math.min(1, ceiling / systemicCost) : 1;
+    const authored = session.scaling?.reducedDurationMin !== undefined && session.gating.durationMin > 0
+        ? Math.min(1, session.scaling.reducedDurationMin / session.gating.durationMin)
+        : 1;
+    return {
+        ...executionDose,
+        volume: Math.max(0, Math.min(executionDose.volume, executionDose.volume * Math.min(proportional, authored))),
+    };
+}
+
+function deferBelowFloor(session: ExternalPlanSession, gateFailures: EligibilityReason[]): ExternalSessionVerdict {
+    return {
+        decision: 'defer',
+        gateFailures,
+        rationale: `Today's ceiling would cut this below the ${session.scaling?.minimumUsefulDurationMin} minutes your plan calls the minimum useful dose. A fragment is worth less than moving it.`,
+    };
+}
+
+function pushReason(reasons: EligibilityReason[], reason: EligibilityReason): void {
+    if (!reasons.includes(reason)) reasons.push(reason);
+}
+
+/**
+ * `evaluateTemplateEligibility` owns the standing athlete constraints. The normal catalog
+ * path then narrows those constraints through `resolveAvailability` for this exact day
+ * (fixed-activity time, travel/hotel equipment and day-wide environment overrides). An
+ * imported session must consume that same resolved authority or it can pass a gate an
+ * equivalent catalog candidate fails.
+ */
+function applyResolvedAvailability(
+    session: ReturnType<typeof toGateableSession>,
+    availability: ResolvedAvailability | null,
+    reasons: EligibilityReason[],
+): void {
+    if (!availability) return;
+    if (session.durationMin > availability.maxTimeMinutes) pushReason(reasons, 'time_limit');
+    if (!session.requiredEquipment.every(item => availability.availableEquipment.includes(item))) pushReason(reasons, 'equipment');
+    if (availability.environmentOverride
+        && session.environment !== 'either'
+        && session.environment !== availability.environmentOverride) {
+        pushReason(reasons, 'environment');
+    }
+}
+
+/**
+ * Decides what to do with one imported session on one day.
+ *
+ * Pure and synchronous: no Firestore, no history provider, no clock. It reuses
+ * `evaluateReadinessAndSafetyEnvelope`'s already-computed state and `resolveExecutionDose`
+ * unchanged, so an imported session is adjudicated by exactly the pipeline that adjudicates
+ * a catalog one (ADR-0019 D-CANDIDATE). It selects nothing and ranks nothing.
+ *
+ * `resolvedAvailability` is the normal schedule authority for this date. It is optional
+ * only for low-level/legacy callers; the intent-aware production path supplies it.
+ *
+ * The ladder follows `architecture/recommendation-engine.md`'s authority ordering and adds
+ * no step to it:
+ *
+ *   clinical/safety → feasibility → readiness ceiling → dose
+ *
+ * Two short-circuits sit on top, both from ADR-0019:
+ *   - `isEvent` returns `advisory` and can never skip, defer or scale (D-EVENT).
+ *   - `reducible: false` escalates straight to `defer` rather than prescribing a
+ *     compromise the author explicitly said has no value (D-IRREDUCIBLE).
+ */
+export function adjudicateExternalSession(
+    session: ExternalPlanSession,
+    readiness: DailyReadiness,
+    context: UserContext,
+    envelopeState: EnvelopeState,
+    plannedDose: PlannedDose,
+    date: string,
+    resolvedAvailability: ResolvedAvailability | null = null,
+): ExternalSessionVerdict {
+    const { mode, envelopes } = envelopeState;
+    const gateable = toGateableSession(session);
+    const eligibility = evaluateTemplateEligibility(
+        gateable,
+        context,
+        resolvedAvailability?.maxTimeMinutes ?? readiness.subjective.timeAvailable,
+        date,
+    );
+
+    const safetyRestricted = envelopes.safety.restrictedModalities.includes(gateable.modality);
+    const clinicalBlocked = envelopes.safety.clinicalFlagActive && safetyRestricted;
+    const gateFailures: EligibilityReason[] = [...eligibility.reasons];
+    applyResolvedAvailability(gateable, resolvedAvailability, gateFailures);
+    if (safetyRestricted) pushReason(gateFailures, 'restricted_modality');
+    const feasible = gateFailures.length === 0;
+
+    // ---- D-EVENT: an event is a commitment. Advise, never instruct. -------------------
+    if (session.isEvent) {
+        const concerns: string[] = [];
+        if (envelopes.safety.clinicalFlagActive) concerns.push(envelopes.safety.clinicalReason ?? 'an active pain or injury flag');
+        if (mode === 'recover') concerns.push('today\'s readiness would otherwise mandate recovery');
+        if (gateFailures.length > 0) concerns.push(describeEligibilityReasons(gateFailures));
+        return {
+            decision: 'advisory',
+            gateFailures,
+            rationale: concerns.length > 0
+                ? `This is your event, so the decision to start is yours. Worth knowing before you do: ${concerns.join('; ')}.`
+                : 'This is your event. Nothing in today\'s readiness or your settings argues against starting.',
+        };
+    }
+
+    // ---- 1. Clinical and safety gates ------------------------------------------------
+    if (clinicalBlocked) {
+        return {
+            decision: 'skip',
+            gateFailures,
+            ...(session.scaling?.fallback ? { fallbackSuggestion: session.scaling.fallback } : {}),
+            rationale: `${envelopes.safety.clinicalReason ?? 'An active clinical flag'} rules out ${gateable.modality.toLowerCase()} today. This is a safety exclusion, not a dose decision.`,
+        };
+    }
+
+    // ---- 2. Feasibility --------------------------------------------------------------
+    if (!feasible) {
+        return {
+            decision: 'skip',
+            gateFailures,
+            ...(session.scaling?.fallback ? { fallbackSuggestion: session.scaling.fallback } : {}),
+            // The rationale is persisted and read by a person, so it names the gate in words.
+            // `gateFailures` still carries the machine-readable codes for the UI and audit.
+            rationale: `Today's constraints exclude this session: ${describeEligibilityReasons(gateFailures)}. Your plan's note on what to do instead is shown for context; it has not been checked against today's constraints.`,
+        };
+    }
+
+    // ---- 3. Readiness mode ceiling ---------------------------------------------------
+    if (mode === 'recover') {
+        // Uniformly `defer`, never `skip`: the verdict says "not today", and whether the
+        // session moves or is abandoned is `placement.ifMissed`'s decision, not this
+        // function's. Reducibility is irrelevant here -- recover means do not train, so
+        // there is no reduced version to offer either.
+        return {
+            decision: 'defer',
+            gateFailures,
+            rationale: 'Readiness puts today in recovery. Move this session rather than doing a diminished version of it.',
+        };
+    }
+
+    const executionDose = resolveExecutionDose(plannedDose, envelopes.plan, null);
+    // resolveExecutionDose fails closed on an out-of-contract planned dose rather than
+    // normalising it, because persisted audits require finite volume in 0..1. Honour that:
+    // without a valid dose there is nothing safe to prescribe, and deferring would only
+    // reproduce the same broken input tomorrow.
+    if (!executionDose) {
+        return {
+            decision: 'skip',
+            gateFailures,
+            rationale: 'This session could not be dosed: the plan\'s volume/intensity for today is outside the supported contract. Nothing is prescribed rather than guessing a dose.',
+        };
+    }
+    // A zeroed ceiling (Rest tier) leaves no session to do. Reached independently of the
+    // `recover` branch above, which is derived separately and could diverge from the tier.
+    if (executionDose.volume === 0) {
+        return {
+            decision: 'defer',
+            gateFailures,
+            rationale: 'Today\'s ceiling leaves no training volume at all. Move this session.',
+        };
+    }
+    // The plan tier is derived from clinical/readiness state independently of `mode`, so
+    // it can bite on a `train` day (a flat body battery caps the tier at Easy while
+    // readiness still reads green). Checking only the modify ceiling would let a hard
+    // imported session through a day that excludes every equivalent catalog template.
+    const tierCeiling = EXTERNAL_PLAN_TIER_SYSTEMIC_COST_CEILING[envelopes.plan.maxAllowableTier];
+    const ceiling = mode === 'modify' ? Math.min(tierCeiling, EXTERNAL_MODIFY_MAX_SYSTEMIC_COST) : tierCeiling;
+    const exceedsCeiling = gateable.systemicCost > ceiling;
+
+    if (exceedsCeiling) {
+        // D-IRREDUCIBLE: the author said this session has no useful reduced form, so a
+        // scaled prescription would be one they explicitly declined to write.
+        if (!isReducible(session)) {
+            return {
+                decision: 'defer',
+                gateFailures,
+                rationale: 'Readiness caps today\'s systemic load, and this session has no useful reduced form. Move it rather than doing a compromised version.',
+            };
+        }
+        const scaledDose = scaledExecutionDose(session, executionDose, gateable.systemicCost, ceiling);
+        // The floor applies here too, and this is the branch that actually cuts volume:
+        // checking it only on the proceed path let the scaled case prescribe below the
+        // author's declared minimum while a cheaper session on the same day deferred.
+        if (belowUsefulFloor(session, scaledDose)) return deferBelowFloor(session, gateFailures);
+        return {
+            decision: 'scale',
+            executionDose: scaledDose,
+            ...(session.scaling?.reducedSummary ? { scaledSummary: session.scaling.reducedSummary } : {}),
+            gateFailures,
+            rationale: session.scaling?.reducedSummary
+                ? 'Readiness caps today\'s systemic load. Use your plan\'s own reduced version rather than a shortened full session.'
+                : 'Readiness caps today\'s systemic load, and your plan gives no reduced form, so hold the intent and cut the volume.',
+        };
+    }
+
+    // ---- 4. Dose ---------------------------------------------------------------------
+    if (belowUsefulFloor(session, executionDose)) return deferBelowFloor(session, gateFailures);
+
+    return {
+        decision: 'proceed',
+        executionDose,
+        gateFailures,
+        rationale: 'Readiness and today\'s constraints both clear this session as your plan wrote it.',
+    };
+}

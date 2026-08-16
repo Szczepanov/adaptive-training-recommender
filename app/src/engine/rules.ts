@@ -30,6 +30,9 @@ import { POLICY_VERSION } from './policy';
 import { resolveExecutionDose } from './dose';
 import { isTemplatePhaseEligible } from './periodization';
 import { resolveMinimumDaysAfterHardLowerBody } from './planningCandidate';
+import { adjudicateExternalSession } from './externalSession';
+import { externalEventAsFixedActivity, toSyntheticTemplate } from './externalSessionProfiles';
+import type { ExternalPlanSession } from './models';
 import { applyFixedActivityStimulusCredit } from './planner';
 import { getUnresolvedObjectives } from './microcycle';
 import { applyCompletedSessionLoad, type FatigueFusionPolicy } from './fatigue';
@@ -316,6 +319,87 @@ export function evaluateTraining(
     return { template: selectedTemplate, rationale, mode, envelopes, telemetry };
 }
 
+/** Identifies which imported session is placed on the evaluation date. */
+export interface ExternalPlanContext {
+    planId: string;
+    revision: number;
+    session: ExternalPlanSession;
+    /** SHA-256 of the stored revision this session was read from (ADR-0019 D-IMMUT).
+     * Recorded on the decision audit so replay verifies against the same bytes. */
+    contentHash: string;
+}
+
+function eventCategoryMatchesSession(event: UserEvent, session: ExternalPlanSession): boolean {
+    switch (session.gating.modality) {
+        case 'cycling': return event.category === 'cycling_event' || event.category === 'triathlon';
+        case 'running': return event.category === 'running_race' || event.category === 'triathlon';
+        case 'strength': return event.category === 'strength_meet';
+        case 'field':
+        case 'mobility':
+        case 'cross_training': return event.category === 'general_target';
+    }
+}
+
+function hasMatchingUserEvent(events: UserEvent[], session: ExternalPlanSession, date: string): boolean {
+    return events.some(event =>
+        event.date === date
+        && event.lifecycle !== 'cancelled'
+        && eventCategoryMatchesSession(event, session),
+    );
+}
+
+function externalPrescriptionFor(externalPlan: ExternalPlanContext): NonNullable<Recommendation['externalPrescription']> {
+    const { session, planId, revision } = externalPlan;
+    return {
+        planId, revision, sessionId: session.id, title: session.title,
+        prescription: session.prescription,
+        ...(session.scaling ? { scaling: session.scaling } : {}),
+        ...(session.isEvent ? { isEvent: true } : {}),
+    };
+}
+
+/**
+ * Builds the recommendation for an imported prescribed session. Events deliberately do
+ * not use this path: D-EVENT reconciles them onto FixedActivity and keeps their verdict as
+ * advice alongside the normal recommendation rather than recommending the event itself.
+ */
+function adjudicatedExternalRecommendation(
+    externalPlan: ExternalPlanContext,
+    readiness: DailyReadiness,
+    context: UserContext,
+    envelopeState: ReturnType<typeof evaluateReadinessAndSafetyEnvelope>,
+    intent: Awaited<ReturnType<typeof resolveTrainingIntent>>,
+    date: string,
+    fixedActivities: FixedActivity[],
+): Recommendation {
+    const { session, planId, revision, contentHash } = externalPlan;
+    const availability = resolveAvailability(date, readiness.subjective, fixedActivities, context);
+    const verdict = adjudicateExternalSession(session, readiness, context, envelopeState, intent.plannedDose, date, availability);
+    const actionable = verdict.decision === 'proceed' || verdict.decision === 'scale';
+
+    const restTemplate = ENRICHED_TEMPLATES.find(template => template.category === 'Rest')
+        ?? TEMPLATES.find(template => template.category === 'Rest')
+        ?? TEMPLATES[0];
+
+    return {
+        template: actionable ? toSyntheticTemplate(session, planId, revision) : restTemplate,
+        plannedDose: intent.plannedDose,
+        ...(verdict.executionDose ? { executionDose: verdict.executionDose } : {}),
+        rationale: verdict.rationale,
+        mode: actionable ? envelopeState.mode : 'recover',
+        envelopes: envelopeState.envelopes,
+        telemetry: envelopeState.telemetry,
+        externalPrescription: externalPrescriptionFor(externalPlan),
+        externalVerdict: verdict,
+        decisionTrace: {
+            policyVersion: POLICY_VERSION,
+            candidateScores: [],
+            droppedContributorObjectives: intent.droppedContributorObjectives,
+            externalPlan: { planId, revision, sessionId: session.id, contentHash },
+        },
+    };
+}
+
 export async function evaluateTrainingWithIntent(
     userId: string,
     readiness: DailyReadiness,
@@ -330,10 +414,52 @@ export async function evaluateTrainingWithIntent(
     trainingIntentProfile: TrainingIntentProfile | null = null,
     preferences: UserPreferences | null = null,
     fatigueFusionPolicy: FatigueFusionPolicy = 'max',
+    externalPlan: ExternalPlanContext | null = null,
 ): Promise<Recommendation> {
     const envelopeState = evaluateReadinessAndSafetyEnvelope(readiness, context, date, previousMode);
     const { mode, envelopes, telemetry } = envelopeState;
     let intent = await resolveTrainingIntent(userId, events, date, readiness, 7, historyProvider, preparedHistorySnapshot, authoredPlanBlocks, trainingIntentProfile, fatigueFusionPolicy);
+
+    let externalEventAdvisory: {
+        prescription: NonNullable<Recommendation['externalPrescription']>;
+        verdict: NonNullable<Recommendation['externalVerdict']>;
+        provenance: { planId: string; revision: number; sessionId: string; contentHash: string };
+    } | null = null;
+
+    if (externalPlan && intent.planningContext.externalFallback) {
+        if (!externalPlan.session.isEvent) {
+            return adjudicatedExternalRecommendation(externalPlan, readiness, context, envelopeState, intent, date, fixedActivities);
+        }
+
+        const eventAvailability = resolveAvailability(date, readiness.subjective, fixedActivities, context);
+        let eventVerdict = adjudicateExternalSession(
+            externalPlan.session, readiness, context, envelopeState, intent.plannedDose, date, eventAvailability,
+        );
+        if (!hasMatchingUserEvent(events, externalPlan.session, date)) {
+            eventVerdict = {
+                ...eventVerdict,
+                rationale: `${eventVerdict.rationale} This imported event is not linked to a matching target event in Goals. Add or link it there so periodization and taper use the same commitment; the import will not create that calendar event for you.`,
+            };
+        }
+
+        const eventFixedActivity = externalEventAsFixedActivity(
+            externalPlan.session, externalPlan.planId, externalPlan.revision, userId, date,
+        );
+        if (eventFixedActivity && !fixedActivities.some(activity => activity.id === eventFixedActivity.id)) {
+            fixedActivities = [...fixedActivities, eventFixedActivity];
+        }
+        externalEventAdvisory = {
+            prescription: externalPrescriptionFor(externalPlan),
+            verdict: eventVerdict,
+            provenance: {
+                planId: externalPlan.planId,
+                revision: externalPlan.revision,
+                sessionId: externalPlan.session.id,
+                contentHash: externalPlan.contentHash,
+            },
+        };
+    }
+
     const evergreen = resolveEvergreenPlan(
         intent.planningContext, intent.periodization.phase, intent.history, intent.historySnapshot,
         preferences, context, date, fixedActivities,
@@ -399,6 +525,9 @@ export async function evaluateTrainingWithIntent(
     const phaseContext = intent.periodization.focusEvent
         ? `${intent.periodization.daysToEvent} days out from ${intent.periodization.focusEvent.title}, ${intent.periodization.phase.phaseName} phase.`
         : `${intent.periodization.phase.phaseName} phase.`;
+    const externalFallbackPrefix = !externalPlan && intent.planningContext.externalFallback
+        ? 'External plan fallback: no imported session is placed today, so the built-in planner is choosing this session. '
+        : '';
     const pick = rankingResult.accepted[0];
     if (!pick) {
         const safeRecovery = candidates.find(template => template.category === 'Rest' || template.category === 'Mobility/Recovery')
@@ -407,13 +536,18 @@ export async function evaluateTrainingWithIntent(
             ?? TEMPLATES[0];
         return {
             template: safeRecovery,
-            rationale: `${phaseContext} No candidate survived the active hard constraints; defaulting to recovery rather than bypassing those constraints.`,
+            rationale: `${externalFallbackPrefix}${phaseContext} No candidate survived the active hard constraints; defaulting to recovery rather than bypassing those constraints.`,
             mode: 'recover', envelopes, telemetry,
+            ...(externalEventAdvisory ? {
+                externalPrescription: externalEventAdvisory.prescription,
+                externalVerdict: externalEventAdvisory.verdict,
+            } : {}),
             decisionTrace: {
                 policyVersion: POLICY_VERSION,
                 candidateScores: rankingResult.all.map(candidate => ({ templateId: candidate.template.id, utilityScore: candidate.utilityScore, benefitScore: candidate.benefitScore, costPenalty: candidate.costPenalty, excludedReasons: candidate.excludedReasons })),
                 droppedContributorObjectives: intent.droppedContributorObjectives,
                 calibration,
+                ...(externalEventAdvisory ? { externalPlan: externalEventAdvisory.provenance } : {}),
             },
         };
     }
@@ -421,13 +555,18 @@ export async function evaluateTrainingWithIntent(
         template: pick.template,
         plannedDose: intent.plannedDose,
         executionDose: resolveExecutionDose(intent.plannedDose, envelopes.plan, null),
-        rationale: `${phaseContext} ${pick.rationale}`,
+        rationale: `${externalFallbackPrefix}${phaseContext} ${pick.rationale}`,
         mode, envelopes, telemetry,
+        ...(externalEventAdvisory ? {
+            externalPrescription: externalEventAdvisory.prescription,
+            externalVerdict: externalEventAdvisory.verdict,
+        } : {}),
         decisionTrace: {
             policyVersion: POLICY_VERSION,
             candidateScores: rankingResult.all.map(candidate => ({ templateId: candidate.template.id, utilityScore: candidate.utilityScore, benefitScore: candidate.benefitScore, costPenalty: candidate.costPenalty, excludedReasons: candidate.excludedReasons })),
             droppedContributorObjectives: intent.droppedContributorObjectives,
             calibration,
+            ...(externalEventAdvisory ? { externalPlan: externalEventAdvisory.provenance } : {}),
         },
     };
 }
@@ -648,6 +787,69 @@ function fixedActivityProjection(activity: FixedActivity): CompletedExposure | n
     };
 }
 
+/**
+ * `evaluateTrainingWithIntent` may synthesize an in-memory FixedActivity for an imported
+ * target event. That object deliberately is not persisted and therefore is not in the
+ * caller's `fixedActivities` array when Home asks for tomorrow's forecast. The decision
+ * trace already records the aggregate fixed-activity profiles that today's ranking saw.
+ * Project only the positive delta between that trace and the caller-owned activities, so
+ * the event load survives into tomorrow without double-counting ordinary commitments.
+ */
+function unrepresentedFixedActivityProjection(
+    date: string,
+    rec: Recommendation,
+    fixedActivities: FixedActivity[],
+): CompletedExposure | null {
+    const trace = rec.decisionTrace?.calibration?.fixedActivity;
+    if (!trace) return null;
+    const represented = fixedActivities.filter(activity => activity.date === date && !activity.isCompleted);
+    if (trace.count <= represented.length) return null;
+
+    const representedCost = represented.reduce<WorkoutCostProfile>((sum, activity) => ({
+        systemic: sum.systemic + (activity.expectedCost?.systemic ?? 0),
+        cardiovascular: sum.cardiovascular + (activity.expectedCost?.cardiovascular ?? 0),
+        lowerBody: sum.lowerBody + (activity.expectedCost?.lowerBody ?? 0),
+        upperBody: sum.upperBody + (activity.expectedCost?.upperBody ?? 0),
+        impactTissue: sum.impactTissue + (activity.expectedCost?.impactTissue ?? 0),
+        neuromuscular: sum.neuromuscular + (activity.expectedCost?.neuromuscular ?? 0),
+    }), ZERO_COST);
+    const representedStimulus = represented.reduce<WorkoutStimulusProfile>((sum, activity) => ({
+        aerobicEndurance: sum.aerobicEndurance + (activity.expectedStimulus?.aerobicEndurance ?? 0),
+        thresholdPower: sum.thresholdPower + (activity.expectedStimulus?.thresholdPower ?? 0),
+        vo2MaxPower: sum.vo2MaxPower + (activity.expectedStimulus?.vo2MaxPower ?? 0),
+        repeatedSurges: sum.repeatedSurges + (activity.expectedStimulus?.repeatedSurges ?? 0),
+        sprintPower: sum.sprintPower + (activity.expectedStimulus?.sprintPower ?? 0),
+        fatigueResistance: sum.fatigueResistance + (activity.expectedStimulus?.fatigueResistance ?? 0),
+        maxStrength: sum.maxStrength + (activity.expectedStimulus?.maxStrength ?? 0),
+        hypertrophy: sum.hypertrophy + (activity.expectedStimulus?.hypertrophy ?? 0),
+    }), ZERO_STIMULUS);
+
+    const costProfile = Object.fromEntries(
+        (Object.keys(ZERO_COST) as (keyof WorkoutCostProfile)[])
+            .map(key => [key, Math.max(0, trace.cost[key] - representedCost[key])]),
+    ) as unknown as WorkoutCostProfile;
+    const stimulusProfile = Object.fromEntries(
+        (Object.keys(ZERO_STIMULUS) as (keyof WorkoutStimulusProfile)[])
+            .map(key => [key, Math.max(0, trace.stimulus[key] - representedStimulus[key])]),
+    ) as unknown as WorkoutStimulusProfile;
+    const hasCost = Object.values(costProfile).some(value => value > 0);
+    const hasStimulus = Object.values(stimulusProfile).some(value => value > 0);
+    if (!hasCost && !hasStimulus) return null;
+
+    return {
+        occurrenceKey: `decision-only-fixed:${date}`,
+        date,
+        costProfile,
+        ...(hasStimulus ? { stimulusProfile, stimulusConfidence: 'inferred' as const } : {}),
+        trainingRecordLike: {
+            type: rec.externalPrescription?.isEvent ? rec.externalPrescription.title : 'Decision-only fixed commitment',
+            duration_min: 0,
+            training_effect: 0,
+            intensity_tag: '',
+        },
+    };
+}
+
 async function projectedProviderForTomorrow(
     userId: string,
     tomorrowDate: string,
@@ -665,6 +867,7 @@ async function projectedProviderForTomorrow(
         const baseProvider = historyProvider ?? (await import('./firestoreTrainingHistory')).firestoreTrainingHistoryProvider;
         prior = await baseProvider.reconstruct(userId, tomorrowDate, 7);
     }
+    const unrepresentedFixed = unrepresentedFixedActivityProjection(todayDate, todayRec, fixedActivities);
     const projected = [
         ...prior.filter(exposure => exposure.date >= windowStart && exposure.date < tomorrowDate),
         recommendationProjection(todayDate, todayRec),
@@ -672,6 +875,7 @@ async function projectedProviderForTomorrow(
             const exposure = fixedActivityProjection(activity);
             return exposure ? [exposure] : [];
         }),
+        ...(unrepresentedFixed ? [unrepresentedFixed] : []),
     ].sort((a, b) => a.date.localeCompare(b.date));
 
     return {

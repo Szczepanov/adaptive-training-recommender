@@ -1,0 +1,201 @@
+.external-import {
+  max-width: 940px;
+  margin: 0 auto;
+  padding: 1rem;
+}
+
+.external-import-input {
+  width: 100%;
+  box-sizing: border-box;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  padding: 0.7rem 0.8rem;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.28);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: inherit;
+  resize: vertical;
+}
+
+.external-import-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.external-import-primary,
+.external-import-secondary {
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  padding: 0.45rem 0.9rem;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+  color: inherit;
+}
+
+.external-import-primary {
+  border-color: rgba(96, 165, 250, 0.45);
+  color: #bfdbfe;
+}
+
+.external-import-primary:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.external-import-primary:not(:disabled):hover,
+.external-import-secondary:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.external-import-errors,
+.external-import-preview,
+.external-import-saved {
+  margin-top: 1rem;
+  padding: 0.85rem 0.95rem;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.external-import-errors {
+  border-color: rgba(248, 113, 113, 0.35);
+  background: rgba(248, 113, 113, 0.06);
+}
+
+.external-import-errors h4,
+.external-import-preview h4,
+.external-import-saved h4 {
+  margin: 0 0 0.4rem;
+  font-size: 0.95rem;
+}
+
+.external-import-errors ul,
+.external-import-diff ul {
+  margin: 0.5rem 0 0;
+  padding-left: 1.15rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.28rem;
+  font-size: 0.85rem;
+  line-height: 1.45;
+}
+
+.external-import-errors code {
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 3px;
+  padding: 0 0.25rem;
+}
+
+.external-import-preview-meta,
+.external-import-status,
+.external-import-objective-note {
+  margin: 0.35rem 0 0;
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+}
+
+.external-import-blocked,
+.external-import-failed {
+  margin: 0.6rem 0 0;
+  padding: 0.55rem 0.7rem;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  background: rgba(248, 113, 113, 0.1);
+  border: 1px solid rgba(248, 113, 113, 0.3);
+}
+
+.external-import-diff {
+  margin-top: 0.8rem;
+}
+
+.external-import-diff h5,
+.external-import-objectives h5 {
+  margin: 0 0 0.3rem;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-secondary);
+}
+
+.external-import-diff .diff-added { color: #6ee7b7; }
+.external-import-diff .diff-removed { color: #fca5a5; }
+.external-import-diff .diff-changed { color: #fcd34d; }
+
+.external-import-sessions {
+  list-style: none;
+  margin: 0.85rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.external-import-sessions li {
+  display: grid;
+  grid-template-columns: 6.5rem 1fr;
+  gap: 0.1rem 0.6rem;
+  padding: 0.35rem 0.5rem;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.external-import-session-date {
+  grid-row: span 2;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  align-self: center;
+}
+
+.external-import-session-title {
+  font-size: 0.88rem;
+  font-weight: 500;
+}
+
+.external-import-session-meta {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.external-import-objectives {
+  margin-top: 1rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.09);
+}
+
+.external-import-objective-row {
+  margin: 0.6rem 0;
+}
+
+.external-import-objective-title {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 500;
+  margin-bottom: 0.3rem;
+}
+
+.external-import-objective-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.external-import-objective-choices button {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  color: inherit;
+  cursor: pointer;
+  font-size: 0.75rem;
+  padding: 0.2rem 0.6rem;
+}
+
+.external-import-objective-choices button.selected {
+  background: rgba(96, 165, 250, 0.18);
+  border-color: rgba(96, 165, 250, 0.5);
+  color: #bfdbfe;
+}

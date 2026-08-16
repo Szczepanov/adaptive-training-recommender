@@ -137,8 +137,13 @@ export function stimulusConfidenceForTier(tier: EvidenceTier): StimulusConfidenc
         case 'exactPrescribedMatch':
         case 'completedStructuredWorkout':
             return 'exact';
+        // `authoredExternal` sits here deliberately (ADR-0019 D-EXTTIER): an imported
+        // session is structured and intentional, but its stimulus is derived from
+        // modality x intensity rather than authored against this catalog, so it is
+        // discounted exactly as an inferred Garmin session is.
         case 'measuredEffort':
         case 'garminTrainingEffect':
+        case 'authoredExternal':
         case 'durationIntensity':
         case 'athleteClassification':
             return 'inferred';

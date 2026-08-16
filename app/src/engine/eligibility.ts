@@ -1,12 +1,61 @@
-import type { SessionTemplate, TrainingSettings, UserContext } from './models';
+import type { EquipmentKey, SessionTemplate, TrainingSettings, TrainingEnvironment, UserContext } from './models';
 
 export type EligibilityReason = 'time_limit' | 'equipment' | 'environment' | 'safety_guardrail' | 'restricted_modality' | 'restricted_category';
 
-export interface TemplateEligibility {
-    template: SessionTemplate;
+/**
+ * Plain language for each gate, as a clause that completes "excluded because ...".
+ *
+ * Lives beside the reasons themselves so the rationale an athlete reads and the sentence a
+ * component renders cannot drift into two different explanations of the same exclusion —
+ * and so no path prints the raw enum to a person.
+ */
+export const ELIGIBILITY_REASON_LABEL: Record<EligibilityReason, string> = {
+    time_limit: 'you have less time available today than this session needs',
+    equipment: 'the equipment this session needs is not available to you',
+    environment: 'today\'s environment does not match where this session has to happen',
+    safety_guardrail: 'one of your safety guardrails excludes this kind of work',
+    restricted_modality: 'this type of training is restricted for you today',
+    restricted_category: 'this category of session is restricted for you today',
+};
+
+/** Joins gate labels into one readable clause. Unknown codes degrade to a de-underscored
+ * form rather than being dropped: a missing explanation must not hide a real exclusion. */
+export function describeEligibilityReasons(reasons: readonly string[]): string {
+    const described = reasons.map(reason =>
+        ELIGIBILITY_REASON_LABEL[reason as EligibilityReason] ?? reason.replaceAll('_', ' '));
+    if (described.length === 0) return '';
+    if (described.length === 1) return described[0];
+    return `${described.slice(0, -1).join(', ')} and ${described[described.length - 1]}`;
+}
+
+/**
+ * The minimum shape the hard feasibility gates read. `SessionTemplate` satisfies it
+ * structurally, so widening these functions from `SessionTemplate` to `GateableSession`
+ * changes no existing call site.
+ *
+ * It exists so a session that is not a catalog template — an imported external session
+ * (ADR-0019 D-CANDIDATE) — passes the *same* gates on the same terms, rather than getting
+ * a second, parallel feasibility path that could drift from this one.
+ */
+export interface GateableSession {
+    durationMin: number;
+    durationMax: number;
+    requiredEquipment: readonly EquipmentKey[];
+    environment: TrainingEnvironment;
+    safetyTags: readonly SessionTemplate['safetyTags'][number][];
+    modality: SessionTemplate['modality'];
+    category: SessionTemplate['category'];
+    systemicCost: number;
+}
+
+export interface SessionEligibility<T extends GateableSession = SessionTemplate> {
+    template: T;
     eligible: boolean;
     reasons: EligibilityReason[];
 }
+
+/** Retained name for the catalog-template case, which is every existing caller. */
+export type TemplateEligibility = SessionEligibility<SessionTemplate>;
 
 function isWeekend(date: string): boolean {
     const day = new Date(`${date}T00:00:00Z`).getUTCDay();
@@ -21,7 +70,7 @@ export function resolveMaximumSessionMinutes(context: UserContext, checkinMinute
     return profileLimit === null || profileLimit === undefined ? checkinMinutes : Math.min(profileLimit, checkinMinutes);
 }
 
-function hasEquipment(settings: TrainingSettings | undefined, context: UserContext, equipment: SessionTemplate['requiredEquipment'][number]): boolean {
+function hasEquipment(settings: TrainingSettings | undefined, context: UserContext, equipment: EquipmentKey): boolean {
     if (settings) return settings.equipment[equipment];
     if (equipment === 'free_weights') return context.constraints.hasFreeWeights;
     if (equipment === 'cable_machine') return context.constraints.hasCableMachine;
@@ -31,12 +80,12 @@ function hasEquipment(settings: TrainingSettings | undefined, context: UserConte
 }
 
 /** Applies all hard feasibility gates. Preferences must be applied only after this function. */
-export function evaluateTemplateEligibility(
-    template: SessionTemplate,
+export function evaluateTemplateEligibility<T extends GateableSession>(
+    template: T,
     context: UserContext,
     checkinMinutes: number,
     date: string,
-): TemplateEligibility {
+): SessionEligibility<T> {
     const reasons: EligibilityReason[] = [];
     if (template.durationMin > resolveMaximumSessionMinutes(context, checkinMinutes, date)) reasons.push('time_limit');
     if (!template.requiredEquipment.every(item => hasEquipment(context.trainingSettings, context, item))) reasons.push('equipment');
@@ -62,11 +111,11 @@ export function evaluateTemplateEligibility(
     return { template, eligible: reasons.length === 0, reasons };
 }
 
-export function eligibleTemplates(
-    templates: SessionTemplate[],
+export function eligibleTemplates<T extends GateableSession>(
+    templates: readonly T[],
     context: UserContext,
     checkinMinutes: number,
     date: string,
-): SessionTemplate[] {
+): T[] {
     return templates.filter(template => evaluateTemplateEligibility(template, context, checkinMinutes, date).eligible);
 }
