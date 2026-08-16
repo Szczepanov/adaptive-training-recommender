@@ -13,7 +13,7 @@ function issue(documentPath: string, code: string, field?: string): DataState<ne
 }
 
 function nullableNumber(value: unknown): boolean {
-    return value === null || (typeof value === 'number' && Number.isFinite(value));
+    return value === null || value === undefined || (typeof value === 'number' && Number.isFinite(value));
 }
 
 function hasNullableNumbers(data: RawDocument, fields: string[]): boolean {

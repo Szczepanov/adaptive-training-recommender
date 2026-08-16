@@ -122,7 +122,6 @@ export class CheckinService {
             const collRef = collection(getDb(), 'users', userId, this.collectionPath);
             const q = query(
                 collRef,
-                where('userId', '==', userId),
                 orderBy('date', 'desc'),
                 limit(days)
             );
@@ -147,7 +146,6 @@ export class CheckinService {
             const collRef = collection(getDb(), 'users', userId, this.collectionPath);
             const q = query(
                 collRef,
-                where('userId', '==', userId),
                 where('date', '>=', startDate),
                 where('date', '<=', endDate),
                 orderBy('date', 'asc')
