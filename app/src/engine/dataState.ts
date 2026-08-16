@@ -13,13 +13,13 @@ export type DataState<T> =
     | { status: 'AVAILABLE'; data: T; revision: string | null; issues?: DataIssue[] }
     | { status: 'MISSING' }
     | { status: 'INVALID'; issues: DataIssue[] }
-    | { status: 'UNAVAILABLE'; operation: string; retryable: boolean };
+    | { status: 'UNAVAILABLE'; operation: string; retryable: boolean; message?: string };
 
 export type DataStateSummary =
     | { status: 'AVAILABLE'; revision: string | null }
     | { status: 'MISSING' }
     | { status: 'INVALID'; issues: DataIssue[] }
-    | { status: 'UNAVAILABLE'; operation: string; retryable: boolean };
+    | { status: 'UNAVAILABLE'; operation: string; retryable: boolean; message?: string };
 
 export function summarizeDataState<T>(state: DataState<T>): DataStateSummary {
     if (state.status === 'AVAILABLE') return { status: state.status, revision: state.revision };

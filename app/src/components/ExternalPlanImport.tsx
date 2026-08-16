@@ -114,11 +114,12 @@ export function ExternalPlanImport({ userId, onImported }: ExternalPlanImportPro
             onImported?.();
             return;
         }
+        const errorDetail = result.status === 'UNAVAILABLE' && result.message ? result.message : null;
         setPhase({
             kind: 'failed',
             message: result.status === 'INVALID'
                 ? `Rejected: ${result.issues.map(issue => `${issue.field ?? 'plan'} (${issue.code})`).join(', ')}`
-                : 'Could not reach storage. Nothing was written; try again.',
+                : `Could not reach storage${errorDetail ? `: ${errorDetail}` : ''}. Nothing was written; try again.`,
         });
     }, [userId, today, onImported]);
 
