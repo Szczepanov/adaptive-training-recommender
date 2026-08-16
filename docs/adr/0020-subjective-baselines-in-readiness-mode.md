@@ -1,37 +1,40 @@
 # ADR-0020: Subjective Baselines in Readiness Mode
 
-* **Status:** Proposed
-* **Date:** 2026-08-15
+* **Status:** Accepted
+* **Date:** 2026-08-16
+* **Proposed:** 2026-08-15
 * **Deciders:** Repository owner
 * **Related:** [ADR-0006](./0006-reconciled-strain-telemetry.md) (acute vs drift decomposition), [ADR-0010](./0010-decision-provenance-and-audit-replay.md) (replay), **D-FUSE** ([Phase 4](../plans/phase-4-objective-credit-v2.md)) — measure before choosing
+
+> **Acceptance boundary.** Accepting this ADR approves the architecture and safety invariants for *measuring* an optional subjective-drift term. It does **not** approve enabling that term in production. Production activation remains a separate Phase 9 go/no-go decision requiring both regression/simulation evidence and prospective real-athlete evidence under D-SUBJCAL.
 
 ## Context
 
 `rules.ts` `evaluateReadinessAndSafetyEnvelope` applies two different philosophies to the two halves of the same readiness question.
 
-**Objective metrics are self-normalised.** `metricStrain` compares HRV, RHR, and sleep with the athlete's own recent and longer baselines, scales the deviation by within-athlete variability, and only accumulates adverse movement. ADR-0006 argues this at length: fixed absolute thresholds cannot express "this person is drifting away from their own normal."
+**Objective metrics are self-normalised.** `metricStrain` compares HRV, RHR, and sleep with the athlete's own recent and longer baselines, scales adverse deviation by within-athlete variability, and only accumulates adverse movement. ADR-0006 established the architectural reason: fixed absolute thresholds cannot express "this person is moving away from their own normal."
 
 **Subjective scores are used raw**, against fixed absolute cutoffs:
 
 ```text
-overallFatigueScore = (fatigue + soreness + (10−readiness) + (10−sleepQuality) + (10−motivation)) / 5
-  > 7 → recover        > 5 → modify        soreness > 6 → modify        fatigue > 8 → extremeFatigue
+overallFatigueScore = (fatigue + soreness + (10-readiness) + (10-sleepQuality) + (10-motivation)) / 5
+  > 7 -> recover        > 5 -> modify        soreness > 6 -> modify        fatigue > 8 -> extremeFatigue
 ```
 
-Nothing anywhere baselines subjective data. A persistent decline that stays on the same side of every absolute threshold is therefore invisible to the mode gate.
+Nothing currently baselines subjective data for decision use. A persistent decline that stays on the same side of every absolute threshold is therefore invisible to the mode gate.
 
-The personal-scale problem exists in both directions. An athlete who habitually reports low values can be over-restricted by absolute thresholds; an athlete who habitually reports high values can deteriorate materially before crossing them. **This ADR only allows the relative signal to act in the conservative direction.** It may detect adverse within-athlete drift earlier, but it may never use "normal for this athlete" to cancel an absolute warning.
+The personal-scale problem exists in both directions. An athlete who habitually reports low values can be over-restricted by absolute thresholds; an athlete who habitually reports high values can deteriorate materially before crossing them. **This ADR only permits the relative signal to act in the conservative direction.** It may detect adverse within-athlete drift earlier, but it may never use "normal for this athlete" to cancel an absolute warning.
 
-That asymmetry is deliberate. Correcting the habitual-low reporter by relaxing an absolute trigger would use the same mechanism that could normalize chronic soreness or fatigue. If scale-use calibration later proves necessary, it needs a different instrument and a separate decision.
+That asymmetry is deliberate. Correcting habitual-low reporting by relaxing an absolute trigger would use the same mechanism that could normalize chronic soreness or fatigue. If scale-use calibration later proves necessary, it needs a different instrument and a separate decision.
 
 ### Evidence posture
 
-Subjective monitoring is useful enough to measure, but not precise enough to justify freezing one estimator by architecture alone.
+Subjective monitoring is useful enough to measure, but the evidence does not justify freezing one estimator as physiological law.
 
 * Thorpe et al. found perceived fatigue sensitive to recent training-load fluctuations in elite soccer, while soreness and sleep quality were not consistently sensitive in the same cohort (PMID 27918668, DOI 10.1123/ijspp.2016-0433).
 * Fitzpatrick et al. found poor reliability for several subjective wellness items in elite youth soccer (PMID 31498220).
 * Pexa et al. found good/excellent test-retest reliability for short daily health surveys in collegiate athletes, but convergent validity differed by item and readiness related only weakly to the comparison measure (PMID 39947188, DOI 10.1123/jsr.2024-0321).
-* Marqués-Jiménez et al. found individualized wellness z-scores more informative than raw/team-normalized scores for some professional-soccer match outputs, but the explained external-load variance remained limited and the clearest signal was DOMS (PMID 39662485, DOI 10.1123/ijspp.2024-0249).
+* Marques-Jimenez et al. found individualized wellness z-scores more informative than raw/team-normalized scores for some professional-soccer match outputs, but explained external-load variance remained limited and the clearest signal was DOMS (PMID 39662485, DOI 10.1123/ijspp.2024-0249).
 
 The evidence supports **individualized interpretation as a hypothesis worth testing**, not a claim that 7-day/28-day z-scores, a particular coverage floor, or a fixed set of questionnaire items are established biological thresholds.
 
@@ -84,7 +87,7 @@ Every existing absolute subjective trigger stays authoritative: `overallFatigueS
 Subjective drift may only escalate:
 
 ```text
-train → modify → recover
+train -> modify -> recover
 ```
 
 No baseline, estimator, coefficient, or favourable trend may de-escalate a mode already selected by an absolute trigger. This must be structural — no subtraction path exists — and covered by a property test.
@@ -101,7 +104,7 @@ longRecordedDays
 lastObservationDate
 ```
 
-and may additionally record a bounded gap diagnostic such as `maxGapDays` if Phase 9.6 shows it is useful.
+and may additionally record a bounded gap diagnostic such as `maxGapDays` if Phase 9 measurement shows it is useful.
 
 If either the recent-state estimate or the long-reference estimate lacks sufficient valid observations, `subjectiveDrift` is exactly `0` and production behaviour is unchanged. The exact recent/long window lengths and minimum counts are calibration parameters, not architectural constants.
 
@@ -118,9 +121,9 @@ Phase 9 starts with a transparent **reference estimator** for measurement:
 * floor favourable movement at zero;
 * cap individual contributions before weighting.
 
-The initial implementation may use mean / population stdev with the existing objective-side style of a 1-point variability floor and `STRAIN_Z_CAP = 2.0`, but those numbers are **candidate policy**, not accepted physiological constants.
+The initial implementation may use mean / population standard deviation with a 1-point variability floor and `STRAIN_Z_CAP = 2.0`, but those numbers are **candidate policy**, not accepted physiological constants.
 
-Before a production ship decision, Phase 9.6 must report sensitivity to estimator choices that can materially change decisions: recent/long window length, coverage requirements, variability floor/cap, included metrics, and weighting. If observed data show strong outlier or discreteness sensitivity, the comparison must include a robust alternative (for example a median/rank-based variant) rather than assuming z-score arithmetic is uniquely correct.
+Before a production ship decision, Phase 9 must report sensitivity to estimator choices that can materially change decisions: recent/long window length, coverage requirements, variability floor/cap, included metrics, and weighting. If observed data show strong outlier or discreteness sensitivity, the comparison must include a robust alternative (for example a median/rank-based variant) rather than assuming z-score arithmetic is uniquely correct.
 
 ### D-SUBJPURE — baselines arrive precomputed; the evaluator stays pure
 
@@ -140,12 +143,12 @@ This is a measurement-integrity rule. If the athlete sees historical context fir
 
 This ADR fixes **structure and safety rules**. It does not prescribe final per-metric weights, participating metrics, window lengths, coverage thresholds, variability floor/cap, drift multiplier, or final estimator.
 
-Phase 9.6 has two jobs:
+Phase 9 comparison has two distinct jobs:
 
-1. **Synthetic/regression gate:** prove tighten-only behaviour, boundedness, stability under noisy/stationary fixtures, no policy drift while disabled, and acceptable effects on mode distribution, recovery share, objective misses, and constraints.
+1. **Synthetic/regression gate:** prove tighten-only behaviour, boundedness, stability under noisy/stationary fixtures, no production policy drift while disabled, and acceptable effects on mode distribution, recovery share, objective misses, and constraints.
 2. **Estimator sensitivity:** show whether reasonable estimator/parameter choices materially change the conclusion.
 
-Synthetic scenarios can reject an unsafe or pathological design, but **they cannot establish real-world predictive usefulness**. A production switch to subjective drift additionally requires prospective evidence from Phase 9.0's real check-in/shadow record (or an equivalent later prospective corpus). If that evidence is not yet adequate, Phase 9.8 may keep the feature off or defer the decision; it may not call a synthetic-only result sufficient evidence to ship.
+Synthetic scenarios can reject an unsafe or pathological design, but **they cannot establish real-world predictive usefulness**. A production switch to subjective drift additionally requires prospective evidence from Phase 9.0's real check-in/shadow record (or an equivalent later prospective corpus). If that evidence is not yet adequate, Phase 9 may keep the feature off or defer the decision; it may not call a synthetic-only result sufficient evidence to ship.
 
 Candidate questions include:
 
@@ -176,13 +179,27 @@ A default-off implementation does **not** bump `POLICY_VERSION`, because it cann
 
 ## Consequences
 
-**Positive.** Persistent subjective deterioration can be tested without weakening today's safety floors. The architecture supports individualized interpretation while keeping the statistical estimator replaceable and auditable. Today's observation is causally separated from its prior-history baseline. Sparse recent history cannot masquerade as a mature baseline. Production adoption requires both regression safety and prospective evidence.
+### Positive
 
-**Negative.** The composition boundary gains a validated history read and the system gains another telemetry component. Calibration becomes more involved because estimator sensitivity is part of the evidence, not just coefficient tuning. Athletes with insufficient recent or long-window coverage get no drift contribution by design.
+* Persistent subjective deterioration can be tested without weakening today's safety floors.
+* The architecture supports individualized interpretation while keeping the statistical estimator replaceable and auditable.
+* Today's observation is causally separated from its prior-history baseline.
+* Sparse recent history cannot masquerade as a mature baseline.
+* Production adoption requires both regression safety and prospective evidence.
 
-**Neutral.** While the selector is default-off, production decisions remain bit-identical and `POLICY_VERSION` remains unchanged.
+### Negative
 
-**Explicitly accepted modelling risk.** The reference estimator may treat ordinal 1–10 responses approximately as interval data. That is acceptable for an experimental, bounded candidate behind a disabled selector; it is not treated as a physiological truth, and production adoption depends on sensitivity plus prospective evidence.
+* The composition boundary gains a validated history read and the system gains another telemetry component.
+* Calibration becomes more involved because estimator sensitivity is part of the evidence, not just coefficient tuning.
+* Athletes with insufficient recent or long-window coverage get no drift contribution by design.
+
+### Neutral
+
+While the selector is default-off, production decisions remain bit-identical and `POLICY_VERSION` remains unchanged.
+
+### Explicitly accepted modelling risk
+
+The reference estimator may treat ordinal 1–10 responses approximately as interval data. That is acceptable for an experimental, bounded candidate behind a disabled selector; it is not treated as a physiological truth, and production adoption depends on sensitivity plus prospective evidence.
 
 ## Alternatives considered
 
@@ -194,6 +211,6 @@ A default-off implementation does **not** bump `POLICY_VERSION`, because it cann
 
 **Fix 7d/28d z-scores, 10/28 coverage, and a 1-point SD floor as permanent ADR decisions.** Rejected. Those are plausible reference settings, but the available evidence does not establish them as universal physiological constants and the questionnaire items themselves have heterogeneous reliability/validity.
 
-**Do nothing; keep subjective baselines informational only.** Remains a legitimate Phase 9.8 outcome if the candidate adds no useful prospective signal or materially worsens decision quality.
+**Do nothing; keep subjective baselines informational only.** Remains a legitimate Phase 9 go/no-go outcome if the candidate adds no useful prospective signal or materially worsens decision quality.
 
 **Ask the athlete once to define a normal score.** Rejected as the baseline authority: it is a single self-report that can become stale and does not solve day-to-day scale-use drift. A future scale-calibration UX could still be useful for habitual-low reporting, but it is separate from this tighten-only mechanism.
