@@ -37,7 +37,9 @@ The important work is narrower:
   places accepted/implemented ADR-0017, ADR-0018, ADR-0019 and now-accepted ADR-0020 under
   "Proposed decisions awaiting acceptance". `docs/README.md` omits ADR-0012 from the list
   despite saying it is listed, still describes ADR-0013 as merely reserved, and carries
-  several stale plan/schema statuses.
+  several stale plan/schema statuses. These are mutable-index cleanups, not ADR changes,
+  and are intentionally left as a focused follow-up rather than silently broadening this
+  Phase-9 fixture/ADR PR further.
 * **P1 — stop using ADR-0006 as evidence that the engine identifies overtraining.** Its
   telemetry is a product strain/risk signal. Overtraining syndrome is a clinical/exclusion
   diagnosis for which no single generally accepted marker exists; the ADR's phrase
@@ -137,7 +139,7 @@ uses the plan index as the entry point for "what is startable today".
 
 ### Recommendation
 
-These are mutable indexes, so fix them directly rather than creating ADRs for them. Move
+These are mutable indexes, so fix them directly in a focused documentation pass. Move
 ADR-0017/18/19/20 decisions into the accepted register (or replace the split register with
 one table carrying `Accepted/Proposed/Rejected` status). Add ADR-0012 and ADR-0013 to the
 docs index and update the stale plan/schema labels.
