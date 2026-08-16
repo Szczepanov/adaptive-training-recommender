@@ -31,7 +31,7 @@ import { resolveExecutionDose } from './dose';
 import { isTemplatePhaseEligible } from './periodization';
 import { resolveMinimumDaysAfterHardLowerBody } from './planningCandidate';
 import { adjudicateExternalSession } from './externalSession';
-import { toSyntheticTemplate } from './externalSessionProfiles';
+import { externalEventAsFixedActivity, toSyntheticTemplate } from './externalSessionProfiles';
 import type { ExternalPlanSession } from './models';
 import { applyFixedActivityStimulusCredit } from './planner';
 import { getUnresolvedObjectives } from './microcycle';
@@ -329,10 +329,39 @@ export interface ExternalPlanContext {
     contentHash: string;
 }
 
+function eventCategoryMatchesSession(event: UserEvent, session: ExternalPlanSession): boolean {
+    switch (session.gating.modality) {
+        case 'cycling': return event.category === 'cycling_event' || event.category === 'triathlon';
+        case 'running': return event.category === 'running_race' || event.category === 'triathlon';
+        case 'strength': return event.category === 'strength_meet';
+        case 'field':
+        case 'mobility':
+        case 'cross_training': return event.category === 'general_target';
+    }
+}
+
+function hasMatchingUserEvent(events: UserEvent[], session: ExternalPlanSession, date: string): boolean {
+    return events.some(event =>
+        event.date === date
+        && event.lifecycle !== 'cancelled'
+        && eventCategoryMatchesSession(event, session),
+    );
+}
+
+function externalPrescriptionFor(externalPlan: ExternalPlanContext): NonNullable<Recommendation['externalPrescription']> {
+    const { session, planId, revision } = externalPlan;
+    return {
+        planId, revision, sessionId: session.id, title: session.title,
+        prescription: session.prescription,
+        ...(session.scaling ? { scaling: session.scaling } : {}),
+        ...(session.isEvent ? { isEvent: true } : {}),
+    };
+}
+
 /**
- * Builds the recommendation for an imported session. The verdict decides what is shown;
- * a non-actionable verdict yields the safe recovery template rather than a prescription,
- * so a `skip`/`defer`/`advisory` day can never render as "do this".
+ * Builds the recommendation for an imported prescribed session. Events deliberately do
+ * not use this path: D-EVENT reconciles them onto FixedActivity and keeps their verdict as
+ * advice alongside the normal recommendation rather than recommending the event itself.
  */
 function adjudicatedExternalRecommendation(
     externalPlan: ExternalPlanContext,
@@ -341,10 +370,12 @@ function adjudicatedExternalRecommendation(
     envelopeState: ReturnType<typeof evaluateReadinessAndSafetyEnvelope>,
     intent: Awaited<ReturnType<typeof resolveTrainingIntent>>,
     date: string,
+    fixedActivities: FixedActivity[],
 ): Recommendation {
     const { session, planId, revision, contentHash } = externalPlan;
-    const verdict = adjudicateExternalSession(session, readiness, context, envelopeState, intent.plannedDose, date);
-    const actionable = verdict.decision === 'proceed' || verdict.decision === 'scale' || verdict.decision === 'advisory';
+    const availability = resolveAvailability(date, readiness.subjective, fixedActivities, context);
+    const verdict = adjudicateExternalSession(session, readiness, context, envelopeState, intent.plannedDose, date, availability);
+    const actionable = verdict.decision === 'proceed' || verdict.decision === 'scale';
 
     const restTemplate = ENRICHED_TEMPLATES.find(template => template.category === 'Rest')
         ?? TEMPLATES.find(template => template.category === 'Rest')
@@ -360,12 +391,7 @@ function adjudicatedExternalRecommendation(
         mode: actionable ? envelopeState.mode : 'recover',
         envelopes: envelopeState.envelopes,
         telemetry: envelopeState.telemetry,
-        externalPrescription: {
-            planId, revision, sessionId: session.id, title: session.title,
-            prescription: session.prescription,
-            ...(session.scaling ? { scaling: session.scaling } : {}),
-            ...(session.isEvent ? { isEvent: true } : {}),
-        },
+        externalPrescription: externalPrescriptionFor(externalPlan),
         externalVerdict: verdict,
         decisionTrace: {
             policyVersion: POLICY_VERSION,
@@ -398,17 +424,51 @@ export async function evaluateTrainingWithIntent(
     const { mode, envelopes, telemetry } = envelopeState;
     let intent = await resolveTrainingIntent(userId, events, date, readiness, 7, historyProvider, preparedHistorySnapshot, authoredPlanBlocks, trainingIntentProfile, fatigueFusionPolicy);
 
-    // ADR-0019 D-EXT: when an imported session is placed today, the plan's author owns
-    // selection and this engine owns adjudication. Intent is still fully resolved above --
-    // the weekly critique (8.7) consumes it, and the planned dose below comes from it.
-    // `externalFallback` is set by the authority exactly when the athlete selected
-    // externally_planned but no session was passed to it -- which is how resolveTrainingIntent
-    // resolves it, since placement is the caller's to do. Gating on it here means a caller
-    // that supplies an external session for an evergreen or event_directed athlete gets the
-    // normal ranked path, rather than silently suspending the engine (ADR-0017 D-MODE).
+    let externalEventAdvisory: {
+        prescription: NonNullable<Recommendation['externalPrescription']>;
+        verdict: NonNullable<Recommendation['externalVerdict']>;
+        provenance: { planId: string; revision: number; sessionId: string; contentHash: string };
+    } | null = null;
+
+    // ADR-0019 D-EXT/D-EVENT. An ordinary imported session owns selection and is
+    // adjudicated directly. An event is different: it is a commitment, not a prescribed
+    // session. Adjudicate it for advice, then reconcile its authored duration/load onto the
+    // existing FixedActivity contract and let the normal engine decide whether anything
+    // additional belongs on the day.
     if (externalPlan && intent.planningContext.externalFallback) {
-        return adjudicatedExternalRecommendation(externalPlan, readiness, context, envelopeState, intent, date);
+        if (!externalPlan.session.isEvent) {
+            return adjudicatedExternalRecommendation(externalPlan, readiness, context, envelopeState, intent, date, fixedActivities);
+        }
+
+        const eventAvailability = resolveAvailability(date, readiness.subjective, fixedActivities, context);
+        let eventVerdict = adjudicateExternalSession(
+            externalPlan.session, readiness, context, envelopeState, intent.plannedDose, date, eventAvailability,
+        );
+        if (!hasMatchingUserEvent(events, externalPlan.session, date)) {
+            eventVerdict = {
+                ...eventVerdict,
+                rationale: `${eventVerdict.rationale} This imported event is not linked to a matching target event in Goals. Add or link it there so periodization and taper use the same commitment; the import will not create that calendar event for you.`,
+            };
+        }
+
+        const eventFixedActivity = externalEventAsFixedActivity(
+            externalPlan.session, externalPlan.planId, externalPlan.revision, userId, date,
+        );
+        if (eventFixedActivity && !fixedActivities.some(activity => activity.id === eventFixedActivity.id)) {
+            fixedActivities = [...fixedActivities, eventFixedActivity];
+        }
+        externalEventAdvisory = {
+            prescription: externalPrescriptionFor(externalPlan),
+            verdict: eventVerdict,
+            provenance: {
+                planId: externalPlan.planId,
+                revision: externalPlan.revision,
+                sessionId: externalPlan.session.id,
+                contentHash: externalPlan.contentHash,
+            },
+        };
     }
+
     const evergreen = resolveEvergreenPlan(
         intent.planningContext, intent.periodization.phase, intent.history, intent.historySnapshot,
         preferences, context, date, fixedActivities,
@@ -474,6 +534,9 @@ export async function evaluateTrainingWithIntent(
     const phaseContext = intent.periodization.focusEvent
         ? `${intent.periodization.daysToEvent} days out from ${intent.periodization.focusEvent.title}, ${intent.periodization.phase.phaseName} phase.`
         : `${intent.periodization.phase.phaseName} phase.`;
+    const externalFallbackPrefix = !externalPlan && intent.planningContext.externalFallback
+        ? 'External plan fallback: no imported session is placed today, so the built-in planner is choosing this session. '
+        : '';
     const pick = rankingResult.accepted[0];
     if (!pick) {
         const safeRecovery = candidates.find(template => template.category === 'Rest' || template.category === 'Mobility/Recovery')
@@ -482,13 +545,18 @@ export async function evaluateTrainingWithIntent(
             ?? TEMPLATES[0];
         return {
             template: safeRecovery,
-            rationale: `${phaseContext} No candidate survived the active hard constraints; defaulting to recovery rather than bypassing those constraints.`,
+            rationale: `${externalFallbackPrefix}${phaseContext} No candidate survived the active hard constraints; defaulting to recovery rather than bypassing those constraints.`,
             mode: 'recover', envelopes, telemetry,
+            ...(externalEventAdvisory ? {
+                externalPrescription: externalEventAdvisory.prescription,
+                externalVerdict: externalEventAdvisory.verdict,
+            } : {}),
             decisionTrace: {
                 policyVersion: POLICY_VERSION,
                 candidateScores: rankingResult.all.map(candidate => ({ templateId: candidate.template.id, utilityScore: candidate.utilityScore, benefitScore: candidate.benefitScore, costPenalty: candidate.costPenalty, excludedReasons: candidate.excludedReasons })),
                 droppedContributorObjectives: intent.droppedContributorObjectives,
                 calibration,
+                ...(externalEventAdvisory ? { externalPlan: externalEventAdvisory.provenance } : {}),
             },
         };
     }
@@ -496,13 +564,18 @@ export async function evaluateTrainingWithIntent(
         template: pick.template,
         plannedDose: intent.plannedDose,
         executionDose: resolveExecutionDose(intent.plannedDose, envelopes.plan, null),
-        rationale: `${phaseContext} ${pick.rationale}`,
+        rationale: `${externalFallbackPrefix}${phaseContext} ${pick.rationale}`,
         mode, envelopes, telemetry,
+        ...(externalEventAdvisory ? {
+            externalPrescription: externalEventAdvisory.prescription,
+            externalVerdict: externalEventAdvisory.verdict,
+        } : {}),
         decisionTrace: {
             policyVersion: POLICY_VERSION,
             candidateScores: rankingResult.all.map(candidate => ({ templateId: candidate.template.id, utilityScore: candidate.utilityScore, benefitScore: candidate.benefitScore, costPenalty: candidate.costPenalty, excludedReasons: candidate.excludedReasons })),
             droppedContributorObjectives: intent.droppedContributorObjectives,
             calibration,
+            ...(externalEventAdvisory ? { externalPlan: externalEventAdvisory.provenance } : {}),
         },
     };
 }
