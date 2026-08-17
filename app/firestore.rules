@@ -490,6 +490,9 @@ service cloud.firestore {
         && data.updatedAt is string && data.updatedAt.size() > 0
         && (!('completedAt' in data) || (data.completedAt is string && data.completedAt.size() > 0))
         && data.state in ['in_progress', 'completed', 'abandoned']
+        // Completion time belongs only to a completed session. An abandoned session keeps
+        // its sets but was never completed; an in-progress session has not closed yet.
+        && ((data.state == 'completed') == ('completedAt' in data))
         && (!('sourceRecommendationDate' in data) || isValidActivityDate(data.sourceRecommendationDate))
         && data.exercises is list && data.exercises.size() <= 30
         && (!('sessionRpe' in data) || (data.sessionRpe is number && data.sessionRpe >= 0 && data.sessionRpe <= 10))
@@ -499,13 +502,18 @@ service cloud.firestore {
 
     match /users/{userId}/strength_sessions/{sessionId} {
       allow read: if isOwner(userId);
-      allow create: if hasValidStrengthSession(userId, sessionId);
+      allow create: if hasValidStrengthSession(userId, sessionId)
+        && request.resource.data.state == 'in_progress';
       // date and startedAt are fixed at creation (ADR-0021: date is the Warsaw-local date
       // of session START, never recomputed) -- an update may append sets, change state, and
       // advance updatedAt/completedAt, but may not rewrite when the session started or which
       // calendar day it belongs to.
       allow update: if hasValidStrengthSession(userId, sessionId)
         && keepsOwnership(userId)
+        // `completed` and `abandoned` are terminal. This is an integrity property, not a
+        // UI convention: a closed record may already have updated 1RM history or supplied
+        // a replayable exposure, so changing its sets/state would rewrite history.
+        && resource.data.state == 'in_progress'
         && request.resource.data.date == resource.data.date
         && request.resource.data.startedAt == resource.data.startedAt;
       // Unlike decision_journal (an audited record), a mis-started session is the athlete's
