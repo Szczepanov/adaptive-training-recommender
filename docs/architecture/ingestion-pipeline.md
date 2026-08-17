@@ -60,3 +60,24 @@ Garmin Connect API
    * Completed previous-day ($D - 1$) total steps
 5. **Upsert**: Writes Schema v3 snapshot payload to Firestore under `users/{userId}/daily_recovery_snapshots/{YYYY-MM-DD}`.
 6. **Activity Normalization**: Saves raw activity records to `users/{userId}/activities/{activityId}` for cross-day auditability.
+
+---
+
+## 🚴 Workout Export & Garmin Connect Integration
+
+The system supports automated workout export and calendar synchronization to Garmin Connect:
+
+1. **Queueing**: The frontend writes a canonical workout export document to `users/{userId}/garmin_workout_queue/{date}`.
+2. **Payload Transformation** (`src/garmin_sync/workout_export.py`):
+   - **Target Resolution Hierarchy**:
+     - *Exact Watts*: `230–240 W` $\rightarrow$ `power.zone` with `targetValueOne: 230`, `targetValueTwo: 240`.
+     - *% FTP + Athlete FTP*: `90–95% FTP` with 260 W FTP $\rightarrow$ `targetValueOne: 234`, `targetValueTwo: 247`.
+     - *Named Zone or % FTP fallback*: `Zone 2`, `Tempo`, `65–75% FTP` $\rightarrow$ native Garmin `zoneNumber: 1–7`.
+     - *Other*: `no.target` with descriptive cues.
+   - **Repeat Grouping (`RepeatGroupDTO`)**:
+     - *Step-level repeats*: Single step repeated $N$ times with recovery.
+     - *Block-level multi-step repeats* (e.g. Over-Under blocks): A block with $N$ iterations containing alternating Under (4 min) and Over (1 min) sub-intervals plus between-block recovery.
+3. **Synchronization** (`src/garmin_sync/service.py`):
+   - `push-pending-workouts` polls `status == 'pending'` items and pushes each to Garmin Connect via `client.upload_workout` + `client.schedule_workout`.
+   - Flips Firestore document to `status: 'synced'` with `garminWorkoutId` and `syncedAt`.
+

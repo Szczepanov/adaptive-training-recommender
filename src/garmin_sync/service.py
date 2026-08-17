@@ -720,7 +720,28 @@ class GarminSyncService:
         client = self._init_garmin_client()
         from .workout_export import canonical_workout_to_garmin_payload
 
-        garmin_payload = canonical_workout_to_garmin_payload(payload)
+        athlete_ftp = payload.get("athleteFtpWatts")
+        if athlete_ftp is None and self.repository.db:
+            try:
+                user_ref = self.repository.db.collection("users").document(self.settings.app_user_id)
+                pref_doc = user_ref.collection("preferences").document("profile").get()
+                if pref_doc.exists:
+                    data = pref_doc.to_dict() or {}
+                    perf = data.get("performanceProfile") or {}
+                    cycling = perf.get("cycling") or {}
+                    athlete_ftp = cycling.get("ftpWatts") or perf.get("ftpWatts")
+
+                if athlete_ftp is None:
+                    settings_doc = user_ref.collection("trainingSettings").document("profile").get()
+                    if settings_doc.exists:
+                        data = settings_doc.to_dict() or {}
+                        perf = data.get("performanceProfile") or {}
+                        cycling = perf.get("cycling") or {}
+                        athlete_ftp = cycling.get("ftpWatts") or perf.get("ftpWatts")
+            except Exception as e:
+                logger.debug(f"Could not load athlete FTP from Firestore profiles: {e}")
+
+        garmin_payload = canonical_workout_to_garmin_payload(payload, athlete_ftp=athlete_ftp)
         logger.info(
             f"Uploading workout '{garmin_payload.get('workoutName')}' to Garmin Connect for {target_date}..."
         )
