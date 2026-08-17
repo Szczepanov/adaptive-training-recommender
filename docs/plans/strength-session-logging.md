@@ -65,7 +65,7 @@ accepted before any Step C item.
 | Item | Title | Status | Blocked by |
 |---|---|---|---|
 | S1.1 | Offline persistence | `[x]` | — |
-| S1.2 | `strength_sessions` schema and types | `[ ]` | D-GAUGE |
+| S1.2 | `strength_sessions` schema and types | `[x]` | D-GAUGE |
 | S1.3 | Firestore rules and validation | `[ ]` | S1.2 |
 | S1.4 | Session state machine and date attribution | `[ ]` | S1.2 |
 | S1.5 | Set-entry UI | `[ ]` | S1.3, S1.4 |
@@ -120,7 +120,7 @@ reconnect" is a real-browser behaviour. The unit tests prove the cache is *confi
 that IndexedDB round-trips. Confirm by hand (DevTools → Network → Offline, write, reload,
 reconnect) before S1.5 depends on it.
 
-### S1.2 `[ ]` `strength_sessions` schema and types — **implements D-GAUGE, D-SETLOG**
+### S1.2 `[x]` `strength_sessions` schema and types — **implements D-GAUGE, D-SETLOG**
 
 **Change:** define the persisted shape at `users/{userId}/strength_sessions/{sessionId}`.
 
@@ -148,10 +148,12 @@ interface LoggedExercise {
 }
 
 interface StrengthSession {
+    userId: string;                // added during implementation, see outcome note
     sessionId: string;
     date: string;                  // Warsaw-local, from session START (S1.4)
     startedAt: string;
     completedAt?: string;
+    updatedAt: string;             // added during implementation, see outcome note
     state: 'in_progress' | 'completed' | 'abandoned';
     sourceRecommendationDate?: string;   // set when started from a prescription
     exercises: LoggedExercise[];
@@ -177,6 +179,30 @@ Notes that are not optional:
 **Done when:** types exist, a parser mirrors the `parseNormalizedGarminActivity` house
 style (unknown keys ignored, malformed optional fields degrade rather than invalidate), and
 `npm run check` passes.
+
+**Outcome (2026-08-17).** Implemented in `engine/models.ts` (types) and a new
+`persistence/parsers/strengthSession.ts`, with 20 tests. Two fields were added beyond this
+block, both required by S1.3's already-planned rules shape rather than optional polish:
+
+* **`userId`.** Every other client-writable collection (`decision_journal`, `goals`,
+  `daily_recommendations`) duplicates `userId` in the document so `hasOwnedUserId` /
+  `keepsOwnership` can validate it; this schema block omitted it. The parser now takes
+  `userId` as a caller-supplied parameter and checks it against the stored value before
+  anything else, mirroring `parseDecisionJournalEntry` — a mismatch is `user-id-mismatch`,
+  not silently trusted.
+* **`updatedAt`.** D-SETLOG requires per-set persistence (every logged set is its own
+  write), so the document needs a monotonic field for read-layer revision tracking. Used as
+  the parser's `DataState` revision, the same role `syncedAt` plays for
+  `NormalizedGarminActivity`.
+
+Degradation policy is two-tier and was tested explicitly: a malformed **top-level** field
+(date, state, schemaVersion, startedAt, updatedAt, userId mismatch) invalidates the whole
+document. A malformed **set or exercise** is dropped from its parent array and the rest of
+the session still parses `AVAILABLE` — D-SETLOG's raw log should survive one bad entry from
+a flaky offline write, not vanish along with every other set in the session. `weightKg`
+parsing is deliberately asymmetric: explicit `null` is accepted as bodyweight, but a
+non-null, non-numeric value drops the set rather than being coerced to `null` — coercion
+would misreport a real loaded set as bodyweight.
 
 ### S1.3 `[ ]` Firestore rules and validation
 
