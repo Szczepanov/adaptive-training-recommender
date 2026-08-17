@@ -1,7 +1,7 @@
 # Strength session logging, 1RM self-calibration, and engine integration
 
-* **Status:** `Accepted` (all 12 work items landed 2026-08-17; see the "Not the same as shipping" note in S3.3's outcome below before treating this plan as fully closed out)
-* **Blocked by:** nothing. D-STRCOST is accepted (ADR-0021) and Steps A–C are all built. **Enabling** `ManualTrainingPolicy.included` in production remains explicitly deferred pending real logged sessions -- see S3.3.
+* **Status:** `In progress (default-off)` — all numbered S tasks are built and reviewed; activation remains evidence-gated.
+* **Blocked by:** nothing for the delivered logger/calibration path. Enabling manual strength load remains deferred until a real logged-history comparison supports it, per [ADR-0021](../adr/0021-strength-session-logging-and-intensity-gauges.md).
 * **Unlocks:** progressive-overload history; self-calibrating strength prescription; strength work finally costing `lowerBody` / `neuromuscular` fatigue.
 * **Source analysis:** [`2026-08-17-strength-logging-gap.md`](../analysis/2026-08-17-strength-logging-gap.md) — findings referenced below as `A2.1`–`A4.1`.
 
@@ -35,14 +35,14 @@ Three goals, delivered one per step, cheapest risk first:
 | P3 | A declared `manualTraining` history source | ✅ declared in `trainingHistorySnapshot.ts`, hardcoded `MISSING` (A2.1) |
 | P4 | A 1RM store with field-level ownership | ✅ `estimated1RmKg` + `targetSources` — **no writer exists** (A2.2) |
 | P5 | Offline write durability | ✅ **S1.1 done** — `persistentLocalCache` with multi-tab manager in `firebase.ts` |
-| P6 | A decision on the intensity-gauge schema | ❌ **D-GAUGE — blocks S1.2** |
-| P7 | A decision on set-log → dimensional cost | ❌ **D-STRCOST — blocks Step C only** |
+| P6 | A decision on the intensity-gauge schema | ✅ **D-GAUGE accepted** in ADR-0021 |
+| P7 | A decision on set-log → dimensional cost | ✅ **D-STRCOST accepted as a measurement obligation** in ADR-0021; S3.3 decided `DEFER`, so real-history activation evidence still blocks enabling it |
 
 ---
 
 ## Decisions this plan needs
 
-Proposed here, **not** yet in the accepted register.
+Accepted in [ADR-0021](../adr/0021-strength-session-logging-and-intensity-gauges.md). The ADR is authoritative where this implementation summary differs.
 
 | ID | Proposal | Why it cannot be left to the implementer |
 |---|---|---|
@@ -51,8 +51,8 @@ Proposed here, **not** yet in the accepted register.
 | **D-1RMSRC** | Derived 1RM joins `targetSources` as its own rung and never overwrites `manual` or `coach` | `targetSources` exists precisely to stop an automated import replacing a human-set target; writing blind reintroduces that bug from a new direction (A3.3) |
 | **D-STRCOST** | The set-log → `WorkoutCostProfile`/`WorkoutStimulusProfile` mapping is built default-off and **measured** before shipping; coefficients come from evidence, not from this document | Same discipline as D-FUSE (ADR-0014) and D-SUBJCAL (ADR-0020). Prescribing a tonnage→fatigue coefficient here would repeat the uncited-constant practice F11 criticised (A3.5) |
 
-D-GAUGE must be accepted before S1.2 (it defines the persisted schema). D-STRCOST must be
-accepted before any Step C item.
+D-GAUGE and D-STRCOST were accepted before their dependent implementation work. D-STRCOST
+still requires a real logged-history activation review before the selector may be enabled.
 
 ---
 
@@ -71,7 +71,7 @@ accepted before any Step C item.
 | S2.2 | Write-back under a `derived` source | `[x]` | S2.1 |
 | S3.1 | Set log → `CompletedExposure` | `[x]` | S1.2, ADR for D-STRCOST |
 | S3.2 | `manualTraining` source wiring | `[x]` | S3.1 |
-| S3.3 | Measurement and ship decision | `[x]` | S3.2 |
+| S3.3 | Measurement and ship decision | `[x]` — DEFER | S3.2 |
 
 ---
 
@@ -316,8 +316,9 @@ Non-negotiable behaviours:
 prescribed session prefills from the recommendation; an offline session syncs on reconnect
 with no duplicate sets.
 
-**Outcome (2026-08-17).** Behaviours 1–3 and 5 are implemented as designed; behaviour 4
-(sync-state indicator) is a known simplification -- see below.
+**Outcome (2026-08-17).** All five behaviours are implemented. The review added the
+previously missing per-set sync affordance using Firestore metadata rather than treating a
+locally accepted write as server-synced.
 
 Split three ways, all new: `workouts/strengthSessionEntry.ts` (pure confirm-or-amend logic
 — prescription matching, prefill, set construction, exercise upsert; 20 tests, no I/O or
@@ -355,13 +356,10 @@ exercise. What *is* verified: `logSet` awaits `saveExercises` before updating lo
 Confirm the real end-to-end behaviour by hand (DevTools → Offline, log a set, kill the tab,
 reopen) before relying on it.
 
-**Sync-state indicator not built.** Item 4 above ("pending" vs "synced" per set) needs a
-live `onSnapshot({ includeMetadataChanges: true })` listener to read `hasPendingWrites`,
-which is a meaningfully separate feature (subscription lifecycle, cleanup, per-document
-metadata state) from durable persistence itself. `saveExercises`'s `await` already
-guarantees the write reached the local cache before the UI reports success; what's missing
-is only the passive "still syncing to the server" affordance. Left for a follow-up rather
-than bundled in here.
+`strengthSessionService.observeSession` now subscribes with metadata changes enabled.
+`useStrengthSessionRunner` retains the last acknowledged set keys while a document has
+pending writes, so older sets remain `synced` and only new local sets display `pending`;
+subscription errors display `sync unavailable` rather than a false acknowledgement.
 
 ### S1.6 `[x]` Rest timer and derived rest
 
@@ -527,6 +525,12 @@ and writes the derived result to **both** locations, keeping neither reader stal
 explicitly: a legacy value of `999` alongside a `strength.estimated1RmKg` of `120` under a
 `coach` source correctly protects `120`, not `999` and not an unprotected write.
 
+**Review correction:** the original implementation exposed the write-back service but no
+production caller invoked it. `strengthSessionCompletion.ts` now makes it part of Finish:
+derivation runs before the terminal session transition, so a failed preferences write
+leaves the session resumable and retryable. Abandonment does not derive a 1RM. A corrupt
+protected source with no corresponding value is reported as `null`, not cast to a number.
+
 ---
 
 ## Step C — Engine integration (**blocked on D-STRCOST**)
@@ -598,9 +602,9 @@ session takes the hardest) reuses `oneRepMax.ts`'s `isNearFailureGauge` (now exp
 than redefining "how close to failure" a second time, and falls back to the existing table's
 own `unknown` row — not a guessed `moderate` — when a working set carries no gauge at all.
 
-`occurrenceKey` is `strength:${session.sessionId}` — the Firestore-generated session id is
-already globally unique per user, unlike a Garmin `activityId`, so no compound key was
-needed. `null` is returned for an `in_progress` session (data may still change) and for a
+`occurrenceKey` is `strength:${session.sessionId}` for an unplanned log. A log started from
+a recommendation uses `recommendation:${sourceRecommendationDate}` so Garmin/adherence and
+the manual record cannot replay one physical session twice. `null` is returned for an `in_progress` session (data may still change) and for a
 `completed`/`abandoned` session with nothing logged; an `abandoned` session with real sets
 still derives an exposure, matching S1.4's "never delete, partial work still happened."
 
@@ -617,50 +621,17 @@ Preserve the existing failure contract exactly: a source that fails must surface
 committed baseline; with it on, strength sessions appear in the snapshot and the diff is
 produced for S3.3.
 
-**Outcome (2026-08-17).** `ManualTrainingPolicy = 'off' | 'included'` added to
-`trainingHistorySnapshot.ts`, threaded through `buildTrainingHistorySnapshot`, mirroring
-`SubjectiveDriftPolicy`'s exact plumbing pattern (`rules.ts`, ADR-0020) rather than
-inventing a second selector shape. `firestoreTrainingHistory.ts` (the one production call
-site) now fetches real strength sessions in parallel with activities/recommendations, but
-calls the builder with the policy literal `'off'` — the fetch is wired so enabling the
-source later is a policy flip, not a second fetch-wiring change, but it currently has no
-effect. 9 new tests in `trainingHistorySnapshot.test.ts`, 6 in a new
-`firestoreTrainingHistory.test.ts`.
+**Outcome (2026-08-17, reviewed).** `ManualTrainingPolicy = 'off' | 'included'` is threaded
+through the real snapshot builder. Production passes `'off'`; that path does not issue a
+strength-session query, keeps `manualTraining` `MISSING`, and preserves the original
+four-source-segment revision exactly. The explicit enabled path reads the same
+`throughDateExclusive` window as activities/recommendations, includes session identity in
+the source revision, and blocks on any `INVALID`/`UNAVAILABLE` record per ADR-0010. Manual
+and Garmin/adherence evidence with the same recommendation occurrence are reconciled to
+one exposure rather than double-counted. S3.3's reviewed decision keeps the flag off; no
+`POLICY_VERSION` change is needed while it remains unreachable in production.
 
-**Every branch checks `=== 'off'`, never `=== 'included'`.** A first draft did the
-opposite (`policy === 'included'` guarding the new logic) and a new architecture guard test
-— mirroring `rules.test.ts`'s existing one for `SubjectiveDriftPolicy` exactly — caught it
-immediately: the guard asserts the enabled literal never appears in production engine code
-outside a test or a future `engine/simulation/` harness, and the first draft failed it. Fixed
-by inverting every branch to test for `'off'` (the safe default) instead, matching
-`rules.ts`'s own `subjectiveDriftStrain`, which never once writes the literal `'drift'`
-outside its own type declaration. The guard is now a permanent regression check, not a
-one-time review.
-
-**The revision string's *shape*, not only its value, had to stay identical when off.** An
-early version always appended a fifth `:manualTrainingRevision` segment to the returned
-`revision` string (using a literal `'off'` placeholder when the selector was off). That
-would have been a silent behaviour change for any caller comparing revision strings by
-shape rather than pure opaque equality — caught before commit, not after; the segment is
-now appended only when the selector is actually on.
-
-**A second failure-contract edge case, closing the same class of bug `firestoreTrainingHistory.ts`'s** `strengthSessionService.getSessionsInRange` **(S1.7) already tolerates:** zero usable sessions with a nonzero `invalidRecords` count (every document present was corrupt) must report `INVALID`, not `MISSING` — otherwise "every record was corrupt" and "the athlete genuinely logged nothing" would read identically, precisely the conflation this source's failure contract exists to prevent. Extracted into an exported, directly-testable `toManualTrainingDataState` function specifically because the selector being `'off'` in production means `getSnapshot`'s returned snapshot cannot observably distinguish the two states — a black-box integration test alone could never have caught a regression here.
-
-**`simulate:diff` could not be run to a clean pass, for a reason unrelated to this change.**
-Running it produces 16 `[NEW SCENARIO]` lines against the committed baseline
-(`docs/analysis/simulation-baseline.json`). Verified this is **pre-existing and not
-introduced by S3.2** by running the identical command against an unmodified checkout of
-`main` (commit `bfb87fc`, via a disposable git worktree): byte-identical output, same 16
-scenario IDs. The baseline's scenario IDs (`cycling_gran_fondo_A`, ...) simply no longer
-match `engine/simulation/scenarios.ts`'s current scenario catalog — a staleness that
-predates this entire plan and this session. This plan's own diff contribution is
-independently confirmable as zero: `git diff main...HEAD --stat -- app/src/engine/simulation/
-docs/analysis/simulation-baseline.json` is empty across every commit in this stack. Not
-fixed here — regenerating the baseline is an out-of-scope, consequential action this repo's
-own tooling requires human review for (`simulate:update-baseline -- --reviewed`), and is
-unrelated to strength logging.
-
-### S3.3 `[x]` Measurement and ship decision — **DEFERRED, not shipped: see outcome**
+### S3.3 `[x]` Measurement and ship decision — DEFER, production stays off
 
 Produce the D-STRCOST evidence: derived strength cost against the athlete's real logged
 history, the `simulate:diff` output from S3.2, and the cases where strength load changed a
@@ -669,41 +640,17 @@ recommendation.
 **Recording "no material improvement" satisfies this item**, per D-BEAM. A defensible
 decision is the success condition, not shipping.
 
-**Outcome and decision (2026-08-17): DEFER — `ManualTrainingPolicy` stays `'off'` in
-production. Not "measured, no improvement" — "cannot yet be measured at all."**
+**Outcome and decision (2026-08-17, reviewed): DEFER.** No repository-supplied real
+strength-session dataset exists from which to judge recommendation changes, and synthetic
+sessions cannot authorize shipping under D-STRCOST. Production therefore remains `'off'`.
 
-This is not the same outcome D-BEAM's precedent describes, and the difference matters. Every
-item in Steps A through S3.2 was built and landed in this single session; **zero real
-strength sessions have been logged by the athlete this plan is for.** `estimateOneRepMax`,
-`deriveStrengthExposure`, and `summarizeManualTrainingMeasurement` are correct against every
-case this plan's own tests construct — but "correct on constructed cases" is exactly the
-synthetic-only evidence ADR-0020's **D-SUBJCAL** already established is *not* sufficient to
-authorize shipping a measured candidate. Fabricating plausible-looking session data to
-produce a report with real-looking numbers would manufacture the appearance of the evidence
-this item asks for, not the evidence itself — worse than reporting "no data yet," because a
-fabricated report could be mistaken for one.
-
-**What was built instead:** `workouts/manualTrainingMeasurement.ts` —
-`summarizeManualTrainingMeasurement`, aggregating cost/stimulus/confidence across a set of
-sessions, pure and independent of the selector (so it can run at any time without enabling
-anything) — 4 tests. Deliberately scoped smaller than a full per-day recommendation-verdict
-comparison (the `simulate:diff`/`subjectiveDriftComparison.ts` shape D-BEAM's Phase 9.6
-precedent used): that generator is a meaningfully larger undertaking, and building it now,
-with nothing real to run it against, would be exactly the kind of work this plan's own
-cheapest-risk-first sequencing (Step A before Step B before Step C) exists to defer until
-there's a reason to spend it.
-
-**What "ready to measure" looks like, so this is actionable rather than indefinite:** once
-the athlete has logged strength sessions across a real training block (a few weeks, spanning
-some real training-load variation), running
-`summarizeManualTrainingMeasurement(await strengthSessionService.getSessionsInRange(...))`
-against that real history, and — if the aggregate contribution looks material — building the
-fuller per-day comparison generator, are the two next steps. Until then this section's
-"Done when" criteria (a fully-identified session yields plausible cost, a free-text session
-degrades, warm-ups never influence 1RM, etc.) are satisfied by the tests already in Steps A
-through C; only the aggregate real-world materiality question — "does this change any real
-recommendation enough to matter" — remains genuinely open, because it cannot be answered any
-other way.
+`manualTrainingMeasurement.ts` provides the pure, non-enabling aggregate needed when real
+history is available: session/exposure/skipped counts, unique occurrence reconciliation,
+duplicate-occurrence visibility, dimensional cost totals, strength-stimulus totals, and
+confidence counts. It deliberately does not claim to be the later per-day verdict
+comparison. If real aggregate load is material, that comparison remains the activation
+review. The numbered implementation work is complete; the plan stays `In progress` so a
+finished plan is not mistaken for authorization to enable the policy.
 
 ---
 
@@ -754,7 +701,7 @@ only client-written training-history collection in the app.
 - [ ] Selector off → `simulate:diff` empty against the committed baseline.
 - [ ] `POLICY_VERSION` bumped, prior version added to `HISTORICAL_POLICY_VERSIONS`, `check-policy-drift.mjs` passes.
 - [ ] A pre-change audited decision still replays via `npm run replay:recommendation`.
-- [ ] S3.3's report exists and states a decision — including "not shipping".
+- [x] S3.3's report exists above and states the `DEFER` / not-shipping decision.
 
 ---
 

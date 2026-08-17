@@ -15,7 +15,7 @@ describe('summarizeManualTrainingMeasurement', () => {
     it('reports an empty summary for no sessions -- the actual state today', () => {
         const summary = summarizeManualTrainingMeasurement([]);
         expect(summary).toEqual({
-            sessionCount: 0, exposureCount: 0, skippedSessionCount: 0,
+            sessionCount: 0, exposureCount: 0, duplicateOccurrenceCount: 0, skippedSessionCount: 0,
             totalCostByAxis: { systemic: 0, cardiovascular: 0, lowerBody: 0, upperBody: 0, impactTissue: 0, neuromuscular: 0 },
             totalStimulus: { maxStrength: 0, hypertrophy: 0 },
             confidenceCounts: { inferred: 0, unknown: 0 },
@@ -35,7 +35,7 @@ describe('summarizeManualTrainingMeasurement', () => {
             sessionId: 's1',
             exercises: [{ exerciseId: 'front_squat', sets: [{ setIndex: 1, weightKg: 100, reps: 5, isWarmup: false, completedAt: '2026-08-17T18:10:00Z', gauge: { scale: 'rir', value: 2 } }] }],
         });
-        const summary = summarizeManualTrainingMeasurement([identified, identified]);
+        const summary = summarizeManualTrainingMeasurement([identified, { ...identified, sessionId: 's2' }]);
         expect(summary.exposureCount).toBe(2);
         expect(summary.totalCostByAxis.lowerBody).toBeGreaterThan(0);
         expect(summary.totalStimulus.maxStrength).toBeGreaterThan(0);
@@ -52,5 +52,19 @@ describe('summarizeManualTrainingMeasurement', () => {
         });
         const summary = summarizeManualTrainingMeasurement([identified, freeText]);
         expect(summary.confidenceCounts).toEqual({ inferred: 1, unknown: 1 });
+    });
+
+    it('measures unique physical occurrences rather than double-counting recommendation-linked logs', () => {
+        const linked = session({
+            sourceRecommendationDate: '2026-08-17',
+            exercises: [{ exerciseId: 'front_squat', sets: [{ setIndex: 1, weightKg: 100, reps: 5, isWarmup: false, completedAt: '2026-08-17T18:10:00Z', gauge: { scale: 'rir', value: 2 } }] }],
+        });
+        const summary = summarizeManualTrainingMeasurement([
+            linked,
+            { ...linked, sessionId: 's2', updatedAt: '2026-08-17T19:05:00Z' },
+        ]);
+        expect(summary.sessionCount).toBe(2);
+        expect(summary.exposureCount).toBe(1);
+        expect(summary.duplicateOccurrenceCount).toBe(1);
     });
 });
