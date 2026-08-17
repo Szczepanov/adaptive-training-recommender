@@ -184,14 +184,14 @@ checking in against stale data. This is safe to poll often because
 in the window find today's snapshot still fresh and return after a single cheap
 Firestore read, with **zero Garmin API calls**. Only the first tick each day (no
 snapshot yet) and the occasional tick once staleness expires actually hit
-Garmin -- roughly 3-4 real calls across the whole window, not one per tick. Do
+Garmin -- roughly 4-5 real calls across the whole window, not one per tick. Do
 **not** add `--force` here -- it bypasses that exact freshness gate, defeating
 the point.
 
 ```bash
 gcloud scheduler jobs create http garmin-sync-morning-poll \
   --location=${REGION} \
-  --schedule="*/15 5-8 * * *" \
+  --schedule="*/15 5-9 * * *" \
   --time-zone="Europe/Warsaw" \
   --uri="https://run.googleapis.com/v2/projects/${GCP_PROJECT}/locations/${REGION}/jobs/garmin-sync:run" \
   --http-method=POST \
