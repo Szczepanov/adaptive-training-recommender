@@ -1,7 +1,7 @@
 import type { WorkoutPrescription } from '../workouts/models';
 import type { ExternalPlanSession } from '../engine/models';
 
-import { extractRecoverySecondsFromText, extractSetRecoverySecondsFromText, extractSetsAndRepsFromText } from './workoutJsonExport';
+import { extractRecoverySecondsFromText, extractSetRecoverySecondsFromText, resolveSetsAndRepetitions } from './workoutJsonExport';
 
 export interface ZwiftExportOptions {
     ftpWatts?: number | null;
@@ -26,18 +26,16 @@ function parseFractionFtpFromTargetText(targetText: string | undefined, ftpWatts
         return ((min + max) / 2) / 100;
     }
     const wattsMatch = targetText.match(/(\d+(?:\.\d+)?)\s*[-–]\s*(\d+(?:\.\d+)?)\s*W\b/i);
-    if (wattsMatch) {
+    if (wattsMatch && ftpWatts && ftpWatts > 0) {
         const minW = parseFloat(wattsMatch[1]);
         const maxW = parseFloat(wattsMatch[2]);
         const avgW = (minW + maxW) / 2;
-        const refFtp = ftpWatts && ftpWatts > 0 ? ftpWatts : 250;
-        return parseFloat((avgW / refFtp).toFixed(2));
+        return parseFloat((avgW / ftpWatts).toFixed(2));
     }
     const singleWattsMatch = targetText.match(/(\d+(?:\.\d+)?)\s*W\b/i);
-    if (singleWattsMatch) {
+    if (singleWattsMatch && ftpWatts && ftpWatts > 0) {
         const w = parseFloat(singleWattsMatch[1]);
-        const refFtp = ftpWatts && ftpWatts > 0 ? ftpWatts : 250;
-        return parseFloat((w / refFtp).toFixed(2));
+        return parseFloat((w / ftpWatts).toFixed(2));
     }
     if (/zone\s*1|recovery/i.test(targetText)) return 0.50;
     if (/zone\s*2|endurance|aerobic/i.test(targetText)) return 0.65;
@@ -150,11 +148,9 @@ export function generateZwiftFromExternalSession(
             const sessionText = `${stepText} ${session.title} ${session.prescription.summary}`;
 
             if (!isWarmup && !isCooldown) {
-                const parsed = extractSetsAndRepsFromText(stepText);
-                if (parsed.sets && parsed.repetitions) {
-                    sets = parsed.sets;
-                    reps = parsed.repetitions;
-                }
+                const resolvedStructure = resolveSetsAndRepetitions(step.sets, step.repeat, stepText);
+                sets = resolvedStructure.sets ?? 1;
+                reps = resolvedStructure.repetitions ?? 1;
 
                 if (!restSec && (reps > 1 || sets > 1 || /interval|vo2|surge|repeat/i.test(step.name) || /30\/15|40\/20/i.test(sessionText))) {
                     restSec = extractRecoverySecondsFromText(sessionText, stepDurationSec);

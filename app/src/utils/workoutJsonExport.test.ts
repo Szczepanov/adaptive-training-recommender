@@ -137,4 +137,33 @@ describe('workoutJsonExport', () => {
         expect(workStep.setRecoverySec).toBe(240);
         expect(workStep.recoveryTarget).toBe('150-180 W');
     });
+
+    it('preserves explicit sets and repetitions when notes describe a future progression', () => {
+        const session: ExternalPlanSession = {
+            id: 'w1-threshold',
+            title: 'Threshold development',
+            priority: 'key',
+            placement: { week: 1, preferredDay: 'wednesday', flexibility: 'preferred', ifMissed: 'drop' },
+            gating: { modality: 'cycling', intensity: 'hard', durationMin: 60, durationMax: 75, environment: 'either', equipment: [] },
+            prescription: {
+                summary: 'Complete the prescribed work without adding volume.',
+                steps: [
+                    {
+                        name: 'Threshold repetitions',
+                        durationMin: 3,
+                        repeat: 8,
+                        sets: 2,
+                        recoveryMin: 2,
+                        setRecoveryMin: 5,
+                        target: '95% FTP',
+                        notes: 'Progress toward 3 sets of 10 in a later training block.',
+                    },
+                ],
+            },
+        };
+
+        const json = exportExternalSessionToJson(session);
+        expect(json.blocks[0].steps[0].sets).toBe(2);
+        expect(json.blocks[0].steps[0].repetitions).toBe(8);
+    });
 });

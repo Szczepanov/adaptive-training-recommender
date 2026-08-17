@@ -115,4 +115,25 @@ describe('zwiftExport', () => {
         expect(setRecoveryMatches).toHaveLength(2);
         expect(xml).toContain('<Cooldown Duration="600"');
     });
+
+    it('converts absolute watts only when the athlete FTP is available', () => {
+        const session: ExternalPlanSession = {
+            id: 'w1-power',
+            title: 'Power target',
+            priority: 'key',
+            placement: { week: 1, preferredDay: 'wednesday', flexibility: 'preferred', ifMissed: 'drop' },
+            gating: { modality: 'cycling', intensity: 'hard', durationMin: 20, durationMax: 30, environment: 'indoor', equipment: ['indoor_bike'] },
+            prescription: {
+                summary: 'Ride at the prescribed absolute power.',
+                steps: [{ name: 'Main effort', durationMin: 20, target: '300 W' }],
+            },
+        };
+
+        const withoutFtp = generateZwiftFromExternalSession(session);
+        expect(withoutFtp).toContain('<SteadyState Duration="1200" Power="0.80"/>');
+        expect(withoutFtp).not.toContain('Power="1.20"');
+
+        const withFtp = generateZwiftFromExternalSession(session, { ftpWatts: 300 });
+        expect(withFtp).toContain('<SteadyState Duration="1200" Power="1.00"/>');
+    });
 });

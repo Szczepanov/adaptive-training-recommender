@@ -123,6 +123,39 @@ export function extractSetsAndRepsFromText(text: string): { sets?: number; repet
     return {};
 }
 
+export function resolveSetsAndRepetitions(
+    explicitSets: number | undefined,
+    explicitRepetitions: number | undefined,
+    text: string,
+): { sets?: number; repetitions?: number } {
+    const inferred = extractSetsAndRepsFromText(text);
+    if (!inferred.sets || !inferred.repetitions) {
+        return { sets: explicitSets, repetitions: explicitRepetitions };
+    }
+
+    if (explicitSets !== undefined && explicitRepetitions !== undefined) {
+        return { sets: explicitSets, repetitions: explicitRepetitions };
+    }
+
+    if (explicitSets === undefined && explicitRepetitions !== undefined) {
+        if (explicitRepetitions === inferred.sets * inferred.repetitions) {
+            return { sets: inferred.sets, repetitions: inferred.repetitions };
+        }
+        if (explicitRepetitions === inferred.repetitions) {
+            return { sets: inferred.sets, repetitions: explicitRepetitions };
+        }
+        return { repetitions: explicitRepetitions };
+    }
+
+    if (explicitSets !== undefined && explicitRepetitions === undefined) {
+        return explicitSets === inferred.sets
+            ? { sets: explicitSets, repetitions: inferred.repetitions }
+            : { sets: explicitSets };
+    }
+
+    return inferred;
+}
+
 export function extractRecoveryTargetFromText(text: string): string | undefined {
     if (!text) return undefined;
     const match = text.match(/followed\s+by\s+\d+\s*(?:s|sec|min|m)?\s+(?:at|below|around|approximately|about)\s+([^.,;]+)/i);
@@ -191,11 +224,7 @@ export function exportExternalSessionToJson(
 
         if (!isWarmup && !isCooldown) {
             // Infer sets & repetitions if missing or if repeat was flattened
-            const parsedSetsReps = extractSetsAndRepsFromText(stepText);
-            if (parsedSetsReps.sets && parsedSetsReps.repetitions) {
-                sets = parsedSetsReps.sets;
-                repetitions = parsedSetsReps.repetitions;
-            }
+            ({ sets, repetitions } = resolveSetsAndRepetitions(sets, repetitions, stepText));
 
             // Infer recovery seconds if missing
             if (!restSec && (repetitions || sets || /interval|vo2|surge|repeat/i.test(step.name) || /30\/15|40\/20/i.test(sessionText))) {
