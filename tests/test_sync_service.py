@@ -66,6 +66,36 @@ class TargetAwareFakeProvider(FakeTestProvider):
         )
 
 
+def test_push_workout_fails_when_garmin_does_not_return_a_workout_id():
+    settings = Settings(app_user_id="test_uid_789")
+    client = MagicMock()
+    client.upload_workout.return_value = {}
+    service = GarminSyncService(
+        settings=settings,
+        repository=MagicMock(db=None),
+        garmin_client=client,
+    )
+
+    result = service.push_workout(
+        date_str="2026-08-17",
+        workout_payload={"title": "Easy ride", "modality": "cycling", "blocks": []},
+    )
+
+    assert result is False
+    client.schedule_workout.assert_not_called()
+
+
+def test_push_workout_does_not_authenticate_when_the_queue_is_empty():
+    settings = Settings(app_user_id="test_uid_789")
+    service = GarminSyncService(settings=settings, repository=MagicMock(db=None))
+    service._init_garmin_client = MagicMock()
+
+    result = service.push_workout(date_str="2026-08-17")
+
+    assert result is False
+    service._init_garmin_client.assert_not_called()
+
+
 class DateAwareFakeProvider:
     """Like FakeTestProvider, but returns a per-date restingHr so a test can tell which
     date's fetch produced which stored value -- needed to prove the lookback resync's

@@ -7,9 +7,11 @@ SPORT_TYPE_MAP: dict[str, dict[str, Any]] = {
     "bike": {"sportTypeId": 2, "sportTypeKey": "cycling"},
     "running": {"sportTypeId": 1, "sportTypeKey": "running"},
     "run": {"sportTypeId": 1, "sportTypeKey": "running"},
-    "strength": {"sportTypeId": 3, "sportTypeKey": "strength_training"},
-    "mobility": {"sportTypeId": 3, "sportTypeKey": "fitness_equipment"},
-    "cross_training": {"sportTypeId": 4, "sportTypeKey": "cross_country_skiing"},
+    "strength": {"sportTypeId": 5, "sportTypeKey": "strength_training"},
+    "mobility": {"sportTypeId": 11, "sportTypeKey": "mobility"},
+    # The app's cross-training bucket is deliberately vendor-neutral; Garmin's
+    # generic "other" type is safer than labelling every session as skiing.
+    "cross_training": {"sportTypeId": 3, "sportTypeKey": "other"},
 }
 
 STEP_TYPE_MAP: dict[str, dict[str, Any]] = {
@@ -23,7 +25,7 @@ STEP_TYPE_MAP: dict[str, dict[str, Any]] = {
 END_CONDITION_MAP: dict[str, dict[str, Any]] = {
     "time": {"conditionTypeId": 2, "conditionTypeKey": "time"},
     "distance": {"conditionTypeId": 3, "conditionTypeKey": "distance"},
-    "reps": {"conditionTypeId": 4, "conditionTypeKey": "reps"},
+    "reps": {"conditionTypeId": 10, "conditionTypeKey": "reps"},
     "lap_button": {"conditionTypeId": 1, "conditionTypeKey": "lap.button"},
 }
 

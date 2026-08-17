@@ -26,7 +26,7 @@ const MODALITY_ICON: Record<string, string> = {
 };
 
 export interface ExternalPlanWeekProps {
-    userId?: string;
+    userId: string;
     planTitle: string;
     weekStartDate: string;
     placed: readonly PlacedSession[];
@@ -62,7 +62,7 @@ function weekLevelFindings(critique: ExternalWeekCritique | null): ExternalCriti
  * this screen moves a session on its own.
  */
 export function ExternalPlanWeek({
-    userId = 'current-user',
+    userId,
     planTitle, weekStartDate, placed, critique, today, fixedActivities,
     onProposeReplacement, onConfirmReplacement, onChooseDate, writeError = null,
 }: ExternalPlanWeekProps) {

@@ -35,3 +35,23 @@ def test_canonical_workout_to_garmin_payload():
     assert payload["workoutSegments"][0]["workoutSteps"][0]["stepType"]["stepTypeKey"] == "warmup"
     assert payload["workoutSegments"][0]["workoutSteps"][1]["stepType"]["stepTypeKey"] == "interval"
     assert payload["workoutSegments"][0]["workoutSteps"][2]["stepType"]["stepTypeKey"] == "recovery"
+
+
+def test_strength_workout_uses_garmin_strength_and_repetition_ids():
+    payload = canonical_workout_to_garmin_payload(
+        {
+            "title": "Squats",
+            "modality": "strength",
+            "blocks": [
+                {
+                    "steps": [
+                        {"name": "Back squat", "repetitions": 5},
+                    ]
+                }
+            ],
+        }
+    )
+
+    step = payload["workoutSegments"][0]["workoutSteps"][0]
+    assert payload["sportType"] == {"sportTypeId": 5, "sportTypeKey": "strength_training"}
+    assert step["endCondition"] == {"conditionTypeId": 10, "conditionTypeKey": "reps"}

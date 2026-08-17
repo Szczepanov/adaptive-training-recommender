@@ -603,8 +603,11 @@ class GarminSyncService:
         workout_payload: dict[str, Any] | None = None,
     ) -> bool:
         """Upload and schedule a structured workout to Garmin Connect."""
-        target_date = str(date_str or local_today())
-        client = self._init_garmin_client()
+        target_date = (
+            get_date_string(parse_date_string(date_str))
+            if date_str
+            else get_date_string(local_today(self.settings.app_timezone))
+        )
 
         payload = workout_payload
         if not payload:
@@ -626,6 +629,7 @@ class GarminSyncService:
             logger.warning(f"No workout payload found for {target_date} in Firestore queue.")
             return False
 
+        client = self._init_garmin_client()
         from .workout_export import canonical_workout_to_garmin_payload
 
         garmin_payload = canonical_workout_to_garmin_payload(payload)
@@ -653,7 +657,6 @@ class GarminSyncService:
                 f"Successfully uploaded and scheduled workout {workout_id} for {target_date}."
             )
             return True
-        else:
-            logger.warning(f"Workout uploaded, but no workoutId returned: {res}")
-            return True
+        logger.error(f"Workout upload returned no workoutId; leaving queue pending: {res}")
+        return False
 
