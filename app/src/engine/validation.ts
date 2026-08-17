@@ -873,6 +873,19 @@ export function validatePreferences(raw: any): ValidationResult<UserPreferences>
                  !Object.values(raw.performanceProfile.estimated1RmKg).every((value) => typeof value === 'number' && Number.isFinite(value) && value > 0))) {
                 errors.push({ field: 'performanceProfile.estimated1RmKg', message: 'All estimated 1RM values must be positive numbers' });
             }
+            // ADR-0021 D-1RMSRC: per-exercise provenance for estimated1RmKg.
+            if (raw.performanceProfile.estimated1RmSources !== undefined) {
+                const validSources = ['garmin', 'manual', 'coach', 'derived'];
+                const sources = raw.performanceProfile.estimated1RmSources;
+                const isValid = typeof sources === 'object' && sources !== null &&
+                    Object.values(sources).every((entry: any) =>
+                        typeof entry === 'object' && entry !== null &&
+                        validSources.includes(entry.source) &&
+                        (entry.computedAt === undefined || typeof entry.computedAt === 'string'));
+                if (!isValid) {
+                    errors.push({ field: 'performanceProfile.estimated1RmSources', message: 'Each 1RM source entry must have a valid source (garmin, manual, coach or derived) and an optional computedAt string' });
+                }
+            }
         }
     }
 

@@ -414,6 +414,11 @@ export interface DeviceCapabilities {
   cadenceData?: boolean;
 }
 
+/** `derived` added for ADR-0021 D-1RMSRC: a 1RM estimated from logged sets (S2.1) joins
+ *  the same ownership vocabulary as a Garmin import rather than bypassing it, and must
+ *  never overwrite `manual` or `coach` -- the reason `targetSources` exists at all. */
+export type TargetSource = 'garmin' | 'manual' | 'coach' | 'derived';
+
 export interface AthletePerformanceProfile {
   // Legacy top-level fields for backwards compatibility with v2 readers
   ftpWatts?: number | null;
@@ -421,7 +426,13 @@ export interface AthletePerformanceProfile {
   lthrBpm?: number | null;
   estimated1RmKg?: Record<string, number>;
   /** Field-level ownership prevents a Garmin refresh from replacing a coach target. */
-  targetSources?: Partial<Record<'ftpWatts' | 'thresholdPaceSecPerKm' | 'lthrBpm' | 'cyclingLthr' | 'runningLthr', 'garmin' | 'manual' | 'coach'>>;
+  targetSources?: Partial<Record<'ftpWatts' | 'thresholdPaceSecPerKm' | 'lthrBpm' | 'cyclingLthr' | 'runningLthr', TargetSource>>;
+  /** Per-exercise 1RM provenance, parallel to `estimated1RmKg`/`strength.estimated1RmKg`
+   *  (ADR-0021 D-1RMSRC) -- keyed by the same `exerciseId` as those maps. An exercise
+   *  present in `estimated1RmKg` with no entry here has no recorded source, and per
+   *  ADR-0021's literal text S2.2's writer treats that as writable, the same as a fully
+   *  absent value -- only an explicit `manual` or `coach` source is protected. */
+  estimated1RmSources?: Record<string, { source: TargetSource; computedAt?: string }>;
   /** Most recent provider import, retained even when the effective target is manual. */
   garmin?: {
     ftpWatts?: number | null;
