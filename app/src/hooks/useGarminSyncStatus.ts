@@ -6,25 +6,24 @@ export type GarminSyncStatusState = 'idle' | 'pending' | 'synced' | 'failed';
 export interface UseGarminSyncStatusResult {
     status: GarminSyncStatusState;
     queuedWorkout: GarminQueuedWorkout | null;
+    pendingCount: number;
     isPending: boolean;
     error: string | null;
 }
 
-export function useGarminSyncStatus(userId: string | null | undefined, date: string): UseGarminSyncStatusResult {
-    const [queuedWorkout, setQueuedWorkout] = useState<GarminQueuedWorkout | null>(null);
+export function useGarminSyncStatus(userId: string | null | undefined): UseGarminSyncStatusResult {
+    const [queueItems, setQueueItems] = useState<GarminQueuedWorkout[]>([]);
     const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
-        if (!userId || !date) {
+        if (!userId) {
             return;
         }
 
-        const unsubscribe = garminWorkoutQueueService.subscribeToQueueItem(
+        const unsubscribe = garminWorkoutQueueService.subscribeToUserQueue(
             userId,
-            date,
-            (item) => {
-                setQueuedWorkout(item);
-                setError(item?.error ?? null);
+            (items) => {
+                setQueueItems(items);
             },
             (err) => {
                 console.error('[useGarminSyncStatus] Subscription error:', err);
@@ -35,16 +34,38 @@ export function useGarminSyncStatus(userId: string | null | undefined, date: str
         return () => {
             unsubscribe();
         };
-    }, [userId, date]);
+    }, [userId]);
 
-    const activeItem = userId && date ? queuedWorkout : null;
-    const activeError = userId && date ? error : null;
-    const status: GarminSyncStatusState = activeItem?.status ?? 'idle';
+    const activeItems = userId ? queueItems : [];
+    const pendingItems = activeItems.filter(item => item.status === 'pending');
+    const failedItems = activeItems.filter(item => item.status === 'failed');
+    const syncedItems = activeItems
+        .filter(item => item.status === 'synced')
+        .sort((a, b) => (b.syncedAt || b.queuedAt || '').localeCompare(a.syncedAt || a.queuedAt || ''));
+
+    let status: GarminSyncStatusState = 'idle';
+    let queuedWorkout: GarminQueuedWorkout | null = null;
+    let activeError: string | null = error;
+
+    if (pendingItems.length > 0) {
+        status = 'pending';
+        // Pick the most recently queued pending item
+        queuedWorkout = [...pendingItems].sort((a, b) => (b.queuedAt || '').localeCompare(a.queuedAt || ''))[0];
+    } else if (failedItems.length > 0) {
+        status = 'failed';
+        queuedWorkout = failedItems[0];
+        activeError = queuedWorkout.error || error || 'Sync failed';
+    } else if (syncedItems.length > 0) {
+        status = 'synced';
+        queuedWorkout = syncedItems[0];
+    }
 
     return {
         status,
-        queuedWorkout: activeItem,
+        queuedWorkout,
+        pendingCount: pendingItems.length,
         isPending: status === 'pending',
         error: activeError,
     };
 }
+

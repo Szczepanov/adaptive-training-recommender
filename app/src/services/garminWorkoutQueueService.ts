@@ -1,4 +1,4 @@
-import { doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
+import { doc, getDoc, setDoc, onSnapshot, collection } from 'firebase/firestore';
 import { getDb } from '../firebase';
 import type { CanonicalWorkoutExport } from '../utils/workoutJsonExport';
 
@@ -66,6 +66,35 @@ export class GarminWorkoutQueueService {
             }
         );
     }
+
+    subscribeToUserQueue(
+        userId: string,
+        onUpdate: (items: GarminQueuedWorkout[]) => void,
+        onError?: (err: Error) => void
+    ): () => void {
+        const db = getDb();
+        const collRef = collection(db, `users/${userId}/garmin_workout_queue`);
+        return onSnapshot(
+            collRef,
+            (querySnapshot) => {
+                const items: GarminQueuedWorkout[] = [];
+                querySnapshot.forEach((d) => {
+                    if (d.exists()) {
+                        items.push(d.data() as GarminQueuedWorkout);
+                    }
+                });
+                onUpdate(items);
+            },
+            (error) => {
+                if (onError) {
+                    onError(error);
+                } else {
+                    console.error('[GarminWorkoutQueueService] User queue subscription error:', error);
+                }
+            }
+        );
+    }
 }
 
 export const garminWorkoutQueueService = new GarminWorkoutQueueService();
+

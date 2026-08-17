@@ -1,6 +1,7 @@
 import importlib.metadata
 import logging
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -757,7 +758,7 @@ class GarminSyncService:
                 ).collection("garmin_workout_queue").document(target_date).set(
                     {
                         "status": "synced",
-                        "syncedAt": str(local_today()),
+                        "syncedAt": datetime.now(timezone.utc).isoformat(),
                         "garminWorkoutId": workout_id,
                     },
                     merge=True,

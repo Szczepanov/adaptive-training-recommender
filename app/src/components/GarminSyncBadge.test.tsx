@@ -12,6 +12,7 @@ describe('GarminSyncBadge', () => {
             status: 'idle',
             queuedWorkout: null,
             isPending: false,
+            pendingCount: 0,
             error: null,
         });
 
@@ -34,6 +35,7 @@ describe('GarminSyncBadge', () => {
                 payload: dummyPayload,
             },
             isPending: true,
+            pendingCount: 0,
             error: null,
         });
 
@@ -59,6 +61,7 @@ describe('GarminSyncBadge', () => {
                 payload: dummyPayload,
             },
             isPending: false,
+            pendingCount: 0,
             error: null,
         });
 
@@ -83,6 +86,7 @@ describe('GarminSyncBadge', () => {
                 payload: dummyPayload,
             },
             isPending: false,
+            pendingCount: 0,
             error: 'Garmin API 500 error',
         });
 
