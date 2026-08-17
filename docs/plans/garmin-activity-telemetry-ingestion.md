@@ -238,9 +238,12 @@ qualifying activities and merge it into the same per-activity write.
 safely persisted. Log at `warning` and continue. A 429 specifically should abandon the
 remaining detail fetches for that run rather than retrying into a harder rate limit.
 
-Archive raw detail payloads only if it can be done without abusing the date-keyed store —
-otherwise skip archiving entirely for now and record why (A5.3; the archive cannot key by
-activity ID today, and that is a deferred concern, not a Stage 1 blocker).
+**Do not archive raw detail payloads.** Settled by the 2026-08-17 amendment to
+[ADR-0005](../adr/0005-raw-archive-store-and-rebuild-pipeline.md): the archive is date-keyed
+only, and two payloads written under the same `(endpoint, logical_date)` within one sync run
+resolve to the same object path, so the second silently overwrites the first. Stage 1 writes
+structured summary fields to Firestore and touches no archive path. Reviving per-activity
+archiving requires its own ADR.
 
 **Done when:** an injected failure on each of the three endpoints leaves the base activity
 record and the daily snapshot intact and the sync exit code unchanged; a simulated 429
@@ -416,7 +419,7 @@ Deliberately excluded — each is a valid finding in the source analysis, not an
 
 | Doc | Change | When |
 |---|---|---|
-| ADR-0005 | Amendment note: the archive stays date-keyed; per-activity payloads are **not** archived, and the "(or activity ID)" phrasing is aspirational (A5.3) | With G1.6 |
+| ADR-0005 | ✅ **Done 2026-08-17.** Amendment records that the archive stays date-keyed, `"(or activity ID)"` was never implemented, the documented key omits the `{year}/{month}` shard, and same-run collisions make naive per-activity archiving lossy (A5.3). `archive.py` also added to Code References | — |
 | New ADR | **D-ZONECRED** — measured-before-shipped, per D-FUSE/D-SUBJCAL precedent | Before Stage 2 |
 | `docs/plans/README.md` | Add this plan to the plans table and D-DETAIL-GATE / D-ZONECRED to the decision register (proposed section until accepted) | With G1.1 |
 | `docs/architecture/ingestion-pipeline.md` | Document the per-activity detail path and its gate | With G1.6 |

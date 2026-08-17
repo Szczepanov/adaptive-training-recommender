@@ -76,7 +76,7 @@ all-`Ready` table became unusable.
 | 9.0 | [Shadow mode & decision journal](./phase-9-0-shadow-mode-and-decision-journal.md) | **In progress** | 9.0.1 (operational; 9.0.2-9.0.6 code is done) | — | runs the app against the athlete's existing AI loop for one block and records the disagreements — the first evidence in this repository from a real athlete rather than a synthetic corpus |
 | 9 | [Subjective baselines in readiness mode](./phase-9-subjective-baselines.md) | **In progress** | 9.4, 9.6, 9.7 (9.1, 9.2, 9.3 and 9.5 done — 9.8 additionally needs Phase 9.0's prospective evidence) | — | self-normalises subjective scores as a tighten-only drift term, measured behind a default-off selector before any ship decision — not an original review finding |
 | G | [Garmin per-activity telemetry](./garmin-activity-telemetry-ingestion.md) | **Draft** | none until approved | D-ZONECRED blocks Stage 2; Stage 1 has no blocker once the design is agreed | ingests per-activity power/HR time-in-zone, normalized power and lap averages, then measures whether zone data should change completed-training credit — not an original review finding |
-| S | [Strength session logging](./strength-session-logging.md) | **Draft** | none until approved | D-GAUGE blocks S1.2; D-STRCOST blocks Step C | closes the strength return path — per-set logging, self-calibrating 1RM, and measured strength load — not an original review finding |
+| S | [Strength session logging](./strength-session-logging.md) | **Ready** | all of Step A and Step B; Step C is buildable but not enableable | — (ADR-0021 accepted) | closes the strength return path — per-set logging, self-calibrating 1RM, and measured strength load — not an original review finding |
 
 The last two rows are **not phases**. They are bounded capability plans whose work items are
 prefixed `G*` and `S*` precisely so they cannot be mistaken for the `Phase 0`–`9` sequence;
@@ -124,6 +124,10 @@ this table exists so none of them has to be rediscovered by reading six document
 | **D-SUBJANCHOR** | Never show the subjective baseline before a check-in is submitted | [ADR-0020](../adr/0020-subjective-baselines-in-readiness-mode.md) | `initialSubmittedAt`/`editedAfterWearableReveal` already record that pre-submission context contaminates a check-in |
 | **D-SUBJCAL** | Coefficients and the estimator come from evidence; synthetic scenarios alone cannot authorize shipping | [ADR-0020](../adr/0020-subjective-baselines-in-readiness-mode.md) | Same discipline as D-FUSE, extended: a synthetic-only result is not sufficient prospective evidence |
 | **D-SUBJAUDIT** | Persist compact normalized drift provenance only when it can affect a decision | [ADR-0020](../adr/0020-subjective-baselines-in-readiness-mode.md) | An audited decision that depended on prior history is not reproducible without recording which policy and how many days it rested on |
+| **D-GAUGE** | Set intensity persists as a tagged gauge (`rir`, `rpe_rts`, `velocity_loss`, `technical`); no conversion on write, conversion allowed on read | [ADR-0021](../adr/0021-strength-session-logging-and-intensity-gauges.md) | RPE and RIR are one scale inverted, but power work is quality-limited rather than failure-limited; a bare number makes the two indistinguishable and corrupts 1RM estimation |
+| **D-SETLOG** | The raw per-set log is the source of truth; every derivation is recomputable from it and none is written back into it | [ADR-0021](../adr/0021-strength-session-logging-and-intensity-gauges.md) | ADR-0005's rebuild philosophy applied to athlete-entered data: a changed formula must be a recomputation, not a data-loss event |
+| **D-1RMSRC** | A derived 1RM joins `targetSources` as its own rung and never overwrites `manual` or `coach` | [ADR-0021](../adr/0021-strength-session-logging-and-intensity-gauges.md) | `targetSources` exists precisely to stop an automated value replacing a human-set one; writing blind reintroduces that bug from a new direction |
+| **D-STRCOST** | Strength load reaches the engine only after measurement; built default-off, coefficients from evidence | [ADR-0021](../adr/0021-strength-session-logging-and-intensity-gauges.md) | Same discipline as D-FUSE and D-SUBJCAL; a tonnage→fatigue coefficient asserted in an ADR is the uncited-constant practice F11 criticised |
 
 ### Proposed decisions awaiting acceptance
 
@@ -158,15 +162,11 @@ plans remain Draft and must not be implemented until the linked ADR is accepted.
 | **D-IRREDUCIBLE** | `scaling.reducible: false` sends a short-of-full readiness to `defer`, not to a prescribed compromise | [ADR-0019](../adr/0019-externally-authored-plans-and-session-adjudication.md) | Otherwise "ride easy and retry Thursday" gets prescribed as the same session at lower volume |
 | **D-DETAIL-GATE** | The extra per-activity Garmin fetch is opt-in per activity, gated on a predicate, and never runs in `backfill` | [Garmin telemetry plan](./garmin-activity-telemetry-ingestion.md#decisions-this-plan-needs) | Ungated it multiplies call volume by activities/day over an unbounded range, and a 429 mid-backfill leaves partial state |
 | **D-ZONECRED** | Zone-derived stimulus is built default-off and *measured* against the current TE-based path before any ship decision | [Garmin telemetry plan](./garmin-activity-telemetry-ingestion.md#decisions-this-plan-needs) | Same discipline as D-FUSE and D-SUBJCAL; naming a zone→stimulus coefficient up front is the uncited-constant practice F11 criticised |
-| **D-GAUGE** | Set intensity persists as a tagged gauge (`rir`, `rpe_rts`, `velocity_loss`, `technical`), never a bare number and never silently converted | [Strength logging plan](./strength-session-logging.md#decisions-this-plan-needs) | RPE and RIR are one scale inverted, but power work is quality-limited rather than failure-limited; a bare number makes the two indistinguishable and corrupts 1RM estimation |
-| **D-SETLOG** | The raw per-set log is the source of truth; both derivations are recomputable from it and never written back into it | [Strength logging plan](./strength-session-logging.md#decisions-this-plan-needs) | Engine-shaped storage permanently destroys overload history; chart-shaped storage leaves the engine blind |
-| **D-1RMSRC** | A derived 1RM joins `targetSources` as its own rung and never overwrites `manual` or `coach` | [Strength logging plan](./strength-session-logging.md#decisions-this-plan-needs) | `targetSources` exists precisely to stop an automated value replacing a human-set one; writing blind reintroduces that bug from a new direction |
-| **D-STRCOST** | The set-log → dimensional cost/stimulus mapping is built default-off and *measured* before shipping | [Strength logging plan](./strength-session-logging.md#decisions-this-plan-needs) | Same discipline as D-FUSE and D-SUBJCAL; a tonnage→fatigue coefficient asserted in advance is not evidence |
 
-The last six differ from the rows above them in one respect: their `Where` column points at
-a **plan**, not an ADR, because the ADR does not exist yet. For these, "accepted" means the
-ADR named in that plan's *Docs to update* table has been written and accepted — the plan
-itself cannot confer acceptance on its own proposal.
+The two remaining rows differ from those above them in one respect: their `Where` column
+points at a **plan**, not an ADR, because the ADR does not exist yet. For these, "accepted"
+means the ADR named in that plan's *Docs to update* table has been written and accepted —
+the plan itself cannot confer acceptance on its own proposal.
 
 Five of the **accepted** decisions — **D-KWD**, **D-GATE**, **D-LIFE**, **D-RECOV**, and the
 withdrawal inside **D-FUSE** — correct errors in earlier drafts and came out of PR #5 review
