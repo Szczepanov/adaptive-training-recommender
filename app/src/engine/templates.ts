@@ -392,7 +392,21 @@ export const TEMPLATES: SessionTemplate[] = [
         systemicCost: 0.45,
         objectiveTransferable: false,
         stimulusProfile: { aerobicEndurance: 0, thresholdPower: 0, vo2MaxPower: 0, repeatedSurges: 0.1, sprintPower: 0.1, fatigueResistance: 0.1, maxStrength: 0.7, hypertrophy: 0.4 },
-        costProfile: { systemic: 0.45, cardiovascular: 0.2, lowerBody: 0.45, upperBody: 0.5, impactTissue: 0.2, neuromuscular: 0.55 }
+        costProfile: { systemic: 0.45, cardiovascular: 0.2, lowerBody: 0.45, upperBody: 0.5, impactTissue: 0.2, neuromuscular: 0.55 },
+        easierDose: {
+            label: "2 Sets Upper/Trunk Focus (25 min)",
+            durationMin: 20,
+            durationMax: 30,
+            doseRatio: 0.7,
+            prescriptionSummary: "Reduced volume: 2 sets focusing on upper body and core/tissue maintenance."
+        },
+        harderDose: {
+            label: "3 Sets Full-body Maintenance (45 min)",
+            durationMin: 40,
+            durationMax: 50,
+            doseRatio: 1.25,
+            prescriptionSummary: "Full 3 sets maintenance dose with compound lifts."
+        }
     },
     {
         id: "str_full_02",

@@ -775,6 +775,74 @@ describe('session adjustment engine', () => {
         expect(adjusted?.activeDose?.label).toBe('5x4 min Intervals (50 min)');
     });
 
+    it('Reduced Full-body Strength Maintenance -> Easier scales to 25 min upper/trunk focus (Tier 1)', () => {
+        const readiness: DailyReadiness = { subjective: greenSubjective(), objective: quietObjective() };
+        const context = baseContext();
+        context.constraints.hasFreeWeights = true;
+        const date = '2026-08-07';
+        const baseRec = evaluateTraining(readiness, context, date);
+        const strFull03 = TEMPLATES.find(t => t.id === 'str_full_03')!;
+        baseRec.template = strFull03;
+
+        const adjusted = adjustSessionRecommendation(baseRec, 'easier', readiness, context, date);
+        expect(adjusted).not.toBeNull();
+        expect(adjusted?.template.id).toBe('str_full_03');
+        expect(adjusted?.adjustment?.tier).toBe(1);
+        expect(adjusted?.adjustment?.direction).toBe('easier');
+        expect(adjusted?.activeDose?.label).toBe('2 Sets Upper/Trunk Focus (25 min)');
+        expect(adjusted?.activeDose?.doseRatio).toBe(0.7);
+    });
+
+    it('Reduced Full-body Strength Maintenance -> Harder scales to 45 min full-body maintenance (Tier 1)', () => {
+        const readiness: DailyReadiness = { subjective: greenSubjective(), objective: quietObjective() };
+        const context = baseContext();
+        context.constraints.hasFreeWeights = true;
+        const date = '2026-08-07';
+        const baseRec = evaluateTraining(readiness, context, date);
+        const strFull03 = TEMPLATES.find(t => t.id === 'str_full_03')!;
+        baseRec.template = strFull03;
+
+        const adjusted = adjustSessionRecommendation(baseRec, 'harder', readiness, context, date);
+        expect(adjusted).not.toBeNull();
+        expect(adjusted?.template.id).toBe('str_full_03');
+        expect(adjusted?.adjustment?.tier).toBe(1);
+        expect(adjusted?.adjustment?.direction).toBe('harder');
+        expect(adjusted?.activeDose?.label).toBe('3 Sets Full-body Maintenance (45 min)');
+        expect(adjusted?.activeDose?.doseRatio).toBe(1.25);
+    });
+
+    it('Tier 2 candidate filtering strictly enforces lower systemic cost when adjusting easier', () => {
+        const readiness: DailyReadiness = { subjective: greenSubjective(), objective: quietObjective() };
+        const context = baseContext();
+        context.constraints.hasFreeWeights = true;
+        const date = '2026-08-07';
+        const baseRec = evaluateTraining(readiness, context, date);
+
+        // A hypothetical template with no in-template easierDose and cost 0.45 in Full-body Strength
+        baseRec.template = {
+            id: 'hypothetical_str_01',
+            category: 'Full-body Strength',
+            modality: 'Strength',
+            durationMin: 30,
+            durationMax: 45,
+            title: 'Hypothetical Mid Strength',
+            description: 'Mid strength session',
+            requiredEquipment: ['free_weights'],
+            environment: 'either',
+            safetyTags: [],
+            systemicCost: 0.45,
+            objectiveTransferable: false,
+        };
+
+        const adjusted = adjustSessionRecommendation(baseRec, 'easier', readiness, context, date);
+        // It must NOT pick str_full_01 (0.60) or str_full_02 (0.55) as Tier 2 because they are harder.
+        // If it adjusts (Tier 3), it must pick a strictly easier session (systemicCost < 0.45).
+        if (adjusted) {
+            expect(adjusted.adjustment?.tier).not.toBe(2);
+            expect(adjusted.template.systemicCost).toBeLessThan(0.45);
+        }
+    });
+
     it('an exclude achilles injury removes every Running template on the readiness path and populates restrictedModalities', () => {
         const readiness: DailyReadiness = { subjective: greenSubjective(), objective: quietObjective() };
         const settings: TrainingSettings = {

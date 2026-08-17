@@ -725,7 +725,10 @@ export function adjustSessionRecommendation(
         .filter(t => t.id !== baseTemplate.id && allowedModalities.includes(t.modality));
 
     const tier2Candidates = availableTemplates.filter(t => t.modality === baseTemplate.modality && t.category === baseTemplate.category)
-        .filter(t => direction === 'easier' || !exceedsPlanCeiling(t.systemicCost, plan));
+        .filter(t => {
+            if (direction === 'easier') return t.systemicCost < baseTemplate.systemicCost;
+            return t.systemicCost > baseTemplate.systemicCost && !exceedsPlanCeiling(t.systemicCost, plan);
+        });
     if (tier2Candidates.length > 0) {
         const picked = pickTemplate(tier2Candidates, date) || tier2Candidates[0];
         return {
