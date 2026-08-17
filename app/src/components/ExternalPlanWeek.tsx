@@ -4,6 +4,7 @@ import type { PlacedSession, ReplacementProposal } from '../engine/externalPlace
 import type { FixedActivity } from '../engine/models';
 import { addDaysToLocalDateString } from '../utils/localDate';
 import { stepTiming } from './externalPrescriptionUtils';
+import { WorkoutExportMenu } from './WorkoutExportMenu';
 import './ExternalPlanWeek.css';
 
 const WEEKDAY_FORMATTER = new Intl.DateTimeFormat('en-US', { weekday: 'short', timeZone: 'UTC' });
@@ -25,6 +26,7 @@ const MODALITY_ICON: Record<string, string> = {
 };
 
 export interface ExternalPlanWeekProps {
+    userId: string;
     planTitle: string;
     weekStartDate: string;
     placed: readonly PlacedSession[];
@@ -60,6 +62,7 @@ function weekLevelFindings(critique: ExternalWeekCritique | null): ExternalCriti
  * this screen moves a session on its own.
  */
 export function ExternalPlanWeek({
+    userId,
     planTitle, weekStartDate, placed, critique, today, fixedActivities,
     onProposeReplacement, onConfirmReplacement, onChooseDate, writeError = null,
 }: ExternalPlanWeekProps) {
@@ -183,6 +186,15 @@ export function ExternalPlanWeek({
                                             </div>
                                             {isExpanded && (
                                                 <div className="external-week-details" aria-label={`Workout details for ${item.session.title}`}>
+                                                    <div className="external-week-details-header">
+                                                        <WorkoutExportMenu
+                                                            userId={userId}
+                                                            date={date}
+                                                            title={item.session.title}
+                                                            modality={item.session.gating.modality}
+                                                            externalSession={item.session}
+                                                        />
+                                                    </div>
                                                     <div className="external-prescription">
                                                         <h5>As your plan wrote it</h5>
                                                         <p className="external-prescription-summary">

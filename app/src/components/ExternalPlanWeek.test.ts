@@ -71,6 +71,7 @@ describe('ExternalPlanWeek occupancy and scheduling contracts', () => {
     it('renders View workout button for scheduled sessions', () => {
         const html = renderToStaticMarkup(
             React.createElement(ExternalPlanWeek, {
+                userId: 'user-1',
                 planTitle: 'Adaptive Peak Plan',
                 weekStartDate: '2026-08-17',
                 placed,

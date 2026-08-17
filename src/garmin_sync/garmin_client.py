@@ -26,6 +26,8 @@ class GarminDataClient(Protocol):
     def get_heart_rate_zones(self) -> list[dict[str, Any]]: ...
     def get_cycling_ftp(self) -> dict[str, Any] | list[dict[str, Any]]: ...
     def get_lactate_threshold(self) -> dict[str, Any]: ...
+    def upload_workout(self, workout_json: dict[str, Any]) -> dict[str, Any]: ...
+    def schedule_workout(self, workout_id: str, date_iso: str) -> dict[str, Any]: ...
 
 
 class GarminClientWrapper:
@@ -181,3 +183,14 @@ class GarminClientWrapper:
             if start_date_iso <= act.get("startTimeLocal", "")[:10] <= end_date_iso
         ]
         return window_acts
+
+    def upload_workout(self, workout_json: dict[str, Any]) -> dict[str, Any]:
+        if not self.api:
+            raise RuntimeError("Garmin client is not authenticated. Call login first.")
+        return self.api.upload_workout(workout_json) or {}
+
+    def schedule_workout(self, workout_id: str, date_iso: str) -> dict[str, Any]:
+        if not self.api:
+            raise RuntimeError("Garmin client is not authenticated. Call login first.")
+        return self.api.schedule_workout(workout_id, date_iso) or {}
+
