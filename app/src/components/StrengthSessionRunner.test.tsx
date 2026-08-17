@@ -71,6 +71,46 @@ describe('StrengthSessionRunner', () => {
         expect(html).toContain('Log set');
     });
 
+    it('labels the timer "Elapsed" before any set is logged and "Rest" once one has been', () => {
+        vi.spyOn(runnerHook, 'useStrengthSessionRunner').mockReturnValue(baseResult({
+            session: {
+                userId: 'u1', sessionId: 's1', date: '2026-08-17', startedAt: '2026-08-17T18:00:00Z',
+                updatedAt: '2026-08-17T18:00:00Z', state: 'in_progress',
+                exercises: [{ exerciseId: 'bench_press', sets: [] }],
+                schemaVersion: 1,
+            },
+            activeExerciseIndex: 0,
+        }));
+        const htmlNoSets = renderToStaticMarkup(<StrengthSessionRunner userId="u1" />);
+        expect(htmlNoSets).toContain('Elapsed:');
+
+        vi.spyOn(runnerHook, 'useStrengthSessionRunner').mockReturnValue(baseResult({
+            session: {
+                userId: 'u1', sessionId: 's1', date: '2026-08-17', startedAt: '2026-08-17T18:00:00Z',
+                updatedAt: '2026-08-17T18:02:00Z', state: 'in_progress',
+                exercises: [{ exerciseId: 'bench_press', sets: [{ setIndex: 1, reps: 5, weightKg: 60, isWarmup: false, completedAt: '2026-08-17T18:01:00Z' }] }],
+                schemaVersion: 1,
+            },
+            activeExerciseIndex: 0,
+        }));
+        const htmlWithSet = renderToStaticMarkup(<StrengthSessionRunner userId="u1" />);
+        expect(htmlWithSet).toContain('Rest:');
+    });
+
+    it('hides the timer once the session is closed', () => {
+        vi.spyOn(runnerHook, 'useStrengthSessionRunner').mockReturnValue(baseResult({
+            session: {
+                userId: 'u1', sessionId: 's1', date: '2026-08-17', startedAt: '2026-08-17T18:00:00Z',
+                completedAt: '2026-08-17T19:00:00Z', updatedAt: '2026-08-17T19:00:00Z', state: 'completed',
+                exercises: [{ exerciseId: 'bench_press', sets: [{ setIndex: 1, reps: 5, weightKg: 60, isWarmup: false, completedAt: '2026-08-17T18:01:00Z' }] }],
+                schemaVersion: 1,
+            },
+            activeExerciseIndex: 0,
+        }));
+        const html = renderToStaticMarkup(<StrengthSessionRunner userId="u1" />);
+        expect(html).not.toContain('strength-rest-timer');
+    });
+
     it('hides set-entry controls and session actions once the session is completed', () => {
         vi.spyOn(runnerHook, 'useStrengthSessionRunner').mockReturnValue(baseResult({
             session: {
