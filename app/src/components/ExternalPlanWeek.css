@@ -83,6 +83,12 @@
   flex: 1;
 }
 
+.external-week-session-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
 .external-week-title {
   font-size: 0.88rem;
   font-weight: 500;
@@ -91,6 +97,29 @@
 .external-week-meta {
   font-size: 0.75rem;
   color: var(--text-secondary);
+}
+
+.external-week-session-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.external-week-view-btn {
+  background: rgba(56, 189, 248, 0.12);
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  border-radius: 6px;
+  color: #e0f2fe;
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 500;
+  padding: 0.3rem 0.6rem;
+  white-space: nowrap;
+}
+
+.external-week-view-btn:hover {
+  background: rgba(56, 189, 248, 0.22);
 }
 
 .external-week-missed-btn,
@@ -118,6 +147,75 @@
 .external-week-accept {
   border-color: rgba(52, 211, 153, 0.4);
   color: #6ee7b7;
+}
+
+.external-week-details {
+  margin-top: 0.15rem;
+  padding: 0.75rem 0.85rem;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.external-week-details .external-prescription h5,
+.external-week-details .external-scaling-summary h5,
+.external-week-details .external-fallback h5 {
+  margin: 0.5rem 0 0.3rem;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-secondary);
+}
+
+.external-week-details .external-prescription:first-child h5 {
+  margin-top: 0;
+}
+
+.external-week-details .external-prescription-summary {
+  margin: 0;
+  font-size: 0.88rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.external-week-details .external-prescription-steps {
+  margin: 0.5rem 0 0;
+  padding-left: 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.external-week-details .external-prescription-steps li {
+  font-size: 0.84rem;
+  line-height: 1.4;
+}
+
+.external-week-details .step-name {
+  font-weight: 600;
+}
+
+.external-week-details .step-target,
+.external-week-details .step-timing,
+.external-week-details .step-notes {
+  display: block;
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+}
+
+.external-week-details .external-scaling-summary p,
+.external-week-details .external-fallback p {
+  margin: 0;
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
+.external-week-details .external-fallback {
+  margin-top: 0.6rem;
+  padding: 0.55rem 0.7rem;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px dashed rgba(255, 255, 255, 0.15);
 }
 
 .external-week-finding {

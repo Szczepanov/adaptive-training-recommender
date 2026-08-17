@@ -1,4 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { renderToStaticMarkup } from 'react-dom/server';
+import React from 'react';
+import { ExternalPlanWeek } from './ExternalPlanWeek';
 import type { PlacedSession } from '../engine/externalPlacement';
 import type { FixedActivity } from '../engine/models';
 
@@ -9,7 +12,14 @@ describe('ExternalPlanWeek occupancy and scheduling contracts', () => {
                 id: 's1', title: 'Threshold', priority: 'key',
                 placement: { week: 1, preferredDay: 'tuesday', flexibility: 'preferred', ifMissed: 'reschedule_within_week' },
                 gating: { modality: 'cycling', intensity: 'hard', durationMin: 60, durationMax: 75, environment: 'either', equipment: ['indoor_bike'] },
-                prescription: { summary: '3x12 at threshold.' },
+                prescription: {
+                    summary: '3x12 at threshold.',
+                    steps: [
+                        { name: 'Warm-up', durationMin: 15, target: 'Zone 2' },
+                        { name: 'Interval', durationMin: 12, sets: 3, setRecoveryMin: 4, target: '95-100% FTP' },
+                    ],
+                },
+                scaling: { reducible: true, reducedSummary: '2x12 at threshold.', fallback: 'Steady 60 min outdoors' },
             },
             date: '2026-08-18',
             status: 'planned',
@@ -57,4 +67,24 @@ describe('ExternalPlanWeek occupancy and scheduling contracts', () => {
         expect(occupied.has('2026-08-17')).toBe(false); // Completed activity does not block
         expect(occupied.has('2026-08-19')).toBe(false); // Free day
     });
+
+    it('renders View workout button for scheduled sessions', () => {
+        const html = renderToStaticMarkup(
+            React.createElement(ExternalPlanWeek, {
+                planTitle: 'Adaptive Peak Plan',
+                weekStartDate: '2026-08-17',
+                placed,
+                critique: null,
+                today: '2026-08-17',
+                onProposeReplacement: () => ({ sessionId: 's1', missedDate: '2026-08-17', outcome: 'unresolved' as const, rationale: '' }),
+                onConfirmReplacement: () => {},
+                onChooseDate: () => {},
+            }),
+        );
+
+        expect(html).toContain('View workout');
+        expect(html).toContain('Threshold');
+        expect(html).toContain('hard · 60–75 min');
+    });
 });
+
