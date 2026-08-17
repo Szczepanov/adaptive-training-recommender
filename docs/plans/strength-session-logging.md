@@ -66,7 +66,7 @@ accepted before any Step C item.
 |---|---|---|---|
 | S1.1 | Offline persistence | `[x]` | — |
 | S1.2 | `strength_sessions` schema and types | `[x]` | D-GAUGE |
-| S1.3 | Firestore rules and validation | `[ ]` | S1.2 |
+| S1.3 | Firestore rules and validation | `[x]` | S1.2 |
 | S1.4 | Session state machine and date attribution | `[ ]` | S1.2 |
 | S1.5 | Set-entry UI | `[ ]` | S1.3, S1.4 |
 | S1.6 | Rest timer and derived rest | `[ ]` | S1.5 |
@@ -204,7 +204,7 @@ parsing is deliberately asymmetric: explicit `null` is accepted as bodyweight, b
 non-null, non-numeric value drops the set rather than being coerced to `null` — coercion
 would misreport a real loaded set as bodyweight.
 
-### S1.3 `[ ]` Firestore rules and validation
+### S1.3 `[x]` Firestore rules and validation
 
 **Current:** no `strength_sessions` match block. `activities` avoids validation only because
 it is server-only; every client-writable collection here carries a `hasValid*` function
@@ -227,6 +227,32 @@ Allow `delete` (unlike `decision_journal`) — a mis-started session must be rem
 **Done when:** `npm run test:rules` covers: owner read/write allowed, cross-user denied,
 oversized arrays denied, out-of-range `weightKg`/`reps` denied, unknown key denied,
 `schemaVersion: 2` denied, ownership change on update denied.
+
+**Outcome (2026-08-17), and a real constraint this plan didn't anticipate.** Firestore's
+rules language has no per-element predicate over a variable-length `list` — only `is list`
+and `.size()`. It cannot express "every set's `weightKg` is in `0..1000`" for an array whose
+length isn't fixed, only "this array has at most 30 elements." This isn't a workaround
+choice; every existing array-of-maps field in `firestore.rules` (`external_plans`'
+`sessions`, `plan_blocks`' `assignments`) is already bounded the same way and none is
+deep-validated — this plan's "out-of-range `weightKg`/`reps` denied" bullet described a
+check the rules language cannot perform.
+
+`hasValidStrengthSession` therefore enforces top-level shape, ownership, `schemaVersion`,
+`state` enum, date validity (reusing `isValidActivityDate`), and `exercises.size() <= 30` —
+and **does not** bound `sets.size()`, `weightKg`, or `reps` per element. Per-element
+correctness is the read side's job: `parseStrengthSession` (S1.2) already drops a malformed
+set or exercise rather than trusting it, which is the actual enforcement point for this
+data. The emulator suite (57 tests, run against the real Firestore emulator via
+`npm run test:rules`, not just typechecked) covers what the rules layer can genuinely
+enforce: create/read/update/delete ownership, `schemaVersion` and state-enum rejection,
+unknown-key rejection, the 30-exercise cap, and — beyond the plan's original list — that
+`date` and `startedAt` are immutable on update (S1.4's "fixed at creation, never
+recomputed" requirement, enforced here rather than left to app discipline).
+
+Also added beyond the plan: `sessionId` is required in `hasAll` and checked against the
+path segment (`isStrengthSessionDocument`), matching `isDateDocument`'s precedent for every
+other date-keyed collection — the plan's schema listed `sessionId` as required but the rules
+section didn't mention enforcing the path/field agreement.
 
 ### S1.4 `[ ]` Session state machine and date attribution
 

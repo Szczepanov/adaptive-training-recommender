@@ -103,6 +103,19 @@ function validDecisionJournalEntry() {
     };
 }
 
+function validStrengthSession() {
+    return {
+        userId: ownerId, sessionId: 'session-1', date: '2026-08-17',
+        startedAt: '2026-08-17T18:00:00Z', updatedAt: '2026-08-17T18:00:00Z',
+        state: 'in_progress',
+        // Rules bound array length and top-level shape only (S1.3): nested per-set fields
+        // like weightKg/reps/gauge are not, and cannot be, validated element-wise here --
+        // see the comment on hasValidStrengthSession. Emulator coverage below reflects that.
+        exercises: [{ exerciseId: 'hang_power_clean', sets: [{ setIndex: 1, reps: 3, weightKg: 80, isWarmup: false, completedAt: '2026-08-17T18:02:00Z' }] }],
+        schemaVersion: 1,
+    };
+}
+
 function validRecommendation(auditEvaluatedAt = '2026-08-07T08:00:00Z') {
     return {
         userId: ownerId,
@@ -692,6 +705,101 @@ emulatorDescribe('Firestore security rules', () => {
         });
         const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
         await assertFails(deleteDoc(doc(ownerDb, decisionJournalPath)));
+    });
+
+    // --- Strength session logging (ADR-0021, S1.3) ---
+
+    const strengthSessionPath = `users/${ownerId}/strength_sessions/session-1`;
+
+    it('allows an owner to create a well-formed strength session', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await expect(assertSucceeds(setDoc(doc(ownerDb, strengthSessionPath), validStrengthSession()))).resolves.toBeUndefined();
+    });
+
+    it('allows appending sets and advancing state on update, but not rewriting when the session started or which day it belongs to', async () => {
+        await testEnvironment.withSecurityRulesDisabled(async context => {
+            await setDoc(doc(context.firestore(), strengthSessionPath), validStrengthSession());
+        });
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+
+        await expect(assertSucceeds(setDoc(doc(ownerDb, strengthSessionPath), {
+            ...validStrengthSession(),
+            state: 'completed',
+            completedAt: '2026-08-17T18:45:00Z',
+            updatedAt: '2026-08-17T18:45:00Z',
+            exercises: [
+                ...validStrengthSession().exercises,
+                { exerciseId: 'front_squat', sets: [{ setIndex: 1, reps: 5, weightKg: 100, isWarmup: false, completedAt: '2026-08-17T18:20:00Z' }] },
+            ],
+        }))).resolves.toBeUndefined();
+
+        await assertFails(setDoc(doc(ownerDb, strengthSessionPath), { ...validStrengthSession(), date: '2026-08-18' }));
+        await assertFails(setDoc(doc(ownerDb, strengthSessionPath), { ...validStrengthSession(), startedAt: '2026-08-17T19:00:00Z' }));
+    });
+
+    it('rejects a malformed or foreign-owned strength session', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertFails(setDoc(doc(ownerDb, `${strengthSessionPath}-starts-completed`), {
+            ...validStrengthSession(), state: 'completed', completedAt: '2026-08-17T18:45:00Z',
+        }));
+        await assertFails(setDoc(doc(ownerDb, `${strengthSessionPath}-premature-completion`), {
+            ...validStrengthSession(), completedAt: '2026-08-17T18:45:00Z',
+        }));
+        await assertFails(setDoc(doc(ownerDb, `${strengthSessionPath}-bad-state`), { ...validStrengthSession(), state: 'paused' }));
+        await assertFails(setDoc(doc(ownerDb, `${strengthSessionPath}-bad-date`), { ...validStrengthSession(), date: '2026-02-30' }));
+        await assertFails(setDoc(doc(ownerDb, `${strengthSessionPath}-bad-schema`), { ...validStrengthSession(), schemaVersion: 2 }));
+        await assertFails(setDoc(doc(ownerDb, `${strengthSessionPath}-extra-field`), { ...validStrengthSession(), surprise: true }));
+        await assertFails(setDoc(doc(ownerDb, `${strengthSessionPath}-id-mismatch`), { ...validStrengthSession(), sessionId: 'someone-elses-id' }));
+        const withoutExercises: Record<string, unknown> = validStrengthSession();
+        delete withoutExercises.exercises;
+        await assertFails(setDoc(doc(ownerDb, `${strengthSessionPath}-missing-field`), withoutExercises));
+        await assertFails(setDoc(doc(ownerDb, `${strengthSessionPath}-oversized`), {
+            ...validStrengthSession(), exercises: Array.from({ length: 31 }, () => ({ exerciseId: 'front_squat', sets: [] })),
+        }));
+        await assertFails(setDoc(doc(ownerDb, strengthSessionPath), { ...validStrengthSession(), userId: otherUserId }));
+        const otherDb = testEnvironment.authenticatedContext(otherUserId).firestore();
+        await assertFails(setDoc(
+            doc(otherDb, `users/${otherUserId}/strength_sessions/session-1`),
+            { ...validStrengthSession(), userId: ownerId },
+        ));
+    });
+
+    it('makes completed and abandoned strength sessions terminal and immutable', async () => {
+        await testEnvironment.withSecurityRulesDisabled(async context => {
+            await setDoc(doc(context.firestore(), strengthSessionPath), validStrengthSession());
+        });
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        const completed = {
+            ...validStrengthSession(),
+            state: 'completed',
+            completedAt: '2026-08-17T18:45:00Z',
+            updatedAt: '2026-08-17T18:45:00Z',
+        };
+        await expect(assertSucceeds(setDoc(doc(ownerDb, strengthSessionPath), completed))).resolves.toBeUndefined();
+        await assertFails(setDoc(doc(ownerDb, strengthSessionPath), {
+            ...validStrengthSession(), updatedAt: '2026-08-17T19:00:00Z',
+        }));
+        await assertFails(setDoc(doc(ownerDb, strengthSessionPath), {
+            ...completed,
+            exercises: [...completed.exercises, { exerciseId: 'bench_press', sets: [] }],
+        }));
+    });
+
+    it('rejects cross-user strength session reads and writes', async () => {
+        await testEnvironment.withSecurityRulesDisabled(async context => {
+            await setDoc(doc(context.firestore(), strengthSessionPath), validStrengthSession());
+        });
+        const otherDb = testEnvironment.authenticatedContext(otherUserId).firestore();
+        await assertFails(getDoc(doc(otherDb, strengthSessionPath)));
+        await assertFails(setDoc(doc(otherDb, strengthSessionPath), validStrengthSession(), { merge: true }));
+    });
+
+    it('allows an owner to delete a mis-started strength session', async () => {
+        await testEnvironment.withSecurityRulesDisabled(async context => {
+            await setDoc(doc(context.firestore(), strengthSessionPath), validStrengthSession());
+        });
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await expect(assertSucceeds(deleteDoc(doc(ownerDb, strengthSessionPath)))).resolves.toBeUndefined();
     });
 
     // --- Garmin workout queue ---
