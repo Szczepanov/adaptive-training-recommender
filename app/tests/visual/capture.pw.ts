@@ -45,7 +45,7 @@ for (const scenario of VISUAL_SCENARIOS) {
     if (scenario.id.startsWith('home-') && scenario.id !== 'home-missing-data') {
       const viewWorkout = page.getByRole('button', { name: 'View workout' });
       if (await viewWorkout.count()) {
-        await viewWorkout.click();
+        await viewWorkout.first().click();
         await capture(page, scenario, 'workout-expanded', ['Workout steps are available on demand without overwhelming the recommendation.']);
       }
     }

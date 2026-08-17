@@ -3,6 +3,7 @@ import type { ExternalCritiqueFinding, ExternalWeekCritique } from '../engine/ex
 import type { PlacedSession, ReplacementProposal } from '../engine/externalPlacement';
 import type { FixedActivity } from '../engine/models';
 import { addDaysToLocalDateString } from '../utils/localDate';
+import { stepTiming } from './externalPrescriptionUtils';
 import './ExternalPlanWeek.css';
 
 const WEEKDAY_FORMATTER = new Intl.DateTimeFormat('en-US', { weekday: 'short', timeZone: 'UTC' });
@@ -64,6 +65,19 @@ export function ExternalPlanWeek({
 }: ExternalPlanWeekProps) {
     const [proposal, setProposal] = useState<ReplacementProposal | null>(null);
     const [choosingFor, setChoosingFor] = useState<string | null>(null);
+    const [expandedSessionIds, setExpandedSessionIds] = useState<Set<string>>(() => new Set());
+
+    const toggleExpandSession = (sessionId: string) => {
+        setExpandedSessionIds(prev => {
+            const next = new Set(prev);
+            if (next.has(sessionId)) {
+                next.delete(sessionId);
+            } else {
+                next.add(sessionId);
+            }
+            return next;
+        });
+    };
 
     const days = useMemo(
         () => Array.from({ length: 7 }, (_, offset) => addDaysToLocalDateString(weekStartDate, offset)),
@@ -132,28 +146,78 @@ export function ExternalPlanWeek({
                             </div>
                             <div className="external-week-daybody">
                                 {sessions.length === 0 && <p className="external-week-empty">Nothing placed</p>}
-                                {sessions.map(item => (
-                                    <div key={item.session.id} className={`external-week-session status-${item.status}`}>
-                                        <span className="external-week-icon">{MODALITY_ICON[item.session.gating.modality] ?? '❔'}</span>
-                                        <div className="external-week-sessionbody">
-                                            <span className="external-week-title">{item.session.title}</span>
-                                            <span className="external-week-meta">
-                                                {item.session.gating.intensity} · {item.session.gating.durationMin}–{item.session.gating.durationMax} min
-                                                {' · '}{STATUS_LABEL[item.status]}
-                                                {item.moved && ' (not where your plan first put it)'}
-                                            </span>
+                                {sessions.map(item => {
+                                    const isExpanded = expandedSessionIds.has(item.session.id);
+                                    const steps = item.session.prescription.steps ?? [];
+                                    return (
+                                        <div key={item.session.id} className="external-week-session-item">
+                                            <div className={`external-week-session status-${item.status}`}>
+                                                <span className="external-week-icon">{MODALITY_ICON[item.session.gating.modality] ?? '❔'}</span>
+                                                <div className="external-week-sessionbody">
+                                                    <span className="external-week-title">{item.session.title}</span>
+                                                    <span className="external-week-meta">
+                                                        {item.session.gating.intensity} · {item.session.gating.durationMin}–{item.session.gating.durationMax} min
+                                                        {' · '}{STATUS_LABEL[item.status]}
+                                                        {item.moved && ' (not where your plan first put it)'}
+                                                    </span>
+                                                </div>
+                                                <div className="external-week-session-actions">
+                                                    <button
+                                                        type="button"
+                                                        className="external-week-view-btn"
+                                                        onClick={() => toggleExpandSession(item.session.id)}
+                                                        aria-expanded={isExpanded}
+                                                    >
+                                                        {isExpanded ? 'Hide workout' : 'View workout'}
+                                                    </button>
+                                                    {(item.status === 'planned' || item.status === 'moved') && date <= today && (
+                                                        <button
+                                                            type="button"
+                                                            className="external-week-missed-btn"
+                                                            onClick={() => startProposal(item.session.id, date)}
+                                                        >
+                                                            {date === today ? 'Reschedule' : 'Missed it'}
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            </div>
+                                            {isExpanded && (
+                                                <div className="external-week-details" aria-label={`Workout details for ${item.session.title}`}>
+                                                    <div className="external-prescription">
+                                                        <h5>As your plan wrote it</h5>
+                                                        <p className="external-prescription-summary">
+                                                            {item.session.prescription.summary}
+                                                        </p>
+                                                        {steps.length > 0 && (
+                                                            <ol className="external-prescription-steps">
+                                                                {steps.map((step, index) => (
+                                                                    <li key={`${step.name}-${index}`}>
+                                                                        <span className="step-name">{step.name}</span>
+                                                                        {step.target && <span className="step-target">{step.target}</span>}
+                                                                        {stepTiming(step) && <span className="step-timing">{stepTiming(step)}</span>}
+                                                                        {step.notes && <span className="step-notes">{step.notes}</span>}
+                                                                    </li>
+                                                                ))}
+                                                            </ol>
+                                                        )}
+                                                    </div>
+                                                    {item.session.scaling?.reducedSummary && (
+                                                        <div className="external-scaling-summary">
+                                                            <h5>Reduced version</h5>
+                                                            <p>{item.session.scaling.reducedSummary}</p>
+                                                        </div>
+                                                    )}
+                                                    {item.session.scaling?.fallback && (
+                                                        <aside className="external-fallback" aria-label="Your plan author's note">
+                                                            <h5>Your plan&apos;s note on what to do instead</h5>
+                                                            <p>{item.session.scaling.fallback}</p>
+                                                        </aside>
+                                                    )}
+                                                </div>
+                                            )}
                                         </div>
-                                        {(item.status === 'planned' || item.status === 'moved') && date <= today && (
-                                            <button
-                                                type="button"
-                                                className="external-week-missed-btn"
-                                                onClick={() => startProposal(item.session.id, date)}
-                                            >
-                                                {date === today ? 'Reschedule' : 'Missed it'}
-                                            </button>
-                                        )}
-                                    </div>
-                                ))}
+                                    );
+                                })}
                                 {dayFindings.map((finding, index) => (
                                     <p key={`${finding.rule}-${index}`} className="external-week-finding">
                                         ⚠️ {finding.detail}
