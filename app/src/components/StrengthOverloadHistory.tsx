@@ -1,6 +1,6 @@
 import { useOverloadHistory } from '../hooks/useOverloadHistory';
 import { EXERCISES } from '../workouts/exercises';
-import type { ExerciseIdentity } from '../workouts/overloadHistory';
+import { exerciseIdentityKey, type ExerciseIdentity } from '../workouts/overloadHistory';
 import './StrengthOverloadHistory.css';
 
 interface StrengthOverloadHistoryProps {
@@ -13,7 +13,7 @@ function exerciseLabel(identity: ExerciseIdentity): string {
 }
 
 function identityValue(identity: ExerciseIdentity): string {
-    return identity.exerciseId ?? `free:${identity.freeTextName ?? ''}`;
+    return exerciseIdentityKey(identity);
 }
 
 /** Progressive-overload view (S1.7, ADR-0021). Reads the raw per-set log directly

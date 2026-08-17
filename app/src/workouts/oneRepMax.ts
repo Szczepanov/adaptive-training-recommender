@@ -1,4 +1,5 @@
 import type { IntensityGauge, LoggedSet } from '../engine/models';
+import { isValidIntensityGauge } from '../engine/strengthSessionValidation';
 
 /**
  * Gauge-aware 1RM estimation (S2.1, ADR-0021). The gauge filter is the entire point of
@@ -34,7 +35,7 @@ export const MAX_REPS_FOR_ESTIMATION = 12;
  *  same "how close to failure" definition, rather than a second, potentially-drifting copy
  *  of this rule. */
 export function isNearFailureGauge(gauge: IntensityGauge | undefined): boolean {
-    if (!gauge) return false; // No gauge at all: excluded by default, not a guessed fallback (ADR-0021 S2.1).
+    if (!gauge || !isValidIntensityGauge(gauge)) return false; // Invalid/absent gauges never become evidence.
     switch (gauge.scale) {
         case 'rir':
             return gauge.value <= MAX_RIR_FOR_ESTIMATION;

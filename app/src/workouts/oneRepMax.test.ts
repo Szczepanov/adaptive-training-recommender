@@ -37,6 +37,11 @@ describe('estimateOneRepMax', () => {
         expect(estimateOneRepMax([set({ gauge: undefined })])).toBeNull();
     });
 
+    it('excludes an out-of-range gauge rather than treating it as evidence', () => {
+        expect(estimateOneRepMax([set({ gauge: { scale: 'rir', value: -1 } })])).toBeNull();
+        expect(estimateOneRepMax([set({ gauge: { scale: 'rpe_rts', value: 11 } })])).toBeNull();
+    });
+
     it(`excludes a set beyond MAX_RIR_FOR_ESTIMATION (${MAX_RIR_FOR_ESTIMATION}) reps in reserve`, () => {
         expect(estimateOneRepMax([set({ gauge: { scale: 'rir', value: MAX_RIR_FOR_ESTIMATION + 1 } })])).toBeNull();
         expect(estimateOneRepMax([set({ gauge: { scale: 'rir', value: MAX_RIR_FOR_ESTIMATION } })])).not.toBeNull();
