@@ -94,11 +94,27 @@ describe('StrengthSessionService', () => {
             existingDoc(validSession());
             const updated = await service.transitionState(USER_ID, SESSION_ID, 'completed', '2026-08-17T19:00:00Z');
             expect(updated).toMatchObject({ state: 'completed', completedAt: '2026-08-17T19:00:00Z', updatedAt: '2026-08-17T19:00:00Z' });
+            expect(firestore.setDoc).toHaveBeenCalledWith(expect.anything(), {
+                state: 'completed', completedAt: '2026-08-17T19:00:00Z', updatedAt: '2026-08-17T19:00:00Z',
+            }, { merge: true });
+        });
+
+        it('preserves an existing completion timestamp on an idempotent close', async () => {
+            existingDoc(validSession({ state: 'completed', completedAt: '2026-08-17T19:00:00Z', updatedAt: '2026-08-17T19:00:00Z' }));
+            const updated = await service.transitionState(USER_ID, SESSION_ID, 'completed', '2026-08-17T20:00:00Z');
+            expect(updated.completedAt).toBe('2026-08-17T19:00:00Z');
+            expect(firestore.setDoc).not.toHaveBeenCalled();
+        });
+
+        it('rejects a transition timestamp before the last saved update', async () => {
+            existingDoc(validSession({ updatedAt: '2026-08-17T19:00:00Z' }));
+            await expect(service.transitionState(USER_ID, SESSION_ID, 'completed', '2026-08-17T18:59:59Z')).rejects.toThrow(/must not precede/i);
+            expect(firestore.setDoc).not.toHaveBeenCalled();
         });
 
         it('rejects reopening a completed session before ever writing to Firestore', async () => {
-            existingDoc(validSession({ state: 'completed', completedAt: '2026-08-17T19:00:00Z' }));
-            await expect(service.transitionState(USER_ID, SESSION_ID, 'in_progress')).rejects.toThrow(/terminal/i);
+            existingDoc(validSession({ state: 'completed', completedAt: '2026-08-17T19:00:00Z', updatedAt: '2026-08-17T19:00:00Z' }));
+            await expect(service.transitionState(USER_ID, SESSION_ID, 'in_progress', '2026-08-17T20:00:00Z')).rejects.toThrow(/terminal/i);
             expect(firestore.setDoc).not.toHaveBeenCalled();
         });
 

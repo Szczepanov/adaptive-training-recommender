@@ -9,6 +9,7 @@ import {
 } from '../engine/strengthSessionLifecycle';
 import { parseStrengthSession } from '../persistence/parsers/strengthSession';
 import { isPermissionDeniedError } from '../utils/errors';
+import { isValidStrengthInstant } from '../engine/strengthSessionValidation';
 
 /**
  * Storage for `users/{userId}/strength_sessions/{sessionId}` (ADR-0021, S1.4). State
@@ -83,6 +84,10 @@ export class StrengthSessionService {
         if (!transition.ok) {
             throw new Error(transition.reason);
         }
+        if (current.state === next) return current;
+        if (!isValidStrengthInstant(nowIso) || Date.parse(nowIso) < Date.parse(current.updatedAt)) {
+            throw new Error('Strength session transition time must not precede the last saved update');
+        }
         const updated: StrengthSession = {
             ...current,
             state: next,
@@ -90,7 +95,11 @@ export class StrengthSessionService {
             ...(next === 'completed' ? { completedAt: nowIso } : {}),
         };
         const docRef = doc(getDb(), 'users', userId, this.collectionPath, sessionId);
-        await setDoc(docRef, updated);
+        await setDoc(docRef, {
+            state: next,
+            updatedAt: nowIso,
+            ...(next === 'completed' ? { completedAt: nowIso } : {}),
+        }, { merge: true });
         return updated;
     }
 
