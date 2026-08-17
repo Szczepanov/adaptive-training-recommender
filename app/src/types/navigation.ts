@@ -1,1 +1,1 @@
-export type Screen = 'home' | 'checkin' | 'goals' | 'constraints' | 'preferences' | 'data' | 'plan' | 'brief';
+export type Screen = 'home' | 'checkin' | 'goals' | 'constraints' | 'preferences' | 'data' | 'plan' | 'brief' | 'strength';

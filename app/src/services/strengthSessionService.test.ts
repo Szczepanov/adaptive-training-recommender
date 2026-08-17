@@ -6,6 +6,7 @@ const firestore = vi.hoisted(() => {
         doc: vi.fn(),
         getDoc: vi.fn(),
         getDocs: vi.fn(),
+        onSnapshot: vi.fn(),
         orderBy: vi.fn(),
         query: vi.fn(),
         setDoc: vi.fn(),
@@ -89,6 +90,19 @@ describe('StrengthSessionService', () => {
         });
     });
 
+    describe('observeSession', () => {
+        it('reports Firestore pending-write metadata', () => {
+            const unsubscribe = vi.fn();
+            firestore.onSnapshot.mockImplementationOnce((_ref, _options, next) => {
+                next({ id: SESSION_ID, ref: { path: `users/${USER_ID}/strength_sessions/${SESSION_ID}` }, exists: () => true, data: () => validSession(), metadata: { hasPendingWrites: true } });
+                return unsubscribe;
+            });
+            const listener = vi.fn();
+            expect(service.observeSession(USER_ID, SESSION_ID, listener)).toBe(unsubscribe);
+            expect(listener).toHaveBeenCalledWith(expect.objectContaining({ status: 'AVAILABLE' }), true);
+        });
+    });
+
     describe('transitionState', () => {
         it('moves an in_progress session to completed and stamps completedAt', async () => {
             existingDoc(validSession());
@@ -168,6 +182,48 @@ describe('StrengthSessionService', () => {
             });
             const abandoned = await service.reconcileStaleSessions(USER_ID, '2026-08-17T18:00:00Z');
             expect(abandoned).toEqual([]);
+            expect(firestore.setDoc).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('findActiveSession', () => {
+        it('returns null when nothing is in progress', async () => {
+            firestore.getDocs.mockResolvedValueOnce({ docs: [] });
+            expect(await service.findActiveSession(USER_ID, '2026-08-17T18:00:00Z')).toBeNull();
+        });
+
+        it('returns a fresh in_progress session, even if its date field is yesterday (started before midnight)', async () => {
+            firestore.getDocs.mockResolvedValueOnce({
+                docs: [{ id: SESSION_ID, ref: { path: `users/${USER_ID}/strength_sessions/${SESSION_ID}` }, data: () => validSession({ date: '2026-08-16', startedAt: '2026-08-16T23:50:00Z' }) }],
+            });
+            const active = await service.findActiveSession(USER_ID, '2026-08-17T00:10:00Z');
+            expect(active).toMatchObject({ sessionId: SESSION_ID, state: 'in_progress' });
+        });
+
+        it('abandons a stale session it walks past rather than returning it as resumable', async () => {
+            firestore.getDocs.mockResolvedValueOnce({
+                docs: [{ id: SESSION_ID, ref: { path: `users/${USER_ID}/strength_sessions/${SESSION_ID}` }, data: () => validSession({ startedAt: '2026-08-17T06:00:00Z' }) }],
+            });
+            existingDoc(validSession({ startedAt: '2026-08-17T06:00:00Z' }));
+            const active = await service.findActiveSession(USER_ID, '2026-08-17T18:00:00Z');
+            expect(active).toBeNull();
+            expect(firestore.setDoc).toHaveBeenCalledTimes(1);
+        });
+    });
+
+    describe('saveExercises', () => {
+        it('merges exercises and updatedAt without rewriting the rest of the document', async () => {
+            const exercises = [{ exerciseId: 'bench_press', sets: [{ setIndex: 1, reps: 5, weightKg: 60, isWarmup: false, completedAt: '2026-08-17T18:10:00Z' }] }];
+            await service.saveExercises(USER_ID, SESSION_ID, exercises, '2026-08-17T18:10:00Z');
+            expect(firestore.setDoc).toHaveBeenCalledTimes(1);
+            const [, payload, options] = firestore.setDoc.mock.calls[0] as [unknown, Record<string, unknown>, Record<string, unknown>];
+            expect(payload).toEqual({ exercises, updatedAt: '2026-08-17T18:10:00Z' });
+            expect(options).toEqual({ merge: true });
+        });
+
+        it('rejects invalid nested set data before writing', async () => {
+            const exercises = [{ exerciseId: 'bench_press', sets: [{ setIndex: 1, reps: 1001, weightKg: 60, isWarmup: false, completedAt: '2026-08-17T18:10:00Z' }] }];
+            await expect(service.saveExercises(USER_ID, SESSION_ID, exercises)).rejects.toThrow('schema bounds');
             expect(firestore.setDoc).not.toHaveBeenCalled();
         });
     });
