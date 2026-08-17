@@ -87,4 +87,32 @@ describe('zwiftExport', () => {
         expect(xml).toContain('<Intervals Repeat="3" OnDuration="720" OffDuration="240"');
         expect(xml).toContain('<Cooldown Duration="600"');
     });
+
+    it('generates multi-set intervals in Zwift XML for 30/15 sessions', () => {
+        const session: ExternalPlanSession = {
+            id: 'w1-vo2',
+            title: 'VO2 30/15 repeated aerobic power',
+            priority: 'key',
+            placement: { week: 1, preferredDay: 'wednesday', flexibility: 'preferred', ifMissed: 'drop' },
+            gating: { modality: 'cycling', intensity: 'hard', durationMin: 60, durationMax: 75, environment: 'either', equipment: [] },
+            prescription: {
+                summary: '3 sets of 10 x 30s/15s.',
+                steps: [
+                    { name: 'Warm-up', durationMin: 20, target: 'Progressively from easy Zone 2' },
+                    { name: '30-second work', durationSec: 30, repeat: 30, target: '320-350 W', notes: 'Each work repetition is followed by 15 s at approximately 150-180 W. Organize as 3 sets of 10 repetitions with 4 min easy riding between sets.' },
+                    { name: 'Cooldown', durationMin: 10, target: 'Easy riding below approximately 160 W' },
+                ],
+            },
+        };
+
+        const xml = generateZwiftFromExternalSession(session);
+        expect(xml).toContain('<Warmup Duration="1200"');
+        // Should have 3 intervals blocks of 10 x 30s/15s
+        const intervalMatches = xml.match(/<Intervals Repeat="10" OnDuration="30" OffDuration="15"/g);
+        expect(intervalMatches).toHaveLength(3);
+        // Should have 2 set recoveries of 240s between sets
+        const setRecoveryMatches = xml.match(/<SteadyState Duration="240" Power="0.50"\/>/g);
+        expect(setRecoveryMatches).toHaveLength(2);
+        expect(xml).toContain('<Cooldown Duration="600"');
+    });
 });

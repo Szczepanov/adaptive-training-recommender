@@ -328,4 +328,120 @@ def test_over_under_multi_step_block_repeats():
     assert steps[2]["targetValueTwo"] == 140.0
 
 
+def test_multi_set_vo2_30_15_garmin_payload():
+    workout = {
+        "title": "VO2 30/15 repeated aerobic power",
+        "modality": "cycling",
+        "targetDurationMin": 60,
+        "blocks": [
+            {
+                "name": "Workout Steps",
+                "role": "main",
+                "steps": [
+                    {
+                        "name": "Warm-up",
+                        "durationSeconds": 1200,
+                        "targets": ["140-180 W, RPE 2-4"],
+                    },
+                    {
+                        "name": "30-second work",
+                        "durationSeconds": 30,
+                        "repetitions": 10,
+                        "sets": 3,
+                        "restAfterSec": 15,
+                        "setRecoverySec": 240,
+                        "targets": ["320-350 W"],
+                        "recoveryTarget": "150-180 W",
+                    },
+                    {
+                        "name": "Cooldown",
+                        "durationSeconds": 600,
+                        "targets": ["160 W"],
+                    },
+                ],
+            }
+        ],
+    }
+
+    payload = canonical_workout_to_garmin_payload(workout)
+    steps = payload["workoutSegments"][0]["workoutSteps"]
+    # Steps: 1 Warmup, 1 RepeatGroup (Set 1), 1 Set Recovery, 1 RepeatGroup (Set 2), 1 Set Recovery, 1 RepeatGroup (Set 3), 1 Cooldown = 7 steps
+    assert len(steps) == 7
+
+    # 1. Warmup
+    assert steps[0]["stepType"]["stepTypeKey"] == "warmup"
+    assert steps[0]["endConditionValue"] == 1200
+    assert steps[0]["targetValueOne"] == 140.0
+    assert steps[0]["targetValueTwo"] == 180.0
+
+    # 2. Set 1
+    assert steps[1]["type"] == "RepeatGroupDTO"
+    assert steps[1]["numberOfIterations"] == 10
+    set1_child = steps[1]["workoutSteps"]
+    assert len(set1_child) == 2
+    assert set1_child[0]["stepType"]["stepTypeKey"] == "interval"
+    assert set1_child[0]["endConditionValue"] == 30
+    assert set1_child[0]["targetValueOne"] == 320.0
+    assert set1_child[0]["targetValueTwo"] == 350.0
+    assert set1_child[1]["stepType"]["stepTypeKey"] == "recovery"
+    assert set1_child[1]["endConditionValue"] == 15
+    assert set1_child[1]["targetValueOne"] == 150.0
+    assert set1_child[1]["targetValueTwo"] == 180.0
+
+    # 3. Inter-set recovery 1
+    assert steps[2]["stepType"]["stepTypeKey"] == "recovery"
+    assert steps[2]["endConditionValue"] == 240
+    assert steps[2]["description"] == "Set recovery"
+
+    # 4. Set 2
+    assert steps[3]["type"] == "RepeatGroupDTO"
+    assert steps[3]["numberOfIterations"] == 10
+
+    # 5. Inter-set recovery 2
+    assert steps[4]["stepType"]["stepTypeKey"] == "recovery"
+    assert steps[4]["endConditionValue"] == 240
+
+    # 6. Set 3
+    assert steps[5]["type"] == "RepeatGroupDTO"
+    assert steps[5]["numberOfIterations"] == 10
+
+    # 7. Cooldown
+    assert steps[6]["stepType"]["stepTypeKey"] == "cooldown"
+    assert steps[6]["endConditionValue"] == 600
+
+
+def test_notes_fallback_recovery_in_garmin_payload():
+    workout = {
+        "title": "VO2 30/15 repeated aerobic power",
+        "modality": "cycling",
+        "blocks": [
+            {
+                "steps": [
+                    {
+                        "name": "30-second work",
+                        "durationSeconds": 30,
+                        "repetitions": 30,
+                        "targets": ["320-350 W"],
+                        "notes": "Each work repetition is followed by 15 s at approximately 150-180 W. Organize as 3 sets of 10 repetitions with 4 min easy riding between sets.",
+                    }
+                ]
+            }
+        ],
+    }
+
+    payload = canonical_workout_to_garmin_payload(workout)
+    steps = payload["workoutSegments"][0]["workoutSteps"]
+    # When restAfterSec was not explicitly passed, fallback extracted 15s recovery and 240s set recovery
+    assert len(steps) == 1
+    assert steps[0]["type"] == "RepeatGroupDTO"
+    assert steps[0]["numberOfIterations"] == 30
+    child_steps = steps[0]["workoutSteps"]
+    assert len(child_steps) == 2
+    assert child_steps[0]["stepType"]["stepTypeKey"] == "interval"
+    assert child_steps[0]["endConditionValue"] == 30
+    assert child_steps[1]["stepType"]["stepTypeKey"] == "recovery"
+    assert child_steps[1]["endConditionValue"] == 15
+
+
+
 

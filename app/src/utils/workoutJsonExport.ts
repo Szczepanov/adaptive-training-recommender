@@ -13,6 +13,8 @@ export interface CanonicalExportStep {
     weightKg?: number;
     weightPercent1Rm?: number;
     restAfterSec?: number;
+    setRecoverySec?: number;
+    recoveryTarget?: string;
     targets?: string[];
     structuredTargets?: DisplayTarget[];
     cues?: string[];
@@ -70,6 +72,66 @@ function parseRestToSeconds(rest: string | undefined): number | undefined {
     return undefined;
 }
 
+export function extractRecoverySecondsFromText(text: string, durationSec?: number): number | undefined {
+    if (!text) return undefined;
+    // 1. "followed by 15 s" / "followed by 15 seconds" / "followed by 2 min"
+    const followedMatch = text.match(/followed\s+by\s+(\d+(?:\.\d+)?)\s*(s(?:ec(?:onds?)?)?|m(?:in(?:utes?)?)?)\b/i);
+    if (followedMatch) {
+        const val = parseFloat(followedMatch[1]);
+        const unit = followedMatch[2].toLowerCase();
+        return unit.startsWith('m') ? Math.round(val * 60) : Math.round(val);
+    }
+    // 2. "15 s recovery" / "15s rest" / "15 sec easy" / "2 min recovery" / "3 min rest"
+    const restMatch = text.match(/(\d+(?:\.\d+)?)\s*(s(?:ec(?:onds?)?)?|m(?:in(?:utes?)?)?)\s+(?:easy|rest|recovery|off)\b/i);
+    if (restMatch) {
+        const val = parseFloat(restMatch[1]);
+        const unit = restMatch[2].toLowerCase();
+        return unit.startsWith('m') ? Math.round(val * 60) : Math.round(val);
+    }
+    // 3. Ratio syntax like "30/15" or "40/20" or "30s/15s"
+    const ratioMatch = text.match(/\b(\d+)\s*(?:s|sec)?\s*\/\s*(\d+)\s*(?:s|sec)?\b/i);
+    if (ratioMatch) {
+        const onVal = parseInt(ratioMatch[1], 10);
+        const offVal = parseInt(ratioMatch[2], 10);
+        if (!durationSec || durationSec === onVal) {
+            return offVal;
+        }
+    }
+    return undefined;
+}
+
+export function extractSetRecoverySecondsFromText(text: string): number | undefined {
+    if (!text) return undefined;
+    const match = text.match(/(\d+(?:\.\d+)?)\s*(s(?:ec(?:onds?)?)?|m(?:in(?:utes?)?)?)(?:\s+[a-z\s]+)?\s+between\s+sets\b/i);
+    if (match) {
+        const val = parseFloat(match[1]);
+        const unit = match[2].toLowerCase();
+        return unit.startsWith('m') ? Math.round(val * 60) : Math.round(val);
+    }
+    return undefined;
+}
+
+export function extractSetsAndRepsFromText(text: string): { sets?: number; repetitions?: number } {
+    if (!text) return {};
+    const match = text.match(/(\d+)\s+sets\s+of\s+(\d+)/i);
+    if (match) {
+        return {
+            sets: parseInt(match[1], 10),
+            repetitions: parseInt(match[2], 10),
+        };
+    }
+    return {};
+}
+
+export function extractRecoveryTargetFromText(text: string): string | undefined {
+    if (!text) return undefined;
+    const match = text.match(/followed\s+by\s+\d+\s*(?:s|sec|min|m)?\s+(?:at|below|around|approximately|about)\s+([^.,;]+)/i);
+    if (match) {
+        return match[1].replace(/^(?:at|below|around|approximately|about)\s+/i, '').trim();
+    }
+    return undefined;
+}
+
 export function exportWorkoutPrescriptionToJson(
     prescription: WorkoutPrescription,
     modality: string = 'cycling',
@@ -114,17 +176,52 @@ export function exportWorkoutPrescriptionToJson(
 export function exportExternalSessionToJson(
     session: ExternalPlanSession,
 ): CanonicalWorkoutExport {
-    const steps: CanonicalExportStep[] = (session.prescription.steps ?? []).map(step => ({
-        name: step.name,
-        durationSeconds: (step.durationMin ? step.durationMin * 60 : 0) + (step.durationSec ?? 0) || undefined,
-        sets: step.sets,
-        repetitions: step.repeat,
-        targets: step.target ? [step.target] : undefined,
-        restAfterSec: (step.recoveryMin ? step.recoveryMin * 60 : 0) + (step.recoverySec ?? 0)
-            || (step.setRecoveryMin ? step.setRecoveryMin * 60 : 0) + (step.setRecoverySec ?? 0)
-            || undefined,
-        notes: step.notes,
-    }));
+    const steps: CanonicalExportStep[] = (session.prescription.steps ?? []).map(step => {
+        const durationSec = (step.durationMin ? step.durationMin * 60 : 0) + (step.durationSec ?? 0) || undefined;
+        let restSec = (step.recoveryMin ? step.recoveryMin * 60 : 0) + (step.recoverySec ?? 0) || undefined;
+        let setRecoverySec = (step.setRecoveryMin ? step.setRecoveryMin * 60 : 0) + (step.setRecoverySec ?? 0) || undefined;
+        let sets = step.sets;
+        let repetitions = step.repeat;
+
+        const isWarmup = /warm-?up/i.test(step.name);
+        const isCooldown = /cool-?down/i.test(step.name);
+
+        const stepText = `${step.notes ?? ''} ${step.name}`;
+        const sessionText = `${stepText} ${session.title} ${session.prescription.summary}`;
+
+        if (!isWarmup && !isCooldown) {
+            // Infer sets & repetitions if missing or if repeat was flattened
+            const parsedSetsReps = extractSetsAndRepsFromText(stepText);
+            if (parsedSetsReps.sets && parsedSetsReps.repetitions) {
+                sets = parsedSetsReps.sets;
+                repetitions = parsedSetsReps.repetitions;
+            }
+
+            // Infer recovery seconds if missing
+            if (!restSec && (repetitions || sets || /interval|vo2|surge|repeat/i.test(step.name) || /30\/15|40\/20/i.test(sessionText))) {
+                restSec = extractRecoverySecondsFromText(sessionText, durationSec);
+            }
+
+            // Infer set recovery seconds if missing
+            if (!setRecoverySec && (sets || /between\s+sets/i.test(sessionText))) {
+                setRecoverySec = extractSetRecoverySecondsFromText(sessionText);
+            }
+        }
+
+        const recoveryTarget = extractRecoveryTargetFromText(step.notes ?? '');
+
+        return {
+            name: step.name,
+            durationSeconds: durationSec,
+            sets,
+            repetitions,
+            targets: step.target ? [step.target] : undefined,
+            restAfterSec: restSec,
+            setRecoverySec,
+            recoveryTarget,
+            notes: step.notes,
+        };
+    });
 
     const blocks: CanonicalExportBlock[] = [
         {
