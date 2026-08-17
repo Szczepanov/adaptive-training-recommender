@@ -1,7 +1,7 @@
 # Strength session logging, 1RM self-calibration, and engine integration
 
-* **Status:** `Accepted`
-* **Blocked by:** nothing for Step A. Step B needs S1.2 landed. Step C needs an accepted ADR for **D-STRCOST**.
+* **Status:** `Ready`
+* **Blocked by:** nothing. All four decisions are accepted in [ADR-0021](../adr/0021-strength-session-logging-and-intensity-gauges.md); Step C may be built default-off, but **enabling** it still requires S3.3's measurement per D-STRCOST.
 * **Unlocks:** progressive-overload history; self-calibrating strength prescription; strength work finally costing `lowerBody` / `neuromuscular` fatigue.
 * **Source analysis:** [`2026-08-17-strength-logging-gap.md`](../analysis/2026-08-17-strength-logging-gap.md) — findings referenced below as `A2.1`–`A4.1`.
 
@@ -35,16 +35,20 @@ Three goals, delivered one per step, cheapest risk first:
 | P3 | A declared `manualTraining` history source | ✅ declared in `trainingHistorySnapshot.ts`, hardcoded `MISSING` (A2.1) |
 | P4 | A 1RM store with field-level ownership | ✅ `estimated1RmKg` + `targetSources` — **no writer exists** (A2.2) |
 | P5 | Offline write durability | ❌ **S1.1 — no `localCache` configured; blocks all gym-floor use** |
-| P6 | A decision on the intensity-gauge schema | ❌ **D-GAUGE — blocks S1.2** |
-| P7 | A decision on set-log → dimensional cost | ❌ **D-STRCOST — blocks Step C only** |
+| P6 | A decision on the intensity-gauge schema | ✅ **D-GAUGE accepted** — [ADR-0021](../adr/0021-strength-session-logging-and-intensity-gauges.md); S1.2 unblocked |
+| P7 | A decision on set-log → dimensional cost | ✅ **D-STRCOST accepted as a measurement obligation** — [ADR-0021](../adr/0021-strength-session-logging-and-intensity-gauges.md). Step C may be *built* default-off; enabling it still requires S3.3's evidence |
 
 ---
 
 ## Decisions this plan needs
 
-Proposed here, **not** yet in the accepted register.
+**Accepted** in [ADR-0021](../adr/0021-strength-session-logging-and-intensity-gauges.md) on
+2026-08-17. Summarised here for implementers; the ADR is authoritative where they differ.
+Note ADR-0021's acceptance boundary: it approves the schema, gauge semantics and 1RM
+ownership rule, but **not** enabling strength load into the engine — D-STRCOST still gates
+Step C behind measurement.
 
-| ID | Proposal | Why it cannot be left to the implementer |
+| ID | Decision | Why it cannot be left to the implementer |
 |---|---|---|
 | **D-GAUGE** | Intensity is stored as a **tagged gauge** `{ scale, value }` — `rir`, `rpe_rts`, `velocity_loss`, `technical` — never a bare `rpe: number`, and never silently converted between scales | RPE/RIR are the same scale inverted for strength, but power work is quality-limited, not failure-limited (A4). A bare number makes a power triple and a hypertrophy set indistinguishable, and silently corrupts 1RM estimation (A4.1) |
 | **D-SETLOG** | The raw per-set log is the source of truth; both derivations are recomputable from it and never written back into it | Storing only engine-shaped data permanently destroys overload history; storing only chart-shaped data leaves the engine blind (A5) |
