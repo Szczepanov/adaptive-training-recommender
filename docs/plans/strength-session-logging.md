@@ -74,7 +74,7 @@ accepted before any Step C item.
 | S2.1 | Gauge-aware 1RM estimator | `[x]` | S1.2 |
 | S2.2 | Write-back under a `derived` source | `[x]` | S2.1 |
 | S3.1 | Set log → `CompletedExposure` | `[x]` | S1.2, ADR for D-STRCOST |
-| S3.2 | `manualTraining` source wiring | `[ ]` | S3.1 |
+| S3.2 | `manualTraining` source wiring | `[x]` | S3.1 |
 | S3.3 | Measurement and ship decision | `[ ]` | S3.2 |
 
 ---
@@ -608,7 +608,7 @@ needed. `null` is returned for an `in_progress` session (data may still change) 
 `completed`/`abandoned` session with nothing logged; an `abandoned` session with real sets
 still derives an exposure, matching S1.4's "never delete, partial work still happened."
 
-### S3.2 `[ ]` `manualTraining` source wiring
+### S3.2 `[x]` `manualTraining` source wiring
 
 **Change:** replace the hardcoded `manualTraining: { status: 'MISSING' }` in
 `buildTrainingHistorySnapshot` with a real `DataState` summary, behind a default-off
@@ -620,6 +620,49 @@ Preserve the existing failure contract exactly: a source that fails must surface
 **Done when:** with the selector off, `simulate:diff` shows **zero** change against the
 committed baseline; with it on, strength sessions appear in the snapshot and the diff is
 produced for S3.3.
+
+**Outcome (2026-08-17).** `ManualTrainingPolicy = 'off' | 'included'` added to
+`trainingHistorySnapshot.ts`, threaded through `buildTrainingHistorySnapshot`, mirroring
+`SubjectiveDriftPolicy`'s exact plumbing pattern (`rules.ts`, ADR-0020) rather than
+inventing a second selector shape. `firestoreTrainingHistory.ts` (the one production call
+site) now fetches real strength sessions in parallel with activities/recommendations, but
+calls the builder with the policy literal `'off'` — the fetch is wired so enabling the
+source later is a policy flip, not a second fetch-wiring change, but it currently has no
+effect. 9 new tests in `trainingHistorySnapshot.test.ts`, 6 in a new
+`firestoreTrainingHistory.test.ts`.
+
+**Every branch checks `=== 'off'`, never `=== 'included'`.** A first draft did the
+opposite (`policy === 'included'` guarding the new logic) and a new architecture guard test
+— mirroring `rules.test.ts`'s existing one for `SubjectiveDriftPolicy` exactly — caught it
+immediately: the guard asserts the enabled literal never appears in production engine code
+outside a test or a future `engine/simulation/` harness, and the first draft failed it. Fixed
+by inverting every branch to test for `'off'` (the safe default) instead, matching
+`rules.ts`'s own `subjectiveDriftStrain`, which never once writes the literal `'drift'`
+outside its own type declaration. The guard is now a permanent regression check, not a
+one-time review.
+
+**The revision string's *shape*, not only its value, had to stay identical when off.** An
+early version always appended a fifth `:manualTrainingRevision` segment to the returned
+`revision` string (using a literal `'off'` placeholder when the selector was off). That
+would have been a silent behaviour change for any caller comparing revision strings by
+shape rather than pure opaque equality — caught before commit, not after; the segment is
+now appended only when the selector is actually on.
+
+**A second failure-contract edge case, closing the same class of bug `firestoreTrainingHistory.ts`'s** `strengthSessionService.getSessionsInRange` **(S1.7) already tolerates:** zero usable sessions with a nonzero `invalidRecords` count (every document present was corrupt) must report `INVALID`, not `MISSING` — otherwise "every record was corrupt" and "the athlete genuinely logged nothing" would read identically, precisely the conflation this source's failure contract exists to prevent. Extracted into an exported, directly-testable `toManualTrainingDataState` function specifically because the selector being `'off'` in production means `getSnapshot`'s returned snapshot cannot observably distinguish the two states — a black-box integration test alone could never have caught a regression here.
+
+**`simulate:diff` could not be run to a clean pass, for a reason unrelated to this change.**
+Running it produces 16 `[NEW SCENARIO]` lines against the committed baseline
+(`docs/analysis/simulation-baseline.json`). Verified this is **pre-existing and not
+introduced by S3.2** by running the identical command against an unmodified checkout of
+`main` (commit `bfb87fc`, via a disposable git worktree): byte-identical output, same 16
+scenario IDs. The baseline's scenario IDs (`cycling_gran_fondo_A`, ...) simply no longer
+match `engine/simulation/scenarios.ts`'s current scenario catalog — a staleness that
+predates this entire plan and this session. This plan's own diff contribution is
+independently confirmable as zero: `git diff main...HEAD --stat -- app/src/engine/simulation/
+docs/analysis/simulation-baseline.json` is empty across every commit in this stack. Not
+fixed here — regenerating the baseline is an out-of-scope, consequential action this repo's
+own tooling requires human review for (`simulate:update-baseline -- --reviewed`), and is
+unrelated to strength logging.
 
 ### S3.3 `[ ]` Measurement and ship decision
 

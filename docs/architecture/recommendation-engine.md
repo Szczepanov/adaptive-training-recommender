@@ -244,6 +244,23 @@ category-scoped objective is rejected (not silently skipped) when the evidence's
 modality/category is unknown, rather than the previous behavior where an absent
 `context.modality`/`context.category` bypassed the restriction entirely.
 
+### Manual strength history (default-off)
+
+`strength_sessions` is wired as the third `TrainingHistorySnapshot` source behind
+`ManualTrainingPolicy`. Production explicitly uses `off`: no strength-history query is
+issued, `sourceStates.manualTraining` remains `MISSING`, and the history revision retains
+its pre-strength shape. This operational isolation matters because an unused Firestore
+read must not make ordinary planning fail.
+
+The explicit `included` path is measurement-only until strength plan S3.3 records a ship
+decision. It reads `[throughDateExclusive - windowDays, throughDateExclusive)`, fails
+closed on any invalid/unavailable record, derives completed/abandoned set logs through
+`strengthExposure.ts`, and includes session IDs plus update times in the immutable source
+revision. A manual log linked to a recommendation uses the same occurrence key as
+Garmin/adherence reconciliation, so one physical session is replayed once. Enabling this
+path would change decisions and therefore requires the D-STRCOST evidence, a policy-version
+bump, deliberate simulation-baseline review, and historical replay verification.
+
 ---
 
 ## Planned and execution dose authority (`trainingIntent.ts`, `dose.ts`)
