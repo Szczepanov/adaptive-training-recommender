@@ -31,7 +31,10 @@ export const MAX_RIR_FOR_ESTIMATION = 3;
  *  documented cap rather than an unbounded formula applied everywhere it technically runs. */
 export const MAX_REPS_FOR_ESTIMATION = 12;
 
-function isNearFailureGauge(gauge: IntensityGauge | undefined): boolean {
+/** Exported so S3.1's exposure derivation can classify per-exercise intensity using the
+ *  same "how close to failure" definition, rather than a second, potentially-drifting copy
+ *  of this rule. */
+export function isNearFailureGauge(gauge: IntensityGauge | undefined): boolean {
     if (!gauge || !isValidIntensityGauge(gauge)) return false; // Invalid/absent gauges never become evidence.
     switch (gauge.scale) {
         case 'rir':
