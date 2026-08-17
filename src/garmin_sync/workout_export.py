@@ -129,6 +129,42 @@ def _extract_zone_target(targets: list[str] | None) -> int | None:
     return None
 
 
+def _extract_recovery_seconds(step: dict[str, Any]) -> int | None:
+    text = f"{step.get('notes', '')} {step.get('name', '')} {step.get('description', '')}"
+    if not text.strip():
+        return None
+    m = re.search(r"followed\s+by\s+(\d+(?:\.\d+)?)\s*(s(?:ec(?:onds?)?)?|m(?:in(?:utes?)?)?)\b", text, re.IGNORECASE)
+    if m:
+        val = float(m.group(1))
+        unit = m.group(2).lower()
+        return round(val * 60) if unit.startswith("m") else round(val)
+    m2 = re.search(r"(\d+(?:\.\d+)?)\s*(s(?:ec(?:onds?)?)?|m(?:in(?:utes?)?)?)\s+(?:easy|rest|recovery|off)\b", text, re.IGNORECASE)
+    if m2:
+        val = float(m2.group(1))
+        unit = m2.group(2).lower()
+        return round(val * 60) if unit.startswith("m") else round(val)
+    m3 = re.search(r"\b(\d+)\s*(?:s|sec)?\s*/\s*(\d+)\s*(?:s|sec)?\b", text, re.IGNORECASE)
+    if m3:
+        on_val = int(m3.group(1))
+        off_val = int(m3.group(2))
+        dur = step.get("durationSeconds")
+        if not dur or dur == on_val:
+            return off_val
+    return None
+
+
+def _extract_set_recovery_seconds(step: dict[str, Any]) -> int | None:
+    text = f"{step.get('notes', '')} {step.get('description', '')}"
+    if not text.strip():
+        return None
+    m = re.search(r"(\d+(?:\.\d+)?)\s*(s(?:ec(?:onds?)?)?|m(?:in(?:utes?)?)?)(?:\s+(?:easy|rest|recovery|riding))?\s+between\s+sets\b", text, re.IGNORECASE)
+    if m:
+        val = float(m.group(1))
+        unit = m.group(2).lower()
+        return round(val * 60) if unit.startswith("m") else round(val)
+    return None
+
+
 def _build_step_dto(
     step: dict[str, Any],
     step_order: int,
@@ -204,20 +240,44 @@ def _build_step_dto(
 
     rest_dto: dict[str, Any] | None = None
     rest_sec = step.get("restAfterSec")
+    if not rest_sec:
+        rest_sec = _extract_recovery_seconds(step)
+
     if rest_sec and rest_sec > 0:
+        rec_target_str = step.get("recoveryTarget")
+        rec_targets = [rec_target_str] if rec_target_str else None
+        rec_power = _extract_power_target(rec_targets, ftp_watts=ftp)
+        rec_zone = _extract_zone_target(rec_targets) if not rec_power else None
+
+        if modality in ["cycling", "bike"] and rec_power:
+            rec_target_type = {"workoutTargetTypeId": 2, "workoutTargetTypeKey": "power.zone"}
+            rec_val_one: float | None = rec_power[0]
+            rec_val_two: float | None = rec_power[1]
+            rec_zone_num: int | None = None
+        elif modality in ["cycling", "bike"] and rec_zone:
+            rec_target_type = {"workoutTargetTypeId": 2, "workoutTargetTypeKey": "power.zone"}
+            rec_val_one = None
+            rec_val_two = None
+            rec_zone_num = rec_zone
+        else:
+            rec_target_type = {"workoutTargetTypeId": 1, "workoutTargetTypeKey": "no.target"}
+            rec_val_one = None
+            rec_val_two = None
+            rec_zone_num = None
+
         rest_dto = {
             "type": "ExecutableStepDTO",
             "stepId": None,
             "stepOrder": step_order + 1,
             "stepType": STEP_TYPE_MAP["recovery"],
             "childStepId": None,
-            "description": "Rest interval",
+            "description": f"Rest interval ({rec_target_str})" if rec_target_str else "Rest interval",
             "endCondition": END_CONDITION_MAP["time"],
             "endConditionValue": rest_sec,
-            "targetType": {"workoutTargetTypeId": 1, "workoutTargetTypeKey": "no.target"},
-            "targetValueOne": None,
-            "targetValueTwo": None,
-            "zoneNumber": None,
+            "targetType": rec_target_type,
+            "targetValueOne": rec_val_one,
+            "targetValueTwo": rec_val_two,
+            "zoneNumber": rec_zone_num,
         }
 
     return main_dto, rest_dto
@@ -300,13 +360,61 @@ def canonical_workout_to_garmin_payload(
         else:
             # 2. Step-level repeat or sequential execution
             for step in block_steps:
-                reps = step.get("repetitions") or step.get("sets")
+                sets = step.get("sets")
+                reps = step.get("repetitions")
+                set_recovery_sec = step.get("setRecoverySec")
+                if not set_recovery_sec and (sets or "between sets" in str(step.get("notes", "")).lower()):
+                    set_recovery_sec = _extract_set_recovery_seconds(step)
 
-                if reps and reps > 1 and modality != "strength":
+                # Case A: Multi-set intervals (e.g. 3 sets of 10 reps)
+                if sets and sets > 1 and reps and reps > 1 and modality != "strength":
+                    for s in range(1, sets + 1):
+                        main_dto, rest_dto = _build_step_dto(
+                            step, 1, default_step_type, modality, ftp=ftp
+                        )
+                        repeat_child_steps = [main_dto]
+                        if rest_dto:
+                            rest_dto["stepOrder"] = 2
+                            repeat_child_steps.append(rest_dto)
+
+                        repeat_group = {
+                            "type": "RepeatGroupDTO",
+                            "stepId": None,
+                            "stepOrder": step_order,
+                            "stepType": {"stepTypeId": 6, "stepTypeKey": "repeat"},
+                            "childStepId": 1,
+                            "numberOfIterations": reps,
+                            "smartRepeat": False,
+                            "workoutSteps": repeat_child_steps,
+                        }
+                        workout_steps.append(repeat_group)
+                        step_order += 1
+
+                        if s < sets and set_recovery_sec and set_recovery_sec > 0:
+                            set_rest_dto = {
+                                "type": "ExecutableStepDTO",
+                                "stepId": None,
+                                "stepOrder": step_order,
+                                "stepType": STEP_TYPE_MAP["recovery"],
+                                "childStepId": None,
+                                "description": "Set recovery",
+                                "endCondition": END_CONDITION_MAP["time"],
+                                "endConditionValue": set_recovery_sec,
+                                "targetType": {"workoutTargetTypeId": 1, "workoutTargetTypeKey": "no.target"},
+                                "targetValueOne": None,
+                                "targetValueTwo": None,
+                                "zoneNumber": None,
+                            }
+                            workout_steps.append(set_rest_dto)
+                            step_order += 1
+
+                # Case B: Single-set repeat (repetitions > 1 or sets > 1)
+                elif ((reps and reps > 1) or (sets and sets > 1)) and modality != "strength":
+                    iteration_count = reps if (reps and reps > 1) else sets
                     main_dto, rest_dto = _build_step_dto(
                         step, 1, default_step_type, modality, ftp=ftp
                     )
-                    repeat_child_steps: list[dict[str, Any]] = [main_dto]
+                    repeat_child_steps = [main_dto]
                     if rest_dto:
                         rest_dto["stepOrder"] = 2
                         repeat_child_steps.append(rest_dto)
@@ -317,12 +425,14 @@ def canonical_workout_to_garmin_payload(
                         "stepOrder": step_order,
                         "stepType": {"stepTypeId": 6, "stepTypeKey": "repeat"},
                         "childStepId": 1,
-                        "numberOfIterations": reps,
+                        "numberOfIterations": iteration_count,
                         "smartRepeat": False,
                         "workoutSteps": repeat_child_steps,
                     }
                     workout_steps.append(repeat_group)
                     step_order += 1
+
+                # Case C: Sequential execution
                 else:
                     main_dto, rest_dto = _build_step_dto(
                         step, step_order, default_step_type, modality, ftp=ftp

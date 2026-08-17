@@ -1,6 +1,8 @@
 import type { WorkoutPrescription } from '../workouts/models';
 import type { ExternalPlanSession } from '../engine/models';
 
+import { extractRecoverySecondsFromText, extractSetRecoverySecondsFromText, resolveSetsAndRepetitions } from './workoutJsonExport';
+
 export interface ZwiftExportOptions {
     ftpWatts?: number | null;
     author?: string;
@@ -15,13 +17,25 @@ function escapeXml(unsafe: string): string {
         .replaceAll("'", '&apos;');
 }
 
-function parseFractionFtpFromTargetText(targetText: string | undefined): number | null {
+function parseFractionFtpFromTargetText(targetText: string | undefined, ftpWatts?: number | null): number | null {
     if (!targetText) return null;
     const ftpMatch = targetText.match(/(\d+)(?:\s*[-–]\s*(\d+))?\s*%\s*FTP/i);
     if (ftpMatch) {
         const min = parseInt(ftpMatch[1], 10);
         const max = ftpMatch[2] ? parseInt(ftpMatch[2], 10) : min;
         return ((min + max) / 2) / 100;
+    }
+    const wattsMatch = targetText.match(/(\d+(?:\.\d+)?)\s*[-–]\s*(\d+(?:\.\d+)?)\s*W\b/i);
+    if (wattsMatch && ftpWatts && ftpWatts > 0) {
+        const minW = parseFloat(wattsMatch[1]);
+        const maxW = parseFloat(wattsMatch[2]);
+        const avgW = (minW + maxW) / 2;
+        return parseFloat((avgW / ftpWatts).toFixed(2));
+    }
+    const singleWattsMatch = targetText.match(/(\d+(?:\.\d+)?)\s*W\b/i);
+    if (singleWattsMatch && ftpWatts && ftpWatts > 0) {
+        const w = parseFloat(singleWattsMatch[1]);
+        return parseFloat((w / ftpWatts).toFixed(2));
     }
     if (/zone\s*1|recovery/i.test(targetText)) return 0.50;
     if (/zone\s*2|endurance|aerobic/i.test(targetText)) return 0.65;
@@ -61,7 +75,7 @@ export function generateZwiftFromPrescription(
 
             let powerFraction = 0.70;
             const targetText = step.structuredTargets?.map(t => t.valueText).join(' ') ?? step.targets.join(' ');
-            const parsedPower = parseFractionFtpFromTargetText(targetText);
+            const parsedPower = parseFractionFtpFromTargetText(targetText, options.ftpWatts);
             if (parsedPower !== null) {
                 powerFraction = parsedPower;
             } else if (isWarmup) {
@@ -123,15 +137,47 @@ export function generateZwiftFromExternalSession(
             const stepDurationSec = (step.durationMin ? step.durationMin * 60 : 0) + (step.durationSec ?? 0) || 300;
             const isWarmup = /warm-?up/i.test(step.name);
             const isCooldown = /cool-?down/i.test(step.name);
-            const power = parseFractionFtpFromTargetText(step.target) ?? (isWarmup ? 0.60 : isCooldown ? 0.50 : 0.80);
-            const repeats = (step.repeat ?? 1) * (step.sets ?? 1);
+            const power = parseFractionFtpFromTargetText(step.target, options.ftpWatts) ?? (isWarmup ? 0.60 : isCooldown ? 0.50 : 0.80);
 
-            if (repeats > 1) {
-                const restSec = (step.recoveryMin ? step.recoveryMin * 60 : 0) + (step.recoverySec ?? 0)
-                    || (step.setRecoveryMin ? step.setRecoveryMin * 60 : 0) + (step.setRecoverySec ?? 0)
-                    || 120;
+            let restSec = (step.recoveryMin ? step.recoveryMin * 60 : 0) + (step.recoverySec ?? 0) || undefined;
+            let setRecoverySec = (step.setRecoveryMin ? step.setRecoveryMin * 60 : 0) + (step.setRecoverySec ?? 0) || undefined;
+            let sets = step.sets ?? 1;
+            let reps = step.repeat ?? 1;
+
+            const stepText = `${step.notes ?? ''} ${step.name}`;
+            const sessionText = `${stepText} ${session.title} ${session.prescription.summary}`;
+
+            if (!isWarmup && !isCooldown) {
+                const resolvedStructure = resolveSetsAndRepetitions(step.sets, step.repeat, stepText);
+                sets = resolvedStructure.sets ?? 1;
+                reps = resolvedStructure.repetitions ?? 1;
+
+                if (!restSec && (reps > 1 || sets > 1 || /interval|vo2|surge|repeat/i.test(step.name) || /30\/15|40\/20/i.test(sessionText))) {
+                    restSec = extractRecoverySecondsFromText(sessionText, stepDurationSec);
+                }
+                if (!setRecoverySec && (sets > 1 || /between\s+sets/i.test(sessionText))) {
+                    setRecoverySec = extractSetRecoverySecondsFromText(sessionText);
+                }
+            }
+
+            if (sets > 1 && reps > 1) {
+                const effectiveRestSec = restSec || 30;
+                const effectiveSetRecoverySec = setRecoverySec || 180;
+                for (let s = 1; s <= sets; s++) {
+                    lines.push(
+                        `        <Intervals Repeat="${reps}" OnDuration="${stepDurationSec}" OffDuration="${effectiveRestSec}" OnPower="${power.toFixed(2)}" OffPower="0.50"/>`,
+                    );
+                    if (s < sets) {
+                        lines.push(
+                            `        <SteadyState Duration="${effectiveSetRecoverySec}" Power="0.50"/>`,
+                        );
+                    }
+                }
+            } else if (reps > 1 || sets > 1) {
+                const totalRepeats = reps > 1 ? reps : sets;
+                const effectiveRestSec = restSec || setRecoverySec || 120;
                 lines.push(
-                    `        <Intervals Repeat="${repeats}" OnDuration="${stepDurationSec}" OffDuration="${restSec}" OnPower="${power.toFixed(2)}" OffPower="0.50"/>`,
+                    `        <Intervals Repeat="${totalRepeats}" OnDuration="${stepDurationSec}" OffDuration="${effectiveRestSec}" OnPower="${power.toFixed(2)}" OffPower="0.50"/>`,
                 );
             } else if (isWarmup) {
                 lines.push(
