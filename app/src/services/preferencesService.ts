@@ -284,6 +284,7 @@ export class PreferencesService {
         const updatedStrengthEstimated1RmKg = { ...profile?.strength?.estimated1RmKg };
         const updatedSources = { ...profile?.estimated1RmSources };
         for (const outcome of written) {
+            if (!outcome.result.updated) continue;
             updatedEstimated1RmKg[outcome.exerciseId] = outcome.result.estimatedOneRmKg;
             updatedStrengthEstimated1RmKg[outcome.exerciseId] = outcome.result.estimatedOneRmKg;
             updatedSources[outcome.exerciseId] = { source: outcome.result.source, ...(outcome.result.computedAt ? { computedAt: outcome.result.computedAt } : {}) };

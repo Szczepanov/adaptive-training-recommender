@@ -13,14 +13,21 @@ import { estimateOneRepMax, type OneRepMaxEstimate } from './oneRepMax';
  * about who might have entered it.
  */
 
-export interface OneRepMaxWritebackResult {
-    updated: boolean;
-    estimatedOneRmKg: number;
-    source: TargetSource;
-    computedAt?: string;
-    /** Present only when `updated` is false -- why the existing value was left alone. */
-    reason?: string;
-}
+export type OneRepMaxWritebackResult =
+    | {
+        updated: true;
+        estimatedOneRmKg: number;
+        source: 'derived';
+        computedAt: string;
+    }
+    | {
+        updated: false;
+        /** A protected provenance entry can be corrupt and have no corresponding value.
+         * Report that honestly instead of casting `undefined` to `number`. */
+        estimatedOneRmKg: number | null;
+        source: TargetSource;
+        reason: string;
+    };
 
 /** `existingSource` is the *only* determinant of writability -- not whether a value already
  *  exists, and not how the new estimate compares to it. This is self-calibration, not a
@@ -38,10 +45,7 @@ export function applyOneRepMaxDerivation(
     if (!isWritable) {
         return {
             updated: false,
-            // existingSource is defined and protected here, so a defined existingValue is
-            // the only reachable case -- a protected source with no recorded value would be
-            // a data inconsistency between the two maps, not a state this function invents.
-            estimatedOneRmKg: existingValue as number,
+            estimatedOneRmKg: existingValue ?? null,
             source: existingSource,
             reason: `existing ${existingSource} value is protected and was not overwritten`,
         };

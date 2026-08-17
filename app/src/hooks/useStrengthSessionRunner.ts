@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import type { LoggedExercise, LoggedSet, StrengthSession } from '../engine/models';
 import { strengthSessionService } from '../services/strengthSessionService';
 import { recommendationService } from '../services/recommendationService';
+import { finalizeStrengthSession } from '../services/strengthSessionCompletion';
 import { getLocalDateString } from '../utils/localDate';
 import {
     appendSetToExercise,
@@ -191,7 +192,8 @@ export function useStrengthSessionRunner(userId: string | null | undefined): Use
         setError(null);
         setSaving(true);
         try {
-            const updated = await strengthSessionService.transitionState(userId!, session.sessionId, next);
+            const nowIso = new Date().toISOString();
+            const updated = await finalizeStrengthSession(userId!, session, next, nowIso);
             setSession(updated);
         } catch (err) {
             setError(err instanceof Error ? err.message : `Could not mark the session ${next}`);
