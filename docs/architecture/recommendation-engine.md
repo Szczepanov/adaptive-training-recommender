@@ -430,10 +430,11 @@ capped-addition candidate worse; that is why `max()` is retained. It is **not** 
 safe or calibrated, and the aggregate scenario recovery-share gate remains release authority.
 
 `computeInternalResponseStrain` in `fatigue.ts` also evaluates unlogged ambulatory load: when
-an acute step surge occurs on $D-1$ ($\ge 1.8\times$ 7d baseline and $\ge +6,000$ excess steps),
+an acute ambient step surge occurs on $D-1$ ($\ge 1.8\times$ 7d baseline and $\ge +6,000$ excess steps
+after deducting estimated steps from logged running/field/walking sessions via `estimateActivitySteps`),
 it introduces a proportional tissue-strain contribution into the `impactTissue` and `lowerBody`
-fatigue dimensions (and a moderate `systemic` load contribution) to prevent high-impact lower-body
-prescriptions following heavy hiking/walking days without requiring athlete subjective soreness input.
+fatigue dimensions to prevent high-impact lower-body prescriptions following unlogged heavy hiking/walking
+days without double-counting structured activities or requiring athlete subjective soreness input.
 
 ---
 

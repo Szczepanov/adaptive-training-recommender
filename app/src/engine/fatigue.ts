@@ -81,6 +81,26 @@ export function decayFatigue(
 }
 
 /**
+ * Estimates the step contribution from a logged Garmin activity so structured sessions
+ * (runs, soccer, hikes) are not double-counted as unlogged ambient walking surge.
+ */
+export function estimateActivitySteps(training: { type?: string; duration_min?: number } | null | undefined): number {
+    if (!training || !training.duration_min || training.duration_min <= 0) return 0;
+    const type = (training.type || '').toLowerCase();
+
+    // Running and high-cadence field sports: ~155 steps/min
+    if (type.includes('run') || type.includes('soccer') || type.includes('football') || type.includes('trail')) {
+        return Math.round(training.duration_min * 155);
+    }
+    // Dedicated walking or hiking activities: ~110 steps/min
+    if (type.includes('walk') || type.includes('hike')) {
+        return Math.round(training.duration_min * 110);
+    }
+    // Other sports (cycling, swimming, gym strength) do not produce primary ambulatory impact steps
+    return 0;
+}
+
+/**
  * Computes internal response strain vector from subjective check-in and objective Garmin deltas.
  */
 export function computeInternalResponseStrain(readiness: DailyReadiness): DimensionalFatigue {
@@ -96,7 +116,8 @@ export function computeInternalResponseStrain(readiness: DailyReadiness): Dimens
     const sleepDeficit = objective.sleep_score !== null && objective.sleep_score < 75 ? (75 - objective.sleep_score) / 50 : 0;
 
     // Acute ambulatory surge (unlogged high-volume walking/hiking)
-    // Triggers when yesterday's step count is >= 1.8x the 7-day average AND >= +6,000 steps above baseline.
+    // Evaluates net ambient steps (totalSteps - estimatedActivitySteps) against the 7-day baseline.
+    // Triggers when ambient steps >= 1.8x baseline AND excess >= +6,000 steps above baseline.
     let ambulatoryTissueStrain = 0;
     const steps7dAvg = objective.steps_7d_avg;
     const totalSteps = objective.total_steps;
@@ -107,15 +128,17 @@ export function computeInternalResponseStrain(readiness: DailyReadiness): Dimens
         steps7dAvg !== undefined &&
         steps7dAvg > 0
     ) {
-        const excessSteps = totalSteps - steps7dAvg;
-        const surgeRatio = totalSteps / steps7dAvg;
-        if (surgeRatio >= 1.8 && excessSteps >= 6000) {
-            // Scale smoothly up to a 0.4 dampening cap for a +15,000 excess step surge
-            ambulatoryTissueStrain = Math.min(0.4, (excessSteps / 15000) * 0.4);
+        const activitySteps = estimateActivitySteps(objective.yesterday_training);
+        const ambientSteps = Math.max(0, totalSteps - activitySteps);
+        const excessAmbientSteps = ambientSteps - steps7dAvg;
+        const surgeRatio = ambientSteps / steps7dAvg;
+        if (surgeRatio >= 1.8 && excessAmbientSteps >= 6000) {
+            // Scale smoothly up to a 0.4 dampening cap for a +15,000 excess ambient step surge
+            ambulatoryTissueStrain = Math.min(0.4, (excessAmbientSteps / 15000) * 0.4);
         }
     }
 
-    const systemic = Math.min(1, 0.4 * subFatigue + 0.3 * hrvDrop + 0.3 * sleepDeficit + 0.5 * ambulatoryTissueStrain);
+    const systemic = Math.min(1, 0.4 * subFatigue + 0.3 * hrvDrop + 0.3 * sleepDeficit);
     const cardiovascular = Math.min(1, 0.5 * rhrElevated + 0.5 * hrvDrop);
     const lowerBody = Math.min(1, subSoreness + ambulatoryTissueStrain);
     const upperBody = subSoreness * 0.7; // default soreness split
