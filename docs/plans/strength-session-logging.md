@@ -67,7 +67,7 @@ accepted before any Step C item.
 | S1.5 | Set-entry UI | `[x]` | S1.3, S1.4 |
 | S1.6 | Rest timer and derived rest | `[x]` | S1.5 |
 | S1.7 | Overload history view | `[x]` | S1.3 |
-| S2.1 | Gauge-aware 1RM estimator | `[ ]` | S1.2 |
+| S2.1 | Gauge-aware 1RM estimator | `[x]` | S1.2 |
 | S2.2 | Write-back under a `derived` source | `[ ]` | S2.1 |
 | S3.1 | Set log → `CompletedExposure` | `[ ]` | S1.2, ADR for D-STRCOST |
 | S3.2 | `manualTraining` source wiring | `[ ]` | S3.1 |
@@ -443,7 +443,7 @@ itself was a deliberate choice to make that boundary hard to blur later by accid
 
 ## Step B — 1RM self-calibration
 
-### S2.1 `[ ]` Gauge-aware 1RM estimator
+### S2.1 `[x]` Gauge-aware 1RM estimator
 
 **Change:** estimate 1RM per exercise from logged working sets (Epley or Brzycki — state
 which and why in the module docstring).
@@ -462,6 +462,30 @@ then corrupts every prescription derived from it.
 
 **Done when:** a power-snatch session at `velocity_loss` produces **no** 1RM estimate; a
 near-failure set of 5 produces a plausible one; warm-ups never influence the result.
+
+**Outcome (2026-08-17).** `workouts/oneRepMax.ts`: `estimateOneRepMax` — pure, 11 tests, no
+I/O. Formula is Epley (1985), stated in the module docstring alongside why: simplicity and
+being the more commonly implemented default, explicitly **not** a claim that it outperforms
+Brzycki — this repo has no evidence either way, and per D-SUBJEST's precedent (ADR-0020),
+the formula is versioned policy, not an invariant this module should assert authority over.
+
+Admissibility, each independently tested: `isWarmup` excluded; a `null` `weightKg`
+(bodyweight) excluded, since there is no external load to estimate a *loaded* max from; reps
+beyond `MAX_REPS_FOR_ESTIMATION = 12` excluded even when gauged near failure, because
+Epley's error compounds with rep count regardless of proximity to failure; `velocity_loss`
+and `technical` gauges excluded unconditionally, any value — the plan called these
+quality-limited, not failure-limited, and this is where that distinction actually bites: no
+percentage or met/missed outcome on a power set implies anything about a true maximum, so
+there is no threshold to tune here, only exclusion; an **absent gauge is excluded by
+default**, the explicit deliberate choice the plan asked for rather than an unstated
+assumption; and `rir`/`rpe_rts` are admissible only within `MAX_RIR_FOR_ESTIMATION = 3`
+(RPE ≥ 7 on the inverted scale) — the source analysis's own finding on `primer_rir`'s
+default of 6: past that distance a self-estimate is a coaching instruction, not a
+measurement.
+
+Among admissible sets, the estimator returns the one implying the **highest** capacity, not
+an average — a single genuine near-failure set is stronger evidence of true capacity than
+diluting it against other, less-informative admissible sets from the same exercise.
 
 ### S2.2 `[ ]` Write-back under a `derived` source — **implements D-1RMSRC**
 
