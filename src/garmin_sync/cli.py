@@ -141,6 +141,28 @@ def run_push_workout_cmd(args: list[str] | None = None) -> int:
         return 1
 
 
+def run_push_pending_workouts_cmd(args: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        description="Poll the Firestore workout queue and push every pending item to Garmin Connect."
+    )
+    parser.add_argument(
+        "--max-age-days",
+        type=int,
+        default=14,
+        help="Leave (don't push) queue items older than this many days pending (default 14)",
+    )
+    parsed_args = parser.parse_args(args)
+
+    try:
+        settings = load_settings()
+        service = GarminSyncService(settings)
+        success = service.push_pending_workouts(max_age_days=parsed_args.max_age_days)
+        return 0 if success else 1
+    except Exception as e:
+        logger.error(f"Push pending workouts execution error: {type(e).__name__}: {e}")
+        return 1
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Garmin Sync Pipeline CLI")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -191,6 +213,18 @@ def main() -> int:
         "--date", type=str, default=None, help="Target date YYYY-MM-DD (default local today)"
     )
 
+    # Push-pending-workouts subcommand
+    push_pending_parser = subparsers.add_parser(
+        "push-pending-workouts",
+        help="Poll the Firestore workout queue and push every pending item to Garmin Connect",
+    )
+    push_pending_parser.add_argument(
+        "--max-age-days",
+        type=int,
+        default=14,
+        help="Leave (don't push) queue items older than this many days pending (default 14)",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -203,6 +237,8 @@ def main() -> int:
         return run_rebuild_cmd(sys.argv[2:])
     elif args.command == "push-workout":
         return run_push_workout_cmd(sys.argv[2:])
+    elif args.command == "push-pending-workouts":
+        return run_push_pending_workouts_cmd(sys.argv[2:])
     return 1
 
 

@@ -96,6 +96,128 @@ def test_push_workout_does_not_authenticate_when_the_queue_is_empty():
     service._init_garmin_client.assert_not_called()
 
 
+def test_push_workout_skips_already_synced_queue_item():
+    """The idempotency guard that makes polling safe: a queue item that already made
+    it to Garmin must not be re-uploaded just because push_workout runs again."""
+    settings = Settings(app_user_id="test_uid_789")
+    mock_repo = MagicMock()
+    doc_snap = MagicMock()
+    doc_snap.exists = True
+    doc_snap.to_dict.return_value = {
+        "status": "synced",
+        "garminWorkoutId": "999",
+        "payload": {"title": "Easy ride", "modality": "cycling", "blocks": []},
+    }
+    mock_repo.db.collection.return_value.document.return_value.collection.return_value.document.return_value.get.return_value = (
+        doc_snap
+    )
+    client = MagicMock()
+    service = GarminSyncService(settings=settings, repository=mock_repo, garmin_client=client)
+
+    result = service.push_workout(date_str="2026-08-17")
+
+    assert result is True
+    client.upload_workout.assert_not_called()
+
+
+class _FakeQueueDoc:
+    """Minimal stand-in for a Firestore QueryResult document snapshot."""
+
+    def __init__(self, doc_id: str, data: dict):
+        self.id = doc_id
+        self._data = data
+
+    def to_dict(self) -> dict:
+        return self._data
+
+
+def test_push_pending_workouts_pushes_each_pending_item_and_marks_synced():
+    settings = Settings(app_user_id="test_uid_789")
+    mock_repo = MagicMock()
+    docs = [
+        _FakeQueueDoc(
+            "2026-08-17",
+            {
+                "date": "2026-08-17",
+                "status": "pending",
+                "payload": {"title": "Ride A", "modality": "cycling", "blocks": []},
+            },
+        ),
+        _FakeQueueDoc(
+            "2026-08-18",
+            {
+                "date": "2026-08-18",
+                "status": "pending",
+                "payload": {"title": "Ride B", "modality": "cycling", "blocks": []},
+            },
+        ),
+    ]
+    queue_collection = mock_repo.db.collection.return_value.document.return_value.collection.return_value
+    queue_collection.where.return_value.stream.return_value = docs
+
+    client = MagicMock()
+    client.upload_workout.side_effect = [{"workoutId": "111"}, {"workoutId": "222"}]
+    service = GarminSyncService(settings=settings, repository=mock_repo, garmin_client=client)
+
+    result = service.push_pending_workouts()
+
+    assert result is True
+    assert client.upload_workout.call_count == 2
+    assert client.schedule_workout.call_count == 2
+    set_calls = queue_collection.document.return_value.set.call_args_list
+    assert len(set_calls) == 2
+    for call in set_calls:
+        assert call.args[0]["status"] == "synced"
+
+
+def test_push_pending_workouts_leaves_stale_items_pending():
+    settings = Settings(app_user_id="test_uid_789")
+    mock_repo = MagicMock()
+    docs = [
+        _FakeQueueDoc(
+            "2025-01-01",
+            {
+                "date": "2025-01-01",
+                "status": "pending",
+                "payload": {"title": "Old ride", "modality": "cycling", "blocks": []},
+            },
+        ),
+    ]
+    queue_collection = mock_repo.db.collection.return_value.document.return_value.collection.return_value
+    queue_collection.where.return_value.stream.return_value = docs
+
+    client = MagicMock()
+    service = GarminSyncService(settings=settings, repository=mock_repo, garmin_client=client)
+
+    result = service.push_pending_workouts()
+
+    assert result is True
+    client.upload_workout.assert_not_called()
+
+
+def test_push_pending_workouts_returns_true_for_empty_queue():
+    settings = Settings(app_user_id="test_uid_789")
+    mock_repo = MagicMock()
+    queue_collection = mock_repo.db.collection.return_value.document.return_value.collection.return_value
+    queue_collection.where.return_value.stream.return_value = []
+    service = GarminSyncService(settings=settings, repository=mock_repo)
+    service._init_garmin_client = MagicMock()
+
+    result = service.push_pending_workouts()
+
+    assert result is True
+    service._init_garmin_client.assert_not_called()
+
+
+def test_push_pending_workouts_fails_without_firestore_db():
+    settings = Settings(app_user_id="test_uid_789")
+    service = GarminSyncService(settings=settings, repository=MagicMock(db=None))
+
+    result = service.push_pending_workouts()
+
+    assert result is False
+
+
 class DateAwareFakeProvider:
     """Like FakeTestProvider, but returns a per-date restingHr so a test can tell which
     date's fetch produced which stored value -- needed to prove the lookback resync's

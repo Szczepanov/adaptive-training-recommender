@@ -602,7 +602,14 @@ class GarminSyncService:
         date_str: str | None = None,
         workout_payload: dict[str, Any] | None = None,
     ) -> bool:
-        """Upload and schedule a structured workout to Garmin Connect."""
+        """Upload and schedule a structured workout to Garmin Connect.
+
+        When `workout_payload` is omitted, the queue item's own `status` gates the
+        push: anything other than 'pending' (i.e. already 'synced', or 'failed' and
+        not yet requeued) is treated as an idempotent no-op rather than re-uploaded.
+        This is what lets `push_pending_workouts` (and any retried caller) poll/re-poll
+        the queue safely without ever creating duplicate Garmin workouts.
+        """
         target_date = (
             get_date_string(parse_date_string(date_str))
             if date_str
@@ -623,12 +630,88 @@ class GarminSyncService:
             )
             if queue_doc.exists:
                 data = queue_doc.to_dict() or {}
+                status = data.get("status")
+                if status and status != "pending":
+                    logger.info(
+                        f"[{target_date}] Queue item already '{status}'; skipping (idempotent no-op)."
+                    )
+                    return True
                 payload = data.get("payload")
 
         if not payload:
             logger.warning(f"No workout payload found for {target_date} in Firestore queue.")
             return False
 
+        return self._upload_and_schedule(target_date, payload)
+
+    def push_pending_workouts(self, max_age_days: int = 14) -> bool:
+        """Poll the Firestore workout queue for every 'pending' item and push each to
+        Garmin Connect. Meant to run frequently (e.g. every few minutes via Cloud
+        Scheduler) so a "Sync to Garmin" click in the web app reaches Garmin without a
+        human ever running `push-workout` by hand for that date.
+
+        Queue items older than `max_age_days` are left pending, not pushed -- an
+        abandoned/forgotten entry shouldn't resurface on Garmin days or weeks later.
+        Relies on push_workout's own status check for idempotency, so a retried poll
+        (or one that overlaps a manual `push-workout` run) can never double-upload.
+        """
+        if not self.repository.db:
+            logger.warning("Firestore DB not initialized; cannot poll queue.")
+            return False
+
+        from google.cloud.firestore_v1.base_query import FieldFilter
+
+        queue_collection = (
+            self.repository.db.collection("users")
+            .document(self.settings.app_user_id)
+            .collection("garmin_workout_queue")
+        )
+        pending_docs = list(
+            queue_collection.where(filter=FieldFilter("status", "==", "pending")).stream()
+        )
+
+        if not pending_docs:
+            logger.info("No pending Garmin workout queue items found.")
+            return True
+
+        oldest_allowed_iso = get_date_string(
+            n_days_ago(local_today(self.settings.app_timezone), max_age_days)
+        )
+
+        ok = True
+        pushed = 0
+        for doc in pending_docs:
+            data = doc.to_dict() or {}
+            target_date = data.get("date") or doc.id
+            payload = data.get("payload")
+
+            if target_date < oldest_allowed_iso:
+                logger.warning(
+                    f"[{target_date}] Pending queue item is older than {max_age_days}d; "
+                    "leaving pending, not pushing."
+                )
+                continue
+            if not payload:
+                logger.warning(f"[{target_date}] Pending queue item has no payload; skipping.")
+                continue
+
+            try:
+                if self._upload_and_schedule(target_date, payload):
+                    pushed += 1
+                else:
+                    ok = False
+            except Exception as e:
+                logger.error(f"[{target_date}] Failed to push queued workout: {e}")
+                ok = False
+
+        logger.info(
+            f"push_pending_workouts finished: {pushed}/{len(pending_docs)} pending item(s) pushed."
+        )
+        return ok
+
+    def _upload_and_schedule(self, target_date: str, payload: dict[str, Any]) -> bool:
+        """Shared upload -> schedule -> mark-synced pipeline used by both push_workout
+        (single date) and push_pending_workouts (bulk poll), so they can't drift."""
         client = self._init_garmin_client()
         from .workout_export import canonical_workout_to_garmin_payload
 
