@@ -532,6 +532,11 @@ class GarminSyncService:
                     f"hrv={raw_hrv is not None}, activities={raw_activities is not None}). Skipping."
                 )
                 skipped_dates.append(target_iso)
+                # Keep history continuous: load existing Firestore raw snapshot if present
+                # so downstream dates in the rebuild range still have full 7d/28d baselines.
+                existing = self.repository.get_snapshot(target_iso)
+                if existing and existing.get("raw"):
+                    raw_memory_store[target_iso] = existing["raw"]
                 continue
 
             stats_fallback = self.archive_store.load("stats", yesterday_iso)
