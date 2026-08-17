@@ -50,6 +50,7 @@ export function buildRecommendationAudit(
         ...(recommendation.executionDose ? { executionDose: recommendation.executionDose } : {}),
         candidateScores: trace.candidateScores,
         droppedContributorObjectives: trace.droppedContributorObjectives,
+        // Carried verbatim: the audit must name the revision bytes, not re-derive them.
         ...(trace.externalPlan ? { externalPlan: trace.externalPlan } : {}),
         ...(subjectiveDrift ? { subjectiveDrift } : {}),
     };
