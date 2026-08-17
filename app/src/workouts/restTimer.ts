@@ -1,4 +1,4 @@
-import type { LoggedSet } from '../engine/models';
+import type { LoggedExercise, LoggedSet } from '../engine/models';
 
 /**
  * Rest is derived from consecutive `LoggedSet.completedAt` timestamps (D-SETLOG, ADR-0021)
@@ -38,4 +38,17 @@ export function deriveRestSecondsBetweenSets(previous: LoggedSet, next: LoggedSe
  *  disagree with the timestamps on. */
 export function deriveRestIntervals(sets: readonly LoggedSet[]): (number | null)[] {
     return sets.map((set, index) => (index === 0 ? null : deriveRestSecondsBetweenSets(sets[index - 1], set)));
+}
+
+/** The live rest clock follows the most recently logged set in the whole session, not only
+ * the currently selected exercise. Switching from squats to bench (or alternating a
+ * superset) must not reset the display to time-since-session-start. */
+export function latestCompletedSet(exercises: readonly LoggedExercise[]): LoggedSet | null {
+    let latest: LoggedSet | null = null;
+    for (const exercise of exercises) {
+        for (const set of exercise.sets) {
+            if (latest === null || Date.parse(set.completedAt) > Date.parse(latest.completedAt)) latest = set;
+        }
+    }
+    return latest;
 }

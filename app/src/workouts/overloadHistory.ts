@@ -17,12 +17,14 @@ export interface ExerciseIdentity {
 /** A bare `exerciseId` is not identity on its own: two different free-text lifts both have
  *  `exerciseId: null`, and matching on `null` alone would silently merge their history.
  *  Every lookup in this module goes through this key. */
-function identityKey(identity: ExerciseIdentity): string {
-    return identity.exerciseId ?? `free:${identity.freeTextName ?? ''}`;
+export function exerciseIdentityKey(identity: ExerciseIdentity): string {
+    return identity.exerciseId !== null
+        ? `catalog:${identity.exerciseId}`
+        : `free:${identity.freeTextName?.trim().toLocaleLowerCase() ?? ''}`;
 }
 
 function matchesIdentity(exercise: LoggedExercise, identity: ExerciseIdentity): boolean {
-    return identityKey({ exerciseId: exercise.exerciseId, freeTextName: exercise.freeTextName }) === identityKey(identity);
+    return exerciseIdentityKey({ exerciseId: exercise.exerciseId, freeTextName: exercise.freeTextName }) === exerciseIdentityKey(identity);
 }
 
 export interface ExerciseSessionSummary {
@@ -51,11 +53,13 @@ function isHeavier(candidate: LoggedSet, current: LoggedSet): boolean {
 }
 
 export function summarizeExerciseSession(session: StrengthSession, identity: ExerciseIdentity): ExerciseSessionSummary | null {
-    const exercise = session.exercises.find(candidate => matchesIdentity(candidate, identity));
-    if (!exercise || exercise.sets.length === 0) return null;
+    const sets = session.exercises
+        .filter(candidate => matchesIdentity(candidate, identity))
+        .flatMap(exercise => exercise.sets);
+    if (sets.length === 0) return null;
 
-    const workingSets = exercise.sets.filter(set => !set.isWarmup);
-    const totalReps = exercise.sets.reduce((sum, set) => sum + set.reps, 0);
+    const workingSets = sets.filter(set => !set.isWarmup);
+    const totalReps = sets.reduce((sum, set) => sum + set.reps, 0);
     const tonnageKg = workingSets.reduce((sum, set) => sum + set.reps * (set.weightKg ?? 0), 0);
     const heaviestSet = workingSets.reduce<LoggedSet | null>(
         (best, set) => (best === null || isHeavier(set, best) ? set : best),
@@ -65,7 +69,7 @@ export function summarizeExerciseSession(session: StrengthSession, identity: Exe
     return {
         date: session.date,
         sessionId: session.sessionId,
-        setCount: exercise.sets.length,
+        setCount: sets.length,
         workingSetCount: workingSets.length,
         totalReps,
         tonnageKg,
@@ -80,7 +84,9 @@ export function summarizeExerciseSession(session: StrengthSession, identity: Exe
  *  still did real work (S1.4's rationale for never deleting one). */
 export function summarizeExerciseAcrossSessions(sessions: readonly StrengthSession[], identity: ExerciseIdentity): ExerciseSessionSummary[] {
     return [...sessions]
-        .sort((a, b) => a.date.localeCompare(b.date))
+        .sort((a, b) => a.date.localeCompare(b.date)
+            || a.startedAt.localeCompare(b.startedAt)
+            || a.sessionId.localeCompare(b.sessionId))
         .map(session => summarizeExerciseSession(session, identity))
         .filter((summary): summary is ExerciseSessionSummary => summary !== null);
 }
@@ -93,7 +99,7 @@ export function distinctLoggedExercises(sessions: readonly StrengthSession[]): E
         for (const exercise of session.exercises) {
             if (exercise.sets.length === 0) continue;
             const identity: ExerciseIdentity = { exerciseId: exercise.exerciseId, ...(exercise.freeTextName ? { freeTextName: exercise.freeTextName } : {}) };
-            const key = identityKey(identity);
+            const key = exerciseIdentityKey(identity);
             if (!seen.has(key)) seen.set(key, identity);
         }
     }

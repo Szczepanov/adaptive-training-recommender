@@ -79,7 +79,9 @@ function signalForExercise(exercise: LoggedExercise): ExerciseSignal | null {
     if (exercise.exerciseId === null) {
         return { identified: false, intensity, weight, lowerFraction: 0.5, upperFraction: 0.5 };
     }
-    const definition = EXERCISES.find(candidate => candidate.id === exercise.exerciseId);
+    // `exerciseId` is a soft reference, so a malformed/manual document can point at a
+    // catalog entry from another modality. That is not identified strength evidence.
+    const definition = EXERCISES.find(candidate => candidate.id === exercise.exerciseId && candidate.modality === 'strength');
     const split = lowerUpperSplit(definition);
     return { identified: definition !== undefined, intensity, weight, ...split };
 }
@@ -138,7 +140,7 @@ export function deriveStrengthExposure(session: StrengthSession): CompletedExpos
     // identified exercises and one free-text lift does not get to claim full confidence for
     // the quarter of it that has no metadata behind it.
     const allIdentified = signals.every(signal => signal.identified);
-    const evidenceTier: EvidenceTier = allIdentified ? 'measuredEffort' : 'genericModalityFallback';
+    const evidenceTier: EvidenceTier = allIdentified ? 'athleteClassification' : 'genericModalityFallback';
     const stimulusConfidence: StimulusConfidence = stimulusConfidenceForTier(evidenceTier);
 
     const startedAtMs = new Date(session.startedAt).getTime();
@@ -156,7 +158,11 @@ export function deriveStrengthExposure(session: StrengthSession): CompletedExpos
 
     return {
         date: session.date,
-        occurrenceKey: `strength:${session.sessionId}`,
+        // A manual log started from a recommendation is evidence about the same physical
+        // occurrence as Garmin/adherence reconciliation, not an additional workout.
+        occurrenceKey: session.sourceRecommendationDate
+            ? `recommendation:${session.sourceRecommendationDate}`
+            : `strength:${session.sessionId}`,
         costProfile,
         stimulusProfile,
         stimulusConfidence,
