@@ -1,17 +1,25 @@
 import type { Recommendation, RecommendationAudit } from './models';
 import type { TrainingHistorySnapshot } from './trainingHistorySnapshot';
+import {
+    compactSubjectiveDriftAudit,
+    type SubjectiveDriftAudit,
+    type SubjectiveDriftAuditSource,
+} from './subjectiveDriftAudit';
 
-/** Builds the v3 audit from already-normalized decision facts. Do not add free-text
- * check-in notes, raw wearable payloads, or raw readiness values to this record. */
+export type RecommendationAuditWithSubjectiveDrift = RecommendationAudit & {
+    subjectiveDrift?: SubjectiveDriftAudit;
+};
+
 export function buildRecommendationAudit(
     recommendation: Recommendation,
     historySnapshot: TrainingHistorySnapshot,
     evaluatedAt = new Date().toISOString(),
-): RecommendationAudit | null {
+    subjectiveDriftEvidence: SubjectiveDriftAuditSource | null = null,
+): RecommendationAuditWithSubjectiveDrift | null {
     const trace = recommendation.decisionTrace;
     const envelopes = recommendation.envelopes;
     if (!trace || !envelopes) return null;
-
+    const subjectiveDrift = compactSubjectiveDriftAudit(subjectiveDriftEvidence);
     return {
         policyVersion: trace.policyVersion,
         evaluatedAt,
@@ -34,7 +42,7 @@ export function buildRecommendationAudit(
         ...(recommendation.executionDose ? { executionDose: recommendation.executionDose } : {}),
         candidateScores: trace.candidateScores,
         droppedContributorObjectives: trace.droppedContributorObjectives,
-        // Carried verbatim: the audit must name the revision bytes, not re-derive them.
         ...(trace.externalPlan ? { externalPlan: trace.externalPlan } : {}),
+        ...(subjectiveDrift ? { subjectiveDrift } : {}),
     };
 }
