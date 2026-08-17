@@ -1,7 +1,9 @@
 import { useMemo, useState } from 'react';
 import { useStrengthSessionRunner } from '../hooks/useStrengthSessionRunner';
+import { useElapsedSeconds } from '../hooks/useElapsedSeconds';
 import type { IntensityGauge } from '../engine/models';
 import { EXERCISES } from '../workouts/exercises';
+import { formatElapsed } from '../workouts/restTimer';
 import './StrengthSessionRunner.css';
 
 interface StrengthSessionRunnerProps {
@@ -36,6 +38,15 @@ export function StrengthSessionRunner({ userId }: StrengthSessionRunnerProps) {
         () => runner.plannedExercises.find(planned => planned.exerciseId === activeExercise?.exerciseId),
         [runner.plannedExercises, activeExercise],
     );
+
+    // S1.6: timestamp-based, not an accumulating interval -- see useElapsedSeconds. "Since"
+    // is the last logged set of THIS exercise, falling back to session start before any set
+    // exists yet (there is nothing to rest from otherwise).
+    const lastSetInExercise = activeExercise?.sets[activeExercise.sets.length - 1];
+    const restSinceIso = runner.session?.state === 'in_progress'
+        ? (lastSetInExercise?.completedAt ?? runner.session.startedAt)
+        : null;
+    const restSeconds = useElapsedSeconds(restSinceIso);
 
     if (runner.loading) {
         return <div className="strength-runner"><p className="card-empty">Loading strength session…</p></div>;
@@ -142,6 +153,12 @@ export function StrengthSessionRunner({ userId }: StrengthSessionRunnerProps) {
             {activeExercise && (
                 <div className="strength-active-exercise">
                     <h4>{activeExercise.exerciseId ? (STRENGTH_EXERCISES.find(e => e.id === activeExercise.exerciseId)?.name ?? activeExercise.exerciseId) : activeExercise.freeTextName}</h4>
+
+                    {!isClosed && (
+                        <p className="strength-rest-timer">
+                            {lastSetInExercise ? 'Rest' : 'Elapsed'}: <span className="rest-value">{formatElapsed(restSeconds)}</span>
+                        </p>
+                    )}
 
                     {activeExercise.sets.length > 0 && (
                         <ul className="strength-set-list">

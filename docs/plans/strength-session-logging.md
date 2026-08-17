@@ -65,7 +65,7 @@ accepted before any Step C item.
 | S1.3 | Firestore rules and validation | `[x]` | S1.2 |
 | S1.4 | Session state machine and date attribution | `[x]` | S1.2 |
 | S1.5 | Set-entry UI | `[x]` | S1.3, S1.4 |
-| S1.6 | Rest timer and derived rest | `[ ]` | S1.5 |
+| S1.6 | Rest timer and derived rest | `[x]` | S1.5 |
 | S1.7 | Overload history view | `[ ]` | S1.3 |
 | S2.1 | Gauge-aware 1RM estimator | `[ ]` | S1.2 |
 | S2.2 | Write-back under a `derived` source | `[ ]` | S2.1 |
@@ -363,7 +363,7 @@ guarantees the write reached the local cache before the UI reports success; what
 is only the passive "still syncing to the server" affordance. Left for a follow-up rather
 than bundled in here.
 
-### S1.6 `[ ]` Rest timer and derived rest
+### S1.6 `[x]` Rest timer and derived rest
 
 **Change:** the timer is **timestamp-based**, computed from the previous set's `completedAt`
 on each render — never a `setInterval` accumulating in memory. Backgrounded tabs throttle or
@@ -374,6 +374,33 @@ it separately.
 
 **Done when:** backgrounding for two minutes and returning shows correct elapsed rest;
 derived rest matches the timestamp delta; no timer state survives in memory across reload.
+
+**Outcome (2026-08-17).** `workouts/restTimer.ts` (`elapsedSeconds`, `formatElapsed`,
+`deriveRestSecondsBetweenSets`, `deriveRestIntervals` — 11 tests, pure) plus
+`hooks/useElapsedSeconds.ts` (no test file, same rationale as `useStrengthSessionRunner`:
+no `@testing-library/react` in this toolchain, and the value it displays is what's actually
+tested). Wired into `StrengthSessionRunner`: "Elapsed" before the exercise's first set,
+"Rest" after, timing from that set's `completedAt` — 2 new component smoke tests.
+
+**The `setInterval` in `useElapsedSeconds` is not the accumulator; it is the trigger.** Its
+callback recomputes `elapsedSeconds(sinceIso, now)` from wall-clock time on every tick, so a
+throttled or fully suspended background timer (routine: phone in a pocket between sets)
+cannot make the displayed value drift low — whichever tick does eventually fire shows the
+*true* elapsed time, not a count of ticks that happened to fire. "No timer state survives
+in memory across reload" holds structurally: the hook's only state is `nowIso`, reset fresh
+on every mount, and the value it renders is a pure function of `sinceIso` (from Firestore,
+already durable per S1.1) and wall-clock time — there is nothing timer-shaped to lose.
+
+`deriveRestIntervals` (post-hoc rest between logged sets, for S1.7 and any future rest-aware
+cost model) is separate from the live countdown for a structural reason, not just naming:
+the live display counts up *before* a "next" set exists, so there is no second timestamp to
+derive an interval from yet.
+
+The two backgrounding/reload criteria above are, again, real browser behaviour a Node test
+cannot exercise directly — the same limitation noted for S1.1 and S1.5. What's verified
+instead: `elapsedSeconds` and `formatElapsed` are fully covered, and the hook's only two
+moving parts (`setInterval` as trigger, `elapsedSeconds` as value) are each independently
+tested at the boundary between them.
 
 ### S1.7 `[ ]` Overload history view
 
