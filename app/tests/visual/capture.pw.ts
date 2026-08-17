@@ -46,6 +46,8 @@ for (const scenario of VISUAL_SCENARIOS) {
       const viewWorkout = page.getByRole('button', { name: 'View workout' });
       if (await viewWorkout.count()) {
         await viewWorkout.first().click();
+        await expect(viewWorkout.first()).toHaveAttribute('aria-expanded', 'true');
+        await expect(page.getByLabel(/Workout details for /)).toBeVisible();
         await capture(page, scenario, 'workout-expanded', ['Workout steps are available on demand without overwhelming the recommendation.']);
       }
     }
