@@ -1,5 +1,6 @@
 import { getLocalDateString } from '../utils/localDate';
 import type { StrengthSession, StrengthSessionState } from './models';
+import { isValidStrengthInstant } from './strengthSessionValidation';
 
 /** Pure state-machine and date-attribution rules for strength sessions (ADR-0021, S1.4).
  *  Kept separate from strengthSessionService.ts's Firestore I/O so the rules themselves
@@ -16,6 +17,9 @@ export const STALE_IN_PROGRESS_HOURS = 6;
  *  and never recomputed. A session starting 23:30 and finishing 00:20 belongs to the
  *  start date. Never derive this with `toISOString().split('T')[0]` (UTC), per CLAUDE.md. */
 export function computeSessionDate(startedAtIso: string): string {
+    if (!isValidStrengthInstant(startedAtIso)) {
+        throw new Error('Strength session start time must be a valid ISO instant');
+    }
     return getLocalDateString(new Date(startedAtIso));
 }
 
@@ -23,6 +27,8 @@ export function computeSessionDate(startedAtIso: string): string {
  *  is responsible for persisting it and for supplying `sessionId` (the Firestore document
  *  id) and `userId`, neither of which this module has any business generating. */
 export function buildNewStrengthSession(userId: string, sessionId: string, startedAtIso: string): StrengthSession {
+    if (userId.trim() === '') throw new Error('Strength session userId is required');
+    if (sessionId.trim() === '') throw new Error('Strength session sessionId is required');
     return {
         userId,
         sessionId,

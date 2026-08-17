@@ -739,6 +739,12 @@ emulatorDescribe('Firestore security rules', () => {
 
     it('rejects a malformed or foreign-owned strength session', async () => {
         const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertFails(setDoc(doc(ownerDb, `${strengthSessionPath}-starts-completed`), {
+            ...validStrengthSession(), state: 'completed', completedAt: '2026-08-17T18:45:00Z',
+        }));
+        await assertFails(setDoc(doc(ownerDb, `${strengthSessionPath}-premature-completion`), {
+            ...validStrengthSession(), completedAt: '2026-08-17T18:45:00Z',
+        }));
         await assertFails(setDoc(doc(ownerDb, `${strengthSessionPath}-bad-state`), { ...validStrengthSession(), state: 'paused' }));
         await assertFails(setDoc(doc(ownerDb, `${strengthSessionPath}-bad-date`), { ...validStrengthSession(), date: '2026-02-30' }));
         await assertFails(setDoc(doc(ownerDb, `${strengthSessionPath}-bad-schema`), { ...validStrengthSession(), schemaVersion: 2 }));
@@ -756,6 +762,27 @@ emulatorDescribe('Firestore security rules', () => {
             doc(otherDb, `users/${otherUserId}/strength_sessions/session-1`),
             { ...validStrengthSession(), userId: ownerId },
         ));
+    });
+
+    it('makes completed and abandoned strength sessions terminal and immutable', async () => {
+        await testEnvironment.withSecurityRulesDisabled(async context => {
+            await setDoc(doc(context.firestore(), strengthSessionPath), validStrengthSession());
+        });
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        const completed = {
+            ...validStrengthSession(),
+            state: 'completed',
+            completedAt: '2026-08-17T18:45:00Z',
+            updatedAt: '2026-08-17T18:45:00Z',
+        };
+        await expect(assertSucceeds(setDoc(doc(ownerDb, strengthSessionPath), completed))).resolves.toBeUndefined();
+        await assertFails(setDoc(doc(ownerDb, strengthSessionPath), {
+            ...validStrengthSession(), updatedAt: '2026-08-17T19:00:00Z',
+        }));
+        await assertFails(setDoc(doc(ownerDb, strengthSessionPath), {
+            ...completed,
+            exercises: [...completed.exercises, { exerciseId: 'bench_press', sets: [] }],
+        }));
     });
 
     it('rejects cross-user strength session reads and writes', async () => {
