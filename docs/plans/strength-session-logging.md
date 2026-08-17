@@ -34,7 +34,7 @@ Three goals, delivered one per step, cheapest risk first:
 | P2 | Prescription emits per-step sets/reps/RIR/technical targets | ✅ `StepTarget`, `IntensityTarget` |
 | P3 | A declared `manualTraining` history source | ✅ declared in `trainingHistorySnapshot.ts`, hardcoded `MISSING` (A2.1) |
 | P4 | A 1RM store with field-level ownership | ✅ `estimated1RmKg` + `targetSources` — **no writer exists** (A2.2) |
-| P5 | Offline write durability | ❌ **S1.1 — no `localCache` configured; blocks all gym-floor use** |
+| P5 | Offline write durability | ✅ **S1.1 done** — `persistentLocalCache` with multi-tab manager in `firebase.ts` |
 | P6 | A decision on the intensity-gauge schema | ✅ **D-GAUGE accepted** — [ADR-0021](../adr/0021-strength-session-logging-and-intensity-gauges.md); S1.2 unblocked |
 | P7 | A decision on set-log → dimensional cost | ✅ **D-STRCOST accepted as a measurement obligation** — [ADR-0021](../adr/0021-strength-session-logging-and-intensity-gauges.md). Step C may be *built* default-off; enabling it still requires S3.3's evidence |
 
@@ -64,7 +64,7 @@ accepted before any Step C item.
 
 | Item | Title | Status | Blocked by |
 |---|---|---|---|
-| S1.1 | Offline persistence | `[ ]` | — |
+| S1.1 | Offline persistence | `[x]` | — |
 | S1.2 | `strength_sessions` schema and types | `[ ]` | D-GAUGE |
 | S1.3 | Firestore rules and validation | `[ ]` | S1.2 |
 | S1.4 | Session state machine and date attribution | `[ ]` | S1.2 |
@@ -81,7 +81,7 @@ accepted before any Step C item.
 
 ## Step A — Logging
 
-### S1.1 `[ ]` Offline persistence
+### S1.1 `[x]` Offline persistence
 
 **Current:** `firebase.ts` calls `initializeFirestore(getApp(), { ignoreUndefinedProperties: true })`
 with no local cache. Every write requires live connectivity.
@@ -99,6 +99,26 @@ reconnect; `npm run check` passes.
 
 > Verify no existing test asserts on cold-cache behaviour before enabling — persistence
 > changes read timing, and this touches every collection, not just the new one.
+
+**Outcome (2026-08-17).** The cold-cache caveat was checked and is a non-issue: every
+service test mocks `../firebase` wholesale (`getDb: vi.fn(() => ({}))`), and the emulator
+suite initializes through `@firebase/rules-unit-testing`'s `initializeTestEnvironment`, so
+no test reaches `src/firebase.ts` at all. `npm run check` passes (1212 tests) and
+`npm run build` succeeds.
+
+Two things were added beyond the literal change:
+
+* `firebase.test.ts` now pins the durability contract. Because every service test mocks the
+  module, nothing previously exercised `getDb()` — the persistent cache could have been
+  deleted without a single test failing, on the one item whose entire purpose is durability.
+* The pre-existing bare `catch {}` now warns before falling back to `getFirestore`. That
+  fallback yields an instance with no offline durability, and silently degrading the exact
+  guarantee this item exists to provide is not an acceptable failure mode.
+
+**Not verified here:** "a write issued while offline is visibly queued and flushes on
+reconnect" is a real-browser behaviour. The unit tests prove the cache is *configured*, not
+that IndexedDB round-trips. Confirm by hand (DevTools → Network → Offline, write, reload,
+reconnect) before S1.5 depends on it.
 
 ### S1.2 `[ ]` `strength_sessions` schema and types — **implements D-GAUGE, D-SETLOG**
 
