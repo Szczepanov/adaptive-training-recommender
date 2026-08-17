@@ -1,8 +1,8 @@
 import { doc, getDoc, setDoc, deleteDoc, deleteField, collection, query, where, orderBy, limit, getDocs } from 'firebase/firestore';
 import { getDb } from '../firebase';
 import type { DailySubjectiveCheckin } from '../engine/models';
-import type { DataState } from '../engine/dataState';
-import { validateCheckin } from '../engine/validation';
+import type { DataIssue, DataState } from '../engine/dataState';
+import { validateCheckin, isValidDate } from '../engine/validation';
 import { getLocalDateString } from '../utils/localDate';
 import { isPermissionDeniedError } from '../utils/errors';
 import { parseSubjectiveCheckin } from '../persistence/parsers/decisionInputs';
@@ -135,28 +135,87 @@ export class CheckinService {
     }
 
     /**
-     * Get check-ins for a date range
+     * Phase 9.4 / D-SUBJPURE: bounded, validated history read for subjective-baseline
+     * composition. The range is deliberately half-open `[startDateInclusive,
+     * endDateExclusive)`, so passing the decision date as the end can never fetch today's
+     * check-in into the baseline used to interpret today (D-SUBJHIST).
+     *
+     * Every returned document is parsed through the same ownership/date/schema parser as a
+     * single check-in read. Invalid documents are excluded from `data` and surfaced through
+     * `issues`; they are never cast into neutral scores. A query/read failure is
+     * `UNAVAILABLE`, allowing the composer to fail open to *no relative drift* while today's
+     * ordinary absolute-safety path remains available.
      */
-    async getCheckinsInRange(
-        userId: string, 
-        startDate: string, 
-        endDate: string
-    ): Promise<DailySubjectiveCheckin[]> {
+    async getCheckinsInRangeState(
+        userId: string,
+        startDateInclusive: string,
+        endDateExclusive: string,
+    ): Promise<DataState<DailySubjectiveCheckin[]>> {
+        const rangePath = `users/${userId}/${this.collectionPath}`;
+        if (!isValidDate(startDateInclusive) || !isValidDate(endDateExclusive) || startDateInclusive >= endDateExclusive) {
+            return {
+                status: 'INVALID',
+                issues: [{ code: 'invalid-date-range', documentPath: rangePath, field: 'date' }],
+            };
+        }
+
         try {
             const collRef = collection(getDb(), 'users', userId, this.collectionPath);
             const q = query(
                 collRef,
-                where('date', '>=', startDate),
-                where('date', '<=', endDate),
-                orderBy('date', 'asc')
+                where('date', '>=', startDateInclusive),
+                where('date', '<', endDateExclusive),
+                orderBy('date', 'asc'),
             );
-            
             const querySnapshot = await getDocs(q);
-            return querySnapshot.docs.map(doc => doc.data() as DailySubjectiveCheckin);
-        } catch (error) {
-            console.error('Error fetching check-ins in range:', error);
-            throw error;
+            if (querySnapshot.empty) return { status: 'MISSING' };
+
+            const checkins: DailySubjectiveCheckin[] = [];
+            const issues: DataIssue[] = [];
+            const revisions: string[] = [];
+            for (const checkinDoc of querySnapshot.docs) {
+                const documentPath = `${rangePath}/${checkinDoc.id}`;
+                const parsed = parseSubjectiveCheckin(checkinDoc.data(), documentPath, userId, checkinDoc.id);
+                if (parsed.status !== 'AVAILABLE') {
+                    if (parsed.status === 'INVALID') issues.push(...parsed.issues);
+                    else issues.push({ code: `unexpected-${parsed.status.toLowerCase()}-range-row`, documentPath });
+                    continue;
+                }
+                if (parsed.data.date < startDateInclusive || parsed.data.date >= endDateExclusive) {
+                    issues.push({ code: 'row-outside-requested-range', documentPath, field: 'date' });
+                    continue;
+                }
+                checkins.push(parsed.data);
+                if (parsed.revision) revisions.push(`${checkinDoc.id}:${parsed.revision}`);
+            }
+
+            if (checkins.length === 0) {
+                return issues.length > 0 ? { status: 'INVALID', issues } : { status: 'MISSING' };
+            }
+            return {
+                status: 'AVAILABLE',
+                data: checkins,
+                revision: revisions.sort().join('|') || null,
+                ...(issues.length > 0 ? { issues } : {}),
+            };
+        } catch (error: unknown) {
+            return {
+                status: 'UNAVAILABLE',
+                operation: 'read subjective check-in history',
+                retryable: !isPermissionDeniedError(error),
+            };
         }
+    }
+
+    /** Compatibility wrapper. New decision-path code must prefer getCheckinsInRangeState
+     * so invalid/unavailable history cannot be mistaken for a valid empty range. */
+    async getCheckinsInRange(
+        userId: string,
+        startDateInclusive: string,
+        endDateExclusive: string,
+    ): Promise<DailySubjectiveCheckin[]> {
+        const state = await this.getCheckinsInRangeState(userId, startDateInclusive, endDateExclusive);
+        return state.status === 'AVAILABLE' ? state.data : [];
     }
 
     /**
