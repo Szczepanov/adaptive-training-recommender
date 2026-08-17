@@ -155,4 +155,40 @@ describe('StrengthSessionService', () => {
             expect(firestore.setDoc).not.toHaveBeenCalled();
         });
     });
+
+    describe('findActiveSession', () => {
+        it('returns null when nothing is in progress', async () => {
+            firestore.getDocs.mockResolvedValueOnce({ docs: [] });
+            expect(await service.findActiveSession(USER_ID, '2026-08-17T18:00:00Z')).toBeNull();
+        });
+
+        it('returns a fresh in_progress session, even if its date field is yesterday (started before midnight)', async () => {
+            firestore.getDocs.mockResolvedValueOnce({
+                docs: [{ id: SESSION_ID, ref: { path: `users/${USER_ID}/strength_sessions/${SESSION_ID}` }, data: () => validSession({ date: '2026-08-16', startedAt: '2026-08-16T23:50:00Z' }) }],
+            });
+            const active = await service.findActiveSession(USER_ID, '2026-08-17T00:10:00Z');
+            expect(active).toMatchObject({ sessionId: SESSION_ID, state: 'in_progress' });
+        });
+
+        it('abandons a stale session it walks past rather than returning it as resumable', async () => {
+            firestore.getDocs.mockResolvedValueOnce({
+                docs: [{ id: SESSION_ID, ref: { path: `users/${USER_ID}/strength_sessions/${SESSION_ID}` }, data: () => validSession({ startedAt: '2026-08-17T06:00:00Z' }) }],
+            });
+            existingDoc(validSession({ startedAt: '2026-08-17T06:00:00Z' }));
+            const active = await service.findActiveSession(USER_ID, '2026-08-17T18:00:00Z');
+            expect(active).toBeNull();
+            expect(firestore.setDoc).toHaveBeenCalledTimes(1);
+        });
+    });
+
+    describe('saveExercises', () => {
+        it('merges exercises and updatedAt without rewriting the rest of the document', async () => {
+            const exercises = [{ exerciseId: 'bench_press', sets: [{ setIndex: 1, reps: 5, weightKg: 60, isWarmup: false, completedAt: '2026-08-17T18:10:00Z' }] }];
+            await service.saveExercises(USER_ID, SESSION_ID, exercises, '2026-08-17T18:10:00Z');
+            expect(firestore.setDoc).toHaveBeenCalledTimes(1);
+            const [, payload, options] = firestore.setDoc.mock.calls[0] as [unknown, Record<string, unknown>, Record<string, unknown>];
+            expect(payload).toEqual({ exercises, updatedAt: '2026-08-17T18:10:00Z' });
+            expect(options).toEqual({ merge: true });
+        });
+    });
 });

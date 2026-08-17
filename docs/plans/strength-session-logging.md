@@ -64,7 +64,7 @@ accepted before any Step C item.
 | S1.2 | `strength_sessions` schema and types | `[x]` | D-GAUGE |
 | S1.3 | Firestore rules and validation | `[x]` | S1.2 |
 | S1.4 | Session state machine and date attribution | `[x]` | S1.2 |
-| S1.5 | Set-entry UI | `[ ]` | S1.3, S1.4 |
+| S1.5 | Set-entry UI | `[x]` | S1.3, S1.4 |
 | S1.6 | Rest timer and derived rest | `[ ]` | S1.5 |
 | S1.7 | Overload history view | `[ ]` | S1.3 |
 | S2.1 | Gauge-aware 1RM estimator | `[ ]` | S1.2 |
@@ -293,7 +293,7 @@ Midnight-crossing is tested in both directions of the DST calendar (CEST, UTC+2 
 CET, UTC+1 in January) via `Intl.DateTimeFormat`, not a hardcoded offset — `getLocalDateString`
 already does this correctly; the tests exist to pin the *contract*, not to add new logic.
 
-### S1.5 `[ ]` Set-entry UI — **the per-set write is the point**
+### S1.5 `[x]` Set-entry UI — **the per-set write is the point**
 
 **Change:** a session runner with two entry paths: start from today's prescription
 (pre-populated with exercise, target sets/reps and target gauge) or start empty and add
@@ -315,6 +315,53 @@ Non-negotiable behaviours:
 **Done when:** killing the app mid-session and reopening restores every logged set; a
 prescribed session prefills from the recommendation; an offline session syncs on reconnect
 with no duplicate sets.
+
+**Outcome (2026-08-17).** Behaviours 1–3 and 5 are implemented as designed; behaviour 4
+(sync-state indicator) is a known simplification -- see below.
+
+Split three ways, all new: `workouts/strengthSessionEntry.ts` (pure confirm-or-amend logic
+— prescription matching, prefill, set construction, exercise upsert; 20 tests, no I/O or
+React), `hooks/useStrengthSessionRunner.ts` (thin orchestration over the pure module and
+`strengthSessionService`; no dedicated test file, matching this repo's own precedent —
+`useGarminSyncStatus` has none either, and there is no `@testing-library/react` in this
+toolchain to test a hook's behaviour directly), and `components/StrengthSessionRunner.tsx`
+(6 `renderToStaticMarkup` smoke tests, the same style as `GarminSyncBadge.test.tsx` — this
+repo has no interaction-testing library, so these assert rendered output across states, not
+clicks). Wired into navigation: `Screen` gained `'strength'`, routed in `App.tsx`, reachable
+from the "More" drawer in `MobileNav.tsx`. Not added to the primary bottom-nav bar or to a
+`Home.tsx` dashboard card — both are placement/prominence decisions better made by a human
+than assumed here; the drawer entry is the same tier `Import Training Plan` and
+`Export Context for AI` already occupy.
+
+**Prescription matching, scoped deliberately.** `WorkoutPrescription` carries both
+`adjustedBlocks` (the original structured `WorkoutBlock[]`, with typed `exerciseId`/`sets`/
+`target: IntensityTarget`) and `displayBlocks` (rendered presentation strings). Matching
+reads only `adjustedBlocks` — `displayBlocks`' `dose`/`targets` are rendered text, not
+parseable back into structured data. Of `IntensityTarget`'s eight variants, only
+`reps_in_reserve` and `technical_quality` map to a suggested gauge (verified against
+`catalog/support-strength.ts`, the only two a real strength step ever carries); every other
+variant (`rpe`, `ftp_percent`, `heart_rate_zone`, `power_zone`, `cadence`) is a
+cycling/running target and degrades to no suggestion rather than a guess. The mapped
+suggestion is explicitly *not* the D-GAUGE conversion the parser forbids — it never touches
+persisted data, only seeds the entry form before the athlete confirms or amends it.
+
+**Two "Done when" criteria are real end-to-end browser behaviour and were not verified
+here**, for the same reason noted in S1.1: "app killed mid-session, reopens with every set
+intact" and "offline session syncs on reconnect with no duplicates" depend on IndexedDB
+round-tripping through `persistentLocalCache`, which unit tests running in Node cannot
+exercise. What *is* verified: `logSet` awaits `saveExercises` before updating local state
+(so a set is never shown as logged before the write call resolves), and
+`findActiveSession`/`saveExercises` are both covered against a mocked Firestore SDK.
+Confirm the real end-to-end behaviour by hand (DevTools → Offline, log a set, kill the tab,
+reopen) before relying on it.
+
+**Sync-state indicator not built.** Item 4 above ("pending" vs "synced" per set) needs a
+live `onSnapshot({ includeMetadataChanges: true })` listener to read `hasPendingWrites`,
+which is a meaningfully separate feature (subscription lifecycle, cleanup, per-document
+metadata state) from durable persistence itself. `saveExercises`'s `await` already
+guarantees the write reached the local cache before the UI reports success; what's missing
+is only the passive "still syncing to the server" affordance. Left for a follow-up rather
+than bundled in here.
 
 ### S1.6 `[ ]` Rest timer and derived rest
 

@@ -8,6 +8,7 @@ import { TrainingSettings } from './components/TrainingSettings';
 import { Preferences } from './components/Preferences';
 import { DataView } from './components/DataView';
 import { ExternalPlanImport } from './components/ExternalPlanImport';
+import { StrengthSessionRunner } from './components/StrengthSessionRunner';
 import { decisionComposer } from './engine/composer';
 import type { DailyDecisionInput } from './engine/models';
 import type { Screen } from './types/navigation';
@@ -114,6 +115,10 @@ function App() {
         
         {screen === 'preferences' && (
           <Preferences userId={userId!} onNavigate={handleNavigate} />
+        )}
+
+        {screen === 'strength' && (
+          <StrengthSessionRunner userId={userId!} />
         )}
 
         {screen === 'plan' && (

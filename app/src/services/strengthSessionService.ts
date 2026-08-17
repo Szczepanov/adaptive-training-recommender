@@ -1,6 +1,6 @@
 import { collection, doc, getDoc, getDocs, orderBy, query, setDoc, where } from 'firebase/firestore';
 import { getDb } from '../firebase';
-import type { StrengthSession, StrengthSessionState } from '../engine/models';
+import type { LoggedExercise, StrengthSession, StrengthSessionState } from '../engine/models';
 import type { DataState } from '../engine/dataState';
 import {
     buildNewStrengthSession,
@@ -112,6 +112,37 @@ export class StrengthSessionService {
             }
         }
         return abandoned;
+    }
+
+    /** Resumable session, if any -- the most recent `in_progress` session regardless of its
+     *  `date` field, since a session that started late at night is still resumable after
+     *  local midnight even though `date` (fixed at S1.4's session START) no longer equals
+     *  today. Walks past-and-abandons any stale session it encounters on the way, so a
+     *  caller never has to run `reconcileStaleSessions` separately first. */
+    async findActiveSession(userId: string, nowIso: string = new Date().toISOString()): Promise<StrengthSession | null> {
+        const collRef = collection(getDb(), 'users', userId, this.collectionPath);
+        const q = query(collRef, where('state', '==', 'in_progress'), orderBy('startedAt', 'desc'));
+        const querySnapshot = await getDocs(q);
+        for (const docSnap of querySnapshot.docs) {
+            const parsed = parseStrengthSession(docSnap.data(), docSnap.ref.path, docSnap.id, userId);
+            if (parsed.status !== 'AVAILABLE') continue;
+            if (isStaleInProgressSession(parsed.data, nowIso)) {
+                await this.transitionState(userId, docSnap.id, 'abandoned', nowIso);
+                continue;
+            }
+            return parsed.data;
+        }
+        return null;
+    }
+
+    /** Persists the session's `exercises` array as its own write, immediately after every
+     *  logged set (D-SETLOG: per-set persistence, not batched until "Done"). A merge write
+     *  of the whole array, matching `decisionJournalService.write`'s whole-object-merge
+     *  style -- simple and correct at this document's bounded size (rules cap `exercises`
+     *  at 30), not the cheapest possible payload at larger scale. */
+    async saveExercises(userId: string, sessionId: string, exercises: LoggedExercise[], nowIso: string = new Date().toISOString()): Promise<void> {
+        const docRef = doc(getDb(), 'users', userId, this.collectionPath, sessionId);
+        await setDoc(docRef, { exercises, updatedAt: nowIso }, { merge: true });
     }
 }
 
