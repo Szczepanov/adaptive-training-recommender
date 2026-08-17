@@ -69,7 +69,7 @@ accepted before any Step C item.
 | S1.7 | Overload history view | `[x]` | S1.3 |
 | S2.1 | Gauge-aware 1RM estimator | `[x]` | S1.2 |
 | S2.2 | Write-back under a `derived` source | `[x]` | S2.1 |
-| S3.1 | Set log → `CompletedExposure` | `[ ]` | S1.2, ADR for D-STRCOST |
+| S3.1 | Set log → `CompletedExposure` | `[x]` | S1.2, ADR for D-STRCOST |
 | S3.2 | `manualTraining` source wiring | `[ ]` | S3.1 |
 | S3.3 | Measurement and ship decision | `[ ]` | S3.2 |
 
@@ -536,7 +536,7 @@ explicitly: a legacy value of `999` alongside a `strength.estimated1RmKg` of `12
 > `check-policy-drift.mjs`), a moved `simulate:diff` baseline, and ADR-0010 replay of
 > pre-change decisions must stay reproducible.
 
-### S3.1 `[ ]` Set log → `CompletedExposure`
+### S3.1 `[x]` Set log → `CompletedExposure`
 
 **Change:** derive a `CompletedExposure` from a completed session — `costProfile` across the
 six `WorkoutCostProfile` dimensions and `stimulusProfile` on `maxStrength` / `hypertrophy`,
@@ -555,6 +555,54 @@ source has.
 **Done when:** a fully-identified session yields a plausible cost profile; a free-text
 session yields a discounted, low-confidence one; re-deriving is idempotent on
 `occurrenceKey`.
+
+**Outcome (2026-08-17).** `workouts/strengthExposure.ts`: `deriveStrengthExposure` — pure,
+17 tests. All three "Done when" criteria hold.
+
+**The magnitudes are not new invented numbers.** `DEFAULT_COST_BY_MODALITY.Strength` /
+`DEFAULT_STIMULUS_BY_MODALITY.Strength` in `completedTraining.ts` are already in production,
+costing today's Garmin-detected strength activities — this item reuses those exact tables
+rather than asserting new coefficients, which stays inside D-STRCOST's boundary (this ADR
+approves *measuring*, not prescribing new numbers). What's new is a *redistribution* of the
+flat table's `lowerBody`/`upperBody` split by which exercises were actually logged
+(`exercises.ts` `primaryMuscles`, weighted by working-set count across the session) and a
+`maxStrength`/`hypertrophy`-only stimulus (the plan's own scoping — the other six axes stay
+at 0, not populated from the reference table's small incidental values for them, since this
+item was never asked to derive those).
+
+**Two real defects were caught by the module's own tests before this commit, not after —
+both are the kind of thing D-STRCOST's "measure before shipping" exists to catch, found
+here even before the default-off gate is reached.**
+
+1. *Architecture defect.* The first draft summed a **full session-sized cost budget once per
+   exercise** (e.g. the entire `hard` row's `lowerBody: 0.8` applied to *each* exercise, then
+   added together). A test asserting "one hard exercise and five hard exercises stay
+   distinguishable" failed — both saturated at the same capped value, because a full budget
+   per exercise blows past any reasonable cap almost immediately. Redesigned: the session's
+   intensity (hardest exercise present) is looked up **once**, producing one budget for the
+   whole session; only the `lowerBody`/`upperBody` *split* of that one budget is weighted
+   across exercises. The failing test is now a permanent regression guard.
+2. *Bound violation.* `WorkoutCostProfile` axes are canonically 0.0–1.0 (the type's own field
+   comments; `firestore.rules`' `hasValidAxisValue` enforces the same bound elsewhere). A
+   fully one-sided exercise (e.g. `front_squat`, no matched upper-body muscle at all) at
+   `hard` intensity redistributes the combined `0.8 + 0.7 = 1.5` budget entirely onto
+   `lowerBody`, which a test caught exceeding 1.0 before a cap was added. Now clamped per
+   axis after redistribution, tested explicitly (`'caps a fully one-sided redistribution at
+   1.0 per axis'`).
+
+**Evidence tier is the weakest link, not the best.** A session with three identified
+exercises and one free-text lift reports `unknown` confidence for the whole thing, not a
+partial credit — tested explicitly (`'drags the whole session down to unknown confidence
+when even one exercise is unidentified'`). Intensity classification (per exercise, then the
+session takes the hardest) reuses `oneRepMax.ts`'s `isNearFailureGauge` (now exported) rather
+than redefining "how close to failure" a second time, and falls back to the existing table's
+own `unknown` row — not a guessed `moderate` — when a working set carries no gauge at all.
+
+`occurrenceKey` is `strength:${session.sessionId}` — the Firestore-generated session id is
+already globally unique per user, unlike a Garmin `activityId`, so no compound key was
+needed. `null` is returned for an `in_progress` session (data may still change) and for a
+`completed`/`abandoned` session with nothing logged; an `abandoned` session with real sets
+still derives an exposure, matching S1.4's "never delete, partial work still happened."
 
 ### S3.2 `[ ]` `manualTraining` source wiring
 
