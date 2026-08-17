@@ -52,9 +52,11 @@ Garmin Connect API
 2. **Fetch Window**: Retrieves biometric stats for date $D$ and step count from completed previous day ($D - 1$).
 3. **Historical Lookback**: Fetches historical data points ($D-1 \dots D-28$) to compute baseline averages.
 4. **Metric Enrichment**: Computes:
-   * 7-day & 28-day moving average HRV (ms)
-   * 7-day & 28-day moving average Resting Heart Rate (bpm)
-   * Waking Body Battery & Sleep Score
-   * Completed previous-day total steps
+   * 7-day & 28-day moving average HRV (ms) and 28-day population standard deviation
+   * 7-day & 28-day moving average Resting Heart Rate (bpm) and 28-day population standard deviation
+   * 7-day & 28-day moving average Sleep Score and 28-day population standard deviation
+   * 7-day & 28-day moving average step counts and 28-day population standard deviation
+   * Waking Body Battery & signed deltas (vs 7d and vs 28d)
+   * Completed previous-day ($D - 1$) total steps
 5. **Upsert**: Writes Schema v3 snapshot payload to Firestore under `users/{userId}/daily_recovery_snapshots/{YYYY-MM-DD}`.
 6. **Activity Normalization**: Saves raw activity records to `users/{userId}/activities/{activityId}` for cross-day auditability.

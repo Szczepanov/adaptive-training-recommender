@@ -183,6 +183,18 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery' }: Dat
             <span className="data-label">Sleep Score 28d Stdev:</span>
             <span className="data-value">{decisionInput.recoverySnapshot?.derived.sleepScore28dStdev ?? 'N/A'}</span>
           </div>
+          <div className="data-item">
+            <span className="data-label">Steps 7d Avg:</span>
+            <span className="data-value">{decisionInput.recoverySnapshot?.derived.steps7dAvg ?? 'N/A'}</span>
+          </div>
+          <div className="data-item">
+            <span className="data-label">Steps 28d Avg:</span>
+            <span className="data-value">{decisionInput.recoverySnapshot?.derived.steps28dAvg ?? 'N/A'}</span>
+          </div>
+          <div className="data-item">
+            <span className="data-label">Steps 28d Stdev:</span>
+            <span className="data-value">{decisionInput.recoverySnapshot?.derived.steps28dStdev ?? 'N/A'}</span>
+          </div>
         </div>
 
         <div className="data-group">
@@ -190,7 +202,7 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery' }: Dat
           <div className="data-item">
             <span className="data-label">Sleep Score vs 7d:</span>
             <span className="data-value">
-              {decisionInput.recoverySnapshot?.derived.deltas.sleepScoreVs7d !== null
+              {decisionInput.recoverySnapshot?.derived.deltas.sleepScoreVs7d !== null && decisionInput.recoverySnapshot?.derived.deltas.sleepScoreVs7d !== undefined
                 ? `${decisionInput.recoverySnapshot!.derived.deltas.sleepScoreVs7d > 0 ? '+' : ''}${decisionInput.recoverySnapshot!.derived.deltas.sleepScoreVs7d}`
                 : 'N/A'
               }
@@ -199,7 +211,7 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery' }: Dat
           <div className="data-item">
             <span className="data-label">Sleep Score vs 28d:</span>
             <span className="data-value">
-              {decisionInput.recoverySnapshot?.derived.deltas.sleepScoreVs28d !== null
+              {decisionInput.recoverySnapshot?.derived.deltas.sleepScoreVs28d !== null && decisionInput.recoverySnapshot?.derived.deltas.sleepScoreVs28d !== undefined
                 ? `${decisionInput.recoverySnapshot!.derived.deltas.sleepScoreVs28d > 0 ? '+' : ''}${decisionInput.recoverySnapshot!.derived.deltas.sleepScoreVs28d}`
                 : 'N/A'
               }
@@ -208,7 +220,7 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery' }: Dat
           <div className="data-item">
             <span className="data-label">Resting HR vs 7d:</span>
             <span className="data-value">
-              {decisionInput.recoverySnapshot?.derived.deltas.restingHrVs7d !== null
+              {decisionInput.recoverySnapshot?.derived.deltas.restingHrVs7d !== null && decisionInput.recoverySnapshot?.derived.deltas.restingHrVs7d !== undefined
                 ? `${decisionInput.recoverySnapshot!.derived.deltas.restingHrVs7d > 0 ? '+' : ''}${decisionInput.recoverySnapshot!.derived.deltas.restingHrVs7d}`
                 : 'N/A'
               }
@@ -217,7 +229,7 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery' }: Dat
           <div className="data-item">
             <span className="data-label">Resting HR vs 28d:</span>
             <span className="data-value">
-              {decisionInput.recoverySnapshot?.derived.deltas.restingHrVs28d !== null
+              {decisionInput.recoverySnapshot?.derived.deltas.restingHrVs28d !== null && decisionInput.recoverySnapshot?.derived.deltas.restingHrVs28d !== undefined
                 ? `${decisionInput.recoverySnapshot!.derived.deltas.restingHrVs28d > 0 ? '+' : ''}${decisionInput.recoverySnapshot!.derived.deltas.restingHrVs28d}`
                 : 'N/A'
               }
@@ -226,7 +238,7 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery' }: Dat
           <div className="data-item">
             <span className="data-label">HRV vs 7d:</span>
             <span className="data-value">
-              {decisionInput.recoverySnapshot?.derived.deltas.hrvVs7d !== null
+              {decisionInput.recoverySnapshot?.derived.deltas.hrvVs7d !== null && decisionInput.recoverySnapshot?.derived.deltas.hrvVs7d !== undefined
                 ? `${decisionInput.recoverySnapshot!.derived.deltas.hrvVs7d > 0 ? '+' : ''}${decisionInput.recoverySnapshot!.derived.deltas.hrvVs7d}`
                 : 'N/A'
               }
@@ -235,8 +247,26 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery' }: Dat
           <div className="data-item">
             <span className="data-label">HRV vs 28d:</span>
             <span className="data-value">
-              {decisionInput.recoverySnapshot?.derived.deltas.hrvVs28d !== null
+              {decisionInput.recoverySnapshot?.derived.deltas.hrvVs28d !== null && decisionInput.recoverySnapshot?.derived.deltas.hrvVs28d !== undefined
                 ? `${decisionInput.recoverySnapshot!.derived.deltas.hrvVs28d > 0 ? '+' : ''}${decisionInput.recoverySnapshot!.derived.deltas.hrvVs28d}`
+                : 'N/A'
+              }
+            </span>
+          </div>
+          <div className="data-item">
+            <span className="data-label">Steps vs 7d:</span>
+            <span className="data-value">
+              {decisionInput.recoverySnapshot?.derived.deltas.stepsVs7d !== null && decisionInput.recoverySnapshot?.derived.deltas.stepsVs7d !== undefined
+                ? `${decisionInput.recoverySnapshot!.derived.deltas.stepsVs7d > 0 ? '+' : ''}${decisionInput.recoverySnapshot!.derived.deltas.stepsVs7d}`
+                : 'N/A'
+              }
+            </span>
+          </div>
+          <div className="data-item">
+            <span className="data-label">Steps vs 28d:</span>
+            <span className="data-value">
+              {decisionInput.recoverySnapshot?.derived.deltas.stepsVs28d !== null && decisionInput.recoverySnapshot?.derived.deltas.stepsVs28d !== undefined
+                ? `${decisionInput.recoverySnapshot!.derived.deltas.stepsVs28d > 0 ? '+' : ''}${decisionInput.recoverySnapshot!.derived.deltas.stepsVs28d}`
                 : 'N/A'
               }
             </span>

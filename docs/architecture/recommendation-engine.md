@@ -429,6 +429,12 @@ fatigue are currently fused with `max()`. ADR-0014's harness comparison found th
 capped-addition candidate worse; that is why `max()` is retained. It is **not** declared
 safe or calibrated, and the aggregate scenario recovery-share gate remains release authority.
 
+`computeInternalResponseStrain` in `fatigue.ts` also evaluates unlogged ambulatory load: when
+an acute step surge occurs on $D-1$ ($\ge 1.8\times$ 7d baseline and $\ge +6,000$ excess steps),
+it introduces a proportional tissue-strain contribution into the `impactTissue` and `lowerBody`
+fatigue dimensions (and a moderate `systemic` load contribution) to prevent high-impact lower-body
+prescriptions following heavy hiking/walking days without requiring athlete subjective soreness input.
+
 ---
 
 ## Multi-day projection

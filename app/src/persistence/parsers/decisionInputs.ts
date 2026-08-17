@@ -39,8 +39,8 @@ export function parseRecoverySnapshot(raw: unknown, documentPath: string, userId
     }
     if (!hasNullableNumbers(metrics, ['sleepScore', 'sleepDurationSec', 'restingHr', 'hrvOvernightAvg', 'respirationAvg', 'bodyBatteryWake', 'bodyBatteryChange', 'totalSteps'])
         || typeof metrics.last3DaysHardSessionsCount !== 'number'
-        || !hasNullableNumbers(derived, ['sleepScore7dAvg', 'sleepScore28dAvg', 'restingHr7dAvg', 'restingHr28dAvg', 'hrv7dAvg', 'hrv28dAvg', 'respiration7dAvg', 'respiration28dAvg'])
-        || !hasNullableNumbers(derived.deltas, ['sleepScoreVs7d', 'sleepScoreVs28d', 'restingHrVs7d', 'restingHrVs28d', 'hrvVs7d', 'hrvVs28d', 'respirationVs7d', 'respirationVs28d'])) {
+        || !hasNullableNumbers(derived, ['sleepScore7dAvg', 'sleepScore28dAvg', 'restingHr7dAvg', 'restingHr28dAvg', 'hrv7dAvg', 'hrv28dAvg', 'respiration7dAvg', 'respiration28dAvg', 'steps7dAvg', 'steps28dAvg', 'steps28dStdev'])
+        || !hasNullableNumbers(derived.deltas, ['sleepScoreVs7d', 'sleepScoreVs28d', 'restingHrVs7d', 'restingHrVs28d', 'hrvVs7d', 'hrvVs28d', 'respirationVs7d', 'respirationVs28d', 'stepsVs7d', 'stepsVs28d'])) {
         return issue(documentPath, 'invalid-engine-metric');
     }
     if (!['sleepScoreAvailable', 'restingHrAvailable', 'hrvAvailable', 'baseline7dReady', 'baseline28dReady']

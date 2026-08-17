@@ -89,12 +89,16 @@ def compute_derived_metrics(
     resp_7d = calculate_average([d.get("respirationAvg") for d in window_7d_raws], 4)
     resp_28d = calculate_average([d.get("respirationAvg") for d in window_28d_raws], 14)
 
+    steps_7d = calculate_average([d.get("totalSteps") for d in window_7d_raws], 4)
+    steps_28d = calculate_average([d.get("totalSteps") for d in window_28d_raws], 14)
+
     # 28-day trailing stdev per metric -- this person's own night-to-night noise floor,
     # consumed by the engine to normalize deltas instead of comparing against a single
     # fixed absolute threshold for everyone (see DerivedMetrics.hrv28dStdev docstring).
     hrv_sd28 = calculate_stdev([d.get("hrvOvernightAvg") for d in window_28d_raws], 14)
     rhr_sd28 = calculate_stdev([d.get("restingHr") for d in window_28d_raws], 14)
     sleep_sd28 = calculate_stdev([d.get("sleepScore") for d in window_28d_raws], 14)
+    steps_sd28 = calculate_stdev([d.get("totalSteps") for d in window_28d_raws], 14)
 
     def _round(val: float | None) -> float | None:
         return round(val, 1) if val is not None else None
@@ -108,6 +112,8 @@ def compute_derived_metrics(
         hrvVs28d=_round(calculate_delta(raw_current.get("hrvOvernightAvg"), hrv_28d)),
         respirationVs7d=_round(calculate_delta(raw_current.get("respirationAvg"), resp_7d)),
         respirationVs28d=_round(calculate_delta(raw_current.get("respirationAvg"), resp_28d)),
+        stepsVs7d=_round(calculate_delta(raw_current.get("totalSteps"), steps_7d)),
+        stepsVs28d=_round(calculate_delta(raw_current.get("totalSteps"), steps_28d)),
     )
 
     return DerivedMetrics(
@@ -123,5 +129,8 @@ def compute_derived_metrics(
         hrv28dStdev=_round(hrv_sd28),
         restingHr28dStdev=_round(rhr_sd28),
         sleepScore28dStdev=_round(sleep_sd28),
+        steps7dAvg=_round(steps_7d),
+        steps28dAvg=_round(steps_28d),
+        steps28dStdev=_round(steps_sd28),
         deltas=deltas,
     )

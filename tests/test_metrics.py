@@ -78,3 +78,23 @@ def test_compute_derived_metrics_stdev_none_below_min_required():
 
     derived = compute_derived_metrics(curr, window_7d, window_28d)
     assert derived.hrv28dStdev is None
+
+
+def test_compute_derived_metrics_steps():
+    window_7d = [
+        {"totalSteps": 5000},
+        {"totalSteps": 6000},
+        {"totalSteps": 7000},
+        {"totalSteps": 6000},
+    ]
+    window_28d = window_7d * 4  # 16 items
+    curr = {"totalSteps": 20000}
+
+    derived = compute_derived_metrics(curr, window_7d, window_28d)
+
+    assert derived.steps7dAvg == 6000.0
+    assert derived.steps28dAvg == 6000.0
+    assert derived.deltas.stepsVs7d == 14000.0
+    assert derived.deltas.stepsVs28d == 14000.0
+    assert derived.steps28dStdev == round(statistics.pstdev([5000, 6000, 7000, 6000] * 4), 1)
+

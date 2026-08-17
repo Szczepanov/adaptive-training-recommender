@@ -58,6 +58,10 @@ export interface EngineObjectiveInput {
     rhr_delta_28d: number | null;
     hrv_delta_28d: number | null;
     sleep_score_delta_28d: number | null;
+    steps_7d_avg?: number | null;
+    steps_28d_avg?: number | null;
+    steps_delta_7d?: number | null;
+    steps_delta_28d?: number | null;
     /** This person's own trailing 28-day population stdev per metric -- normalizes a
      *  raw delta into "how unusual is this for *this* person" instead of comparing
      *  everyone against the same fixed absolute number. Null until 14+ days of history
@@ -65,6 +69,7 @@ export interface EngineObjectiveInput {
     hrv_stdev_28d: number | null;
     rhr_stdev_28d: number | null;
     sleep_score_stdev_28d: number | null;
+    steps_stdev_28d?: number | null;
 }
 
 export interface DailyReadiness {
@@ -880,6 +885,9 @@ export interface DailyRecoverySnapshot {
         hrv28dStdev?: number | null;
         restingHr28dStdev?: number | null;
         sleepScore28dStdev?: number | null;
+        steps7dAvg?: number | null;
+        steps28dAvg?: number | null;
+        steps28dStdev?: number | null;
         deltas: {
             sleepScoreVs7d: number | null;
             sleepScoreVs28d: number | null;
@@ -889,6 +897,8 @@ export interface DailyRecoverySnapshot {
             hrvVs28d: number | null;
             respirationVs7d: number | null;
             respirationVs28d: number | null;
+            stepsVs7d?: number | null;
+            stepsVs28d?: number | null;
         };
     };
     dataQuality: {

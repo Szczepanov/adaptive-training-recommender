@@ -95,11 +95,31 @@ export function computeInternalResponseStrain(readiness: DailyReadiness): Dimens
     const rhrElevated = objective.rhr_delta !== null && objective.rhr_delta > 0 ? Math.min(1, objective.rhr_delta / 10) : 0;
     const sleepDeficit = objective.sleep_score !== null && objective.sleep_score < 75 ? (75 - objective.sleep_score) / 50 : 0;
 
-    const systemic = Math.min(1, 0.4 * subFatigue + 0.3 * hrvDrop + 0.3 * sleepDeficit);
+    // Acute ambulatory surge (unlogged high-volume walking/hiking)
+    // Triggers when yesterday's step count is >= 1.8x the 7-day average AND >= +6,000 steps above baseline.
+    let ambulatoryTissueStrain = 0;
+    const steps7dAvg = objective.steps_7d_avg;
+    const totalSteps = objective.total_steps;
+    if (
+        totalSteps !== null &&
+        totalSteps !== undefined &&
+        steps7dAvg !== null &&
+        steps7dAvg !== undefined &&
+        steps7dAvg > 0
+    ) {
+        const excessSteps = totalSteps - steps7dAvg;
+        const surgeRatio = totalSteps / steps7dAvg;
+        if (surgeRatio >= 1.8 && excessSteps >= 6000) {
+            // Scale smoothly up to a 0.4 dampening cap for a +15,000 excess step surge
+            ambulatoryTissueStrain = Math.min(0.4, (excessSteps / 15000) * 0.4);
+        }
+    }
+
+    const systemic = Math.min(1, 0.4 * subFatigue + 0.3 * hrvDrop + 0.3 * sleepDeficit + 0.5 * ambulatoryTissueStrain);
     const cardiovascular = Math.min(1, 0.5 * rhrElevated + 0.5 * hrvDrop);
-    const lowerBody = subSoreness;
+    const lowerBody = Math.min(1, subSoreness + ambulatoryTissueStrain);
     const upperBody = subSoreness * 0.7; // default soreness split
-    const impactTissue = subSoreness;
+    const impactTissue = Math.min(1, subSoreness + ambulatoryTissueStrain);
     const neuromuscular = Math.min(1, 0.5 * subFatigue + 0.5 * (1 - (subjective.motivation / 10)));
 
     return {
