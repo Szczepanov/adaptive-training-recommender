@@ -3,7 +3,7 @@ import { useStrengthSessionRunner } from '../hooks/useStrengthSessionRunner';
 import { useElapsedSeconds } from '../hooks/useElapsedSeconds';
 import type { IntensityGauge } from '../engine/models';
 import { EXERCISES } from '../workouts/exercises';
-import { formatElapsed } from '../workouts/restTimer';
+import { formatElapsed, latestCompletedSet } from '../workouts/restTimer';
 import './StrengthSessionRunner.css';
 
 interface StrengthSessionRunnerProps {
@@ -39,11 +39,11 @@ export function StrengthSessionRunner({ userId }: StrengthSessionRunnerProps) {
     );
 
     // S1.6: timestamp-based, not an accumulating interval -- see useElapsedSeconds. "Since"
-    // is the last logged set of THIS exercise, falling back to session start before any set
-    // exists yet (there is nothing to rest from otherwise).
-    const lastSetInExercise = activeExercise?.sets[activeExercise.sets.length - 1];
+    // is the last logged set across the session, including when the athlete switches
+    // exercises or alternates a superset.
+    const lastSetInSession = runner.session ? latestCompletedSet(runner.session.exercises) : null;
     const restSinceIso = runner.session?.state === 'in_progress'
-        ? (lastSetInExercise?.completedAt ?? runner.session.startedAt)
+        ? (lastSetInSession?.completedAt ?? runner.session.startedAt)
         : null;
     const restSeconds = useElapsedSeconds(restSinceIso);
 
@@ -154,7 +154,7 @@ export function StrengthSessionRunner({ userId }: StrengthSessionRunnerProps) {
 
                     {!isClosed && (
                         <p className="strength-rest-timer">
-                            {lastSetInExercise ? 'Rest' : 'Elapsed'}: <span className="rest-value">{formatElapsed(restSeconds)}</span>
+                            {lastSetInSession ? 'Rest' : 'Elapsed'}: <span className="rest-value">{formatElapsed(restSeconds)}</span>
                         </p>
                     )}
 
