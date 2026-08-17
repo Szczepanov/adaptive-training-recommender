@@ -6,6 +6,7 @@ const firestore = vi.hoisted(() => {
         doc: vi.fn(),
         getDoc: vi.fn(),
         getDocs: vi.fn(),
+        onSnapshot: vi.fn(),
         orderBy: vi.fn(),
         query: vi.fn(),
         setDoc: vi.fn(),
@@ -89,16 +90,45 @@ describe('StrengthSessionService', () => {
         });
     });
 
+    describe('observeSession', () => {
+        it('reports Firestore pending-write metadata', () => {
+            const unsubscribe = vi.fn();
+            firestore.onSnapshot.mockImplementationOnce((_ref, _options, next) => {
+                next({ id: SESSION_ID, ref: { path: `users/${USER_ID}/strength_sessions/${SESSION_ID}` }, exists: () => true, data: () => validSession(), metadata: { hasPendingWrites: true } });
+                return unsubscribe;
+            });
+            const listener = vi.fn();
+            expect(service.observeSession(USER_ID, SESSION_ID, listener)).toBe(unsubscribe);
+            expect(listener).toHaveBeenCalledWith(expect.objectContaining({ status: 'AVAILABLE' }), true);
+        });
+    });
+
     describe('transitionState', () => {
         it('moves an in_progress session to completed and stamps completedAt', async () => {
             existingDoc(validSession());
             const updated = await service.transitionState(USER_ID, SESSION_ID, 'completed', '2026-08-17T19:00:00Z');
             expect(updated).toMatchObject({ state: 'completed', completedAt: '2026-08-17T19:00:00Z', updatedAt: '2026-08-17T19:00:00Z' });
+            expect(firestore.setDoc).toHaveBeenCalledWith(expect.anything(), {
+                state: 'completed', completedAt: '2026-08-17T19:00:00Z', updatedAt: '2026-08-17T19:00:00Z',
+            }, { merge: true });
+        });
+
+        it('preserves an existing completion timestamp on an idempotent close', async () => {
+            existingDoc(validSession({ state: 'completed', completedAt: '2026-08-17T19:00:00Z', updatedAt: '2026-08-17T19:00:00Z' }));
+            const updated = await service.transitionState(USER_ID, SESSION_ID, 'completed', '2026-08-17T20:00:00Z');
+            expect(updated.completedAt).toBe('2026-08-17T19:00:00Z');
+            expect(firestore.setDoc).not.toHaveBeenCalled();
+        });
+
+        it('rejects a transition timestamp before the last saved update', async () => {
+            existingDoc(validSession({ updatedAt: '2026-08-17T19:00:00Z' }));
+            await expect(service.transitionState(USER_ID, SESSION_ID, 'completed', '2026-08-17T18:59:59Z')).rejects.toThrow(/must not precede/i);
+            expect(firestore.setDoc).not.toHaveBeenCalled();
         });
 
         it('rejects reopening a completed session before ever writing to Firestore', async () => {
-            existingDoc(validSession({ state: 'completed', completedAt: '2026-08-17T19:00:00Z' }));
-            await expect(service.transitionState(USER_ID, SESSION_ID, 'in_progress')).rejects.toThrow(/terminal/i);
+            existingDoc(validSession({ state: 'completed', completedAt: '2026-08-17T19:00:00Z', updatedAt: '2026-08-17T19:00:00Z' }));
+            await expect(service.transitionState(USER_ID, SESSION_ID, 'in_progress', '2026-08-17T20:00:00Z')).rejects.toThrow(/terminal/i);
             expect(firestore.setDoc).not.toHaveBeenCalled();
         });
 
@@ -189,6 +219,12 @@ describe('StrengthSessionService', () => {
             const [, payload, options] = firestore.setDoc.mock.calls[0] as [unknown, Record<string, unknown>, Record<string, unknown>];
             expect(payload).toEqual({ exercises, updatedAt: '2026-08-17T18:10:00Z' });
             expect(options).toEqual({ merge: true });
+        });
+
+        it('rejects invalid nested set data before writing', async () => {
+            const exercises = [{ exerciseId: 'bench_press', sets: [{ setIndex: 1, reps: 1001, weightKg: 60, isWarmup: false, completedAt: '2026-08-17T18:10:00Z' }] }];
+            await expect(service.saveExercises(USER_ID, SESSION_ID, exercises)).rejects.toThrow('schema bounds');
+            expect(firestore.setDoc).not.toHaveBeenCalled();
         });
     });
 });

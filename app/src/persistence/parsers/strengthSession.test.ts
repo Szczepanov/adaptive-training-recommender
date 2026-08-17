@@ -21,11 +21,16 @@ describe('parseStrengthSession', () => {
         });
     });
 
-    it('falls back to the document id when sessionId is absent', () => {
+    it('rejects a missing sessionId instead of weakening the rules path binding', () => {
         const rest: Record<string, unknown> = { ...session };
         delete rest.sessionId;
         const parsed = parseStrengthSession(rest, 'users/u1/strength_sessions/s-1', 's-1', 'u1');
-        expect(parsed).toMatchObject({ status: 'AVAILABLE', data: { sessionId: 's-1' } });
+        expect(parsed).toMatchObject({ status: 'INVALID', issues: [{ code: 'session-id-mismatch', field: 'sessionId' }] });
+    });
+
+    it('rejects a stored sessionId that disagrees with the document path', () => {
+        const parsed = parseStrengthSession({ ...session, sessionId: 'other' }, 'p', 's-1', 'u1');
+        expect(parsed).toMatchObject({ status: 'INVALID', issues: [{ code: 'session-id-mismatch', field: 'sessionId' }] });
     });
 
     it('rejects a document whose stored userId does not match the expected owner', () => {
@@ -50,6 +55,16 @@ describe('parseStrengthSession', () => {
     it('rejects a session with no startedAt instant', () => {
         const parsed = parseStrengthSession({ ...session, startedAt: 'not-a-timestamp' }, 'p', 's-1', 'u1');
         expect(parsed).toMatchObject({ status: 'INVALID', issues: [{ code: 'invalid-type', field: 'startedAt' }] });
+    });
+
+    it('rejects a valid date that is not the Warsaw-local date of startedAt', () => {
+        const parsed = parseStrengthSession({
+            ...session,
+            date: '2026-08-17',
+            startedAt: '2026-08-17T23:30:00Z',
+            updatedAt: '2026-08-17T23:35:00Z',
+        }, 'p', 's-1', 'u1');
+        expect(parsed).toMatchObject({ status: 'INVALID', issues: [{ code: 'date-start-mismatch', field: 'date' }] });
     });
 
     it('rejects an unrecognised state', () => {
@@ -93,6 +108,62 @@ describe('parseStrengthSession', () => {
             exercises: [{ exerciseId: 'pull_up', sets: [{ ...validSet, weightKg: 'eighty' }] }],
         }, 'p', 's-1', 'u1');
         expect(parsed).toMatchObject({ status: 'AVAILABLE', data: { exercises: [{ sets: [] }] } });
+    });
+
+    it('requires completedAt exactly for completed sessions', () => {
+        expect(parseStrengthSession({ ...session, state: 'completed' }, 'p', 's-1', 'u1'))
+            .toMatchObject({ status: 'INVALID', issues: [{ code: 'invalid-lifecycle', field: 'completedAt' }] });
+        expect(parseStrengthSession({ ...session, completedAt: '2026-08-17T19:00:00Z' }, 'p', 's-1', 'u1'))
+            .toMatchObject({ status: 'INVALID', issues: [{ code: 'invalid-lifecycle', field: 'completedAt' }] });
+    });
+
+    it('rejects lifecycle timestamps that run backwards', () => {
+        expect(parseStrengthSession({ ...session, updatedAt: '2026-08-17T17:00:00Z' }, 'p', 's-1', 'u1'))
+            .toMatchObject({ status: 'INVALID', issues: [{ code: 'invalid-order', field: 'updatedAt' }] });
+        expect(parseStrengthSession({
+            ...session,
+            state: 'completed',
+            completedAt: '2026-08-17T19:00:00Z',
+            updatedAt: '2026-08-17T18:30:00Z',
+        }, 'p', 's-1', 'u1')).toMatchObject({ status: 'INVALID', issues: [{ code: 'invalid-order', field: 'completedAt' }] });
+    });
+
+    it('drops fractional/out-of-range reps and weights at the persistence boundary', () => {
+        const parsed = parseStrengthSession({
+            ...session,
+            exercises: [{
+                exerciseId: 'pull_up',
+                sets: [
+                    { ...validSet, setIndex: 1.5 },
+                    { ...validSet, setIndex: 2, reps: 1001 },
+                    { ...validSet, setIndex: 3, weightKg: 1001 },
+                ],
+            }],
+        }, 'p', 's-1', 'u1');
+        expect(parsed).toMatchObject({ status: 'AVAILABLE', data: { exercises: [{ sets: [] }] } });
+    });
+
+    it('keeps only the first set when corrupt data repeats a set index', () => {
+        const parsed = parseStrengthSession({
+            ...session,
+            exercises: [{ exerciseId: 'pull_up', sets: [validSet, { ...validSet, reps: 99 }] }],
+        }, 'p', 's-1', 'u1');
+        expect(parsed).toMatchObject({ status: 'AVAILABLE', data: { exercises: [{ sets: [{ reps: 3 }] }] } });
+    });
+
+    it('degrades out-of-range gauge values to absent', () => {
+        for (const gauge of [
+            { scale: 'rir', value: -1 },
+            { scale: 'rpe_rts', value: 11 },
+            { scale: 'velocity_loss', percent: 101 },
+        ]) {
+            const parsed = parseStrengthSession({
+                ...session,
+                exercises: [{ exerciseId: 'hang_power_clean', sets: [{ ...validSet, gauge }] }],
+            }, 'p', 's-1', 'u1');
+            const data = parsed.status === 'AVAILABLE' ? parsed.data : undefined;
+            expect(data?.exercises[0]?.sets[0]?.gauge).toBeUndefined();
+        }
     });
 
     it('degrades a malformed gauge to absent without dropping the set', () => {
