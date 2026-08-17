@@ -39,6 +39,8 @@ Adaptive Training Recommendation
 9. **Reconciled Strain Telemetry & Multi-Day Recovery Drift**: Decomposes objective strain into acute metric deviations (`acuteDeviation`), persistent 28d-vs-7d baseline drift (`multiDayDrift`), and contextual penalties (`recentHardSessions`, `bodyBatteryDeficit`, `sleepFloorPenalty`, `conservativeBias`). Reconciled telemetry is attached to returned recommendations, and decision-relevant multi-day baseline trends are automatically annotated in the user-facing rationale.
 10. **Adaptive Multi-Sport Engine & Optimization Pipeline**: Integrates multi-layered schedule availability (`schedule.ts`), structured event periodization (`periodization.ts`), weekly microcycle objectives (`microcycle.ts`), 6D fatigue state decay tracking (`fatigue.ts`), and utility optimization (`optimizer.ts`). Solves for optimal workout placement by balancing required weekly stimulus benefit against dimensional fatigue cost.
 11. **Structured Technical Workout Library**: Couples engine templates to detailed prescriptions and validates sprint mechanics, acceleration/braking, cycling pedalling economy, and manual-only outdoor handling work with explicit quality criteria and safety stop conditions.
+12. **Decision Provenance, Audit Records & Replay**: Adopts explicit read semantics (`DataState`), immutable history revisions, and persisted audits. Incorporates a `POLICY_VERSION` identifier enabling a persisted decision to be replayed against its own audit payload for reproducibility.
+13. **Rolling 7-Day Week-Ahead Planning**: Implements a multi-day forecast with confidence tiers and a rolling microcycle window through never-persisted recomputation, collapsing selection paths to a single training authority.
 
 ---
 
