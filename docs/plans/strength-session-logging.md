@@ -72,7 +72,7 @@ accepted before any Step C item.
 | S1.6 | Rest timer and derived rest | `[x]` | S1.5 |
 | S1.7 | Overload history view | `[x]` | S1.3 |
 | S2.1 | Gauge-aware 1RM estimator | `[x]` | S1.2 |
-| S2.2 | Write-back under a `derived` source | `[ ]` | S2.1 |
+| S2.2 | Write-back under a `derived` source | `[x]` | S2.1 |
 | S3.1 | Set log → `CompletedExposure` | `[ ]` | S1.2, ADR for D-STRCOST |
 | S3.2 | `manualTraining` source wiring | `[ ]` | S3.1 |
 | S3.3 | Measurement and ship decision | `[ ]` | S3.2 |
@@ -491,7 +491,7 @@ Among admissible sets, the estimator returns the one implying the **highest** ca
 an average — a single genuine near-failure set is stronger evidence of true capacity than
 diluting it against other, less-informative admissible sets from the same exercise.
 
-### S2.2 `[ ]` Write-back under a `derived` source — **implements D-1RMSRC**
+### S2.2 `[x]` Write-back under a `derived` source — **implements D-1RMSRC**
 
 **Change:** add a `derived` rung to `targetSources` and write estimated 1RM into
 `estimated1RmKg` only where the existing source is absent or itself `derived`. Never
@@ -503,6 +503,33 @@ must extend that mechanism rather than bypass it (A3.3).
 **Done when:** a `manual` 1RM survives a derivation that would have lowered it; an absent
 1RM is populated; a stale `derived` value is replaced; `prescription.test.ts`'s
 "relative when no 1RM is known" case still passes for exercises with no data.
+
+**Outcome (2026-08-17).** `workouts/oneRepMaxWriteback.ts` (`applyOneRepMaxDerivation`,
+`deriveOneRepMaxUpdatesForSession` — pure, 9 tests) and
+`preferencesService.applyOneRepMaxDerivations` (4 tests, mocked Firestore). All four "Done
+when" criteria hold, including the required `prescription.test.ts` case, run explicitly.
+
+**A first draft contradicted the accepted ADR-0021 text and was caught before landing, not
+after.** This plan's own wording above ("existing source is absent or itself `derived`") is
+ambiguous, and the first implementation resolved that ambiguity by treating an existing
+value with no recorded source as *protected* — reasoning, by analogy with
+`upsert_garmin_performance_targets`' documented "existing values without provenance are
+conservatively treated as manual," that an untracked `estimated1RmKg` value was more likely
+hand-entered than not. Re-reading ADR-0021 directly (not just this plan) before writing the
+outcome note surfaced the actual accepted text: *"A derived estimate may populate a target
+whose **source is absent** or already `derived`."* Unambiguous, and the opposite of what had
+been built. Fixed before commit: writability now turns on `existingSource` alone
+(`undefined` or `'derived'`), never on whether a value is already present under that absent
+source. The one test this changed (`'treats an existing value with no recorded source as
+protected'` → `'writes over an existing value that has no recorded source, per ADR-0021's
+literal text'`) is the exact case the contradiction lived in.
+
+Dual-write and lookup: `prescription.ts` reads `strength.estimated1RmKg` ahead of the legacy
+top-level `estimated1RmKg`; `applyOneRepMaxDerivations` reads the same effective value (so a
+value only present in the legacy field is still correctly protected, not treated as absent)
+and writes the derived result to **both** locations, keeping neither reader stale. Tested
+explicitly: a legacy value of `999` alongside a `strength.estimated1RmKg` of `120` under a
+`coach` source correctly protects `120`, not `999` and not an unprotected write.
 
 ---
 

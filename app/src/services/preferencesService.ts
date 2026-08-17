@@ -1,8 +1,9 @@
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { getDb } from '../firebase';
-import type { UserPreferences } from '../engine/models';
+import type { StrengthSession, UserPreferences } from '../engine/models';
 import type { DataState } from '../engine/dataState';
 import { validatePreferences } from '../engine/validation';
+import { deriveOneRepMaxUpdatesForSession, type OneRepMaxDerivationOutcome } from '../workouts/oneRepMaxWriteback';
 
 export class PreferencesService {
     private readonly collectionPath = 'preferences';
@@ -255,6 +256,50 @@ export class PreferencesService {
         };
 
         return this.upsertPreferences(userId, { preferredUnits: updatedUnits }, prefs);
+    }
+
+    /**
+     * Applies S2.2's gauge-aware 1RM write-back (ADR-0021 D-1RMSRC) for every exercise in a
+     * completed strength session. Reads the *effective* current value the same way
+     * `prescription.ts` does -- `strength.estimated1RmKg` first, falling back to the legacy
+     * top-level `estimated1RmKg` -- so a value only ever present in the legacy field is
+     * still correctly protected rather than treated as absent. A write is dual-written to
+     * both locations (matching how this profile's V2/V3 fields already coexist) so neither
+     * reader is left stale, but `estimated1RmSources` is a single shared provenance map --
+     * there is exactly one true source per exercise, not one per schema version.
+     *
+     * Returns every outcome (updated and protected alike) so a caller can show what
+     * happened; only the `updated: true` outcomes are actually persisted.
+     */
+    async applyOneRepMaxDerivations(userId: string, session: StrengthSession, computedAtIso: string = new Date().toISOString()): Promise<OneRepMaxDerivationOutcome[]> {
+        const prefs = await this.getPreferences(userId);
+        const profile = prefs?.performanceProfile;
+        const effectiveEstimated1RmKg: Record<string, number> = { ...profile?.estimated1RmKg, ...profile?.strength?.estimated1RmKg };
+
+        const outcomes = deriveOneRepMaxUpdatesForSession(session, effectiveEstimated1RmKg, profile?.estimated1RmSources, computedAtIso);
+        const written = outcomes.filter(outcome => outcome.result.updated);
+        if (written.length === 0) return outcomes;
+
+        const updatedEstimated1RmKg = { ...profile?.estimated1RmKg };
+        const updatedStrengthEstimated1RmKg = { ...profile?.strength?.estimated1RmKg };
+        const updatedSources = { ...profile?.estimated1RmSources };
+        for (const outcome of written) {
+            if (!outcome.result.updated) continue;
+            updatedEstimated1RmKg[outcome.exerciseId] = outcome.result.estimatedOneRmKg;
+            updatedStrengthEstimated1RmKg[outcome.exerciseId] = outcome.result.estimatedOneRmKg;
+            updatedSources[outcome.exerciseId] = { source: outcome.result.source, ...(outcome.result.computedAt ? { computedAt: outcome.result.computedAt } : {}) };
+        }
+
+        await this.upsertPreferences(userId, {
+            performanceProfile: {
+                ...profile,
+                estimated1RmKg: updatedEstimated1RmKg,
+                estimated1RmSources: updatedSources,
+                strength: { ...profile?.strength, estimated1RmKg: updatedStrengthEstimated1RmKg },
+            },
+        }, prefs);
+
+        return outcomes;
     }
 
     /**
