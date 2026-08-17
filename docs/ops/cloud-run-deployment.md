@@ -6,18 +6,11 @@ This guide describes how to containerize, deploy, and schedule the Python Garmin
 
 ## 🐳 1. Building and Pushing Container Image
 
-From the workspace root, build the Docker container image:
+From the workspace root, build and push the container image to Artifact Registry using Cloud Build (no local Docker required):
 
 ```bash
-# Define target GCP project and image tag
-export GCP_PROJECT="your-gcp-project-id"
-export IMAGE_TAG="gcr.io/${GCP_PROJECT}/garmin-sync:latest"
-
-# Build container
-docker build -t ${IMAGE_TAG} .
-
-# Push to Container Registry / Artifact Registry
-docker push ${IMAGE_TAG}
+# Submit build to Artifact Registry
+gcloud builds submit --tag europe-central2-docker.pkg.dev/adaptive-training-recommender/garmin-sync/garmin-sync:latest .
 ```
 
 ---
