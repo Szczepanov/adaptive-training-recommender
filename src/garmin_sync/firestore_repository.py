@@ -41,13 +41,21 @@ class FirestoreRecoveryRepository:
             )
         self.user_id = user_id.strip()
         self.collection_name = collection_name
-        self.db = db
+        self._db = db
         self.credentials_path = credentials_path
 
+    @property
+    def db(self) -> Any:
+        return self._get_db()
+
+    @db.setter
+    def db(self, value: Any) -> None:
+        self._db = value
+
     def _get_db(self) -> Any:
-        if self.db is None:
-            self.db = init_firestore_client(self.credentials_path)
-        return self.db
+        if self._db is None:
+            self._db = init_firestore_client(self.credentials_path)
+        return self._db
 
     def _get_doc_ref(self, date_iso: str) -> Any:
         db = self._get_db()
