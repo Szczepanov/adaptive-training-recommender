@@ -5,13 +5,20 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from garminconnect import GarminConnectTooManyRequestsError
+
 from .archive import RawArchiveStore, create_archive_store
-from .canonical import CanonicalActivity, CanonicalDailyMetrics
+from .canonical import CanonicalActivity, CanonicalActivityDetail, CanonicalDailyMetrics
 from .config import Settings
 from .dates import get_date_range, get_date_string, local_today, n_days_ago, parse_date_string
 from .firestore_repository import FirestoreRecoveryRepository
 from .garmin_client import GarminClientWrapper
-from .garmin_provider import GarminProviderAdapter, canonicalize_activities, canonicalize_from_raw
+from .garmin_provider import (
+    GarminProviderAdapter,
+    canonicalize_activities,
+    canonicalize_from_raw,
+    qualifies_for_activity_detail,
+)
 from .mapper import build_snapshot_from_canonical, normalize_activity
 from .metrics import compute_derived_metrics
 from .models import DailyRecoverySnapshot
@@ -126,7 +133,10 @@ class GarminSyncService:
             self._archive_raw(archive_endpoint, logical_date, payload, sync_run_id)
 
     def _archive_activities(
-        self, canonical_activities: list[CanonicalActivity], sync_run_id: str
+        self,
+        canonical_activities: list[CanonicalActivity],
+        sync_run_id: str,
+        details_by_activity_id: dict[str, CanonicalActivityDetail] | None = None,
     ) -> None:
         """Write a normalized standalone record per activity to users/{userId}/activities/.
         Safe to call unconditionally (no-op for an empty list). Activities without a
@@ -137,8 +147,52 @@ class GarminSyncService:
                 logger.warning("Skipping activity with no activityId (cannot archive safely).")
                 continue
             self.repository.upsert_activity(
-                activity.activity_id, normalize_activity(activity, sync_run_id)
+                activity.activity_id,
+                normalize_activity(
+                    activity,
+                    sync_run_id,
+                    (details_by_activity_id or {}).get(activity.activity_id),
+                ),
             )
+
+    def _fetch_activity_details(
+        self,
+        provider: WearableProvider,
+        canonical_activities: list[CanonicalActivity],
+        target_iso: str,
+    ) -> dict[str, CanonicalActivityDetail]:
+        """Best-effort live enrichment behind D-DETAIL-GATE.
+
+        Raw detail payloads are deliberately not archived: ADR-0005's store is keyed by
+        logical date, while these payloads require an activity-ID key. A failed detail
+        fetch never prevents the base activity or daily snapshot from being written.
+        """
+        if not provider.capabilities.activity_details:
+            return {}
+        fetch_detail = getattr(provider, "fetch_activity_detail", None)
+        if not callable(fetch_detail):
+            return {}
+
+        details: dict[str, CanonicalActivityDetail] = {}
+        for activity in canonical_activities:
+            if not qualifies_for_activity_detail(activity):
+                continue
+            assert activity.activity_id is not None
+            try:
+                result = fetch_detail(activity.activity_id)
+                details[activity.activity_id] = result.canonical
+            except GarminConnectTooManyRequestsError as error:
+                logger.warning(
+                    f"[{target_iso}] Garmin activity-detail rate limit reached; "
+                    f"abandoning remaining detail fetches for this run: {error}"
+                )
+                break
+            except Exception as error:
+                logger.warning(
+                    f"[{target_iso}] Garmin activity detail failed for "
+                    f"activity=<ID-redacted>, continuing with the base record: {error}"
+                )
+        return details
 
     def _seed_prehistory(
         self, raw_memory_store: dict[str, dict[str, Any]], range_start: Any
@@ -200,7 +254,12 @@ class GarminSyncService:
         self.repository.upsert_snapshot(target_iso, snapshot.to_dict())
         return snapshot
 
-    def _fetch_and_store_date(self, target_date: Any, target_iso: str) -> bool:
+    def _fetch_and_store_date(
+        self,
+        target_date: Any,
+        target_iso: str,
+        include_activity_details: bool = False,
+    ) -> bool:
         """Unconditional fetch -> canonicalize -> derive -> store pipeline for one date
         (no staleness check -- callers decide whether a date is worth fetching).
         Shared by sync_daily's primary target-date sync and its D-1..D-N lookback
@@ -243,7 +302,16 @@ class GarminSyncService:
             three_days_ago_iso, target_iso, zone4_floor=zone4_floor
         )
         self._archive_raw("activities", target_iso, activities_result.raw_payload, sync_run_id)
-        self._archive_activities(activities_result.canonical, sync_run_id)
+        details_by_activity_id = (
+            self._fetch_activity_details(provider, activities_result.canonical, target_iso)
+            if include_activity_details
+            else {}
+        )
+        self._archive_activities(
+            activities_result.canonical,
+            sync_run_id,
+            details_by_activity_id=details_by_activity_id,
+        )
 
         # Persist refreshed tokens after API calls
         self.token_store.persist(self.token_file_path)
@@ -374,7 +442,11 @@ class GarminSyncService:
         # Target date is built last, after any lookback corrections above are already
         # persisted -- an exception here (unlike a lookback failure) propagates, as it
         # always has: it's the primary date the caller asked for.
-        if not self._fetch_and_store_date(target_date, target_iso):
+        if not self._fetch_and_store_date(
+            target_date,
+            target_iso,
+            include_activity_details=self.settings.garmin_activity_detail_enabled,
+        ):
             ok = False
         else:
             self._sync_current_performance_targets(target_iso)

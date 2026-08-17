@@ -1,18 +1,27 @@
 [
   {
+    "activityId": 1001,
     "startTimeLocal": "2026-08-05T17:30:00.0",
     "duration": 3600.0,
     "aerobicTrainingEffect": 3.4,
     "averageHeartRate": 152,
+    "avgPower": 286.4,
+    "normPower": 301.2,
+    "maxPower": 512.0,
     "activityType": {
       "typeKey": "running"
     }
   },
   {
+    "activityId": 1002,
     "startTimeLocal": "2026-08-04T08:00:00.0",
     "duration": 2700.0,
     "aerobicTrainingEffect": 2.2,
     "averageHeartRate": 130,
+    "avgPower": 214.0,
+    "normPower": 229.0,
+    "maxPower": 540.0,
+    "intensityFactor": 0.82,
     "activityType": {
       "typeKey": "cycling"
     }

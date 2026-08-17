@@ -41,6 +41,7 @@ def test_rebuild_reproduces_snapshot_from_archive_without_garmin_calls(tmp_path)
 
     assert result is True
     mock_repo.upsert_snapshot.assert_called_once()
+    mock_repo.upsert_activity.assert_not_called()
     assert mock_client.mock_calls == []  # never called Garmin
 
     saved_payload = mock_repo.upsert_snapshot.call_args[0][1]

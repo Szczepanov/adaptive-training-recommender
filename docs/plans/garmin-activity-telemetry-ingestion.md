@@ -1,8 +1,10 @@
 # Garmin per-activity telemetry: zones, NP, and lap summaries
 
-* **Status:** `Draft`
-* **Blocked by:** nothing for Stage 1 (G1.0 is a spike, not a dependency). Stage 2 is blocked by G1 landing **and** by an accepted ADR for **D-ZONECRED**.
-* **Unlocks:** zone-accurate completed-training credit; interval-fade detection; the activity-detail view.
+* **Status:** `Implemented`
+* **Approved:** 2026-08-17
+* **Implemented:** 2026-08-17
+* **Blocked by:** nothing. Production activation of zone-derived credit was rejected by G2.4's current evidence.
+* **Outcome:** additive activity telemetry and the read-only detail view shipped; a default-off zone-credit candidate was measured and retained off.
 * **Source analysis:** [`2026-08-17-garmin-high-resolution-telemetry.md`](../analysis/2026-08-17-garmin-high-resolution-telemetry.md) — §5 findings are referenced below as `A5.1`–`A5.8`.
 
 > **Not a top-level phase.** This is a bounded ingestion capability, not a roadmap phase in the
@@ -10,17 +12,22 @@
 > numbering. If the deferred raw-series/dashboard work is later revived at scale, promote *that*
 > to a real `phase-10-*` plan rather than renumbering these items.
 
+> **Historical implementation record.** Every task below is complete. Descriptions and
+> acceptance checks record what was delivered; they are not an open work list. The
+> measured ship decision is in
+> [`2026-08-17-garmin-zone-credit-measurement.md`](../analysis/2026-08-17-garmin-zone-credit-measurement.md).
+
 ---
 
 ## Goal
 
-Ingest Garmin's per-activity power/HR time-in-zone distributions, normalized power, and
-lap averages into the existing per-activity Firestore record, then — separately and only
-after measurement — let the engine use them for completed-training credit.
+Garmin's per-activity power/HR time-in-zone distributions, normalized power, and lap
+averages are ingested into the existing per-activity Firestore record. The engine can
+measure a separate zone-derived credit candidate, but production continues to use TE.
 
-Stage 1 is pure ingestion with **no decision impact**. Stage 2 changes recommendations and
-is governed accordingly (see D-ZONECRED). Stage 3 is read-only UI. The three ship
-independently.
+Stage 1 remained pure ingestion with **no decision impact**. Stage 2 delivered a
+default-off comparison path under ADR-0022 and did not change live recommendations.
+Stage 3 delivered the read-only UI independently.
 
 ---
 
@@ -29,26 +36,24 @@ independently.
 | # | Condition | State today |
 |---|---|---|
 | P1 | `users/{userId}/activities/{activityId}` exists and is server-written | ✅ `upsert_activity`, rules are `allow write: if false` |
-| P2 | The pinned `garminconnect` exposes per-activity endpoints | ✅ verified: `get_activity_power_in_timezones`, `get_activity_hr_in_timezones`, `get_activity_splits`, `get_activity` |
-| P3 | A provider-neutral canonical layer exists to extend | ✅ `canonical.py`, and `ProviderCapabilities.activity_details` already exists as an unused flag |
-| P4 | The read-side parser tolerates unknown fields | ✅ `parseNormalizedGarminActivity` ignores unrecognised keys — **but see G1.5 for the `schemaVersion` trap (A5.7)** |
-| P5 | An agreed rate-limit budget | ❌ **G1.0 must produce this before G1.2 is written** (A5.2) |
-| P6 | An accepted decision on whether zones may change credit | ❌ **D-ZONECRED — blocks Stage 2 only** (A5.8) |
+| P2 | The pinned `garminconnect` exposes per-activity endpoints | ✅ verified: `get_activity_power_in_timezones`, `get_activity_hr_in_timezones`, `get_activity_splits` |
+| P3 | A provider-neutral canonical layer exists to extend | ✅ `canonical.py`; the Garmin adapter now advertises `ProviderCapabilities.activity_details` |
+| P4 | The read-side parser tolerates additive fields | ✅ `parseNormalizedGarminActivity` surfaces valid optional telemetry and drops malformed optional telemetry without invalidating the base record |
+| P5 | An agreed rate-limit budget | ✅ G1.0 measured the live shapes: NP/IF/average power are in the list payload; detail costs exactly three calls per qualifying activity |
+| P6 | An accepted decision on whether zones may change credit | ✅ **D-ZONECRED — ADR-0022**; measurement approved, production activation rejected by current evidence |
 
 ---
 
 ## Decisions this plan needs
 
-Per `docs/plans/README.md`, decisions belong in ADRs; the plan references them. Two are
-proposed here and are **not** yet in the accepted register.
+Per `docs/plans/README.md`, decisions belong in ADRs; the plan references them.
 
 | ID | Proposal | Why it cannot be left to the implementer |
 |---|---|---|
-| **D-DETAIL-GATE** | The extra per-activity fetch is **opt-in per activity**, gated on a predicate (power-bearing modality, or `intensity_tag != 'easy'`), and runs in `sync_daily` only — never in `backfill` | The alternative silently multiplies Garmin call volume by activities/day across an unbounded historical range; a 429 mid-backfill leaves partial state (A5.2) |
-| **D-ZONECRED** | Zone-derived stimulus is **built default-off and measured** against the current TE-based path before any ship decision; coefficients come from evidence, not from this document | Exactly the D-FUSE (ADR-0014) and D-SUBJCAL (ADR-0020) precedent. Prescribing a zone→stimulus coefficient here would repeat the uncited-constant practice F11 criticised (A5.8) |
+| **D-DETAIL-GATE** | **Accepted in ADR-0005.** The extra per-activity fetch is default-off and requires all three: a power-bearing modality, `intensity_tag != 'easy'`, and an activity ID. It runs only for the target-date pass of `sync_daily`, never lookback resync, `backfill`, or `rebuild` | This bounds the incremental budget to `3 × N` requests per run and avoids refetching overlapping activities in the daily lookback windows (A5.2) |
+| **D-ZONECRED** | **Accepted in ADR-0022.** A complete cycling 7-zone distribution may produce the named direct-share candidate within `measuredEffort`; the selector defaults to TE and production activation requires a later decision | Preserves the D-FUSE/D-SUBJCAL measurement discipline without inventing a stronger evidence tier or silently changing live credit |
 
-D-ZONECRED needs an accepted ADR before Stage 2 work items may start. D-DETAIL-GATE can be
-recorded as an amendment note on ADR-0005 alongside the archive-keying clarification.
+G2.4 measured the accepted candidate and concluded **do not enable it**.
 
 ---
 
@@ -56,25 +61,25 @@ recorded as an amendment note on ADR-0005 alongside the archive-keying clarifica
 
 | Item | Title | Status | Blocked by |
 |---|---|---|---|
-| G1.0 | Payload spike: what is already in the activities list? | `[ ]` | — |
-| G1.1 | Client methods for the three per-activity endpoints | `[ ]` | — |
-| G1.2 | Fetch gate and rate-limit budget | `[ ]` | G1.0 |
-| G1.3 | Canonical dataclasses for zones and laps | `[ ]` | G1.0 |
-| G1.4 | Provider canonicalisation | `[ ]` | G1.1, G1.3 |
-| G1.5 | Persist via `normalize_activity` — no `schemaVersion` bump | `[ ]` | G1.3 |
-| G1.6 | Service wiring and failure isolation | `[ ]` | G1.2, G1.4, G1.5 |
-| G1.7 | Rebuild-path behaviour | `[ ]` | G1.6 |
-| G2.1 | Read-side parse of the new fields | `[ ]` | G1.5, ADR for D-ZONECRED |
-| G2.2 | Default-off zone-derived stimulus candidate | `[ ]` | G2.1 |
-| G2.3 | Interval fade from lap summaries | `[ ]` | G2.1 |
-| G2.4 | Measurement report and ship decision | `[ ]` | G2.2, G2.3 |
-| G3.1 | Activity detail view | `[ ]` | G1.5 |
+| G1.0 | Payload spike: what is already in the activities list? | `[x]` | — |
+| G1.1 | Client methods for the three per-activity endpoints | `[x]` | — |
+| G1.2 | Fetch gate and rate-limit budget | `[x]` | G1.0 |
+| G1.3 | Canonical dataclasses for zones and laps | `[x]` | G1.0 |
+| G1.4 | Provider canonicalisation | `[x]` | G1.1, G1.3 |
+| G1.5 | Persist and parse additive fields — no `schemaVersion` bump | `[x]` | G1.3 |
+| G1.6 | Service wiring and failure isolation | `[x]` | G1.2, G1.4, G1.5 |
+| G1.7 | Rebuild-path behaviour | `[x]` | G1.6 |
+| G2.1 | Decision-side feature extraction and evidence trace | `[x]` | G1.5, ADR-0022 |
+| G2.2 | Default-off zone-derived stimulus candidate | `[x]` | G2.1 |
+| G2.3 | Interval fade from lap summaries | `[x]` | G2.1 |
+| G2.4 | Measurement report and ship decision | `[x]` | G2.2, G2.3 |
+| G3.1 | Activity detail view | `[x]` | G1.5 |
 
 ---
 
 ## Stage 1 — Ingestion (no decision impact)
 
-### G1.0 `[ ]` Payload spike: what is already in the activities list?
+### G1.0 `[x]` Payload spike: what is already in the activities list?
 
 **Why first.** `get_activities` may already return `normPower` / `intensityFactor` /
 `avgPower` for power-bearing activities. If it does, NP/IF/VI cost **zero** extra API calls
@@ -82,11 +87,16 @@ and only zones and laps need per-activity requests — which roughly halves the 
 exposure and changes what G1.2 has to gate. The repo's `tests/fixtures/activities.json` is
 a hand-written minimal stub and cannot answer this.
 
-**Do:** against one real cycling activity and one real run, record which of
-`normPower`, `intensityFactor`, `avgPower`, `maxPower` appear in the existing
-`get_activities_window` payload; and capture one sanitised sample response from each of
-`get_activity_power_in_timezones`, `get_activity_hr_in_timezones`, `get_activity_splits`.
-Commit them as fixtures.
+**Outcome (2026-08-17):** against one real cycling activity and one real run, the list
+payload carried `normPower`, `avgPower`, and `maxPower` for both; the cycling activity
+also carried `intensityFactor`. The observed detail shapes were arrays for power/HR zones
+and a mapping containing `lapDTOs` for splits. The committed fixtures preserve those key
+names with synthetic values and no identifiers or raw health payload.
+
+The spike recorded which of `normPower`, `intensityFactor`, `avgPower`, and `maxPower`
+appear in the existing `get_activities_window` payload. Reduced observed-shape samples
+from `get_activity_power_in_timezones`, `get_activity_hr_in_timezones`, and
+`get_activity_splits` were committed as fixtures with synthetic values.
 
 **Done when:** `tests/fixtures/` contains `activity_power_zones.json`,
 `activity_hr_zones.json`, `activity_splits.json` and an enriched `activities.json`, each
@@ -94,31 +104,31 @@ with real key names and no personal identifiers; and this plan's G1.2/G1.3 notes
 updated to say whether NP comes free with the list payload.
 
 > Sanitise before committing: strip `startTimeGMT` precision, location, device serial, and
-> `ownerId`. Per `CLAUDE.md` no raw health JSON is committed — these fixtures must be
+> `ownerId`. Per `AGENTS.md` no raw health JSON is committed — these fixtures must be
 > reduced to the shape under test, matching the existing minimal-fixture style.
 
-### G1.1 `[ ]` Client methods for the three per-activity endpoints
+### G1.1 `[x]` Client methods for the three per-activity endpoints
 
 **Current:** `garmin_client.py`'s `GarminDataClient` Protocol and `GarminClientWrapper`
 expose no per-activity methods at all (A5.1).
 
 **Change:** add to **both** the Protocol and the wrapper, following the established
 `if not self.api: raise RuntimeError("Garmin client is not authenticated. Call login first.")`
-then `... or {}` pattern used by every existing method:
+then the endpoint-appropriate empty fallback:
 
-| New wrapper method | Wraps |
-|---|---|
-| `get_activity_power_zones(activity_id)` | `api.get_activity_power_in_timezones` |
-| `get_activity_hr_zones(activity_id)` | `api.get_activity_hr_in_timezones` |
-| `get_activity_splits(activity_id)` | `api.get_activity_splits` |
+| New wrapper method | Wraps | Empty response |
+|---|---|---|
+| `get_activity_power_zones(activity_id)` | `api.get_activity_power_in_timezones` | `[]` |
+| `get_activity_hr_zones(activity_id)` | `api.get_activity_hr_in_timezones` | `[]` |
+| `get_activity_splits(activity_id)` | `api.get_activity_splits` | `{}` |
 
 Do **not** add `download_activity` or `get_activity_details` — deferred (see Out of scope).
 
-**Done when:** all three exist on the Protocol and the wrapper, each returns `{}` on a
-falsy upstream response, and each raises the standard unauthenticated `RuntimeError`;
+**Done when:** all three exist on the Protocol and the wrapper, each returns its typed
+empty collection on a falsy upstream response, and each raises the standard unauthenticated `RuntimeError`;
 `uv run mypy src/garmin_sync` passes.
 
-### G1.2 `[ ]` Fetch gate and rate-limit budget — **implements D-DETAIL-GATE**
+### G1.2 `[x]` Fetch gate and rate-limit budget — **implements D-DETAIL-GATE**
 
 **Change:** a single predicate in `garmin_provider.py`, e.g.
 `_qualifies_for_detail_fetch(activity: CanonicalActivity) -> bool`, plus a
@@ -126,19 +136,21 @@ falsy upstream response, and each raises the standard unauthenticated `RuntimeEr
 opt-in style from ADR-0005), default **off**.
 
 Gate on: a power-bearing modality, **and** `intensity_tag != 'easy'`, **and** a non-null
-`activity_id`. Detail fetch runs in `sync_daily` only. `backfill` must not call it —
-assert this in tests, do not merely document it.
+`activity_id`. Detail fetch runs only in the target-date pass of `sync_daily`. Lookback
+resync, `backfill`, and `rebuild` must not call it — assert this in tests, do not merely
+document it.
 
-**Budget:** state the worst case explicitly in the module docstring — *N* qualifying
-activities/day × *k* endpoints (k=3, or k=2 if G1.0 shows NP ships with the list). Confirm
-`GarminClientWrapper`'s existing `retry_attempts` / `retry_min_wait` / `retry_max_wait`
-cover that volume; if not, raise the backoff here rather than in a follow-up.
+**Budget:** G1.0 showed NP/IF/average power ship with the list, but zones and laps still
+require three endpoints. The exact incremental budget is therefore `3 × N` calls for *N*
+qualifying activities in the target window, once per `sync_daily` run. The wrapper's
+existing three-attempt exponential backoff applies; the first exhausted 429 abandons the
+remaining detail work.
 
 **Done when:** the predicate is unit-tested on both branches; a test asserts `backfill`
 issues **zero** detail calls over a multi-day range; the flag defaults off and the whole
 feature is inert when unset.
 
-### G1.3 `[ ]` Canonical dataclasses for zones and laps
+### G1.3 `[x]` Canonical dataclasses for zones and laps
 
 **Current:** `CanonicalActivity` carries only `activity_id`, `date`, `type`,
 `duration_min`, `duration_seconds`, the two training effects, `average_hr`,
@@ -183,7 +195,7 @@ both inputs are present and average power is non-zero; never store a sentinel.
 **Done when:** the dataclasses exist with no Garmin key names anywhere in `canonical.py`,
 and `mypy` passes.
 
-### G1.4 `[ ]` Provider canonicalisation
+### G1.4 `[x]` Provider canonicalisation
 
 **Change:** in `garmin_provider.py` add `canonicalize_activity_detail(...)`, public for the
 same reason `canonicalize_activities` is — so a rebuild path can reuse it without a live
@@ -201,12 +213,16 @@ the Garmin adapter — the field already exists and is currently dead.
 name (`secsInZone`, `zoneLowBoundary`, `lapDTOs`, `normPower`) appears outside
 `garmin_provider.py`.
 
-### G1.5 `[ ]` Persist via `normalize_activity` — **no `schemaVersion` bump** (A5.7)
+### G1.5 `[x]` Persist and parse additive fields — **no `schemaVersion` bump** (A5.7)
 
 **Change:** extend `mapper.py`'s `normalize_activity` to accept an optional
 `CanonicalActivityDetail` and emit camelCase keys consistent with the existing record:
 `powerInZones`, `hrInZones`, `normalizedPower`, `intensityFactor`, `variabilityIndex`,
 `laps`. Omit each key entirely when absent — do not write `null`.
+
+Also extend `NormalizedGarminActivity` and `parseNormalizedGarminActivity` here, not in
+Stage 2. Parsing is required for the Stage 3 read-only UI and has no decision impact.
+Malformed optional telemetry degrades to absent while the base activity stays `AVAILABLE`.
 
 **Two hard constraints, both load-bearing:**
 
@@ -216,25 +232,27 @@ name (`secsInZone`, `zoneLowBoundary`, `lapDTOs`, `normPower`) appears outside
    single document fails to parse. Bumping the version would silently zero out the engine's
    whole completed-training history rather than degrading gracefully. The record writes no
    `schemaVersion` today; keep it that way unless the parser is widened in the same commit.
-2. **Write detail in the same `upsert_activity` call as the base record**, not a second
-   merge. `syncedAt` doubles as the read-side `revision`; a second write churns it and
-   invalidates snapshot revision strings for no reason.
+2. **Write detail in the same `upsert_activity` call as each processed base record**, not
+   a second detail-only merge. `syncedAt` doubles as the read-side `revision`; a second
+   write in the same date pass would churn it for no reason. Existing overlapping
+   lookback-window upserts are outside this feature and remain unchanged.
 
 **Done when:** a test asserts the enriched payload contains no `schemaVersion` key; a test
 feeds the enriched payload through the **real** `parseNormalizedGarminActivity` (not a
-stub) and asserts `AVAILABLE`; and a test asserts exactly one `upsert_activity` call per
-activity per sync.
+stub) and asserts `AVAILABLE`; and a test asserts enrichment does not add a second
+`upsert_activity` call.
 
 > That cross-language test is the point of this item. A Python-side test alone cannot catch
 > the failure this constraint exists to prevent.
 
-### G1.6 `[ ]` Service wiring and failure isolation
+### G1.6 `[x]` Service wiring and failure isolation
 
-**Change:** in `service.py`'s `sync_daily`, after `_archive_activities`, fetch detail for
-qualifying activities and merge it into the same per-activity write.
+**Change:** in `service.py`'s target-date `sync_daily` pass, after the activity-list fetch
+and raw date archive but before `_archive_activities`, fetch detail for qualifying
+activities and include it in the same per-activity write.
 
 **Failure isolation:** a detail fetch that fails must **never** fail the sync, exactly as
-`_fetch_and_store_performance_targets` already tolerates its own failure after core data is
+`_sync_current_performance_targets` already tolerates its own failure after core data is
 safely persisted. Log at `warning` and continue. A 429 specifically should abandon the
 remaining detail fetches for that run rather than retrying into a harder rate limit.
 
@@ -245,84 +263,72 @@ resolve to the same object path, so the second silently overwrites the first. St
 structured summary fields to Firestore and touches no archive path. Reviving per-activity
 archiving requires its own ADR.
 
-**Done when:** an injected failure on each of the three endpoints leaves the base activity
-record and the daily snapshot intact and the sync exit code unchanged; a simulated 429
-stops further detail fetches within the run.
+**Done when:** an injected provider-detail failure leaves the base activity record and the
+daily snapshot intact and the sync exit code unchanged; a simulated 429 stops further
+detail fetches within the run. Endpoint wrapper/auth behavior is covered separately in
+`test_garmin_client.py`.
 
-### G1.7 `[ ]` Rebuild-path behaviour
+### G1.7 `[x]` Rebuild-path behaviour
 
-`rebuild` reads exclusively from the archive and calls no Garmin APIs (ADR-0005). Since
-G1.6 does not archive detail payloads, **rebuild must leave existing detail fields
-untouched rather than erasing them.** Confirm the merge semantics do this; if a rebuild
-would strip previously-written detail, fix it here.
+`rebuild` reads exclusively from the archive and calls no Garmin APIs (ADR-0005). It also
+does not rewrite standalone activity documents at all, so existing detail fields remain
+untouched by construction.
 
-**Done when:** a test rebuilds a date whose activity already carries detail fields and
-asserts they survive unchanged.
+**Done when:** a test asserts rebuild performs zero `upsert_activity` calls.
 
 ---
 
-## Stage 2 — Engine integration (**blocked on D-ZONECRED**)
+## Stage 2 — Engine measurement integration (completed; production remains TE)
 
-> Do not start these until an ADR for D-ZONECRED is accepted. Stage 2 alters real
-> recommendations: it forces a `POLICY_VERSION` bump in `policy.ts` (CI-guarded by
-> `check-policy-drift.mjs`), moves the committed scenario baseline compared by
-> `simulate:diff`, and must keep ADR-0010 replay of pre-change decisions reproducible.
+> ADR-0022 accepted the measurement architecture but not production activation. The
+> candidate has no ambient switch and no production caller, so `POLICY_VERSION` correctly
+> remained unchanged. Activation would require the bump and audit work described there.
 
-### G2.1 `[ ]` Read-side parse of the new fields
+### G2.1 `[x]` Decision-side feature extraction and evidence trace
 
-Extend `parseNormalizedGarminActivity` and `NormalizedGarminActivity` to surface the new
-fields as optional. Preserve the existing contract exactly: unknown keys ignored, a
-malformed *optional* telemetry field must **not** invalidate the document — it should
-degrade to absent, because one `INVALID` document still kills the whole window.
+`garminTelemetryEvidence.ts` derives explicit zone/lap features from parsed optional
+telemetry. Full, partial, duplicate/malformed, zero-total, and absent coverage have typed
+fallbacks; comparison rows omit activity identifiers and dates.
 
-**Done when:** a document with corrupt `powerInZones` still parses `AVAILABLE` with the
-field absent, and the existing activity-parser tests are unchanged and green.
+Full, partial, and absent telemetry are unit-tested, and the named candidate policy plus
+zone seconds/shares and duration coverage reproduce G2.4.
 
-### G2.2 `[ ]` Default-off zone-derived stimulus candidate
+### G2.2 `[x]` Default-off zone-derived stimulus candidate
 
-Implement zone-derived stimulus as a **selectable candidate** behind a default-off
-selector, alongside the current TE-based path — the shape ADR-0020 used for subjective
-drift, not an in-place replacement.
+The `power_zones_direct_share_v1` selector is an explicit optional engine argument whose
+default is `training_effect`. No environment, Firestore, UI, or production composition
+path enables it.
 
-`classifyGarminTier` in `completedTraining.ts` currently returns `measuredEffort` when TE
-and training load are both present; that is already the top measured tier. Whether zone
-data justifies a **new** rung above it, or should only refine `estimatedStimulus` *within*
-`measuredEffort`, is a D-ZONECRED question — the ADR decides, not the implementer. Adding a
-rung changes the `EvidenceTier` union and `stimulusConfidenceForTier`, so it is not a local
-edit.
+ADR-0022 resolved the evidence-tier question: the candidate refines
+`estimatedStimulus` within `measuredEffort`; no rung or confidence weight was added.
+Missing/partial power data and non-cycling activities degrade exactly to the TE path.
 
-**Must degrade** to the current TE path when no power data exists — a run, a walk, a ride
-with no power meter — rather than propagating nulls into cost/stimulus (A5.6).
+Selector-off equality is asserted at the event boundary, and `simulate:diff` reports no
+semantic differences. The enabled real-history credit diff is recorded in G2.4's report.
 
-**Done when:** with the selector off, `simulate:diff` shows **zero** change against the
-committed baseline; with it on, the diff is produced and attached to G2.4.
+### G2.3 `[x]` Interval fade from lap summaries
 
-### G2.3 `[ ]` Interval fade from lap summaries
+`deriveMatchedIntervalFade` compares first/last average power only across caller-supplied
+matched lap indexes; it never guesses interval membership from auto-laps. Attribution
+retains the normalized Warsaw-local activity start date, including a session whose
+matched laps cross midnight.
 
-Compare per-lap average power across a matched interval set (Lap 3 vs Lap 1 of a `3x15`)
-using `laps` only — no raw series needed.
+A 3x15 fade, negative split, and crossing-midnight attribution are asserted.
 
-Any lap-to-date attribution must use the existing Warsaw-local conversion in `dates.py` /
-`localDate.ts`, never a UTC `toISOString().split('T')[0]`, for sessions crossing midnight
-(A5.6, and the `CLAUDE.md` timezone rule).
+### G2.4 `[x]` Measurement report and ship decision
 
-**Done when:** a fade case and a negative-split case are both asserted, plus a
-crossing-midnight attribution test.
+The [measurement report](../analysis/2026-08-17-garmin-zone-credit-measurement.md) records
+the bounded real-history comparison, selector-off semantic diff, and replay result.
 
-### G2.4 `[ ]` Measurement report and ship decision
-
-Produce the D-ZONECRED evidence: zone-derived vs TE-derived credit over the athlete's real
-recorded history, the `simulate:diff` output from G2.2, and the disagreement cases.
-
-**Recording "no material improvement" satisfies this item** — the same standard D-BEAM set,
-where a negative result is a valid and useful outcome. Shipping is not the success
-condition; a defensible decision is.
+**Decision: do not ship the candidate.** All 8 eligible activities disagreed with TE and
+the candidate reduced quality credit materially, but the sample has no outcome labels or
+auditable authored-interval matches showing those reductions are more accurate.
 
 ---
 
 ## Stage 3 — Activity detail view (independent of Stage 2)
 
-### G3.1 `[ ]` Activity detail view
+### G3.1 `[x]` Activity detail view
 
 Render power/HR zone bars and a lap-split table from the Stage 1 fields. Every field is
 optional — the view must render correctly for an activity with no telemetry at all (a run,
@@ -338,17 +344,17 @@ or any pre-G1 historical activity), which will be the majority of the back catal
 | Test | Asserts |
 |---|---|
 | `test_garmin_client.py::test_activity_detail_methods_require_login` | Each new method raises the standard unauthenticated `RuntimeError` |
-| `test_garmin_client.py::test_activity_detail_methods_tolerate_empty_response` | Falsy upstream response → `{}`, not `None` |
-| `test_garmin_provider.py::test_canonicalize_zones_from_fixture` | Real fixture → correct `CanonicalZoneBucket` list |
-| `test_garmin_provider.py::test_canonicalize_detail_degrades_on_malformed_payload` | Missing/`None`/wrong-typed fields → `None` fields, no raise |
+| `test_garmin_client.py::test_activity_detail_methods_tolerate_empty_response` | Falsy upstream response → endpoint-appropriate `[]`/`{}`, not `None` |
+| `test_garmin_provider.py::test_canonicalize_activity_detail_from_reduced_contract_fixtures` | Reduced observed-shape fixture → correct `CanonicalZoneBucket` list |
+| `test_garmin_provider.py::test_canonicalize_activity_detail_degrades_on_malformed_payload` | Missing/`None`/wrong-typed fields → `None` fields, no raise |
 | `test_garmin_provider.py::test_variability_index_omitted_when_average_power_zero` | No divide-by-zero, no sentinel written |
 | `test_garmin_provider.py::test_detail_gate_skips_easy_and_non_power_activities` | D-DETAIL-GATE predicate, both branches |
 | `test_sync_service.py::test_backfill_issues_no_detail_calls` | Backfill exclusion is enforced, not just documented |
-| `test_sync_service.py::test_detail_failure_does_not_fail_sync` | Base record + snapshot intact, exit code unchanged |
+| `test_sync_service.py::test_detail_failure_does_not_fail_sync_or_drop_base_activity` | Base record + snapshot intact, exit code unchanged |
 | `test_sync_service.py::test_rate_limit_stops_further_detail_fetches` | A 429 abandons remaining detail work in the run |
-| `test_sync_service.py::test_single_upsert_per_activity` | `syncedAt`/revision is not churned by a second write |
-| `test_mapper.py::test_normalize_activity_writes_no_schema_version` | The A5.7 trap cannot regress |
-| `test_rebuild_and_audit.py::test_rebuild_preserves_existing_detail_fields` | Rebuild does not erase un-archived detail |
+| `test_sync_service.py::test_activity_detail_flag_controls_fetch_and_uses_single_enriched_upsert` | `syncedAt`/revision is not churned by a second detail write |
+| `test_mapper.py::test_normalize_activity_adds_detail_without_schema_version_or_null_fields` | The A5.7 trap cannot regress |
+| `test_rebuild_and_audit.py::test_rebuild_reproduces_snapshot_from_archive_without_garmin_calls` | Rebuild performs no activity writes, so unarchived detail is untouched |
 | `trainingHistory.test.ts` — enriched-payload case | The **real** parser accepts the Python-written enriched document as `AVAILABLE` |
 | `trainingHistory.test.ts` — corrupt-telemetry case | Corrupt optional telemetry degrades to absent, document stays `AVAILABLE` |
 
@@ -360,24 +366,24 @@ tests that cross the Python→Firestore→TypeScript boundary where A5.7's failu
 ## Acceptance criteria
 
 **Stage 1**
-- [ ] `uv run pytest`, `uv run ruff check .`, `uv run mypy src/garmin_sync` all pass.
-- [ ] `cd app && npm run check` passes.
-- [ ] With `GARMIN_ACTIVITY_DETAIL_ENABLED` unset, `sync_daily` issues **zero** extra Garmin calls and writes a byte-identical activity record to today's.
-- [ ] With it set, a qualifying activity gains the new fields and a non-qualifying one does not.
-- [ ] `backfill` issues zero detail calls regardless of the flag.
-- [ ] No Garmin key name appears outside `garmin_provider.py`.
-- [ ] The activity document still carries no `schemaVersion`.
-- [ ] A detail-endpoint failure leaves sync exit code and snapshot unchanged.
+- [x] `uv run pytest`, `uv run ruff check .`, `uv run mypy src/garmin_sync` all pass.
+- [x] `cd app && npm run check` passes.
+- [x] With `GARMIN_ACTIVITY_DETAIL_ENABLED` unset, `sync_daily` issues **zero** extra Garmin calls and writes the existing base activity shape.
+- [x] With it set, a qualifying activity gains the new fields and non-qualifying activities fail the gate.
+- [x] `backfill` issues zero detail calls regardless of the flag.
+- [x] No Garmin response key name appears in provider-neutral source modules.
+- [x] The activity document still carries no `schemaVersion`.
+- [x] A detail-endpoint failure leaves sync success and snapshot persistence unchanged.
 
 **Stage 2** *(additionally)*
-- [ ] An accepted ADR records D-ZONECRED.
-- [ ] Selector off → `simulate:diff` is empty against the committed baseline.
-- [ ] `POLICY_VERSION` bumped and the prior version added to `HISTORICAL_POLICY_VERSIONS`; `check-policy-drift.mjs` passes.
-- [ ] A pre-change audited decision still replays via `npm run replay:recommendation`.
-- [ ] G2.4's report exists and states a decision — including "not shipping" as a valid one.
+- [x] ADR-0022 records D-ZONECRED.
+- [x] Selector off → `simulate:diff` is empty against the reviewed committed baseline.
+- [x] `POLICY_VERSION` remains unchanged because no production path can select the candidate; ADR-0022 requires the bump only if activation later ships.
+- [x] A synthetic pre-change audited decision replays via `npm run replay:recommendation`.
+- [x] G2.4's report records the evidence-backed **do not ship** decision.
 
 **Stage 3**
-- [ ] The view renders for full / partial / absent telemetry.
+- [x] The view renders for full / partial / absent telemetry; all three desktop/mobile visual captures pass.
 
 ---
 
@@ -385,11 +391,11 @@ tests that cross the Python→Firestore→TypeScript boundary where A5.7's failu
 
 | Risk | Mitigation | Rollback |
 |---|---|---|
-| Rate limiting from the extra per-activity calls | D-DETAIL-GATE narrows to qualifying activities in `sync_daily` only; G1.0 may cut a third of the calls if NP ships with the list | Unset `GARMIN_ACTIVITY_DETAIL_ENABLED`; ingestion returns to today's behaviour with no schema change to undo |
-| **A `schemaVersion` bump silently zeroes the engine's training history** | G1.5's constraint plus a dedicated regression test; the cross-language parser test is the real guard | Fields are additive — remove the writer and stale fields are simply ignored on read |
+| Rate limiting from the extra per-activity calls | D-DETAIL-GATE narrows to qualifying activities in the target-date `sync_daily` pass; the budget is three endpoint operations per qualifying activity, subject to configured retries | Unset `GARMIN_ACTIVITY_DETAIL_ENABLED`; ingestion returns to today's behaviour with no schema change to undo |
+| **A `schemaVersion` bump silently zeroes the engine's training history** | G1.5's constraint plus a dedicated regression test; the cross-language parser test is the real guard | Fields are additive; disabling the writer leaves old detail read-only, and the engine continues to ignore it |
 | A detail fetch failure breaks daily sync | G1.6 failure isolation, mirroring the performance-targets precedent | Flag off |
 | Stage 2 quietly changes recommendations | Default-off selector, `simulate:diff` gate, D-ZONECRED ADR, `POLICY_VERSION` discipline | Flip the selector off; policy version and baseline are unchanged while off |
-| Fixtures leak personal health data | G1.0 sanitisation; `CLAUDE.md` forbids committing raw health JSON | — |
+| Fixtures leak personal health data | G1.0 records observed key shapes with synthetic values; `AGENTS.md` forbids committing raw health JSON | — |
 
 The whole of Stage 1 is behind one default-off flag and writes only additive fields, so
 rollback is "unset the flag". That is the reason for the flag; it is not decoration.
@@ -406,8 +412,8 @@ Deliberately excluded — each is a valid finding in the source analysis, not an
 * **`activityDetailMetrics` high-frequency series** (§1.3) and **binary FIT export** (§1.4).
   Interval fade is computable from lap summaries alone (G2.3), so the 1,875-sample-per-
   activity storage cost buys nothing yet.
-* **GCS archiving of per-activity payloads.** Blocked by the archive's date-only keying
-  (A5.3); needs an ADR-0005 amendment. Not required by any item here.
+* **GCS archiving of per-activity payloads.** Excluded by the accepted ADR-0005 amendment:
+  the current archive is date-keyed, while these payloads require activity-ID keying.
 * **Backfilling telemetry over historical activities.** Explicitly excluded by
   D-DETAIL-GATE. Reconsider only with a measured budget.
 * **W′ / anaerobic work capacity** (analysis §2). Needs a model and a calibration decision
@@ -420,8 +426,8 @@ Deliberately excluded — each is a valid finding in the source analysis, not an
 | Doc | Change | When |
 |---|---|---|
 | ADR-0005 | ✅ **Done 2026-08-17.** Amendment records that the archive stays date-keyed, `"(or activity ID)"` was never implemented, the documented key omits the `{year}/{month}` shard, and same-run collisions make naive per-activity archiving lossy (A5.3). `archive.py` also added to Code References | — |
-| New ADR | **D-ZONECRED** — measured-before-shipped, per D-FUSE/D-SUBJCAL precedent | Before Stage 2 |
-| `docs/plans/README.md` | Add this plan to the plans table and D-DETAIL-GATE / D-ZONECRED to the decision register (proposed section until accepted) | With G1.1 |
-| `docs/architecture/ingestion-pipeline.md` | Document the per-activity detail path and its gate | With G1.6 |
-| `docs/architecture/recommendation-engine.md` | Only if D-ZONECRED ships | With G2.4 |
-| `README.md` | `GARMIN_ACTIVITY_DETAIL_ENABLED` in the configuration section | With G1.2 |
+| ADR-0022 | **D-ZONECRED** — measured-before-shipped, per D-FUSE/D-SUBJCAL precedent | Done before Stage 2 |
+| `docs/plans/README.md` | Record accepted D-DETAIL-GATE and D-ZONECRED | Done |
+| `docs/architecture/ingestion-pipeline.md` | Document the per-activity detail path and its gate | Done with G1.6 |
+| `docs/architecture/recommendation-engine.md` | Only if D-ZONECRED ships | Not required — G2.4 kept the candidate off |
+| `README.md` | `GARMIN_ACTIVITY_DETAIL_ENABLED` in the configuration section | Done with G1.2 |

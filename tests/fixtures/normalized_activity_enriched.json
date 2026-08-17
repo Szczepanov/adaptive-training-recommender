@@ -1,0 +1,17 @@
+{
+  "activityId": "999",
+  "date": "2026-08-05",
+  "type": "cycling",
+  "durationMin": 60,
+  "trainingEffectAerobic": 3.4,
+  "trainingEffectAnaerobic": 0.0,
+  "averageHr": 145,
+  "activityTrainingLoad": 120.0,
+  "intensityTag": "moderate",
+  "syncRunId": "run-abc",
+  "powerInZones": [{"zoneNumber": 1, "secondsInZone": 300.0}],
+  "normalizedPower": 229.0,
+  "intensityFactor": 0.82,
+  "variabilityIndex": 1.07,
+  "laps": [{"lapIndex": 1, "durationSeconds": 900.0, "averagePowerWatts": 250.0}]
+}

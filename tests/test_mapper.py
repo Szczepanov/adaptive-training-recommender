@@ -308,6 +308,54 @@ def test_normalize_activity_maps_canonical_fields():
     assert "syncedAt" in normalized
 
 
+def test_normalize_activity_adds_detail_without_schema_version_or_null_fields():
+    import json
+    from pathlib import Path
+
+    from garmin_sync.canonical import (
+        CanonicalActivityDetail,
+        CanonicalLapSummary,
+        CanonicalZoneBucket,
+    )
+
+    activity = CanonicalActivity(
+        activity_id="999",
+        date="2026-08-05",
+        type="cycling",
+        duration_min=60,
+        duration_seconds=3600,
+        training_effect_aerobic=3.4,
+        training_effect_anaerobic=0.0,
+        average_hr=145,
+        training_load=120.0,
+        intensity_tag="moderate",
+    )
+    detail = CanonicalActivityDetail(
+        activity_id="999",
+        power_zones=[CanonicalZoneBucket(1, 300.0, None)],
+        hr_zones=None,
+        normalized_power_watts=229.0,
+        intensity_factor=0.82,
+        variability_index=1.07,
+        laps=[CanonicalLapSummary(1, 900.0, 250.0, None)],
+    )
+
+    normalized = normalize_activity(activity, sync_run_id="run-abc", detail=detail)
+
+    assert "schemaVersion" not in normalized
+    assert normalized["powerInZones"] == [{"zoneNumber": 1, "secondsInZone": 300.0}]
+    assert "hrInZones" not in normalized
+    assert normalized["normalizedPower"] == 229.0
+    assert normalized["laps"] == [
+        {"lapIndex": 1, "durationSeconds": 900.0, "averagePowerWatts": 250.0}
+    ]
+    expected = json.loads(
+        (Path(__file__).parent / "fixtures" / "normalized_activity_enriched.json").read_text()
+    )
+    without_timestamp = {key: value for key, value in normalized.items() if key != "syncedAt"}
+    assert without_timestamp == expected
+
+
 def test_build_snapshot_populates_metric_enrichment_fields():
     from garmin_sync.canonical import (
         CanonicalBodyBattery,

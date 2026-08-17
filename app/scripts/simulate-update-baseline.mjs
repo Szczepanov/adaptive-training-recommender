@@ -41,6 +41,10 @@ const normalizedBaseline = {
   ...report,
   commit: 'baseline',
   capturedAt: 'baseline',
+  // `simulate:diff` compares scenario-level semantic summaries, not the per-day
+  // calibration trace. Keeping hundreds of trace rows in the committed baseline made a
+  // routine scenario refresh add tens of thousands of irrelevant lines.
+  scenarios: report.scenarios.map(({ decisionTraces: _decisionTraces, ...scenario }) => scenario),
 };
 writeFileSync(baselinePath, `${JSON.stringify(normalizedBaseline, null, 2)}\n`);
 console.log(`Reviewed simulation baseline updated at ${baselinePath}.`);

@@ -63,7 +63,7 @@ export function VisualReviewApp({ scenario }: VisualReviewAppProps) {
         {screen === 'home' && <Home userId={VISUAL_USER_ID} onNavigate={navigate} onViewData={() => navigate('data')} />}
         {screen === 'checkin' && <DailyCheckin userId={VISUAL_USER_ID} onNavigate={navigate} onBack={() => navigate('home')} />}
         {screen === 'goals' && <Goals userId={VISUAL_USER_ID} onNavigate={navigate} />}
-        {screen === 'data' && <DataView decisionInput={scenario.fixture.input} userId={VISUAL_USER_ID} onBack={() => navigate('home')} />}
+        {screen === 'data' && <DataView decisionInput={scenario.fixture.input} userId={VISUAL_USER_ID} onBack={() => navigate('home')} initialTab={scenario.initialDataTab} />}
         {screen === 'constraints' && <TrainingSettings userId={VISUAL_USER_ID} />}
         {screen === 'preferences' && <Preferences userId={VISUAL_USER_ID} onNavigate={navigate} />}
       </main>

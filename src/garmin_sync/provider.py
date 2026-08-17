@@ -5,7 +5,12 @@ A second provider (real or fake-for-tests) only needs to satisfy WearableProvide
 from dataclasses import dataclass
 from typing import Any, Protocol
 
-from .canonical import CanonicalActivity, CanonicalDailyMetrics, CanonicalPerformanceTargets
+from .canonical import (
+    CanonicalActivity,
+    CanonicalActivityDetail,
+    CanonicalDailyMetrics,
+    CanonicalPerformanceTargets,
+)
 
 
 @dataclass(frozen=True)
@@ -37,6 +42,12 @@ class ProviderFetchResult:
 class ProviderActivitiesResult:
     canonical: list[CanonicalActivity]
     raw_payload: list[dict[str, Any]]
+
+
+@dataclass
+class ProviderActivityDetailResult:
+    canonical: CanonicalActivityDetail
+    raw_payloads: dict[str, Any]
 
 
 @dataclass

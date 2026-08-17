@@ -1,0 +1,53 @@
+{
+  "userId": "synthetic-user",
+  "date": "2026-08-07",
+  "templateId": "easy_01",
+  "templateTitle": "Easy Ride",
+  "category": "Easy Endurance",
+  "modality": "Cycling",
+  "mode": "train",
+  "rationale": "Synthetic replay fixture captured before the zone-credit candidate.",
+  "schemaVersion": 3,
+  "createdAt": "2026-08-07T08:00:00Z",
+  "updatedAt": "2026-08-07T08:00:00Z",
+  "adherence": {
+    "respondedAt": null,
+    "followed": null,
+    "actualModality": null,
+    "actualDurationMin": null,
+    "skipped": false,
+    "notes": null
+  },
+  "recommendationAudit": {
+    "policyVersion": "2026-08-session-adjustment-cost-tiering-v1",
+    "evaluatedAt": "2026-08-07T08:00:00Z",
+    "decisionContextRevision": "history-v1:2026-08-07:7:synthetic:synthetic",
+    "safetyStatus": "complete",
+    "history": {
+      "completedEventCount": 1,
+      "unmatchedEventCount": 0,
+      "sourceStatuses": {
+        "activities": "AVAILABLE",
+        "recommendations": "AVAILABLE",
+        "manualTraining": "MISSING"
+      }
+    },
+    "envelope": {
+      "safetyRestrictedModalityCount": 0,
+      "planMaxAllowableTier": "Easy"
+    },
+    "candidateScores": [
+      {
+        "templateId": "easy_01",
+        "utilityScore": 1,
+        "excludedReasons": []
+      },
+      {
+        "templateId": "easy_02",
+        "utilityScore": 0.5,
+        "excludedReasons": []
+      }
+    ],
+    "droppedContributorObjectives": []
+  }
+}

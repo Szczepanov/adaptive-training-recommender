@@ -4,6 +4,7 @@ import {
   type DailyRecoverySnapshot,
   type DailySubjectiveCheckin,
   type ExternalTrainingPlan,
+  type NormalizedGarminActivity,
   type TrainingIntentProfile,
   type TrainingSettings,
   type UserGoal,
@@ -22,6 +23,7 @@ export interface VisualScenario {
   screen: VisualScreen;
   expectedFocus: string[];
   fixture: VisualFixture;
+  initialDataTab?: 'recovery' | 'activities';
 }
 
 export interface VisualFixture {
@@ -31,6 +33,7 @@ export interface VisualFixture {
   preferences: UserPreferences;
   checkin: DailySubjectiveCheckin | null;
   recovery: DailyRecoverySnapshot | null;
+  activities: NormalizedGarminActivity[];
   /** An imported plan governing this date (ADR-0019). Absent for every other scenario, so
    * the ordinary screens keep exercising the ranked path. */
   externalPlan?: ExternalTrainingPlan;
@@ -165,7 +168,7 @@ const eventGoal: UserGoal & { id: string } = {
 };
 
 function buildFixture(
-  overrides: Partial<Pick<VisualFixture, 'settings' | 'preferences' | 'checkin' | 'recovery' | 'goals' | 'externalPlan'>> = {},
+  overrides: Partial<Pick<VisualFixture, 'settings' | 'preferences' | 'checkin' | 'recovery' | 'goals' | 'activities' | 'externalPlan'>> = {},
   trainingIntentProfile: TrainingIntentProfile | null = null,
 ): VisualFixture {
   const fixtureSettings = overrides.settings ?? settings;
@@ -173,6 +176,7 @@ function buildFixture(
   const fixtureCheckin = overrides.checkin === undefined ? checkin : overrides.checkin;
   const fixtureRecovery = overrides.recovery === undefined ? recovery : overrides.recovery;
   const fixtureGoals = overrides.goals ?? [eventGoal];
+  const fixtureActivities = overrides.activities ?? [];
 
   return {
     settings: fixtureSettings,
@@ -180,6 +184,7 @@ function buildFixture(
     checkin: fixtureCheckin,
     recovery: fixtureRecovery,
     goals: fixtureGoals,
+    activities: fixtureActivities,
     ...(overrides.externalPlan ? { externalPlan: overrides.externalPlan } : {}),
     input: {
       userId: VISUAL_USER_ID,
@@ -237,6 +242,44 @@ const restrictedSettings: TrainingSettings = {
 };
 
 const standardFixture = buildFixture();
+
+const fullTelemetryActivity: NormalizedGarminActivity = {
+  activityId: 'visual-ride-full', date: VISUAL_DATE, type: 'cycling', durationMin: 72,
+  trainingEffectAerobic: 3.6, trainingEffectAnaerobic: 1.2, averageHr: 148,
+  activityTrainingLoad: 138, intensityTag: 'hard', normalizedPower: 238,
+  intensityFactor: 0.86, variabilityIndex: 1.08,
+  powerInZones: [
+    { zoneNumber: 1, secondsInZone: 600, lowBoundary: 0 },
+    { zoneNumber: 2, secondsInZone: 1800, lowBoundary: 150 },
+    { zoneNumber: 4, secondsInZone: 900, lowBoundary: 240 },
+  ],
+  hrInZones: [
+    { zoneNumber: 2, secondsInZone: 1500, lowBoundary: 117 },
+    { zoneNumber: 4, secondsInZone: 780, lowBoundary: 156 },
+  ],
+  laps: [
+    { lapIndex: 1, durationSeconds: 900, averagePowerWatts: 252, averageHrBpm: 149 },
+    { lapIndex: 2, durationSeconds: 360, averagePowerWatts: 142, averageHrBpm: 132 },
+    { lapIndex: 3, durationSeconds: 900, averagePowerWatts: 248, averageHrBpm: 152 },
+  ],
+};
+
+const partialTelemetryActivity: NormalizedGarminActivity = {
+  ...fullTelemetryActivity,
+  activityId: 'visual-run-partial',
+  type: 'running',
+  normalizedPower: undefined,
+  intensityFactor: undefined,
+  variabilityIndex: undefined,
+  powerInZones: undefined,
+  laps: undefined,
+};
+
+const historicalActivity: NormalizedGarminActivity = {
+  activityId: 'visual-historical', date: VISUAL_DATE, type: 'walking', durationMin: 45,
+  trainingEffectAerobic: 1.2, trainingEffectAnaerobic: 0, averageHr: 108,
+  activityTrainingLoad: 24, intensityTag: 'easy',
+};
 
 /** Monday of the week containing VISUAL_DATE (2026-09-12, a Saturday), so the imported
  * plan's week 1 is the week on screen. */
@@ -373,6 +416,30 @@ export const VISUAL_SCENARIOS: VisualScenario[] = [
     screen: 'data',
     expectedFocus: ['Dense telemetry remains grouped and readable.'],
     fixture: standardFixture,
+  },
+  {
+    id: 'data-activities-full',
+    title: 'Detailed data — full activity telemetry',
+    screen: 'data',
+    initialDataTab: 'activities',
+    expectedFocus: ['Power and heart-rate distributions are comparable at a glance.', 'Lap summaries remain readable on narrow screens.'],
+    fixture: buildFixture({ activities: [fullTelemetryActivity] }),
+  },
+  {
+    id: 'data-activities-partial',
+    title: 'Detailed data — partial activity telemetry',
+    screen: 'data',
+    initialDataTab: 'activities',
+    expectedFocus: ['An HR-only activity remains useful without blank power sections.'],
+    fixture: buildFixture({ activities: [partialTelemetryActivity] }),
+  },
+  {
+    id: 'data-activities-none',
+    title: 'Detailed data — historical activity without telemetry',
+    screen: 'data',
+    initialDataTab: 'activities',
+    expectedFocus: ['Historical activities have an explicit empty-detail state rather than a broken layout.'],
+    fixture: buildFixture({ activities: [historicalActivity] }),
   },
   {
     id: 'training-setup-restricted',

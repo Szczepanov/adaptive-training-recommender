@@ -14,6 +14,9 @@ async function visitScenario(page: Page, scenario: VisualScenario): Promise<void
   // resolves the plan, adjudicates and critiques the week, and photographed as a "Loading
   // dashboard..." placeholder. Wait for the placeholder to actually go.
   await expect(page.locator('.loading-state')).toHaveCount(0, { timeout: 15_000 });
+  if (scenario.id.startsWith('data-activities-')) {
+    await expect(page.getByText('Loading recent activities…')).toHaveCount(0, { timeout: 15_000 });
+  }
   await page.addStyleTag({ content: '*,*::before,*::after{animation:none!important;transition:none!important;caret-color:transparent!important}' });
   await page.waitForTimeout(300);
 }
@@ -43,7 +46,9 @@ for (const scenario of VISUAL_SCENARIOS) {
     await capture(page, scenario);
 
     if (scenario.id.startsWith('home-') && scenario.id !== 'home-missing-data') {
-      const viewWorkout = page.getByRole('button', { name: 'View workout' });
+      // Home can also contain imported-plan session buttons with the same label. This
+      // interaction captures the recommendation card's own disclosure specifically.
+      const viewWorkout = page.locator('.view-workout-btn');
       if (await viewWorkout.count()) {
         await viewWorkout.first().click();
         await expect(viewWorkout.first()).toHaveAttribute('aria-expanded', 'true');

@@ -3,10 +3,17 @@ from unittest.mock import MagicMock
 import pytest
 from garminconnect import GarminConnectTooManyRequestsError
 
-from garmin_sync.canonical import CanonicalDailyMetrics, CanonicalPerformanceTargets
+from garmin_sync.canonical import (
+    CanonicalActivity,
+    CanonicalActivityDetail,
+    CanonicalDailyMetrics,
+    CanonicalPerformanceTargets,
+    CanonicalZoneBucket,
+)
 from garmin_sync.config import Settings
 from garmin_sync.provider import (
     ProviderActivitiesResult,
+    ProviderActivityDetailResult,
     ProviderCapabilities,
     ProviderFetchResult,
     ProviderPerformanceTargetsResult,
@@ -64,6 +71,120 @@ class TargetAwareFakeProvider(FakeTestProvider):
                 "lactate_threshold": {"speed_and_heart_rate": {"speed": 0.27}},
             },
         )
+
+
+class DetailFakeProvider(FakeTestProvider):
+    capabilities = ProviderCapabilities(
+        daily_summary=True,
+        sleep=True,
+        hrv=True,
+        activities=True,
+        activity_details=True,
+    )
+
+    def __init__(self, activity_count: int = 1):
+        super().__init__()
+        self.detail_calls: list[str] = []
+        self.detail_side_effect: Exception | None = None
+        self.activities = [
+            CanonicalActivity(
+                activity_id=str(index + 1),
+                date="2026-08-06",
+                type="cycling",
+                duration_min=60,
+                duration_seconds=3600,
+                training_effect_aerobic=3.2,
+                training_effect_anaerobic=0.4,
+                average_hr=145,
+                training_load=110.0,
+                intensity_tag="moderate",
+            )
+            for index in range(activity_count)
+        ]
+
+    def fetch_activities(
+        self,
+        start_date_iso: str,
+        end_date_iso: str,
+        zone4_floor: int | None = None,
+    ) -> ProviderActivitiesResult:
+        return ProviderActivitiesResult(canonical=self.activities, raw_payload=[])
+
+    def fetch_activity_detail(self, activity_id: str) -> ProviderActivityDetailResult:
+        self.detail_calls.append(activity_id)
+        if self.detail_side_effect is not None:
+            raise self.detail_side_effect
+        detail = CanonicalActivityDetail(
+            activity_id=activity_id,
+            power_zones=[CanonicalZoneBucket(2, 1200.0, 150.0)],
+            normalized_power_watts=230.0,
+        )
+        return ProviderActivityDetailResult(canonical=detail, raw_payloads={})
+
+
+def _detail_service(provider: DetailFakeProvider, enabled: bool = True):
+    settings = Settings(
+        app_user_id="test_uid_789",
+        garmin_activity_detail_enabled=enabled,
+    )
+    repo = MagicMock()
+    repo.is_fresh.return_value = False
+    repo.get_historical_snapshots.return_value = {}
+    service = GarminSyncService(settings=settings, repository=repo, provider=provider)
+    return service, repo
+
+
+def test_activity_detail_flag_controls_fetch_and_uses_single_enriched_upsert():
+    disabled_provider = DetailFakeProvider()
+    disabled_service, disabled_repo = _detail_service(disabled_provider, enabled=False)
+    assert disabled_service.sync_daily("2026-08-06", force=True, resync_lookback_days=0)
+    assert disabled_provider.detail_calls == []
+    disabled_payload = disabled_repo.upsert_activity.call_args.args[1]
+    assert "powerInZones" not in disabled_payload
+
+    enabled_provider = DetailFakeProvider()
+    enabled_service, enabled_repo = _detail_service(enabled_provider, enabled=True)
+    assert enabled_service.sync_daily("2026-08-06", force=True, resync_lookback_days=0)
+    assert enabled_provider.detail_calls == ["1"]
+    enabled_repo.upsert_activity.assert_called_once()
+    enabled_payload = enabled_repo.upsert_activity.call_args.args[1]
+    assert enabled_payload["normalizedPower"] == 230.0
+    assert enabled_payload["powerInZones"][0]["zoneNumber"] == 2
+
+
+def test_detail_failure_does_not_fail_sync_or_drop_base_activity():
+    provider = DetailFakeProvider()
+    provider.detail_side_effect = RuntimeError("detail endpoint unavailable")
+    service, repo = _detail_service(provider)
+
+    assert service.sync_daily("2026-08-06", force=True, resync_lookback_days=0)
+    repo.upsert_snapshot.assert_called_once()
+    repo.upsert_activity.assert_called_once()
+    assert repo.upsert_activity.call_args.args[1]["activityId"] == "1"
+    assert "powerInZones" not in repo.upsert_activity.call_args.args[1]
+
+
+def test_rate_limit_stops_further_detail_fetches():
+    provider = DetailFakeProvider(activity_count=2)
+    provider.detail_side_effect = GarminConnectTooManyRequestsError("rate limited")
+    service, repo = _detail_service(provider)
+
+    assert service.sync_daily("2026-08-06", force=True, resync_lookback_days=0)
+    assert provider.detail_calls == ["1"]
+    assert repo.upsert_activity.call_count == 2
+
+
+def test_backfill_issues_no_detail_calls_even_when_enabled():
+    provider = DetailFakeProvider()
+    service, repo = _detail_service(provider)
+    repo.get_snapshot.return_value = None
+
+    assert service.backfill(
+        start_date_str="2026-08-06",
+        end_date_str="2026-08-06",
+        force=True,
+    )
+    assert provider.detail_calls == []
 
 
 def test_push_workout_fails_when_garmin_does_not_return_a_workout_id():

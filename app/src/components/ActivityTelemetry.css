@@ -1,0 +1,134 @@
+.activity-telemetry-list {
+  display: grid;
+  gap: 1rem;
+}
+
+.activity-telemetry-card {
+  background: var(--background-color);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  padding: 1.1rem;
+}
+
+.activity-telemetry-card > header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.activity-telemetry-card h4,
+.activity-telemetry-card h5 {
+  margin: 0;
+  color: var(--text-color);
+  text-transform: capitalize;
+}
+
+.activity-telemetry-card header p,
+.activity-telemetry-empty,
+.activity-telemetry-state {
+  color: var(--text-secondary);
+}
+
+.activity-telemetry-card header p {
+  margin: 0.35rem 0 0;
+}
+
+.activity-power-summary {
+  display: flex;
+  gap: 0.8rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.activity-power-summary strong {
+  color: var(--primary-color);
+}
+
+.activity-zone-section,
+.activity-laps {
+  margin-top: 1rem;
+}
+
+.activity-zone-list {
+  display: grid;
+  gap: 0.45rem;
+  margin-top: 0.65rem;
+}
+
+.activity-zone-row {
+  display: grid;
+  grid-template-columns: 2rem minmax(80px, 1fr) minmax(120px, auto);
+  align-items: center;
+  gap: 0.65rem;
+  font-size: 0.82rem;
+}
+
+.activity-zone-track {
+  height: 0.55rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.activity-zone-track span {
+  display: block;
+  min-width: 2px;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--primary-color);
+}
+
+.activity-zone-value {
+  color: var(--text-secondary);
+  text-align: right;
+}
+
+.activity-lap-table-wrap {
+  overflow-x: auto;
+  margin-top: 0.65rem;
+}
+
+.activity-laps table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.activity-laps th,
+.activity-laps td {
+  padding: 0.55rem;
+  border-bottom: 1px solid var(--border-color);
+  text-align: right;
+}
+
+.activity-laps th:first-child,
+.activity-laps td:first-child {
+  text-align: left;
+}
+
+.activity-telemetry-state.error {
+  color: var(--danger-color, #d85b5b);
+}
+
+@media (max-width: 640px) {
+  .activity-telemetry-card > header {
+    flex-direction: column;
+  }
+
+  .activity-power-summary {
+    justify-content: flex-start;
+  }
+
+  .activity-zone-row {
+    grid-template-columns: 2rem 1fr;
+  }
+
+  .activity-zone-value {
+    grid-column: 2;
+    text-align: left;
+  }
+}

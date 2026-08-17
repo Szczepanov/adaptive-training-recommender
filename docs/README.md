@@ -71,6 +71,7 @@ Architectural choices, system invariants, and technical trade-offs are documente
 * [**ADR-0018: Weekly Allocation, Safe Role Reservations & Explicit Misses**](./adr/0018-weekly-allocation-and-role-reservations.md) — Accepted production-greedy allocation contract for preserving safe, required weekly roles after PR #17.
 * [**ADR-0019: Externally-Authored Plans & Session Adjudication**](./adr/0019-externally-authored-plans-and-session-adjudication.md) — *Accepted.* A third planning mode in which an imported plan owns selection and the engine owns safety, dose, and weekly critique.
 * [**ADR-0020: Subjective Baselines in Readiness Mode**](./adr/0020-subjective-baselines-in-readiness-mode.md) — *Accepted.* Self-normalised subjective drift as a tighten-only term, gated on check-in coverage, with estimator details deferred to calibration and a production ship decision gated on Phase 9.0's prospective evidence.
+* [**ADR-0022: Zone-Derived Completed-Training Credit Is a Measured Candidate**](./adr/0022-zone-derived-completed-training-credit.md) — *Accepted.* A direct power-zone-share candidate may be measured inside the existing evidence tier, but production remains on TE pending a later evidence-backed activation decision.
 
 ---
 
@@ -84,6 +85,8 @@ Point-in-time assessments of the system as built, including gaps between documen
 * [**2026-08-11 Phase 6 & 7 compliance review**](./analysis/2026-08-11-phase-6-7-compliance-review.md) — Code, test, simulation, deployment, and plan-status review of the delivered Phase 6 and Phase 7 work.
 * [**2026-08-15 Externally-authored plan feasibility**](./analysis/2026-08-15-externally-authored-plan-feasibility.md) — Structural assessment of importing an externally-authored training plan and narrowing the engine to per-session adjudication.
 * [**2026-08-16 Manual AI loop vs app adjudication**](./analysis/2026-08-16-manual-loop-vs-app-adjudication.md) — Whether the athlete's manual daily AI loop should be replaced by the app now that Phase 8 has landed. Verdict: shadow both for one block first; the subjective input is the one unmeasured path.
+* [**2026-08-17 Garmin high-resolution telemetry**](./analysis/2026-08-17-garmin-high-resolution-telemetry.md) — Live endpoint-shape evidence and bounded ingestion recommendations for per-activity zones, power metrics, and laps.
+* [**2026-08-17 Garmin zone-credit measurement**](./analysis/2026-08-17-garmin-zone-credit-measurement.md) — Bounded de-identified real-history comparison of ADR-0022's candidate against TE; decision: keep the candidate off.
 
 ---
 
@@ -102,6 +105,7 @@ How agreed changes get made. Mutable, status-tracked, and expected to go stale �
 * [**Phase 8: Externally-planned mode**](./plans/phase-8-externally-planned-mode.md) — *Implemented.* Import an externally-authored plan, adjudicate its sessions against daily readiness, and repoint the weekly machinery to critique.
 * [**Phase 9.0: Shadow mode and the decision journal**](./plans/phase-9-0-shadow-mode-and-decision-journal.md) — *In progress.* Journal storage, UI, agreement classification, export and the engine-isolation guard are done; only the operational unattended-ingestion step and running the multi-week block itself remain.
 * [**Phase 9: Subjective baselines in readiness mode**](./plans/phase-9-subjective-baselines.md) — *In progress.* ADR-0020 accepted; the scenario corpus has real subjective variance (9.5), the subjective baseline computation exists (9.1) and `DailyReadiness` can carry it (9.2), inert until the drift term (9.3) reads it. Shipping stays gated on Phase 9.0's prospective evidence.
+* [**Garmin per-activity telemetry**](./plans/garmin-activity-telemetry-ingestion.md) — *Implemented.* Additive ingestion and the read-only activity view are delivered; ADR-0022's measured zone-credit candidate remains off after the real-history no-ship decision.
 
 ---
 
