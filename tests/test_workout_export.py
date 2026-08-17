@@ -55,3 +55,38 @@ def test_strength_workout_uses_garmin_strength_and_repetition_ids():
     step = payload["workoutSegments"][0]["workoutSteps"][0]
     assert payload["sportType"] == {"sportTypeId": 5, "sportTypeKey": "strength_training"}
     assert step["endCondition"] == {"conditionTypeId": 10, "conditionTypeKey": "reps"}
+
+
+def test_endurance_workout_generates_repeat_group_with_child_steps():
+    workout = {
+        "title": "Aerobic Engine 3x15",
+        "modality": "cycling",
+        "blocks": [
+            {
+                "steps": [
+                    {
+                        "name": "Sustained interval",
+                        "durationSeconds": 900,
+                        "repetitions": 3,
+                        "restAfterSec": 300,
+                        "targets": ["230-240 W"],
+                    }
+                ]
+            }
+        ],
+    }
+
+    payload = canonical_workout_to_garmin_payload(workout)
+    steps = payload["workoutSegments"][0]["workoutSteps"]
+    assert len(steps) == 1
+    repeat_group = steps[0]
+    assert repeat_group["type"] == "RepeatGroupDTO"
+    assert repeat_group["numberOfIterations"] == 3
+    assert repeat_group["stepType"]["stepTypeKey"] == "repeat"
+    assert len(repeat_group["workoutSteps"]) == 2
+    assert repeat_group["workoutSteps"][0]["stepType"]["stepTypeKey"] == "interval"
+    assert repeat_group["workoutSteps"][0]["endConditionValue"] == 900
+    assert "230-240 W" in repeat_group["workoutSteps"][0]["description"]
+    assert repeat_group["workoutSteps"][1]["stepType"]["stepTypeKey"] == "recovery"
+    assert repeat_group["workoutSteps"][1]["endConditionValue"] == 300
+

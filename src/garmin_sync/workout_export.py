@@ -55,13 +55,20 @@ def canonical_workout_to_garmin_payload(workout: dict[str, Any]) -> dict[str, An
             reps = step.get("repetitions") or step.get("sets")
 
             step_type = default_step_type
-            step_name = str(step.get("name", "")).lower()
-            if "warm" in step_name:
+            step_name = str(step.get("name", "")).strip()
+            step_name_lower = step_name.lower()
+            if "warm" in step_name_lower:
                 step_type = STEP_TYPE_MAP["warmup"]
-            elif "cool" in step_name:
+            elif "cool" in step_name_lower:
                 step_type = STEP_TYPE_MAP["cooldown"]
-            elif "rest" in step_name or "recovery" in step_name:
+            elif "rest" in step_name_lower or "recovery" in step_name_lower:
                 step_type = STEP_TYPE_MAP["recovery"]
+
+            targets = step.get("targets")
+            desc_parts = [step_name] if step_name else []
+            if targets and isinstance(targets, list) and targets:
+                desc_parts.append(f"({'; '.join(targets)})")
+            step_desc = " ".join(desc_parts) if desc_parts else None
 
             if reps and modality == "strength":
                 end_condition = END_CONDITION_MAP["reps"]
@@ -70,38 +77,80 @@ def canonical_workout_to_garmin_payload(workout: dict[str, Any]) -> dict[str, An
                 end_condition = END_CONDITION_MAP["time"]
                 end_condition_value = duration_sec
 
-            garmin_step: dict[str, Any] = {
-                "type": "ExecutableStepDTO",
-                "stepId": None,
-                "stepOrder": step_order,
-                "stepType": step_type,
-                "childStepId": None,
-                "description": step.get("name", "") or None,
-                "endCondition": end_condition,
-                "endConditionValue": end_condition_value,
-                "targetType": {"workoutTargetTypeId": 1, "workoutTargetTypeKey": "no.target"},
-            }
-
-            workout_steps.append(garmin_step)
-            step_order += 1
-
-            # If there is a rest interval after this step, add a recovery step
             rest_sec = step.get("restAfterSec")
-            if rest_sec and rest_sec > 0:
-                workout_steps.append(
+
+            if reps and reps > 1 and modality != "strength":
+                repeat_steps: list[dict[str, Any]] = [
                     {
                         "type": "ExecutableStepDTO",
                         "stepId": None,
-                        "stepOrder": step_order,
-                        "stepType": STEP_TYPE_MAP["recovery"],
+                        "stepOrder": 1,
+                        "stepType": step_type,
                         "childStepId": None,
-                        "description": "Rest interval",
-                        "endCondition": END_CONDITION_MAP["time"],
-                        "endConditionValue": rest_sec,
+                        "description": step_desc,
+                        "endCondition": end_condition,
+                        "endConditionValue": end_condition_value,
                         "targetType": {"workoutTargetTypeId": 1, "workoutTargetTypeKey": "no.target"},
                     }
-                )
+                ]
+                if rest_sec and rest_sec > 0:
+                    repeat_steps.append(
+                        {
+                            "type": "ExecutableStepDTO",
+                            "stepId": None,
+                            "stepOrder": 2,
+                            "stepType": STEP_TYPE_MAP["recovery"],
+                            "childStepId": None,
+                            "description": "Rest interval",
+                            "endCondition": END_CONDITION_MAP["time"],
+                            "endConditionValue": rest_sec,
+                            "targetType": {"workoutTargetTypeId": 1, "workoutTargetTypeKey": "no.target"},
+                        }
+                    )
+                repeat_group: dict[str, Any] = {
+                    "type": "RepeatGroupDTO",
+                    "stepId": None,
+                    "stepOrder": step_order,
+                    "stepType": {"stepTypeId": 6, "stepTypeKey": "repeat"},
+                    "childStepId": 1,
+                    "numberOfIterations": reps,
+                    "smartRepeat": False,
+                    "workoutSteps": repeat_steps,
+                }
+                workout_steps.append(repeat_group)
                 step_order += 1
+            else:
+                garmin_step: dict[str, Any] = {
+                    "type": "ExecutableStepDTO",
+                    "stepId": None,
+                    "stepOrder": step_order,
+                    "stepType": step_type,
+                    "childStepId": None,
+                    "description": step_desc,
+                    "endCondition": end_condition,
+                    "endConditionValue": end_condition_value,
+                    "targetType": {"workoutTargetTypeId": 1, "workoutTargetTypeKey": "no.target"},
+                }
+
+                workout_steps.append(garmin_step)
+                step_order += 1
+
+                # If there is a rest interval after this step, add a recovery step
+                if rest_sec and rest_sec > 0:
+                    workout_steps.append(
+                        {
+                            "type": "ExecutableStepDTO",
+                            "stepId": None,
+                            "stepOrder": step_order,
+                            "stepType": STEP_TYPE_MAP["recovery"],
+                            "childStepId": None,
+                            "description": "Rest interval",
+                            "endCondition": END_CONDITION_MAP["time"],
+                            "endConditionValue": rest_sec,
+                            "targetType": {"workoutTargetTypeId": 1, "workoutTargetTypeKey": "no.target"},
+                        }
+                    )
+                    step_order += 1
 
     if not workout_steps:
         workout_steps.append(
