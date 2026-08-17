@@ -468,8 +468,7 @@ service cloud.firestore {
       allow read: if isOwner(userId);
       allow create: if hasValidGarminQueuedWorkout(userId, date);
       allow update: if hasValidGarminQueuedWorkout(userId, date)
-        && keepsOwnership(userId)
-        && request.resource.data.queuedAt == resource.data.queuedAt;
+        && keepsOwnership(userId);
       allow delete: if isOwner(userId);
     }
 

@@ -667,6 +667,17 @@ emulatorDescribe('Firestore security rules', () => {
         await expect(assertSucceeds(getDoc(doc(ownerDb, garminQueuePath)))).resolves.toBeDefined();
     });
 
+    it('allows an owner to update and re-queue an existing garmin workout item with new queuedAt', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await expect(assertSucceeds(setDoc(doc(ownerDb, garminQueuePath), validGarminQueuedWorkout()))).resolves.toBeUndefined();
+        const updated = {
+            ...validGarminQueuedWorkout(),
+            queuedAt: '2026-08-17T09:30:00Z',
+            workoutTitle: 'Threshold 4x10',
+        };
+        await expect(assertSucceeds(setDoc(doc(ownerDb, garminQueuePath), updated))).resolves.toBeUndefined();
+    });
+
     it('rejects a malformed or foreign-owned garmin workout queue item', async () => {
         const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
         await assertFails(setDoc(doc(ownerDb, `${garminQueuePath}-bad-status`), {
