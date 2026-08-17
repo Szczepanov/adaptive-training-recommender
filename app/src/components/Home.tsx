@@ -31,6 +31,7 @@ import {
 import { externalPlanService } from '../services/externalPlanService';
 import { ExternalVerdictBanner } from './ExternalVerdictBanner';
 import { ExternalPlanWeek } from './ExternalPlanWeek';
+import { WorkoutExportMenu } from './WorkoutExportMenu';
 import { AdherencePrompt, type AdherenceAnswer } from './AdherencePrompt';
 import { DecisionJournalCard } from './DecisionJournalCard';
 import { MinimumSafetyCheckin } from './MinimumSafetyCheckin';
@@ -67,12 +68,33 @@ function formatEventTiming(daysToEvent: number | null): string {
   return daysToEvent > 0 ? `In ${daysToEvent} days` : `${Math.abs(daysToEvent)} days ago`;
 }
 
-const DetailedTodayPlan = memo(function DetailedTodayPlan({ prescription }: { prescription: WorkoutPrescription }) {
+const DetailedTodayPlan = memo(function DetailedTodayPlan({
+  prescription,
+  userId,
+  date,
+  title,
+  modality,
+}: {
+  prescription: WorkoutPrescription;
+  userId: string;
+  date: string;
+  title: string;
+  modality: string;
+}) {
   return (
     <section className="detailed-plan" aria-label="Detailed training plan">
       <div className="detailed-plan-header">
-        <h5>Today&apos;s Plan</h5>
-        <span>{prescription.targetDurationMin} min target</span>
+        <div>
+          <h5>Today&apos;s Plan</h5>
+          <span>{prescription.targetDurationMin} min target</span>
+        </div>
+        <WorkoutExportMenu
+          userId={userId}
+          date={date}
+          title={title}
+          modality={modality}
+          prescription={prescription}
+        />
       </div>
       {prescription.displayBlocks.map((block) => (
         <section className={`plan-block plan-block-${block.role}`} key={block.id}>
@@ -699,7 +721,15 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
                     >
                       {showWorkoutDetails ? 'Hide workout' : 'View workout'}
                     </button>
-                    {showWorkoutDetails && <DetailedTodayPlan prescription={activeRec.prescription} />}
+                    {showWorkoutDetails && (
+                      <DetailedTodayPlan
+                        prescription={activeRec.prescription}
+                        userId={userId}
+                        date={decisionInput?.date ?? ''}
+                        title={activeRec.template.title}
+                        modality={activeRec.template.modality}
+                      />
+                    )}
                   </>
                 )}
 
@@ -767,6 +797,7 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
 
           {activeExternalPlan && decisionInput && (
             <ExternalPlanWeek
+              userId={userId}
               planTitle={activeExternalPlan.plan.title}
               weekStartDate={mondayOf(decisionInput.date)}
               placed={activeExternalPlan.placed}

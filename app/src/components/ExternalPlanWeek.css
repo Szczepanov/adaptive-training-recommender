@@ -157,6 +157,12 @@
   border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
+.external-week-details-header {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 0.5rem;
+}
+
 .external-week-details .external-prescription h5,
 .external-week-details .external-scaling-summary h5,
 .external-week-details .external-fallback h5 {

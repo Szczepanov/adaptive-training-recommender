@@ -212,6 +212,7 @@ firebase-service-account.json
 .garmin_tokens/
 garmin_tokens.json
 .garmin_archive/
+cloud-run-job.env.yaml
 sleep_daily_sample.json
 hrv_range_sample.json
 *.cache*
