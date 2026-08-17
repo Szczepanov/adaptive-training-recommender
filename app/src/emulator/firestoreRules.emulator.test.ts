@@ -634,4 +634,60 @@ emulatorDescribe('Firestore security rules', () => {
         const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
         await assertFails(deleteDoc(doc(ownerDb, decisionJournalPath)));
     });
+
+    // --- Garmin workout queue ---
+
+    const garminQueuePath = `users/${ownerId}/garmin_workout_queue/2026-08-17`;
+
+    function validGarminQueuedWorkout() {
+        return {
+            userId: ownerId,
+            date: '2026-08-17',
+            workoutTitle: 'Threshold 3x12',
+            modality: 'cycling',
+            status: 'pending',
+            queuedAt: '2026-08-17T08:00:00Z',
+            syncedAt: null,
+            error: null,
+            payload: {
+                schemaVersion: 'canonical_workout_v1',
+                title: 'Threshold 3x12',
+                workoutId: 's1',
+                modality: 'cycling',
+                targetDurationMin: 75,
+                blocks: [],
+                exportedAt: '2026-08-17T08:00:00Z',
+            },
+        };
+    }
+
+    it('allows an owner to queue and read a valid garmin workout item', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await expect(assertSucceeds(setDoc(doc(ownerDb, garminQueuePath), validGarminQueuedWorkout()))).resolves.toBeUndefined();
+        await expect(assertSucceeds(getDoc(doc(ownerDb, garminQueuePath)))).resolves.toBeDefined();
+    });
+
+    it('rejects a malformed or foreign-owned garmin workout queue item', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertFails(setDoc(doc(ownerDb, `${garminQueuePath}-bad-status`), {
+            ...validGarminQueuedWorkout(), status: 'unknown',
+        }));
+        await assertFails(setDoc(doc(ownerDb, `${garminQueuePath}-extra-field`), {
+            ...validGarminQueuedWorkout(), unexpectedField: true,
+        }));
+        await assertFails(setDoc(doc(ownerDb, garminQueuePath), {
+            ...validGarminQueuedWorkout(), userId: otherUserId,
+        }));
+        const otherDb = testEnvironment.authenticatedContext(otherUserId).firestore();
+        await assertFails(getDoc(doc(otherDb, garminQueuePath)));
+        await assertFails(setDoc(doc(otherDb, garminQueuePath), validGarminQueuedWorkout()));
+    });
+
+    it('allows an owner to delete a queued workout item', async () => {
+        await testEnvironment.withSecurityRulesDisabled(async context => {
+            await setDoc(doc(context.firestore(), garminQueuePath), validGarminQueuedWorkout());
+        });
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await expect(assertSucceeds(deleteDoc(doc(ownerDb, garminQueuePath)))).resolves.toBeUndefined();
+    });
 });

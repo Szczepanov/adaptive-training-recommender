@@ -448,6 +448,31 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    function hasValidGarminQueuedWorkout(userId, date) {
+      let data = request.resource.data;
+      return hasOwnedUserId(userId)
+        && isDateDocument(date)
+        && data.keys().hasOnly(['userId', 'date', 'workoutTitle', 'modality', 'status', 'queuedAt', 'syncedAt', 'error', 'payload', 'garminWorkoutId'])
+        && data.keys().hasAll(['userId', 'date', 'workoutTitle', 'modality', 'status', 'queuedAt', 'payload'])
+        && data.workoutTitle is string && data.workoutTitle.size() <= 200
+        && data.modality is string && data.modality.size() <= 64
+        && data.status in ['pending', 'synced', 'failed']
+        && data.queuedAt is string
+        && (!('syncedAt' in data) || data.syncedAt == null || data.syncedAt is string)
+        && (!('error' in data) || data.error == null || (data.error is string && data.error.size() <= 2000))
+        && (!('garminWorkoutId' in data) || data.garminWorkoutId is string)
+        && data.payload is map;
+    }
+
+    match /users/{userId}/garmin_workout_queue/{date} {
+      allow read: if isOwner(userId);
+      allow create: if hasValidGarminQueuedWorkout(userId, date);
+      allow update: if hasValidGarminQueuedWorkout(userId, date)
+        && keepsOwnership(userId)
+        && request.resource.data.queuedAt == resource.data.queuedAt;
+      allow delete: if isOwner(userId);
+    }
+
     match /users/{userId}/daily_recommendations/{date} {
       allow read: if isOwner(userId);
       allow create: if hasValidRecommendation(userId, date);
