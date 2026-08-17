@@ -350,6 +350,65 @@ emulatorDescribe('Firestore security rules', () => {
         )).resolves.toBeUndefined();
     });
 
+    it('allows an adherence-only merge on a revisioned v3 recommendation with nested decision evidence', async () => {
+        const original = {
+            ...validRecommendation('2026-08-07T08:00:00Z'),
+            revision: 1,
+            prescription: {
+                id: '2026-08-07_easy_ride_default',
+                workoutId: 'easy_ride',
+                displayBlocks: [{ id: 'main', steps: [{ id: 'easy', targets: ['RPE 3'] }] }],
+            },
+        };
+        original.recommendationAudit.plannedDose = { volume: 1, intensity: 1.1 };
+        original.recommendationAudit.executionDose = { volume: 1, intensity: 1.1 };
+        original.recommendationAudit.candidateScores = [{
+            templateId: 'easy_01', utilityScore: 1, excludedReasons: [], benefitScore: 1, costPenalty: 0,
+        }];
+        original.recommendationAudit.droppedContributorObjectives = [];
+
+        await testEnvironment.withSecurityRulesDisabled(async context => {
+            await setDoc(doc(context.firestore(), recommendationPath), original);
+        });
+
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        const answeredAdherence = {
+            respondedAt: '2026-08-08T07:00:00Z',
+            followed: true,
+            actualModality: null,
+            actualDurationMin: null,
+            skipped: false,
+            notes: null,
+        };
+        await expect(assertSucceeds(setDoc(
+            doc(ownerDb, recommendationPath),
+            { adherence: answeredAdherence },
+            { merge: true },
+        ))).resolves.toBeUndefined();
+
+        const stored = await getDoc(doc(ownerDb, recommendationPath));
+        expect(stored.data()?.adherence).toEqual(answeredAdherence);
+        expect(stored.data()?.revision).toBe(1);
+    });
+
+    it('rejects a cross-user adherence-only merge', async () => {
+        await testEnvironment.withSecurityRulesDisabled(async context => {
+            await setDoc(doc(context.firestore(), recommendationPath), { ...validRecommendation(), revision: 1 });
+        });
+
+        const otherDb = testEnvironment.authenticatedContext(otherUserId).firestore();
+        await assertFails(setDoc(doc(otherDb, recommendationPath), {
+            adherence: {
+                respondedAt: '2026-08-08T07:00:00Z',
+                followed: true,
+                actualModality: null,
+                actualDurationMin: null,
+                skipped: false,
+                notes: null,
+            },
+        }, { merge: true }));
+    });
+
     it('allows an owner to create and read a valid fixed activity', async () => {
         const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
         await expect(assertSucceeds(setDoc(doc(ownerDb, fixedActivityPath), validFixedActivity()))).resolves.toBeUndefined();

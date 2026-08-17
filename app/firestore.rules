@@ -41,6 +41,19 @@ service cloud.firestore {
         && (adherence.notes == null || adherence.notes is string);
     }
 
+    // Adherence is the only routine update that does not change decision evidence. Keep
+    // it on a bounded fast path: revalidating a nested v3 audit and prescription can hit
+    // Firestore's 1,000-expression limit before the immutability checks are evaluated.
+    function isValidAdherenceOnlyUpdate(userId, date) {
+      return isOwner(userId)
+        && resource.data.userId == userId
+        && resource.data.date == date
+        && request.resource.data.userId == resource.data.userId
+        && request.resource.data.date == resource.data.date
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['adherence'])
+        && hasValidAdherence(request.resource.data.adherence);
+    }
+
     function hasValidDose(dose) {
       return dose is map
         && dose.keys().hasOnly(['volume', 'intensity'])
@@ -477,22 +490,23 @@ service cloud.firestore {
     match /users/{userId}/daily_recommendations/{date} {
       allow read: if isOwner(userId);
       allow create: if hasValidRecommendation(userId, date);
-      allow update: if hasValidRecommendation(userId, date)
-        && keepsOwnership(userId)
-        && request.resource.data.createdAt == resource.data.createdAt
-        && schemaRatchets()
-        && auditWriteOnce()
-        && (
-          (decisionFieldsUnchanged() && (
-            (('revision' in resource.data) && request.resource.data.revision == resource.data.revision) ||
-            (!('revision' in resource.data) && (!('revision' in request.resource.data) || request.resource.data.revision == 1))
-          ))
-          ||
-          (!decisionFieldsUnchanged() && (
-            request.resource.data.revision == (('revision' in resource.data) ? resource.data.revision : 1) + 1
-            && archivesPriorRevision(userId, date)
-          ))
-        );
+      allow update: if isValidAdherenceOnlyUpdate(userId, date)
+        || (hasValidRecommendation(userId, date)
+          && keepsOwnership(userId)
+          && request.resource.data.createdAt == resource.data.createdAt
+          && schemaRatchets()
+          && auditWriteOnce()
+          && (
+            (decisionFieldsUnchanged() && (
+              (('revision' in resource.data) && request.resource.data.revision == resource.data.revision) ||
+              (!('revision' in resource.data) && (!('revision' in request.resource.data) || request.resource.data.revision == 1))
+            ))
+            ||
+            (!decisionFieldsUnchanged() && (
+              request.resource.data.revision == (('revision' in resource.data) ? resource.data.revision : 1) + 1
+              && archivesPriorRevision(userId, date)
+            ))
+          ));
       allow delete: if false;
 
       match /revisions/{revId} {
