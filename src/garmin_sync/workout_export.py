@@ -1,5 +1,4 @@
-"""Workout transformation into Garmin Connect API payload schema."""
-
+import re
 from typing import Any
 
 SPORT_TYPE_MAP: dict[str, dict[str, Any]] = {
@@ -28,6 +27,23 @@ END_CONDITION_MAP: dict[str, dict[str, Any]] = {
     "reps": {"conditionTypeId": 10, "conditionTypeKey": "reps"},
     "lap_button": {"conditionTypeId": 1, "conditionTypeKey": "lap.button"},
 }
+
+
+def _extract_power_target(targets: list[str] | None) -> tuple[float, float] | None:
+    """Extract (min_watts, max_watts) from target strings like '230-240 W' or '140–175 W'."""
+    if not targets:
+        return None
+    for t in targets:
+        if not isinstance(t, str):
+            continue
+        m = re.search(r"(\d+(?:\.\d+)?)\s*[-–—]\s*(\d+(?:\.\d+)?)\s*W\b", t, re.IGNORECASE)
+        if m:
+            return float(m.group(1)), float(m.group(2))
+        single_m = re.search(r"(\d+(?:\.\d+)?)\s*W\b", t, re.IGNORECASE)
+        if single_m:
+            w = float(single_m.group(1))
+            return w, w
+    return None
 
 
 def canonical_workout_to_garmin_payload(workout: dict[str, Any]) -> dict[str, Any]:
@@ -70,6 +86,16 @@ def canonical_workout_to_garmin_payload(workout: dict[str, Any]) -> dict[str, An
                 desc_parts.append(f"({'; '.join(targets)})")
             step_desc = " ".join(desc_parts) if desc_parts else None
 
+            power_target = _extract_power_target(targets)
+            if power_target and modality in ["cycling", "bike"]:
+                target_type = {"workoutTargetTypeId": 2, "workoutTargetTypeKey": "power.zone"}
+                target_val_one: float | None = power_target[0]
+                target_val_two: float | None = power_target[1]
+            else:
+                target_type = {"workoutTargetTypeId": 1, "workoutTargetTypeKey": "no.target"}
+                target_val_one = None
+                target_val_two = None
+
             if reps and modality == "strength":
                 end_condition = END_CONDITION_MAP["reps"]
                 end_condition_value = reps
@@ -90,7 +116,10 @@ def canonical_workout_to_garmin_payload(workout: dict[str, Any]) -> dict[str, An
                         "description": step_desc,
                         "endCondition": end_condition,
                         "endConditionValue": end_condition_value,
-                        "targetType": {"workoutTargetTypeId": 1, "workoutTargetTypeKey": "no.target"},
+                        "targetType": target_type,
+                        "targetValueOne": target_val_one,
+                        "targetValueTwo": target_val_two,
+                        "zoneNumber": None,
                     }
                 ]
                 if rest_sec and rest_sec > 0:
@@ -105,6 +134,9 @@ def canonical_workout_to_garmin_payload(workout: dict[str, Any]) -> dict[str, An
                             "endCondition": END_CONDITION_MAP["time"],
                             "endConditionValue": rest_sec,
                             "targetType": {"workoutTargetTypeId": 1, "workoutTargetTypeKey": "no.target"},
+                            "targetValueOne": None,
+                            "targetValueTwo": None,
+                            "zoneNumber": None,
                         }
                     )
                 repeat_group: dict[str, Any] = {
@@ -129,7 +161,10 @@ def canonical_workout_to_garmin_payload(workout: dict[str, Any]) -> dict[str, An
                     "description": step_desc,
                     "endCondition": end_condition,
                     "endConditionValue": end_condition_value,
-                    "targetType": {"workoutTargetTypeId": 1, "workoutTargetTypeKey": "no.target"},
+                    "targetType": target_type,
+                    "targetValueOne": target_val_one,
+                    "targetValueTwo": target_val_two,
+                    "zoneNumber": None,
                 }
 
                 workout_steps.append(garmin_step)
@@ -148,6 +183,9 @@ def canonical_workout_to_garmin_payload(workout: dict[str, Any]) -> dict[str, An
                             "endCondition": END_CONDITION_MAP["time"],
                             "endConditionValue": rest_sec,
                             "targetType": {"workoutTargetTypeId": 1, "workoutTargetTypeKey": "no.target"},
+                            "targetValueOne": None,
+                            "targetValueTwo": None,
+                            "zoneNumber": None,
                         }
                     )
                     step_order += 1
