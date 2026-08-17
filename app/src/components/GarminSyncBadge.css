@@ -1,0 +1,56 @@
+.garmin-sync-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.2rem 0.55rem;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    line-height: 1;
+    cursor: default;
+    user-select: none;
+    transition: all 0.2s ease-in-out;
+    margin-left: 0.75rem;
+    white-space: nowrap;
+}
+
+.garmin-sync-badge.status-pending {
+    background-color: rgba(59, 130, 246, 0.15);
+    color: #3b82f6;
+    border: 1px solid rgba(59, 130, 246, 0.3);
+}
+
+.garmin-sync-badge.status-pending .garmin-sync-icon {
+    display: inline-block;
+    animation: garmin-spin 1.5s linear infinite;
+}
+
+.garmin-sync-badge.status-synced {
+    background-color: rgba(16, 185, 129, 0.12);
+    color: #10b981;
+    border: 1px solid rgba(16, 185, 129, 0.25);
+}
+
+.garmin-sync-badge.status-failed {
+    background-color: rgba(239, 68, 68, 0.12);
+    color: #ef4444;
+    border: 1px solid rgba(239, 68, 68, 0.25);
+}
+
+.garmin-sync-icon {
+    font-size: 0.8rem;
+}
+
+.garmin-sync-label {
+    font-size: 0.72rem;
+    letter-spacing: 0.02em;
+}
+
+@keyframes garmin-spin {
+    from {
+        transform: rotate(0deg);
+    }
+    to {
+        transform: rotate(360deg);
+    }
+}

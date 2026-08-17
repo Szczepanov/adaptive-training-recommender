@@ -1,6 +1,7 @@
 import React, { useRef, useEffect } from 'react';
 import type { Screen } from '../types/navigation';
 import { getAuthInstance } from '../firebase';
+import { GarminSyncBadge } from './GarminSyncBadge';
 
 interface HeaderProps {
   screen: Screen;
@@ -8,9 +9,19 @@ interface HeaderProps {
   loadDecisionInput: () => void;
   desktopSettingsOpen: boolean;
   setDesktopSettingsOpen: React.Dispatch<React.SetStateAction<boolean>>;
+  userId?: string | null;
+  date?: string;
 }
 
-export const Header: React.FC<HeaderProps> = ({ screen, handleNavigate, loadDecisionInput, desktopSettingsOpen, setDesktopSettingsOpen }) => {
+export const Header: React.FC<HeaderProps> = ({
+  screen,
+  handleNavigate,
+  loadDecisionInput,
+  desktopSettingsOpen,
+  setDesktopSettingsOpen,
+  userId,
+  date,
+}) => {
   const desktopSettingsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -50,6 +61,7 @@ export const Header: React.FC<HeaderProps> = ({ screen, handleNavigate, loadDeci
             <span className="brand-icon">⚡</span>
             <span className="brand-name">Adaptive Coach</span>
           </button>
+          {userId && date && <GarminSyncBadge userId={userId} date={date} />}
         </div>
 
         <nav className="navbar-desktop-menu">

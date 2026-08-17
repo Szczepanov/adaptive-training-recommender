@@ -15,6 +15,7 @@ import { useAuth } from './contexts/AuthContext';
 import { LoginScreen } from './components/LoginScreen';
 import { Header } from './components/Header';
 import { MobileNav } from './components/MobileNav';
+import { getLocalDateString } from './utils/localDate';
 
 function App() {
   const { userId, authPhase } = useAuth();
@@ -61,6 +62,8 @@ function App() {
         loadDecisionInput={loadDecisionInput}
         desktopSettingsOpen={desktopSettingsOpen}
         setDesktopSettingsOpen={setDesktopSettingsOpen}
+        userId={userId}
+        date={decisionInput?.date ?? getLocalDateString()}
       />
 
       {/* Main Page Content */}

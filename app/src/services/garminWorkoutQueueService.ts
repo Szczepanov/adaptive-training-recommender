@@ -1,4 +1,4 @@
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
 import { getDb } from '../firebase';
 import type { CanonicalWorkoutExport } from '../utils/workoutJsonExport';
 
@@ -38,6 +38,33 @@ export class GarminWorkoutQueueService {
         const snap = await getDoc(ref);
         if (!snap.exists()) return null;
         return snap.data() as GarminQueuedWorkout;
+    }
+
+    subscribeToQueueItem(
+        userId: string,
+        date: string,
+        onUpdate: (item: GarminQueuedWorkout | null) => void,
+        onError?: (err: Error) => void
+    ): () => void {
+        const db = getDb();
+        const ref = doc(db, `users/${userId}/garmin_workout_queue/${date}`);
+        return onSnapshot(
+            ref,
+            (snap) => {
+                if (!snap.exists()) {
+                    onUpdate(null);
+                } else {
+                    onUpdate(snap.data() as GarminQueuedWorkout);
+                }
+            },
+            (error) => {
+                if (onError) {
+                    onError(error);
+                } else {
+                    console.error('[GarminWorkoutQueueService] Subscription error:', error);
+                }
+            }
+        );
     }
 }
 
