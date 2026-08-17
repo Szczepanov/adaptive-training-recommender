@@ -130,10 +130,15 @@
 
 .set-gauge,
 .set-warmup-tag {
-  margin-left: auto;
   font-size: 0.8rem;
   color: var(--text-secondary, #94a3b8);
 }
+
+.set-gauge { margin-left: auto; }
+.set-sync { margin-left: 0.35rem; font-size: 0.72rem; white-space: nowrap; }
+.set-sync-synced { color: var(--success, #22c55e); }
+.set-sync-pending { color: var(--warning, #f59e0b); }
+.set-sync-unavailable { color: var(--danger, #ef4444); }
 
 .strength-set-entry {
   display: grid;

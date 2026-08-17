@@ -1,4 +1,4 @@
-import { collection, doc, getDoc, getDocs, orderBy, query, setDoc, where } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, onSnapshot, orderBy, query, setDoc, where, type Unsubscribe } from 'firebase/firestore';
 import { getDb } from '../firebase';
 import type { LoggedExercise, StrengthSession, StrengthSessionState } from '../engine/models';
 import type { DataState } from '../engine/dataState';
@@ -9,7 +9,7 @@ import {
 } from '../engine/strengthSessionLifecycle';
 import { parseStrengthSession } from '../persistence/parsers/strengthSession';
 import { isPermissionDeniedError } from '../utils/errors';
-import { isValidStrengthInstant } from '../engine/strengthSessionValidation';
+import { areValidLoggedExercises, isValidStrengthInstant } from '../engine/strengthSessionValidation';
 
 /**
  * Storage for `users/{userId}/strength_sessions/{sessionId}` (ADR-0021, S1.4). State
@@ -38,6 +38,25 @@ export class StrengthSessionService {
     async getSession(userId: string, sessionId: string): Promise<StrengthSession | null> {
         const state = await this.getSessionState(userId, sessionId);
         return state.status === 'AVAILABLE' ? state.data : null;
+    }
+
+    observeSession(
+        userId: string,
+        sessionId: string,
+        listener: (state: DataState<StrengthSession>, hasPendingWrites: boolean) => void,
+    ): Unsubscribe {
+        const docRef = doc(getDb(), 'users', userId, this.collectionPath, sessionId);
+        return onSnapshot(docRef, { includeMetadataChanges: true }, snapshot => {
+            if (!snapshot.exists()) {
+                listener({ status: 'MISSING' }, snapshot.metadata.hasPendingWrites);
+                return;
+            }
+            listener(parseStrengthSession(snapshot.data(), snapshot.ref.path, snapshot.id, userId), snapshot.metadata.hasPendingWrites);
+        }, error => listener({
+            status: 'UNAVAILABLE',
+            operation: 'observe strength session sync',
+            retryable: !isPermissionDeniedError(error),
+        }, false));
     }
 
     /** Starts a new `in_progress` session. The document id is generated client-side (via
@@ -150,6 +169,8 @@ export class StrengthSessionService {
      *  style -- simple and correct at this document's bounded size (rules cap `exercises`
      *  at 30), not the cheapest possible payload at larger scale. */
     async saveExercises(userId: string, sessionId: string, exercises: LoggedExercise[], nowIso: string = new Date().toISOString()): Promise<void> {
+        if (!isValidStrengthInstant(nowIso)) throw new Error('Strength session update time must be a valid instant');
+        if (!areValidLoggedExercises(exercises)) throw new Error('Strength session exercises exceed schema bounds or contain invalid sets');
         const docRef = doc(getDb(), 'users', userId, this.collectionPath, sessionId);
         await setDoc(docRef, { exercises, updatedAt: nowIso }, { merge: true });
     }

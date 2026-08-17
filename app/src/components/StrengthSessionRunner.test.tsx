@@ -13,6 +13,7 @@ function baseResult(overrides: Partial<UseStrengthSessionRunnerResult> = {}): Us
         plannedExercises: [],
         activeExerciseIndex: null,
         draft: { reps: 1, weightKg: null, isWarmup: false },
+        syncStatusForSet: vi.fn(() => 'synced' as const),
         start: vi.fn(),
         selectExercise: vi.fn(),
         updateDraft: vi.fn(),
@@ -66,6 +67,7 @@ describe('StrengthSessionRunner', () => {
         const html = renderToStaticMarkup(<StrengthSessionRunner userId="u1" />);
         expect(html).toContain('warm-up');
         expect(html).toContain('3 RIR');
+        expect(html).toContain('synced');
         expect(html).toContain('Log set');
     });
 

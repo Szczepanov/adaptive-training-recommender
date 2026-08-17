@@ -6,6 +6,7 @@ const firestore = vi.hoisted(() => {
         doc: vi.fn(),
         getDoc: vi.fn(),
         getDocs: vi.fn(),
+        onSnapshot: vi.fn(),
         orderBy: vi.fn(),
         query: vi.fn(),
         setDoc: vi.fn(),
@@ -86,6 +87,19 @@ describe('StrengthSessionService', () => {
         it('carries an optional sourceRecommendationDate when the session started from a prescription', async () => {
             const session = await service.startSession(USER_ID, { startedAt: '2026-08-17T18:00:00Z', sourceRecommendationDate: '2026-08-17' });
             expect(session.sourceRecommendationDate).toBe('2026-08-17');
+        });
+    });
+
+    describe('observeSession', () => {
+        it('reports Firestore pending-write metadata', () => {
+            const unsubscribe = vi.fn();
+            firestore.onSnapshot.mockImplementationOnce((_ref, _options, next) => {
+                next({ id: SESSION_ID, ref: { path: `users/${USER_ID}/strength_sessions/${SESSION_ID}` }, exists: () => true, data: () => validSession(), metadata: { hasPendingWrites: true } });
+                return unsubscribe;
+            });
+            const listener = vi.fn();
+            expect(service.observeSession(USER_ID, SESSION_ID, listener)).toBe(unsubscribe);
+            expect(listener).toHaveBeenCalledWith(expect.objectContaining({ status: 'AVAILABLE' }), true);
         });
     });
 
@@ -205,6 +219,12 @@ describe('StrengthSessionService', () => {
             const [, payload, options] = firestore.setDoc.mock.calls[0] as [unknown, Record<string, unknown>, Record<string, unknown>];
             expect(payload).toEqual({ exercises, updatedAt: '2026-08-17T18:10:00Z' });
             expect(options).toEqual({ merge: true });
+        });
+
+        it('rejects invalid nested set data before writing', async () => {
+            const exercises = [{ exerciseId: 'bench_press', sets: [{ setIndex: 1, reps: 1001, weightKg: 60, isWarmup: false, completedAt: '2026-08-17T18:10:00Z' }] }];
+            await expect(service.saveExercises(USER_ID, SESSION_ID, exercises)).rejects.toThrow('schema bounds');
+            expect(firestore.setDoc).not.toHaveBeenCalled();
         });
     });
 });

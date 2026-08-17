@@ -27,7 +27,6 @@ function gaugeLabel(gauge: IntensityGauge | undefined): string | null {
  *  `strengthSessionService.test.ts`, which this component only orchestrates. */
 export function StrengthSessionRunner({ userId }: StrengthSessionRunnerProps) {
     const runner = useStrengthSessionRunner(userId);
-    const [gaugeScale, setGaugeScale] = useState<IntensityGauge['scale'] | ''>('');
     const [freeTextName, setFreeTextName] = useState('');
     const [catalogExerciseId, setCatalogExerciseId] = useState('');
 
@@ -46,8 +45,8 @@ export function StrengthSessionRunner({ userId }: StrengthSessionRunnerProps) {
             <div className="strength-runner strength-runner-start">
                 <h3>Strength session</h3>
                 <p className="card-empty">No session in progress.</p>
-                <button type="button" className="strength-start-btn" onClick={() => void runner.start()}>
-                    Start strength session
+                <button type="button" className="strength-start-btn" disabled={runner.saving} onClick={() => void runner.start()}>
+                    {runner.saving ? 'Starting…' : 'Start strength session'}
                 </button>
                 {runner.error && <p className="strength-error">{runner.error}</p>}
             </div>
@@ -77,7 +76,6 @@ export function StrengthSessionRunner({ userId }: StrengthSessionRunnerProps) {
     }
 
     function onGaugeScaleChange(scale: IntensityGauge['scale'] | '') {
-        setGaugeScale(scale);
         if (scale === '') {
             runner.updateDraft({ gauge: undefined });
             return;
@@ -145,14 +143,20 @@ export function StrengthSessionRunner({ userId }: StrengthSessionRunnerProps) {
 
                     {activeExercise.sets.length > 0 && (
                         <ul className="strength-set-list">
-                            {activeExercise.sets.map(set => (
-                                <li key={set.setIndex} className={set.isWarmup ? 'warmup' : ''}>
-                                    <span className="set-index">{set.setIndex}</span>
-                                    <span className="set-summary">{set.reps} × {set.weightKg ?? 'BW'}{set.weightKg !== null ? ' kg' : ''}</span>
-                                    {gaugeLabel(set.gauge) && <span className="set-gauge">{gaugeLabel(set.gauge)}</span>}
-                                    {set.isWarmup && <span className="set-warmup-tag">warm-up</span>}
-                                </li>
-                            ))}
+                            {activeExercise.sets.map(set => {
+                                const syncStatus = runner.syncStatusForSet(activeExercise, set);
+                                return (
+                                    <li key={set.setIndex} className={set.isWarmup ? 'warmup' : ''}>
+                                        <span className="set-index">{set.setIndex}</span>
+                                        <span className="set-summary">{set.reps} × {set.weightKg ?? 'BW'}{set.weightKg !== null ? ' kg' : ''}</span>
+                                        {gaugeLabel(set.gauge) && <span className="set-gauge">{gaugeLabel(set.gauge)}</span>}
+                                        {set.isWarmup && <span className="set-warmup-tag">warm-up</span>}
+                                        <span className={`set-sync set-sync-${syncStatus}`}>
+                                            {syncStatus === 'unavailable' ? 'sync unavailable' : syncStatus}
+                                        </span>
+                                    </li>
+                                );
+                            })}
                         </ul>
                     )}
 
@@ -189,7 +193,7 @@ export function StrengthSessionRunner({ userId }: StrengthSessionRunnerProps) {
 
                             <label>
                                 Gauge
-                                <select value={gaugeScale} onChange={event => onGaugeScaleChange(event.target.value as IntensityGauge['scale'] | '')}>
+                                <select value={runner.draft.gauge?.scale ?? ''} onChange={event => onGaugeScaleChange(event.target.value as IntensityGauge['scale'] | '')}>
                                     <option value="">None</option>
                                     <option value="rir">RIR (reps in reserve)</option>
                                     <option value="rpe_rts">RPE (1-10)</option>
@@ -237,8 +241,10 @@ export function StrengthSessionRunner({ userId }: StrengthSessionRunnerProps) {
 
             {!isClosed && (
                 <div className="strength-session-actions">
-                    <button type="button" onClick={() => void runner.finishSession()}>Finish session</button>
-                    <button type="button" className="strength-abandon-btn" onClick={() => void runner.abandonSession()}>Abandon</button>
+                    <button type="button" disabled={runner.saving} onClick={() => void runner.finishSession()}>
+                        {runner.saving ? 'Saving…' : 'Finish session'}
+                    </button>
+                    <button type="button" disabled={runner.saving} className="strength-abandon-btn" onClick={() => void runner.abandonSession()}>Abandon</button>
                 </div>
             )}
         </div>
