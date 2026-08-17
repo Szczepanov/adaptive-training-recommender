@@ -63,7 +63,7 @@ accepted before any Step C item.
 | S1.1 | Offline persistence | `[x]` | — |
 | S1.2 | `strength_sessions` schema and types | `[x]` | D-GAUGE |
 | S1.3 | Firestore rules and validation | `[x]` | S1.2 |
-| S1.4 | Session state machine and date attribution | `[ ]` | S1.2 |
+| S1.4 | Session state machine and date attribution | `[x]` | S1.2 |
 | S1.5 | Set-entry UI | `[ ]` | S1.3, S1.4 |
 | S1.6 | Rest timer and derived rest | `[ ]` | S1.5 |
 | S1.7 | Overload history view | `[ ]` | S1.3 |
@@ -250,7 +250,7 @@ path segment (`isStrengthSessionDocument`), matching `isDateDocument`'s preceden
 other date-keyed collection — the plan's schema listed `sessionId` as required but the rules
 section didn't mention enforcing the path/field agreement.
 
-### S1.4 `[ ]` Session state machine and date attribution
+### S1.4 `[x]` Session state machine and date attribution
 
 **Change:** `in_progress → completed | abandoned`. Transitions are explicit; a session is
 created `in_progress` on start, not on finish.
@@ -265,6 +265,33 @@ partial work still happened and still costs fatigue in Step C.
 
 **Done when:** a crossing-midnight session asserts the start date; an abandoned session
 retains its logged sets; state transitions are unit-tested including the illegal ones.
+
+**Outcome (2026-08-17).** Split into a pure module and a service, per D-SUBJPURE's
+precedent of keeping engine-layer rules synchronous and testable without mocking Firestore:
+`engine/strengthSessionLifecycle.ts` (`computeSessionDate`, `buildNewStrengthSession`,
+`canTransitionStrengthSessionState`, `isStaleInProgressSession` — 13 tests, no I/O) and
+`services/strengthSessionService.ts` (`startSession`, `transitionState`,
+`reconcileStaleSessions` — 12 tests, mocked Firestore per the `decisionJournalService.test.ts`
+house style).
+
+Transition rule chosen: `in_progress` may move to any state, including re-saving itself
+(every logged set is its own write per D-SETLOG, and each keeps `state` unchanged);
+`completed` and `abandoned` are **terminal**, including against each other and against
+re-opening to `in_progress` — reopening a closed session is treated as a modelling error
+(log a fresh session instead), not a supported transition, since a closed session may
+already have fed overload history or, once Step C ships, engine credit. Re-saving a
+terminal state at itself is allowed (idempotent), which matters because `reconcileStaleSessions`
+would otherwise error on a session it processes twice.
+
+`STALE_IN_PROGRESS_HOURS = 6` is this implementation's choice for the abandonment
+threshold — no session realistically runs that long, but the plan didn't specify a number
+and none was derivable from existing code. Documented as a constant with its rationale in
+`strengthSessionLifecycle.ts` rather than buried in the service, so S1.5 (which decides
+*when* to call `reconcileStaleSessions`) can find and, if needed, override it.
+
+Midnight-crossing is tested in both directions of the DST calendar (CEST, UTC+2 in August;
+CET, UTC+1 in January) via `Intl.DateTimeFormat`, not a hardcoded offset — `getLocalDateString`
+already does this correctly; the tests exist to pin the *contract*, not to add new logic.
 
 ### S1.5 `[ ]` Set-entry UI — **the per-set write is the point**
 
