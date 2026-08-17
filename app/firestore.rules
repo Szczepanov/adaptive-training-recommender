@@ -116,7 +116,9 @@ service cloud.firestore {
     function auditWriteOnce() {
       return !('recommendationAudit' in resource.data)
         || !decisionFieldsUnchanged()
-        || (('recommendationAudit' in request.resource.data) && request.resource.data.recommendationAudit == resource.data.recommendationAudit);
+        || (('recommendationAudit' in request.resource.data)
+          && request.resource.data.recommendationAudit.policyVersion == resource.data.recommendationAudit.policyVersion
+          && request.resource.data.recommendationAudit.evaluatedAt == resource.data.recommendationAudit.evaluatedAt);
     }
 
     function decisionFieldsUnchanged() {
@@ -130,7 +132,7 @@ service cloud.firestore {
         && request.resource.data.rationale == resource.data.rationale
         && (('prescription' in request.resource.data) == ('prescription' in resource.data))
         && (!('prescription' in resource.data)
-          || request.resource.data.prescription == resource.data.prescription);
+          || (!('id' in resource.data.prescription) || request.resource.data.prescription.id == resource.data.prescription.id));
     }
 
     function archivesPriorRevision(userId, date) {
@@ -145,8 +147,8 @@ service cloud.firestore {
         && prior.mode == resource.data.mode
         && prior.rationale == resource.data.rationale
         && (!('engineVerdict' in resource.data) || (('engineVerdict' in prior) && prior.engineVerdict == resource.data.engineVerdict))
-        && (!('prescription' in resource.data) || (('prescription' in prior) && prior.prescription == resource.data.prescription))
-        && (!('recommendationAudit' in resource.data) || (('recommendationAudit' in prior) && prior.recommendationAudit == resource.data.recommendationAudit));
+        && (!('prescription' in resource.data) || (('prescription' in prior) && (!('id' in resource.data.prescription) || prior.prescription.id == resource.data.prescription.id)))
+        && (!('recommendationAudit' in resource.data) || (('recommendationAudit' in prior) && prior.recommendationAudit.policyVersion == resource.data.recommendationAudit.policyVersion && prior.recommendationAudit.evaluatedAt == resource.data.recommendationAudit.evaluatedAt));
     }
 
     match /daily_recovery_snapshot/{date} { allow read, write: if false; }
