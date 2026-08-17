@@ -596,3 +596,64 @@ class GarminSyncService:
         if skipped_dates:
             logger.warning(f"Skipped dates: {skipped_dates}")
         return len(rebuilt_dates) > 0
+
+    def push_workout(
+        self,
+        date_str: str | None = None,
+        workout_payload: dict[str, Any] | None = None,
+    ) -> bool:
+        """Upload and schedule a structured workout to Garmin Connect."""
+        target_date = str(date_str or local_today())
+        client = self._init_garmin_client()
+
+        payload = workout_payload
+        if not payload:
+            if not self.repository.db:
+                logger.warning("Firestore DB not initialized; cannot read queue.")
+                return False
+            queue_doc = (
+                self.repository.db.collection("users")
+                .document(self.settings.app_user_id)
+                .collection("garmin_workout_queue")
+                .document(target_date)
+                .get()
+            )
+            if queue_doc.exists:
+                data = queue_doc.to_dict() or {}
+                payload = data.get("payload")
+
+        if not payload:
+            logger.warning(f"No workout payload found for {target_date} in Firestore queue.")
+            return False
+
+        from .workout_export import canonical_workout_to_garmin_payload
+
+        garmin_payload = canonical_workout_to_garmin_payload(payload)
+        logger.info(
+            f"Uploading workout '{garmin_payload.get('workoutName')}' to Garmin Connect for {target_date}..."
+        )
+        res = client.upload_workout(garmin_payload)
+        workout_id = str(res.get("workoutId") or res.get("workout_id") or "")
+
+        if workout_id:
+            logger.info(f"Scheduling workout {workout_id} on {target_date}...")
+            client.schedule_workout(workout_id, target_date)
+            if self.repository.db:
+                self.repository.db.collection("users").document(
+                    self.settings.app_user_id
+                ).collection("garmin_workout_queue").document(target_date).set(
+                    {
+                        "status": "synced",
+                        "syncedAt": str(local_today()),
+                        "garminWorkoutId": workout_id,
+                    },
+                    merge=True,
+                )
+            logger.info(
+                f"Successfully uploaded and scheduled workout {workout_id} for {target_date}."
+            )
+            return True
+        else:
+            logger.warning(f"Workout uploaded, but no workoutId returned: {res}")
+            return True
+

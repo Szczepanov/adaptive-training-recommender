@@ -119,6 +119,28 @@ def run_rebuild_cmd(args: list[str] | None = None) -> int:
         return 1
 
 
+def run_push_workout_cmd(args: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        description="Upload and schedule a queued structured workout to Garmin Connect."
+    )
+    parser.add_argument(
+        "--date",
+        type=str,
+        default=None,
+        help="Target date YYYY-MM-DD (default local today in Warsaw)",
+    )
+    parsed_args = parser.parse_args(args)
+
+    try:
+        settings = load_settings()
+        service = GarminSyncService(settings)
+        success = service.push_workout(date_str=parsed_args.date)
+        return 0 if success else 1
+    except Exception as e:
+        logger.error(f"Push workout execution error: {type(e).__name__}: {e}")
+        return 1
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Garmin Sync Pipeline CLI")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -161,6 +183,14 @@ def main() -> int:
     )
     rebuild_parser.add_argument("--end-date", type=str, required=True, help="End date YYYY-MM-DD")
 
+    # Push-workout subcommand
+    push_workout_parser = subparsers.add_parser(
+        "push-workout", help="Upload and schedule a queued structured workout to Garmin Connect"
+    )
+    push_workout_parser.add_argument(
+        "--date", type=str, default=None, help="Target date YYYY-MM-DD (default local today)"
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -171,6 +201,8 @@ def main() -> int:
         return run_audit_cmd(sys.argv[2:])
     elif args.command == "rebuild":
         return run_rebuild_cmd(sys.argv[2:])
+    elif args.command == "push-workout":
+        return run_push_workout_cmd(sys.argv[2:])
     return 1
 
 
