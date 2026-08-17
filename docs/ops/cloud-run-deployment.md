@@ -3,7 +3,10 @@
 This guide containerizes the Python Garmin ingestion/sync package and schedules two
 recurring jobs on Google Cloud Platform (GCP):
 
-* **`garmin-sync`** -- daily recovery-metrics ingestion (`python -m garmin_sync sync`)
+* **`garmin-sync`** -- recovery-metrics ingestion (`python -m garmin_sync sync`),
+  polled every 15 min through a morning wake window rather than run once at a
+  fixed time (see step 6) -- most ticks are a free Firestore freshness check,
+  not a Garmin call
 * **`garmin-push-pending-workouts`** -- polls the Firestore workout queue every few
   minutes and pushes anything queued by "Sync to Garmin" in the web app
   (`python -m garmin_sync push-pending-workouts`)
@@ -168,15 +171,34 @@ gcloud logging read \
 
 ## 6. Create the two Cloud Scheduler jobs
 
+`garmin-sync` runs on a **repeating window, not one fixed time** -- wake time
+varies (p95 ~5-7am), and a single fixed cron either fires too early or leaves you
+checking in against stale data. This is safe to poll often because
+`sync_daily()` checks Firestore freshness (`is_fresh`, gated on
+`GARMIN_STALENESS_MINUTES`, default 60) *before* ever calling Garmin: most ticks
+in the window find today's snapshot still fresh and return after a single cheap
+Firestore read, with **zero Garmin API calls**. Only the first tick each day (no
+snapshot yet) and the occasional tick once staleness expires actually hit
+Garmin -- roughly 3-4 real calls across the whole window, not one per tick. Do
+**not** add `--force` here -- it bypasses that exact freshness gate, defeating
+the point.
+
 ```bash
-gcloud scheduler jobs create http garmin-sync-daily \
+gcloud scheduler jobs create http garmin-sync-morning-poll \
   --location=${REGION} \
-  --schedule="15 6 * * *" \
+  --schedule="*/15 5-8 * * *" \
   --time-zone="Europe/Warsaw" \
   --uri="https://run.googleapis.com/v2/projects/${GCP_PROJECT}/locations/${REGION}/jobs/garmin-sync:run" \
   --http-method=POST \
   --oauth-service-account-email=${SCHEDULER_SA_EMAIL}
 ```
+
+The window's first tick each day (5:00am, no snapshot yet for today) always runs
+a real fetch, which includes the normal D-1 lookback resync -- so there's no need
+for a separate once-daily "thorough" run; this single schedule covers it. Want
+data refreshed sooner than the 60-minute default after you actually wake?
+Lower `GARMIN_STALENESS_MINUTES` (e.g. to 20-30) in `cloud-run-job.env.yaml` --
+that raises the real-call count to maybe 6-8 across the window, still light.
 
 ```bash
 gcloud scheduler jobs create http garmin-push-pending-workouts-poll \
