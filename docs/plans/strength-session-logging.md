@@ -1,7 +1,7 @@
 # Strength session logging, 1RM self-calibration, and engine integration
 
-* **Status:** `Accepted`
-* **Blocked by:** nothing for Step A. Step B needs S1.2 landed. Step C needs an accepted ADR for **D-STRCOST**.
+* **Status:** `Accepted` (all 12 work items landed 2026-08-17; see the "Not the same as shipping" note in S3.3's outcome below before treating this plan as fully closed out)
+* **Blocked by:** nothing. D-STRCOST is accepted (ADR-0021) and Steps A–C are all built. **Enabling** `ManualTrainingPolicy.included` in production remains explicitly deferred pending real logged sessions -- see S3.3.
 * **Unlocks:** progressive-overload history; self-calibrating strength prescription; strength work finally costing `lowerBody` / `neuromuscular` fatigue.
 * **Source analysis:** [`2026-08-17-strength-logging-gap.md`](../analysis/2026-08-17-strength-logging-gap.md) — findings referenced below as `A2.1`–`A4.1`.
 
@@ -71,7 +71,7 @@ accepted before any Step C item.
 | S2.2 | Write-back under a `derived` source | `[x]` | S2.1 |
 | S3.1 | Set log → `CompletedExposure` | `[x]` | S1.2, ADR for D-STRCOST |
 | S3.2 | `manualTraining` source wiring | `[x]` | S3.1 |
-| S3.3 | Measurement and ship decision | `[ ]` | S3.2 |
+| S3.3 | Measurement and ship decision | `[x]` | S3.2 |
 
 ---
 
@@ -660,7 +660,7 @@ fixed here — regenerating the baseline is an out-of-scope, consequential actio
 own tooling requires human review for (`simulate:update-baseline -- --reviewed`), and is
 unrelated to strength logging.
 
-### S3.3 `[ ]` Measurement and ship decision
+### S3.3 `[x]` Measurement and ship decision — **DEFERRED, not shipped: see outcome**
 
 Produce the D-STRCOST evidence: derived strength cost against the athlete's real logged
 history, the `simulate:diff` output from S3.2, and the cases where strength load changed a
@@ -668,6 +668,42 @@ recommendation.
 
 **Recording "no material improvement" satisfies this item**, per D-BEAM. A defensible
 decision is the success condition, not shipping.
+
+**Outcome and decision (2026-08-17): DEFER — `ManualTrainingPolicy` stays `'off'` in
+production. Not "measured, no improvement" — "cannot yet be measured at all."**
+
+This is not the same outcome D-BEAM's precedent describes, and the difference matters. Every
+item in Steps A through S3.2 was built and landed in this single session; **zero real
+strength sessions have been logged by the athlete this plan is for.** `estimateOneRepMax`,
+`deriveStrengthExposure`, and `summarizeManualTrainingMeasurement` are correct against every
+case this plan's own tests construct — but "correct on constructed cases" is exactly the
+synthetic-only evidence ADR-0020's **D-SUBJCAL** already established is *not* sufficient to
+authorize shipping a measured candidate. Fabricating plausible-looking session data to
+produce a report with real-looking numbers would manufacture the appearance of the evidence
+this item asks for, not the evidence itself — worse than reporting "no data yet," because a
+fabricated report could be mistaken for one.
+
+**What was built instead:** `workouts/manualTrainingMeasurement.ts` —
+`summarizeManualTrainingMeasurement`, aggregating cost/stimulus/confidence across a set of
+sessions, pure and independent of the selector (so it can run at any time without enabling
+anything) — 4 tests. Deliberately scoped smaller than a full per-day recommendation-verdict
+comparison (the `simulate:diff`/`subjectiveDriftComparison.ts` shape D-BEAM's Phase 9.6
+precedent used): that generator is a meaningfully larger undertaking, and building it now,
+with nothing real to run it against, would be exactly the kind of work this plan's own
+cheapest-risk-first sequencing (Step A before Step B before Step C) exists to defer until
+there's a reason to spend it.
+
+**What "ready to measure" looks like, so this is actionable rather than indefinite:** once
+the athlete has logged strength sessions across a real training block (a few weeks, spanning
+some real training-load variation), running
+`summarizeManualTrainingMeasurement(await strengthSessionService.getSessionsInRange(...))`
+against that real history, and — if the aggregate contribution looks material — building the
+fuller per-day comparison generator, are the two next steps. Until then this section's
+"Done when" criteria (a fully-identified session yields plausible cost, a free-text session
+degrades, warm-ups never influence 1RM, etc.) are satisfied by the tests already in Steps A
+through C; only the aggregate real-world materiality question — "does this change any real
+recommendation enough to matter" — remains genuinely open, because it cannot be answered any
+other way.
 
 ---
 
