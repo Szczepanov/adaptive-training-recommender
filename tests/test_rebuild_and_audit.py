@@ -74,6 +74,44 @@ def test_rebuild_skips_date_missing_archived_payload(tmp_path):
     assert mock_client.mock_calls == []
 
 
+def test_rebuild_preserves_existing_firestore_history_on_skipped_dates(tmp_path):
+    archive_store = LocalRawArchiveStore(base_dir=tmp_path)
+    # Day 2 is fully archived
+    archive_store.archive("stats", "2026-08-07", {"restingHeartRate": 50}, "run-1", "0.3.8")
+    archive_store.archive("sleep", "2026-08-07", {"sleepScores": {"overallScore": {"value": 80}}}, "run-1", "0.3.8")
+    archive_store.archive("hrv", "2026-08-07", {"hrvSummary": {"weeklyAvg": 55, "lastNightAvg": 55}}, "run-1", "0.3.8")
+    archive_store.archive("activities", "2026-08-07", [], "run-1", "0.3.8")
+
+    settings = Settings(app_user_id="test_uid_789")
+    mock_repo = MagicMock()
+    mock_repo.get_historical_snapshots.return_value = {
+        f"2026-07-{d:02d}": {"raw": {"sleepScore": 80, "restingHr": 50, "hrvOvernightAvg": 55, "respirationAvg": 14, "totalSteps": 6000}}
+        for d in range(10, 32)
+    }
+    # Day 1 is missing from archive but present in Firestore
+    mock_repo.get_snapshot.return_value = {
+        "raw": {"sleepScore": 80, "restingHr": 50, "hrvOvernightAvg": 55, "respirationAvg": 14, "totalSteps": 6000}
+    }
+    mock_client = MagicMock()
+
+    service = GarminSyncService(
+        settings=settings,
+        repository=mock_repo,
+        garmin_client=mock_client,
+        archive_store=archive_store,
+    )
+
+    result = service.rebuild("2026-08-06", "2026-08-07")
+
+    assert result is True
+    # Day 2 should have been upserted with 28d baseline because Day 1's raw snapshot was preserved in memory
+    assert mock_repo.upsert_snapshot.call_count == 1
+    call_args = mock_repo.upsert_snapshot.call_args_list[0]
+    date_iso, snapshot_dict = call_args[0]
+    assert date_iso == "2026-08-07"
+    assert snapshot_dict["derived"]["steps28dAvg"] == 6000.0
+
+
 def test_audit_reports_missing_snapshots_and_availability():
     settings = Settings(app_user_id="test_uid_789")
     mock_repo = MagicMock()

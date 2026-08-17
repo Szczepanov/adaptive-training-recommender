@@ -17,7 +17,6 @@ Both share one container image and one runtime service account; only their
 ---
 
 ## 0. Prerequisites
-
 * [`gcloud` CLI](https://cloud.google.com/sdk/docs/install) installed and logged in
   (`gcloud auth login`).
 * Your existing **Firebase project** is the GCP project to use -- Firebase projects
@@ -30,6 +29,12 @@ Both share one container image and one runtime service account; only their
 export GCP_PROJECT="your-gcp-project-id"
 export REGION="europe-central2"  # Warsaw
 gcloud config set project ${GCP_PROJECT}
+```
+
+From the workspace root, build and push the container image to Artifact Registry using Cloud Build (no local Docker required):
+```bash
+# Submit build to Artifact Registry
+gcloud builds submit --tag europe-central2-docker.pkg.dev/adaptive-training-recommender/garmin-sync/garmin-sync:latest .
 ```
 
 ---

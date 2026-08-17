@@ -200,6 +200,12 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
       ...(defaults.environment === 'either' ? [] : [{ label: `${defaults.environment === 'indoor' ? 'Indoor' : 'Outdoor'} training only`, kind: 'guardrail' }]),
     ];
   }, [decisionInput]);
+
+  // ⚡ Bolt: Memoize filtered guardrails to prevent redundant O(N) filtering on every render
+  const activeGuardrails = useMemo(
+    () => activeSettings.filter((setting) => setting.kind === 'guardrail'),
+    [activeSettings]
+  );
   const minimumSafetyStatus = useMemo(
     () => getMinimumSafetyCheckinStatus(decisionInput?.subjectiveCheckin),
     [decisionInput?.subjectiveCheckin],
@@ -982,9 +988,9 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
                 <h3>Training Status</h3>
               </div>
               
-              {activeSettings.some((setting) => setting.kind === 'guardrail') ? (
+              {activeGuardrails.length > 0 ? (
                 <div className="constraints-preview">
-                  {activeSettings.filter((setting) => setting.kind === 'guardrail').slice(0, 3).map(setting => (
+                  {activeGuardrails.slice(0, 3).map(setting => (
                     <div key={setting.label} className="constraint-item">
                       <span className="constraint-name">{setting.label}</span>
                       <span className={`constraint-severity ${setting.kind}`}>
@@ -992,9 +998,9 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
                       </span>
                     </div>
                   ))}
-                  {activeSettings.filter((setting) => setting.kind === 'guardrail').length > 3 && (
+                  {activeGuardrails.length > 3 && (
                     <p className="more-items">
-                      +{activeSettings.filter((setting) => setting.kind === 'guardrail').length - 3} more
+                      +{activeGuardrails.length - 3} more
                     </p>
                   )}
                   <p className="card-action">Tap to manage</p>
