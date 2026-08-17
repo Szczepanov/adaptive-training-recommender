@@ -1255,6 +1255,67 @@ export interface DailyRecommendation {
     };
 }
 
+/** Discriminated intensity gauge for one logged strength set (ADR-0021 D-GAUGE). `rir` and
+ *  `rpe_rts` measure the same failure-proximity construct in different vocabulary and are
+ *  mutually convertible -- but only at READ time; the persisted value is always exactly
+ *  what the athlete entered. `velocity_loss` and `technical` measure output quality, not
+ *  proximity to failure, and are never convertible to or from the other two. Consumers
+ *  that need "how close to failure" (S2.1's 1RM estimator) must branch on `scale`, not
+ *  assume every gauge answers that question. */
+export type IntensityGauge =
+    | { scale: 'rir'; value: number }
+    | { scale: 'rpe_rts'; value: number }
+    | { scale: 'velocity_loss'; percent: number }
+    | { scale: 'technical'; met: boolean; note?: string };
+
+/** One logged set (ADR-0021 D-SETLOG: this is the raw source of truth, never derived
+ *  data written back). `completedAt` is what makes rest duration free -- consecutive
+ *  sets' timestamps are the rest interval; no separate rest field is stored. */
+export interface LoggedSet {
+    setIndex: number;
+    weightKg: number | null;
+    reps: number;
+    gauge?: IntensityGauge;
+    isWarmup: boolean;
+    completedAt: string;
+    notes?: string;
+}
+
+/** `exerciseId` is a soft reference into workouts/exercises.ts, not an enforced foreign
+ *  key -- an unrecognised or null id (free-text lift) is still loggable for overload
+ *  tracking; it only loses the dimensional-cost derivation in S3.1, where it degrades to a
+ *  discounted evidence tier rather than a rejected write. */
+export interface LoggedExercise {
+    exerciseId: string | null;
+    freeTextName?: string;
+    sets: LoggedSet[];
+}
+
+export type StrengthSessionState = 'in_progress' | 'completed' | 'abandoned';
+
+/** Persisted at users/{uid}/strength_sessions/{sessionId} (ADR-0021). `date` is the
+ *  Warsaw-local calendar date of session START, fixed at creation and never recomputed --
+ *  a session crossing midnight belongs to its start date. `updatedAt` stamps every write
+ *  (the schema block in the strength-session-logging plan omitted it; added here because a
+ *  document rewritten on every set, per D-SETLOG's per-set persistence requirement, needs a
+ *  monotonic field for read-layer revision tracking -- the same role `syncedAt` plays for
+ *  NormalizedGarminActivity). `sessionRpe` is whole-session Borg CR-10 and is never an
+ *  `IntensityGauge` -- a different construct from any set-level gauge. */
+export interface StrengthSession {
+    userId: string;
+    sessionId: string;
+    date: string;
+    startedAt: string;
+    completedAt?: string;
+    updatedAt: string;
+    state: StrengthSessionState;
+    sourceRecommendationDate?: string;
+    exercises: LoggedExercise[];
+    sessionRpe?: number;
+    notes?: string;
+    schemaVersion: 1;
+}
+
 /** Backend-normalized Garmin activity stored at users/{uid}/activities/{activityId}. */
 export interface NormalizedGarminActivity {
     activityId: string;
