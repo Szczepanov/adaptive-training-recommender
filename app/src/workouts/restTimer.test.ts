@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { deriveRestIntervals, deriveRestSecondsBetweenSets, elapsedSeconds, formatElapsed } from './restTimer';
+import { deriveRestIntervals, deriveRestSecondsBetweenSets, elapsedSeconds, formatElapsed, latestCompletedSet } from './restTimer';
 import type { LoggedSet } from '../engine/models';
 
 function loggedSet(overrides: Partial<LoggedSet> = {}): LoggedSet {
@@ -72,5 +72,16 @@ describe('deriveRestIntervals', () => {
 
     it('returns an empty list for no sets', () => {
         expect(deriveRestIntervals([])).toEqual([]);
+    });
+});
+
+describe('latestCompletedSet', () => {
+    it('keeps rest timing continuous when the athlete switches exercises', () => {
+        const squat = loggedSet({ completedAt: '2026-08-17T18:05:00Z' });
+        const bench = loggedSet({ completedAt: '2026-08-17T18:07:00Z' });
+        expect(latestCompletedSet([
+            { exerciseId: 'front_squat', sets: [squat] },
+            { exerciseId: 'bench_press', sets: [bench] },
+        ])).toBe(bench);
     });
 });
