@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { StrengthSession } from '../engine/models';
+import type { LoggedExercise, LoggedSet, StrengthSession } from '../engine/models';
 import { strengthSessionService } from '../services/strengthSessionService';
 import { recommendationService } from '../services/recommendationService';
 import { getLocalDateString } from '../utils/localDate';
@@ -25,6 +25,7 @@ export interface UseStrengthSessionRunnerResult {
     plannedExercises: PlannedStrengthExercise[];
     activeExerciseIndex: number | null;
     draft: SetEntryDraft;
+    syncStatusForSet: (exercise: LoggedExercise, set: LoggedSet) => 'synced' | 'pending' | 'unavailable';
     start: () => Promise<void>;
     selectExercise: (exerciseId: string | null, freeTextName?: string) => void;
     updateDraft: (patch: Partial<SetEntryDraft>) => void;
@@ -35,6 +36,14 @@ export interface UseStrengthSessionRunnerResult {
 
 const EMPTY_DRAFT: SetEntryDraft = { reps: 1, weightKg: null, isWarmup: false };
 
+function setSyncKey(exercise: LoggedExercise, set: LoggedSet): string {
+    return `${exercise.exerciseId ?? `free:${exercise.freeTextName ?? ''}`}:${set.setIndex}:${set.completedAt}`;
+}
+
+function sessionSetKeys(session: StrengthSession): Set<string> {
+    return new Set(session.exercises.flatMap(exercise => exercise.sets.map(set => setSyncKey(exercise, set))));
+}
+
 export function useStrengthSessionRunner(userId: string | null | undefined): UseStrengthSessionRunnerResult {
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
@@ -43,6 +52,9 @@ export function useStrengthSessionRunner(userId: string | null | undefined): Use
     const [plannedExercises, setPlannedExercises] = useState<PlannedStrengthExercise[]>([]);
     const [activeExerciseIndex, setActiveExerciseIndex] = useState<number | null>(null);
     const [draft, setDraft] = useState<SetEntryDraft>(EMPTY_DRAFT);
+    const [acknowledgedSetKeys, setAcknowledgedSetKeys] = useState<Set<string>>(() => new Set());
+    const [syncUnavailable, setSyncUnavailable] = useState(false);
+    const observedSessionId = session?.sessionId;
 
     // Resume-on-open: an in_progress session left from earlier today (or last night, if it
     // crosses midnight -- findActiveSession deliberately ignores `date` for this) is
@@ -76,9 +88,31 @@ export function useStrengthSessionRunner(userId: string | null | undefined): Use
         };
     }, [userId]);
 
+    useEffect(() => {
+        if (!userId || !observedSessionId) {
+            setAcknowledgedSetKeys(new Set());
+            setSyncUnavailable(false);
+            return;
+        }
+        return strengthSessionService.observeSession(userId, observedSessionId, (state, hasPendingWrites) => {
+            if (state.status === 'UNAVAILABLE' || state.status === 'INVALID') {
+                setSyncUnavailable(true);
+                return;
+            }
+            setSyncUnavailable(false);
+            // A pending snapshot contains both previously acknowledged sets and the new
+            // local mutation. Preserve the last server-acknowledged keys until metadata
+            // flips false; otherwise every older set would incorrectly turn pending too.
+            if (state.status === 'AVAILABLE' && !hasPendingWrites) {
+                setAcknowledgedSetKeys(sessionSetKeys(state.data));
+            }
+        });
+    }, [userId, observedSessionId]);
+
     const start = useCallback(async () => {
-        if (!userId) return;
+        if (!userId || saving) return;
         setError(null);
+        setSaving(true);
         try {
             const today = getLocalDateString();
             const recommendation = await recommendationService.getRecommendation(userId, today);
@@ -92,11 +126,13 @@ export function useStrengthSessionRunner(userId: string | null | undefined): Use
             setDraft(EMPTY_DRAFT);
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Could not start a strength session');
+        } finally {
+            setSaving(false);
         }
-    }, [userId]);
+    }, [userId, saving]);
 
     const selectExercise = useCallback((exerciseId: string | null, freeTextName?: string) => {
-        if (!session) return;
+        if (!session || saving) return;
         const updated = upsertExercise(session.exercises, exerciseId, freeTextName);
         const isNewlyAdded = updated.length > session.exercises.length;
         const index = exerciseId !== null
@@ -110,11 +146,14 @@ export function useStrengthSessionRunner(userId: string | null | undefined): Use
             // Persisted immediately, matching every other write in this hook -- an added
             // exercise with zero sets is still real session state (e.g. "planned but not
             // yet started"), not something to lose on a killed app before the first set.
-            strengthSessionService.saveExercises(userId!, session.sessionId, updated).catch(err => {
-                setError(err instanceof Error ? err.message : 'Could not save the selected exercise');
-            });
+            setSaving(true);
+            strengthSessionService.saveExercises(userId!, session.sessionId, updated)
+                .catch(err => {
+                    setError(err instanceof Error ? err.message : 'Could not save the selected exercise');
+                })
+                .finally(() => setSaving(false));
         }
-    }, [session, plannedExercises, userId]);
+    }, [session, plannedExercises, userId, saving]);
 
     const updateDraft = useCallback((patch: Partial<SetEntryDraft>) => {
         setDraft(current => ({ ...current, ...patch }));
@@ -148,21 +187,30 @@ export function useStrengthSessionRunner(userId: string | null | undefined): Use
     }, [session, activeExerciseIndex, draft, plannedExercises, userId]);
 
     const closeSession = useCallback(async (next: 'completed' | 'abandoned') => {
-        if (!session) return;
+        if (!session || saving) return;
         setError(null);
+        setSaving(true);
         try {
             const updated = await strengthSessionService.transitionState(userId!, session.sessionId, next);
             setSession(updated);
         } catch (err) {
             setError(err instanceof Error ? err.message : `Could not mark the session ${next}`);
+        } finally {
+            setSaving(false);
         }
-    }, [session, userId]);
+    }, [session, userId, saving]);
 
     const finishSession = useCallback(() => closeSession('completed'), [closeSession]);
     const abandonSession = useCallback(() => closeSession('abandoned'), [closeSession]);
 
+    const syncStatusForSet = useCallback((exercise: LoggedExercise, set: LoggedSet) => {
+        if (syncUnavailable) return 'unavailable' as const;
+        return acknowledgedSetKeys.has(setSyncKey(exercise, set)) ? 'synced' as const : 'pending' as const;
+    }, [acknowledgedSetKeys, syncUnavailable]);
+
     return {
         loading, saving, error, session, plannedExercises, activeExerciseIndex, draft,
+        syncStatusForSet,
         start, selectExercise, updateDraft, logSet, finishSession, abandonSession,
     };
 }

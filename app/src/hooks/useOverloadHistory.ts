@@ -39,9 +39,10 @@ export function useOverloadHistory(userId: string | null | undefined, windowDays
         }
         let cancelled = false;
         setLoading(true);
-        const endInclusive = getLocalDateString();
-        const startInclusive = addDaysToLocalDateString(endInclusive, -windowDays);
-        strengthSessionService.getSessionsInRange(userId, startInclusive, endInclusive)
+        const today = getLocalDateString();
+        const throughDateExclusive = addDaysToLocalDateString(today, 1);
+        const startInclusive = addDaysToLocalDateString(throughDateExclusive, -windowDays);
+        strengthSessionService.getSessionsInRange(userId, startInclusive, throughDateExclusive)
             .then(result => {
                 if (cancelled) return;
                 setSessions(result.sessions);

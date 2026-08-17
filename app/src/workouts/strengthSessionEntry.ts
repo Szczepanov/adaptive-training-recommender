@@ -1,4 +1,11 @@
 import type { IntensityGauge, LoggedExercise, LoggedSet } from '../engine/models';
+import {
+    MAX_REPS_PER_SET,
+    MAX_SETS_PER_EXERCISE,
+    MAX_WEIGHT_KG,
+    isValidIntensityGauge,
+    isValidStrengthInstant,
+} from '../engine/strengthSessionValidation';
 import type { IntensityTarget, WorkoutPrescription } from './models';
 
 /**
@@ -94,11 +101,20 @@ export type BuildSetResult = { ok: true; set: LoggedSet } | { ok: false; error: 
  *  convenience, not the enforcement point; `parseStrengthSession` (S1.2) and the Firestore
  *  rules (S1.3) remain the real gates. */
 export function buildLoggedSet(draft: SetEntryDraft, loggedSets: readonly LoggedSet[], completedAtIso: string): BuildSetResult {
-    if (!Number.isFinite(draft.reps) || draft.reps <= 0) {
-        return { ok: false, error: 'Enter reps greater than zero' };
+    if (!Number.isInteger(draft.reps) || draft.reps <= 0 || draft.reps > MAX_REPS_PER_SET) {
+        return { ok: false, error: `Enter whole-number reps between 1 and ${MAX_REPS_PER_SET}` };
     }
-    if (draft.weightKg !== null && (!Number.isFinite(draft.weightKg) || draft.weightKg < 0)) {
+    if (draft.weightKg !== null && (!Number.isFinite(draft.weightKg) || draft.weightKg < 0 || draft.weightKg > MAX_WEIGHT_KG)) {
         return { ok: false, error: 'Enter a valid weight, or leave it blank for bodyweight' };
+    }
+    if (draft.gauge && !isValidIntensityGauge(draft.gauge)) {
+        return { ok: false, error: 'Enter a valid intensity gauge value' };
+    }
+    if (loggedSets.length >= MAX_SETS_PER_EXERCISE) {
+        return { ok: false, error: `An exercise cannot contain more than ${MAX_SETS_PER_EXERCISE} sets` };
+    }
+    if (!isValidStrengthInstant(completedAtIso)) {
+        return { ok: false, error: 'Could not determine when the set was completed' };
     }
     return {
         ok: true,
