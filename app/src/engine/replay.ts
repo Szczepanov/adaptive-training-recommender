@@ -2,6 +2,7 @@ import type { DailyRecommendation, ExternalDecisionProvenance, ExternalTrainingP
 import { computeContentHash } from './externalPlanHash';
 import { externalTemplateId, isExternalTemplateId } from './externalSessionProfiles';
 import { isHistoricalPolicyVersion, POLICY_VERSION } from './policy';
+import { subjectiveDriftAuditReplayErrors } from './subjectiveDriftAudit';
 
 export interface RecommendationReplayResult {
     reproducible: boolean;
@@ -35,7 +36,9 @@ function rankedDecisionErrors(recommendation: DailyRecommendation): string[] {
 /**
  * Verifies that a v3 record is internally reproducible from its compact persisted
  * audit. It intentionally validates normalized decision facts only; raw recovery
- * payloads and free-text notes are neither required nor accepted as replay inputs.
+ * payloads, raw subjective history, and free-text notes are neither required nor accepted
+ * as replay inputs. Optional subjective-drift evidence is checked against only the
+ * normalized invariants that are reproducible from the compact audit.
  *
  * Historical policy versions remain auditable but are not executable in the current
  * bundle. Replaying one is rejected explicitly rather than silently interpreting its
@@ -67,6 +70,9 @@ export function replayRecommendationAudit(
     if (audit.safetyStatus !== 'complete') errors.push('Audit safety status is not complete.');
     if (!audit.decisionContextRevision.startsWith('history-v1:')) errors.push('Decision context revision is invalid.');
     if (audit.history.unmatchedEventCount > audit.history.completedEventCount) errors.push('Unmatched event count exceeds completed event count.');
+
+    const subjectiveDrift = (audit as typeof audit & { subjectiveDrift?: unknown }).subjectiveDrift;
+    errors.push(...subjectiveDriftAuditReplayErrors(subjectiveDrift, recommendation.date));
 
     if (audit.externalPlan) {
         errors.push(...externalDecisionErrors(recommendation, audit.externalPlan, externalRevision));
