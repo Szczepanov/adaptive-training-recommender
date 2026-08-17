@@ -144,6 +144,26 @@ export class StrengthSessionService {
         const docRef = doc(getDb(), 'users', userId, this.collectionPath, sessionId);
         await setDoc(docRef, { exercises, updatedAt: nowIso }, { merge: true });
     }
+
+    /** Bounded date-range read for S1.7's overload history, same query shape as
+     *  `activityService.getActivitiesInRange` / `decisionJournalService.getEntriesInRange`
+     *  (`where` on `date`, `orderBy('date')`). An invalid stored session is omitted from
+     *  the rows and counted, matching that precedent -- a corrupt document must not read as
+     *  a genuinely missing day, and one bad document must not fail the whole range the way
+     *  a single-document read's `INVALID` status would. */
+    async getSessionsInRange(userId: string, startDateInclusive: string, endDateInclusive: string): Promise<{ sessions: StrengthSession[]; invalidRecords: number }> {
+        const collRef = collection(getDb(), 'users', userId, this.collectionPath);
+        const q = query(collRef, where('date', '>=', startDateInclusive), where('date', '<=', endDateInclusive), orderBy('date', 'asc'));
+        const querySnapshot = await getDocs(q);
+        const sessions: StrengthSession[] = [];
+        let invalidRecords = 0;
+        for (const docSnap of querySnapshot.docs) {
+            const parsed = parseStrengthSession(docSnap.data(), docSnap.ref.path, docSnap.id, userId);
+            if (parsed.status === 'AVAILABLE') sessions.push(parsed.data);
+            else if (parsed.status === 'INVALID') invalidRecords += 1;
+        }
+        return { sessions, invalidRecords };
+    }
 }
 
 export const strengthSessionService = new StrengthSessionService();

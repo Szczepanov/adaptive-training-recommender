@@ -1,0 +1,36 @@
+.strength-overload-history {
+  background: var(--surface-card, #1e293b);
+  border-radius: 0.75rem;
+  padding: 1rem;
+  color: var(--text-primary, #f8fafc);
+  display: grid;
+  gap: 0.75rem;
+}
+
+.strength-overload-history h3 {
+  margin: 0;
+}
+
+.strength-overload-warning {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--tier-yellow, #eab308);
+}
+
+.strength-overload-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.strength-overload-table th,
+.strength-overload-table td {
+  text-align: left;
+  padding: 0.4rem 0.5rem;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.15);
+}
+
+.strength-overload-table th {
+  color: var(--text-secondary, #94a3b8);
+  font-weight: 600;
+}

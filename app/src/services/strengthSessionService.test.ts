@@ -191,4 +191,33 @@ describe('StrengthSessionService', () => {
             expect(options).toEqual({ merge: true });
         });
     });
+
+    describe('getSessionsInRange', () => {
+        it('returns parsed sessions within the range', async () => {
+            firestore.getDocs.mockResolvedValueOnce({
+                docs: [{ id: SESSION_ID, ref: { path: `users/${USER_ID}/strength_sessions/${SESSION_ID}` }, data: () => validSession() }],
+            });
+            const result = await service.getSessionsInRange(USER_ID, '2026-08-01', '2026-08-31');
+            expect(result.sessions).toHaveLength(1);
+            expect(result.invalidRecords).toBe(0);
+        });
+
+        it('omits an invalid document from the rows but counts it, rather than failing the whole range', async () => {
+            firestore.getDocs.mockResolvedValueOnce({
+                docs: [
+                    { id: SESSION_ID, ref: { path: `users/${USER_ID}/strength_sessions/${SESSION_ID}` }, data: () => validSession() },
+                    { id: 'corrupt', ref: { path: `users/${USER_ID}/strength_sessions/corrupt` }, data: () => ({ ...validSession({ sessionId: 'corrupt' }), state: 'not-a-real-state' }) },
+                ],
+            });
+            const result = await service.getSessionsInRange(USER_ID, '2026-08-01', '2026-08-31');
+            expect(result.sessions).toHaveLength(1);
+            expect(result.invalidRecords).toBe(1);
+        });
+
+        it('returns an empty range cleanly', async () => {
+            firestore.getDocs.mockResolvedValueOnce({ docs: [] });
+            const result = await service.getSessionsInRange(USER_ID, '2026-08-01', '2026-08-31');
+            expect(result).toEqual({ sessions: [], invalidRecords: 0 });
+        });
+    });
 });

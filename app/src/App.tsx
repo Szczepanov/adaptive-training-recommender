@@ -9,6 +9,7 @@ import { Preferences } from './components/Preferences';
 import { DataView } from './components/DataView';
 import { ExternalPlanImport } from './components/ExternalPlanImport';
 import { StrengthSessionRunner } from './components/StrengthSessionRunner';
+import { StrengthOverloadHistory } from './components/StrengthOverloadHistory';
 import { decisionComposer } from './engine/composer';
 import type { DailyDecisionInput } from './engine/models';
 import type { Screen } from './types/navigation';
@@ -118,7 +119,10 @@ function App() {
         )}
 
         {screen === 'strength' && (
-          <StrengthSessionRunner userId={userId!} />
+          <div className="strength-screen">
+            <StrengthSessionRunner userId={userId!} />
+            <StrengthOverloadHistory userId={userId!} />
+          </div>
         )}
 
         {screen === 'plan' && (
