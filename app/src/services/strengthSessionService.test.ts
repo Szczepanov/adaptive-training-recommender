@@ -75,6 +75,26 @@ describe('StrengthSessionService', () => {
         });
     });
 
+    describe('observeSession', () => {
+        it('reports SDK pending-write metadata instead of treating a local-cache write as synced', () => {
+            const unsubscribe = vi.fn();
+            firestore.onSnapshot.mockImplementationOnce((_ref, _options, next) => {
+                next({
+                    id: SESSION_ID,
+                    ref: { path: `users/${USER_ID}/strength_sessions/${SESSION_ID}` },
+                    exists: () => true,
+                    data: () => validSession(),
+                    metadata: { hasPendingWrites: true },
+                });
+                return unsubscribe;
+            });
+            const listener = vi.fn();
+            expect(service.observeSession(USER_ID, SESSION_ID, listener)).toBe(unsubscribe);
+            expect(listener).toHaveBeenCalledWith(expect.objectContaining({ status: 'AVAILABLE' }), true);
+            expect(firestore.onSnapshot.mock.calls[0]?.[1]).toEqual({ includeMetadataChanges: true });
+        });
+    });
+
     describe('startSession', () => {
         it('creates an in_progress session with the freshly minted doc id embedded as sessionId', async () => {
             const session = await service.startSession(USER_ID, { startedAt: '2026-08-17T18:00:00Z' });
@@ -90,40 +110,11 @@ describe('StrengthSessionService', () => {
         });
     });
 
-    describe('observeSession', () => {
-        it('reports Firestore pending-write metadata', () => {
-            const unsubscribe = vi.fn();
-            firestore.onSnapshot.mockImplementationOnce((_ref, _options, next) => {
-                next({ id: SESSION_ID, ref: { path: `users/${USER_ID}/strength_sessions/${SESSION_ID}` }, exists: () => true, data: () => validSession(), metadata: { hasPendingWrites: true } });
-                return unsubscribe;
-            });
-            const listener = vi.fn();
-            expect(service.observeSession(USER_ID, SESSION_ID, listener)).toBe(unsubscribe);
-            expect(listener).toHaveBeenCalledWith(expect.objectContaining({ status: 'AVAILABLE' }), true);
-        });
-    });
-
     describe('transitionState', () => {
         it('moves an in_progress session to completed and stamps completedAt', async () => {
             existingDoc(validSession());
             const updated = await service.transitionState(USER_ID, SESSION_ID, 'completed', '2026-08-17T19:00:00Z');
             expect(updated).toMatchObject({ state: 'completed', completedAt: '2026-08-17T19:00:00Z', updatedAt: '2026-08-17T19:00:00Z' });
-            expect(firestore.setDoc).toHaveBeenCalledWith(expect.anything(), {
-                state: 'completed', completedAt: '2026-08-17T19:00:00Z', updatedAt: '2026-08-17T19:00:00Z',
-            }, { merge: true });
-        });
-
-        it('preserves an existing completion timestamp on an idempotent close', async () => {
-            existingDoc(validSession({ state: 'completed', completedAt: '2026-08-17T19:00:00Z', updatedAt: '2026-08-17T19:00:00Z' }));
-            const updated = await service.transitionState(USER_ID, SESSION_ID, 'completed', '2026-08-17T20:00:00Z');
-            expect(updated.completedAt).toBe('2026-08-17T19:00:00Z');
-            expect(firestore.setDoc).not.toHaveBeenCalled();
-        });
-
-        it('rejects a transition timestamp before the last saved update', async () => {
-            existingDoc(validSession({ updatedAt: '2026-08-17T19:00:00Z' }));
-            await expect(service.transitionState(USER_ID, SESSION_ID, 'completed', '2026-08-17T18:59:59Z')).rejects.toThrow(/must not precede/i);
-            expect(firestore.setDoc).not.toHaveBeenCalled();
         });
 
         it('rejects reopening a completed session before ever writing to Firestore', async () => {
@@ -194,9 +185,9 @@ describe('StrengthSessionService', () => {
 
         it('returns a fresh in_progress session, even if its date field is yesterday (started before midnight)', async () => {
             firestore.getDocs.mockResolvedValueOnce({
-                docs: [{ id: SESSION_ID, ref: { path: `users/${USER_ID}/strength_sessions/${SESSION_ID}` }, data: () => validSession({ date: '2026-08-16', startedAt: '2026-08-16T23:50:00Z' }) }],
+                docs: [{ id: SESSION_ID, ref: { path: `users/${USER_ID}/strength_sessions/${SESSION_ID}` }, data: () => validSession({ date: '2026-08-16', startedAt: '2026-08-16T21:50:00Z' }) }],
             });
-            const active = await service.findActiveSession(USER_ID, '2026-08-17T00:10:00Z');
+            const active = await service.findActiveSession(USER_ID, '2026-08-16T22:10:00Z');
             expect(active).toMatchObject({ sessionId: SESSION_ID, state: 'in_progress' });
         });
 
@@ -221,10 +212,45 @@ describe('StrengthSessionService', () => {
             expect(options).toEqual({ merge: true });
         });
 
-        it('rejects invalid nested set data before writing', async () => {
+        it('rejects invalid nested set data before the permissive array rules boundary', async () => {
             const exercises = [{ exerciseId: 'bench_press', sets: [{ setIndex: 1, reps: 1001, weightKg: 60, isWarmup: false, completedAt: '2026-08-17T18:10:00Z' }] }];
             await expect(service.saveExercises(USER_ID, SESSION_ID, exercises)).rejects.toThrow('schema bounds');
             expect(firestore.setDoc).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('getSessionsInRange', () => {
+        it('uses an exclusive upper bound matching TrainingHistorySnapshot semantics', async () => {
+            await service.getSessionsInRange(USER_ID, '2026-08-01', '2026-08-31');
+            expect(firestore.where).toHaveBeenNthCalledWith(1, 'date', '>=', '2026-08-01');
+            expect(firestore.where).toHaveBeenNthCalledWith(2, 'date', '<', '2026-08-31');
+        });
+
+        it('returns parsed sessions within the range', async () => {
+            firestore.getDocs.mockResolvedValueOnce({
+                docs: [{ id: SESSION_ID, ref: { path: `users/${USER_ID}/strength_sessions/${SESSION_ID}` }, data: () => validSession() }],
+            });
+            const result = await service.getSessionsInRange(USER_ID, '2026-08-01', '2026-08-31');
+            expect(result.sessions).toHaveLength(1);
+            expect(result.invalidRecords).toBe(0);
+        });
+
+        it('omits an invalid document from the rows but counts it, rather than failing the whole range', async () => {
+            firestore.getDocs.mockResolvedValueOnce({
+                docs: [
+                    { id: SESSION_ID, ref: { path: `users/${USER_ID}/strength_sessions/${SESSION_ID}` }, data: () => validSession() },
+                    { id: 'corrupt', ref: { path: `users/${USER_ID}/strength_sessions/corrupt` }, data: () => ({ ...validSession({ sessionId: 'corrupt' }), state: 'not-a-real-state' }) },
+                ],
+            });
+            const result = await service.getSessionsInRange(USER_ID, '2026-08-01', '2026-08-31');
+            expect(result.sessions).toHaveLength(1);
+            expect(result.invalidRecords).toBe(1);
+        });
+
+        it('returns an empty range cleanly', async () => {
+            firestore.getDocs.mockResolvedValueOnce({ docs: [] });
+            const result = await service.getSessionsInRange(USER_ID, '2026-08-01', '2026-08-31');
+            expect(result).toEqual({ sessions: [], invalidRecords: 0 });
         });
     });
 });

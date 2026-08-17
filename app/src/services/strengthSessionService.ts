@@ -40,6 +40,9 @@ export class StrengthSessionService {
         return state.status === 'AVAILABLE' ? state.data : null;
     }
 
+    /** Metadata-aware observation used by the gym-floor UI. `setDoc` resolving means the
+     * write reached the local cache, not the server; `hasPendingWrites` is the SDK's actual
+     * acknowledgement signal and is therefore the only honest synced/pending indicator. */
     observeSession(
         userId: string,
         sessionId: string,
@@ -51,12 +54,17 @@ export class StrengthSessionService {
                 listener({ status: 'MISSING' }, snapshot.metadata.hasPendingWrites);
                 return;
             }
-            listener(parseStrengthSession(snapshot.data(), snapshot.ref.path, snapshot.id, userId), snapshot.metadata.hasPendingWrites);
-        }, error => listener({
-            status: 'UNAVAILABLE',
-            operation: 'observe strength session sync',
-            retryable: !isPermissionDeniedError(error),
-        }, false));
+            listener(
+                parseStrengthSession(snapshot.data(), snapshot.ref.path, snapshot.id, userId),
+                snapshot.metadata.hasPendingWrites,
+            );
+        }, error => {
+            listener({
+                status: 'UNAVAILABLE',
+                operation: 'observe strength session sync',
+                retryable: !isPermissionDeniedError(error),
+            }, false);
+        });
     }
 
     /** Starts a new `in_progress` session. The document id is generated client-side (via
@@ -103,6 +111,9 @@ export class StrengthSessionService {
         if (!transition.ok) {
             throw new Error(transition.reason);
         }
+        // Terminal states are idempotent and immutable. Rewriting a completed session's
+        // completion time would change derived duration and replayed load without a new
+        // workout having occurred.
         if (current.state === next) return current;
         if (!isValidStrengthInstant(nowIso) || Date.parse(nowIso) < Date.parse(current.updatedAt)) {
             throw new Error('Strength session transition time must not precede the last saved update');
@@ -114,6 +125,8 @@ export class StrengthSessionService {
             ...(next === 'completed' ? { completedAt: nowIso } : {}),
         };
         const docRef = doc(getDb(), 'users', userId, this.collectionPath, sessionId);
+        // Merge only lifecycle fields. A whole-document rewrite can overwrite a set that
+        // another tab queued between the read above and this close action.
         await setDoc(docRef, {
             state: next,
             updatedAt: nowIso,
@@ -173,6 +186,26 @@ export class StrengthSessionService {
         if (!areValidLoggedExercises(exercises)) throw new Error('Strength session exercises exceed schema bounds or contain invalid sets');
         const docRef = doc(getDb(), 'users', userId, this.collectionPath, sessionId);
         await setDoc(docRef, { exercises, updatedAt: nowIso }, { merge: true });
+    }
+
+    /** Bounded date-range read for S1.7's overload history, same query shape as
+     *  `activityService.getActivitiesInRange` / `decisionJournalService.getEntriesInRange`
+     *  (`where` on `date`, `orderBy('date')`). An invalid stored session is omitted from
+     *  the rows and counted, matching that precedent -- a corrupt document must not read as
+     *  a genuinely missing day, and one bad document must not fail the whole range the way
+     *  a single-document read's `INVALID` status would. */
+    async getSessionsInRange(userId: string, startDateInclusive: string, throughDateExclusive: string): Promise<{ sessions: StrengthSession[]; invalidRecords: number }> {
+        const collRef = collection(getDb(), 'users', userId, this.collectionPath);
+        const q = query(collRef, where('date', '>=', startDateInclusive), where('date', '<', throughDateExclusive), orderBy('date', 'asc'));
+        const querySnapshot = await getDocs(q);
+        const sessions: StrengthSession[] = [];
+        let invalidRecords = 0;
+        for (const docSnap of querySnapshot.docs) {
+            const parsed = parseStrengthSession(docSnap.data(), docSnap.ref.path, docSnap.id, userId);
+            if (parsed.status === 'AVAILABLE') sessions.push(parsed.data);
+            else if (parsed.status === 'INVALID') invalidRecords += 1;
+        }
+        return { sessions, invalidRecords };
     }
 }
 

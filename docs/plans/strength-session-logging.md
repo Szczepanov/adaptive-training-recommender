@@ -70,7 +70,7 @@ accepted before any Step C item.
 | S1.4 | Session state machine and date attribution | `[x]` | S1.2 |
 | S1.5 | Set-entry UI | `[x]` | S1.3, S1.4 |
 | S1.6 | Rest timer and derived rest | `[x]` | S1.5 |
-| S1.7 | Overload history view | `[ ]` | S1.3 |
+| S1.7 | Overload history view | `[x]` | S1.3 |
 | S2.1 | Gauge-aware 1RM estimator | `[ ]` | S1.2 |
 | S2.2 | Write-back under a `derived` source | `[ ]` | S2.1 |
 | S3.1 | Set log → `CompletedExposure` | `[ ]` | S1.2, ADR for D-STRCOST |
@@ -406,7 +406,7 @@ instead: `elapsedSeconds` and `formatElapsed` are fully covered, and the hook's 
 moving parts (`setInterval` as trigger, `elapsedSeconds` as value) are each independently
 tested at the boundary between them.
 
-### S1.7 `[ ]` Overload history view
+### S1.7 `[x]` Overload history view
 
 **Change:** per-exercise history — load, reps, tonnage and best set over time, reading the
 raw log directly (D-SETLOG). Warm-up sets excluded from tonnage.
@@ -415,6 +415,33 @@ This is the deliverable for goal 2 and needs nothing from Steps B or C.
 
 **Done when:** an exercise with sessions across several weeks renders a correct trend;
 warm-up sets are excluded; an exercise with one session renders without special-casing.
+
+**Outcome (2026-08-17).** `workouts/overloadHistory.ts` (`summarizeExerciseSession`,
+`summarizeExerciseAcrossSessions`, `distinctLoggedExercises` — 14 tests, pure, no I/O),
+`services/strengthSessionService.getSessionsInRange` (bounded date-range read, same query
+shape as `activityService.getActivitiesInRange` / `decisionJournalService.getEntriesInRange`
+— invalid documents are omitted and counted rather than failing the whole range; 3 new
+tests), `hooks/useOverloadHistory.ts` (orchestration, no dedicated test file per this plan's
+established precedent), and `components/StrengthOverloadHistory.tsx` (a table, not a chart —
+the plan's own wording is satisfied by one row per session; 8 smoke tests). Wired into the
+same `'strength'` screen as S1.5's runner rather than a separate nav entry, stacked below it.
+
+**A real identity bug was caught and fixed during implementation, not after.** The first
+draft matched an exercise across sessions on `exerciseId` alone. Two different free-text
+lifts both have `exerciseId: null`, so that match would have silently merged, say, "Farmer
+carry" and "Sled push" into one shared history the moment both existed. Every lookup in the
+module now goes through an `ExerciseIdentity { exerciseId, freeTextName }` and a single
+`identityKey` function, and a dedicated test (`'never conflates two distinct free-text
+exercises that share exerciseId: null'`) pins it. Contrast with `upsertExercise` (S1.5),
+which deliberately keeps two same-named free-text entries distinct *within one session* —
+across sessions, for history purposes, they are necessarily merged by name instead, since
+there is nothing else to key on. Documented as a stated relaxation, not an inconsistency.
+
+**"Best set" is a plain heuristic, not an estimate.** `heaviestSet` is the working set with
+the greatest `weightKg` (ties broken by reps) — never conflated with S2.1's 1RM estimator,
+which does not exist yet at this point in the plan and uses a different, gauge-filtered
+admissibility rule. Naming it "heaviest" rather than "best" or "estimated max" in the type
+itself was a deliberate choice to make that boundary hard to blur later by accident.
 
 ---
 
