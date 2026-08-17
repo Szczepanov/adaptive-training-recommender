@@ -176,6 +176,8 @@ class DerivedDeltas:
     hrvVs28d: float | None = None
     respirationVs7d: float | None = None
     respirationVs28d: float | None = None
+    stepsVs7d: float | None = None
+    stepsVs28d: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -198,6 +200,9 @@ class DerivedMetrics:
     hrv28dStdev: float | None = None
     restingHr28dStdev: float | None = None
     sleepScore28dStdev: float | None = None
+    steps7dAvg: float | None = None
+    steps28dAvg: float | None = None
+    steps28dStdev: float | None = None
     deltas: DerivedDeltas = field(default_factory=DerivedDeltas)
 
     def to_dict(self) -> dict[str, Any]:

@@ -384,6 +384,31 @@ def test_sync_service_works_with_a_non_garmin_provider():
     assert saved_payload["raw"]["restingHr"] == 47.0
 
 
+def test_sync_service_derives_step_delta_from_completed_d1_steps():
+    """Step deltas must receive the current canonical D-1 total, not only history."""
+    settings = Settings(app_user_id="test_uid_789")
+    mock_repo = MagicMock()
+    mock_repo.is_fresh.return_value = False
+    mock_repo.get_historical_snapshots.return_value = {
+        f"2026-08-0{day}": {"raw": {"totalSteps": 5000}}
+        for day in range(2, 6)
+    }
+    service = GarminSyncService(
+        settings=settings,
+        repository=mock_repo,
+        provider=FakeTestProvider(),
+    )
+
+    assert service.sync_daily(
+        target_date_str="2026-08-06", force=True, resync_lookback_days=0
+    ) is True
+
+    saved_payload = mock_repo.upsert_snapshot.call_args.args[1]
+    assert saved_payload["raw"]["totalSteps"] == 9000
+    assert saved_payload["derived"]["steps7dAvg"] == 5000.0
+    assert saved_payload["derived"]["deltas"]["stepsVs7d"] == 4000.0
+
+
 def test_sync_service_survives_a_failed_enrichment_fetch():
     """A metric-enrichment endpoint (stress/body battery/training readiness/training
     status) failing must not abort the whole sync -- the core snapshot (sleep/HRV/RHR)

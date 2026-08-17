@@ -177,6 +177,10 @@ class GarminSyncService:
             "restingHr": canonical.resting_heart_rate_bpm,
             "hrvOvernightAvg": canonical.hrv_overnight_avg_ms,
             "respirationAvg": canonical.respiration_rate_brpm,
+            # `steps_count` is the completed D-1 value (see metricDates.steps),
+            # so it must accompany the other current metrics when deriving its
+            # trailing baseline and deltas.
+            "totalSteps": canonical.steps_count,
         }
         derived = compute_derived_metrics(dummy_current, window_7d, window_28d)
 

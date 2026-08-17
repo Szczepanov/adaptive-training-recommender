@@ -5,7 +5,7 @@ Quick guide for building, testing, and working on `adaptive-training-recommender
 ## Core Guidelines & Architectural Rules
 - **User Scoping**: Ingestion output path MUST be `users/{APP_USER_ID}/daily_recovery_snapshots/{YYYY-MM-DD}`. Never write `"default_user"` documents.
 - **Timezone**: Dates MUST be computed in `Europe/Warsaw` timezone (`local_today()` in Python, `getLocalDateString()` in TS). Avoid UTC `.toISOString().split('T')[0]` for calendar dates.
-- **Step Semantics**: `totalSteps` represents previous completed day (`D - 1`).
+- **Step Semantics**: `totalSteps` represents previous completed day (`D - 1`). Baselines and activity-deducted ambient surges feed `fatigue.ts`.
 - **Security**: Never commit credentials, `.garth` token directories, `.env` files, or raw health JSON logs.
 
 ## Essential Development Commands

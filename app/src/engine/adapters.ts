@@ -62,11 +62,16 @@ export function mapSnapshotToEngineInput(snapshot: DailyRecoverySnapshot): Engin
         rhr_delta_28d: snapshot.derived.deltas.restingHrVs28d,
         hrv_delta_28d: snapshot.derived.deltas.hrvVs28d,
         sleep_score_delta_28d: snapshot.derived.deltas.sleepScoreVs28d,
+        steps_7d_avg: snapshot.derived.steps7dAvg ?? null,
+        steps_28d_avg: snapshot.derived.steps28dAvg ?? null,
+        steps_delta_7d: snapshot.derived.deltas.stepsVs7d ?? null,
+        steps_delta_28d: snapshot.derived.deltas.stepsVs28d ?? null,
         // ?? null normalizes documents written before baselineComputationVersion 2,
         // where these fields are absent (undefined) rather than explicitly null.
         hrv_stdev_28d: snapshot.derived.hrv28dStdev ?? null,
         rhr_stdev_28d: snapshot.derived.restingHr28dStdev ?? null,
         sleep_score_stdev_28d: snapshot.derived.sleepScore28dStdev ?? null,
+        steps_stdev_28d: snapshot.derived.steps28dStdev ?? null,
     };
 }
 

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { DimensionalFatigue, FatigueState, UserPreferences } from './models';
 import type { ResolvedAvailability } from './schedule';
-import { combineFatigue, decayFatigue } from './fatigue';
+import { combineFatigue, computeInternalResponseStrain, decayFatigue } from './fatigue';
 import { ENRICHED_TEMPLATES } from './templates';
 import { rankCandidates } from './optimizer';
 import { workoutForTemplate } from '../workouts/prescription';
@@ -70,5 +70,68 @@ describe('macrocycle v5 recovery and strength contracts', () => {
         expect(reduced.systemicCost).toBeLessThanOrEqual(0.5);
         expect(reduced.costProfile?.systemic).toBeLessThanOrEqual(0.5);
         expect(workoutForTemplate(reduced.id)?.id).toBe('strength_full_body_maintenance_01');
+    });
+
+    it('injects tissue-specific fatigue dampening when an acute unlogged step surge is detected', () => {
+        const baseReadiness = {
+            subjective: {
+                readiness: 8, sleepQuality: 8, fatigue: 2, soreness: 1, stress: 2, motivation: 8,
+                timeAvailable: 90, painFlag: false, alreadyTrainedToday: false, preferredModalityToday: null,
+            },
+            objective: {
+                total_steps: 20000, sleep_score: 85, sleep_duration_min: 480, rhr: 50, rhr_7d_avg: 50, rhr_delta: 0,
+                hrv_weekly_avg: 50, hrv_last_night: 50, hrv_delta: 0, respiration: 14, body_battery_wake: 90,
+                last_3_days_hard_sessions_count: 0, yesterday_training: null, today_training: null,
+                sleep_score_delta_7d: 0, rhr_delta_28d: 0, hrv_delta_28d: 0, sleep_score_delta_28d: 0,
+                hrv_stdev_28d: 8, rhr_stdev_28d: 3, sleep_score_stdev_28d: 7,
+                steps_7d_avg: 5000, steps_28d_avg: 5500, steps_delta_7d: 15000, steps_delta_28d: 14500, steps_stdev_28d: 800,
+            },
+        };
+
+        const normalReadiness = {
+            ...baseReadiness,
+            objective: {
+                ...baseReadiness.objective,
+                total_steps: 5000,
+                steps_delta_7d: 0,
+            },
+        };
+
+        const normalStrain = computeInternalResponseStrain(normalReadiness);
+        const surgeStrain = computeInternalResponseStrain(baseReadiness);
+
+        expect(normalStrain.impactTissue).toBe(0);
+        expect(normalStrain.lowerBody).toBe(0);
+        expect(surgeStrain.impactTissue).toBeGreaterThan(0.35);
+        expect(surgeStrain.lowerBody).toBeGreaterThan(0.35);
+    });
+
+    it('does not trigger an ambient surge when high step volume is explained by a logged running activity', () => {
+        const loggedRunReadiness = {
+            subjective: {
+                readiness: 8, sleepQuality: 8, fatigue: 2, soreness: 1, stress: 2, motivation: 8,
+                timeAvailable: 90, painFlag: false, alreadyTrainedToday: false, preferredModalityToday: null,
+            },
+            objective: {
+                total_steps: 20000, sleep_score: 85, sleep_duration_min: 480, rhr: 50, rhr_7d_avg: 50, rhr_delta: 0,
+                hrv_weekly_avg: 50, hrv_last_night: 50, hrv_delta: 0, respiration: 14, body_battery_wake: 90,
+                last_3_days_hard_sessions_count: 1,
+                yesterday_training: {
+                    type: 'running',
+                    duration_min: 90, // 90 min * 155 steps/min = ~13,950 steps -> ambient = 6,050 vs 5,000 baseline
+                    training_effect: 3.5,
+                    intensity_tag: 'hard',
+                },
+                today_training: null,
+                sleep_score_delta_7d: 0, rhr_delta_28d: 0, hrv_delta_28d: 0, sleep_score_delta_28d: 0,
+                hrv_stdev_28d: 8, rhr_stdev_28d: 3, sleep_score_stdev_28d: 7,
+                steps_7d_avg: 5000, steps_28d_avg: 5500, steps_delta_7d: 15000, steps_delta_28d: 14500, steps_stdev_28d: 800,
+            },
+        };
+
+        const strain = computeInternalResponseStrain(loggedRunReadiness);
+        // Because the run accounts for ~14k steps, net ambient steps (6,050) is only +1,050 above baseline -> no ambient surge
+        expect(strain.impactTissue).toBe(0);
+        expect(strain.lowerBody).toBe(0);
     });
 });
