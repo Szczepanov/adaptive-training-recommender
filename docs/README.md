@@ -73,6 +73,7 @@ Architectural choices, system invariants, and technical trade-offs are documente
 * [**ADR-0020: Subjective Baselines in Readiness Mode**](./adr/0020-subjective-baselines-in-readiness-mode.md) — *Accepted.* Self-normalised subjective drift as a tighten-only term, gated on check-in coverage, with estimator details deferred to calibration and a production ship decision gated on Phase 9.0's prospective evidence.
 * [**ADR-0021: Strength Session Logging & Intensity Gauges**](./adr/0021-strength-session-logging-and-intensity-gauges.md) — *Accepted.* Durable raw strength-session logging, gauge semantics, safe estimated-1RM write-back, and the evidence gate before logged work can affect engine cost or stimulus.
 * [**ADR-0022: Zone-Derived Completed-Training Credit Is a Measured Candidate**](./adr/0022-zone-derived-completed-training-credit.md) — *Accepted.* A direct power-zone-share candidate may be measured inside the existing evidence tier, but production remains on TE pending a later evidence-backed activation decision.
+* [**ADR-0023: Multidomain Session Authoring, Execution, and Evidence**](./adr/0023-multidomain-session-authoring-execution-and-evidence.md) — *Accepted.* Source-neutral session definition, occurrence authority, subcollection performed entries, D-MSNAP content-addressed snapshots, D-MCHOICE bounded option sets, and single tissue authority linkage.
 
 ---
 

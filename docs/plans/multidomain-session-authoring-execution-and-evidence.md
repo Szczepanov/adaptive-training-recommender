@@ -1,8 +1,8 @@
 # Multidomain session authoring, execution and evidence
 
-* **Status:** `Approved`
-* **Blocked by:** plan approval. M2–M9 additionally require the successor ADR produced by
-  M0.1 to be accepted before implementation.
+* **Status:** `In progress`
+* **Blocked by:** The successor [ADR-0023](../adr/0023-multidomain-session-authoring-execution-and-evidence.md)
+  is accepted. Only the item-level dependencies below remain.
 * **Unlocks:** executable manual/external sessions; mixed strength/speed/field/power
   tracking; occurrence-linked response; protocol-aware testing; evidence for later engine
   policy decisions.
@@ -55,8 +55,8 @@ session from a fixture and log it natively*. Authoring UI moved to the end of M3
 ### C2 — The runner did not actually depend on recommendation replay
 
 The first draft's `M4.1` (general runner) was blocked by its `M2.6` (recommendation
-persistence, immutability and replay). It does not need it. `save_only` and `unplanned_log` occurrences have, by this plan's own D-MAUTH,
-**no selection authority at all** — they never touch `Recommendation`,
+persistence, immutability and replay). It does not need it. A `save_only` definition and an
+`unplanned_log` occurrence have, by D-MAUTH, **no selection authority at all** — they never touch `Recommendation`,
 `DailyRecommendation`, `decisionFieldsUnchanged`, audit provenance or replay. The entire
 engine-authority surface is required only the first time a definition becomes *today's
 session*.
@@ -152,9 +152,10 @@ cannot validate every element of a variable nested list*. Its `M2.6` then embedd
 which the rules do validate, and into every archived revision. Same limitation, new location,
 plus 1 MiB document pressure on a document that already carries the audit.
 
-**Change.** New decision **`D-MSNAP`**: the recommendation carries
-`{ sessionSource, occurrenceId, prescriptionHash }` only. The snapshot itself lives in a
-separate immutable, content-addressed document validated write-once and never on mutation.
+**Change.** New decision **`D-MSNAP`**: the recommendation carries a reference-only primary
+binding and a bounded ordered list of reference-only additional bindings. Every binding is
+`{ sessionSource, occurrenceId, prescriptionHash }`; the snapshot itself lives in a separate
+immutable, content-addressed document validated write-once and never on mutation.
 Replay verifies the hash and reads the bytes by reference. This is what ADR-0010 needs and
 what the analysis meant by "exact execution prescription **or immutable hash reference**";
 the plan must choose, and it chooses the reference.
@@ -200,22 +201,22 @@ provenance mid-block would contaminate that comparison.
 | ADR-0003 date semantics | Every scheduled/start date uses Europe/Warsaw helpers, never UTC date slicing. |
 | ADR-0002 user isolation | Every new document lives below `users/{uid}/...` and duplicates/checks ownership where required. |
 
-### Decisions M0.1 must settle
+### Decisions settled by M0.1
 
 | ID | Proposed decision |
 |---|---|
 | **D-MSESSION** | `SessionDefinition` is the source-neutral executable content contract; catalog, external and manual sources adapt to it. |
 | **D-MRECORDS** | Definition, occurrence, execution prescription and performed execution are distinct records/lifecycles. |
-| **D-MAUTH** | A date-scoped athlete occurrence can explicitly replace/add to a recommendation; `save_only` and `unplanned_log` have no selection authority and therefore no engine surface. |
+| **D-MAUTH** | A date-scoped athlete occurrence can explicitly replace/add to a recommendation; `save_only` creates no occurrence, while `schedule` and `unplanned_log` occurrences have no selection authority and therefore no engine surface. |
 | **D-MENTRY** | New performed rows are individual `session_executions/{id}/entries/{entryId}` documents; v1 Strength arrays remain read-only compatible history. |
-| **D-MSNAP** | The recommendation stores `{sessionSource, occurrenceId, prescriptionHash}`; the prescription snapshot is a separate write-once content-addressed document. Nested executable content is never embedded in a mutable rules-validated document. |
+| **D-MSNAP** | The recommendation stores `primarySession?` and ordered `additionalSessions[]` reference bindings whose entries are `{sessionSource, occurrenceId, prescriptionHash}`; the prescription snapshot is a separate write-once content-addressed document. Nested executable content is never embedded in a mutable rules-validated document. |
 | **D-MCHOICE** | Authored branch points are **bounded option sets presented to the athlete**, not evaluated rules. The selected option, reason and timestamp are recorded execution events. Nothing evaluates a condition automatically in this plan. |
 | **D-MOBS** | Metrics retain unit, source, protocol, validity and comparison-series provenance; training and testing are distinct intents. |
 | **D-MRESP** | `DailySubjectiveCheckin.tissueResponses` remains the **sole** tissue authority. Response records store occurrence↔window↔check-in linkage plus non-tissue session facts. Missing follow-up is `unknown`, never a passed/default response. |
 | **D-MPOLICY** | Step-derived profiles, response-based progression, automatic option selection and domain exposure remain default-off evidence candidates until separate ship decisions. |
 
-M0.1 must also supersede ADR-0019 D-SHIM narrowly. It must not weaken D-CANDIDATE, D-IMMUT,
-D-EXTTIER or replay.
+ADR-0023 also supersedes ADR-0019 D-SHIM prospectively and narrowly. It does not weaken
+D-CANDIDATE, D-IMMUT, D-EXTTIER or replay.
 
 ---
 
@@ -251,8 +252,8 @@ M1 v1 repair + response v0    │   (independent; needs only plan approval)
                                             M9 deferred capabilities
 ```
 
-M1 can be implemented independently after plan approval and does not wait on M0.1. M2 and
-later are blocked until M0.1 is accepted. No M8 item may ship merely because its code exists.
+M1 was independently startable before M0.1. ADR-0023 is now accepted, so M2 and later follow
+only their item-level dependencies. No M8 item may ship merely because its code exists.
 
 ### What each milestone puts in the athlete's hands
 
@@ -272,7 +273,7 @@ later are blocked until M0.1 is accepted. No M8 item may ship merely because its
 
 | Item | Title | Status | Blocked by |
 |---|---|:---:|---|
-| M0.1 | Successor ADR and authority contract | `[ ]` | plan approval |
+| M0.1 | Successor ADR and authority contract | `[x]` | — |
 | M0.2 | Canonical schema examples and fixture corpus | `[ ]` | M0.1 |
 | M0.3 | Dependency and compatibility contracts | `[ ]` | M0.1 |
 | M1.1 | Persistent exercise navigator and resume | `[ ]` | plan approval |
@@ -322,18 +323,14 @@ later are blocked until M0.1 is accepted. No M8 item may ship merely because its
 
 ## M0 — contract and decision boundary
 
-### M0.1 `[ ]` Successor ADR and authority contract
+### M0.1 `[x]` Successor ADR and authority contract
 
-**Current.** ADR-0019 intentionally carries external sessions through a synthetic
-`SessionTemplate` and parallel display-only `externalPrescription`. The ADR itself says a
-union/source boundary becomes correct when another non-catalog consumer appears. Manual
-definitions and a general runner are that consumer.
+**Outcome.** Accepted
+[`ADR-0023`](../adr/0023-multidomain-session-authoring-execution-and-evidence.md) supersedes
+ADR-0019 D-SHIM prospectively and records D-MSESSION through D-MPOLICY. It defines:
 
-**Change.** Add a new ADR under `docs/adr/` accepting or revising D-MSESSION through
-D-MPOLICY. It must define:
-
-* source identity versus occurrence authority, and that `save_only`/`unplanned_log` have no
-  engine surface at all — this is what lets M2 ship before M3;
+* source identity versus occurrence authority, and that `save_only` creates no occurrence
+  while `schedule`/`unplanned_log` have no engine surface — this lets M2 ship before M3;
 * exact precedence of a date-scoped `replace_recommendation` occurrence relative to
   `planningMode.ts`;
 * how `additional_session` enters same-day feasibility/critique;
@@ -345,11 +342,7 @@ D-MPOLICY. It must define:
 * that authored branch points are recorded athlete choices, not evaluated rules (D-MCHOICE),
   and that the canonical check-in remains the sole tissue authority (D-MRESP).
 
-**Files.** New ADR; update `docs/architecture/recommendation-engine.md` only when code lands,
-not in this decision task.
-
-**Done when.** The ADR is accepted, every proposal in the table above has a recorded
-decision, and no implementer must invent precedence or persistence ownership.
+The living `docs/architecture/recommendation-engine.md` remains unchanged until code lands.
 
 ### M0.2 `[ ]` Canonical schema examples and fixture corpus
 
@@ -357,7 +350,8 @@ decision, and no implementer must invent precedence or persistence ownership.
 
 1. the supplied full-body maintenance session;
 2. the supplied lower/Olympic session with ramp sets, variants and stop rules;
-3. upper-body absorption with alternating/superset groups and a later recovery ride;
+3. upper-body absorption with alternating/superset groups and a separately executable later
+   recovery-ride definition;
 4. the Friday field session with distance, side and controlled intensity;
 5. timed tissue/trunk work;
 6. a protocol-locked sprint/jump test;
@@ -365,6 +359,13 @@ decision, and no implementer must invent precedence or persistence ownership.
 
 Fixtures must contain no raw athlete health history. Transient HRV/RHR/pain narrative from
 source prose is represented as an import warning, not reusable definition content.
+
+Positive runner-loadable definitions use ADR-0023's one canonical v1 vocabulary:
+`schemaVersion`, `id`, `revision`, mandatory `intent`, `exerciseRef.kind`, and singular dose
+discriminants. The translated rejection corpus lives under `fixtures/invalid/`; it is not a
+second schema and is not runner-loadable. Generator aliases such as `schema`, `definitionId`,
+`exerciseRef.state`, and `repetitions` are import inputs at most, never accepted persisted
+definitions.
 
 **These fixtures are the authoring mechanism until M3.8.** They must be loadable by the
 runner, not only by tests — that is what makes the builder deferrable (C7).
@@ -382,7 +383,7 @@ sessions/ and observations/ domain types
     do not import selection/ranking modules
 engine adapters
     may import sessions/ types
-components/services
+new session/observation components and services
     may import domain types, never optimizer policy
 ```
 
@@ -522,8 +523,8 @@ pairing costs one reference field today and is otherwise five milestones away.
 * extend the M1.3 completion sheet with pain/unexpected-fatigue and affected regions, writing
   tissue values **through `checkinService` into the canonical check-in** — never into a second
   store (D-MRESP);
-* add a `sourceSessionRef` (kind + id + Warsaw date) to the tissue-response linkage so the
-  next-morning reaction is attributable;
+* add a transitional `sourceSessionRef` (kind + id + Warsaw date) only when exactly one source
+  session is attributable; never overwrite a different reference or imply medical causation;
 * surface one next-morning prompt on `Home`/`DailyCheckin` when yesterday had a completed
   session and no `nextMorningReaction` for its regions;
 * a skipped prompt stays absent. It is never written as "normal".
@@ -591,9 +592,10 @@ state and created/updated timestamps. Nested definition validation is defensive 
 because rules cannot iterate arbitrary arrays; top-level ownership/shape/bounds and revision
 immutability remain rules-enforced.
 
-**At this milestone only `unplanned_log` and `save_only` authorities are writable.** Rules
-must reject `replace_recommendation` and `additional_session` until M3.3 lands the audited
-path — a half-implemented authority is worse than an absent one.
+**At this milestone only `unplanned_log` occurrences are writable.** Save-only persists a
+definition revision and creates no occurrence. Rules must reject `schedule`,
+`replace_recommendation`, and `additional_session` until M3.3 lands their intended paths — a
+half-implemented authority is worse than an absent one.
 
 **Files.** New `services/sessionDefinitionService.ts`, `services/sessionOccurrenceService.ts`;
 `firestore.rules` and emulator tests.
@@ -667,9 +669,9 @@ bike and warm-up circuit fixtures can be completed without fake reps or kilogram
 
 **Change.** Generalize M1.3's sheet to planned versus performed blocks/entries, omissions,
 duration, sRPE, pain/unusual response and notes. Keep session RPE as raw RPE + duration; any
-multiplied display value is derived. Carry M1.7's response capture across unchanged — the same
-completion path, now writing a `sourceSessionRef` that names an execution instead of a
-`strength_sessions` document.
+multiplied display value is derived. Carry M1.7's response capture across with the same
+single-attribution restriction; the transitional `sourceSessionRef` names an execution instead
+of a `strength_sessions` document until M5 introduces the permanent many-session linkage.
 
 Completion and its immediate response must be **idempotent, not transactional**: a Firestore
 transaction cannot query the entries subcollection, so retry safety comes from a deterministic
@@ -740,11 +742,12 @@ cut with 9.0.1.
 **Change.** Per D-MSNAP:
 
 * add a write-once, content-addressed `execution_prescriptions/{prescriptionHash}` document;
-* add `{ sessionSource, occurrenceId, prescriptionHash }` — and nothing nested — to
-  `Recommendation`/`DailyRecommendation`;
-* include those three fields in `recommendationService` decision-change equality, archived
-  revision bytes, `validateRecommendation`, Firestore `decisionFieldsUnchanged`, audit
-  provenance and replay;
+* add `primarySession?` and bounded ordered `additionalSessions[]` reference bindings — and no
+  nested executable content — to `Recommendation`/`DailyRecommendation`; every binding carries
+  `{ sessionSource, occurrenceId, prescriptionHash }`;
+* include both bindings in `recommendationService` decision-change equality, archived revision
+  bytes, `validateRecommendation`, Firestore `decisionFieldsUnchanged`, audit provenance and
+  replay;
 * replay resolves the hash to the stored bytes and fails on mismatch or absence.
 
 Historical `ext:` audits keep their old path and hash verification.
@@ -1245,8 +1248,8 @@ Applies to M3.2, M3.3, M3.4, M4.3 and any M8 activation.
 * [ ] Definitions, occurrences, prescriptions and executions have distinct stable IDs.
 * [ ] Every new Firestore path is user-scoped and emulator-tested.
 * [ ] V1 Strength and external-plan history remains readable without bulk rewrite.
-* [ ] `daily_recommendations` carries source, occurrence and prescription **hash** — never
-      embedded nested executable content (D-MSNAP).
+* [ ] `daily_recommendations` carries reference-only primary/additional bindings with source,
+      occurrence and prescription **hash** — never embedded executable content (D-MSNAP).
 * [ ] Replay resolves the hash to exact stored bytes and fails on mismatch.
 
 ### Athlete UX
@@ -1335,7 +1338,7 @@ Each may receive a separate plan after the dependency and evidence it needs exis
 
 ## Documentation to update as work lands
 
-* the new successor ADR from M0.1 and the `docs/README.md` ADR index;
+* accepted ADR-0023 and the `docs/README.md` ADR index as implementation details land;
 * `docs/architecture/recommendation-engine.md` for source-neutral adjudication and authority;
 * `docs/workout-library.md` for the definition/catalog adapter and ontology facets;
 * `docs/external-plan-schema.md` for v2 and v1 compatibility;
