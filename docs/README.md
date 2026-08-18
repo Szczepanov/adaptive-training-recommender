@@ -87,6 +87,7 @@ Point-in-time assessments of the system as built, including gaps between documen
 * [**2026-08-16 Manual AI loop vs app adjudication**](./analysis/2026-08-16-manual-loop-vs-app-adjudication.md) — Whether the athlete's manual daily AI loop should be replaced by the app now that Phase 8 has landed. Verdict: shadow both for one block first; the subjective input is the one unmeasured path.
 * [**2026-08-17 Garmin high-resolution telemetry**](./analysis/2026-08-17-garmin-high-resolution-telemetry.md) — Live endpoint-shape evidence and bounded ingestion recommendations for per-activity zones, power metrics, and laps.
 * [**2026-08-17 Garmin zone-credit measurement**](./analysis/2026-08-17-garmin-zone-credit-measurement.md) — Bounded de-identified real-history comparison of ADR-0022's candidate against TE; decision: keep the candidate off.
+* [**2026-08-18 Strength session UI/UX review**](./analysis/2026-08-18-strength-session-ui-ux-review.md) — Browser- and code-backed review of the gym-floor logging flow; verdict: durable persistence foundation, but resume, correction, terminal-action safety, mobile layout, prescription context, accessibility, and visual coverage need work before the UX is finished.
 
 ---
 
