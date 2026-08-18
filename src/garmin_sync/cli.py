@@ -55,6 +55,11 @@ def run_backfill(args: list[str] | None = None) -> int:
     parser.add_argument("--start-date", type=str, default=None, help="Start date YYYY-MM-DD")
     parser.add_argument("--end-date", type=str, default=None, help="End date YYYY-MM-DD")
     parser.add_argument("--force", action="store_true", help="Force re-fetching existing records")
+    parser.add_argument(
+        "--include-details",
+        action="store_true",
+        help="Also fetch and persist power/HR zones and lap details for qualifying activities",
+    )
     parsed_args = parser.parse_args(args)
 
     try:
@@ -65,6 +70,7 @@ def run_backfill(args: list[str] | None = None) -> int:
             start_date_str=parsed_args.start_date,
             end_date_str=parsed_args.end_date,
             force=parsed_args.force,
+            include_details=parsed_args.include_details,
         )
         return 0 if success else 1
     except Exception as e:
@@ -186,6 +192,11 @@ def main() -> int:
     )
     backfill_parser.add_argument("--end-date", type=str, default=None, help="End date YYYY-MM-DD")
     backfill_parser.add_argument("--force", action="store_true", help="Force re-fetch")
+    backfill_parser.add_argument(
+        "--include-details",
+        action="store_true",
+        help="Also fetch and persist power/HR zones and lap details for qualifying activities",
+    )
 
     # Audit subcommand
     audit_parser = subparsers.add_parser("audit", help="Report sync completeness")

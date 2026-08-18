@@ -227,6 +227,24 @@ def test_backfill_issues_no_detail_calls_even_when_enabled():
     assert provider.detail_calls == []
 
 
+def test_backfill_with_include_details_fetches_and_persists_details():
+    provider = DetailFakeProvider()
+    service, repo = _detail_service(provider)
+    repo.get_snapshot.return_value = None
+
+    assert service.backfill(
+        start_date_str="2026-08-06",
+        end_date_str="2026-08-06",
+        force=True,
+        include_details=True,
+    )
+    assert provider.detail_calls == ["1"]
+    assert repo.upsert_activity.call_count == 1
+    payload = repo.upsert_activity.call_args.args[1]
+    assert payload["normalizedPower"] == 230.0
+    assert payload["powerInZones"][0]["zoneNumber"] == 2
+
+
 def test_push_workout_fails_when_garmin_does_not_return_a_workout_id():
     settings = Settings(app_user_id="test_uid_789")
     client = MagicMock()

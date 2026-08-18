@@ -81,7 +81,16 @@ def test_run_backfill_success(mock_settings: Any, mock_service: Any) -> None:
     mock_service_instance = mock_service.return_value
     mock_service_instance.backfill.return_value = True
 
-    args = ["--days", "30", "--start-date", "2023-09-01", "--end-date", "2023-10-01", "--force"]
+    args = [
+        "--days",
+        "30",
+        "--start-date",
+        "2023-09-01",
+        "--end-date",
+        "2023-10-01",
+        "--force",
+        "--include-details",
+    ]
     exit_code = run_backfill(args)
 
     assert exit_code == 0
@@ -92,6 +101,7 @@ def test_run_backfill_success(mock_settings: Any, mock_service: Any) -> None:
         start_date_str="2023-09-01",
         end_date_str="2023-10-01",
         force=True,
+        include_details=True,
     )
 
 
@@ -107,6 +117,7 @@ def test_run_backfill_failure(mock_settings: Any, mock_service: Any) -> None:
         start_date_str=None,
         end_date_str=None,
         force=False,
+        include_details=False,
     )
 
 

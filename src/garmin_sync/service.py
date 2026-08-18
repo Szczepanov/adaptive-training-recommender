@@ -464,6 +464,7 @@ class GarminSyncService:
         start_date_str: str | None = None,
         end_date_str: str | None = None,
         force: bool = False,
+        include_details: bool = False,
     ) -> bool:
         """Run historical backfill for date range."""
         today = local_today(self.settings.app_timezone)
@@ -501,7 +502,43 @@ class GarminSyncService:
         all_activities_raw = activities_result.raw_payload
         all_activities_canonical = activities_result.canonical
         logger.info(f"Retrieved {len(all_activities_raw)} activities in window.")
-        self._archive_activities(all_activities_canonical, run_id)
+
+        details_by_activity_id: dict[str, CanonicalActivityDetail] = {}
+        if include_details:
+            fetch_detail = (
+                getattr(provider, "fetch_activity_detail", None)
+                if provider.capabilities.activity_details
+                else None
+            )
+            if callable(fetch_detail):
+                qualifying = [
+                    a for a in all_activities_canonical if qualifies_for_activity_detail(a)
+                ]
+                logger.info(
+                    f"Fetching activity details for {len(qualifying)} qualifying activities in backfill window..."
+                )
+                for activity in qualifying:
+                    assert activity.activity_id is not None
+                    try:
+                        result = fetch_detail(activity.activity_id)
+                        details_by_activity_id[activity.activity_id] = result.canonical
+                    except GarminConnectTooManyRequestsError as error:
+                        logger.warning(
+                            f"Garmin activity-detail rate limit reached during backfill; "
+                            f"abandoning remaining detail fetches: {error}"
+                        )
+                        break
+                    except Exception as error:
+                        logger.warning(
+                            f"[{activity.date}] Garmin activity detail failed for "
+                            f"activity=<ID-redacted>, continuing with the base record: {error}"
+                        )
+
+        self._archive_activities(
+            all_activities_canonical,
+            run_id,
+            details_by_activity_id=details_by_activity_id,
+        )
 
         # Process dates in chronological order
         raw_memory_store: dict[str, dict[str, Any]] = {}
