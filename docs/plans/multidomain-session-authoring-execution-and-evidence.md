@@ -271,18 +271,21 @@ only their item-level dependencies. No M8 item may ship merely because its code 
 
 ## Task board
 
+Item status: `[ ]` not started · `[-]` in progress · `[x]` finished. A finished item is
+rewritten as an outcome; an in-progress item retains its remaining acceptance work.
+
 | Item | Title | Status | Blocked by |
 |---|---|:---:|---|
 | M0.1 | Successor ADR and authority contract | `[x]` | — |
-| M0.2 | Canonical schema examples and fixture corpus | `[ ]` | M0.1 |
-| M0.3 | Dependency and compatibility contracts | `[ ]` | M0.1 |
-| M1.1 | Persistent exercise navigator and resume | `[ ]` | plan approval |
-| M1.2 | Performed-set correction and undo | `[ ]` | plan approval |
-| M1.3 | Completion and abandonment sheets | `[ ]` | M1.2 |
-| M1.4 | Mobile layout, focus and accessibility | `[ ]` | M1.1 |
-| M1.5 | Today start/resume CTA and last-time context | `[ ]` | M1.1 |
-| M1.6 | Session visual, interaction and offline acceptance | `[ ]` | M1.1–M1.5 |
-| M1.7 | Session-linked response v0 | `[ ]` | M1.3 |
+| M0.2 | Canonical schema examples and fixture corpus | `[-]` | M2.4 runner integration for final acceptance |
+| M0.3 | Dependency and compatibility contracts | `[-]` | M2 implementation for final compatibility proof |
+| M1.1 | Persistent exercise navigator and resume | `[x]` | — |
+| M1.2 | Performed-set correction and undo | `[x]` | — |
+| M1.3 | Completion and abandonment sheets | `[x]` | — |
+| M1.4 | Mobile layout, focus and accessibility | `[x]` | — |
+| M1.5 | Today start/resume CTA and last-time context | `[x]` | — |
+| M1.6 | Session visual, interaction and offline acceptance | `[-]` | — |
+| M1.7 | Session-linked response v0 | `[x]` | — |
 | M2.1 | Session definition and execution types/validators | `[ ]` | M0.2, M0.3 |
 | M2.2 | Definition and occurrence persistence | `[ ]` | M2.1 |
 | M2.3 | Execution header and entry persistence | `[ ]` | M2.1, M2.2 |
@@ -344,7 +347,7 @@ ADR-0019 D-SHIM prospectively and records D-MSESSION through D-MPOLICY. It defin
 
 The living `docs/architecture/recommendation-engine.md` remains unchanged until code lands.
 
-### M0.2 `[ ]` Canonical schema examples and fixture corpus
+### M0.2 `[-]` Canonical schema examples and fixture corpus
 
 **Change.** Add reviewed JSON fixtures under `app/src/sessions/fixtures/` for:
 
@@ -374,7 +377,11 @@ runner, not only by tests — that is what makes the builder deferrable (C7).
 shared corpus for validator, import, runner and visual tests, and at least one fixture is
 startable by the M2.4 runner with no authoring UI present.
 
-### M0.3 `[ ]` Dependency and compatibility contracts
+**Progress (2026-08-18).** The reviewed positive and negative fixture corpus, its canonical
+vocabulary guard, and fixture-only architecture tests are present in `app/src/sessions/`.
+Runner loading and use of the corpus remain M2.4 work, so this item is not finished.
+
+### M0.3 `[-]` Dependency and compatibility contracts
 
 **Change.** Add architecture tests that pin dependency direction before new modules spread:
 
@@ -396,6 +403,10 @@ Define read compatibility for external plan v1, `DailyRecommendation` v1–v3 an
 **Done when.** Tests fail on a sessions→optimizer/planner dependency and a compatibility
 matrix is recorded in the ADR and here.
 
+**Progress (2026-08-18).** `sessions/architecture.test.ts` pins the new session-component
+boundary and the ADR records the compatibility matrix. The required engine/external
+architecture extensions and v1 read-compatibility implementation remain M2 work.
+
 ---
 
 ## M1 — repair the current Strength workflow and start the evidence clock
@@ -404,91 +415,44 @@ Tactical changes on the v1 logger. Items marked **carried** are built for reuse 
 general runner. Items marked **disposable** die with `StrengthSessionRunner.tsx` at M3.4 and
 must not be over-invested in.
 
-### M1.1 `[ ]` Persistent exercise navigator and resume — *carried*
+### M1.1 `[x]` Persistent exercise navigator and resume — *carried*
 
-**Current.** `useStrengthSessionRunner` restores the session (`setSession(active)`) but never
-calls `setActiveExerciseIndex`, so a resumed session opens with nothing selected; and
-`plannedExercises` is populated only when `sourceRecommendationDate` is set.
-`StrengthSessionRunner` exposes planned exercise buttons only, not a merged list of
-existing/manual/free-text work.
+**Outcome (2026-08-18).** `SessionStepNavigator` merges prescribed and persisted exercises,
+including ad-hoc/free-text entries; `useStrengthSessionRunner` restores the first incomplete
+or last touched logged exercise; and `strengthSessionEntry.test.ts` plus the visual fixture
+cover the navigation model. The reusable navigator remains the M2 runner seam.
 
-**Change.** Add a reusable `SessionStepNavigator` that merges persisted exercises with
-not-yet-started prescribed exercises, shows required/optional and completed/target state, and
-selects last-touched or first-incomplete work on resume. "Open" and "Add" are separate
-actions.
+### M1.2 `[x]` Performed-set correction and undo — *carried (pure logic) / disposable (UI)*
 
-**Files.** `hooks/useStrengthSessionRunner.ts`, `components/StrengthSessionRunner.tsx`, new
-`components/session/SessionStepNavigator.tsx`, `workouts/strengthSessionEntry.ts`.
+**Outcome (2026-08-18).** The v1 runner supports row-level replacement, removal and an
+immediate bounded undo stack while the session is in progress. `amendLoggedSet` preserves the
+historical set index, completion time, warm-up status and intensity gauge; terminal sessions
+remain protected by the existing lifecycle rules. Pure tests cover the correction operations
+and metadata preservation.
 
-**Tests.** Extend `strengthSessionEntry.test.ts`; add visual states in `visual/fixtures.ts`
-and `visual/installVisualServices.ts`.
+### M1.3 `[x]` Completion and abandonment sheets — *carried*
 
-**Done when.** A resumed session with catalog and same-named free-text exercises is fully
-understandable and reachable without re-adding anything.
+**Outcome (2026-08-18).** `SessionCompletionSheet` shows duration, performed work,
+incomplete required steps, optional sRPE and notes. Completion persists its metadata through
+`finalizeStrengthSession`; abandonment requires a distinct danger confirmation and retains
+partial entries. Completion feedback is written before the terminal transition so a failed
+check-in write can be retried.
 
-### M1.2 `[ ]` Performed-set correction and undo — *carried (pure logic) / disposable (UI)*
+### M1.4 `[x]` Mobile layout, focus and accessibility — *disposable; cap the investment*
 
-**Current.** The v1 hook appends only (`appendSetToExercise`). A valid typo is durable and
-cannot be fixed.
+**Outcome (2026-08-18).** The shared app content and runner have width containment,
+single-column narrow controls, labelled actions, ≥44 px interactive targets, Enter submission,
+and post-log weight focus/select. The browser visual test asserts no horizontal overflow at
+the 390 px project.
 
-**Change.** Add pure replace/remove operations keyed by exercise identity + set index +
-`completedAt`, service writes that preserve session ownership/state, row-level Edit and an
-immediate Undo affordance. Correction is allowed only while the session is in progress;
-`firestore.rules` already makes `completed`/`abandoned` terminal and that stays.
+### M1.5 `[x]` Today start/resume CTA and last-time context — *carried*
 
-**Files.** `workouts/strengthSessionEntry.ts`, `hooks/useStrengthSessionRunner.ts`,
-`services/strengthSessionService.ts`, `components/StrengthSessionRunner.tsx`.
+**Outcome (2026-08-18).** The Strength recommendation exposes a start/resume CTA; `App`
+reloads and advertises an in-progress session globally; and the active exercise shows a
+previous comparable performance. Full history is now behind a disclosure rather than in the
+live logging flow.
 
-**Tests.** Pure replace/remove, simultaneous pending writes, correction rejection after
-terminal transition, undo after local-cache acceptance.
-
-**Done when.** A `725 kg` typo can be corrected to `72.5 kg` before completion and every
-derived view uses the corrected raw log.
-
-### M1.3 `[ ]` Completion and abandonment sheets — *carried*
-
-**Change.** Replace direct terminal buttons with a completion sheet showing duration,
-performed work, incomplete prescribed steps, optional session RPE and notes. Put Abandon
-behind a separate danger confirmation that says partial work is retained. Capture the already
-schema-supported `sessionRpe`/`notes` through `finalizeStrengthSession`.
-
-**Files.** New `components/session/SessionCompletionSheet.tsx`; update
-`StrengthSessionRunner.tsx`, `useStrengthSessionRunner.ts`, `strengthSessionCompletion.ts`
-and tests.
-
-**Done when.** No single tap can terminally close a session; completion persists sRPE/notes;
-abandon retains partial sets and is visually separated.
-
-### M1.4 `[ ]` Mobile layout, focus and accessibility — *disposable; cap the investment*
-
-**Change.** Repair `StrengthSessionRunner.css` containment and responsive width; use a
-single-column narrow entry flow, ≥44 px primary targets, consistent dark inputs, wrapped set
-metadata and responsive history. Implement labels, distinct action names, live regions, focus
-styles, Enter submission, and weight focus/select after a successful log.
-
-Fix the shared `App.css` content-width shrink-wrap rather than patching around it locally —
-that part **is** carried.
-
-**Files.** `StrengthSessionRunner.css`, `StrengthSessionRunner.tsx`,
-`StrengthOverloadHistory.tsx`/CSS, `App.css`.
-
-**Done when.** The visual test at 390 px has no horizontal overflow; keyboard and
-screen-reader names are unambiguous; the repeated entry loop returns to weight.
-
-### M1.5 `[ ]` Today start/resume CTA and last-time context — *carried*
-
-**Change.** Add **Start / resume and log this session** to the Strength recommendation on
-`Home`; add a global in-progress banner; preserve route/resume state on reload. Move the
-90-day history table out of the live flow and show a compact last comparable performance
-beside the active exercise.
-
-**Files.** `components/Home.tsx`, `App.tsx`, `Header.tsx`, `MobileNav.tsx`,
-`StrengthSessionRunner.tsx`, `StrengthOverloadHistory.tsx`, `hooks/useOverloadHistory.ts`.
-
-**Done when.** The athlete reaches or resumes the session from Today in one action and sees
-the relevant prior performance without scrolling through the history table.
-
-### M1.6 `[ ]` Session visual, interaction and offline acceptance — *carried*
+### M1.6 `[-]` Session visual, interaction and offline acceptance — *carried*
 
 **Change.** Extend `VisualScreen` in `visual/fixtures.ts` — currently
 `'home' | 'checkin' | 'goals' | 'data' | 'constraints' | 'preferences'` — with a **`session`**
@@ -507,39 +471,23 @@ interaction spec if capture tests should remain screenshot-only.
 terminal confirmation is required, weight refocuses, and offline reload/reconnect neither
 duplicates nor loses a set.
 
-### M1.7 `[ ]` Session-linked response v0 — *carried*
+**Progress (2026-08-18).** The visual harness now has a `session` screen and an in-progress
+Strength fixture. Desktop and 390 px browser interaction tests cover navigation, overflow,
+completion and the separate abandonment confirmation. The real Firebase offline
+kill/reopen/reconnect scenario remains open.
+
+### M1.7 `[x]` Session-linked response v0 — *carried*
 
 **Why here (C6).** Every deferred policy decision in this repository — D-STRCOST, S3.3,
 Phase 9.6 — is blocked on real logged history that pairs a session with its aftermath. That
 pairing costs one reference field today and is otherwise five milestones away.
 
-**Current.** `StrengthSession` persists `sessionRpe` and `notes`.
-`DailySubjectiveCheckin.tissueResponses[region]` already carries `morningState`,
-`painDuringTraining`, `afterTrainingState` and `nextMorningReaction`. Nothing connects them:
-`injuryPolicy.ts` can see that a region reacted, but not to what.
-
-**Change.** Add a minimal link so a completed strength session can be attributed:
-
-* extend the M1.3 completion sheet with pain/unexpected-fatigue and affected regions, writing
-  tissue values **through `checkinService` into the canonical check-in** — never into a second
-  store (D-MRESP);
-* add a transitional `sourceSessionRef` (kind + id + Warsaw date) only when exactly one source
-  session is attributable; never overwrite a different reference or imply medical causation;
-* surface one next-morning prompt on `Home`/`DailyCheckin` when yesterday had a completed
-  session and no `nextMorningReaction` for its regions;
-* a skipped prompt stays absent. It is never written as "normal".
-
-Keep the write path additive: existing check-ins without a link remain valid, and
-`injuryPolicy.ts` behavior is unchanged. This task adds provenance, not policy.
-
-**Files.** `components/session/SessionCompletionSheet.tsx`, `services/checkinService.ts`,
-`components/DailyCheckin.tsx`, `components/Home.tsx`, `engine/models.ts`, `firestore.rules`
-and emulator tests.
-
-**Done when.** A completed Strength session on day D produces one next-morning prompt on D+1;
-the answer is stored once, in the canonical check-in, with a link to the session;
-`injuryPolicy.ts` tests are unchanged; a skipped prompt is distinguishable from a normal
-reading; no engine coefficient reads the link.
+**Outcome (2026-08-18).** Completion feedback writes one transitional `sourceSessionRef`
+through the canonical daily check-in and refuses to overwrite a response attributed to a
+different session. Home and Daily Check-in surface the next-morning prompt; `normal` is a
+recordable response and Skip remains absent/unknown. Validation and Firestore-emulator tests
+cover the link, while `injuryPolicy.ts` remains unchanged and no engine coefficient consumes
+the new provenance.
 
 ---
 
@@ -1244,7 +1192,7 @@ Applies to M3.2, M3.3, M3.4, M4.3 and any M8 activation.
 
 ### Foundation
 
-* [ ] All M0.1 decisions are accepted and referenced by implementation tasks.
+* [x] All M0.1 decisions are accepted and referenced by implementation tasks.
 * [ ] Definitions, occurrences, prescriptions and executions have distinct stable IDs.
 * [ ] Every new Firestore path is user-scoped and emulator-tested.
 * [ ] V1 Strength and external-plan history remains readable without bulk rewrite.

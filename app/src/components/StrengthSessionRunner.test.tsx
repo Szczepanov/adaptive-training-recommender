@@ -5,19 +5,38 @@ import * as runnerHook from '../hooks/useStrengthSessionRunner';
 import type { UseStrengthSessionRunnerResult } from '../hooks/useStrengthSessionRunner';
 
 function baseResult(overrides: Partial<UseStrengthSessionRunnerResult> = {}): UseStrengthSessionRunnerResult {
+    const planned = overrides.plannedExercises ?? [];
+    const session = overrides.session ?? null;
     return {
         loading: false,
         saving: false,
         error: null,
-        session: null,
-        plannedExercises: [],
+        session,
+        plannedExercises: planned,
+        navigationSteps: planned.map((p, idx) => ({
+            exerciseIndex: session?.exercises[idx] ? idx : null,
+            exerciseId: p.exerciseId,
+            displayName: p.name,
+            isPlanned: true,
+            optional: p.optional,
+            targetSets: p.targetSets,
+            targetReps: p.targetReps,
+            targetGauge: p.targetGauge,
+            loggedSetsCount: session?.exercises[idx]?.sets.length ?? 0,
+            isComplete: (session?.exercises[idx]?.sets.length ?? 0) >= p.targetSets,
+        })),
         activeExerciseIndex: null,
         draft: { reps: 1, weightKg: null, isWarmup: false },
+        canUndo: false,
         syncStatusForSet: vi.fn(() => 'synced' as const),
         start: vi.fn(),
         selectExercise: vi.fn(),
+        selectStep: vi.fn(),
         updateDraft: vi.fn(),
         logSet: vi.fn(),
+        editSet: vi.fn(),
+        removeSet: vi.fn(),
+        undo: vi.fn(),
         finishSession: vi.fn(),
         abandonSession: vi.fn(),
         ...overrides,

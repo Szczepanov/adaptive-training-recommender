@@ -1,0 +1,94 @@
+{
+  "schemaVersion": 1,
+  "id": "upper-body-absorption-and-spin-03",
+  "revision": 1,
+  "title": "Upper Body Absorption & Recovery Spin",
+  "summary": "Upper body power absorption with alternating groups and an optional evening recovery ride.",
+  "intent": "training",
+  "modalities": [
+    "strength",
+    "power",
+    "recovery"
+  ],
+  "dominantModality": "strength",
+  "duration": {
+    "min": 40,
+    "max": 50
+  },
+  "companionSessions": [
+    {
+      "id": "companion-spin-01",
+      "definitionRef": "recovery-spin-companion-08",
+      "relation": "later_same_day",
+      "optional": true,
+      "notEarlierThanMinutesAfter": 240,
+      "note": "Separate occurrence. Start or skip independently; reconcile a matching Garmin ride exactly once."
+    }
+  ],
+  "blocks": [
+    {
+      "id": "block-upper-superset",
+      "title": "Upper Push / Pull Antagonistic Superset",
+      "role": "main",
+      "executionMode": "superset",
+      "steps": [
+        {
+          "kind": "exercise",
+          "id": "step-overhead-press",
+          "exerciseRef": {
+            "kind": "unresolved_free_text",
+            "name": "Standing Overhead Press"
+          },
+          "dose": {
+            "kind": "repetition",
+            "sets": 3,
+            "reps": {
+              "min": 6,
+              "max": 6
+            }
+          },
+          "load": {
+            "kind": "descriptive",
+            "display": "Use the last reviewed smooth working load; this unresolved movement has no 1RM authority."
+          },
+          "effort": {
+            "kind": "rir",
+            "target": 2
+          },
+          "rest": {
+            "min": 60,
+            "max": 60
+          },
+          "resolutionNote": "Not in the catalog. Loggable by name; asserts no safety, cost, stimulus, muscle-split, PR or 1RM semantics (ADR-0023 D-MSESSION; plan M3.5 adds it)."
+        },
+        {
+          "kind": "exercise",
+          "id": "step-pullup",
+          "exerciseRef": {
+            "kind": "catalog",
+            "exerciseId": "pull_up"
+          },
+          "dose": {
+            "kind": "repetition",
+            "sets": 3,
+            "reps": {
+              "min": 6,
+              "max": 8
+            }
+          },
+          "load": {
+            "kind": "bodyweight"
+          },
+          "effort": {
+            "kind": "rir",
+            "target": 2
+          },
+          "rest": {
+            "min": 90,
+            "max": 120
+          }
+        }
+      ]
+    }
+  ]
+}

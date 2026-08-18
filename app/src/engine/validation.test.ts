@@ -462,6 +462,23 @@ describe('validateCheckin: tissueResponses (Phase 5.4)', () => {
         expect(result.isValid).toBe(true);
         expect(result.data?.tissueResponses?.knee).toEqual({ region: 'knee', morningState: 'mild' });
     });
+
+    it('preserves a valid source session reference with a next-morning reaction', () => {
+        const result = validateCheckin({
+            ...baseFields,
+            tissueResponses: {
+                knee: {
+                    morningState: 'normal',
+                    nextMorningReaction: 'normal',
+                    sourceSessionRef: { kind: 'strength', id: 'session-1', date: '2026-08-07' },
+                },
+            },
+        });
+        expect(result.data?.tissueResponses?.knee).toMatchObject({
+            nextMorningReaction: 'normal',
+            sourceSessionRef: { kind: 'strength', id: 'session-1', date: '2026-08-07' },
+        });
+    });
 });
 
 describe('validateEventTiming', () => {

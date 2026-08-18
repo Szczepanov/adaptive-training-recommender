@@ -3,13 +3,14 @@ import { checkinService } from '../services/checkinService';
 import { recoverySnapshotService } from '../services/recoverySnapshotService';
 import type { BodyRegion, DailySubjectiveCheckin, RegionTissueResponse, TissueResponseLevel } from '../engine/models';
 import { BODY_REGIONS, TISSUE_LEVELS } from '../engine/models';
-import { getLocalDateString } from '../utils/localDate';
+import { getLocalDateString, addDaysToLocalDateString } from '../utils/localDate';
 import { getErrorMessage } from '../utils/errors';
+import type { Screen } from '../types/navigation';
 import './DailyCheckin.css';
 
 interface DailyCheckinProps {
   userId: string;
-  onNavigate: (screen: 'home' | 'checkin' | 'goals' | 'constraints' | 'preferences') => void;
+  onNavigate: (screen: Screen) => void;
   onBack?: () => void;
 }
 
@@ -40,6 +41,7 @@ export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) 
   const [currentStep, setCurrentStep] = useState(0);
   const [isEditing, setIsEditing] = useState(false);
   const [recoverySnapshot, setRecoverySnapshot] = useState<Awaited<ReturnType<typeof recoverySnapshotService.getRecoverySnapshotByDate>>>(null);
+  const [pendingFollowups, setPendingFollowups] = useState<Array<{ region: BodyRegion; sessionRef?: RegionTissueResponse['sourceSessionRef'] }>>([]);
   const readinessFields = READINESS_FIELDS;
 
   const loadTodayCheckin = useCallback(async () => {
@@ -52,6 +54,22 @@ export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) 
         const existing = await checkinService.getCheckin(userId, today);
         const snapshot = await recoverySnapshotService.getRecoverySnapshotByDate(userId, today);
         setRecoverySnapshot(snapshot ?? null);
+
+        // Check if yesterday's checkin or session logged tissue reactions requiring follow-up (M1.7)
+        const yesterday = addDaysToLocalDateString(today, -1);
+        const yesterdayCheckin = await checkinService.getCheckin(userId, yesterday);
+        if (yesterdayCheckin?.tissueResponses) {
+          const needed: Array<{ region: BodyRegion; sessionRef?: RegionTissueResponse['sourceSessionRef'] }> = [];
+          for (const [regionKey, response] of Object.entries(yesterdayCheckin.tissueResponses)) {
+            const region = regionKey as BodyRegion;
+            if (response && (response.painDuringTraining || response.afterTrainingState || response.sourceSessionRef)) {
+              if (!existing?.tissueResponses?.[region]?.nextMorningReaction) {
+                needed.push({ region, sessionRef: response.sourceSessionRef });
+              }
+            }
+          }
+          setPendingFollowups(needed);
+        }
         
         if (existing) {
           setCheckin(existing);
@@ -186,11 +204,40 @@ export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) 
     const existing = checkin.tissueResponses?.[region];
     if (!existing) return;
     const updated: RegionTissueResponse = { ...existing };
-    if (field !== 'region') {
+    if (field !== 'region' && field !== 'sourceSessionRef') {
       if (value === '') delete updated[field];
-      else updated[field] = value;
+      else (updated as unknown as Record<string, unknown>)[field] = value;
     }
     setCheckin({ ...checkin, tissueResponses: { ...checkin.tissueResponses, [region]: updated } });
+  };
+
+  const handleAnswerFollowup = async (
+    region: BodyRegion,
+    level: TissueResponseLevel,
+    sessionRef?: RegionTissueResponse['sourceSessionRef'],
+  ) => {
+    if (!checkin) return;
+    const currentResponses = { ...(checkin.tissueResponses ?? {}) };
+    const existingEntry = currentResponses[region] ?? { region, morningState: level };
+    currentResponses[region] = {
+      ...existingEntry,
+      nextMorningReaction: level,
+      ...(sessionRef ? { sourceSessionRef: sessionRef } : {}),
+    };
+    const updatedCheckin: Partial<DailySubjectiveCheckin> = {
+      ...checkin,
+      tissueResponses: currentResponses,
+      painOrInjury: level !== 'normal' ? true : checkin.painOrInjury,
+    };
+    setCheckin(updatedCheckin);
+    setPendingFollowups(prev => prev.filter(item => item.region !== region));
+    if (checkin.userId && checkin.date) {
+      await checkinService.upsertTodayCheckin(checkin.userId, updatedCheckin);
+    }
+  };
+
+  const handleSkipFollowup = (region: BodyRegion) => {
+    setPendingFollowups(prev => prev.filter(item => item.region !== region));
   };
 
   const handleAvailabilityChange = (field: string, value: number | string | boolean | null) => {
@@ -451,6 +498,34 @@ export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) 
         <button className="back-btn" onClick={handleBack}>
           ← Back
         </button>
+
+        {pendingFollowups.length > 0 && (
+          <div className="followup-tissue-prompt">
+            <h4>Yesterday's Session Reaction</h4>
+            <p>
+              How did your <strong>{REGION_LABELS[pendingFollowups[0].region]}</strong> react this morning after yesterday's training?
+            </p>
+            <div className="followup-actions">
+              {(['normal', 'mild', 'moderate', 'severe'] as const).map(lvl => (
+                <button
+                  key={lvl}
+                  type="button"
+                  className="btn-followup-pill"
+                  onClick={() => void handleAnswerFollowup(pendingFollowups[0].region, lvl, pendingFollowups[0].sessionRef)}
+                >
+                  {TISSUE_LEVEL_LABELS[lvl]}
+                </button>
+              ))}
+              <button
+                type="button"
+                className="btn-followup-skip"
+                onClick={() => handleSkipFollowup(pendingFollowups[0].region)}
+              >
+                Skip
+              </button>
+            </div>
+          </div>
+        )}
 
         <div className="step-indicator">
           Step {currentStep + 1} of {readinessFields.length + 2}

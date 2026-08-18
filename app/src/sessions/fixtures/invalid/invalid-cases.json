@@ -1,0 +1,361 @@
+{
+  "schemaVersion": 1,
+  "kind": "invalid_session_definition_cases",
+  "purpose": "Each case must be rejected by the SessionDefinition authoring validator at the stated path. These are not runner-loadable definitions.",
+  "cases": [
+    {
+      "name": "missing-intent",
+      "why": "Training, testing, recovery and other intents have different execution and evidence semantics.",
+      "expectedIssuePath": "intent",
+      "definition": {
+        "schemaVersion": 1,
+        "id": "invalid-missing-intent",
+        "revision": 1,
+        "title": "Missing intent",
+        "modalities": ["strength"],
+        "dominantModality": "strength",
+        "duration": { "min": 30, "max": 30 },
+        "blocks": []
+      }
+    },
+    {
+      "name": "range-inverted",
+      "why": "A dose range whose minimum exceeds its maximum is not executable.",
+      "expectedIssuePath": "blocks[0].steps[0].dose.reps",
+      "definition": {
+        "schemaVersion": 1,
+        "id": "invalid-range-inverted",
+        "revision": 1,
+        "title": "Inverted range",
+        "intent": "training",
+        "modalities": ["strength"],
+        "dominantModality": "strength",
+        "duration": { "min": 30, "max": 30 },
+        "blocks": [
+          {
+            "id": "block",
+            "title": "Block",
+            "role": "main",
+            "executionMode": "sequential",
+            "steps": [
+              {
+                "kind": "exercise",
+                "id": "step",
+                "exerciseRef": { "kind": "catalog", "exerciseId": "bench_press" },
+                "dose": { "kind": "repetition", "sets": 1, "reps": { "min": 8, "max": 5 } }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "duplicate-step-id",
+      "why": "Performed entries cannot unambiguously reference duplicate planned-step IDs.",
+      "expectedIssuePath": "blocks[0].steps[1].id",
+      "definition": {
+        "schemaVersion": 1,
+        "id": "invalid-duplicate-step",
+        "revision": 1,
+        "title": "Duplicate step",
+        "intent": "training",
+        "modalities": ["strength"],
+        "dominantModality": "strength",
+        "duration": { "min": 30, "max": 30 },
+        "blocks": [
+          {
+            "id": "block",
+            "title": "Block",
+            "role": "main",
+            "executionMode": "sequential",
+            "steps": [
+              {
+                "kind": "exercise",
+                "id": "duplicate",
+                "exerciseRef": { "kind": "catalog", "exerciseId": "bench_press" },
+                "dose": { "kind": "repetition", "sets": 1, "reps": { "min": 5, "max": 5 } }
+              },
+              {
+                "kind": "exercise",
+                "id": "duplicate",
+                "exerciseRef": { "kind": "catalog", "exerciseId": "cable_row" },
+                "dose": { "kind": "repetition", "sets": 1, "reps": { "min": 8, "max": 8 } }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "relative-load-dangling",
+      "why": "A relative load must reference an earlier step in the same definition.",
+      "expectedIssuePath": "blocks[0].steps[0].load.stepId",
+      "definition": {
+        "schemaVersion": 1,
+        "id": "invalid-relative-load",
+        "revision": 1,
+        "title": "Dangling relative load",
+        "intent": "training",
+        "modalities": ["strength"],
+        "dominantModality": "strength",
+        "duration": { "min": 30, "max": 30 },
+        "blocks": [
+          {
+            "id": "block",
+            "title": "Block",
+            "role": "main",
+            "executionMode": "sequential",
+            "steps": [
+              {
+                "kind": "exercise",
+                "id": "step",
+                "exerciseRef": { "kind": "catalog", "exerciseId": "romanian_deadlift" },
+                "dose": { "kind": "repetition", "sets": 1, "reps": { "min": 6, "max": 6 } },
+                "load": { "kind": "relative_step", "stepId": "missing-step", "percent": 60 }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "option-action-targets-missing-step",
+      "why": "A bounded action cannot be applied when its target does not exist.",
+      "expectedIssuePath": "blocks[0].optionSets[0].options[0].actions[0].targetStepId",
+      "definition": {
+        "schemaVersion": 1,
+        "id": "invalid-option-target",
+        "revision": 1,
+        "title": "Option targets nothing",
+        "intent": "training",
+        "modalities": ["strength"],
+        "dominantModality": "strength",
+        "duration": { "min": 30, "max": 30 },
+        "blocks": [
+          {
+            "id": "block",
+            "title": "Block",
+            "role": "main",
+            "executionMode": "sequential",
+            "optionSets": [
+              {
+                "id": "choice",
+                "appliesAtStepId": "step",
+                "trigger": { "kind": "athlete_observed", "description": "How does it feel?" },
+                "options": [
+                  {
+                    "id": "reduce",
+                    "label": "Reduce",
+                    "actions": [
+                      { "kind": "omit_step", "targetStepId": "missing-step" }
+                    ]
+                  }
+                ]
+              }
+            ],
+            "steps": [
+              {
+                "kind": "exercise",
+                "id": "step",
+                "exerciseRef": { "kind": "catalog", "exerciseId": "front_squat" },
+                "dose": { "kind": "repetition", "sets": 1, "reps": { "min": 5, "max": 5 } }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "unbounded-action-kind",
+      "why": "Unknown action kinds must fail instead of becoming executable behavior.",
+      "expectedIssuePath": "blocks[0].optionSets[0].options[0].actions[0].kind",
+      "definition": {
+        "schemaVersion": 1,
+        "id": "invalid-action-kind",
+        "revision": 1,
+        "title": "Arbitrary action",
+        "intent": "training",
+        "modalities": ["strength"],
+        "dominantModality": "strength",
+        "duration": { "min": 30, "max": 30 },
+        "blocks": [
+          {
+            "id": "block",
+            "title": "Block",
+            "role": "main",
+            "executionMode": "sequential",
+            "optionSets": [
+              {
+                "id": "choice",
+                "appliesAtStepId": "step",
+                "trigger": { "kind": "athlete_observed", "description": "How does it feel?" },
+                "options": [
+                  {
+                    "id": "improvise",
+                    "label": "Improvise",
+                    "actions": [
+                      { "kind": "run_script", "targetStepId": "step", "script": "skipEverything()" }
+                    ]
+                  }
+                ]
+              }
+            ],
+            "steps": [
+              {
+                "kind": "exercise",
+                "id": "step",
+                "exerciseRef": { "kind": "catalog", "exerciseId": "front_squat" },
+                "dose": { "kind": "repetition", "sets": 1, "reps": { "min": 5, "max": 5 } }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "condition-loosens-injury-constraint",
+      "why": "An authored choice cannot clear a standing safety constraint.",
+      "expectedIssuePath": "blocks[0].optionSets[0].options[0].actions[0].kind",
+      "definition": {
+        "schemaVersion": 1,
+        "id": "invalid-clear-constraint",
+        "revision": 1,
+        "title": "Override gate",
+        "intent": "training",
+        "modalities": ["strength"],
+        "dominantModality": "strength",
+        "duration": { "min": 30, "max": 30 },
+        "blocks": [
+          {
+            "id": "block",
+            "title": "Block",
+            "role": "main",
+            "executionMode": "sequential",
+            "optionSets": [
+              {
+                "id": "choice",
+                "appliesAtStepId": "step",
+                "trigger": { "kind": "athlete_observed", "description": "Knee feels fine" },
+                "options": [
+                  {
+                    "id": "clear",
+                    "label": "Clear constraint",
+                    "actions": [
+                      { "kind": "clear_injury_constraint", "region": "knee" }
+                    ]
+                  }
+                ]
+              }
+            ],
+            "steps": [
+              {
+                "kind": "exercise",
+                "id": "step",
+                "exerciseRef": { "kind": "catalog", "exerciseId": "front_squat" },
+                "dose": { "kind": "repetition", "sets": 1, "reps": { "min": 5, "max": 5 } }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "author-supplied-systemic-cost",
+      "why": "Authored calibrated cost cannot move a readiness ceiling.",
+      "expectedIssuePath": "systemicCost",
+      "definition": {
+        "schemaVersion": 1,
+        "id": "invalid-authored-cost",
+        "revision": 1,
+        "title": "Authored cost",
+        "intent": "training",
+        "modalities": ["strength"],
+        "dominantModality": "strength",
+        "duration": { "min": 30, "max": 30 },
+        "systemicCost": 0.62,
+        "blocks": []
+      }
+    },
+    {
+      "name": "unresolved-movement-claims-one-rm",
+      "why": "An unresolved movement may be logged but has no 1RM or PR authority.",
+      "expectedIssuePath": "blocks[0].steps[0].load.kind",
+      "definition": {
+        "schemaVersion": 1,
+        "id": "invalid-unresolved-one-rm",
+        "revision": 1,
+        "title": "Unresolved 1RM",
+        "intent": "training",
+        "modalities": ["strength"],
+        "dominantModality": "strength",
+        "duration": { "min": 30, "max": 30 },
+        "blocks": [
+          {
+            "id": "block",
+            "title": "Block",
+            "role": "main",
+            "executionMode": "sequential",
+            "steps": [
+              {
+                "kind": "exercise",
+                "id": "step",
+                "exerciseRef": { "kind": "unresolved_free_text", "name": "Special calf drill" },
+                "dose": { "kind": "repetition", "sets": 1, "reps": { "min": 5, "max": 5 } },
+                "load": { "kind": "percent_one_rm", "percent": 80 },
+                "resolutionNote": "Unresolved movement has no metadata authority."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "prose-in-place-of-structure",
+      "why": "Display prose is inert and cannot be parsed into a dose.",
+      "expectedIssuePath": "blocks[0].steps[0].dose.kind",
+      "definition": {
+        "schemaVersion": 1,
+        "id": "invalid-prose-dose",
+        "revision": 1,
+        "title": "Prose dose",
+        "intent": "training",
+        "modalities": ["strength"],
+        "dominantModality": "strength",
+        "duration": { "min": 30, "max": 30 },
+        "blocks": [
+          {
+            "id": "block",
+            "title": "Block",
+            "role": "main",
+            "executionMode": "sequential",
+            "steps": [
+              {
+                "kind": "exercise",
+                "id": "step",
+                "exerciseRef": { "kind": "catalog", "exerciseId": "bench_press" },
+                "dose": { "kind": "display", "display": "Work to a heavy triple then back off 10%." }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "utc-scheduled-date",
+      "why": "Calendar dates must be Warsaw-local date strings, not sliced UTC instants.",
+      "expectedIssuePath": "defaultScheduledDate",
+      "definition": {
+        "schemaVersion": 1,
+        "id": "invalid-utc-date",
+        "revision": 1,
+        "title": "UTC date",
+        "intent": "training",
+        "modalities": ["strength"],
+        "dominantModality": "strength",
+        "duration": { "min": 30, "max": 30 },
+        "defaultScheduledDate": "2026-08-18T22:30:00.000Z",
+        "blocks": []
+      }
+    }
+  ]
+}

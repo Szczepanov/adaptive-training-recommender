@@ -144,12 +144,21 @@ function validateTissueResponses(raw: any, errors: ValidationError[]): Partial<R
         }
         if (hasInvalidOptional) continue;
 
+        let sourceSessionRef: RegionTissueResponse['sourceSessionRef'] = undefined;
+        if (entry.sourceSessionRef && typeof entry.sourceSessionRef === 'object') {
+            const { kind, id, date } = entry.sourceSessionRef;
+            if ((kind === 'strength' || kind === 'execution') && typeof id === 'string' && typeof date === 'string') {
+                sourceSessionRef = { kind, id, date };
+            }
+        }
+
         result[region] = {
             region,
             morningState: entry.morningState,
             ...(isValidTissueLevel(entry.painDuringTraining) ? { painDuringTraining: entry.painDuringTraining } : {}),
             ...(isValidTissueLevel(entry.afterTrainingState) ? { afterTrainingState: entry.afterTrainingState } : {}),
             ...(isValidTissueLevel(entry.nextMorningReaction) ? { nextMorningReaction: entry.nextMorningReaction } : {}),
+            ...(sourceSessionRef ? { sourceSessionRef } : {}),
         };
     }
     return result;

@@ -1,0 +1,140 @@
+{
+  "schemaVersion": 1,
+  "id": "lower-olympic-variants-02",
+  "revision": 1,
+  "title": "Lower Body & Olympic Lift Ramp Sets",
+  "summary": "Ramp sets for Olympic power clean with technical variants and bar speed stop rules.",
+  "intent": "training",
+  "modalities": [
+    "power",
+    "strength"
+  ],
+  "dominantModality": "power",
+  "duration": {
+    "min": 50,
+    "max": 60
+  },
+  "sessionTargets": [
+    {
+      "kind": "session_rpe_cap",
+      "maxRpe": 8
+    },
+    {
+      "kind": "technical_stop",
+      "description": "Stop working sets if bar velocity drops > 10%"
+    }
+  ],
+  "blocks": [
+    {
+      "id": "block-warmup-ramp",
+      "title": "Olympic Warm-Up & Ramp",
+      "role": "warmup",
+      "executionMode": "sequential",
+      "steps": [
+        {
+          "kind": "exercise",
+          "id": "step-clean-warmup",
+          "exerciseRef": {
+            "kind": "catalog",
+            "exerciseId": "hang_power_clean"
+          },
+          "dose": {
+            "kind": "repetition",
+            "sets": 3,
+            "reps": {
+              "min": 3,
+              "max": 3
+            }
+          },
+          "load": {
+            "kind": "percent_one_rm",
+            "percent": 50
+          },
+          "rest": {
+            "min": 60,
+            "max": 90
+          }
+        }
+      ]
+    },
+    {
+      "id": "block-main-clean",
+      "title": "Power Clean Primary",
+      "role": "main",
+      "executionMode": "sequential",
+      "optionSets": [
+        {
+          "id": "choice-floor-clean-quality",
+          "appliesAtStepId": "step-clean-main",
+          "trigger": {
+            "kind": "athlete_observed",
+            "description": "How do the warm-up and speed off the floor feel?"
+          },
+          "options": [
+            {
+              "id": "continue-floor-clean",
+              "label": "Crisp — continue as written",
+              "actions": []
+            },
+            {
+              "id": "reduce-floor-clean-load",
+              "label": "Heavy or slow — reduce load 5%",
+              "actions": [
+                {
+                  "kind": "reduce_load_percent",
+                  "targetStepId": "step-clean-main",
+                  "percent": 5
+                }
+              ]
+            },
+            {
+              "id": "end-floor-clean-block",
+              "label": "Catch or joint comfort is poor — end the block",
+              "actions": [
+                {
+                  "kind": "end_block",
+                  "targetBlockId": "block-main-clean"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "steps": [
+        {
+          "kind": "exercise",
+          "id": "step-clean-main",
+          "exerciseRef": {
+            "kind": "unresolved_free_text",
+            "name": "Power Clean (from the floor)"
+          },
+          "dose": {
+            "kind": "repetition",
+            "sets": 5,
+            "reps": {
+              "min": 2,
+              "max": 2
+            }
+          },
+          "load": {
+            "kind": "descriptive",
+            "display": "Use the last reviewed technically crisp working load; this unresolved movement has no 1RM authority."
+          },
+          "effort": {
+            "kind": "rpe",
+            "target": 7.5
+          },
+          "quality": {
+            "kind": "velocity_loss",
+            "maxLossPercent": 10
+          },
+          "rest": {
+            "min": 120,
+            "max": 180
+          },
+          "resolutionNote": "Not in the catalog. Loggable by name; asserts no safety, cost, stimulus, muscle-split, PR or 1RM semantics (ADR-0023 D-MSESSION; plan M3.5 adds it)."
+        }
+      ]
+    }
+  ]
+}

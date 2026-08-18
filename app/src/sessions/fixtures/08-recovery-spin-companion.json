@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "id": "recovery-spin-companion-08",
+  "revision": 1,
+  "title": "Optional Recovery Spin",
+  "summary": "Circulation only. If it feels like training, it is too hard.",
+  "intent": "recovery",
+  "modalities": [
+    "cycling",
+    "recovery"
+  ],
+  "dominantModality": "cycling",
+  "duration": {
+    "min": 25,
+    "max": 35
+  },
+  "sessionTargets": [
+    {
+      "kind": "session_rpe_cap",
+      "maxRpe": 3
+    }
+  ],
+  "prohibitedAdditions": [
+    "no intervals or surges",
+    "do not turn this into a Zone 2 session"
+  ],
+  "blocks": [
+    {
+      "id": "block-recovery-spin",
+      "title": "Easy Spin",
+      "role": "recovery",
+      "executionMode": "sequential",
+      "steps": [
+        {
+          "kind": "exercise",
+          "id": "step-recovery-spin",
+          "exerciseRef": {
+            "kind": "catalog",
+            "exerciseId": "bike_easy_spin"
+          },
+          "dose": {
+            "kind": "duration",
+            "sets": 1,
+            "seconds": {
+              "min": 1500,
+              "max": 2100
+            }
+          },
+          "effort": {
+            "kind": "rpe",
+            "min": 2,
+            "max": 3
+          },
+          "loggingMode": "completion_only"
+        }
+      ]
+    }
+  ]
+}

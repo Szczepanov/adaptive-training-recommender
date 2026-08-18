@@ -23,6 +23,7 @@ export async function finalizeStrengthSession(
     next: Exclude<StrengthSessionState, 'in_progress'>,
     nowIso: string = new Date().toISOString(),
     dependencies: StrengthSessionCompletionDependencies = productionDependencies,
+    metadata: { sessionRpe?: number; notes?: string } = {},
 ): Promise<StrengthSession> {
     if (!isValidStrengthInstant(nowIso) || Date.parse(nowIso) < Date.parse(session.updatedAt)) {
         throw new Error('Strength session completion time must not precede the last saved update');
@@ -30,9 +31,9 @@ export async function finalizeStrengthSession(
     if (next === 'completed') {
         await dependencies.applyOneRepMaxDerivations(
             userId,
-            { ...session, state: 'completed', completedAt: nowIso, updatedAt: nowIso },
+            { ...session, state: 'completed', completedAt: nowIso, updatedAt: nowIso, ...metadata },
             nowIso,
         );
     }
-    return dependencies.transitionState(userId, session.sessionId, next, nowIso);
+    return dependencies.transitionState(userId, session.sessionId, next, nowIso, metadata);
 }

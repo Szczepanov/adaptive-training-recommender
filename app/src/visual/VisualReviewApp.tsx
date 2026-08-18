@@ -5,11 +5,19 @@ import { DataView } from '../components/DataView';
 import { Goals } from '../components/Goals';
 import { Home } from '../components/Home';
 import { Preferences } from '../components/Preferences';
+import { StrengthSessionRunner } from '../components/StrengthSessionRunner';
 import { TrainingSettings } from '../components/TrainingSettings';
+import type { Screen } from '../types/navigation';
 import { VISUAL_USER_ID, type VisualScenario, type VisualScreen } from './fixtures';
 
 interface VisualReviewAppProps {
   scenario: VisualScenario;
+}
+
+function mapScreenToVisual(s: Screen): VisualScreen {
+  if (s === 'strength') return 'session';
+  if (s === 'plan' || s === 'brief') return 'home';
+  return s;
 }
 
 export function VisualReviewApp({ scenario }: VisualReviewAppProps) {
@@ -21,6 +29,10 @@ export function VisualReviewApp({ scenario }: VisualReviewAppProps) {
     setScreen(nextScreen);
     setDesktopSettingsOpen(false);
     setMobileMoreOpen(false);
+  };
+
+  const handleAppNavigate = (s: Screen) => {
+    navigate(mapScreenToVisual(s));
   };
 
   return (
@@ -37,6 +49,7 @@ export function VisualReviewApp({ scenario }: VisualReviewAppProps) {
           <nav className="navbar-desktop-menu" aria-label="Primary navigation">
             <button className={`nav-link ${screen === 'home' ? 'active' : ''}`} onClick={() => navigate('home')}>Home</button>
             <button className={`nav-link ${screen === 'checkin' ? 'active' : ''}`} onClick={() => navigate('checkin')}>Check-in</button>
+            <button className={`nav-link ${screen === 'session' ? 'active' : ''}`} onClick={() => navigate('session')}>Session</button>
             <button className={`nav-link ${screen === 'goals' ? 'active' : ''}`} onClick={() => navigate('goals')}>Goals</button>
             <button className={`nav-link ${screen === 'data' ? 'active' : ''}`} onClick={() => navigate('data')}>Data</button>
             <div className="more-menu-container">
@@ -60,17 +73,19 @@ export function VisualReviewApp({ scenario }: VisualReviewAppProps) {
       </header>
 
       <main className="app-content">
-        {screen === 'home' && <Home userId={VISUAL_USER_ID} onNavigate={navigate} onViewData={() => navigate('data')} />}
-        {screen === 'checkin' && <DailyCheckin userId={VISUAL_USER_ID} onNavigate={navigate} onBack={() => navigate('home')} />}
-        {screen === 'goals' && <Goals userId={VISUAL_USER_ID} onNavigate={navigate} />}
+        {screen === 'home' && <Home userId={VISUAL_USER_ID} onNavigate={handleAppNavigate} onViewData={() => navigate('data')} />}
+        {screen === 'checkin' && <DailyCheckin userId={VISUAL_USER_ID} onNavigate={handleAppNavigate} onBack={() => navigate('home')} />}
+        {screen === 'goals' && <Goals userId={VISUAL_USER_ID} onNavigate={handleAppNavigate} />}
         {screen === 'data' && <DataView decisionInput={scenario.fixture.input} userId={VISUAL_USER_ID} onBack={() => navigate('home')} initialTab={scenario.initialDataTab} />}
         {screen === 'constraints' && <TrainingSettings userId={VISUAL_USER_ID} />}
-        {screen === 'preferences' && <Preferences userId={VISUAL_USER_ID} onNavigate={navigate} />}
+        {screen === 'preferences' && <Preferences userId={VISUAL_USER_ID} onNavigate={handleAppNavigate} />}
+        {screen === 'session' && <StrengthSessionRunner userId={VISUAL_USER_ID} />}
       </main>
 
       <nav className="bottom-nav" aria-label="Mobile navigation">
         <button className={`nav-item ${screen === 'home' ? 'active' : ''}`} onClick={() => navigate('home')}><span className="nav-label">Home</span></button>
         <button className={`nav-item ${screen === 'checkin' ? 'active' : ''}`} onClick={() => navigate('checkin')}><span className="nav-label">Check-in</span></button>
+        <button className={`nav-item ${screen === 'session' ? 'active' : ''}`} onClick={() => navigate('session')}><span className="nav-label">Session</span></button>
         <button className={`nav-item ${screen === 'goals' ? 'active' : ''}`} onClick={() => navigate('goals')}><span className="nav-label">Goals</span></button>
         <button className={`nav-item ${['constraints', 'preferences', 'data'].includes(screen) ? 'active' : ''}`} onClick={() => setMobileMoreOpen((isOpen) => !isOpen)} aria-expanded={mobileMoreOpen} aria-haspopup="dialog"><span className="nav-label">More</span></button>
       </nav>

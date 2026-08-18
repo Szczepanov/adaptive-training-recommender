@@ -1,0 +1,103 @@
+{
+  "schemaVersion": 1,
+  "id": "protocol-locked-sprint-jump-test-06",
+  "revision": 1,
+  "title": "Protocol-Locked Sprint & Jump Benchmark Test",
+  "summary": "Standardized benchmark assessment measuring 10m sprint, 30m sprint, and countermovement jump.",
+  "modalities": [
+    "speed",
+    "power"
+  ],
+  "dominantModality": "speed",
+  "duration": {
+    "min": 30,
+    "max": 40
+  },
+  "intent": "testing",
+  "blocks": [
+    {
+      "id": "block-jump-benchmark",
+      "title": "Countermovement Jump Assessment",
+      "role": "main",
+      "executionMode": "sequential",
+      "steps": [
+        {
+          "kind": "exercise",
+          "id": "step-cmj-test",
+          "exerciseRef": {
+            "kind": "catalog",
+            "exerciseId": "countermovement_jump"
+          },
+          "dose": {
+            "kind": "repetition",
+            "sets": 3,
+            "reps": {
+              "min": 1,
+              "max": 1
+            }
+          },
+          "setRoles": [
+            "test_attempt",
+            "test_attempt",
+            "test_attempt"
+          ],
+          "protocolRef": {
+            "protocolId": "cmj_hands_on_hips",
+            "revision": 1
+          },
+          "measurementProfile": "jump",
+          "metrics": [
+            "jump_height_cm"
+          ],
+          "rest": {
+            "min": 90,
+            "max": 120
+          }
+        }
+      ]
+    },
+    {
+      "id": "block-sprint-benchmark",
+      "title": "10m / 30m Sprint Acceleration Test",
+      "role": "main",
+      "executionMode": "sequential",
+      "steps": [
+        {
+          "kind": "exercise",
+          "id": "step-sprint-10-30",
+          "exerciseRef": {
+            "kind": "unresolved_free_text",
+            "name": "30 m Sprint with Splits"
+          },
+          "dose": {
+            "kind": "distance",
+            "sets": 3,
+            "metres": {
+              "min": 30,
+              "max": 30
+            }
+          },
+          "setRoles": [
+            "test_attempt",
+            "test_attempt",
+            "test_attempt"
+          ],
+          "protocolRef": {
+            "protocolId": "sprint_dual_beam_30m",
+            "revision": 1
+          },
+          "measurementProfile": "sprint",
+          "metrics": [
+            "sprint_time_s",
+            "split_10m_s"
+          ],
+          "rest": {
+            "min": 180,
+            "max": 240
+          },
+          "resolutionNote": "Not in the catalog. Loggable by name; asserts no safety, cost, stimulus, muscle-split, PR or 1RM semantics (ADR-0023 D-MSESSION; plan M3.5 adds it)."
+        }
+      ]
+    }
+  ]
+}

@@ -19,6 +19,7 @@ const externalPlanPath = `users/${ownerId}/external_plans/autumn-block`;
 const externalRevisionPath = `${externalPlanPath}/revisions/1`;
 const externalPlacementPath = `${externalPlanPath}/placement/current`;
 const decisionJournalPath = `users/${ownerId}/decision_journal/2026-08-07`;
+const checkinPath = `users/${ownerId}/daily_subjective_checkins/2026-08-18`;
 
 function validExternalPlanHeader() {
     return {
@@ -100,6 +101,34 @@ function validDecisionJournalEntry() {
         externalVerdict: 'proceed', sawEngineVerdictFirst: false,
         createdAt: '2026-08-07T06:00:00Z', updatedAt: '2026-08-07T06:00:00Z',
         schemaVersion: 1,
+    };
+}
+
+function validCheckinWithSessionResponse() {
+    return {
+        userId: ownerId,
+        date: '2026-08-18',
+        readiness: 6,
+        sleepQuality: 6,
+        fatigue: 4,
+        soreness: 3,
+        mentalStress: 4,
+        motivation: 6,
+        painOrInjury: false,
+        illnessSymptoms: false,
+        unusuallyLimitedTime: false,
+        alreadyTrainedToday: false,
+        availability: { timeAvailableMin: 45, preferredModalityToday: null, indoorOnly: false },
+        tissueResponses: {
+            knee: {
+                region: 'knee',
+                morningState: 'normal',
+                nextMorningReaction: 'normal',
+                sourceSessionRef: { kind: 'strength', id: 'session-1', date: '2026-08-17' },
+            },
+        },
+        createdAt: '2026-08-18T06:00:00Z',
+        updatedAt: '2026-08-18T06:00:00Z',
     };
 }
 
@@ -193,6 +222,14 @@ emulatorDescribe('Firestore security rules', () => {
         const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
         await assertFails(setDoc(doc(ownerDb, `users/${ownerId}/activities/garmin-1`), { date: '2026-08-07' }));
         await assertFails(setDoc(doc(ownerDb, `users/${ownerId}/daily_recovery_snapshots/2026-08-07`), { date: '2026-08-07' }));
+    });
+
+    it('allows an owner to record a canonical check-in response linked to a strength session', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertSucceeds(setDoc(doc(ownerDb, checkinPath), validCheckinWithSessionResponse()));
+
+        const otherDb = testEnvironment.authenticatedContext(otherUserId).firestore();
+        await assertFails(setDoc(doc(otherDb, checkinPath), validCheckinWithSessionResponse(), { merge: true }));
     });
 
     it('allows a well-formed goal taper and rejects a malformed taper object', async () => {

@@ -100,7 +100,49 @@ export function installVisualServices(fixture: VisualFixture): void {
   recommendationService.getRecommendation = async () => null;
   recommendationService.getRecommendationsInRange = async () => ({ status: 'AVAILABLE', data: [], revision: null });
   recommendationService.saveRecommendation = async () => null;
-  strengthSessionService.getSessionsInRange = async () => ({ sessions: [], invalidRecords: 0 });
+
+  strengthSessionService.getSessionsInRange = async () => ({
+    sessions: fixture.strengthSession ? [fixture.strengthSession] : [],
+    invalidRecords: 0,
+  });
+  strengthSessionService.findActiveSession = async () => fixture.strengthSession ?? null;
+  strengthSessionService.getSessionState = async () => (
+    fixture.strengthSession
+      ? { status: 'AVAILABLE', data: fixture.strengthSession, revision: null }
+      : { status: 'MISSING' }
+  );
+  strengthSessionService.observeSession = (_userId, _sessionId, listener) => {
+    if (fixture.strengthSession) {
+      listener({ status: 'AVAILABLE', data: fixture.strengthSession, revision: null }, false);
+    } else {
+      listener({ status: 'MISSING' }, false);
+    }
+    return () => {};
+  };
+  strengthSessionService.saveExercises = async () => {};
+  strengthSessionService.startSession = async () => fixture.strengthSession ?? {
+    userId: fixture.input.userId,
+    sessionId: 'visual-strength-session-new',
+    date: fixture.input.date,
+    startedAt: fixture.input.date,
+    updatedAt: fixture.input.date,
+    state: 'in_progress',
+    exercises: [],
+    schemaVersion: 1,
+  };
+  strengthSessionService.transitionState = async (_userId, _sessionId, next) => ({
+    ...(fixture.strengthSession ?? {
+      userId: fixture.input.userId,
+      sessionId: 'visual-strength-session-new',
+      date: fixture.input.date,
+      startedAt: fixture.input.date,
+      exercises: [],
+      schemaVersion: 1,
+    }),
+    state: next,
+    updatedAt: fixture.input.date,
+  });
+
   recommendationService.getAdherenceStats = async () => ({
     totalRecommendations: 14,
     answered: 12,

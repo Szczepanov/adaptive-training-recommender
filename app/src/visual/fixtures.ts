@@ -11,11 +11,13 @@ import {
   type UserPreferences,
 } from '../engine/models';
 
+import type { StrengthSession } from '../engine/models';
+
 export const VISUAL_USER_ID = 'visual-athlete';
 export const VISUAL_DATE = '2026-09-12';
 const TIMESTAMP = '2026-09-12T08:00:00.000+02:00';
 
-export type VisualScreen = 'home' | 'checkin' | 'goals' | 'data' | 'constraints' | 'preferences';
+export type VisualScreen = 'home' | 'checkin' | 'goals' | 'data' | 'constraints' | 'preferences' | 'session';
 
 export interface VisualScenario {
   id: string;
@@ -37,6 +39,7 @@ export interface VisualFixture {
   /** An imported plan governing this date (ADR-0019). Absent for every other scenario, so
    * the ordinary screens keep exercising the ranked path. */
   externalPlan?: ExternalTrainingPlan;
+  strengthSession?: StrengthSession | null;
 }
 
 const settings: TrainingSettings = {
@@ -168,7 +171,7 @@ const eventGoal: UserGoal & { id: string } = {
 };
 
 function buildFixture(
-  overrides: Partial<Pick<VisualFixture, 'settings' | 'preferences' | 'checkin' | 'recovery' | 'goals' | 'activities' | 'externalPlan'>> = {},
+  overrides: Partial<Pick<VisualFixture, 'settings' | 'preferences' | 'checkin' | 'recovery' | 'goals' | 'activities' | 'externalPlan' | 'strengthSession'>> = {},
   trainingIntentProfile: TrainingIntentProfile | null = null,
 ): VisualFixture {
   const fixtureSettings = overrides.settings ?? settings;
@@ -186,6 +189,7 @@ function buildFixture(
     goals: fixtureGoals,
     activities: fixtureActivities,
     ...(overrides.externalPlan ? { externalPlan: overrides.externalPlan } : {}),
+    ...(overrides.strengthSession ? { strengthSession: overrides.strengthSession } : {}),
     input: {
       userId: VISUAL_USER_ID,
       date: VISUAL_DATE,
@@ -454,6 +458,37 @@ export const VISUAL_SCENARIOS: VisualScenario[] = [
     screen: 'preferences',
     expectedFocus: ['Preference groups and save affordances are clear.'],
     fixture: standardFixture,
+  },
+  {
+    id: 'session-runner-in-progress',
+    title: 'Session Runner — active strength session',
+    screen: 'session',
+    expectedFocus: ['Step navigation, logged set list with sync status, and responsive mobile layout are clear.'],
+    fixture: buildFixture({
+      strengthSession: {
+        userId: VISUAL_USER_ID,
+        sessionId: 'visual-strength-session-1',
+        date: VISUAL_DATE,
+        startedAt: '2026-09-12T08:15:00.000+02:00',
+        updatedAt: '2026-09-12T08:25:00.000+02:00',
+        state: 'in_progress',
+        sourceRecommendationDate: VISUAL_DATE,
+        exercises: [
+          {
+            exerciseId: 'hang_power_clean',
+            sets: [
+              { setIndex: 1, reps: 3, weightKg: 50, isWarmup: true, completedAt: '2026-09-12T08:18:00.000+02:00' },
+              { setIndex: 2, reps: 3, weightKg: 70, isWarmup: false, completedAt: '2026-09-12T08:22:00.000+02:00', gauge: { scale: 'rir', value: 3 } },
+            ],
+          },
+          {
+            exerciseId: 'bench_press',
+            sets: [],
+          },
+        ],
+        schemaVersion: 1,
+      },
+    }),
   },
 ];
 

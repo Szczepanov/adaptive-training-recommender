@@ -6,11 +6,12 @@ import { TrainingPlanSection } from './TrainingPlanSection';
 import { ModalitySections } from './ModalitySections';
 import { StyleSections } from './StyleSections';
 import { PerformanceSections } from './PerformanceSections';
+import type { Screen } from '../../types/navigation';
 import '../Preferences.css';
 
 interface PreferencesProps {
   userId: string;
-  onNavigate?: (screen: 'home' | 'checkin' | 'goals' | 'constraints' | 'preferences') => void;
+  onNavigate?: (screen: Screen) => void;
 }
 
 export function Preferences({ userId }: PreferencesProps) {

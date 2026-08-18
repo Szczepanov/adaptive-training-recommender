@@ -452,6 +452,68 @@
   background: rgba(56, 189, 248, 0.22);
 }
 
+.start-strength-btn-cta {
+  margin-top: 1rem;
+  margin-left: 0.5rem;
+  padding: 0.7rem 1.25rem;
+  border: 1px solid rgba(59, 130, 246, 0.6);
+  border-radius: 8px;
+  background: #2563eb;
+  color: #ffffff;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+  transition: background 0.15s ease, transform 0.1s ease;
+}
+
+.start-strength-btn-cta:hover {
+  background: #1d4ed8;
+  transform: translateY(-1px);
+}
+
+.session-response-reminder {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid rgba(251, 191, 36, 0.45);
+  border-radius: 0.75rem;
+  background: rgba(180, 83, 9, 0.16);
+  color: #fef3c7;
+}
+
+.session-response-reminder div {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.session-response-reminder span {
+  color: #fde68a;
+  font-size: 0.875rem;
+}
+
+.session-response-reminder button {
+  flex: 0 0 auto;
+  min-height: 44px;
+  padding: 0.45rem 0.8rem;
+  border: 1px solid rgba(253, 230, 138, 0.55);
+  border-radius: 0.45rem;
+  background: transparent;
+  color: #fef3c7;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+@media (max-width: 520px) {
+  .session-response-reminder {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+
 .detailed-plan {
   margin-top: 1.25rem;
   padding-top: 1rem;

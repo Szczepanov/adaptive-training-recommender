@@ -25,11 +25,12 @@ const EVENT_LIFECYCLE_LABELS: Record<NonNullable<UserGoal['eventLifecycle']>, st
 type UserGoalWithId = UserGoal & { id: string };
 /** Fields the add/edit goal form collects; matches goalService.createGoal's input. */
 type GoalInput = Omit<UserGoal, 'userId' | 'createdAt' | 'updatedAt' | 'schemaVersion'>;
+import type { Screen } from '../types/navigation';
 import './Goals.css';
 
 interface GoalsProps {
   userId: string;
-  onNavigate?: (screen: 'home' | 'checkin' | 'goals' | 'constraints' | 'preferences') => void;
+  onNavigate?: (screen: Screen) => void;
 }
 
 export function Goals({ userId }: GoalsProps) {

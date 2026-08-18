@@ -1,0 +1,236 @@
+{
+  "schemaVersion": 1,
+  "id": "full-body-maintenance-01",
+  "revision": 1,
+  "title": "Full-Body Strength/Power Maintenance",
+  "summary": "Full-body maintenance session with crisp bar speed, moderate volume, and no grinding.",
+  "intent": "training",
+  "modalities": [
+    "strength",
+    "power"
+  ],
+  "dominantModality": "strength",
+  "duration": {
+    "min": 45,
+    "max": 55
+  },
+  "sessionTargets": [
+    {
+      "kind": "session_rpe_cap",
+      "maxRpe": 7
+    },
+    {
+      "kind": "technical_stop",
+      "description": "Terminate any set where bar speed degrades noticeably"
+    }
+  ],
+  "prohibitedAdditions": [
+    "no additional heavy leg sets",
+    "no failure grinding"
+  ],
+  "blocks": [
+    {
+      "id": "block-warmup",
+      "title": "Movement Preparation & Activation",
+      "role": "warmup",
+      "executionMode": "circuit",
+      "rounds": {
+        "min": 2,
+        "max": 2
+      },
+      "steps": [
+        {
+          "kind": "exercise",
+          "id": "step-warmup-1",
+          "exerciseRef": {
+            "kind": "catalog",
+            "exerciseId": "dead_bug"
+          },
+          "dose": {
+            "kind": "repetition",
+            "sets": 2,
+            "reps": {
+              "min": 8,
+              "max": 8
+            }
+          },
+          "laterality": "per_side",
+          "rest": {
+            "min": 30,
+            "max": 45
+          }
+        },
+        {
+          "kind": "exercise",
+          "id": "step-warmup-2",
+          "exerciseRef": {
+            "kind": "catalog",
+            "exerciseId": "copenhagen_plank"
+          },
+          "dose": {
+            "kind": "duration",
+            "sets": 2,
+            "seconds": {
+              "min": 20,
+              "max": 20
+            }
+          },
+          "laterality": "per_side",
+          "rest": {
+            "min": 30,
+            "max": 45
+          }
+        }
+      ]
+    },
+    {
+      "id": "block-power",
+      "title": "Olympic Power Primer",
+      "role": "main",
+      "executionMode": "sequential",
+      "optionSets": [
+        {
+          "id": "choice-clean-quality",
+          "appliesAtStepId": "step-power-1",
+          "trigger": {
+            "kind": "athlete_observed",
+            "description": "How are catch comfort and bar speed holding up?"
+          },
+          "options": [
+            {
+              "id": "continue-clean",
+              "label": "Crisp and comfortable — continue",
+              "actions": []
+            },
+            {
+              "id": "reduce-clean-load",
+              "label": "Quality is fading — reduce load 10%",
+              "actions": [
+                {
+                  "kind": "reduce_load_percent",
+                  "targetStepId": "step-power-1",
+                  "percent": 10
+                }
+              ]
+            },
+            {
+              "id": "end-clean-block",
+              "label": "Catch is uncomfortable — end the block",
+              "actions": [
+                {
+                  "kind": "end_block",
+                  "targetBlockId": "block-power"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "steps": [
+        {
+          "kind": "exercise",
+          "id": "step-power-1",
+          "exerciseRef": {
+            "kind": "catalog",
+            "exerciseId": "hang_power_clean"
+          },
+          "dose": {
+            "kind": "repetition",
+            "sets": 4,
+            "reps": {
+              "min": 3,
+              "max": 3
+            }
+          },
+          "load": {
+            "kind": "percent_one_rm",
+            "percent": 70
+          },
+          "effort": {
+            "kind": "rpe",
+            "target": 7
+          },
+          "quality": {
+            "kind": "technical",
+            "stopRule": "crisp_bar_speed"
+          },
+          "rest": {
+            "min": 120,
+            "max": 150
+          }
+        }
+      ]
+    },
+    {
+      "id": "block-strength",
+      "title": "Lower & Upper Strength Pairing",
+      "role": "main",
+      "executionMode": "alternating",
+      "steps": [
+        {
+          "kind": "exercise",
+          "id": "step-str-1",
+          "exerciseRef": {
+            "kind": "unresolved_free_text",
+            "name": "Back Squat"
+          },
+          "dose": {
+            "kind": "repetition",
+            "sets": 3,
+            "reps": {
+              "min": 5,
+              "max": 5
+            }
+          },
+          "load": {
+            "kind": "descriptive",
+            "display": "Use the last reviewed technically sound working load; this unresolved movement has no 1RM authority."
+          },
+          "effort": {
+            "kind": "rir",
+            "target": 3
+          },
+          "tempo": {
+            "display": "3-1-X-1"
+          },
+          "rest": {
+            "min": 120,
+            "max": 180
+          },
+          "resolutionNote": "Not in the catalog. Loggable by name; asserts no safety, cost, stimulus, muscle-split, PR or 1RM semantics (ADR-0023 D-MSESSION; plan M3.5 adds it)."
+        },
+        {
+          "kind": "exercise",
+          "id": "step-str-2",
+          "exerciseRef": {
+            "kind": "catalog",
+            "exerciseId": "bench_press"
+          },
+          "dose": {
+            "kind": "repetition",
+            "sets": 3,
+            "reps": {
+              "min": 6,
+              "max": 6
+            }
+          },
+          "load": {
+            "kind": "percent_one_rm",
+            "percent": 75
+          },
+          "effort": {
+            "kind": "rir",
+            "target": 2
+          },
+          "tempo": {
+            "display": "2-1-X-0"
+          },
+          "rest": {
+            "min": 90,
+            "max": 120
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,10 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import {
     appendSetToExercise,
+    amendLoggedSet,
     buildLoggedSet,
     extractPlannedStrengthExercises,
     nextSetIndex,
     prefillNextSet,
+    reindexSets,
+    removeSetFromExercise,
+    replaceSetInExercise,
+    resolveInitialExerciseIndex,
+    resolveStepNavigation,
     upsertExercise,
 } from './strengthSessionEntry';
 import type { LoggedExercise, LoggedSet } from '../engine/models';
@@ -116,6 +122,31 @@ describe('buildLoggedSet', () => {
     });
 });
 
+describe('amendLoggedSet', () => {
+    it('changes only the entry fields and preserves historical set metadata', () => {
+        const existing = loggedSet({
+            setIndex: 2,
+            reps: 3,
+            weightKg: 70,
+            isWarmup: true,
+            completedAt: '2026-08-17T18:02:00Z',
+            gauge: { scale: 'rir', value: 4 },
+        });
+
+        expect(amendLoggedSet(existing, { reps: 5, weightKg: 72.5, isWarmup: false })).toEqual({
+            ok: true,
+            set: {
+                setIndex: 2,
+                reps: 5,
+                weightKg: 72.5,
+                isWarmup: true,
+                completedAt: '2026-08-17T18:02:00Z',
+                gauge: { scale: 'rir', value: 4 },
+            },
+        });
+    });
+});
+
 describe('upsertExercise', () => {
     it('adds a new exercise by exerciseId', () => {
         expect(upsertExercise([], 'bench_press')).toEqual([{ exerciseId: 'bench_press', sets: [] }]);
@@ -139,5 +170,124 @@ describe('appendSetToExercise', () => {
         const updated = appendSetToExercise(exercises, 0, loggedSet({ setIndex: 1, weightKg: 60 }));
         expect(updated[0]?.sets).toEqual([loggedSet({ setIndex: 1, weightKg: 60 })]);
         expect(updated[1]).toBe(exercises[1]);
+    });
+});
+
+describe('replaceSetInExercise and removeSetFromExercise (M1.2 / ADR-0023)', () => {
+    it('replaces a targeted set preserving its setIndex', () => {
+        const exercises: LoggedExercise[] = [{
+            exerciseId: 'bench_press',
+            sets: [loggedSet({ setIndex: 1, weightKg: 70 }), loggedSet({ setIndex: 2, weightKg: 725 })],
+        }];
+        const corrected = replaceSetInExercise(exercises, 0, 2, loggedSet({ setIndex: 2, weightKg: 72.5 }));
+        expect(corrected[0]?.sets[1]).toEqual(loggedSet({ setIndex: 2, weightKg: 72.5 }));
+    });
+
+    it('removes a targeted set and reindexes subsequent sets', () => {
+        const exercises: LoggedExercise[] = [{
+            exerciseId: 'bench_press',
+            sets: [
+                loggedSet({ setIndex: 1, weightKg: 70 }),
+                loggedSet({ setIndex: 2, weightKg: 75 }),
+                loggedSet({ setIndex: 3, weightKg: 80 }),
+            ],
+        }];
+        const afterRemoval = removeSetFromExercise(exercises, 0, 2);
+        expect(afterRemoval[0]?.sets).toHaveLength(2);
+        expect(afterRemoval[0]?.sets[0]).toMatchObject({ setIndex: 1, weightKg: 70 });
+        expect(afterRemoval[0]?.sets[1]).toMatchObject({ setIndex: 2, weightKg: 80 });
+    });
+
+    it('reindexes arbitrary sets strictly 1..N', () => {
+        const rawSets: LoggedSet[] = [
+            loggedSet({ setIndex: 4, reps: 5 }),
+            loggedSet({ setIndex: 9, reps: 3 }),
+        ];
+        expect(reindexSets(rawSets)).toEqual([
+            loggedSet({ setIndex: 1, reps: 5 }),
+            loggedSet({ setIndex: 2, reps: 3 }),
+        ]);
+    });
+});
+
+describe('resolveStepNavigation (M1.1)', () => {
+    it('merges planned exercises with logged exercises and marks completion', () => {
+        const planned = [
+            { exerciseId: 'bench_press', name: 'Bench Press', targetSets: 2, targetReps: 5, targetGauge: null, optional: false },
+            { exerciseId: 'pull_up', name: 'Pull Up', targetSets: 2, targetReps: 8, targetGauge: null, optional: true },
+        ];
+        const logged: LoggedExercise[] = [
+            { exerciseId: 'bench_press', sets: [loggedSet({ setIndex: 1 }), loggedSet({ setIndex: 2 })] },
+            { exerciseId: null, freeTextName: 'Custom Curl', sets: [loggedSet({ setIndex: 1 })] },
+        ];
+
+        const nav = resolveStepNavigation(logged, planned);
+        expect(nav).toHaveLength(3);
+
+        // First step: Bench Press (planned, 2/2 completed)
+        expect(nav[0]).toMatchObject({
+            exerciseIndex: 0,
+            exerciseId: 'bench_press',
+            displayName: 'Bench Press',
+            isPlanned: true,
+            optional: false,
+            loggedSetsCount: 2,
+            isComplete: true,
+        });
+
+        // Second step: Pull Up (planned, 0/2 not yet started in logged)
+        expect(nav[1]).toMatchObject({
+            exerciseIndex: null,
+            exerciseId: 'pull_up',
+            displayName: 'Pull Up',
+            isPlanned: true,
+            optional: true,
+            loggedSetsCount: 0,
+            isComplete: false,
+        });
+
+        // Third step: Custom Curl (ad-hoc logged)
+        expect(nav[2]).toMatchObject({
+            exerciseIndex: 1,
+            displayName: 'Custom Curl',
+            isPlanned: false,
+            loggedSetsCount: 1,
+            isComplete: true,
+        });
+    });
+});
+
+describe('resolveInitialExerciseIndex (M1.1)', () => {
+    it('returns null when no exercises exist in session', () => {
+        expect(resolveInitialExerciseIndex([])).toBeNull();
+    });
+
+    it('returns first incomplete step index when resuming session', () => {
+        const planned = [
+            { exerciseId: 'bench_press', name: 'Bench Press', targetSets: 2, targetReps: 5, targetGauge: null, optional: false },
+            { exerciseId: 'pull_up', name: 'Pull Up', targetSets: 2, targetReps: 8, targetGauge: null, optional: false },
+        ];
+        const logged: LoggedExercise[] = [
+            { exerciseId: 'bench_press', sets: [loggedSet({ setIndex: 1 }), loggedSet({ setIndex: 2 })] },
+            { exerciseId: 'pull_up', sets: [] },
+        ];
+
+        expect(resolveInitialExerciseIndex(logged, planned)).toBe(1);
+    });
+
+    it('returns first empty exercise index when unplanned exercises exist', () => {
+        const logged: LoggedExercise[] = [
+            { exerciseId: 'bench_press', sets: [loggedSet({ setIndex: 1 })] },
+            { exerciseId: 'pull_up', sets: [] },
+        ];
+        expect(resolveInitialExerciseIndex(logged, [])).toBe(1);
+    });
+
+    it('returns last touched exercise index when all exercises have sets', () => {
+        const logged: LoggedExercise[] = [
+            { exerciseId: 'bench_press', sets: [loggedSet({ setIndex: 1 })] },
+            { exerciseId: 'pull_up', sets: [loggedSet({ setIndex: 1 })] },
+        ];
+        expect(resolveInitialExerciseIndex(logged, [])).toBe(1);
     });
 });

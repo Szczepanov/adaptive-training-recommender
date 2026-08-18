@@ -95,6 +95,7 @@ export class StrengthSessionService {
         sessionId: string,
         next: StrengthSessionState,
         nowIso: string = new Date().toISOString(),
+        metadata: { sessionRpe?: number; notes?: string } = {},
     ): Promise<StrengthSession> {
         const existingState = await this.getSessionState(userId, sessionId);
         if (existingState.status === 'UNAVAILABLE') {
@@ -123,14 +124,17 @@ export class StrengthSessionService {
             state: next,
             updatedAt: nowIso,
             ...(next === 'completed' ? { completedAt: nowIso } : {}),
+            ...(metadata.sessionRpe !== undefined ? { sessionRpe: metadata.sessionRpe } : {}),
+            ...(metadata.notes !== undefined ? { notes: metadata.notes } : {}),
         };
         const docRef = doc(getDb(), 'users', userId, this.collectionPath, sessionId);
-        // Merge only lifecycle fields. A whole-document rewrite can overwrite a set that
-        // another tab queued between the read above and this close action.
+        // Merge only lifecycle fields and optional completion metadata.
         await setDoc(docRef, {
             state: next,
             updatedAt: nowIso,
             ...(next === 'completed' ? { completedAt: nowIso } : {}),
+            ...(metadata.sessionRpe !== undefined ? { sessionRpe: metadata.sessionRpe } : {}),
+            ...(metadata.notes !== undefined ? { notes: metadata.notes } : {}),
         }, { merge: true });
         return updated;
     }

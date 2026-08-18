@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "id": "malformed-and-custom-movement-07",
+  "revision": 1,
+  "title": "Field Session with Custom Movements and Import Warnings",
+  "summary": "Imported session containing uncatalogued custom exercise and transient HRV notes flagged during parse.",
+  "intent": "training",
+  "modalities": ["strength", "field"],
+  "dominantModality": "field",
+  "duration": { "min": 40, "max": 50 },
+  "importWarnings": [
+    "Transient morning HRV/soreness note omitted from reusable definition content",
+    "Exercise 'spanish_squat_isometric' is unresolved free-text; engine eligibility and load credit discounted"
+  ],
+  "blocks": [
+    {
+      "id": "block-custom-prep",
+      "title": "Patellar Preparation & Field Agility",
+      "role": "main",
+      "executionMode": "sequential",
+      "steps": [
+        {
+          "kind": "exercise",
+          "id": "step-spanish-squat",
+          "exerciseRef": { "kind": "unresolved_free_text", "name": "Spanish Squat Isometric with Heavy Band" },
+          "dose": { "kind": "duration", "sets": 3, "seconds": { "min": 45, "max": 45 } },
+          "load": { "kind": "band", "bandColor": "orange" },
+          "rest": { "min": 60, "max": 60 }
+        }
+      ]
+    }
+  ]
+}

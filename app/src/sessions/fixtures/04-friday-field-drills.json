@@ -1,0 +1,88 @@
+{
+  "schemaVersion": 1,
+  "id": "friday-field-drills-04",
+  "revision": 1,
+  "title": "Friday Field Agility & Acceleration",
+  "summary": "Controlled acceleration and change-of-direction field drills with distance metrics and complete rest.",
+  "intent": "training",
+  "modalities": [
+    "speed",
+    "field"
+  ],
+  "dominantModality": "speed",
+  "duration": {
+    "min": 35,
+    "max": 45
+  },
+  "sessionTargets": [
+    {
+      "kind": "technical_stop",
+      "description": "Full recovery between reps; no conditioning fatigue"
+    }
+  ],
+  "blocks": [
+    {
+      "id": "block-field-accel",
+      "title": "Linear Acceleration",
+      "role": "main",
+      "executionMode": "sequential",
+      "steps": [
+        {
+          "kind": "exercise",
+          "id": "step-accel-15m",
+          "exerciseRef": {
+            "kind": "unresolved_free_text",
+            "name": "15 m Sprint"
+          },
+          "dose": {
+            "kind": "distance",
+            "sets": 4,
+            "metres": {
+              "min": 15,
+              "max": 15
+            }
+          },
+          "effort": {
+            "kind": "rpe",
+            "target": 9
+          },
+          "rest": {
+            "min": 90,
+            "max": 120
+          },
+          "resolutionNote": "Not in the catalog. Loggable by name; asserts no safety, cost, stimulus, muscle-split, PR or 1RM semantics (ADR-0023 D-MSESSION; plan M3.5 adds it)."
+        }
+      ]
+    },
+    {
+      "id": "block-field-cod",
+      "title": "5-10-5 Pro Agility Cuts",
+      "role": "main",
+      "executionMode": "alternating",
+      "steps": [
+        {
+          "kind": "exercise",
+          "id": "step-cod-left-right",
+          "exerciseRef": {
+            "kind": "unresolved_free_text",
+            "name": "Pro-Agility Shuttle (5-10-5)"
+          },
+          "dose": {
+            "kind": "distance",
+            "sets": 3,
+            "metres": {
+              "min": 20,
+              "max": 20
+            }
+          },
+          "laterality": "alternating",
+          "rest": {
+            "min": 120,
+            "max": 150
+          },
+          "resolutionNote": "Not in the catalog. Loggable by name; asserts no safety, cost, stimulus, muscle-split, PR or 1RM semantics (ADR-0023 D-MSESSION; plan M3.5 adds it)."
+        }
+      ]
+    }
+  ]
+}

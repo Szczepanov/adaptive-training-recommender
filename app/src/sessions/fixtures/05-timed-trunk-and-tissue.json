@@ -1,0 +1,94 @@
+{
+  "schemaVersion": 1,
+  "id": "timed-trunk-and-tissue-05",
+  "revision": 1,
+  "title": "Timed Trunk & Tissue Preparation",
+  "summary": "Isometric tendon and core stabilization circuit with per-side time doses.",
+  "intent": "training",
+  "modalities": [
+    "strength",
+    "recovery"
+  ],
+  "dominantModality": "strength",
+  "duration": {
+    "min": 25,
+    "max": 30
+  },
+  "blocks": [
+    {
+      "id": "block-tissue-circuit",
+      "title": "Tendon & Core Stabilization",
+      "role": "main",
+      "executionMode": "circuit",
+      "rounds": {
+        "min": 3,
+        "max": 3
+      },
+      "steps": [
+        {
+          "kind": "exercise",
+          "id": "step-soleus-iso",
+          "exerciseRef": {
+            "kind": "catalog",
+            "exerciseId": "seated_soleus_iso"
+          },
+          "dose": {
+            "kind": "duration",
+            "sets": 3,
+            "seconds": {
+              "min": 30,
+              "max": 30
+            }
+          },
+          "laterality": "per_side",
+          "rest": {
+            "min": 15,
+            "max": 30
+          }
+        },
+        {
+          "kind": "exercise",
+          "id": "step-copenhagen",
+          "exerciseRef": {
+            "kind": "catalog",
+            "exerciseId": "copenhagen_plank"
+          },
+          "dose": {
+            "kind": "duration",
+            "sets": 3,
+            "seconds": {
+              "min": 20,
+              "max": 20
+            }
+          },
+          "laterality": "per_side",
+          "rest": {
+            "min": 15,
+            "max": 30
+          }
+        },
+        {
+          "kind": "exercise",
+          "id": "step-dead-bug",
+          "exerciseRef": {
+            "kind": "catalog",
+            "exerciseId": "dead_bug"
+          },
+          "dose": {
+            "kind": "repetition",
+            "sets": 3,
+            "reps": {
+              "min": 10,
+              "max": 10
+            }
+          },
+          "laterality": "per_side",
+          "rest": {
+            "min": 45,
+            "max": 60
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1116,6 +1116,12 @@ export interface RegionTissueResponse {
   afterTrainingState?: TissueResponseLevel;
   /** The following morning's reaction to that session. */
   nextMorningReaction?: TissueResponseLevel;
+  /** Linkage to the session that provoked the response (M1.7 / ADR-0023 D-MRESP). */
+  sourceSessionRef?: {
+    kind: 'strength' | 'execution';
+    id: string;
+    date: string;
+  };
 }
 
 export interface TrainingSettings {

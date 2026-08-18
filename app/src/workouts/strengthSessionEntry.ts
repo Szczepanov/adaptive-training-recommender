@@ -129,6 +129,20 @@ export function buildLoggedSet(draft: SetEntryDraft, loggedSets: readonly Logged
     };
 }
 
+/** Applies a reps/weight correction without changing the meaning of an already-performed
+ * set. Warm-up status, intensity gauge, timestamp, and index are historical facts rather
+ * than editable-entry defaults. */
+export function amendLoggedSet(existing: LoggedSet, draft: SetEntryDraft): BuildSetResult {
+    const result = buildLoggedSet({
+        ...draft,
+        isWarmup: existing.isWarmup,
+        ...(existing.gauge ? { gauge: existing.gauge } : {}),
+    }, [], existing.completedAt);
+    return result.ok
+        ? { ok: true, set: { ...result.set, setIndex: existing.setIndex } }
+        : result;
+}
+
 /** Adds a new exercise to the session if one matching this identity isn't already present
  *  (confirm-or-amend re-adding the same prescribed exercise is a no-op, not a duplicate
  *  entry). Two free-text exercises are distinct entries even with the same name -- there is
@@ -143,4 +157,147 @@ export function upsertExercise(exercises: readonly LoggedExercise[], exerciseId:
 
 export function appendSetToExercise(exercises: readonly LoggedExercise[], exerciseIndex: number, set: LoggedSet): LoggedExercise[] {
     return exercises.map((exercise, index) => (index === exerciseIndex ? { ...exercise, sets: [...exercise.sets, set] } : exercise));
+}
+
+/** Re-indexes an exercise's sets sequentially starting at 1, preserving all other fields. */
+export function reindexSets(sets: readonly LoggedSet[]): LoggedSet[] {
+    return sets.map((set, idx) => ({ ...set, setIndex: idx + 1 }));
+}
+
+/** Pure replacement of a performed set within an exercise (M1.2 / ADR-0023). Preserves
+ *  original setIndex and completion order, replacing the targeted set's contents. */
+export function replaceSetInExercise(
+    exercises: readonly LoggedExercise[],
+    exerciseIndex: number,
+    targetSetIndex: number,
+    updatedSet: LoggedSet,
+): LoggedExercise[] {
+    return exercises.map((exercise, idx) => {
+        if (idx !== exerciseIndex) return exercise;
+        const nextSets = exercise.sets.map(s => (s.setIndex === targetSetIndex ? { ...updatedSet, setIndex: targetSetIndex } : s));
+        return { ...exercise, sets: nextSets };
+    });
+}
+
+/** Pure removal of a performed set (M1.2 / ADR-0023). Removes the set with the given
+ *  setIndex and reindexes the remaining sets so indices remain strictly 1..N sequential. */
+export function removeSetFromExercise(
+    exercises: readonly LoggedExercise[],
+    exerciseIndex: number,
+    targetSetIndex: number,
+): LoggedExercise[] {
+    return exercises.map((exercise, idx) => {
+        if (idx !== exerciseIndex) return exercise;
+        const filtered = exercise.sets.filter(s => s.setIndex !== targetSetIndex);
+        return { ...exercise, sets: reindexSets(filtered) };
+    });
+}
+
+export interface SessionStepSummary {
+    /** Index in session.exercises array if currently present, or null if prescribed but not yet added. */
+    exerciseIndex: number | null;
+    exerciseId: string | null;
+    freeTextName?: string;
+    displayName: string;
+    isPlanned: boolean;
+    optional: boolean;
+    targetSets: number;
+    targetReps: number | null;
+    targetGauge: IntensityGauge | null;
+    loggedSetsCount: number;
+    isComplete: boolean;
+}
+
+/** Merges prescribed planned exercises with active logged exercises (M1.1 SessionStepNavigator).
+ *  Shows planned items in prescribed order, followed by any ad-hoc/free-text exercises. */
+export function resolveStepNavigation(
+    loggedExercises: readonly LoggedExercise[],
+    plannedExercises: readonly PlannedStrengthExercise[],
+): SessionStepSummary[] {
+    const steps: SessionStepSummary[] = [];
+    const matchedLoggedIndices = new Set<number>();
+
+    // 1. Add all planned exercises in their prescribed order
+    for (const planned of plannedExercises) {
+        const loggedIdx = loggedExercises.findIndex((ex, idx) => !matchedLoggedIndices.has(idx) && ex.exerciseId === planned.exerciseId);
+        if (loggedIdx >= 0) {
+            matchedLoggedIndices.add(loggedIdx);
+            const logged = loggedExercises[loggedIdx];
+            const count = logged.sets.length;
+            steps.push({
+                exerciseIndex: loggedIdx,
+                exerciseId: planned.exerciseId,
+                displayName: planned.name,
+                isPlanned: true,
+                optional: planned.optional,
+                targetSets: planned.targetSets,
+                targetReps: planned.targetReps,
+                targetGauge: planned.targetGauge,
+                loggedSetsCount: count,
+                isComplete: count >= planned.targetSets,
+            });
+        } else {
+            steps.push({
+                exerciseIndex: null,
+                exerciseId: planned.exerciseId,
+                displayName: planned.name,
+                isPlanned: true,
+                optional: planned.optional,
+                targetSets: planned.targetSets,
+                targetReps: planned.targetReps,
+                targetGauge: planned.targetGauge,
+                loggedSetsCount: 0,
+                isComplete: false,
+            });
+        }
+    }
+
+    // 2. Add any additional/ad-hoc logged exercises not matched to planned steps
+    loggedExercises.forEach((logged, idx) => {
+        if (!matchedLoggedIndices.has(idx)) {
+            const count = logged.sets.length;
+            steps.push({
+                exerciseIndex: idx,
+                exerciseId: logged.exerciseId,
+                ...(logged.freeTextName ? { freeTextName: logged.freeTextName } : {}),
+                displayName: logged.freeTextName ?? logged.exerciseId ?? 'Exercise',
+                isPlanned: false,
+                optional: true,
+                targetSets: 0,
+                targetReps: null,
+                targetGauge: null,
+                loggedSetsCount: count,
+                isComplete: count > 0,
+            });
+        }
+    });
+
+    return steps;
+}
+
+/** Determines which exercise index in `session.exercises` should be active upon opening
+ *  or resuming a session (M1.1). Chooses the first incomplete exercise, or the last touched
+ *  exercise with logged sets, or defaults to the first available exercise. */
+export function resolveInitialExerciseIndex(
+    loggedExercises: readonly LoggedExercise[],
+    plannedExercises: readonly PlannedStrengthExercise[] = [],
+): number | null {
+    if (loggedExercises.length === 0) return null;
+
+    const nav = resolveStepNavigation(loggedExercises, plannedExercises);
+
+    // Look for the first incomplete step that already exists in loggedExercises
+    const firstIncomplete = nav.find(step => !step.isComplete && step.exerciseIndex !== null);
+    if (firstIncomplete && firstIncomplete.exerciseIndex !== null) {
+        return firstIncomplete.exerciseIndex;
+    }
+
+    // Otherwise, find the last exercise that has logged sets
+    for (let i = loggedExercises.length - 1; i >= 0; i--) {
+        if (loggedExercises[i].sets.length > 0) {
+            return i;
+        }
+    }
+
+    return 0;
 }

@@ -84,3 +84,24 @@ test('captures goal modal state', async ({ page }) => {
   await expect(page.getByRole('dialog', { name: 'Add New Goal' })).toBeVisible();
   await capture(page, scenario, 'add-modal-open', ['Goal creation form inputs are spaced clearly without visual overlap.']);
 });
+
+test('captures Strength runner interaction states without horizontal overflow', async ({ page }) => {
+  const scenario = VISUAL_SCENARIOS.find(candidate => candidate.id === 'session-runner-in-progress');
+  if (!scenario) throw new Error('Missing Strength runner visual scenario');
+  await visitScenario(page, scenario);
+
+  await expect(page.locator('.strength-runner')).toBeVisible();
+  expect(await page.locator('body').evaluate(body => body.scrollWidth <= window.innerWidth)).toBe(true);
+
+  await page.getByRole('navigation', { name: 'Session Steps' }).getByRole('button', { name: /bench_press/ }).click();
+  await expect(page.getByRole('heading', { name: 'Bench Press' })).toBeVisible();
+  await capture(page, scenario, 'bench-selected', ['The selected step and its entry controls remain visible without horizontal overflow.']);
+
+  await page.getByRole('button', { name: 'Finish session' }).click();
+  await expect(page.getByRole('dialog', { name: 'Complete Session' })).toBeVisible();
+  await capture(page, scenario, 'completion-sheet', ['Completion summarizes performed work and requires an explicit final action.']);
+
+  await page.getByRole('button', { name: 'Abandon Session...' }).click();
+  await expect(page.getByText('Abandon Session?')).toBeVisible();
+  await capture(page, scenario, 'abandon-confirmation', ['Abandonment is a separate confirmation and states that partial work remains retained.']);
+});

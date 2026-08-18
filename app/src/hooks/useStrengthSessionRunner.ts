@@ -2,37 +2,47 @@ import { useCallback, useEffect, useState } from 'react';
 import type { LoggedExercise, LoggedSet, StrengthSession } from '../engine/models';
 import { strengthSessionService } from '../services/strengthSessionService';
 import { recommendationService } from '../services/recommendationService';
+import { checkinService } from '../services/checkinService';
 import { finalizeStrengthSession } from '../services/strengthSessionCompletion';
 import { getLocalDateString } from '../utils/localDate';
 import {
     appendSetToExercise,
+    amendLoggedSet,
     buildLoggedSet,
     extractPlannedStrengthExercises,
     prefillNextSet,
+    removeSetFromExercise,
+    replaceSetInExercise,
+    resolveInitialExerciseIndex,
+    resolveStepNavigation,
     upsertExercise,
     type PlannedStrengthExercise,
+    type SessionStepSummary,
     type SetEntryDraft,
 } from '../workouts/strengthSessionEntry';
+import type { SessionCompletionPayload } from '../components/session/SessionCompletionSheet';
 
-/** Thin orchestration over `strengthSessionEntry.ts` (pure logic, fully unit-tested) and
- *  `strengthSessionService.ts` (I/O, fully unit-tested). This repo has no
- *  `@testing-library/react` and no hook has its own test file (e.g. `useGarminSyncStatus`);
- *  the rules that matter are tested at the layers below, not here. */
 export interface UseStrengthSessionRunnerResult {
     loading: boolean;
     saving: boolean;
     error: string | null;
     session: StrengthSession | null;
     plannedExercises: PlannedStrengthExercise[];
+    navigationSteps: SessionStepSummary[];
     activeExerciseIndex: number | null;
     draft: SetEntryDraft;
+    canUndo: boolean;
     syncStatusForSet: (exercise: LoggedExercise, set: LoggedSet) => 'synced' | 'pending' | 'unavailable';
     start: () => Promise<void>;
     selectExercise: (exerciseId: string | null, freeTextName?: string) => void;
+    selectStep: (step: SessionStepSummary) => void;
     updateDraft: (patch: Partial<SetEntryDraft>) => void;
     logSet: () => Promise<void>;
-    finishSession: () => Promise<void>;
-    abandonSession: () => Promise<void>;
+    editSet: (exerciseIndex: number, setIndex: number, updatedDraft: SetEntryDraft) => Promise<void>;
+    removeSet: (exerciseIndex: number, setIndex: number) => Promise<void>;
+    undo: () => Promise<void>;
+    finishSession: (payload?: SessionCompletionPayload) => Promise<boolean>;
+    abandonSession: () => Promise<boolean>;
 }
 
 const EMPTY_DRAFT: SetEntryDraft = { reps: 1, weightKg: null, isWarmup: false };
@@ -55,13 +65,12 @@ export function useStrengthSessionRunner(userId: string | null | undefined): Use
     const [draft, setDraft] = useState<SetEntryDraft>(EMPTY_DRAFT);
     const [acknowledgedSetKeys, setAcknowledgedSetKeys] = useState<Set<string>>(() => new Set());
     const [syncUnavailable, setSyncUnavailable] = useState(false);
+    const [undoStack, setUndoStack] = useState<LoggedExercise[][]>([]);
+
     const observedSessionId = session?.sessionId;
 
-    // Resume-on-open: an in_progress session left from earlier today (or last night, if it
-    // crosses midnight -- findActiveSession deliberately ignores `date` for this) is
-    // restored rather than silently orphaned. This is also where a stale session gets
-    // abandoned (S1.4), so opening the runner is the "opportunistic" trigger the service
-    // was designed around.
+    // Resume-on-open: an in_progress session left from earlier today is restored and
+    // its active exercise is automatically selected (M1.1)
     useEffect(() => {
         if (!userId) {
             setLoading(false);
@@ -73,9 +82,21 @@ export function useStrengthSessionRunner(userId: string | null | undefined): Use
             .then(async active => {
                 if (cancelled) return;
                 setSession(active);
+                let planned: PlannedStrengthExercise[] = [];
                 if (active?.sourceRecommendationDate) {
                     const recommendation = await recommendationService.getRecommendation(userId, active.sourceRecommendationDate);
-                    if (!cancelled) setPlannedExercises(extractPlannedStrengthExercises(recommendation?.prescription));
+                    if (!cancelled && recommendation?.prescription) {
+                        planned = extractPlannedStrengthExercises(recommendation.prescription);
+                        setPlannedExercises(planned);
+                    }
+                }
+                if (active) {
+                    const initialIdx = resolveInitialExerciseIndex(active.exercises, planned);
+                    setActiveExerciseIndex(initialIdx);
+                    if (initialIdx !== null && active.exercises[initialIdx]) {
+                        const targetPlan = planned.find(p => p.exerciseId === active.exercises[initialIdx].exerciseId);
+                        setDraft(prefillNextSet(active.exercises[initialIdx].sets, targetPlan));
+                    }
                 }
             })
             .catch(err => {
@@ -101,9 +122,6 @@ export function useStrengthSessionRunner(userId: string | null | undefined): Use
                 return;
             }
             setSyncUnavailable(false);
-            // A pending snapshot contains both previously acknowledged sets and the new
-            // local mutation. Preserve the last server-acknowledged keys until metadata
-            // flips false; otherwise every older set would incorrectly turn pending too.
             if (state.status === 'AVAILABLE' && !hasPendingWrites) {
                 setAcknowledgedSetKeys(sessionSetKeys(state.data));
             }
@@ -123,8 +141,10 @@ export function useStrengthSessionRunner(userId: string | null | undefined): Use
             });
             setSession(started);
             setPlannedExercises(planned);
-            setActiveExerciseIndex(null);
+            const initialIdx = resolveInitialExerciseIndex(started.exercises, planned);
+            setActiveExerciseIndex(initialIdx);
             setDraft(EMPTY_DRAFT);
+            setUndoStack([]);
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Could not start a strength session');
         } finally {
@@ -144,9 +164,6 @@ export function useStrengthSessionRunner(userId: string | null | undefined): Use
         setDraft(prefillNextSet(updated[index]?.sets ?? [], plan));
         if (isNewlyAdded) {
             setSession({ ...session, exercises: updated });
-            // Persisted immediately, matching every other write in this hook -- an added
-            // exercise with zero sets is still real session state (e.g. "planned but not
-            // yet started"), not something to lose on a killed app before the first set.
             setSaving(true);
             strengthSessionService.saveExercises(userId!, session.sessionId, updated)
                 .catch(err => {
@@ -155,6 +172,17 @@ export function useStrengthSessionRunner(userId: string | null | undefined): Use
                 .finally(() => setSaving(false));
         }
     }, [session, plannedExercises, userId, saving]);
+
+    const selectStep = useCallback((step: SessionStepSummary) => {
+        if (!session || saving) return;
+        if (step.exerciseIndex !== null) {
+            setActiveExerciseIndex(step.exerciseIndex);
+            const plan = step.exerciseId !== null ? plannedExercises.find(p => p.exerciseId === step.exerciseId) : undefined;
+            setDraft(prefillNextSet(session.exercises[step.exerciseIndex]?.sets ?? [], plan));
+        } else {
+            selectExercise(step.exerciseId, step.freeTextName);
+        }
+    }, [session, saving, plannedExercises, selectExercise]);
 
     const updateDraft = useCallback((patch: Partial<SetEntryDraft>) => {
         setDraft(current => ({ ...current, ...patch }));
@@ -172,9 +200,6 @@ export function useStrengthSessionRunner(userId: string | null | undefined): Use
         const updatedExercises = appendSetToExercise(session.exercises, activeExerciseIndex, result.set);
         setSaving(true);
         try {
-            // D-SETLOG: persist the moment the set is logged, not batched until "Done".
-            // await resolves against the local cache immediately even offline (S1.1); it
-            // does not wait for a server round-trip.
             await strengthSessionService.saveExercises(userId!, session.sessionId, updatedExercises);
             const updatedSession = { ...session, exercises: updatedExercises };
             setSession(updatedSession);
@@ -187,22 +212,123 @@ export function useStrengthSessionRunner(userId: string | null | undefined): Use
         }
     }, [session, activeExerciseIndex, draft, plannedExercises, userId]);
 
-    const closeSession = useCallback(async (next: 'completed' | 'abandoned') => {
+    const editSet = useCallback(async (exerciseIndex: number, targetSetIndex: number, updatedDraft: SetEntryDraft) => {
         if (!session || saving) return;
+        setError(null);
+        const exercise = session.exercises[exerciseIndex];
+        if (!exercise) return;
+        const existingSet = exercise.sets.find(s => s.setIndex === targetSetIndex);
+        if (!existingSet) return;
+
+        const result = amendLoggedSet(existingSet, updatedDraft);
+        if (!result.ok) {
+            setError(result.error);
+            return;
+        }
+        const updatedSet: LoggedSet = result.set;
+        const updatedExercises = replaceSetInExercise(session.exercises, exerciseIndex, targetSetIndex, updatedSet);
+
+        setSaving(true);
+        try {
+            setUndoStack(prev => [...prev.slice(-4), session.exercises]);
+            await strengthSessionService.saveExercises(userId!, session.sessionId, updatedExercises);
+            setSession({ ...session, exercises: updatedExercises });
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Could not update set');
+        } finally {
+            setSaving(false);
+        }
+    }, [session, saving, userId]);
+
+    const removeSet = useCallback(async (exerciseIndex: number, targetSetIndex: number) => {
+        if (!session || saving) return;
+        setError(null);
+        const updatedExercises = removeSetFromExercise(session.exercises, exerciseIndex, targetSetIndex);
+
+        setSaving(true);
+        try {
+            setUndoStack(prev => [...prev.slice(-4), session.exercises]);
+            await strengthSessionService.saveExercises(userId!, session.sessionId, updatedExercises);
+            setSession({ ...session, exercises: updatedExercises });
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Could not delete set');
+        } finally {
+            setSaving(false);
+        }
+    }, [session, saving, userId]);
+
+    const undo = useCallback(async () => {
+        if (!session || undoStack.length === 0 || saving) return;
+        setError(null);
+        const prevExercises = undoStack[undoStack.length - 1];
+        setSaving(true);
+        try {
+            await strengthSessionService.saveExercises(userId!, session.sessionId, prevExercises);
+            setSession({ ...session, exercises: prevExercises });
+            setUndoStack(prev => prev.slice(0, -1));
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Could not undo last action');
+        } finally {
+            setSaving(false);
+        }
+    }, [session, undoStack, saving, userId]);
+
+    const closeSession = useCallback(async (next: 'completed' | 'abandoned', payload?: SessionCompletionPayload): Promise<boolean> => {
+        if (!session || saving) return false;
         setError(null);
         setSaving(true);
         try {
             const nowIso = new Date().toISOString();
-            const updated = await finalizeStrengthSession(userId!, session, next, nowIso);
+            const metadata = {
+                sessionRpe: payload?.sessionRpe,
+                notes: payload?.notes,
+            };
+            // Persist completion feedback before making the session terminal. Otherwise a
+            // failed check-in write would leave the athlete unable to retry the feedback.
+            if (next === 'completed' && payload?.tissueFeedback && payload.tissueFeedback.length > 0 && userId) {
+                const today = session.date || getLocalDateString();
+                const existingCheckin = await checkinService.getCheckin(userId, today);
+                const existingResponses = existingCheckin?.tissueResponses ?? {};
+                const updatedResponses = { ...existingResponses };
+                for (const item of payload.tissueFeedback) {
+                    const existingSource = existingResponses[item.region]?.sourceSessionRef;
+                    if (existingSource && (
+                        existingSource.kind !== 'strength'
+                        || existingSource.id !== session.sessionId
+                        || existingSource.date !== today
+                    )) {
+                        throw new Error(`A tissue response for ${item.region} is already linked to another session`);
+                    }
+                    updatedResponses[item.region] = {
+                        region: item.region,
+                        morningState: existingResponses[item.region]?.morningState ?? 'normal',
+                        painDuringTraining: item.painDuringTraining,
+                        afterTrainingState: item.afterTrainingState ?? item.painDuringTraining,
+                        sourceSessionRef: {
+                            kind: 'strength',
+                            id: session.sessionId,
+                            date: today,
+                        },
+                    };
+                }
+                await checkinService.upsertCheckin(userId, {
+                    date: today,
+                    painOrInjury: true,
+                    tissueResponses: updatedResponses,
+                });
+            }
+            const updated = await finalizeStrengthSession(userId!, session, next, nowIso, undefined, metadata);
             setSession(updated);
+            return true;
         } catch (err) {
             setError(err instanceof Error ? err.message : `Could not mark the session ${next}`);
+            return false;
         } finally {
             setSaving(false);
         }
     }, [session, userId, saving]);
 
-    const finishSession = useCallback(() => closeSession('completed'), [closeSession]);
+    const finishSession = useCallback((payload?: SessionCompletionPayload) => closeSession('completed', payload), [closeSession]);
     const abandonSession = useCallback(() => closeSession('abandoned'), [closeSession]);
 
     const syncStatusForSet = useCallback((exercise: LoggedExercise, set: LoggedSet) => {
@@ -210,9 +336,12 @@ export function useStrengthSessionRunner(userId: string | null | undefined): Use
         return acknowledgedSetKeys.has(setSyncKey(exercise, set)) ? 'synced' as const : 'pending' as const;
     }, [acknowledgedSetKeys, syncUnavailable]);
 
+    const navigationSteps = resolveStepNavigation(session?.exercises ?? [], plannedExercises);
+
     return {
-        loading, saving, error, session, plannedExercises, activeExerciseIndex, draft,
+        loading, saving, error, session, plannedExercises, navigationSteps,
+        activeExerciseIndex, draft, canUndo: undoStack.length > 0,
         syncStatusForSet,
-        start, selectExercise, updateDraft, logSet, finishSession, abandonSession,
+        start, selectExercise, selectStep, updateDraft, logSet, editSet, removeSet, undo, finishSession, abandonSession,
     };
 }

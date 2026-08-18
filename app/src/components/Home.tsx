@@ -9,7 +9,7 @@ import { buildRecommendationAudit } from '../engine/provenance';
 import { evaluatePeriodizationPhase, getDaysToEvent } from '../engine/periodization';
 import { resolvePlanningContext } from '../engine/planningMode';
 import { resolveExecutionDose } from '../engine/dose';
-import type { AuthoredPlanBlock, DailyDecisionInput, Recommendation, NextDayPotentialPlan, DailyRecommendation, DecisionJournalEntry, ExternalPlacementAssignment, ExternalPlanPlacement, FixedActivity, ShadowVerdict } from '../engine/models';
+import type { AuthoredPlanBlock, BodyRegion, DailyDecisionInput, Recommendation, NextDayPotentialPlan, DailyRecommendation, DecisionJournalEntry, ExternalPlacementAssignment, ExternalPlanPlacement, FixedActivity, ShadowVerdict } from '../engine/models';
 import type { DataState } from '../engine/dataState';
 import { recommendationService } from '../services/recommendationService';
 import { fixedActivityService } from '../services/fixedActivityService';
@@ -29,6 +29,7 @@ import {
   type ActiveExternalPlan,
 } from '../services/activeExternalPlanService';
 import { externalPlanService } from '../services/externalPlanService';
+import { checkinService } from '../services/checkinService';
 import { ExternalVerdictBanner } from './ExternalVerdictBanner';
 import { ExternalPlanWeek } from './ExternalPlanWeek';
 import { WorkoutExportMenu } from './WorkoutExportMenu';
@@ -43,9 +44,11 @@ import {
 } from '../engine/safetyCheckin';
 import './Home.css';
 
+import type { Screen } from '../types/navigation';
+
 interface HomeProps {
   userId: string;
-  onNavigate: (screen: 'home' | 'checkin' | 'goals' | 'constraints' | 'preferences') => void;
+  onNavigate: (screen: Screen) => void;
   onViewData?: () => void;
 }
 
@@ -164,6 +167,7 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
   const [externalWeekCritique, setExternalWeekCritique] = useState<ExternalWeekCritique | null>(null);
   const [planWeekFixedActivities, setPlanWeekFixedActivities] = useState<FixedActivity[]>([]);
   const [placementError, setPlacementError] = useState<string | null>(null);
+  const [hasPendingSessionResponse, setHasPendingSessionResponse] = useState(false);
   const pendingAdherenceRef = useRef(pendingAdherence);
   useEffect(() => { pendingAdherenceRef.current = pendingAdherence; }, [pendingAdherence]);
 
@@ -185,6 +189,31 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
   const handleRevealRecommendation = useCallback(() => setRecommendationRevealed(true), []);
   const handleJournalEntryChange = useCallback((entry: DecisionJournalEntry | null) => setTodaysJournalEntry(entry), []);
   const dashboardRequest = useRef(0);
+
+  useEffect(() => {
+    if (!decisionInput) {
+      setHasPendingSessionResponse(false);
+      return;
+    }
+    let cancelled = false;
+    const today = decisionInput.date;
+    const yesterday = getPreviousLocalDateString(today);
+    Promise.all([
+      checkinService.getCheckin(userId, today),
+      checkinService.getCheckin(userId, yesterday),
+    ]).then(([todayCheckin, yesterdayCheckin]) => {
+      if (cancelled) return;
+      const pending = Object.entries(yesterdayCheckin?.tissueResponses ?? {}).some(([region, response]) =>
+        !!response
+        && !!(response.painDuringTraining || response.afterTrainingState || response.sourceSessionRef)
+        && !todayCheckin?.tissueResponses?.[region as BodyRegion]?.nextMorningReaction,
+      );
+      setHasPendingSessionResponse(pending);
+    }).catch(() => {
+      if (!cancelled) setHasPendingSessionResponse(false);
+    });
+    return () => { cancelled = true; };
+  }, [userId, decisionInput]);
   const activeSettings = useMemo(() => {
     if (!decisionInput) return [];
     const { equipment, guardrails, defaults } = decisionInput.trainingSettings;
@@ -658,6 +687,15 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
 
   return (
     <div className="home-container">
+      {hasPendingSessionResponse && (
+        <aside className="session-response-reminder" aria-label="Session response follow-up">
+          <div>
+            <strong>How did yesterday&apos;s session feel this morning?</strong>
+            <span>Your response helps keep future recommendations appropriately cautious.</span>
+          </div>
+          <button type="button" onClick={() => onNavigate('checkin')}>Answer follow-up</button>
+        </aside>
+      )}
       <div className="home-dashboard-layout">
         <div className="home-main-col">
           <div className="dashboard-card recommendation-card">
@@ -721,6 +759,15 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
                     >
                       {showWorkoutDetails ? 'Hide workout' : 'View workout'}
                     </button>
+                    {activeRec.template.modality === 'Strength' && (
+                      <button
+                        type="button"
+                        className="start-strength-btn-cta"
+                        onClick={() => onNavigate('strength')}
+                      >
+                        🏋️ Start / Resume Strength Session →
+                      </button>
+                    )}
                     {showWorkoutDetails && (
                       <DetailedTodayPlan
                         prescription={activeRec.prescription}

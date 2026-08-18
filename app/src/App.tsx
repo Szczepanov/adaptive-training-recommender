@@ -11,13 +11,14 @@ import { ExternalPlanImport } from './components/ExternalPlanImport';
 import { StrengthSessionRunner } from './components/StrengthSessionRunner';
 import { StrengthOverloadHistory } from './components/StrengthOverloadHistory';
 import { decisionComposer } from './engine/composer';
-import type { DailyDecisionInput } from './engine/models';
+import type { DailyDecisionInput, StrengthSession } from './engine/models';
 import type { Screen } from './types/navigation';
 import { useAuth } from './contexts/AuthContext';
 import { LoginScreen } from './components/LoginScreen';
 import { Header } from './components/Header';
 import { MobileNav } from './components/MobileNav';
 import { getLocalDateString } from './utils/localDate';
+import { strengthSessionService } from './services/strengthSessionService';
 
 function App() {
   const { userId, authPhase } = useAuth();
@@ -25,6 +26,7 @@ function App() {
   const [decisionInput, setDecisionInput] = useState<DailyDecisionInput | null>(null);
   const [desktopSettingsOpen, setDesktopSettingsOpen] = useState(false);
   const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
+  const [activeStrengthSession, setActiveStrengthSession] = useState<StrengthSession | null>(null);
 
   const loadDecisionInput = useCallback(async () => {
     if (!userId) return;
@@ -43,6 +45,23 @@ function App() {
       loadDecisionInput();
     }
   }, [userId, authPhase, loadDecisionInput]);
+
+  useEffect(() => {
+    if (!userId || authPhase !== 'AUTHENTICATED') {
+      return;
+    }
+    let cancelled = false;
+    strengthSessionService.findActiveSession(userId)
+      .then(session => {
+        if (!cancelled) setActiveStrengthSession(session);
+      })
+      .catch(() => {
+        if (!cancelled) setActiveStrengthSession(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [userId, authPhase]);
 
   if (authPhase !== 'AUTHENTICATED') {
     return <LoginScreen />;
@@ -67,6 +86,13 @@ function App() {
         userId={userId}
         date={decisionInput?.date ?? getLocalDateString()}
       />
+
+      {activeStrengthSession?.state === 'in_progress' && screen !== 'strength' && (
+        <div className="active-session-banner" role="status">
+          <span>Strength session in progress</span>
+          <button type="button" onClick={() => handleNavigate('strength')}>Resume session</button>
+        </div>
+      )}
 
       {/* Main Page Content */}
       <main className="app-content">
@@ -120,8 +146,14 @@ function App() {
 
         {screen === 'strength' && (
           <div className="strength-screen">
-            <StrengthSessionRunner userId={userId!} />
-            <StrengthOverloadHistory userId={userId!} />
+            <StrengthSessionRunner
+              userId={userId!}
+              onSessionStateChange={session => setActiveStrengthSession(session?.state === 'in_progress' ? session : null)}
+            />
+            <details className="strength-history-disclosure">
+              <summary>View strength history</summary>
+              <StrengthOverloadHistory userId={userId!} />
+            </details>
           </div>
         )}
 
