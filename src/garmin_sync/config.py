@@ -30,6 +30,7 @@ class Settings:
     garmin_archive_bucket: str | None = None  # falls back to garmin_token_bucket if unset
     garmin_archive_local_dir: str = ".garmin_archive"
     garmin_archive_prefix: str = "raw/garmin"
+    garmin_activity_detail_enabled: bool = False
 
     def resolved_archive_bucket(self) -> str | None:
         return self.garmin_archive_bucket or self.garmin_token_bucket
@@ -98,6 +99,11 @@ def load_settings(env_file: str | None = None) -> Settings:
     archive_bucket = os.getenv("GARMIN_ARCHIVE_BUCKET")
     archive_local_dir = os.getenv("GARMIN_ARCHIVE_LOCAL_DIR", ".garmin_archive").strip()
     archive_prefix = os.getenv("GARMIN_ARCHIVE_PREFIX", "raw/garmin").strip()
+    activity_detail_enabled = os.getenv("GARMIN_ACTIVITY_DETAIL_ENABLED", "false").lower() in (
+        "true",
+        "1",
+        "yes",
+    )
 
     settings = Settings(
         app_user_id=user_id,
@@ -123,6 +129,7 @@ def load_settings(env_file: str | None = None) -> Settings:
         garmin_archive_bucket=archive_bucket,
         garmin_archive_local_dir=archive_local_dir,
         garmin_archive_prefix=archive_prefix,
+        garmin_activity_detail_enabled=activity_detail_enabled,
     )
     settings.validate()
     return settings

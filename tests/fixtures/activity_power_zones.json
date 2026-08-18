@@ -1,0 +1,9 @@
+[
+  {"zoneNumber": 1, "secsInZone": 602.4, "zoneLowBoundary": 0},
+  {"zoneNumber": 2, "secsInZone": 1318.6, "zoneLowBoundary": 149},
+  {"zoneNumber": 3, "secsInZone": 721.0, "zoneLowBoundary": 202},
+  {"zoneNumber": 4, "secsInZone": 438.0, "zoneLowBoundary": 239},
+  {"zoneNumber": 5, "secsInZone": 210.0, "zoneLowBoundary": 281},
+  {"zoneNumber": 6, "secsInZone": 78.0, "zoneLowBoundary": 333},
+  {"zoneNumber": 7, "secsInZone": 32.0, "zoneLowBoundary": 428}
+]

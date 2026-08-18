@@ -6,7 +6,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Any
 
-from .canonical import CanonicalActivity, CanonicalDailyMetrics
+from .canonical import CanonicalActivity, CanonicalActivityDetail, CanonicalDailyMetrics
 from .dates import get_date_string, n_days_ago, parse_date_string
 from .models import (
     SCHEMA_VERSION,
@@ -27,12 +27,16 @@ from .models import (
 logger = logging.getLogger(__name__)
 
 
-def normalize_activity(activity: CanonicalActivity, sync_run_id: str) -> dict[str, Any]:
+def normalize_activity(
+    activity: CanonicalActivity,
+    sync_run_id: str,
+    detail: CanonicalActivityDetail | None = None,
+) -> dict[str, Any]:
     """Normalize a canonical activity into the standalone per-activity record stored at
     users/{userId}/activities/{activityId} -- decoupled from any one day's recovery
     snapshot so full activity history isn't lost/truncated by the 3-day window used for
     yesterdayTraining/last3DaysHardSessionsCount."""
-    return {
+    payload: dict[str, Any] = {
         "activityId": activity.activity_id,
         "date": activity.date or None,
         "type": activity.type,
@@ -45,6 +49,60 @@ def normalize_activity(activity: CanonicalActivity, sync_run_id: str) -> dict[st
         "syncRunId": sync_run_id,
         "syncedAt": datetime.now(timezone.utc).isoformat(),
     }
+    if detail is None:
+        return payload
+
+    if detail.power_zones:
+        payload["powerInZones"] = [
+            {
+                "zoneNumber": bucket.zone_number,
+                "secondsInZone": bucket.seconds_in_zone,
+                **(
+                    {"lowBoundary": bucket.low_boundary}
+                    if bucket.low_boundary is not None
+                    else {}
+                ),
+            }
+            for bucket in detail.power_zones
+        ]
+    if detail.hr_zones:
+        payload["hrInZones"] = [
+            {
+                "zoneNumber": bucket.zone_number,
+                "secondsInZone": bucket.seconds_in_zone,
+                **(
+                    {"lowBoundary": bucket.low_boundary}
+                    if bucket.low_boundary is not None
+                    else {}
+                ),
+            }
+            for bucket in detail.hr_zones
+        ]
+    if detail.normalized_power_watts is not None:
+        payload["normalizedPower"] = detail.normalized_power_watts
+    if detail.intensity_factor is not None:
+        payload["intensityFactor"] = detail.intensity_factor
+    if detail.variability_index is not None:
+        payload["variabilityIndex"] = detail.variability_index
+    if detail.laps:
+        payload["laps"] = [
+            {
+                "lapIndex": lap.lap_index,
+                "durationSeconds": lap.duration_seconds,
+                **(
+                    {"averagePowerWatts": lap.average_power_watts}
+                    if lap.average_power_watts is not None
+                    else {}
+                ),
+                **(
+                    {"averageHrBpm": lap.average_hr_bpm}
+                    if lap.average_hr_bpm is not None
+                    else {}
+                ),
+            }
+            for lap in detail.laps
+        ]
+    return payload
 
 
 def _build_training_summary(

@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { parseDailyRecommendation, parseNormalizedGarminActivity } from './trainingHistory';
 
@@ -28,6 +29,38 @@ describe('training-history persistence parsers', () => {
     it('rejects an unknown future activity schema', () => {
         const parsed = parseNormalizedGarminActivity({ ...activity, schemaVersion: 3 }, 'users/u1/activities/a-1', 'a-1');
         expect(parsed).toMatchObject({ status: 'INVALID', issues: [{ code: 'unsupported-schema-version', schemaVersion: 3 }] });
+    });
+
+    it('surfaces enriched schema-less telemetry without changing availability', () => {
+        const backendFixture = JSON.parse(readFileSync(
+            new URL('../../../../tests/fixtures/normalized_activity_enriched.json', import.meta.url),
+            'utf8',
+        ));
+        const parsed = parseNormalizedGarminActivity(backendFixture, 'users/u1/activities/999', '999');
+
+        expect(parsed).toMatchObject({
+            status: 'AVAILABLE',
+            data: {
+                normalizedPower: 229,
+                powerInZones: [{ zoneNumber: 1, secondsInZone: 300 }],
+                laps: [{ lapIndex: 1, durationSeconds: 900, averagePowerWatts: 250 }],
+            },
+        });
+    });
+
+    it('drops corrupt optional telemetry while preserving the base activity', () => {
+        const parsed = parseNormalizedGarminActivity({
+            ...activity,
+            powerInZones: [{ zoneNumber: 'two', secondsInZone: 1200 }],
+            normalizedPower: '229',
+            laps: [{ lapIndex: 1, durationSeconds: '900' }],
+        }, 'users/u1/activities/a-1', 'a-1');
+
+        expect(parsed).toMatchObject({ status: 'AVAILABLE', data: { activityId: 'a-1' } });
+        if (parsed.status !== 'AVAILABLE') throw new Error('expected available activity');
+        expect(parsed.data.powerInZones).toBeUndefined();
+        expect(parsed.data.normalizedPower).toBeUndefined();
+        expect(parsed.data.laps).toBeUndefined();
     });
 
     it('parses supported recommendation schemas and rejects future ones', () => {

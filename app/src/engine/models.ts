@@ -1317,6 +1317,19 @@ export interface StrengthSession {
 }
 
 /** Backend-normalized Garmin activity stored at users/{uid}/activities/{activityId}. */
+export interface ActivityZoneBucket {
+    zoneNumber: number;
+    secondsInZone: number;
+    lowBoundary?: number;
+}
+
+export interface ActivityLapSummary {
+    lapIndex: number;
+    durationSeconds: number;
+    averagePowerWatts?: number;
+    averageHrBpm?: number;
+}
+
 export interface NormalizedGarminActivity {
     activityId: string;
     date: string;
@@ -1327,6 +1340,12 @@ export interface NormalizedGarminActivity {
     averageHr: number | null;
     activityTrainingLoad: number | null;
     intensityTag: string;
+    powerInZones?: ActivityZoneBucket[];
+    hrInZones?: ActivityZoneBucket[];
+    normalizedPower?: number;
+    intensityFactor?: number;
+    variabilityIndex?: number;
+    laps?: ActivityLapSummary[];
     syncRunId?: string;
     syncedAt?: string;
 }

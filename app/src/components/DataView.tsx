@@ -1,15 +1,21 @@
 import { useState, useEffect } from 'react';
-import type { DailyDecisionInput } from '../engine/models';
+import type { DataState } from '../engine/dataState';
+import type { DailyDecisionInput, NormalizedGarminActivity } from '../engine/models';
+import { activityService } from '../services/activityService';
 import { recommendationService } from '../services/recommendationService';
 import { contextBriefService, type ContextBriefResult } from '../services/contextBriefService';
+import { addDaysToLocalDateString } from '../utils/localDate';
+import { ActivityTelemetry } from './ActivityTelemetry';
 import './DataView.css';
 
 interface DataViewProps {
   decisionInput: DailyDecisionInput | null;
   userId: string;
   onBack: () => void;
-  initialTab?: 'recovery' | 'checkin' | 'goals' | 'constraints' | 'preferences' | 'adherence' | 'brief';
+  initialTab?: DataViewTab;
 }
+
+type DataViewTab = 'recovery' | 'activities' | 'checkin' | 'goals' | 'constraints' | 'preferences' | 'adherence' | 'brief';
 
 type AdherenceStats = Awaited<ReturnType<typeof recommendationService.getAdherenceStats>>;
 
@@ -20,7 +26,7 @@ function describeSourceState(status: 'MISSING' | 'INVALID' | 'UNAVAILABLE'): str
 }
 
 export function DataView({ decisionInput, userId, initialTab = 'recovery' }: DataViewProps) {
-  const [activeTab, setActiveTab] = useState<'recovery' | 'checkin' | 'goals' | 'constraints' | 'preferences' | 'adherence' | 'brief'>(initialTab);
+  const [activeTab, setActiveTab] = useState<DataViewTab>(initialTab);
   const [brief, setBrief] = useState<ContextBriefResult | null>(null);
   // Tagged with the date it belongs to, so a failure for one date is not rendered
   // against another. Deriving visibility this way avoids clearing state from inside
@@ -31,6 +37,11 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery' }: Dat
   // real (possibly all-zero) stats object, so this alone distinguishes loading from an
   // answer of "nothing recorded yet" without a separate loading flag.
   const [adherenceStats, setAdherenceStats] = useState<AdherenceStats | null>(null);
+  const [activityWindow, setActivityWindow] = useState<{
+    userId: string;
+    asOfDate: string;
+    state: DataState<NormalizedGarminActivity[]>;
+  } | null>(null);
 
   useEffect(() => {
     if (activeTab !== 'adherence' || adherenceStats) return;
@@ -42,6 +53,20 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery' }: Dat
   }, [activeTab, userId, adherenceStats]);
 
   const briefDate = decisionInput?.date;
+  useEffect(() => {
+    // Both userId and asOfDate must match the cached window, or a user switch on the same
+    // calendar date would skip the fetch and later render the previous user's activities.
+    if (activeTab !== 'activities' || !briefDate
+      || (activityWindow?.userId === userId && activityWindow.asOfDate === briefDate)) return;
+    let cancelled = false;
+    const startInclusive = addDaysToLocalDateString(briefDate, -6);
+    const throughExclusive = addDaysToLocalDateString(briefDate, 1);
+    activityService.getActivitiesInRange(userId, startInclusive, throughExclusive).then((state) => {
+      if (!cancelled) setActivityWindow({ userId, asOfDate: briefDate, state });
+    });
+    return () => { cancelled = true; };
+  }, [activeTab, userId, briefDate, activityWindow?.userId, activityWindow?.asOfDate]);
+
   useEffect(() => {
     // Keyed on the date the brief was built for, not merely on its presence: a scenario
     // switch or a midnight rollover changes `briefDate`, and a presence-only guard would
@@ -632,7 +657,7 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery' }: Dat
       <div className="data-view-header">
         <div>
           <h1>Detailed Data & Telemetry</h1>
-          <p className="header-subtitle">Inspect engine inputs, snapshot metrics, and 30-day adherence statistics.</p>
+          <p className="header-subtitle">Inspect engine inputs, recovery metrics, activity telemetry, and adherence.</p>
         </div>
       </div>
 
@@ -642,6 +667,12 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery' }: Dat
           onClick={() => setActiveTab('recovery')}
         >
           Recovery
+        </button>
+        <button
+          className={activeTab === 'activities' ? 'active' : ''}
+          onClick={() => setActiveTab('activities')}
+        >
+          Activities
         </button>
         <button 
           className={activeTab === 'checkin' ? 'active' : ''}
@@ -683,6 +714,14 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery' }: Dat
 
       <div className="data-view-content">
         {activeTab === 'recovery' && renderRecoveryData()}
+        {activeTab === 'activities' && (
+          <div className="data-section">
+            <h3>Recent activity telemetry</h3>
+            <ActivityTelemetry
+              state={activityWindow && activityWindow.userId === userId && activityWindow.asOfDate === briefDate ? activityWindow.state : null}
+            />
+          </div>
+        )}
         {activeTab === 'checkin' && renderCheckinData()}
         {activeTab === 'goals' && renderGoalsData()}
         {activeTab === 'constraints' && renderConstraintsData()}

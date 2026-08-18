@@ -86,3 +86,25 @@ def test_get_stats_unauthenticated():
     wrapper = GarminClientWrapper(allow_credential_login=False)
     with pytest.raises(RuntimeError, match="Garmin client is not authenticated. Call login first."):
         wrapper.get_stats("2023-10-10")
+
+
+@pytest.mark.parametrize(
+    "method_name",
+    ["get_activity_power_zones", "get_activity_hr_zones", "get_activity_splits"],
+)
+def test_activity_detail_methods_require_login(method_name):
+    wrapper = GarminClientWrapper(allow_credential_login=False)
+    with pytest.raises(RuntimeError, match="Garmin client is not authenticated"):
+        getattr(wrapper, method_name)("123")
+
+
+def test_activity_detail_methods_tolerate_empty_response():
+    wrapper = GarminClientWrapper(allow_credential_login=False)
+    wrapper.api = MagicMock()
+    wrapper.api.get_activity_power_in_timezones.return_value = None
+    wrapper.api.get_activity_hr_in_timezones.return_value = None
+    wrapper.api.get_activity_splits.return_value = None
+
+    assert wrapper.get_activity_power_zones("123") == []
+    assert wrapper.get_activity_hr_zones("123") == []
+    assert wrapper.get_activity_splits("123") == {}

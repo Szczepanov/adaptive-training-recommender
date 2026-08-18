@@ -21,6 +21,52 @@ function optionalNonNegativeNumber(value: unknown): number | null | undefined {
     return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : undefined;
 }
 
+function telemetryNumber(value: unknown): number | undefined {
+    return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : undefined;
+}
+
+function parseZoneBuckets(value: unknown): NormalizedGarminActivity['powerInZones'] | undefined {
+    if (!Array.isArray(value)) return undefined;
+    const parsed = value.map((entry) => {
+        if (!isObject(entry)) return undefined;
+        const zoneNumber = telemetryNumber(entry.zoneNumber);
+        const secondsInZone = telemetryNumber(entry.secondsInZone);
+        const lowBoundary = entry.lowBoundary === undefined ? undefined : telemetryNumber(entry.lowBoundary);
+        // Garmin's power (7-zone Coggan) and HR (5-zone) models never exceed zone 7; this
+        // mirrors the upper bound extractPowerZoneFeatures enforces in garminTelemetryEvidence.ts
+        // and the ingestion-side bound in garmin_provider.py, so all three layers agree.
+        if (zoneNumber === undefined || !Number.isInteger(zoneNumber) || zoneNumber < 1 || zoneNumber > 7 || secondsInZone === undefined) return undefined;
+        if (entry.lowBoundary !== undefined && lowBoundary === undefined) return undefined;
+        return { zoneNumber, secondsInZone, ...(lowBoundary !== undefined ? { lowBoundary } : {}) };
+    });
+    return parsed.every((entry) => entry !== undefined)
+        ? parsed as NonNullable<NormalizedGarminActivity['powerInZones']>
+        : undefined;
+}
+
+function parseLaps(value: unknown): NormalizedGarminActivity['laps'] | undefined {
+    if (!Array.isArray(value)) return undefined;
+    const parsed = value.map((entry) => {
+        if (!isObject(entry)) return undefined;
+        const lapIndex = telemetryNumber(entry.lapIndex);
+        const durationSeconds = telemetryNumber(entry.durationSeconds);
+        const averagePowerWatts = entry.averagePowerWatts === undefined ? undefined : telemetryNumber(entry.averagePowerWatts);
+        const averageHrBpm = entry.averageHrBpm === undefined ? undefined : telemetryNumber(entry.averageHrBpm);
+        if (lapIndex === undefined || !Number.isInteger(lapIndex) || lapIndex < 1 || durationSeconds === undefined) return undefined;
+        if (entry.averagePowerWatts !== undefined && averagePowerWatts === undefined) return undefined;
+        if (entry.averageHrBpm !== undefined && averageHrBpm === undefined) return undefined;
+        return {
+            lapIndex,
+            durationSeconds,
+            ...(averagePowerWatts !== undefined ? { averagePowerWatts } : {}),
+            ...(averageHrBpm !== undefined ? { averageHrBpm } : {}),
+        };
+    });
+    return parsed.every((entry) => entry !== undefined)
+        ? parsed as NonNullable<NormalizedGarminActivity['laps']>
+        : undefined;
+}
+
 function isShadowVerdict(value: unknown): value is ShadowVerdict {
     return typeof value === 'string' && (SHADOW_VERDICTS as readonly string[]).includes(value);
 }
@@ -54,6 +100,13 @@ export function parseNormalizedGarminActivity(
     if (raw.syncRunId !== undefined && typeof raw.syncRunId !== 'string') return invalid(documentPath, 'invalid-type', 'syncRunId');
     if (raw.syncedAt !== undefined && typeof raw.syncedAt !== 'string') return invalid(documentPath, 'invalid-type', 'syncedAt');
 
+    const powerInZones = parseZoneBuckets(raw.powerInZones);
+    const hrInZones = parseZoneBuckets(raw.hrInZones);
+    const normalizedPower = telemetryNumber(raw.normalizedPower);
+    const intensityFactor = telemetryNumber(raw.intensityFactor);
+    const variabilityIndex = telemetryNumber(raw.variabilityIndex);
+    const laps = parseLaps(raw.laps);
+
     return {
         status: 'AVAILABLE',
         data: {
@@ -66,6 +119,12 @@ export function parseNormalizedGarminActivity(
             averageHr: averageHr ?? null,
             activityTrainingLoad: activityTrainingLoad ?? null,
             intensityTag: raw.intensityTag,
+            ...(powerInZones !== undefined ? { powerInZones } : {}),
+            ...(hrInZones !== undefined ? { hrInZones } : {}),
+            ...(normalizedPower !== undefined ? { normalizedPower } : {}),
+            ...(intensityFactor !== undefined ? { intensityFactor } : {}),
+            ...(variabilityIndex !== undefined ? { variabilityIndex } : {}),
+            ...(laps !== undefined ? { laps } : {}),
             ...(typeof raw.syncRunId === 'string' ? { syncRunId: raw.syncRunId } : {}),
             ...(typeof raw.syncedAt === 'string' ? { syncedAt: raw.syncedAt } : {}),
         },

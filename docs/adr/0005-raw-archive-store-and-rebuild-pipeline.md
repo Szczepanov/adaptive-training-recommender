@@ -41,6 +41,20 @@ We built an opt-in **immutable raw payload archive & offline rebuild engine**:
 3. **Audit Utility**:
    * Executing `python -m garmin_sync audit --days 90` checks archive completeness and reports coverage percentages across sleep, HRV, activities, and daily snapshots.
 
+### 2026-08-17 amendment: bounded per-activity detail ingestion
+
+Per-activity power/HR zone payloads and lap summaries require activity-ID keying, which
+the implemented date-keyed archive does not provide. They are therefore not raw-archived;
+offline rebuild continues to rebuild snapshots only and never rewrites standalone activity
+documents.
+
+**D-DETAIL-GATE:** the additional detail fetch is default-off
+(`GARMIN_ACTIVITY_DETAIL_ENABLED=false`) and requires a non-easy, power-bearing activity
+with an ID. It runs only during the target-date pass of `sync_daily`; lookback resync,
+`backfill`, and `rebuild` issue zero detail calls. The live endpoint budget is up to
+three calls per qualifying activity (power zones, HR zones, splits), and an exhausted 429
+abandons the remaining detail work without failing core ingestion.
+
 ---
 
 ## Code References

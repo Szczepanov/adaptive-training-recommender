@@ -112,3 +112,29 @@ class CanonicalActivity:
     average_hr: float | None
     training_load: float | None
     intensity_tag: str
+
+
+@dataclass
+class CanonicalZoneBucket:
+    zone_number: int
+    seconds_in_zone: float
+    low_boundary: float | None = None
+
+
+@dataclass
+class CanonicalLapSummary:
+    lap_index: int
+    duration_seconds: float
+    average_power_watts: float | None = None
+    average_hr_bpm: float | None = None
+
+
+@dataclass
+class CanonicalActivityDetail:
+    activity_id: str
+    power_zones: list[CanonicalZoneBucket] | None = None
+    hr_zones: list[CanonicalZoneBucket] | None = None
+    normalized_power_watts: float | None = None
+    intensity_factor: float | None = None
+    variability_index: float | None = None
+    laps: list[CanonicalLapSummary] | None = None

@@ -4,28 +4,45 @@ hrvSummary, activityType, etc.) -- everything downstream (mapper.py, service.py,
 recommendation engine) operates on canonical.py types only."""
 
 import logging
-from typing import Any, Callable
+import math
+from typing import Any, Callable, TypeVar
 
 from .canonical import (
     CanonicalActivity,
+    CanonicalActivityDetail,
     CanonicalBodyBattery,
     CanonicalDailyMetrics,
     CanonicalHeartRateZones,
+    CanonicalLapSummary,
     CanonicalPerformanceTargets,
     CanonicalStress,
     CanonicalTrainingReadiness,
     CanonicalTrainingStatus,
+    CanonicalZoneBucket,
 )
 from .garmin_client import GarminClientWrapper
 from .metrics import classify_activity_intensity
 from .provider import (
     ProviderActivitiesResult,
+    ProviderActivityDetailResult,
     ProviderCapabilities,
     ProviderFetchResult,
     ProviderPerformanceTargetsResult,
 )
 
 logger = logging.getLogger(__name__)
+
+T = TypeVar("T")
+
+_POWER_ACTIVITY_TYPES = {
+    "cycling",
+    "cyclocross",
+    "gravel_cycling",
+    "indoor_cycling",
+    "mountain_biking",
+    "road_biking",
+    "virtual_ride",
+}
 
 
 def extract_sleep_metrics(
@@ -152,6 +169,121 @@ def _first_positive_number(value: Any) -> float | None:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return None
     return float(value) if value > 0 else None
+
+
+def _non_negative_number(value: Any) -> float | None:
+    """Return a finite non-negative number without coercing strings or booleans."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    numeric = float(value)
+    return numeric if math.isfinite(numeric) and numeric >= 0 else None
+
+
+def _positive_integer(value: Any) -> int | None:
+    numeric = _non_negative_number(value)
+    if numeric is None or numeric < 1 or not numeric.is_integer():
+        return None
+    return int(numeric)
+
+
+def qualifies_for_activity_detail(activity: CanonicalActivity) -> bool:
+    """Accepted D-DETAIL-GATE predicate for the opt-in live detail fetch.
+
+    The daily target-date fetch is the only caller. At three endpoints per qualifying
+    activity, the worst-case incremental request budget is ``3 * N`` for that run;
+    backfill and rebuild remain at zero.
+    """
+    return (
+        activity.activity_id is not None
+        and activity.type.lower() in _POWER_ACTIVITY_TYPES
+        and activity.intensity_tag != "easy"
+    )
+
+
+def _parse_records(raw_items: list[Any], build: Callable[[dict[str, Any]], T | None]) -> list[T]:
+    """Shared per-item extraction loop: skip non-dict entries and entries `build` rejects
+    (returns None for), keep everything else. Both zone buckets and laps degrade the same
+    way -- a malformed individual entry is dropped, never a raised exception."""
+    records: list[T] = []
+    for raw_item in raw_items:
+        if not isinstance(raw_item, dict):
+            continue
+        record = build(raw_item)
+        if record is not None:
+            records.append(record)
+    return records
+
+
+def _build_zone_bucket(raw_bucket: dict[str, Any]) -> CanonicalZoneBucket | None:
+    zone_number = _positive_integer(raw_bucket.get("zoneNumber"))
+    seconds = _non_negative_number(raw_bucket.get("secsInZone"))
+    # Garmin's power (7-zone Coggan) and HR (5-zone) models never exceed zone 7; this
+    # mirrors the upper bound `extractPowerZoneFeatures` enforces in
+    # app/src/engine/garminTelemetryEvidence.ts so the persisted record and the
+    # evidence-extraction layer agree on what a valid zone bucket is.
+    if zone_number is None or zone_number > 7 or seconds is None:
+        return None
+    return CanonicalZoneBucket(
+        zone_number=zone_number,
+        seconds_in_zone=seconds,
+        low_boundary=_non_negative_number(raw_bucket.get("zoneLowBoundary")),
+    )
+
+
+def _build_lap_summary(raw_lap: dict[str, Any]) -> CanonicalLapSummary | None:
+    lap_index = _positive_integer(raw_lap.get("lapIndex"))
+    duration = _non_negative_number(raw_lap.get("duration"))
+    if lap_index is None or duration is None:
+        return None
+    return CanonicalLapSummary(
+        lap_index=lap_index,
+        duration_seconds=duration,
+        average_power_watts=_non_negative_number(raw_lap.get("averagePower")),
+        average_hr_bpm=_non_negative_number(raw_lap.get("averageHR")),
+    )
+
+
+def _canonicalize_zone_buckets(payload: Any) -> list[CanonicalZoneBucket] | None:
+    if not isinstance(payload, list):
+        return None
+    return _parse_records(payload, _build_zone_bucket)
+
+
+def _canonicalize_laps(payload: Any) -> list[CanonicalLapSummary] | None:
+    if not isinstance(payload, dict):
+        return None
+    raw_laps = payload.get("lapDTOs")
+    if not isinstance(raw_laps, list):
+        return None
+    return _parse_records(raw_laps, _build_lap_summary)
+
+
+def canonicalize_activity_detail(
+    activity_id: str,
+    activity_summary: Any,
+    power_zones: Any,
+    hr_zones: Any,
+    splits: Any,
+) -> CanonicalActivityDetail:
+    """Normalize additive per-activity telemetry without inventing missing values."""
+    summary = activity_summary if isinstance(activity_summary, dict) else {}
+    normalized_power = _non_negative_number(summary.get("normPower"))
+    average_power = _non_negative_number(summary.get("avgPower"))
+    intensity_factor = _non_negative_number(summary.get("intensityFactor"))
+    variability_index = (
+        normalized_power / average_power
+        if normalized_power is not None and average_power is not None and average_power > 0
+        else None
+    )
+    return CanonicalActivityDetail(
+        activity_id=activity_id,
+        power_zones=_canonicalize_zone_buckets(power_zones),
+        hr_zones=_canonicalize_zone_buckets(hr_zones),
+        normalized_power_watts=normalized_power,
+        intensity_factor=intensity_factor,
+        variability_index=variability_index,
+        laps=_canonicalize_laps(splits),
+    )
 
 
 def _first_mapping(payload: Any) -> dict[str, Any]:
@@ -374,6 +506,7 @@ class GarminProviderAdapter:
         sleep=True,
         hrv=True,
         activities=True,
+        activity_details=True,
     )
 
     def __init__(self, client: GarminClientWrapper):
@@ -387,6 +520,7 @@ class GarminProviderAdapter:
         self._stats_cache: dict[str, dict[str, Any]] = {}
         self._sleep_cache: dict[str, dict[str, Any]] = {}
         self._heart_rate_zones_cache: list[dict[str, Any]] | None = None
+        self._activity_summary_cache: dict[str, dict[str, Any]] = {}
 
     def clear_cache(self) -> None:
         """Called by GarminSyncService at the start of each sync_daily/backfill
@@ -397,6 +531,7 @@ class GarminProviderAdapter:
         self._stats_cache.clear()
         self._sleep_cache.clear()
         self._heart_rate_zones_cache = None
+        self._activity_summary_cache.clear()
 
     def _get_stats(self, date_iso: str) -> dict[str, Any]:
         if date_iso not in self._stats_cache:
@@ -516,7 +651,32 @@ class GarminProviderAdapter:
         zone4_floor: int | None = None,
     ) -> ProviderActivitiesResult:
         raw_activities = self.client.get_activities_window(start_date_iso, end_date_iso)
+        self._activity_summary_cache = {
+            str(activity["activityId"]): activity
+            for activity in raw_activities
+            if isinstance(activity, dict) and activity.get("activityId") is not None
+        }
         return ProviderActivitiesResult(
             canonical=canonicalize_activities(raw_activities, zone4_floor=zone4_floor),
             raw_payload=raw_activities,
+        )
+
+    def fetch_activity_detail(self, activity_id: str) -> ProviderActivityDetailResult:
+        power_zones = self.client.get_activity_power_zones(activity_id)
+        hr_zones = self.client.get_activity_hr_zones(activity_id)
+        splits = self.client.get_activity_splits(activity_id)
+        raw_payloads = {
+            "activity_power_zones": power_zones,
+            "activity_hr_zones": hr_zones,
+            "activity_splits": splits,
+        }
+        return ProviderActivityDetailResult(
+            canonical=canonicalize_activity_detail(
+                activity_id=activity_id,
+                activity_summary=self._activity_summary_cache.get(activity_id),
+                power_zones=power_zones,
+                hr_zones=hr_zones,
+                splits=splits,
+            ),
+            raw_payloads=raw_payloads,
         )

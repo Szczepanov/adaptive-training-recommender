@@ -1,10 +1,14 @@
 import { decisionComposer } from '../engine/composer';
 import { checkinService } from '../services/checkinService';
+import { activityService } from '../services/activityService';
 import { goalService } from '../services/goalService';
 import { preferencesService } from '../services/preferencesService';
+import { planBlockService } from '../services/planBlockService';
 import { recommendationService } from '../services/recommendationService';
 import { recoverySnapshotService } from '../services/recoverySnapshotService';
 import { trainingSettingsService } from '../services/trainingSettingsService';
+import { trainingIntentProfileService } from '../services/trainingIntentProfileService';
+import { strengthSessionService } from '../services/strengthSessionService';
 import { externalPlanService } from '../services/externalPlanService';
 import { fixedActivityService } from '../services/fixedActivityService';
 import { computeContentHash } from '../engine/externalPlanHash';
@@ -33,6 +37,9 @@ export function installVisualServices(fixture: VisualFixture): void {
   }) as Awaited<ReturnType<typeof checkinService.upsertTodayCheckin>>;
 
   recoverySnapshotService.getRecoverySnapshotByDate = async () => fixture.recovery;
+  activityService.getActivitiesInRange = async () => ({
+    status: 'AVAILABLE', data: fixture.activities, revision: null,
+  });
 
   goalService.listGoals = async () => fixture.goals;
   goalService.getActiveGoals = async () => fixture.goals;
@@ -51,8 +58,20 @@ export function installVisualServices(fixture: VisualFixture): void {
     preferences: { ...fixture.settings.preferences, ...update.preferences },
     migration: { ...fixture.settings.migration, ...update.migration },
   });
+  trainingIntentProfileService.getProfileState = async () => (
+    fixture.input.trainingIntentProfile
+      ? { status: 'AVAILABLE', data: fixture.input.trainingIntentProfile, revision: null }
+      : { status: 'MISSING' }
+  );
+  trainingIntentProfileService.upsert = async (_userId, profile) => ({
+    ...profile,
+    userId: fixture.input.userId,
+    createdAt: fixture.input.date,
+    updatedAt: fixture.input.date,
+  });
 
   fixedActivityService.getActivitiesInRangeState = async () => ({ status: 'AVAILABLE', data: [], revision: null });
+  planBlockService.getBlocksInRangeState = async () => ({ status: 'AVAILABLE', data: [], revision: null });
   const plan = fixture.externalPlan;
   externalPlanService.listPlanIds = async () => (plan
     ? { status: 'AVAILABLE', data: [plan.planId], revision: null }
@@ -79,7 +98,9 @@ export function installVisualServices(fixture: VisualFixture): void {
   });
 
   recommendationService.getRecommendation = async () => null;
+  recommendationService.getRecommendationsInRange = async () => ({ status: 'AVAILABLE', data: [], revision: null });
   recommendationService.saveRecommendation = async () => null;
+  strengthSessionService.getSessionsInRange = async () => ({ sessions: [], invalidRecords: 0 });
   recommendationService.getAdherenceStats = async () => ({
     totalRecommendations: 14,
     answered: 12,

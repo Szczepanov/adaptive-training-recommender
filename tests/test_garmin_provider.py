@@ -5,11 +5,123 @@ from unittest.mock import MagicMock
 from garmin_sync.garmin_provider import (
     GarminProviderAdapter,
     canonicalize_activities,
+    canonicalize_activity_detail,
     canonicalize_from_raw,
     extract_sleep_metrics,
+    qualifies_for_activity_detail,
 )
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
+
+
+def test_canonicalize_activity_detail_from_reduced_contract_fixtures():
+    power_zones = json.loads((FIXTURES_DIR / "activity_power_zones.json").read_text())
+    hr_zones = json.loads((FIXTURES_DIR / "activity_hr_zones.json").read_text())
+    splits = json.loads((FIXTURES_DIR / "activity_splits.json").read_text())
+
+    detail = canonicalize_activity_detail(
+        "1002",
+        {"normPower": 229.0, "avgPower": 214.0, "intensityFactor": 0.82},
+        power_zones,
+        hr_zones,
+        splits,
+    )
+
+    assert len(detail.power_zones or []) == 7
+    assert detail.power_zones and detail.power_zones[1].seconds_in_zone == 1318.6
+    assert len(detail.hr_zones or []) == 5
+    assert detail.normalized_power_watts == 229.0
+    assert detail.intensity_factor == 0.82
+    assert detail.variability_index == 229.0 / 214.0
+    assert detail.laps and detail.laps[2].average_power_watts == 258.0
+
+
+def test_canonicalize_activity_detail_degrades_on_malformed_payload():
+    detail = canonicalize_activity_detail(
+        "1002",
+        {"normPower": "229", "avgPower": 0, "intensityFactor": object()},
+        {"not": "a-list"},
+        [
+            {"zoneNumber": "1", "secsInZone": 10},
+            {"zoneNumber": 2, "secsInZone": 20, "zoneLowBoundary": "bad"},
+        ],
+        {"lapDTOs": [{"lapIndex": 1, "duration": 60, "averagePower": "bad"}, "bad"]},
+    )
+
+    assert detail.power_zones is None
+    assert detail.hr_zones is not None and len(detail.hr_zones) == 1
+    assert detail.hr_zones[0].low_boundary is None
+    assert detail.normalized_power_watts is None
+    assert detail.intensity_factor is None
+    assert detail.variability_index is None
+    assert detail.laps and detail.laps[0].average_power_watts is None
+
+
+def test_variability_index_omitted_when_average_power_zero():
+    detail = canonicalize_activity_detail("1002", {"normPower": 229, "avgPower": 0}, [], [], {})
+    assert detail.variability_index is None
+
+
+def test_detail_gate_skips_easy_and_non_power_activities():
+    from garmin_sync.canonical import CanonicalActivity
+
+    def activity(activity_type: str, intensity: str, activity_id: str | None = "1"):
+        return CanonicalActivity(
+            activity_id=activity_id,
+            date="2026-08-17",
+            type=activity_type,
+            duration_min=60,
+            duration_seconds=3600,
+            training_effect_aerobic=3.0,
+            training_effect_anaerobic=0.0,
+            average_hr=140,
+            training_load=100,
+            intensity_tag=intensity,
+        )
+
+    assert qualifies_for_activity_detail(activity("cycling", "moderate"))
+    assert not qualifies_for_activity_detail(activity("cycling", "easy"))
+    assert not qualifies_for_activity_detail(activity("running", "hard"))
+    assert not qualifies_for_activity_detail(activity("cycling", "hard", None))
+
+
+def test_adapter_fetch_activity_detail_uses_cached_list_summary_and_all_three_endpoints():
+    mock_client = MagicMock()
+    mock_client.get_activities_window.return_value = [
+        {
+            "activityId": 1002,
+            "startTimeLocal": "2026-08-17T08:00:00",
+            "duration": 3600,
+            "activityType": {"typeKey": "cycling"},
+            "normPower": 229,
+            "avgPower": 214,
+            "intensityFactor": 0.82,
+        }
+    ]
+    mock_client.get_activity_power_zones.return_value = [
+        {"zoneNumber": 2, "secsInZone": 1200, "zoneLowBoundary": 150}
+    ]
+    mock_client.get_activity_hr_zones.return_value = [
+        {"zoneNumber": 3, "secsInZone": 900, "zoneLowBoundary": 137}
+    ]
+    mock_client.get_activity_splits.return_value = {
+        "lapDTOs": [{"lapIndex": 1, "duration": 900, "averagePower": 250}]
+    }
+    adapter = GarminProviderAdapter(mock_client)
+
+    adapter.fetch_activities("2026-08-17", "2026-08-17")
+    result = adapter.fetch_activity_detail("1002")
+
+    assert result.canonical.normalized_power_watts == 229
+    assert result.canonical.intensity_factor == 0.82
+    assert result.canonical.variability_index == 229 / 214
+    assert result.canonical.power_zones and result.canonical.power_zones[0].zone_number == 2
+    assert result.canonical.laps and result.canonical.laps[0].average_power_watts == 250
+    assert set(result.raw_payloads) == {
+        "activity_power_zones",
+        "activity_hr_zones",
+        "activity_splits",
+    }
 
 
 def test_canonicalize_from_raw_using_fixtures():

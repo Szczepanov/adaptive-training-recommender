@@ -75,7 +75,7 @@ all-`Ready` table became unusable.
 | 8 | [Externally-planned mode](./phase-8-externally-planned-mode.md) | **Implemented** | — | — | imports an externally-authored plan and narrows the engine to per-session adjudication plus weekly critique — not an original review finding |
 | 9.0 | [Shadow mode & decision journal](./phase-9-0-shadow-mode-and-decision-journal.md) | **In progress** | 9.0.1 (operational; 9.0.2-9.0.6 code is done) | — | runs the app against the athlete's existing AI loop for one block and records the disagreements — the first evidence in this repository from a real athlete rather than a synthetic corpus |
 | 9 | [Subjective baselines in readiness mode](./phase-9-subjective-baselines.md) | **In progress** | 9.4, 9.6, 9.7 (9.1, 9.2, 9.3 and 9.5 done — 9.8 additionally needs Phase 9.0's prospective evidence) | — | self-normalises subjective scores as a tighten-only drift term, measured behind a default-off selector before any ship decision — not an original review finding |
-| G | [Garmin per-activity telemetry](./garmin-activity-telemetry-ingestion.md) | **Draft** | none until approved | D-ZONECRED blocks Stage 2; Stage 1 has no blocker once the design is agreed | ingests per-activity power/HR time-in-zone, normalized power and lap averages, then measures whether zone data should change completed-training credit — not an original review finding |
+| G | [Garmin per-activity telemetry](./garmin-activity-telemetry-ingestion.md) | **Implemented** | none | none | ingests per-activity power/HR time-in-zone, normalized power and lap averages; the measured zone-credit candidate remains off after an evidence-backed no-ship decision |
 | S | [Strength session logging](./strength-session-logging.md) | **Ready** | all of Step A and Step B; Step C is buildable but not enableable | — (ADR-0021 accepted) | closes the strength return path — per-set logging, self-calibrating 1RM, and measured strength load — not an original review finding |
 
 The last two rows are **not phases**. They are bounded capability plans whose work items are
@@ -128,11 +128,16 @@ this table exists so none of them has to be rediscovered by reading six document
 | **D-SETLOG** | The raw per-set log is the source of truth; every derivation is recomputable from it and none is written back into it | [ADR-0021](../adr/0021-strength-session-logging-and-intensity-gauges.md) | ADR-0005's rebuild philosophy applied to athlete-entered data: a changed formula must be a recomputation, not a data-loss event |
 | **D-1RMSRC** | A derived 1RM joins `targetSources` as its own rung and never overwrites `manual` or `coach` | [ADR-0021](../adr/0021-strength-session-logging-and-intensity-gauges.md) | `targetSources` exists precisely to stop an automated value replacing a human-set one; writing blind reintroduces that bug from a new direction |
 | **D-STRCOST** | Strength load reaches the engine only after measurement; built default-off, coefficients from evidence | [ADR-0021](../adr/0021-strength-session-logging-and-intensity-gauges.md) | Same discipline as D-FUSE and D-SUBJCAL; a tonnage→fatigue coefficient asserted in an ADR is the uncited-constant practice F11 criticised |
+| **D-DETAIL-GATE** | Detail ingestion is default-off, limited to non-easy power-bearing activities in the target-date daily pass, and never runs in lookback/backfill/rebuild | [ADR-0005 amendment](../adr/0005-raw-archive-store-and-rebuild-pipeline.md#2026-08-17-amendment-bounded-per-activity-detail-ingestion) | Bounds live calls to `3 × N`, avoids overlapping-window refetches, and keeps historical operations offline |
+| **D-ZONECRED** | A complete cycling power-zone distribution may produce a default-off direct-share stimulus candidate inside `measuredEffort`; production remains TE-derived | [ADR-0022](../adr/0022-zone-derived-completed-training-credit.md) | Granularity is measured without pretending it establishes exact intent or calibrated dose-response |
 
 ### Proposed decisions awaiting acceptance
 
 These decisions are intentionally **not** part of the accepted register above. Their
-plans remain Draft and must not be implemented until the linked ADR is accepted.
+plans remain Draft and must not be implemented until the linked ADR is accepted. (The
+bounded Garmin and strength capability plans have none outstanding — D-DETAIL-GATE and
+D-ZONECRED moved to the accepted table above, and D-GAUGE/D-SETLOG/D-1RMSRC/D-STRCOST
+were accepted under ADR-0021.)
 
 | ID | Proposal | Where | One-line reason |
 |---|---|---|---|
@@ -160,13 +165,6 @@ plans remain Draft and must not be implemented until the linked ADR is accepted.
 | **D-NOPARSE** | JSON import only; no in-app model call in this phase | [ADR-0019](../adr/0019-externally-authored-plans-and-session-adjudication.md) | A non-deterministic transform at the persistence boundary conflicts with ADR-0010 |
 | **D-EVENT** | A target event reconciles onto `FixedActivity` and is adjudicated for advice, never permission | [ADR-0019](../adr/0019-externally-authored-plans-and-session-adjudication.md) | Telling an athlete to skip a race they entered is not the speech act the app has standing to make |
 | **D-IRREDUCIBLE** | `scaling.reducible: false` sends a short-of-full readiness to `defer`, not to a prescribed compromise | [ADR-0019](../adr/0019-externally-authored-plans-and-session-adjudication.md) | Otherwise "ride easy and retry Thursday" gets prescribed as the same session at lower volume |
-| **D-DETAIL-GATE** | The extra per-activity Garmin fetch is opt-in per activity, gated on a predicate, and never runs in `backfill` | [Garmin telemetry plan](./garmin-activity-telemetry-ingestion.md#decisions-this-plan-needs) | Ungated it multiplies call volume by activities/day over an unbounded range, and a 429 mid-backfill leaves partial state |
-| **D-ZONECRED** | Zone-derived stimulus is built default-off and *measured* against the current TE-based path before any ship decision | [Garmin telemetry plan](./garmin-activity-telemetry-ingestion.md#decisions-this-plan-needs) | Same discipline as D-FUSE and D-SUBJCAL; naming a zone→stimulus coefficient up front is the uncited-constant practice F11 criticised |
-
-The two remaining rows differ from those above them in one respect: their `Where` column
-points at a **plan**, not an ADR, because the ADR does not exist yet. For these, "accepted"
-means the ADR named in that plan's *Docs to update* table has been written and accepted —
-the plan itself cannot confer acceptance on its own proposal.
 
 Five of the **accepted** decisions — **D-KWD**, **D-GATE**, **D-LIFE**, **D-RECOV**, and the
 withdrawal inside **D-FUSE** — correct errors in earlier drafts and came out of PR #5 review

@@ -13,6 +13,12 @@ import type { CompletedExposure } from './trainingHistory';
 import type { StimulusConfidence } from './stimulus';
 import { ENRICHED_TEMPLATES } from './templates';
 import type { DeliveredDose } from './models';
+import {
+    derivePowerZoneStimulusCandidate,
+    extractPowerZoneFeatures,
+    isGarminCyclingPowerActivity,
+    type GarminStimulusPolicy,
+} from './garminTelemetryEvidence';
 
 type CompletedModality = SessionTemplate['modality'] | 'Unknown';
 
@@ -300,7 +306,10 @@ export const DEFAULT_STIMULUS_BY_MODALITY: Record<CompletedModality, Record<Comp
     },
 };
 
-function candidateEventFromGarmin(activity: NormalizedGarminActivity): CompletedTrainingEvent {
+function candidateEventFromGarmin(
+    activity: NormalizedGarminActivity,
+    garminStimulusPolicy: GarminStimulusPolicy,
+): CompletedTrainingEvent {
     const modality = modalityFromActivityType(activity.type);
     const intensity = intensityFromGarmin(activity);
     const baseCost = DEFAULT_COST_BY_MODALITY[modality][intensity];
@@ -315,19 +324,26 @@ function candidateEventFromGarmin(activity: NormalizedGarminActivity): Completed
         activityTrainingLoad: activity.activityTrainingLoad,
         modalityKnown: modality !== 'Unknown',
     });
+    const trainingEffectStimulus = DEFAULT_STIMULUS_BY_MODALITY[modality][intensity];
+    const zoneCandidate = garminStimulusPolicy === 'power_zones_direct_share_v1'
+        && evidenceTier === 'measuredEffort'
+        && isGarminCyclingPowerActivity(activity.type)
+        ? derivePowerZoneStimulusCandidate(extractPowerZoneFeatures(activity), trainingEffectStimulus)
+        : null;
+    const effectiveModality = zoneCandidate && modality === 'Unknown' ? 'Cycling' : modality;
     return {
         id: `garmin:${activity.activityId}`,
         date: activity.date,
         durationMin: activity.durationMin,
         deliveredDose,
-        modality,
+        modality: effectiveModality,
         intensity,
         trainingEffect: Math.max(activity.trainingEffectAerobic ?? 0, activity.trainingEffectAnaerobic ?? 0) || null,
         estimatedCost: scaleCostByDeliveredDose(baseCost, deliveredDose),
-        estimatedStimulus: DEFAULT_STIMULUS_BY_MODALITY[modality][intensity],
+        estimatedStimulus: zoneCandidate ?? trainingEffectStimulus,
         exactTemplateMatch: false,
         sources: ['garmin'],
-        confidence: modality === 'Unknown' ? 'medium' : 'high',
+        confidence: effectiveModality === 'Unknown' ? 'medium' : 'high',
         evidenceTier,
         linkedActivityId: activity.activityId,
         linkedRecommendationDate: null,
@@ -411,9 +427,11 @@ function mergeAdherenceIntoGarmin(
 export function reconcileCompletedTrainingEvents(
     activities: NormalizedGarminActivity[],
     recommendations: DailyRecommendation[],
+    options: { garminStimulusPolicy?: GarminStimulusPolicy } = {},
 ): CompletedTrainingEvent[] {
+    const garminStimulusPolicy = options.garminStimulusPolicy ?? 'training_effect';
     const events = activities
-        .map(candidateEventFromGarmin)
+        .map(activity => candidateEventFromGarmin(activity, garminStimulusPolicy))
         .sort((left, right) => left.date.localeCompare(right.date) || left.id.localeCompare(right.id));
 
     for (const recommendation of [...recommendations].sort((left, right) => left.date.localeCompare(right.date))) {

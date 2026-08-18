@@ -43,6 +43,10 @@ const decisionAffectingFiles = [
   'app/src/engine/fatigue.ts',
   'app/src/engine/planner.ts',
   'app/src/engine/dose.ts',
+  // Completed evidence changes future objective state and fatigue replay. A selectable
+  // estimator here is policy even though it sits upstream of the ranking modules.
+  'app/src/engine/completedTraining.ts',
+  'app/src/engine/garminTelemetryEvidence.ts',
   // ADR-0019: adjudication decides what an externally-planned athlete is told to do, so a
   // change here alters a persisted decision exactly as a change to rules.ts does. The
   // profile derivation is included because the cost it produces feeds the ceilings.
@@ -58,6 +62,9 @@ const policyFile = 'app/src/engine/policy.ts';
 const rulesFile = 'app/src/engine/rules.ts';
 const subjectiveBaselineFile = 'app/src/engine/subjectiveBaseline.ts';
 const adr20File = 'docs/adr/0020-subjective-baselines-in-readiness-mode.md';
+const completedTrainingFile = 'app/src/engine/completedTraining.ts';
+const garminTelemetryEvidenceFile = 'app/src/engine/garminTelemetryEvidence.ts';
+const adr22File = 'docs/adr/0022-zone-derived-completed-training-credit.md';
 const repoRoot = git(['rev-parse', '--show-toplevel']).trim();
 
 const changedDecisionFiles = changedFiles.filter((f) => decisionAffectingFiles.includes(f));
@@ -116,10 +123,59 @@ function isAcceptedDormantSubjectiveDriftChange() {
   return accepted && explicitlyNoBump;
 }
 
+/** ADR-0022 uses the same policy identity rule as ADR-0020: a candidate that no
+ * production caller can select must retain the current live policy version. The grep is
+ * deliberately mechanical; adding the candidate literal to any other app source makes
+ * this exception fail and requires the normal version bump. */
+function isAcceptedDormantGarminZoneCreditChange() {
+  const dormantDecisionFiles = new Set([completedTrainingFile, garminTelemetryEvidenceFile]);
+  if (changedDecisionFiles.length === 0 || !changedDecisionFiles.every((file) => dormantDecisionFiles.has(file))) {
+    return false;
+  }
+
+  const completedTrainingSource = readFileSync(join(repoRoot, completedTrainingFile), 'utf8');
+  const defaultsToTrainingEffect = /garminStimulusPolicy\s*=\s*options\.garminStimulusPolicy\s*\?\?\s*['"]training_effect['"]/.test(completedTrainingSource);
+  if (!defaultsToTrainingEffect) return false;
+
+  let selectorReferences;
+  try {
+    selectorReferences = git(['grep', '-l', 'power_zones_direct_share_v1', '--', 'app/src'])
+      .trim().split('\n').filter(Boolean);
+  } catch (err) {
+    // `git grep -l` exits 1 (throwing here) when the pattern has zero matches, which is a
+    // legitimate outcome, not an error -- treat it as "no references found" rather than
+    // letting a genuine no-match case crash the whole drift check.
+    if (err.status === 1) {
+      selectorReferences = [];
+    } else {
+      throw err;
+    }
+  }
+  const allowedReferences = new Set([
+    completedTrainingFile,
+    garminTelemetryEvidenceFile,
+    'app/src/engine/garminTelemetryComparison.ts',
+    'app/src/engine/garminTelemetryEvidence.test.ts',
+  ]);
+  if (selectorReferences.some(file => !allowedReferences.has(file))) return false;
+
+  const adr22 = readFileSync(join(repoRoot, adr22File), 'utf8');
+  const accepted = /\*\*Status:\*\*\s*Accepted/.test(adr22);
+  const explicitlyNoBump = /default-off implementation does not bump `POLICY_VERSION`/.test(adr22);
+  return accepted && explicitlyNoBump;
+}
+
 if (changedDecisionFiles.length > 0 && !policyVersionChanged) {
   if (isAcceptedDormantSubjectiveDriftChange()) {
     console.log(
       'POLICY DRIFT CHECK PASSED: ADR-0020 dormant subjective-drift implementation is default-off; '
+      + `POLICY_VERSION correctly remains ${currentPolicyVersion}.`
+    );
+    process.exit(0);
+  }
+  if (isAcceptedDormantGarminZoneCreditChange()) {
+    console.log(
+      'POLICY DRIFT CHECK PASSED: ADR-0022 Garmin zone-credit candidate is default-off and has no production caller; '
       + `POLICY_VERSION correctly remains ${currentPolicyVersion}.`
     );
     process.exit(0);
