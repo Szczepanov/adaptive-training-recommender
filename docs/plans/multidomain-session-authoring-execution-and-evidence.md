@@ -1,6 +1,6 @@
 # Multidomain session authoring, execution and evidence
 
-* **Status:** `Draft`
+* **Status:** `Approved`
 * **Blocked by:** plan approval. M2–M9 additionally require the successor ADR produced by
   M0.1 to be accepted before implementation.
 * **Unlocks:** executable manual/external sessions; mixed strength/speed/field/power
