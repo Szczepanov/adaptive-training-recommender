@@ -68,4 +68,3 @@ export function useGarminSyncStatus(userId: string | null | undefined): UseGarmi
         error: activeError,
     };
 }
-

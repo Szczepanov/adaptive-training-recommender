@@ -535,7 +535,7 @@
   .app-container {
     padding: 0;
   }
-  
+
   .app-content {
     max-width: 1350px;
     margin: 0 auto;
@@ -548,7 +548,7 @@
     padding: 3rem;
     max-width: 450px;
   }
-  
+
   .auth-card h1 {
     font-size: 2.5rem;
   }
@@ -589,4 +589,3 @@
     transform: translateY(0);
   }
 }
-

@@ -91,4 +91,3 @@ The system supports automated workout export and calendar synchronization to Gar
 3. **Synchronization** (`src/garmin_sync/service.py`):
    - `push-pending-workouts` polls `status == 'pending'` items and pushes each to Garmin Connect via `client.upload_workout` + `client.schedule_workout`.
    - Flips Firestore document to `status: 'synced'` with `garminWorkoutId` and `syncedAt`.
-

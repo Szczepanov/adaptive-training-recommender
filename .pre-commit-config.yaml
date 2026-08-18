@@ -1,0 +1,35 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+        args: [--unsafe]
+      - id: check-json
+        exclude: (tsconfig.*\.json)
+      - id: check-added-large-files
+        args: [--maxkb=1000]
+      - id: detect-private-key
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.3
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: local
+    hooks:
+      - id: mypy
+        name: mypy (garmin_sync)
+        entry: uv run mypy src/garmin_sync
+        language: system
+        types: [python]
+        pass_filenames: false
+
+      - id: no-utc-iso-string-in-engine
+        name: Enforce Warsaw local date over UTC toISOString in engine/services
+        entry: ^[^/*#\n]*\.toISOString\(\)\.split\(['"]T['"]\)
+        language: pygrep
+        files: ^app/src/(engine|services)/.*\.tsx?$

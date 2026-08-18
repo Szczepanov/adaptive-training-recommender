@@ -61,4 +61,3 @@ export const GarminSyncBadge: React.FC<GarminSyncBadgeProps> = ({ userId }) => {
         </div>
     );
 };
-

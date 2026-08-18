@@ -1,8 +1,8 @@
 # Sustained Multidirectional Field Macrocycle — v5.0 contract
 
-**Source version:** 5.0  
-**Source updated:** 3 August 2026  
-**Status:** in-repository behavioral authority for the recommendation-policy alignment work in PR #17.  
+**Source version:** 5.0
+**Source updated:** 3 August 2026
+**Status:** in-repository behavioral authority for the recommendation-policy alignment work in PR #17.
 **Scope:** this file records the macrocycle rules that are decision-bearing in the engine. It is intentionally narrower than the full athlete-context document.
 
 The external v5.0 context supersedes v4.0 and the July football-return bridge. Its current phase is a cycling-priority race build with football and running maintenance. The primary cycling event is an approximately 50-minute road race, most likely **5–6 September 2026** or **12–13 September 2026**.

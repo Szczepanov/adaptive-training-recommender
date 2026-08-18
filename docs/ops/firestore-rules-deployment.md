@@ -84,4 +84,3 @@ projects/adaptive-training-recommender/rulesets/8564ac3b-05c3-45eb-aa10-0cc4834a
 
 The deployed and local SHA-256 were both
 `f48b3c31d8cf659e63c9fd5d313909945159a020b39d4bb68045490b4bf693e5`.
-

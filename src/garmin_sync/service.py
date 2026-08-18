@@ -838,7 +838,9 @@ class GarminSyncService:
         athlete_ftp = payload.get("athleteFtpWatts")
         if athlete_ftp is None and self.repository.db:
             try:
-                user_ref = self.repository.db.collection("users").document(self.settings.app_user_id)
+                user_ref = self.repository.db.collection("users").document(
+                    self.settings.app_user_id
+                )
                 pref_doc = user_ref.collection("preferences").document("profile").get()
                 if pref_doc.exists:
                     data = pref_doc.to_dict() or {}
@@ -883,4 +885,3 @@ class GarminSyncService:
             return True
         logger.error(f"Workout upload returned no workoutId; leaving queue pending: {res}")
         return False
-

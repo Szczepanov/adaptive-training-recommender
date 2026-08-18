@@ -138,7 +138,7 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery' }: Dat
           <div className="data-item">
             <span className="data-label">Sleep Duration:</span>
             <span className="data-value">
-              {decisionInput.recoverySnapshot?.raw.sleepDurationSec 
+              {decisionInput.recoverySnapshot?.raw.sleepDurationSec
                 ? `${Math.round(decisionInput.recoverySnapshot.raw.sleepDurationSec / 60)} min`
                 : 'N/A'
               }
@@ -519,7 +519,7 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery' }: Dat
             <div className="data-item">
               <span className="data-label">Preferred Modalities:</span>
               <span className="data-value">
-                {decisionInput.preferences.preferredModalities.length > 0 
+                {decisionInput.preferences.preferredModalities.length > 0
                   ? decisionInput.preferences.preferredModalities.join(', ')
                   : 'None specified'
                 }
@@ -662,7 +662,7 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery' }: Dat
       </div>
 
       <div className="data-view-tabs">
-        <button 
+        <button
           className={activeTab === 'recovery' ? 'active' : ''}
           onClick={() => setActiveTab('recovery')}
         >
@@ -674,19 +674,19 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery' }: Dat
         >
           Activities
         </button>
-        <button 
+        <button
           className={activeTab === 'checkin' ? 'active' : ''}
           onClick={() => setActiveTab('checkin')}
         >
           Check-in
         </button>
-        <button 
+        <button
           className={activeTab === 'goals' ? 'active' : ''}
           onClick={() => setActiveTab('goals')}
         >
           Goals
         </button>
-        <button 
+        <button
           className={activeTab === 'constraints' ? 'active' : ''}
           onClick={() => setActiveTab('constraints')}
         >

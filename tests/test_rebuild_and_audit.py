@@ -79,19 +79,37 @@ def test_rebuild_preserves_existing_firestore_history_on_skipped_dates(tmp_path)
     archive_store = LocalRawArchiveStore(base_dir=tmp_path)
     # Day 2 is fully archived
     archive_store.archive("stats", "2026-08-07", {"restingHeartRate": 50}, "run-1", "0.3.8")
-    archive_store.archive("sleep", "2026-08-07", {"sleepScores": {"overallScore": {"value": 80}}}, "run-1", "0.3.8")
-    archive_store.archive("hrv", "2026-08-07", {"hrvSummary": {"weeklyAvg": 55, "lastNightAvg": 55}}, "run-1", "0.3.8")
+    archive_store.archive(
+        "sleep", "2026-08-07", {"sleepScores": {"overallScore": {"value": 80}}}, "run-1", "0.3.8"
+    )
+    archive_store.archive(
+        "hrv", "2026-08-07", {"hrvSummary": {"weeklyAvg": 55, "lastNightAvg": 55}}, "run-1", "0.3.8"
+    )
     archive_store.archive("activities", "2026-08-07", [], "run-1", "0.3.8")
 
     settings = Settings(app_user_id="test_uid_789")
     mock_repo = MagicMock()
     mock_repo.get_historical_snapshots.return_value = {
-        f"2026-07-{d:02d}": {"raw": {"sleepScore": 80, "restingHr": 50, "hrvOvernightAvg": 55, "respirationAvg": 14, "totalSteps": 6000}}
+        f"2026-07-{d:02d}": {
+            "raw": {
+                "sleepScore": 80,
+                "restingHr": 50,
+                "hrvOvernightAvg": 55,
+                "respirationAvg": 14,
+                "totalSteps": 6000,
+            }
+        }
         for d in range(10, 32)
     }
     # Day 1 is missing from archive but present in Firestore
     mock_repo.get_snapshot.return_value = {
-        "raw": {"sleepScore": 80, "restingHr": 50, "hrvOvernightAvg": 55, "respirationAvg": 14, "totalSteps": 6000}
+        "raw": {
+            "sleepScore": 80,
+            "restingHr": 50,
+            "hrvOvernightAvg": 55,
+            "respirationAvg": 14,
+            "totalSteps": 6000,
+        }
     }
     mock_client = MagicMock()
 

@@ -287,9 +287,7 @@ def test_push_workout_skips_already_synced_queue_item():
         "garminWorkoutId": "999",
         "payload": {"title": "Easy ride", "modality": "cycling", "blocks": []},
     }
-    mock_repo.db.collection.return_value.document.return_value.collection.return_value.document.return_value.get.return_value = (
-        doc_snap
-    )
+    mock_repo.db.collection.return_value.document.return_value.collection.return_value.document.return_value.get.return_value = doc_snap
     client = MagicMock()
     service = GarminSyncService(settings=settings, repository=mock_repo, garmin_client=client)
 
@@ -331,7 +329,9 @@ def test_push_pending_workouts_pushes_each_pending_item_and_marks_synced():
             },
         ),
     ]
-    queue_collection = mock_repo.db.collection.return_value.document.return_value.collection.return_value
+    queue_collection = (
+        mock_repo.db.collection.return_value.document.return_value.collection.return_value
+    )
     queue_collection.where.return_value.stream.return_value = docs
 
     client = MagicMock()
@@ -362,7 +362,9 @@ def test_push_pending_workouts_leaves_stale_items_pending():
             },
         ),
     ]
-    queue_collection = mock_repo.db.collection.return_value.document.return_value.collection.return_value
+    queue_collection = (
+        mock_repo.db.collection.return_value.document.return_value.collection.return_value
+    )
     queue_collection.where.return_value.stream.return_value = docs
 
     client = MagicMock()
@@ -377,7 +379,9 @@ def test_push_pending_workouts_leaves_stale_items_pending():
 def test_push_pending_workouts_returns_true_for_empty_queue():
     settings = Settings(app_user_id="test_uid_789")
     mock_repo = MagicMock()
-    queue_collection = mock_repo.db.collection.return_value.document.return_value.collection.return_value
+    queue_collection = (
+        mock_repo.db.collection.return_value.document.return_value.collection.return_value
+    )
     queue_collection.where.return_value.stream.return_value = []
     service = GarminSyncService(settings=settings, repository=mock_repo)
     service._init_garmin_client = MagicMock()
@@ -721,8 +725,7 @@ def test_sync_service_derives_step_delta_from_completed_d1_steps():
     mock_repo = MagicMock()
     mock_repo.is_fresh.return_value = False
     mock_repo.get_historical_snapshots.return_value = {
-        f"2026-08-0{day}": {"raw": {"totalSteps": 5000}}
-        for day in range(2, 6)
+        f"2026-08-0{day}": {"raw": {"totalSteps": 5000}} for day in range(2, 6)
     }
     service = GarminSyncService(
         settings=settings,
@@ -730,9 +733,9 @@ def test_sync_service_derives_step_delta_from_completed_d1_steps():
         provider=FakeTestProvider(),
     )
 
-    assert service.sync_daily(
-        target_date_str="2026-08-06", force=True, resync_lookback_days=0
-    ) is True
+    assert (
+        service.sync_daily(target_date_str="2026-08-06", force=True, resync_lookback_days=0) is True
+    )
 
     saved_payload = mock_repo.upsert_snapshot.call_args.args[1]
     assert saved_payload["raw"]["totalSteps"] == 9000

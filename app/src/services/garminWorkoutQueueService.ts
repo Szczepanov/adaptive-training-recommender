@@ -97,4 +97,3 @@ export class GarminWorkoutQueueService {
 }
 
 export const garminWorkoutQueueService = new GarminWorkoutQueueService();
-

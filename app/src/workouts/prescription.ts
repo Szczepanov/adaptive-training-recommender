@@ -161,7 +161,7 @@ function resolveStructuredTargets(
             const valueText = isZone2
               ? `Primary target: FTP-based Zone 2, 56–75% FTP (${minW}–${maxW} W) [${zoneSystemLabel}]`
               : `Power: ${val.min}–${val.max}% FTP (${minW}–${maxW} W)`;
-            
+
             structured.push({
               role: target.role,
               label: ROLE_LABELS[target.role],

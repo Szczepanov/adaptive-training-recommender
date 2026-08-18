@@ -125,7 +125,7 @@ export class CheckinService {
                 orderBy('date', 'desc'),
                 limit(days)
             );
-            
+
             const querySnapshot = await getDocs(q);
             return querySnapshot.docs.map(doc => doc.data() as DailySubjectiveCheckin);
         } catch (error) {
@@ -249,7 +249,7 @@ export class CheckinService {
             // Calculate current streak
             let streak = 0;
             const sortedCheckins = checkins.sort((a, b) => b.date.localeCompare(a.date));
-            
+
             for (const checkin of sortedCheckins) {
                 if (checkin.dataQuality.isComplete) {
                     streak++;
