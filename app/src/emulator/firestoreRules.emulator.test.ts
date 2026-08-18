@@ -1055,22 +1055,100 @@ emulatorDescribe('Firestore security rules', () => {
         await assertFails(getDoc(doc(otherDb, sessionDefRevPath)));
     });
 
-    it('allows unplanned_log occurrences in M2 and rejects other authorities', async () => {
+    const executionPrescriptionPath = `users/${ownerId}/execution_prescriptions/presc-hash-abc`;
+
+    function validExecutionPrescription() {
+        return {
+            userId: ownerId,
+            schemaVersion: 1,
+            prescriptionHash: 'presc-hash-abc',
+            definitionHash: 'def-hash-123',
+            blocks: [
+                {
+                    id: 'b1',
+                    title: 'Main',
+                    role: 'main',
+                    executionMode: 'sequential',
+                    steps: [{ id: 's1', kind: 'exercise' }],
+                },
+            ],
+            createdAt: '2026-08-18T10:00:00Z',
+        };
+    }
+
+    it('allows owner to write-once execution prescriptions and rejects mutations', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await expect(assertSucceeds(setDoc(doc(ownerDb, executionPrescriptionPath), validExecutionPrescription()))).resolves.toBeUndefined();
+
+        // Write-once immutable
+        await assertFails(setDoc(doc(ownerDb, executionPrescriptionPath), {
+            ...validExecutionPrescription(),
+            definitionHash: 'mutated-hash',
+        }));
+
+        // Cross-user denied
+        const otherDb = testEnvironment.authenticatedContext(otherUserId).firestore();
+        await assertFails(getDoc(doc(otherDb, executionPrescriptionPath)));
+    });
+
+    it('allows valid occurrence authorities in M3 (unplanned_log, schedule, replace, additional) and rejects invalid ones', async () => {
         const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
         // unplanned_log succeeds
         await expect(assertSucceeds(setDoc(doc(ownerDb, sessionOccPath), validSessionOccurrence()))).resolves.toBeUndefined();
 
-        // schedule or replace_recommendation rejected at M2.2
-        await assertFails(setDoc(doc(ownerDb, `${sessionOccPath}-sched`), {
+        // schedule succeeds in M3
+        await expect(assertSucceeds(setDoc(doc(ownerDb, `${sessionOccPath}-sched`), {
             ...validSessionOccurrence(),
             occurrenceId: 'occ-unplanned-1-sched',
             authority: 'schedule',
-        }));
-        await assertFails(setDoc(doc(ownerDb, `${sessionOccPath}-replace`), {
+        }))).resolves.toBeUndefined();
+
+        // replace_recommendation succeeds in M3
+        await expect(assertSucceeds(setDoc(doc(ownerDb, `${sessionOccPath}-replace`), {
             ...validSessionOccurrence(),
             occurrenceId: 'occ-unplanned-1-replace',
             authority: 'replace_recommendation',
+        }))).resolves.toBeUndefined();
+
+        // additional_session succeeds in M3
+        await expect(assertSucceeds(setDoc(doc(ownerDb, `${sessionOccPath}-add`), {
+            ...validSessionOccurrence(),
+            occurrenceId: 'occ-unplanned-1-add',
+            authority: 'additional_session',
+        }))).resolves.toBeUndefined();
+
+        // unknown authority is rejected
+        await assertFails(setDoc(doc(ownerDb, `${sessionOccPath}-unknown`), {
+            ...validSessionOccurrence(),
+            occurrenceId: 'occ-unplanned-1-unknown',
+            authority: 'bogus_authority',
         }));
+    });
+
+    it('allows recommendations with primarySession and additionalSessions bindings', async () => {
+        const base = validRecommendation();
+        const recWithBindings = {
+            ...base,
+            primarySession: {
+                sessionSource: { kind: 'catalog', workoutId: 'strength_full_body_maintenance_01', catalogVersion: '1' },
+                prescriptionHash: 'presc-hash-abc',
+            },
+            additionalSessions: [
+                {
+                    sessionSource: { kind: 'unplanned_fixture', fixtureId: '01-full-body-maintenance' },
+                    prescriptionHash: 'presc-hash-xyz',
+                },
+            ],
+            recommendationAudit: {
+                ...base.recommendationAudit,
+                primarySession: {
+                    sessionSource: { kind: 'catalog', workoutId: 'strength_full_body_maintenance_01', catalogVersion: '1' },
+                    prescriptionHash: 'presc-hash-abc',
+                },
+            },
+        };
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await expect(assertSucceeds(setDoc(doc(ownerDb, `users/${ownerId}/daily_recommendations/2026-08-07`), recWithBindings))).resolves.toBeUndefined();
     });
 
     it('allows execution lifecycle with entry subcollection mutability while in_progress, and terminal immutability', async () => {

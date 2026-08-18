@@ -1,4 +1,5 @@
 import type { AthletePerformanceProfile, WorkoutPrescription } from '../workouts/models.ts';
+import type { SessionReferenceBinding } from '../sessions/models';
 import type { DataIssue, DataState, DataStateSummary } from './dataState';
 import type { SubjectiveBaseline } from './subjectiveBaseline';
 
@@ -712,6 +713,9 @@ export interface Recommendation {
         scaling?: ExternalSessionScaling;
         isEvent?: boolean;
     };
+    /** Multidomain session bindings (M3.2 / ADR-0023 D-MSNAP). */
+    primarySession?: SessionReferenceBinding;
+    additionalSessions?: SessionReferenceBinding[];
     /** Assigned at the composition boundary immediately before persistence. */
     recommendationAudit?: RecommendationAudit;
     /** Engine trace retained only long enough to create the compact persisted audit. */
@@ -1241,6 +1245,9 @@ export interface DailyRecommendation {
     updatedAt: string;
     adjustment?: SessionAdjustment;
     prescription?: WorkoutPrescription;
+    /** Multidomain session bindings (M3.2 / ADR-0023 D-MSNAP). */
+    primarySession?: SessionReferenceBinding;
+    additionalSessions?: SessionReferenceBinding[];
     /** Compact, replay-oriented metadata. It deliberately omits raw health values and notes. */
     recommendationAudit?: RecommendationAudit;
     adherence: {
@@ -1445,6 +1452,9 @@ export interface RecommendationAudit {
     droppedContributorObjectives: DroppedContributorObjective[];
     /** Present exactly when the decision adjudicated an imported session (ADR-0019). */
     externalPlan?: ExternalDecisionProvenance;
+    /** Multidomain session bindings (M3.2 / ADR-0023 D-MSNAP). */
+    primarySession?: SessionReferenceBinding;
+    additionalSessions?: SessionReferenceBinding[];
 }
 
 /**

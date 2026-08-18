@@ -284,6 +284,11 @@ export function validateSessionDefinition(raw: unknown): ValidationResult<Sessio
                     }
                 }
 
+                if (step.stopConditions !== undefined
+                    && (!Array.isArray(step.stopConditions) || !step.stopConditions.every(condition => typeof condition === 'string' && condition.trim().length > 0))) {
+                    issues.push({ path: `${sPath}.stopConditions`, message: 'stopConditions must be non-empty strings' });
+                }
+
                 // Load
                 if (step.load !== undefined) {
                     if (!isObject(step.load)) {

@@ -293,14 +293,14 @@ rewritten as an outcome; an in-progress item retains its remaining acceptance wo
 | M2.5 | Typed repetition/time/distance/check-off inputs | `[x]` | — |
 | M2.6 | General completion, comparison and response | `[x]` | — |
 | M2.7 | Strength v1 compatibility read model | `[x]` | — |
-| M3.1 | Canonical serialization, hashing and source adapters | `[ ]` | M2.1 |
-| M3.2 | Recommendation source/occurrence persistence and replay | `[ ]` | M3.1, M2.2, Phase 9.0 block boundary |
-| M3.3 | Save/schedule/replace/add/start intent flow | `[ ]` | M2.2, M3.2 |
-| M3.4 | Catalog-to-definition adapter and v1 runner retirement | `[ ]` | M3.1, M2.4, M2.7 |
-| M3.5 | Bounded exercise/drill facet vocabulary | `[ ]` | M2.1 |
-| M3.6 | External plan/session schema v2 adapter | `[ ]` | M3.1, M3.5 |
-| M3.7 | Full semantic import preview and diff | `[ ]` | M3.6 |
-| M3.8 | Manual block-first session builder | `[ ]` | M2.2, M3.5, M3.7 |
+| M3.1 | Canonical serialization, hashing and source adapters | `[x]` | — |
+| M3.2 | Recommendation source/occurrence persistence and replay | `[x]` | — |
+| M3.3 | Save/schedule/replace/add/start intent flow | `[x]` | — |
+| M3.4 | Catalog-to-definition adapter and v1 runner retirement | `[x]` | — |
+| M3.5 | Bounded exercise/drill facet vocabulary | `[x]` | — |
+| M3.6 | External plan/session schema v2 adapter | `[x]` | — |
+| M3.7 | Full semantic import preview and diff | `[x]` | — |
+| M3.8 | Manual block-first session builder | `[x]` | — |
 | M4.1 | Group execution modes | `[ ]` | M2.5 |
 | M4.2 | Recorded athlete choices and alternatives | `[ ]` | M4.1, M3.5 |
 | M4.3 | Companion occurrence and duplicate reconciliation | `[ ]` | M2.4, M3.3 |
@@ -560,6 +560,14 @@ repetition entries produce the same results through the shared read boundary.
 
 **Milestone exit.** An imported or built session can be scheduled, can replace or add to
 today's recommendation, and that decision replays against exact stored bytes.
+
+**Implementation review (2026-08-18).** M3 has partial scaffolding only: canonical content
+hashing, a write-once prescription store, source-hash-verifying manual/external resolution,
+and early catalog/manual UI components exist. None of M3.1–M3.8 is complete. In particular,
+source bindings are not yet resolved during replay, and destinations are not connected to the
+recommendation authority. The temporary attempt to retire the Strength runner was reverted:
+the generic runner has not yet acquired the catalog-source launch/resume contract required by
+M3.4. Keep the M1 Strength route in service until that contract and its regression suite land.
 
 ### M3.1 `[ ]` Canonical serialization, hashing and source adapters
 

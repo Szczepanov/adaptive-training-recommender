@@ -56,6 +56,7 @@ import { validateEventTiming, BODY_REGIONS, TISSUE_LEVELS } from './models';
 import { deriveGoalCategory } from './periodization';
 import { EVENT_PRESETS } from './eventPresets';
 import { getLocalDateString } from '../utils/localDate';
+import type { SessionReferenceBinding, SessionSourceRef } from '../sessions/models';
 
 // --- Validation Result Types ---
 
@@ -1098,6 +1099,21 @@ export function validateFixedActivity(raw: any): ValidationResult<FixedActivity>
 
 // --- Daily Recommendation Validation ---
 
+function isValidSessionSourceRef(value: any): value is SessionSourceRef {
+    if (!value || typeof value !== 'object') return false;
+    if (value.kind === 'catalog') return typeof value.workoutId === 'string' && value.workoutId.length > 0 && typeof value.catalogVersion === 'string' && value.catalogVersion.length > 0;
+    if (value.kind === 'external_plan') return typeof value.planId === 'string' && Number.isInteger(value.revision) && value.revision >= 1 && typeof value.sessionId === 'string' && typeof value.contentHash === 'string';
+    if (value.kind === 'manual') return typeof value.definitionId === 'string' && Number.isInteger(value.revision) && value.revision >= 1 && typeof value.contentHash === 'string';
+    return value.kind === 'unplanned_fixture' && typeof value.fixtureId === 'string' && value.fixtureId.length > 0;
+}
+
+function isValidSessionReferenceBinding(value: any): value is SessionReferenceBinding {
+    return value && typeof value === 'object'
+        && isValidSessionSourceRef(value.sessionSource)
+        && typeof value.prescriptionHash === 'string' && value.prescriptionHash.length > 0
+        && (value.occurrenceId === undefined || (typeof value.occurrenceId === 'string' && value.occurrenceId.length > 0));
+}
+
 export function validateRecommendation(raw: any): ValidationResult<DailyRecommendation> {
     const errors: ValidationError[] = [];
 
@@ -1130,6 +1146,14 @@ export function validateRecommendation(raw: any): ValidationResult<DailyRecommen
         if (typeof raw.prescription !== 'object' || !raw.prescription.workoutId || !Array.isArray(raw.prescription.displayBlocks)) {
             errors.push({ field: 'prescription', message: 'Prescription must include a workout id and display blocks' });
         }
+    }
+    if (raw.primarySession !== undefined && !isValidSessionReferenceBinding(raw.primarySession)) {
+        errors.push({ field: 'primarySession', message: 'primarySession must be a valid source/occurrence/prescription binding' });
+    }
+    if (raw.additionalSessions !== undefined && (!Array.isArray(raw.additionalSessions)
+        || raw.additionalSessions.length > 16
+        || !raw.additionalSessions.every(isValidSessionReferenceBinding))) {
+        errors.push({ field: 'additionalSessions', message: 'additionalSessions must contain at most 16 valid bindings' });
     }
 
     let recommendationAudit: DailyRecommendation['recommendationAudit'] | undefined;
@@ -1227,6 +1251,8 @@ export function validateRecommendation(raw: any): ValidationResult<DailyRecommen
         createdAt: raw.createdAt || new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         ...(raw.prescription ? { prescription: raw.prescription } : {}),
+        ...(raw.primarySession ? { primarySession: raw.primarySession } : {}),
+        ...(raw.additionalSessions && Array.isArray(raw.additionalSessions) ? { additionalSessions: raw.additionalSessions } : {}),
         ...(adjustment ? { adjustment } : {}),
         ...(recommendationAudit ? { recommendationAudit } : {}),
         adherence: {

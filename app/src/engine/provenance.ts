@@ -52,6 +52,8 @@ export function buildRecommendationAudit(
         droppedContributorObjectives: trace.droppedContributorObjectives,
         // Carried verbatim: the audit must name the revision bytes, not re-derive them.
         ...(trace.externalPlan ? { externalPlan: trace.externalPlan } : {}),
+        ...(recommendation.primarySession ? { primarySession: recommendation.primarySession } : {}),
+        ...(recommendation.additionalSessions && recommendation.additionalSessions.length > 0 ? { additionalSessions: recommendation.additionalSessions } : {}),
         ...(subjectiveDrift ? { subjectiveDrift } : {}),
     };
 }

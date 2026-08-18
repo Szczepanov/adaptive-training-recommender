@@ -6,6 +6,7 @@ import type {
     SessionEntryPayload,
     SessionStep,
     SessionBlock,
+    SessionSourceRef,
 } from '../sessions/models';
 import { sessionExecutionService } from '../services/sessionExecutionService';
 import { checkinService } from '../services/checkinService';
@@ -29,6 +30,8 @@ export interface UseSessionRunnerResult {
     lastRemovedEntry: SessionEntry | null;
 
     startFixtureSession: (fixture: SessionDefinition) => Promise<void>;
+    startSession: (definition: SessionDefinition, source: SessionSourceRef, options?: { occurrenceId?: string; prescriptionHash?: string }) => Promise<void>;
+    restoreSessionDefinition: (definition: SessionDefinition) => Promise<void>;
     selectStep: (blockIndex: number, stepIndex: number) => void;
     nextStep: () => void;
     prevStep: () => void;
@@ -61,13 +64,14 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
         let cancelled = false;
         sessionExecutionService.findInProgressExecution(userId)
             .then(async existing => {
-                if (!existing || existing.sessionSource.kind !== 'unplanned_fixture') return;
+                if (!existing) return;
                 const source = existing.sessionSource;
-                const fixture = fixtures.find(candidate => candidate.id === source.fixtureId);
-                if (!fixture) return;
+                const fixture = source.kind === 'unplanned_fixture'
+                    ? fixtures.find(candidate => candidate.id === source.fixtureId)
+                    : undefined;
                 const existingEntries = await sessionExecutionService.getEntries(userId, existing.executionId);
                 if (cancelled) return;
-                setDefinition(fixture);
+                if (fixture) setDefinition(fixture);
                 setExecution(existing);
                 setEntries(existingEntries);
                 setElapsedSeconds(Math.max(0, Math.floor((Date.now() - Date.parse(existing.startedAt)) / 1000)));
@@ -118,22 +122,51 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
     const activeBlock = definition?.blocks[activeBlockIndex] ?? null;
     const activeStep = activeBlock?.steps[activeStepIndex] ?? null;
 
-    const startFixtureSession = useCallback(async (fixture: SessionDefinition) => {
+    const startSession = useCallback(async (
+        nextDefinition: SessionDefinition,
+        source: SessionSourceRef,
+        options: { occurrenceId?: string; prescriptionHash?: string } = {},
+    ) => {
         if (isRestoring || execution?.state === 'in_progress') return;
-        setDefinition(fixture);
+        setDefinition(nextDefinition);
         setActiveBlockIndex(0);
         setActiveStepIndex(0);
         setEntries([]);
         setElapsedSeconds(0);
+        setLastRemovedEntry(null);
+        setSyncStatus('pending');
 
         const executionId = `exec-${Date.now()}`;
         const today = getLocalDateString();
-        const exec = await sessionExecutionService.startExecution(userId, executionId, {
-            sessionSource: { kind: 'unplanned_fixture', fixtureId: fixture.id },
-            date: today,
-        });
-        setExecution(exec);
+        try {
+            const exec = await sessionExecutionService.startExecution(userId, executionId, {
+                sessionSource: source,
+                ...(options.occurrenceId ? { occurrenceId: options.occurrenceId } : {}),
+                ...(options.prescriptionHash ? { prescriptionHash: options.prescriptionHash } : {}),
+                date: today,
+            });
+            setExecution(exec);
+            setSyncStatus('synced');
+        } catch (error) {
+            setDefinition(null);
+            setSyncStatus('unavailable');
+            throw error;
+        }
     }, [execution?.state, isRestoring, userId]);
+
+    const startFixtureSession = useCallback(async (fixture: SessionDefinition) => {
+        await startSession(fixture, {
+            kind: 'unplanned_fixture', fixtureId: fixture.id,
+        });
+    }, [startSession]);
+
+    const restoreSessionDefinition = useCallback(async (nextDefinition: SessionDefinition) => {
+        if (!execution || execution.state !== 'in_progress') return;
+        const existingEntries = await sessionExecutionService.getEntries(userId, execution.executionId);
+        setDefinition(nextDefinition);
+        setEntries(existingEntries);
+        setElapsedSeconds(Math.max(0, Math.floor((Date.now() - Date.parse(execution.startedAt)) / 1000)));
+    }, [execution, userId]);
 
     const selectStep = useCallback((blockIndex: number, stepIndex: number) => {
         if (!definition) return;
@@ -326,6 +359,8 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
         lastRemovedEntry,
 
         startFixtureSession,
+        startSession,
+        restoreSessionDefinition,
         selectStep,
         nextStep,
         prevStep,

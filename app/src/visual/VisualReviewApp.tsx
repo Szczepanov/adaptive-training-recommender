@@ -5,7 +5,7 @@ import { DataView } from '../components/DataView';
 import { Goals } from '../components/Goals';
 import { Home } from '../components/Home';
 import { Preferences } from '../components/Preferences';
-import { StrengthSessionRunner } from '../components/StrengthSessionRunner';
+import { SessionRunner } from '../components/session/SessionRunner';
 import { TrainingSettings } from '../components/TrainingSettings';
 import type { Screen } from '../types/navigation';
 import { VISUAL_USER_ID, type VisualScenario, type VisualScreen } from './fixtures';
@@ -22,54 +22,33 @@ function mapScreenToVisual(s: Screen): VisualScreen {
 
 export function VisualReviewApp({ scenario }: VisualReviewAppProps) {
   const [screen, setScreen] = useState<VisualScreen>(scenario.screen);
-  const [desktopSettingsOpen, setDesktopSettingsOpen] = useState(false);
   const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
 
-  const navigate = (nextScreen: VisualScreen) => {
-    setScreen(nextScreen);
-    setDesktopSettingsOpen(false);
+  const navigate = (next: VisualScreen) => {
+    setScreen(next);
     setMobileMoreOpen(false);
   };
 
-  const handleAppNavigate = (s: Screen) => {
-    navigate(mapScreenToVisual(s));
+  const handleAppNavigate = (next: Screen) => {
+    navigate(mapScreenToVisual(next));
   };
 
   return (
-    <div className="app-container visual-review-app" data-visual-scenario={scenario.id}>
-      <header className="global-navbar">
-        <div className="navbar-container">
-          <div className="navbar-left">
-            <button className="navbar-brand" onClick={() => navigate('home')} title="Go to Home Dashboard">
-              <span className="brand-icon">⚡</span>
-              <span className="brand-name">Adaptive Coach</span>
-            </button>
-          </div>
-
-          <nav className="navbar-desktop-menu" aria-label="Primary navigation">
-            <button className={`nav-link ${screen === 'home' ? 'active' : ''}`} onClick={() => navigate('home')}>Home</button>
-            <button className={`nav-link ${screen === 'checkin' ? 'active' : ''}`} onClick={() => navigate('checkin')}>Check-in</button>
-            <button className={`nav-link ${screen === 'session' ? 'active' : ''}`} onClick={() => navigate('session')}>Session</button>
-            <button className={`nav-link ${screen === 'goals' ? 'active' : ''}`} onClick={() => navigate('goals')}>Goals</button>
-            <button className={`nav-link ${screen === 'data' ? 'active' : ''}`} onClick={() => navigate('data')}>Data</button>
-            <div className="more-menu-container">
-              <button
-                className={`nav-link more-btn ${['constraints', 'preferences'].includes(screen) ? 'active' : ''}`}
-                onClick={() => setDesktopSettingsOpen((isOpen) => !isOpen)}
-                aria-expanded={desktopSettingsOpen}
-                aria-haspopup="menu"
-              >
-                <span>Settings</span><span className="caret">▾</span>
-              </button>
-              {desktopSettingsOpen && (
-                <div className="dropdown-menu" role="menu" aria-label="Settings">
-                  <button className={`dropdown-item ${screen === 'constraints' ? 'active' : ''}`} onClick={() => navigate('constraints')} role="menuitem">Training Setup</button>
-                  <button className={`dropdown-item ${screen === 'preferences' ? 'active' : ''}`} onClick={() => navigate('preferences')} role="menuitem">Coach Preferences</button>
-                </div>
-              )}
-            </div>
-          </nav>
+    <div className="app-container">
+      <header className="app-header">
+        <div className="header-brand">
+          <h1>Adaptive Training</h1>
+          <span className="visual-indicator" title="Visual review harness mode">VISUAL REVIEW</span>
         </div>
+        <nav className="desktop-nav">
+          <button className={`nav-link ${screen === 'home' ? 'active' : ''}`} onClick={() => navigate('home')}>Home</button>
+          <button className={`nav-link ${screen === 'checkin' ? 'active' : ''}`} onClick={() => navigate('checkin')}>Check-in</button>
+          <button className={`nav-link ${screen === 'session' ? 'active' : ''}`} onClick={() => navigate('session')}>Session</button>
+          <button className={`nav-link ${screen === 'goals' ? 'active' : ''}`} onClick={() => navigate('goals')}>Goals</button>
+          <button className={`nav-link ${screen === 'data' ? 'active' : ''}`} onClick={() => navigate('data')}>Data</button>
+          <button className={`nav-link ${screen === 'constraints' ? 'active' : ''}`} onClick={() => navigate('constraints')}>Constraints</button>
+          <button className={`nav-link ${screen === 'preferences' ? 'active' : ''}`} onClick={() => navigate('preferences')}>Preferences</button>
+        </nav>
       </header>
 
       <main className="app-content">
@@ -79,7 +58,12 @@ export function VisualReviewApp({ scenario }: VisualReviewAppProps) {
         {screen === 'data' && <DataView decisionInput={scenario.fixture.input} userId={VISUAL_USER_ID} onBack={() => navigate('home')} initialTab={scenario.initialDataTab} />}
         {screen === 'constraints' && <TrainingSettings userId={VISUAL_USER_ID} />}
         {screen === 'preferences' && <Preferences userId={VISUAL_USER_ID} onNavigate={handleAppNavigate} />}
-        {screen === 'session' && <StrengthSessionRunner userId={VISUAL_USER_ID} />}
+        {screen === 'session' && (
+          <SessionRunner
+            userId={VISUAL_USER_ID}
+            onClose={() => navigate('home')}
+          />
+        )}
       </main>
 
       <nav className="bottom-nav" aria-label="Mobile navigation">

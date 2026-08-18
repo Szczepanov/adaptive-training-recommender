@@ -24,6 +24,12 @@ export type SessionSourceRef =
     | { kind: 'manual'; definitionId: string; revision: number; contentHash: string }
     | { kind: 'unplanned_fixture'; fixtureId: string };
 
+export interface SessionReferenceBinding {
+    sessionSource: SessionSourceRef;
+    occurrenceId?: string;
+    prescriptionHash: string;
+}
+
 export type ExerciseRef =
     | { kind: 'catalog'; exerciseId: string }
     | { kind: 'unresolved_free_text'; name: string };
@@ -149,6 +155,8 @@ export interface SessionStep {
     optional?: boolean;
     alternatives?: StepAlternative[];
     notes?: string;
+    /** Explicit technical or safety stop conditions shown to the athlete; no automatic evaluation. */
+    stopConditions?: string[];
     resolutionNote?: string;
 }
 

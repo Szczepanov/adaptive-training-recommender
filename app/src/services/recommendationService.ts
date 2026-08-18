@@ -81,7 +81,9 @@ export class RecommendationService {
                 // the construction order of a freshly-built prescription -- comparing via
                 // JSON.stringify would treat an unchanged, round-tripped prescription as
                 // "changed" and spuriously bump the revision (see deepEqual for detail).
-                !deepEqual(existing.prescription ?? null, rec.prescription ?? null)
+                !deepEqual(existing.prescription ?? null, rec.prescription ?? null) ||
+                !deepEqual(existing.primarySession ?? null, rec.primarySession ?? null) ||
+                !deepEqual(existing.additionalSessions ?? null, rec.additionalSessions ?? null)
             );
             decisionChanged = decisionChangedThisSave;
 
@@ -100,6 +102,8 @@ export class RecommendationService {
                 mode: rec.mode,
                 rationale: rec.rationale,
                 ...(rec.prescription ? { prescription: rec.prescription } : {}),
+                ...(rec.primarySession ? { primarySession: rec.primarySession } : {}),
+                ...(rec.additionalSessions ? { additionalSessions: rec.additionalSessions } : {}),
                 ...(rec.adjustment ? { adjustment: rec.adjustment } : {}),
                 ...(existing?.adherence ? { adherence: existing.adherence } : {}),
                 // Audit is write-once per decision (firestore.rules: auditWriteOnce()):
@@ -129,9 +133,10 @@ export class RecommendationService {
             // reconstructing it later from train/modify/recover (which cannot represent
             // skip/advisory and is not equivalent on every imported-plan day).
             const validated = { ...validation.data!, engineVerdict } as PersistedRecommendationWithVerdict;
-            const writeData = !rec.prescription && existing?.prescription
-                ? { ...validated, prescription: deleteField() }
-                : validated;
+            const writeData: Record<string, unknown> = { ...validated };
+            if (!rec.prescription && existing?.prescription) writeData.prescription = deleteField();
+            if (!rec.primarySession && existing?.primarySession) writeData.primarySession = deleteField();
+            if (!rec.additionalSessions && existing?.additionalSessions) writeData.additionalSessions = deleteField();
 
             if (decisionChangedThisSave) {
                 const batch = writeBatch(getDb());
@@ -147,6 +152,8 @@ export class RecommendationService {
                 };
                 if (existing.engineVerdict) archiveData.engineVerdict = existing.engineVerdict;
                 if (existing.prescription) archiveData.prescription = existing.prescription;
+                if (existing.primarySession) archiveData.primarySession = existing.primarySession;
+                if (existing.additionalSessions) archiveData.additionalSessions = existing.additionalSessions;
                 if (existing.recommendationAudit) archiveData.recommendationAudit = existing.recommendationAudit;
 
                 batch.set(archiveRef, archiveData);

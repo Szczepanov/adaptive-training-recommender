@@ -64,7 +64,7 @@ service cloud.firestore {
 
     function hasValidRecommendationAudit(audit) {
       return audit is map
-        && audit.keys().hasOnly(['policyVersion', 'evaluatedAt', 'decisionContextRevision', 'safetyStatus', 'history', 'envelope', 'plannedDose', 'executionDose', 'candidateScores', 'droppedContributorObjectives', 'externalPlan'])
+        && audit.keys().hasOnly(['policyVersion', 'evaluatedAt', 'decisionContextRevision', 'safetyStatus', 'history', 'envelope', 'plannedDose', 'executionDose', 'candidateScores', 'droppedContributorObjectives', 'externalPlan', 'primarySession', 'additionalSessions'])
         && audit.keys().hasAll(['policyVersion', 'evaluatedAt', 'decisionContextRevision', 'safetyStatus', 'history', 'envelope', 'candidateScores'])
         && audit.policyVersion is string
         && audit.evaluatedAt is string
@@ -90,6 +90,8 @@ service cloud.firestore {
         && (!('executionDose' in audit) || hasValidDose(audit.executionDose))
         && audit.candidateScores is list && audit.candidateScores.size() <= 64
         && (!('droppedContributorObjectives' in audit) || (audit.droppedContributorObjectives is list && audit.droppedContributorObjectives.size() <= 64))
+        && (!('primarySession' in audit) || hasValidSessionReferenceBinding(audit.primarySession))
+        && (!('additionalSessions' in audit) || (audit.additionalSessions is list && audit.additionalSessions.size() <= 16))
         && (!('externalPlan' in audit) || (
           audit.externalPlan is map
           && audit.externalPlan.keys().hasOnly(['planId', 'revision', 'sessionId', 'contentHash'])
@@ -104,7 +106,7 @@ service cloud.firestore {
     function hasValidRecommendation(userId, date) {
       return hasOwnedUserId(userId)
         && isDateDocument(date)
-        && request.resource.data.keys().hasOnly(['userId', 'date', 'templateId', 'templateTitle', 'category', 'modality', 'mode', 'engineVerdict', 'rationale', 'schemaVersion', 'createdAt', 'updatedAt', 'adjustment', 'prescription', 'adherence', 'recommendationAudit', 'revision'])
+        && request.resource.data.keys().hasOnly(['userId', 'date', 'templateId', 'templateTitle', 'category', 'modality', 'mode', 'engineVerdict', 'rationale', 'schemaVersion', 'createdAt', 'updatedAt', 'adjustment', 'prescription', 'primarySession', 'additionalSessions', 'adherence', 'recommendationAudit', 'revision'])
         && request.resource.data.keys().hasAll(['userId', 'date', 'templateId', 'templateTitle', 'category', 'modality', 'mode', 'rationale', 'schemaVersion', 'createdAt', 'updatedAt', 'adherence'])
         && request.resource.data.templateId is string
         && request.resource.data.templateTitle is string
@@ -118,6 +120,7 @@ service cloud.firestore {
         && request.resource.data.schemaVersion in [1, 2, 3]
         && (!('revision' in request.resource.data) || (request.resource.data.revision is int && request.resource.data.revision >= 1))
         && hasValidAdherence(request.resource.data.adherence)
+        && (!('primarySession' in request.resource.data) || hasValidSessionReferenceBinding(request.resource.data.primarySession))
         && (request.resource.data.schemaVersion != 3
           || ('recommendationAudit' in request.resource.data && hasValidRecommendationAudit(request.resource.data.recommendationAudit)));
     }
@@ -145,7 +148,11 @@ service cloud.firestore {
         && request.resource.data.rationale == resource.data.rationale
         && (('prescription' in request.resource.data) == ('prescription' in resource.data))
         && (!('prescription' in resource.data)
-          || (!('id' in resource.data.prescription) || request.resource.data.prescription.id == resource.data.prescription.id));
+          || (!('id' in resource.data.prescription) || request.resource.data.prescription.id == resource.data.prescription.id))
+        && (('primarySession' in request.resource.data) == ('primarySession' in resource.data))
+        && (!('primarySession' in resource.data) || request.resource.data.primarySession == resource.data.primarySession)
+        && (('additionalSessions' in request.resource.data) == ('additionalSessions' in resource.data))
+        && (!('additionalSessions' in resource.data) || request.resource.data.additionalSessions == resource.data.additionalSessions);
     }
 
     function archivesPriorRevision(userId, date) {
@@ -161,6 +168,10 @@ service cloud.firestore {
         && prior.rationale == resource.data.rationale
         && (!('engineVerdict' in resource.data) || (('engineVerdict' in prior) && prior.engineVerdict == resource.data.engineVerdict))
         && (!('prescription' in resource.data) || (('prescription' in prior) && (!('id' in resource.data.prescription) || prior.prescription.id == resource.data.prescription.id)))
+        && (('primarySession' in prior) == ('primarySession' in resource.data))
+        && (!('primarySession' in resource.data) || prior.primarySession == resource.data.primarySession)
+        && (('additionalSessions' in prior) == ('additionalSessions' in resource.data))
+        && (!('additionalSessions' in resource.data) || prior.additionalSessions == resource.data.additionalSessions)
         && (!('recommendationAudit' in resource.data) || (('recommendationAudit' in prior) && prior.recommendationAudit.policyVersion == resource.data.recommendationAudit.policyVersion && prior.recommendationAudit.evaluatedAt == resource.data.recommendationAudit.evaluatedAt));
     }
 
@@ -594,8 +605,8 @@ service cloud.firestore {
         && data.keys().hasAll(['userId', 'occurrenceId', 'date', 'authority', 'definitionRef', 'state', 'createdAt', 'updatedAt'])
         && data.occurrenceId == occurrenceId
         && isValidActivityDate(data.date)
-        // M2.2 constraint: only unplanned_log occurrences are permitted until M3.3 lands schedule/replace/additional
-        && data.authority == 'unplanned_log'
+        // M3.3: supports unplanned_log, schedule, replace_recommendation, and additional_session
+        && data.authority in ['unplanned_log', 'schedule', 'replace_recommendation', 'additional_session']
         && data.state in ['scheduled', 'active', 'superseded', 'completed', 'abandoned', 'missed']
         && data.definitionRef is map
         && data.definitionRef.keys().hasOnly(['definitionId', 'revision', 'contentHash'])
@@ -617,6 +628,24 @@ service cloud.firestore {
         && request.resource.data.definitionRef == resource.data.definitionRef
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['state', 'updatedAt']);
       allow delete: if isOwner(userId);
+    }
+
+    function hasValidExecutionPrescription(userId, prescriptionHash) {
+      let data = request.resource.data;
+      return hasOwnedUserId(userId)
+        && data.keys().hasOnly(['userId', 'schemaVersion', 'prescriptionHash', 'definitionHash', 'blocks', 'createdAt'])
+        && data.keys().hasAll(['userId', 'schemaVersion', 'prescriptionHash', 'definitionHash', 'blocks', 'createdAt'])
+        && data.prescriptionHash == prescriptionHash
+        && data.definitionHash is string
+        && data.schemaVersion == 1
+        && data.blocks is list
+        && data.createdAt is string;
+    }
+
+    match /users/{userId}/execution_prescriptions/{prescriptionHash} {
+      allow read: if isOwner(userId);
+      allow create: if hasValidExecutionPrescription(userId, prescriptionHash);
+      allow update, delete: if false;
     }
 
     function hasValidSessionExecution(userId, executionId) {
@@ -658,6 +687,15 @@ service cloud.firestore {
           && source.keys().hasAll(['kind', 'fixtureId'])
           && source.fixtureId is string)
       );
+    }
+
+    function hasValidSessionReferenceBinding(binding) {
+      return binding is map
+        && binding.keys().hasOnly(['sessionSource', 'occurrenceId', 'prescriptionHash'])
+        && binding.keys().hasAll(['sessionSource', 'prescriptionHash'])
+        && hasValidSessionSource(binding.sessionSource)
+        && binding.prescriptionHash is string && binding.prescriptionHash.size() > 0
+        && (!('occurrenceId' in binding) || (binding.occurrenceId is string && binding.occurrenceId.size() > 0));
     }
 
     function hasValidSessionEntry(executionId, entryId) {

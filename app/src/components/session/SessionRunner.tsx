@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import type { SessionDefinition, SessionEntry } from '../../sessions/models';
+import React, { useEffect, useRef, useState } from 'react';
+import type { SessionDefinition, SessionEntry, SessionReferenceBinding } from '../../sessions/models';
 import type { SessionStepSummary } from '../../workouts/strengthSessionEntry';
 import { useSessionRunner } from '../../hooks/useSessionRunner';
 import { resolveStepInputProfile } from '../../sessions/inputProfiles';
@@ -30,14 +30,18 @@ const AVAILABLE_FIXTURES: SessionDefinition[] = [
 
 interface SessionRunnerProps {
     userId: string;
+    /** A persisted M3 binding plus the exact snapshot-resolved definition to execute. */
+    initialSession?: { definition: SessionDefinition; binding: SessionReferenceBinding };
     onClose?: () => void;
 }
 
 export const SessionRunner: React.FC<SessionRunnerProps> = ({
     userId,
+    initialSession,
     onClose,
 }) => {
     const runner = useSessionRunner(userId, AVAILABLE_FIXTURES);
+    const initialLaunchAttempted = useRef(false);
     const [showCompletionSheet, setShowCompletionSheet] = useState<boolean>(false);
     const [showAbandonConfirmation, setShowAbandonConfirmation] = useState<boolean>(false);
     const [completionError, setCompletionError] = useState<string | null>(null);
@@ -45,12 +49,40 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
     const [editReps, setEditReps] = useState<string>('');
     const [editWeight, setEditWeight] = useState<string>('');
 
+    useEffect(() => {
+        if (!initialSession || runner.isRestoring || initialLaunchAttempted.current) return;
+        if (runner.execution?.state === 'in_progress'
+            && !runner.definition
+            && runner.execution.prescriptionHash === initialSession.binding.prescriptionHash) {
+            initialLaunchAttempted.current = true;
+            runner.restoreSessionDefinition(initialSession.definition)
+                .catch(() => { initialLaunchAttempted.current = false; });
+            return;
+        }
+        if (runner.execution) return;
+        initialLaunchAttempted.current = true;
+        runner.startSession(initialSession.definition, initialSession.binding.sessionSource, {
+            occurrenceId: initialSession.binding.occurrenceId,
+            prescriptionHash: initialSession.binding.prescriptionHash,
+        }).catch(() => {
+            initialLaunchAttempted.current = false;
+        });
+    }, [initialSession, runner]);
+
     // If no active session, show fixture picker to start an unplanned session
     if (runner.isRestoring) {
         return <div className="session-runner-container no-active"><p>Restoring an active session…</p></div>;
     }
 
     if (!runner.definition || !runner.execution || runner.execution.state !== 'in_progress') {
+        if (runner.execution?.state === 'in_progress') {
+            return (
+                <div className="session-runner-container no-active">
+                    <h2>Active session needs its stored prescription</h2>
+                    <p>Return from the session that started it so the exact snapshot can be restored. Starting another session is disabled.</p>
+                </div>
+            );
+        }
         return (
             <div className="session-runner-container no-active">
                 <header className="session-runner-header">
