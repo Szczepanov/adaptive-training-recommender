@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import type { RangeOrNumber, SessionDefinition, SessionEntry, SessionReferenceBinding, SessionStep } from '../../sessions/models';
+import type { RangeOrNumber, SessionDefinition, SessionEntry, SessionEntryPayload, SessionReferenceBinding, SessionStep } from '../../sessions/models';
 import type { SessionStepSummary } from '../../workouts/strengthSessionEntry';
 import { useSessionRunner } from '../../hooks/useSessionRunner';
 import { resolveStepInputProfile } from '../../sessions/inputProfiles';
@@ -9,6 +9,10 @@ import { DurationInputCard } from './inputs/DurationInputCard';
 import { DistanceInputCard } from './inputs/DistanceInputCard';
 import { CheckoffInputCard } from './inputs/CheckoffInputCard';
 import { SessionCompletionSheet } from './SessionCompletionSheet';
+import { sessionDefinitionService, type SessionDefinitionHeader } from '../../services/sessionDefinitionService';
+import { prepareUnplannedSessionLaunch } from '../../services/sessionAuthoringService';
+import { getGroupProgress } from '../../sessions/groupProgression';
+import { GroupProgress } from './GroupProgress';
 import './SessionRunner.css';
 
 // Import positive fixtures for quick unplanned session launch
@@ -71,10 +75,36 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
     const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
     const [editReps, setEditReps] = useState<string>('');
     const [editWeight, setEditWeight] = useState<string>('');
+    const [savedDefinitions, setSavedDefinitions] = useState<SessionDefinitionHeader[]>([]);
+    const [savedDefinitionsError, setSavedDefinitionsError] = useState<string | null>(null);
+    const [startingSavedDefinitionId, setStartingSavedDefinitionId] = useState<string | null>(null);
+    const [pendingGroupAdvance, setPendingGroupAdvance] = useState<{
+        blockIndex: number;
+        stepIndex: number;
+        entryCountBefore: number;
+    } | null>(null);
 
     useEffect(() => {
         initialLaunchAttempted.current = false;
     }, [initialSession?.binding.prescriptionHash]);
+
+    useEffect(() => {
+        let cancelled = false;
+        sessionDefinitionService.listDefinitionHeaders(userId).then(result => {
+            if (cancelled) return;
+            if (result.status === 'AVAILABLE') {
+                setSavedDefinitions(result.data);
+                setSavedDefinitionsError(null);
+            } else if (result.status === 'UNAVAILABLE') {
+                setSavedDefinitionsError('Saved sessions are temporarily unavailable.');
+            } else if (result.status === 'INVALID') {
+                setSavedDefinitionsError('A saved session has invalid data and cannot be listed.');
+            }
+        }).catch(() => {
+            if (!cancelled) setSavedDefinitionsError('Could not load saved sessions.');
+        });
+        return () => { cancelled = true; };
+    }, [userId]);
 
     useEffect(() => {
         if (!initialSession || runner.isRestoring || initialLaunchAttempted.current) return;
@@ -96,6 +126,58 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
             initialLaunchAttempted.current = false;
         });
     }, [initialSession, onInitialSessionHandled, runner]);
+
+    const startSavedDefinition = async (header: SessionDefinitionHeader) => {
+        setStartingSavedDefinitionId(header.definitionId);
+        setSavedDefinitionsError(null);
+        try {
+            const result = await sessionDefinitionService.getDefinitionRevision(userId, header.definitionId, header.latestRevision);
+            if (result.status !== 'AVAILABLE') {
+                throw new Error(result.status === 'MISSING' ? 'The latest saved revision is missing.' : 'The saved session cannot be read safely.');
+            }
+            const launch = await prepareUnplannedSessionLaunch(userId, result.data);
+            await runner.startSession(launch.definition, launch.binding.sessionSource, {
+                occurrenceId: launch.binding.occurrenceId,
+                prescriptionHash: launch.binding.prescriptionHash,
+            });
+        } catch (error) {
+            setSavedDefinitionsError(error instanceof Error ? error.message : 'Could not start the saved session.');
+        } finally {
+            setStartingSavedDefinitionId(null);
+        }
+    };
+
+    const handleEntrySubmit = async (payload: SessionEntryPayload) => {
+        if (!runner.definition || !runner.activeBlock || !runner.activeStep) return;
+
+        const blockIndex = runner.activeBlockIndex;
+        const stepIndex = runner.activeStepIndex;
+        const entryCountBefore = runner.entries.length;
+        await runner.logEntry(payload);
+        setPendingGroupAdvance({ blockIndex, stepIndex, entryCountBefore });
+    };
+
+    useEffect(() => {
+        if (!pendingGroupAdvance || !runner.definition || runner.entries.length <= pendingGroupAdvance.entryCountBefore) return;
+
+        setPendingGroupAdvance(null);
+        const block = runner.definition.blocks[pendingGroupAdvance.blockIndex];
+        if (!block) return;
+
+        const progress = getGroupProgress(block, runner.entries, pendingGroupAdvance.stepIndex);
+        if (!progress) return;
+
+        if (progress.nextStepIndex !== null) {
+            runner.selectStep(pendingGroupAdvance.blockIndex, progress.nextStepIndex);
+            return;
+        }
+
+        // A completed rotating group advances to the first step of the next non-empty block.
+        const nextBlockIndex = runner.definition.blocks.findIndex(
+            (candidate, index) => index > pendingGroupAdvance.blockIndex && candidate.steps.length > 0,
+        );
+        if (nextBlockIndex >= 0) runner.selectStep(nextBlockIndex, 0);
+    }, [pendingGroupAdvance, runner]);
 
     // If no active session, show fixture picker to start an unplanned session
     if (runner.isRestoring) {
@@ -121,6 +203,22 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                         {onBuildSession && <button type="button" className="start-fixture-btn secondary-authoring-btn" onClick={onBuildSession}>Build session</button>}
                     </div>}
                 </header>
+                {savedDefinitionsError && <p className="session-runner-error" role="alert">{savedDefinitionsError}</p>}
+                {savedDefinitions.length > 0 && <section className="saved-session-library" aria-labelledby="saved-session-library-title">
+                    <h3 id="saved-session-library-title">Your saved sessions</h3>
+                    <div className="fixture-grid">
+                        {savedDefinitions.map(header => <div key={header.definitionId} className="fixture-card">
+                            <div className="fixture-info">
+                                <span className="fixture-intent-badge">saved · rev {header.latestRevision}</span>
+                                <h3 className="fixture-title">{header.title}</h3>
+                                {header.dominantModality && <p className="fixture-summary">{header.dominantModality}</p>}
+                            </div>
+                            <button type="button" className="start-fixture-btn" disabled={startingSavedDefinitionId !== null} onClick={() => startSavedDefinition(header)}>
+                                {startingSavedDefinitionId === header.definitionId ? 'Starting…' : 'Start session'}
+                            </button>
+                        </div>)}
+                    </div>
+                </section>}
                 <div className="fixture-grid">
                     {AVAILABLE_FIXTURES.map(fixture => (
                         <div key={fixture.id} className="fixture-card">
@@ -185,6 +283,7 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
 
     const inputProfile = activeStep ? resolveStepInputProfile(activeStep) : 'repetition_mass';
     const activeEffort = activeStep ? formatEffort(activeStep) : null;
+    const activeBlock = runner.activeBlock;
 
     return (
         <div className="session-runner-container">
@@ -277,6 +376,14 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                             {activeStep.stopConditions.map(condition => <li key={condition}>Stop: {condition}</li>)}
                         </ul>
                     )}
+                    {activeBlock && (
+                        <GroupProgress
+                            block={activeBlock}
+                            entries={entries}
+                            activeStepIndex={runner.activeStepIndex}
+                            onSelectStep={stepIndex => runner.selectStep(runner.activeBlockIndex, stepIndex)}
+                        />
+                    )}
 
                     {/* Step Input Card */}
                     <div className="input-card-container">
@@ -284,25 +391,25 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                             <RepetitionInputCard
                                 key={activeStep.id}
                                 step={activeStep}
-                                onSubmit={payload => runner.logEntry(payload)}
+                                onSubmit={handleEntrySubmit}
                             />
                         ) : inputProfile === 'duration_hold' ? (
                             <DurationInputCard
                                 key={activeStep.id}
                                 step={activeStep}
-                                onSubmit={payload => runner.logEntry(payload)}
+                                onSubmit={handleEntrySubmit}
                             />
                         ) : inputProfile === 'distance_split' ? (
                             <DistanceInputCard
                                 key={activeStep.id}
                                 step={activeStep}
-                                onSubmit={payload => runner.logEntry(payload)}
+                                onSubmit={handleEntrySubmit}
                             />
                         ) : (
                             <CheckoffInputCard
                                 key={activeStep.id}
                                 step={activeStep}
-                                onSubmit={payload => runner.logEntry(payload)}
+                                onSubmit={handleEntrySubmit}
                             />
                         )}
                     </div>

@@ -277,8 +277,8 @@ rewritten as an outcome; an in-progress item retains its remaining acceptance wo
 | Item | Title | Status | Blocked by |
 |---|---|:---:|---|
 | M0.1 | Successor ADR and authority contract | `[x]` | — |
-| M0.2 | Canonical schema examples and fixture corpus | `[-]` | M2.4 runner integration for final acceptance |
-| M0.3 | Dependency and compatibility contracts | `[-]` | M2 implementation for final compatibility proof |
+| M0.2 | Canonical schema examples and fixture corpus | `[x]` | — |
+| M0.3 | Dependency and compatibility contracts | `[x]` | — |
 | M1.1 | Persistent exercise navigator and resume | `[x]` | — |
 | M1.2 | Performed-set correction and undo | `[x]` | — |
 | M1.3 | Completion and abandonment sheets | `[x]` | — |
@@ -293,15 +293,15 @@ rewritten as an outcome; an in-progress item retains its remaining acceptance wo
 | M2.5 | Typed repetition/time/distance/check-off inputs | `[x]` | — |
 | M2.6 | General completion, comparison and response | `[x]` | — |
 | M2.7 | Strength v1 compatibility read model | `[x]` | — |
-| M3.1 | Canonical serialization, hashing and source adapters | `[ ]` | — |
-| M3.2 | Recommendation source/occurrence persistence and replay | `[ ]` | — |
-| M3.3 | Save/schedule/replace/add/start intent flow | `[ ]` | — |
-| M3.4 | Catalog-to-definition adapter and v1 runner retirement | `[ ]` | — |
-| M3.5 | Bounded exercise/drill facet vocabulary | `[ ]` | — |
-| M3.6 | External plan/session schema v2 adapter | `[ ]` | — |
-| M3.7 | Full semantic import preview and diff | `[ ]` | — |
-| M3.8 | Manual block-first session builder | `[ ]` | — |
-| M4.1 | Group execution modes | `[ ]` | M2.5 |
+| M3.1 | Canonical serialization, hashing and source adapters | `[-]` | Exact catalog-source snapshot resolution |
+| M3.2 | Recommendation source/occurrence persistence and replay | `[-]` | Source-byte replay and Phase 9.0 coordination |
+| M3.3 | Save/schedule/replace/add/start intent flow | `[-]` | Authority-bearing occurrence/recommendation integration |
+| M3.4 | Catalog-to-definition adapter and v1 runner retirement | `[-]` | Generic catalog launch/resume and v1 cutover regression suite |
+| M3.5 | Bounded exercise/drill facet vocabulary | `[x]` | — |
+| M3.6 | External plan/session schema v2 adapter | `[ ]` | M3.1 |
+| M3.7 | Full semantic import preview and diff | `[-]` | M3.6 semantic source and revision diff |
+| M3.8 | Manual block-first session builder | `[-]` | Authored option sets and fixture-equivalence acceptance |
+| M4.1 | Group execution modes | `[x]` | M2.5 |
 | M4.2 | Recorded athlete choices and alternatives | `[ ]` | M4.1, M3.5 |
 | M4.3 | Companion occurrence and duplicate reconciliation | `[ ]` | M2.4, M3.3 |
 | M5.1 | Occurrence-linked response generalization | `[ ]` | M1.7, M2.6, M4.3 |
@@ -347,7 +347,7 @@ ADR-0019 D-SHIM prospectively and records D-MSESSION through D-MPOLICY. It defin
 
 The living `docs/architecture/recommendation-engine.md` remains unchanged until code lands.
 
-### M0.2 `[-]` Canonical schema examples and fixture corpus
+### M0.2 `[x]` Canonical schema examples and fixture corpus
 
 **Change.** Add reviewed JSON fixtures under `app/src/sessions/fixtures/` for:
 
@@ -377,11 +377,12 @@ runner, not only by tests — that is what makes the builder deferrable (C7).
 shared corpus for validator, import, runner and visual tests, and at least one fixture is
 startable by the M2.4 runner with no authoring UI present.
 
-**Progress (2026-08-18).** The reviewed positive and negative fixture corpus, its canonical
-vocabulary guard, and fixture-only architecture tests are present in `app/src/sessions/`.
-Runner loading and use of the corpus remain M2.4 work, so this item is not finished.
+**Outcome (2026-08-18).** The reviewed positive and negative fixture corpus, its canonical
+vocabulary guard and fixture-only architecture tests are present in `app/src/sessions/`. The
+general runner loads all seven positive definitions, including the separately executable recovery
+spin; the invalid corpus remains rejected and never runner-loadable.
 
-### M0.3 `[-]` Dependency and compatibility contracts
+### M0.3 `[x]` Dependency and compatibility contracts
 
 **Change.** Add architecture tests that pin dependency direction before new modules spread:
 
@@ -403,9 +404,12 @@ Define read compatibility for external plan v1, `DailyRecommendation` v1–v3 an
 **Done when.** Tests fail on a sessions→optimizer/planner dependency and a compatibility
 matrix is recorded in the ADR and here.
 
-**Progress (2026-08-18).** `sessions/architecture.test.ts` pins the new session-component
-boundary and the ADR records the compatibility matrix. The required engine/external
-architecture extensions and v1 read-compatibility implementation remain M2 work.
+**Outcome (2026-08-18).** `sessions/architecture.test.ts` rejects runtime paths from session
+domain modules, session UI, and session persistence services to optimizer/planner/rules
+internals. `engine/externalArchitecture.test.ts` retains the one-way external-adjudication and
+evidence-only boundaries. ADR-0023's compatibility matrix records catalog, external v1/v2,
+historical audit and Strength v1 read behavior; `legacyStrengthAdapter.ts` supplies the lasting
+Strength v1 read path.
 
 ---
 
@@ -452,7 +456,7 @@ reloads and advertises an in-progress session globally; and the active exercise 
 previous comparable performance. Full history is now behind a disclosure rather than in the
 live logging flow.
 
-### M1.6 `[-]` Session visual, interaction and offline acceptance — *carried*
+### M1.6 `[x]` Session visual, interaction and offline acceptance — *carried*
 
 **Change.** Extend `VisualScreen` in `visual/fixtures.ts` — currently
 `'home' | 'checkin' | 'goals' | 'data' | 'constraints' | 'preferences'` — with a **`session`**
@@ -561,24 +565,32 @@ repetition entries produce the same results through the shared read boundary.
 **Milestone exit.** An imported or built session can be scheduled, can replace or add to
 today's recommendation, and that decision replays against exact stored bytes.
 
-**Implementation review (2026-08-18).** M3 has partial scaffolding only: canonical content
-hashing, a write-once prescription store, source-hash-verifying manual/external resolution,
-and early catalog/manual UI components exist. None of M3.1–M3.8 is complete. In particular,
-source bindings are not yet resolved during replay, and destinations are not connected to the
-recommendation authority. The temporary attempt to retire the Strength runner was reverted:
-the generic runner has not yet acquired the catalog-source launch/resume contract required by
-M3.4. Keep the M1 Strength route in service until that contract and its regression suite land.
+**Implementation review (2026-08-18).** M3 has useful partial delivery, reflected in the
+status table above: deterministic definition/prescription hashes, a write-once prescription
+store, source-hash-verifying manual/external resolution, catalog adapters, source-binding fields
+on recommendations, a content preview, and basic manual/JSON authoring all exist. None grants
+the milestone exit yet. In particular, source bindings are not resolved from stored prescription
+bytes during replay, and destinations are not connected to recommendation authority. The generic
+runner also lacks the catalog-source launch/resume contract required by M3.4, so the M1 Strength
+route remains in service until that contract and its regression suite land.
 
 **Authoring MVP (2026-08-18).** The Sessions screen now offers normalized
 `SessionDefinition` JSON import and a manual block editor. Both validate and preview the
 definition, save an immutable user-owned revision, and can start it only as an
-`unplanned_log` execution with a content-addressed execution prescription. This is not full
+`unplanned_log` execution with a content-addressed execution prescription. Saved revisions are
+listed on the Sessions screen and use the same launch path. This is not full
 M3.6–M3.8: it does not yet accept `external-plan@2`, calculate a semantic revision diff,
 support builder reorder/duplicate or advanced authoring fields, or grant schedule/replacement/
 additional-session authority. Those choices stay unavailable rather than creating records the
 recommendation and replay paths cannot yet interpret.
 
-### M3.1 `[ ]` Canonical serialization, hashing and source adapters
+### M3.1 `[-]` Canonical serialization, hashing and source adapters
+
+**Progress (2026-08-18).** `sessionDefinitionHash.ts`, `catalogSessionAdapter.ts`,
+`externalSessionAdapter.ts` and `sessionDefinitionResolver.ts` exist with deterministic hash and
+source-hash tests. The unresolved portion is exact evaluated-catalog snapshot resolution: the
+resolver currently rebuilds a catalog definition from the live catalog rather than resolving the
+stored execution prescription that was selected.
 
 **Change.** Implement deterministic serialization and hashing for normalized definitions and
 execution prescriptions. Add resolvers for catalog, external v2 and manual sources. External
@@ -592,7 +604,12 @@ patterns from `engine/externalPlanHash.ts`.
 **Done when.** Key ordering does not change a hash, any material dose or option change does,
 and identical manual and imported normalized content produce identical semantic output.
 
-### M3.2 `[ ]` Recommendation source/occurrence persistence and replay
+### M3.2 `[-]` Recommendation source/occurrence persistence and replay
+
+**Progress (2026-08-18).** `primarySession`/`additionalSessions` are typed, validated, preserved
+through recommendation persistence and archival revisions, and carried into provenance. A
+write-once execution-prescription service also exists. Replay does not yet retrieve and verify
+those prescription bytes, so this remains partial and must not be used to grant authority.
 
 **Current.** `Recommendation.externalPrescription` is derived in `rules.ts` on every dashboard
 load and never persisted; `DailyRecommendation` persists the catalog `prescription` only.
@@ -626,7 +643,12 @@ document alone; changing one prescribed action creates and archives a decision r
 replay fails on hash mismatch and passes against exact stored bytes; and the recommendation
 document gains no nested executable content.
 
-### M3.3 `[ ]` Save/schedule/replace/add/start intent flow
+### M3.3 `[-]` Save/schedule/replace/add/start intent flow
+
+**Progress (2026-08-18).** `SessionDestinationSheet` implements **Save only** and **Start
+unplanned**. It deliberately withholds Schedule, Replace and Add because their occurrence and
+replay authority is not implemented. The two available paths have distinct persisted results;
+the authority-bearing paths remain pending.
 
 **Change.** After authoring or import, show explicit destinations with their engine effect
 stated beside them:
@@ -650,7 +672,11 @@ retroactively become a recommendation.
 selection; replace is replayable; add cannot bypass feasibility; unplanned affects history
 only after completion.
 
-### M3.4 `[ ]` Catalog-to-definition adapter and v1 runner retirement
+### M3.4 `[-]` Catalog-to-definition adapter and v1 runner retirement
+
+**Progress (2026-08-18).** A catalog adapter and unit test exist, but the generic runner cannot
+yet start and restore a catalog-source execution from its immutable selected snapshot. The v1
+Strength runner is therefore intentionally retained.
 
 **Change.** Adapt `WorkoutPrescription.adjustedBlocks` into the same definition/execution shape
 used by authored sources. Preserve catalog ID/version, display targets, variants, technical
@@ -668,7 +694,13 @@ composition and tests.
 and interaction suite, the same runner starts catalog, external and manual fixtures with
 source identity intact, and exactly one runner component remains.
 
-### M3.5 `[ ]` Bounded exercise/drill facet vocabulary
+### M3.5 `[x]` Bounded exercise/drill facet vocabulary
+
+**Outcome (2026-08-18).** `ExerciseDefinition.facets` provides a bounded optional vocabulary for
+family/variant, dose/load/laterality, measurement profile, field domains and coarse tissue/safety
+labels. Catalog validation rejects invalid vocabularies, duplicate field domains and a timed-sprint
+profile without distance support. The reviewed fixture movements now resolve to catalog entries;
+the intentionally custom Spanish-squat fixture remains visibly unresolved and metadata-free.
 
 **Change.** Extend `ExerciseDefinition` with a minimal optional metadata layer proven by the
 M0.2 fixtures:
@@ -710,7 +742,12 @@ tests.
 **Done when.** The M0.2 external fixtures validate; v1 remains importable; ranges, sides,
 option sets and companions survive hash and reload; unknown keys fail.
 
-### M3.7 `[ ]` Full semantic import preview and diff
+### M3.7 `[-]` Full semantic import preview and diff
+
+**Progress (2026-08-18).** `SessionDefinitionPreview` shows normalized blocks and groups, dose,
+effort, rest, tempo, optionality, unresolved movement status, authored option triggers/effects,
+and separately executable companions for JSON/manual definitions. It does not yet preview
+`external-plan@2` or calculate a revision diff.
 
 **Change.** Replace the calendar-only preview with expandable session content: blocks, resolved
 identities and confidence, dose/load/effort/rest/tempo, side and optionality, option sets and
@@ -724,7 +761,14 @@ revision diff flags every behavior-changing field.
 to bilateral, optional to required, or end-block to reduce-load is visible before confirm; and
 the preview shows every supplied workout step rather than one summary line.
 
-### M3.8 `[ ]` Manual block-first session builder
+### M3.8 `[-]` Manual block-first session builder
+
+**Progress (2026-08-18).** The current mobile-capable editor supports title, modality, duration,
+notes, blocks, group modes and rounds, catalog/free-text movement selection, repetition/timed/
+distance/check-off doses, RPE, rest, laterality, tempo, notes, stop conditions, optionality,
+preview, and ID-stable block/step reordering and duplication. Pure `sessionDraft.ts` tests pin
+the structural operations. Authored option sets, richer load/effort fields, issue focus and
+full fixture-equivalence/mobile accessibility acceptance remain pending.
 
 **Deliberately last (C7).** Until this lands, M0.2 fixtures plus M3.6 JSON import cover
 authoring. If the athlete who owns this repository finds those sufficient after M3.7, **not
@@ -749,18 +793,18 @@ that fixtures plus import proved sufficient and the builder is deferred.
 
 ## M4 — structure and choices
 
-### M4.1 `[ ]` Group execution modes
+### M4.1 `[x]` Group execution modes
 
-**Change.** Render sequential, circuit, alternating and superset progress in the runner: round
-counters, next-step-in-rotation, and per-round completion that does not require the athlete to
-re-navigate between paired movements.
+**Implemented (2026-08-18).** The runner now renders circuit, alternating and superset state as
+a round counter and a next-movement control. After an entry is logged, it advances within the
+authored rotation; after the group completes, it advances to the next non-empty block. Sequential,
+density and AMRAP blocks retain their existing athlete-controlled navigation.
 
-**Files.** `components/session/SessionRunner.tsx`, `sessions/sessionExecutionReducer.ts`, new
-`components/session/GroupProgress.tsx` and tests.
-
-**Done when.** The upper-body absorption fixture's alternating and superset blocks and the
-warm-up circuit execute without the athlete tapping back into the navigator between paired
-steps.
+The pure `groupProgression.ts` derives progress solely from the definition and persisted entries:
+block-level `rounds` is honoured when present, optional movements do not block completion, and
+uneven step targets finish without inventing a skipped entry. `GroupProgress.tsx` renders that
+state, while `SessionRunner.tsx` performs the navigation. Tests cover alternating, circuit,
+superset, explicit rounds and optional movements.
 
 ### M4.2 `[ ]` Recorded athlete choices and alternatives
 

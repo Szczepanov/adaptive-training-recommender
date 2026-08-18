@@ -76,6 +76,28 @@ export type Equipment =
 
 export type LoadLevel = 1 | 2 | 3 | 4 | 5;
 
+/** Bounded metadata used to validate authored session references, never to infer coaching intent. */
+export type ExerciseFamily = 'cycling' | 'running' | 'strength' | 'field_drill' | 'mobility' | 'recovery';
+export type ExerciseDoseKind = 'repetition' | 'duration' | 'distance' | 'checkoff';
+export type ExerciseLoadKind = 'bodyweight' | 'mass' | 'band' | 'percent_max' | 'percent_one_rm' | 'descriptive' | 'unloaded';
+export type ExerciseLaterality = 'bilateral' | 'per_side' | 'alternating';
+export type ExerciseMeasurementProfile = 'repetitions' | 'duration' | 'distance' | 'timed_sprint' | 'checkoff';
+export type FieldDomainFacet = 'acceleration' | 'max_velocity' | 'braking' | 'change_of_direction' | 'elastic';
+
+export interface ExerciseFacets {
+  family: ExerciseFamily;
+  variant?: string;
+  allowedDoseKinds: ExerciseDoseKind[];
+  allowedLoadKinds: ExerciseLoadKind[];
+  allowedLaterality: ExerciseLaterality[];
+  measurementProfile: ExerciseMeasurementProfile;
+  /** Field-only exposure tags. They are descriptive metadata, not a load model. */
+  fieldDomains?: FieldDomainFacet[];
+  /** Coarse heuristic labels retained separately from diagnosis or clinical claims. */
+  tissueDemand?: string[];
+  safetyTags?: string[];
+}
+
 export interface ExerciseDefinition {
   id: string;
   version: number;
@@ -89,6 +111,8 @@ export interface ExerciseDefinition {
   coordinationDemand: 'low' | 'moderate' | 'high';
   contraindicationTags: string[];
   instruction: string;
+  /** Optional for catalog compatibility; new multidomain fixture movements declare it. */
+  facets?: ExerciseFacets;
 }
 
 export type StepDuration =

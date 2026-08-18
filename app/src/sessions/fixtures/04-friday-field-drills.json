@@ -30,10 +30,7 @@
         {
           "kind": "exercise",
           "id": "step-accel-15m",
-          "exerciseRef": {
-            "kind": "unresolved_free_text",
-            "name": "15 m Sprint"
-          },
+          "exerciseRef": { "kind": "catalog", "exerciseId": "sprint_15m" },
           "dose": {
             "kind": "distance",
             "sets": 4,
@@ -49,8 +46,7 @@
           "rest": {
             "min": 90,
             "max": 120
-          },
-          "resolutionNote": "Not in the catalog. Loggable by name; asserts no safety, cost, stimulus, muscle-split, PR or 1RM semantics (ADR-0023 D-MSESSION; plan M3.5 adds it)."
+          }
         }
       ]
     },
@@ -63,10 +59,7 @@
         {
           "kind": "exercise",
           "id": "step-cod-left-right",
-          "exerciseRef": {
-            "kind": "unresolved_free_text",
-            "name": "Pro-Agility Shuttle (5-10-5)"
-          },
+          "exerciseRef": { "kind": "catalog", "exerciseId": "pro_agility_5_10_5" },
           "dose": {
             "kind": "distance",
             "sets": 3,
@@ -79,8 +72,7 @@
           "rest": {
             "min": 120,
             "max": 150
-          },
-          "resolutionNote": "Not in the catalog. Loggable by name; asserts no safety, cost, stimulus, muscle-split, PR or 1RM semantics (ADR-0023 D-MSESSION; plan M3.5 adds it)."
+          }
         }
       ]
     }

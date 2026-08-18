@@ -34,7 +34,7 @@ export function VisualReviewApp({ scenario }: VisualReviewAppProps) {
   };
 
   return (
-    <div className="app-container">
+    <div className="app-container" data-visual-scenario={scenario.id}>
       <header className="app-header">
         <div className="header-brand">
           <h1>Adaptive Training</h1>

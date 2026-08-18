@@ -123,6 +123,45 @@ export class SessionDefinitionService {
         }
     }
 
+    async listDefinitionHeaders(userId: string): Promise<DataState<SessionDefinitionHeader[]>> {
+        try {
+            const snap = await getDocs(collection(this.db, 'users', userId, 'session_definitions'));
+            const headers: SessionDefinitionHeader[] = [];
+            for (const document of snap.docs) {
+                const data = document.data() as Partial<SessionDefinitionHeader>;
+                const latestRevision = data.latestRevision;
+                if (
+                    data.userId !== userId
+                    || data.definitionId !== document.id
+                    || typeof data.title !== 'string'
+                    || !Number.isInteger(latestRevision)
+                    || typeof data.createdAt !== 'string'
+                    || typeof data.updatedAt !== 'string'
+                ) {
+                    return { status: 'INVALID', issues: [{ code: 'invalid-header', documentPath: document.ref.path }] };
+                }
+                headers.push({
+                    userId,
+                    definitionId: data.definitionId,
+                    title: data.title,
+                    latestRevision: latestRevision as number,
+                    ...(typeof data.dominantModality === 'string' ? { dominantModality: data.dominantModality } : {}),
+                    createdAt: data.createdAt,
+                    updatedAt: data.updatedAt,
+                });
+            }
+            return {
+                status: 'AVAILABLE',
+                data: headers.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
+                revision: null,
+            };
+        } catch (err: unknown) {
+            const code = (err as { code?: string })?.code;
+            if (code === 'permission-denied') throw err;
+            return { status: 'UNAVAILABLE', operation: 'listDefinitionHeaders', retryable: true };
+        }
+    }
+
     async listRevisions(userId: string, definitionId: string): Promise<number[]> {
         const coll = collection(this.db, 'users', userId, 'session_definitions', definitionId, 'revisions');
         const snap = await getDocs(coll);

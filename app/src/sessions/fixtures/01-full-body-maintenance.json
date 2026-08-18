@@ -170,10 +170,7 @@
         {
           "kind": "exercise",
           "id": "step-str-1",
-          "exerciseRef": {
-            "kind": "unresolved_free_text",
-            "name": "Back Squat"
-          },
+          "exerciseRef": { "kind": "catalog", "exerciseId": "back_squat" },
           "dose": {
             "kind": "repetition",
             "sets": 3,
@@ -184,7 +181,7 @@
           },
           "load": {
             "kind": "descriptive",
-            "display": "Use the last reviewed technically sound working load; this unresolved movement has no 1RM authority."
+            "display": "Use the last reviewed technically sound working load."
           },
           "effort": {
             "kind": "rir",
@@ -196,8 +193,7 @@
           "rest": {
             "min": 120,
             "max": 180
-          },
-          "resolutionNote": "Not in the catalog. Loggable by name; asserts no safety, cost, stimulus, muscle-split, PR or 1RM semantics (ADR-0023 D-MSESSION; plan M3.5 adds it)."
+          }
         },
         {
           "kind": "exercise",

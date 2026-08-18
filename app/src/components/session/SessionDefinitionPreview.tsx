@@ -1,5 +1,5 @@
 import React from 'react';
-import type { RangeOrNumber, SessionDefinition, SessionStep } from '../../sessions/models';
+import type { RangeOrNumber, SessionChoiceAction, SessionDefinition, SessionStep } from '../../sessions/models';
 import './SessionDefinitionPreview.css';
 
 interface SessionDefinitionPreviewProps {
@@ -27,6 +27,18 @@ function effortText(step: SessionStep): string | null {
     if (effort.rpe !== undefined) return `RPE ${formatRange(effort.rpe)}`;
     if (effort.rir !== undefined) return `${formatRange(effort.rir)} RIR`;
     return null;
+}
+
+function actionText(action: SessionChoiceAction): string {
+    switch (action.kind) {
+        case 'select_alternative': return `Use alternative ${action.alternativeId}`;
+        case 'reduce_load_percent': return `Reduce load ${action.percent}%`;
+        case 'reduce_sets': return `Use ${action.sets} sets`;
+        case 'reduce_reps': return `Use ${action.reps} reps`;
+        case 'omit_step': return 'Omit this movement';
+        case 'end_block': return 'End this block';
+        case 'end_session': return 'End session';
+    }
 }
 
 export const SessionDefinitionPreview: React.FC<SessionDefinitionPreviewProps> = ({
@@ -57,7 +69,7 @@ export const SessionDefinitionPreview: React.FC<SessionDefinitionPreviewProps> =
                     <section key={block.id ?? bIdx} className="preview-block-card">
                         <div className="preview-block-header">
                             <h4>{block.title ?? `Block ${bIdx + 1}`}</h4>
-                            <span className="block-role-tag">{block.role}</span>
+                            <span className="block-role-tag">{block.role} · {block.executionMode}{block.rounds !== undefined ? ` · ${formatRange(block.rounds)} rounds` : ''}</span>
                         </div>
                         <ul className="preview-steps-list">
                             {block.steps.map((step, sIdx) => {
@@ -87,9 +99,21 @@ export const SessionDefinitionPreview: React.FC<SessionDefinitionPreviewProps> =
                                 </li>;
                             })}
                         </ul>
+                        {block.optionSets && block.optionSets.length > 0 && <div className="preview-option-sets">
+                            <h5>Authored choices</h5>
+                            {block.optionSets.map(choice => <section key={choice.id} className="preview-option-set">
+                                <p><strong>When:</strong> {choice.trigger.description}</p>
+                                <ul>{choice.options.map(option => <li key={option.id}><strong>{option.label}</strong>{option.actions.length > 0 && ` — ${option.actions.map(actionText).join('; ')}`}</li>)}</ul>
+                            </section>)}
+                        </div>}
                     </section>
                 ))}
             </div>
+
+            {definition.companionSessions && definition.companionSessions.length > 0 && <section className="preview-companions">
+                <h4>Separate companion sessions</h4>
+                <ul>{definition.companionSessions.map(companion => <li key={companion.id}><strong>{companion.definitionRef}</strong>{companion.optional ? ' (optional)' : ''}{companion.note ? ` — ${companion.note}` : ''}</li>)}</ul>
+            </section>}
 
             <div className="preview-actions">
                 {onStart && (

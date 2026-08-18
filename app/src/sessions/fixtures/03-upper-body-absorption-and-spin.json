@@ -199,13 +199,12 @@
         {
           "kind": "exercise",
           "id": "side-plank",
-          "exerciseRef": { "kind": "unresolved_free_text", "name": "Side Plank" },
+          "exerciseRef": { "kind": "catalog", "exerciseId": "side_plank" },
           "dose": { "kind": "duration", "sets": 2, "seconds": { "min": 20, "max": 30 } },
           "laterality": "per_side",
           "rest": { "min": 30, "max": 45 },
           "optional": true,
-          "notes": "Skip when the Copenhagen planks already feel sufficient.",
-          "resolutionNote": "Not yet in the exercise catalog. Loggable by name; it asserts no safety, cost, stimulus, muscle-split, PR or 1RM semantics."
+          "notes": "Skip when the Copenhagen planks already feel sufficient."
         }
       ]
     },
@@ -237,12 +236,11 @@
         {
           "kind": "exercise",
           "id": "optional-quad-set",
-          "exerciseRef": { "kind": "unresolved_free_text", "name": "Quad Set" },
+          "exerciseRef": { "kind": "catalog", "exerciseId": "quad_set" },
           "dose": { "kind": "duration", "sets": 2, "seconds": 20 },
           "rest": { "min": 30, "max": 30 },
           "optional": true,
-          "notes": "Gentle activation only; omit if it is not useful today.",
-          "resolutionNote": "Not yet in the exercise catalog. Loggable by name; it asserts no safety, cost, stimulus, muscle-split, PR or 1RM semantics."
+          "notes": "Gentle activation only; omit if it is not useful today."
         }
       ]
     }

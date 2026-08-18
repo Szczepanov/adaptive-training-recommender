@@ -144,6 +144,50 @@
     text-transform: uppercase;
 }
 
+.builder-order-controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+.builder-order-controls button,
+.draft-order-btn {
+    min-height: 36px;
+    padding: 0.25rem 0.45rem;
+    border: 1px solid #475569;
+    border-radius: 4px;
+    background: #1e293b;
+    color: #cbd5e1;
+    cursor: pointer;
+    font-size: 0.75rem;
+}
+
+.builder-order-controls button:disabled,
+.draft-order-btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.45;
+}
+
+.builder-order-controls label {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    color: #94a3b8;
+    font-size: 0.75rem;
+}
+
+.builder-order-controls input {
+    width: 5rem;
+    min-height: 36px;
+    box-sizing: border-box;
+    padding: 0.35rem 0.45rem;
+    border: 1px solid #475569;
+    border-radius: 4px;
+    background: #0f172a;
+    color: #f8fafc;
+}
+
 .builder-steps-list {
     display: flex;
     flex-direction: column;
@@ -233,6 +277,51 @@
     color: #cbd5e1;
 }
 
+.builder-advanced-fields {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 0.5rem;
+    padding-top: 0.25rem;
+    color: #94a3b8;
+    font-size: 0.75rem;
+}
+
+.builder-advanced-fields summary {
+    grid-column: 1 / -1;
+    cursor: pointer;
+    color: #cbd5e1;
+    font-weight: 600;
+}
+
+.builder-advanced-fields label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+}
+
+.builder-advanced-fields label:first-of-type {
+    flex-direction: row;
+    align-items: center;
+}
+
+.builder-advanced-fields input,
+.builder-advanced-fields select,
+.builder-advanced-fields textarea {
+    box-sizing: border-box;
+    width: 100%;
+    min-height: 36px;
+    padding: 0.35rem 0.45rem;
+    border: 1px solid #475569;
+    border-radius: 4px;
+    background: #1e293b;
+    color: #f8fafc;
+}
+
+.builder-advanced-fields label:first-of-type input {
+    width: auto;
+    min-height: 0;
+}
+
 .builder-actions {
     margin-top: 0.75rem;
 }
@@ -252,4 +341,19 @@
 
 .save-and-proceed-btn:hover {
     background: #1d4ed8;
+}
+
+@media (max-width: 520px) {
+    .manual-session-builder {
+        padding: 1rem;
+    }
+
+    .form-row,
+    .block-meta-row {
+        flex-direction: column;
+    }
+
+    .builder-step-row {
+        flex-wrap: wrap;
+    }
 }

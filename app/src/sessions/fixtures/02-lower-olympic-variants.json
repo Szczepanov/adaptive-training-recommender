@@ -104,10 +104,7 @@
         {
           "kind": "exercise",
           "id": "step-clean-main",
-          "exerciseRef": {
-            "kind": "unresolved_free_text",
-            "name": "Power Clean (from the floor)"
-          },
+          "exerciseRef": { "kind": "catalog", "exerciseId": "power_clean_from_floor" },
           "dose": {
             "kind": "repetition",
             "sets": 5,
@@ -118,7 +115,7 @@
           },
           "load": {
             "kind": "descriptive",
-            "display": "Use the last reviewed technically crisp working load; this unresolved movement has no 1RM authority."
+            "display": "Use the last reviewed technically crisp working load."
           },
           "effort": {
             "kind": "rpe",
@@ -131,8 +128,7 @@
           "rest": {
             "min": 120,
             "max": 180
-          },
-          "resolutionNote": "Not in the catalog. Loggable by name; asserts no safety, cost, stimulus, muscle-split, PR or 1RM semantics (ADR-0023 D-MSESSION; plan M3.5 adds it)."
+          }
         }
       ]
     }

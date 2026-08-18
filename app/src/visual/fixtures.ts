@@ -461,34 +461,10 @@ export const VISUAL_SCENARIOS: VisualScenario[] = [
   },
   {
     id: 'session-runner-in-progress',
-    title: 'Session Runner — active strength session',
+    title: 'Session Runner — grouped execution',
     screen: 'session',
-    expectedFocus: ['Step navigation, logged set list with sync status, and responsive mobile layout are clear.'],
-    fixture: buildFixture({
-      strengthSession: {
-        userId: VISUAL_USER_ID,
-        sessionId: 'visual-strength-session-1',
-        date: VISUAL_DATE,
-        startedAt: '2026-09-12T08:15:00.000+02:00',
-        updatedAt: '2026-09-12T08:25:00.000+02:00',
-        state: 'in_progress',
-        sourceRecommendationDate: VISUAL_DATE,
-        exercises: [
-          {
-            exerciseId: 'hang_power_clean',
-            sets: [
-              { setIndex: 1, reps: 3, weightKg: 50, isWarmup: true, completedAt: '2026-09-12T08:18:00.000+02:00' },
-              { setIndex: 2, reps: 3, weightKg: 70, isWarmup: false, completedAt: '2026-09-12T08:22:00.000+02:00', gauge: { scale: 'rir', value: 3 } },
-            ],
-          },
-          {
-            exerciseId: 'bench_press',
-            sets: [],
-          },
-        ],
-        schemaVersion: 1,
-      },
-    }),
+    expectedFocus: ['The runner shows the current round and advances through a grouped rotation without horizontal overflow.'],
+    fixture: standardFixture,
   },
 ];
 

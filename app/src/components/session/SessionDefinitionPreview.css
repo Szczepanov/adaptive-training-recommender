@@ -185,6 +185,37 @@
     margin-top: 0.5rem;
 }
 
+.preview-option-sets,
+.preview-companions {
+    margin-top: 0.75rem;
+    padding: 0.75rem;
+    border: 1px solid #475569;
+    border-radius: 6px;
+    background: rgba(30, 41, 59, 0.65);
+}
+
+.preview-option-sets h5,
+.preview-companions h4,
+.preview-option-set p,
+.preview-option-set ul,
+.preview-companions ul {
+    margin: 0;
+}
+
+.preview-option-set {
+    margin-top: 0.65rem;
+    color: #cbd5e1;
+    font-size: 0.85rem;
+}
+
+.preview-option-set ul,
+.preview-companions ul {
+    margin-top: 0.35rem;
+    padding-left: 1.2rem;
+    color: #94a3b8;
+    font-size: 0.85rem;
+}
+
 .preview-actions .btn-primary {
     flex: 2;
     background: #2563eb;

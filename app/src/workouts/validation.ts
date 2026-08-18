@@ -1,6 +1,7 @@
 import type {
   Equipment,
   ExerciseDefinition,
+  ExerciseFacets,
   IntensityTarget,
   WorkoutDefinition,
   WorkoutModality,
@@ -30,6 +31,30 @@ const compatibleExerciseModalities: Record<WorkoutModality, WorkoutModality[]> =
 };
 
 const hotelGymEquipment = new Set<Equipment>(['dumbbells', 'bench', 'treadmill', 'bodyweight']);
+const exerciseFamilies = new Set<ExerciseFacets['family']>(['cycling', 'running', 'strength', 'field_drill', 'mobility', 'recovery']);
+const exerciseDoseKinds = new Set<ExerciseFacets['allowedDoseKinds'][number]>(['repetition', 'duration', 'distance', 'checkoff']);
+const exerciseLoadKinds = new Set<ExerciseFacets['allowedLoadKinds'][number]>(['bodyweight', 'mass', 'band', 'percent_max', 'percent_one_rm', 'descriptive', 'unloaded']);
+const exerciseLaterality = new Set<ExerciseFacets['allowedLaterality'][number]>(['bilateral', 'per_side', 'alternating']);
+const measurementProfiles = new Set<ExerciseFacets['measurementProfile']>(['repetitions', 'duration', 'distance', 'timed_sprint', 'checkoff']);
+const fieldDomains = new Set<NonNullable<ExerciseFacets['fieldDomains']>[number]>(['acceleration', 'max_velocity', 'braking', 'change_of_direction', 'elastic']);
+
+function hasOnlyUniqueKnown<T>(values: readonly T[], known: ReadonlySet<T>): boolean {
+  return values.length > 0 && new Set(values).size === values.length && values.every(value => known.has(value));
+}
+
+function validateExerciseFacets(exercise: ExerciseDefinition, path: string, errors: string[]): void {
+  const facets = exercise.facets;
+  if (!facets) return;
+  if (!exerciseFamilies.has(facets.family)) errors.push(`${path}: unknown exercise family ${facets.family}`);
+  if (!hasOnlyUniqueKnown(facets.allowedDoseKinds, exerciseDoseKinds)) errors.push(`${path}: allowedDoseKinds must be a non-empty unique known vocabulary`);
+  if (!hasOnlyUniqueKnown(facets.allowedLoadKinds, exerciseLoadKinds)) errors.push(`${path}: allowedLoadKinds must be a non-empty unique known vocabulary`);
+  if (!hasOnlyUniqueKnown(facets.allowedLaterality, exerciseLaterality)) errors.push(`${path}: allowedLaterality must be a non-empty unique known vocabulary`);
+  if (!measurementProfiles.has(facets.measurementProfile)) errors.push(`${path}: unknown measurementProfile ${facets.measurementProfile}`);
+  if (facets.measurementProfile === 'timed_sprint' && !facets.allowedDoseKinds.includes('distance')) errors.push(`${path}: timed_sprint requires distance dose support`);
+  if (facets.fieldDomains && (!hasOnlyUniqueKnown(facets.fieldDomains, fieldDomains) || facets.family !== 'field_drill')) errors.push(`${path}: fieldDomains are unique field_drill-only facets`);
+  if (facets.family === 'field_drill' && exercise.modality !== 'field') errors.push(`${path}: field_drill family requires field modality`);
+  if (facets.family !== 'field_drill' && facets.fieldDomains?.length) errors.push(`${path}: non-field family cannot declare fieldDomains`);
+}
 
 function validateTarget(target: IntensityTarget, path: string, errors: string[]): void {
   if (target.type === 'rpe' && (target.min < 1 || target.max > 10 || target.min > target.max)) errors.push(`${path}: invalid RPE range ${target.min}-${target.max}`);
@@ -188,6 +213,7 @@ export function validateWorkoutLibrary(
     if (exerciseIds.has(exercise.id)) errors.push(`Duplicate exercise id: ${exercise.id}`);
     exerciseIds.add(exercise.id);
     exerciseById.set(exercise.id, exercise);
+    validateExerciseFacets(exercise, `exercise ${exercise.id}`, errors);
     if (!exercise.name.trim()) errors.push(`${exercise.id}: exercise name is required`);
     if (!exercise.instruction.trim()) errors.push(`${exercise.id}: exercise instruction is required`);
   }

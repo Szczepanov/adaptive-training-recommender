@@ -105,7 +105,7 @@ describe('Multidomain sessions architecture and dependency boundaries (M0.3 / AD
         }
     });
 
-    it('new session UI components do not import optimizer policy or ranking internals at runtime', () => {
+    it('new session UI components and persistence services do not import optimizer policy or ranking internals at runtime', () => {
         const forbiddenOptimizer = [
             'engine/optimizer',
             'engine/planner',
@@ -119,8 +119,11 @@ describe('Multidomain sessions architecture and dependency boundaries (M0.3 / AD
         // engine/rules.ts. ADR-0023 does not silently refactor that established boundary;
         // it prevents the new general runner/session UI from adding another policy entry.
         const uiModules = Array.from(graph.keys()).filter(path => path.startsWith('components/session/'));
+        const sessionServices = Array.from(graph.keys()).filter(path => (
+            path.startsWith('services/session') || path === 'services/executionPrescriptionService.ts'
+        ));
 
-        for (const mod of uiModules) {
+        for (const mod of [...uiModules, ...sessionServices]) {
             const imports = graph.get(mod) ?? [];
             for (const imp of imports) {
                 for (const forbidden of forbiddenOptimizer) {

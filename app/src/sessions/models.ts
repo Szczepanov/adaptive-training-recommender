@@ -200,6 +200,15 @@ export interface SessionDefinition {
     sessionTargets?: Array<{ kind: string; [key: string]: unknown }>;
     prohibitedAdditions?: string[];
     importWarnings?: string[];
+    /** Separately executable session references; the runner never treats them as embedded work. */
+    companionSessions?: Array<{
+        id: string;
+        definitionRef: string;
+        relation: string;
+        optional?: boolean;
+        notEarlierThanMinutesAfter?: number;
+        note?: string;
+    }>;
     blocks: SessionBlock[];
 }
 

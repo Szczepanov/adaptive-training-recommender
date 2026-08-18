@@ -1,19 +1,15 @@
 import React, { useState } from 'react';
-import type { ExecutionPrescription, SessionDefinition, SessionReferenceBinding } from '../../sessions/models';
+import type { SessionDefinition } from '../../sessions/models';
+import type { PreparedSessionLaunch } from '../../sessions/sessionLaunch';
 import { validateSessionDefinition } from '../../sessions/validation';
 import { sessionDefinitionService } from '../../services/sessionDefinitionService';
-import { sessionOccurrenceService } from '../../services/sessionOccurrenceService';
-import { executionPrescriptionService } from '../../services/executionPrescriptionService';
-import { hashExecutionPrescription, hashSessionDefinition } from '../../sessions/sessionDefinitionHash';
-import { getLocalDateString } from '../../utils/localDate';
+import { hashSessionDefinition } from '../../sessions/sessionDefinitionHash';
+import { prepareUnplannedSessionLaunch } from '../../services/sessionAuthoringService';
 import './SessionDestinationSheet.css';
 
 export type DestinationChoice = 'save_only' | 'start_unplanned';
 
-export interface PreparedSessionLaunch {
-    definition: SessionDefinition;
-    binding: SessionReferenceBinding;
-}
+export type { PreparedSessionLaunch } from '../../sessions/sessionLaunch';
 
 interface SessionDestinationSheetProps {
     userId: string;
@@ -61,49 +57,7 @@ export const SessionDestinationSheet: React.FC<SessionDestinationSheetProps> = (
                 return;
             }
 
-            const createdAt = new Date().toISOString();
-            const unsignedPrescription: ExecutionPrescription = {
-                schemaVersion: 1,
-                prescriptionHash: '',
-                definitionHash: contentHash,
-                blocks: definition.blocks,
-                createdAt,
-            };
-            const prescriptionHash = await hashExecutionPrescription(unsignedPrescription);
-            await executionPrescriptionService.savePrescription(userId, {
-                ...unsignedPrescription,
-                prescriptionHash,
-            });
-
-            const occurrenceId = `occ-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-            await sessionOccurrenceService.saveOccurrence({
-                userId,
-                occurrenceId,
-                date: getLocalDateString(),
-                authority: 'unplanned_log',
-                state: 'active',
-                definitionRef: {
-                    definitionId: definition.id,
-                    revision: definition.revision,
-                    contentHash,
-                },
-                createdAt,
-                updatedAt: createdAt,
-            });
-
-            onStartExecution({
-                definition,
-                binding: {
-                    sessionSource: {
-                        kind: 'manual',
-                        definitionId: definition.id,
-                        revision: definition.revision,
-                        contentHash,
-                    },
-                    occurrenceId,
-                    prescriptionHash,
-                },
-            });
+            onStartExecution(await prepareUnplannedSessionLaunch(userId, definition));
             onClose();
         } catch (err: unknown) {
             setError(err instanceof Error ? err.message : String(err));

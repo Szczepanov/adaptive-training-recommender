@@ -85,23 +85,26 @@ test('captures goal modal state', async ({ page }) => {
   await capture(page, scenario, 'add-modal-open', ['Goal creation form inputs are spaced clearly without visual overlap.']);
 });
 
-test('captures Strength runner interaction states without horizontal overflow', async ({ page }) => {
+test('captures grouped session runner rotation without horizontal overflow', async ({ page }) => {
   const scenario = VISUAL_SCENARIOS.find(candidate => candidate.id === 'session-runner-in-progress');
-  if (!scenario) throw new Error('Missing Strength runner visual scenario');
+  if (!scenario) throw new Error('Missing session runner visual scenario');
   await visitScenario(page, scenario);
 
-  await expect(page.locator('.strength-runner')).toBeVisible();
+  await expect(page.locator('.session-runner-container')).toBeVisible();
   expect(await page.locator('body').evaluate(body => body.scrollWidth <= window.innerWidth)).toBe(true);
 
-  await page.getByRole('navigation', { name: 'Session Steps' }).getByRole('button', { name: /bench_press/ }).click();
-  await expect(page.getByRole('heading', { name: 'Bench Press' })).toBeVisible();
-  await capture(page, scenario, 'bench-selected', ['The selected step and its entry controls remain visible without horizontal overflow.']);
+  const groupedFixture = page.locator('.fixture-card').filter({ hasText: 'Upper-Body Absorption & Field-Readiness Support' });
+  await groupedFixture.getByRole('button', { name: 'Start Session →' }).click();
+  await expect(page.locator('.group-progress')).toContainText('Circuit');
 
-  await page.getByRole('button', { name: 'Finish session' }).click();
-  await expect(page.getByRole('dialog', { name: 'Complete Session' })).toBeVisible();
-  await capture(page, scenario, 'completion-sheet', ['Completion summarizes performed work and requires an explicit final action.']);
+  await page.getByRole('button', { name: 'Log Set ⏎' }).click();
+  await expect(page.getByRole('heading', { name: 'scapular_push_up' })).toBeVisible();
 
-  await page.getByRole('button', { name: 'Abandon Session...' }).click();
-  await expect(page.getByText('Abandon Session?')).toBeVisible();
-  await capture(page, scenario, 'abandon-confirmation', ['Abandonment is a separate confirmation and states that partial work remains retained.']);
+  await page.getByRole('button', { name: 'bench_press' }).click();
+  await expect(page.getByRole('heading', { name: 'bench_press' })).toBeVisible();
+  await page.getByRole('button', { name: 'Log Set ⏎' }).click();
+  await expect(page.getByRole('heading', { name: 'chest_supported_dumbbell_row' })).toBeVisible();
+  await capture(page, scenario, 'group-rotation', ['The runner shows the current alternating-pair round and advances after logging a set without using the navigator.']);
+
+  expect(await page.locator('body').evaluate(body => body.scrollWidth <= window.innerWidth)).toBe(true);
 });

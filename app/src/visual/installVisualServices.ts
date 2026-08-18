@@ -9,6 +9,8 @@ import { recoverySnapshotService } from '../services/recoverySnapshotService';
 import { trainingSettingsService } from '../services/trainingSettingsService';
 import { trainingIntentProfileService } from '../services/trainingIntentProfileService';
 import { strengthSessionService } from '../services/strengthSessionService';
+import { sessionExecutionService } from '../services/sessionExecutionService';
+import { sessionDefinitionService } from '../services/sessionDefinitionService';
 import { externalPlanService } from '../services/externalPlanService';
 import { fixedActivityService } from '../services/fixedActivityService';
 import { computeContentHash } from '../engine/externalPlanHash';
@@ -142,6 +144,28 @@ export function installVisualServices(fixture: VisualFixture): void {
     state: next,
     updatedAt: fixture.input.date,
   });
+
+  // The general session runner owns its execution records independently of the
+  // retired Strength-session service. Keep visual scenarios local and repeatable.
+  sessionExecutionService.findInProgressExecution = async () => null;
+  sessionExecutionService.getEntries = async () => [];
+  sessionExecutionService.startExecution = async (_userId, executionId, params) => ({
+    userId: fixture.input.userId,
+    executionId,
+    sessionSource: params.sessionSource,
+    ...(params.occurrenceId ? { occurrenceId: params.occurrenceId } : {}),
+    ...(params.prescriptionHash ? { prescriptionHash: params.prescriptionHash } : {}),
+    date: params.date,
+    startedAt: fixture.input.date,
+    updatedAt: fixture.input.date,
+    state: 'in_progress' as const,
+    schemaVersion: 1,
+  });
+  sessionExecutionService.logEntry = async () => {};
+  sessionExecutionService.correctEntry = async () => {};
+  sessionExecutionService.deleteEntry = async () => {};
+  sessionExecutionService.transitionExecution = async () => {};
+  sessionDefinitionService.listDefinitionHeaders = async () => ({ status: 'AVAILABLE', data: [], revision: null });
 
   recommendationService.getAdherenceStats = async () => ({
     totalRecommendations: 14,

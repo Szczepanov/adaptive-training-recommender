@@ -65,10 +65,7 @@
         {
           "kind": "exercise",
           "id": "step-sprint-10-30",
-          "exerciseRef": {
-            "kind": "unresolved_free_text",
-            "name": "30 m Sprint with Splits"
-          },
+          "exerciseRef": { "kind": "catalog", "exerciseId": "sprint_30m_with_splits" },
           "dose": {
             "kind": "distance",
             "sets": 3,
@@ -94,8 +91,7 @@
           "rest": {
             "min": 180,
             "max": 240
-          },
-          "resolutionNote": "Not in the catalog. Loggable by name; asserts no safety, cost, stimulus, muscle-split, PR or 1RM semantics (ADR-0023 D-MSESSION; plan M3.5 adds it)."
+          }
         }
       ]
     }
