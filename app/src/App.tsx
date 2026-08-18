@@ -11,6 +11,9 @@ import { ExternalPlanImport } from './components/ExternalPlanImport';
 import { StrengthOverloadHistory } from './components/StrengthOverloadHistory';
 import { StrengthSessionRunner } from './components/StrengthSessionRunner';
 import { SessionRunner } from './components/session/SessionRunner';
+import { ManualSessionBuilder } from './components/session/ManualSessionBuilder';
+import { SessionJsonImport } from './components/session/SessionJsonImport';
+import type { PreparedSessionLaunch } from './components/session/SessionDestinationSheet';
 import { decisionComposer } from './engine/composer';
 import type { DailyDecisionInput, StrengthSession } from './engine/models';
 import type { Screen } from './types/navigation';
@@ -28,6 +31,8 @@ function App() {
   const [desktopSettingsOpen, setDesktopSettingsOpen] = useState(false);
   const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
   const [activeStrengthSession, setActiveStrengthSession] = useState<StrengthSession | null>(null);
+  const [sessionAuthoringMode, setSessionAuthoringMode] = useState<'import' | 'manual' | null>(null);
+  const [sessionLaunch, setSessionLaunch] = useState<PreparedSessionLaunch | null>(null);
 
   const loadDecisionInput = useCallback(async () => {
     if (!userId) return;
@@ -159,7 +164,34 @@ function App() {
         )}
 
         {screen === 'sessions' && (
-          <SessionRunner userId={userId!} onClose={() => handleNavigate('home')} />
+          sessionAuthoringMode === 'import' ? (
+            <SessionJsonImport
+              userId={userId!}
+              onClose={() => setSessionAuthoringMode(null)}
+              onStartExecution={session => {
+                setSessionLaunch(session);
+                setSessionAuthoringMode(null);
+              }}
+            />
+          ) : sessionAuthoringMode === 'manual' ? (
+            <ManualSessionBuilder
+              userId={userId!}
+              onClose={() => setSessionAuthoringMode(null)}
+              onStartExecution={session => {
+                setSessionLaunch(session);
+                setSessionAuthoringMode(null);
+              }}
+            />
+          ) : (
+            <SessionRunner
+              userId={userId!}
+              initialSession={sessionLaunch ?? undefined}
+              onInitialSessionHandled={() => setSessionLaunch(null)}
+              onImportSession={() => setSessionAuthoringMode('import')}
+              onBuildSession={() => setSessionAuthoringMode('manual')}
+              onClose={() => handleNavigate('home')}
+            />
+          )
         )}
 
         {screen === 'plan' && (

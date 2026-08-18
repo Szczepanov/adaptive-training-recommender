@@ -25,6 +25,14 @@
     color: #f1f5f9;
 }
 
+.builder-header p,
+.builder-help {
+    margin: 0.3rem 0 0;
+    color: #94a3b8;
+    font-size: 0.85rem;
+    line-height: 1.35;
+}
+
 .close-builder-btn {
     background: transparent;
     border: none;
@@ -146,6 +154,50 @@
     display: flex;
     align-items: center;
     gap: 0.5rem;
+}
+
+.builder-step-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    padding: 0.65rem;
+    background: #0f172a;
+    border: 1px solid #334155;
+    border-radius: 6px;
+}
+
+.builder-step-fields {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+    gap: 0.5rem;
+}
+
+.builder-step-fields label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    color: #94a3b8;
+    font-size: 0.75rem;
+}
+
+.builder-step-fields input,
+.builder-step-fields select {
+    box-sizing: border-box;
+    width: 100%;
+    min-height: 36px;
+    padding: 0.35rem 0.45rem;
+    border: 1px solid #475569;
+    border-radius: 4px;
+    background: #1e293b;
+    color: #f8fafc;
+}
+
+.remove-step-btn {
+    border: 0;
+    background: transparent;
+    color: #fca5a5;
+    cursor: pointer;
+    min-height: 36px;
 }
 
 .step-idx {

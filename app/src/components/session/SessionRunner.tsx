@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import type { SessionDefinition, SessionEntry, SessionReferenceBinding } from '../../sessions/models';
+import type { RangeOrNumber, SessionDefinition, SessionEntry, SessionReferenceBinding, SessionStep } from '../../sessions/models';
 import type { SessionStepSummary } from '../../workouts/strengthSessionEntry';
 import { useSessionRunner } from '../../hooks/useSessionRunner';
 import { resolveStepInputProfile } from '../../sessions/inputProfiles';
@@ -18,6 +18,7 @@ import fixture03 from '../../sessions/fixtures/03-upper-body-absorption-and-spin
 import fixture04 from '../../sessions/fixtures/04-friday-field-drills.json';
 import fixture05 from '../../sessions/fixtures/05-timed-trunk-and-tissue.json';
 import fixture06 from '../../sessions/fixtures/06-protocol-locked-sprint-jump-test.json';
+import fixture08 from '../../sessions/fixtures/08-recovery-spin-companion.json';
 
 const AVAILABLE_FIXTURES: SessionDefinition[] = [
     fixture01 as unknown as SessionDefinition,
@@ -26,18 +27,40 @@ const AVAILABLE_FIXTURES: SessionDefinition[] = [
     fixture04 as unknown as SessionDefinition,
     fixture05 as unknown as SessionDefinition,
     fixture06 as unknown as SessionDefinition,
+    fixture08 as unknown as SessionDefinition,
 ];
+
+function formatRange(value: RangeOrNumber): string {
+    return typeof value === 'number' ? String(value) : `${value.min}–${value.max}`;
+}
+
+function formatEffort(step: SessionStep): string | null {
+    const effort = step.effort;
+    if (!effort) return null;
+
+    if (effort.kind === 'rpe' && effort.target !== undefined) return `RPE ${formatRange(effort.target)}`;
+    if (effort.kind === 'rir' && effort.target !== undefined) return `${formatRange(effort.target)} RIR`;
+    if (effort.rpe !== undefined) return `RPE ${formatRange(effort.rpe)}`;
+    if (effort.rir !== undefined) return `${formatRange(effort.rir)} RIR`;
+    return null;
+}
 
 interface SessionRunnerProps {
     userId: string;
     /** A persisted M3 binding plus the exact snapshot-resolved definition to execute. */
     initialSession?: { definition: SessionDefinition; binding: SessionReferenceBinding };
+    onInitialSessionHandled?: () => void;
+    onImportSession?: () => void;
+    onBuildSession?: () => void;
     onClose?: () => void;
 }
 
 export const SessionRunner: React.FC<SessionRunnerProps> = ({
     userId,
     initialSession,
+    onInitialSessionHandled,
+    onImportSession,
+    onBuildSession,
     onClose,
 }) => {
     const runner = useSessionRunner(userId, AVAILABLE_FIXTURES);
@@ -50,12 +73,17 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
     const [editWeight, setEditWeight] = useState<string>('');
 
     useEffect(() => {
+        initialLaunchAttempted.current = false;
+    }, [initialSession?.binding.prescriptionHash]);
+
+    useEffect(() => {
         if (!initialSession || runner.isRestoring || initialLaunchAttempted.current) return;
         if (runner.execution?.state === 'in_progress'
             && !runner.definition
             && runner.execution.prescriptionHash === initialSession.binding.prescriptionHash) {
             initialLaunchAttempted.current = true;
             runner.restoreSessionDefinition(initialSession.definition)
+                .then(() => onInitialSessionHandled?.())
                 .catch(() => { initialLaunchAttempted.current = false; });
             return;
         }
@@ -64,10 +92,10 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
         runner.startSession(initialSession.definition, initialSession.binding.sessionSource, {
             occurrenceId: initialSession.binding.occurrenceId,
             prescriptionHash: initialSession.binding.prescriptionHash,
-        }).catch(() => {
+        }).then(() => onInitialSessionHandled?.()).catch(() => {
             initialLaunchAttempted.current = false;
         });
-    }, [initialSession, runner]);
+    }, [initialSession, onInitialSessionHandled, runner]);
 
     // If no active session, show fixture picker to start an unplanned session
     if (runner.isRestoring) {
@@ -87,7 +115,11 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
             <div className="session-runner-container no-active">
                 <header className="session-runner-header">
                     <h2>🚀 Start a Structured Session</h2>
-                    <p className="session-runner-subtitle">Select a session definition to execute:</p>
+                    <p className="session-runner-subtitle">Start a reviewed session, or make one that is stored and validated before execution.</p>
+                    {(onImportSession || onBuildSession) && <div className="session-authoring-actions">
+                        {onImportSession && <button type="button" className="start-fixture-btn" onClick={onImportSession}>Import session JSON</button>}
+                        {onBuildSession && <button type="button" className="start-fixture-btn secondary-authoring-btn" onClick={onBuildSession}>Build session</button>}
+                    </div>}
                 </header>
                 <div className="fixture-grid">
                     {AVAILABLE_FIXTURES.map(fixture => (
@@ -152,6 +184,7 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
     };
 
     const inputProfile = activeStep ? resolveStepInputProfile(activeStep) : 'repetition_mass';
+    const activeEffort = activeStep ? formatEffort(activeStep) : null;
 
     return (
         <div className="session-runner-container">
@@ -234,8 +267,16 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                             {activeStep.dose?.kind === 'distance' && (
                                 <span>Target: {typeof activeStep.dose.meters === 'number' ? `${activeStep.dose.meters}m` : (typeof activeStep.dose.metres === 'number' ? `${activeStep.dose.metres}m` : 'Distance')}</span>
                             )}
+                            {activeEffort && <span>Effort: {activeEffort}</span>}
+                            {activeStep.rest !== undefined && <span>Rest: {formatRange(activeStep.rest)} sec</span>}
+                            {activeStep.tempo && <span>Tempo: {activeStep.tempo}</span>}
                         </div>
                     </div>
+                    {activeStep.stopConditions && activeStep.stopConditions.length > 0 && (
+                        <ul className="step-stop-conditions">
+                            {activeStep.stopConditions.map(condition => <li key={condition}>Stop: {condition}</li>)}
+                        </ul>
+                    )}
 
                     {/* Step Input Card */}
                     <div className="input-card-container">

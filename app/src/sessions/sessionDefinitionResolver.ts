@@ -15,6 +15,7 @@ import fixture03 from './fixtures/03-upper-body-absorption-and-spin.json';
 import fixture04 from './fixtures/04-friday-field-drills.json';
 import fixture05 from './fixtures/05-timed-trunk-and-tissue.json';
 import fixture06 from './fixtures/06-protocol-locked-sprint-jump-test.json';
+import fixture08 from './fixtures/08-recovery-spin-companion.json';
 
 const FIXTURES_BY_ID = new Map<string, SessionDefinition>([
     [fixture01.id, fixture01 as unknown as SessionDefinition],
@@ -23,6 +24,7 @@ const FIXTURES_BY_ID = new Map<string, SessionDefinition>([
     [fixture04.id, fixture04 as unknown as SessionDefinition],
     [fixture05.id, fixture05 as unknown as SessionDefinition],
     [fixture06.id, fixture06 as unknown as SessionDefinition],
+    [fixture08.id, fixture08 as unknown as SessionDefinition],
 ]);
 
 function adaptWorkoutDefinitionToSessionDefinition(workout: WorkoutDefinition): SessionDefinition {

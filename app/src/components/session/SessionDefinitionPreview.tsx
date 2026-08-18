@@ -1,11 +1,32 @@
 import React from 'react';
-import type { SessionDefinition } from '../../sessions/models';
+import type { RangeOrNumber, SessionDefinition, SessionStep } from '../../sessions/models';
 import './SessionDefinitionPreview.css';
 
 interface SessionDefinitionPreviewProps {
     definition: SessionDefinition;
     onStart?: () => void;
     onChooseDestination?: () => void;
+}
+
+function formatRange(value: RangeOrNumber): string {
+    return typeof value === 'number' ? String(value) : `${value.min}–${value.max}`;
+}
+
+function stepName(step: SessionStep): string {
+    if (step.title) return step.title;
+    if (step.exerciseRef?.kind === 'catalog') return step.exerciseRef.exerciseId;
+    if (step.exerciseRef?.kind === 'unresolved_free_text') return step.exerciseRef.name;
+    return step.id;
+}
+
+function effortText(step: SessionStep): string | null {
+    const effort = step.effort;
+    if (!effort) return null;
+    if (effort.kind === 'rpe' && effort.target !== undefined) return `RPE ${formatRange(effort.target)}`;
+    if (effort.kind === 'rir' && effort.target !== undefined) return `${formatRange(effort.target)} RIR`;
+    if (effort.rpe !== undefined) return `RPE ${formatRange(effort.rpe)}`;
+    if (effort.rir !== undefined) return `${formatRange(effort.rir)} RIR`;
+    return null;
 }
 
 export const SessionDefinitionPreview: React.FC<SessionDefinitionPreviewProps> = ({
@@ -39,25 +60,32 @@ export const SessionDefinitionPreview: React.FC<SessionDefinitionPreviewProps> =
                             <span className="block-role-tag">{block.role}</span>
                         </div>
                         <ul className="preview-steps-list">
-                            {block.steps.map((step, sIdx) => (
-                                <li key={step.id ?? sIdx} className="preview-step-item">
+                            {block.steps.map((step, sIdx) => {
+                                const effort = effortText(step);
+                                const isUnresolved = step.exerciseRef?.kind === 'unresolved_free_text';
+                                return <li key={step.id ?? sIdx} className="preview-step-item">
                                     <div className="step-main">
                                         <span className="step-number">{sIdx + 1}.</span>
                                         <div className="step-details">
-                                            <span className="step-title">{step.title}</span>
+                                            <span className="step-title">{stepName(step)} {step.optional && <em>(optional)</em>}</span>
+                                            {isUnresolved && <span className="step-unresolved">Custom movement — no catalog-derived metadata</span>}
                                             {step.dose && (
                                                 <span className="step-dose">
                                                     {step.dose.kind === 'repetition' && `${step.dose.sets} sets × ${typeof step.dose.reps === 'object' ? `${step.dose.reps.min}-${step.dose.reps.max}` : step.dose.reps} reps`}
-                                                    {step.dose.kind === 'duration' && `${step.dose.seconds}s hold`}
-                                                    {step.dose.kind === 'distance' && `${step.dose.meters}m`}
+                                                    {step.dose.kind === 'duration' && `${step.dose.sets ?? 1} sets × ${formatRange(step.dose.seconds)} sec`}
+                                                    {step.dose.kind === 'distance' && `${formatRange(step.dose.meters ?? step.dose.metres ?? 0)} m`}
                                                     {step.dose.kind === 'checkoff' && `${step.dose.rounds ?? 1} rounds`}
                                                 </span>
                                             )}
+                                            {(effort || step.rest !== undefined || step.tempo) && <span className="step-prescription">
+                                                {[effort, step.rest !== undefined ? `Rest ${formatRange(step.rest)} sec` : null, step.tempo ? `Tempo ${step.tempo}` : null].filter(Boolean).join(' · ')}
+                                            </span>}
                                         </div>
                                     </div>
                                     {step.notes && <p className="step-notes">{step.notes}</p>}
-                                </li>
-                            ))}
+                                    {step.stopConditions && <p className="step-stop">Stop: {step.stopConditions.join('; ')}</p>}
+                                </li>;
+                            })}
                         </ul>
                     </section>
                 ))}

@@ -1,57 +1,67 @@
 {
   "schemaVersion": 1,
   "id": "recovery-spin-companion-08",
-  "revision": 1,
-  "title": "Optional Recovery Spin",
-  "summary": "Circulation only. If it feels like training, it is too hard.",
+  "revision": 2,
+  "title": "Recovery Bike — Leg Absorption",
+  "summary": "A genuinely easy 22–35 minute bike session for looser legs, not aerobic training. It can stand alone when the upper-body session is inappropriate.",
   "intent": "recovery",
-  "modalities": [
-    "cycling",
-    "recovery"
-  ],
+  "modalities": ["cycling", "recovery"],
   "dominantModality": "cycling",
-  "duration": {
-    "min": 25,
-    "max": 35
-  },
+  "duration": { "min": 22, "max": 35 },
   "sessionTargets": [
-    {
-      "kind": "session_rpe_cap",
-      "maxRpe": 3
-    }
+    { "kind": "session_rpe_cap", "maxRpe": 2 },
+    { "kind": "morning_gate", "description": "Use this only when pedalling is symptom-free. Stop rather than pushing through worsening knee or Achilles symptoms." },
+    { "kind": "finish_state", "description": "Legs should feel looser and heart rate should settle near 100–105 bpm; this never replaces a Zone 2 session." }
   ],
   "prohibitedAdditions": [
-    "no intervals or surges",
-    "do not turn this into a Zone 2 session"
+    "no standing", "no grinding", "no intervals or Zone 2 extension", "do not exceed 130 W or 118 bpm during the warm-up"
   ],
   "blocks": [
     {
-      "id": "block-recovery-spin",
-      "title": "Easy Spin",
+      "id": "progressive-recovery-warmup",
+      "title": "10-minute Recovery Warm-up",
+      "role": "warmup",
+      "executionMode": "sequential",
+      "steps": [
+        {
+          "kind": "exercise",
+          "id": "recovery-bike-very-easy",
+          "exerciseRef": { "kind": "catalog", "exerciseId": "bike_progressive_warmup" },
+          "dose": { "kind": "duration", "seconds": 180 },
+          "effort": { "kind": "rpe", "target": { "min": 1, "max": 2 } },
+          "notes": "80–100 W, HR below 105 bpm, cadence 85–90 rpm. Use a light gear, smooth circles and remain seated."
+        },
+        {
+          "kind": "exercise",
+          "id": "recovery-bike-easy",
+          "exerciseRef": { "kind": "catalog", "exerciseId": "bike_easy_spin" },
+          "dose": { "kind": "duration", "seconds": 240 },
+          "effort": { "kind": "rpe", "target": 2 },
+          "notes": "100–115 W, HR 100–110 bpm, cadence 85–95 rpm. No standing and no grinding."
+        },
+        {
+          "kind": "exercise",
+          "id": "recovery-bike-settle",
+          "exerciseRef": { "kind": "catalog", "exerciseId": "bike_easy_spin" },
+          "dose": { "kind": "duration", "seconds": 180 },
+          "effort": { "kind": "rpe", "target": { "min": 2, "max": 3 } },
+          "notes": "110–125 W, HR 105–115 bpm, cadence 85–95 rpm. Legs should feel looser at the end; back off if they do not."
+        }
+      ]
+    },
+    {
+      "id": "recovery-finish",
+      "title": "Easy Recovery Finish",
       "role": "recovery",
       "executionMode": "sequential",
       "steps": [
         {
           "kind": "exercise",
-          "id": "step-recovery-spin",
-          "exerciseRef": {
-            "kind": "catalog",
-            "exerciseId": "bike_easy_spin"
-          },
-          "dose": {
-            "kind": "duration",
-            "sets": 1,
-            "seconds": {
-              "min": 1500,
-              "max": 2100
-            }
-          },
-          "effort": {
-            "kind": "rpe",
-            "min": 2,
-            "max": 3
-          },
-          "loggingMode": "completion_only"
+          "id": "recovery-bike-finish",
+          "exerciseRef": { "kind": "catalog", "exerciseId": "bike_easy_spin" },
+          "dose": { "kind": "duration", "seconds": { "min": 720, "max": 1500 } },
+          "effort": { "kind": "rpe", "target": { "min": 1, "max": 2 } },
+          "notes": "90–115 W, HR 100–115 bpm and cadence 85–95 rpm. Use 12–15 minutes if fresh, 15–20 if mildly heavy, or 20–25 if noticeably fatigued. Keep pressure very light and breathing easy."
         }
       ]
     }

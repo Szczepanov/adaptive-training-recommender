@@ -1,27 +1,34 @@
 import React, { useState } from 'react';
-import type { SessionDefinition, OccurrenceAuthority } from '../../sessions/models';
+import type { ExecutionPrescription, SessionDefinition, SessionReferenceBinding } from '../../sessions/models';
+import { validateSessionDefinition } from '../../sessions/validation';
 import { sessionDefinitionService } from '../../services/sessionDefinitionService';
 import { sessionOccurrenceService } from '../../services/sessionOccurrenceService';
-import { hashSessionDefinition } from '../../sessions/sessionDefinitionHash';
+import { executionPrescriptionService } from '../../services/executionPrescriptionService';
+import { hashExecutionPrescription, hashSessionDefinition } from '../../sessions/sessionDefinitionHash';
 import { getLocalDateString } from '../../utils/localDate';
 import './SessionDestinationSheet.css';
 
-export type DestinationChoice =
-    | 'save_only'
-    | 'schedule'
-    | 'replace_recommendation'
-    | 'additional_session'
-    | 'start_unplanned';
+export type DestinationChoice = 'save_only' | 'start_unplanned';
+
+export interface PreparedSessionLaunch {
+    definition: SessionDefinition;
+    binding: SessionReferenceBinding;
+}
 
 interface SessionDestinationSheetProps {
     userId: string;
     definition: SessionDefinition;
     isOpen: boolean;
     onClose: () => void;
-    onStartExecution?: (definition: SessionDefinition, occurrenceId?: string) => void;
-    onSaved?: (destination: DestinationChoice) => void;
+    onStartExecution: (session: PreparedSessionLaunch) => void;
+    onSaved?: () => void;
 }
 
+/**
+ * The first authoring destination is intentionally bounded.  A user may save a definition
+ * or run it unplanned; it cannot yet claim schedule/replace/add recommendation authority
+ * before M3.2/M3.3 supply replay and same-day feasibility.
+ */
 export const SessionDestinationSheet: React.FC<SessionDestinationSheetProps> = ({
     userId,
     definition,
@@ -30,9 +37,8 @@ export const SessionDestinationSheet: React.FC<SessionDestinationSheetProps> = (
     onStartExecution,
     onSaved,
 }) => {
-    const [selectedDestination, setSelectedDestination] = useState<DestinationChoice>('schedule');
-    const [scheduledDate, setScheduledDate] = useState<string>(getLocalDateString());
-    const [saving, setSaving] = useState<boolean>(false);
+    const [selectedDestination, setSelectedDestination] = useState<DestinationChoice>('start_unplanned');
+    const [saving, setSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
     if (!isOpen) return null;
@@ -41,52 +47,66 @@ export const SessionDestinationSheet: React.FC<SessionDestinationSheetProps> = (
         setSaving(true);
         setError(null);
         try {
-            const contentHash = await hashSessionDefinition(definition);
-            const now = new Date().toISOString();
+            const validation = validateSessionDefinition(definition);
+            if (!validation.ok) {
+                throw new Error(validation.issues.map(issue => `${issue.path}: ${issue.message}`).join('\n'));
+            }
 
-            // 1. Always persist the definition revision
+            const contentHash = await hashSessionDefinition(definition);
             await sessionDefinitionService.saveDefinitionRevision(userId, definition, contentHash);
 
             if (selectedDestination === 'save_only') {
-                if (onSaved) onSaved('save_only');
+                onSaved?.();
                 onClose();
                 return;
             }
 
-            // 2. Map destination to occurrence authority
-            let authority: OccurrenceAuthority = 'unplanned_log';
-            if (selectedDestination === 'schedule') authority = 'schedule';
-            else if (selectedDestination === 'replace_recommendation') authority = 'replace_recommendation';
-            else if (selectedDestination === 'additional_session') authority = 'additional_session';
+            const createdAt = new Date().toISOString();
+            const unsignedPrescription: ExecutionPrescription = {
+                schemaVersion: 1,
+                prescriptionHash: '',
+                definitionHash: contentHash,
+                blocks: definition.blocks,
+                createdAt,
+            };
+            const prescriptionHash = await hashExecutionPrescription(unsignedPrescription);
+            await executionPrescriptionService.savePrescription(userId, {
+                ...unsignedPrescription,
+                prescriptionHash,
+            });
 
-            const occurrenceId = `occ-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-            const targetDate = selectedDestination === 'schedule' ? scheduledDate : getLocalDateString();
-
+            const occurrenceId = `occ-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
             await sessionOccurrenceService.saveOccurrence({
                 userId,
                 occurrenceId,
-                date: targetDate,
-                authority,
+                date: getLocalDateString(),
+                authority: 'unplanned_log',
                 state: 'active',
                 definitionRef: {
                     definitionId: definition.id,
                     revision: definition.revision,
                     contentHash,
                 },
-                createdAt: now,
-                updatedAt: now,
+                createdAt,
+                updatedAt: createdAt,
             });
 
-            if (selectedDestination === 'start_unplanned' && onStartExecution) {
-                onStartExecution(definition, occurrenceId);
-            } else if (onSaved) {
-                onSaved(selectedDestination);
-            }
-
+            onStartExecution({
+                definition,
+                binding: {
+                    sessionSource: {
+                        kind: 'manual',
+                        definitionId: definition.id,
+                        revision: definition.revision,
+                        contentHash,
+                    },
+                    occurrenceId,
+                    prescriptionHash,
+                },
+            });
             onClose();
         } catch (err: unknown) {
-            const message = err instanceof Error ? err.message : String(err);
-            setError(message);
+            setError(err instanceof Error ? err.message : String(err));
         } finally {
             setSaving(false);
         }
@@ -96,109 +116,45 @@ export const SessionDestinationSheet: React.FC<SessionDestinationSheetProps> = (
         <div className="destination-sheet-overlay" role="dialog" aria-modal="true" aria-labelledby="destination-title">
             <div className="destination-sheet-card">
                 <header className="destination-header">
-                    <h3 id="destination-title">Choose Session Destination</h3>
+                    <h3 id="destination-title">Save or start session</h3>
                     <p className="destination-subtitle">{definition.title}</p>
                 </header>
 
                 <div className="destination-options-list">
-                    <label className={`destination-option ${selectedDestination === 'schedule' ? 'selected' : ''}`}>
-                        <input
-                            type="radio"
-                            name="destination"
-                            value="schedule"
-                            checked={selectedDestination === 'schedule'}
-                            onChange={() => setSelectedDestination('schedule')}
-                        />
-                        <div className="option-content">
-                            <span className="option-title">📅 Schedule for a specific date</span>
-                            <span className="option-desc">Places the session on your calendar without overriding today's readiness pick.</span>
-                            {selectedDestination === 'schedule' && (
-                                <input
-                                    type="date"
-                                    value={scheduledDate}
-                                    onChange={e => setScheduledDate(e.target.value)}
-                                    className="schedule-date-input"
-                                />
-                            )}
-                        </div>
-                    </label>
-
-                    <label className={`destination-option ${selectedDestination === 'replace_recommendation' ? 'selected' : ''}`}>
-                        <input
-                            type="radio"
-                            name="destination"
-                            value="replace_recommendation"
-                            checked={selectedDestination === 'replace_recommendation'}
-                            onChange={() => setSelectedDestination('replace_recommendation')}
-                        />
-                        <div className="option-content">
-                            <span className="option-title">🔄 Replace today's recommendation</span>
-                            <span className="option-desc">Explicitly substitutes today's automated recommendation with this session.</span>
-                        </div>
-                    </label>
-
-                    <label className={`destination-option ${selectedDestination === 'additional_session' ? 'selected' : ''}`}>
-                        <input
-                            type="radio"
-                            name="destination"
-                            value="additional_session"
-                            checked={selectedDestination === 'additional_session'}
-                            onChange={() => setSelectedDestination('additional_session')}
-                        />
-                        <div className="option-content">
-                            <span className="option-title">➕ Add as an extra session today</span>
-                            <span className="option-desc">Keeps today's primary recommendation and adds this as a secondary session.</span>
-                        </div>
-                    </label>
-
                     <label className={`destination-option ${selectedDestination === 'start_unplanned' ? 'selected' : ''}`}>
                         <input
                             type="radio"
                             name="destination"
-                            value="start_unplanned"
                             checked={selectedDestination === 'start_unplanned'}
                             onChange={() => setSelectedDestination('start_unplanned')}
                         />
-                        <div className="option-content">
-                            <span className="option-title">⚡ Start immediately</span>
-                            <span className="option-desc">Launches the session runner now without altering recommendation planning.</span>
-                        </div>
+                        <span className="option-content">
+                            <span className="option-title">Start now</span>
+                            <span className="option-desc">Saves an immutable definition and execution snapshot, then starts an unplanned session. It does not alter today’s recommendation.</span>
+                        </span>
                     </label>
-
                     <label className={`destination-option ${selectedDestination === 'save_only' ? 'selected' : ''}`}>
                         <input
                             type="radio"
                             name="destination"
-                            value="save_only"
                             checked={selectedDestination === 'save_only'}
                             onChange={() => setSelectedDestination('save_only')}
                         />
-                        <div className="option-content">
-                            <span className="option-title">💾 Save to library only</span>
-                            <span className="option-desc">Saves this definition revision for future use without scheduling an occurrence.</span>
-                        </div>
+                        <span className="option-content">
+                            <span className="option-title">Save to library</span>
+                            <span className="option-desc">Stores this revision without creating an occurrence or changing planning.</span>
+                        </span>
                     </label>
                 </div>
 
-                {error && <div className="destination-error-box" role="alert">{error}</div>}
+                <p className="destination-subtitle">Scheduling and recommendation replacement stay unavailable until their replay and safety contracts are implemented.</p>
+                {error && <pre className="destination-error-box" role="alert">{error}</pre>}
 
                 <div className="destination-actions">
-                    <button
-                        type="button"
-                        className="destination-confirm-btn"
-                        onClick={handleConfirm}
-                        disabled={saving}
-                    >
-                        {saving ? 'Saving...' : 'Confirm & Proceed'}
+                    <button type="button" className="destination-confirm-btn" onClick={handleConfirm} disabled={saving}>
+                        {saving ? 'Saving…' : selectedDestination === 'start_unplanned' ? 'Save & Start' : 'Save revision'}
                     </button>
-                    <button
-                        type="button"
-                        className="destination-cancel-btn"
-                        onClick={onClose}
-                        disabled={saving}
-                    >
-                        Cancel
-                    </button>
+                    <button type="button" className="destination-cancel-btn" onClick={onClose} disabled={saving}>Cancel</button>
                 </div>
             </div>
         </div>

@@ -1,92 +1,248 @@
 {
   "schemaVersion": 1,
   "id": "upper-body-absorption-and-spin-03",
-  "revision": 1,
-  "title": "Upper Body Absorption & Recovery Spin",
-  "summary": "Upper body power absorption with alternating groups and an optional evening recovery ride.",
+  "revision": 2,
+  "title": "Upper-Body Absorption & Field-Readiness Support",
+  "summary": "Leg-sparing upper-body, trunk and tissue maintenance after a ride; finish fresher and protect Friday field readiness.",
   "intent": "training",
-  "modalities": [
-    "strength",
-    "power",
-    "recovery"
-  ],
+  "modalities": ["strength", "recovery"],
   "dominantModality": "strength",
-  "duration": {
-    "min": 40,
-    "max": 50
-  },
+  "duration": { "min": 45, "max": 55 },
   "companionSessions": [
     {
-      "id": "companion-spin-01",
+      "id": "companion-recovery-bike",
       "definitionRef": "recovery-spin-companion-08",
       "relation": "later_same_day",
       "optional": true,
-      "notEarlierThanMinutesAfter": 240,
-      "note": "Separate occurrence. Start or skip independently; reconcile a matching Garmin ride exactly once."
+      "notEarlierThanMinutesAfter": 0,
+      "note": "A separately executable recovery bike. Start it with this session or later, and skip it when it would not leave the legs better."
     }
+  ],
+  "sessionTargets": [
+    { "kind": "session_rpe_cap", "maxRpe": 5 },
+    { "kind": "hardest_set_rpe_cap", "maxRpe": 6 },
+    { "kind": "morning_gate", "description": "Use the full session only with normal walking and stairs, no knee swelling or fullness, Achilles stiffness no more than 2/10 and resolving within 5–10 minutes, and leg soreness no more than 3/10. Otherwise perform only the separate recovery bike and gentle tissue work." },
+    { "kind": "finish_state", "description": "Finish better than at the start, with minimal lower-body fatigue." }
+  ],
+  "prohibitedAdditions": [
+    "no squats, step-ups, lunges, calf-fatigue work, pogos or Olympic lifts",
+    "no failure grinding or additional heavy leg sets",
+    "do not turn the companion recovery bike into a Zone 2 session"
   ],
   "blocks": [
     {
-      "id": "block-upper-superset",
-      "title": "Upper Push / Pull Antagonistic Superset",
+      "id": "upper-preparation",
+      "title": "Upper-body Preparation — 2 Easy Rounds",
+      "role": "warmup",
+      "executionMode": "circuit",
+      "steps": [
+        {
+          "kind": "exercise",
+          "id": "band-pull-apart",
+          "exerciseRef": { "kind": "catalog", "exerciseId": "band_pull_apart" },
+          "dose": { "kind": "repetition", "sets": 2, "reps": 15 },
+          "effort": { "kind": "rpe", "target": { "min": 2, "max": 3 } },
+          "rest": { "min": 20, "max": 30 },
+          "notes": "Keep this easy; ribs down and no shrugging."
+        },
+        {
+          "kind": "exercise",
+          "id": "scapular-push-up",
+          "exerciseRef": { "kind": "catalog", "exerciseId": "scapular_push_up" },
+          "dose": { "kind": "repetition", "sets": 2, "reps": 8 },
+          "effort": { "kind": "rpe", "target": { "min": 2, "max": 3 } },
+          "rest": { "min": 20, "max": 30 },
+          "notes": "Move through the shoulder blades only; keep elbows straight and ribs quiet."
+        },
+        {
+          "kind": "exercise",
+          "id": "band-external-rotation",
+          "exerciseRef": { "kind": "catalog", "exerciseId": "band_external_rotation" },
+          "dose": { "kind": "repetition", "sets": 2, "reps": 10 },
+          "laterality": "per_side",
+          "effort": { "kind": "rpe", "target": { "min": 2, "max": 3 } },
+          "rest": { "min": 20, "max": 30 },
+          "notes": "Easy external rotation with the elbow comfortably at the side."
+        },
+        {
+          "kind": "exercise",
+          "id": "dead-hang",
+          "exerciseRef": { "kind": "catalog", "exerciseId": "dead_hang" },
+          "dose": { "kind": "duration", "sets": 2, "seconds": { "min": 15, "max": 20 } },
+          "effort": { "kind": "rpe", "target": { "min": 2, "max": 3 } },
+          "rest": { "min": 20, "max": 30 },
+          "notes": "Use a dead hang or active-shoulder scapular pull-up; choose the pain-free version."
+        },
+        {
+          "kind": "exercise",
+          "id": "light-push-up",
+          "exerciseRef": { "kind": "catalog", "exerciseId": "push_up" },
+          "dose": { "kind": "repetition", "sets": 2, "reps": { "min": 6, "max": 8 } },
+          "effort": { "kind": "rpe", "target": { "min": 2, "max": 3 } },
+          "rest": { "min": 20, "max": 30 },
+          "notes": "Use an incline if needed. This is preparation, not a working set."
+        }
+      ]
+    },
+    {
+      "id": "primary-pairing",
+      "title": "Primary Upper-body Pairing",
       "role": "main",
+      "executionMode": "alternating",
+      "steps": [
+        {
+          "kind": "exercise",
+          "id": "bench-press",
+          "exerciseRef": { "kind": "catalog", "exerciseId": "bench_press" },
+          "dose": { "kind": "repetition", "sets": 4, "reps": 5 },
+          "effort": { "kind": "rpe", "target": 6 },
+          "tempo": "2-0-X-0",
+          "rest": { "min": 120, "max": 120 },
+          "notes": "Use a load for roughly 9–10 clean repetitions. Feet stay planted but do not drive aggressively; shoulder blades back and down; smooth press with at least 4 RIR.",
+          "stopConditions": ["No grinding", "Stop if shoulder mechanics deteriorate"]
+        },
+        {
+          "kind": "exercise",
+          "id": "chest-supported-row",
+          "exerciseRef": { "kind": "catalog", "exerciseId": "chest_supported_dumbbell_row" },
+          "dose": { "kind": "repetition", "sets": 4, "reps": 8 },
+          "effort": { "kind": "rpe", "target": 6 },
+          "rest": { "min": 75, "max": 90 },
+          "notes": "Perform between bench sets or immediately after. Chest stays on bench; pull elbows toward hips; pause for one second; no torso rotation."
+        }
+      ]
+    },
+    {
+      "id": "secondary-pairing",
+      "title": "Secondary Upper-body Pairing",
+      "role": "main",
+      "executionMode": "alternating",
+      "steps": [
+        {
+          "kind": "exercise",
+          "id": "assisted-pull-up",
+          "exerciseRef": { "kind": "catalog", "exerciseId": "pull_up" },
+          "dose": { "kind": "repetition", "sets": 3, "reps": { "min": 4, "max": 6 } },
+          "load": { "kind": "descriptive", "display": "Use assistance if needed to keep every repetition clean." },
+          "effort": { "kind": "rpe", "target": 6 },
+          "rest": { "min": 90, "max": 90 },
+          "notes": "Start from active shoulders, ribs down and no kicking. Stop before speed slows substantially.",
+          "stopConditions": ["End the set when speed slows", "No kipping"]
+        },
+        {
+          "kind": "exercise",
+          "id": "seated-dumbbell-press",
+          "exerciseRef": { "kind": "catalog", "exerciseId": "seated_dumbbell_overhead_press" },
+          "dose": { "kind": "repetition", "sets": 3, "reps": { "min": 6, "max": 8 } },
+          "effort": { "kind": "rpe", "target": 6 },
+          "rest": { "min": 90, "max": 90 },
+          "notes": "Use back support. Keep feet relaxed, glutes on the bench and ribs down; press slightly back, not forward.",
+          "stopConditions": ["No grinding", "Stop for shoulder discomfort"]
+        }
+      ]
+    },
+    {
+      "id": "upper-accessories",
+      "title": "Optional Upper-body Accessories",
+      "role": "accessory",
       "executionMode": "superset",
       "steps": [
         {
           "kind": "exercise",
-          "id": "step-overhead-press",
-          "exerciseRef": {
-            "kind": "unresolved_free_text",
-            "name": "Standing Overhead Press"
-          },
-          "dose": {
-            "kind": "repetition",
-            "sets": 3,
-            "reps": {
-              "min": 6,
-              "max": 6
-            }
-          },
-          "load": {
-            "kind": "descriptive",
-            "display": "Use the last reviewed smooth working load; this unresolved movement has no 1RM authority."
-          },
-          "effort": {
-            "kind": "rir",
-            "target": 2
-          },
-          "rest": {
-            "min": 60,
-            "max": 60
-          },
-          "resolutionNote": "Not in the catalog. Loggable by name; asserts no safety, cost, stimulus, muscle-split, PR or 1RM semantics (ADR-0023 D-MSESSION; plan M3.5 adds it)."
+          "id": "incline-push-up",
+          "exerciseRef": { "kind": "catalog", "exerciseId": "push_up" },
+          "dose": { "kind": "repetition", "sets": 2, "reps": { "min": 8, "max": 12 } },
+          "effort": { "kind": "rpe", "target": { "min": 5, "max": 6 } },
+          "rest": { "min": 60, "max": 60 },
+          "optional": true,
+          "notes": "Use a push-up or dumbbell incline press; stop well before failure. Skip if legs feel noticeably fatigued."
         },
         {
           "kind": "exercise",
-          "id": "step-pullup",
-          "exerciseRef": {
-            "kind": "catalog",
-            "exerciseId": "pull_up"
-          },
-          "dose": {
-            "kind": "repetition",
-            "sets": 3,
-            "reps": {
-              "min": 6,
-              "max": 8
-            }
-          },
-          "load": {
-            "kind": "bodyweight"
-          },
-          "effort": {
-            "kind": "rir",
-            "target": 2
-          },
-          "rest": {
-            "min": 90,
-            "max": 120
-          }
+          "id": "rear-delt-raise",
+          "exerciseRef": { "kind": "catalog", "exerciseId": "rear_delt_raise" },
+          "dose": { "kind": "repetition", "sets": 2, "reps": { "min": 12, "max": 15 } },
+          "effort": { "kind": "rpe", "target": 5 },
+          "rest": { "min": 45, "max": 60 },
+          "optional": true,
+          "notes": "Use a rear-delt raise or band face pull. Keep the weight light, avoid shrugging and let the shoulder blades move naturally."
+        }
+      ]
+    },
+    {
+      "id": "trunk-adductor",
+      "title": "Trunk & Adductor Maintenance",
+      "role": "accessory",
+      "executionMode": "sequential",
+      "steps": [
+        {
+          "kind": "exercise",
+          "id": "short-lever-copenhagen",
+          "exerciseRef": { "kind": "catalog", "exerciseId": "copenhagen_plank" },
+          "dose": { "kind": "duration", "sets": 3, "seconds": { "min": 15, "max": 20 } },
+          "laterality": "per_side",
+          "effort": { "kind": "rpe", "target": 5 },
+          "rest": { "min": 30, "max": 45 },
+          "notes": "Use the short lever with the support knee on the bench; hips extended and trunk straight. Stop before shaking becomes excessive.",
+          "stopConditions": ["Stop for groin pain or strain"]
+        },
+        {
+          "kind": "exercise",
+          "id": "dead-bug",
+          "exerciseRef": { "kind": "catalog", "exerciseId": "dead_bug" },
+          "dose": { "kind": "repetition", "sets": 3, "reps": 6 },
+          "laterality": "per_side",
+          "effort": { "kind": "rpe", "target": 4 },
+          "rest": { "min": 30, "max": 45 },
+          "notes": "Lower back stays gently pressed down; exhale fully and stop the limb before the back arches."
+        },
+        {
+          "kind": "exercise",
+          "id": "side-plank",
+          "exerciseRef": { "kind": "unresolved_free_text", "name": "Side Plank" },
+          "dose": { "kind": "duration", "sets": 2, "seconds": { "min": 20, "max": 30 } },
+          "laterality": "per_side",
+          "rest": { "min": 30, "max": 45 },
+          "optional": true,
+          "notes": "Skip when the Copenhagen planks already feel sufficient.",
+          "resolutionNote": "Not yet in the exercise catalog. Loggable by name; it asserts no safety, cost, stimulus, muscle-split, PR or 1RM semantics."
+        }
+      ]
+    },
+    {
+      "id": "knee-achilles-maintenance",
+      "title": "Knee & Achilles Maintenance",
+      "role": "accessory",
+      "executionMode": "sequential",
+      "steps": [
+        {
+          "kind": "exercise",
+          "id": "soleus-isometric",
+          "exerciseRef": { "kind": "catalog", "exerciseId": "seated_soleus_iso" },
+          "dose": { "kind": "duration", "sets": 3, "seconds": { "min": 25, "max": 30 } },
+          "effort": { "kind": "rpe", "target": 4 },
+          "rest": { "min": 30, "max": 30 },
+          "notes": "Maintenance only: a strong but comfortable contraction, never escalating Achilles symptoms.",
+          "stopConditions": ["Stop if Achilles pain increases"]
+        },
+        {
+          "kind": "exercise",
+          "id": "tibialis-raise",
+          "exerciseRef": { "kind": "catalog", "exerciseId": "tibialis_raise" },
+          "dose": { "kind": "repetition", "sets": 2, "reps": { "min": 15, "max": 20 } },
+          "effort": { "kind": "rpe", "target": 4 },
+          "rest": { "min": 30, "max": 45 },
+          "notes": "Lift under control without bouncing."
+        },
+        {
+          "kind": "exercise",
+          "id": "optional-quad-set",
+          "exerciseRef": { "kind": "unresolved_free_text", "name": "Quad Set" },
+          "dose": { "kind": "duration", "sets": 2, "seconds": 20 },
+          "rest": { "min": 30, "max": 30 },
+          "optional": true,
+          "notes": "Gentle activation only; omit if it is not useful today.",
+          "resolutionNote": "Not yet in the exercise catalog. Loggable by name; it asserts no safety, cost, stimulus, muscle-split, PR or 1RM semantics."
         }
       ]
     }

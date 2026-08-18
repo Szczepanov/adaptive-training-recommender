@@ -293,14 +293,14 @@ rewritten as an outcome; an in-progress item retains its remaining acceptance wo
 | M2.5 | Typed repetition/time/distance/check-off inputs | `[x]` | — |
 | M2.6 | General completion, comparison and response | `[x]` | — |
 | M2.7 | Strength v1 compatibility read model | `[x]` | — |
-| M3.1 | Canonical serialization, hashing and source adapters | `[x]` | — |
-| M3.2 | Recommendation source/occurrence persistence and replay | `[x]` | — |
-| M3.3 | Save/schedule/replace/add/start intent flow | `[x]` | — |
-| M3.4 | Catalog-to-definition adapter and v1 runner retirement | `[x]` | — |
-| M3.5 | Bounded exercise/drill facet vocabulary | `[x]` | — |
-| M3.6 | External plan/session schema v2 adapter | `[x]` | — |
-| M3.7 | Full semantic import preview and diff | `[x]` | — |
-| M3.8 | Manual block-first session builder | `[x]` | — |
+| M3.1 | Canonical serialization, hashing and source adapters | `[ ]` | — |
+| M3.2 | Recommendation source/occurrence persistence and replay | `[ ]` | — |
+| M3.3 | Save/schedule/replace/add/start intent flow | `[ ]` | — |
+| M3.4 | Catalog-to-definition adapter and v1 runner retirement | `[ ]` | — |
+| M3.5 | Bounded exercise/drill facet vocabulary | `[ ]` | — |
+| M3.6 | External plan/session schema v2 adapter | `[ ]` | — |
+| M3.7 | Full semantic import preview and diff | `[ ]` | — |
+| M3.8 | Manual block-first session builder | `[ ]` | — |
 | M4.1 | Group execution modes | `[ ]` | M2.5 |
 | M4.2 | Recorded athlete choices and alternatives | `[ ]` | M4.1, M3.5 |
 | M4.3 | Companion occurrence and duplicate reconciliation | `[ ]` | M2.4, M3.3 |
@@ -568,6 +568,15 @@ source bindings are not yet resolved during replay, and destinations are not con
 recommendation authority. The temporary attempt to retire the Strength runner was reverted:
 the generic runner has not yet acquired the catalog-source launch/resume contract required by
 M3.4. Keep the M1 Strength route in service until that contract and its regression suite land.
+
+**Authoring MVP (2026-08-18).** The Sessions screen now offers normalized
+`SessionDefinition` JSON import and a manual block editor. Both validate and preview the
+definition, save an immutable user-owned revision, and can start it only as an
+`unplanned_log` execution with a content-addressed execution prescription. This is not full
+M3.6–M3.8: it does not yet accept `external-plan@2`, calculate a semantic revision diff,
+support builder reorder/duplicate or advanced authoring fields, or grant schedule/replacement/
+additional-session authority. Those choices stay unavailable rather than creating records the
+recommendation and replay paths cannot yet interpret.
 
 ### M3.1 `[ ]` Canonical serialization, hashing and source adapters
 
