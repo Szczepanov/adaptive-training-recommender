@@ -71,6 +71,7 @@ Architectural choices, system invariants, and technical trade-offs are documente
 * [**ADR-0018: Weekly Allocation, Safe Role Reservations & Explicit Misses**](./adr/0018-weekly-allocation-and-role-reservations.md) — Accepted production-greedy allocation contract for preserving safe, required weekly roles after PR #17.
 * [**ADR-0019: Externally-Authored Plans & Session Adjudication**](./adr/0019-externally-authored-plans-and-session-adjudication.md) — *Accepted.* A third planning mode in which an imported plan owns selection and the engine owns safety, dose, and weekly critique.
 * [**ADR-0020: Subjective Baselines in Readiness Mode**](./adr/0020-subjective-baselines-in-readiness-mode.md) — *Accepted.* Self-normalised subjective drift as a tighten-only term, gated on check-in coverage, with estimator details deferred to calibration and a production ship decision gated on Phase 9.0's prospective evidence.
+* [**ADR-0021: Strength Session Logging & Intensity Gauges**](./adr/0021-strength-session-logging-and-intensity-gauges.md) — *Accepted.* Durable raw strength-session logging, gauge semantics, safe estimated-1RM write-back, and the evidence gate before logged work can affect engine cost or stimulus.
 * [**ADR-0022: Zone-Derived Completed-Training Credit Is a Measured Candidate**](./adr/0022-zone-derived-completed-training-credit.md) — *Accepted.* A direct power-zone-share candidate may be measured inside the existing evidence tier, but production remains on TE pending a later evidence-backed activation decision.
 
 ---
@@ -88,6 +89,7 @@ Point-in-time assessments of the system as built, including gaps between documen
 * [**2026-08-17 Garmin high-resolution telemetry**](./analysis/2026-08-17-garmin-high-resolution-telemetry.md) — Live endpoint-shape evidence and bounded ingestion recommendations for per-activity zones, power metrics, and laps.
 * [**2026-08-17 Garmin zone-credit measurement**](./analysis/2026-08-17-garmin-zone-credit-measurement.md) — Bounded de-identified real-history comparison of ADR-0022's candidate against TE; decision: keep the candidate off.
 * [**2026-08-18 Strength session UI/UX review**](./analysis/2026-08-18-strength-session-ui-ux-review.md) — Browser- and code-backed review of the gym-floor logging flow; verdict: durable persistence foundation, but resume, correction, terminal-action safety, mobile layout, prescription context, accessibility, and visual coverage need work before the UX is finished.
+* [**2026-08-18 Authored composite session import and execution**](./analysis/2026-08-18-authored-composite-session-import-and-execution.md) — Design analysis for importing or manually building the supplied strength/Olympic/field sessions and executing them against a source-neutral, revisioned prescription without weakening engine authority or replay.
 
 ---
 
@@ -116,7 +118,7 @@ In-depth technical design documents covering system subsystems:
 * [**Ingestion Pipeline Architecture**](./architecture/ingestion-pipeline.md) — Python Garmin API client, token persistence, baseline metrics calculation, and Firestore repository.
 * [**Recommendation Engine**](./architecture/recommendation-engine.md) — The two selection paths, module map, self-normalised strain scoring, `train`/`modify`/`recover` modes, candidate ranking, and the authority ordering.
 * [**Workout Library Architecture**](./workout-library.md) — Multi-layered workout definitions, variants, and September race event plan contract.
-* [**External Plan Import Schema**](./external-plan-schema.md) — *Proposed, not implemented.* JSON contract for importing an externally-authored plan, plus the placement/revision scheduling model.
+* [**External Plan Import Schema**](./external-plan-schema.md) — *Implemented.* JSON contract for importing an externally-authored plan, plus the placement/revision scheduling model.
 
 ---
 
