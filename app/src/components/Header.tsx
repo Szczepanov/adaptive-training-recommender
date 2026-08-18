@@ -78,6 +78,12 @@ export const Header: React.FC<HeaderProps> = ({
             Check-in
           </button>
           <button
+            className={`nav-link ${screen === 'strength' ? 'active' : ''}`}
+            onClick={() => handleNavigate('strength')}
+          >
+            Strength
+          </button>
+          <button
             className={`nav-link ${screen === 'goals' ? 'active' : ''}`}
             onClick={() => handleNavigate('goals')}
           >
