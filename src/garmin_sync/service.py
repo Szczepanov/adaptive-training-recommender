@@ -175,7 +175,12 @@ class GarminSyncService:
 
         details: dict[str, CanonicalActivityDetail] = {}
         for activity in canonical_activities:
-            if not qualifies_for_activity_detail(activity):
+            # `canonical_activities` here is the full 3-day lookback window fetch_activities
+            # uses for activity discovery, not just target_iso's activities. D-DETAIL-GATE is
+            # explicitly scoped to "the target-date pass of sync_daily" only -- without this
+            # check a qualifying D-1/D-2 activity would get (re-)fetched and re-upserted on
+            # every subsequent day's sync too, well past the intended 3xN-per-run budget.
+            if activity.date != target_iso or not qualifies_for_activity_detail(activity):
                 continue
             assert activity.activity_id is not None
             try:

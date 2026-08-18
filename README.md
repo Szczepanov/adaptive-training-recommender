@@ -111,7 +111,7 @@ Set the following environment variables (e.g. in `.env` locally or Secret Manage
 | `GARMIN_ARCHIVE_STORE` | No | `gcs` | Archive backend (`local` or `gcs`) |
 | `GARMIN_ARCHIVE_BUCKET` | For GCS | — | Private GCS bucket for raw archive; falls back to `GARMIN_TOKEN_BUCKET` |
 | `GARMIN_ARCHIVE_PREFIX` | No | `raw/garmin` | GCS/local object prefix for archived payloads |
-| `GARMIN_ACTIVITY_DETAIL_ENABLED` | No | `false` | Opt-in live ingestion of power/HR zones and lap summaries for non-easy power-bearing activities; never used by backfill/rebuild |
+| `GARMIN_ACTIVITY_DETAIL_ENABLED` | No | `false` | Opt-in live ingestion of power/HR zones and lap summaries for non-easy power-bearing activities, target-date `sync_daily` pass only; never used by lookback resync, backfill, or rebuild |
 
 ---
 

@@ -133,8 +133,14 @@ this table exists so none of them has to be rediscovered by reading six document
 
 ### Proposed decisions awaiting acceptance
 
-There are currently no proposed decisions awaiting acceptance in the bounded Garmin or
-strength capability plans.
+These decisions are intentionally **not** part of the accepted register above. Their
+plans remain Draft and must not be implemented until the linked ADR is accepted. (The
+bounded Garmin and strength capability plans have none outstanding — D-DETAIL-GATE and
+D-ZONECRED moved to the accepted table above, and D-GAUGE/D-SETLOG/D-1RMSRC/D-STRCOST
+were accepted under ADR-0021.)
+
+| ID | Proposal | Where | One-line reason |
+|---|---|---|---|
 | **D-MODE** | `evergreen` and `event_directed` are first-class modes; event strategy is a separate capability | [ADR-0017](../adr/0017-training-intent-profile-and-planning-modes.md) | Cycling can use a structured plan while other existing event categories retain demand-derived direction |
 | **D-DOSE** | Evidence-derived adaptation dose precedes capacity and role packing | [ADR-0017](../adr/0017-training-intent-profile-and-planning-modes.md) | Exercise evidence speaks in dose dimensions; a session is a container, not the physiological requirement |
 | **D-CAP** | Real sessions, minutes, and windows constrain dose packing; they do not define the dose | [ADR-0017](../adr/0017-training-intent-profile-and-planning-modes.md) | Three 25-minute sessions and three 90-minute sessions are not equivalent capacity |

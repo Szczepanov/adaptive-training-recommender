@@ -174,6 +174,46 @@ def test_rate_limit_stops_further_detail_fetches():
     assert repo.upsert_activity.call_count == 2
 
 
+def test_detail_fetch_skips_qualifying_activity_outside_target_date():
+    """D-DETAIL-GATE scopes the live detail fetch to "the target-date pass of
+    sync_daily" only. fetch_activities returns a 3-day lookback window (not just
+    target_iso) for activity discovery, so a qualifying activity from that window's
+    earlier days must not also get detail-fetched -- that would silently repeat the
+    fetch/upsert for the same activity across multiple days' syncs, well past the
+    documented 3xN-per-run budget."""
+    provider = DetailFakeProvider()
+    provider.activities = [
+        CanonicalActivity(
+            activity_id="prior-day",
+            date="2026-08-06",
+            type="cycling",
+            duration_min=60,
+            duration_seconds=3600,
+            training_effect_aerobic=3.2,
+            training_effect_anaerobic=0.4,
+            average_hr=145,
+            training_load=110.0,
+            intensity_tag="moderate",
+        ),
+        CanonicalActivity(
+            activity_id="target-day",
+            date="2026-08-08",
+            type="cycling",
+            duration_min=60,
+            duration_seconds=3600,
+            training_effect_aerobic=3.2,
+            training_effect_anaerobic=0.4,
+            average_hr=145,
+            training_load=110.0,
+            intensity_tag="moderate",
+        ),
+    ]
+    service, repo = _detail_service(provider)
+
+    assert service.sync_daily("2026-08-08", force=True, resync_lookback_days=0)
+    assert provider.detail_calls == ["target-day"]
+
+
 def test_backfill_issues_no_detail_calls_even_when_enabled():
     provider = DetailFakeProvider()
     service, repo = _detail_service(provider)

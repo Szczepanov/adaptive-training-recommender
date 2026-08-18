@@ -39,7 +39,7 @@ Stage 3 delivered the read-only UI independently.
 | P2 | The pinned `garminconnect` exposes per-activity endpoints | ✅ verified: `get_activity_power_in_timezones`, `get_activity_hr_in_timezones`, `get_activity_splits` |
 | P3 | A provider-neutral canonical layer exists to extend | ✅ `canonical.py`; the Garmin adapter now advertises `ProviderCapabilities.activity_details` |
 | P4 | The read-side parser tolerates additive fields | ✅ `parseNormalizedGarminActivity` surfaces valid optional telemetry and drops malformed optional telemetry without invalidating the base record |
-| P5 | An agreed rate-limit budget | ✅ G1.0 measured the live shapes: NP/IF/average power are in the list payload; detail costs exactly three calls per qualifying activity |
+| P5 | An agreed rate-limit budget | ✅ G1.0 measured the live shapes: NP/IF/average power are in the list payload; detail costs up to three calls per qualifying activity |
 | P6 | An accepted decision on whether zones may change credit | ✅ **D-ZONECRED — ADR-0022**; measurement approved, production activation rejected by current evidence |
 
 ---
@@ -141,10 +141,10 @@ resync, `backfill`, and `rebuild` must not call it — assert this in tests, do 
 document it.
 
 **Budget:** G1.0 showed NP/IF/average power ship with the list, but zones and laps still
-require three endpoints. The exact incremental budget is therefore `3 × N` calls for *N*
-qualifying activities in the target window, once per `sync_daily` run. The wrapper's
-existing three-attempt exponential backoff applies; the first exhausted 429 abandons the
-remaining detail work.
+require three endpoints. The incremental budget is therefore up to `3 × N` calls for *N*
+qualifying activities in the target window, once per `sync_daily` run — fewer if an
+exhausted 429 abandons the remaining detail work partway through. The wrapper's existing
+three-attempt exponential backoff applies to each individual call.
 
 **Done when:** the predicate is unit-tested on both branches; a test asserts `backfill`
 issues **zero** detail calls over a multi-day range; the flag defaults off and the whole

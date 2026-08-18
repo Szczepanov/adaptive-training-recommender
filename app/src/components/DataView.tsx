@@ -38,6 +38,7 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery' }: Dat
   // answer of "nothing recorded yet" without a separate loading flag.
   const [adherenceStats, setAdherenceStats] = useState<AdherenceStats | null>(null);
   const [activityWindow, setActivityWindow] = useState<{
+    userId: string;
     asOfDate: string;
     state: DataState<NormalizedGarminActivity[]>;
   } | null>(null);
@@ -53,15 +54,18 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery' }: Dat
 
   const briefDate = decisionInput?.date;
   useEffect(() => {
-    if (activeTab !== 'activities' || !briefDate || activityWindow?.asOfDate === briefDate) return;
+    // Both userId and asOfDate must match the cached window, or a user switch on the same
+    // calendar date would skip the fetch and later render the previous user's activities.
+    if (activeTab !== 'activities' || !briefDate
+      || (activityWindow?.userId === userId && activityWindow.asOfDate === briefDate)) return;
     let cancelled = false;
     const startInclusive = addDaysToLocalDateString(briefDate, -6);
     const throughExclusive = addDaysToLocalDateString(briefDate, 1);
     activityService.getActivitiesInRange(userId, startInclusive, throughExclusive).then((state) => {
-      if (!cancelled) setActivityWindow({ asOfDate: briefDate, state });
+      if (!cancelled) setActivityWindow({ userId, asOfDate: briefDate, state });
     });
     return () => { cancelled = true; };
-  }, [activeTab, userId, briefDate, activityWindow?.asOfDate]);
+  }, [activeTab, userId, briefDate, activityWindow?.userId, activityWindow?.asOfDate]);
 
   useEffect(() => {
     // Keyed on the date the brief was built for, not merely on its presence: a scenario
@@ -714,7 +718,7 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery' }: Dat
           <div className="data-section">
             <h3>Recent activity telemetry</h3>
             <ActivityTelemetry
-              state={activityWindow && activityWindow.asOfDate === briefDate ? activityWindow.state : null}
+              state={activityWindow && activityWindow.userId === userId && activityWindow.asOfDate === briefDate ? activityWindow.state : null}
             />
           </div>
         )}
