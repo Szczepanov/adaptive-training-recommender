@@ -57,7 +57,7 @@ import {
     rankCandidates,
     resolveRecoveryStyle,
 } from './optimizer';
-import { ENRICHED_TEMPLATES } from './templates';
+import { ENRICHED_TEMPLATES, ENRICHED_TEMPLATES_BY_ID } from './templates';
 import { resolveMinimumDaysAfterHardLowerBody } from './planningCandidate';
 import { resolvePlannedDoseForDate, resolveTrainingIntent } from './trainingIntent';
 import { resolvePlanDefinitionForEvent, type PlanDefinition } from './planSchedule';
@@ -244,11 +244,11 @@ export function displayModeFromCategory(category: SessionTemplate['category']): 
 }
 
 export function enrichedCostProfile(templateId: string): WorkoutCostProfile {
-    return ENRICHED_TEMPLATES.find(t => t.id === templateId)?.costProfile ?? ZERO_COST;
+    return ENRICHED_TEMPLATES_BY_ID.get(templateId)?.costProfile ?? ZERO_COST;
 }
 
 export function enrichedStimulusProfile(template: SessionTemplate): WorkoutStimulusProfile {
-    return template.stimulusProfile ?? ENRICHED_TEMPLATES.find(t => t.id === template.id)?.stimulusProfile ?? ZERO_STIMULUS;
+    return template.stimulusProfile ?? ENRICHED_TEMPLATES_BY_ID.get(template.id)?.stimulusProfile ?? ZERO_STIMULUS;
 }
 
 export interface ProjectedObjectiveCreditInput {

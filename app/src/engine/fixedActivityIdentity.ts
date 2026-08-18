@@ -1,6 +1,6 @@
 import { WORKOUTS } from '../workouts/catalog';
 import { workoutForTemplate } from '../workouts/prescription';
-import { ENRICHED_TEMPLATES } from './templates';
+import { ENRICHED_TEMPLATES, ENRICHED_TEMPLATES_BY_ID } from './templates';
 import type { FixedActivity, SessionTemplate } from './models';
 import type { StimulusConfidence } from './stimulus';
 
@@ -91,7 +91,7 @@ export function resolveFixedActivityIdentity(activity: FixedActivity): ResolvedF
     }
 
     if (templateId) {
-        const template = ENRICHED_TEMPLATES.find(item => item.id === templateId);
+        const template = ENRICHED_TEMPLATES_BY_ID.get(templateId);
         const resolvedWorkout = workoutForTemplate(templateId);
         if (!template || !resolvedWorkout) return null;
         if (declaredWorkoutId && declaredWorkoutId !== resolvedWorkout.id) return null;
