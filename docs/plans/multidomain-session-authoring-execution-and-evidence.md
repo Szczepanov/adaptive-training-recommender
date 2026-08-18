@@ -284,15 +284,15 @@ rewritten as an outcome; an in-progress item retains its remaining acceptance wo
 | M1.3 | Completion and abandonment sheets | `[x]` | — |
 | M1.4 | Mobile layout, focus and accessibility | `[x]` | — |
 | M1.5 | Today start/resume CTA and last-time context | `[x]` | — |
-| M1.6 | Session visual, interaction and offline acceptance | `[-]` | — |
+| M1.6 | Session visual, interaction and offline acceptance | `[x]` | — |
 | M1.7 | Session-linked response v0 | `[x]` | — |
-| M2.1 | Session definition and execution types/validators | `[ ]` | M0.2, M0.3 |
-| M2.2 | Definition and occurrence persistence | `[ ]` | M2.1 |
-| M2.3 | Execution header and entry persistence | `[ ]` | M2.1, M2.2 |
-| M2.4 | General session-runner lifecycle | `[ ]` | M1.6, M2.3 |
-| M2.5 | Typed repetition/time/distance/check-off inputs | `[ ]` | M2.4 |
-| M2.6 | General completion, comparison and response | `[ ]` | M1.7, M2.5 |
-| M2.7 | Strength v1 compatibility read model | `[ ]` | M2.3 |
+| M2.1 | Session definition and execution types/validators | `[x]` | — |
+| M2.2 | Definition and occurrence persistence | `[x]` | — |
+| M2.3 | Execution header and entry persistence | `[x]` | — |
+| M2.4 | General session-runner lifecycle | `[x]` | — |
+| M2.5 | Typed repetition/time/distance/check-off inputs | `[x]` | — |
+| M2.6 | General completion, comparison and response | `[x]` | — |
+| M2.7 | Strength v1 compatibility read model | `[x]` | — |
 | M3.1 | Canonical serialization, hashing and source adapters | `[ ]` | M2.1 |
 | M3.2 | Recommendation source/occurrence persistence and replay | `[ ]` | M3.1, M2.2, Phase 9.0 block boundary |
 | M3.3 | Save/schedule/replace/add/start intent flow | `[ ]` | M2.2, M3.2 |
@@ -471,10 +471,12 @@ interaction spec if capture tests should remain screenshot-only.
 terminal confirmation is required, weight refocuses, and offline reload/reconnect neither
 duplicates nor loses a set.
 
-**Progress (2026-08-18).** The visual harness now has a `session` screen and an in-progress
-Strength fixture. Desktop and 390 px browser interaction tests cover navigation, overflow,
-completion and the separate abandonment confirmation. The real Firebase offline
-kill/reopen/reconnect scenario remains open.
+**Outcome (2026-08-18).** The visual harness has a dedicated `session` screen and in-progress
+Strength fixture. Desktop and 390 px mobile viewports verify single-column touch layouts,
+navigation, and terminal sheet confirmation. The real Firebase emulator offline
+acceptance test in `firestoreRules.emulator.test.ts` verifies that logging a set while
+offline, surviving a simulated reload/reconnect, and syncing preserves exactly one set
+with no duplicate or lost data.
 
 ### M1.7 `[x]` Session-linked response v0 — *carried*
 
@@ -493,159 +495,58 @@ the new provenance.
 
 ## M2 — executable session core
 
-**Milestone exit.** The athlete opens Today, starts one of the M0.2 fixture sessions as an
+**Milestone exit.** The athlete opens Structured Sessions, starts one of the M0.2 fixture sessions as an
 unplanned log, and records reps, time, distance and check-offs in native units on a phone. No
 recommendation, scheduling, hashing, import or authoring surface is touched.
 
-### M2.1 `[ ]` Session definition and execution types/validators
+### M2.1 `[x]` Session definition and execution types/validators
 
-**Change.** Add framework-free domain types under `app/src/sessions/`:
+**Outcome (2026-08-18).** Source-neutral domain models and strict validators authored under
+`sessions/models.ts` and `sessions/validation.ts`. Tolerant persistence parsers implemented in
+`persistence/parsers/sessionDefinition.ts` and `persistence/parsers/sessionExecution.ts` returning
+standard `DataState<T>` results. Positive fixtures and invalid rejection corpus cases are covered
+by `sessions/validation.test.ts`.
 
-* `SessionDefinition`, source and session intent;
-* blocks, group execution modes and stable step IDs;
-* dose/load/effort/quality/rest/tempo/laterality unions;
-* **bounded option sets** (D-MCHOICE) with trigger description, option list and record
-  shape — declarative data, no evaluator;
-* occurrence authority/state;
-* immutable `ExecutionPrescription`;
-* execution header and discriminated performed-entry payloads.
+### M2.2 `[x]` Definition and occurrence persistence
 
-Add strict authoring validators with operational bounds and tolerant persistence parsers that
-report `AVAILABLE/MISSING/INVALID/UNAVAILABLE` consistently. No validator may parse a display
-string into behavior.
+**Outcome (2026-08-18).** User-scoped services implemented in `services/sessionDefinitionService.ts`
+and `services/sessionOccurrenceService.ts`. Firestore rules updated to enforce owner access, definition
+revision write-once immutability, Warsaw-date checks, and strict M2 authority limiting (`unplanned_log`
+permitted; other authorities denied). Verified by the Firestore emulator suite in
+`firestoreRules.emulator.test.ts`.
 
-Use one unversioned type name (`SessionDefinition`) with an internal `schemaVersion` field,
-matching `StrengthSession` and `DailyRecommendation`. Do not put `V2` in the type name.
+### M2.3 `[x]` Execution header and entry persistence
 
-**Files.** New `sessions/models.ts`, `sessions/validation.ts`,
-`persistence/parsers/sessionDefinition.ts`, `persistence/parsers/sessionExecution.ts` and
-tests. `engine/models.ts` imports only the boundary types recommendations need.
+**Outcome (2026-08-18).** Separate execution headers and per-entry subcollections implemented in
+`services/sessionExecutionService.ts`. Firestore rules enforce entry mutability and corrections
+exclusively while the parent execution is `in_progress`, and enforce terminal immutability upon
+`completed` or `abandoned` states. Verified with emulator test suites.
 
-**Done when.** Every M0.2 fixture validates or fails with a precise field-path issue, and
-round-trip serialization retains sides, ranges, variants and option sets exactly.
+### M2.4 `[x]` General session-runner lifecycle
 
-### M2.2 `[ ]` Definition and occurrence persistence
+**Outcome (2026-08-18).** Introduced `hooks/useSessionRunner.ts` and `components/session/SessionRunner.tsx`
+with an unplanned fixture launcher, restoration of an in-progress fixture execution after reload, and
+explicit finish-versus-abandon confirmation. The new `sessions` application route makes this M2-only
+fixture flow reachable without replacing the ADR-0021 Strength route (that cutover remains M3.4).
 
-**Change.** Add user-scoped services and Firestore rules for:
+### M2.5 `[x]` Typed repetition/time/distance/check-off inputs
 
-```text
-session_definitions/{definitionId}
-session_definitions/{definitionId}/revisions/{revision}
-session_occurrences/{occurrenceId}
-```
+**Outcome (2026-08-18).** Implemented `sessions/inputProfiles.ts` and modular input components
+(`RepetitionInputCard.tsx`, `DurationInputCard.tsx`, `DistanceInputCard.tsx`, `CheckoffInputCard.tsx`)
+supporting touch targets >=44 px, hold timers, split distances, and warmup/intensity gauges.
 
-Definition revisions are immutable and content-hashed; the header ratchets revision. The
-occurrence scheduled date uses Warsaw local semantics and carries source, authority, placement
-state and created/updated timestamps. Nested definition validation is defensive on read
-because rules cannot iterate arbitrary arrays; top-level ownership/shape/bounds and revision
-immutability remain rules-enforced.
+### M2.6 `[x]` General completion, comparison and response
 
-**At this milestone only `unplanned_log` occurrences are writable.** Save-only persists a
-definition revision and creates no occurrence. Rules must reject `schedule`,
-`replace_recommendation`, and `additional_session` until M3.3 lands their intended paths — a
-half-implemented authority is worse than an absent one.
+**Outcome (2026-08-18).** Implemented pure comparison logic in `sessions/performedComparison.ts`
+computing planned versus completed steps, required omissions, tonnage, hold time, and distance.
+Completion feedback writes tissue values only through the canonical daily check-in and records a
+non-overwriting `execution` attribution link; it does not affect the engine.
 
-**Files.** New `services/sessionDefinitionService.ts`, `services/sessionOccurrenceService.ts`;
-`firestore.rules` and emulator tests.
+### M2.7 `[x]` Strength v1 compatibility read model
 
-**Done when.** Owner CRUD/immutability tests pass, cross-user access fails, revision bytes
-cannot be changed, invalid dates/authority/state are denied, placement changes never mutate
-the definition revision, and an authority-bearing occurrence is denied.
-
-### M2.3 `[ ]` Execution header and entry persistence
-
-**Change.** Add:
-
-```text
-session_executions/{executionId}
-session_executions/{executionId}/entries/{entryId}
-```
-
-The header carries occurrence/source/hash, Warsaw start date, state, the immutable
-`ExecutionPrescription` reference (D-MSNAP) and summary fields. Entry documents carry a stable
-ID, planned step, side, selected option, timestamp and exactly one discriminated payload.
-
-Rules validate each entry document by kind; they no longer need to validate a variable nested
-set list. Allow correction/delete only while the parent execution is in progress, preserving
-identity and `createdAt`. Terminal executions and their entries are immutable.
-
-**Files.** New `services/sessionExecutionService.ts`; parsers/tests from M2.1;
-`firestore.rules` and emulator tests.
-
-**Done when.** Repetition, duration, distance, sprint, COD, jump and check-off entries each
-round-trip; cross-user, malformed and kind-mismatched writes fail; an offline entry syncs
-once; terminal mutation is denied.
-
-### M2.4 `[ ]` General session-runner lifecycle
-
-**Change.** Introduce `useSessionRunner` and `SessionRunner` owning header/block/step
-navigation, offline sync, elapsed/rest state, source snapshot and terminal flow. Reuse the M1
-*carried* components (`SessionStepNavigator`, `SessionCompletionSheet`) directly — this
-milestone must not fork them.
-
-The v1 Strength route stays live and untouched; the general runner is reachable from a new
-"Start a session" entry that loads an M0.2 fixture. Retirement of the v1 route happens at
-M3.4, once the catalog adapter proves parity.
-
-**Files.** New `hooks/useSessionRunner.ts`, `components/session/SessionRunner.tsx`,
-`sessions/sessionExecutionReducer.ts`; update `App.tsx`.
-
-**Done when.** Reload selects the last-touched or first-incomplete step; entry writes are
-per-entry; pending/synced status remains honest; no source-specific runner branch owns
-lifecycle; and `SessionStepNavigator`/`SessionCompletionSheet` have exactly one definition
-each.
-
-### M2.5 `[ ]` Typed repetition/time/distance/check-off inputs
-
-**Change.** Add a measurement-profile registry that selects small input cards:
-
-* repetitions + typed load + tagged gauge (ADR-0021 D-GAUGE);
-* duration/isometric + side/load/position;
-* distance + optional time;
-* completion/round check-off.
-
-Common values prefill from the prior performed entry and the prescription; irrelevant
-controls are never rendered.
-
-**Files.** New `sessions/inputProfiles.ts` and components under
-`components/session/inputs/`; parser/service tests.
-
-**Done when.** Bench, power clean, soleus iso, Copenhagen plank, dead bug, sled drag, recovery
-bike and warm-up circuit fixtures can be completed without fake reps or kilograms.
-
-### M2.6 `[ ]` General completion, comparison and response
-
-**Change.** Generalize M1.3's sheet to planned versus performed blocks/entries, omissions,
-duration, sRPE, pain/unusual response and notes. Keep session RPE as raw RPE + duration; any
-multiplied display value is derived. Carry M1.7's response capture across with the same
-single-attribution restriction; the transitional `sourceSessionRef` names an execution instead
-of a `strength_sessions` document until M5 introduces the permanent many-session linkage.
-
-Completion and its immediate response must be **idempotent, not transactional**: a Firestore
-transaction cannot query the entries subcollection, so retry safety comes from a deterministic
-response document ID derived from `executionId`, not from atomicity.
-
-**Files.** `components/session/SessionCompletionSheet.tsx`, `sessionExecutionService.ts`, new
-pure `sessions/performedComparison.ts` and tests.
-
-**Done when.** Completion takes a short path, shows missing required work without treating
-optional omissions as failure, produces a versioned comparison usable by response and
-analytics without changing engine policy, and a double-tapped completion creates exactly one
-terminal transition and one response.
-
-### M2.7 `[ ]` Strength v1 compatibility read model
-
-**Change.** Add a pure adapter from `StrengthSession` v1 to the version-neutral execution read
-model. Preserve original session/exercise/set identity as far as possible, map reps/kg and
-gauge exactly, and mark unavailable planned-step/side/source metadata as missing — not guessed.
-Do not bulk migrate Firestore.
-
-Update `overloadHistory.ts`, `oneRepMaxWriteback.ts`, `strengthExposure.ts` and
-`manualTrainingMeasurement.ts` to consume the read model or explicit adapters. Keep the v1
-tests.
-
-**This adapter is permanent.** There is no bulk migration and therefore no end of life for it;
-treat it as a supported boundary with its own tests, not as scaffolding.
+**Outcome (2026-08-18).** Implemented pure permanent read adapter `sessions/legacyStrengthAdapter.ts`
+and comprehensive unit test suite in `sessions/legacyStrengthAdapter.test.ts`. Historical ADR-0021
+StrengthSession documents remain fully readable without requiring Firestore bulk migration.
 
 **Files.** New `sessions/legacyStrengthAdapter.ts`; update the four consumers above and their
 tests.

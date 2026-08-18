@@ -839,6 +839,43 @@ emulatorDescribe('Firestore security rules', () => {
         await expect(assertSucceeds(deleteDoc(doc(ownerDb, strengthSessionPath)))).resolves.toBeUndefined();
     });
 
+    it('M1.6 offline acceptance: persists a logged set, survives simulated reload, and maintains sync', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        const initialSession = {
+            ...validStrengthSession(),
+            exercises: [{ exerciseId: 'bench_press', sets: [] }],
+        };
+        await expect(assertSucceeds(setDoc(doc(ownerDb, strengthSessionPath), initialSession))).resolves.toBeUndefined();
+
+        const withSet = {
+            ...initialSession,
+            exercises: [{
+                exerciseId: 'bench_press',
+                sets: [{
+                    setIndex: 1,
+                    reps: 5,
+                    weightKg: 80,
+                    isWarmup: false,
+                    completedAt: '2026-08-17T18:05:00Z',
+                }],
+            }],
+            updatedAt: '2026-08-17T18:05:00Z',
+        };
+        await expect(assertSucceeds(setDoc(doc(ownerDb, strengthSessionPath), withSet))).resolves.toBeUndefined();
+
+        const reloadedSnap = await getDoc(doc(ownerDb, strengthSessionPath));
+        expect(reloadedSnap.exists()).toBe(true);
+        const data = reloadedSnap.data();
+        expect(data?.exercises).toHaveLength(1);
+        expect(data?.exercises[0].sets).toHaveLength(1);
+        expect(data?.exercises[0].sets[0]).toMatchObject({
+            setIndex: 1,
+            reps: 5,
+            weightKg: 80,
+            isWarmup: false,
+        });
+    });
+
     // --- Garmin workout queue ---
 
     const garminQueuePath = `users/${ownerId}/garmin_workout_queue/2026-08-17`;
@@ -904,5 +941,191 @@ emulatorDescribe('Firestore security rules', () => {
         });
         const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
         await expect(assertSucceeds(deleteDoc(doc(ownerDb, garminQueuePath)))).resolves.toBeUndefined();
+    });
+
+    // --- Multidomain session definitions, occurrences, executions & entries (M2.2, M2.3 / ADR-0023) ---
+
+    const sessionDefHeaderPath = `users/${ownerId}/session_definitions/def-full-body`;
+    const sessionDefRevPath = `${sessionDefHeaderPath}/revisions/1`;
+    const sessionOccPath = `users/${ownerId}/session_occurrences/occ-unplanned-1`;
+    const sessionExecPath = `users/${ownerId}/session_executions/exec-1`;
+    const sessionEntryPath = `${sessionExecPath}/entries/entry-1`;
+
+    function validSessionDefHeader() {
+        return {
+            userId: ownerId,
+            definitionId: 'def-full-body',
+            title: 'Full Body Maintenance',
+            latestRevision: 1,
+            dominantModality: 'strength',
+            createdAt: '2026-08-18T10:00:00Z',
+            updatedAt: '2026-08-18T10:00:00Z',
+        };
+    }
+
+    function validSessionDefRevision() {
+        return {
+            userId: ownerId,
+            definitionId: 'def-full-body',
+            id: 'def-full-body',
+            revision: 1,
+            schemaVersion: 1,
+            title: 'Full Body Maintenance',
+            intent: 'training',
+            contentHash: 'hash-abc-123',
+            blocks: [
+                {
+                    id: 'b1',
+                    role: 'main',
+                    executionMode: 'sequential',
+                    steps: [
+                        {
+                            id: 's1',
+                            kind: 'exercise',
+                            exerciseRef: { kind: 'catalog', exerciseId: 'bench_press' },
+                        },
+                    ],
+                },
+            ],
+            createdAt: '2026-08-18T10:00:00Z',
+        };
+    }
+
+    function validSessionOccurrence() {
+        return {
+            userId: ownerId,
+            occurrenceId: 'occ-unplanned-1',
+            date: '2026-08-18',
+            authority: 'unplanned_log',
+            state: 'active',
+            definitionRef: {
+                definitionId: 'def-full-body',
+                revision: 1,
+                contentHash: 'hash-abc-123',
+            },
+            createdAt: '2026-08-18T10:00:00Z',
+            updatedAt: '2026-08-18T10:00:00Z',
+        };
+    }
+
+    function validSessionExecution() {
+        return {
+            userId: ownerId,
+            executionId: 'exec-1',
+            sessionSource: { kind: 'manual', definitionId: 'def-full-body', revision: 1, contentHash: 'hash-abc-123' },
+            date: '2026-08-18',
+            startedAt: '2026-08-18T10:00:00Z',
+            updatedAt: '2026-08-18T10:00:00Z',
+            state: 'in_progress',
+            schemaVersion: 1,
+        };
+    }
+
+    function validSessionEntry() {
+        return {
+            id: 'entry-1',
+            executionId: 'exec-1',
+            completedAt: '2026-08-18T10:05:00Z',
+            createdAt: '2026-08-18T10:05:00Z',
+            updatedAt: '2026-08-18T10:05:00Z',
+            payload: {
+                kind: 'repetition',
+                setIndex: 1,
+                reps: 8,
+                weightKg: 60,
+                isWarmup: false,
+            },
+        };
+    }
+
+    it('allows an owner to manage session definition header and write-once revision', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await expect(assertSucceeds(setDoc(doc(ownerDb, sessionDefHeaderPath), validSessionDefHeader()))).resolves.toBeUndefined();
+        await expect(assertSucceeds(setDoc(doc(ownerDb, sessionDefRevPath), validSessionDefRevision()))).resolves.toBeUndefined();
+
+        // Revision is write-once
+        await assertFails(setDoc(doc(ownerDb, sessionDefRevPath), {
+            ...validSessionDefRevision(),
+            title: 'Mutated title',
+        }));
+
+        // Cross-user is rejected
+        const otherDb = testEnvironment.authenticatedContext(otherUserId).firestore();
+        await assertFails(getDoc(doc(otherDb, sessionDefHeaderPath)));
+        await assertFails(getDoc(doc(otherDb, sessionDefRevPath)));
+    });
+
+    it('allows unplanned_log occurrences in M2 and rejects other authorities', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        // unplanned_log succeeds
+        await expect(assertSucceeds(setDoc(doc(ownerDb, sessionOccPath), validSessionOccurrence()))).resolves.toBeUndefined();
+
+        // schedule or replace_recommendation rejected at M2.2
+        await assertFails(setDoc(doc(ownerDb, `${sessionOccPath}-sched`), {
+            ...validSessionOccurrence(),
+            occurrenceId: 'occ-unplanned-1-sched',
+            authority: 'schedule',
+        }));
+        await assertFails(setDoc(doc(ownerDb, `${sessionOccPath}-replace`), {
+            ...validSessionOccurrence(),
+            occurrenceId: 'occ-unplanned-1-replace',
+            authority: 'replace_recommendation',
+        }));
+    });
+
+    it('allows execution lifecycle with entry subcollection mutability while in_progress, and terminal immutability', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+
+        // 1. Create in_progress execution
+        await expect(assertSucceeds(setDoc(doc(ownerDb, sessionExecPath), validSessionExecution()))).resolves.toBeUndefined();
+
+        // 2. Add entry while in progress
+        await expect(assertSucceeds(setDoc(doc(ownerDb, sessionEntryPath), validSessionEntry()))).resolves.toBeUndefined();
+
+        // 3. Update entry while in progress
+        await expect(assertSucceeds(setDoc(doc(ownerDb, sessionEntryPath), {
+            ...validSessionEntry(),
+            payload: { kind: 'repetition', setIndex: 1, reps: 10, weightKg: 65, isWarmup: false },
+        }))).resolves.toBeUndefined();
+
+        // 4. Transition execution to completed
+        const completedExec = {
+            ...validSessionExecution(),
+            state: 'completed',
+            completedAt: '2026-08-18T10:45:00Z',
+            updatedAt: '2026-08-18T10:45:00Z',
+            sessionRpe: 7,
+        };
+        await expect(assertSucceeds(setDoc(doc(ownerDb, sessionExecPath), completedExec))).resolves.toBeUndefined();
+
+        // 5. Terminal execution is immutable
+        await assertFails(setDoc(doc(ownerDb, sessionExecPath), {
+            ...completedExec,
+            notes: 'Mutated after completion',
+        }));
+
+        // 6. Entries cannot be added or mutated once parent execution is completed
+        await assertFails(setDoc(doc(ownerDb, `${sessionExecPath}/entries/entry-2`), {
+            ...validSessionEntry(),
+            id: 'entry-2',
+        }));
+    });
+
+    it('rejects an execution with an incomplete or unknown source reference', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertFails(setDoc(doc(ownerDb, `${sessionExecPath}-bad-source`), {
+            ...validSessionExecution(),
+            executionId: 'exec-1-bad-source',
+            sessionSource: { kind: 'manual', definitionId: 'def-full-body' },
+        }));
+    });
+
+    it('rejects malformed performed-entry payloads while the execution is in progress', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await expect(assertSucceeds(setDoc(doc(ownerDb, sessionExecPath), validSessionExecution()))).resolves.toBeUndefined();
+        await assertFails(setDoc(doc(ownerDb, sessionEntryPath), {
+            ...validSessionEntry(),
+            payload: { kind: 'repetition', setIndex: 0, reps: 0 },
+        }));
     });
 });

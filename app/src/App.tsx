@@ -10,6 +10,7 @@ import { DataView } from './components/DataView';
 import { ExternalPlanImport } from './components/ExternalPlanImport';
 import { StrengthSessionRunner } from './components/StrengthSessionRunner';
 import { StrengthOverloadHistory } from './components/StrengthOverloadHistory';
+import { SessionRunner } from './components/session/SessionRunner';
 import { decisionComposer } from './engine/composer';
 import type { DailyDecisionInput, StrengthSession } from './engine/models';
 import type { Screen } from './types/navigation';
@@ -155,6 +156,10 @@ function App() {
               <StrengthOverloadHistory userId={userId!} />
             </details>
           </div>
+        )}
+
+        {screen === 'sessions' && (
+          <SessionRunner userId={userId!} onClose={() => handleNavigate('home')} />
         )}
 
         {screen === 'plan' && (

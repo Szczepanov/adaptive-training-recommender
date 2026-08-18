@@ -545,6 +545,183 @@ service cloud.firestore {
       allow delete: if isOwner(userId);
     }
 
+    function hasValidSessionDefinitionHeader(userId, definitionId) {
+      let data = request.resource.data;
+      return hasOwnedUserId(userId)
+        && data.keys().hasOnly(['userId', 'definitionId', 'title', 'latestRevision', 'dominantModality', 'createdAt', 'updatedAt'])
+        && data.keys().hasAll(['userId', 'definitionId', 'title', 'latestRevision', 'createdAt', 'updatedAt'])
+        && data.definitionId == definitionId
+        && data.title is string && data.title.size() > 0 && data.title.size() <= 200
+        && data.latestRevision is int && data.latestRevision >= 1
+        && (!('dominantModality' in data) || data.dominantModality is string)
+        && data.createdAt is string && data.updatedAt is string;
+    }
+
+    function hasValidSessionDefinitionRevision(userId, definitionId, revId) {
+      let data = request.resource.data;
+      return hasOwnedUserId(userId)
+        && data.keys().hasOnly(['userId', 'definitionId', 'schemaVersion', 'id', 'revision', 'title', 'summary', 'intent', 'modalities', 'dominantModality', 'duration', 'defaultScheduledDate', 'sessionTargets', 'prohibitedAdditions', 'importWarnings', 'blocks', 'contentHash', 'createdAt'])
+        && data.keys().hasAll(['userId', 'definitionId', 'id', 'revision', 'schemaVersion', 'title', 'intent', 'contentHash', 'blocks', 'createdAt'])
+        && data.definitionId == definitionId
+        && data.id == definitionId
+        && data.revision is int && string(data.revision) == revId
+        && data.schemaVersion == 1
+        && data.contentHash is string && data.contentHash.size() > 0
+        && data.intent in ['training', 'testing', 'competition', 'rehab_return', 'recovery', 'skill_technical']
+        && data.blocks is list;
+    }
+
+    match /users/{userId}/session_definitions/{definitionId} {
+      allow read: if isOwner(userId);
+      allow create: if hasValidSessionDefinitionHeader(userId, definitionId);
+      allow update: if hasValidSessionDefinitionHeader(userId, definitionId)
+        && keepsOwnership(userId)
+        && request.resource.data.latestRevision >= resource.data.latestRevision
+        && request.resource.data.createdAt == resource.data.createdAt;
+      allow delete: if isOwner(userId);
+
+      match /revisions/{revId} {
+        allow read: if isOwner(userId);
+        allow create: if hasValidSessionDefinitionRevision(userId, definitionId, revId);
+        allow update, delete: if false;
+      }
+    }
+
+    function hasValidSessionOccurrence(userId, occurrenceId) {
+      let data = request.resource.data;
+      return hasOwnedUserId(userId)
+        && data.keys().hasOnly(['userId', 'occurrenceId', 'date', 'authority', 'definitionRef', 'state', 'placementOrder', 'createdAt', 'updatedAt'])
+        && data.keys().hasAll(['userId', 'occurrenceId', 'date', 'authority', 'definitionRef', 'state', 'createdAt', 'updatedAt'])
+        && data.occurrenceId == occurrenceId
+        && isValidActivityDate(data.date)
+        // M2.2 constraint: only unplanned_log occurrences are permitted until M3.3 lands schedule/replace/additional
+        && data.authority == 'unplanned_log'
+        && data.state in ['scheduled', 'active', 'superseded', 'completed', 'abandoned', 'missed']
+        && data.definitionRef is map
+        && data.definitionRef.keys().hasOnly(['definitionId', 'revision', 'contentHash'])
+        && data.definitionRef.keys().hasAll(['definitionId', 'revision', 'contentHash'])
+        && data.definitionRef.definitionId is string && data.definitionRef.definitionId.size() > 0
+        && data.definitionRef.revision is int && data.definitionRef.revision >= 1
+        && data.definitionRef.contentHash is string && data.definitionRef.contentHash.size() > 0
+        && (!('placementOrder' in data) || (data.placementOrder is int && data.placementOrder >= 0))
+        && data.createdAt is string && data.updatedAt is string;
+    }
+
+    match /users/{userId}/session_occurrences/{occurrenceId} {
+      allow read: if isOwner(userId);
+      allow create: if hasValidSessionOccurrence(userId, occurrenceId);
+      allow update: if hasValidSessionOccurrence(userId, occurrenceId)
+        && keepsOwnership(userId)
+        && request.resource.data.date == resource.data.date
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.definitionRef == resource.data.definitionRef
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['state', 'updatedAt']);
+      allow delete: if isOwner(userId);
+    }
+
+    function hasValidSessionExecution(userId, executionId) {
+      let data = request.resource.data;
+      return hasOwnedUserId(userId)
+        && data.keys().hasOnly(['userId', 'executionId', 'occurrenceId', 'sessionSource', 'prescriptionHash', 'date', 'startedAt', 'completedAt', 'updatedAt', 'state', 'sessionRpe', 'notes', 'schemaVersion'])
+        && data.keys().hasAll(['userId', 'executionId', 'sessionSource', 'date', 'startedAt', 'updatedAt', 'state', 'schemaVersion'])
+        && data.executionId == executionId
+        && isValidActivityDate(data.date)
+        && hasValidSessionSource(data.sessionSource)
+        && (!('occurrenceId' in data) || data.occurrenceId is string)
+        && (!('prescriptionHash' in data) || data.prescriptionHash is string)
+        && (!('sessionRpe' in data) || (data.sessionRpe is number && data.sessionRpe >= 1 && data.sessionRpe <= 10))
+        && (!('notes' in data) || (data.notes is string && data.notes.size() <= 4000))
+        && data.state in ['in_progress', 'completed', 'abandoned']
+        && ((data.state == 'completed') == ('completedAt' in data))
+        && data.startedAt is string
+        && data.updatedAt is string
+        && data.schemaVersion == 1;
+    }
+
+    function hasValidSessionSource(source) {
+      return source is map && (
+        (source.kind == 'catalog'
+          && source.keys().hasOnly(['kind', 'workoutId', 'catalogVersion'])
+          && source.keys().hasAll(['kind', 'workoutId', 'catalogVersion'])
+          && source.workoutId is string && source.catalogVersion is string)
+        || (source.kind == 'external_plan'
+          && source.keys().hasOnly(['kind', 'planId', 'revision', 'sessionId', 'contentHash'])
+          && source.keys().hasAll(['kind', 'planId', 'revision', 'sessionId', 'contentHash'])
+          && source.planId is string && source.revision is int && source.revision >= 1
+          && source.sessionId is string && source.contentHash is string)
+        || (source.kind == 'manual'
+          && source.keys().hasOnly(['kind', 'definitionId', 'revision', 'contentHash'])
+          && source.keys().hasAll(['kind', 'definitionId', 'revision', 'contentHash'])
+          && source.definitionId is string && source.revision is int && source.revision >= 1 && source.contentHash is string)
+        || (source.kind == 'unplanned_fixture'
+          && source.keys().hasOnly(['kind', 'fixtureId'])
+          && source.keys().hasAll(['kind', 'fixtureId'])
+          && source.fixtureId is string)
+      );
+    }
+
+    function hasValidSessionEntry(executionId, entryId) {
+      let data = request.resource.data;
+      let payload = data.payload;
+      return data.keys().hasOnly(['id', 'executionId', 'stepId', 'exerciseRef', 'side', 'selectedOptionId', 'completedAt', 'createdAt', 'updatedAt', 'payload'])
+        && data.keys().hasAll(['id', 'executionId', 'completedAt', 'createdAt', 'updatedAt', 'payload'])
+        && data.id == entryId
+        && data.executionId == executionId
+        && data.completedAt is string && data.createdAt is string && data.updatedAt is string
+        && (!('stepId' in data) || data.stepId is string)
+        && (!('selectedOptionId' in data) || data.selectedOptionId is string)
+        && (!('side' in data) || data.side in ['left', 'right', 'bilateral'])
+        && payload is map
+        && (
+          (payload.kind == 'repetition'
+            && payload.keys().hasOnly(['kind', 'setIndex', 'reps', 'weightKg', 'isWarmup', 'gauge'])
+            && payload.setIndex is int && payload.setIndex >= 1
+            && payload.reps is int && payload.reps >= 1
+            && (!('weightKg' in payload) || (payload.weightKg is number && payload.weightKg >= 0))
+            && (!('isWarmup' in payload) || payload.isWarmup is bool))
+          || (payload.kind == 'duration'
+            && payload.keys().hasOnly(['kind', 'seconds', 'loadKg', 'position'])
+            && payload.seconds is number && payload.seconds > 0
+            && (!('loadKg' in payload) || (payload.loadKg is number && payload.loadKg >= 0)))
+          || (payload.kind == 'distance'
+            && payload.keys().hasOnly(['kind', 'meters', 'durationSeconds'])
+            && payload.meters is number && payload.meters > 0
+            && (!('durationSeconds' in payload) || (payload.durationSeconds is number && payload.durationSeconds > 0)))
+          || (payload.kind == 'sprint'
+            && payload.keys().hasOnly(['kind', 'meters', 'splitSeconds', 'surface'])
+            && payload.meters is number && payload.meters > 0
+            && payload.splitSeconds is number && payload.splitSeconds > 0)
+          || (payload.kind == 'jump_attempt'
+            && payload.keys().hasOnly(['kind', 'attemptIndex', 'heightInches', 'distanceMeters'])
+            && payload.attemptIndex is int && payload.attemptIndex >= 1
+            && (('heightInches' in payload && payload.heightInches is number && payload.heightInches > 0)
+              || ('distanceMeters' in payload && payload.distanceMeters is number && payload.distanceMeters > 0)))
+          || (payload.kind == 'checkoff'
+            && payload.keys().hasOnly(['kind', 'roundIndex', 'completed'])
+            && payload.completed is bool
+            && (!('roundIndex' in payload) || (payload.roundIndex is int && payload.roundIndex >= 1)))
+        );
+    }
+
+    match /users/{userId}/session_executions/{executionId} {
+      allow read: if isOwner(userId);
+      allow create: if hasValidSessionExecution(userId, executionId)
+        && request.resource.data.state == 'in_progress';
+      allow update: if hasValidSessionExecution(userId, executionId)
+        && keepsOwnership(userId)
+        && resource.data.state == 'in_progress'
+        && request.resource.data.date == resource.data.date
+        && request.resource.data.startedAt == resource.data.startedAt;
+      allow delete: if isOwner(userId);
+
+      match /entries/{entryId} {
+        allow read: if isOwner(userId);
+        allow create, update, delete: if isOwner(userId)
+          && get(/databases/$(database)/documents/users/$(userId)/session_executions/$(executionId)).data.state == 'in_progress'
+          && (request.method == 'delete' || hasValidSessionEntry(executionId, entryId));
+      }
+    }
+
     match /users/{userId}/daily_recommendations/{date} {
       allow read: if isOwner(userId);
       allow create: if hasValidRecommendation(userId, date);

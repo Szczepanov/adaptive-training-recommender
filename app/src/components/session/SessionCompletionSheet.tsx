@@ -36,6 +36,8 @@ interface SessionCompletionSheetProps {
     onAbandon: () => Promise<void>;
     onCancel: () => void;
     saving: boolean;
+    openAbandonConfirmation?: boolean;
+    error?: string | null;
 }
 
 export const SessionCompletionSheet: React.FC<SessionCompletionSheetProps> = ({
@@ -46,12 +48,14 @@ export const SessionCompletionSheet: React.FC<SessionCompletionSheetProps> = ({
     onAbandon,
     onCancel,
     saving,
+    openAbandonConfirmation = false,
+    error = null,
 }) => {
     const [sessionRpe, setSessionRpe] = useState<number | undefined>(7);
     const [notes, setNotes] = useState('');
     const [selectedRegion, setSelectedRegion] = useState<BodyRegion | ''>('');
     const [reportedPain, setReportedPain] = useState<TissueResponseLevel>('mild');
-    const [showAbandonConfirm, setShowAbandonConfirm] = useState(false);
+    const [showAbandonConfirm, setShowAbandonConfirm] = useState(openAbandonConfirmation);
     const [elapsedMinutes] = useState(() => Math.max(1, Math.round((Date.now() - Date.parse(startedAt)) / 60000)));
 
     const missingRequiredSteps = steps.filter(s => s.isPlanned && !s.optional && !s.isComplete);
@@ -70,6 +74,7 @@ export const SessionCompletionSheet: React.FC<SessionCompletionSheetProps> = ({
     return (
         <div className="session-completion-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="completion-title">
             <div className="session-completion-sheet">
+                {error && <p className="session-runner-error" role="alert">{error}</p>}
                 {showAbandonConfirm ? (
                     <div className="abandon-confirmation-view">
                         <h3 className="danger-text">Abandon Session?</h3>

@@ -16,7 +16,7 @@ interface VisualReviewAppProps {
 
 function mapScreenToVisual(s: Screen): VisualScreen {
   if (s === 'strength') return 'session';
-  if (s === 'plan' || s === 'brief') return 'home';
+  if (s === 'plan' || s === 'brief' || s === 'sessions') return 'home';
   return s;
 }
 
