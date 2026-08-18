@@ -62,9 +62,34 @@ service cloud.firestore {
         && dose.intensity is number && dose.intensity >= 0 && dose.intensity <= 1.2;
     }
 
+    // Phase 9.7/D-SUBJAUDIT: compact, normalized subjective-drift provenance. Optional --
+    // production callers still supply no `subjectiveDrift` at all while the live default
+    // stays 'off' (see rules.ts/provenance.ts); this only validates the shape when present.
+    function hasValidSubjectiveDriftAudit(drift) {
+      return drift is map
+        && drift.keys().hasOnly(['estimatorId', 'estimatorPolicyVersion', 'historyThroughDateExclusive', 'recentRecordedDays', 'longRecordedDays', 'contribution', 'perMetricContributions', 'decisionRelevant'])
+        && drift.keys().hasAll(['estimatorId', 'estimatorPolicyVersion', 'historyThroughDateExclusive', 'recentRecordedDays', 'longRecordedDays', 'contribution', 'perMetricContributions', 'decisionRelevant'])
+        && drift.estimatorId is string && drift.estimatorId.size() > 0
+        && drift.estimatorPolicyVersion is string && drift.estimatorPolicyVersion.size() > 0
+        && drift.historyThroughDateExclusive is string
+        && drift.recentRecordedDays is int && drift.recentRecordedDays >= 0
+        && drift.longRecordedDays is int && drift.longRecordedDays >= 0
+        && drift.contribution is number && drift.contribution >= 0
+        && drift.decisionRelevant is bool
+        && drift.perMetricContributions is map
+        && drift.perMetricContributions.keys().hasOnly(['readiness', 'sleepQuality', 'fatigue', 'soreness', 'mentalStress', 'motivation'])
+        && drift.perMetricContributions.keys().hasAll(['readiness', 'sleepQuality', 'fatigue', 'soreness', 'mentalStress', 'motivation'])
+        && drift.perMetricContributions.readiness is number && drift.perMetricContributions.readiness >= 0
+        && drift.perMetricContributions.sleepQuality is number && drift.perMetricContributions.sleepQuality >= 0
+        && drift.perMetricContributions.fatigue is number && drift.perMetricContributions.fatigue >= 0
+        && drift.perMetricContributions.soreness is number && drift.perMetricContributions.soreness >= 0
+        && drift.perMetricContributions.mentalStress is number && drift.perMetricContributions.mentalStress >= 0
+        && drift.perMetricContributions.motivation is number && drift.perMetricContributions.motivation >= 0;
+    }
+
     function hasValidRecommendationAudit(audit) {
       return audit is map
-        && audit.keys().hasOnly(['policyVersion', 'evaluatedAt', 'decisionContextRevision', 'safetyStatus', 'history', 'envelope', 'plannedDose', 'executionDose', 'candidateScores', 'droppedContributorObjectives', 'externalPlan', 'primarySession', 'additionalSessions'])
+        && audit.keys().hasOnly(['policyVersion', 'evaluatedAt', 'decisionContextRevision', 'safetyStatus', 'history', 'envelope', 'plannedDose', 'executionDose', 'candidateScores', 'droppedContributorObjectives', 'externalPlan', 'primarySession', 'additionalSessions', 'subjectiveDrift'])
         && audit.keys().hasAll(['policyVersion', 'evaluatedAt', 'decisionContextRevision', 'safetyStatus', 'history', 'envelope', 'candidateScores'])
         && audit.policyVersion is string
         && audit.evaluatedAt is string
@@ -100,7 +125,8 @@ service cloud.firestore {
           && audit.externalPlan.revision is int && audit.externalPlan.revision >= 1
           && audit.externalPlan.sessionId is string && audit.externalPlan.sessionId.size() <= 64
           && audit.externalPlan.contentHash is string && audit.externalPlan.contentHash.size() <= 128
-        ));
+        ))
+        && (!('subjectiveDrift' in audit) || hasValidSubjectiveDriftAudit(audit.subjectiveDrift));
     }
 
     function hasValidRecommendation(userId, date) {

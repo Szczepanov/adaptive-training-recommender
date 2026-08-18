@@ -1,9 +1,7 @@
 # Phase 9: Subjective baselines in readiness mode
 
-* **Status:** In progress. ADR-0020 is Accepted; 9.1, 9.2, 9.3 and 9.5 are done. 9.4 is
-  independently startable now; 9.6 needs both 9.3 (done) and 9.5 (done) and is now
-  startable too; 9.7 needs 9.3 (done) and is startable; 9.8 additionally needs Phase 9.0's
-  prospective evidence.
+* **Status:** In progress. ADR-0020 is Accepted; 9.1-9.7 are done. Only 9.8 remains, and it
+  additionally needs Phase 9.0's prospective evidence, which has not yet been collected.
 * **Blocked by:** nothing at the plan level. Individual work items list their own blockers
   in the task board below.
 * **Strongly preceded by:** [Phase 9.0](./phase-9-0-shadow-mode-and-decision-journal.md) — its shadow block supplies the prospective evidence required before a production ship decision
@@ -242,7 +240,7 @@ path, that cutover gets the real version bump and moves the outgoing value into
 
 ---
 
-### 9.4 Composition boundary supplies the baseline `[ ]`
+### 9.4 Composition boundary supplies the baseline `[x]`
 
 **Current behaviour.** `composer.ts` reads today's check-in only.
 
@@ -263,6 +261,19 @@ Today's ordinary absolute safety logic still runs from today's valid check-in.
 **Done when** the baseline reaches the evaluator, history is strictly `throughDateExclusive`,
 failed/invalid/sparse prior history leaves the decision unchanged, and the added history read
 is bounded to one range query per composed decision.
+
+**Implementation note.** `composer.ts` bundles `checkinService.getCheckinsInRangeState(userId,
+D-28, D)` into the same `Promise.allSettled` batch as its other reads (one range read per
+composed decision), reusing `parseSubjectiveCheckin` per document so an invalid row surfaces
+as a `subjectiveHistoryIssues` entry rather than a raw type assertion. Any non-`AVAILABLE`
+history state degrades `ComposedDailyDecisionInput.subjectiveBaseline` to `null` without
+throwing; today's absolute safety path (today's own check-in) is read independently and is
+unaffected either way. `composer.test.ts`'s "Phase 9.4 subjective baseline boundary" block
+covers the mature-history, unavailable-history, issues-surfaced, and sparse-history cases.
+Threading `ComposedDailyDecisionInput.subjectiveBaseline` onto the `DailyReadiness` consumed
+by the real `evaluateTrainingWithIntent`/`evaluateReadinessAndSafetyEnvelope` call sites
+remains out of scope here, same as 9.3's note: `decisionComposer` has no production caller
+today, and 9.6/9.8 are where a live wiring decision belongs.
 
 ---
 
@@ -306,7 +317,7 @@ slow-drifter and noisy-stationary remain `train` under today's logic.
 
 ---
 
-### 9.6 Comparison harness and estimator sensitivity `[ ]`
+### 9.6 Comparison harness and estimator sensitivity `[x]`
 
 **Change.** Add `runSubjectiveDriftComparison` to `simulation/analyze.ts` and
 `scripts/simulate-subjective-drift.mjs`, modelled on the fatigue-fusion comparison. Run the
@@ -335,9 +346,55 @@ Phase 9.0/9.8.
 reported, reasonable estimator choices do not hide a materially different conclusion, and
 no automatic production recommendation is emitted.
 
+**Implementation note.** `scenarios.ts`'s `subjective_*` scenarios now attach a real
+`subjectiveBaseline` to `readinessForDate` (computed from the profile's own deterministic
+daily series via `computeSubjectiveBaseline`, strictly `< date`) -- previously only the
+mechanics-only "9.6a" evaluator-level harness (`subjectiveDriftComparison.ts`) could see any
+drift signal. `evaluateTrainingWithIntent`/`evaluateNextDayPlanWithIntent` (`rules.ts`) gained
+trailing `subjectiveDriftPolicy`/`subjectiveDriftWeights` parameters mirroring
+`fatigueFusionPolicy`'s existing threading, both defaulting to `'off'` at every production
+call site; `generateWeekAheadPlanWithIntent`/`planner.ts` deliberately do not read the
+selector (forecast-day tiers come from `fatigueTierFor(peakFatigue)`, not
+`evaluateReadinessAndSafetyEnvelope`, and `planner.ts` sits outside the policy-drift guard's
+dormant exception) -- stated as an explicit report limitation, matching 9.3's precedent that
+threading past today/tomorrow is out of scope.
+
+`simulation/analyze.ts` adds `runSubjectiveDriftComparison` (modelled directly on
+`runFatigueFusionComparison`: real planner/hard gates, `'off'` vs `'drift'`, full
+`SCENARIOS` corpus) and `runSubjectiveDriftSensitivityComparison` (the same real-planner
+comparison swept across the existing 8 `SUBJECTIVE_DRIFT_SENSITIVITY_CONFIGS`, reused from
+`subjectiveDriftComparison.ts` rather than duplicated). `scripts/simulate-subjective-drift.mjs`
+now runs all three layers -- 9.6a mechanics, the planner-level comparison, and the
+planner-level sensitivity sweep -- into one `report.md` that states the
+synthetic-safety-evidence/real-world-usefulness-evidence distinction explicitly.
+
+Actually running the harness against the full corpus confirmed every non-`subjective_*`
+scenario diffs to exactly zero (the regression control holds), and `subjective_slow_drifter`
+is detectable (`train -> modify`, 6 changed selections) exactly as the plan named it. The
+sensitivity sweep showed smoothly graded, non-pathological behaviour across every window/
+floor/weight variant tested (e.g. a tighter `variabilityFloor: 0.5` strengthens the effect,
+a looser `1.5` weakens it to zero, half-weights and fatigue/soreness-only weights attenuate
+it) with no sign of an outlier- or discrete-scale-driven artifact -- so per the plan's
+conditional language, no robust median/MAD alternative was added; the report states this
+conclusion rather than assuming it. Habitual-low and chronically-sore showed zero mode
+changes under every measured config, satisfying the "no relaxation" acceptance criterion.
+`aggregate.constraintViolationDelta` was `0` throughout -- drift never introduced a
+constraint violation `'off'` didn't already have -- though `restOrRecoveryDayDelta`/
+`recoverySelectionDelta` **can** go negative for `subjective_slow_drifter` in aggregate: an
+earlier day's changed selection alters what the chained multi-week simulation accumulates as
+history, which can shift *when* a later recovery day falls. D-SUBJADD's never-less-restrictive
+guarantee is a per-decision invariant (proven by `rules.test.ts`'s property test), not a claim
+that a multi-week aggregate share can only rise -- the new `scenarios.test.ts` coverage
+documents this distinction rather than asserting a stronger (and false) aggregate invariant.
+
+`check-policy-drift.mjs`'s policy-affecting file set was left unchanged (`analyze.ts`,
+`scenarios.ts`, `subjectiveDriftEvidence.ts` all live under `engine/simulation/`, already
+exempt), so this work item required no CI-guard change by itself -- see 9.7's note for the
+guard change that *was* needed.
+
 ---
 
-### 9.7 Telemetry, audit and rationale `[ ]`
+### 9.7 Telemetry, audit and rationale `[x]`
 
 **Change.** Add `subjectiveDrift` to `DecisionScoreTelemetry` as a separately readable
 component that reconciles to the total.
@@ -364,6 +421,51 @@ when it actually mattered.
 
 **Done when** telemetry reconciles, replay verifies the normalized drift provenance, the
 audit remains compact/non-raw, and rationale is counterfactually decision-relevant.
+
+**Implementation note.** `DecisionScoreTelemetry` (`models.ts`) gained an optional
+`subjectiveDrift?: number` field; `evaluateReadinessAndSafetyEnvelope` now populates it and
+changed `totalDecisionScore` to `objectiveStrain + subjectiveDrift` so the components
+reconcile exactly. Under production's `'off'` default `subjectiveDrift` is always `0`, so
+this is bit-identical to pre-9.7 output -- confirmed by the full existing test suite passing
+unchanged. A live-safe `subjectiveDriftIsDecisionRelevant` counterfactual was added inline
+(mirroring the existing `multiDayDriftIsDecisionRelevant` pattern exactly: computed from
+`objectiveStrain` alone through the same threshold logic, compared against the pre-override
+`mode`), and wired into `evaluateTraining`'s ("Path A") rationale alongside the existing
+`multiDayDriftIsDecisionRelevant` line -- scoped there rather than into
+`evaluateTrainingWithIntent`'s optimizer-driven rationale, matching precedent and the 9.3
+note that threading further is out of scope. Neither addition references the literal string
+`'drift'`, so the existing `rules.test.ts` guard (no non-test engine file outside
+`simulation/` may contain that literal) is untouched.
+
+A new `estimatorPolicyVersion` (`rules.ts`'s `SUBJECTIVE_DRIFT_ESTIMATOR_POLICY_VERSION`,
+currently `'subjective-drift-score-v1-equal-weights-strain-z-cap'`) was added alongside
+`estimatorId` on `SubjectiveDriftAudit`/`SubjectiveDriftDecisionEvidence`: `estimatorId`
+identifies the *baseline* estimator's own parameterization (windows/floor/coverage --
+already varied per sensitivity config), while `estimatorPolicyVersion` identifies the
+*scoring* policy (weights + cap-source convention) that turns a baseline into a strain
+contribution, so a future weights/cap change is distinguishable from a future baseline
+change. `subjectiveDriftAuditReplayErrors` (`subjectiveDriftAudit.ts`) validates it as a
+non-empty string alongside the existing checks. Fixing this also surfaced and corrected a
+double-count: `buildSubjectiveDriftDecisionEvidence`'s `totalDecisionScoreWithDrift` used to
+add `contribution` on top of `drift.telemetry.totalDecisionScore` under the assumption that
+telemetry did not yet include the subjective term -- now that it does (this work item), that
+addition would have double-counted, so it was simplified to read the reconciled telemetry
+value directly.
+
+`firestore.rules`'s `hasValidRecommendationAudit` allow-lists an optional `subjectiveDrift`
+key and validates its shape via a new `hasValidSubjectiveDriftAudit` helper (estimator
+identifiers non-empty, coverage counts non-negative integers, contribution non-negative,
+the canonical six-metric key set exactly, `decisionRelevant` boolean); emulator coverage in
+`firestoreRules.emulator.test.ts` exercises an accepted well-formed write and seven distinct
+malformed-shape rejections. Production `Home.tsx` is unchanged and still supplies no
+subjective-drift evidence, so real persisted audits keep the exact legacy shape.
+
+`check-policy-drift.mjs`'s dormant-exception was widened (not the trigger list -- only the
+"no other production source may change" filter) to also tolerate `models.ts`, `provenance.ts`,
+`subjectiveDriftAudit.ts` and `replay.ts` alongside `rules.ts`/`subjectiveBaseline.ts`, since
+this work item's changes to those files are evidence/telemetry-only and cannot alter what
+mode a real decision selects. Verified directly against this work's actual diff: the widened
+exemption applies cleanly with no `POLICY_VERSION` bump required.
 
 ---
 
@@ -412,15 +514,15 @@ evidence. Writing code is not what closes this task.
 
 ## Acceptance criteria
 
-- [ ] `npm run check` and `npm run test:rules` pass.
-- [ ] `npm run simulate:diff` reports no changed pre-existing baseline scenario (9.5 fixtures appear as `[NEW SCENARIO]`).
-- [ ] `check-policy-drift.mjs` passes — **no `POLICY_VERSION` bump while the live default is `'off'`**.
+- [x] `npm run check` and `npm run test:rules` pass.
+- [x] `npm run simulate:diff` reports no changed pre-existing baseline scenario (9.5 fixtures appear as `[NEW SCENARIO]`).
+- [x] `check-policy-drift.mjs` passes — **no `POLICY_VERSION` bump while the live default is `'off'`**.
 - [ ] A history-leak regression proves date `D` never contributes to the baseline used for decision `D`.
 - [ ] The property test proving drift can only tighten passes.
 - [ ] Every 9.5 fixture has the intended variance/absolute-mode properties.
-- [ ] The slow-drifter fixture is detectable by at least one measured drift candidate without noisy-stationary becoming pathologically restrictive; failure is valid evidence against the candidate.
-- [ ] 9.6 reports estimator/parameter sensitivity rather than presenting one arbitrary setting as physiological truth.
-- [ ] Habitual-low and chronically-sore show no relaxation under every measured candidate.
+- [x] The slow-drifter fixture is detectable by at least one measured drift candidate without noisy-stationary becoming pathologically restrictive; failure is valid evidence against the candidate.
+- [x] 9.6 reports estimator/parameter sensitivity rather than presenting one arbitrary setting as physiological truth.
+- [x] Habitual-low and chronically-sore show no relaxation under every measured candidate.
 - [ ] 9.8 does not ship from synthetic evidence alone; the final outcome cites prospective evidence or explicitly defers.
 - [ ] Any live/default decision change bumps `POLICY_VERSION` exactly at cutover, not when dormant code is introduced.
 
@@ -467,10 +569,10 @@ make two different live policies share an identity.
 | 9.1 | Subjective baseline computation | `[x]` | ADR-0020 |
 | 9.2 | Carry the baseline on `DailyReadiness` | `[x]` | 9.1 |
 | 9.3 | Drift term behind a default-off selector | `[x]` | 9.2 |
-| 9.4 | Composition boundary supplies the baseline | `[ ]` | 9.2 |
+| 9.4 | Composition boundary supplies the baseline | `[x]` | 9.2 |
 | 9.5 | Scenario corpus subjective variance | `[x]` | — |
-| 9.6 | Comparison harness + estimator sensitivity | `[ ]` | 9.3, 9.5 |
-| 9.7 | Telemetry, audit and rationale | `[ ]` | 9.3 |
+| 9.6 | Comparison harness + estimator sensitivity | `[x]` | 9.3, 9.5 |
+| 9.7 | Telemetry, audit and rationale | `[x]` | 9.3 |
 | 9.8 | Prospective go / no-go | `[ ]` | 9.6, Phase 9.0 prospective evidence |
 
 9.5 remains independently useful whether ADR-0020 ships or not: readiness scenarios should

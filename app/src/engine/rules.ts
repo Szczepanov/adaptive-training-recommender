@@ -160,6 +160,15 @@ export const REFERENCE_SUBJECTIVE_DRIFT_WEIGHTS: SubjectiveDriftWeights = {
     readiness: 1, sleepQuality: 1, fatigue: 1, soreness: 1, mentalStress: 1, motivation: 1,
 };
 
+/** Phase 9.7/D-SUBJAUDIT: identifies the *scoring* policy (weights + cap-source convention)
+ *  that turns a `SubjectiveBaseline` into a strain contribution, independent of a baseline's
+ *  own `estimatorId` (which identifies the baseline estimator's windows/floor/coverage --
+ *  see the 9.6 sensitivity configs, which mint a new `estimatorId` per baseline variant).
+ *  Bump this when the drift-scoring arithmetic, cap source, or reference weights change, so
+ *  a persisted audit can distinguish a scoring-policy change from a baseline-estimator
+ *  change. */
+export const SUBJECTIVE_DRIFT_ESTIMATOR_POLICY_VERSION = 'subjective-drift-score-v1-equal-weights-strain-z-cap';
+
 /** Adverse movement is signed positive for every metric regardless of scale direction --
  *  duplicated from `contextBrief.ts`'s equivalent `higherIsBetter` table rather than
  *  imported, the same reasoning `subjectiveBaseline.ts`'s own header comment gives for
@@ -244,6 +253,7 @@ export function evaluateReadinessAndSafetyEnvelope(
     alreadyTrainedOverride: boolean;
     fatigueTriggeredRecover: boolean;
     multiDayDriftIsDecisionRelevant: boolean;
+    subjectiveDriftIsDecisionRelevant: boolean;
     postRecoverBufferApplied: boolean;
 } {
     const { subjective, objective } = readiness;
@@ -294,6 +304,16 @@ export function evaluateReadinessAndSafetyEnvelope(
     const counterfactualModeWithoutDrift = counterfactualRecover ? 'recover' : (counterfactualModify ? 'modify' : 'train');
     const multiDayDriftIsDecisionRelevant = (mode !== 'train') && (mode !== counterfactualModeWithoutDrift);
 
+    // Phase 9.7: the analogous counterfactual for the *subjective* term above -- computed
+    // from objectiveStrain alone (not strainWithoutDrift, which subtracts the unrelated
+    // objective multi-day-drift axis) through the same threshold logic, so a caller can tell
+    // whether subjective drift specifically changed the mode. Inert under 'off' (subjectiveDrift
+    // is always 0 there, so modeWithoutSubjectiveDrift always equals mode).
+    const recoverWithoutSubjectiveDrift = overallFatigueScore > 7 || extremeFatigue || lowBodyBatteryRecovery || objectiveStrain >= STRAIN_RECOVER_THRESHOLD;
+    const modifyWithoutSubjectiveDrift = recoverWithoutSubjectiveDrift || overallFatigueScore > 5 || subjective.soreness > 6 || objectiveStrain >= STRAIN_MODIFY_THRESHOLD;
+    const modeWithoutSubjectiveDrift = recoverWithoutSubjectiveDrift ? 'recover' : (modifyWithoutSubjectiveDrift ? 'modify' : 'train');
+    const subjectiveDriftIsDecisionRelevant = (mode !== 'train') && (mode !== modeWithoutSubjectiveDrift);
+
     const postRecoverBufferApplied = mode === 'train' && previousMode === 'recover';
     if (postRecoverBufferApplied) mode = 'modify';
     const alreadyTrainedOverride = subjective.alreadyTrainedToday === true || objective.today_training !== null;
@@ -312,7 +332,11 @@ export function evaluateReadinessAndSafetyEnvelope(
             sleepFloorPenalty: round2(sleepFloorPenalty),
             conservativeBias: round2(conservativeBias),
         },
-        totalDecisionScore: round2(objectiveStrain),
+        // Phase 9.7: reconciles metricStrain.totalMetricStrain + contextPenalties.* +
+        // subjectiveDrift === totalDecisionScore. subjectiveDrift is always 0 under the
+        // production 'off' default, so this stays byte-identical to pre-Phase-9.7 output.
+        subjectiveDrift: round2(subjectiveDrift),
+        totalDecisionScore: round2(objectiveStrain + subjectiveDrift),
     };
 
     return {
@@ -322,6 +346,7 @@ export function evaluateReadinessAndSafetyEnvelope(
         alreadyTrainedOverride,
         fatigueTriggeredRecover,
         multiDayDriftIsDecisionRelevant,
+        subjectiveDriftIsDecisionRelevant,
         postRecoverBufferApplied,
     };
 }
@@ -335,7 +360,7 @@ export function evaluateTraining(
 ): Recommendation {
     const { subjective, objective } = readiness;
     const state = precomputedEnvelopeState ?? evaluateReadinessAndSafetyEnvelope(readiness, context, date, previousMode);
-    const { mode, envelopes, telemetry, alreadyTrainedOverride, fatigueTriggeredRecover, multiDayDriftIsDecisionRelevant, postRecoverBufferApplied } = state;
+    const { mode, envelopes, telemetry, alreadyTrainedOverride, fatigueTriggeredRecover, multiDayDriftIsDecisionRelevant, subjectiveDriftIsDecisionRelevant, postRecoverBufferApplied } = state;
 
     const availableTemplates = eligibleTemplates(TEMPLATES, context, subjective.timeAvailable, date).filter(t => {
         if (context.preferences.avoidedModalities.some(m => modalityMatches(t.modality, m))) return false;
@@ -391,6 +416,7 @@ export function evaluateTraining(
 
     if (modalityNote) rationale += ` ${modalityNote}`;
     if (multiDayDriftIsDecisionRelevant) rationale += " Your recovery metrics have been trending away from baseline over several days, capping today's training load.";
+    if (subjectiveDriftIsDecisionRelevant) rationale += " Your recent daily check-ins have been trending adverse relative to your own baseline, which contributed to today's more conservative call.";
     if (postRecoverBufferApplied) rationale += " Yesterday was a mandated recovery day, so easing back in today (rather than going straight to a hard session) even though this morning's numbers look fully green.";
     if (objective.yesterday_training && objective.yesterday_training.duration_min && mode === 'modify') rationale += ` Giving your body a break after yesterday's ${objective.yesterday_training.type} session.`;
     if (!selectedTemplate) {
@@ -496,8 +522,12 @@ export async function evaluateTrainingWithIntent(
     preferences: UserPreferences | null = null,
     fatigueFusionPolicy: FatigueFusionPolicy = 'max',
     externalPlan: ExternalPlanContext | null = null,
+    /** Phase 9.6: only the simulation comparison harness overrides this. Every production
+     *  entry point uses the default 'off', mirroring `fatigueFusionPolicy` above. */
+    subjectiveDriftPolicy: SubjectiveDriftPolicy = 'off',
+    subjectiveDriftWeights: SubjectiveDriftWeights = REFERENCE_SUBJECTIVE_DRIFT_WEIGHTS,
 ): Promise<Recommendation> {
-    const envelopeState = evaluateReadinessAndSafetyEnvelope(readiness, context, date, previousMode);
+    const envelopeState = evaluateReadinessAndSafetyEnvelope(readiness, context, date, previousMode, subjectiveDriftPolicy, subjectiveDriftWeights);
     const { mode, envelopes, telemetry } = envelopeState;
     let intent = await resolveTrainingIntent(userId, events, date, readiness, 7, historyProvider, preparedHistorySnapshot, authoredPlanBlocks, trainingIntentProfile, fatigueFusionPolicy);
 
@@ -984,6 +1014,9 @@ export async function evaluateNextDayPlanWithIntent(
     trainingIntentProfile: TrainingIntentProfile | null = null,
     preferences: UserPreferences | null = null,
     fatigueFusionPolicy: FatigueFusionPolicy = 'max',
+    /** Phase 9.6: only the simulation comparison harness overrides this. */
+    subjectiveDriftPolicy: SubjectiveDriftPolicy = 'off',
+    subjectiveDriftWeights: SubjectiveDriftWeights = REFERENCE_SUBJECTIVE_DRIFT_WEIGHTS,
 ): Promise<NextDayPotentialPlan> {
     const scenarios = buildNextDayScenarios(todayReadiness, context, todayDate, todayRec);
     const projectedProvider = await projectedProviderForTomorrow(
@@ -991,7 +1024,11 @@ export async function evaluateNextDayPlanWithIntent(
     );
     const evaluate = async (scenario: NextDayScenario) => evaluatedBranch(
         scenario,
-        await evaluateTrainingWithIntent(userId, scenario.readiness, context, events, scenarios.date, todayRec.mode, projectedProvider, null, fixedActivities, authoredPlanBlocks, trainingIntentProfile, preferences, fatigueFusionPolicy),
+        await evaluateTrainingWithIntent(
+            userId, scenario.readiness, context, events, scenarios.date, todayRec.mode, projectedProvider, null,
+            fixedActivities, authoredPlanBlocks, trainingIntentProfile, preferences, fatigueFusionPolicy, null,
+            subjectiveDriftPolicy, subjectiveDriftWeights,
+        ),
     );
     const [green, yellow, red] = await Promise.all([
         evaluate(scenarios.scenarios.green), evaluate(scenarios.scenarios.yellow), evaluate(scenarios.scenarios.red),

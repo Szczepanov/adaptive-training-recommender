@@ -13,7 +13,12 @@ import type {
 import type { CompletedExposure } from '../trainingHistory';
 import { resolveDemandProfile } from '../eventPresets';
 import { addDaysToLocalDateString } from '../../utils/localDate';
-import { subjectiveProfileReadiness, SUBJECTIVE_PROFILE_KINDS, type SubjectiveProfileKind } from './subjectiveProfiles';
+import { subjectiveProfileReadiness, subjectiveProfileDay, SUBJECTIVE_PROFILE_KINDS, type SubjectiveProfileKind } from './subjectiveProfiles';
+import {
+    computeSubjectiveBaseline,
+    REFERENCE_SUBJECTIVE_BASELINE_POLICY,
+    type SubjectiveCheckinForBaseline,
+} from '../subjectiveBaseline';
 
 /**
  * One named, reproducible athlete configuration the simulation harness runs the real
@@ -179,6 +184,38 @@ const SUBJECTIVE_PROFILE_META: Record<SubjectiveProfileKind, { label: string; de
  *  No event, minimal equipment/context, mirroring `no_event_base_phase` -- the point of
  *  these fixtures is isolating subjective variance, not exercising event/equipment paths
  *  already covered elsewhere in this corpus. */
+
+/** One prior day's profile values, adapted to `computeSubjectiveBaseline`'s minimal
+ * structural input. Deliberately duplicated from `subjectiveDriftComparison.ts`'s private
+ * `profileHistoryRow` rather than imported -- that module is the comparison harness built
+ * on top of this scenario corpus, not a dependency of it. */
+function subjectiveProfileHistoryRow(kind: SubjectiveProfileKind, dayIndex: number, date: string): SubjectiveCheckinForBaseline {
+    const values = subjectiveProfileDay(kind, dayIndex);
+    return {
+        date,
+        readiness: values.readiness,
+        sleepQuality: values.sleepQuality,
+        fatigue: values.fatigue,
+        soreness: values.soreness,
+        mentalStress: values.stress,
+        motivation: values.motivation,
+    };
+}
+
+/** Phase 9.6: attaches a real `subjectiveBaseline` computed from the profile's own
+ * deterministic daily series preceding `date` (strictly `< date`, matching D-SUBJHIST), so
+ * the real planner path (`evaluateTrainingWithIntent`) has something to read once a caller
+ * explicitly passes `subjectiveDriftPolicy: 'drift'`. Harmless under the production default
+ * `'off'`, since the baseline is simply never read. */
+function subjectiveProfileReadinessWithBaseline(kind: SubjectiveProfileKind, dayIndex: number, date: string): DailyReadiness {
+    const history: SubjectiveCheckinForBaseline[] = [];
+    for (let priorDayIndex = 0; priorDayIndex < dayIndex; priorDayIndex += 1) {
+        history.push(subjectiveProfileHistoryRow(kind, priorDayIndex, addDaysToLocalDateString(date, priorDayIndex - dayIndex)));
+    }
+    const subjectiveBaseline = computeSubjectiveBaseline(history, date, REFERENCE_SUBJECTIVE_BASELINE_POLICY);
+    return { ...subjectiveProfileReadiness(kind, dayIndex), subjectiveBaseline };
+}
+
 function subjectiveProfileScenario(kind: SubjectiveProfileKind): AthleteScenario {
     const meta = SUBJECTIVE_PROFILE_META[kind];
     return {
@@ -189,7 +226,7 @@ function subjectiveProfileScenario(kind: SubjectiveProfileKind): AthleteScenario
         event: null,
         startDate: START_DATE, weeks: 4, tags: ['subjective-profile'],
         readinessForWeek: () => subjectiveProfileReadiness(kind, 0),
-        readinessForDate: (_date, weekIndex) => subjectiveProfileReadiness(kind, weekIndex * 7),
+        readinessForDate: (date, weekIndex) => subjectiveProfileReadinessWithBaseline(kind, weekIndex * 7, date),
     };
 }
 

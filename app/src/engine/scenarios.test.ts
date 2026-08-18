@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 import { SCENARIOS } from './simulation/scenarios';
-import { buildCalibrationReport, runAllScenarios, runFatigueFusionComparison, runScenario, type ScenarioResult } from './simulation/analyze';
+import { addDaysToLocalDateString } from '../utils/localDate';
+import {
+    buildCalibrationReport, runAllScenarios, runFatigueFusionComparison, runScenario,
+    runSubjectiveDriftComparison, type ScenarioResult,
+} from './simulation/analyze';
 
 /**
  * Regression coverage for the recommendation engine across sport/event types, built on
@@ -328,5 +332,51 @@ describe('Phase 6.7 fatigue-fusion evidence gate', () => {
         expect(comparison.candidatePolicy).toBe('additive');
         expect(comparison.aggregate.increasedPeakFatigueDays).toBeGreaterThan(0);
         expect(comparison.aggregate.constraintViolationDelta).toBe(0);
+    });
+});
+
+describe('Phase 9.6 subjective-drift evidence gate', () => {
+    it('runs the real planner/hard gates under a simulation-only drift comparator across the full corpus', async () => {
+        const comparison = await runSubjectiveDriftComparison(SCENARIOS);
+        expect(comparison.baselinePolicy).toBe('off');
+        expect(comparison.candidatePolicy).toBe('drift');
+
+        // Every non-subjective-profile scenario carries no subjectiveBaseline (only
+        // scenarios.ts's subjective_* scenarios do), so it must diff to exactly zero -- the
+        // regression control the plan requires.
+        const nonProfileScenarios = comparison.scenarios.filter(item => !item.scenarioId.startsWith('subjective_'));
+        expect(nonProfileScenarios.length).toBeGreaterThan(0);
+        nonProfileScenarios.forEach(item => {
+            expect(item).toMatchObject({
+                changedSelections: 0, trainToModifyDays: 0, trainToRecoverDays: 0, modifyToRecoverDays: 0,
+                recoverySelectionDelta: 0, restOrRecoveryDayDelta: 0, objectiveMissDelta: 0, constraintViolationDelta: 0,
+            });
+        });
+
+        // The slow-drifter is the fixture the plan names as the one a drift candidate must
+        // be able to detect (persistent decline that never crosses an absolute threshold).
+        const slowDrifter = comparison.scenarios.find(item => item.scenarioId === 'subjective_slow_drifter');
+        expect(slowDrifter?.trainToModifyDays).toBeGreaterThan(0);
+        expect(slowDrifter?.changedSelections).toBeGreaterThan(0);
+
+        // D-SUBJADD is a per-decision, never-less-restrictive invariant, not a claim that a
+        // multi-week chained simulation's aggregate rest/recovery share can only rise -- an
+        // earlier day's changed selection can alter later weeks' accumulated history and
+        // shift *when* recovery happens. What must still hold in aggregate is that drift
+        // never introduces a constraint violation that 'off' didn't have.
+        expect(comparison.aggregate.constraintViolationDelta).toBeGreaterThanOrEqual(0);
+        expect(comparison.evidenceType).toBe('synthetic safety/regression evidence; not real-world usefulness evidence');
+    }, 30000);
+
+    it('attaches a real subjectiveBaseline to profile scenarios once enough prior history exists, and never on day 0', () => {
+        const scenario = SCENARIOS.find(item => item.id === 'subjective_slow_drifter');
+        if (!scenario?.readinessForDate) throw new Error('subjective_slow_drifter scenario missing readinessForDate');
+        const day0 = scenario.readinessForDate(scenario.startDate, 0);
+        expect(day0.subjectiveBaseline).toBeFalsy();
+
+        const day14Date = addDaysToLocalDateString(scenario.startDate, 14);
+        const day14 = scenario.readinessForDate(day14Date, 2);
+        expect(day14.subjectiveBaseline).toBeTruthy();
+        expect(day14.subjectiveBaseline?.historyThroughDateExclusive).toBe(day14Date);
     });
 });

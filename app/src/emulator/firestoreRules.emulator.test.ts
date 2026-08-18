@@ -268,6 +268,37 @@ emulatorDescribe('Firestore security rules', () => {
         }
     });
 
+    it('accepts an audit carrying subjective-drift provenance, and rejects a malformed one', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        const withDrift = validRecommendation();
+        withDrift.recommendationAudit.subjectiveDrift = {
+            estimatorId: 'subjective-baseline-v1-mean-stdev-7-28',
+            estimatorPolicyVersion: 'subjective-drift-score-v1-equal-weights-strain-z-cap',
+            historyThroughDateExclusive: '2026-08-07',
+            recentRecordedDays: 7,
+            longRecordedDays: 28,
+            contribution: 1.2,
+            perMetricContributions: { readiness: 0.2, sleepQuality: 0.2, fatigue: 0.2, soreness: 0.2, mentalStress: 0.2, motivation: 0.2 },
+            decisionRelevant: true,
+        };
+        await assertSucceeds(setDoc(doc(ownerDb, recommendationPath), withDrift));
+
+        const validDrift = withDrift.recommendationAudit.subjectiveDrift as Record<string, unknown>;
+        for (const broken of [
+            { ...validDrift, estimatorId: '' },
+            { ...validDrift, estimatorPolicyVersion: '' },
+            { ...validDrift, recentRecordedDays: -1 },
+            { ...validDrift, contribution: -0.5 },
+            { ...validDrift, decisionRelevant: 'yes' },
+            { ...validDrift, perMetricContributions: { readiness: 0.2 } },
+            { ...validDrift, extra: true },
+        ]) {
+            const malformed = validRecommendation();
+            malformed.recommendationAudit.subjectiveDrift = broken;
+            await assertFails(setDoc(doc(ownerDb, recommendationPath), malformed));
+        }
+    });
+
     it('rejects a v3 recommendation with a malformed audit', async () => {
         const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
         const malformed = validRecommendation();

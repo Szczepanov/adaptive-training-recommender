@@ -1072,6 +1072,84 @@ describe('Phase 9.3: subjective drift term', () => {
     });
 });
 
+describe('Phase 9.7: subjective drift telemetry, decision-relevant counterfactual, rationale', () => {
+    it("telemetry.subjectiveDrift is 0 and totalDecisionScore is unchanged under 'off', even with an adverse baseline attached", () => {
+        const context = baseContext();
+        const readiness: DailyReadiness = { ...trainModeReadiness(), subjectiveBaseline: uniformDriftBaseline(0.5) };
+        const off = evaluateReadinessAndSafetyEnvelope(readiness, context, undefined, undefined, 'off');
+        expect(off.telemetry.subjectiveDrift).toBe(0);
+        expect(off.telemetry.totalDecisionScore).toBe(
+            off.telemetry.metricStrain.totalMetricStrain
+            + off.telemetry.contextPenalties.recentHardSessions
+            + off.telemetry.contextPenalties.bodyBatteryDeficit
+            + off.telemetry.contextPenalties.sleepFloorPenalty
+            + off.telemetry.contextPenalties.conservativeBias,
+        );
+    });
+
+    it("telemetry reconciles under 'drift': metricStrain + contextPenalties + subjectiveDrift === totalDecisionScore", () => {
+        const context = baseContext();
+        const readiness: DailyReadiness = { ...trainModeReadiness(), subjectiveBaseline: uniformDriftBaseline(0.3) };
+        const drift = evaluateReadinessAndSafetyEnvelope(readiness, context, undefined, undefined, 'drift');
+        expect(drift.telemetry.subjectiveDrift).toBeGreaterThan(0);
+        const round2 = (value: number) => Math.round(value * 100) / 100;
+        expect(drift.telemetry.totalDecisionScore).toBeCloseTo(round2(
+            drift.telemetry.metricStrain.totalMetricStrain
+            + drift.telemetry.contextPenalties.recentHardSessions
+            + drift.telemetry.contextPenalties.bodyBatteryDeficit
+            + drift.telemetry.contextPenalties.sleepFloorPenalty
+            + drift.telemetry.contextPenalties.conservativeBias
+            + drift.telemetry.subjectiveDrift!,
+        ), 10);
+    });
+
+    it('subjectiveDriftIsDecisionRelevant is true only when subjective drift alone changed the mode', () => {
+        const context = baseContext();
+        // Escalating gap (0.3): train -> modify purely from the drift term (see the earlier
+        // escalation test) -- relevant.
+        const escalating: DailyReadiness = { ...trainModeReadiness(), subjectiveBaseline: uniformDriftBaseline(0.3) };
+        const escalatingResult = evaluateReadinessAndSafetyEnvelope(escalating, context, undefined, undefined, 'drift');
+        expect(escalatingResult.mode).toBe('modify');
+        expect(escalatingResult.subjectiveDriftIsDecisionRelevant).toBe(true);
+
+        // No baseline attached at all -- subjectiveDrift is 0, never relevant.
+        const noBaseline = trainModeReadiness();
+        const noBaselineResult = evaluateReadinessAndSafetyEnvelope(noBaseline, context, undefined, undefined, 'drift');
+        expect(noBaselineResult.subjectiveDriftIsDecisionRelevant).toBe(false);
+
+        // A favourable baseline contributes exactly zero -- never relevant.
+        const favourable: DailyReadiness = { ...trainModeReadiness(), subjectiveBaseline: uniformDriftBaseline(-5) };
+        const favourableResult = evaluateReadinessAndSafetyEnvelope(favourable, context, undefined, undefined, 'drift');
+        expect(favourableResult.subjectiveDriftIsDecisionRelevant).toBe(false);
+
+        // Already 'recover' via an absolute trigger regardless of drift -- mode !== 'train'
+        // alone is not sufficient; the counterfactual-without-drift mode must also differ.
+        const absoluteRecover: DailyReadiness = {
+            subjective: neutralSubjective({ painFlag: true }), objective: quietObjective(),
+            subjectiveBaseline: uniformDriftBaseline(0.3),
+        };
+        const absoluteRecoverResult = evaluateReadinessAndSafetyEnvelope(absoluteRecover, context, undefined, undefined, 'drift');
+        expect(absoluteRecoverResult.mode).toBe('recover');
+        expect(absoluteRecoverResult.subjectiveDriftIsDecisionRelevant).toBe(false);
+
+        // 'off' never marks subjective drift as decision-relevant, regardless of baseline.
+        const offResult = evaluateReadinessAndSafetyEnvelope(escalating, context, undefined, undefined, 'off');
+        expect(offResult.subjectiveDriftIsDecisionRelevant).toBe(false);
+    });
+
+    it('the Path A rationale mentions subjective drift only when it is decision-relevant', () => {
+        const context = baseContext();
+        const escalating: DailyReadiness = { ...trainModeReadiness(), subjectiveBaseline: uniformDriftBaseline(0.3) };
+        const withDrift = evaluateTraining(escalating, context, '2026-08-16', undefined,
+            evaluateReadinessAndSafetyEnvelope(escalating, context, '2026-08-16', undefined, 'drift'));
+        expect(withDrift.rationale).toContain('trending adverse relative to your own baseline');
+
+        const withoutDrift = evaluateTraining(escalating, context, '2026-08-16', undefined,
+            evaluateReadinessAndSafetyEnvelope(escalating, context, '2026-08-16', undefined, 'off'));
+        expect(withoutDrift.rationale).not.toContain('trending adverse relative to your own baseline');
+    });
+});
+
 describe('subjectiveDriftStrain (unit)', () => {
     it('returns exactly 0 for policy "off" regardless of baseline', () => {
         expect(subjectiveDriftStrain(uniformDriftBaseline(50), 'off')).toBe(0);

@@ -14,6 +14,7 @@ artifacts/visual-review/
 artifacts/simulation-reports/
 artifacts/calibration-reports/
 artifacts/fatigue-fusion-reports/
+artifacts/subjective-drift-reports/
 artifacts/coverage/
 artifacts/firestore-rules-rollbacks/
 artifacts/sequence-search-comparison/

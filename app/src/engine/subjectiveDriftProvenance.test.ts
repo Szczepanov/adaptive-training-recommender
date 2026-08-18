@@ -28,7 +28,9 @@ function recommendation(): Recommendation {
     };
 }
 const evidence: SubjectiveDriftDecisionEvidence = {
-    estimatorId: 'subjective-baseline-v1-mean-stdev-7-28', historyThroughDateExclusive: '2026-08-16',
+    estimatorId: 'subjective-baseline-v1-mean-stdev-7-28',
+    estimatorPolicyVersion: 'subjective-drift-score-v1-equal-weights-strain-z-cap',
+    historyThroughDateExclusive: '2026-08-16',
     recentRecordedDays: 6, longRecordedDays: 23, contribution: 1.25,
     perMetricContributions: { readiness: 0.25, sleepQuality: 0.2, fatigue: 0.3, soreness: 0.25, mentalStress: 0.15, motivation: 0.1 },
     modeWithoutDrift: 'train', modeWithDrift: 'modify', decisionRelevant: true, totalDecisionScoreWithDrift: 1.4,
@@ -43,7 +45,8 @@ describe('Phase 9.7 recommendation audit', () => {
     it('stores only compact normalized drift provenance when evidence is explicitly supplied', () => {
         const audit = buildRecommendationAudit(recommendation(), snapshot(), '2026-08-16T09:00:00Z', evidence);
         expect(audit?.subjectiveDrift).toEqual({
-            estimatorId: evidence.estimatorId, historyThroughDateExclusive: evidence.historyThroughDateExclusive,
+            estimatorId: evidence.estimatorId, estimatorPolicyVersion: evidence.estimatorPolicyVersion,
+            historyThroughDateExclusive: evidence.historyThroughDateExclusive,
             recentRecordedDays: evidence.recentRecordedDays, longRecordedDays: evidence.longRecordedDays,
             contribution: evidence.contribution, perMetricContributions: evidence.perMetricContributions, decisionRelevant: true,
         });

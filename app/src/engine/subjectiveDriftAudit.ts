@@ -2,6 +2,10 @@ import { SUBJECTIVE_BASELINE_METRICS, type SubjectiveBaselineMetric } from './su
 
 export interface SubjectiveDriftAudit {
     estimatorId: string;
+    /** Phase 9.7/D-SUBJAUDIT: identifies the drift-scoring policy (weights + cap-source
+     *  convention), independent of `estimatorId` (the baseline estimator's own
+     *  windows/floor/coverage). See `rules.ts`'s `SUBJECTIVE_DRIFT_ESTIMATOR_POLICY_VERSION`. */
+    estimatorPolicyVersion: string;
     historyThroughDateExclusive: string;
     recentRecordedDays: number;
     longRecordedDays: number;
@@ -16,6 +20,7 @@ export function compactSubjectiveDriftAudit(evidence: SubjectiveDriftAuditSource
     if (!evidence) return null;
     return {
         estimatorId: evidence.estimatorId,
+        estimatorPolicyVersion: evidence.estimatorPolicyVersion,
         historyThroughDateExclusive: evidence.historyThroughDateExclusive,
         recentRecordedDays: evidence.recentRecordedDays,
         longRecordedDays: evidence.longRecordedDays,
@@ -33,6 +38,9 @@ export function subjectiveDriftAuditReplayErrors(audit: unknown, decisionDate: s
     const record = audit as Record<string, unknown>;
     if (typeof record.estimatorId !== 'string' || record.estimatorId.trim() === '') {
         errors.push('Subjective drift audit estimatorId is invalid.');
+    }
+    if (typeof record.estimatorPolicyVersion !== 'string' || record.estimatorPolicyVersion.trim() === '') {
+        errors.push('Subjective drift audit estimatorPolicyVersion is invalid.');
     }
     if (record.historyThroughDateExclusive !== decisionDate) {
         errors.push(`Subjective drift audit history boundary ${String(record.historyThroughDateExclusive)} does not equal decision date ${decisionDate}.`);

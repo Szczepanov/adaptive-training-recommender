@@ -121,10 +121,18 @@ app/src/engine/
   sequenceSearch.ts    # Phase 5.1 beam-search prototype -- measured, NOT in any live path
   shadowAgreement.ts   # Phase 9.0: pure engine-vs-athlete verdict classifier (evidence only)
   shadowLog.ts         # Phase 9.0: pure day-row joiner + CSV renderer for the export (evidence only)
-  subjectiveBaseline.ts # Phase 9.1: pure recent-vs-long subjective baseline. Consumed by
-                       #   rules.ts's subjectiveDriftStrain (9.3) behind a default-off selector;
-                       #   not yet reachable from any production call site (9.4/9.6)
-  simulation/          # Scenario harness: runAllScenarios, decision-quality metrics
+  subjectiveBaseline.ts # Phase 9.1: pure recent-vs-long subjective baseline. Composer (9.4)
+                       #   supplies it on DailyReadiness; rules.ts's subjectiveDriftStrain
+                       #   (9.3) reads it behind a `subjectiveDriftPolicy` selector that
+                       #   defaults to 'off' at every production call site (9.6) -- only the
+                       #   simulation comparison harness passes 'drift'
+  subjectiveDriftAudit.ts # Phase 9.7: compact SubjectiveDriftAudit shape + replay validation.
+                       #   provenance.ts attaches it to RecommendationAudit only when explicit
+                       #   evidence is supplied (never by production callers today)
+  simulation/          # Scenario harness: runAllScenarios, decision-quality metrics;
+                       #   runFatigueFusionComparison / runSubjectiveDriftComparison /
+                       #   runSubjectiveDriftSensitivityComparison run the real planner twice
+                       #   under a simulation-only policy override to measure a candidate
 ```
 
 This map is a routing aid, not a complete file listing. Where it disagrees with the

@@ -10,6 +10,20 @@ import type { AthleteScenario } from './scenarios';
 import { SCENARIOS } from './scenarios';
 import type { WeeklyRoleAllocationReport } from '../weeklyAllocation';
 import type { FatigueFusionPolicy } from '../fatigue';
+import {
+    REFERENCE_SUBJECTIVE_DRIFT_WEIGHTS,
+    type SubjectiveDriftPolicy,
+    type SubjectiveDriftWeights,
+} from '../rules';
+import { buildSubjectiveDriftDecisionEvidence } from './subjectiveDriftEvidence';
+import {
+    computeSubjectiveBaseline,
+    REFERENCE_SUBJECTIVE_BASELINE_POLICY,
+    type SubjectiveBaselinePolicy,
+    type SubjectiveCheckinForBaseline,
+} from '../subjectiveBaseline';
+import { SUBJECTIVE_DRIFT_SENSITIVITY_CONFIGS, type SubjectiveDriftSensitivityConfig } from './subjectiveDriftComparison';
+import { subjectiveProfileDay, subjectiveProfileReadiness, SUBJECTIVE_PROFILE_KINDS, type SubjectiveProfileKind } from './subjectiveProfiles';
 
 const ZERO_COST: WorkoutCostProfile = { systemic: 0, cardiovascular: 0, lowerBody: 0, upperBody: 0, impactTissue: 0, neuromuscular: 0 };
 const ZERO_STIMULUS: WorkoutStimulusProfile = { aerobicEndurance: 0, thresholdPower: 0, vo2MaxPower: 0, repeatedSurges: 0, sprintPower: 0, fatigueResistance: 0, maxStrength: 0, hypertrophy: 0 };
@@ -301,6 +315,12 @@ type WeekAheadPlanGenerator = typeof generateWeekAheadPlanWithIntent;
 export interface SimulationRunOptions {
     /** Only the simulation harness may override this. Production entry points use `max`. */
     fatigueFusionPolicy?: FatigueFusionPolicy;
+    /** Phase 9.6: only the simulation comparison harness overrides this. Production entry
+     *  points always default to `'off'`. Only the `subjective_*` profile scenarios carry a
+     *  `subjectiveBaseline` (see `scenarios.ts`), so this is a no-op for every other
+     *  scenario regardless of the value passed here. */
+    subjectiveDriftPolicy?: SubjectiveDriftPolicy;
+    subjectiveDriftWeights?: SubjectiveDriftWeights;
 }
 
 export async function runScenario(
@@ -311,6 +331,8 @@ export async function runScenario(
     const events = [...(scenario.events ?? (scenario.event ? [scenario.event] : []))];
     const fixedActivities = scenario.fixedActivities ?? [];
     const fatigueFusionPolicy = options.fatigueFusionPolicy ?? 'max';
+    const subjectiveDriftPolicy = options.subjectiveDriftPolicy ?? 'off';
+    const subjectiveDriftWeights = options.subjectiveDriftWeights ?? REFERENCE_SUBJECTIVE_DRIFT_WEIGHTS;
     const accumulatedHistory: CompletedExposure[] = [...(scenario.initialHistory ?? [])];
     const historyProvider: TrainingHistoryProvider = {
         reconstruct: async (_userId, throughDateExclusive, windowDays) => {
@@ -332,10 +354,12 @@ export async function runScenario(
         const todayRec = await evaluateTrainingWithIntent(
             'sim-user', readiness, scenario.context, events, currentDate, undefined, historyProvider,
             null, fixedActivities, [], scenario.trainingIntentProfile ?? null, scenario.preferences ?? null, fatigueFusionPolicy,
+            null, subjectiveDriftPolicy, subjectiveDriftWeights,
         );
         const nextDayPlan = await evaluateNextDayPlanWithIntent(
             'sim-user', events, readiness, scenario.context, currentDate, todayRec, historyProvider,
             null, fixedActivities, [], scenario.trainingIntentProfile ?? null, scenario.preferences ?? null, fatigueFusionPolicy,
+            subjectiveDriftPolicy, subjectiveDriftWeights,
         );
         const tomorrowRec = nextDayPlan.branches.yellow.recommendation;
 
@@ -544,6 +568,227 @@ export async function runFatigueFusionComparison(
         constraintViolationDelta: total.constraintViolationDelta + summary.constraintViolationDelta,
     }), { changedSelections: 0, increasedPeakFatigueDays: 0, recoverySelectionDelta: 0, restOrRecoveryDayDelta: 0, objectiveMissDelta: 0, constraintViolationDelta: 0 });
     return { baselinePolicy: 'max', candidatePolicy: 'additive', baselineRuntimeMs, candidateRuntimeMs, scenarios: summaries, aggregate };
+}
+
+export interface SubjectiveDriftScenarioComparison {
+    scenarioId: string;
+    changedSelections: number;
+    trainToModifyDays: number;
+    trainToRecoverDays: number;
+    modifyToRecoverDays: number;
+    recoverySelectionDelta: number;
+    restOrRecoveryDayDelta: number;
+    objectiveMissDelta: number;
+    constraintViolationDelta: number;
+}
+export interface SubjectiveDriftComparison {
+    baselinePolicy: 'off';
+    candidatePolicy: 'drift';
+    baselineRuntimeMs: number;
+    candidateRuntimeMs: number;
+    scenarios: SubjectiveDriftScenarioComparison[];
+    aggregate: Omit<SubjectiveDriftScenarioComparison, 'scenarioId'>;
+    evidenceType: 'synthetic safety/regression evidence; not real-world usefulness evidence';
+    limitations: string[];
+}
+
+function emptySubjectiveDriftAggregate(): Omit<SubjectiveDriftScenarioComparison, 'scenarioId'> {
+    return {
+        changedSelections: 0, trainToModifyDays: 0, trainToRecoverDays: 0, modifyToRecoverDays: 0,
+        recoverySelectionDelta: 0, restOrRecoveryDayDelta: 0, objectiveMissDelta: 0, constraintViolationDelta: 0,
+    };
+}
+
+/** Runs the real planner and hard gates (`evaluateTrainingWithIntent`/
+ * `evaluateNextDayPlanWithIntent`) twice; the only altered input is the explicitly
+ * simulation-only subjective-drift policy -- mirrors `runFatigueFusionComparison`. Only the
+ * `subjective_*` profile scenarios (see `scenarios.ts`) carry a `subjectiveBaseline`, so
+ * every other scenario in `scenarios` is expected to diff to exactly zero and acts as the
+ * regression control. */
+export async function runSubjectiveDriftComparison(
+    scenarios: AthleteScenario[] = SCENARIOS,
+    weights: SubjectiveDriftWeights = REFERENCE_SUBJECTIVE_DRIFT_WEIGHTS,
+): Promise<SubjectiveDriftComparison> {
+    const baselineStarted = performance.now();
+    const baseline = await runAllScenarios(scenarios, 'simulation', { subjectiveDriftPolicy: 'off' });
+    const baselineRuntimeMs = performance.now() - baselineStarted;
+    const candidateStarted = performance.now();
+    const candidate = await runAllScenarios(scenarios, 'simulation', { subjectiveDriftPolicy: 'drift', subjectiveDriftWeights: weights });
+    const candidateRuntimeMs = performance.now() - candidateStarted;
+    const baselineById = new Map(baseline.scenarios.map(result => [result.scenarioId, result]));
+    const scenarioById = new Map(scenarios.map(item => [item.id, item]));
+    const summaries: SubjectiveDriftScenarioComparison[] = candidate.scenarios.map(next => {
+        const current = baselineById.get(next.scenarioId);
+        if (!current) throw new Error(`Missing off-policy result for ${next.scenarioId}.`);
+        const candidateTraces = new Map(next.decisionTraces.map(trace => [trace.date, trace]));
+        let changedSelections = 0;
+        current.decisionTraces.forEach(trace => {
+            const compared = candidateTraces.get(trace.date);
+            if (compared && trace.selected.templateId !== compared.selected.templateId) changedSelections += 1;
+        });
+
+        // Mode-transition evidence, computed directly from the scenario definition (the same
+        // sampled dates runScenario used) rather than threaded through ScenarioDecisionTrace.
+        let trainToModifyDays = 0;
+        let trainToRecoverDays = 0;
+        let modifyToRecoverDays = 0;
+        const scenarioDef = scenarioById.get(next.scenarioId);
+        if (scenarioDef?.readinessForDate) {
+            for (let weekIndex = 0; weekIndex < scenarioDef.weeks; weekIndex += 1) {
+                const date = addDaysToLocalDateString(scenarioDef.startDate, weekIndex * 7);
+                const readiness = scenarioDef.readinessForDate(date, weekIndex);
+                if (!readiness.subjectiveBaseline) continue;
+                const evidence = buildSubjectiveDriftDecisionEvidence(readiness, scenarioDef.context, date, undefined, weights);
+                if (!evidence?.decisionRelevant) continue;
+                if (evidence.modeWithoutDrift === 'train' && evidence.modeWithDrift === 'modify') trainToModifyDays += 1;
+                else if (evidence.modeWithoutDrift === 'train' && evidence.modeWithDrift === 'recover') trainToRecoverDays += 1;
+                else if (evidence.modeWithoutDrift === 'modify' && evidence.modeWithDrift === 'recover') modifyToRecoverDays += 1;
+            }
+        }
+
+        const currentCalibration = calibrationSummary(current);
+        const nextCalibration = calibrationSummary(next);
+        return {
+            scenarioId: next.scenarioId,
+            changedSelections, trainToModifyDays, trainToRecoverDays, modifyToRecoverDays,
+            recoverySelectionDelta: nextCalibration.recoverySelections - currentCalibration.recoverySelections,
+            restOrRecoveryDayDelta: next.restOrRecoveryDayCount - current.restOrRecoveryDayCount,
+            objectiveMissDelta: objectiveMisses(next) - objectiveMisses(current),
+            constraintViolationDelta: next.constraintViolations.length - current.constraintViolations.length,
+        };
+    });
+    const aggregate = summaries.reduce<Omit<SubjectiveDriftScenarioComparison, 'scenarioId'>>((total, summary) => ({
+        changedSelections: total.changedSelections + summary.changedSelections,
+        trainToModifyDays: total.trainToModifyDays + summary.trainToModifyDays,
+        trainToRecoverDays: total.trainToRecoverDays + summary.trainToRecoverDays,
+        modifyToRecoverDays: total.modifyToRecoverDays + summary.modifyToRecoverDays,
+        recoverySelectionDelta: total.recoverySelectionDelta + summary.recoverySelectionDelta,
+        restOrRecoveryDayDelta: total.restOrRecoveryDayDelta + summary.restOrRecoveryDayDelta,
+        objectiveMissDelta: total.objectiveMissDelta + summary.objectiveMissDelta,
+        constraintViolationDelta: total.constraintViolationDelta + summary.constraintViolationDelta,
+    }), emptySubjectiveDriftAggregate());
+    return {
+        baselinePolicy: 'off', candidatePolicy: 'drift', baselineRuntimeMs, candidateRuntimeMs,
+        scenarios: summaries, aggregate,
+        evidenceType: 'synthetic safety/regression evidence; not real-world usefulness evidence',
+        limitations: [
+            'Runs the real planner/hard gates for today and tomorrow only (evaluateTrainingWithIntent / evaluateNextDayPlanWithIntent); week-ahead forecast-day tiers (generateWeekAheadPlanWithIntent) do not read subjectiveDriftPolicy -- see rules.ts and the 9.3 implementation note on planner threading being out of scope.',
+            'Only the subjective_* profile scenarios carry a subjectiveBaseline; every other scenario in the corpus is expected to diff to exactly zero and acts as the regression control.',
+            'Synthetic profiles test mechanism safety/regression; they do not establish real-world predictive usefulness -- that requires Phase 9.0/9.8 prospective evidence.',
+            'Production remains SubjectiveDriftPolicy=off; this report is measurement evidence only.',
+        ],
+    };
+}
+
+export interface SubjectiveDriftSensitivityScenarioResult {
+    configId: string;
+    profile: SubjectiveProfileKind;
+    scenarioId: string;
+    changedSelections: number;
+    trainToModifyDays: number;
+    trainToRecoverDays: number;
+    modifyToRecoverDays: number;
+    recoverySelectionDelta: number;
+    restOrRecoveryDayDelta: number;
+    constraintViolationDelta: number;
+}
+export interface SubjectiveDriftSensitivityComparison {
+    configs: SubjectiveDriftSensitivityConfig[];
+    results: SubjectiveDriftSensitivityScenarioResult[];
+    evidenceType: 'synthetic safety/regression evidence; not real-world usefulness evidence';
+}
+
+/** Builds a `subjective_<kind>` scenario variant that attaches a `subjectiveBaseline`
+ * computed under an arbitrary `SubjectiveBaselinePolicy`, instead of the corpus's fixed
+ * `REFERENCE_SUBJECTIVE_BASELINE_POLICY` -- for the sensitivity sweep only, not the
+ * committed baseline corpus in `scenarios.ts`. */
+function subjectiveDriftSensitivityScenario(kind: SubjectiveProfileKind, baselinePolicy: SubjectiveBaselinePolicy): AthleteScenario {
+    const startDate = '2026-01-01';
+    const readinessAt = (date: string, dayIndex: number) => {
+        const history: SubjectiveCheckinForBaseline[] = [];
+        for (let priorDayIndex = 0; priorDayIndex < dayIndex; priorDayIndex += 1) {
+            const values = subjectiveProfileDay(kind, priorDayIndex);
+            history.push({
+                date: addDaysToLocalDateString(date, priorDayIndex - dayIndex),
+                readiness: values.readiness, sleepQuality: values.sleepQuality, fatigue: values.fatigue,
+                soreness: values.soreness, mentalStress: values.stress, motivation: values.motivation,
+            });
+        }
+        const subjectiveBaseline = computeSubjectiveBaseline(history, date, baselinePolicy);
+        return { ...subjectiveProfileReadiness(kind, dayIndex), subjectiveBaseline };
+    };
+    return {
+        id: `subjective_${kind}`,
+        label: `Sensitivity: ${kind}`,
+        description: `Sensitivity-sweep variant of the ${kind} subjective profile.`,
+        context: {
+            goals: { shortTerm: '', midTerm: '', longTerm: '' },
+            constraints: { hasCableMachine: true, hasFreeWeights: true, hasTreadmill: true, hasIndoorBike: true, maxTimeMinutes: 90 },
+            preferences: { avoidedModalities: [], deprioritizedModalities: [], preferredModalities: [], conservativeBias: false },
+        },
+        event: null,
+        startDate, weeks: 4, tags: ['subjective-profile', 'sensitivity'],
+        readinessForWeek: () => readinessAt(startDate, 0),
+        readinessForDate: (date, weekIndex) => readinessAt(date, weekIndex * 7),
+    };
+}
+
+/** Sweeps `SUBJECTIVE_DRIFT_SENSITIVITY_CONFIGS` (window length, coverage minima,
+ * variability floor/cap, weights) through the real planner for the five 9.5 profiles, each
+ * diffed against a single shared `'off'` baseline run. Complements the mechanics-only sweep
+ * in `subjectiveDriftComparison.ts` (which measures the evaluator in isolation) with the
+ * real-planner/hard-gate signal the plan's 9.6 explicitly asks for. */
+export async function runSubjectiveDriftSensitivityComparison(
+    configs: SubjectiveDriftSensitivityConfig[] = SUBJECTIVE_DRIFT_SENSITIVITY_CONFIGS,
+): Promise<SubjectiveDriftSensitivityComparison> {
+    const offScenarios = SUBJECTIVE_PROFILE_KINDS.map(kind => subjectiveDriftSensitivityScenario(kind, REFERENCE_SUBJECTIVE_BASELINE_POLICY));
+    const offReport = await runAllScenarios(offScenarios, 'simulation', { subjectiveDriftPolicy: 'off' });
+    const offById = new Map(offReport.scenarios.map(result => [result.scenarioId, result]));
+
+    const results: SubjectiveDriftSensitivityScenarioResult[] = [];
+    for (const config of configs) {
+        const driftScenarios = SUBJECTIVE_PROFILE_KINDS.map(kind => subjectiveDriftSensitivityScenario(kind, config.baselinePolicy));
+        const driftReport = await runAllScenarios(driftScenarios, 'simulation', { subjectiveDriftPolicy: 'drift', subjectiveDriftWeights: config.weights });
+        for (const kind of SUBJECTIVE_PROFILE_KINDS) {
+            const scenarioId = `subjective_${kind}`;
+            const off = offById.get(scenarioId);
+            const drift = driftReport.scenarios.find(result => result.scenarioId === scenarioId);
+            if (!off || !drift) throw new Error(`Missing sensitivity result for ${scenarioId}.`);
+            const driftScenario = driftScenarios.find(item => item.id === scenarioId)!;
+            const driftTraces = new Map(drift.decisionTraces.map(trace => [trace.date, trace]));
+            let changedSelections = 0;
+            off.decisionTraces.forEach(trace => {
+                const compared = driftTraces.get(trace.date);
+                if (compared && trace.selected.templateId !== compared.selected.templateId) changedSelections += 1;
+            });
+            let trainToModifyDays = 0;
+            let trainToRecoverDays = 0;
+            let modifyToRecoverDays = 0;
+            for (let weekIndex = 0; weekIndex < driftScenario.weeks; weekIndex += 1) {
+                const date = addDaysToLocalDateString(driftScenario.startDate, weekIndex * 7);
+                const readiness = driftScenario.readinessForDate!(date, weekIndex);
+                if (!readiness.subjectiveBaseline) continue;
+                const evidence = buildSubjectiveDriftDecisionEvidence(readiness, driftScenario.context, date, undefined, config.weights);
+                if (!evidence?.decisionRelevant) continue;
+                if (evidence.modeWithoutDrift === 'train' && evidence.modeWithDrift === 'modify') trainToModifyDays += 1;
+                else if (evidence.modeWithoutDrift === 'train' && evidence.modeWithDrift === 'recover') trainToRecoverDays += 1;
+                else if (evidence.modeWithoutDrift === 'modify' && evidence.modeWithDrift === 'recover') modifyToRecoverDays += 1;
+            }
+            const offCalibration = calibrationSummary(off);
+            const driftCalibration = calibrationSummary(drift);
+            results.push({
+                configId: config.id, profile: kind, scenarioId,
+                changedSelections, trainToModifyDays, trainToRecoverDays, modifyToRecoverDays,
+                recoverySelectionDelta: driftCalibration.recoverySelections - offCalibration.recoverySelections,
+                restOrRecoveryDayDelta: drift.restOrRecoveryDayCount - off.restOrRecoveryDayCount,
+                constraintViolationDelta: drift.constraintViolations.length - off.constraintViolations.length,
+            });
+        }
+    }
+    return {
+        configs, results,
+        evidenceType: 'synthetic safety/regression evidence; not real-world usefulness evidence',
+    };
 }
 
 function distributionDifference(preferred: Partial<Record<SessionTemplate['modality'], number>>, baseline: Partial<Record<SessionTemplate['modality'], number>>): number {

@@ -647,6 +647,9 @@ export interface DecisionScoreTelemetry {
         sleepFloorPenalty: number;
         conservativeBias: number;
     };
+    /** Phase 9.7: the subjective-drift component (0 under production's default `'off'`
+     *  policy). Optional so historical persisted telemetry without this field still parses. */
+    subjectiveDrift?: number;
     totalDecisionScore: number;
 }
 

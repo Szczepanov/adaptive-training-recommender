@@ -7,6 +7,7 @@ import type { SubjectiveDriftAudit } from './subjectiveDriftAudit';
 function driftAudit(overrides: Partial<SubjectiveDriftAudit> = {}): SubjectiveDriftAudit {
     return {
         estimatorId: 'subjective-baseline-v1-mean-stdev-7-28',
+        estimatorPolicyVersion: 'subjective-drift-score-v1-equal-weights-strain-z-cap',
         historyThroughDateExclusive: '2026-08-16', recentRecordedDays: 7, longRecordedDays: 28,
         contribution: 1.2,
         perMetricContributions: { readiness: 0.2, sleepQuality: 0.2, fatigue: 0.2, soreness: 0.2, mentalStress: 0.2, motivation: 0.2 },

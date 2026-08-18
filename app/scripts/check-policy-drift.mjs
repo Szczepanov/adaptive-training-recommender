@@ -91,13 +91,28 @@ const basePolicyVersion = extractPolicyVersion(basePolicySource, `${baseRef}:${p
 const currentPolicyVersion = extractPolicyVersion(currentPolicySource, policyFile);
 const policyVersionChanged = basePolicyVersion !== currentPolicyVersion;
 
+// Phase 9.7: compact, normalized subjective-drift telemetry/audit/replay scaffolding.
+// None of these can change what mode a real decision selects -- they only add optional
+// evidence fields gated behind the same 'off' default rules.ts already carries -- so a
+// change limited to this set (alongside rules.ts/subjectiveBaseline.ts) stays inside the
+// dormant exception below rather than forcing a version bump for evidence-only additions.
+const subjectiveDriftEvidenceFiles = new Set([
+  rulesFile,
+  subjectiveBaselineFile,
+  'app/src/engine/models.ts',
+  'app/src/engine/provenance.ts',
+  'app/src/engine/subjectiveDriftAudit.ts',
+  'app/src/engine/replay.ts',
+]);
+
 /**
  * ADR-0020 explicitly requires a default-off implementation to keep the existing policy
  * identity because it cannot affect a persisted recommendation. This exception is narrow
  * and mechanical: changed decision files must be limited to the subjective-drift rules /
- * baseline implementation, no other production source may change, the evaluator must still
+ * baseline implementation, no other production source may change except the named
+ * evidence-only files in `subjectiveDriftEvidenceFiles` above, the evaluator must still
  * default the selector to 'off', and ADR-0020 must remain Accepted with its no-bump rule.
- * Any production call-site change therefore falls back to the normal version-bump rule.
+ * Any other production call-site change therefore falls back to the normal version-bump rule.
  */
 function isAcceptedDormantSubjectiveDriftChange() {
   const dormantDecisionFiles = new Set([rulesFile, subjectiveBaselineFile]);
@@ -107,7 +122,7 @@ function isAcceptedDormantSubjectiveDriftChange() {
 
   const changedProductionSources = changedFiles.filter((file) =>
     file.startsWith('app/src/')
-    && !dormantDecisionFiles.has(file)
+    && !subjectiveDriftEvidenceFiles.has(file)
     && !file.endsWith('.test.ts')
     && !file.includes('/simulation/')
   );

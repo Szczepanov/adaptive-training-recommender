@@ -2,6 +2,7 @@ import type { DailyReadiness, UserContext } from '../models';
 import type { SubjectiveDriftAuditSource } from '../subjectiveDriftAudit';
 import {
     REFERENCE_SUBJECTIVE_DRIFT_WEIGHTS,
+    SUBJECTIVE_DRIFT_ESTIMATOR_POLICY_VERSION,
     evaluateReadinessAndSafetyEnvelope,
     subjectiveDriftStrain,
     type SubjectiveDriftWeights,
@@ -55,6 +56,7 @@ export function buildSubjectiveDriftDecisionEvidence(
 
     return {
         estimatorId: baseline.estimatorId,
+        estimatorPolicyVersion: SUBJECTIVE_DRIFT_ESTIMATOR_POLICY_VERSION,
         historyThroughDateExclusive: baseline.historyThroughDateExclusive,
         recentRecordedDays: baseline.recentRecordedDays,
         longRecordedDays: baseline.longRecordedDays,
@@ -63,6 +65,9 @@ export function buildSubjectiveDriftDecisionEvidence(
         decisionRelevant: off.mode !== drift.mode,
         modeWithoutDrift: off.mode,
         modeWithDrift: drift.mode,
-        totalDecisionScoreWithDrift: drift.telemetry.totalDecisionScore + contribution,
+        // Phase 9.7: `drift.telemetry.totalDecisionScore` already reconciles objectiveStrain +
+        // subjectiveDrift (rules.ts), so this is no longer a separate addition -- doing so
+        // here too would double-count the contribution.
+        totalDecisionScoreWithDrift: drift.telemetry.totalDecisionScore,
     };
 }
