@@ -52,7 +52,7 @@ def normalize_activity(
     if detail is None:
         return payload
 
-    if detail.power_zones is not None:
+    if detail.power_zones:
         payload["powerInZones"] = [
             {
                 "zoneNumber": bucket.zone_number,
@@ -65,7 +65,7 @@ def normalize_activity(
             }
             for bucket in detail.power_zones
         ]
-    if detail.hr_zones is not None:
+    if detail.hr_zones:
         payload["hrInZones"] = [
             {
                 "zoneNumber": bucket.zone_number,
@@ -84,7 +84,7 @@ def normalize_activity(
         payload["intensityFactor"] = detail.intensity_factor
     if detail.variability_index is not None:
         payload["variabilityIndex"] = detail.variability_index
-    if detail.laps is not None:
+    if detail.laps:
         payload["laps"] = [
             {
                 "lapIndex": lap.lap_index,

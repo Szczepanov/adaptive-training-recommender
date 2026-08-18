@@ -330,19 +330,20 @@ function candidateEventFromGarmin(
         && isGarminCyclingPowerActivity(activity.type)
         ? derivePowerZoneStimulusCandidate(extractPowerZoneFeatures(activity), trainingEffectStimulus)
         : null;
+    const effectiveModality = zoneCandidate && modality === 'Unknown' ? 'Cycling' : modality;
     return {
         id: `garmin:${activity.activityId}`,
         date: activity.date,
         durationMin: activity.durationMin,
         deliveredDose,
-        modality: zoneCandidate && modality === 'Unknown' ? 'Cycling' : modality,
+        modality: effectiveModality,
         intensity,
         trainingEffect: Math.max(activity.trainingEffectAerobic ?? 0, activity.trainingEffectAnaerobic ?? 0) || null,
         estimatedCost: scaleCostByDeliveredDose(baseCost, deliveredDose),
         estimatedStimulus: zoneCandidate ?? trainingEffectStimulus,
         exactTemplateMatch: false,
         sources: ['garmin'],
-        confidence: modality === 'Unknown' ? 'medium' : 'high',
+        confidence: effectiveModality === 'Unknown' ? 'medium' : 'high',
         evidenceTier,
         linkedActivityId: activity.activityId,
         linkedRecommendationDate: null,

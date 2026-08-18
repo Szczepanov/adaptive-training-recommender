@@ -137,8 +137,20 @@ function isAcceptedDormantGarminZoneCreditChange() {
   const defaultsToTrainingEffect = /garminStimulusPolicy\s*=\s*options\.garminStimulusPolicy\s*\?\?\s*['"]training_effect['"]/.test(completedTrainingSource);
   if (!defaultsToTrainingEffect) return false;
 
-  const selectorReferences = git(['grep', '-l', 'power_zones_direct_share_v1', '--', 'app/src'])
-    .trim().split('\n').filter(Boolean);
+  let selectorReferences;
+  try {
+    selectorReferences = git(['grep', '-l', 'power_zones_direct_share_v1', '--', 'app/src'])
+      .trim().split('\n').filter(Boolean);
+  } catch (err) {
+    // `git grep -l` exits 1 (throwing here) when the pattern has zero matches, which is a
+    // legitimate outcome, not an error -- treat it as "no references found" rather than
+    // letting a genuine no-match case crash the whole drift check.
+    if (err.status === 1) {
+      selectorReferences = [];
+    } else {
+      throw err;
+    }
+  }
   const allowedReferences = new Set([
     completedTrainingFile,
     garminTelemetryEvidenceFile,

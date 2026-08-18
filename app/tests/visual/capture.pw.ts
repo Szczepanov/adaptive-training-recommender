@@ -50,8 +50,10 @@ for (const scenario of VISUAL_SCENARIOS) {
       // interaction captures the recommendation card's own disclosure specifically.
       const viewWorkout = page.locator('.view-workout-btn');
       if (await viewWorkout.count()) {
+        await expect(viewWorkout.first()).toHaveAccessibleName('View workout');
         await viewWorkout.first().click();
         await expect(viewWorkout.first()).toHaveAttribute('aria-expanded', 'true');
+        await expect(viewWorkout.first()).toHaveAccessibleName('Hide workout');
         await expect(page.getByLabel(/Workout details for /)).toBeVisible();
         await capture(page, scenario, 'workout-expanded', ['Workout steps are available on demand without overwhelming the recommendation.']);
       }

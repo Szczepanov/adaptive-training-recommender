@@ -5,7 +5,7 @@ recommendation engine) operates on canonical.py types only."""
 
 import logging
 import math
-from typing import Any, Callable
+from typing import Any, Callable, TypeVar
 
 from .canonical import (
     CanonicalActivity,
@@ -31,6 +31,8 @@ from .provider import (
 )
 
 logger = logging.getLogger(__name__)
+
+T = TypeVar("T")
 
 _POWER_ACTIVITY_TYPES = {
     "cycling",
@@ -198,25 +200,53 @@ def qualifies_for_activity_detail(activity: CanonicalActivity) -> bool:
     )
 
 
+def _parse_records(raw_items: list[Any], build: Callable[[dict[str, Any]], T | None]) -> list[T]:
+    """Shared per-item extraction loop: skip non-dict entries and entries `build` rejects
+    (returns None for), keep everything else. Both zone buckets and laps degrade the same
+    way -- a malformed individual entry is dropped, never a raised exception."""
+    records: list[T] = []
+    for raw_item in raw_items:
+        if not isinstance(raw_item, dict):
+            continue
+        record = build(raw_item)
+        if record is not None:
+            records.append(record)
+    return records
+
+
+def _build_zone_bucket(raw_bucket: dict[str, Any]) -> CanonicalZoneBucket | None:
+    zone_number = _positive_integer(raw_bucket.get("zoneNumber"))
+    seconds = _non_negative_number(raw_bucket.get("secsInZone"))
+    # Garmin's power (7-zone Coggan) and HR (5-zone) models never exceed zone 7; this
+    # mirrors the upper bound `extractPowerZoneFeatures` enforces in
+    # app/src/engine/garminTelemetryEvidence.ts so the persisted record and the
+    # evidence-extraction layer agree on what a valid zone bucket is.
+    if zone_number is None or zone_number > 7 or seconds is None:
+        return None
+    return CanonicalZoneBucket(
+        zone_number=zone_number,
+        seconds_in_zone=seconds,
+        low_boundary=_non_negative_number(raw_bucket.get("zoneLowBoundary")),
+    )
+
+
+def _build_lap_summary(raw_lap: dict[str, Any]) -> CanonicalLapSummary | None:
+    lap_index = _positive_integer(raw_lap.get("lapIndex"))
+    duration = _non_negative_number(raw_lap.get("duration"))
+    if lap_index is None or duration is None:
+        return None
+    return CanonicalLapSummary(
+        lap_index=lap_index,
+        duration_seconds=duration,
+        average_power_watts=_non_negative_number(raw_lap.get("averagePower")),
+        average_hr_bpm=_non_negative_number(raw_lap.get("averageHR")),
+    )
+
+
 def _canonicalize_zone_buckets(payload: Any) -> list[CanonicalZoneBucket] | None:
     if not isinstance(payload, list):
         return None
-    buckets: list[CanonicalZoneBucket] = []
-    for raw_bucket in payload:
-        if not isinstance(raw_bucket, dict):
-            continue
-        zone_number = _positive_integer(raw_bucket.get("zoneNumber"))
-        seconds = _non_negative_number(raw_bucket.get("secsInZone"))
-        if zone_number is None or seconds is None:
-            continue
-        buckets.append(
-            CanonicalZoneBucket(
-                zone_number=zone_number,
-                seconds_in_zone=seconds,
-                low_boundary=_non_negative_number(raw_bucket.get("zoneLowBoundary")),
-            )
-        )
-    return buckets
+    return _parse_records(payload, _build_zone_bucket)
 
 
 def _canonicalize_laps(payload: Any) -> list[CanonicalLapSummary] | None:
@@ -225,23 +255,7 @@ def _canonicalize_laps(payload: Any) -> list[CanonicalLapSummary] | None:
     raw_laps = payload.get("lapDTOs")
     if not isinstance(raw_laps, list):
         return None
-    laps: list[CanonicalLapSummary] = []
-    for raw_lap in raw_laps:
-        if not isinstance(raw_lap, dict):
-            continue
-        lap_index = _positive_integer(raw_lap.get("lapIndex"))
-        duration = _non_negative_number(raw_lap.get("duration"))
-        if lap_index is None or duration is None:
-            continue
-        laps.append(
-            CanonicalLapSummary(
-                lap_index=lap_index,
-                duration_seconds=duration,
-                average_power_watts=_non_negative_number(raw_lap.get("averagePower")),
-                average_hr_bpm=_non_negative_number(raw_lap.get("averageHR")),
-            )
-        )
-    return laps
+    return _parse_records(raw_laps, _build_lap_summary)
 
 
 def canonicalize_activity_detail(

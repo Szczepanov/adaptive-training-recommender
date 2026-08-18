@@ -105,7 +105,16 @@ def export(days: int, max_activities: int) -> list[dict[str, Any]]:
             detail = provider.fetch_activity_detail(activity.activity_id).canonical
         except GarminConnectTooManyRequestsError:
             break
-        except Exception:
+        except Exception as error:
+            # De-identified: only the sample's ordinal position is logged, never the
+            # activity ID or date. Without this, a transient detail-fetch failure is
+            # indistinguishable from an activity that genuinely has no telemetry, which
+            # would silently skew the eligible/fallback counts the measurement report relies
+            # on. Logged to stderr so stdout stays valid JSON for the downstream pipe.
+            print(
+                f"warning: detail fetch failed for sample #{len(result) + 1}: {error}",
+                file=sys.stderr,
+            )
             detail = None
         result.append(_deidentified_activity(len(result) + 1, activity, detail))
     return result

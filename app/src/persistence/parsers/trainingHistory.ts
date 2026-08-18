@@ -32,7 +32,10 @@ function parseZoneBuckets(value: unknown): NormalizedGarminActivity['powerInZone
         const zoneNumber = telemetryNumber(entry.zoneNumber);
         const secondsInZone = telemetryNumber(entry.secondsInZone);
         const lowBoundary = entry.lowBoundary === undefined ? undefined : telemetryNumber(entry.lowBoundary);
-        if (zoneNumber === undefined || !Number.isInteger(zoneNumber) || zoneNumber < 1 || secondsInZone === undefined) return undefined;
+        // Garmin's power (7-zone Coggan) and HR (5-zone) models never exceed zone 7; this
+        // mirrors the upper bound extractPowerZoneFeatures enforces in garminTelemetryEvidence.ts
+        // and the ingestion-side bound in garmin_provider.py, so all three layers agree.
+        if (zoneNumber === undefined || !Number.isInteger(zoneNumber) || zoneNumber < 1 || zoneNumber > 7 || secondsInZone === undefined) return undefined;
         if (entry.lowBoundary !== undefined && lowBoundary === undefined) return undefined;
         return { zoneNumber, secondsInZone, ...(lowBoundary !== undefined ? { lowBoundary } : {}) };
     });
