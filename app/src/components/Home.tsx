@@ -1,15 +1,20 @@
 import { useState, useEffect, useCallback, useMemo, useRef, memo } from 'react';
 import { decisionComposer } from '../engine/composer';
-import { evaluateTrainingWithIntent, evaluateNextDayPlanWithIntent, adjustSessionRecommendation } from '../engine/rules';
+import { evaluateTrainingWithIntent, evaluateNextDayPlanWithIntent, adjustSessionRecommendation, evaluateReadinessAndSafetyEnvelope } from '../engine/rules';
 import { mapSnapshotToEngineInput, mapCheckinToSubjectiveInput, mapContextFromGoalsAndTrainingSettings, mapGoalsToUserEvents } from '../engine/adapters';
 import { generateWeekAheadPlanWithIntent, trailingHistoryFromCompletedExposures, type WeekAheadPlan } from '../engine/planner';
-import { prepareTrainingHistorySnapshot } from '../engine/trainingIntent';
+import { prepareTrainingHistorySnapshot, resolveTrainingIntent } from '../engine/trainingIntent';
 import type { TrainingHistorySnapshot } from '../engine/trainingHistorySnapshot';
 import { buildRecommendationAudit } from '../engine/provenance';
 import { evaluatePeriodizationPhase, getDaysToEvent } from '../engine/periodization';
 import { resolvePlanningContext } from '../engine/planningMode';
 import { resolveExecutionDose } from '../engine/dose';
-import type { AuthoredPlanBlock, BodyRegion, DailyDecisionInput, Recommendation, NextDayPotentialPlan, DailyRecommendation, DecisionJournalEntry, ExternalPlacementAssignment, ExternalPlanPlacement, FixedActivity, ShadowVerdict } from '../engine/models';
+import { resolveAvailability } from '../engine/schedule';
+import { adjudicateAuthoredSession } from '../engine/authoredSessionGates';
+import { sessionOccurrenceService } from '../services/sessionOccurrenceService';
+import { sessionDefinitionService } from '../services/sessionDefinitionService';
+import type { AuthoredPlanBlock, BodyRegion, DailyDecisionInput, Recommendation, NextDayPotentialPlan, DailyRecommendation, DecisionJournalEntry, ExternalPlacementAssignment, ExternalPlanPlacement, FixedActivity, Modality, ShadowVerdict } from '../engine/models';
+import type { SessionReferenceBinding } from '../sessions/models';
 import type { DataState } from '../engine/dataState';
 import { recommendationService } from '../services/recommendationService';
 import { prepareCatalogSessionLaunch } from '../services/sessionAuthoringService';
@@ -21,7 +26,6 @@ import { resolveEngineShadowVerdict } from '../engine/shadowAgreement';
 import { getPreviousLocalDateString, addDaysToLocalDateString } from '../utils/localDate';
 import { getPrescriptionLegend, resolveWorkoutPrescription } from '../workouts';
 import type { WorkoutPrescription } from '../workouts';
-import { resolveTrainingIntent } from '../engine/trainingIntent';
 import { computeInternalResponseStrain } from '../engine/fatigue';
 import { critiqueExternalWeek, type ExternalWeekCritique } from '../engine/externalCritique';
 import { applyConfirmedProposal, proposeReplacement, type ReplacementProposal } from '../engine/externalPlacement';
@@ -64,17 +68,15 @@ const MODE_LABELS: Record<Recommendation['mode'], string> = {
   recover: 'Recovery day',
 };
 
-/** Monday of the week containing `date`. Plan weeks are Monday-start by contract, and the
- * critique reviews one plan week at a time. */
-function mondayOf(date: string): string {
-  const weekday = new Date(`${date}T00:00:00Z`).getUTCDay();
-  return addDaysToLocalDateString(date, -((weekday + 6) % 7));
-}
-
 function formatEventTiming(daysToEvent: number | null): string {
   if (daysToEvent === 0) return 'Today';
   if (daysToEvent === null) return '';
   return daysToEvent > 0 ? `In ${daysToEvent} days` : `${Math.abs(daysToEvent)} days ago`;
+}
+
+function mondayOf(date: string): string {
+  const weekday = new Date(`${date}T00:00:00Z`).getUTCDay();
+  return addDaysToLocalDateString(date, -((weekday + 6) % 7));
 }
 
 const DetailedTodayPlan = memo(function DetailedTodayPlan({
@@ -366,11 +368,9 @@ export function Home({ userId, onNavigate, onViewData, onStartCatalogSession }: 
           ...baseRecommendation,
           prescription: resolveWorkoutPrescription(baseRecommendation, userId, input.date, input.preferences?.performanceProfile, baseRecommendation.executionDose, input.trainingSettings) ?? undefined
         };
+
         // M3.1/M3.4: a catalog-sourced recommendation gets its executable snapshot bound
-        // and persisted (write-once, content-addressed) at composition time -- not later,
-        // since primarySession is a decision-relevant field (recommendationService's
-        // decision-change equality and archival already govern it). External/adjudicated
-        // recommendations carry no `.prescription` and are unaffected.
+        // and persisted (write-once, content-addressed) at composition time.
         let primarySession: Recommendation['primarySession'] = recommendationWithPrescription.primarySession;
         if (recommendationWithPrescription.prescription) {
           try {
@@ -381,7 +381,92 @@ export function Home({ userId, onNavigate, onViewData, onStartCatalogSession }: 
             console.warn('Failed to prepare the catalog session binding for today\'s recommendation:', err);
           }
         }
-        const recommendationWithSession = { ...recommendationWithPrescription, primarySession };
+
+        let recommendationWithSession = { ...recommendationWithPrescription, primarySession };
+
+        // M3.3 Gated authored replacement & additional session authority (ADR-0023 / D-MAUTH)
+        try {
+          const replaceOccurrence = await sessionOccurrenceService.getReplaceOccurrenceForDate(userId, input.date);
+          const additionalOccurrences = await sessionOccurrenceService.getAdditionalOccurrencesForDate(userId, input.date);
+
+          if (replaceOccurrence) {
+            const defState = await sessionDefinitionService.getDefinitionRevision(
+              userId,
+              replaceOccurrence.definitionRef.definitionId,
+              replaceOccurrence.definitionRef.revision,
+            );
+            if (defState.status === 'AVAILABLE') {
+              const envelopeState = evaluateReadinessAndSafetyEnvelope(
+                { subjective, objective, subjectiveBaseline: input.subjectiveBaseline },
+                context,
+                input.date,
+                yesterdayRec?.mode,
+              );
+              const availability = resolveAvailability(input.date, subjective, todayAndTomorrowFixedActivities, context);
+              const authoredVerdict = adjudicateAuthoredSession(
+                defState.data,
+                { subjective, objective, subjectiveBaseline: input.subjectiveBaseline },
+                context,
+                envelopeState,
+                baseRecommendation.executionDose ?? { volume: 1.0, intensity: 1.0 },
+                input.date,
+                availability,
+              );
+
+              if (authoredVerdict.decision === 'proceed' || authoredVerdict.decision === 'scale') {
+                const targetDef = authoredVerdict.scaledDefinition ?? defState.data;
+                recommendationWithSession = {
+                  ...baseRecommendation,
+                  prescription: recommendationWithPrescription.prescription,
+                  template: {
+                    ...baseRecommendation.template,
+                    title: targetDef.title,
+                    modality: (targetDef.dominantModality as Modality) ?? baseRecommendation.template.modality,
+                    category: targetDef.intent === 'recovery' ? 'Mobility/Recovery' : baseRecommendation.template.category,
+                  },
+                  rationale: `${authoredVerdict.rationale} (Authored replacement for today).`,
+                  mode: authoredVerdict.decision === 'scale' ? 'modify' : 'train',
+                  executionDose: authoredVerdict.executionDose ?? baseRecommendation.executionDose,
+                  primarySession: {
+                    sessionSource: {
+                      kind: 'manual',
+                      definitionId: replaceOccurrence.definitionRef.definitionId,
+                      revision: replaceOccurrence.definitionRef.revision,
+                      contentHash: replaceOccurrence.definitionRef.contentHash,
+                    },
+                    occurrenceId: replaceOccurrence.occurrenceId,
+                    prescriptionHash: replaceOccurrence.definitionRef.contentHash,
+                  },
+                };
+              } else {
+                recommendationWithSession = {
+                  ...recommendationWithSession,
+                  rationale: `${recommendationWithSession.rationale} [Notice: Scheduled replacement session was rejected by safety gates: ${authoredVerdict.rationale}]`,
+                };
+              }
+            }
+          }
+
+          if (additionalOccurrences.length > 0) {
+            const additionalBindings: SessionReferenceBinding[] = additionalOccurrences.map(occ => ({
+              sessionSource: {
+                kind: 'manual',
+                definitionId: occ.definitionRef.definitionId,
+                revision: occ.definitionRef.revision,
+                contentHash: occ.definitionRef.contentHash,
+              },
+              occurrenceId: occ.occurrenceId,
+              prescriptionHash: occ.definitionRef.contentHash,
+            }));
+            recommendationWithSession = {
+              ...recommendationWithSession,
+              additionalSessions: additionalBindings,
+            };
+          }
+        } catch (occErr) {
+          console.warn('Failed to evaluate authored session occurrences for today:', occErr);
+        }
+
         const todayRec = {
           ...recommendationWithSession,
           recommendationAudit: buildRecommendationAudit(recommendationWithSession, preparedSnapshot) ?? undefined,

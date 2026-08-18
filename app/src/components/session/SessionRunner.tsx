@@ -100,9 +100,10 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
         return null;
     }, [runner.activeStep]);
 
+    const { select: selectOverload } = overload;
     useEffect(() => {
-        overload.select(activeExerciseIdentity);
-    }, [activeExerciseIdentity, overload.select]);
+        selectOverload(activeExerciseIdentity);
+    }, [activeExerciseIdentity, selectOverload]);
 
     const pastSummary = useMemo(() => {
         if (!overload.history || overload.history.length === 0) return null;

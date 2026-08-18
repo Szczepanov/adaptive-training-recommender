@@ -34,8 +34,8 @@ describe('SessionDestinationSheet (M3.3)', () => {
         expect(html).toContain('Replace today');
         expect(html).toContain('Add to today');
         expect(html).toContain('Save to library');
-        expect(html).toContain('Not yet available');
-        expect((html.match(/disabled=""/g) ?? [])).toHaveLength(2);
+        expect(html).not.toContain('Not yet available');
+        expect(html.match(/disabled=""/g)).toBeNull();
     });
 
     it('defaults to Start now selected and does not show the schedule date', () => {
