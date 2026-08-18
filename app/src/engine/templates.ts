@@ -653,3 +653,5 @@ export const ENRICHED_TEMPLATES: SessionTemplate[] = TEMPLATES.map(t => {
         costProfile: cost,
     };
 });
+
+export const ENRICHED_TEMPLATES_BY_ID: Map<string, SessionTemplate> = new Map(ENRICHED_TEMPLATES.map(t => [t.id, t]));
