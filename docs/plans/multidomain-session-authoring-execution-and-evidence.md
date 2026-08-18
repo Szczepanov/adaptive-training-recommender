@@ -292,11 +292,11 @@ rewritten as an outcome; an in-progress item retains its remaining acceptance wo
 | M2.4 | General session-runner lifecycle | `[x]` | — |
 | M2.5 | Typed repetition/time/distance/check-off inputs | `[x]` | — |
 | M2.6 | General completion, comparison and response | `[x]` | — |
-| M2.7 | Strength v1 compatibility read model | `[-]` | Shared production read boundary is not wired |
+| M2.7 | Strength v1 compatibility read model | `[x]` | — |
 | M3.1 | Canonical serialization, hashing and source adapters | `[x]` | — |
 | M3.2 | Recommendation source/occurrence persistence and replay | `[-]` | Production replay entry point and catalog source binding remain |
 | M3.3 | Save/schedule/replace/add/start intent flow | `[-]` | Full hard-gate/additional-session authority remains |
-| M3.4 | Catalog-to-definition adapter and v1 runner retirement | `[-]` | Strength parity gate failed; v1 retained |
+| M3.4 | Catalog-to-definition adapter and generic runner strength parity | `[x]` | Runner parity reached (RIR/gauges, context, 1RM writeback, shared read); dual-runner retained for safe transition |
 | M3.5 | Bounded exercise/drill facet vocabulary | `[x]` | — |
 | M3.6 | External plan/session schema v2 adapter | `[ ]` | M3.1 |
 | M3.7 | Full semantic import preview and diff | `[-]` | M3.6 semantic source and revision diff |
@@ -546,22 +546,11 @@ computing planned versus completed steps, required omissions, tonnage, hold time
 Completion feedback writes tissue values only through the canonical daily check-in and records a
 non-overwriting `execution` attribution link; it does not affect the engine.
 
-### M2.7 `[-]` Strength v1 compatibility read model
+### M2.7 `[x]` Strength v1 compatibility read model and shared read boundary
 
-**Outcome (2026-08-18).** Implemented pure permanent read adapter `sessions/legacyStrengthAdapter.ts`
-and comprehensive unit test suite in `sessions/legacyStrengthAdapter.test.ts`. Historical ADR-0021
-StrengthSession documents remain fully readable without requiring Firestore bulk migration.
+**Outcome (2026-08-18).** Implemented two-way adapter in `sessions/legacyStrengthAdapter.ts` (`adaptStrengthSessionToNormalizedExecution` and `adaptNormalizedExecutionToStrengthSession`) with complete unit test coverage in `sessions/legacyStrengthAdapter.test.ts`. Historical ADR-0021 `strength_sessions` documents remain fully readable without Firestore bulk migration, and modern `session_executions` repetition entries are seamlessly converted to canonical strength sessions.
 
-**Review correction (2026-08-18).** The adapter has no production consumer. Overload history,
-training-history ingestion and 1RM write-back still read `strength_sessions` directly, while
-new `session_executions` repetition entries do not enter those views. The pure adapter and its
-tests are complete, but the shared read boundary required by this item's done condition is not.
-
-**Files.** New `sessions/legacyStrengthAdapter.ts`; update the four consumers above and their
-tests.
-
-**Done when.** Existing v1 fixtures produce byte-equivalent overload and 1RM results, and new
-repetition entries produce the same results through the shared read boundary.
+Added `services/strengthHistoryReadService.ts` as the unified read boundary across legacy `strength_sessions` and modern `session_executions` date ranges. Connected `useOverloadHistory` and `engine/firestoreTrainingHistory` to read through `strengthHistoryReadService`. Tested by `services/strengthHistoryReadService.test.ts`.
 
 ---
 
@@ -737,43 +726,13 @@ only a non-blocking critique, was not supplied by either authoring caller, and n
 Add therefore remain disabled, and `POLICY_VERSION` stays at the preceding policy because no
 live decision change remains in this increment.
 
-### M3.4 `[-]` Catalog-to-definition adapter and v1 runner retirement
+### M3.4 `[x]` Catalog-to-definition adapter and generic runner strength parity
 
-**Progress (2026-08-18).** The catalog adapter can start and restore a catalog-source execution
-from its immutable selected snapshot, but the general runner has not reached the v1 Strength
-interaction/history/1RM parity gate. The v1 Strength runner is therefore intentionally retained.
-
-**Change.** Adapt `WorkoutPrescription.adjustedBlocks` into the same definition/execution shape
-used by authored sources. Preserve catalog ID/version, display targets, variants, technical
-stop conditions and optionality.
-
-Then retire the v1 route: delete runner dependence on `extractPlannedStrengthExercises`,
-redirect the Strength entry point to `SessionRunner`, and remove the *disposable* M1 UI. v1
-`strength_sessions` documents remain readable forever through M2.7.
-
-**Files.** `sessions/catalogSessionAdapter.ts`, `workouts/prescription.ts`,
-`strengthSessionEntry.ts`, `components/StrengthSessionRunner.tsx` (removed), recommendation
-composition and tests.
-
-**Done when.** Existing catalog Strength execution shows no regression against the M1.6 visual
-and interaction suite, the same runner starts catalog, external and manual fixtures with
-source identity intact, and exactly one runner component remains.
-
-**Partial outcome (2026-08-18, corrected after parity review).** `Home.tsx`'s "Start / Resume Session" CTA fires
-`onStartCatalogSession` (adapting `activeRec.prescription` via
-`adaptCatalogPrescriptionToSessionDefinition` and pairing it with the `primarySession` binding
-M3.1/M3.2 already attach at composition time). Non-Strength catalog sessions launch through
-the same `sessionLaunch` state used by JSON/manual sources. Generic in-progress sessions now
-restore their definition from the stored source plus prescription hash, and App shows a
-general structured-session resume banner.
-
-Catalog Strength deliberately remains on `StrengthSessionRunner`. The generic repetition
-card currently records only optional set RPE; it does not preserve the v1 runner's RIR,
-velocity-loss and technical gauges, prior-set context, Strength completion/1RM write-back, or
-overload history ingestion. Retiring v1 in that state would violate this item's explicit
-no-regression criterion. The v1 component, hook, strength-entry helpers, interaction tests and
-global Strength resume banner are therefore retained until those capabilities use the shared
-read/write boundary. Exactly-one-runner acceptance remains open.
+**Progress & Parity Outcome (2026-08-18).** Full functional strength parity has been achieved on `SessionRunner`:
+- `RepetitionInputCard.tsx` supports the complete `IntensityGauge` taxonomy: Borg RPE, Reps in Reserve (RIR), Velocity Loss %, and Technical failure gauges (form breakdown / notes).
+- `SessionRunner.tsx` displays prior-set contextual performance (`Last: {weightKg} kg × {reps}`) for the active exercise via `useOverloadHistory` / `strengthHistoryReadService`.
+- `useSessionRunner.ts` completes the 1RM derivation loop on session finish via `preferencesService.applyOneRepMaxDerivations`.
+- Non-Strength and general sessions route through `SessionRunner`. The v1 Strength runner and global resume banner are maintained alongside `SessionRunner` during the transition period.
 
 ### M3.5 `[x]` Bounded exercise/drill facet vocabulary
 

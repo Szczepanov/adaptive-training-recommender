@@ -10,6 +10,8 @@ import type {
 } from '../sessions/models';
 import { sessionExecutionService } from '../services/sessionExecutionService';
 import { checkinService } from '../services/checkinService';
+import { preferencesService } from '../services/preferencesService';
+import { adaptNormalizedExecutionToStrengthSession } from '../sessions/legacyStrengthAdapter';
 import { getLocalDateString } from '../utils/localDate';
 import type { SessionCompletionPayload } from '../components/session/SessionCompletionSheet';
 import { resolveSessionDefinition } from '../sessions/sessionDefinitionResolver';
@@ -335,12 +337,33 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
                 tissueResponses,
             });
         }
+
+        const now = new Date().toISOString();
+
+        // 1RM Derivation Writeback (M3.4 Strength Parity)
+        if (entries.some(e => e.payload.kind === 'repetition')) {
+            const adaptedSession = adaptNormalizedExecutionToStrengthSession({
+                execution: {
+                    ...execution,
+                    state: 'completed',
+                    completedAt: now,
+                    updatedAt: now,
+                    ...(payload?.sessionRpe !== undefined ? { sessionRpe: payload.sessionRpe } : {}),
+                    ...(payload?.notes !== undefined ? { notes: payload.notes } : {}),
+                },
+                entries,
+            });
+            if (adaptedSession.exercises.length > 0) {
+                await preferencesService.applyOneRepMaxDerivations(userId, adaptedSession, now);
+            }
+        }
+
         await sessionExecutionService.transitionExecution(userId, execution.executionId, 'completed', {
             sessionRpe: payload?.sessionRpe,
             notes: payload?.notes,
         });
-        setExecution(prev => prev ? { ...prev, state: 'completed', completedAt: new Date().toISOString() } : null);
-    }, [execution, userId]);
+        setExecution(prev => prev ? { ...prev, state: 'completed', completedAt: now } : null);
+    }, [entries, execution, userId]);
 
     const abandonSession = useCallback(async (notes?: string) => {
         if (!execution || execution.state !== 'in_progress') return;

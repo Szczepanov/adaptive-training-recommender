@@ -5,6 +5,9 @@ import {
     deleteDoc,
     collection,
     getDocs,
+    query,
+    where,
+    orderBy,
     type Firestore,
 } from 'firebase/firestore';
 import { getDb } from '../firebase';
@@ -15,6 +18,7 @@ import type {
     SessionSourceRef,
     SessionExecutionState,
 } from '../sessions/models';
+import type { NormalizedExecutionRecord } from '../sessions/legacyStrengthAdapter';
 import {
     parseSessionExecutionDocument,
     parseSessionEntryDocument,
@@ -173,6 +177,38 @@ export class SessionExecutionService {
             ...(data?.notes !== undefined ? { notes: data.notes } : {}),
         };
         await setDoc(this.executionRef(userId, executionId), patch, { merge: true });
+    }
+
+    async getExecutionsInRange(
+        userId: string,
+        startDateInclusive: string,
+        throughDateExclusive: string,
+    ): Promise<{ executions: NormalizedExecutionRecord[]; invalidRecords: number }> {
+        const collRef = collection(this.db, 'users', userId, 'session_executions');
+        const q = query(
+            collRef,
+            where('date', '>=', startDateInclusive),
+            where('date', '<', throughDateExclusive),
+            orderBy('date', 'asc'),
+        );
+        const snap = await getDocs(q);
+        const executions: NormalizedExecutionRecord[] = [];
+        let invalidRecords = 0;
+
+        for (const docSnap of snap.docs) {
+            const parsed = parseSessionExecutionDocument(docSnap.data(), docSnap.ref.path);
+            if (parsed.status === 'AVAILABLE') {
+                const entries = await this.getEntries(userId, parsed.data.executionId);
+                executions.push({
+                    execution: parsed.data,
+                    entries,
+                });
+            } else if (parsed.status === 'INVALID') {
+                invalidRecords += 1;
+            }
+        }
+
+        return { executions, invalidRecords };
     }
 }
 

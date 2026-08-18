@@ -1,15 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { StrengthSession } from './models';
 
-const { activityService, recommendationService, strengthSessionService } = vi.hoisted(() => ({
+const { activityService, recommendationService, strengthHistoryReadService } = vi.hoisted(() => ({
     activityService: { getActivitiesInRange: vi.fn(async () => ({ status: 'AVAILABLE' as const, revision: 'a', data: [] })) },
     recommendationService: { getRecommendationsInRange: vi.fn(async () => ({ status: 'AVAILABLE' as const, revision: 'r', data: [] })) },
-    strengthSessionService: { getSessionsInRange: vi.fn(async (): Promise<{ sessions: StrengthSession[]; invalidRecords: number }> => ({ sessions: [], invalidRecords: 0 })) },
+    strengthHistoryReadService: { getSessionsInRange: vi.fn(async (): Promise<{ sessions: StrengthSession[]; invalidRecords: number }> => ({ sessions: [], invalidRecords: 0 })) },
 }));
 
 vi.mock('../services/activityService', () => ({ activityService }));
 vi.mock('../services/recommendationService', () => ({ recommendationService }));
-vi.mock('../services/strengthSessionService', () => ({ strengthSessionService }));
+vi.mock('../services/strengthHistoryReadService', () => ({ strengthHistoryReadService }));
 
 import {
     firestoreTrainingHistoryProvider,
@@ -42,20 +42,20 @@ describe('Firestore training history manual source', () => {
 
     it('does not issue the manual Firestore read in the production default-off path', async () => {
         const snapshot = await firestoreTrainingHistoryProvider.getSnapshot!('u1', '2026-08-07', 7);
-        expect(strengthSessionService.getSessionsInRange).not.toHaveBeenCalled();
+        expect(strengthHistoryReadService.getSessionsInRange).not.toHaveBeenCalled();
         expect(snapshot.sourceStates.manualTraining).toEqual({ status: 'MISSING' });
     });
 
     it('reads the exact exclusive window and includes strength only when explicitly enabled', async () => {
-        strengthSessionService.getSessionsInRange.mockResolvedValueOnce({ sessions: [session], invalidRecords: 0 });
+        strengthHistoryReadService.getSessionsInRange.mockResolvedValueOnce({ sessions: [session], invalidRecords: 0 });
         const snapshot = await getFirestoreTrainingHistorySnapshot('u1', '2026-08-07', 7, 'included');
-        expect(strengthSessionService.getSessionsInRange).toHaveBeenCalledWith('u1', '2026-07-31', '2026-08-07');
+        expect(strengthHistoryReadService.getSessionsInRange).toHaveBeenCalledWith('u1', '2026-07-31', '2026-08-07');
         expect(snapshot.exposures).toHaveLength(1);
         expect(snapshot.sourceStates.manualTraining.status).toBe('AVAILABLE');
     });
 
     it('turns a failed manual query into an unavailable source that blocks enabled planning', async () => {
-        strengthSessionService.getSessionsInRange.mockRejectedValueOnce(new Error('offline'));
+        strengthHistoryReadService.getSessionsInRange.mockRejectedValueOnce(new Error('offline'));
         await expect(getFirestoreTrainingHistorySnapshot('u1', '2026-08-07', 7, 'included'))
             .rejects.toMatchObject({ source: 'manualTraining', state: { status: 'UNAVAILABLE' } });
     });

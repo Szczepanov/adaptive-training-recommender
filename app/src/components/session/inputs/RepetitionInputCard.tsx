@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import type { SessionStep, RepetitionEntryPayload } from '../../../sessions/models';
+import type { IntensityGauge } from '../../../engine/models';
 
 interface RepetitionInputCardProps {
     step: SessionStep;
@@ -7,6 +8,8 @@ interface RepetitionInputCardProps {
     suggestedReps?: number;
     onSubmit: (payload: RepetitionEntryPayload) => void;
 }
+
+type GaugeScaleType = 'none' | 'rpe' | 'rir' | 'velocity_loss' | 'technical';
 
 export const RepetitionInputCard: React.FC<RepetitionInputCardProps> = ({
     step,
@@ -19,7 +22,12 @@ export const RepetitionInputCard: React.FC<RepetitionInputCardProps> = ({
     const [reps, setReps] = useState<string>(String(defaultReps));
     const [weight, setWeight] = useState<string>(suggestedWeightKg !== undefined ? String(suggestedWeightKg) : '');
     const [isWarmup, setIsWarmup] = useState<boolean>(false);
-    const [rpe, setRpe] = useState<string>('');
+
+    // Gauge state
+    const [gaugeScale, setGaugeScale] = useState<GaugeScaleType>('rpe');
+    const [gaugeVal, setGaugeVal] = useState<string>('');
+    const [technicalMet, setTechnicalMet] = useState<boolean>(true);
+    const [technicalNote, setTechnicalNote] = useState<string>('');
 
     const prescribedRpe = step.effort?.kind === 'rpe'
         ? step.effort.target
@@ -39,25 +47,52 @@ export const RepetitionInputCard: React.FC<RepetitionInputCardProps> = ({
         }
     }, [step.id]);
 
+    const buildGauge = (): IntensityGauge | undefined => {
+        if (gaugeScale === 'rpe') {
+            const val = gaugeVal.trim().length > 0 ? parseFloat(gaugeVal) : undefined;
+            if (val !== undefined && Number.isFinite(val) && val >= 1 && val <= 10) {
+                return { scale: 'rpe_rts', value: val };
+            }
+        } else if (gaugeScale === 'rir') {
+            const val = gaugeVal.trim().length > 0 ? parseFloat(gaugeVal) : undefined;
+            if (val !== undefined && Number.isFinite(val) && val >= 0 && val <= 10) {
+                return { scale: 'rir', value: val };
+            }
+        } else if (gaugeScale === 'velocity_loss') {
+            const val = gaugeVal.trim().length > 0 ? parseFloat(gaugeVal) : undefined;
+            if (val !== undefined && Number.isFinite(val) && val >= 0 && val <= 100) {
+                return { scale: 'velocity_loss', percent: val };
+            }
+        } else if (gaugeScale === 'technical') {
+            return {
+                scale: 'technical',
+                met: technicalMet,
+                ...(technicalNote.trim().length > 0 ? { note: technicalNote.trim() } : {}),
+            };
+        }
+        return undefined;
+    };
+
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         const parsedReps = parseInt(reps, 10);
         if (isNaN(parsedReps) || parsedReps <= 0) return;
 
         const parsedWeight = weight.trim().length > 0 ? parseFloat(weight) : undefined;
-        const parsedRpe = rpe.trim().length > 0 ? parseFloat(rpe) : undefined;
-        if (parsedRpe !== undefined && (!Number.isFinite(parsedRpe) || parsedRpe < 1 || parsedRpe > 10)) return;
+        const gauge = buildGauge();
+
         onSubmit({
             kind: 'repetition',
             setIndex: 1, // dynamically indexed by caller
             reps: parsedReps,
             ...(parsedWeight !== undefined ? { weightKg: parsedWeight } : {}),
             isWarmup,
-            ...(parsedRpe !== undefined ? { gauge: { scale: 'rpe_rts', value: parsedRpe } } : {}),
+            ...(gauge ? { gauge } : {}),
         });
 
-        // RPE is an observed value for this set, not a default for the next one.
-        setRpe('');
+        // Reset gauge value for next set
+        setGaugeVal('');
+        setTechnicalNote('');
 
         // Refocus weight input for next set
         if (weightRef.current) {
@@ -107,20 +142,75 @@ export const RepetitionInputCard: React.FC<RepetitionInputCardProps> = ({
                     />
                     <span>Warm-up</span>
                 </label>
-                <label className="input-group rpe-input-group">
-                    <span className="input-label">Set RPE (optional)</span>
-                    <input
-                        type="number"
-                        step="0.5"
-                        min="1"
-                        max="10"
-                        placeholder={rpePlaceholder}
-                        value={rpe}
-                        onChange={e => setRpe(e.target.value)}
-                        className="session-input-box"
-                        aria-label="Set RPE from 1 to 10"
-                    />
-                </label>
+                <div className="gauge-selector-group">
+                    <select
+                        value={gaugeScale}
+                        onChange={e => setGaugeScale(e.target.value as GaugeScaleType)}
+                        className="gauge-type-select"
+                        aria-label="Intensity gauge scale"
+                    >
+                        <option value="rpe">RPE</option>
+                        <option value="rir">RIR</option>
+                        <option value="velocity_loss">Vel Loss %</option>
+                        <option value="technical">Technical</option>
+                        <option value="none">No Gauge</option>
+                    </select>
+
+                    {gaugeScale === 'rpe' && (
+                        <input
+                            type="number"
+                            step="0.5"
+                            min="1"
+                            max="10"
+                            placeholder={rpePlaceholder}
+                            value={gaugeVal}
+                            onChange={e => setGaugeVal(e.target.value)}
+                            className="session-input-box gauge-val-input"
+                            aria-label="Set RPE from 1 to 10"
+                        />
+                    )}
+
+                    {gaugeScale === 'rir' && (
+                        <input
+                            type="number"
+                            step="0.5"
+                            min="0"
+                            max="10"
+                            placeholder="Reps in reserve (e.g. 2)"
+                            value={gaugeVal}
+                            onChange={e => setGaugeVal(e.target.value)}
+                            className="session-input-box gauge-val-input"
+                            aria-label="Reps in reserve"
+                        />
+                    )}
+
+                    {gaugeScale === 'velocity_loss' && (
+                        <input
+                            type="number"
+                            step="1"
+                            min="0"
+                            max="100"
+                            placeholder="Velocity loss %"
+                            value={gaugeVal}
+                            onChange={e => setGaugeVal(e.target.value)}
+                            className="session-input-box gauge-val-input"
+                            aria-label="Velocity loss percentage"
+                        />
+                    )}
+
+                    {gaugeScale === 'technical' && (
+                        <div className="technical-gauge-inputs">
+                            <label className="technical-met-toggle">
+                                <input
+                                    type="checkbox"
+                                    checked={technicalMet}
+                                    onChange={e => setTechnicalMet(e.target.checked)}
+                                />
+                                <span>{technicalMet ? 'Form Maintained' : 'Form Breakdown'}</span>
+                            </label>
+                        </div>
+                    )}
+                </div>
             </div>
 
             <button type="submit" className="log-set-btn">

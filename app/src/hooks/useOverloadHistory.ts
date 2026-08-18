@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
-import { strengthSessionService } from '../services/strengthSessionService';
+import { strengthHistoryReadService } from '../services/strengthHistoryReadService';
 import type { StrengthSession } from '../engine/models';
 import { distinctLoggedExercises, summarizeExerciseAcrossSessions, type ExerciseIdentity, type ExerciseSessionSummary } from '../workouts/overloadHistory';
 import { addDaysToLocalDateString, getLocalDateString } from '../utils/localDate';
 
 /** Thin orchestration over `overloadHistory.ts` (pure, fully unit-tested) and
- *  `strengthSessionService.getSessionsInRange`. No dedicated test file -- same rationale as
+ *  `strengthHistoryReadService.getSessionsInRange`. No dedicated test file -- same rationale as
  *  every other hook added in this plan: no `@testing-library/react` in this toolchain, and
  *  the two things worth testing (the aggregation math, the query shape) are each tested at
  *  the layer below. */
@@ -42,7 +42,7 @@ export function useOverloadHistory(userId: string | null | undefined, windowDays
         const today = getLocalDateString();
         const throughDateExclusive = addDaysToLocalDateString(today, 1);
         const startInclusive = addDaysToLocalDateString(throughDateExclusive, -windowDays);
-        strengthSessionService.getSessionsInRange(userId, startInclusive, throughDateExclusive)
+        strengthHistoryReadService.getSessionsInRange(userId, startInclusive, throughDateExclusive)
             .then(result => {
                 if (cancelled) return;
                 setSessions(result.sessions);
