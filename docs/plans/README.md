@@ -50,7 +50,7 @@ These implement the way forward in
 [`docs/analysis/2026-08-08-architecture-review.md`](../analysis/2026-08-08-architecture-review.md)
 §7.5. Finding IDs (`F1`, `F16`, …) refer to that document.
 
-Phases 0–5 are **implemented** as verified on 2026-08-09; Phase 6 is now **In progress**.
+Phases 0–8 are **implemented**; Phase 9.0 and Phase 9 remain **In progress**.
 The Phase 0–5 task boards are historical implementation records; the
 [follow-up analysis](../analysis/2026-08-09-phase-0-5-completion-review.md) records
 which original findings are fully closed and which remain ongoing work.
@@ -76,15 +76,14 @@ all-`Ready` table became unusable.
 | 9.0 | [Shadow mode & decision journal](./phase-9-0-shadow-mode-and-decision-journal.md) | **In progress** | 9.0.1 (operational; 9.0.2-9.0.6 code is done) | — | runs the app against the athlete's existing AI loop for one block and records the disagreements — the first evidence in this repository from a real athlete rather than a synthetic corpus |
 | 9 | [Subjective baselines in readiness mode](./phase-9-subjective-baselines.md) | **In progress** | 9.4, 9.6, 9.7 (9.1, 9.2, 9.3 and 9.5 done — 9.8 additionally needs Phase 9.0's prospective evidence) | — | self-normalises subjective scores as a tighten-only drift term, measured behind a default-off selector before any ship decision — not an original review finding |
 | G | [Garmin per-activity telemetry](./garmin-activity-telemetry-ingestion.md) | **Implemented** | none | none | ingests per-activity power/HR time-in-zone, normalized power and lap averages; the measured zone-credit candidate remains off after an evidence-backed no-ship decision |
-| S | [Strength session logging](./strength-session-logging.md) | **Ready** | all of Step A and Step B; Step C is buildable but not enableable | — (ADR-0021 accepted) | closes the strength return path — per-set logging, self-calibrating 1RM, and measured strength load — not an original review finding |
+| S | [Strength session logging](./strength-session-logging.md) | **In progress (default-off)** | none; all numbered work is built | real logged-history evidence before enabling manual Strength load | closes the strength return path — per-set logging, self-calibrating 1RM, and measured strength load — not an original review finding |
+| M | [Multidomain session authoring, execution & evidence](./multidomain-session-authoring-execution-and-evidence.md) | **Draft** | none while Draft | plan approval; M2+ also require the successor ADR from M0.1 | source-neutral authored sessions, safe mixed-dose execution, response linkage, and protocol-aware field/speed/power evidence |
 
-The last two rows are **not phases**. They are bounded capability plans whose work items are
-prefixed `G*` and `S*` precisely so they cannot be mistaken for the `Phase 0`–`9` sequence;
-the `#` column carries that prefix rather than a phase number. If either later grows into a
-roadmap-scale initiative, promote it to a numbered `phase-10-*` plan at that point rather
-than renumbering its existing items.
+Rows G, S and M are **not phases**. They are capability plans whose work items are prefixed
+`G*`, `S*` and `M*` precisely so they cannot be mistaken for the `Phase 0`–`9` sequence;
+the `#` column carries that prefix rather than a phase number.
 
-Phases 0–6 are implemented. Phase 6 delivered explicit scenario evidence, calibration
+Phases 0–8 are implemented. Phase 6 delivered explicit scenario evidence, calibration
 traces, coverage visibility, a verified repository-owned local Firestore-rules deployment
 and rollback procedure, and an evidence-backed decision to retain production fatigue
 fusion. [Phase 7A](./phase-7-weekly-allocation-and-role-reservations.md) implemented the
@@ -131,13 +130,12 @@ this table exists so none of them has to be rediscovered by reading six document
 | **D-DETAIL-GATE** | Detail ingestion is default-off, limited to non-easy power-bearing activities in the target-date daily pass, and never runs in lookback/backfill/rebuild | [ADR-0005 amendment](../adr/0005-raw-archive-store-and-rebuild-pipeline.md#2026-08-17-amendment-bounded-per-activity-detail-ingestion) | Bounds live calls to `3 × N`, avoids overlapping-window refetches, and keeps historical operations offline |
 | **D-ZONECRED** | A complete cycling power-zone distribution may produce a default-off direct-share stimulus candidate inside `measuredEffort`; production remains TE-derived | [ADR-0022](../adr/0022-zone-derived-completed-training-credit.md) | Granularity is measured without pretending it establishes exact intent or calibrated dose-response |
 
-### Proposed decisions awaiting acceptance
+### Additional accepted decisions
 
-These decisions are intentionally **not** part of the accepted register above. Their
-plans remain Draft and must not be implemented until the linked ADR is accepted. (The
-bounded Garmin and strength capability plans have none outstanding — D-DETAIL-GATE and
-D-ZONECRED moved to the accepted table above, and D-GAUGE/D-SETLOG/D-1RMSRC/D-STRCOST
-were accepted under ADR-0021.)
+The decisions below are accepted by their linked ADRs and are authoritative. They remain
+in a separate table only because this index has not yet been mechanically consolidated
+into one register; the heading previously called them “awaiting acceptance,” which
+contradicted the accepted ADRs and the implemented plans.
 
 | ID | Proposal | Where | One-line reason |
 |---|---|---|---|

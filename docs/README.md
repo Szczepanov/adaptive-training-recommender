@@ -90,6 +90,7 @@ Point-in-time assessments of the system as built, including gaps between documen
 * [**2026-08-17 Garmin zone-credit measurement**](./analysis/2026-08-17-garmin-zone-credit-measurement.md) — Bounded de-identified real-history comparison of ADR-0022's candidate against TE; decision: keep the candidate off.
 * [**2026-08-18 Strength session UI/UX review**](./analysis/2026-08-18-strength-session-ui-ux-review.md) — Browser- and code-backed review of the gym-floor logging flow; verdict: durable persistence foundation, but resume, correction, terminal-action safety, mobile layout, prescription context, accessibility, and visual coverage need work before the UX is finished.
 * [**2026-08-18 Authored composite session import and execution**](./analysis/2026-08-18-authored-composite-session-import-and-execution.md) — Design analysis for importing or manually building the supplied strength/Olympic/field sessions and executing them against a source-neutral, revisioned prescription without weakening engine authority or replay.
+* [**2026-08-18 Multidomain training system — consolidated analysis**](./analysis/2026-08-18-multidomain-training-system-consolidated-analysis.md) — Consolidates the Strength UX, composite-session and speed/field/power requirements into one bounded architecture: deterministic session execution first, protocol/response evidence next, and engine policy only after measurement.
 
 ---
 
@@ -109,6 +110,8 @@ How agreed changes get made. Mutable, status-tracked, and expected to go stale �
 * [**Phase 9.0: Shadow mode and the decision journal**](./plans/phase-9-0-shadow-mode-and-decision-journal.md) — *In progress.* Journal storage, UI, agreement classification, export and the engine-isolation guard are done; only the operational unattended-ingestion step and running the multi-week block itself remain.
 * [**Phase 9: Subjective baselines in readiness mode**](./plans/phase-9-subjective-baselines.md) — *In progress.* ADR-0020 accepted; the scenario corpus has real subjective variance (9.5), the subjective baseline computation exists (9.1) and `DailyReadiness` can carry it (9.2), inert until the drift term (9.3) reads it. Shipping stays gated on Phase 9.0's prospective evidence.
 * [**Garmin per-activity telemetry**](./plans/garmin-activity-telemetry-ingestion.md) — *Implemented.* Additive ingestion and the read-only activity view are delivered; ADR-0022's measured zone-credit candidate remains off after the real-history no-ship decision.
+* [**Strength session logging**](./plans/strength-session-logging.md) — *In progress (default-off).* The raw logger, 1RM derivation and manual-training measurement path are built; live Strength load remains evidence-gated.
+* [**Multidomain session authoring, execution & evidence**](./plans/multidomain-session-authoring-execution-and-evidence.md) — *Draft.* Sequenced plan for runner repair, source-neutral session persistence, manual/external authoring, mixed-dose execution, delayed response, speed/field/power observations, protocol-aware testing and evidence-gated engine candidates.
 
 ---
 
