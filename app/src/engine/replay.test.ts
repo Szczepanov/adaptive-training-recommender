@@ -1,8 +1,17 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { EXTERNAL_PLAN_SCHEMA, type DailyRecommendation, type ExternalTrainingPlan } from './models';
+import type { SessionReferenceBinding } from '../sessions/models';
 import { POLICY_VERSION } from './policy';
 import { externalTemplateId } from './externalSessionProfiles';
-import { replayRecommendationAudit, replayRecommendationAuditAgainstRevision } from './replay';
+
+const services = vi.hoisted(() => ({
+    prescription: { getPrescription: vi.fn() },
+    resolver: { resolveSessionDefinition: vi.fn() },
+}));
+vi.mock('../services/executionPrescriptionService', () => ({ executionPrescriptionService: services.prescription }));
+vi.mock('../sessions/sessionDefinitionResolver', () => ({ resolveSessionDefinition: services.resolver.resolveSessionDefinition }));
+
+import { replayRecommendationAudit, replayRecommendationAuditAgainstRevision, replayRecommendationAuditAgainstSessions, sessionBindingEvidenceKey } from './replay';
 
 function auditedRecommendation(): DailyRecommendation {
     return {
@@ -240,5 +249,99 @@ describe('external decision replay (ADR-0019 D-IMMUT)', () => {
     it('still replays a normal catalog decision unchanged when no revision is involved', () => {
         expect(replayRecommendationAudit(auditedRecommendation()))
             .toEqual({ reproducible: true, policyMatchesCurrent: true, errors: [] });
+    });
+});
+
+describe('M3.2 session prescription binding replay', () => {
+    const binding: SessionReferenceBinding = {
+        sessionSource: { kind: 'catalog', workoutId: 'catalog-workout-1', catalogVersion: '1' },
+        prescriptionHash: 'a'.repeat(64),
+    };
+
+    function withPrimarySession(): DailyRecommendation {
+        const record = auditedRecommendation();
+        record.primarySession = binding;
+        record.recommendationAudit!.primarySession = binding;
+        return record;
+    }
+
+    it('is unaffected when no session bindings are present', () => {
+        expect(replayRecommendationAudit(auditedRecommendation()))
+            .toEqual({ reproducible: true, policyMatchesCurrent: true, errors: [] });
+    });
+
+    it('fails closed when a binding is present but no evidence is supplied', () => {
+        const result = replayRecommendationAudit(withPrimarySession());
+        expect(result.reproducible).toBe(false);
+        expect(result.errors).toContain('Decision references 1 session prescription binding(s), which were not supplied; it cannot be replayed without them.');
+    });
+
+    it('passes when the binding resolves in the supplied evidence', () => {
+        const result = replayRecommendationAudit(withPrimarySession(), null, { resolvedBindings: new Set([sessionBindingEvidenceKey(binding)]) });
+        expect(result).toEqual({ reproducible: true, policyMatchesCurrent: true, errors: [] });
+    });
+
+    it('fails when the binding is absent from the supplied evidence', () => {
+        const result = replayRecommendationAudit(withPrimarySession(), null, { resolvedBindings: new Set() });
+        expect(result.reproducible).toBe(false);
+        expect(result.errors).toContain(`Session prescription ${binding.prescriptionHash} referenced by the audit could not be resolved or failed content verification.`);
+    });
+
+    it('replayRecommendationAuditAgainstSessions resolves evidence via executionPrescriptionService and passes', async () => {
+        services.prescription.getPrescription.mockResolvedValue({
+            status: 'AVAILABLE', revision: null,
+            data: { schemaVersion: 1, prescriptionHash: binding.prescriptionHash, definitionHash: 'def', blocks: [], createdAt: '2026-08-18T00:00:00Z' },
+        });
+        services.resolver.resolveSessionDefinition.mockResolvedValue({
+            status: 'AVAILABLE', revision: binding.prescriptionHash,
+            data: { schemaVersion: 1, id: 'catalog-workout-1', revision: 1, title: 'Catalog', intent: 'training', blocks: [] },
+        });
+        const result = await replayRecommendationAuditAgainstSessions('u1', withPrimarySession());
+        expect(result).toEqual({ reproducible: true, policyMatchesCurrent: true, errors: [] });
+        expect(services.prescription.getPrescription).toHaveBeenCalledWith('u1', binding.prescriptionHash);
+        expect(services.resolver.resolveSessionDefinition).toHaveBeenCalledWith('u1', binding.sessionSource, binding.prescriptionHash);
+    });
+
+    it('replayRecommendationAuditAgainstSessions fails when the stored prescription is missing or corrupted', async () => {
+        services.prescription.getPrescription.mockResolvedValue({ status: 'MISSING' });
+        const result = await replayRecommendationAuditAgainstSessions('u1', withPrimarySession());
+        expect(result.reproducible).toBe(false);
+        expect(result.errors).toContain(`Session prescription ${binding.prescriptionHash} referenced by the audit could not be resolved or failed content verification.`);
+    });
+
+    it('fails when persisted bindings and audited bindings differ', () => {
+        const record = withPrimarySession();
+        record.primarySession = { ...binding, prescriptionHash: 'd'.repeat(64) };
+        const result = replayRecommendationAudit(record, null, { resolvedBindings: new Set([sessionBindingEvidenceKey(binding)]) });
+        expect(result.reproducible).toBe(false);
+        expect(result.errors).toContain('Persisted primarySession does not match the binding recorded in the recommendation audit.');
+    });
+
+    it('fails when the source resolver rejects a mis-bound manual prescription', async () => {
+        const manualBinding: SessionReferenceBinding = {
+            sessionSource: { kind: 'manual', definitionId: 'manual-1', revision: 1, contentHash: 'source-hash' },
+            occurrenceId: 'occ-1', prescriptionHash: 'c'.repeat(64),
+        };
+        const record = auditedRecommendation();
+        record.primarySession = manualBinding;
+        record.recommendationAudit!.primarySession = manualBinding;
+        services.prescription.getPrescription.mockResolvedValue({
+            status: 'AVAILABLE', revision: null,
+            data: { schemaVersion: 1, prescriptionHash: manualBinding.prescriptionHash, definitionHash: 'different-definition', blocks: [], createdAt: '2026-08-18T00:00:00Z' },
+        });
+        services.resolver.resolveSessionDefinition.mockResolvedValue({
+            status: 'INVALID', issues: [{ code: 'prescription-definition-hash-mismatch', documentPath: 'manual-1' }],
+        });
+
+        const result = await replayRecommendationAuditAgainstSessions('u1', record);
+        expect(result.reproducible).toBe(false);
+        expect(result.errors).toContain(`Session prescription ${manualBinding.prescriptionHash} referenced by the audit could not be resolved or failed content verification.`);
+    });
+
+    it('replayRecommendationAuditAgainstSessions does not call the service when no bindings are present', async () => {
+        services.prescription.getPrescription.mockClear();
+        const result = await replayRecommendationAuditAgainstSessions('u1', auditedRecommendation());
+        expect(result).toEqual({ reproducible: true, policyMatchesCurrent: true, errors: [] });
+        expect(services.prescription.getPrescription).not.toHaveBeenCalled();
     });
 });

@@ -1,6 +1,8 @@
 import type { SessionDefinition, ExecutionPrescription } from '../sessions/models';
 import type { PreparedSessionLaunch } from '../sessions/sessionLaunch';
+import type { WorkoutPrescription } from '../workouts/models';
 import { validateSessionDefinition } from '../sessions/validation';
+import { adaptCatalogPrescriptionToSessionDefinition, createExecutionPrescriptionFromCatalog } from '../sessions/catalogSessionAdapter';
 import { executionPrescriptionService } from './executionPrescriptionService';
 import { sessionOccurrenceService } from './sessionOccurrenceService';
 import { hashExecutionPrescription, hashSessionDefinition } from '../sessions/sessionDefinitionHash';
@@ -62,6 +64,38 @@ export async function prepareUnplannedSessionLaunch(
             },
             occurrenceId,
             prescriptionHash,
+        },
+    };
+}
+
+/**
+ * Evidence for a catalog-sourced session (M3.1/M3.4). Starting today's already-recommended
+ * catalog session carries no new selection authority (D-MAUTH): the recommendation already
+ * made that decision, so this creates no `session_occurrences` record -- only the write-once
+ * execution-prescription snapshot the runner and replay resolve against.
+ *
+ * Idempotent and safe to call every time a catalog recommendation is composed:
+ * `executionPrescriptionService.savePrescription` no-ops when the same content-addressed
+ * hash is already stored.
+ */
+export async function prepareCatalogSessionLaunch(
+    userId: string,
+    prescription: WorkoutPrescription,
+): Promise<PreparedSessionLaunch> {
+    const definition = adaptCatalogPrescriptionToSessionDefinition(prescription);
+    const definitionHash = await hashSessionDefinition(definition);
+    const executionPrescription = await createExecutionPrescriptionFromCatalog(prescription, definitionHash);
+    await executionPrescriptionService.savePrescription(userId, executionPrescription);
+
+    return {
+        definition,
+        binding: {
+            sessionSource: {
+                kind: 'catalog',
+                workoutId: prescription.workoutId,
+                catalogVersion: String(prescription.workoutVersion),
+            },
+            prescriptionHash: executionPrescription.prescriptionHash,
         },
     };
 }

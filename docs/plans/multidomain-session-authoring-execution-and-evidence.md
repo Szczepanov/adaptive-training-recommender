@@ -292,11 +292,11 @@ rewritten as an outcome; an in-progress item retains its remaining acceptance wo
 | M2.4 | General session-runner lifecycle | `[x]` | — |
 | M2.5 | Typed repetition/time/distance/check-off inputs | `[x]` | — |
 | M2.6 | General completion, comparison and response | `[x]` | — |
-| M2.7 | Strength v1 compatibility read model | `[x]` | — |
-| M3.1 | Canonical serialization, hashing and source adapters | `[-]` | Exact catalog-source snapshot resolution |
-| M3.2 | Recommendation source/occurrence persistence and replay | `[-]` | Source-byte replay and Phase 9.0 coordination |
-| M3.3 | Save/schedule/replace/add/start intent flow | `[-]` | Authority-bearing occurrence/recommendation integration |
-| M3.4 | Catalog-to-definition adapter and v1 runner retirement | `[-]` | Generic catalog launch/resume and v1 cutover regression suite |
+| M2.7 | Strength v1 compatibility read model | `[-]` | Shared production read boundary is not wired |
+| M3.1 | Canonical serialization, hashing and source adapters | `[x]` | — |
+| M3.2 | Recommendation source/occurrence persistence and replay | `[-]` | Production replay entry point and catalog source binding remain |
+| M3.3 | Save/schedule/replace/add/start intent flow | `[-]` | Full hard-gate/additional-session authority remains |
+| M3.4 | Catalog-to-definition adapter and v1 runner retirement | `[-]` | Strength parity gate failed; v1 retained |
 | M3.5 | Bounded exercise/drill facet vocabulary | `[x]` | — |
 | M3.6 | External plan/session schema v2 adapter | `[ ]` | M3.1 |
 | M3.7 | Full semantic import preview and diff | `[-]` | M3.6 semantic source and revision diff |
@@ -546,11 +546,16 @@ computing planned versus completed steps, required omissions, tonnage, hold time
 Completion feedback writes tissue values only through the canonical daily check-in and records a
 non-overwriting `execution` attribution link; it does not affect the engine.
 
-### M2.7 `[x]` Strength v1 compatibility read model
+### M2.7 `[-]` Strength v1 compatibility read model
 
 **Outcome (2026-08-18).** Implemented pure permanent read adapter `sessions/legacyStrengthAdapter.ts`
 and comprehensive unit test suite in `sessions/legacyStrengthAdapter.test.ts`. Historical ADR-0021
 StrengthSession documents remain fully readable without requiring Firestore bulk migration.
+
+**Review correction (2026-08-18).** The adapter has no production consumer. Overload history,
+training-history ingestion and 1RM write-back still read `strength_sessions` directly, while
+new `session_executions` repetition entries do not enter those views. The pure adapter and its
+tests are complete, but the shared read boundary required by this item's done condition is not.
 
 **Files.** New `sessions/legacyStrengthAdapter.ts`; update the four consumers above and their
 tests.
@@ -565,26 +570,40 @@ repetition entries produce the same results through the shared read boundary.
 **Milestone exit.** An imported or built session can be scheduled, can replace or add to
 today's recommendation, and that decision replays against exact stored bytes.
 
-**Implementation review (2026-08-18).** M3 has useful partial delivery, reflected in the
-status table above: deterministic definition/prescription hashes, a write-once prescription
-store, source-hash-verifying manual/external resolution, catalog adapters, source-binding fields
-on recommendations, a content preview, and basic manual/JSON authoring all exist. None grants
-the milestone exit yet. In particular, source bindings are not resolved from stored prescription
-bytes during replay, and destinations are not connected to recommendation authority. The generic
-runner also lacks the catalog-source launch/resume contract required by M3.4, so the M1 Strength
-route remains in service until that contract and its regression suite land.
+**Implementation review (2026-08-18).** M3 has useful partial
+delivery only: deterministic definition/prescription hashes, a write-once prescription store,
+source-hash-verifying manual/external resolution, catalog adapters, source-binding fields on
+recommendations, a content preview, and basic manual/JSON authoring existed, but source
+bindings were not resolved from stored prescription bytes during replay, destinations were not
+connected to recommendation authority, and the generic runner lacked the catalog-source
+launch/resume contract required by M3.4.
 
-**Authoring MVP (2026-08-18).** The Sessions screen now offers normalized
-`SessionDefinition` JSON import and a manual block editor. Both validate and preview the
-definition, save an immutable user-owned revision, and can start it only as an
-`unplanned_log` execution with a content-addressed execution prescription. Saved revisions are
-listed on the Sessions screen and use the same launch path. This is not full
-M3.6–M3.8: it does not yet accept `external-plan@2`, calculate a semantic revision diff,
-support builder reorder/duplicate or advanced authoring fields, or grant schedule/replacement/
-additional-session authority. Those choices stay unavailable rather than creating records the
-recommendation and replay paths cannot yet interpret.
+**Review correction (2026-08-18, current).** The milestone exit is **not reached**. M3.1 is
+complete and M3.5 remains complete, but the first attempted M3.3 live branch checked only
+`train`/`modify`/`recover`; it bypassed the clinical, injury, time, equipment and environment
+contract in D-MAUTH. Additional occurrences were neither composed into the recommendation nor
+its ordered audit, and the optional critique callback was not wired by either authoring screen.
+That live branch and its policy-version bump were withdrawn rather than shipping an authority
+that the accepted ADR explicitly forbids. Save, start-unplanned and schedule remain available;
+replace/add are visibly disabled pending the complete gate and replay path.
 
-### M3.1 `[-]` Canonical serialization, hashing and source adapters
+The M3.4 retirement also failed its parity gate: the general repetition card does not preserve
+RIR, velocity-loss or technical gauges, prior-set context, the Strength completion/1RM path, or
+the existing overload read path. The plan's own rollback rule therefore applies: catalog
+Strength stays on the v1 runner, while other source-neutral sessions use `SessionRunner`.
+Both runners retain app-wide resume banners, and the general runner now restores non-fixture
+executions through their stored source/prescription binding.
+
+**Authoring MVP (2026-08-18).** The Sessions screen offers normalized `SessionDefinition` JSON
+import and a manual block editor (the latter already supports ID-stable block/step reorder and
+duplicate, per M3.8's own progress note below). Both validate and preview the definition, save
+an immutable user-owned revision, and can be saved, scheduled or started unplanned. Replace
+and Add remain visible but disabled with the missing authority contract stated beside them.
+This is not full M3.6–M3.8: it does not yet accept
+`external-plan@2`, calculate a semantic revision diff, or offer the advanced authoring fields
+M3.8 adds below (load editing, option-set authoring, issue focus).
+
+### M3.1 `[x]` Canonical serialization, hashing and source adapters
 
 **Progress (2026-08-18).** `sessionDefinitionHash.ts`, `catalogSessionAdapter.ts`,
 `externalSessionAdapter.ts` and `sessionDefinitionResolver.ts` exist with deterministic hash and
@@ -592,17 +611,19 @@ source-hash tests. The unresolved portion is exact evaluated-catalog snapshot re
 resolver currently rebuilds a catalog definition from the live catalog rather than resolving the
 stored execution prescription that was selected.
 
-**Change.** Implement deterministic serialization and hashing for normalized definitions and
-execution prescriptions. Add resolvers for catalog, external v2 and manual sources. External
-v1 receives a display-compatible adapter but cannot invent missing option sets, laterality or
-exercise IDs.
-
-**Files.** New `sessions/sessionDefinitionHash.ts`, `sessions/sessionDefinitionResolver.ts`,
-`sessions/catalogSessionAdapter.ts`, `sessions/externalSessionAdapter.ts`; reuse the hash-test
-patterns from `engine/externalPlanHash.ts`.
-
-**Done when.** Key ordering does not change a hash, any material dose or option change does,
-and identical manual and imported normalized content produce identical semantic output.
+**Outcome (2026-08-18).** `resolveSessionDefinition`'s `catalog` branch now takes an optional
+`prescriptionHash` and fails closed (`catalog-prescription-hash-required`) when it's absent,
+rather than silently re-deriving from the live, editable catalog template. When supplied, it
+resolves the write-once `execution_prescriptions/{hash}` document via
+`executionPrescriptionService` and returns the *stored evaluated* blocks, with only display
+metadata (title/duration) still sourced from the static catalog. `sessionAuthoringService.ts`
+gained `prepareCatalogSessionLaunch`, mirroring `prepareUnplannedSessionLaunch` for catalog
+sources: it hashes and saves the prescription (idempotent write-once) but creates no
+`session_occurrences` record, since starting today's already-recommended session claims no
+new selection authority (D-MAUTH). `useSessionRunner` now resolves a non-fixture in-progress
+execution through its stored source plus `prescriptionHash`, so reload no longer requires the
+transient `initialSession` object. The catalog resolver also rejects a source whose stored
+`catalogVersion` no longer matches the available catalog definition.
 
 ### M3.2 `[-]` Recommendation source/occurrence persistence and replay
 
@@ -643,12 +664,39 @@ document alone; changing one prescribed action creates and archives a decision r
 replay fails on hash mismatch and passes against exact stored bytes; and the recommendation
 document gains no nested executable content.
 
+**Partial outcome (2026-08-18).** `Home.tsx`'s recommendation composition now attaches `primarySession`
+(via M3.1's `prepareCatalogSessionLaunch`) before `buildRecommendationAudit`/`saveRecommendation`
+run, so a catalog decision's binding is present from the moment the decision is first
+persisted — matching `decisionFieldsUnchanged`'s existing treatment of the binding as
+decision-relevant, not a benign later patch. `engine/replay.ts` gained
+`SessionPrescriptionEvidence`, a `sessionBindingErrors` sync check mirroring
+`externalDecisionErrors`'s "not supplied" fail-closed pattern, and an async
+`replayRecommendationAuditAgainstSessions(userId, recommendation, externalRevision?)` wrapper
+that resolves each binding via `executionPrescriptionService.getPrescription` (lazily
+imported, keeping the synchronous replay core free of any service-layer/Firestore
+dependency). Evidence is keyed by the full source/occurrence/prescription tuple rather than a
+hash-only set; manual, external and fixture sources also verify that the prescription's
+`definitionHash` matches the resolved source bytes. The offline CLI
+(`scripts/replay-recommendation-audit.mjs`) is unchanged in behavior and now documents in its
+usage text that it cannot verify session bindings (no live Firestore connection); the app's
+own replay path is expected to call the new async wrapper.
+
+This remains partial: no production caller invokes that wrapper, and catalog schema v1 stores
+evaluated blocks plus a definition hash but not enough historical display metadata to
+recompute the complete catalog definition hash after a catalog edit. Manual/imported
+authority is also intentionally disabled under M3.3, so its persisted-decision acceptance
+scenario has not passed. Firestore rules currently bound `additionalSessions` length but do
+not validate every nested member; a direct 16-element expansion exceeded the emulator's
+1,000-expression budget on valid revision/archive updates, so a cheaper server-side shape or
+smaller schema is still required before Add can ship. Coordinated with 9.0.1 per C11: Phase
+9.0's shadow block had not started when this work began.
+
 ### M3.3 `[-]` Save/schedule/replace/add/start intent flow
 
-**Progress (2026-08-18).** `SessionDestinationSheet` implements **Save only** and **Start
-unplanned**. It deliberately withholds Schedule, Replace and Add because their occurrence and
-replay authority is not implemented. The two available paths have distinct persisted results;
-the authority-bearing paths remain pending.
+**Progress (2026-08-18).** `SessionDestinationSheet` implements **Save only**, **Schedule** and
+**Start unplanned**. Replace and Add are shown but disabled because their full hard-gate and
+replay authority is not implemented. The three available paths have distinct persisted
+results; recommendation-bearing paths remain pending.
 
 **Change.** After authoring or import, show explicit destinations with their engine effect
 stated beside them:
@@ -672,11 +720,28 @@ retroactively become a recommendation.
 selection; replace is replayable; add cannot bypass feasibility; unplanned affects history
 only after completion.
 
+**Partial outcome (2026-08-18, corrected after review).** `sessionOccurrenceService.ts` gained typed
+`scheduleOccurrence`/`replaceRecommendationOccurrence`/`addAdditionalSessionOccurrence`
+methods plus `getReplaceOccurrenceForDate`/`getAdditionalOccurrencesForDate` read helpers over
+the Firestore rules that already permit all four values. Reads now order additions by stable
+`placementOrder` plus `occurrenceId`, and duplicate active replacements fail closed instead of
+winning by query order. Save-only, start-unplanned and schedule have distinct persisted
+results and are enabled in `SessionDestinationSheet`.
+
+The attempted live replacement branch was removed in review. It used only readiness mode,
+returned the authored session without `evaluateTemplateEligibility`, schedule availability,
+injury/category restrictions or the plan-tier cost ceiling, and treated Modify as prose-only
+scaling without producing a changed immutable prescription. The attempted additional path was
+only a non-blocking critique, was not supplied by either authoring caller, and never populated
+`Recommendation.additionalSessions`. That does not satisfy D-CANDIDATE or D-MAUTH. Replace and
+Add therefore remain disabled, and `POLICY_VERSION` stays at the preceding policy because no
+live decision change remains in this increment.
+
 ### M3.4 `[-]` Catalog-to-definition adapter and v1 runner retirement
 
-**Progress (2026-08-18).** A catalog adapter and unit test exist, but the generic runner cannot
-yet start and restore a catalog-source execution from its immutable selected snapshot. The v1
-Strength runner is therefore intentionally retained.
+**Progress (2026-08-18).** The catalog adapter can start and restore a catalog-source execution
+from its immutable selected snapshot, but the general runner has not reached the v1 Strength
+interaction/history/1RM parity gate. The v1 Strength runner is therefore intentionally retained.
 
 **Change.** Adapt `WorkoutPrescription.adjustedBlocks` into the same definition/execution shape
 used by authored sources. Preserve catalog ID/version, display targets, variants, technical
@@ -693,6 +758,22 @@ composition and tests.
 **Done when.** Existing catalog Strength execution shows no regression against the M1.6 visual
 and interaction suite, the same runner starts catalog, external and manual fixtures with
 source identity intact, and exactly one runner component remains.
+
+**Partial outcome (2026-08-18, corrected after parity review).** `Home.tsx`'s "Start / Resume Session" CTA fires
+`onStartCatalogSession` (adapting `activeRec.prescription` via
+`adaptCatalogPrescriptionToSessionDefinition` and pairing it with the `primarySession` binding
+M3.1/M3.2 already attach at composition time). Non-Strength catalog sessions launch through
+the same `sessionLaunch` state used by JSON/manual sources. Generic in-progress sessions now
+restore their definition from the stored source plus prescription hash, and App shows a
+general structured-session resume banner.
+
+Catalog Strength deliberately remains on `StrengthSessionRunner`. The generic repetition
+card currently records only optional set RPE; it does not preserve the v1 runner's RIR,
+velocity-loss and technical gauges, prior-set context, Strength completion/1RM write-back, or
+overload history ingestion. Retiring v1 in that state would violate this item's explicit
+no-regression criterion. The v1 component, hook, strength-entry helpers, interaction tests and
+global Strength resume banner are therefore retained until those capabilities use the shared
+read/write boundary. Exactly-one-runner acceptance remains open.
 
 ### M3.5 `[x]` Bounded exercise/drill facet vocabulary
 

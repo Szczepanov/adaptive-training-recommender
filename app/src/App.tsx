@@ -16,6 +16,7 @@ import { SessionJsonImport } from './components/session/SessionJsonImport';
 import type { PreparedSessionLaunch } from './components/session/SessionDestinationSheet';
 import { decisionComposer } from './engine/composer';
 import type { DailyDecisionInput, StrengthSession } from './engine/models';
+import type { SessionExecution } from './sessions/models';
 import type { Screen } from './types/navigation';
 import { useAuth } from './contexts/AuthContext';
 import { LoginScreen } from './components/LoginScreen';
@@ -23,6 +24,7 @@ import { Header } from './components/Header';
 import { MobileNav } from './components/MobileNav';
 import { getLocalDateString } from './utils/localDate';
 import { strengthSessionService } from './services/strengthSessionService';
+import { sessionExecutionService } from './services/sessionExecutionService';
 
 function App() {
   const { userId, authPhase } = useAuth();
@@ -31,6 +33,7 @@ function App() {
   const [desktopSettingsOpen, setDesktopSettingsOpen] = useState(false);
   const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
   const [activeStrengthSession, setActiveStrengthSession] = useState<StrengthSession | null>(null);
+  const [activeStructuredSession, setActiveStructuredSession] = useState<SessionExecution | null>(null);
   const [sessionAuthoringMode, setSessionAuthoringMode] = useState<'import' | 'manual' | null>(null);
   const [sessionLaunch, setSessionLaunch] = useState<PreparedSessionLaunch | null>(null);
 
@@ -53,20 +56,17 @@ function App() {
   }, [userId, authPhase, loadDecisionInput]);
 
   useEffect(() => {
-    if (!userId || authPhase !== 'AUTHENTICATED') {
-      return;
-    }
+    if (!userId || authPhase !== 'AUTHENTICATED') return;
     let cancelled = false;
-    strengthSessionService.findActiveSession(userId)
-      .then(session => {
-        if (!cancelled) setActiveStrengthSession(session);
-      })
-      .catch(() => {
-        if (!cancelled) setActiveStrengthSession(null);
-      });
-    return () => {
-      cancelled = true;
-    };
+    Promise.allSettled([
+      strengthSessionService.findActiveSession(userId),
+      sessionExecutionService.findInProgressExecution(userId),
+    ]).then(([strengthResult, structuredResult]) => {
+      if (cancelled) return;
+      setActiveStrengthSession(strengthResult.status === 'fulfilled' ? strengthResult.value : null);
+      setActiveStructuredSession(structuredResult.status === 'fulfilled' ? structuredResult.value : null);
+    });
+    return () => { cancelled = true; };
   }, [userId, authPhase]);
 
   if (authPhase !== 'AUTHENTICATED') {
@@ -99,16 +99,33 @@ function App() {
           <button type="button" onClick={() => handleNavigate('strength')}>Resume session</button>
         </div>
       )}
+      {activeStructuredSession?.state === 'in_progress' && screen !== 'sessions' && (
+        <div className="active-session-banner" role="status">
+          <span>Structured session in progress</span>
+          <button type="button" onClick={() => handleNavigate('sessions')}>Resume session</button>
+        </div>
+      )}
 
       {/* Main Page Content */}
       <main className="app-content">
         {screen === 'home' && (
-          <Home 
-            userId={userId!} 
+          <Home
+            userId={userId!}
             onNavigate={handleNavigate}
             onViewData={() => {
               loadDecisionInput();
               handleNavigate('data');
+            }}
+            onStartCatalogSession={launch => {
+              // The source-neutral runner has not yet reached ADR-0021 parity for catalog
+              // Strength (RIR/velocity/technical gauges, prior-set context and 1RM
+              // write-back). Keep the v1 runner for that source until parity lands.
+              if (launch.definition.dominantModality === 'strength') {
+                handleNavigate('strength');
+              } else {
+                setSessionLaunch(launch);
+                handleNavigate('sessions');
+              }
             }}
           />
         )}
@@ -189,6 +206,7 @@ function App() {
               onInitialSessionHandled={() => setSessionLaunch(null)}
               onImportSession={() => setSessionAuthoringMode('import')}
               onBuildSession={() => setSessionAuthoringMode('manual')}
+              onSessionStateChange={session => setActiveStructuredSession(session?.state === 'in_progress' ? session : null)}
               onClose={() => handleNavigate('home')}
             />
           )

@@ -12,6 +12,7 @@ import { sessionExecutionService } from '../services/sessionExecutionService';
 import { checkinService } from '../services/checkinService';
 import { getLocalDateString } from '../utils/localDate';
 import type { SessionCompletionPayload } from '../components/session/SessionCompletionSheet';
+import { resolveSessionDefinition } from '../sessions/sessionDefinitionResolver';
 
 export interface UseSessionRunnerResult {
     definition: SessionDefinition | null;
@@ -58,8 +59,9 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
     const [syncStatus, setSyncStatus] = useState<'synced' | 'pending' | 'unavailable'>('synced');
     const [lastRemovedEntry, setLastRemovedEntry] = useState<SessionEntry | null>(null);
 
-    // Reloading or backgrounding must not create a second execution. M2 only permits
-    // fixture launches, so its source identity is sufficient to restore the exact UI.
+    // Reloading or backgrounding must not create a second execution. Source-neutral
+    // executions restore through the immutable source + prescription binding; fixtures
+    // remain the only legacy path that does not carry a prescription hash.
     useEffect(() => {
         let cancelled = false;
         sessionExecutionService.findInProgressExecution(userId)
@@ -69,9 +71,15 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
                 const fixture = source.kind === 'unplanned_fixture'
                     ? fixtures.find(candidate => candidate.id === source.fixtureId)
                     : undefined;
+                const resolved = fixture
+                    ? { status: 'AVAILABLE' as const, data: fixture }
+                    : existing.prescriptionHash
+                        ? await resolveSessionDefinition(userId, source, existing.prescriptionHash)
+                        : null;
                 const existingEntries = await sessionExecutionService.getEntries(userId, existing.executionId);
                 if (cancelled) return;
-                if (fixture) setDefinition(fixture);
+                if (resolved?.status === 'AVAILABLE') setDefinition(resolved.data);
+                else if (!fixture) setSyncStatus('unavailable');
                 setExecution(existing);
                 setEntries(existingEntries);
                 setElapsedSeconds(Math.max(0, Math.floor((Date.now() - Date.parse(existing.startedAt)) / 1000)));

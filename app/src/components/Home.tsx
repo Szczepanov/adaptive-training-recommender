@@ -12,6 +12,8 @@ import { resolveExecutionDose } from '../engine/dose';
 import type { AuthoredPlanBlock, BodyRegion, DailyDecisionInput, Recommendation, NextDayPotentialPlan, DailyRecommendation, DecisionJournalEntry, ExternalPlacementAssignment, ExternalPlanPlacement, FixedActivity, ShadowVerdict } from '../engine/models';
 import type { DataState } from '../engine/dataState';
 import { recommendationService } from '../services/recommendationService';
+import { prepareCatalogSessionLaunch } from '../services/sessionAuthoringService';
+import { adaptCatalogPrescriptionToSessionDefinition } from '../sessions/catalogSessionAdapter';
 import { fixedActivityService } from '../services/fixedActivityService';
 import { planBlockService } from '../services/planBlockService';
 import { decisionJournalService } from '../services/decisionJournalService';
@@ -45,11 +47,15 @@ import {
 import './Home.css';
 
 import type { Screen } from '../types/navigation';
+import type { PreparedSessionLaunch } from '../sessions/sessionLaunch';
 
 interface HomeProps {
   userId: string;
   onNavigate: (screen: Screen) => void;
   onViewData?: () => void;
+  /** Launches today's catalog-sourced recommendation through the modality-appropriate
+   * runner while preserving the immutable source/prescription binding. */
+  onStartCatalogSession?: (launch: PreparedSessionLaunch) => void;
 }
 
 const MODE_LABELS: Record<Recommendation['mode'], string> = {
@@ -151,7 +157,7 @@ const DetailedTodayPlan = memo(function DetailedTodayPlan({
   );
 });
 
-export function Home({ userId, onNavigate, onViewData }: HomeProps) {
+export function Home({ userId, onNavigate, onViewData, onStartCatalogSession }: HomeProps) {
   const [decisionInput, setDecisionInput] = useState<DailyDecisionInput | null>(null);
   const [recommendation, setRecommendation] = useState<Recommendation | null>(null);
   const [adjustmentDirection, setAdjustmentDirection] = useState<'easier' | 'harder' | null>(null);
@@ -360,9 +366,25 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
           ...baseRecommendation,
           prescription: resolveWorkoutPrescription(baseRecommendation, userId, input.date, input.preferences?.performanceProfile, baseRecommendation.executionDose, input.trainingSettings) ?? undefined
         };
+        // M3.1/M3.4: a catalog-sourced recommendation gets its executable snapshot bound
+        // and persisted (write-once, content-addressed) at composition time -- not later,
+        // since primarySession is a decision-relevant field (recommendationService's
+        // decision-change equality and archival already govern it). External/adjudicated
+        // recommendations carry no `.prescription` and are unaffected.
+        let primarySession: Recommendation['primarySession'] = recommendationWithPrescription.primarySession;
+        if (recommendationWithPrescription.prescription) {
+          try {
+            const launch = await prepareCatalogSessionLaunch(userId, recommendationWithPrescription.prescription);
+            if (!isCurrent()) return;
+            primarySession = launch.binding;
+          } catch (err) {
+            console.warn('Failed to prepare the catalog session binding for today\'s recommendation:', err);
+          }
+        }
+        const recommendationWithSession = { ...recommendationWithPrescription, primarySession };
         const todayRec = {
-          ...recommendationWithPrescription,
-          recommendationAudit: buildRecommendationAudit(recommendationWithPrescription, preparedSnapshot) ?? undefined,
+          ...recommendationWithSession,
+          recommendationAudit: buildRecommendationAudit(recommendationWithSession, preparedSnapshot) ?? undefined,
         };
         setRecommendation(todayRec);
 
@@ -759,13 +781,16 @@ export function Home({ userId, onNavigate, onViewData }: HomeProps) {
                     >
                       {showWorkoutDetails ? 'Hide workout' : 'View workout'}
                     </button>
-                    {activeRec.template.modality === 'Strength' && (
+                    {activeRec.prescription && activeRec.primarySession && onStartCatalogSession && (
                       <button
                         type="button"
                         className="start-strength-btn-cta"
-                        onClick={() => onNavigate('strength')}
+                        onClick={() => onStartCatalogSession({
+                          definition: adaptCatalogPrescriptionToSessionDefinition(activeRec.prescription!),
+                          binding: activeRec.primarySession!,
+                        })}
                       >
-                        🏋️ Start / Resume Strength Session →
+                        {activeRec.template.modality === 'Strength' ? '🏋️' : '▶️'} Start / Resume Session →
                       </button>
                     )}
                     {showWorkoutDetails && (

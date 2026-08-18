@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import type { RangeOrNumber, SessionDefinition, SessionEntry, SessionEntryPayload, SessionReferenceBinding, SessionStep } from '../../sessions/models';
+import type { RangeOrNumber, SessionDefinition, SessionEntry, SessionEntryPayload, SessionExecution, SessionReferenceBinding, SessionStep } from '../../sessions/models';
 import type { SessionStepSummary } from '../../workouts/strengthSessionEntry';
 import { useSessionRunner } from '../../hooks/useSessionRunner';
 import { resolveStepInputProfile } from '../../sessions/inputProfiles';
@@ -56,6 +56,7 @@ interface SessionRunnerProps {
     onInitialSessionHandled?: () => void;
     onImportSession?: () => void;
     onBuildSession?: () => void;
+    onSessionStateChange?: (execution: SessionExecution | null) => void;
     onClose?: () => void;
 }
 
@@ -65,6 +66,7 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
     onInitialSessionHandled,
     onImportSession,
     onBuildSession,
+    onSessionStateChange,
     onClose,
 }) => {
     const runner = useSessionRunner(userId, AVAILABLE_FIXTURES);
@@ -83,6 +85,10 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
         stepIndex: number;
         entryCountBefore: number;
     } | null>(null);
+
+    useEffect(() => {
+        onSessionStateChange?.(runner.execution);
+    }, [onSessionStateChange, runner.execution]);
 
     useEffect(() => {
         initialLaunchAttempted.current = false;

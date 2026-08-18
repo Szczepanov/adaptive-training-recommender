@@ -6,6 +6,9 @@ const [inputPath, planPath] = process.argv.slice(2);
 if (!inputPath) {
   console.error('Usage: npm run replay:recommendation -- <recommendation-audit.json> [external-plan-revision.json]');
   console.error('An external decision needs the plan revision it names; without it the replay reports why.');
+  console.error('M3.2: a decision carrying primarySession/additionalSessions bindings needs a live Firestore');
+  console.error('read (replayRecommendationAuditAgainstSessions) that this offline CLI does not perform; it');
+  console.error('will report those bindings as "not supplied" rather than verify them.');
   process.exit(2);
 }
 

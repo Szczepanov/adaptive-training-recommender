@@ -2,6 +2,7 @@ import type { SessionSourceRef, SessionDefinition } from './models';
 import type { DataState } from '../engine/dataState';
 import { sessionDefinitionService } from '../services/sessionDefinitionService';
 import { externalPlanService } from '../services/externalPlanService';
+import { executionPrescriptionService } from '../services/executionPrescriptionService';
 import { computeContentHash } from '../engine/externalPlanHash';
 import { WORKOUTS } from '../workouts/catalog';
 import type { WorkoutDefinition } from '../workouts/models';
@@ -56,9 +57,41 @@ function adaptWorkoutDefinitionToSessionDefinition(workout: WorkoutDefinition): 
     };
 }
 
+async function applyStoredPrescription(
+    userId: string,
+    definition: SessionDefinition,
+    prescriptionHash: string | undefined,
+    expectedDefinitionHash: string | null,
+    documentPath: string,
+    fallbackRevision: string | null,
+): Promise<DataState<SessionDefinition>> {
+    if (!prescriptionHash) {
+        return { status: 'AVAILABLE', data: definition, revision: fallbackRevision };
+    }
+    const prescriptionState = await executionPrescriptionService.getPrescription(userId, prescriptionHash);
+    if (prescriptionState.status !== 'AVAILABLE') return prescriptionState;
+    if (expectedDefinitionHash !== null && prescriptionState.data.definitionHash !== expectedDefinitionHash) {
+        return {
+            status: 'INVALID',
+            issues: [{ code: 'prescription-definition-hash-mismatch', field: 'definitionHash', documentPath }],
+        };
+    }
+    return {
+        status: 'AVAILABLE',
+        data: { ...definition, blocks: prescriptionState.data.blocks },
+        revision: prescriptionHash,
+    };
+}
+
 export async function resolveSessionDefinition(
     userId: string,
     source: SessionSourceRef,
+    /** M3.1: required to resolve a `catalog` source. The stored, evaluated
+     * `ExecutionPrescription` -- not the live catalog template -- is the only source of
+     * truth for what was actually prescribed; unlike `manual`/`external_plan`, a `catalog`
+     * source ref alone (`workoutId`/`catalogVersion`) carries no dose/variant identity of
+     * its own. Ignored for every other source kind. */
+    prescriptionHash?: string,
 ): Promise<DataState<SessionDefinition>> {
     if (source.kind === 'unplanned_fixture') {
         const fixture = FIXTURES_BY_ID.get(source.fixtureId);
@@ -68,11 +101,10 @@ export async function resolveSessionDefinition(
                 issues: [{ code: 'fixture-not-found', documentPath: `fixtures/${source.fixtureId}` }],
             };
         }
-        return {
-            status: 'AVAILABLE',
-            data: fixture,
-            revision: null,
-        };
+        return applyStoredPrescription(
+            userId, fixture, prescriptionHash, await hashSessionDefinition(fixture),
+            `fixtures/${source.fixtureId}`, null,
+        );
     }
 
     if (source.kind === 'manual') {
@@ -89,22 +121,48 @@ export async function resolveSessionDefinition(
                 }],
             };
         }
-        return definition;
+        return applyStoredPrescription(
+            userId, definition.data, prescriptionHash, contentHash,
+            `users/${userId}/session_definitions/${source.definitionId}/revisions/${source.revision}`,
+            definition.revision,
+        );
     }
 
     if (source.kind === 'catalog') {
         const workout = WORKOUTS.find(w => w.id === source.workoutId);
-        if (workout) {
+        if (!workout) {
             return {
-                status: 'AVAILABLE',
-                data: adaptWorkoutDefinitionToSessionDefinition(workout),
-                revision: null,
+                status: 'INVALID',
+                issues: [{ code: 'catalog-workout-not-found', documentPath: `workouts/${source.workoutId}` }],
             };
         }
-        return {
-            status: 'INVALID',
-            issues: [{ code: 'catalog-workout-not-found', documentPath: `workouts/${source.workoutId}` }],
-        };
+        if (String(workout.version) !== source.catalogVersion) {
+            return {
+                status: 'INVALID',
+                issues: [{
+                    code: 'catalog-version-mismatch',
+                    field: 'catalogVersion',
+                    documentPath: `workouts/${source.workoutId}`,
+                }],
+            };
+        }
+        if (!prescriptionHash) {
+            // Fail closed rather than fall back to re-deriving from the live catalog: the
+            // live template can have been edited since this decision was made, and a
+            // silent re-derivation would resolve to different content than was executed.
+            return {
+                status: 'INVALID',
+                issues: [{ code: 'catalog-prescription-hash-required', documentPath: `workouts/${source.workoutId}` }],
+            };
+        }
+        // Static catalog metadata (title/duration/etc.) remains display-only. Catalog v1
+        // does not persist enough historical metadata to recompute its definition hash,
+        // so source association is the exact workout id/version check above plus the
+        // content-verified stored prescription.
+        return applyStoredPrescription(
+            userId, adaptWorkoutDefinitionToSessionDefinition(workout), prescriptionHash,
+            null, `workouts/${source.workoutId}`, null,
+        );
     }
 
     const revision = await externalPlanService.getRevisionState(userId, source.planId, source.revision);
@@ -131,9 +189,9 @@ export async function resolveSessionDefinition(
             issues: [{ code: 'external-session-not-found', field: 'sessionId', documentPath }],
         };
     }
-    return {
-        status: 'AVAILABLE',
-        data: adaptExternalPlanSessionToSessionDefinition(session, source.revision),
-        revision: source.contentHash,
-    };
+    const definition = adaptExternalPlanSessionToSessionDefinition(session, source.revision);
+    return applyStoredPrescription(
+        userId, definition, prescriptionHash, await hashSessionDefinition(definition),
+        documentPath, source.contentHash,
+    );
 }

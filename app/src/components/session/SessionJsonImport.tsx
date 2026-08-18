@@ -51,7 +51,7 @@ export const SessionJsonImport: React.FC<SessionJsonImportProps> = ({ userId, on
                 <div className="builder-actions"><button type="button" className="save-and-proceed-btn" onClick={review}>Validate & preview</button></div>
             </div>
             {definition && <SessionDefinitionPreview definition={definition} onChooseDestination={() => setShowDestination(true)} />}
-            {definition && <SessionDestinationSheet userId={userId} definition={definition} isOpen={showDestination} onClose={() => setShowDestination(false)} onStartExecution={onStartExecution} onSaved={onClose} />}
+            {definition && <SessionDestinationSheet userId={userId} definition={definition} isOpen={showDestination} onClose={() => setShowDestination(false)} onStartExecution={onStartExecution} onSaved={onClose} onOccurrenceCreated={onClose} />}
         </div>
     );
 };

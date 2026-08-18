@@ -222,7 +222,7 @@ export const ManualSessionBuilder: React.FC<ManualSessionBuilderProps> = ({ user
             </div>
 
             {showPreview && <SessionDefinitionPreview definition={definition} onChooseDestination={() => setShowDestination(true)} />}
-            <SessionDestinationSheet userId={userId} definition={definition} isOpen={showDestination} onClose={() => setShowDestination(false)} onStartExecution={onStartExecution} onSaved={onClose} />
+            <SessionDestinationSheet userId={userId} definition={definition} isOpen={showDestination} onClose={() => setShowDestination(false)} onStartExecution={onStartExecution} onSaved={onClose} onOccurrenceCreated={onClose} />
         </div>
     );
 };

@@ -11,6 +11,7 @@ import { trainingIntentProfileService } from '../services/trainingIntentProfileS
 import { strengthSessionService } from '../services/strengthSessionService';
 import { sessionExecutionService } from '../services/sessionExecutionService';
 import { sessionDefinitionService } from '../services/sessionDefinitionService';
+import { executionPrescriptionService } from '../services/executionPrescriptionService';
 import { externalPlanService } from '../services/externalPlanService';
 import { fixedActivityService } from '../services/fixedActivityService';
 import { computeContentHash } from '../engine/externalPlanHash';
@@ -166,6 +167,9 @@ export function installVisualServices(fixture: VisualFixture): void {
   sessionExecutionService.deleteEntry = async () => {};
   sessionExecutionService.transitionExecution = async () => {};
   sessionDefinitionService.listDefinitionHeaders = async () => ({ status: 'AVAILABLE', data: [], revision: null });
+  // Home persists the content-addressed catalog prescription before exposing its Start CTA.
+  // Keep that evidence write inside the visual harness rather than waiting on real Firestore.
+  executionPrescriptionService.savePrescription = async () => {};
 
   recommendationService.getAdherenceStats = async () => ({
     totalRecommendations: 14,

@@ -1,4 +1,5 @@
 import type { DailyRecommendation, ExternalDecisionProvenance, ExternalTrainingPlan } from './models';
+import type { SessionReferenceBinding } from '../sessions/models';
 import { computeContentHash } from './externalPlanHash';
 import { externalTemplateId, isExternalTemplateId } from './externalSessionProfiles';
 import { isHistoricalPolicyVersion, POLICY_VERSION } from './policy';
@@ -21,6 +22,71 @@ export interface ExternalRevisionEvidence {
     /** SHA-256 recomputed from `plan`. Never read from the audit — that would make the
      * comparison below compare a value with itself. */
     contentHash: string;
+}
+
+/**
+ * M3.2/D-MSNAP: which `execution_prescriptions/{hash}` bindings the audit references could
+ * actually be resolved and content-verified. Unlike `ExternalRevisionEvidence` — where the
+ * *external plan's own content* can legitimately change under the same revision number —
+ * `execution_prescriptions` are write-once and content-addressed by the hash itself, so
+ * there is no drift case to detect, only existence/corruption. `getPrescription` already
+ * reverifies hash-of-stored-bytes-equals-its-own-id internally. Evidence is keyed by the
+ * complete binding so one valid snapshot cannot accidentally bless a different source.
+ */
+export interface SessionPrescriptionEvidence {
+    /** Canonical source/occurrence/prescription tuples that resolved as one binding. A
+     * hash-only set is insufficient: a valid snapshot for session A must not make a
+     * mis-bound session B replay successfully merely because both cite the same hash. */
+    resolvedBindings: ReadonlySet<string>;
+}
+
+export function sessionBindingEvidenceKey(binding: SessionReferenceBinding): string {
+    const source = binding.sessionSource;
+    const sourceKey = source.kind === 'catalog'
+        ? [source.kind, source.workoutId, source.catalogVersion]
+        : source.kind === 'external_plan'
+            ? [source.kind, source.planId, source.revision, source.sessionId, source.contentHash]
+            : source.kind === 'manual'
+                ? [source.kind, source.definitionId, source.revision, source.contentHash]
+                : [source.kind, source.fixtureId];
+    return JSON.stringify([sourceKey, binding.occurrenceId ?? null, binding.prescriptionHash]);
+}
+
+function sessionBindingErrors(
+    audit: { primarySession?: SessionReferenceBinding; additionalSessions?: SessionReferenceBinding[] },
+    evidence: SessionPrescriptionEvidence | null,
+): string[] {
+    const bindings = [audit.primarySession, ...(audit.additionalSessions ?? [])]
+        .filter((binding): binding is SessionReferenceBinding => Boolean(binding));
+    if (bindings.length === 0) return [];
+    if (!evidence) {
+        return [`Decision references ${bindings.length} session prescription binding(s), which were not supplied; it cannot be replayed without them.`];
+    }
+    const errors: string[] = [];
+    for (const binding of bindings) {
+        if (!evidence.resolvedBindings.has(sessionBindingEvidenceKey(binding))) {
+            errors.push(`Session prescription ${binding.prescriptionHash} referenced by the audit could not be resolved or failed content verification.`);
+        }
+    }
+    return errors;
+}
+
+function sessionBindingConsistencyErrors(recommendation: DailyRecommendation): string[] {
+    const audit = recommendation.recommendationAudit!;
+    const persistedPrimary = recommendation.primarySession
+        ? sessionBindingEvidenceKey(recommendation.primarySession)
+        : null;
+    const auditedPrimary = audit.primarySession ? sessionBindingEvidenceKey(audit.primarySession) : null;
+    const persistedAdditional = (recommendation.additionalSessions ?? []).map(sessionBindingEvidenceKey);
+    const auditedAdditional = (audit.additionalSessions ?? []).map(sessionBindingEvidenceKey);
+    const errors: string[] = [];
+    if (persistedPrimary !== auditedPrimary) {
+        errors.push('Persisted primarySession does not match the binding recorded in the recommendation audit.');
+    }
+    if (JSON.stringify(persistedAdditional) !== JSON.stringify(auditedAdditional)) {
+        errors.push('Persisted additionalSessions do not match the ordered bindings recorded in the recommendation audit.');
+    }
+    return errors;
 }
 
 function rankedDecisionErrors(recommendation: DailyRecommendation): string[] {
@@ -55,6 +121,7 @@ function rankedDecisionErrors(recommendation: DailyRecommendation): string[] {
 export function replayRecommendationAudit(
     recommendation: DailyRecommendation,
     externalRevision: ExternalRevisionEvidence | null = null,
+    sessionEvidence: SessionPrescriptionEvidence | null = null,
 ): RecommendationReplayResult {
     const errors: string[] = [];
     const audit = recommendation.recommendationAudit;
@@ -73,6 +140,9 @@ export function replayRecommendationAudit(
 
     const subjectiveDrift = (audit as typeof audit & { subjectiveDrift?: unknown }).subjectiveDrift;
     errors.push(...subjectiveDriftAuditReplayErrors(subjectiveDrift, recommendation.date));
+
+    errors.push(...sessionBindingConsistencyErrors(recommendation));
+    errors.push(...sessionBindingErrors(audit, sessionEvidence));
 
     if (audit.externalPlan) {
         errors.push(...externalDecisionErrors(recommendation, audit.externalPlan, externalRevision));
@@ -157,4 +227,43 @@ export async function replayRecommendationAuditAgainstRevision(
 ): Promise<RecommendationReplayResult> {
     if (!plan) return replayRecommendationAudit(recommendation);
     return replayRecommendationAudit(recommendation, { plan, contentHash: await computeContentHash(plan) });
+}
+
+/**
+ * Resolves every `primarySession`/`additionalSessions` prescription binding the audit
+ * references via `executionPrescriptionService` (a real Firestore read, hence async and
+ * kept out of the synchronous core) and replays against the result. Composes with
+ * `externalRevision` since a decision can, in principle, carry both an external-plan
+ * provenance and session bindings (e.g. a same-day `additional_session`).
+ */
+export async function replayRecommendationAuditAgainstSessions(
+    userId: string,
+    recommendation: DailyRecommendation,
+    externalRevision: ExternalRevisionEvidence | null = null,
+): Promise<RecommendationReplayResult> {
+    const audit = recommendation.recommendationAudit;
+    const bindings = audit
+        ? [audit.primarySession, ...(audit.additionalSessions ?? [])].filter((binding): binding is SessionReferenceBinding => Boolean(binding))
+        : [];
+    if (bindings.length === 0) return replayRecommendationAudit(recommendation, externalRevision);
+
+    // Lazy import: replay.ts otherwise has zero I/O dependencies, and every other export in
+    // this file must stay importable without a live Firestore connection (e.g. the CLI
+    // replay script only ever calls replayRecommendationAuditAgainstRevision).
+    const { executionPrescriptionService } = await import('../services/executionPrescriptionService');
+    const resolvedBindings = new Set<string>();
+    const { resolveSessionDefinition } = await import('../sessions/sessionDefinitionResolver');
+    for (const binding of bindings) {
+        const state = await executionPrescriptionService.getPrescription(userId, binding.prescriptionHash);
+        if (state.status !== 'AVAILABLE') continue;
+        const definition = await resolveSessionDefinition(userId, binding.sessionSource, binding.prescriptionHash);
+        if (definition.status !== 'AVAILABLE') continue;
+
+        // The resolver binds manual/external/fixture prescription.definitionHash to the
+        // exact source bytes and verifies catalog id/version before returning executable
+        // stored blocks. Catalog v1 cannot recompute historical display metadata; see the
+        // resolver's explicit limitation.
+        resolvedBindings.add(sessionBindingEvidenceKey(binding));
+    }
+    return replayRecommendationAudit(recommendation, externalRevision, { resolvedBindings });
 }
