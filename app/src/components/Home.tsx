@@ -71,10 +71,6 @@ function formatEventTiming(daysToEvent: number | null): string {
   return daysToEvent > 0 ? `In ${daysToEvent} days` : `${Math.abs(daysToEvent)} days ago`;
 }
 
-function mondayOf(date: string): string {
-  const weekday = new Date(`${date}T00:00:00Z`).getUTCDay();
-  return addDaysToLocalDateString(date, -((weekday + 6) % 7));
-}
 
 /**
  * Fire-and-forget self-check (M3.2): confirms a just-saved decision's session bindings
@@ -354,9 +350,8 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
         }
         setHistorySnapshot(preparedSnapshot);
 
-        const planWeekStart = mondayOf(input.date);
         const planWeekActivitiesState = await fixedActivityService.getActivitiesInRangeState(
-          userId, planWeekStart, addDaysToLocalDateString(planWeekStart, 6),
+          userId, input.date, addDaysToLocalDateString(input.date, 6),
         );
         if (!isCurrent()) return;
         if (planWeekActivitiesState.status !== 'AVAILABLE') {
@@ -550,7 +545,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
           );
           if (!isCurrent()) return;
           setExternalWeekCritique(critiqueExternalWeek({
-            weekStartDate: mondayOf(input.date),
+            weekStartDate: input.date,
             planId: activeExternal.plan.planId,
             revision: activeExternal.plan.revision,
             placed: activeExternal.placed,
@@ -1023,7 +1018,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
             <ExternalPlanWeek
               userId={userId}
               planTitle={activeExternalPlan.plan.title}
-              weekStartDate={mondayOf(decisionInput.date)}
+              weekStartDate={decisionInput.date}
               placed={activeExternalPlan.placed}
               critique={externalWeekCritique}
               today={decisionInput.date}

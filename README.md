@@ -26,6 +26,29 @@ Adaptive Training Recommendation
 
 ---
 
+## Mobile Application Showcase
+
+<div align="center">
+
+| Adaptive Daily Decision | 7-Day Rolling Forecast & Adaptations |
+|:---:|:---:|
+| <img src="docs/screenshots/mobile-daily-recommendation.png" width="360" alt="Adaptive Daily Recommendation" /> | <img src="docs/screenshots/mobile-adaptive-reduction.png" width="360" alt="Reduced Load & Adaptive Rationale" /> |
+| *Personalized daily recommendation & readiness score* | *Auto-regulated adaptation & rationale breakdown* |
+
+| Daily Subjective Check-in | Garmin Recovery & Biomarkers |
+|:---:|:---:|
+| <img src="docs/screenshots/mobile-daily-checkin.png" width="360" alt="Daily Subjective Check-in" /> | <img src="docs/screenshots/mobile-garmin-recovery.png" width="360" alt="Garmin Recovery & Biomarkers" /> |
+| *Readiness, fatigue, soreness, and availability check-in* | *Overnight HRV, resting HR, sleep score & 7d/28d baselines* |
+
+| Guided Session Runner | Telemetry & Power Distribution |
+|:---:|:---:|
+| <img src="docs/screenshots/mobile-session-runner.png" width="360" alt="Guided Session Runner" /> | <img src="docs/screenshots/mobile-activity-telemetry.png" width="360" alt="Activity Telemetry & Power Distribution" /> |
+| *Real-time set logging & structured circuit execution* | *Power/HR zones, lap splits, and training load tracking* |
+
+</div>
+
+---
+
 ## Technical Features
 
 1. **User-Scoped Isolation**: All Firestore snapshots are saved strictly under `users/{firebaseUid}/daily_recovery_snapshots/{YYYY-MM-DD}`.
@@ -131,6 +154,9 @@ make test
 
 # Format code automatically
 make format
+
+# Build and deploy frontend to Firebase production
+make deploy
 
 # View all available targets
 make help

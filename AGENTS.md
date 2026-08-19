@@ -29,6 +29,9 @@ This document outlines repository rules, code conventions, testing instructions,
 * `make format` — Auto-format Python and TypeScript code
 * `make simulate` — Run scenario simulations and verify baseline diff
 * `make build` — Build production frontend application
+* `make deploy` — Build and deploy frontend to Firebase Hosting
+* `make deploy-all` — Build and deploy all Firebase assets (Hosting + Rules + Indexes)
+* `make deploy-rules` — Deploy Firestore security rules (with drift check)
 * `make help` — Show all available Makefile targets
 
 ### Python Backend
