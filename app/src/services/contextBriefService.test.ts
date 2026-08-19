@@ -42,16 +42,16 @@ describe('ContextBriefService', () => {
         services.getActiveGoalsState.mockResolvedValue({ status: 'MISSING' });
     });
 
-    it('reads check-ins over a date range covering the full baseline, not just the window', async () => {
+    it('reads check-ins over a date range covering the full baseline, inclusive of asOfDate', async () => {
         await new ContextBriefService().build('u1', AS_OF, 14);
-        // 28-day baseline ending 2026-08-15 starts on 2026-07-19, inclusive both ends.
-        expect(services.getCheckinsInRange).toHaveBeenCalledWith('u1', '2026-07-19', AS_OF);
+        // 28-day baseline ending 2026-08-15 starts on 2026-07-19; throughExclusive is 2026-08-16.
+        expect(services.getCheckinsInRange).toHaveBeenCalledWith('u1', '2026-07-19', '2026-08-16');
     });
 
     it('keeps the baseline strictly longer than the window for a long window', async () => {
         await new ContextBriefService().build('u1', AS_OF, 28);
-        // windowDays * 2 = 56 days ending 2026-08-15.
-        expect(services.getCheckinsInRange).toHaveBeenCalledWith('u1', '2026-06-21', AS_OF);
+        // windowDays * 2 = 56 days ending 2026-08-15 (starts 2026-06-21; throughExclusive 2026-08-16).
+        expect(services.getCheckinsInRange).toHaveBeenCalledWith('u1', '2026-06-21', '2026-08-16');
     });
 
     it('does not report missing snapshot days as a read failure', async () => {

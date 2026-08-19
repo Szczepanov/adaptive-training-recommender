@@ -1071,7 +1071,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
                   <span className="status-badge warning">No Data</span>
                 )}
               </div>
-              
+
               {decisionInput?.recoverySnapshot ? (
                 <div className="recovery-metrics revealed">
                   <>
@@ -1115,7 +1115,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
                   <span className="status-badge pending">Safety check needed</span>
                 )}
               </div>
-              
+
               {decisionInput?.subjectiveCheckin ? (
                 <div className="checkin-summary">
                   <div className="readiness-score">
@@ -1137,7 +1137,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
               <div className="card-header">
                 <h3>{periodizationToday?.focusEvent ? 'Focus Event' : 'Active Goals'}</h3>
               </div>
-              
+
               {periodizationToday?.focusEvent ? (
                 <div className="goals-preview event-preview">
                   <strong className="event-title">{periodizationToday.focusEvent.title}</strong>
@@ -1190,7 +1190,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
               <div className="card-header">
                 <h3>Training Status</h3>
               </div>
-              
+
               {activeGuardrails.length > 0 ? (
                 <div className="constraints-preview">
                   {activeGuardrails.slice(0, 3).map(setting => (

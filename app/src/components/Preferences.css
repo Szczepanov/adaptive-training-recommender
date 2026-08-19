@@ -540,7 +540,7 @@
     gap: 1.5rem;
     align-items: start;
   }
-  
+
   .preference-section {
     padding: 1.75rem;
     height: 100%;
@@ -549,13 +549,12 @@
   .preference-section.full-width-card {
     grid-column: 1 / -1;
   }
-  
+
   .time-inputs {
     gap: 1.5rem;
   }
-  
+
   .units-grid {
     grid-template-columns: repeat(2, 1fr);
   }
 }
-

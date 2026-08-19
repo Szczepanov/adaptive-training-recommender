@@ -411,13 +411,13 @@ export interface TrainingIntentProfile {
     updatedAt: string;
 }
 
-export type ObjectiveKey = 
-  | 'threshold_quality' 
-  | 'surge_repeatability' 
-  | 'zone2_aerobic' 
-  | 'strength_maintenance' 
+export type ObjectiveKey =
+  | 'threshold_quality'
+  | 'surge_repeatability'
+  | 'zone2_aerobic'
+  | 'strength_maintenance'
   | 'strength_development'
-  | 'race_specific_endurance' 
+  | 'race_specific_endurance'
   | 'vo2_max';
 
 export type ObjectivePriority = 'must_have' | 'should_have' | 'nice_to_have';
@@ -548,7 +548,7 @@ export interface SessionHistoryEntry {
     lowerBodyCost: number;
 }
 
-export type SessionPlanRelationship = 
+export type SessionPlanRelationship =
   | 'matched_as_planned'
   | 'matched_modified'
   | 'rescheduled'

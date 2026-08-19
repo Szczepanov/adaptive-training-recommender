@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { writeBatch } from 'firebase/firestore';
 import type {
     SessionDefinition,
     SessionExecution,
@@ -8,6 +9,7 @@ import type {
     SessionBlock,
     SessionSourceRef,
 } from '../sessions/models';
+import { getDb } from '../firebase';
 import { sessionExecutionService } from '../services/sessionExecutionService';
 import { checkinService } from '../services/checkinService';
 import { preferencesService } from '../services/preferencesService';
@@ -338,10 +340,6 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
             });
         }
 
-        await sessionExecutionService.transitionExecution(userId, execution.executionId, 'completed', {
-            sessionRpe: payload?.sessionRpe,
-            notes: payload?.notes,
-        });
         const now = new Date().toISOString();
         const completedExecution = {
             ...execution,
@@ -352,10 +350,14 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
             ...(payload?.notes !== undefined ? { notes: payload.notes } : {}),
         };
 
-        // Derive only after the terminal state is durable and only from a fresh read of
-        // persisted entries. `logEntry` intentionally keeps optimistic UI state on an
-        // unavailable write, which must never influence a derived performance value.
+        // Derive only from a fresh read of persisted entries. `logEntry` intentionally
+        // keeps optimistic UI state on an unavailable write, which must never influence a
+        // derived performance value. Both writes below are then queued into one batch and
+        // committed together so a failed transition can never leave the 1RM derivation
+        // persisted against an execution that is still (or forever) `in_progress` -- see
+        // the completion/writeback atomicity note on `transitionExecution`/`applyOneRepMaxDerivations`.
         const persistedEntries = await sessionExecutionService.getEntries(userId, execution.executionId);
+        const batch = writeBatch(getDb());
         if (persistedEntries.some(e => e.payload.kind === 'repetition')) {
             const adaptedSession = adaptNormalizedExecutionToStrengthSession({
                 execution: completedExecution,
@@ -365,10 +367,15 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
                 // Derived writes are deterministic and only replace the same `derived`
                 // ownership rung, so a recovery retry after a preferences outage is
                 // idempotent for this completed execution.
-                await preferencesService.applyOneRepMaxDerivations(userId, adaptedSession, now);
+                await preferencesService.applyOneRepMaxDerivations(userId, adaptedSession, now, batch);
             }
         }
 
+        await sessionExecutionService.transitionExecution(userId, execution.executionId, 'completed', {
+            sessionRpe: payload?.sessionRpe,
+            notes: payload?.notes,
+        }, batch);
+        await batch.commit();
         setExecution(completedExecution);
     }, [execution, userId]);
 

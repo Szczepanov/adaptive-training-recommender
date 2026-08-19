@@ -9,13 +9,13 @@ import { addDaysToLocalDateString } from '../utils/localDate';
 import { resolvePlanningContext, type PlanningContext } from './planningMode';
 import { applyPlanningOverlays } from './planningOverlays';
 
-export type PlannedRecoveryReason = 
+export type PlannedRecoveryReason =
   | 'scheduled_recovery'   // Prescribed microcycle rest day
   | 'load_target_reached' // Weekly strain cap met
   | 'key_session_shield'; // Protecting tomorrow's key anchor
 
-export type ExecutionModifier = 
-  | 'readiness_reduction' 
+export type ExecutionModifier =
+  | 'readiness_reduction'
   | 'safety_constraint';
 
 export interface TrainingIntent {

@@ -1,4 +1,4 @@
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, type WriteBatch } from 'firebase/firestore';
 import { getDb } from '../firebase';
 import type { StrengthSession, UserPreferences } from '../engine/models';
 import type { DataState } from '../engine/dataState';
@@ -31,7 +31,7 @@ export class PreferencesService {
         try {
             const docRef = doc(getDb(), 'users', userId, this.collectionPath, this.singletonDocId);
             const docSnap = await getDoc(docRef);
-            
+
             if (docSnap.exists()) {
                 return docSnap.data() as UserPreferences;
             }
@@ -45,11 +45,11 @@ export class PreferencesService {
     /**
      * Create or update user preferences
      */
-    async upsertPreferences(userId: string, prefsData: Partial<UserPreferences>, existingPrefsArg?: UserPreferences | null): Promise<UserPreferences> {
+    async upsertPreferences(userId: string, prefsData: Partial<UserPreferences>, existingPrefsArg?: UserPreferences | null, batch?: WriteBatch): Promise<UserPreferences> {
         try {
             // Get existing preferences to merge with
             const existingPrefs = existingPrefsArg !== undefined ? existingPrefsArg : await this.getPreferences(userId);
-            
+
             // Prepare data for validation
             const rawData = {
                 userId,
@@ -85,10 +85,16 @@ export class PreferencesService {
             }
 
             const validatedPrefs = validation.data!;
-            
-            // Save to Firestore
+
+            // Save to Firestore. When `batch` is supplied, this write is queued into a
+            // caller-owned WriteBatch instead of committed here -- the caller commits once,
+            // atomically, alongside whatever other write depends on this one landing too.
             const docRef = doc(getDb(), 'users', userId, this.collectionPath, this.singletonDocId);
-            await setDoc(docRef, validatedPrefs, { merge: true });
+            if (batch) {
+                batch.set(docRef, validatedPrefs, { merge: true });
+            } else {
+                await setDoc(docRef, validatedPrefs, { merge: true });
+            }
 
             return validatedPrefs;
         } catch (error) {
@@ -140,11 +146,11 @@ export class PreferencesService {
         timeOfDay?: 'morning' | 'midday' | 'evening' | 'flexible'
     ): Promise<UserPreferences> {
         const updates: Partial<UserPreferences> = {};
-        
+
         if (weekdayMinutes !== undefined) updates.defaultWeekdayTimeMin = weekdayMinutes;
         if (weekendMinutes !== undefined) updates.defaultWeekendTimeMin = weekendMinutes;
         if (timeOfDay !== undefined) updates.preferredTimeOfDay = timeOfDay;
-        
+
         return this.upsertPreferences(userId, updates);
     }
 
@@ -157,10 +163,10 @@ export class PreferencesService {
         avoided?: string[]
     ): Promise<UserPreferences> {
         const updates: Partial<UserPreferences> = {};
-        
+
         if (preferred !== undefined) updates.preferredModalities = preferred;
         if (avoided !== undefined) updates.avoidedModalities = avoided;
-        
+
         return this.upsertPreferences(userId, updates);
     }
 
@@ -270,8 +276,11 @@ export class PreferencesService {
      *
      * Returns every outcome (updated and protected alike) so a caller can show what
      * happened; only the `updated: true` outcomes are actually persisted.
+     *
+     * Pass `batch` to queue the write into a caller-owned `WriteBatch` (e.g. alongside the
+     * execution-completion write) instead of committing it here -- see `upsertPreferences`.
      */
-    async applyOneRepMaxDerivations(userId: string, session: StrengthSession, computedAtIso: string = new Date().toISOString()): Promise<OneRepMaxDerivationOutcome[]> {
+    async applyOneRepMaxDerivations(userId: string, session: StrengthSession, computedAtIso: string = new Date().toISOString(), batch?: WriteBatch): Promise<OneRepMaxDerivationOutcome[]> {
         const prefs = await this.getPreferences(userId);
         const profile = prefs?.performanceProfile;
         const effectiveEstimated1RmKg: Record<string, number> = { ...profile?.estimated1RmKg, ...profile?.strength?.estimated1RmKg };
@@ -297,7 +306,7 @@ export class PreferencesService {
                 estimated1RmSources: updatedSources,
                 strength: { ...profile?.strength, estimated1RmKg: updatedStrengthEstimated1RmKg },
             },
-        }, prefs);
+        }, prefs, batch);
 
         return outcomes;
     }
@@ -333,7 +342,7 @@ export class PreferencesService {
     }> {
         try {
             const prefs = await this.getPreferences(userId);
-            
+
             if (!prefs) {
                 return {
                     hasPreferences: false,

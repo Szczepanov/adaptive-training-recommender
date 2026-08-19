@@ -92,4 +92,18 @@ describe('PreferencesService.applyOneRepMaxDerivations', () => {
         expect(outcomes).toEqual([]);
         expect(firestore.setDoc).not.toHaveBeenCalled();
     });
+
+    it('queues into a caller-owned batch instead of writing directly, when one is supplied', async () => {
+        missingDoc();
+        const batch = { set: vi.fn(), commit: vi.fn() };
+        const outcomes = await service.applyOneRepMaxDerivations(
+            USER_ID, sessionWithExercise('front_squat', 100, 5, 2), '2026-08-17T18:15:00Z', batch as never,
+        );
+
+        expect(outcomes).toMatchObject([{ exerciseId: 'front_squat', result: { updated: true } }]);
+        expect(firestore.setDoc).not.toHaveBeenCalled();
+        expect(batch.set).toHaveBeenCalledTimes(1);
+        const [, payload] = batch.set.mock.calls[0] as [unknown, { performanceProfile: { estimated1RmKg: Record<string, number> } }];
+        expect(payload.performanceProfile.estimated1RmKg.front_squat).toBeCloseTo(116.7, 1);
+    });
 });

@@ -171,27 +171,27 @@
   .data-view-container {
     padding: 10px;
   }
-  
+
   .data-grid {
     grid-template-columns: 1fr;
     gap: 20px;
   }
-  
+
   .data-view-tabs {
     gap: 5px;
   }
-  
+
   .data-view-tabs button {
     padding: 10px 15px;
     font-size: 14px;
   }
-  
+
   .data-item {
     flex-direction: column;
     align-items: flex-start;
     gap: 5px;
   }
-  
+
   .data-value {
     font-weight: 500;
   }

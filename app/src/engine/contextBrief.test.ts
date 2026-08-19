@@ -299,16 +299,53 @@ describe('buildContextBrief', () => {
         });
     });
 
-    it('lists the dates on which pain or illness was flagged', () => {
+    it('renders the most recent check-in separately in subjective reports', () => {
+        const text = buildContextBrief(input({
+            checkins: [
+                checkin('2026-08-10', { readiness: 5, fatigue: 6, soreness: 5, sleepQuality: 6, motivation: 5, mentalStress: 6 }),
+                checkin('2026-08-15', {
+                    readiness: 8, fatigue: 3, soreness: 2, sleepQuality: 9, motivation: 9, mentalStress: 2,
+                    alreadyTrainedToday: true,
+                    availability: { timeAvailableMin: 45, preferredModalityToday: 'Cycling', indoorOnly: true },
+                }),
+            ],
+        }));
+        expect(text).toContain('Most recent check-in — 2026-08-15:');
+        expect(text).toContain('- Readiness 8 · fatigue 3 · soreness 2');
+        expect(text).toContain('- Sleep quality 9 · motivation 9 · mental stress 2');
+        expect(text).toContain('- Flags / availability: already trained today · 45 min available · preferred modality: Cycling · indoor only');
+    });
+
+    it('renders tissue responses when pain is flagged on the most recent check-in', () => {
+        const text = buildContextBrief(input({
+            checkins: [
+                checkin('2026-08-15', {
+                    painOrInjury: true,
+                    tissueResponses: {
+                        knee: {
+                            region: 'knee',
+                            morningState: 'mild',
+                            painDuringTraining: 'normal',
+                        },
+                    },
+                }),
+            ],
+        }));
+        expect(text).toContain('- Flags / availability: pain/injury flagged');
+        expect(text).toContain('- Tissue response: knee: morning mild, during normal');
+    });
+
+    it('lists the dates on which pain, illness, or prior training was flagged', () => {
         const text = buildContextBrief(input({
             checkins: [
                 checkin('2026-08-10', { painOrInjury: true }),
                 checkin('2026-08-11', { illnessSymptoms: true }),
-                checkin('2026-08-12'),
+                checkin('2026-08-12', { alreadyTrainedToday: true }),
             ],
         }));
         expect(text).toContain('Pain or injury flagged: 1 day(s) — 2026-08-10');
         expect(text).toContain('Illness symptoms flagged: 1 day(s) — 2026-08-11');
+        expect(text).toContain('Already trained today: 1 day(s) — 2026-08-12');
     });
 
     it('separates skipped sessions from sessions replaced by something else', () => {

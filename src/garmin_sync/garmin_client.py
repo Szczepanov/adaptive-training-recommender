@@ -211,4 +211,3 @@ class GarminClientWrapper:
         if not self.api:
             raise RuntimeError("Garmin client is not authenticated. Call login first.")
         return self.api.schedule_workout(workout_id, date_iso) or {}
-

@@ -136,7 +136,7 @@ function App() {
             }}
           />
         )}
-        
+
         {screen === 'data' && (
           <DataView
             decisionInput={decisionInput}
@@ -153,23 +153,23 @@ function App() {
             onBack={() => handleNavigate('home')}
           />
         )}
-        
+
         {screen === 'checkin' && (
-          <DailyCheckin 
-            userId={userId!} 
+          <DailyCheckin
+            userId={userId!}
             onNavigate={handleNavigate}
             onBack={() => handleNavigate('home')}
           />
         )}
-        
+
         {screen === 'goals' && (
           <Goals userId={userId!} onNavigate={handleNavigate} />
         )}
-        
+
         {screen === 'constraints' && (
           <TrainingSettings userId={userId!} />
         )}
-        
+
         {screen === 'preferences' && (
           <Preferences userId={userId!} onNavigate={handleNavigate} />
         )}

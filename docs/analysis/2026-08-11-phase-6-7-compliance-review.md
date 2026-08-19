@@ -1,8 +1,8 @@
 # Phase 6 and Phase 7 compliance review
 
-**Date:** 2026-08-11  
-**Repository state reviewed:** `85c4f76f1165a916cdab76d25d52c2453494b5df`  
-**Scope:** Phase 6 evidence/operations, Phase 7A weekly allocation, and Phase 7B training-intent and planning modes.  
+**Date:** 2026-08-11
+**Repository state reviewed:** `85c4f76f1165a916cdab76d25d52c2453494b5df`
+**Scope:** Phase 6 evidence/operations, Phase 7A weekly allocation, and Phase 7B training-intent and planning modes.
 **Method:** source and architecture review, plan/ADR cross-check, fresh local validation, emulator execution, synthetic-scenario evidence, and a read-only production Firestore-rules comparison. This is a point-in-time engineering audit, not physiological or clinical validation.
 
 ## Verdict
@@ -110,4 +110,3 @@ These actions follow from the audit; none requires a recommendation-policy redes
 ## Conclusion
 
 Phase 6 is implemented and operational under its selected local deployment model. Phase 7A and 7B are implemented in code and pass the fresh test/simulation evidence reviewed here. The repository should not create a new Phase 8 merely to redo this work. The appropriate follow-up is narrow: correct Phase 7 plan status/evidence bookkeeping and add the two missing regression guards.
-

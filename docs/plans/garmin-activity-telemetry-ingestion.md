@@ -164,14 +164,16 @@ matching how `CanonicalHeartRateZones` / `CanonicalTrainingStatus` were introduc
 class CanonicalZoneBucket:
     zone_number: int
     seconds_in_zone: float
-    low_boundary: float | None = None   # watts for power, bpm for HR
+    low_boundary: float | None = None  # watts for power, bpm for HR
+
 
 @dataclass
 class CanonicalLapSummary:
-    lap_index: int                       # 1-based, as presented to the athlete
+    lap_index: int  # 1-based, as presented to the athlete
     duration_seconds: float
     average_power_watts: float | None = None
     average_hr_bpm: float | None = None
+
 
 @dataclass
 class CanonicalActivityDetail:

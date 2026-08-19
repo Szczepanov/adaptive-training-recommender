@@ -23,6 +23,7 @@ class Settings:
     garmin_verify_login: bool = True
     garmin_allow_credential_login: bool = False
     garmin_staleness_minutes: int = 60
+    garmin_incomplete_staleness_minutes: int = 5
     garmin_resync_lookback_days: int = 1
     firebase_credentials_path: str | None = None
     garmin_archive_enabled: bool = False
@@ -92,6 +93,7 @@ def load_settings(env_file: str | None = None) -> Settings:
         "yes",
     )
     staleness = int(os.getenv("GARMIN_STALENESS_MINUTES", "60"))
+    incomplete_staleness = int(os.getenv("GARMIN_INCOMPLETE_STALENESS_MINUTES", "5"))
     resync_lookback_days = int(os.getenv("GARMIN_RESYNC_LOOKBACK_DAYS", "1"))
     firebase_cred = os.getenv("FIREBASE_CREDENTIALS_PATH")
     archive_enabled = os.getenv("GARMIN_ARCHIVE_ENABLED", "false").lower() in ("true", "1", "yes")
@@ -122,6 +124,7 @@ def load_settings(env_file: str | None = None) -> Settings:
         garmin_verify_login=verify_login,
         garmin_allow_credential_login=allow_credential_login,
         garmin_staleness_minutes=staleness,
+        garmin_incomplete_staleness_minutes=incomplete_staleness,
         garmin_resync_lookback_days=resync_lookback_days,
         firebase_credentials_path=firebase_cred,
         garmin_archive_enabled=archive_enabled,

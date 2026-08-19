@@ -21,10 +21,23 @@ This document outlines repository rules, code conventions, testing instructions,
 
 ## Commands Reference
 
+### Full Suite (Makefile)
+* `make all` — Run all code checks, test suites, simulations, and build
+* `make check` — Run all backend and frontend checks (ruff, mypy, pytest, tsc, eslint, vitest, workout validation)
+* `make test` — Run all unit test suites (pytest + vitest)
+* `make lint` — Run all linters (ruff + eslint)
+* `make format` — Auto-format Python and TypeScript code
+* `make simulate` — Run scenario simulations and verify baseline diff
+* `make build` — Build production frontend application
+* `make help` — Show all available Makefile targets
+
 ### Python Backend
 * `uv sync` — Restore dependencies
+* `uv run pre-commit install` — Install pre-commit git hooks locally
+* `uv run pre-commit run --all-files` — Run pre-commit checks across all staged files
 * `uv run pytest` — Run unit tests
 * `uv run ruff check .` — Run ruff linter & import sorter
+* `uv run ruff format --check .` — Check ruff code formatting (`uv run ruff format .` to format)
 * `uv run mypy src/garmin_sync` — Run static type checking on backend source
 * `uv run python -m garmin_sync sync` — Run daily ingestion
 * `uv run python -m garmin_sync backfill --days 56` — Run historical backfill

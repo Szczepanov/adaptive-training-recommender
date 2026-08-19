@@ -352,23 +352,24 @@ describe('M3.2 session prescription binding replay', () => {
         expect(result.errors).toContain(`Session prescription ${binding.prescriptionHash} referenced by the audit could not be resolved or failed content verification.`);
     });
 
-    it('replayRecommendationAuditAgainstSessions resolves evidence via executionPrescriptionService and passes', async () => {
-        services.prescription.getPrescription.mockResolvedValue({
-            status: 'AVAILABLE', revision: null,
-            data: { schemaVersion: 1, prescriptionHash: binding.prescriptionHash, definitionHash: 'def', blocks: [], createdAt: '2026-08-18T00:00:00Z' },
-        });
+    it('replayRecommendationAuditAgainstSessions resolves evidence via resolveSessionDefinition and passes', async () => {
         services.resolver.resolveSessionDefinition.mockResolvedValue({
             status: 'AVAILABLE', revision: binding.prescriptionHash,
             data: { schemaVersion: 1, id: 'catalog-workout-1', revision: 1, title: 'Catalog', intent: 'training', blocks: [] },
         });
         const result = await replayRecommendationAuditAgainstSessions('u1', withPrimarySession());
         expect(result).toEqual({ reproducible: true, policyMatchesCurrent: true, errors: [] });
-        expect(services.prescription.getPrescription).toHaveBeenCalledWith('u1', binding.prescriptionHash);
+        // resolveSessionDefinition resolves and verifies the prescription hash itself (it
+        // reads executionPrescriptionService.getPrescription internally), so a separate
+        // getPrescription call from replay.ts would be a redundant read -- not asserted here.
         expect(services.resolver.resolveSessionDefinition).toHaveBeenCalledWith('u1', binding.sessionSource, binding.prescriptionHash);
     });
 
     it('replayRecommendationAuditAgainstSessions fails when the stored prescription is missing or corrupted', async () => {
-        services.prescription.getPrescription.mockResolvedValue({ status: 'MISSING' });
+        services.resolver.resolveSessionDefinition.mockResolvedValue({
+            status: 'INVALID',
+            issues: [{ code: 'prescription-not-found', documentPath: `execution_prescriptions/${binding.prescriptionHash}` }],
+        });
         const result = await replayRecommendationAuditAgainstSessions('u1', withPrimarySession());
         expect(result.reproducible).toBe(false);
         expect(result.errors).toContain(`Session prescription ${binding.prescriptionHash} referenced by the audit could not be resolved or failed content verification.`);

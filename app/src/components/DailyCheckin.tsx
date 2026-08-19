@@ -49,7 +49,7 @@ export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) 
       setLoading(true);
       setError(null);
       const today = getLocalDateString();
-      
+
       try {
         const existing = await checkinService.getCheckin(userId, today);
         const snapshot = await recoverySnapshotService.getRecoverySnapshotByDate(userId, today);
@@ -70,7 +70,7 @@ export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) 
           }
           setPendingFollowups(needed);
         }
-        
+
         if (existing) {
           setCheckin(existing);
           if (existing.dataQuality?.isComplete) {
@@ -465,8 +465,8 @@ export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) 
           </div>
 
           <div className="post-submission-actions">
-            <button 
-              type="button" 
+            <button
+              type="button"
               className="btn-secondary"
               onClick={() => {
                 setIsEditing(true);
@@ -475,8 +475,8 @@ export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) 
             >
               Edit Check-in
             </button>
-            <button 
-              type="button" 
+            <button
+              type="button"
               className="btn-primary"
               onClick={() => onNavigate('home')}
             >
@@ -824,8 +824,8 @@ export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) 
           </div>
         )}
 
-        <button 
-          className="submit-btn" 
+        <button
+          className="submit-btn"
           onClick={handleSubmit}
           disabled={saving}
         >

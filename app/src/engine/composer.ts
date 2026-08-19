@@ -36,7 +36,7 @@ export class DecisionComposer {
             targetDate,
             -REFERENCE_SUBJECTIVE_BASELINE_POLICY.longWindowDays,
         );
-        
+
         try {
             const results = await Promise.allSettled([
                 recoverySnapshotService.getRecoverySnapshotState(userId, targetDate),

@@ -171,7 +171,7 @@ export function Goals({ userId }: GoalsProps) {
           <h1>Goals</h1>
           <p className="header-subtitle">Manage short-term targets, race milestones, and long-term athletic goals.</p>
         </div>
-        <button 
+        <button
           className="add-btn"
           onClick={() => setShowAddModal(true)}
         >
@@ -180,19 +180,19 @@ export function Goals({ userId }: GoalsProps) {
       </div>
 
       <div className="filter-tabs">
-        <button 
+        <button
           className={`filter-tab ${filter === 'active' ? 'active' : ''}`}
           onClick={() => setFilter('active')}
         >
           Active
         </button>
-        <button 
+        <button
           className={`filter-tab ${filter === 'archived' ? 'active' : ''}`}
           onClick={() => setFilter('archived')}
         >
           Archived
         </button>
-        <button 
+        <button
           className={`filter-tab ${filter === 'all' ? 'active' : ''}`}
           onClick={() => setFilter('all')}
         >
@@ -214,7 +214,7 @@ export function Goals({ userId }: GoalsProps) {
               {category.replace('-', ' ')}
               <span className="goal-count">({categoryGoals.length})</span>
             </h2>
-            
+
             <div className="goals-list">
               {categoryGoals.map(goal => (
                 <div key={goal.id} className={`goal-card ${goal.status}`}>
@@ -231,7 +231,7 @@ export function Goals({ userId }: GoalsProps) {
                       )}
                     </h3>
                     <div className="goal-actions">
-                      <button 
+                      <button
                         onClick={() => setEditingGoal(goal)}
                         className="action-btn edit"
                       >
@@ -245,7 +245,7 @@ export function Goals({ userId }: GoalsProps) {
                           >
                             Pause
                           </button>
-                          <button 
+                          <button
                             onClick={() => handleArchiveGoal(goal.id)}
                             className="action-btn archive"
                           >
@@ -260,7 +260,7 @@ export function Goals({ userId }: GoalsProps) {
                           >
                             Reactivate
                           </button>
-                          <button 
+                          <button
                             onClick={() => handleArchiveGoal(goal.id)}
                             className="action-btn archive"
                           >
@@ -268,7 +268,7 @@ export function Goals({ userId }: GoalsProps) {
                           </button>
                         </>
                       ) : (
-                        <button 
+                        <button
                           onClick={() => handleDeleteGoal(goal.id)}
                           className="action-btn delete"
                         >
@@ -277,11 +277,11 @@ export function Goals({ userId }: GoalsProps) {
                       )}
                     </div>
                   </div>
-                  
+
                   {goal.description && (
                     <p className="goal-description">{goal.description}</p>
                   )}
-                  
+
                   <div className="goal-meta">
                     <div className="goal-priority">
                       Priority: {renderStars(goal.priority)}
@@ -306,7 +306,7 @@ export function Goals({ userId }: GoalsProps) {
                       Target: {goal.targetValue} {goal.targetUnit}
                     </div>
                   )}
-                  
+
                   {goal.targetDate && (
                     <div className="goal-date">
                       Target date: {new Date(goal.targetDate).toLocaleDateString()}
@@ -314,18 +314,18 @@ export function Goals({ userId }: GoalsProps) {
                   )}
                 </div>
               ))}
-              
+
               {categoryGoals.length === 0 && (
                 <p className="empty-category">No {filter} goals in this category</p>
               )}
             </div>
           </div>
         ))}
-        
+
         {filteredGoals.length === 0 && (
           <div className="empty-state">
             <p>No goals yet</p>
-            <button 
+            <button
               className="add-btn"
               onClick={() => setShowAddModal(true)}
             >
@@ -375,7 +375,7 @@ export function Goals({ userId }: GoalsProps) {
       {(showAddModal || editingGoal) && (
         <GoalModal
           goal={editingGoal}
-          onSave={editingGoal 
+          onSave={editingGoal
             ? (updates) => handleUpdateGoal(editingGoal.id, updates)
             : handleAddGoal
           }
@@ -488,11 +488,11 @@ function GoalModal({ goal, onSave, onClose }: GoalModalProps) {
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div 
+      <div
         ref={modalRef}
-        className="modal-content" 
-        role="dialog" 
-        aria-modal="true" 
+        className="modal-content"
+        role="dialog"
+        aria-modal="true"
         aria-labelledby="goal-modal-title"
         onClick={(e) => e.stopPropagation()}
       >

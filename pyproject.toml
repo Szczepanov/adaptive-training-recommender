@@ -15,6 +15,7 @@ dependencies = [
 [dependency-groups]
 dev = [
     "mypy>=1.10.0",
+    "pre-commit>=3.7.0",
     "pytest>=7.0.0",
     "pytest-cov>=6.0.0",
     "ruff>=0.4.0",
@@ -42,12 +43,12 @@ line-length = 100
 target-version = "py312"
 
 [tool.ruff.lint]
-select = ["E", "F", "I"]
-ignore = ["E501"]
+select = ["E", "F", "I", "B"]
+ignore = ["E501", "RUF001", "RUF002", "RUF003"]
 
 [tool.mypy]
 python_version = "3.12"
 files = ["src/garmin_sync"]
 disallow_untyped_defs = true
+check_untyped_defs = true
 ignore_missing_imports = true
-

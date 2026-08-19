@@ -287,9 +287,7 @@ def test_push_workout_skips_already_synced_queue_item():
         "garminWorkoutId": "999",
         "payload": {"title": "Easy ride", "modality": "cycling", "blocks": []},
     }
-    mock_repo.db.collection.return_value.document.return_value.collection.return_value.document.return_value.get.return_value = (
-        doc_snap
-    )
+    mock_repo.db.collection.return_value.document.return_value.collection.return_value.document.return_value.get.return_value = doc_snap
     client = MagicMock()
     service = GarminSyncService(settings=settings, repository=mock_repo, garmin_client=client)
 
@@ -331,7 +329,9 @@ def test_push_pending_workouts_pushes_each_pending_item_and_marks_synced():
             },
         ),
     ]
-    queue_collection = mock_repo.db.collection.return_value.document.return_value.collection.return_value
+    queue_collection = (
+        mock_repo.db.collection.return_value.document.return_value.collection.return_value
+    )
     queue_collection.where.return_value.stream.return_value = docs
 
     client = MagicMock()
@@ -362,7 +362,9 @@ def test_push_pending_workouts_leaves_stale_items_pending():
             },
         ),
     ]
-    queue_collection = mock_repo.db.collection.return_value.document.return_value.collection.return_value
+    queue_collection = (
+        mock_repo.db.collection.return_value.document.return_value.collection.return_value
+    )
     queue_collection.where.return_value.stream.return_value = docs
 
     client = MagicMock()
@@ -377,7 +379,9 @@ def test_push_pending_workouts_leaves_stale_items_pending():
 def test_push_pending_workouts_returns_true_for_empty_queue():
     settings = Settings(app_user_id="test_uid_789")
     mock_repo = MagicMock()
-    queue_collection = mock_repo.db.collection.return_value.document.return_value.collection.return_value
+    queue_collection = (
+        mock_repo.db.collection.return_value.document.return_value.collection.return_value
+    )
     queue_collection.where.return_value.stream.return_value = []
     service = GarminSyncService(settings=settings, repository=mock_repo)
     service._init_garmin_client = MagicMock()
@@ -445,7 +449,13 @@ class FakeStatefulRepository:
     def __init__(self) -> None:
         self.snapshots: dict[str, dict] = {}
 
-    def is_fresh(self, date_iso: str, staleness_minutes: int) -> bool:
+    def is_fresh(
+        self,
+        date_iso: str,
+        staleness_minutes: int = 60,
+        incomplete_staleness_minutes: int = 5,
+        require_complete: bool = True,
+    ) -> bool:
         return False
 
     def get_historical_snapshots(self, start_iso: str, end_iso: str) -> dict[str, dict]:
@@ -488,7 +498,9 @@ def test_sync_service_skips_when_fresh():
     result = service.sync_daily(target_date_str="2026-08-06", force=False)
 
     assert result is True
-    mock_repo.is_fresh.assert_called_once_with("2026-08-06", 60)
+    mock_repo.is_fresh.assert_called_once_with(
+        "2026-08-06", staleness_minutes=60, incomplete_staleness_minutes=5
+    )
 
 
 def test_sync_service_forces_refresh():
@@ -721,8 +733,7 @@ def test_sync_service_derives_step_delta_from_completed_d1_steps():
     mock_repo = MagicMock()
     mock_repo.is_fresh.return_value = False
     mock_repo.get_historical_snapshots.return_value = {
-        f"2026-08-0{day}": {"raw": {"totalSteps": 5000}}
-        for day in range(2, 6)
+        f"2026-08-0{day}": {"raw": {"totalSteps": 5000}} for day in range(2, 6)
     }
     service = GarminSyncService(
         settings=settings,
@@ -730,9 +741,9 @@ def test_sync_service_derives_step_delta_from_completed_d1_steps():
         provider=FakeTestProvider(),
     )
 
-    assert service.sync_daily(
-        target_date_str="2026-08-06", force=True, resync_lookback_days=0
-    ) is True
+    assert (
+        service.sync_daily(target_date_str="2026-08-06", force=True, resync_lookback_days=0) is True
+    )
 
     saved_payload = mock_repo.upsert_snapshot.call_args.args[1]
     assert saved_payload["raw"]["totalSteps"] == 9000
@@ -883,7 +894,9 @@ def test_sync_service_fresh_target_skips_lookback_resync_too():
     assert result is True
     assert fake_provider.fetch_daily_metrics_calls == []
     mock_repo.upsert_snapshot.assert_not_called()
-    mock_repo.is_fresh.assert_called_once_with("2026-08-06", 60)
+    mock_repo.is_fresh.assert_called_once_with(
+        "2026-08-06", staleness_minutes=60, incomplete_staleness_minutes=5
+    )
 
 
 def test_sync_service_lookback_failure_does_not_hide_primary_success_but_reports_false():
