@@ -1,7 +1,8 @@
 .home-container {
-  max-width: 100%;
-  padding: 1rem;
-  padding-bottom: 5rem; /* Space for bottom nav */
+  max-width: 1350px;
+  margin: 0 auto;
+  padding: 0;
+  padding-bottom: 2rem;
 }
 
 .home-header {
@@ -343,138 +344,274 @@
   margin-top: 0.5rem;
 }
 
+/* Action Gate Banner (Checkin Missing State) */
+.checkin-action-gate-card {
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.15) 0%, rgba(30, 41, 59, 0.6) 100%);
+  border: 1px solid rgba(59, 130, 246, 0.35);
+  border-radius: var(--radius-card, 16px);
+  padding: 1.25rem;
+  margin-bottom: var(--mobile-section-gap, 16px);
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.gate-content {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.gate-text h3 {
+  margin: 0 0 0.25rem 0;
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: #f8fafc;
+}
+
+.gate-text p {
+  margin: 0;
+  font-size: 0.875rem;
+  color: #cbd5e1;
+}
+
+.start-checkin-gate-btn {
+  width: auto;
+  min-height: var(--touch-target-min, 44px);
+  padding: 0.75rem 1.4rem;
+  font-size: 0.95rem;
+  font-weight: 700;
+  border-radius: var(--radius-control, 10px);
+}
+
+.gate-garmin-strip {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  padding-top: 0.75rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.strip-item {
+  font-size: 0.8rem;
+  color: var(--text-secondary, #94a3b8);
+}
+
+.strip-item strong {
+  color: #f8fafc;
+  margin-left: 0.2rem;
+}
+
+/* Today Status Summary Card */
+.today-status-summary-card {
+  margin-bottom: var(--mobile-section-gap, 16px);
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.today-status-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 1rem;
+}
+
+.status-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.status-item-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-secondary, #94a3b8);
+}
+
+.status-item-val {
+  font-size: 1.35rem;
+  font-weight: 800;
+  color: #38bdf8;
+}
+
+.status-item-sub {
+  font-size: 0.75rem;
+  color: var(--text-secondary, #94a3b8);
+}
+
+.garmin-status-badge {
+  display: inline-block;
+  padding: 0.25rem 0.6rem;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  width: fit-content;
+}
+
+.garmin-status-badge.mode-train {
+  background: rgba(34, 197, 94, 0.15);
+  color: #86efac;
+}
+
+.garmin-status-badge.mode-modify {
+  background: rgba(245, 158, 11, 0.16);
+  color: #fcd34d;
+}
+
+.garmin-status-badge.mode-recover {
+  background: rgba(56, 189, 248, 0.15);
+  color: #7dd3fc;
+}
+
+.garmin-status-badge.warning {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+}
+
+.mode-rationale-callout {
+  margin-top: 1rem;
+  padding: 0.75rem 0.9rem;
+  border-radius: 8px;
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.25);
+  font-size: 0.85rem;
+  line-height: 1.45;
+  color: #fef3c7;
+}
+
 /* Today's Recommendation */
 .recommendation-card {
   cursor: default;
-  margin-bottom: 2rem;
-  border: 1px solid rgba(56, 189, 248, 0.2);
-  background: linear-gradient(135deg, rgba(56, 189, 248, 0.08), rgba(255, 255, 255, 0.03));
+  margin-bottom: var(--mobile-section-gap, 16px);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  background: linear-gradient(135deg, rgba(56, 189, 248, 0.08) 0%, rgba(30, 41, 59, 0.5) 100%);
 }
 
 .recommendation-card:hover {
   transform: none;
 }
 
-/* Phase 9.0.3: hidden recommendation placeholder, shown until revealed or a journal
-   entry exists for today. */
-.recommendation-hidden {
-  text-align: center;
-  padding: 1rem 0.5rem;
-}
-
-.reveal-recommendation-btn {
-  margin: 0.75rem 0;
-  padding: 0.6rem 1.25rem;
-  border-radius: 10px;
-  font-size: 0.9rem;
-  font-weight: 500;
-  cursor: pointer;
-  border: 1px solid rgba(56, 189, 248, 0.4);
-  background: var(--card-background);
-  color: var(--text-color);
-  transition: all 0.2s;
-}
-
-.reveal-recommendation-btn:hover {
-  background: var(--hover-background);
-}
-
-.reveal-hint {
-  font-size: 0.8rem;
-  color: var(--text-secondary);
-  max-width: 32rem;
-  margin: 0 auto;
-}
-
 .recommendation-title {
-  font-size: 1.375rem;
-  font-weight: 700;
-  margin: 0 0 0.25rem 0;
+  font-size: 1.35rem;
+  font-weight: 800;
+  margin: 0 0 0.35rem 0;
+  color: #f8fafc;
 }
 
 .recommendation-meta {
-  font-size: 0.8rem;
-  color: var(--text-secondary);
+  font-size: 0.825rem;
+  color: #38bdf8;
+  font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.5px;
   margin: 0 0 0.75rem 0;
 }
 
 .recommendation-description {
-  margin: 0 0 0.75rem 0;
+  margin: 0 0 1.25rem 0;
+  font-size: 0.95rem;
+  line-height: 1.55;
+  color: #e2e8f0;
 }
 
-.recommendation-rationale {
-  font-size: 0.875rem;
-  color: var(--text-secondary);
-  font-style: italic;
-  margin: 0;
+/* Primary Dominant Start Workout Action */
+.primary-action-cta-wrap {
+  margin: 1.25rem 0 1rem 0;
 }
 
-.recommendation-why {
-  margin-top: 1rem;
-  padding: 0.9rem 1rem;
-  border-left: 3px solid rgba(56, 189, 248, 0.7);
-  background: rgba(15, 23, 42, 0.22);
-  border-radius: 0 8px 8px 0;
-}
-
-.recommendation-why h5,
-.recommendation-why p {
-  margin: 0;
-}
-
-.recommendation-why h5 {
-  font-size: 0.8rem;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
-.recommendation-why p {
-  margin-top: 0.35rem;
-  color: var(--text-secondary);
-  font-size: 0.9rem;
-  line-height: 1.5;
-}
-
-.view-workout-btn {
-  margin-top: 1rem;
-  padding: 0.7rem 1rem;
-  border: 1px solid rgba(56, 189, 248, 0.45);
-  border-radius: 8px;
-  background: rgba(56, 189, 248, 0.13);
-  color: #e0f2fe;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.view-workout-btn:hover {
-  background: rgba(56, 189, 248, 0.22);
-}
-
-.start-strength-btn-cta {
-  margin-top: 1rem;
-  margin-left: 0.5rem;
-  padding: 0.7rem 1.25rem;
-  border: 1px solid rgba(59, 130, 246, 0.6);
-  border-radius: 8px;
-  background: #2563eb;
+.start-workout-dominant-cta {
+  width: 100%;
+  min-height: var(--touch-target-min, 48px);
+  padding: 0.9rem 1.25rem;
+  font-size: 1.05rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
   color: #ffffff;
-  font-weight: 700;
+  border: none;
+  border-radius: var(--radius-control, 12px);
   cursor: pointer;
-  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
-  transition: background 0.15s ease, transform 0.1s ease;
+  box-shadow: 0 6px 18px rgba(37, 99, 235, 0.4);
+  transition: transform 0.15s ease, background 0.15s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
 }
 
-.start-strength-btn-cta:hover {
-  background: #1d4ed8;
+.start-workout-dominant-cta:hover {
   transform: translateY(-1px);
+  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
 }
 
-.start-strength-btn-cta:disabled {
-  opacity: 0.7;
-  cursor: default;
-  transform: none;
+/* Secondary Actions Bar */
+.recommendation-secondary-actions {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+
+.toggle-workout-btn {
+  flex: 1;
+  min-height: var(--touch-target-min, 44px);
+  padding: 0.6rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  border-radius: var(--radius-control, 10px);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #f1f5f9;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-align: center;
+}
+
+.toggle-workout-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* Collapsible Details */
+.recommendation-why-disclosure,
+.adjustment-disclosure {
+  margin-top: 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-control, 10px);
+  background: rgba(0, 0, 0, 0.2);
+  overflow: hidden;
+}
+
+.recommendation-why-disclosure > summary,
+.adjustment-disclosure > summary {
+  padding: 0.75rem 1rem;
+  min-height: var(--touch-target-min, 44px);
+  display: flex;
+  align-items: center;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--text-secondary, #94a3b8);
+  cursor: pointer;
+  user-select: none;
+}
+
+.recommendation-why-disclosure > summary:hover,
+.adjustment-disclosure > summary:hover {
+  color: #f8fafc;
+}
+
+.recommendation-why-disclosure .why-content {
+  padding: 0.5rem 1rem 1rem 1rem;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: #cbd5e1;
+}
+
+.recommendation-why-disclosure .why-content p {
+  margin: 0;
 }
 
 .session-launch-error {
@@ -668,11 +805,7 @@
   transform: translateY(-1px);
 }
 
-.home-container {
-  max-width: 1350px;
-  margin: 0 auto;
-  padding-bottom: 2rem;
-}
+
 
 .home-dashboard-layout {
   display: flex;

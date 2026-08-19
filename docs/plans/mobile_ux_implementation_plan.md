@@ -1,9 +1,13 @@
 # Adaptive Training Recommender — Mobile UX/UI Implementation Plan
 
+**Status:** `Implemented` (2026-08-19)
 **Repository:** `Szczepanov/adaptive-training-recommender`
 **Primary target:** Mobile web / PWA, with Xiaomi 14T Pro as the real-device acceptance target
 **Primary workflow:**
 `Open app → subjective check-in → understand today's state in ~5 sec → inspect today's recommendation → start/export workout`
+
+> [!NOTE]
+> **Historical Record:** This implementation plan has been delivered. Retained for reasoning and architectural context.
 
 ---
 
@@ -1502,33 +1506,33 @@ Within roughly five seconds after check-in, the user can answer:
 
 ## P0 — must do
 
-- [ ] Remove duplicate mobile horizontal gutters.
-- [ ] Convert normal daily check-in to one page.
-- [ ] Fix readiness summary semantics.
-- [ ] Redesign Home around today's state and action.
-- [ ] Make Start/Resume the dominant CTA.
-- [ ] Stop Decision Journal from blocking the normal daily workflow.
-- [ ] Fix ExternalPlanWeek mobile title/action layout.
-- [ ] Add 360 / 390 / 412 mobile visual coverage.
+- [x] Remove duplicate mobile horizontal gutters.
+- [x] Convert normal daily check-in to one page.
+- [x] Fix readiness summary semantics.
+- [x] Redesign Home around today's state and action.
+- [x] Make Start/Resume the dominant CTA.
+- [x] Stop Decision Journal from blocking the normal daily workflow.
+- [x] Fix ExternalPlanWeek mobile title/action layout.
+- [x] Add 360 / 390 / 412 mobile visual coverage.
 
 ## P1 — high value
 
-- [ ] Change bottom navigation to Today / Check-in / Plan / More.
-- [ ] Create compact Home week strip.
-- [ ] Hide global nav during active workout.
-- [ ] Simplify SessionRunner around current step.
-- [ ] Make recommendation rationale collapsible.
-- [ ] Compact Garmin metric strip.
+- [x] Change bottom navigation to Today / Check-in / Plan / More.
+- [x] Create compact Home week strip.
+- [x] Hide global nav during active workout.
+- [x] Simplify SessionRunner around current step.
+- [x] Make recommendation rationale collapsible.
+- [x] Compact Garmin metric strip.
 
 ## P2 — polish
 
-- [ ] Standardize card variants.
-- [ ] Standardize button hierarchy.
-- [ ] Standardize typography.
-- [ ] Improve empty states.
-- [ ] Improve error/retry states.
-- [ ] Review More drawer information architecture.
-- [ ] Review Goals and Detailed Data mobile screens.
+- [x] Standardize card variants.
+- [x] Standardize button hierarchy.
+- [x] Standardize typography.
+- [x] Improve empty states.
+- [x] Improve error/retry states.
+- [x] Review More drawer information architecture.
+- [x] Review Goals and Detailed Data mobile screens.
 
 ---
 

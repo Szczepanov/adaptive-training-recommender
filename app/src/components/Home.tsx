@@ -107,7 +107,7 @@ const DetailedTodayPlan = memo(function DetailedTodayPlan({
   modality: string;
 }) {
   return (
-    <section className="detailed-plan" aria-label="Detailed training plan">
+    <section className="detailed-plan" aria-label={`Workout details for ${title}`}>
       <div className="detailed-plan-header">
         <div>
           <h5>Today&apos;s Plan</h5>
@@ -182,8 +182,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
   const [error, setError] = useState<string | null>(null);
   const [showWorkoutDetails, setShowWorkoutDetails] = useState(false);
   const [pendingAdherence, setPendingAdherence] = useState<{ date: string; recommendation: DailyRecommendation } | null>(null);
-  const [recommendationRevealed, setRecommendationRevealed] = useState(false);
-  const [todaysJournalEntry, setTodaysJournalEntry] = useState<DecisionJournalEntry | null>(null);
+  const [, setTodaysJournalEntry] = useState<DecisionJournalEntry | null>(null);
   const [historySnapshot, setHistorySnapshot] = useState<TrainingHistorySnapshot | null>(null);
   const [activeExternalPlan, setActiveExternalPlan] = useState<ActiveExternalPlan | null>(null);
   const [externalWeekCritique, setExternalWeekCritique] = useState<ExternalWeekCritique | null>(null);
@@ -208,7 +207,6 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
         .catch(err => console.warn('Failed to sync decision journal actualVerdict from adherence:', err));
     }
   }, [userId]);
-  const handleRevealRecommendation = useCallback(() => setRecommendationRevealed(true), []);
   const handleJournalEntryChange = useCallback((entry: DecisionJournalEntry | null) => setTodaysJournalEntry(entry), []);
   const dashboardRequest = useRef(0);
 
@@ -597,7 +595,6 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
   }, [loadDashboardData]);
 
   useEffect(() => {
-    setRecommendationRevealed(false);
     setTodaysJournalEntry(null);
   }, [decisionInput?.date]);
 
@@ -669,7 +666,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
   const todaysEngineVerdict = activeRec && canGenerateNormalPlan
     ? resolveEngineShadowVerdict(activeRec.mode, activeRec.externalVerdict?.decision)
     : null;
-  const recommendationEffectivelyRevealed = recommendationRevealed || !!todaysJournalEntry;
+  const recommendationEffectivelyRevealed = true;
 
   const eventPeriodization = useMemo(() => {
     if (!decisionInput) return null;
@@ -840,22 +837,12 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
 
   const completeness = getDataCompleteness();
   const periodizationToday = eventPeriodization?.today ?? null;
-  const checkinValues = decisionInput?.subjectiveCheckin
-    ? [
-        decisionInput.subjectiveCheckin.readiness,
-        decisionInput.subjectiveCheckin.sleepQuality,
-        decisionInput.subjectiveCheckin.fatigue,
-        decisionInput.subjectiveCheckin.soreness,
-        decisionInput.subjectiveCheckin.mentalStress,
-        decisionInput.subjectiveCheckin.motivation,
-      ].filter((value): value is number => value !== null)
-    : [];
-  const readinessScore = checkinValues.length > 0
-    ? Math.round(checkinValues.reduce((sum, value) => sum + value, 0) / checkinValues.length)
-    : null;
-  const readinessLabel = readinessScore === null
+  const subjectiveReadiness = decisionInput?.subjectiveCheckin?.readiness ?? null;
+  const subjectiveReadinessLabel = subjectiveReadiness === null
     ? null
-    : readinessScore >= 8 ? 'High' : readinessScore >= 5 ? 'Moderate' : 'Low';
+    : subjectiveReadiness >= 8 ? 'High' : subjectiveReadiness >= 5 ? 'Moderate' : 'Low';
+
+  const isCheckinMissing = !decisionInput?.dataQuality.hasSubjectiveCheckin;
 
   return (
     <div className="home-container">
@@ -868,29 +855,88 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
           <button type="button" onClick={() => onNavigate('checkin')}>Answer follow-up</button>
         </aside>
       )}
+
+      {isCheckinMissing && (
+        <section className="checkin-action-gate-card" aria-label="Morning check-in required">
+          <div className="gate-content">
+            <div className="gate-text">
+              <h3>Good morning</h3>
+              <p>Complete your morning check-in (~10 sec) to generate today&apos;s plan.</p>
+            </div>
+            <button
+              type="button"
+              className="btn-primary start-checkin-gate-btn"
+              onClick={() => onNavigate('checkin')}
+            >
+              Start Check-in ✓
+            </button>
+          </div>
+          {decisionInput?.recoverySnapshot && (
+            <div className="gate-garmin-strip">
+              <span className="strip-item">Sleep <strong>{decisionInput.recoverySnapshot.raw.sleepScore ?? '--'}</strong></span>
+              <span className="strip-item">HRV <strong>{decisionInput.recoverySnapshot.raw.hrvOvernightAvg ?? '--'} ms</strong></span>
+              <span className="strip-item">RHR <strong>{decisionInput.recoverySnapshot.raw.restingHr ?? '--'} bpm</strong></span>
+              <span className="strip-item">Battery <strong>{decisionInput.recoverySnapshot.raw.bodyBatteryWake ?? '--'}</strong></span>
+            </div>
+          )}
+        </section>
+      )}
+
       <div className="home-dashboard-layout">
         <div className="home-main-col">
+          {/* State Summary Banner */}
+          <div className="dashboard-card today-status-summary-card">
+            <div className="today-status-row">
+              <div className="status-item subjective-item">
+                <span className="status-item-label">Subjective Readiness</span>
+                <span className="status-item-val">
+                  {subjectiveReadiness !== null ? `${subjectiveReadiness}/10` : 'No check-in'}
+                </span>
+                {subjectiveReadinessLabel && <span className="status-item-sub">{subjectiveReadinessLabel}</span>}
+              </div>
+
+              <div className="status-item mode-item">
+                <span className="status-item-label">Today&apos;s Load Mode</span>
+                {activeRec ? (
+                  <span className={`status-badge mode-${activeRec.mode}`}>
+                    {MODE_LABELS[activeRec.mode]}
+                  </span>
+                ) : (
+                  <span className="status-badge pending">Pending</span>
+                )}
+              </div>
+
+              <div className="status-item garmin-item">
+                <span className="status-item-label">Garmin Recovery</span>
+                {decisionInput?.recoverySnapshot ? (
+                  <span className={`garmin-status-badge mode-${activeRec?.mode ?? 'train'}`}>
+                    {activeRec?.mode === 'recover' ? 'Needs recovery' : activeRec?.mode === 'modify' ? 'Cautious' : 'Good'}
+                  </span>
+                ) : (
+                  <span className="garmin-status-badge warning">No Data</span>
+                )}
+              </div>
+            </div>
+
+            {activeRec && (activeRec.mode === 'modify' || activeRec.mode === 'recover') && (
+              <div className="mode-rationale-callout">
+                <strong>{activeRec.mode === 'recover' ? 'Recovery day:' : 'Reduced load:'}</strong> {activeRec.rationale}
+              </div>
+            )}
+          </div>
+
+          {/* Today's Recommendation Card */}
           <div className="dashboard-card recommendation-card">
             <div className="card-header">
-              <h3>Today's Recommendation</h3>
-              {activeRec && (!canGenerateNormalPlan || recommendationEffectivelyRevealed) && (
+              <h3>Today&apos;s Training</h3>
+              {activeRec && (
                 <span className={`status-badge mode-${activeRec.mode}`}>
                   {MODE_LABELS[activeRec.mode]}
                 </span>
               )}
             </div>
+
             {activeRec ? (
-              canGenerateNormalPlan && !recommendationEffectivelyRevealed ? (
-                <div className="recommendation-hidden">
-                  <p className="card-empty">Today's recommendation is ready.</p>
-                  <button type="button" className="reveal-recommendation-btn" onClick={handleRevealRecommendation}>
-                    👁️ Reveal today's recommendation
-                  </button>
-                  <p className="reveal-hint">
-                    Recording your own plan's verdict first is what the Decision Journal card measures.
-                  </p>
-                </div>
-              ) : (
               <div className="recommendation-content">
                 {activeRec.externalPrescription && activeRec.externalVerdict && (
                   <ExternalVerdictBanner
@@ -898,22 +944,74 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
                     verdict={activeRec.externalVerdict}
                   />
                 )}
+
                 <h4 className="recommendation-title">
                   {activeRec.template.title}
                   {activeRec.activeDose && (
                     <span className="dose-badge">{activeRec.activeDose.label}</span>
                   )}
                 </h4>
+
                 <p className="recommendation-meta">
-                  {activeRec.template.category} · {activeRec.activeDose ? `${activeRec.activeDose.durationMin}-${activeRec.activeDose.durationMax}` : `${activeRec.template.durationMin}-${activeRec.template.durationMax}`} min
+                  {activeRec.template.category} · {activeRec.activeDose ? `${activeRec.activeDose.durationMin}-${activeRec.activeDose.durationMax}` : `${activeRec.template.durationMin}-${activeRec.template.durationMax}`} min · {activeRec.template.modality}
                 </p>
+
                 <p className="recommendation-description">
                   {activeRec.activeDose ? activeRec.activeDose.prescriptionSummary : activeRec.template.description}
                 </p>
-                <section className="recommendation-why" aria-label="Why this recommendation">
-                  <h5>Why this today?</h5>
-                  <p>{activeRec.rationale}</p>
-                </section>
+
+                {/* Primary Dominant Start Workout Action */}
+                {activeRec.primarySession && onStartSession && (
+                  <div className="primary-action-cta-wrap">
+                    <button
+                      type="button"
+                      className="btn-primary start-workout-dominant-cta"
+                      onClick={() => { void onStartSession(activeRec.primarySession!); }}
+                    >
+                      {activeRec.template.modality === 'Strength' ? '🏋️' : '▶️'} Start Session →
+                    </button>
+                  </div>
+                )}
+
+                {/* Secondary Actions Row */}
+                {activeRec.prescription && (
+                  <div className="recommendation-secondary-actions">
+                    <button
+                      type="button"
+                      className="btn-secondary toggle-workout-btn view-workout-btn"
+                      onClick={() => setShowWorkoutDetails((isOpen) => !isOpen)}
+                      aria-expanded={showWorkoutDetails}
+                    >
+                      {showWorkoutDetails ? 'Hide workout' : 'View workout'}
+                    </button>
+                    <WorkoutExportMenu
+                      userId={userId}
+                      date={decisionInput?.date ?? ''}
+                      title={activeRec.template.title}
+                      modality={activeRec.template.modality}
+                      prescription={activeRec.prescription}
+                    />
+                  </div>
+                )}
+
+                {showWorkoutDetails && activeRec.prescription && (
+                  <DetailedTodayPlan
+                    prescription={activeRec.prescription}
+                    userId={userId}
+                    date={decisionInput?.date ?? ''}
+                    title={activeRec.template.title}
+                    modality={activeRec.template.modality}
+                  />
+                )}
+
+                {/* Collapsible Rationale */}
+                <details className="recommendation-why-disclosure">
+                  <summary>Why this today? ›</summary>
+                  <div className="why-content">
+                    <p>{activeRec.rationale}</p>
+                  </div>
+                </details>
+
                 {!canGenerateNormalPlan && (
                   <MinimumSafetyCheckin
                     userId={userId}
@@ -921,88 +1019,63 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
                     onCompleted={loadDashboardData}
                   />
                 )}
-                {activeRec.prescription && (
-                  <>
-                    <button
-                      type="button"
-                      className="view-workout-btn"
-                      onClick={() => setShowWorkoutDetails((isOpen) => !isOpen)}
-                      aria-expanded={showWorkoutDetails}
-                    >
-                      {showWorkoutDetails ? 'Hide workout' : 'View workout'}
-                    </button>
-                    {showWorkoutDetails && (
-                      <DetailedTodayPlan
-                        prescription={activeRec.prescription}
-                        userId={userId}
-                        date={decisionInput?.date ?? ''}
-                        title={activeRec.template.title}
-                        modality={activeRec.template.modality}
-                      />
-                    )}
-                  </>
-                )}
-                {activeRec.primarySession && onStartSession && (
-                  <button
-                    type="button"
-                    className="start-strength-btn-cta"
-                    onClick={() => { void onStartSession(activeRec.primarySession!); }}
-                  >
-                    {activeRec.template.modality === 'Strength' ? '🏋️' : '▶️'} Start / Resume Session →
-                  </button>
-                )}
 
-                {canGenerateNormalPlan && <div className="adjustment-control-section">
-                  <span className="adjustment-label">Adjust Today's Session Load:</span>
-                  <div className="adjustment-button-group">
-                    <button
-                      type="button"
-                      className={`adjustment-btn ${adjustmentDirection === 'easier' ? 'active' : ''}`}
-                      onClick={() => handleAdjustSession(adjustmentDirection === 'easier' ? null : 'easier')}
-                    >
-                      Easier
-                    </button>
-                    <button
-                      type="button"
-                      className={`adjustment-btn ${adjustmentDirection === null ? 'active' : ''}`}
-                      onClick={() => handleAdjustSession(null)}
-                    >
-                      As Recommended
-                    </button>
-                    <button
-                      type="button"
-                      className={`adjustment-btn ${adjustmentDirection === 'harder' ? 'active' : ''}`}
-                      disabled={recommendation?.envelopes?.safety.clinicalFlagActive}
-                      title={recommendation?.envelopes?.safety.clinicalFlagActive ? 'Harder option disabled due to active pain/injury flag.' : 'Increase session load'}
-                      onClick={() => handleAdjustSession(adjustmentDirection === 'harder' ? null : 'harder')}
-                    >
-                      Harder
-                    </button>
-                  </div>
+                {/* Load Adjustment Section */}
+                {canGenerateNormalPlan && (
+                  <details className="adjustment-disclosure">
+                    <summary>Adjust session load ›</summary>
+                    <div className="adjustment-control-section">
+                      <span className="adjustment-label">Select load variation:</span>
+                      <div className="adjustment-button-group">
+                        <button
+                          type="button"
+                          className={`adjustment-btn ${adjustmentDirection === 'easier' ? 'active' : ''}`}
+                          onClick={() => handleAdjustSession(adjustmentDirection === 'easier' ? null : 'easier')}
+                        >
+                          Easier
+                        </button>
+                        <button
+                          type="button"
+                          className={`adjustment-btn ${adjustmentDirection === null ? 'active' : ''}`}
+                          onClick={() => handleAdjustSession(null)}
+                        >
+                          As Recommended
+                        </button>
+                        <button
+                          type="button"
+                          className={`adjustment-btn ${adjustmentDirection === 'harder' ? 'active' : ''}`}
+                          disabled={recommendation?.envelopes?.safety.clinicalFlagActive}
+                          title={recommendation?.envelopes?.safety.clinicalFlagActive ? 'Harder option disabled due to active pain/injury flag.' : 'Increase session load'}
+                          onClick={() => handleAdjustSession(adjustmentDirection === 'harder' ? null : 'harder')}
+                        >
+                          Harder
+                        </button>
+                      </div>
 
-                  {recommendation?.envelopes?.safety.clinicalFlagActive && (
-                    <p className="adjustment-notice safety-notice">
-                      ⚠️ Harder option is unavailable today because an active pain/injury flag restricts physical loading.
-                    </p>
-                  )}
+                      {recommendation?.envelopes?.safety.clinicalFlagActive && (
+                        <p className="adjustment-notice safety-notice">
+                          ⚠️ Harder option is unavailable today because an active pain/injury flag restricts physical loading.
+                        </p>
+                      )}
 
-                  {activeRec.adjustment && (
-                    <div className="adjustment-summary-box">
-                      <p>
-                        <strong>Session Adjusted ({activeRec.adjustment.direction}):</strong> {activeRec.adjustment.rationale}
-                      </p>
-                      <button
-                        type="button"
-                        className="reset-adjustment-btn"
-                        onClick={() => handleAdjustSession(null)}
-                      >
-                        ↺ Reset to As Recommended
-                      </button>
+                      {activeRec.adjustment && (
+                        <div className="adjustment-summary-box">
+                          <p>
+                            <strong>Session Adjusted ({activeRec.adjustment.direction}):</strong> {activeRec.adjustment.rationale}
+                          </p>
+                          <button
+                            type="button"
+                            className="reset-adjustment-btn"
+                            onClick={() => handleAdjustSession(null)}
+                          >
+                            ↺ Reset to As Recommended
+                          </button>
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>}
+                  </details>
+                )}
               </div>
-              )
             ) : (
               <p className="card-empty">
                 {!decisionInput?.dataQuality.hasRecoverySnapshot
@@ -1135,9 +1208,9 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
               {decisionInput?.subjectiveCheckin ? (
                 <div className="checkin-summary">
                   <div className="readiness-score">
-                    <span className="score-label">Readiness</span>
-                    <span className="score-value">{readinessScore ?? '--'}{readinessScore !== null && <small>/10</small>}</span>
-                    {readinessLabel && <span className="readiness-label">{readinessLabel}</span>}
+                    <span className="score-label">Subjective Readiness</span>
+                    <span className="score-value">{subjectiveReadiness ?? '--'}{subjectiveReadiness !== null && <small>/10</small>}</span>
+                    {subjectiveReadinessLabel && <span className="readiness-label">{subjectiveReadinessLabel}</span>}
                   </div>
                   <p className="card-action">Edit check-in</p>
                 </div>
