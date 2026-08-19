@@ -1123,6 +1123,24 @@ emulatorDescribe('Firestore security rules', () => {
         await assertFails(getDoc(doc(otherDb, executionPrescriptionPath)));
     });
 
+    it('allows a catalog execution prescription with a valid displayMetadata snapshot (M3.2)', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await expect(assertSucceeds(setDoc(doc(ownerDb, executionPrescriptionPath), {
+            ...validExecutionPrescription(),
+            displayMetadata: {
+                title: 'Full Body Maintenance', intent: 'training', dominantModality: 'Strength', duration: { min: 30, max: 60 },
+            },
+        }))).resolves.toBeUndefined();
+    });
+
+    it('rejects an execution prescription with a malformed displayMetadata snapshot', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertFails(setDoc(doc(ownerDb, executionPrescriptionPath), {
+            ...validExecutionPrescription(),
+            displayMetadata: { intent: 'training' }, // missing required title
+        }));
+    });
+
     it('allows valid occurrence authorities in M3 (unplanned_log, schedule, replace, additional) and rejects invalid ones', async () => {
         const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
         // unplanned_log succeeds

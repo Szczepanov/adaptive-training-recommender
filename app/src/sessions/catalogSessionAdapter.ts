@@ -199,6 +199,15 @@ export async function createExecutionPrescriptionFromCatalog(
         },
         definitionHash,
         blocks: sessionDef.blocks,
+        // Snapshotted as of today's launch (M3.2), so a later edit to this workout's live
+        // catalog entry can't rewrite what this recommendation actually displayed/prescribed.
+        displayMetadata: {
+            title: sessionDef.title,
+            ...(sessionDef.summary !== undefined ? { summary: sessionDef.summary } : {}),
+            intent: sessionDef.intent,
+            ...(sessionDef.dominantModality !== undefined ? { dominantModality: sessionDef.dominantModality } : {}),
+            ...(sessionDef.duration !== undefined ? { duration: sessionDef.duration } : {}),
+        },
         createdAt: now,
     };
     const hash = await hashExecutionPrescription(draft);
