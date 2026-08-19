@@ -9,7 +9,7 @@ Garmin device
     ↓ Garmin Connect sync
 Garmin Connect API
     ↓
-Cloud Scheduler (06:15 Europe/Warsaw)
+Cloud Scheduler (05:00–09:45 Europe/Warsaw, every 15 min)
     ↓
 Cloud Run Job
     ├── TokenStore (Downloads/Uploads encrypted garmin_tokens.json from/to GCS)
@@ -130,7 +130,7 @@ Set the following environment variables (e.g. in `.env` locally or Secret Manage
 | `GARMIN_TOKEN_PATH` | No | `.garmin_tokens/garmin_tokens.json` | Path to local single token JSON file |
 | `GARMIN_TOKEN_STORE` | No | `local` | Token store backend (`local` or `gcs`) |
 | `GARMIN_TOKEN_BUCKET` | For GCS | — | Private GCS bucket name storing Garmin token JSON |
-| `GARMIN_TOKEN_OBJECT` | For GCS | `garmin/garmin_tokens.json` | GCS token object name |
+| `GARMIN_TOKEN_OBJECT` | No | `garmin/garmin_tokens.json` | GCS token object name |
 | `GARMIN_STALENESS_MINUTES` | No | `60` | Skip Garmin API fetch if snapshot updated within N mins |
 | `GARMIN_RESYNC_LOOKBACK_DAYS` | No | `1` | After syncing the target date, also force-resync this many preceding day(s), to pick up Garmin data that finalized/arrived after that day's own sync ran (e.g. a training session logged later that day). Override per-run with `sync --resync-days N` |
 | `GARMIN_ALLOW_CREDENTIAL_LOGIN` | No | `false` | Cloud/automated runs set `false` (token-only); bootstrap sets `true` |
@@ -258,6 +258,7 @@ Create a Cloud Run Job executing `python -m garmin_sync sync`:
 
 ### 3. Cloud Scheduler Setup
 
-Create a Cloud Scheduler job triggering the Cloud Run Job:
-* Schedule: `06:15`
+Use the repository-owned runbook in `docs/ops/cloud-run-deployment.md` for the scheduler and IAM commands. The recovery sync uses a morning polling window rather than a single fixed run:
+* Schedule: `*/15 5-9 * * *`
 * Timezone: `Europe/Warsaw`
+* Do **not** pass `--force`; `GARMIN_STALENESS_MINUTES` lets most ticks stop after the Firestore freshness check without calling Garmin.
