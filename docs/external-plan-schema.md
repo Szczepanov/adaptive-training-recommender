@@ -334,6 +334,8 @@ Paste this above the plan request when asking an AI to author or revise a plan.
 > adjudicates each session against that morning's data and owns all green/yellow/red
 > decisions. Use `notes` only for context the app cannot know: which power meter is the
 > reference, whether wattage targets or RPE take precedence, what block preceded this one.
+>
+> Output as a downloadable JSON file.
 
 That last paragraph matters: without it an AI will helpfully invent a deload for a trip it
 was told about, and that dose reduction would then be applied twice — once by the plan and

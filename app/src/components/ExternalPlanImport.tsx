@@ -68,7 +68,9 @@ Do not include travel weeks, illness, or time off — those are handled separate
 
 Do not encode readiness or autoregulation rules anywhere, including notes. The app adjudicates each session against that morning's data and owns all green/yellow/red decisions. Use notes only for context the app cannot know: which power meter is the reference, whether wattage targets or RPE take precedence, what block preceded this one.
 
-Never include a "systemicCost" or similar calibrated load figure anywhere in definition — the app derives that itself from modality, intensity and duration.`;
+Never include a "systemicCost" or similar calibrated load figure anywhere in definition — the app derives that itself from modality, intensity and duration.
+
+Output as a downloadable JSON file.`;
 
 /**
  * Paste → validate → preview → confirm.
