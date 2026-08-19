@@ -609,6 +609,84 @@ class GarminSyncService:
         logger.info("Backfill completed successfully for all requested dates.")
         return True
 
+    def _rebuild_single_date(
+        self,
+        target_iso: str,
+        yesterday_iso: str,
+        raw_memory_store: dict[str, dict[str, Any]],
+    ) -> bool:
+        """Helper to rebuild a single date from its archived payloads. Returns True on
+        success, False if skipped due to missing payloads or exceptions."""
+        raw_stats = self.archive_store.load("stats", target_iso)
+        raw_sleep = self.archive_store.load("sleep", target_iso)
+        raw_hrv = self.archive_store.load("hrv", target_iso)
+        raw_activities = self.archive_store.load("activities", target_iso)
+
+        if raw_stats is None or raw_sleep is None or raw_hrv is None or raw_activities is None:
+            logger.warning(
+                f"[{target_iso}] Not rebuildable: missing archived payload(s) "
+                f"(stats={raw_stats is not None}, sleep={raw_sleep is not None}, "
+                f"hrv={raw_hrv is not None}, activities={raw_activities is not None}). Skipping."
+            )
+            # Keep history continuous: load existing Firestore raw snapshot if present
+            # so downstream dates in the rebuild range still have full 7d/28d baselines.
+            existing = self.repository.get_snapshot(target_iso)
+            if existing and existing.get("raw"):
+                raw_memory_store[target_iso] = existing["raw"]
+            return False
+
+        stats_fallback = self.archive_store.load("stats", yesterday_iso)
+        sleep_fallback = self.archive_store.load("sleep", yesterday_iso) if not raw_sleep else None
+
+        # Metric enrichment (stress/body battery/training readiness/training status)
+        # is best-effort here, unlike the four required payloads above -- it wasn't
+        # part of the archive contract before item 4, so older archived dates simply
+        # won't have it, and that must not block rebuildability.
+        stress_today = self.archive_store.load("stress", target_iso)
+        body_battery_today = self.archive_store.load("body_battery", target_iso)
+        training_readiness_today = self.archive_store.load("training_readiness", target_iso)
+        training_status_today = self.archive_store.load("training_status", target_iso)
+        heart_rate_zones = self.archive_store.load("heart_rate_zones", target_iso)
+
+        try:
+            canonical = canonicalize_from_raw(
+                stats_today=raw_stats,
+                stats_fallback=stats_fallback,
+                sleep_today=raw_sleep,
+                sleep_fallback=sleep_fallback,
+                hrv_today=raw_hrv,
+                target_date_iso=target_iso,
+                yesterday_iso=yesterday_iso,
+                stress_today=stress_today,
+                body_battery_today=body_battery_today,
+                training_readiness_today=training_readiness_today,
+                training_status_today=training_status_today,
+                heart_rate_zones=heart_rate_zones,
+            )
+            zone4_floor = (
+                canonical.heart_rate_zones.zone4_floor if canonical.heart_rate_zones else None
+            )
+            canonical_activities = canonicalize_activities(raw_activities, zone4_floor=zone4_floor)
+
+            self._build_and_store_snapshot(
+                target_iso=target_iso,
+                canonical=canonical,
+                canonical_activities=canonical_activities,
+                raw_memory_store=raw_memory_store,
+                # Conservative: this archived "activities" entry may predate
+                # same-day activity fetching (see mapper.build_snapshot_from_canonical),
+                # so rebuild can't assert it covers through target_iso the way a live
+                # sync_daily/backfill fetch can. todayTraining itself is still
+                # populated from whatever canonical_activities actually contains --
+                # only this coverage marker is deliberately understated.
+                activities_through_iso=yesterday_iso,
+            )
+            logger.info(f"[{target_iso}] Rebuilt from archive.")
+            return True
+        except Exception as e:
+            logger.error(f"[{target_iso}] Rebuild failed: {type(e).__name__}")
+            return False
+
     def rebuild(self, start_date_str: str, end_date_str: str) -> bool:
         """Recreate normalized Firestore snapshots from archived raw payloads, without
         calling Garmin (no WearableProvider needed -- purely archive-driven, using the
@@ -637,79 +715,10 @@ class GarminSyncService:
             target_iso = get_date_string(target_date)
             yesterday_iso = get_date_string(n_days_ago(target_date, 1))
 
-            raw_stats = self.archive_store.load("stats", target_iso)
-            raw_sleep = self.archive_store.load("sleep", target_iso)
-            raw_hrv = self.archive_store.load("hrv", target_iso)
-            raw_activities = self.archive_store.load("activities", target_iso)
-
-            if raw_stats is None or raw_sleep is None or raw_hrv is None or raw_activities is None:
-                logger.warning(
-                    f"[{target_iso}] Not rebuildable: missing archived payload(s) "
-                    f"(stats={raw_stats is not None}, sleep={raw_sleep is not None}, "
-                    f"hrv={raw_hrv is not None}, activities={raw_activities is not None}). Skipping."
-                )
-                skipped_dates.append(target_iso)
-                # Keep history continuous: load existing Firestore raw snapshot if present
-                # so downstream dates in the rebuild range still have full 7d/28d baselines.
-                existing = self.repository.get_snapshot(target_iso)
-                if existing and existing.get("raw"):
-                    raw_memory_store[target_iso] = existing["raw"]
-                continue
-
-            stats_fallback = self.archive_store.load("stats", yesterday_iso)
-            sleep_fallback = (
-                self.archive_store.load("sleep", yesterday_iso) if not raw_sleep else None
-            )
-
-            # Metric enrichment (stress/body battery/training readiness/training status)
-            # is best-effort here, unlike the four required payloads above -- it wasn't
-            # part of the archive contract before item 4, so older archived dates simply
-            # won't have it, and that must not block rebuildability.
-            stress_today = self.archive_store.load("stress", target_iso)
-            body_battery_today = self.archive_store.load("body_battery", target_iso)
-            training_readiness_today = self.archive_store.load("training_readiness", target_iso)
-            training_status_today = self.archive_store.load("training_status", target_iso)
-            heart_rate_zones = self.archive_store.load("heart_rate_zones", target_iso)
-
-            try:
-                canonical = canonicalize_from_raw(
-                    stats_today=raw_stats,
-                    stats_fallback=stats_fallback,
-                    sleep_today=raw_sleep,
-                    sleep_fallback=sleep_fallback,
-                    hrv_today=raw_hrv,
-                    target_date_iso=target_iso,
-                    yesterday_iso=yesterday_iso,
-                    stress_today=stress_today,
-                    body_battery_today=body_battery_today,
-                    training_readiness_today=training_readiness_today,
-                    training_status_today=training_status_today,
-                    heart_rate_zones=heart_rate_zones,
-                )
-                zone4_floor = (
-                    canonical.heart_rate_zones.zone4_floor if canonical.heart_rate_zones else None
-                )
-                canonical_activities = canonicalize_activities(
-                    raw_activities, zone4_floor=zone4_floor
-                )
-
-                self._build_and_store_snapshot(
-                    target_iso=target_iso,
-                    canonical=canonical,
-                    canonical_activities=canonical_activities,
-                    raw_memory_store=raw_memory_store,
-                    # Conservative: this archived "activities" entry may predate
-                    # same-day activity fetching (see mapper.build_snapshot_from_canonical),
-                    # so rebuild can't assert it covers through target_iso the way a live
-                    # sync_daily/backfill fetch can. todayTraining itself is still
-                    # populated from whatever canonical_activities actually contains --
-                    # only this coverage marker is deliberately understated.
-                    activities_through_iso=yesterday_iso,
-                )
+            success = self._rebuild_single_date(target_iso, yesterday_iso, raw_memory_store)
+            if success:
                 rebuilt_dates.append(target_iso)
-                logger.info(f"[{target_iso}] Rebuilt from archive.")
-            except Exception as e:
-                logger.error(f"[{target_iso}] Rebuild failed: {e}")
+            else:
                 skipped_dates.append(target_iso)
 
         logger.info(
