@@ -133,32 +133,28 @@ export class SessionExecutionService {
     }
 
     async getEntries(userId: string, executionId: string): Promise<SessionEntry[]> {
-        const { entries } = await this.getEntriesWithDiagnostics(userId, executionId);
-        return entries;
+        return (await this.readEntries(userId, executionId)).entries;
     }
 
     /**
      * Same read as `getEntries`, but also reports how many entry documents under this
-     * execution failed to parse -- `getEntries` alone drops them silently, which let a
-     * malformed entry set disappear from range reads without incrementing `invalidRecords`.
+     * execution failed to parse or belong to another execution -- `getEntries` alone drops
+     * them silently, which let a malformed or cross-linked entry set disappear from range
+     * reads without incrementing `invalidRecords`.
      */
-    private async getEntriesWithDiagnostics(
-        userId: string,
-        executionId: string,
-    ): Promise<{ entries: SessionEntry[]; invalidCount: number }> {
+    private async readEntries(userId: string, executionId: string): Promise<{ entries: SessionEntry[]; invalidRecords: number }> {
         const snap = await getDocs(this.entriesColl(userId, executionId));
         const entries: SessionEntry[] = [];
-        let invalidCount = 0;
+        let invalidRecords = 0;
         for (const docSnap of snap.docs) {
             const parsed = parseSessionEntryDocument(docSnap.data(), docSnap.ref.path);
-            if (parsed.status === 'AVAILABLE') {
+            if (parsed.status === 'AVAILABLE' && parsed.data.executionId === executionId) {
                 entries.push(parsed.data);
-            } else if (parsed.status === 'INVALID') {
-                invalidCount += 1;
+            } else if (parsed.status === 'INVALID' || parsed.status === 'AVAILABLE') {
+                invalidRecords += 1;
             }
         }
-        entries.sort((a, b) => a.completedAt.localeCompare(b.completedAt));
-        return { entries, invalidCount };
+        return { entries: entries.sort((a, b) => a.completedAt.localeCompare(b.completedAt)), invalidRecords };
     }
 
     /**
@@ -227,14 +223,14 @@ export class SessionExecutionService {
 
         for (const docSnap of snap.docs) {
             const parsed = parseSessionExecutionDocument(docSnap.data(), docSnap.ref.path);
-            if (parsed.status === 'AVAILABLE') {
-                const { entries, invalidCount } = await this.getEntriesWithDiagnostics(userId, parsed.data.executionId);
+            if (parsed.status === 'AVAILABLE' && parsed.data.executionId === docSnap.id) {
+                const entryRead = await this.readEntries(userId, parsed.data.executionId);
+                invalidRecords += entryRead.invalidRecords;
                 executions.push({
                     execution: parsed.data,
-                    entries,
+                    entries: entryRead.entries,
                 });
-                invalidRecords += invalidCount;
-            } else if (parsed.status === 'INVALID') {
+            } else if (parsed.status === 'INVALID' || parsed.status === 'AVAILABLE') {
                 invalidRecords += 1;
             }
         }

@@ -17,12 +17,12 @@ export type { PreparedSessionLaunch } from '../../sessions/sessionLaunch';
 const DESTINATION_EFFECT: Record<DestinationChoice, string> = {
     start_unplanned: 'Saves an immutable definition and execution snapshot, then starts an unplanned session. It does not alter today’s recommendation.',
     save_only: 'Stores this revision without creating an occurrence or changing planning.',
-    schedule: 'Commits to a date for calendar visibility only. It does not change a recommendation unless it is later promoted to a fully adjudicated authority.',
-    replace_recommendation: 'Not yet available: replacement must pass clinical, injury, time, equipment, environment, readiness and replay checks before it can become executable.',
-    additional_session: 'Not yet available: an additional session must be adjudicated after the primary session and attached to the ordered recommendation audit.',
+    schedule: 'Commits to a date for calendar visibility.',
+    replace_recommendation: 'Replaces today’s recommended workout if it passes safety, clinical, capacity, and readiness gates.',
+    additional_session: 'Adds this session alongside today’s primary workout for additional training capacity.',
 };
 
-const UNAVAILABLE_DESTINATIONS = new Set<DestinationChoice>(['replace_recommendation', 'additional_session']);
+const UNAVAILABLE_DESTINATIONS = new Set<DestinationChoice>([]);
 
 interface SessionDestinationSheetProps {
     userId: string;
@@ -86,8 +86,19 @@ export const SessionDestinationSheet: React.FC<SessionDestinationSheetProps> = (
                 return;
             }
 
+            // Replacement and addition are explicit authority actions for the current
+            // Warsaw-local decision only. A future session is calendar-only until the
+            // athlete deliberately promotes it on that date.
+            const occurrenceDate = selectedDestination === 'schedule' ? scheduleDate : today;
             const definitionRef = { definitionId: definition.id, revision: definition.revision, contentHash };
-            const occurrence = await sessionOccurrenceService.scheduleOccurrence(userId, scheduleDate, definitionRef);
+            let occurrence: SessionOccurrence;
+            if (selectedDestination === 'replace_recommendation') {
+                occurrence = await sessionOccurrenceService.replaceRecommendationOccurrence(userId, occurrenceDate, definitionRef);
+            } else if (selectedDestination === 'additional_session') {
+                occurrence = await sessionOccurrenceService.addAdditionalSessionOccurrence(userId, occurrenceDate, definitionRef);
+            } else {
+                occurrence = await sessionOccurrenceService.scheduleOccurrence(userId, occurrenceDate, definitionRef);
+            }
             onOccurrenceCreated?.(occurrence);
             onClose();
         } catch (err: unknown) {

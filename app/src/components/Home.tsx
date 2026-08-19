@@ -1,18 +1,23 @@
 import { useState, useEffect, useCallback, useMemo, useRef, memo } from 'react';
 import { decisionComposer } from '../engine/composer';
-import { evaluateTrainingWithIntent, evaluateNextDayPlanWithIntent, adjustSessionRecommendation } from '../engine/rules';
+import { evaluateTrainingWithIntent, evaluateNextDayPlanWithIntent, adjustSessionRecommendation, evaluateReadinessAndSafetyEnvelope } from '../engine/rules';
 import { mapSnapshotToEngineInput, mapCheckinToSubjectiveInput, mapContextFromGoalsAndTrainingSettings, mapGoalsToUserEvents } from '../engine/adapters';
 import { generateWeekAheadPlanWithIntent, trailingHistoryFromCompletedExposures, type WeekAheadPlan } from '../engine/planner';
-import { prepareTrainingHistorySnapshot } from '../engine/trainingIntent';
+import { prepareTrainingHistorySnapshot, resolveTrainingIntent } from '../engine/trainingIntent';
 import type { TrainingHistorySnapshot } from '../engine/trainingHistorySnapshot';
 import { buildRecommendationAudit } from '../engine/provenance';
 import { evaluatePeriodizationPhase, getDaysToEvent } from '../engine/periodization';
 import { resolvePlanningContext } from '../engine/planningMode';
 import { resolveExecutionDose } from '../engine/dose';
+import { resolveAvailability } from '../engine/schedule';
+import { adjudicateAuthoredSession, createAuthoredSessionTemplate, estimateAuthoredSessionSystemicCost } from '../engine/authoredSessionGates';
+import { sessionOccurrenceService } from '../services/sessionOccurrenceService';
 import type { AuthoredPlanBlock, BodyRegion, DailyDecisionInput, Recommendation, NextDayPotentialPlan, DailyRecommendation, DecisionJournalEntry, ExternalPlacementAssignment, ExternalPlanPlacement, FixedActivity, ShadowVerdict } from '../engine/models';
+import type { SessionReferenceBinding } from '../sessions/models';
 import type { DataState } from '../engine/dataState';
 import { recommendationService } from '../services/recommendationService';
-import { prepareCatalogSessionLaunch } from '../services/sessionAuthoringService';
+import { prepareAuthoredOccurrenceLaunch, prepareCatalogSessionLaunch } from '../services/sessionAuthoringService';
+import { resolveSessionDefinition } from '../sessions/sessionDefinitionResolver';
 import { fixedActivityService } from '../services/fixedActivityService';
 import { planBlockService } from '../services/planBlockService';
 import { decisionJournalService } from '../services/decisionJournalService';
@@ -20,7 +25,6 @@ import { resolveEngineShadowVerdict } from '../engine/shadowAgreement';
 import { getPreviousLocalDateString, addDaysToLocalDateString } from '../utils/localDate';
 import { getPrescriptionLegend, resolveWorkoutPrescription } from '../workouts';
 import type { WorkoutPrescription } from '../workouts';
-import { resolveTrainingIntent } from '../engine/trainingIntent';
 import { computeInternalResponseStrain } from '../engine/fatigue';
 import { critiqueExternalWeek, type ExternalWeekCritique } from '../engine/externalCritique';
 import { applyConfirmedProposal, proposeReplacement, type ReplacementProposal } from '../engine/externalPlacement';
@@ -46,15 +50,13 @@ import {
 import './Home.css';
 
 import type { Screen } from '../types/navigation';
-import type { PreparedSessionLaunch } from '../sessions/sessionLaunch';
 
 interface HomeProps {
   userId: string;
   onNavigate: (screen: Screen) => void;
   onViewData?: () => void;
-  /** Launches today's catalog-sourced recommendation through the modality-appropriate
-   * runner while preserving the immutable source/prescription binding. */
-  onStartCatalogSession?: (launch: PreparedSessionLaunch) => void;
+  /** Launches today's immutable session binding through the source-neutral runner. */
+  onStartSession?: (binding: SessionReferenceBinding) => void | Promise<void>;
 }
 
 const MODE_LABELS: Record<Recommendation['mode'], string> = {
@@ -63,17 +65,15 @@ const MODE_LABELS: Record<Recommendation['mode'], string> = {
   recover: 'Recovery day',
 };
 
-/** Monday of the week containing `date`. Plan weeks are Monday-start by contract, and the
- * critique reviews one plan week at a time. */
-function mondayOf(date: string): string {
-  const weekday = new Date(`${date}T00:00:00Z`).getUTCDay();
-  return addDaysToLocalDateString(date, -((weekday + 6) % 7));
-}
-
 function formatEventTiming(daysToEvent: number | null): string {
   if (daysToEvent === 0) return 'Today';
   if (daysToEvent === null) return '';
   return daysToEvent > 0 ? `In ${daysToEvent} days` : `${Math.abs(daysToEvent)} days ago`;
+}
+
+function mondayOf(date: string): string {
+  const weekday = new Date(`${date}T00:00:00Z`).getUTCDay();
+  return addDaysToLocalDateString(date, -((weekday + 6) % 7));
 }
 
 const DetailedTodayPlan = memo(function DetailedTodayPlan({
@@ -156,7 +156,7 @@ const DetailedTodayPlan = memo(function DetailedTodayPlan({
   );
 });
 
-export function Home({ userId, onNavigate, onViewData, onStartCatalogSession }: HomeProps) {
+export function Home({ userId, onNavigate, onViewData, onStartSession }: HomeProps) {
   const [decisionInput, setDecisionInput] = useState<DailyDecisionInput | null>(null);
   const [recommendation, setRecommendation] = useState<Recommendation | null>(null);
   const [adjustmentDirection, setAdjustmentDirection] = useState<'easier' | 'harder' | null>(null);
@@ -164,8 +164,6 @@ export function Home({ userId, onNavigate, onViewData, onStartCatalogSession }: 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showWorkoutDetails, setShowWorkoutDetails] = useState(false);
-  const [startingCatalogSession, setStartingCatalogSession] = useState(false);
-  const [catalogSessionLaunchError, setCatalogSessionLaunchError] = useState<string | null>(null);
   const [pendingAdherence, setPendingAdherence] = useState<{ date: string; recommendation: DailyRecommendation } | null>(null);
   const [recommendationRevealed, setRecommendationRevealed] = useState(false);
   const [todaysJournalEntry, setTodaysJournalEntry] = useState<DecisionJournalEntry | null>(null);
@@ -367,11 +365,9 @@ export function Home({ userId, onNavigate, onViewData, onStartCatalogSession }: 
           ...baseRecommendation,
           prescription: resolveWorkoutPrescription(baseRecommendation, userId, input.date, input.preferences?.performanceProfile, baseRecommendation.executionDose, input.trainingSettings) ?? undefined
         };
+
         // M3.1/M3.4: a catalog-sourced recommendation gets its executable snapshot bound
-        // and persisted (write-once, content-addressed) at composition time -- not later,
-        // since primarySession is a decision-relevant field (recommendationService's
-        // decision-change equality and archival already govern it). External/adjudicated
-        // recommendations carry no `.prescription` and are unaffected.
+        // and persisted (write-once, content-addressed) at composition time.
         let primarySession: Recommendation['primarySession'] = recommendationWithPrescription.primarySession;
         if (recommendationWithPrescription.prescription) {
           try {
@@ -382,7 +378,144 @@ export function Home({ userId, onNavigate, onViewData, onStartCatalogSession }: 
             console.warn('Failed to prepare the catalog session binding for today\'s recommendation:', err);
           }
         }
-        const recommendationWithSession = { ...recommendationWithPrescription, primarySession };
+
+        let recommendationWithSession = { ...recommendationWithPrescription, primarySession };
+
+        // M3.3 Gated authored replacement & additional session authority (ADR-0023 / D-MAUTH)
+        try {
+          const replaceOccurrence = await sessionOccurrenceService.getReplaceOccurrenceForDate(userId, input.date);
+          const additionalOccurrences = await sessionOccurrenceService.getAdditionalOccurrencesForDate(userId, input.date);
+          const envelopeState = evaluateReadinessAndSafetyEnvelope(
+            { subjective, objective, subjectiveBaseline: input.subjectiveBaseline },
+            context,
+            input.date,
+            yesterdayRec?.mode,
+          );
+          const availability = resolveAvailability(input.date, subjective, todayAndTomorrowFixedActivities, context);
+          let acceptedSameDaySystemicCost = baseRecommendation.template.systemicCost;
+          let acceptedSameDayMinutes = baseRecommendation.template.durationMin;
+
+          if (replaceOccurrence) {
+            const source = {
+              kind: 'manual' as const,
+              definitionId: replaceOccurrence.definitionRef.definitionId,
+              revision: replaceOccurrence.definitionRef.revision,
+              contentHash: replaceOccurrence.definitionRef.contentHash,
+            };
+            // Resolve through the content-hash boundary before freezing a new
+            // occurrence-specific prescription; never bind a live definition directly.
+            const defState = await resolveSessionDefinition(userId, source);
+            if (defState.status === 'AVAILABLE') {
+              const authoredVerdict = adjudicateAuthoredSession(
+                defState.data,
+                { subjective, objective, subjectiveBaseline: input.subjectiveBaseline },
+                context,
+                envelopeState,
+                baseRecommendation.executionDose ?? { volume: 1.0, intensity: 1.0 },
+                input.date,
+                availability,
+              );
+
+              if (authoredVerdict.decision === 'proceed' || authoredVerdict.decision === 'scale') {
+                const targetDef = authoredVerdict.scaledDefinition ?? defState.data;
+                const launch = await prepareAuthoredOccurrenceLaunch(userId, source, replaceOccurrence.occurrenceId, targetDef);
+                if (!isCurrent()) return;
+                const traceWithoutExternalPlan = { ...(baseRecommendation.decisionTrace ?? {
+                  policyVersion: '', candidateScores: [], droppedContributorObjectives: [],
+                }) };
+                delete traceWithoutExternalPlan.externalPlan;
+                recommendationWithSession = {
+                  ...baseRecommendation,
+                  // The catalog prescription belongs to the displaced engine candidate,
+                  // not the accepted authored occurrence.
+                  prescription: undefined,
+                  externalVerdict: undefined,
+                  externalPrescription: undefined,
+                  template: createAuthoredSessionTemplate(targetDef),
+                  rationale: `${authoredVerdict.rationale} (Authored replacement for today).`,
+                  mode: envelopeState.mode,
+                  executionDose: authoredVerdict.executionDose ?? baseRecommendation.executionDose,
+                  primarySession: launch.binding,
+                  decisionTrace: {
+                    ...traceWithoutExternalPlan,
+                    // An authored primary is adjudicated rather than ranked against the
+                    // catalog. Retaining these scores would misstate its authority.
+                    candidateScores: [],
+                    authoredOccurrence: {
+                      occurrenceId: replaceOccurrence.occurrenceId,
+                      decision: authoredVerdict.decision,
+                    },
+                  },
+                };
+                acceptedSameDaySystemicCost = authoredVerdict.acceptedSystemicCost ?? estimateAuthoredSessionSystemicCost(targetDef);
+                acceptedSameDayMinutes = targetDef.duration?.min ?? acceptedSameDayMinutes;
+              } else {
+                recommendationWithSession = {
+                  ...recommendationWithSession,
+                  rationale: `${recommendationWithSession.rationale} [Notice: Scheduled replacement session was rejected by safety gates: ${authoredVerdict.rationale}]`,
+                };
+              }
+            } else {
+              recommendationWithSession = {
+                ...recommendationWithSession,
+                rationale: `${recommendationWithSession.rationale} [Notice: Scheduled replacement session could not be resolved (${defState.status}) and was not activated.]`,
+              };
+            }
+          }
+
+          const additionalBindings: SessionReferenceBinding[] = [];
+          const additionalNotices: string[] = [];
+          for (const occurrence of additionalOccurrences) {
+            const source = {
+              kind: 'manual' as const,
+              definitionId: occurrence.definitionRef.definitionId,
+              revision: occurrence.definitionRef.revision,
+              contentHash: occurrence.definitionRef.contentHash,
+            };
+            const defState = await resolveSessionDefinition(userId, source);
+            if (defState.status !== 'AVAILABLE') {
+              additionalNotices.push(`Additional session ${occurrence.occurrenceId} could not be resolved (${defState.status}).`);
+              continue;
+            }
+            const remainingAvailability = {
+              ...availability,
+              maxTimeMinutes: Math.max(0, availability.maxTimeMinutes - acceptedSameDayMinutes),
+            };
+            const verdict = adjudicateAuthoredSession(
+              defState.data,
+              { subjective, objective, subjectiveBaseline: input.subjectiveBaseline },
+              context,
+              envelopeState,
+              baseRecommendation.executionDose ?? { volume: 1.0, intensity: 1.0 },
+              input.date,
+              remainingAvailability,
+              acceptedSameDaySystemicCost,
+            );
+            if (verdict.decision === 'reject') {
+              additionalNotices.push(`Additional session ${occurrence.occurrenceId} was rejected by safety gates: ${verdict.rationale}`);
+              continue;
+            }
+            const targetDef = verdict.scaledDefinition ?? defState.data;
+            const launch = await prepareAuthoredOccurrenceLaunch(userId, source, occurrence.occurrenceId, targetDef);
+            if (!isCurrent()) return;
+            additionalBindings.push(launch.binding);
+            acceptedSameDaySystemicCost += verdict.acceptedSystemicCost ?? estimateAuthoredSessionSystemicCost(targetDef);
+            acceptedSameDayMinutes += targetDef.duration?.min ?? 45;
+          }
+
+          if (additionalBindings.length > 0 || additionalNotices.length > 0) {
+            recommendationWithSession = {
+              ...recommendationWithSession,
+              ...(additionalBindings.length > 0 ? { additionalSessions: additionalBindings } : {}),
+              rationale: additionalNotices.length > 0
+                ? `${recommendationWithSession.rationale} [Notice: ${additionalNotices.join(' ')}]`
+                : recommendationWithSession.rationale,
+            };
+          }
+        } catch (occErr) {
+          console.warn('Failed to evaluate authored session occurrences for today:', occErr);
+        }
+
         const todayRec = {
           ...recommendationWithSession,
           recommendationAudit: buildRecommendationAudit(recommendationWithSession, preparedSnapshot) ?? undefined,
@@ -516,24 +649,6 @@ export function Home({ userId, onNavigate, onViewData, onStartCatalogSession }: 
     () => computeAdjustedRecommendation(adjustmentDirection),
     [computeAdjustedRecommendation, adjustmentDirection]
   );
-
-  // Prepares (and persists) a launch for whatever is actually on screen right now --
-  // base or load-adjusted -- instead of reusing the binding captured for the base
-  // prescription at load time. `prepareCatalogSessionLaunch` is idempotent/write-once,
-  // so this is safe to call on every click, including the unadjusted case.
-  const handleStartCatalogSession = useCallback(async () => {
-    if (!onStartCatalogSession || !activeRec?.prescription || !userId) return;
-    setCatalogSessionLaunchError(null);
-    setStartingCatalogSession(true);
-    try {
-      const launch = await prepareCatalogSessionLaunch(userId, activeRec.prescription);
-      onStartCatalogSession(launch);
-    } catch (err) {
-      setCatalogSessionLaunchError(err instanceof Error ? err.message : 'Could not start the session');
-    } finally {
-      setStartingCatalogSession(false);
-    }
-  }, [onStartCatalogSession, activeRec, userId]);
 
   const todaysEngineVerdict = activeRec && canGenerateNormalPlan
     ? resolveEngineShadowVerdict(activeRec.mode, activeRec.externalVerdict?.decision)
@@ -800,21 +915,6 @@ export function Home({ userId, onNavigate, onViewData, onStartCatalogSession }: 
                     >
                       {showWorkoutDetails ? 'Hide workout' : 'View workout'}
                     </button>
-                    {activeRec.prescription && activeRec.primarySession && onStartCatalogSession && (
-                      <>
-                        <button
-                          type="button"
-                          className="start-strength-btn-cta"
-                          onClick={handleStartCatalogSession}
-                          disabled={startingCatalogSession}
-                        >
-                          {activeRec.template.modality === 'Strength' ? '🏋️' : '▶️'} {startingCatalogSession ? 'Starting…' : 'Start / Resume Session →'}
-                        </button>
-                        {catalogSessionLaunchError && (
-                          <p className="session-launch-error">{catalogSessionLaunchError}</p>
-                        )}
-                      </>
-                    )}
                     {showWorkoutDetails && (
                       <DetailedTodayPlan
                         prescription={activeRec.prescription}
@@ -825,6 +925,15 @@ export function Home({ userId, onNavigate, onViewData, onStartCatalogSession }: 
                       />
                     )}
                   </>
+                )}
+                {activeRec.primarySession && onStartSession && (
+                  <button
+                    type="button"
+                    className="start-strength-btn-cta"
+                    onClick={() => { void onStartSession(activeRec.primarySession!); }}
+                  >
+                    {activeRec.template.modality === 'Strength' ? '🏋️' : '▶️'} Start / Resume Session →
+                  </button>
                 )}
 
                 {canGenerateNormalPlan && <div className="adjustment-control-section">

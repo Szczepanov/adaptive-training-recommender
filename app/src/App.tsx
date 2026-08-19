@@ -25,6 +25,7 @@ import { MobileNav } from './components/MobileNav';
 import { getLocalDateString } from './utils/localDate';
 import { strengthSessionService } from './services/strengthSessionService';
 import { sessionExecutionService } from './services/sessionExecutionService';
+import { resolveSessionDefinition } from './sessions/sessionDefinitionResolver';
 
 function App() {
   const { userId, authPhase } = useAuth();
@@ -116,16 +117,22 @@ function App() {
               loadDecisionInput();
               handleNavigate('data');
             }}
-            onStartCatalogSession={launch => {
-              // The source-neutral runner has not yet reached ADR-0021 parity for catalog
-              // Strength (RIR/velocity/technical gauges, prior-set context and 1RM
-              // write-back). Keep the v1 runner for that source until parity lands.
-              if (launch.definition.dominantModality === 'strength') {
-                handleNavigate('strength');
-              } else {
-                setSessionLaunch(launch);
-                handleNavigate('sessions');
+            onStartSession={async binding => {
+              const definitionState = await resolveSessionDefinition(
+                userId!,
+                binding.sessionSource,
+                binding.prescriptionHash,
+              );
+              if (definitionState.status !== 'AVAILABLE') {
+                console.error(`Unable to resolve the stored session prescription: ${definitionState.status}`);
+                return;
               }
+              const launch = { definition: definitionState.data, binding };
+              // Every launched recommendation, including catalog strength, runs through
+              // the source-neutral execution path so occurrence/source/prescription
+              // identity survives into the execution and replay records.
+              setSessionLaunch(launch);
+              handleNavigate('sessions');
             }}
           />
         )}

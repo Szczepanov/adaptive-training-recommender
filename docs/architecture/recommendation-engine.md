@@ -65,6 +65,31 @@ cannot import `externalSession.ts`, and `externalArchitecture.test.ts` enforces 
 boundary and the absence of any runtime import from `optimizer.ts`/`planner.ts` into
 adjudication.
 
+### Authored occurrence authority (`authoredSessionGates.ts`, ADR-0023)
+
+An active `replace_recommendation` occurrence is resolved at the `Home.tsx` composition
+boundary for its Warsaw-local date. Its pinned manual definition is hash-verified, then
+adjudicated through `evaluateTemplateEligibility`, readiness envelopes, the plan-tier
+ceiling, and injury/category restrictions. An approved or scaled form is saved as a new,
+content-addressed `ExecutionPrescription`, whose hash also covers its exact source reference;
+the recommendation and audit retain the source reference, occurrence ID, and prescription
+hash. Replay verifies the saved occurrence date, authority, and manual definition revision
+before accepting that binding. The primary's audit records
+`authoredOccurrence` and has no catalog candidate scores, so replay proves an adjudicated
+authority decision rather than pretending the catalog ranked it.
+
+`additional_session` occurrences are independently hash-verified and adjudicated in stable
+placement order. Each accepted item consumes the remaining same-day minutes and systemic
+cost ceiling before the next is considered; rejected or unresolvable items remain inert and
+are reported in the rationale. Authored definitions still lack modeled equipment and
+environment requirements, so their source-neutral v1 schema cannot yet express more than
+the common gates; no inferred requirements are used.
+
+The placement in `Home.tsx` is a temporary composition seam, not a second planner. It uses
+the normal engine result only to obtain current readiness/availability inputs and safe
+fallback; moving date-scoped occurrence resolution into `planningMode.ts` remains the
+follow-up needed to fully realize ADR-0023's single planning-authority design.
+
 ---
 
 ## Planning authority and coverage sets (`planningMode.ts`, `evergreenPlanning.ts`)

@@ -83,6 +83,42 @@ describe('SessionExecutionService', () => {
             expect(result.invalidRecords).toBe(1);
         });
 
+        it('counts an entry cross-linked to another execution toward invalidRecords rather than dropping it silently', async () => {
+            firestore.getDocs
+                .mockResolvedValueOnce({
+                    docs: [{ id: EXECUTION_ID, ref: { path: `users/${USER_ID}/session_executions/${EXECUTION_ID}` }, data: () => validExecution() }],
+                })
+                .mockResolvedValueOnce({
+                    docs: [
+                        { id: 'entry-1', ref: { path: `.../entries/entry-1` }, data: () => validEntry() },
+                        { id: 'cross-linked', ref: { path: `.../entries/cross-linked` }, data: () => validEntry({ id: 'cross-linked', executionId: 'other-execution' }) },
+                    ],
+                });
+
+            const result = await service.getExecutionsInRange(USER_ID, '2026-08-01', '2026-08-31');
+
+            expect(result.executions).toHaveLength(1);
+            expect(result.executions[0].entries).toHaveLength(1);
+            expect(result.invalidRecords).toBe(1);
+        });
+
+        it('counts an execution document whose id disagrees with its own executionId field, alongside any invalid entries elsewhere in the range', async () => {
+            firestore.getDocs.mockResolvedValueOnce({
+                docs: [
+                    { id: EXECUTION_ID, ref: { path: `users/${USER_ID}/session_executions/${EXECUTION_ID}` }, data: () => validExecution() },
+                    { id: 'doc-id-mismatch', ref: { path: `users/${USER_ID}/session_executions/doc-id-mismatch` }, data: () => validExecution() },
+                ],
+            });
+            firestore.getDocs.mockResolvedValueOnce({
+                docs: [{ id: 'entry-1', ref: { path: `.../entries/entry-1` }, data: () => validEntry() }],
+            });
+
+            const result = await service.getExecutionsInRange(USER_ID, '2026-08-01', '2026-08-31');
+
+            expect(result.executions).toHaveLength(1);
+            expect(result.invalidRecords).toBe(1);
+        });
+
         it('still counts an invalid execution document itself, alongside any invalid entries elsewhere in the range', async () => {
             firestore.getDocs.mockResolvedValueOnce({
                 docs: [

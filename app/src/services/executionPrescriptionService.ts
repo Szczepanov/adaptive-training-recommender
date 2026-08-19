@@ -9,6 +9,15 @@ import type { DataState } from '../engine/dataState';
 import type { ExecutionPrescription } from '../sessions/models';
 import { hashExecutionPrescription } from '../sessions/sessionDefinitionHash';
 
+function hasSessionSource(value: unknown): boolean {
+    if (!value || typeof value !== 'object') return false;
+    const source = value as Record<string, unknown>;
+    if (source.kind === 'catalog') return typeof source.workoutId === 'string' && typeof source.catalogVersion === 'string';
+    if (source.kind === 'manual') return typeof source.definitionId === 'string' && typeof source.revision === 'number' && typeof source.contentHash === 'string';
+    if (source.kind === 'external_plan') return typeof source.planId === 'string' && typeof source.revision === 'number' && typeof source.sessionId === 'string' && typeof source.contentHash === 'string';
+    return source.kind === 'unplanned_fixture' && typeof source.fixtureId === 'string';
+}
+
 export class ExecutionPrescriptionService {
     private readonly db: Firestore;
 
@@ -54,6 +63,7 @@ export class ExecutionPrescriptionService {
             if (
                 data.schemaVersion === 1 &&
                 typeof data.prescriptionHash === 'string' &&
+                hasSessionSource(data.sessionSource) &&
                 typeof data.definitionHash === 'string' &&
                 Array.isArray(data.blocks)
             ) {

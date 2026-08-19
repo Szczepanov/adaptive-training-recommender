@@ -56,6 +56,8 @@ const decisionAffectingFiles = [
   // deciding function even though it lives outside rules.ts. Keep it guarded now so a
   // later estimator change cannot silently retain an old live policy identity.
   'app/src/engine/subjectiveBaseline.ts',
+  // ADR-0023: authored session replacement and addition gates directly alter live recommendations.
+  'app/src/engine/authoredSessionGates.ts',
 ];
 
 const policyFile = 'app/src/engine/policy.ts';

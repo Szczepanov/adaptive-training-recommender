@@ -1093,6 +1093,7 @@ emulatorDescribe('Firestore security rules', () => {
             userId: ownerId,
             schemaVersion: 1,
             prescriptionHash: 'presc-hash-abc',
+            sessionSource: { kind: 'catalog', workoutId: 'strength_full_body_maintenance_01', catalogVersion: '1' },
             definitionHash: 'def-hash-123',
             blocks: [
                 {
@@ -1180,6 +1181,28 @@ emulatorDescribe('Firestore security rules', () => {
         };
         const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
         await expect(assertSucceeds(setDoc(doc(ownerDb, `users/${ownerId}/daily_recommendations/2026-08-07`), recWithBindings))).resolves.toBeUndefined();
+    });
+
+    it('allows an authored replacement occurrence provenance in a recommendation audit', async () => {
+        const base = validRecommendation();
+        const primarySession = {
+            sessionSource: {
+                kind: 'manual', definitionId: 'manual-1', revision: 1, contentHash: 'a'.repeat(64),
+            },
+            occurrenceId: 'occ-authored-1',
+            prescriptionHash: 'b'.repeat(64),
+        };
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await expect(assertSucceeds(setDoc(doc(ownerDb, recommendationPath), {
+            ...base,
+            primarySession,
+            recommendationAudit: {
+                ...base.recommendationAudit,
+                candidateScores: [],
+                primarySession,
+                authoredOccurrence: { occurrenceId: 'occ-authored-1', decision: 'scale' },
+            },
+        }))).resolves.toBeUndefined();
     });
 
     it('allows execution lifecycle with entry subcollection mutability while in_progress, and terminal immutability', async () => {

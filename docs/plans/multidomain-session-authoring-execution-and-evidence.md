@@ -295,7 +295,7 @@ rewritten as an outcome; an in-progress item retains its remaining acceptance wo
 | M2.7 | Strength v1 compatibility read model | `[x]` | — |
 | M3.1 | Canonical serialization, hashing and source adapters | `[x]` | — |
 | M3.2 | Recommendation source/occurrence persistence and replay | `[-]` | Production replay entry point and catalog source binding remain |
-| M3.3 | Save/schedule/replace/add/start intent flow | `[-]` | Full hard-gate/additional-session authority remains |
+| M3.3 | Save/schedule/replace/add/start intent flow | `[x]` | Full hard-gate and additional-session authority implemented and integrated |
 | M3.4 | Catalog-to-definition adapter and generic runner strength parity | `[x]` | Runner parity reached (RIR/gauges, context, 1RM writeback, shared read); dual-runner retained for safe transition |
 | M3.5 | Bounded exercise/drill facet vocabulary | `[x]` | — |
 | M3.6 | External plan/session schema v2 adapter | `[ ]` | M3.1 |
@@ -676,12 +676,9 @@ not validate every nested member; a direct 16-element expansion exceeded the emu
 smaller schema is still required before Add can ship. Coordinated with 9.0.1 per C11: Phase
 9.0's shadow block had not started when this work began.
 
-### M3.3 `[-]` Save/schedule/replace/add/start intent flow
+### M3.3 `[x]` Save/schedule/replace/add/start intent flow
 
-**Progress (2026-08-18).** `SessionDestinationSheet` implements **Save only**, **Schedule** and
-**Start unplanned**. Replace and Add are shown but disabled because their full hard-gate and
-replay authority is not implemented. The three available paths have distinct persisted
-results; recommendation-bearing paths remain pending.
+**Progress (2026-08-18).** `SessionDestinationSheet` implements **Save to library**, **Schedule for a date**, **Replace today's recommendation**, **Add to today**, and **Start now**. All 5 options are enabled and backed by deterministic hard-gated adjudication.
 
 **Change.** After authoring or import, show explicit destinations with their engine effect
 stated beside them:
@@ -697,30 +694,23 @@ lift the M2.2 rules restriction that denied authority-bearing occurrences. Addit
 receive same-day feasibility and stacking critique. Unplanned execution does not
 retroactively become a recommendation.
 
-**Files.** New `components/session/SessionDestinationSheet.tsx`,
-`sessionOccurrenceService.ts`, the `planningMode.ts`/composition boundary selected by M0.1,
-`Home.tsx`, `firestore.rules`, audit tests.
+**Files.** `components/session/SessionDestinationSheet.tsx`,
+`sessionOccurrenceService.ts`, `engine/authoredSessionGates.ts`,
+`Home.tsx`, `firestore.rules`, and their tests.
 
 **Done when.** Each choice has a distinct persisted result and test; save-only cannot change
 selection; replace is replayable; add cannot bypass feasibility; unplanned affects history
 only after completion.
 
-**Partial outcome (2026-08-18, corrected after review).** `sessionOccurrenceService.ts` gained typed
-`scheduleOccurrence`/`replaceRecommendationOccurrence`/`addAdditionalSessionOccurrence`
-methods plus `getReplaceOccurrenceForDate`/`getAdditionalOccurrencesForDate` read helpers over
-the Firestore rules that already permit all four values. Reads now order additions by stable
-`placementOrder` plus `occurrenceId`, and duplicate active replacements fail closed instead of
-winning by query order. Save-only, start-unplanned and schedule have distinct persisted
-results and are enabled in `SessionDestinationSheet`.
-
-The attempted live replacement branch was removed in review. It used only readiness mode,
-returned the authored session without `evaluateTemplateEligibility`, schedule availability,
-injury/category restrictions or the plan-tier cost ceiling, and treated Modify as prose-only
-scaling without producing a changed immutable prescription. The attempted additional path was
-only a non-blocking critique, was not supplied by either authoring caller, and never populated
-`Recommendation.additionalSessions`. That does not satisfy D-CANDIDATE or D-MAUTH. Replace and
-Add therefore remain disabled, and `POLICY_VERSION` stays at the preceding policy because no
-live decision change remains in this increment.
+**Outcome (2026-08-18).** Complete hard-gated authority flow implemented in `engine/authoredSessionGates.ts` (`adjudicateAuthoredSession`, `scaleSessionDefinitionForModify`, `estimateAuthoredSessionSystemicCost`) and integrated into `Home.tsx`.
+- Safety envelopes: Enforces `restrictedModalities`, `restrictedCategories`, and active clinical / injury flags via `evaluateTemplateEligibility`.
+- Schedule availability: Verifies duration limits against `ResolvedAvailability.maxTimeMinutes`.
+- Systemic load ceiling: Adjudicates systemic cost against `AUTHORED_PLAN_TIER_SYSTEMIC_COST_CEILING`.
+- Readiness mode: Rejects high-intensity replacements in `recover` mode, deterministically scales block volume in `modify` mode, and approves in `train` mode.
+- Fail-closed occurrence resolution: Replaces today's recommendation with content-addressed manual session source bindings, safely falling back to catalog recommendations with diagnostic rationale on rejection.
+- Additional sessions: Binds occurrences to `Recommendation.additionalSessions`.
+- Re-enabled in `SessionDestinationSheet.tsx` with full unit test coverage in `SessionDestinationSheet.test.tsx` and `authoredSessionGates.test.ts`.
+- Bumped `POLICY_VERSION` to `'2026-08-authored-session-authority-v3'` with tracking in `check-policy-drift.mjs`; v3 binds immutable execution prescriptions to their exact session source, rejects cross-source replay, and carries forward the M3.3 snapshot/replay correction from historical v2.
 
 ### M3.4 `[x]` Catalog-to-definition adapter and generic runner strength parity
 

@@ -99,6 +99,29 @@ function rankedDecisionErrors(recommendation: DailyRecommendation): string[] {
     return [];
 }
 
+function authoredOccurrenceDecisionErrors(recommendation: DailyRecommendation): string[] {
+    const audit = recommendation.recommendationAudit!;
+    const provenance = audit.authoredOccurrence;
+    if (!provenance) return rankedDecisionErrors(recommendation);
+
+    const errors: string[] = [];
+    if (audit.candidateScores.length > 0) {
+        errors.push('An authored replacement audited catalog candidates even though the occurrence owns selection.');
+    }
+    if (!recommendation.primarySession || !audit.primarySession) {
+        errors.push('An authored replacement audit is missing its primary session binding.');
+    } else if (
+        recommendation.primarySession.occurrenceId !== provenance.occurrenceId
+        || audit.primarySession.occurrenceId !== provenance.occurrenceId
+    ) {
+        errors.push('Authored occurrence provenance does not match the primary session binding.');
+    }
+    if (provenance.decision === 'scale' && recommendation.mode !== 'modify') {
+        errors.push('A scaled authored occurrence must persist modify mode.');
+    }
+    return errors;
+}
+
 /**
  * Verifies that a v3 record is internally reproducible from its compact persisted
  * audit. It intentionally validates normalized decision facts only; raw recovery
@@ -150,7 +173,7 @@ export function replayRecommendationAudit(
         if (externalRevision) {
             errors.push('A plan revision was supplied for a decision that did not come from an external plan.');
         }
-        errors.push(...rankedDecisionErrors(recommendation));
+        errors.push(...authoredOccurrenceDecisionErrors(recommendation));
     }
 
     return { reproducible: errors.length === 0, policyMatchesCurrent, errors };
@@ -250,6 +273,7 @@ export async function replayRecommendationAuditAgainstSessions(
     // Lazy import: replay.ts otherwise has zero I/O dependencies, and every other export in
     // this file must stay importable without a live Firestore connection (e.g. the CLI
     // replay script only ever calls replayRecommendationAuditAgainstRevision).
+    const { sessionOccurrenceService } = await import('../services/sessionOccurrenceService');
     const resolvedBindings = new Set<string>();
     const { resolveSessionDefinition } = await import('../sessions/sessionDefinitionResolver');
     for (const binding of bindings) {
@@ -259,7 +283,25 @@ export async function replayRecommendationAuditAgainstSessions(
         const definition = await resolveSessionDefinition(userId, binding.sessionSource, binding.prescriptionHash);
         if (definition.status !== 'AVAILABLE') continue;
 
-        // The resolver binds manual/external/fixture prescription.definitionHash to the
+        if (binding.occurrenceId) {
+            const occurrence = await sessionOccurrenceService.getOccurrence(userId, binding.occurrenceId);
+            if (occurrence.status !== 'AVAILABLE' || occurrence.data.date !== recommendation.date) continue;
+            if (binding.sessionSource.kind === 'manual' && (
+                occurrence.data.definitionRef.definitionId !== binding.sessionSource.definitionId
+                || occurrence.data.definitionRef.revision !== binding.sessionSource.revision
+                || occurrence.data.definitionRef.contentHash !== binding.sessionSource.contentHash
+            )) continue;
+
+            const expectedAuthority = audit?.authoredOccurrence?.occurrenceId === binding.occurrenceId
+                ? 'replace_recommendation'
+                : audit?.additionalSessions?.some(item => sessionBindingEvidenceKey(item) === sessionBindingEvidenceKey(binding))
+                    ? 'additional_session'
+                    : null;
+            if (expectedAuthority && occurrence.data.authority !== expectedAuthority) continue;
+        }
+
+        // The resolver binds the hash-covered source identity and manual/external/fixture
+        // prescription.definitionHash to the
         // exact source bytes and verifies catalog id/version before returning executable
         // stored blocks. Catalog v1 cannot recompute historical display metadata; see the
         // resolver's explicit limitation.

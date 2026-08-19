@@ -33,7 +33,7 @@ export function canonicalSessionDefinitionJson(definition: SessionDefinition): s
 export function canonicalExecutionPrescriptionJson(prescription: ExecutionPrescription): string {
     // A digest cannot include itself; createdAt is provenance rather than execution
     // content, so it must not turn the same prescription into a new snapshot.
-    const content = pickDefined(prescription, ['schemaVersion', 'definitionHash', 'blocks']);
+    const content = pickDefined(prescription, ['schemaVersion', 'sessionSource', 'definitionHash', 'blocks']);
     return JSON.stringify(canonicalizeSessionData(content));
 }
 

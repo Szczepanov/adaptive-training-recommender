@@ -245,6 +245,8 @@ export interface SessionOccurrence {
 export interface ExecutionPrescription {
     schemaVersion: number;
     prescriptionHash: string;
+    /** Immutable source identity, covered by `prescriptionHash`. */
+    sessionSource: SessionSourceRef;
     definitionHash: string;
     blocks: SessionBlock[];
     createdAt: string;

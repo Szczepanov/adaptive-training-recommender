@@ -7,9 +7,11 @@ import { externalTemplateId } from './externalSessionProfiles';
 const services = vi.hoisted(() => ({
     prescription: { getPrescription: vi.fn() },
     resolver: { resolveSessionDefinition: vi.fn() },
+    occurrence: { getOccurrence: vi.fn() },
 }));
 vi.mock('../services/executionPrescriptionService', () => ({ executionPrescriptionService: services.prescription }));
 vi.mock('../sessions/sessionDefinitionResolver', () => ({ resolveSessionDefinition: services.resolver.resolveSessionDefinition }));
+vi.mock('../services/sessionOccurrenceService', () => ({ sessionOccurrenceService: services.occurrence }));
 
 import { replayRecommendationAudit, replayRecommendationAuditAgainstRevision, replayRecommendationAuditAgainstSessions, sessionBindingEvidenceKey } from './replay';
 
@@ -279,6 +281,69 @@ describe('M3.2 session prescription binding replay', () => {
     it('passes when the binding resolves in the supplied evidence', () => {
         const result = replayRecommendationAudit(withPrimarySession(), null, { resolvedBindings: new Set([sessionBindingEvidenceKey(binding)]) });
         expect(result).toEqual({ reproducible: true, policyMatchesCurrent: true, errors: [] });
+    });
+
+    it('replays an authored replacement through occurrence authority rather than catalog ranking', () => {
+        const authoredBinding: SessionReferenceBinding = {
+            sessionSource: { kind: 'manual', definitionId: 'manual-1', revision: 1, contentHash: 'b'.repeat(64) },
+            occurrenceId: 'occ-authored-1',
+            prescriptionHash: 'c'.repeat(64),
+        };
+        const record = auditedRecommendation();
+        record.templateId = 'authored:manual-1:1';
+        record.templateTitle = 'Authored replacement';
+        record.mode = 'modify';
+        record.primarySession = authoredBinding;
+        record.recommendationAudit!.primarySession = authoredBinding;
+        record.recommendationAudit!.candidateScores = [];
+        record.recommendationAudit!.authoredOccurrence = {
+            occurrenceId: 'occ-authored-1',
+            decision: 'scale',
+        };
+
+        expect(replayRecommendationAudit(record, null, {
+            resolvedBindings: new Set([sessionBindingEvidenceKey(authoredBinding)]),
+        })).toEqual({ reproducible: true, policyMatchesCurrent: true, errors: [] });
+    });
+
+    it('requires the persisted occurrence to match the authored replacement binding', async () => {
+        const authoredBinding: SessionReferenceBinding = {
+            sessionSource: { kind: 'manual', definitionId: 'manual-1', revision: 1, contentHash: 'b'.repeat(64) },
+            occurrenceId: 'occ-authored-1', prescriptionHash: 'c'.repeat(64),
+        };
+        const record = auditedRecommendation();
+        record.mode = 'modify';
+        record.primarySession = authoredBinding;
+        record.recommendationAudit!.primarySession = authoredBinding;
+        record.recommendationAudit!.candidateScores = [];
+        record.recommendationAudit!.authoredOccurrence = { occurrenceId: 'occ-authored-1', decision: 'scale' };
+        services.prescription.getPrescription.mockResolvedValue({ status: 'AVAILABLE', data: {}, revision: null });
+        services.resolver.resolveSessionDefinition.mockResolvedValue({ status: 'AVAILABLE', data: {}, revision: null });
+        services.occurrence.getOccurrence.mockResolvedValue({
+            status: 'AVAILABLE', revision: null,
+            data: {
+                occurrenceId: 'occ-authored-1', userId: 'u1', date: record.date,
+                authority: 'replace_recommendation', state: 'scheduled',
+                definitionRef: { definitionId: 'manual-1', revision: 1, contentHash: 'b'.repeat(64) },
+            },
+        });
+
+        await expect(replayRecommendationAuditAgainstSessions('u1', record)).resolves.toEqual({
+            reproducible: true, policyMatchesCurrent: true, errors: [],
+        });
+
+        services.occurrence.getOccurrence.mockResolvedValue({
+            status: 'AVAILABLE', revision: null,
+            data: {
+                occurrenceId: 'occ-authored-1', userId: 'u1', date: record.date,
+                authority: 'additional_session', state: 'scheduled',
+                definitionRef: { definitionId: 'manual-1', revision: 1, contentHash: 'b'.repeat(64) },
+            },
+        });
+        await expect(replayRecommendationAuditAgainstSessions('u1', record)).resolves.toMatchObject({
+            reproducible: false,
+            errors: [expect.stringContaining(authoredBinding.prescriptionHash)],
+        });
     });
 
     it('fails when the binding is absent from the supplied evidence', () => {

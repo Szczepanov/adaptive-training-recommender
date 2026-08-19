@@ -212,9 +212,9 @@ export const RepetitionInputCard: React.FC<RepetitionInputCardProps> = ({
                                 type="text"
                                 value={technicalNote}
                                 onChange={e => setTechnicalNote(e.target.value)}
-                                placeholder="Optional form note"
-                                className="session-input-box"
+                                className="session-input-box gauge-val-input"
                                 aria-label="Technical form note"
+                                placeholder="Optional note"
                             />
                         </div>
                     )}

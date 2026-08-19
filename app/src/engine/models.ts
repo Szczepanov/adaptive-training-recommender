@@ -739,6 +739,9 @@ export interface Recommendation {
         /** Present exactly when an imported session was adjudicated. Carried to the
          * persisted audit unchanged so replay can name the revision it must verify. */
         externalPlan?: ExternalDecisionProvenance;
+        /** An athlete-selected replacement was adjudicated instead of being selected by
+         * catalog ranking. Its occurrence ID binds that authority to the primary session. */
+        authoredOccurrence?: AuthoredOccurrenceProvenance;
         /** Compact simulator-only evidence. It excludes raw wearable payloads and
          * check-in text; provenance.ts does not persist it in RecommendationAudit. */
         calibration?: {
@@ -1455,9 +1458,18 @@ export interface RecommendationAudit {
     droppedContributorObjectives: DroppedContributorObjective[];
     /** Present exactly when the decision adjudicated an imported session (ADR-0019). */
     externalPlan?: ExternalDecisionProvenance;
+    /** Present exactly when an active replacement occurrence owned the primary session. */
+    authoredOccurrence?: AuthoredOccurrenceProvenance;
     /** Multidomain session bindings (M3.2 / ADR-0023 D-MSNAP). */
     primarySession?: SessionReferenceBinding;
     additionalSessions?: SessionReferenceBinding[];
+}
+
+/** A compact, replayable record that a replacement occurrence, not catalog ranking,
+ * selected the primary executable session (ADR-0023 D-MAUTH). */
+export interface AuthoredOccurrenceProvenance {
+    occurrenceId: string;
+    decision: 'proceed' | 'scale';
 }
 
 /**

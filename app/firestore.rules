@@ -89,7 +89,7 @@ service cloud.firestore {
 
     function hasValidRecommendationAudit(audit) {
       return audit is map
-        && audit.keys().hasOnly(['policyVersion', 'evaluatedAt', 'decisionContextRevision', 'safetyStatus', 'history', 'envelope', 'plannedDose', 'executionDose', 'candidateScores', 'droppedContributorObjectives', 'externalPlan', 'primarySession', 'additionalSessions', 'subjectiveDrift'])
+        && audit.keys().hasOnly(['policyVersion', 'evaluatedAt', 'decisionContextRevision', 'safetyStatus', 'history', 'envelope', 'plannedDose', 'executionDose', 'candidateScores', 'droppedContributorObjectives', 'externalPlan', 'authoredOccurrence', 'primarySession', 'additionalSessions', 'subjectiveDrift'])
         && audit.keys().hasAll(['policyVersion', 'evaluatedAt', 'decisionContextRevision', 'safetyStatus', 'history', 'envelope', 'candidateScores'])
         && audit.policyVersion is string
         && audit.evaluatedAt is string
@@ -125,6 +125,13 @@ service cloud.firestore {
           && audit.externalPlan.revision is int && audit.externalPlan.revision >= 1
           && audit.externalPlan.sessionId is string && audit.externalPlan.sessionId.size() <= 64
           && audit.externalPlan.contentHash is string && audit.externalPlan.contentHash.size() <= 128
+        ))
+        && (!('authoredOccurrence' in audit) || (
+          audit.authoredOccurrence is map
+          && audit.authoredOccurrence.keys().hasOnly(['occurrenceId', 'decision'])
+          && audit.authoredOccurrence.keys().hasAll(['occurrenceId', 'decision'])
+          && audit.authoredOccurrence.occurrenceId is string && audit.authoredOccurrence.occurrenceId.size() <= 128
+          && audit.authoredOccurrence.decision in ['proceed', 'scale']
         ))
         && (!('subjectiveDrift' in audit) || hasValidSubjectiveDriftAudit(audit.subjectiveDrift));
     }
@@ -659,10 +666,11 @@ service cloud.firestore {
     function hasValidExecutionPrescription(userId, prescriptionHash) {
       let data = request.resource.data;
       return hasOwnedUserId(userId)
-        && data.keys().hasOnly(['userId', 'schemaVersion', 'prescriptionHash', 'definitionHash', 'blocks', 'createdAt'])
-        && data.keys().hasAll(['userId', 'schemaVersion', 'prescriptionHash', 'definitionHash', 'blocks', 'createdAt'])
+        && data.keys().hasOnly(['userId', 'schemaVersion', 'prescriptionHash', 'sessionSource', 'definitionHash', 'blocks', 'createdAt'])
+        && data.keys().hasAll(['userId', 'schemaVersion', 'prescriptionHash', 'sessionSource', 'definitionHash', 'blocks', 'createdAt'])
         && data.prescriptionHash == prescriptionHash
         && data.definitionHash is string
+        && hasValidSessionSource(data.sessionSource)
         && data.schemaVersion == 1
         && data.blocks is list
         && data.createdAt is string;
