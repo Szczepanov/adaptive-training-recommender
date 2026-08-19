@@ -141,19 +141,94 @@ describe('resolveSessionDefinition', () => {
             });
         });
 
+        it('resolves with the historically-snapshotted display metadata (M3.2), not a live-catalog re-derivation, once displayMetadata is present', async () => {
+            // Deliberately different from FAKE_WORKOUT.name ('Fake Catalog Workout') --
+            // simulates the live catalog entry having been edited since this was prescribed.
+            const historicalMeta: NonNullable<ExecutionPrescription['displayMetadata']> = {
+                title: 'Historical Custom Title', intent: 'training', dominantModality: 'cycling', duration: { min: 30, max: 60 },
+            };
+            const blocks: ExecutionPrescription['blocks'] = [{ id: 'evaluated-block', role: 'main', executionMode: 'sequential', steps: [] }];
+            const reconstructed: SessionDefinition = {
+                schemaVersion: 1, id: 'catalog-workout-1', revision: 1, blocks,
+                title: historicalMeta.title, intent: historicalMeta.intent,
+                dominantModality: historicalMeta.dominantModality, duration: historicalMeta.duration,
+            };
+            const definitionHash = await hashSessionDefinition(reconstructed);
+            services.prescription.getPrescription.mockResolvedValue({
+                status: 'AVAILABLE', revision: null,
+                data: { schemaVersion: 1, prescriptionHash: 'hash-2', sessionSource: catalogSource, definitionHash, blocks, displayMetadata: historicalMeta, createdAt: '2026-08-18T00:00:00Z' },
+            } satisfies DataState<ExecutionPrescription>);
+
+            const result = await resolveSessionDefinition('u1', catalogSource, 'hash-2');
+            expect(result.status).toBe('AVAILABLE');
+            if (result.status !== 'AVAILABLE') throw new Error('expected AVAILABLE');
+            expect(result.data.title).toBe('Historical Custom Title');
+            expect(result.data.blocks).toEqual(blocks);
+        });
+
+        it('rejects a catalog prescription whose stored displayMetadata does not match its definitionHash', async () => {
+            const blocks: ExecutionPrescription['blocks'] = [{ id: 'evaluated-block', role: 'main', executionMode: 'sequential', steps: [] }];
+            services.prescription.getPrescription.mockResolvedValue({
+                status: 'AVAILABLE', revision: null,
+                data: {
+                    schemaVersion: 1, prescriptionHash: 'hash-3', sessionSource: catalogSource,
+                    definitionHash: 'stale-or-corrupted-hash', blocks,
+                    displayMetadata: { title: 'Tampered Title', intent: 'training', dominantModality: 'cycling', duration: { min: 30, max: 60 } },
+                    createdAt: '2026-08-18T00:00:00Z',
+                },
+            } satisfies DataState<ExecutionPrescription>);
+
+            await expect(resolveSessionDefinition('u1', catalogSource, 'hash-3')).resolves.toMatchObject({
+                status: 'INVALID', issues: [{ code: 'prescription-definition-hash-mismatch' }],
+            });
+        });
+
         it('still rejects an unknown workoutId regardless of prescriptionHash', async () => {
             await expect(resolveSessionDefinition('u1', { kind: 'catalog', workoutId: 'nope', catalogVersion: '1' }, 'hash-1'))
                 .resolves.toMatchObject({ status: 'INVALID', issues: [{ code: 'catalog-workout-not-found' }] });
         });
 
-        it('fails closed when the stored catalog version no longer matches the available definition', async () => {
-            services.prescription.getPrescription.mockClear();
+        it('fails closed on a live-catalog version mismatch only for the legacy no-displayMetadata fallback', async () => {
+            // No displayMetadata: there is no historical snapshot to self-verify against,
+            // so this can only fall back to requiring the live catalog to still match.
+            services.prescription.getPrescription.mockResolvedValue({
+                status: 'AVAILABLE', revision: null,
+                data: { ...storedPrescription, sessionSource: { kind: 'catalog', workoutId: 'catalog-workout-1', catalogVersion: '2' } },
+            } satisfies DataState<ExecutionPrescription>);
+
             await expect(resolveSessionDefinition('u1', {
                 kind: 'catalog', workoutId: 'catalog-workout-1', catalogVersion: '2',
             }, 'hash-1')).resolves.toMatchObject({
                 status: 'INVALID', issues: [{ code: 'catalog-version-mismatch' }],
             });
-            expect(services.prescription.getPrescription).not.toHaveBeenCalled();
+        });
+
+        it('replays a stored snapshot by its displayMetadata even when the live catalog version has since moved on (regression, M3.2 replay wiring)', async () => {
+            // The stored source's catalogVersion ('2') intentionally differs from the live
+            // FAKE_WORKOUT.version ('1'), simulating a catalog edit made after this was
+            // prescribed. With displayMetadata present, replay must not depend on the live
+            // catalog version still matching.
+            const staleVersionSource = { kind: 'catalog' as const, workoutId: 'catalog-workout-1', catalogVersion: '2' };
+            const historicalMeta: NonNullable<ExecutionPrescription['displayMetadata']> = {
+                title: 'Historical Custom Title', intent: 'training', dominantModality: 'cycling', duration: { min: 30, max: 60 },
+            };
+            const blocks: ExecutionPrescription['blocks'] = [{ id: 'evaluated-block', role: 'main', executionMode: 'sequential', steps: [] }];
+            const reconstructed: SessionDefinition = {
+                schemaVersion: 1, id: 'catalog-workout-1', revision: 1, blocks,
+                title: historicalMeta.title, intent: historicalMeta.intent,
+                dominantModality: historicalMeta.dominantModality, duration: historicalMeta.duration,
+            };
+            const definitionHash = await hashSessionDefinition(reconstructed);
+            services.prescription.getPrescription.mockResolvedValue({
+                status: 'AVAILABLE', revision: null,
+                data: { schemaVersion: 1, prescriptionHash: 'hash-4', sessionSource: staleVersionSource, definitionHash, blocks, displayMetadata: historicalMeta, createdAt: '2026-08-18T00:00:00Z' },
+            } satisfies DataState<ExecutionPrescription>);
+
+            const result = await resolveSessionDefinition('u1', staleVersionSource, 'hash-4');
+            expect(result.status).toBe('AVAILABLE');
+            if (result.status !== 'AVAILABLE') throw new Error('expected AVAILABLE');
+            expect(result.data.title).toBe('Historical Custom Title');
+            expect(result.data.blocks).toEqual(blocks);
         });
     });
 });

@@ -76,6 +76,27 @@ function mondayOf(date: string): string {
   return addDaysToLocalDateString(date, -((weekday + 6) % 7));
 }
 
+/**
+ * Fire-and-forget self-check (M3.2): confirms a just-saved decision's session bindings
+ * actually replay against their stored bytes. Skips a day with no bindings at all, so an
+ * ordinary catalog/no-session day doesn't pay two extra Firestore reads on every save.
+ * Non-fatal by design, matching saveRecommendation's own "shouldn't block the dashboard"
+ * idiom -- reports via console.warn only, same as every other integrity check in this
+ * codebase (see shadowLogService). Lazily imported so replay.ts stays free of a live
+ * Firestore dependency for every other caller (see its own module comment).
+ */
+function verifySessionBindingReplay(userId: string, saved: DailyRecommendation | null): void {
+  if (!saved || (!saved.primarySession && !saved.additionalSessions)) return;
+  import('../engine/replay')
+    .then(({ replayRecommendationAuditAgainstSessions }) => replayRecommendationAuditAgainstSessions(userId, saved))
+    .then(result => {
+      if (!result.reproducible) {
+        console.warn(`Recommendation for ${saved.date} does not replay against its stored session bindings:`, result.errors);
+      }
+    })
+    .catch(err => console.warn(`Failed to verify session-binding replay for ${saved.date}:`, err));
+}
+
 const DetailedTodayPlan = memo(function DetailedTodayPlan({
   prescription,
   userId,
@@ -552,9 +573,9 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
         if (!isCurrent()) return;
         setNextDayPlan(tomorrowPlan);
 
-        recommendationService.saveRecommendation(userId, input.date, todayRec).catch(err =>
-          console.warn('Failed to persist recommendation:', err)
-        );
+        recommendationService.saveRecommendation(userId, input.date, todayRec)
+          .then(saved => verifySessionBindingReplay(userId, saved))
+          .catch(err => console.warn('Failed to persist recommendation:', err));
       } else if (input.recoverySnapshot && safetyStatus !== 'complete') {
         setRecommendation(createProvisionalSafetyRecommendation(safetyStatus));
         setAdjustmentDirection(null);
@@ -640,9 +661,9 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
     recommendationService.saveRecommendation(userId, decisionInput.date, {
       ...recommendation,
       adjustment: direction ? adjusted?.adjustment : undefined,
-    }).catch(err =>
-      console.warn('Failed to persist adjusted recommendation:', err)
-    );
+    })
+      .then(saved => verifySessionBindingReplay(userId, saved))
+      .catch(err => console.warn('Failed to persist adjusted recommendation:', err));
   }, [recommendation, canGenerateNormalPlan, decisionInput, computeAdjustedRecommendation, userId]);
 
   const activeRec = useMemo(

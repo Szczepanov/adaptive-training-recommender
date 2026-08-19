@@ -242,6 +242,22 @@ export interface SessionOccurrence {
     updatedAt: string;
 }
 
+/**
+ * The non-`blocks` fields `definitionHash` was computed over (M3.2), snapshotted so a
+ * `catalog` source can be replayed with historical fidelity: the live catalog entry a
+ * `SessionSourceRef` points at can be edited (title, duration, ...) after the day it was
+ * prescribed, but the hash alone can't be inverted back into the original values. Optional
+ * because prescriptions written before this field existed don't have it -- resolvers must
+ * fall back to the live catalog for those, exactly as before.
+ */
+export interface SessionDisplayMetadata {
+    title: string;
+    summary?: string;
+    intent: SessionIntent;
+    dominantModality?: string;
+    duration?: NumericRange;
+}
+
 export interface ExecutionPrescription {
     schemaVersion: number;
     prescriptionHash: string;
@@ -249,6 +265,7 @@ export interface ExecutionPrescription {
     sessionSource: SessionSourceRef;
     definitionHash: string;
     blocks: SessionBlock[];
+    displayMetadata?: SessionDisplayMetadata;
     createdAt: string;
 }
 

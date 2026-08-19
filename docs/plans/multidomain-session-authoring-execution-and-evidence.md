@@ -294,7 +294,7 @@ rewritten as an outcome; an in-progress item retains its remaining acceptance wo
 | M2.6 | General completion, comparison and response | `[x]` | — |
 | M2.7 | Strength v1 compatibility read model | `[x]` | — |
 | M3.1 | Canonical serialization, hashing and source adapters | `[x]` | — |
-| M3.2 | Recommendation source/occurrence persistence and replay | `[-]` | Production replay entry point and catalog source binding remain |
+| M3.2 | Recommendation source/occurrence persistence and replay | `[x]` | Production replay wiring and catalog display-metadata fidelity closed |
 | M3.3 | Save/schedule/replace/add/start intent flow | `[x]` | Full hard-gate and additional-session authority implemented and integrated |
 | M3.4 | Catalog-to-definition adapter and generic runner strength parity | `[x]` | Runner parity reached (RIR/gauges, context, 1RM writeback, shared read); dual-runner retained for safe transition |
 | M3.5 | Bounded exercise/drill facet vocabulary | `[x]` | — |
@@ -610,18 +610,21 @@ execution through its stored source plus `prescriptionHash`, so reload no longer
 transient `initialSession` object. The catalog resolver also rejects a source whose stored
 `catalogVersion` no longer matches the available catalog definition.
 
-### M3.2 `[-]` Recommendation source/occurrence persistence and replay
+### M3.2 `[x]` Recommendation source/occurrence persistence and replay
 
-**Progress (2026-08-18).** `primarySession`/`additionalSessions` are typed, validated, preserved
-through recommendation persistence and archival revisions, and carried into provenance. A
-write-once execution-prescription service also exists. Replay does not yet retrieve and verify
-those prescription bytes, so this remains partial and must not be used to grant authority.
+**Progress as of 2026-08-18 (superseded by the 2026-08-19 outcome below).**
+`primarySession`/`additionalSessions` were typed, validated, preserved through recommendation
+persistence and archival revisions, and carried into provenance. A write-once
+execution-prescription service also existed. Replay did not yet retrieve and verify those
+prescription bytes at this point, so the milestone remained partial and was not used to grant
+authority.
 
-**Current.** `Recommendation.externalPrescription` is derived in `rules.ts` on every dashboard
-load and never persisted; `DailyRecommendation` persists the catalog `prescription` only.
-`Home.tsx` recomputes the whole recommendation on load and then calls `saveRecommendation`, so
-the *display* survives reload by re-derivation — but the *runner* reads the persisted document
-and *replay* reads the persisted audit. Both are blind to authored content.
+**Gap as of 2026-08-18 (closed below).** `Recommendation.externalPrescription` was derived in
+`rules.ts` on every dashboard load and never persisted; `DailyRecommendation` persisted the
+catalog `prescription` only. `Home.tsx` recomputed the whole recommendation on load and then
+called `saveRecommendation`, so the *display* survived reload by re-derivation — but the
+*runner* read the persisted document and *replay* read the persisted audit. Both were blind to
+authored content.
 
 **Precondition (C11).** Do not start this inside an open Phase 9.0 shadow-mode comparison
 block. Changing decision equality, archived revision bytes and audit provenance mid-block
@@ -666,15 +669,51 @@ hash-only set; manual, external and fixture sources also verify that the prescri
 usage text that it cannot verify session bindings (no live Firestore connection); the app's
 own replay path is expected to call the new async wrapper.
 
-This remains partial: no production caller invokes that wrapper, and catalog schema v1 stores
-evaluated blocks plus a definition hash but not enough historical display metadata to
-recompute the complete catalog definition hash after a catalog edit. Manual/imported
-authority is also intentionally disabled under M3.3, so its persisted-decision acceptance
-scenario has not passed. Firestore rules currently bound `additionalSessions` length but do
-not validate every nested member; a direct 16-element expansion exceeded the emulator's
-1,000-expression budget on valid revision/archive updates, so a cheaper server-side shape or
-smaller schema is still required before Add can ship. Coordinated with 9.0.1 per C11: Phase
-9.0's shadow block had not started when this work began.
+This remained partial through 2026-08-18: no production caller invoked that wrapper, and
+catalog schema v1 stored evaluated blocks plus a definition hash but not enough historical
+display metadata to recompute the complete catalog definition hash after a catalog edit.
+Manual/imported authority is also intentionally disabled under M3.3, so its
+persisted-decision acceptance scenario had not passed. Firestore rules bound
+`additionalSessions` length but did not validate every nested member; a direct 16-element
+expansion exceeded the emulator's 1,000-expression budget on valid revision/archive updates,
+so a cheaper server-side shape or smaller schema was required before Add could ship.
+Coordinated with 9.0.1 per C11: Phase 9.0's shadow block had not started when this work
+began (still true at the outcome below, so this stayed clear of C11 throughout).
+
+**Outcome (2026-08-19).** All three remaining gaps closed, now that the completed M3.3
+authority flow shipped the gate this was blocked on. In order:
+
+* **Firestore rules.** `additionalSessions` now gets real per-element shape validation
+  (source kind, non-empty `prescriptionHash`) rather than length-only, at both the
+  top-level field (previously *unvalidated entirely* -- only `keys().hasOnly()` gated its
+  presence) and the audit's copy. Fitting this in the expression budget needed two things:
+  `decisionFieldsUnchanged()` was being evaluated three times over in the update rule
+  purely because the rules language doesn't memoize function calls (now computed once via
+  a `let` binding and threaded through, `canUpdateRecommendation()`); and additional
+  session elements get a lighter structural check than `primarySession`'s full per-kind
+  field rigor (still real validation -- shape, recognized source kind, non-empty hash --
+  just cheap enough to unroll across elements; the client already applies the full
+  per-kind check before any write reaches here). Bound dropped from 16 to 4 -- an isolated
+  number with no other dependents, comfortably above what `adjudicateAuthoredSession`'s
+  systemic-cost ceiling ever actually admits in one day.
+* **Catalog display fidelity.** `ExecutionPrescription` gained an optional
+  `displayMetadata` snapshot (title/summary/intent/dominantModality/duration) at
+  catalog-launch time, included in `prescriptionHash`'s own covered content
+  (backward-compatible: absent on older prescriptions, so their hash is unaffected).
+  `resolveSessionDefinition`'s `catalog` branch now reconstructs the historical
+  `SessionDefinition` entirely from the stored prescription and self-verifies by
+  recomputing the hash the same way it was computed at write time, instead of always
+  merging in live catalog metadata with `expectedDefinitionHash: null`. Falls back to the
+  old live-catalog-merge behavior only for prescriptions written before this existed.
+* **Production replay entry point.** `Home.tsx`'s two `saveRecommendation` call sites now
+  fire an unawaited `replayRecommendationAuditAgainstSessions` self-check whenever the
+  saved decision carries a session binding, following the exact non-fatal
+  `.catch(console.warn)` idiom already used at both sites and the quiet-report shape
+  `shadowLogService` already establishes elsewhere -- console-level only, no new UI
+  surface, no persisted verification state.
+
+Manual/imported authority is no longer disabled (the completed M3.3 authority flow shipped
+the complete gate), so the milestone's `Done when` criteria are met.
 
 ### M3.3 `[x]` Save/schedule/replace/add/start intent flow
 

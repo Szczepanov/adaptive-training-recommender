@@ -145,16 +145,6 @@ export async function resolveSessionDefinition(
                 issues: [{ code: 'catalog-workout-not-found', documentPath: `workouts/${source.workoutId}` }],
             };
         }
-        if (String(workout.version) !== source.catalogVersion) {
-            return {
-                status: 'INVALID',
-                issues: [{
-                    code: 'catalog-version-mismatch',
-                    field: 'catalogVersion',
-                    documentPath: `workouts/${source.workoutId}`,
-                }],
-            };
-        }
         if (!prescriptionHash) {
             // Fail closed rather than fall back to re-deriving from the live catalog: the
             // live template can have been edited since this decision was made, and a
@@ -164,14 +154,63 @@ export async function resolveSessionDefinition(
                 issues: [{ code: 'catalog-prescription-hash-required', documentPath: `workouts/${source.workoutId}` }],
             };
         }
-        // Static catalog metadata (title/duration/etc.) remains display-only. Catalog v1
-        // does not persist enough historical metadata to recompute its definition hash,
-        // so source association is the exact workout id/version check above plus the
-        // content-verified stored prescription.
-        return applyStoredPrescription(
-            userId, adaptWorkoutDefinitionToSessionDefinition(workout), prescriptionHash, source,
-            null, `workouts/${source.workoutId}`, null,
-        );
+        const documentPath = `workouts/${source.workoutId}`;
+        const prescriptionState = await executionPrescriptionService.getPrescription(userId, prescriptionHash);
+        if (prescriptionState.status !== 'AVAILABLE') return prescriptionState;
+        if (JSON.stringify(canonicalizeSessionData(prescriptionState.data.sessionSource)) !== JSON.stringify(canonicalizeSessionData(source))) {
+            return {
+                status: 'INVALID',
+                issues: [{ code: 'prescription-source-mismatch', field: 'sessionSource', documentPath }],
+            };
+        }
+        const liveDefinition = adaptWorkoutDefinitionToSessionDefinition(workout);
+        const meta = prescriptionState.data.displayMetadata;
+        if (!meta) {
+            // Written before M3.2 added displayMetadata: no historical snapshot to verify
+            // against. Fall back to the live-catalog version check -- this is the only
+            // remaining signal that the live template hasn't drifted out from under this
+            // prescription's evaluated blocks -- and fail closed on drift rather than
+            // silently mixing a stale block set with a since-edited live template.
+            if (String(workout.version) !== source.catalogVersion) {
+                return {
+                    status: 'INVALID',
+                    issues: [{
+                        code: 'catalog-version-mismatch',
+                        field: 'catalogVersion',
+                        documentPath,
+                    }],
+                };
+            }
+            return {
+                status: 'AVAILABLE',
+                data: { ...liveDefinition, blocks: prescriptionState.data.blocks },
+                revision: prescriptionHash,
+            };
+        }
+        // The historical definition is reconstructed entirely from the stored prescription
+        // -- never merged with the live catalog -- so an edit to this workout's live entry
+        // (title, duration, ...) after the day it was prescribed cannot silently rewrite
+        // what this recommendation actually displayed. This makes the definition
+        // self-verifying (via the hash check below), so it does not need the live catalog's
+        // `version` to still match this prescription's historical `catalogVersion` -- unlike
+        // the no-`meta` fallback above, replaying this snapshot never depends on the live
+        // catalog being unedited since the day it was prescribed.
+        const reconstructed: SessionDefinition = {
+            ...liveDefinition,
+            title: meta.title,
+            summary: meta.summary,
+            intent: meta.intent,
+            dominantModality: meta.dominantModality,
+            duration: meta.duration,
+            blocks: prescriptionState.data.blocks,
+        };
+        if (await hashSessionDefinition(reconstructed) !== prescriptionState.data.definitionHash) {
+            return {
+                status: 'INVALID',
+                issues: [{ code: 'prescription-definition-hash-mismatch', field: 'definitionHash', documentPath }],
+            };
+        }
+        return { status: 'AVAILABLE', data: reconstructed, revision: prescriptionHash };
     }
 
     const revision = await externalPlanService.getRevisionState(userId, source.planId, source.revision);

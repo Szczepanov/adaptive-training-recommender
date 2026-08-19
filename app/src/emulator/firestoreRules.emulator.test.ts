@@ -1123,6 +1123,24 @@ emulatorDescribe('Firestore security rules', () => {
         await assertFails(getDoc(doc(otherDb, executionPrescriptionPath)));
     });
 
+    it('allows a catalog execution prescription with a valid displayMetadata snapshot (M3.2)', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await expect(assertSucceeds(setDoc(doc(ownerDb, executionPrescriptionPath), {
+            ...validExecutionPrescription(),
+            displayMetadata: {
+                title: 'Full Body Maintenance', intent: 'training', dominantModality: 'Strength', duration: { min: 30, max: 60 },
+            },
+        }))).resolves.toBeUndefined();
+    });
+
+    it('rejects an execution prescription with a malformed displayMetadata snapshot', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertFails(setDoc(doc(ownerDb, executionPrescriptionPath), {
+            ...validExecutionPrescription(),
+            displayMetadata: { intent: 'training' }, // missing required title
+        }));
+    });
+
     it('allows valid occurrence authorities in M3 (unplanned_log, schedule, replace, additional) and rejects invalid ones', async () => {
         const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
         // unplanned_log succeeds
@@ -1181,6 +1199,84 @@ emulatorDescribe('Firestore security rules', () => {
         };
         const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
         await expect(assertSucceeds(setDoc(doc(ownerDb, `users/${ownerId}/daily_recommendations/2026-08-07`), recWithBindings))).resolves.toBeUndefined();
+    });
+
+    it('allows additionalSessions at the full 4-element bound without exceeding the rule-evaluation budget', async () => {
+        // Regression test: a prior attempt at real per-element validation at the schema's
+        // historical 16-element bound blew the emulator's ~1000-expression budget. This
+        // proves per-element validation at the current 4-element bound actually works,
+        // not just the single-element case the test above already covers.
+        const binding = (i: number) => ({
+            sessionSource: { kind: 'unplanned_fixture', fixtureId: `0${i}-full-body-maintenance` },
+            prescriptionHash: `presc-hash-${i}`,
+        });
+        const base = validRecommendation();
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await expect(assertSucceeds(setDoc(doc(ownerDb, `users/${ownerId}/daily_recommendations/2026-08-07`), {
+            ...base,
+            additionalSessions: [binding(1), binding(2), binding(3), binding(4)],
+        }))).resolves.toBeUndefined();
+    });
+
+    it('rejects additionalSessions beyond the 4-element bound', async () => {
+        const binding = (i: number) => ({
+            sessionSource: { kind: 'unplanned_fixture', fixtureId: `0${i}-full-body-maintenance` },
+            prescriptionHash: `presc-hash-${i}`,
+        });
+        const base = validRecommendation();
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertFails(setDoc(doc(ownerDb, `users/${ownerId}/daily_recommendations/2026-08-07`), {
+            ...base,
+            additionalSessions: [binding(1), binding(2), binding(3), binding(4), binding(5)],
+        }));
+    });
+
+    it('rejects a top-level additionalSessions entry with a malformed binding', async () => {
+        // Prior to hasValidAdditionalSessions, the top-level additionalSessions field had
+        // no shape validation at all -- only keys().hasOnly() gated its presence.
+        const base = validRecommendation();
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertFails(setDoc(doc(ownerDb, `users/${ownerId}/daily_recommendations/2026-08-07`), {
+            ...base,
+            additionalSessions: [
+                { sessionSource: { kind: 'unplanned_fixture', fixtureId: '01-full-body-maintenance' } }, // missing prescriptionHash
+            ],
+        }));
+    });
+
+    it('rejects an additionalSessions binding whose sessionSource names a valid kind but omits that kind\'s required fields', async () => {
+        // hasValidAdditionalSessionBinding checked only sessionSource.kind, so a binding
+        // like `{ sessionSource: { kind: 'catalog' }, prescriptionHash: 'x' }` -- missing
+        // workoutId/catalogVersion entirely -- previously passed. Cover all three
+        // non-trivial kinds so the shape gap can't reopen for any one of them.
+        const base = validRecommendation();
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        const malformedSources = [
+            { kind: 'catalog' }, // missing workoutId, catalogVersion
+            { kind: 'manual', definitionId: 'manual-1' }, // missing revision, contentHash
+            { kind: 'external_plan', planId: 'autumn-block', revision: 1 }, // missing sessionId, contentHash
+        ];
+        for (const sessionSource of malformedSources) {
+            await assertFails(setDoc(doc(ownerDb, `users/${ownerId}/daily_recommendations/2026-08-07`), {
+                ...base,
+                additionalSessions: [{ sessionSource, prescriptionHash: 'presc-hash-1' }],
+            }));
+        }
+    });
+
+    it('rejects a recommendationAudit.additionalSessions entry that is not a valid binding', async () => {
+        // audit.additionalSessions previously only checked list-ness and length -- any
+        // non-binding value (including an empty map) was accepted here even though the
+        // top-level additionalSessions field was already shape-checked.
+        const base = validRecommendation();
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertFails(setDoc(doc(ownerDb, `users/${ownerId}/daily_recommendations/2026-08-07`), {
+            ...base,
+            recommendationAudit: {
+                ...base.recommendationAudit,
+                additionalSessions: [{ notABinding: true }],
+            },
+        }));
     });
 
     it('allows an authored replacement occurrence provenance in a recommendation audit', async () => {
