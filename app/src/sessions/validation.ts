@@ -193,6 +193,7 @@ export function validateSessionDefinition(raw: unknown): ValidationResult<Sessio
     const blockIds = new Set<string>();
     const allStepIds = new Set<string>();
     const stepOrder: string[] = [];
+    const stepAlternativeIds = new Map<string, Set<string>>();
 
     // First pass to collect step IDs and check duplicates
     raw.blocks.forEach((block, bIdx) => {
@@ -217,6 +218,13 @@ export function validateSessionDefinition(raw: unknown): ValidationResult<Sessio
                     }
                     allStepIds.add(step.id);
                     stepOrder.push(step.id);
+                    const altIds = new Set<string>();
+                    if (Array.isArray(step.alternatives)) {
+                        step.alternatives.forEach(alt => {
+                            if (isObject(alt) && typeof alt.id === 'string' && alt.id.length > 0) altIds.add(alt.id);
+                        });
+                    }
+                    stepAlternativeIds.set(step.id, altIds);
                 }
             });
         }
@@ -364,6 +372,8 @@ export function validateSessionDefinition(raw: unknown): ValidationResult<Sessio
                 }
                 if (!Array.isArray(choice.options)) {
                     issues.push({ path: `${cPath}.options`, message: 'Choice options must be an array' });
+                } else if (choice.options.length === 0) {
+                    issues.push({ path: `${cPath}.options`, message: 'Choice options must contain at least one option' });
                 } else {
                     choice.options.forEach((opt, oIdx) => {
                         const oPath = `${cPath}.options[${oIdx}]`;
@@ -389,6 +399,12 @@ export function validateSessionDefinition(raw: unknown): ValidationResult<Sessio
                                 }
                                 if ('targetBlockId' in act && (typeof act.targetBlockId !== 'string' || !blockIds.has(act.targetBlockId))) {
                                     issues.push({ path: `${aPath}.targetBlockId`, message: `targetBlockId '${String(act.targetBlockId)}' not found in definition` });
+                                }
+                                if (kind === 'select_alternative') {
+                                    const validAlternativeIds = typeof act.targetStepId === 'string' ? stepAlternativeIds.get(act.targetStepId) : undefined;
+                                    if (typeof act.alternativeId !== 'string' || act.alternativeId.length === 0 || !validAlternativeIds?.has(act.alternativeId)) {
+                                        issues.push({ path: `${aPath}.alternativeId`, message: `alternativeId '${String(act.alternativeId)}' not found among targetStepId's alternatives` });
+                                    }
                                 }
                             });
                         }

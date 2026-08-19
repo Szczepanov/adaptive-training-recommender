@@ -325,7 +325,7 @@ rewritten as an outcome; an in-progress item retains its remaining acceptance wo
 | M3.5 | Bounded exercise/drill facet vocabulary | `[x]` | — |
 | M3.6 | External plan/session schema v2 adapter | `[x]` | Schema, validation, resolver/display wiring, export support shipped; M3.7's fine-grained diff remains |
 | M3.7 | Full semantic import preview and diff | `[x]` | — |
-| M3.8 | Manual block-first session builder | `[-]` | Bounded hardening only: option sets / fixture-equivalence / accessibility gaps that matter in real use; stop when current builder is sufficient |
+| M3.8 | Manual block-first session builder | `[x]` | — |
 | M4.1 | Group execution modes | `[x]` | M2.5 |
 | M4.2 | Recorded athlete choices and alternatives | `[x]` | M4.1, M3.5 |
 | M4.3 | Companion occurrence and duplicate reconciliation | `[ ]` | M2.4, M3.3 |
@@ -916,7 +916,7 @@ unmodified. `sessions/architecture.test.ts` and `engine/externalArchitecture.tes
 unchanged (the new diff module only imports `sessions/models.ts`). Full `npm run check`
 (typecheck, lint, unit tests, catalog validation) passes.
 
-### M3.8 `[-]` Manual block-first session builder
+### M3.8 `[x]` Manual block-first session builder
 
 **Progress (2026-08-18).** The current mobile-capable editor supports title, modality, duration,
 notes, blocks, group modes and rounds, catalog/free-text movement selection, repetition/timed/
@@ -949,6 +949,54 @@ fixture equivalence, mobile visual fixtures, keyboard and accessibility.
 editing JSON and preview identically to their normalized fixtures — **or** a dated note records
 that the current builder plus import proved sufficient and the remaining advanced controls are
 deferred.
+
+**Outcome (2026-08-19).** Built the two gaps the Change section actually named — "authored
+option sets where actually used" and "richer load/effort fields needed by the fixtures" — then
+stopped there per the cutline's own instruction not to expand the form for completeness.
+
+* **Load editor.** Every well-defined `SessionLoad` kind the fixtures use is now editable:
+  bodyweight, mass (kg), % of max, % of 1RM, resistance band, descriptive (free-text "last
+  reviewed load"), and unloaded. `relative_step` is exposed as a labelled option but not yet
+  field-editable (no fixture uses it and it needs a same-block step picker; deferred, not
+  silently dropped).
+* **Effort.** The RPE-only field became an effort-kind selector (none/RPE/RIR) with a target
+  input — fixture 01's back squat and bench press steps both prescribe RIR, which the builder
+  could not previously express at all.
+* **Authored choices (D-MCHOICE).** A block-scoped "Authored choices" editor: add/remove a
+  choice, edit its trigger description and which step it applies at, add/remove options per
+  choice, edit an option's label, and add/remove/edit that option's actions (all seven
+  `SessionChoiceAction` kinds, via `sessionDraft.ts`'s new `createDraftAction` factory scoped to
+  the authoring step/block so a freshly added `end_block`/`select_alternative` action is
+  structurally valid the instant it's added, not just once every field is filled in).
+* **Step alternatives.** A per-step alternatives editor (catalog-or-free-text movement, title)
+  so `select_alternative` actions have somewhere real to point — fixture 01's
+  warm-up-heavy-squat/symptom choices both depend on this.
+
+New pure factories in `sessions/sessionDraft.ts` (`createDraftChoice`, `createDraftOption`,
+`createDraftAlternative`, `createDraftAction`) carry the default-value logic and are unit
+tested directly (`sessionDraft.test.ts`); `ManualSessionBuilder.tsx` wires them through the
+same immutable block-array update pattern the existing step/block editors already use, keyed by
+choice/option id rather than index since an option's action list changes length independently
+of its siblings. `ManualSessionBuilder.test.tsx` (new; this repo has no interactive
+component-test harness, so it's a markup-level smoke test matching the existing convention for
+sibling session components) confirms the new controls render.
+
+**Deferred, not built (recorded rather than silently dropped, per the cutline's own escape
+hatch).** Full fixture-equivalence with fixtures 01/02 needs more than this: `rest` stays a
+single number in the builder (fixtures use `{min, max}` ranges), `quality`/technical stop-rule
+fields have no editor (and are already unvalidated/loosely typed even in the canonical fixture
+JSON — a pre-existing model/fixture mismatch outside this item's scope, flagged separately
+rather than fixed here), and session-level `sessionTargets`/`prohibitedAdditions` have no UI.
+None of these block authoring a real session — every fixture remains buildable via JSON import
+(M3.6), and a built session that skips these fields is still a valid, executable
+`SessionDefinition`; they are narrower prescription-fidelity gaps, not missing capability. Given
+the athlete who owns this repository already has working JSON import, expanding the form to
+close every one of these before real use demonstrates a need would be exactly the "building by
+default" the cutline warns against (C7).
+
+Verified by `sessionDraft.test.ts` (8 new cases covering every factory), the new
+`ManualSessionBuilder.test.tsx`, and a full `npm run check`-equivalent pass (typecheck, lint,
+1654 unit tests, catalog validation) with no regressions.
 
 ---
 
