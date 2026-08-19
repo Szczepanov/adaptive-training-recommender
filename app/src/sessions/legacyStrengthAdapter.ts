@@ -65,3 +65,77 @@ export function adaptStrengthSessionToNormalizedExecution(
         entries,
     };
 }
+
+/**
+ * Pure read adapter converting normalized execution records (M2.7 / ADR-0023)
+ * back to StrengthSession models for backwards compatibility with overload history,
+ * 1RM derivation, and legacy reporting.
+ */
+export function adaptNormalizedExecutionToStrengthSession(
+    record: NormalizedExecutionRecord,
+): StrengthSession {
+    const repEntries = record.entries.filter(
+        (e): e is SessionEntry & { payload: Extract<SessionEntry['payload'], { kind: 'repetition' }> } =>
+            e.payload.kind === 'repetition',
+    );
+
+    const exerciseMap = new Map<string, { exercise: LoggedExercise; sets: LoggedSet[] }>();
+
+    for (const entry of repEntries) {
+        let exerciseId: string | null = null;
+        let freeTextName: string | undefined = undefined;
+
+        if (entry.exerciseRef?.kind === 'catalog') {
+            exerciseId = entry.exerciseRef.exerciseId;
+        } else if (entry.exerciseRef?.kind === 'unresolved_free_text') {
+            freeTextName = entry.exerciseRef.name;
+        }
+
+        const key = exerciseId !== null ? `catalog:${exerciseId}` : `free:${freeTextName ?? 'unknown'}`;
+
+        if (!exerciseMap.has(key)) {
+            exerciseMap.set(key, {
+                exercise: {
+                    exerciseId,
+                    ...(freeTextName ? { freeTextName } : {}),
+                    sets: [],
+                },
+                sets: [],
+            });
+        }
+
+        const group = exerciseMap.get(key)!;
+        const p = entry.payload;
+        group.sets.push({
+            setIndex: p.setIndex,
+            reps: p.reps,
+            weightKg: p.weightKg !== undefined ? p.weightKg : null,
+            isWarmup: p.isWarmup ?? false,
+            completedAt: entry.completedAt,
+            ...(p.gauge ? { gauge: p.gauge } : {}),
+        });
+    }
+
+    const exercises: LoggedExercise[] = [];
+    for (const group of exerciseMap.values()) {
+        group.sets.sort((a, b) => a.setIndex - b.setIndex || a.completedAt.localeCompare(b.completedAt));
+        exercises.push({
+            ...group.exercise,
+            sets: group.sets,
+        });
+    }
+
+    return {
+        userId: record.execution.userId,
+        sessionId: record.execution.executionId,
+        date: record.execution.date,
+        startedAt: record.execution.startedAt,
+        ...(record.execution.completedAt ? { completedAt: record.execution.completedAt } : {}),
+        updatedAt: record.execution.updatedAt,
+        state: record.execution.state,
+        ...(record.execution.sessionRpe !== undefined ? { sessionRpe: record.execution.sessionRpe } : {}),
+        ...(record.execution.notes !== undefined ? { notes: record.execution.notes } : {}),
+        exercises,
+        schemaVersion: 1,
+    };
+}

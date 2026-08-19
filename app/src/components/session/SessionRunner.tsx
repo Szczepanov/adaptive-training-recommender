@@ -1,7 +1,9 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { RangeOrNumber, SessionDefinition, SessionEntry, SessionEntryPayload, SessionExecution, SessionReferenceBinding, SessionStep } from '../../sessions/models';
 import type { SessionStepSummary } from '../../workouts/strengthSessionEntry';
 import { useSessionRunner } from '../../hooks/useSessionRunner';
+import { useOverloadHistory } from '../../hooks/useOverloadHistory';
+import type { ExerciseIdentity } from '../../workouts/overloadHistory';
 import { resolveStepInputProfile } from '../../sessions/inputProfiles';
 import { comparePlannedVsPerformed } from '../../sessions/performedComparison';
 import { RepetitionInputCard } from './inputs/RepetitionInputCard';
@@ -70,6 +72,7 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
     onClose,
 }) => {
     const runner = useSessionRunner(userId, AVAILABLE_FIXTURES);
+    const overload = useOverloadHistory(userId);
     const initialLaunchAttempted = useRef(false);
     const [showCompletionSheet, setShowCompletionSheet] = useState<boolean>(false);
     const [showAbandonConfirmation, setShowAbandonConfirmation] = useState<boolean>(false);
@@ -85,6 +88,27 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
         stepIndex: number;
         entryCountBefore: number;
     } | null>(null);
+
+    const activeExerciseIdentity = useMemo((): ExerciseIdentity | null => {
+        if (!runner.activeStep?.exerciseRef) return null;
+        if (runner.activeStep.exerciseRef.kind === 'catalog') {
+            return { exerciseId: runner.activeStep.exerciseRef.exerciseId };
+        }
+        if (runner.activeStep.exerciseRef.kind === 'unresolved_free_text') {
+            return { exerciseId: null, freeTextName: runner.activeStep.exerciseRef.name };
+        }
+        return null;
+    }, [runner.activeStep]);
+
+    useEffect(() => {
+        overload.select(activeExerciseIdentity);
+    }, [activeExerciseIdentity, overload.select]);
+
+    const pastSummary = useMemo(() => {
+        if (!overload.history || overload.history.length === 0) return null;
+        const latestSession = [...overload.history].reverse().find(entry => entry.sessionId !== runner.execution?.executionId);
+        return latestSession?.heaviestSet ?? null;
+    }, [overload.history, runner.execution?.executionId]);
 
     useEffect(() => {
         onSessionStateChange?.(runner.execution);
@@ -360,6 +384,11 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                             <h3 className="step-name">
                                 {activeStep.title || (activeStep.exerciseRef?.kind === 'catalog' ? activeStep.exerciseRef.exerciseId : (activeStep.exerciseRef?.kind === 'unresolved_free_text' ? activeStep.exerciseRef.name : activeStep.id))}
                             </h3>
+                            {pastSummary && (
+                                <span className="previous-context-chip">
+                                    Last: {pastSummary.weightKg !== null ? `${pastSummary.weightKg} kg` : 'BW'} × {pastSummary.reps}
+                                </span>
+                            )}
                             {activeStep.notes && <p className="step-notes-text">{activeStep.notes}</p>}
                         </div>
                         <div className="step-target-summary">

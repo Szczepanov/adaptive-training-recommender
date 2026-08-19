@@ -90,7 +90,9 @@ export async function resolveSessionDefinition(
      * `ExecutionPrescription` -- not the live catalog template -- is the only source of
      * truth for what was actually prescribed; unlike `manual`/`external_plan`, a `catalog`
      * source ref alone (`workoutId`/`catalogVersion`) carries no dose/variant identity of
-     * its own. Ignored for every other source kind. */
+     * its own. When supplied for any other source kind, `applyStoredPrescription` still
+     * validates and applies it (see the `unplanned_fixture`, `manual` and `external_plan`
+     * branches below). */
     prescriptionHash?: string,
 ): Promise<DataState<SessionDefinition>> {
     if (source.kind === 'unplanned_fixture') {

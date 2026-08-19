@@ -250,12 +250,12 @@ export async function replayRecommendationAuditAgainstSessions(
     // Lazy import: replay.ts otherwise has zero I/O dependencies, and every other export in
     // this file must stay importable without a live Firestore connection (e.g. the CLI
     // replay script only ever calls replayRecommendationAuditAgainstRevision).
-    const { executionPrescriptionService } = await import('../services/executionPrescriptionService');
     const resolvedBindings = new Set<string>();
     const { resolveSessionDefinition } = await import('../sessions/sessionDefinitionResolver');
     for (const binding of bindings) {
-        const state = await executionPrescriptionService.getPrescription(userId, binding.prescriptionHash);
-        if (state.status !== 'AVAILABLE') continue;
+        // resolveSessionDefinition resolves and verifies the prescription hash itself
+        // (fetching the same execution_prescriptions/{hash} document a separate
+        // getPrescription call would), so a prior read here would be redundant.
         const definition = await resolveSessionDefinition(userId, binding.sessionSource, binding.prescriptionHash);
         if (definition.status !== 'AVAILABLE') continue;
 

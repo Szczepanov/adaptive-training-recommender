@@ -9,6 +9,7 @@ import { recoverySnapshotService } from '../services/recoverySnapshotService';
 import { trainingSettingsService } from '../services/trainingSettingsService';
 import { trainingIntentProfileService } from '../services/trainingIntentProfileService';
 import { strengthSessionService } from '../services/strengthSessionService';
+import { strengthHistoryReadService } from '../services/strengthHistoryReadService';
 import { sessionExecutionService } from '../services/sessionExecutionService';
 import { sessionDefinitionService } from '../services/sessionDefinitionService';
 import { executionPrescriptionService } from '../services/executionPrescriptionService';
@@ -105,6 +106,10 @@ export function installVisualServices(fixture: VisualFixture): void {
   recommendationService.saveRecommendation = async () => null;
 
   strengthSessionService.getSessionsInRange = async () => ({
+    sessions: fixture.strengthSession ? [fixture.strengthSession] : [],
+    invalidRecords: 0,
+  });
+  strengthHistoryReadService.getSessionsInRange = async () => ({
     sessions: fixture.strengthSession ? [fixture.strengthSession] : [],
     invalidRecords: 0,
   });

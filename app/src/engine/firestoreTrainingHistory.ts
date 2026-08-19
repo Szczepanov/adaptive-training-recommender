@@ -4,7 +4,7 @@ import type { CompletedExposure, TrainingHistoryProvider } from './trainingHisto
 import { recommendationService } from '../services/recommendationService';
 import { addDaysToLocalDateString } from '../utils/localDate';
 import { activityService } from '../services/activityService';
-import { strengthSessionService } from '../services/strengthSessionService';
+import { strengthHistoryReadService } from '../services/strengthHistoryReadService';
 import { isPermissionDeniedError } from '../utils/errors';
 import {
     buildTrainingHistorySnapshot,
@@ -43,7 +43,7 @@ async function readManualTraining(
     try {
         return toManualTrainingDataState(
             userId,
-            await strengthSessionService.getSessionsInRange(userId, startDateInclusive, throughDateExclusive),
+            await strengthHistoryReadService.getSessionsInRange(userId, startDateInclusive, throughDateExclusive),
         );
     } catch (error: unknown) {
         return {
