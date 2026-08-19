@@ -134,5 +134,5 @@ export function injectActivityTelemetryIntoContextBrief(
     const markerIndex = brief.indexOf(nextSectionMarker);
     if (markerIndex === -1) return `${brief.trimEnd()}\n\n${telemetry}\n`;
 
-    return `${brief.slice(0, markerIndex)}\n\n${telemetry}${brief.slice(markerIndex)}`;
+    return `${brief.slice(0, markerIndex)}\n\n${telemetry}\n${brief.slice(markerIndex)}`;
 }
