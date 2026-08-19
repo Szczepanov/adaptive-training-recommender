@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { writeBatch } from 'firebase/firestore';
 import type {
     SessionDefinition,
     SessionExecution,
@@ -8,8 +9,11 @@ import type {
     SessionBlock,
     SessionSourceRef,
 } from '../sessions/models';
+import { getDb } from '../firebase';
 import { sessionExecutionService } from '../services/sessionExecutionService';
 import { checkinService } from '../services/checkinService';
+import { preferencesService } from '../services/preferencesService';
+import { adaptNormalizedExecutionToStrengthSession } from '../sessions/legacyStrengthAdapter';
 import { getLocalDateString } from '../utils/localDate';
 import type { SessionCompletionPayload } from '../components/session/SessionCompletionSheet';
 import { resolveSessionDefinition } from '../sessions/sessionDefinitionResolver';
@@ -335,12 +339,40 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
                 tissueResponses,
             });
         }
+
+        const now = new Date().toISOString();
+
+        // Both writes below are queued into one batch and committed together so a failed
+        // transition can never leave the 1RM derivation persisted against an execution that
+        // is still (or forever) `in_progress` -- see the completion/writeback atomicity note
+        // on `transitionExecution`/`applyOneRepMaxDerivations`.
+        const batch = writeBatch(getDb());
+
+        // 1RM Derivation Writeback (M3.4 Strength Parity)
+        if (entries.some(e => e.payload.kind === 'repetition')) {
+            const adaptedSession = adaptNormalizedExecutionToStrengthSession({
+                execution: {
+                    ...execution,
+                    state: 'completed',
+                    completedAt: now,
+                    updatedAt: now,
+                    ...(payload?.sessionRpe !== undefined ? { sessionRpe: payload.sessionRpe } : {}),
+                    ...(payload?.notes !== undefined ? { notes: payload.notes } : {}),
+                },
+                entries,
+            });
+            if (adaptedSession.exercises.length > 0) {
+                await preferencesService.applyOneRepMaxDerivations(userId, adaptedSession, now, batch);
+            }
+        }
+
         await sessionExecutionService.transitionExecution(userId, execution.executionId, 'completed', {
             sessionRpe: payload?.sessionRpe,
             notes: payload?.notes,
-        });
-        setExecution(prev => prev ? { ...prev, state: 'completed', completedAt: new Date().toISOString() } : null);
-    }, [execution, userId]);
+        }, batch);
+        await batch.commit();
+        setExecution(prev => prev ? { ...prev, state: 'completed', completedAt: now } : null);
+    }, [entries, execution, userId]);
 
     const abandonSession = useCallback(async (notes?: string) => {
         if (!execution || execution.state !== 'in_progress') return;
