@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { exportWorkoutPrescriptionToJson, exportExternalSessionToJson, exportExternalSessionV2ToJson } from './workoutJsonExport';
+import {
+    exportWorkoutPrescriptionToJson,
+    exportExternalSessionToJson,
+    exportExternalSessionV2ToJson,
+    extractSetsAndRepsFromText,
+    hasMultipleSetsAndRepsPrescriptions,
+    validateGarminExportFidelity,
+} from './workoutJsonExport';
 import type { WorkoutPrescription } from '../workouts/models';
 import type { ExternalPlanSession } from '../engine/models';
 import type { ExternalPlanSessionV2 } from '../sessions/externalPlanV2';
@@ -260,5 +267,89 @@ describe('workoutJsonExport', () => {
         const json = exportExternalSessionToJson(session);
         expect(json.blocks[0].steps[0].sets).toBe(2);
         expect(json.blocks[0].steps[0].repetitions).toBe(8);
+    });
+
+    it('exports v1 "4 x 2" strength text as sets=4, repetitions=2', () => {
+        expect(extractSetsAndRepsFromText('4 x 2 fast repetitions, RPE 5-6')).toEqual({
+            sets: 4,
+            repetitions: 2,
+        });
+    });
+
+    it('flags a v1 strength step containing two sets-x-reps prescriptions', () => {
+        const compoundText = '2 x 3-5 squat or split-squat repetitions plus 2 x 4-6 hinge repetitions, RPE 5-6';
+        expect(hasMultipleSetsAndRepsPrescriptions(compoundText)).toBe(true);
+        expect(hasMultipleSetsAndRepsPrescriptions('4 x 2 fast repetitions, RPE 5-6')).toBe(false);
+
+        const session: ExternalPlanSession = {
+            id: 'w1-lower-body',
+            title: 'Low-Fatigue Strength Maintenance',
+            priority: 'key',
+            placement: { week: 1, preferredDay: 'wednesday', flexibility: 'preferred', ifMissed: 'drop' },
+            gating: { modality: 'strength', intensity: 'easy', durationMin: 25, durationMax: 40, environment: 'indoor', equipment: [] },
+            prescription: {
+                summary: 'Very low fatigue, finish fresh.',
+                steps: [{ name: 'Lower-body strength', target: compoundText }],
+            },
+        };
+
+        const json = exportExternalSessionToJson(session);
+        const issues = validateGarminExportFidelity(json);
+        expect(issues).toContainEqual(
+            expect.objectContaining({ level: 'error', code: 'multiple_prescriptions', stepName: 'Lower-body strength' }),
+        );
+    });
+
+    it('does not invent rest when the source has no recovery field', () => {
+        const session: ExternalPlanSession = {
+            id: 'w1-explosive',
+            title: 'Low-Fatigue Strength Maintenance',
+            priority: 'key',
+            placement: { week: 1, preferredDay: 'wednesday', flexibility: 'preferred', ifMissed: 'drop' },
+            gating: { modality: 'strength', intensity: 'easy', durationMin: 25, durationMax: 40, environment: 'indoor', equipment: [] },
+            prescription: {
+                summary: 'Very low fatigue, finish fresh.',
+                steps: [{ name: 'Explosive lift', repeat: 2, sets: 4 }],
+            },
+        };
+
+        const json = exportExternalSessionToJson(session);
+        expect(json.blocks[0].steps[0].restAfterSec).toBeUndefined();
+        expect(json.blocks[0].steps[0].setRecoverySec).toBeUndefined();
+
+        const issues = validateGarminExportFidelity(json);
+        expect(issues).toContainEqual(
+            expect.objectContaining({ level: 'warning', code: 'no_explicit_rest', stepName: 'Explosive lift' }),
+        );
+        // A missing rest field must never be silently backfilled with a
+        // fabricated duration -- only surfaced as a warning.
+        expect(json.blocks[0].steps[0].restAfterSec).toBeUndefined();
+    });
+
+    it('v2 strength SessionDefinition exports exact sets, representative reps and rest with no fidelity errors', () => {
+        const session: ExternalPlanSessionV2 = {
+            id: 'w1-strength-loaded',
+            title: 'Lower Body Strength',
+            priority: 'key',
+            placement: { week: 1, preferredDay: 'monday', flexibility: 'preferred', ifMissed: 'drop' },
+            gating: { modality: 'strength', intensity: 'hard', durationMin: 50, durationMax: 60, environment: 'indoor', equipment: ['free_weights'] },
+            definition: {
+                schemaVersion: 1, id: 'w1-strength-loaded', revision: 1, title: 'Lower Body Strength', intent: 'training',
+                blocks: [{
+                    id: 'block-main', role: 'main', executionMode: 'sequential',
+                    steps: [{
+                        id: 'step-squat-mass', kind: 'exercise', title: 'Squat Mass',
+                        exerciseRef: { kind: 'unresolved_free_text', name: 'Back Squat' },
+                        dose: { kind: 'repetition', sets: 4, reps: { min: 6, max: 8 } },
+                        load: { kind: 'mass', kg: { min: 95, max: 105 } },
+                        rest: 180,
+                    }],
+                }],
+            },
+        };
+
+        const json = exportExternalSessionV2ToJson(session);
+        expect(json.blocks[0].steps[0]).toMatchObject({ sets: 4, repetitions: 7, restAfterSec: 180 });
+        expect(validateGarminExportFidelity(json)).toEqual([]);
     });
 });

@@ -177,6 +177,133 @@ export function resolveSetsAndRepetitions(
     return inferred;
 }
 
+/**
+ * Detects whether free text contains more than one distinct `sets x reps`
+ * prescription, e.g. "2 x 3-5 squat or split-squat repetitions plus 2 x 4-6
+ * hinge repetitions". `extractSetsAndRepsFromText` only ever returns the
+ * first match, so a step flagged here is losing whichever prescription
+ * comes after the first unless it is atomized into separate steps upstream.
+ *
+ * This is a coarse structural signal only: it cannot tell whether the two
+ * matches are genuinely distinct exercises, so callers must not use it to
+ * auto-split prose -- only to surface the ambiguity.
+ */
+export function hasMultipleSetsAndRepsPrescriptions(text: string): boolean {
+    if (!text) return false;
+    const pattern = /(\d+)\s*(?:sets\s*)?[x×]\s*(\d+)(?:\s*[-–]\s*(\d+))?/gi;
+    const matches = text.match(pattern);
+    return !!matches && matches.length > 1;
+}
+
+export interface GarminExportFidelityIssue {
+    level: 'error' | 'warning';
+    blockName?: string;
+    stepName: string;
+    code:
+        | 'multiple_prescriptions'
+        | 'no_usable_dose'
+        | 'invalid_dose'
+        | 'no_explicit_rest'
+        | 'rep_range_reduced'
+        | 'time_based_block';
+    message: string;
+}
+
+/**
+ * Source-neutral pre-sync validation. Runs over the already-built canonical
+ * export (not the source prose) so it applies equally to v1- and
+ * v2-authored sessions and to catalog prescriptions.
+ *
+ * `error` issues mean sync would silently lose or misrepresent a
+ * prescription and should block sync until resolved; `warning` issues are
+ * safe to sync but worth surfacing (e.g. an unspecified rest, or a rep
+ * range collapsed to Garmin's single numeric target).
+ */
+export function validateGarminExportFidelity(workout: CanonicalWorkoutExport): GarminExportFidelityIssue[] {
+    const issues: GarminExportFidelityIssue[] = [];
+    const isStrength = workout.modality === 'strength';
+    const repRangePattern = /\b\d+\s*[-–]\s*\d+\b/;
+
+    for (const block of workout.blocks) {
+        for (const step of block.steps) {
+            const rawText = `${step.notes ?? ''} ${step.name} ${(step.targets ?? []).join(' ')}`.trim();
+
+            if (hasMultipleSetsAndRepsPrescriptions(rawText)) {
+                issues.push({
+                    level: 'error',
+                    blockName: block.name,
+                    stepName: step.name,
+                    code: 'multiple_prescriptions',
+                    message: `Cannot faithfully sync "${step.name}": this step contains more than one set/rep prescription. Split it into separate executable steps before Garmin sync.`,
+                });
+                // A step already flagged as lossy shouldn't also collect
+                // secondary warnings that assume a single resolved dose.
+                continue;
+            }
+
+            if (!isStrength) continue;
+
+            const hasSets = step.sets !== undefined;
+            const hasReps = step.repetitions !== undefined;
+            const hasDuration = step.durationSeconds !== undefined && step.durationSeconds > 0;
+
+            if ((hasSets && (step.sets as number) <= 0) || (hasReps && (step.repetitions as number) <= 0)) {
+                issues.push({
+                    level: 'error',
+                    blockName: block.name,
+                    stepName: step.name,
+                    code: 'invalid_dose',
+                    message: `"${step.name}" has an invalid sets/repetitions value; sets and repetitions must be greater than zero.`,
+                });
+                continue;
+            }
+
+            if (hasSets && (step.sets as number) > 1 && !hasReps && !hasDuration) {
+                issues.push({
+                    level: 'error',
+                    blockName: block.name,
+                    stepName: step.name,
+                    code: 'no_usable_dose',
+                    message: `"${step.name}" has ${step.sets} sets but no repetition target or duration. Add reps or a duration before syncing.`,
+                });
+                continue;
+            }
+
+            if (hasSets && (step.sets as number) > 1 && hasReps && !step.restAfterSec && !step.setRecoverySec) {
+                issues.push({
+                    level: 'warning',
+                    blockName: block.name,
+                    stepName: step.name,
+                    code: 'no_explicit_rest',
+                    message: `"${step.name}" has no explicit rest between sets; Garmin will not show a recovery step.`,
+                });
+            }
+
+            if (hasReps && repRangePattern.test(rawText)) {
+                issues.push({
+                    level: 'warning',
+                    blockName: block.name,
+                    stepName: step.name,
+                    code: 'rep_range_reduced',
+                    message: `"${step.name}"'s rep range was reduced to a single Garmin target of ${step.repetitions}; the original range is preserved in the description only.`,
+                });
+            }
+
+            if (!hasSets && !hasReps && hasDuration) {
+                issues.push({
+                    level: 'warning',
+                    blockName: block.name,
+                    stepName: step.name,
+                    code: 'time_based_block',
+                    message: `"${step.name}" will sync as a ${Math.round((step.durationSeconds ?? 0) / 60)}-minute time block rather than explicit sets/reps.`,
+                });
+            }
+        }
+    }
+
+    return issues;
+}
+
 export function extractRecoveryTargetFromText(text: string): string | undefined {
     if (!text) return undefined;
     const match = text.match(/followed\s+by\s+\d+\s*(?:s|sec|min|m)?\s+(?:at|below|around|approximately|about)\s+([^.,;]+)/i);
