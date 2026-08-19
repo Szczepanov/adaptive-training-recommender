@@ -1078,6 +1078,24 @@ emulatorDescribe('Firestore security rules', () => {
         };
     }
 
+    // --- M5.1: SessionResponse (occurrence-linked response generalization) ---
+
+    const sessionResponsePath = `users/${ownerId}/session_responses/resp-1`;
+
+    function validSessionResponse() {
+        return {
+            userId: ownerId,
+            responseId: 'resp-1',
+            sourceSession: { kind: 'execution', id: 'exec-1', date: '2026-08-18' },
+            window: 'immediate',
+            date: '2026-08-18',
+            checkinRef: { date: '2026-08-18' },
+            sessionRpe: 7,
+            createdAt: '2026-08-18T10:45:00Z',
+            updatedAt: '2026-08-18T10:45:00Z',
+        };
+    }
+
     it('allows an owner to manage session definition header and write-once revision', async () => {
         const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
         await expect(assertSucceeds(setDoc(doc(ownerDb, sessionDefHeaderPath), validSessionDefHeader()))).resolves.toBeUndefined();
@@ -1412,5 +1430,68 @@ emulatorDescribe('Firestore security rules', () => {
             ...validChoiceEntry,
             id: 'entry-choice-4',
         }));
+    });
+
+    it('allows an owner to record and revise a session response, and rejects a cross-user read/write', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await expect(assertSucceeds(setDoc(doc(ownerDb, sessionResponsePath), validSessionResponse()))).resolves.toBeUndefined();
+
+        // Edits preserve provenance: only non-tissue facts and updatedAt may change.
+        await expect(assertSucceeds(setDoc(doc(ownerDb, sessionResponsePath), {
+            ...validSessionResponse(),
+            sessionRpe: 8,
+            note: 'legs felt heavier than expected',
+            updatedAt: '2026-08-18T11:00:00Z',
+        }))).resolves.toBeUndefined();
+
+        // Another user can neither read nor write this response.
+        const otherDb = testEnvironment.authenticatedContext(otherUserId).firestore();
+        await assertFails(getDoc(doc(otherDb, sessionResponsePath)));
+        await assertFails(setDoc(doc(otherDb, sessionResponsePath), validSessionResponse()));
+    });
+
+    it('rejects an edit that changes sourceSession, window, date or createdAt (provenance)', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await expect(assertSucceeds(setDoc(doc(ownerDb, sessionResponsePath), validSessionResponse()))).resolves.toBeUndefined();
+
+        await assertFails(setDoc(doc(ownerDb, sessionResponsePath), {
+            ...validSessionResponse(),
+            sourceSession: { kind: 'strength', id: 'strength-1', date: '2026-08-18' },
+        }));
+        await assertFails(setDoc(doc(ownerDb, sessionResponsePath), { ...validSessionResponse(), window: 'later_day' }));
+        await assertFails(setDoc(doc(ownerDb, sessionResponsePath), { ...validSessionResponse(), date: '2026-08-19' }));
+        await assertFails(setDoc(doc(ownerDb, sessionResponsePath), { ...validSessionResponse(), createdAt: '2026-08-19T00:00:00Z' }));
+    });
+
+    it('rejects a malformed session response: bad window, out-of-range sessionRpe/completedFraction, extra field, foreign userId', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertFails(setDoc(doc(ownerDb, `${sessionResponsePath}-bad-window`), {
+            ...validSessionResponse(), responseId: 'resp-1-bad-window', window: 'next_week',
+        }));
+        await assertFails(setDoc(doc(ownerDb, `${sessionResponsePath}-bad-rpe`), {
+            ...validSessionResponse(), responseId: 'resp-1-bad-rpe', sessionRpe: 11,
+        }));
+        await assertFails(setDoc(doc(ownerDb, `${sessionResponsePath}-bad-fraction`), {
+            ...validSessionResponse(), responseId: 'resp-1-bad-fraction', completedFraction: 1.5,
+        }));
+        await assertFails(setDoc(doc(ownerDb, `${sessionResponsePath}-extra`), {
+            ...validSessionResponse(), responseId: 'resp-1-extra', unexpectedField: true,
+        }));
+        await assertFails(setDoc(doc(ownerDb, sessionResponsePath), { ...validSessionResponse(), userId: otherUserId }));
+    });
+
+    it('rejects a response whose occurrenceId does not reference a real occurrence of this user', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        // No session_occurrences/occ-unplanned-1 document has been written in this test.
+        await assertFails(setDoc(doc(ownerDb, sessionResponsePath), {
+            ...validSessionResponse(),
+            occurrenceId: 'occ-unplanned-1',
+        }));
+
+        await expect(assertSucceeds(setDoc(doc(ownerDb, sessionOccPath), validSessionOccurrence()))).resolves.toBeUndefined();
+        await expect(assertSucceeds(setDoc(doc(ownerDb, sessionResponsePath), {
+            ...validSessionResponse(),
+            occurrenceId: 'occ-unplanned-1',
+        }))).resolves.toBeUndefined();
     });
 });

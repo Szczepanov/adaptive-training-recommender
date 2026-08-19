@@ -329,7 +329,7 @@ rewritten as an outcome; an in-progress item retains its remaining acceptance wo
 | M4.1 | Group execution modes | `[x]` | M2.5 |
 | M4.2 | Recorded athlete choices and alternatives | `[x]` | M4.1, M3.5 |
 | M4.3 | Companion occurrence and duplicate reconciliation | `[x]` | — |
-| M5.1 | Occurrence-linked response generalization | `[ ]` | M1.7, M2.6, M4.3 |
+| M5.1 | Occurrence-linked response generalization | `[x]` | — |
 | M5.2 | Later-day and next-morning follow-up | `[ ]` | M5.1 |
 | M5.3 | Outcome/override evidence report | `[ ]` | M5.2; richer history UI only after a usage trigger |
 | M6.1 | Representative speed/field/power taxonomy v1 | `[ ]` | **Usage trigger:** recurring real session needs domain detail the generic runner cannot represent; then M3.5, M2.5 |
@@ -1312,7 +1312,7 @@ M1.7 already established the link against `strength_sessions`. This milestone ge
 any occurrence and adds the delayed windows. M5.1 and M5.2 are the near-term evidence-producing
 chain after M4.3; M5.3 is deliberately narrower than the original UI-heavy proposal.
 
-### M5.1 `[ ]` Occurrence-linked response generalization
+### M5.1 `[x]` Occurrence-linked response generalization
 
 **Change.** Add `SessionResponse` with occurrence/execution identity and window
 `immediate | later_day | next_morning`. Per D-MRESP it stores **linkage and non-tissue session
@@ -1331,6 +1331,59 @@ rules/emulator tests.
 **Done when.** A response cannot reference another user's occurrence; window and date are
 validated; edits preserve provenance; missing follow-up is distinguishable from normal; and a
 tissue value appears in exactly one collection.
+
+**Outcome (2026-08-19).** New `responses/` domain (own distinct lifecycle, per D-MRECORDS,
+alongside `sessions/`): `responses/models.ts` (`SessionResponse`, `ResponseWindow`,
+`SessionResponseSourceRef`), `responses/validation.ts` (`validateSessionResponse`, a
+self-contained strict validator mirroring `sessions/validation.ts`'s own conventions),
+`persistence/parsers/sessionResponse.ts`, and `services/sessionResponseService.ts`
+(`recordResponse`, `updateResponseFacts`, `getResponsesForSource`, `getResponseForWindow`).
+
+* **Reuses, not migrates, M1.7/M2.6's linkage shape.** `SessionResponseSourceRef` is exactly
+  the `{kind: 'strength'|'execution', id, date}` shape `RegionTissueResponse.sourceSessionRef`
+  already writes (M2.6 had already generalized `kind` beyond strength-only, ahead of this
+  item) -- reused rather than reinvented so a `SessionResponse` and the check-in's own
+  tissue-side linkage join on identical fields for the same session. No existing check-in
+  document needed rewriting; `sourceSessionRef` itself is untouched.
+* **Linkage and non-tissue facts only (D-MRESP).** `SessionResponse` stores `window`
+  (`immediate | later_day | next_morning`), `sessionRpe`, `completedFraction`,
+  `unexpectedFatigue`, `techniqueNote`, `note`, and a `checkinRef: { date }` pointing at the
+  canonical check-in that holds this window's tissue values -- never a tissue value itself.
+  `DailySubjectiveCheckin.tissueResponses` remains the sole tissue authority; nothing here
+  duplicates it.
+* **Missing follow-up is distinguishable from normal.** No `SessionResponse` document is ever
+  created except in direct answer to an athlete action (`recordResponse` is the only write
+  path that creates one); `getResponseForWindow` returns `null` -- never a fabricated
+  default -- when a window was never answered, so callers (M5.2's schedule, M5.3's outcome
+  report) can tell "never asked/answered" from every actual answer, including a normal one.
+* **Edits preserve provenance.** `updateResponseFacts` only ever patches the five non-tissue
+  fact fields plus `updatedAt`; `sourceSession`/`occurrenceId`/`window`/`date`/`createdAt` have
+  no code path that changes them after creation. Firestore rules enforce the same constraint
+  server-side (`request.resource.data.sourceSession/window/date/createdAt ==
+  resource.data....`), not just client discipline.
+* **Cannot reference another user's occurrence.** Beyond the standard owner-scoped path and
+  `userId` match, the rules require an `occurrenceId` (when present) to resolve via `exists()`
+  against `users/{userId}/session_occurrences/{occurrenceId}` under that same authenticated
+  user's own path -- a cross-user id structurally cannot resolve there, and a garbage/mistyped
+  id is rejected rather than silently stored.
+* **Window/date validated at both layers.** `window` and `sourceSession.kind` are checked
+  against their exact enums, and every date field (`date`, `sourceSession.date`,
+  `checkinRef.date`) is checked as a real calendar date, in both the TypeScript validator and
+  the Firestore rules (`isValidActivityDate`) -- the same fail-closed, two-layer pattern every
+  other M2/M3 record already uses.
+
+**Files.** `responses/models.ts`, `responses/validation.ts` (+ `.test.ts`),
+`persistence/parsers/sessionResponse.ts` (+ `.test.ts`), `services/sessionResponseService.ts`
+(+ `.test.ts`), `firestore.rules`, `emulator/firestoreRules.emulator.test.ts`. Extended
+`sessions/architecture.test.ts`'s optimizer/planner boundary check to also scan `responses/`
+(a second distinct-lifecycle domain now exists, not only `sessions/`).
+
+Verified by 15 validator cases, 8 service cases, 3 parser cases, 5 new Firestore-emulator
+cases (record + revise, provenance-preserving edit rejection on each of the four immutable
+fields, malformed-shape rejection, foreign-`userId` rejection, and the
+occurrenceId-must-exist-for-this-user check both failing and then succeeding once the
+occurrence is written) -- 82/82 emulator tests total -- and a full `npm run check`
+(typecheck, lint, 1692 unit tests, catalog validation) pass with no regressions.
 
 ### M5.2 `[ ]` Later-day and next-morning follow-up
 
