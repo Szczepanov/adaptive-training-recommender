@@ -1,18 +1,7 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, lazy, Suspense } from 'react';
 import './App.css';
 import './index.css';
 import { Home } from './components/Home';
-import { DailyCheckin } from './components/DailyCheckin';
-import { Goals } from './components/Goals';
-import { TrainingSettings } from './components/TrainingSettings';
-import { Preferences } from './components/Preferences';
-import { DataView } from './components/DataView';
-import { ExternalPlanImport } from './components/ExternalPlanImport';
-import { StrengthOverloadHistory } from './components/StrengthOverloadHistory';
-import { StrengthSessionRunner } from './components/StrengthSessionRunner';
-import { SessionRunner } from './components/session/SessionRunner';
-import { ManualSessionBuilder } from './components/session/ManualSessionBuilder';
-import { SessionJsonImport } from './components/session/SessionJsonImport';
 import type { PreparedSessionLaunch } from './components/session/SessionDestinationSheet';
 import { decisionComposer } from './engine/composer';
 import type { DailyDecisionInput, StrengthSession } from './engine/models';
@@ -26,6 +15,18 @@ import { getLocalDateString } from './utils/localDate';
 import { strengthSessionService } from './services/strengthSessionService';
 import { sessionExecutionService } from './services/sessionExecutionService';
 import { resolveSessionDefinition } from './sessions/sessionDefinitionResolver';
+
+const DailyCheckin = lazy(() => import('./components/DailyCheckin').then(m => ({ default: m.DailyCheckin })));
+const Goals = lazy(() => import('./components/Goals').then(m => ({ default: m.Goals })));
+const TrainingSettings = lazy(() => import('./components/TrainingSettings').then(m => ({ default: m.TrainingSettings })));
+const Preferences = lazy(() => import('./components/Preferences').then(m => ({ default: m.Preferences })));
+const DataView = lazy(() => import('./components/DataView').then(m => ({ default: m.DataView })));
+const ExternalPlanImport = lazy(() => import('./components/ExternalPlanImport').then(m => ({ default: m.ExternalPlanImport })));
+const StrengthOverloadHistory = lazy(() => import('./components/StrengthOverloadHistory').then(m => ({ default: m.StrengthOverloadHistory })));
+const StrengthSessionRunner = lazy(() => import('./components/StrengthSessionRunner').then(m => ({ default: m.StrengthSessionRunner })));
+const SessionRunner = lazy(() => import('./components/session/SessionRunner').then(m => ({ default: m.SessionRunner })));
+const ManualSessionBuilder = lazy(() => import('./components/session/ManualSessionBuilder').then(m => ({ default: m.ManualSessionBuilder })));
+const SessionJsonImport = lazy(() => import('./components/session/SessionJsonImport').then(m => ({ default: m.SessionJsonImport })));
 
 function App() {
   const { userId, authPhase } = useAuth();
@@ -109,126 +110,128 @@ function App() {
 
       {/* Main Page Content */}
       <main className="app-content">
-        {screen === 'home' && (
-          <Home
-            userId={userId!}
-            onNavigate={handleNavigate}
-            onViewData={() => {
-              loadDecisionInput();
-              handleNavigate('data');
-            }}
-            onStartSession={async binding => {
-              const definitionState = await resolveSessionDefinition(
-                userId!,
-                binding.sessionSource,
-                binding.prescriptionHash,
-              );
-              if (definitionState.status !== 'AVAILABLE') {
-                console.error(`Unable to resolve the stored session prescription: ${definitionState.status}`);
-                return;
-              }
-              const launch = { definition: definitionState.data, binding };
-              // Every launched recommendation, including catalog strength, runs through
-              // the source-neutral execution path so occurrence/source/prescription
-              // identity survives into the execution and replay records.
-              setSessionLaunch(launch);
-              handleNavigate('sessions');
-            }}
-          />
-        )}
-
-        {screen === 'data' && (
-          <DataView
-            decisionInput={decisionInput}
-            userId={userId!}
-            onBack={() => handleNavigate('home')}
-          />
-        )}
-
-        {screen === 'brief' && (
-          <DataView
-            decisionInput={decisionInput}
-            userId={userId!}
-            initialTab="brief"
-            onBack={() => handleNavigate('home')}
-          />
-        )}
-
-        {screen === 'checkin' && (
-          <DailyCheckin
-            userId={userId!}
-            onNavigate={handleNavigate}
-            onBack={() => handleNavigate('home')}
-          />
-        )}
-
-        {screen === 'goals' && (
-          <Goals userId={userId!} onNavigate={handleNavigate} />
-        )}
-
-        {screen === 'constraints' && (
-          <TrainingSettings userId={userId!} />
-        )}
-
-        {screen === 'preferences' && (
-          <Preferences userId={userId!} onNavigate={handleNavigate} />
-        )}
-
-        {screen === 'strength' && (
-          <div className="strength-screen">
-            <StrengthSessionRunner
+        <Suspense fallback={<div className="loading-state">Loading...</div>}>
+          {screen === 'home' && (
+            <Home
               userId={userId!}
-              onSessionStateChange={session => setActiveStrengthSession(session?.state === 'in_progress' ? session : null)}
-            />
-            <details className="strength-history-disclosure">
-              <summary>View strength history</summary>
-              <StrengthOverloadHistory userId={userId!} />
-            </details>
-          </div>
-        )}
-
-        {screen === 'sessions' && (
-          sessionAuthoringMode === 'import' ? (
-            <SessionJsonImport
-              userId={userId!}
-              onClose={() => setSessionAuthoringMode(null)}
-              onStartExecution={session => {
-                setSessionLaunch(session);
-                setSessionAuthoringMode(null);
+              onNavigate={handleNavigate}
+              onViewData={() => {
+                loadDecisionInput();
+                handleNavigate('data');
+              }}
+              onStartSession={async binding => {
+                const definitionState = await resolveSessionDefinition(
+                  userId!,
+                  binding.sessionSource,
+                  binding.prescriptionHash,
+                );
+                if (definitionState.status !== 'AVAILABLE') {
+                  console.error(`Unable to resolve the stored session prescription: ${definitionState.status}`);
+                  return;
+                }
+                const launch = { definition: definitionState.data, binding };
+                // Every launched recommendation, including catalog strength, runs through
+                // the source-neutral execution path so occurrence/source/prescription
+                // identity survives into the execution and replay records.
+                setSessionLaunch(launch);
+                handleNavigate('sessions');
               }}
             />
-          ) : sessionAuthoringMode === 'manual' ? (
-            <ManualSessionBuilder
+          )}
+
+          {screen === 'data' && (
+            <DataView
+              decisionInput={decisionInput}
               userId={userId!}
-              onClose={() => setSessionAuthoringMode(null)}
-              onStartExecution={session => {
-                setSessionLaunch(session);
-                setSessionAuthoringMode(null);
+              onBack={() => handleNavigate('home')}
+            />
+          )}
+
+          {screen === 'brief' && (
+            <DataView
+              decisionInput={decisionInput}
+              userId={userId!}
+              initialTab="brief"
+              onBack={() => handleNavigate('home')}
+            />
+          )}
+
+          {screen === 'checkin' && (
+            <DailyCheckin
+              userId={userId!}
+              onNavigate={handleNavigate}
+              onBack={() => handleNavigate('home')}
+            />
+          )}
+
+          {screen === 'goals' && (
+            <Goals userId={userId!} onNavigate={handleNavigate} />
+          )}
+
+          {screen === 'constraints' && (
+            <TrainingSettings userId={userId!} />
+          )}
+
+          {screen === 'preferences' && (
+            <Preferences userId={userId!} onNavigate={handleNavigate} />
+          )}
+
+          {screen === 'strength' && (
+            <div className="strength-screen">
+              <StrengthSessionRunner
+                userId={userId!}
+                onSessionStateChange={session => setActiveStrengthSession(session?.state === 'in_progress' ? session : null)}
+              />
+              <details className="strength-history-disclosure">
+                <summary>View strength history</summary>
+                <StrengthOverloadHistory userId={userId!} />
+              </details>
+            </div>
+          )}
+
+          {screen === 'sessions' && (
+            sessionAuthoringMode === 'import' ? (
+              <SessionJsonImport
+                userId={userId!}
+                onClose={() => setSessionAuthoringMode(null)}
+                onStartExecution={session => {
+                  setSessionLaunch(session);
+                  setSessionAuthoringMode(null);
+                }}
+              />
+            ) : sessionAuthoringMode === 'manual' ? (
+              <ManualSessionBuilder
+                userId={userId!}
+                onClose={() => setSessionAuthoringMode(null)}
+                onStartExecution={session => {
+                  setSessionLaunch(session);
+                  setSessionAuthoringMode(null);
+                }}
+              />
+            ) : (
+              <SessionRunner
+                userId={userId!}
+                initialSession={sessionLaunch ?? undefined}
+                onInitialSessionHandled={() => setSessionLaunch(null)}
+                onImportSession={() => setSessionAuthoringMode('import')}
+                onBuildSession={() => setSessionAuthoringMode('manual')}
+                onSessionStateChange={session => setActiveStructuredSession(session?.state === 'in_progress' ? session : null)}
+                onClose={() => handleNavigate('home')}
+              />
+            )
+          )}
+
+          {screen === 'plan' && (
+            <ExternalPlanImport
+              userId={userId!}
+              onImported={() => {
+                // The imported plan changes what today's decision is made from, so the
+                // composed input has to be refetched rather than left stale behind the nav.
+                loadDecisionInput();
               }}
             />
-          ) : (
-            <SessionRunner
-              userId={userId!}
-              initialSession={sessionLaunch ?? undefined}
-              onInitialSessionHandled={() => setSessionLaunch(null)}
-              onImportSession={() => setSessionAuthoringMode('import')}
-              onBuildSession={() => setSessionAuthoringMode('manual')}
-              onSessionStateChange={session => setActiveStructuredSession(session?.state === 'in_progress' ? session : null)}
-              onClose={() => handleNavigate('home')}
-            />
-          )
-        )}
-
-        {screen === 'plan' && (
-          <ExternalPlanImport
-            userId={userId!}
-            onImported={() => {
-              // The imported plan changes what today's decision is made from, so the
-              // composed input has to be refetched rather than left stale behind the nav.
-              loadDecisionInput();
-            }}
-          />
-        )}
+          )}
+        </Suspense>
       </main>
 
       {/* Mobile Bottom Navigation */}

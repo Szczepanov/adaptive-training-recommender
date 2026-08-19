@@ -55,15 +55,16 @@ build: build-frontend
 # -----------------------------------------------------------------------------
 
 ## Deploy frontend application to Firebase Hosting (builds first)
-deploy: deploy-hosting
+deploy:
+	npm --prefix app run deploy:hosting
 
 ## Build and deploy frontend application to Firebase Hosting
-deploy-hosting: build-frontend
-	npm --prefix app exec -- firebase deploy --only hosting --project adaptive-training-recommender
+deploy-hosting:
+	npm --prefix app run deploy:hosting
 
 ## Deploy all Firebase assets (Hosting, Firestore rules and indexes)
-deploy-all: build-frontend
-	npm --prefix app exec -- firebase deploy --project adaptive-training-recommender
+deploy-all:
+	npm --prefix app run deploy:all
 
 ## Deploy Firestore security rules with drift check and emulator validation
 deploy-rules:
@@ -71,7 +72,7 @@ deploy-rules:
 
 ## Deploy Firestore indexes
 deploy-indexes:
-	npm --prefix app exec -- firebase deploy --only firestore:indexes --project adaptive-training-recommender
+	npm --prefix app run deploy:indexes
 
 # -----------------------------------------------------------------------------
 # Python Backend Targets
