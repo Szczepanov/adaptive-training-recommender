@@ -113,6 +113,7 @@ How agreed changes get made. Mutable, status-tracked, and expected to go stale �
 * [**Garmin per-activity telemetry**](./plans/garmin-activity-telemetry-ingestion.md) — *Implemented.* Additive ingestion and the read-only activity view are delivered; ADR-0022's measured zone-credit candidate remains off after the real-history no-ship decision.
 * [**Strength session logging**](./plans/strength-session-logging.md) — *In progress (default-off).* The raw logger, 1RM derivation and manual-training measurement path are built; live Strength load remains evidence-gated.
 * [**Multidomain session authoring, execution & evidence**](./plans/multidomain-session-authoring-execution-and-evidence.md) — *Draft.* Sequenced plan for runner repair, source-neutral session persistence, manual/external authoring, mixed-dose execution, delayed response, speed/field/power observations, protocol-aware testing and evidence-gated engine candidates.
+* [**Mobile UX/UI redesign**](./plans/mobile_ux_implementation_plan.md) — *Implemented.* Mobile-first redesign of the daily check-in, state-first Home dashboard, unblocked recommendations, and runner execution focus.
 
 ---
 

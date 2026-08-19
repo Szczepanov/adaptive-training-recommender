@@ -71,7 +71,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({ screen, handleNavigate, lo
           onClick={() => handleNavigate('home')}
         >
           <span className="nav-icon">🏠</span>
-          <span className="nav-label">Home</span>
+          <span className="nav-label">Today</span>
         </button>
 
         <button
@@ -83,16 +83,16 @@ export const MobileNav: React.FC<MobileNavProps> = ({ screen, handleNavigate, lo
         </button>
 
         <button
-          className={`nav-item ${screen === 'goals' ? 'active' : ''}`}
-          onClick={() => handleNavigate('goals')}
+          className={`nav-item ${screen === 'plan' ? 'active' : ''}`}
+          onClick={() => handleNavigate('plan')}
         >
-          <span className="nav-icon">🎯</span>
-          <span className="nav-label">Goals</span>
+          <span className="nav-icon">📋</span>
+          <span className="nav-label">Plan</span>
         </button>
 
         <button
           ref={mobileMoreBtnRef}
-          className={`nav-item ${['constraints', 'preferences', 'data', 'plan', 'sessions'].includes(screen) ? 'active' : ''}`}
+          className={`nav-item ${['goals', 'constraints', 'preferences', 'data', 'brief', 'sessions', 'strength'].includes(screen) ? 'active' : ''}`}
           onClick={() => setMobileMoreOpen((isOpen) => !isOpen)}
           aria-expanded={mobileMoreOpen}
           aria-haspopup="dialog"
@@ -111,6 +111,17 @@ export const MobileNav: React.FC<MobileNavProps> = ({ screen, handleNavigate, lo
             </div>
             <div className="drawer-items">
               <button
+                className={`drawer-item ${screen === 'goals' ? 'active' : ''}`}
+                onClick={() => handleNavigate('goals')}
+              >
+                <span className="item-icon">🎯</span>
+                <div className="item-text">
+                  <span className="item-title">Goals & Target Events</span>
+                  <span className="item-sub">Manage events and target milestones</span>
+                </div>
+              </button>
+
+              <button
                 className={`drawer-item ${screen === 'data' ? 'active' : ''}`}
                 onClick={() => {
                   loadDecisionInput();
@@ -125,13 +136,24 @@ export const MobileNav: React.FC<MobileNavProps> = ({ screen, handleNavigate, lo
               </button>
 
               <button
-                className={`drawer-item ${screen === 'plan' ? 'active' : ''}`}
-                onClick={() => handleNavigate('plan')}
+                className={`drawer-item ${screen === 'constraints' ? 'active' : ''}`}
+                onClick={() => handleNavigate('constraints')}
               >
-                <span className="item-icon">📋</span>
+                <span className="item-icon">⚠️</span>
                 <div className="item-text">
-                  <span className="item-title">Import Training Plan</span>
-                  <span className="item-sub">Paste a plan authored outside this app</span>
+                  <span className="item-title">Training Setup</span>
+                  <span className="item-sub">Manage physical cautions & equipment</span>
+                </div>
+              </button>
+
+              <button
+                className={`drawer-item ${screen === 'preferences' ? 'active' : ''}`}
+                onClick={() => handleNavigate('preferences')}
+              >
+                <span className="item-icon">⚙️</span>
+                <div className="item-text">
+                  <span className="item-title">Coach Preferences</span>
+                  <span className="item-sub">Configure modalities & strain caps</span>
                 </div>
               </button>
 
@@ -157,28 +179,6 @@ export const MobileNav: React.FC<MobileNavProps> = ({ screen, handleNavigate, lo
                 <div className="item-text">
                   <span className="item-title">Export Context for AI</span>
                   <span className="item-sub">Compile recent metrics & prompt for your AI</span>
-                </div>
-              </button>
-
-              <button
-                className={`drawer-item ${screen === 'constraints' ? 'active' : ''}`}
-                onClick={() => handleNavigate('constraints')}
-              >
-                <span className="item-icon">⚠️</span>
-                <div className="item-text">
-                  <span className="item-title">Training Setup</span>
-                  <span className="item-sub">Manage physical cautions & equipment</span>
-                </div>
-              </button>
-
-              <button
-                className={`drawer-item ${screen === 'preferences' ? 'active' : ''}`}
-                onClick={() => handleNavigate('preferences')}
-              >
-                <span className="item-icon">⚙️</span>
-                <div className="item-text">
-                  <span className="item-title">Coach Preferences</span>
-                  <span className="item-sub">Configure modalities & strain caps</span>
                 </div>
               </button>
 

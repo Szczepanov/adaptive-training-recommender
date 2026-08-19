@@ -234,14 +234,19 @@ function App() {
         </Suspense>
       </main>
 
-      {/* Mobile Bottom Navigation */}
-      <MobileNav
-        screen={screen}
-        handleNavigate={handleNavigate}
-        loadDecisionInput={loadDecisionInput}
-        mobileMoreOpen={mobileMoreOpen}
-        setMobileMoreOpen={setMobileMoreOpen}
-      />
+      {/* Mobile Bottom Navigation - Hidden during active workout execution to prevent accidental mis-taps */}
+      {!(
+        (screen === 'sessions' && activeStructuredSession?.state === 'in_progress') ||
+        (screen === 'strength' && activeStrengthSession?.state === 'in_progress')
+      ) && (
+        <MobileNav
+          screen={screen}
+          handleNavigate={handleNavigate}
+          loadDecisionInput={loadDecisionInput}
+          mobileMoreOpen={mobileMoreOpen}
+          setMobileMoreOpen={setMobileMoreOpen}
+        />
+      )}
     </div>
   );
 }

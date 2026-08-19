@@ -518,7 +518,7 @@
   }
 
   .app-content {
-    padding: 1rem;
+    padding: var(--mobile-page-gutter, 16px);
     padding-bottom: calc(4.5rem + env(safe-area-inset-bottom));
   }
 }

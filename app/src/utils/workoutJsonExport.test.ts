@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { exportWorkoutPrescriptionToJson, exportExternalSessionToJson } from './workoutJsonExport';
+import { exportWorkoutPrescriptionToJson, exportExternalSessionToJson, exportExternalSessionV2ToJson } from './workoutJsonExport';
 import type { WorkoutPrescription } from '../workouts/models';
 import type { ExternalPlanSession } from '../engine/models';
+import type { ExternalPlanSessionV2 } from '../sessions/externalPlanV2';
 
 describe('workoutJsonExport', () => {
     it('exports a strength workout prescription with parsed sets, reps, and cues', () => {
@@ -73,6 +74,100 @@ describe('workoutJsonExport', () => {
         expect(json.blocks[0].steps[1].repetitions).toBe(2);
         expect(json.blocks[0].steps[1].durationSeconds).toBe(1200);
         expect(json.blocks[0].steps[1].restAfterSec).toBe(300);
+    });
+
+    it('exports a v2 external session directly from structured dose/effort/rest fields, no free-text parsing (M3.6)', () => {
+        const session: ExternalPlanSessionV2 = {
+            id: 'w1-vo2-v2',
+            title: 'VO2 30/15 repeated aerobic power',
+            priority: 'key',
+            placement: { week: 1, preferredDay: 'wednesday', flexibility: 'preferred', ifMissed: 'drop' },
+            gating: { modality: 'cycling', intensity: 'hard', durationMin: 60, durationMax: 75, environment: 'either', equipment: [] },
+            definition: {
+                schemaVersion: 1, id: 'w1-vo2-v2', revision: 1, title: 'VO2 30/15', summary: '3 sets of 10 x 30s/15s.', intent: 'training',
+                blocks: [{
+                    id: 'block-main', role: 'main', executionMode: 'sequential',
+                    steps: [{
+                        id: 'step-vo2', kind: 'exercise', title: 'VO2 rep',
+                        exerciseRef: { kind: 'unresolved_free_text', name: 'VO2 rep' },
+                        dose: { kind: 'duration', sets: 3, seconds: 30 },
+                        rest: 15,
+                        effort: { rpe: 9 },
+                    }],
+                }],
+            },
+        };
+
+        const json = exportExternalSessionV2ToJson(session);
+        expect(json.schemaVersion).toBe('canonical_workout_v1');
+        expect(json.summary).toBe('3 sets of 10 x 30s/15s.');
+        expect(json.blocks[0].steps).toHaveLength(1);
+        expect(json.blocks[0].steps[0]).toMatchObject({
+            name: 'VO2 rep', sets: 3, durationSeconds: 30, restAfterSec: 15, targetRpe: 9,
+        });
+    });
+
+    it('exports a v2 external session with structured load (mass, percent_one_rm, percent_max)', () => {
+        const session: ExternalPlanSessionV2 = {
+            id: 'w1-strength-loaded',
+            title: 'Lower Body Strength',
+            priority: 'key',
+            placement: { week: 1, preferredDay: 'monday', flexibility: 'preferred', ifMissed: 'drop' },
+            gating: { modality: 'strength', intensity: 'hard', durationMin: 50, durationMax: 60, environment: 'indoor', equipment: ['free_weights'] },
+            definition: {
+                schemaVersion: 1, id: 'w1-strength-loaded', revision: 1, title: 'Lower Body Strength', intent: 'training',
+                blocks: [{
+                    id: 'block-main', role: 'main', executionMode: 'sequential',
+                    steps: [
+                        {
+                            id: 'step-squat-mass', kind: 'exercise', title: 'Squat Mass',
+                            exerciseRef: { kind: 'unresolved_free_text', name: 'Back Squat' },
+                            dose: { kind: 'repetition', sets: 4, reps: { min: 6, max: 8 } },
+                            load: { kind: 'mass', kg: { min: 95, max: 105 } },
+                            rest: 180,
+                        },
+                        {
+                            id: 'step-deadlift-1rm', kind: 'exercise', title: 'Deadlift 1RM',
+                            exerciseRef: { kind: 'unresolved_free_text', name: 'Deadlift' },
+                            dose: { kind: 'repetition', sets: 3, reps: 5 },
+                            load: { kind: 'percent_one_rm', percent: 82.5 },
+                            rest: 180,
+                        },
+                        {
+                            id: 'step-press-max', kind: 'exercise', title: 'Press Max',
+                            exerciseRef: { kind: 'unresolved_free_text', name: 'Overhead Press' },
+                            dose: { kind: 'repetition', sets: 3, reps: 8 },
+                            load: { kind: 'percent_max', percent: 75 },
+                            rest: 120,
+                        },
+                    ],
+                }],
+            },
+        };
+
+        const json = exportExternalSessionV2ToJson(session);
+        expect(json.blocks[0].steps).toHaveLength(3);
+        expect(json.blocks[0].steps[0]).toMatchObject({
+            name: 'Squat Mass',
+            sets: 4,
+            repetitions: 7,
+            weightKg: 100,
+            restAfterSec: 180,
+        });
+        expect(json.blocks[0].steps[1]).toMatchObject({
+            name: 'Deadlift 1RM',
+            sets: 3,
+            repetitions: 5,
+            weightPercent1Rm: 82.5,
+            restAfterSec: 180,
+        });
+        expect(json.blocks[0].steps[2]).toMatchObject({
+            name: 'Press Max',
+            sets: 3,
+            repetitions: 8,
+            weightPercent1Rm: 75,
+            restAfterSec: 120,
+        });
     });
 
     it('exports a multi-set 30/15 workout with explicit structured fields', () => {

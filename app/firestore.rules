@@ -409,7 +409,11 @@ service cloud.firestore {
       let data = request.resource.data;
       return data.keys().hasOnly(['schema', 'planId', 'revision', 'title', 'startDate', 'weekCount', 'notes', 'sessions'])
         && data.keys().hasAll(['schema', 'planId', 'revision', 'title', 'startDate', 'weekCount', 'sessions'])
-        && data.schema == 'adaptive-training-recommender/external-plan@1'
+        // M3.6: v2 carries the same envelope, just a normalized SessionDefinition per
+        // session instead of v1's flat prescription -- neither is deep-validated here (see
+        // the strength-session-logging comment below for why), so accepting either schema
+        // literal changes nothing else about this check.
+        && data.schema in ['adaptive-training-recommender/external-plan@1', 'adaptive-training-recommender/external-plan@2']
         && data.revision is int && data.revision >= 1
         && isValidActivityDate(data.startDate)
         && data.weekCount is int && data.weekCount >= 1 && data.weekCount <= 26

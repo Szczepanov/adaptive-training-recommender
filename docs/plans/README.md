@@ -78,9 +78,10 @@ all-`Ready` table became unusable.
 | G | [Garmin per-activity telemetry](./garmin-activity-telemetry-ingestion.md) | **Implemented** | none | none | ingests per-activity power/HR time-in-zone, normalized power and lap averages; the measured zone-credit candidate remains off after an evidence-backed no-ship decision |
 | S | [Strength session logging](./strength-session-logging.md) | **In progress (default-off)** | none; all numbered work is built | real logged-history evidence before enabling manual Strength load — [M1.7](./multidomain-session-authoring-execution-and-evidence.md) is the item that starts producing it | closes the strength return path — per-set logging, self-calibrating 1RM, and measured strength load — not an original review finding |
 | M | [Multidomain session authoring, execution & evidence](./multidomain-session-authoring-execution-and-evidence.md) | **In progress** | M0.2–M0.3, M1.6 | M2+ also require the successor ADR from M0.1 | source-neutral authored sessions, safe mixed-dose execution, occurrence-linked response, and protocol-aware field/speed/power evidence — ordered so every milestone from M1 ends with a phone-usable capability, and so the session→response evidence link ships with the M1 Strength repairs rather than five milestones later |
+| UX | [Mobile UX/UI redesign](./mobile_ux_implementation_plan.md) | **Implemented** | none | none | mobile-first daily decision flow, single-page rapid check-in, state-first Home layout, unblocked recommendation, 44px+ touch targets, and mobile layout tokens |
 
-Rows G, S and M are **not phases**. They are capability plans whose work items are prefixed
-`G*`, `S*` and `M*` precisely so they cannot be mistaken for the `Phase 0`–`9` sequence;
+Rows G, S, M, and UX are **not phases**. They are capability/surface plans whose work items are prefixed
+`G*`, `S*`, `M*`, `UX*` precisely so they cannot be mistaken for the `Phase 0`–`9` sequence;
 the `#` column carries that prefix rather than a phase number.
 
 Phases 0–8 are implemented. Phase 6 delivered explicit scenario evidence, calibration

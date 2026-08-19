@@ -1,9 +1,9 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import type { WorkoutPrescription } from '../workouts/models';
-import type { ExternalPlanSession } from '../engine/models';
-import { generateZwiftFromPrescription, generateZwiftFromExternalSession, downloadZwiftFile } from '../utils/zwiftExport';
-import { exportWorkoutPrescriptionToJson, exportExternalSessionToJson, downloadJsonFile, copyJsonToClipboard, type CanonicalWorkoutExport } from '../utils/workoutJsonExport';
+import { generateZwiftFromPrescription, generateZwiftFromExternalSession, generateZwiftFromExternalSessionV2, downloadZwiftFile } from '../utils/zwiftExport';
+import { exportWorkoutPrescriptionToJson, exportExternalSessionToJson, exportExternalSessionV2ToJson, downloadJsonFile, copyJsonToClipboard, type CanonicalWorkoutExport } from '../utils/workoutJsonExport';
 import { garminWorkoutQueueService } from '../services/garminWorkoutQueueService';
+import { isV2Session, type AnyExternalPlanSession } from '../sessions/externalPlanV2';
 import './WorkoutExportMenu.css';
 
 export interface WorkoutExportMenuProps {
@@ -12,7 +12,7 @@ export interface WorkoutExportMenuProps {
     title: string;
     modality: string;
     prescription?: WorkoutPrescription;
-    externalSession?: ExternalPlanSession;
+    externalSession?: AnyExternalPlanSession;
     onSyncQueued?: () => void;
 }
 
@@ -37,7 +37,7 @@ export function WorkoutExportMenu({
             return exportWorkoutPrescriptionToJson(prescription, modality);
         }
         if (externalSession) {
-            return exportExternalSessionToJson(externalSession);
+            return isV2Session(externalSession) ? exportExternalSessionV2ToJson(externalSession) : exportExternalSessionToJson(externalSession);
         }
         return {
             schemaVersion: 'canonical_workout_v1',
@@ -55,7 +55,7 @@ export function WorkoutExportMenu({
         if (prescription) {
             xml = generateZwiftFromPrescription(prescription);
         } else if (externalSession) {
-            xml = generateZwiftFromExternalSession(externalSession);
+            xml = isV2Session(externalSession) ? generateZwiftFromExternalSessionV2(externalSession) : generateZwiftFromExternalSession(externalSession);
         }
         if (xml) {
             const cleanName = title.replace(/[^a-zA-Z0-9_-]/g, '_');

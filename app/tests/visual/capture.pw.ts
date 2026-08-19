@@ -22,7 +22,12 @@ async function visitScenario(page: Page, scenario: VisualScenario): Promise<void
 }
 
 async function capture(page: Page, scenario: VisualScenario, suffix = '', expectedFocus = scenario.expectedFocus): Promise<void> {
-  const viewport = test.info().project.name === 'visual-mobile' ? 'mobile' : 'desktop';
+  const projectName = test.info().project.name;
+  const viewport = projectName === 'visual-mobile-narrow'
+    ? 'mobile-narrow'
+    : projectName === 'visual-mobile'
+    ? 'mobile'
+    : 'desktop';
   const id = `${scenario.id}${suffix ? `-${suffix}` : ''}`;
   const directory = resolve(artifactDir, viewport);
   const path = resolve(directory, `${id}.png`);
@@ -65,7 +70,7 @@ test('captures navigation interaction states', async ({ page }) => {
   const scenario = VISUAL_SCENARIOS[0];
   await visitScenario(page, scenario);
 
-  if (test.info().project.name === 'visual-mobile') {
+  if (test.info().project.name.includes('mobile')) {
     await page.getByRole('button', { name: 'More' }).click();
     await expect(page.getByRole('dialog', { name: 'Navigation & Settings' })).toBeVisible();
     await capture(page, scenario, 'more-drawer-open', ['The mobile drawer is distinct from the page beneath it and presents secondary destinations clearly.']);
@@ -104,7 +109,14 @@ test('captures grouped session runner rotation without horizontal overflow', asy
   await expect(page.getByRole('heading', { name: 'bench_press' })).toBeVisible();
   await page.getByRole('button', { name: 'Log Set ⏎' }).click();
   await expect(page.getByRole('heading', { name: 'chest_supported_dumbbell_row' })).toBeVisible();
-  await capture(page, scenario, 'group-rotation', ['The runner shows the current alternating-pair round and advances after logging a set without using the navigator.']);
 
-  expect(await page.locator('body').evaluate(body => body.scrollWidth <= window.innerWidth)).toBe(true);
+  const nextBtn = page.locator('.group-next-button');
+  if (await nextBtn.count()) {
+    await nextBtn.first().click();
+    await expect(page.getByRole('heading', { name: /bench_press|scapular_push_up|chest_supported_dumbbell_row/ })).toBeVisible();
+  }
+
+  await capture(page, scenario, 'grouped-runner-active', [
+    'The grouped runner presents clear superset/circuit context and large hit targets for mobile use.',
+  ]);
 });

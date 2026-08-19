@@ -619,6 +619,15 @@ emulatorDescribe('Firestore security rules', () => {
         await assertSucceeds(setDoc(doc(ownerDb, externalPlacementPath), validExternalPlacement()));
     });
 
+    it('stores a v2 external plan revision (M3.6) -- rules bound sessions but never deep-validate them either version', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertSucceeds(setDoc(doc(ownerDb, externalRevisionPath), {
+            ...validExternalPlanRevision(),
+            schema: 'adaptive-training-recommender/external-plan@2',
+            sessions: [{ id: 'w1-a', title: 'Threshold', priority: 'key', definition: { schemaVersion: 1, title: 'Threshold', intent: 'training', blocks: [] } }],
+        }));
+    });
+
     it('makes a stored revision create-only, so an audited decision stays verifiable', async () => {
         await testEnvironment.withSecurityRulesDisabled(async context => {
             await setDoc(doc(context.firestore(), externalRevisionPath), validExternalPlanRevision());
@@ -644,7 +653,7 @@ emulatorDescribe('Firestore security rules', () => {
         await assertFails(setDoc(doc(ownerDb, externalPlanPath), { ...validExternalPlanHeader(), weekCount: 27 }));
         await assertFails(setDoc(doc(ownerDb, externalRevisionPath), {
             ...validExternalPlanRevision(),
-            schema: 'adaptive-training-recommender/external-plan@2',
+            schema: 'adaptive-training-recommender/external-plan@3',
         }));
         await assertFails(setDoc(doc(ownerDb, externalRevisionPath), { ...validExternalPlanRevision(), sessions: [] }));
         await assertFails(setDoc(doc(ownerDb, `users/${ownerId}/external_plans/autumn-block/revisions/4`), {
