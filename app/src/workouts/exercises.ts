@@ -2,13 +2,6 @@ import type { ExerciseDefinition } from './models.ts';
 import { EXERCISES as BASE_EXERCISES } from './exercises-base.ts';
 import { EXERCISE_FACET_OVERRIDES, EXPANDED_EXERCISES } from './exercise-catalog-extensions.ts';
 
-function normalizeExpandedExercise(exercise: ExerciseDefinition): ExerciseDefinition {
-  if (!exercise.facets?.fieldDomains || exercise.facets.fieldDomains.length > 0) return exercise;
-  const facets = { ...exercise.facets };
-  delete facets.fieldDomains;
-  return { ...exercise, facets };
-}
-
 /**
  * Canonical exercise catalog.
  *
@@ -21,5 +14,5 @@ export const EXERCISES: ExerciseDefinition[] = [
     const reviewedFacets = EXERCISE_FACET_OVERRIDES[exercise.id];
     return reviewedFacets ? { ...exercise, facets: reviewedFacets } : exercise;
   }),
-  ...EXPANDED_EXERCISES.map(normalizeExpandedExercise),
+  ...EXPANDED_EXERCISES,
 ];

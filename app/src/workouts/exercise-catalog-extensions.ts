@@ -61,7 +61,7 @@ function strengthCarry(
 
 function fieldReps(
   variant: string,
-  fieldDomains: NonNullable<ExerciseFacets['fieldDomains']>,
+  fieldDomains: NonNullable<ExerciseFacets['fieldDomains']> = [],
   tissueDemand: string[] = [],
   safetyTags: string[] = [],
   allowedLaterality: ExerciseLaterality[] = ['bilateral'],
@@ -73,7 +73,7 @@ function fieldReps(
     allowedLoadKinds: ['unloaded', 'descriptive'],
     allowedLaterality,
     measurementProfile: 'repetitions',
-    fieldDomains,
+    ...(fieldDomains.length ? { fieldDomains } : {}),
     ...(tissueDemand.length ? { tissueDemand } : {}),
     ...(safetyTags.length ? { safetyTags } : {}),
   };

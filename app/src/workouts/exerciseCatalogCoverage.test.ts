@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { EXERCISES } from './exercises';
+import { EXERCISES as BASE_EXERCISES } from './exercises-base';
 import { EXERCISE_FACET_OVERRIDES, EXPANDED_EXERCISES } from './exercise-catalog-extensions';
 import { validateWorkoutLibrary } from './validation';
 
@@ -51,6 +52,8 @@ const REQUIRED_PROGRAM_EXERCISE_IDS = [
 describe('expanded exercise catalog coverage', () => {
   it('keeps the enriched catalog valid', () => {
     expect(validateWorkoutLibrary(EXERCISES, []).errors).toEqual([]);
+    expect(validateWorkoutLibrary(EXPANDED_EXERCISES, []).errors).toEqual([]);
+    expect(validateWorkoutLibrary(BASE_EXERCISES, []).errors).toEqual([]);
   });
 
   it('keeps every strength, field, running and recovery movement facet-backed', () => {
