@@ -54,10 +54,9 @@ export class ContextBriefService {
                 // read outage would be indistinguishable from "no data that day" and the
                 // brief would silently under-report the window. Read the state instead.
                 Promise.all(snapshotDates.map(date => recoverySnapshotService.getRecoverySnapshotState(userId, date))),
-                // A date range, not getRecentCheckins' most-recent-N-documents: with gaps
-                // that returns a longer span than requested, which would make the
-                // baseline's coverage count meaningless (it would always look complete).
-                checkinService.getCheckinsInRange(userId, baselineStart, targetDate),
+                // Activity, recommendation, and check-in range queries are end-exclusive;
+                // the brief window is inclusive of targetDate, so the fetch reaches throughExclusive.
+                checkinService.getCheckinsInRange(userId, baselineStart, throughExclusive),
                 activityService.getActivitiesInRange(userId, startDate, throughExclusive),
                 recommendationService.getRecommendationsInRange(userId, startDate, throughExclusive),
                 // peek, not get: the brief is read-only and must not create a settings
