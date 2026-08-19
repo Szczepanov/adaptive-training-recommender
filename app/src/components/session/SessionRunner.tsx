@@ -109,9 +109,14 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
     const [companionError, setCompanionError] = useState<string | null>(null);
     // Ticks the companion prompt's "available in N minutes" copy toward eligibility -- only
     // runs while the prompt is open, so it costs nothing the rest of the runner's lifetime.
+    // Re-synced to Date.now() the instant the prompt opens (not just on the first interval
+    // tick) -- otherwise this would hold whatever stale value it had from mount/the previous
+    // prompt (e.g. from ~40 minutes into a completed session) for up to 15 seconds, making an
+    // immediately-eligible companion appear falsely gated.
     const [companionPromptNow, setCompanionPromptNow] = useState(() => Date.now());
     useEffect(() => {
         if (!companionPrompt) return;
+        setCompanionPromptNow(Date.now());
         const interval = setInterval(() => setCompanionPromptNow(Date.now()), 15_000);
         return () => clearInterval(interval);
     }, [companionPrompt]);

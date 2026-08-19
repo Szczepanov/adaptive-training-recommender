@@ -891,6 +891,62 @@ service cloud.firestore {
       }
     }
 
+    // M5.1: SessionResponse -- linkage plus non-tissue session facts only (D-MRESP).
+    // DailySubjectiveCheckin.tissueResponses remains the sole tissue authority; this
+    // record never carries a tissue value.
+    function hasValidSessionResponse(userId, responseId) {
+      let data = request.resource.data;
+      return hasOwnedUserId(userId)
+        && data.keys().hasOnly(['userId', 'responseId', 'sourceSession', 'occurrenceId', 'window', 'date', 'checkinRef', 'sessionRpe', 'completedFraction', 'unexpectedFatigue', 'techniqueNote', 'note', 'createdAt', 'updatedAt'])
+        && data.keys().hasAll(['userId', 'responseId', 'sourceSession', 'window', 'date', 'checkinRef', 'createdAt', 'updatedAt'])
+        && data.responseId == responseId
+        && data.sourceSession is map
+        && data.sourceSession.keys().hasOnly(['kind', 'id', 'date'])
+        && data.sourceSession.keys().hasAll(['kind', 'id', 'date'])
+        && data.sourceSession.kind in ['strength', 'execution']
+        && data.sourceSession.id is string && data.sourceSession.id.size() > 0
+        && isValidActivityDate(data.sourceSession.date)
+        && data.window in ['immediate', 'later_day', 'next_morning']
+        && isValidActivityDate(data.date)
+        // `date` equals sourceSession.date for `immediate`, strictly later otherwise
+        // (models.ts's own documented invariant) -- ISO YYYY-MM-DD strings compare
+        // lexicographically the same as chronologically.
+        && (data.window == 'immediate' ? data.date == data.sourceSession.date : data.date > data.sourceSession.date)
+        && data.checkinRef is map
+        && data.checkinRef.keys().hasOnly(['date'])
+        && isValidActivityDate(data.checkinRef.date)
+        && (!('occurrenceId' in data) || (
+          data.occurrenceId is string && data.occurrenceId.size() > 0
+          // Cannot reference another user's occurrence: it must exist under this same
+          // user's own path -- a cross-user id structurally cannot resolve here.
+          && exists(/databases/$(database)/documents/users/$(userId)/session_occurrences/$(data.occurrenceId))
+        ))
+        && (!('sessionRpe' in data) || (data.sessionRpe is number && data.sessionRpe >= 0 && data.sessionRpe <= 10))
+        && (!('completedFraction' in data) || (data.completedFraction is number && data.completedFraction >= 0 && data.completedFraction <= 1))
+        && (!('unexpectedFatigue' in data) || data.unexpectedFatigue is bool)
+        && (!('techniqueNote' in data) || (data.techniqueNote is string && data.techniqueNote.size() <= 2000))
+        && (!('note' in data) || (data.note is string && data.note.size() <= 2000))
+        && data.createdAt is string && data.updatedAt is string;
+    }
+
+    match /users/{userId}/session_responses/{responseId} {
+      allow read: if isOwner(userId);
+      allow create: if hasValidSessionResponse(userId, responseId);
+      allow update: if hasValidSessionResponse(userId, responseId)
+        && keepsOwnership(userId)
+        // Edits preserve provenance: identity/occurrence/window/createdAt never change
+        // after creation -- only the non-tissue facts and updatedAt may be revised.
+        // occurrenceId's presence and value are both pinned (not just its value when
+        // present), so a response created without one can't have one added later either.
+        && request.resource.data.sourceSession == resource.data.sourceSession
+        && ('occurrenceId' in request.resource.data) == ('occurrenceId' in resource.data)
+        && (!('occurrenceId' in resource.data) || request.resource.data.occurrenceId == resource.data.occurrenceId)
+        && request.resource.data.window == resource.data.window
+        && request.resource.data.date == resource.data.date
+        && request.resource.data.createdAt == resource.data.createdAt;
+      allow delete: if isOwner(userId);
+    }
+
     match /users/{userId}/daily_recommendations/{date} {
       allow read: if isOwner(userId);
       allow create: if hasValidRecommendation(userId, date);
