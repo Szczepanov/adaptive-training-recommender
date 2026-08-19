@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { exportWorkoutPrescriptionToJson, exportExternalSessionToJson } from './workoutJsonExport';
+import { exportWorkoutPrescriptionToJson, exportExternalSessionToJson, exportExternalSessionV2ToJson } from './workoutJsonExport';
 import type { WorkoutPrescription } from '../workouts/models';
 import type { ExternalPlanSession } from '../engine/models';
+import type { ExternalPlanSessionV2 } from '../sessions/externalPlanV2';
 
 describe('workoutJsonExport', () => {
     it('exports a strength workout prescription with parsed sets, reps, and cues', () => {
@@ -73,6 +74,37 @@ describe('workoutJsonExport', () => {
         expect(json.blocks[0].steps[1].repetitions).toBe(2);
         expect(json.blocks[0].steps[1].durationSeconds).toBe(1200);
         expect(json.blocks[0].steps[1].restAfterSec).toBe(300);
+    });
+
+    it('exports a v2 external session directly from structured dose/effort/rest fields, no free-text parsing (M3.6)', () => {
+        const session: ExternalPlanSessionV2 = {
+            id: 'w1-vo2-v2',
+            title: 'VO2 30/15 repeated aerobic power',
+            priority: 'key',
+            placement: { week: 1, preferredDay: 'wednesday', flexibility: 'preferred', ifMissed: 'drop' },
+            gating: { modality: 'cycling', intensity: 'hard', durationMin: 60, durationMax: 75, environment: 'either', equipment: [] },
+            definition: {
+                schemaVersion: 1, id: 'w1-vo2-v2', revision: 1, title: 'VO2 30/15', summary: '3 sets of 10 x 30s/15s.', intent: 'training',
+                blocks: [{
+                    id: 'block-main', role: 'main', executionMode: 'sequential',
+                    steps: [{
+                        id: 'step-vo2', kind: 'exercise', title: 'VO2 rep',
+                        exerciseRef: { kind: 'unresolved_free_text', name: 'VO2 rep' },
+                        dose: { kind: 'duration', sets: 3, seconds: 30 },
+                        rest: 15,
+                        effort: { rpe: 9 },
+                    }],
+                }],
+            },
+        };
+
+        const json = exportExternalSessionV2ToJson(session);
+        expect(json.schemaVersion).toBe('canonical_workout_v1');
+        expect(json.summary).toBe('3 sets of 10 x 30s/15s.');
+        expect(json.blocks[0].steps).toHaveLength(1);
+        expect(json.blocks[0].steps[0]).toMatchObject({
+            name: 'VO2 rep', sets: 3, durationSeconds: 30, restAfterSec: 15, targetRpe: 9,
+        });
     });
 
     it('exports a multi-set 30/15 workout with explicit structured fields', () => {

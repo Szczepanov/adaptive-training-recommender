@@ -1,5 +1,7 @@
 import type { WorkoutPrescription, DisplayTarget, TechnicalRequirements } from '../workouts/models';
 import type { ExternalPlanSession } from '../engine/models';
+import type { ExternalPlanSessionV2 } from '../sessions/externalPlanV2';
+import type { RangeOrNumber, SessionStep } from '../sessions/models';
 
 export interface CanonicalExportStep {
     id?: string;
@@ -272,6 +274,60 @@ export function exportExternalSessionToJson(
         modality: session.gating.modality,
         targetDurationMin: session.gating.durationMin,
         summary: session.prescription.summary,
+        blocks,
+        exportedAt: new Date().toISOString(),
+    };
+}
+
+function rangeMidpoint(value: RangeOrNumber | undefined): number | undefined {
+    if (value === undefined) return undefined;
+    return typeof value === 'number' ? value : Math.round((value.min + value.max) / 2);
+}
+
+function stepDisplayName(step: SessionStep): string {
+    if (step.title) return step.title;
+    if (step.exerciseRef?.kind === 'unresolved_free_text') return step.exerciseRef.name;
+    if (step.exerciseRef?.kind === 'catalog') return step.exerciseRef.exerciseId;
+    return 'Step';
+}
+
+/**
+ * v2 counterpart of `exportExternalSessionToJson`. Genuinely simpler: a v2 session's
+ * content is already structured (`dose`/`effort`/`rest`), so this needs none of v1's
+ * free-text parsing (`parseDoseToMetrics`, `extractRecoverySecondsFromText`, ...) -- it's a
+ * direct field mapping, the same way `exportWorkoutPrescriptionToJson` maps a catalog
+ * prescription's already-structured `displayBlocks` (M3.6).
+ */
+export function exportExternalSessionV2ToJson(session: ExternalPlanSessionV2): CanonicalWorkoutExport {
+    const blocks: CanonicalExportBlock[] = session.definition.blocks.map(block => ({
+        id: block.id,
+        name: block.title ?? block.role,
+        role: block.role,
+        steps: block.steps.map((step): CanonicalExportStep => {
+            const durationSeconds = step.dose?.kind === 'duration' ? rangeMidpoint(step.dose.seconds) : undefined;
+            return {
+                id: step.id,
+                name: stepDisplayName(step),
+                exerciseId: step.exerciseRef?.kind === 'catalog' ? step.exerciseRef.exerciseId : undefined,
+                durationSeconds,
+                sets: step.dose && 'sets' in step.dose ? step.dose.sets : undefined,
+                repetitions: step.dose?.kind === 'repetition' ? rangeMidpoint(step.dose.reps) : undefined,
+                targetRpe: step.effort?.rpe !== undefined ? rangeMidpoint(step.effort.rpe) : undefined,
+                restAfterSec: rangeMidpoint(step.rest),
+                stopConditions: step.stopConditions,
+                optional: step.optional,
+                notes: step.notes,
+            };
+        }),
+    }));
+
+    return {
+        schemaVersion: 'canonical_workout_v1',
+        title: session.title,
+        workoutId: session.id,
+        modality: session.gating.modality,
+        targetDurationMin: session.gating.durationMin,
+        summary: session.definition.summary ?? session.definition.title,
         blocks,
         exportedAt: new Date().toISOString(),
     };
