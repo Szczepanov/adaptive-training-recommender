@@ -664,3 +664,110 @@ def test_notes_fallback_recovery_in_garmin_payload():
     assert child_steps[0]["endConditionValue"] == 30
     assert child_steps[1]["stepType"]["stepTypeKey"] == "recovery"
     assert child_steps[1]["endConditionValue"] == 15
+
+
+def test_zone2_ride_extracts_power_target_from_notes():
+    workout = {
+        "title": "Low-variability aerobic support",
+        "modality": "cycling",
+        "blocks": [
+            {
+                "role": "main",
+                "steps": [
+                    {
+                        "name": "Zone 2 cycling",
+                        "durationSeconds": 3600,
+                        "notes": "Approximately 140-175 W with smooth cadence and minimal power variability.",
+                    }
+                ],
+            }
+        ],
+    }
+
+    payload = canonical_workout_to_garmin_payload(workout)
+    steps = payload["workoutSegments"][0]["workoutSteps"]
+    assert len(steps) == 1
+    step = steps[0]
+    assert step["stepType"]["stepTypeKey"] == "interval"
+    assert step["endConditionValue"] == 3600
+    assert step["targetType"] == {
+        "workoutTargetTypeId": 2,
+        "workoutTargetTypeKey": "power.zone",
+    }
+    assert step["targetValueOne"] == 140.0
+    assert step["targetValueTwo"] == 175.0
+
+
+def test_threshold_workout_extracts_power_targets_for_all_steps_from_notes():
+    workout = {
+        "title": "The largest sustained threshold-oriented session of the build.",
+        "modality": "cycling",
+        "blocks": [
+            {
+                "role": "warmup",
+                "steps": [
+                    {
+                        "name": "Progressive cycling warm-up",
+                        "durationSeconds": 1200,
+                        "notes": "Approximately 140-175 W.",
+                    }
+                ],
+            },
+            {
+                "role": "main",
+                "steps": [
+                    {
+                        "name": "Threshold interval",
+                        "durationSeconds": 1020,
+                        "sets": 3,
+                        "restAfterSec": 300,
+                        "notes": "Target approximately 235-245 W. Keep cadence and mechanics stable across all three intervals.",
+                    }
+                ],
+            },
+            {
+                "role": "cooldown",
+                "steps": [
+                    {
+                        "name": "Easy aerobic riding",
+                        "durationSeconds": 1350,
+                    }
+                ],
+            },
+        ],
+    }
+
+    payload = canonical_workout_to_garmin_payload(workout)
+    steps = payload["workoutSegments"][0]["workoutSteps"]
+    assert len(steps) == 3
+
+    # Warmup
+    warmup = steps[0]
+    assert warmup["stepType"]["stepTypeKey"] == "warmup"
+    assert warmup["endConditionValue"] == 1200
+    assert warmup["targetType"]["workoutTargetTypeKey"] == "power.zone"
+    assert warmup["targetValueOne"] == 140.0
+    assert warmup["targetValueTwo"] == 175.0
+
+    # Main interval repeat group
+    repeat_group = steps[1]
+    assert repeat_group["type"] == "RepeatGroupDTO"
+    assert repeat_group["numberOfIterations"] == 3
+    assert len(repeat_group["workoutSteps"]) == 2
+
+    child_interval = repeat_group["workoutSteps"][0]
+    assert child_interval["stepType"]["stepTypeKey"] == "interval"
+    assert child_interval["endConditionValue"] == 1020
+    assert child_interval["targetType"]["workoutTargetTypeKey"] == "power.zone"
+    assert child_interval["targetValueOne"] == 235.0
+    assert child_interval["targetValueTwo"] == 245.0
+
+    child_recovery = repeat_group["workoutSteps"][1]
+    assert child_recovery["stepType"]["stepTypeKey"] == "recovery"
+    assert child_recovery["endConditionValue"] == 300
+
+    # Cooldown
+    cooldown = steps[2]
+    assert cooldown["stepType"]["stepTypeKey"] == "cooldown"
+    assert cooldown["endConditionValue"] == 1350
+    assert cooldown["targetType"]["workoutTargetTypeKey"] == "no.target"

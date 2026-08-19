@@ -330,13 +330,21 @@ def _build_step_dto(
         step_type = STEP_TYPE_MAP["recovery"]
 
     targets = step.get("targets")
+    target_sources: list[str] = []
+    if targets and isinstance(targets, list):
+        target_sources.extend([t for t in targets if isinstance(t, str) and t.strip()])
+    for key in ("notes", "description", "name"):
+        val = step.get(key)
+        if isinstance(val, str) and val.strip() and val not in target_sources:
+            target_sources.append(val)
+
     desc_parts = [step_name] if step_name else []
     if targets and isinstance(targets, list) and targets:
         desc_parts.append(f"({'; '.join(targets)})")
     step_desc = " ".join(desc_parts) if desc_parts else None
 
-    power_target = _extract_power_target(targets, ftp_watts=ftp)
-    zone_target = _extract_zone_target(targets) if not power_target else None
+    power_target = _extract_power_target(target_sources, ftp_watts=ftp)
+    zone_target = _extract_zone_target(target_sources) if not power_target else None
 
     if modality in ["cycling", "bike"]:
         if power_target:
@@ -389,9 +397,22 @@ def _build_step_dto(
 
     if rest_sec and rest_sec > 0:
         rec_target_str = step.get("recoveryTarget")
-        rec_targets = [rec_target_str] if rec_target_str else None
-        rec_power = _extract_power_target(rec_targets, ftp_watts=ftp)
-        rec_zone = _extract_zone_target(rec_targets) if not rec_power else None
+        rec_sources: list[str] = []
+        if rec_target_str and isinstance(rec_target_str, str):
+            rec_sources.append(rec_target_str)
+        step_notes = str(step.get("notes", ""))
+        rec_match = re.search(
+            r"(?:followed\s+by|with)\s+[^.,;]*\s+(?:at|around|approximately|about)\s+([^.,;]+)",
+            step_notes,
+            re.IGNORECASE,
+        )
+        if rec_match:
+            rec_sources.append(rec_match.group(1).strip())
+        elif step_notes:
+            rec_sources.append(step_notes)
+
+        rec_power = _extract_power_target(rec_sources, ftp_watts=ftp) if rec_sources else None
+        rec_zone = _extract_zone_target(rec_sources) if (rec_sources and not rec_power) else None
 
         if modality in ["cycling", "bike"] and rec_power:
             rec_target_type = {"workoutTargetTypeId": 2, "workoutTargetTypeKey": "power.zone"}

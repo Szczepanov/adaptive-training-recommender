@@ -192,4 +192,30 @@ describe('zwiftExport', () => {
         const withFtp = generateZwiftFromExternalSession(session, { ftpWatts: 300 });
         expect(withFtp).toContain('<SteadyState Duration="1200" Power="1.00"/>');
     });
+
+    it('parses power targets from notes for v2 sessions when athlete FTP is provided', () => {
+        const session: ExternalPlanSessionV2 = {
+            id: 'w1-z2-v2',
+            title: 'Zone 2 cycling',
+            priority: 'supporting',
+            placement: { week: 1, preferredDay: 'tuesday', flexibility: 'any_day', ifMissed: 'drop' },
+            gating: { modality: 'cycling', intensity: 'moderate', durationMin: 60, durationMax: 60, environment: 'outdoor', equipment: [] },
+            definition: {
+                schemaVersion: 1, id: 'w1-z2-v2', revision: 1, title: 'Zone 2 cycling', intent: 'training',
+                blocks: [{
+                    id: 'block-main', role: 'main', executionMode: 'sequential',
+                    steps: [{
+                        id: 'step-z2', kind: 'exercise', title: 'Zone 2 cycling',
+                        exerciseRef: { kind: 'unresolved_free_text', name: 'Zone 2 cycling' },
+                        dose: { kind: 'duration', seconds: 3600 },
+                        notes: 'Approximately 140-175 W with smooth cadence and minimal power variability.',
+                    }],
+                }],
+            },
+        };
+
+        const withFtp = generateZwiftFromExternalSessionV2(session, { ftpWatts: 250 });
+        // Average watts = 157.5 W, 157.5 / 250 = 0.63
+        expect(withFtp).toContain('<SteadyState Duration="3600" Power="0.63"/>');
+    });
 });

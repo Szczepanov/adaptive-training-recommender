@@ -250,7 +250,9 @@ export function generateZwiftFromExternalSessionV2(
         for (const { block, step } of steps) {
             const isWarmup = block.role === 'warmup';
             const isCooldown = block.role === 'cooldown';
-            const power = isWarmup ? 0.60 : isCooldown ? 0.50 : basePower;
+            const targetText = `${step.notes ?? ''} ${step.title ?? ''}`;
+            const parsedFraction = parseFractionFtpFromTargetText(targetText, options.ftpWatts);
+            const power = parsedFraction !== null ? parsedFraction : (isWarmup ? 0.60 : isCooldown ? 0.50 : basePower);
             const durationSec = (step.dose?.kind === 'duration' ? rangeMidpointSec(step.dose.seconds) : undefined) ?? 300;
             const repeats = step.dose?.kind === 'duration' ? (step.dose.sets ?? 1) : 1;
             const restSec = rangeMidpointSec(step.rest);

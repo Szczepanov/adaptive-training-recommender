@@ -1,7 +1,7 @@
 import type { WorkoutPrescription, DisplayTarget, TechnicalRequirements } from '../workouts/models';
 import type { ExternalPlanSession } from '../engine/models';
 import type { ExternalPlanSessionV2 } from '../sessions/externalPlanV2';
-import type { RangeOrNumber, SessionStep } from '../sessions/models';
+import type { RangeOrNumber, SessionEffort, SessionStep } from '../sessions/models';
 
 export interface CanonicalExportStep {
     id?: string;
@@ -313,6 +313,31 @@ export function extractRecoveryTargetFromText(text: string): string | undefined 
     return undefined;
 }
 
+export function extractTargetsFromStepNotes(notes: string | undefined, effort?: SessionEffort): string[] | undefined {
+    const targets: string[] = [];
+    if (effort?.kind === 'power' && effort.target !== undefined) {
+        targets.push(typeof effort.target === 'number' ? `${effort.target} W` : `${effort.target.min}-${effort.target.max} W`);
+    }
+    if (notes) {
+        // Match explicit wattage ranges or single wattage: "140-175 W", "235-245 W", "200W", etc.
+        const wattsMatch = notes.match(/(\d+(?:\.\d+)?\s*[-–—]\s*\d+(?:\.\d+)?\s*W\b|\d+(?:\.\d+)?\s*W\b)/i);
+        if (wattsMatch) {
+            targets.push(wattsMatch[1].trim());
+        }
+        // Match % FTP: "65-75% FTP", "90-95% FTP", "80% FTP"
+        const ftpMatch = notes.match(/(\d+(?:\.\d+)?\s*[-–—]\s*\d+(?:\.\d+)?\s*%\s*(?:FTP)?|\d+(?:\.\d+)?\s*%\s*FTP\b)/i);
+        if (ftpMatch && !targets.some(t => t.toLowerCase().includes('ftp'))) {
+            targets.push(ftpMatch[1].trim());
+        }
+        // Match Zones: "Zone 2", "Z2", "Zone-2"
+        const zoneMatch = notes.match(/\b(?:zone|z)\s*[-–—]?\s*[1-7]\b/i);
+        if (zoneMatch && !targets.some(t => /zone|z/i.test(t))) {
+            targets.push(zoneMatch[0].trim());
+        }
+    }
+    return targets.length > 0 ? targets : undefined;
+}
+
 export function exportWorkoutPrescriptionToJson(
     prescription: WorkoutPrescription,
     modality: string = 'cycling',
@@ -394,6 +419,7 @@ export function exportExternalSessionToJson(
         }
 
         const recoveryTarget = extractRecoveryTargetFromText(step.notes ?? '');
+        const targets = step.target ? [step.target] : extractTargetsFromStepNotes(step.notes);
 
         return {
             name: step.name,
@@ -401,7 +427,7 @@ export function exportExternalSessionToJson(
             sets,
             repetitions,
             targetRpe,
-            targets: step.target ? [step.target] : undefined,
+            targets,
             restAfterSec: restSec,
             setRecoverySec,
             recoveryTarget,
@@ -480,6 +506,8 @@ export function exportExternalSessionV2ToJson(session: ExternalPlanSessionV2): C
         steps: block.steps.map((step): CanonicalExportStep => {
             const durationSeconds = step.dose?.kind === 'duration' ? rangeMidpoint(step.dose.seconds) : undefined;
             const { weightKg, weightPercent1Rm } = extractStepLoad(step.load);
+            const targets = extractTargetsFromStepNotes(step.notes, step.effort);
+            const recoveryTarget = extractRecoveryTargetFromText(step.notes ?? '');
             return {
                 id: step.id,
                 name: stepDisplayName(step),
@@ -490,7 +518,9 @@ export function exportExternalSessionV2ToJson(session: ExternalPlanSessionV2): C
                 weightKg,
                 weightPercent1Rm,
                 targetRpe: step.effort?.rpe !== undefined ? rangeMidpoint(step.effort.rpe) : undefined,
+                targets,
                 restAfterSec: rangeMidpoint(step.rest),
+                recoveryTarget,
                 stopConditions: step.stopConditions,
                 optional: step.optional,
                 notes: step.notes,

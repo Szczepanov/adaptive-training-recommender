@@ -352,4 +352,67 @@ describe('workoutJsonExport', () => {
         expect(json.blocks[0].steps[0]).toMatchObject({ sets: 4, repetitions: 7, restAfterSec: 180 });
         expect(validateGarminExportFidelity(json)).toEqual([]);
     });
+
+    it('extracts power targets from notes for v2 cycling sessions', () => {
+        const session: ExternalPlanSessionV2 = {
+            id: 'w1-z2',
+            title: 'Zone 2 cycling',
+            priority: 'supporting',
+            placement: { week: 1, preferredDay: 'tuesday', flexibility: 'any_day', ifMissed: 'drop' },
+            gating: { modality: 'cycling', intensity: 'moderate', durationMin: 60, durationMax: 60, environment: 'outdoor', equipment: [] },
+            definition: {
+                schemaVersion: 1, id: 'w1-z2', revision: 1, title: 'Zone 2 cycling', summary: 'Low-variability aerobic support.', intent: 'training',
+                blocks: [{
+                    id: 'block-main', role: 'main', executionMode: 'sequential',
+                    steps: [{
+                        id: 'step-z2', kind: 'exercise', title: 'Zone 2 cycling',
+                        exerciseRef: { kind: 'unresolved_free_text', name: 'Zone 2 cycling' },
+                        dose: { kind: 'duration', seconds: 3600 },
+                        notes: 'Approximately 140-175 W with smooth cadence and minimal power variability.',
+                    }],
+                }],
+            },
+        };
+
+        const json = exportExternalSessionV2ToJson(session);
+        expect(json.blocks[0].steps[0].targets).toEqual(['140-175 W']);
+    });
+
+    it('extracts power targets and recovery targets for v2 threshold interval session', () => {
+        const session: ExternalPlanSessionV2 = {
+            id: 'w1-threshold-v2',
+            title: 'Threshold intervals',
+            priority: 'key',
+            placement: { week: 1, preferredDay: 'thursday', flexibility: 'preferred', ifMissed: 'drop' },
+            gating: { modality: 'cycling', intensity: 'hard', durationMin: 75, durationMax: 90, environment: 'either', equipment: [] },
+            definition: {
+                schemaVersion: 1, id: 'w1-threshold-v2', revision: 1, title: 'Threshold intervals', intent: 'training',
+                blocks: [
+                    {
+                        id: 'block-warmup', role: 'warmup', executionMode: 'sequential',
+                        steps: [{
+                            id: 'step-warmup', kind: 'exercise', title: 'Progressive cycling warm-up',
+                            exerciseRef: { kind: 'unresolved_free_text', name: 'Progressive cycling warm-up' },
+                            dose: { kind: 'duration', seconds: 1200 },
+                            notes: 'Approximately 140-175 W.',
+                        }],
+                    },
+                    {
+                        id: 'block-main', role: 'main', executionMode: 'sequential',
+                        steps: [{
+                            id: 'step-interval', kind: 'exercise', title: 'Threshold interval',
+                            exerciseRef: { kind: 'unresolved_free_text', name: 'Threshold interval' },
+                            dose: { kind: 'duration', sets: 3, seconds: 1020 },
+                            rest: 300,
+                            notes: 'Target approximately 235-245 W. Keep cadence and mechanics stable across all three intervals.',
+                        }],
+                    },
+                ],
+            },
+        };
+
+        const json = exportExternalSessionV2ToJson(session);
+        expect(json.blocks[0].steps[0].targets).toEqual(['140-175 W']);
+        expect(json.blocks[1].steps[0].targets).toEqual(['235-245 W']);
+    });
 });
