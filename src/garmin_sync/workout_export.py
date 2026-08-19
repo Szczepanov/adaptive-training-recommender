@@ -195,6 +195,35 @@ def _resolve_strength_rest_seconds(step: dict[str, Any]) -> int | None:
     return None
 
 
+def _get_strength_step_desc(step: dict[str, Any], step_name: str) -> str | None:
+    targets = step.get("targets")
+    desc_parts = [step_name] if step_name else []
+    if targets and isinstance(targets, list) and targets:
+        desc_parts.append(f"({'; '.join(targets)})")
+    return " ".join(desc_parts) if desc_parts else None
+
+
+def _get_strength_step_type(step_name_lower: str, default_step_type: dict[str, Any]) -> dict[str, Any]:
+    if "warm" in step_name_lower:
+        return STEP_TYPE_MAP["warmup"]
+    if "cool" in step_name_lower:
+        return STEP_TYPE_MAP["cooldown"]
+    return default_step_type
+
+
+def _get_strength_end_condition(
+    reps: Any, duration_sec: Any
+) -> tuple[dict[str, Any], Any]:
+    if reps and reps > 0:
+        return END_CONDITION_MAP["reps"], reps
+    if duration_sec and duration_sec > 0:
+        return END_CONDITION_MAP["time"], duration_sec
+    # No usable rep target and no duration: prefer an explicit/manual
+    # completion condition over fabricating a duration or using the
+    # set count as the rep target.
+    return END_CONDITION_MAP["lap_button"], None
+
+
 def _build_strength_step_or_group(
     step: dict[str, Any],
     step_order: int,
@@ -226,30 +255,10 @@ def _build_strength_step_or_group(
 
     step_name = str(step.get("name", "")).strip()
     step_name_lower = step_name.lower()
-    targets = step.get("targets")
-    desc_parts = [step_name] if step_name else []
-    if targets and isinstance(targets, list) and targets:
-        desc_parts.append(f"({'; '.join(targets)})")
-    step_desc = " ".join(desc_parts) if desc_parts else None
 
-    step_type = default_step_type
-    if "warm" in step_name_lower:
-        step_type = STEP_TYPE_MAP["warmup"]
-    elif "cool" in step_name_lower:
-        step_type = STEP_TYPE_MAP["cooldown"]
-
-    if reps and reps > 0:
-        end_condition = END_CONDITION_MAP["reps"]
-        end_condition_value: Any = reps
-    elif duration_sec and duration_sec > 0:
-        end_condition = END_CONDITION_MAP["time"]
-        end_condition_value = duration_sec
-    else:
-        # No usable rep target and no duration: prefer an explicit/manual
-        # completion condition over fabricating a duration or using the
-        # set count as the rep target.
-        end_condition = END_CONDITION_MAP["lap_button"]
-        end_condition_value = None
+    step_desc = _get_strength_step_desc(step, step_name)
+    step_type = _get_strength_step_type(step_name_lower, default_step_type)
+    end_condition, end_condition_value = _get_strength_end_condition(reps, duration_sec)
 
     exercise_dto: dict[str, Any] = {
         "type": "ExecutableStepDTO",
