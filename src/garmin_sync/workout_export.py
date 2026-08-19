@@ -203,7 +203,9 @@ def _get_strength_step_desc(step: dict[str, Any], step_name: str) -> str | None:
     return " ".join(desc_parts) if desc_parts else None
 
 
-def _get_strength_step_type(step_name_lower: str, default_step_type: dict[str, Any]) -> dict[str, Any]:
+def _get_strength_step_type(
+    step_name_lower: str, default_step_type: dict[str, Any]
+) -> dict[str, Any]:
     if "warm" in step_name_lower:
         return STEP_TYPE_MAP["warmup"]
     if "cool" in step_name_lower:
@@ -211,9 +213,7 @@ def _get_strength_step_type(step_name_lower: str, default_step_type: dict[str, A
     return default_step_type
 
 
-def _get_strength_end_condition(
-    reps: Any, duration_sec: Any
-) -> tuple[dict[str, Any], Any]:
+def _get_strength_end_condition(reps: Any, duration_sec: Any) -> tuple[dict[str, Any], Any]:
     if reps and reps > 0:
         return END_CONDITION_MAP["reps"], reps
     if duration_sec and duration_sec > 0:
