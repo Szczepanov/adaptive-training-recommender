@@ -210,12 +210,15 @@ export function adjudicateAuthoredSession(
         gateFailures.push('restricted_category');
     }
 
-    // If hard gates failed, reject the replacement
+    // If hard gates failed, reject the replacement. Distinct checks above (e.g. the recover-mode
+    // gate and the cost-ceiling gate) can independently land on the same reason, so dedupe before
+    // describing it -- otherwise the rationale reads "restricted category and restricted category".
     if (gateFailures.length > 0) {
-        const failureDescription = describeEligibilityReasons(gateFailures);
+        const uniqueGateFailures = [...new Set(gateFailures)];
+        const failureDescription = describeEligibilityReasons(uniqueGateFailures);
         return {
             decision: 'reject',
-            gateFailures,
+            gateFailures: uniqueGateFailures,
             rationale: `Authored session cannot replace today's recommendation: ${failureDescription}.`,
         };
     }

@@ -186,6 +186,34 @@ describe('authoredSessionGates (ADR-0023 / D-MAUTH / D-CANDIDATE)', () => {
         expect(verdict.gateFailures).toContain('restricted_category');
     });
 
+    it('dedupes a gate failure reason hit by more than one check rather than repeating it in the rationale', () => {
+        // In recover mode with a Rest envelope tier, a non-recovery session trips both the
+        // recover-mode gate and the cost-ceiling gate with the same 'restricted_category'
+        // reason -- the rationale must not read "restricted category and restricted category".
+        const envelopeState = {
+            mode: 'recover',
+            envelopes: {
+                safety: { restrictedModalities: [], clinicalFlagActive: false },
+                plan: { maxAllowableTier: 'Rest' },
+            },
+            telemetry: {},
+        } as unknown as EnvelopeState;
+
+        const verdict = adjudicateAuthoredSession(
+            sampleDefinition,
+            mockReadiness,
+            mockContext,
+            envelopeState,
+            mockPlannedDose,
+            '2026-08-18',
+            mockAvailability,
+        );
+
+        expect(verdict.decision).toBe('reject');
+        expect(verdict.gateFailures).toEqual(['restricted_category']);
+        expect(verdict.rationale).not.toMatch(/restricted category.*restricted category/i);
+    });
+
     it('rejects an authored session when duration exceeds available time budget', () => {
         const envelopeState = {
             mode: 'train',
