@@ -320,12 +320,13 @@ Paste this above the plan request when asking an AI to author or revise a plan.
 > - `isEvent`: `true` only on the target event itself (a race, a test event). An event
 >   session must also use `flexibility: "fixed"` with a `preferredDay`. Do not mark
 >   ordinary hard sessions as events.
-> - `scaling`: `reducible` (`false` when the session has no useful reduced form — a race
->   simulation, a test — in which case say so rather than inventing a compromised version),
->   `reducedSummary` (how to cut this session down while keeping its purpose),
->   `reducedDurationMin`, `minimumUsefulDurationMin` (below this, skipping is better than
->   a fragment), `fallback` (advisory author suggestion shown if the equipment or venue is
->   unavailable; it is not an executable substitute).
+> - `scaling`: `reducible` (boolean; set to `false` when the session has no useful reduced form —
+>   e.g. a race simulation or test. When `reducible` is `false`, omit `reducedSummary` and
+>   `reducedDurationMin` entirely), `reducedSummary` (how to cut this session down while
+>   keeping its purpose; only include when `reducible` is `true`), `reducedDurationMin`
+>   (minutes; only include when `reducible` is `true`), `minimumUsefulDurationMin` (below
+>   this, skipping is better than a fragment), `fallback` (advisory author suggestion shown
+>   if the equipment or venue is unavailable; it is not an executable substitute).
 >
 > Do not include travel weeks, illness, or time off — those are handled separately by the
 > app's own calendar. Plan as if every scheduled day is available.
