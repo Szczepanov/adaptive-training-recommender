@@ -1,13 +1,19 @@
 // M3.6: a plan may be either schema version; every field compared below except the final
-// content check is identical on v1 and v2 sessions. The content check itself stays a
-// coarse "changed"/"unchanged" for a v2 session -- fine-grained per-field content diffing
-// is M3.7's stated scope, not this one's.
+// content check is identical on v1 and v2 sessions. M3.7 replaces the content check's
+// coarse "changed"/"unchanged" with a fine-grained per-field diff for v2 sessions (whose
+// content is a normalized `SessionDefinition`); v1's flat `ExternalPrescription` keeps the
+// coarse check since it has no comparable block/step structure to diff.
 import { isV2Session, type AnyExternalTrainingPlan as ExternalTrainingPlan } from '../sessions/externalPlanV2';
+import { diffSessionDefinitions, hasBehaviorChanges, type SessionContentDiffRow } from '../sessions/sessionDefinitionDiff';
 
 export interface PlanDiffRow {
     sessionId: string;
     change: 'added' | 'removed' | 'changed';
     detail: string;
+    /** Fine-grained content diff, present only when both revisions are `external-plan@2`
+     * sessions. Absence does not mean nothing changed -- see `detail` for the coarse v1
+     * fallback line ("the session content changed"). */
+    contentChanges?: SessionContentDiffRow[];
 }
 
 function sameStringSet(left: readonly string[] | undefined, right: readonly string[] | undefined): boolean {
@@ -65,12 +71,31 @@ export function diffPlans(previous: ExternalTrainingPlan, next: ExternalTraining
         if (!sameStringSet(old.objectives, session.objectives)) changes.push('objective tags changed');
         if (!sameStructuredValue(old.scaling, session.scaling)) changes.push('scaling / fallback policy changed');
         if (Boolean(old.isEvent) !== Boolean(session.isEvent)) changes.push(session.isEvent ? 'now marked as an event' : 'no longer marked as an event');
-        // A coarse "changed"/"unchanged" content comparison. Fine-grained per-field content
-        // diffing (which side changed exactly what) is M3.7's stated job for both schemas.
-        const oldContent = isV2Session(old) ? old.definition : old.prescription;
-        const newContent = isV2Session(session) ? session.definition : session.prescription;
-        if (!sameStructuredValue(oldContent, newContent)) changes.push('the session content changed');
-        if (changes.length > 0) rows.push({ sessionId: id, change: 'changed', detail: `“${session.title}”: ${changes.join('; ')}.` });
+
+        let contentChanges: SessionContentDiffRow[] | undefined;
+        if (isV2Session(old) && isV2Session(session)) {
+            // Fine-grained per-field content diff (M3.7): what changed inside blocks/steps/
+            // choices, not just that something did.
+            contentChanges = diffSessionDefinitions(old.definition, session.definition);
+            if (contentChanges.length > 0) {
+                changes.push(hasBehaviorChanges(contentChanges) ? 'the session content changed (see below)' : 'session wording changed (see below)');
+            }
+        } else {
+            // v1's flat `ExternalPrescription` has no comparable block/step structure --
+            // this stays a coarse "changed"/"unchanged" content comparison.
+            const oldContent = isV2Session(old) ? old.definition : old.prescription;
+            const newContent = isV2Session(session) ? session.definition : session.prescription;
+            if (!sameStructuredValue(oldContent, newContent)) changes.push('the session content changed');
+        }
+
+        if (changes.length > 0) {
+            rows.push({
+                sessionId: id,
+                change: 'changed',
+                detail: `“${session.title}”: ${changes.join('; ')}.`,
+                ...(contentChanges && contentChanges.length > 0 ? { contentChanges } : {}),
+            });
+        }
     }
 
     return rows;

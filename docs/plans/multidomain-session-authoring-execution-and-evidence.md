@@ -324,7 +324,7 @@ rewritten as an outcome; an in-progress item retains its remaining acceptance wo
 | M3.4 | Catalog-to-definition adapter and generic runner strength parity | `[x]` | Runner parity reached (RIR/gauges, context, 1RM writeback, shared read); dual-runner retained for safe transition |
 | M3.5 | Bounded exercise/drill facet vocabulary | `[x]` | — |
 | M3.6 | External plan/session schema v2 adapter | `[x]` | Schema, validation, resolver/display wiring, export support shipped; M3.7's fine-grained diff remains |
-| M3.7 | Full semantic import preview and diff | `[-]` | M3.6 semantic source and revision diff |
+| M3.7 | Full semantic import preview and diff | `[x]` | — |
 | M3.8 | Manual block-first session builder | `[-]` | Bounded hardening only: option sets / fixture-equivalence / accessibility gaps that matter in real use; stop when current builder is sufficient |
 | M4.1 | Group execution modes | `[x]` | M2.5 |
 | M4.2 | Recorded athlete choices and alternatives | `[x]` | M4.1, M3.5 |
@@ -837,7 +837,7 @@ export JSON (`canonical_workout_v1`) to be directly pasted and converted into no
 scoped: fine-grained per-field content diffing for a v2 session (`externalPlanDiff.ts`
 reports a coarse "the session content changed" for either schema).
 
-### M3.7 `[-]` Full semantic import preview and diff
+### M3.7 `[x]` Full semantic import preview and diff
 
 **Progress (2026-08-18).** `SessionDefinitionPreview` shows normalized blocks and groups, dose,
 effort, rest, tempo, optionality, unresolved movement status, authored option triggers/effects,
@@ -855,6 +855,46 @@ revision diff flags every behavior-changing field.
 **Done when.** Import cannot proceed through unresolved blocking semantics; changing per-side
 to bilateral, optional to required, or end-block to reduce-load is visible before confirm; and
 the preview shows every supplied workout step rather than one summary line.
+
+**Outcome (2026-08-19).** The two remaining gaps from the 2026-08-18 progress note are closed.
+
+* **`external-plan@2` full-content preview.** `PlanPreview`'s per-session summary row now
+  renders an expandable "Full session content" `<details>` (closed by default so the scannable
+  list stays intact) that mounts the existing `SessionDefinitionPreview` against
+  `session.definition` for every v2 session — the same block/step/dose/effort/option-set
+  rendering JSON/manual authoring already had. v1 sessions are unaffected: `prescription` isn't
+  a `SessionDefinition`, so the summary line remains their only preview, matching what the
+  schema can express.
+* **Fine-grained revision diff.** New pure `sessions/sessionDefinitionDiff.ts`
+  (`diffSessionDefinitions`) replaces the coarse "the session content changed" line with
+  block/step/choice-level rows, each tagged `behaviorChanging`. Per-side to bilateral,
+  optional to required, dose/load/effort/quality/rest/tempo changes, an authored choice's
+  actions changing (including the named end-block-to-reduce-load example), and added/removed
+  blocks/steps/choices/options are all `behaviorChanging: true`; title/notes/summary/trigger
+  wording are `false`. `externalPlanDiff.ts` calls it only when both the stored and pasted
+  session are v2 (`isV2Session` on both sides) — v1's flat `ExternalPrescription` has no
+  comparable block/step structure and keeps the coarse check, so the existing v1 diff test's
+  literal "the session content changed" expectation still holds unmodified.
+* **Blocking on unreviewed behavior changes.** Referential-integrity blocking (an option
+  action's `targetStepId`/`targetBlockId` not resolving) was already enforced pre-preview by
+  `validateSessionDefinition`, itself already called on every v2 session's `definition` inside
+  `validateExternalTrainingPlanV2` — that half of the "Done when" line was already true going
+  in. What was missing was making a *behavior-changing* diff impossible to scroll past: the
+  preview now lists every fine-grained row inline under its session (⚠-prefixed and
+  red-highlighted when `behaviorChanging`), and renders a checkbox — "I reviewed the N behavior
+  changes marked ⚠ above" — that must be checked before **Import this plan** enables, whenever
+  `behaviorChangeCount > 0`. A diff containing only cosmetic wording changes never shows the
+  checkbox and never blocks.
+
+Verified by `sessions/sessionDefinitionDiff.test.ts` (identical-definition no-op, per-side↔
+bilateral, optional↔required, the end-block/reduce-load choice-action swap, dose/load
+before/after formatting, added/removed blocks and steps, cosmetic-only wording producing zero
+behavior rows) and new `externalPlanDiff.ts` cases in `ExternalPlanImport.test.ts` (a v2/v2
+pair surfaces `contentChanges` and the "(see below)" summary suffix; a title-only v2 change
+stays cosmetic; an unchanged v2 definition produces no diff row) — the pre-existing v1 diff
+tests pass unmodified. `sessions/architecture.test.ts` and `engine/externalArchitecture.test.ts`
+pass unchanged (the new diff module only imports `sessions/models.ts`). Full `npm run check`
+(typecheck, lint, unit tests, catalog validation) passes.
 
 ### M3.8 `[-]` Manual block-first session builder
 

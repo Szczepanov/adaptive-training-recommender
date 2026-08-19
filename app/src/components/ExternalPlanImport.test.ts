@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { diffPlans } from './externalPlanDiff';
 import { EXTERNAL_PLAN_SCHEMA, type ExternalTrainingPlan } from '../engine/models';
+import { EXTERNAL_PLAN_SCHEMA_V2, type ExternalTrainingPlanV2 } from '../sessions/externalPlanV2';
+import type { SessionDefinition } from '../sessions/models';
 
 function plan(): ExternalTrainingPlan {
     return {
@@ -66,5 +68,82 @@ describe('diffPlans', () => {
         next.sessions[0].objectives = [...(next.sessions[0].objectives ?? [])].reverse();
 
         expect(diffPlans(plan(), next)).toEqual([]);
+    });
+});
+
+function v2Definition(): SessionDefinition {
+    return {
+        schemaVersion: 1,
+        id: 's1',
+        revision: 1,
+        title: 'Threshold',
+        intent: 'training',
+        blocks: [
+            {
+                id: 'block-main',
+                role: 'main',
+                executionMode: 'sequential',
+                steps: [
+                    {
+                        id: 'step-interval',
+                        kind: 'exercise',
+                        title: 'Interval',
+                        exerciseRef: { kind: 'unresolved_free_text', name: 'Bike interval' },
+                        dose: { kind: 'duration', sets: 3, seconds: 720 },
+                        rest: 240,
+                        optional: false,
+                    },
+                ],
+            },
+        ],
+    };
+}
+
+function v2Plan(): ExternalTrainingPlanV2 {
+    return {
+        schema: EXTERNAL_PLAN_SCHEMA_V2,
+        planId: 'block', revision: 1, title: 'Block', startDate: '2026-08-17', weekCount: 1,
+        sessions: [{
+            id: 's1', title: 'Threshold', priority: 'key',
+            placement: { week: 1, preferredDay: 'tuesday', flexibility: 'preferred', ifMissed: 'reschedule_within_week' },
+            gating: { modality: 'cycling', intensity: 'hard', durationMin: 60, durationMax: 75, environment: 'either', equipment: ['indoor_bike'] },
+            objectives: ['threshold_quality', 'zone2_aerobic'],
+            definition: v2Definition(),
+        }],
+    };
+}
+
+describe('diffPlans — M3.7 fine-grained v2 content diff', () => {
+    it('replaces the coarse content line with per-field rows for a v2/v2 session pair', () => {
+        const previous = v2Plan();
+        const next = structuredClone(previous);
+        next.revision = 2;
+        next.sessions[0].definition.blocks[0].steps[0].optional = true;
+
+        const rows = diffPlans(previous, next);
+        const row = rows.find(r => r.sessionId === 's1');
+        expect(row?.contentChanges).toBeDefined();
+        expect(row?.contentChanges?.some(change => change.behaviorChanging && change.detail.includes('required → optional'))).toBe(true);
+        expect(row?.detail).toContain('the session content changed (see below)');
+    });
+
+    it('marks a title-only content change as non-behavior-changing (cosmetic)', () => {
+        const previous = v2Plan();
+        const next = structuredClone(previous);
+        next.revision = 2;
+        next.sessions[0].definition.title = 'Threshold v2';
+
+        const rows = diffPlans(previous, next);
+        const row = rows.find(r => r.sessionId === 's1');
+        expect(row?.contentChanges?.every(change => !change.behaviorChanging)).toBe(true);
+        expect(row?.detail).toContain('session wording changed (see below)');
+    });
+
+    it('reports nothing when the v2 definition is unchanged', () => {
+        const previous = v2Plan();
+        const next = structuredClone(previous);
+        next.revision = 2;
+
+        expect(diffPlans(previous, next)).toEqual([]);
     });
 });
