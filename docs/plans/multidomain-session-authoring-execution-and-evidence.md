@@ -714,7 +714,7 @@ only after completion.
 - Fail-closed occurrence resolution: Replaces today's recommendation with content-addressed manual session source bindings, safely falling back to catalog recommendations with diagnostic rationale on rejection.
 - Additional sessions: Binds occurrences to `Recommendation.additionalSessions`.
 - Re-enabled in `SessionDestinationSheet.tsx` with full unit test coverage in `SessionDestinationSheet.test.tsx` and `authoredSessionGates.test.ts`.
-- Bumped `POLICY_VERSION` to `'2026-08-authored-session-authority-v2'` with tracking in `check-policy-drift.mjs`; v2 corrects the M3.3 snapshot binding and replay provenance.
+- Bumped `POLICY_VERSION` to `'2026-08-authored-session-authority-v3'` with tracking in `check-policy-drift.mjs`; v3 binds immutable execution prescriptions to their exact session source, rejects cross-source replay, and carries forward the M3.3 snapshot/replay correction from historical v2.
 
 ### M3.4 `[x]` Catalog-to-definition adapter and generic runner strength parity
 

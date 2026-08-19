@@ -1093,6 +1093,7 @@ emulatorDescribe('Firestore security rules', () => {
             userId: ownerId,
             schemaVersion: 1,
             prescriptionHash: 'presc-hash-abc',
+            sessionSource: { kind: 'catalog', workoutId: 'strength_full_body_maintenance_01', catalogVersion: '1' },
             definitionHash: 'def-hash-123',
             blocks: [
                 {

@@ -192,6 +192,11 @@ export async function createExecutionPrescriptionFromCatalog(
     const draft: ExecutionPrescription = {
         schemaVersion: 1,
         prescriptionHash: '',
+        sessionSource: {
+            kind: 'catalog',
+            workoutId: prescription.workoutId,
+            catalogVersion: String(prescription.workoutVersion),
+        },
         definitionHash,
         blocks: sessionDef.blocks,
         createdAt: now,

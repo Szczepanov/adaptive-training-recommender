@@ -44,6 +44,7 @@ describe('prepareCatalogSessionLaunch (M3.1/M3.4)', () => {
         expect(services.prescription.savePrescription).toHaveBeenCalledTimes(1);
         const [, saved] = services.prescription.savePrescription.mock.calls[0];
         expect(saved.prescriptionHash).toBe(launch.binding.prescriptionHash);
+        expect(saved.sessionSource).toEqual(launch.binding.sessionSource);
         expect(saved.blocks).toEqual(launch.definition.blocks);
     });
 
@@ -82,6 +83,7 @@ describe('prepareAuthoredOccurrenceLaunch (M3.3)', () => {
         const lastSave = services.prescription.savePrescription.mock.calls.at(-1);
         expect(lastSave).toBeDefined();
         const saved = lastSave![1];
+        expect(saved.sessionSource).toEqual(source);
         expect(saved.definitionHash).toBe(source.contentHash);
         expect(saved.blocks).toEqual(definition.blocks);
     });

@@ -56,7 +56,7 @@ describe('resolveSessionDefinition', () => {
         services.definition.getDefinitionRevision.mockResolvedValue({ status: 'AVAILABLE', data: manualDefinition, revision: null } satisfies DataState<SessionDefinition>);
         services.prescription.getPrescription.mockResolvedValue({
             status: 'AVAILABLE', revision: null,
-            data: { schemaVersion: 1, prescriptionHash: 'manual-prescription', definitionHash: hash, blocks: evaluatedBlocks, createdAt: '2026-08-18T00:00:00Z' },
+            data: { schemaVersion: 1, prescriptionHash: 'manual-prescription', sessionSource: { kind: 'manual', definitionId: 'manual-1', revision: 1, contentHash: hash }, definitionHash: hash, blocks: evaluatedBlocks, createdAt: '2026-08-18T00:00:00Z' },
         } satisfies DataState<ExecutionPrescription>);
 
         await expect(resolveSessionDefinition('u1', {
@@ -67,7 +67,7 @@ describe('resolveSessionDefinition', () => {
 
         services.prescription.getPrescription.mockResolvedValue({
             status: 'AVAILABLE', revision: null,
-            data: { schemaVersion: 1, prescriptionHash: 'wrong', definitionHash: 'different', blocks: evaluatedBlocks, createdAt: '2026-08-18T00:00:00Z' },
+            data: { schemaVersion: 1, prescriptionHash: 'wrong', sessionSource: { kind: 'manual', definitionId: 'manual-1', revision: 1, contentHash: hash }, definitionHash: 'different', blocks: evaluatedBlocks, createdAt: '2026-08-18T00:00:00Z' },
         } satisfies DataState<ExecutionPrescription>);
         await expect(resolveSessionDefinition('u1', {
             kind: 'manual', definitionId: 'manual-1', revision: 1, contentHash: hash,
@@ -92,6 +92,7 @@ describe('resolveSessionDefinition', () => {
         const catalogSource = { kind: 'catalog' as const, workoutId: 'catalog-workout-1', catalogVersion: '1' };
         const storedPrescription: ExecutionPrescription = {
             schemaVersion: 1, prescriptionHash: 'hash-1', definitionHash: 'def-hash-1',
+            sessionSource: catalogSource,
             blocks: [{ id: 'evaluated-block', role: 'main', executionMode: 'sequential', steps: [] }],
             createdAt: '2026-08-18T00:00:00Z',
         };
@@ -112,6 +113,20 @@ describe('resolveSessionDefinition', () => {
             expect(result.data.blocks).toEqual(storedPrescription.blocks);
             expect(result.data.title).toBe('Fake Catalog Workout');
             expect(services.prescription.getPrescription).toHaveBeenCalledWith('u1', 'hash-1');
+        });
+
+        it('rejects a content-valid prescription bound to a different catalog source', async () => {
+            services.prescription.getPrescription.mockResolvedValue({
+                status: 'AVAILABLE', revision: null,
+                data: {
+                    ...storedPrescription,
+                    sessionSource: { kind: 'catalog', workoutId: 'other-workout', catalogVersion: '1' },
+                },
+            } satisfies DataState<ExecutionPrescription>);
+
+            await expect(resolveSessionDefinition('u1', catalogSource, 'hash-1')).resolves.toMatchObject({
+                status: 'INVALID', issues: [{ code: 'prescription-source-mismatch' }],
+            });
         });
 
         it('propagates a missing or corrupted stored prescription instead of falling back', async () => {

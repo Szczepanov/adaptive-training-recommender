@@ -27,6 +27,12 @@ export async function prepareUnplannedSessionLaunch(
     const unsignedPrescription: ExecutionPrescription = {
         schemaVersion: 1,
         prescriptionHash: '',
+        sessionSource: {
+            kind: 'manual',
+            definitionId: definition.id,
+            revision: definition.revision,
+            contentHash,
+        },
         definitionHash: contentHash,
         blocks: definition.blocks,
         createdAt: now,
@@ -121,6 +127,7 @@ export async function prepareAuthoredOccurrenceLaunch(
     const unsignedPrescription: ExecutionPrescription = {
         schemaVersion: 1,
         prescriptionHash: '',
+        sessionSource: source,
         definitionHash: source.contentHash,
         blocks: acceptedDefinition.blocks,
         createdAt: now,

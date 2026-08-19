@@ -338,32 +338,39 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
             });
         }
 
-        const now = new Date().toISOString();
-
-        // 1RM Derivation Writeback (M3.4 Strength Parity)
-        if (entries.some(e => e.payload.kind === 'repetition')) {
-            const adaptedSession = adaptNormalizedExecutionToStrengthSession({
-                execution: {
-                    ...execution,
-                    state: 'completed',
-                    completedAt: now,
-                    updatedAt: now,
-                    ...(payload?.sessionRpe !== undefined ? { sessionRpe: payload.sessionRpe } : {}),
-                    ...(payload?.notes !== undefined ? { notes: payload.notes } : {}),
-                },
-                entries,
-            });
-            if (adaptedSession.exercises.length > 0) {
-                await preferencesService.applyOneRepMaxDerivations(userId, adaptedSession, now);
-            }
-        }
-
         await sessionExecutionService.transitionExecution(userId, execution.executionId, 'completed', {
             sessionRpe: payload?.sessionRpe,
             notes: payload?.notes,
         });
-        setExecution(prev => prev ? { ...prev, state: 'completed', completedAt: now } : null);
-    }, [entries, execution, userId]);
+        const now = new Date().toISOString();
+        const completedExecution = {
+            ...execution,
+            state: 'completed' as const,
+            completedAt: now,
+            updatedAt: now,
+            ...(payload?.sessionRpe !== undefined ? { sessionRpe: payload.sessionRpe } : {}),
+            ...(payload?.notes !== undefined ? { notes: payload.notes } : {}),
+        };
+
+        // Derive only after the terminal state is durable and only from a fresh read of
+        // persisted entries. `logEntry` intentionally keeps optimistic UI state on an
+        // unavailable write, which must never influence a derived performance value.
+        const persistedEntries = await sessionExecutionService.getEntries(userId, execution.executionId);
+        if (persistedEntries.some(e => e.payload.kind === 'repetition')) {
+            const adaptedSession = adaptNormalizedExecutionToStrengthSession({
+                execution: completedExecution,
+                entries: persistedEntries,
+            });
+            if (adaptedSession.exercises.length > 0) {
+                // Derived writes are deterministic and only replace the same `derived`
+                // ownership rung, so a recovery retry after a preferences outage is
+                // idempotent for this completed execution.
+                await preferencesService.applyOneRepMaxDerivations(userId, adaptedSession, now);
+            }
+        }
+
+        setExecution(completedExecution);
+    }, [execution, userId]);
 
     const abandonSession = useCallback(async (notes?: string) => {
         if (!execution || execution.state !== 'in_progress') return;

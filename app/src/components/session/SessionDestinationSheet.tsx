@@ -63,7 +63,7 @@ export const SessionDestinationSheet: React.FC<SessionDestinationSheetProps> = (
                 throw new Error('This destination is not available until its full hard-gate and replay contract is implemented.');
             }
             const today = getLocalDateString();
-            if ((selectedDestination === 'schedule' || selectedDestination === 'replace_recommendation' || selectedDestination === 'additional_session') && (!isValidDate(scheduleDate) || scheduleDate < today)) {
+            if (selectedDestination === 'schedule' && (!isValidDate(scheduleDate) || scheduleDate < today)) {
                 throw new Error('Choose today or a future date in the Europe/Warsaw calendar.');
             }
             const validation = validateSessionDefinition(definition);
@@ -86,14 +86,18 @@ export const SessionDestinationSheet: React.FC<SessionDestinationSheetProps> = (
                 return;
             }
 
+            // Replacement and addition are explicit authority actions for the current
+            // Warsaw-local decision only. A future session is calendar-only until the
+            // athlete deliberately promotes it on that date.
+            const occurrenceDate = selectedDestination === 'schedule' ? scheduleDate : today;
             const definitionRef = { definitionId: definition.id, revision: definition.revision, contentHash };
             let occurrence: SessionOccurrence;
             if (selectedDestination === 'replace_recommendation') {
-                occurrence = await sessionOccurrenceService.replaceRecommendationOccurrence(userId, scheduleDate, definitionRef);
+                occurrence = await sessionOccurrenceService.replaceRecommendationOccurrence(userId, occurrenceDate, definitionRef);
             } else if (selectedDestination === 'additional_session') {
-                occurrence = await sessionOccurrenceService.addAdditionalSessionOccurrence(userId, scheduleDate, definitionRef);
+                occurrence = await sessionOccurrenceService.addAdditionalSessionOccurrence(userId, occurrenceDate, definitionRef);
             } else {
-                occurrence = await sessionOccurrenceService.scheduleOccurrence(userId, scheduleDate, definitionRef);
+                occurrence = await sessionOccurrenceService.scheduleOccurrence(userId, occurrenceDate, definitionRef);
             }
             onOccurrenceCreated?.(occurrence);
             onClose();
@@ -144,7 +148,7 @@ export const SessionDestinationSheet: React.FC<SessionDestinationSheetProps> = (
                     ))}
                 </div>
 
-                {(selectedDestination === 'schedule' || selectedDestination === 'replace_recommendation' || selectedDestination === 'additional_session') && (
+                {selectedDestination === 'schedule' && (
                     <label className="destination-schedule-date">
                         Date
                         <input

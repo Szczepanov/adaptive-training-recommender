@@ -128,15 +128,11 @@ function App() {
                 return;
               }
               const launch = { definition: definitionState.data, binding };
-              // The source-neutral runner has not yet reached ADR-0021 parity for catalog
-              // Strength (RIR/velocity/technical gauges, prior-set context and 1RM
-              // write-back). Keep the v1 runner for that source until parity lands.
-              if (launch.definition.dominantModality === 'strength') {
-                handleNavigate('strength');
-              } else {
-                setSessionLaunch(launch);
-                handleNavigate('sessions');
-              }
+              // Every launched recommendation, including catalog strength, runs through
+              // the source-neutral execution path so occurrence/source/prescription
+              // identity survives into the execution and replay records.
+              setSessionLaunch(launch);
+              handleNavigate('sessions');
             }}
           />
         )}

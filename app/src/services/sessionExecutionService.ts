@@ -132,15 +132,24 @@ export class SessionExecutionService {
     }
 
     async getEntries(userId: string, executionId: string): Promise<SessionEntry[]> {
+        return (await this.readEntries(userId, executionId)).entries;
+    }
+
+    /** Keeps interactive reads permissive while allowing history ingestion to fail closed
+     * on malformed child documents rather than silently dropping evidence. */
+    private async readEntries(userId: string, executionId: string): Promise<{ entries: SessionEntry[]; invalidRecords: number }> {
         const snap = await getDocs(this.entriesColl(userId, executionId));
         const entries: SessionEntry[] = [];
+        let invalidRecords = 0;
         for (const docSnap of snap.docs) {
             const parsed = parseSessionEntryDocument(docSnap.data(), docSnap.ref.path);
-            if (parsed.status === 'AVAILABLE') {
+            if (parsed.status === 'AVAILABLE' && parsed.data.executionId === executionId) {
                 entries.push(parsed.data);
+            } else if (parsed.status === 'INVALID' || parsed.status === 'AVAILABLE') {
+                invalidRecords += 1;
             }
         }
-        return entries.sort((a, b) => a.completedAt.localeCompare(b.completedAt));
+        return { entries: entries.sort((a, b) => a.completedAt.localeCompare(b.completedAt)), invalidRecords };
     }
 
     /**
@@ -197,13 +206,14 @@ export class SessionExecutionService {
 
         for (const docSnap of snap.docs) {
             const parsed = parseSessionExecutionDocument(docSnap.data(), docSnap.ref.path);
-            if (parsed.status === 'AVAILABLE') {
-                const entries = await this.getEntries(userId, parsed.data.executionId);
+            if (parsed.status === 'AVAILABLE' && parsed.data.executionId === docSnap.id) {
+                const entryRead = await this.readEntries(userId, parsed.data.executionId);
+                invalidRecords += entryRead.invalidRecords;
                 executions.push({
                     execution: parsed.data,
-                    entries,
+                    entries: entryRead.entries,
                 });
-            } else if (parsed.status === 'INVALID') {
+            } else if (parsed.status === 'INVALID' || parsed.status === 'AVAILABLE') {
                 invalidRecords += 1;
             }
         }

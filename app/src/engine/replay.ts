@@ -274,6 +274,7 @@ export async function replayRecommendationAuditAgainstSessions(
     // this file must stay importable without a live Firestore connection (e.g. the CLI
     // replay script only ever calls replayRecommendationAuditAgainstRevision).
     const { executionPrescriptionService } = await import('../services/executionPrescriptionService');
+    const { sessionOccurrenceService } = await import('../services/sessionOccurrenceService');
     const resolvedBindings = new Set<string>();
     const { resolveSessionDefinition } = await import('../sessions/sessionDefinitionResolver');
     for (const binding of bindings) {
@@ -282,7 +283,25 @@ export async function replayRecommendationAuditAgainstSessions(
         const definition = await resolveSessionDefinition(userId, binding.sessionSource, binding.prescriptionHash);
         if (definition.status !== 'AVAILABLE') continue;
 
-        // The resolver binds manual/external/fixture prescription.definitionHash to the
+        if (binding.occurrenceId) {
+            const occurrence = await sessionOccurrenceService.getOccurrence(userId, binding.occurrenceId);
+            if (occurrence.status !== 'AVAILABLE' || occurrence.data.date !== recommendation.date) continue;
+            if (binding.sessionSource.kind === 'manual' && (
+                occurrence.data.definitionRef.definitionId !== binding.sessionSource.definitionId
+                || occurrence.data.definitionRef.revision !== binding.sessionSource.revision
+                || occurrence.data.definitionRef.contentHash !== binding.sessionSource.contentHash
+            )) continue;
+
+            const expectedAuthority = audit?.authoredOccurrence?.occurrenceId === binding.occurrenceId
+                ? 'replace_recommendation'
+                : audit?.additionalSessions?.some(item => sessionBindingEvidenceKey(item) === sessionBindingEvidenceKey(binding))
+                    ? 'additional_session'
+                    : null;
+            if (expectedAuthority && occurrence.data.authority !== expectedAuthority) continue;
+        }
+
+        // The resolver binds the hash-covered source identity and manual/external/fixture
+        // prescription.definitionHash to the
         // exact source bytes and verifies catalog id/version before returning executable
         // stored blocks. Catalog v1 cannot recompute historical display metadata; see the
         // resolver's explicit limitation.

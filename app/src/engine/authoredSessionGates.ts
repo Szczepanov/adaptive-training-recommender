@@ -192,7 +192,11 @@ export function adjudicateAuthoredSession(
 
     // 2. Systemic cost ceiling (in modify mode, check if scaled cost fits)
     const effectiveCost = mode === 'modify' ? systemicCost * 0.7 : systemicCost;
-    if (acceptedSameDaySystemicCost + effectiveCost > maxCost) {
+    // The Rest envelope still permits one deliberately recovery-intent session. Its
+    // bounded recovery cost must not be evaluated against the ordinary zero-cost Rest
+    // ceiling, while every non-recovery session remains excluded in recover mode above.
+    const recoveryWithinRecoverEnvelope = mode === 'recover' && definition.intent === 'recovery';
+    if (!recoveryWithinRecoverEnvelope && acceptedSameDaySystemicCost + effectiveCost > maxCost) {
         gateFailures.push('restricted_category');
     }
 

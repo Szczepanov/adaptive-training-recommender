@@ -666,10 +666,11 @@ service cloud.firestore {
     function hasValidExecutionPrescription(userId, prescriptionHash) {
       let data = request.resource.data;
       return hasOwnedUserId(userId)
-        && data.keys().hasOnly(['userId', 'schemaVersion', 'prescriptionHash', 'definitionHash', 'blocks', 'createdAt'])
-        && data.keys().hasAll(['userId', 'schemaVersion', 'prescriptionHash', 'definitionHash', 'blocks', 'createdAt'])
+        && data.keys().hasOnly(['userId', 'schemaVersion', 'prescriptionHash', 'sessionSource', 'definitionHash', 'blocks', 'createdAt'])
+        && data.keys().hasAll(['userId', 'schemaVersion', 'prescriptionHash', 'sessionSource', 'definitionHash', 'blocks', 'createdAt'])
         && data.prescriptionHash == prescriptionHash
         && data.definitionHash is string
+        && hasValidSessionSource(data.sessionSource)
         && data.schemaVersion == 1
         && data.blocks is list
         && data.createdAt is string;

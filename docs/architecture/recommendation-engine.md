@@ -71,8 +71,10 @@ An active `replace_recommendation` occurrence is resolved at the `Home.tsx` comp
 boundary for its Warsaw-local date. Its pinned manual definition is hash-verified, then
 adjudicated through `evaluateTemplateEligibility`, readiness envelopes, the plan-tier
 ceiling, and injury/category restrictions. An approved or scaled form is saved as a new,
-content-addressed `ExecutionPrescription`; the recommendation and audit retain the source
-reference, occurrence ID, and prescription hash. The primary's audit records
+content-addressed `ExecutionPrescription`, whose hash also covers its exact source reference;
+the recommendation and audit retain the source reference, occurrence ID, and prescription
+hash. Replay verifies the saved occurrence date, authority, and manual definition revision
+before accepting that binding. The primary's audit records
 `authoredOccurrence` and has no catalog candidate scores, so replay proves an adjudicated
 authority decision rather than pretending the catalog ranked it.
 

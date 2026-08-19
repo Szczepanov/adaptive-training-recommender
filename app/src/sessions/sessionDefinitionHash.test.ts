@@ -105,6 +105,7 @@ describe('Session Definition Canonical Hashing (M3.1 / ADR-0023)', () => {
         const presc: ExecutionPrescription = {
             schemaVersion: 1,
             prescriptionHash: '',
+            sessionSource: { kind: 'unplanned_fixture', fixtureId: 'fixture-1' },
             definitionHash: 'def-hash-123',
             blocks: [],
             createdAt: '2026-08-18T10:00:00Z',
@@ -119,7 +120,7 @@ describe('Session Definition Canonical Hashing (M3.1 / ADR-0023)', () => {
 
     it('is stable after the calculated hash and provenance timestamp are attached', async () => {
         const draft: ExecutionPrescription = {
-            schemaVersion: 1, prescriptionHash: '', definitionHash: 'def-hash-123', blocks: [],
+            schemaVersion: 1, prescriptionHash: '', sessionSource: { kind: 'unplanned_fixture', fixtureId: 'fixture-1' }, definitionHash: 'def-hash-123', blocks: [],
             createdAt: '2026-08-18T10:00:00Z',
         };
         const hash = await hashExecutionPrescription(draft);

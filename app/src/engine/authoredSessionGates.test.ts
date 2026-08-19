@@ -245,4 +245,23 @@ describe('authoredSessionGates (ADR-0023 / D-MAUTH / D-CANDIDATE)', () => {
         expect(verdict.decision).toBe('reject');
         expect(verdict.gateFailures).toContain('restricted_category');
     });
+
+    it('permits a recovery-intent session in recover mode', () => {
+        const envelopeState = {
+            mode: 'recover',
+            envelopes: {
+                safety: { restrictedModalities: [], clinicalFlagActive: false },
+                plan: { maxAllowableTier: 'Rest' },
+            },
+            telemetry: {},
+        } as unknown as EnvelopeState;
+        const recoveryDefinition = { ...sampleDefinition, intent: 'recovery' as const, dominantModality: 'Mobility' };
+
+        const verdict = adjudicateAuthoredSession(
+            recoveryDefinition, mockReadiness, mockContext, envelopeState,
+            mockPlannedDose, '2026-08-18', mockAvailability,
+        );
+
+        expect(verdict.decision).toBe('proceed');
+    });
 });

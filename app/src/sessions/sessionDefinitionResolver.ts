@@ -7,7 +7,7 @@ import { computeContentHash } from '../engine/externalPlanHash';
 import { WORKOUTS } from '../workouts/catalog';
 import type { WorkoutDefinition } from '../workouts/models';
 import { adaptExternalPlanSessionToSessionDefinition } from './externalSessionAdapter';
-import { hashSessionDefinition } from './sessionDefinitionHash';
+import { canonicalizeSessionData, hashSessionDefinition } from './sessionDefinitionHash';
 
 // Fixture imports
 import fixture01 from './fixtures/01-full-body-maintenance.json';
@@ -61,6 +61,7 @@ async function applyStoredPrescription(
     userId: string,
     definition: SessionDefinition,
     prescriptionHash: string | undefined,
+    expectedSource: SessionSourceRef,
     expectedDefinitionHash: string | null,
     documentPath: string,
     fallbackRevision: string | null,
@@ -70,6 +71,12 @@ async function applyStoredPrescription(
     }
     const prescriptionState = await executionPrescriptionService.getPrescription(userId, prescriptionHash);
     if (prescriptionState.status !== 'AVAILABLE') return prescriptionState;
+    if (JSON.stringify(canonicalizeSessionData(prescriptionState.data.sessionSource)) !== JSON.stringify(canonicalizeSessionData(expectedSource))) {
+        return {
+            status: 'INVALID',
+            issues: [{ code: 'prescription-source-mismatch', field: 'sessionSource', documentPath }],
+        };
+    }
     if (expectedDefinitionHash !== null && prescriptionState.data.definitionHash !== expectedDefinitionHash) {
         return {
             status: 'INVALID',
@@ -102,7 +109,7 @@ export async function resolveSessionDefinition(
             };
         }
         return applyStoredPrescription(
-            userId, fixture, prescriptionHash, await hashSessionDefinition(fixture),
+            userId, fixture, prescriptionHash, source, await hashSessionDefinition(fixture),
             `fixtures/${source.fixtureId}`, null,
         );
     }
@@ -122,7 +129,7 @@ export async function resolveSessionDefinition(
             };
         }
         return applyStoredPrescription(
-            userId, definition.data, prescriptionHash, contentHash,
+            userId, definition.data, prescriptionHash, source, contentHash,
             `users/${userId}/session_definitions/${source.definitionId}/revisions/${source.revision}`,
             definition.revision,
         );
@@ -160,7 +167,7 @@ export async function resolveSessionDefinition(
         // so source association is the exact workout id/version check above plus the
         // content-verified stored prescription.
         return applyStoredPrescription(
-            userId, adaptWorkoutDefinitionToSessionDefinition(workout), prescriptionHash,
+            userId, adaptWorkoutDefinitionToSessionDefinition(workout), prescriptionHash, source,
             null, `workouts/${source.workoutId}`, null,
         );
     }
@@ -191,7 +198,7 @@ export async function resolveSessionDefinition(
     }
     const definition = adaptExternalPlanSessionToSessionDefinition(session, source.revision);
     return applyStoredPrescription(
-        userId, definition, prescriptionHash, await hashSessionDefinition(definition),
+        userId, definition, prescriptionHash, source, await hashSessionDefinition(definition),
         documentPath, source.contentHash,
     );
 }
