@@ -174,12 +174,27 @@ export const ManualSessionBuilder: React.FC<ManualSessionBuilderProps> = ({ user
         }),
     }));
 
-    const removeAlternative = (blockIndex: number, stepIndex: number, altId: string) => setBlocks(current => current.map((block, index) => index !== blockIndex ? block : {
-        ...block,
-        steps: block.steps.map((step, stepAt) => stepAt !== stepIndex ? step : {
-            ...step,
-            alternatives: (step.alternatives ?? []).filter(alt => alt.id !== altId),
-        }),
+    // Also clears alternativeId on any select_alternative action targeting this step that
+    // referenced the removed alternative -- otherwise it dangles silently: validation only
+    // checks targetStepId/targetBlockId, and the runner's applySelectAlternative no-ops on an
+    // unresolvable id, so the athlete would pick "switch exercise" and nothing would happen.
+    const removeAlternative = (blockIndex: number, stepIndex: number, altId: string) => setBlocks(current => current.map((block, index) => {
+        if (index !== blockIndex) return block;
+        const removedFromStepId = block.steps[stepIndex]?.id;
+        return {
+            ...block,
+            steps: block.steps.map((step, stepAt) => stepAt !== stepIndex ? step : {
+                ...step,
+                alternatives: (step.alternatives ?? []).filter(alt => alt.id !== altId),
+            }),
+            optionSets: (block.optionSets ?? []).map(choice => choice.appliesAtStepId !== removedFromStepId ? choice : {
+                ...choice,
+                options: choice.options.map(option => ({
+                    ...option,
+                    actions: option.actions.map(action => action.kind === 'select_alternative' && action.alternativeId === altId ? { ...action, alternativeId: '' } : action),
+                })),
+            }),
+        };
     }));
 
     const updateAlternative = (blockIndex: number, stepIndex: number, altId: string, exerciseId: string | undefined, title: string) => setBlocks(current => current.map((block, index) => index !== blockIndex ? block : {
@@ -204,6 +219,29 @@ export const ManualSessionBuilder: React.FC<ManualSessionBuilderProps> = ({ user
     const removeChoice = (blockIndex: number, choiceId: string) => updateChoices(blockIndex, choices => choices.filter(choice => choice.id !== choiceId));
     const updateChoice = (blockIndex: number, choiceId: string, patch: Partial<SessionChoice>) => updateChoices(blockIndex, choices => choices.map(choice => choice.id !== choiceId ? choice : { ...choice, ...patch }));
 
+    // Retargets every action across this choice's options that pointed at the previous
+    // `appliesAtStepId`, so switching which step a choice applies to can't silently leave an
+    // action mutating the *old* step. `select_alternative` additionally loses its alternativeId
+    // -- alternatives are step-scoped, so an alternative id valid on the old step is meaningless
+    // (and may not even exist) on the new one; the author must re-pick it.
+    const updateChoiceAppliesAtStep = (blockIndex: number, choiceId: string, nextStepId: string) => updateChoices(blockIndex, choices => choices.map(choice => {
+        if (choice.id !== choiceId) return choice;
+        const previousStepId = choice.appliesAtStepId;
+        return {
+            ...choice,
+            appliesAtStepId: nextStepId,
+            options: choice.options.map(option => ({
+                ...option,
+                actions: option.actions.map(action => {
+                    if (!('targetStepId' in action) || action.targetStepId !== previousStepId) return action;
+                    return action.kind === 'select_alternative'
+                        ? { ...action, targetStepId: nextStepId, alternativeId: '' }
+                        : { ...action, targetStepId: nextStepId };
+                }),
+            })),
+        };
+    }));
+
     const updateOptions = (blockIndex: number, choiceId: string, updater: (options: SessionOption[]) => SessionOption[]) => updateChoices(blockIndex, choices => choices.map(choice => choice.id !== choiceId ? choice : { ...choice, options: updater(choice.options) }));
     const addOption = (blockIndex: number, choiceId: string) => updateOptions(blockIndex, choiceId, options => [...options, createDraftOption(newId)]);
     const removeOption = (blockIndex: number, choiceId: string, optionId: string) => updateOptions(blockIndex, choiceId, options => options.filter(option => option.id !== optionId));
@@ -216,7 +254,12 @@ export const ManualSessionBuilder: React.FC<ManualSessionBuilderProps> = ({ user
         updateActions(blockIndex, choice.id, optionId, actions => [...actions, createDraftAction(kind, { stepId: choice.appliesAtStepId, blockId: block.id, firstAlternativeId })]);
     };
     const removeAction = (blockIndex: number, choiceId: string, optionId: string, actionIndex: number) => updateActions(blockIndex, choiceId, optionId, actions => actions.filter((_, index) => index !== actionIndex));
+    // Patches fields on the action *without* changing its kind (%, sets, reps, alternativeId, ...).
     const updateAction = (blockIndex: number, choiceId: string, optionId: string, actionIndex: number, patch: Partial<SessionChoiceAction>) => updateActions(blockIndex, choiceId, optionId, actions => actions.map((action, index) => index !== actionIndex ? action : { ...action, ...patch } as SessionChoiceAction));
+    // Swaps the action's kind entirely. Merging a patch (as updateAction does) would leave stale
+    // fields from the previous kind on the object -- e.g. switching reduce_load_percent to
+    // end_session must drop `percent`/`targetStepId`, not keep them alongside the new kind.
+    const replaceAction = (blockIndex: number, choiceId: string, optionId: string, actionIndex: number, next: SessionChoiceAction) => updateActions(blockIndex, choiceId, optionId, actions => actions.map((action, index) => index !== actionIndex ? action : next));
 
     const review = () => {
         const result = validateSessionDefinition(definition);
@@ -348,7 +391,7 @@ export const ManualSessionBuilder: React.FC<ManualSessionBuilderProps> = ({ user
                                 </div>
                                 {(block.optionSets ?? []).map(choice => <div key={choice.id} className="builder-choice-card">
                                     <div className="builder-choice-row">
-                                        <label>Applies at<select value={choice.appliesAtStepId} onChange={event => updateChoice(blockIndex, choice.id, { appliesAtStepId: event.target.value })}>
+                                        <label>Applies at<select value={choice.appliesAtStepId} onChange={event => updateChoiceAppliesAtStep(blockIndex, choice.id, event.target.value)}>
                                             {block.steps.map(step => <option key={step.id} value={step.id}>{step.title ?? step.id}</option>)}
                                         </select></label>
                                         <button type="button" onClick={() => removeChoice(blockIndex, choice.id)} aria-label="Remove choice">Remove choice</button>
@@ -358,12 +401,12 @@ export const ManualSessionBuilder: React.FC<ManualSessionBuilderProps> = ({ user
                                         {choice.options.map(option => <div key={option.id} className="builder-option-card">
                                             <div className="builder-option-row">
                                                 <input value={option.label} onChange={event => updateOptionLabel(blockIndex, choice.id, option.id, event.target.value)} aria-label="Option label" />
-                                                <button type="button" onClick={() => removeOption(blockIndex, choice.id, option.id)} aria-label="Remove option">Remove</button>
+                                                <button type="button" disabled={choice.options.length <= 1} onClick={() => removeOption(blockIndex, choice.id, option.id)} aria-label="Remove option">Remove</button>
                                             </div>
                                             {option.actions.map((action, actionIndex) => {
                                                 const targetStep = block.steps.find(step => step.id === choice.appliesAtStepId);
                                                 return <div key={actionIndex} className="builder-action-row">
-                                                    <select value={action.kind} onChange={event => updateAction(blockIndex, choice.id, option.id, actionIndex, createDraftAction(event.target.value as SessionChoiceAction['kind'], { stepId: choice.appliesAtStepId, blockId: block.id, firstAlternativeId: targetStep?.alternatives?.[0]?.id }))}>
+                                                    <select value={action.kind} onChange={event => replaceAction(blockIndex, choice.id, option.id, actionIndex, createDraftAction(event.target.value as SessionChoiceAction['kind'], { stepId: choice.appliesAtStepId, blockId: block.id, firstAlternativeId: targetStep?.alternatives?.[0]?.id }))}>
                                                         {ACTION_KINDS.map(kind => <option key={kind} value={kind}>{ACTION_KIND_LABELS[kind]}</option>)}
                                                     </select>
                                                     {action.kind === 'reduce_load_percent' && <label>%<input type="number" min={1} max={99} value={action.percent} onChange={event => updateAction(blockIndex, choice.id, option.id, actionIndex, { percent: Math.max(1, Number(event.target.value) || 1) })} /></label>}
