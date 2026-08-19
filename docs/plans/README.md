@@ -42,6 +42,11 @@ declared per work item, not only per phase** — a phase can be part-startable, 
 "depends on nothing" at the header while an individual item requires the Phase-0 harness is
 how a plan stops being executable.
 
+A dependency being satisfied is not always enough to make optional capability work startable.
+Where a plan declares an explicit **usage trigger**, the trigger is part of `Blocked by` even
+when every code dependency has landed. This keeps capability numbering from silently becoming
+a delivery queue.
+
 ---
 
 ## Current plans
@@ -55,6 +60,13 @@ Among capability plans, Garmin per-activity telemetry (G) and Mobile UX/UI (UX) 
 **implemented**; Strength session logging (S) is **In progress (default-off)** with all
 numbered code delivered; Multidomain sessions (M) is **In progress** with M0–M2,
 M3.1–M3.6, and M4.1–M4.2 complete.
+
+For Multidomain delivery, the current evidence-first cutline from
+[`2026-08-19-product-scope-cutline-review.md`](../analysis/2026-08-19-product-scope-cutline-review.md)
+is `M3.7 → bounded M3.8 → M4.3 → M5.1 → M5.2`. M6/M7 are usage-triggered capability
+families, not the automatic continuation after M5; M8 may consume them only if athlete use
+justified them independently.
+
 The Phase 0–5 task boards are historical implementation records; the
 [follow-up analysis](../analysis/2026-08-09-phase-0-5-completion-review.md) records
 which original findings are fully closed and which remain ongoing work.
@@ -81,12 +93,13 @@ all-`Ready` table became unusable.
 | 9 | [Subjective baselines in readiness mode](./phase-9-subjective-baselines.md) | **In progress** | only 9.8 remains (9.1–9.7 done — 9.8 needs Phase 9.0's prospective evidence) | — | self-normalises subjective scores as a tighten-only drift term, measured behind a default-off selector before any ship decision — not an original review finding |
 | G | [Garmin per-activity telemetry](./garmin-activity-telemetry-ingestion.md) | **Implemented** | none | none | ingests per-activity power/HR time-in-zone, normalized power and lap averages; the measured zone-credit candidate remains off after an evidence-backed no-ship decision |
 | S | [Strength session logging](./strength-session-logging.md) | **In progress (default-off)** | none; all numbered work is built | real logged-history evidence before enabling manual Strength load — [M1.7](./multidomain-session-authoring-execution-and-evidence.md) is the item that starts producing it | closes the strength return path — per-set logging, self-calibrating 1RM, and measured strength load — not an original review finding |
-| M | [Multidomain session authoring, execution & evidence](./multidomain-session-authoring-execution-and-evidence.md) | **In progress** | M3.7, M3.8 (in progress), M4.3, M6.1 (unblocked) | M5.1–M5.3 need M4.3; M7.1–M7.4 need M6.1; M8 candidates need M5/M6/M7 + real history; M9 needs specific triggers | source-neutral authored sessions, safe mixed-dose execution, occurrence-linked response, and protocol-aware field/speed/power evidence — ordered so every milestone from M1 ends with a phone-usable capability, and so the session→response evidence link ships with the M1 Strength repairs rather than five milestones later |
+| M | [Multidomain session authoring, execution & evidence](./multidomain-session-authoring-execution-and-evidence.md) | **In progress** | M3.7, bounded M3.8 (in progress), M4.3 | M5.1→M5.2 follow M4.3; M5.3 follows M5.2 but starts report-first; M6/M7 require explicit real-use triggers; M8 is evidence-gated and cannot pull untriggered M6/M7 into scope; M9 needs its own named triggers | source-neutral authored sessions, safe mixed-dose execution and occurrence-linked response first; specialized field/testing capability only when athlete use proves the generic runner/evidence model insufficient |
 | UX | [Mobile UX/UI redesign](./mobile_ux_implementation_plan.md) | **Implemented** | none | none | mobile-first daily decision flow, single-page rapid check-in, state-first Home layout, unblocked recommendation, 44px+ touch targets, and mobile layout tokens |
 
 Rows G, S, M, and UX are **not phases**. They are capability/surface plans whose work items are prefixed
 `G*`, `S*`, `M*`, `UX*` precisely so they cannot be mistaken for the `Phase 0`–`9` sequence;
-the `#` column carries that prefix rather than a phase number.
+the `#` column carries that prefix rather than a phase number. For capability plans, an item
+with satisfied dependencies but an unmet usage trigger is **not** listed as startable.
 
 Phases 0–8 are implemented. Phase 6 delivered explicit scenario evidence, calibration
 traces, coverage visibility, a verified repository-owned local Firestore-rules deployment
@@ -147,10 +160,10 @@ contradicted the accepted ADRs and the implemented plans.
 | **D-MODE** | `evergreen` and `event_directed` are first-class modes; event strategy is a separate capability | [ADR-0017](../adr/0017-training-intent-profile-and-planning-modes.md) | Cycling can use a structured plan while other existing event categories retain demand-derived direction |
 | **D-DOSE** | Evidence-derived adaptation dose precedes capacity and role packing | [ADR-0017](../adr/0017-training-intent-profile-and-planning-modes.md) | Exercise evidence speaks in dose dimensions; a session is a container, not the physiological requirement |
 | **D-CAP** | Real sessions, minutes, and windows constrain dose packing; they do not define the dose | [ADR-0017](../adr/0017-training-intent-profile-and-planning-modes.md) | Three 25-minute sessions and three 90-minute sessions are not equivalent capacity |
-| **D-COVSET** | The coverage catalog becomes a named generic-plan registry, not an event-shaped module constant | [ADR-0017](../adr/0017-training-intent-profile-and-planning-modes.md) | Evergreen needs to be a peer plan descriptor, not a fabricated event phase |
-| **D-OWNERSHIP** | Each preference field has one persisted authority | [ADR-0017](../adr/0017-training-intent-profile-and-planning-modes.md) | Two live preference models create contradictory valid states with no safe merge rule |
-| **D-ORG** | Persist only executable Auto/Adaptive Hybrid policy | [ADR-0017](../adr/0017-training-intent-profile-and-planning-modes.md) | A valid stored choice must not make normal recommendation generation fail |
-| **D-TAPERSCOPE** | Taper requires a real event; a star rating is not one | [ADR-0017](../adr/0017-training-intent-profile-and-planning-modes.md) | `deriveEventPriority(5) → 'A'` currently grants a dated `general_target` goal a 14-day taper |
+| **D-COVSET** | The coverage catalog becomes a named generic-plan registry, not an event-shaped module constant | [ADR-0017](../adr/0017-training-intent-and-planning-modes.md) | Evergreen needs to be a peer plan descriptor, not a fabricated event phase |
+| **D-OWNERSHIP** | Each preference field has one persisted authority | [ADR-0017](../adr/0017-training-intent-and-planning-modes.md) | Two live preference models create contradictory valid states with no safe merge rule |
+| **D-ORG** | Persist only executable Auto/Adaptive Hybrid policy | [ADR-0017](../adr/0017-training-intent-and-planning-modes.md) | A valid stored choice must not make normal recommendation generation fail |
+| **D-TAPERSCOPE** | Taper requires a real event; a star rating is not one | [ADR-0017](../adr/0017-training-intent-and-planning-modes.md) | `deriveEventPriority(5) → 'A'` currently grants a dated `general_target` goal a 14-day taper |
 | **D-RESERVE** | Allocate exact, eligible minimum coverage roles before support work | [ADR-0018](../adr/0018-weekly-allocation-and-role-reservations.md) | Anchor modifiers cannot preserve a future role opportunity in a greedy loop |
 | **D-FEASIBILITY** | Reuse production eligibility and revalidate reservations after every pick | [ADR-0018](../adr/0018-weekly-allocation-and-role-reservations.md) | A second planner would drift from safety, spacing, and fatigue gates |
 | **D-BOUND** | One deterministic search budget; exhaustion is `unresolved_search_budget`, never a miss | [ADR-0018](../adr/0018-weekly-allocation-and-role-reservations.md) | A wall-clock cut-off would make identical input plan differently on different devices |
