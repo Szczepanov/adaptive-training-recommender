@@ -3,7 +3,7 @@ import type { SessionDefinition } from '../sessions/models';
 import type { DailyReadiness, PlannedDose, UserContext } from './models';
 import type { ResolvedAvailability } from './schedule';
 import type { evaluateReadinessAndSafetyEnvelope } from './rules';
-import { adjudicateAuthoredSession } from './authoredSessionGates';
+import { adjudicateAuthoredSession, createAuthoredSessionTemplate } from './authoredSessionGates';
 
 type EnvelopeState = ReturnType<typeof evaluateReadinessAndSafetyEnvelope>;
 
@@ -214,5 +214,35 @@ describe('authoredSessionGates (ADR-0023 / D-MAUTH / D-CANDIDATE)', () => {
 
         expect(verdict.decision).toBe('reject');
         expect(verdict.gateFailures).toContain('time_limit');
+    });
+
+    it('uses the authored modality to derive the category checked by guardrails', () => {
+        const strengthDefinition = { ...sampleDefinition, dominantModality: 'Strength' };
+        expect(createAuthoredSessionTemplate(strengthDefinition).category).toBe('Full-body Strength');
+    });
+
+    it('rejects an additional session when accepted same-day work exhausts the plan ceiling', () => {
+        const envelopeState = {
+            mode: 'train',
+            envelopes: {
+                safety: { restrictedModalities: [], clinicalFlagActive: false },
+                plan: { maxAllowableTier: 'Easy' },
+            },
+            telemetry: {},
+        } as unknown as EnvelopeState;
+
+        const verdict = adjudicateAuthoredSession(
+            sampleDefinition,
+            mockReadiness,
+            mockContext,
+            envelopeState,
+            mockPlannedDose,
+            '2026-08-18',
+            mockAvailability,
+            0.3,
+        );
+
+        expect(verdict.decision).toBe('reject');
+        expect(verdict.gateFailures).toContain('restricted_category');
     });
 });

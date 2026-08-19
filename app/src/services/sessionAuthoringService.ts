@@ -1,4 +1,4 @@
-import type { SessionDefinition, ExecutionPrescription } from '../sessions/models';
+import type { SessionDefinition, ExecutionPrescription, SessionReferenceBinding } from '../sessions/models';
 import type { PreparedSessionLaunch } from '../sessions/sessionLaunch';
 import type { WorkoutPrescription } from '../workouts/models';
 import { validateSessionDefinition } from '../sessions/validation';
@@ -96,6 +96,47 @@ export async function prepareCatalogSessionLaunch(
                 catalogVersion: String(prescription.workoutVersion),
             },
             prescriptionHash: executionPrescription.prescriptionHash,
+        },
+    };
+}
+
+/**
+ * Freezes the exact accepted form of an authority-bearing manual occurrence. The source
+ * definition hash and the prescription hash intentionally differ: a readiness-scaled
+ * prescription must be a new content-addressed snapshot while still naming the immutable
+ * authored definition revision it came from (ADR-0023 D-MSNAP).
+ */
+export async function prepareAuthoredOccurrenceLaunch(
+    userId: string,
+    source: Extract<SessionReferenceBinding['sessionSource'], { kind: 'manual' }>,
+    occurrenceId: string,
+    acceptedDefinition: SessionDefinition,
+    now = new Date().toISOString(),
+): Promise<PreparedSessionLaunch> {
+    const validation = validateSessionDefinition(acceptedDefinition);
+    if (!validation.ok) {
+        throw new Error(validation.issues.map(issue => `${issue.path}: ${issue.message}`).join('\n'));
+    }
+
+    const unsignedPrescription: ExecutionPrescription = {
+        schemaVersion: 1,
+        prescriptionHash: '',
+        definitionHash: source.contentHash,
+        blocks: acceptedDefinition.blocks,
+        createdAt: now,
+    };
+    const prescriptionHash = await hashExecutionPrescription(unsignedPrescription);
+    await executionPrescriptionService.savePrescription(userId, {
+        ...unsignedPrescription,
+        prescriptionHash,
+    });
+
+    return {
+        definition: acceptedDefinition,
+        binding: {
+            sessionSource: source,
+            occurrenceId,
+            prescriptionHash,
         },
     };
 }

@@ -281,6 +281,29 @@ describe('M3.2 session prescription binding replay', () => {
         expect(result).toEqual({ reproducible: true, policyMatchesCurrent: true, errors: [] });
     });
 
+    it('replays an authored replacement through occurrence authority rather than catalog ranking', () => {
+        const authoredBinding: SessionReferenceBinding = {
+            sessionSource: { kind: 'manual', definitionId: 'manual-1', revision: 1, contentHash: 'b'.repeat(64) },
+            occurrenceId: 'occ-authored-1',
+            prescriptionHash: 'c'.repeat(64),
+        };
+        const record = auditedRecommendation();
+        record.templateId = 'authored:manual-1:1';
+        record.templateTitle = 'Authored replacement';
+        record.mode = 'modify';
+        record.primarySession = authoredBinding;
+        record.recommendationAudit!.primarySession = authoredBinding;
+        record.recommendationAudit!.candidateScores = [];
+        record.recommendationAudit!.authoredOccurrence = {
+            occurrenceId: 'occ-authored-1',
+            decision: 'scale',
+        };
+
+        expect(replayRecommendationAudit(record, null, {
+            resolvedBindings: new Set([sessionBindingEvidenceKey(authoredBinding)]),
+        })).toEqual({ reproducible: true, policyMatchesCurrent: true, errors: [] });
+    });
+
     it('fails when the binding is absent from the supplied evidence', () => {
         const result = replayRecommendationAudit(withPrimarySession(), null, { resolvedBindings: new Set() });
         expect(result.reproducible).toBe(false);

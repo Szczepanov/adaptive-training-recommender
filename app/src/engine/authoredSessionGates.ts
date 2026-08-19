@@ -21,6 +21,10 @@ export interface AuthoredSessionVerdict {
     decision: AuthoredSessionDecision;
     scaledDefinition?: SessionDefinition;
     executionDose?: PlannedDose;
+    /** Cost after the readiness scale. Callers carry this forward when adjudicating an
+     * additional same-day occurrence so each accepted session consumes the same finite
+     * plan-envelope budget. */
+    acceptedSystemicCost?: number;
     gateFailures: EligibilityReason[];
     rationale: string;
 }
@@ -37,9 +41,45 @@ export function estimateAuthoredSessionSystemicCost(definition: SessionDefinitio
 
     if (intent === 'recovery') return 0.1;
     if (intent === 'competition' || intent === 'testing') return Math.min(1.2, 0.6 + (duration / 60) * 0.4);
-    
+
     // Default baseline estimation based on duration
     return Math.min(1.0, (duration / 60) * 0.5);
+}
+
+function authoredCategory(definition: SessionDefinition): SessionTemplate['category'] {
+    if (definition.intent === 'recovery') return 'Mobility/Recovery';
+    if (definition.intent === 'testing' || definition.intent === 'skill_technical') return 'Technical Skill';
+
+    switch (definition.dominantModality) {
+        case 'Strength': return 'Full-body Strength';
+        case 'Field': return 'Field Maintenance';
+        case 'Mobility': return 'Mobility/Recovery';
+        case 'None': return 'Rest';
+        default: return 'Easy Endurance';
+    }
+}
+
+/**
+ * The small `SessionTemplate` projection used only for common hard-gate machinery and
+ * for rendering an accepted authored primary. It deliberately has no stimulus profile:
+ * ADR-0023 D-MPOLICY keeps authored-session load and stimulus evidence-only.
+ */
+export function createAuthoredSessionTemplate(definition: SessionDefinition): SessionTemplate {
+    const durationMin = definition.duration?.min ?? 45;
+    const durationMax = definition.duration?.max ?? durationMin;
+    return {
+        id: `authored:${definition.id}:${definition.revision}`,
+        title: definition.title,
+        description: definition.summary ?? 'Athlete-authored session.',
+        modality: (definition.dominantModality as Modality) ?? 'Strength',
+        category: authoredCategory(definition),
+        durationMin,
+        durationMax,
+        environment: 'either',
+        requiredEquipment: [],
+        safetyTags: [],
+        systemicCost: estimateAuthoredSessionSystemicCost(definition),
+    };
 }
 
 /**
@@ -129,30 +169,14 @@ export function adjudicateAuthoredSession(
     plannedDose: PlannedDose,
     date: string,
     availability: ResolvedAvailability,
+    acceptedSameDaySystemicCost = 0,
 ): AuthoredSessionVerdict {
     const { mode, envelopes } = envelopeState;
-    const durationMin = definition.duration?.min ?? 45;
-    const durationMax = definition.duration?.max ?? durationMin;
     const systemicCost = estimateAuthoredSessionSystemicCost(definition);
     const maxCost = AUTHORED_PLAN_TIER_SYSTEMIC_COST_CEILING[envelopes.plan.maxAllowableTier];
-
-    const modality: Modality = (definition.dominantModality as Modality) ?? 'Strength';
-    const category: SessionTemplate['category'] = definition.intent === 'recovery' ? 'Mobility/Recovery' : 'Easy Endurance';
-
-    // Build synthetic template representation for eligibility checks
-    const syntheticTemplate = {
-        id: definition.id,
-        title: definition.title,
-        modality,
-        category,
-        systemicCost,
-        durationMin,
-        durationMax,
-        environment: 'either' as const,
-        requiredEquipment: [] as const,
-        safetyTags: [] as const,
-        muscleFatigueExclusions: [] as const,
-    };
+    const syntheticTemplate = createAuthoredSessionTemplate(definition);
+    const modality = syntheticTemplate.modality;
+    const category = syntheticTemplate.category;
 
     const eligibility = evaluateTemplateEligibility(syntheticTemplate, context, availability.maxTimeMinutes, date);
     const gateFailures: EligibilityReason[] = [];
@@ -168,7 +192,7 @@ export function adjudicateAuthoredSession(
 
     // 2. Systemic cost ceiling (in modify mode, check if scaled cost fits)
     const effectiveCost = mode === 'modify' ? systemicCost * 0.7 : systemicCost;
-    if (effectiveCost > maxCost) {
+    if (acceptedSameDaySystemicCost + effectiveCost > maxCost) {
         gateFailures.push('restricted_category');
     }
 
@@ -200,6 +224,7 @@ export function adjudicateAuthoredSession(
             decision: 'scale',
             scaledDefinition,
             executionDose,
+            acceptedSystemicCost: effectiveCost,
             gateFailures: [],
             rationale: 'Authored session accepted with modified dose scaling to match current readiness.',
         };
@@ -210,6 +235,7 @@ export function adjudicateAuthoredSession(
         decision: 'proceed',
         scaledDefinition: definition,
         executionDose,
+        acceptedSystemicCost: effectiveCost,
         gateFailures: [],
         rationale: 'Authored session cleared all safety, eligibility, and capacity gates for today.',
     };

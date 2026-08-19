@@ -89,7 +89,7 @@ service cloud.firestore {
 
     function hasValidRecommendationAudit(audit) {
       return audit is map
-        && audit.keys().hasOnly(['policyVersion', 'evaluatedAt', 'decisionContextRevision', 'safetyStatus', 'history', 'envelope', 'plannedDose', 'executionDose', 'candidateScores', 'droppedContributorObjectives', 'externalPlan', 'primarySession', 'additionalSessions', 'subjectiveDrift'])
+        && audit.keys().hasOnly(['policyVersion', 'evaluatedAt', 'decisionContextRevision', 'safetyStatus', 'history', 'envelope', 'plannedDose', 'executionDose', 'candidateScores', 'droppedContributorObjectives', 'externalPlan', 'authoredOccurrence', 'primarySession', 'additionalSessions', 'subjectiveDrift'])
         && audit.keys().hasAll(['policyVersion', 'evaluatedAt', 'decisionContextRevision', 'safetyStatus', 'history', 'envelope', 'candidateScores'])
         && audit.policyVersion is string
         && audit.evaluatedAt is string
@@ -125,6 +125,13 @@ service cloud.firestore {
           && audit.externalPlan.revision is int && audit.externalPlan.revision >= 1
           && audit.externalPlan.sessionId is string && audit.externalPlan.sessionId.size() <= 64
           && audit.externalPlan.contentHash is string && audit.externalPlan.contentHash.size() <= 128
+        ))
+        && (!('authoredOccurrence' in audit) || (
+          audit.authoredOccurrence is map
+          && audit.authoredOccurrence.keys().hasOnly(['occurrenceId', 'decision'])
+          && audit.authoredOccurrence.keys().hasAll(['occurrenceId', 'decision'])
+          && audit.authoredOccurrence.occurrenceId is string && audit.authoredOccurrence.occurrenceId.size() <= 128
+          && audit.authoredOccurrence.decision in ['proceed', 'scale']
         ))
         && (!('subjectiveDrift' in audit) || hasValidSubjectiveDriftAudit(audit.subjectiveDrift));
     }

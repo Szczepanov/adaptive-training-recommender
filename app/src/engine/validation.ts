@@ -1193,6 +1193,10 @@ export function validateRecommendation(raw: any): ValidationResult<DailyRecommen
             && audit.candidateScores.every((candidate: any) => candidate && typeof candidate.templateId === 'string'
                 && typeof candidate.utilityScore === 'number' && Number.isFinite(candidate.utilityScore)
                 && Array.isArray(candidate.excludedReasons) && candidate.excludedReasons.every((reason: any) => typeof reason === 'string'))
+            && (audit.authoredOccurrence === undefined || (audit.authoredOccurrence
+                && typeof audit.authoredOccurrence === 'object'
+                && typeof audit.authoredOccurrence.occurrenceId === 'string'
+                && ['proceed', 'scale'].includes(audit.authoredOccurrence.decision)))
             && (audit.droppedContributorObjectives === undefined
                 || (Array.isArray(audit.droppedContributorObjectives)
                     && audit.droppedContributorObjectives.length <= 64
