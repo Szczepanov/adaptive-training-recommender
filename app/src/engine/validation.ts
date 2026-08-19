@@ -1150,10 +1150,15 @@ export function validateRecommendation(raw: any): ValidationResult<DailyRecommen
     if (raw.primarySession !== undefined && !isValidSessionReferenceBinding(raw.primarySession)) {
         errors.push({ field: 'primarySession', message: 'primarySession must be a valid source/occurrence/prescription binding' });
     }
+    // Bounded to 4, matching firestore.rules' hasValidAdditionalSessions -- the server-side
+    // check unrolls per-element validation by index (the rules language has no iteration),
+    // and a prior attempt at that with the schema's historical 16-element bound exceeded the
+    // emulator's rule-evaluation budget. 4 is a real bound, not a compromise: the systemic-cost
+    // ceiling in adjudicateAuthoredSession never admits more than a handful of same-day sessions.
     if (raw.additionalSessions !== undefined && (!Array.isArray(raw.additionalSessions)
-        || raw.additionalSessions.length > 16
+        || raw.additionalSessions.length > 4
         || !raw.additionalSessions.every(isValidSessionReferenceBinding))) {
-        errors.push({ field: 'additionalSessions', message: 'additionalSessions must contain at most 16 valid bindings' });
+        errors.push({ field: 'additionalSessions', message: 'additionalSessions must contain at most 4 valid bindings' });
     }
 
     let recommendationAudit: DailyRecommendation['recommendationAudit'] | undefined;

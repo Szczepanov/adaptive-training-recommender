@@ -116,7 +116,7 @@ service cloud.firestore {
         && audit.candidateScores is list && audit.candidateScores.size() <= 64
         && (!('droppedContributorObjectives' in audit) || (audit.droppedContributorObjectives is list && audit.droppedContributorObjectives.size() <= 64))
         && (!('primarySession' in audit) || hasValidSessionReferenceBinding(audit.primarySession))
-        && (!('additionalSessions' in audit) || (audit.additionalSessions is list && audit.additionalSessions.size() <= 16))
+        && (!('additionalSessions' in audit) || (audit.additionalSessions is list && audit.additionalSessions.size() <= 4))
         && (!('externalPlan' in audit) || (
           audit.externalPlan is map
           && audit.externalPlan.keys().hasOnly(['planId', 'revision', 'sessionId', 'contentHash'])
@@ -154,6 +154,7 @@ service cloud.firestore {
         && (!('revision' in request.resource.data) || (request.resource.data.revision is int && request.resource.data.revision >= 1))
         && hasValidAdherence(request.resource.data.adherence)
         && (!('primarySession' in request.resource.data) || hasValidSessionReferenceBinding(request.resource.data.primarySession))
+        && (!('additionalSessions' in request.resource.data) || hasValidAdditionalSessions(request.resource.data.additionalSessions))
         && (request.resource.data.schemaVersion != 3
           || ('recommendationAudit' in request.resource.data && hasValidRecommendationAudit(request.resource.data.recommendationAudit)));
     }
@@ -162,9 +163,11 @@ service cloud.firestore {
       return request.resource.data.schemaVersion >= resource.data.schemaVersion;
     }
 
-    function auditWriteOnce() {
+    // Takes the already-computed decisionChanged flag rather than calling
+    // decisionFieldsUnchanged() itself -- see canUpdateRecommendation()'s comment for why.
+    function auditWriteOnce(decisionChanged) {
       return !('recommendationAudit' in resource.data)
-        || !decisionFieldsUnchanged()
+        || decisionChanged
         || (('recommendationAudit' in request.resource.data)
           && request.resource.data.recommendationAudit.policyVersion == resource.data.recommendationAudit.policyVersion
           && request.resource.data.recommendationAudit.evaluatedAt == resource.data.recommendationAudit.evaluatedAt);
@@ -206,6 +209,33 @@ service cloud.firestore {
         && (('additionalSessions' in prior) == ('additionalSessions' in resource.data))
         && (!('additionalSessions' in resource.data) || prior.additionalSessions == resource.data.additionalSessions)
         && (!('recommendationAudit' in resource.data) || (('recommendationAudit' in prior) && prior.recommendationAudit.policyVersion == resource.data.recommendationAudit.policyVersion && prior.recommendationAudit.evaluatedAt == resource.data.recommendationAudit.evaluatedAt));
+    }
+
+    // decisionFieldsUnchanged() itself does ~10 field comparisons; the update rule below
+    // used to call it 3 times over (once directly in each side of the changed/unchanged
+    // branch, once more indirectly inside auditWriteOnce()) purely because the rules
+    // language has no memoization. That redundancy was consuming enough of Firestore's
+    // ~1000 expression-evaluation budget that a decision-changing update carrying a
+    // populated additionalSessions binding could no longer be validated at all -- calling
+    // it once via `let` and threading the result through recovers that headroom.
+    function canUpdateRecommendation(userId, date) {
+      let decisionChanged = !decisionFieldsUnchanged();
+      return hasValidRecommendation(userId, date)
+        && keepsOwnership(userId)
+        && request.resource.data.createdAt == resource.data.createdAt
+        && schemaRatchets()
+        && auditWriteOnce(decisionChanged)
+        && (
+          (!decisionChanged && (
+            (('revision' in resource.data) && request.resource.data.revision == resource.data.revision) ||
+            (!('revision' in resource.data) && (!('revision' in request.resource.data) || request.resource.data.revision == 1))
+          ))
+          ||
+          (decisionChanged && (
+            request.resource.data.revision == (('revision' in resource.data) ? resource.data.revision : 1) + 1
+            && archivesPriorRevision(userId, date)
+          ))
+        );
     }
 
     match /daily_recovery_snapshot/{date} { allow read, write: if false; }
@@ -732,6 +762,38 @@ service cloud.firestore {
         && (!('occurrenceId' in binding) || (binding.occurrenceId is string && binding.occurrenceId.size() > 0));
     }
 
+    // Lighter than hasValidSessionReferenceBinding: checks shape and a recognized source
+    // kind, but not every per-kind field (workoutId/catalogVersion types, etc.) -- see
+    // hasValidAdditionalSessions for why. The client (engine/validation.ts) still applies
+    // the full per-kind check before any write reaches here; this is defense in depth
+    // against a client that skips it, not the only gate.
+    function hasValidAdditionalSessionBinding(binding) {
+      return binding is map
+        && binding.keys().hasOnly(['sessionSource', 'occurrenceId', 'prescriptionHash'])
+        && binding.keys().hasAll(['sessionSource', 'prescriptionHash'])
+        && binding.sessionSource is map
+        && binding.sessionSource.kind in ['catalog', 'external_plan', 'manual', 'unplanned_fixture']
+        && binding.prescriptionHash is string && binding.prescriptionHash.size() > 0
+        && (!('occurrenceId' in binding) || (binding.occurrenceId is string && binding.occurrenceId.size() > 0));
+    }
+
+    // Bounded to 4 (not the schema's historical 16): the rules language has no
+    // iteration, so per-element validation is unrolled by index below. A prior attempt
+    // at this same check unrolled to 16 elements calling the full hasValidSessionReferenceBinding
+    // per element and exceeded the emulator's ~1000 expression-evaluation budget per write;
+    // 4 elements at that same per-kind rigor still didn't fit even after removing other
+    // redundant evaluation (see canUpdateRecommendation's comment), hence the lighter
+    // per-element check above. 4 is a real bound, not a compromise -- adjudicateAuthoredSession's
+    // systemic-cost ceiling never admits more than a handful of same-day sessions in
+    // practice (see authoredSessionGates.ts).
+    function hasValidAdditionalSessions(list) {
+      return list is list && list.size() <= 4
+        && (list.size() < 1 || hasValidAdditionalSessionBinding(list[0]))
+        && (list.size() < 2 || hasValidAdditionalSessionBinding(list[1]))
+        && (list.size() < 3 || hasValidAdditionalSessionBinding(list[2]))
+        && (list.size() < 4 || hasValidAdditionalSessionBinding(list[3]));
+    }
+
     function hasValidSessionEntry(executionId, entryId) {
       let data = request.resource.data;
       let payload = data.payload;
@@ -797,23 +859,7 @@ service cloud.firestore {
     match /users/{userId}/daily_recommendations/{date} {
       allow read: if isOwner(userId);
       allow create: if hasValidRecommendation(userId, date);
-      allow update: if isValidAdherenceOnlyUpdate(userId, date)
-        || (hasValidRecommendation(userId, date)
-          && keepsOwnership(userId)
-          && request.resource.data.createdAt == resource.data.createdAt
-          && schemaRatchets()
-          && auditWriteOnce()
-          && (
-            (decisionFieldsUnchanged() && (
-              (('revision' in resource.data) && request.resource.data.revision == resource.data.revision) ||
-              (!('revision' in resource.data) && (!('revision' in request.resource.data) || request.resource.data.revision == 1))
-            ))
-            ||
-            (!decisionFieldsUnchanged() && (
-              request.resource.data.revision == (('revision' in resource.data) ? resource.data.revision : 1) + 1
-              && archivesPriorRevision(userId, date)
-            ))
-          ));
+      allow update: if isValidAdherenceOnlyUpdate(userId, date) || canUpdateRecommendation(userId, date);
       allow delete: if false;
 
       match /revisions/{revId} {

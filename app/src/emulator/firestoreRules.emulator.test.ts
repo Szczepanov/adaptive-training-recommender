@@ -1183,6 +1183,49 @@ emulatorDescribe('Firestore security rules', () => {
         await expect(assertSucceeds(setDoc(doc(ownerDb, `users/${ownerId}/daily_recommendations/2026-08-07`), recWithBindings))).resolves.toBeUndefined();
     });
 
+    it('allows additionalSessions at the full 4-element bound without exceeding the rule-evaluation budget', async () => {
+        // Regression test: a prior attempt at real per-element validation at the schema's
+        // historical 16-element bound blew the emulator's ~1000-expression budget. This
+        // proves per-element validation at the current 4-element bound actually works,
+        // not just the single-element case the test above already covers.
+        const binding = (i: number) => ({
+            sessionSource: { kind: 'unplanned_fixture', fixtureId: `0${i}-full-body-maintenance` },
+            prescriptionHash: `presc-hash-${i}`,
+        });
+        const base = validRecommendation();
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await expect(assertSucceeds(setDoc(doc(ownerDb, `users/${ownerId}/daily_recommendations/2026-08-07`), {
+            ...base,
+            additionalSessions: [binding(1), binding(2), binding(3), binding(4)],
+        }))).resolves.toBeUndefined();
+    });
+
+    it('rejects additionalSessions beyond the 4-element bound', async () => {
+        const binding = (i: number) => ({
+            sessionSource: { kind: 'unplanned_fixture', fixtureId: `0${i}-full-body-maintenance` },
+            prescriptionHash: `presc-hash-${i}`,
+        });
+        const base = validRecommendation();
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertFails(setDoc(doc(ownerDb, `users/${ownerId}/daily_recommendations/2026-08-07`), {
+            ...base,
+            additionalSessions: [binding(1), binding(2), binding(3), binding(4), binding(5)],
+        }));
+    });
+
+    it('rejects a top-level additionalSessions entry with a malformed binding', async () => {
+        // Prior to hasValidAdditionalSessions, the top-level additionalSessions field had
+        // no shape validation at all -- only keys().hasOnly() gated its presence.
+        const base = validRecommendation();
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertFails(setDoc(doc(ownerDb, `users/${ownerId}/daily_recommendations/2026-08-07`), {
+            ...base,
+            additionalSessions: [
+                { sessionSource: { kind: 'unplanned_fixture', fixtureId: '01-full-body-maintenance' } }, // missing prescriptionHash
+            ],
+        }));
+    });
+
     it('allows an authored replacement occurrence provenance in a recommendation audit', async () => {
         const base = validRecommendation();
         const primarySession = {
