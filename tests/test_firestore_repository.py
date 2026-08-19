@@ -38,3 +38,167 @@ def test_firestore_repository_user_mismatch_raises_error():
     invalid_payload = {"userId": "other_uid_789", "date": "2026-08-06", "raw": {}}
     with pytest.raises(ValueError, match="does not match configured user_id"):
         repo.upsert_snapshot("2026-08-06", invalid_payload)
+
+
+def test_is_snapshot_complete_all_metrics_present():
+    from garmin_sync.firestore_repository import is_snapshot_complete
+
+    complete_snapshot = {
+        "raw": {
+            "sleepScore": 85,
+            "sleepDurationSec": 28800,
+            "restingHr": 48,
+            "hrvOvernightAvg": 62,
+            "respirationAvg": 14.5,
+            "bodyBatteryWake": 90,
+            "totalSteps": 10500,
+        }
+    }
+    assert is_snapshot_complete(complete_snapshot) is True
+
+
+def test_is_snapshot_complete_sleep_duration_fallback():
+    from garmin_sync.firestore_repository import is_snapshot_complete
+
+    snapshot = {
+        "raw": {
+            "sleepScore": None,
+            "sleepDurationSec": 28800,
+            "restingHr": 48,
+            "hrvOvernightAvg": 62,
+            "respirationAvg": 14.5,
+            "bodyBatteryWake": 90,
+            "totalSteps": 10500,
+        }
+    }
+    assert is_snapshot_complete(snapshot) is True
+
+
+@pytest.mark.parametrize(
+    "missing_field",
+    [
+        "restingHr",
+        "hrvOvernightAvg",
+        "respirationAvg",
+        "bodyBatteryWake",
+        "totalSteps",
+    ],
+)
+def test_is_snapshot_complete_missing_metric_returns_false(missing_field: str):
+    from garmin_sync.firestore_repository import is_snapshot_complete
+
+    snapshot = {
+        "raw": {
+            "sleepScore": 85,
+            "sleepDurationSec": 28800,
+            "restingHr": 48,
+            "hrvOvernightAvg": 62,
+            "respirationAvg": 14.5,
+            "bodyBatteryWake": 90,
+            "totalSteps": 10500,
+        }
+    }
+    snapshot["raw"][missing_field] = None
+    assert is_snapshot_complete(snapshot) is False
+
+
+def test_is_snapshot_complete_missing_both_sleep_fields():
+    from garmin_sync.firestore_repository import is_snapshot_complete
+
+    snapshot = {
+        "raw": {
+            "sleepScore": None,
+            "sleepDurationSec": None,
+            "restingHr": 48,
+            "hrvOvernightAvg": 62,
+            "respirationAvg": 14.5,
+            "bodyBatteryWake": 90,
+            "totalSteps": 10500,
+        }
+    }
+    assert is_snapshot_complete(snapshot) is False
+
+
+def test_is_fresh_complete_snapshot(monkeypatch):
+    from datetime import datetime
+
+    repo = FirestoreRecoveryRepository(user_id="real_uid_456")
+    complete_doc = {
+        "source": {"garminSyncedAt": "2026-08-19T06:30:00+00:00"},
+        "raw": {
+            "sleepScore": 85,
+            "restingHr": 48,
+            "hrvOvernightAvg": 62,
+            "respirationAvg": 14.5,
+            "bodyBatteryWake": 90,
+            "totalSteps": 10500,
+        },
+    }
+    repo.get_snapshot = MagicMock(return_value=complete_doc)
+
+    # Synced 30 mins ago -> Fresh under 60m threshold
+    now_30m_later = datetime.fromisoformat("2026-08-19T07:00:00+00:00")
+    monkeypatch.setattr(
+        "garmin_sync.firestore_repository.datetime",
+        MagicMock(
+            now=MagicMock(return_value=now_30m_later),
+            fromisoformat=datetime.fromisoformat,
+        ),
+    )
+    assert repo.is_fresh("2026-08-19", staleness_minutes=60, incomplete_staleness_minutes=5) is True
+
+    # Synced 70 mins ago -> Stale (> 60m)
+    now_70m_later = datetime.fromisoformat("2026-08-19T07:40:00+00:00")
+    monkeypatch.setattr(
+        "garmin_sync.firestore_repository.datetime",
+        MagicMock(
+            now=MagicMock(return_value=now_70m_later),
+            fromisoformat=datetime.fromisoformat,
+        ),
+    )
+    assert (
+        repo.is_fresh("2026-08-19", staleness_minutes=60, incomplete_staleness_minutes=5) is False
+    )
+
+
+def test_is_fresh_incomplete_snapshot_short_cooldown(monkeypatch):
+    from datetime import datetime
+
+    repo = FirestoreRecoveryRepository(user_id="real_uid_456")
+    # Incomplete snapshot (sleep and HRV missing)
+    incomplete_doc = {
+        "source": {"garminSyncedAt": "2026-08-19T06:30:00+00:00"},
+        "raw": {
+            "sleepScore": None,
+            "restingHr": 48,
+            "hrvOvernightAvg": None,
+            "respirationAvg": None,
+            "bodyBatteryWake": 90,
+            "totalSteps": 10500,
+        },
+    }
+    repo.get_snapshot = MagicMock(return_value=incomplete_doc)
+
+    # Synced 2 mins ago -> Within incomplete cooldown (5m) -> True (rate-limit guard)
+    now_2m_later = datetime.fromisoformat("2026-08-19T06:32:00+00:00")
+    monkeypatch.setattr(
+        "garmin_sync.firestore_repository.datetime",
+        MagicMock(
+            now=MagicMock(return_value=now_2m_later),
+            fromisoformat=datetime.fromisoformat,
+        ),
+    )
+    assert repo.is_fresh("2026-08-19", staleness_minutes=60, incomplete_staleness_minutes=5) is True
+
+    # Synced 15 mins ago -> Exceeds incomplete cooldown (5m), even though < 60m -> False (triggers refetch!)
+    now_15m_later = datetime.fromisoformat("2026-08-19T06:45:00+00:00")
+    monkeypatch.setattr(
+        "garmin_sync.firestore_repository.datetime",
+        MagicMock(
+            now=MagicMock(return_value=now_15m_later),
+            fromisoformat=datetime.fromisoformat,
+        ),
+    )
+    assert (
+        repo.is_fresh("2026-08-19", staleness_minutes=60, incomplete_staleness_minutes=5) is False
+    )

@@ -449,7 +449,13 @@ class FakeStatefulRepository:
     def __init__(self) -> None:
         self.snapshots: dict[str, dict] = {}
 
-    def is_fresh(self, date_iso: str, staleness_minutes: int) -> bool:
+    def is_fresh(
+        self,
+        date_iso: str,
+        staleness_minutes: int = 60,
+        incomplete_staleness_minutes: int = 5,
+        require_complete: bool = True,
+    ) -> bool:
         return False
 
     def get_historical_snapshots(self, start_iso: str, end_iso: str) -> dict[str, dict]:
@@ -492,7 +498,9 @@ def test_sync_service_skips_when_fresh():
     result = service.sync_daily(target_date_str="2026-08-06", force=False)
 
     assert result is True
-    mock_repo.is_fresh.assert_called_once_with("2026-08-06", 60)
+    mock_repo.is_fresh.assert_called_once_with(
+        "2026-08-06", staleness_minutes=60, incomplete_staleness_minutes=5
+    )
 
 
 def test_sync_service_forces_refresh():
@@ -886,7 +894,9 @@ def test_sync_service_fresh_target_skips_lookback_resync_too():
     assert result is True
     assert fake_provider.fetch_daily_metrics_calls == []
     mock_repo.upsert_snapshot.assert_not_called()
-    mock_repo.is_fresh.assert_called_once_with("2026-08-06", 60)
+    mock_repo.is_fresh.assert_called_once_with(
+        "2026-08-06", staleness_minutes=60, incomplete_staleness_minutes=5
+    )
 
 
 def test_sync_service_lookback_failure_does_not_hide_primary_success_but_reports_false():

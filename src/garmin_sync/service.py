@@ -404,7 +404,9 @@ class GarminSyncService:
         # a retriggered run within the staleness window is a no-op, not a chance to
         # re-hit the lookback dates too.
         if not force and self.repository.is_fresh(
-            target_iso, self.settings.garmin_staleness_minutes
+            target_iso,
+            staleness_minutes=self.settings.garmin_staleness_minutes,
+            incomplete_staleness_minutes=self.settings.garmin_incomplete_staleness_minutes,
         ):
             logger.info(
                 f"Snapshot for {target_iso} is fresh (< {self.settings.garmin_staleness_minutes}m). Skipping Garmin fetch."

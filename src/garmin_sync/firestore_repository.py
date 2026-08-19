@@ -25,6 +25,24 @@ def init_firestore_client(credentials_path: str | None = None) -> Any:
     return firestore.client()
 
 
+def is_snapshot_complete(snapshot: dict[str, Any]) -> bool:
+    """Return True if the snapshot contains all core recovery metrics:
+    sleep (score or duration), resting HR, HRV overnight avg, respiration avg,
+    body battery at wake, and total steps (D-1 completed)."""
+    raw = snapshot.get("raw", {})
+    if not isinstance(raw, dict):
+        return False
+
+    has_sleep = raw.get("sleepScore") is not None or raw.get("sleepDurationSec") is not None
+    has_rhr = raw.get("restingHr") is not None
+    has_hrv = raw.get("hrvOvernightAvg") is not None
+    has_resp = raw.get("respirationAvg") is not None
+    has_bb = raw.get("bodyBatteryWake") is not None
+    has_steps = raw.get("totalSteps") is not None
+
+    return bool(has_sleep and has_rhr and has_hrv and has_resp and has_bb and has_steps)
+
+
 class FirestoreRecoveryRepository:
     """Repository managing user-scoped Firestore operations for daily recovery snapshots."""
 
@@ -84,8 +102,20 @@ class FirestoreRecoveryRepository:
             )
             return None
 
-    def is_fresh(self, date_iso: str, staleness_minutes: int = 60) -> bool:
-        """Check if today's snapshot was synced within staleness threshold."""
+    def is_fresh(
+        self,
+        date_iso: str,
+        staleness_minutes: int = 60,
+        incomplete_staleness_minutes: int = 5,
+        require_complete: bool = True,
+    ) -> bool:
+        """Check if date's snapshot was synced within staleness threshold.
+
+        If require_complete is True and the snapshot is missing any core recovery metric
+        (sleep, resting HR, HRV, respiration, body battery wake, steps), it is considered
+        incomplete and only remains fresh for incomplete_staleness_minutes (a short rate-limit
+        cooldown). Once complete, it respects staleness_minutes.
+        """
         snapshot = self.get_snapshot(date_iso)
         if not snapshot:
             return False
@@ -102,6 +132,10 @@ class FirestoreRecoveryRepository:
                 synced_at = synced_at.replace(tzinfo=timezone.utc)
             now_utc = datetime.now(timezone.utc)
             age_minutes = (now_utc - synced_at).total_seconds() / 60.0
+
+            if require_complete and not is_snapshot_complete(snapshot):
+                return age_minutes < incomplete_staleness_minutes
+
             return age_minutes < staleness_minutes
         except Exception as e:
             logger.warning(f"Failed to parse synced_at timestamp '{synced_at_str}': {e}")
