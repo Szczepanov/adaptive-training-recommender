@@ -88,6 +88,38 @@ describe('resolveSessionDefinition', () => {
         })).resolves.toMatchObject({ status: 'INVALID', issues: [{ code: 'external-plan-hash-mismatch' }] });
     });
 
+    it('resolves a v2 external-plan session\'s embedded definition directly, not through the lossy v1 adapter (M3.6)', async () => {
+        // Two blocks: the v1 adapter always collapses a session into exactly one
+        // ('block-main'), so seeing both back proves this bypassed it entirely.
+        const definition = {
+            schemaVersion: 1, id: 'w1-session', revision: 1, title: 'Two-Block Session', intent: 'training',
+            blocks: [
+                { id: 'block-warmup', role: 'warmup', executionMode: 'sequential', steps: [] },
+                { id: 'block-main', role: 'main', executionMode: 'sequential', steps: [] },
+            ],
+        } as unknown as SessionDefinition;
+        const planV2 = {
+            schema: 'adaptive-training-recommender/external-plan@2', planId: 'plan-v2', revision: 1,
+            title: 'V2 Plan', startDate: '2026-08-17', weekCount: 1,
+            sessions: [{
+                id: 'w1-session', title: 'Two-Block Session', priority: 'key',
+                placement: { week: 1, preferredDay: 'monday', flexibility: 'preferred', ifMissed: 'reschedule_within_week' },
+                gating: { modality: 'strength', intensity: 'moderate', durationMin: 45, durationMax: 55, environment: 'either', equipment: [] },
+                definition,
+            }],
+        };
+        services.external.getRevisionState.mockResolvedValue({ status: 'AVAILABLE', data: planV2, revision: '1' } as never);
+
+        const result = await resolveSessionDefinition('u1', {
+            kind: 'external_plan', planId: 'plan-v2', revision: 1, sessionId: 'w1-session', contentHash: await computeContentHash(planV2),
+        });
+        expect(result.status).toBe('AVAILABLE');
+        if (result.status !== 'AVAILABLE') throw new Error('expected AVAILABLE');
+        expect(result.data.blocks).toHaveLength(2);
+        expect(result.data.blocks.map(b => b.id)).toEqual(['block-warmup', 'block-main']);
+        expect(services.prescription.getPrescription).not.toHaveBeenCalled();
+    });
+
     describe('catalog source (M3.1)', () => {
         const catalogSource = { kind: 'catalog' as const, workoutId: 'catalog-workout-1', catalogVersion: '1' };
         const storedPrescription: ExecutionPrescription = {

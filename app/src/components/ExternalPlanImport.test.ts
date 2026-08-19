@@ -54,7 +54,9 @@ describe('diffPlans', () => {
         next.revision = 2;
         next.sessions[0].prescription.steps![0].repeat = 4;
 
-        expect(details(next)).toContain('the prescription changed');
+        // M3.6: the message is schema-neutral now that a v2 session's content
+        // (`definition`) is compared through the same coarse check.
+        expect(details(next)).toContain('the session content changed');
     });
 
     it('does not report order-only changes to set-like equipment and objective tags', () => {
