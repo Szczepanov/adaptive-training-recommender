@@ -1,7 +1,7 @@
 import importlib.metadata
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -460,6 +460,115 @@ class GarminSyncService:
 
         return ok
 
+    def _resolve_backfill_dates(
+        self,
+        today: date,
+        days: int | None,
+        start_date_str: str | None,
+        end_date_str: str | None,
+    ) -> tuple[date, date]:
+        if start_date_str and end_date_str:
+            return parse_date_string(start_date_str), parse_date_string(end_date_str)
+        n_days = days or 56
+        return n_days_ago(today, n_days - 1), today
+
+    def _fetch_activity_details(
+        self,
+        provider: WearableProvider,
+        all_activities_canonical: list[CanonicalActivity],
+        target_iso: str | None = None,
+    ) -> dict[str, CanonicalActivityDetail]:
+        details_by_activity_id: dict[str, CanonicalActivityDetail] = {}
+        fetch_detail = (
+            getattr(provider, "fetch_activity_detail", None)
+            if provider.capabilities.activity_details
+            else None
+        )
+        if callable(fetch_detail):
+            qualifying = [
+                a
+                for a in all_activities_canonical
+                if qualifies_for_activity_detail(a) and (target_iso is None or a.date == target_iso)
+            ]
+            logger.info(f"Fetching activity details for {len(qualifying)} qualifying activities...")
+            for activity in qualifying:
+                assert activity.activity_id is not None
+                try:
+                    result = fetch_detail(activity.activity_id)
+                    details_by_activity_id[activity.activity_id] = result.canonical
+                except GarminConnectTooManyRequestsError as error:
+                    logger.warning(
+                        f"Garmin activity-detail rate limit reached during backfill; "
+                        f"abandoning remaining detail fetches: {type(error).__name__}"
+                    )
+                    break
+                except Exception as error:
+                    logger.warning(
+                        f"[{activity.date}] Garmin activity detail failed for "
+                        f"activity=<ID-redacted>, continuing with the base record: {type(error).__name__}"
+                    )
+        return details_by_activity_id
+
+    def _process_backfill_date(
+        self,
+        target_date: date,
+        target_iso: str,
+        force: bool,
+        provider: WearableProvider,
+        run_id: str,
+        all_activities_raw: list[dict[str, Any]],
+        raw_memory_store: dict[str, dict[str, Any]],
+    ) -> bool:
+        if not force:
+            existing = self.repository.get_snapshot(target_iso)
+            if existing and existing.get("raw"):
+                raw_memory_store[target_iso] = existing["raw"]
+                logger.info(
+                    f"[{target_iso}] Loaded existing snapshot from Firestore. Skipping Garmin API fetch."
+                )
+                return True
+
+        try:
+            yesterday_iso = get_date_string(n_days_ago(target_date, 1))
+            daily_result = provider.fetch_daily_metrics(target_iso, yesterday_iso)
+            self._archive_daily_payloads(
+                daily_result.raw_payloads, target_iso, yesterday_iso, run_id
+            )
+
+            # Archive the per-date-relevant activities slice (not the whole batch) so
+            # a single date can be rebuilt independently from its own archive entry.
+            # Upper bound is target_iso itself (not yesterday_iso) to match the live
+            # sync_daily window and preserve that date's own todayTraining on rebuild.
+            three_days_ago_iso = get_date_string(n_days_ago(target_date, 3))
+            date_activities_raw = [
+                a
+                for a in all_activities_raw
+                if three_days_ago_iso <= a.get("startTimeLocal", "")[:10] <= target_iso
+            ]
+            self._archive_raw("activities", target_iso, date_activities_raw, run_id)
+
+            zone4_floor = (
+                daily_result.canonical.heart_rate_zones.zone4_floor
+                if daily_result.canonical.heart_rate_zones
+                else None
+            )
+            date_canonical_activities = canonicalize_activities(
+                date_activities_raw, zone4_floor=zone4_floor
+            )
+
+            self._build_and_store_snapshot(
+                target_iso=target_iso,
+                canonical=daily_result.canonical,
+                canonical_activities=date_canonical_activities,
+                raw_memory_store=raw_memory_store,
+            )
+            logger.info(f"[{target_iso}] Backfill sync completed.")
+            return True
+
+        except Exception as e:
+            logger.error(f"[{target_iso}] Backfill failed: {type(e).__name__}")
+            return False
+
     def backfill(
         self,
         days: int | None = 56,
@@ -470,14 +579,7 @@ class GarminSyncService:
     ) -> bool:
         """Run historical backfill for date range."""
         today = local_today(self.settings.app_timezone)
-
-        if start_date_str and end_date_str:
-            start_d = parse_date_string(start_date_str)
-            end_d = parse_date_string(end_date_str)
-        else:
-            n_days = days or 56
-            end_d = today
-            start_d = n_days_ago(today, n_days - 1)
+        start_d, end_d = self._resolve_backfill_dates(today, days, start_date_str, end_date_str)
 
         target_dates = get_date_range(start_d, end_d)
         if not target_dates:
@@ -488,14 +590,10 @@ class GarminSyncService:
             f"Starting historical backfill for user=<UID-redacted> range {get_date_string(start_d)} -> {get_date_string(end_d)} ({len(target_dates)} dates)..."
         )
 
-        # Batch fetch all activities upfront to save API calls
         batch_start_iso = get_date_string(n_days_ago(start_d, 3))
         batch_end_iso = get_date_string(end_d)
 
         provider = self._init_provider()
-        # See sync_daily: clear any per-date caching from a prior operation before this
-        # backfill starts. Caching is only safe *within* this run's chronological date
-        # loop, populated fresh below.
         provider.clear_cache()
         run_id = _new_sync_run_id(f"backfill-{batch_start_iso}")
 
@@ -507,34 +605,9 @@ class GarminSyncService:
 
         details_by_activity_id: dict[str, CanonicalActivityDetail] = {}
         if include_details:
-            fetch_detail = (
-                getattr(provider, "fetch_activity_detail", None)
-                if provider.capabilities.activity_details
-                else None
+            details_by_activity_id = self._fetch_activity_details(
+                provider, all_activities_canonical
             )
-            if callable(fetch_detail):
-                qualifying = [
-                    a for a in all_activities_canonical if qualifies_for_activity_detail(a)
-                ]
-                logger.info(
-                    f"Fetching activity details for {len(qualifying)} qualifying activities in backfill window..."
-                )
-                for activity in qualifying:
-                    assert activity.activity_id is not None
-                    try:
-                        result = fetch_detail(activity.activity_id)
-                        details_by_activity_id[activity.activity_id] = result.canonical
-                    except GarminConnectTooManyRequestsError as error:
-                        logger.warning(
-                            f"Garmin activity-detail rate limit reached during backfill; "
-                            f"abandoning remaining detail fetches: {error}"
-                        )
-                        break
-                    except Exception as error:
-                        logger.warning(
-                            f"[{activity.date}] Garmin activity detail failed for "
-                            f"activity=<ID-redacted>, continuing with the base record: {error}"
-                        )
 
         self._archive_activities(
             all_activities_canonical,
@@ -542,7 +615,6 @@ class GarminSyncService:
             details_by_activity_id=details_by_activity_id,
         )
 
-        # Process dates in chronological order
         raw_memory_store: dict[str, dict[str, Any]] = {}
         failed_dates: list[str] = []
 
@@ -550,54 +622,16 @@ class GarminSyncService:
 
         for target_date in target_dates:
             target_iso = get_date_string(target_date)
-
-            if not force:
-                existing = self.repository.get_snapshot(target_iso)
-                if existing and existing.get("raw"):
-                    raw_memory_store[target_iso] = existing["raw"]
-                    logger.info(
-                        f"[{target_iso}] Loaded existing snapshot from Firestore. Skipping Garmin API fetch."
-                    )
-                    continue
-
-            try:
-                yesterday_iso = get_date_string(n_days_ago(target_date, 1))
-                daily_result = provider.fetch_daily_metrics(target_iso, yesterday_iso)
-                self._archive_daily_payloads(
-                    daily_result.raw_payloads, target_iso, yesterday_iso, run_id
-                )
-
-                # Archive the per-date-relevant activities slice (not the whole batch) so
-                # a single date can be rebuilt independently from its own archive entry.
-                # Upper bound is target_iso itself (not yesterday_iso) to match the live
-                # sync_daily window and preserve that date's own todayTraining on rebuild.
-                three_days_ago_iso = get_date_string(n_days_ago(target_date, 3))
-                date_activities_raw = [
-                    a
-                    for a in all_activities_raw
-                    if three_days_ago_iso <= a.get("startTimeLocal", "")[:10] <= target_iso
-                ]
-                self._archive_raw("activities", target_iso, date_activities_raw, run_id)
-
-                zone4_floor = (
-                    daily_result.canonical.heart_rate_zones.zone4_floor
-                    if daily_result.canonical.heart_rate_zones
-                    else None
-                )
-                date_canonical_activities = canonicalize_activities(
-                    date_activities_raw, zone4_floor=zone4_floor
-                )
-
-                self._build_and_store_snapshot(
-                    target_iso=target_iso,
-                    canonical=daily_result.canonical,
-                    canonical_activities=date_canonical_activities,
-                    raw_memory_store=raw_memory_store,
-                )
-                logger.info(f"[{target_iso}] Backfill sync completed.")
-
-            except Exception as e:
-                logger.error(f"[{target_iso}] Backfill failed: {e}")
+            success = self._process_backfill_date(
+                target_date,
+                target_iso,
+                force,
+                provider,
+                run_id,
+                all_activities_raw,
+                raw_memory_store,
+            )
+            if not success:
                 failed_dates.append(target_iso)
 
         self.token_store.persist(self.token_file_path)
