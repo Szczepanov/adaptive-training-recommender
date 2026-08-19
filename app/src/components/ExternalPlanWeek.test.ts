@@ -87,4 +87,47 @@ describe('ExternalPlanWeek occupancy and scheduling contracts', () => {
         expect(html).toContain('Threshold');
         expect(html).toContain('hard · 60–75 min');
     });
+
+    it('renders a rolling 7-day window showing today and the next 6 days (7 days overall)', () => {
+        const today = '2026-08-19';
+        const html = renderToStaticMarkup(
+            React.createElement(ExternalPlanWeek, {
+                userId: 'user-1',
+                planTitle: '13 September Road Race Adaptive Peak Plan',
+                weekStartDate: today,
+                placed: [
+                    ...placed,
+                    {
+                        session: {
+                            id: 's2', title: 'Endurance Ride', priority: 'supporting',
+                            placement: { week: 1, preferredDay: 'sunday', flexibility: 'preferred', ifMissed: 'reschedule_within_week' },
+                            gating: { modality: 'cycling', intensity: 'easy', durationMin: 90, durationMax: 120, environment: 'outdoor', equipment: [] },
+                            prescription: { summary: 'Zone 2 endurance.', steps: [] },
+                        },
+                        date: '2026-08-25', // today + 6
+                        status: 'planned',
+                        moved: false,
+                    },
+                ],
+                critique: null,
+                today,
+                onProposeReplacement: () => ({ sessionId: 's1', missedDate: today, outcome: 'unresolved' as const, rationale: '' }),
+                onConfirmReplacement: () => {},
+                onChooseDate: () => {},
+            }),
+        );
+
+        // Verify the 7 days from today (2026-08-19) to today+6 (2026-08-25) are rendered
+        expect(html).toContain('2026-08-19');
+        expect(html).toContain('2026-08-20');
+        expect(html).toContain('2026-08-21');
+        expect(html).toContain('2026-08-22');
+        expect(html).toContain('2026-08-23');
+        expect(html).toContain('2026-08-24');
+        expect(html).toContain('2026-08-25');
+        // Past day should not be in the rolling window
+        expect(html).not.toContain('2026-08-18');
+        expect(html).not.toContain('2026-08-26');
+        expect(html).toContain('Endurance Ride');
+    });
 });
