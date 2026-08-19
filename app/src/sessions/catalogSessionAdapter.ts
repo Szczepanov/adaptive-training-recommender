@@ -26,11 +26,11 @@ function mapBlockRole(role: string): BlockRole {
     }
 }
 
-function parsePrescriptionDose(doseStr: string): SessionDose | undefined {
+export function parsePrescriptionDose(doseStr: string): SessionDose | undefined {
     const trimmed = doseStr.trim().toLowerCase();
 
-    // Check for "X sets × Y reps" or "X × Y reps"
-    const repsMatch = trimmed.match(/(\d+)\s*(?:sets\s*)?[x×]\s*(\d+)(?:-(\d+))?\s*reps?/);
+    // Check for "X sets × Y reps", "X × Y reps", "X x Y-Z fast repetitions", "X x Y-Z"
+    const repsMatch = trimmed.match(/(\d+)\s*(?:sets\s*)?[x×]\s*(\d+)(?:\s*[-–]\s*(\d+))?\s*(?:fast\s*)?(?:reps?|repetitions?)?/i);
     if (repsMatch) {
         const sets = parseInt(repsMatch[1], 10);
         const minReps = parseInt(repsMatch[2], 10);
@@ -42,18 +42,20 @@ function parsePrescriptionDose(doseStr: string): SessionDose | undefined {
         };
     }
 
-    // Check for "X reps"
-    const singleRepsMatch = trimmed.match(/^(\d+)\s*reps?/);
+    // Check for "X-Y reps" or "X reps"
+    const singleRepsMatch = trimmed.match(/^(\d+)(?:\s*[-–]\s*(\d+))?\s*(?:fast\s*)?(?:reps?|repetitions?)/i);
     if (singleRepsMatch) {
+        const minReps = parseInt(singleRepsMatch[1], 10);
+        const maxReps = singleRepsMatch[2] ? parseInt(singleRepsMatch[2], 10) : minReps;
         return {
             kind: 'repetition',
             sets: 1,
-            reps: parseInt(singleRepsMatch[1], 10),
+            reps: minReps === maxReps ? minReps : { min: minReps, max: maxReps },
         };
     }
 
     // Check for "X sec" or "X min"
-    const secMatch = trimmed.match(/(\d+)\s*sec/);
+    const secMatch = trimmed.match(/(\d+)\s*sec/i);
     if (secMatch) {
         return {
             kind: 'duration',
@@ -61,16 +63,16 @@ function parsePrescriptionDose(doseStr: string): SessionDose | undefined {
         };
     }
 
-    const minMatch = trimmed.match(/(\d+)\s*min/);
+    const minMatch = trimmed.match(/(\d+(?:\.\d+)?)\s*min/i);
     if (minMatch) {
         return {
             kind: 'duration',
-            seconds: parseInt(minMatch[1], 10) * 60,
+            seconds: Math.round(parseFloat(minMatch[1]) * 60),
         };
     }
 
     // Check for meters
-    const meterMatch = trimmed.match(/(\d+)\s*m\b/);
+    const meterMatch = trimmed.match(/(\d+)\s*m\b/i);
     if (meterMatch) {
         return {
             kind: 'distance',

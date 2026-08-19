@@ -50,17 +50,23 @@ function parseDoseToMetrics(dose: string): { durationSeconds?: number; sets?: nu
     const minMatch = dose.match(/(\d+(?:\.\d+)?)\s*(?:min|m\b)/i);
     if (minMatch) res.durationSeconds = Math.round(parseFloat(minMatch[1]) * 60);
 
-    const repsMatch = dose.match(/(\d+)\s*(?:reps|r\b)/i);
+    const repsMatch = dose.match(/(\d+)\s*(?:reps|repetitions?|r\b)/i);
     if (repsMatch) res.repetitions = parseInt(repsMatch[1], 10);
 
-    const setsRepsMatch = dose.match(/(\d+)\s*[x×]\s*(\d+)/i);
+    const setsRepsMatch = dose.match(/(\d+)\s*(?:sets\s*)?[x×]\s*(\d+)(?:\s*[-–]\s*(\d+))?/i);
     if (setsRepsMatch) {
         res.sets = parseInt(setsRepsMatch[1], 10);
-        res.repetitions = parseInt(setsRepsMatch[2], 10);
+        const minReps = parseInt(setsRepsMatch[2], 10);
+        const maxReps = setsRepsMatch[3] ? parseInt(setsRepsMatch[3], 10) : minReps;
+        res.repetitions = Math.round((minReps + maxReps) / 2);
     }
 
-    const rpeMatch = dose.match(/RPE\s*(\d+(?:\.\d+)?)/i);
-    if (rpeMatch) res.rpe = parseFloat(rpeMatch[1]);
+    const rpeMatch = dose.match(/RPE\s*(\d+(?:\.\d+)?)(?:\s*[-–]\s*(\d+(?:\.\d+)?))?/i);
+    if (rpeMatch) {
+        const minRpe = parseFloat(rpeMatch[1]);
+        const maxRpe = rpeMatch[2] ? parseFloat(rpeMatch[2]) : minRpe;
+        res.rpe = (minRpe + maxRpe) / 2;
+    }
 
     return res;
 }
@@ -115,11 +121,24 @@ export function extractSetRecoverySecondsFromText(text: string): number | undefi
 
 export function extractSetsAndRepsFromText(text: string): { sets?: number; repetitions?: number } {
     if (!text) return {};
-    const match = text.match(/(\d+)\s+sets\s+of\s+(\d+)/i);
-    if (match) {
+    const setsOfMatch = text.match(/(\d+)\s+sets\s+of\s+(\d+)(?:\s*[-–]\s*(\d+))?/i);
+    if (setsOfMatch) {
+        const sets = parseInt(setsOfMatch[1], 10);
+        const minR = parseInt(setsOfMatch[2], 10);
+        const maxR = setsOfMatch[3] ? parseInt(setsOfMatch[3], 10) : minR;
         return {
-            sets: parseInt(match[1], 10),
-            repetitions: parseInt(match[2], 10),
+            sets,
+            repetitions: Math.round((minR + maxR) / 2),
+        };
+    }
+    const xMatch = text.match(/(\d+)\s*(?:sets\s*)?[x×]\s*(\d+)(?:\s*[-–]\s*(\d+))?/i);
+    if (xMatch) {
+        const sets = parseInt(xMatch[1], 10);
+        const minR = parseInt(xMatch[2], 10);
+        const maxR = xMatch[3] ? parseInt(xMatch[3], 10) : minR;
+        return {
+            sets,
+            repetitions: Math.round((minR + maxR) / 2),
         };
     }
     return {};
@@ -221,8 +240,16 @@ export function exportExternalSessionToJson(
         const isWarmup = /warm-?up/i.test(step.name);
         const isCooldown = /cool-?down/i.test(step.name);
 
-        const stepText = `${step.notes ?? ''} ${step.name}`;
+        const stepText = `${step.notes ?? ''} ${step.name} ${step.target ?? ''}`;
         const sessionText = `${stepText} ${session.title} ${session.prescription.summary}`;
+
+        let targetRpe: number | undefined;
+        const rpeMatch = stepText.match(/RPE\s*(\d+(?:\.\d+)?)(?:\s*[-–]\s*(\d+(?:\.\d+)?))?/i);
+        if (rpeMatch) {
+            const minR = parseFloat(rpeMatch[1]);
+            const maxR = rpeMatch[2] ? parseFloat(rpeMatch[2]) : minR;
+            targetRpe = (minR + maxR) / 2;
+        }
 
         if (!isWarmup && !isCooldown) {
             // Infer sets & repetitions if missing or if repeat was flattened
@@ -246,6 +273,7 @@ export function exportExternalSessionToJson(
             durationSeconds: durationSec,
             sets,
             repetitions,
+            targetRpe,
             targets: step.target ? [step.target] : undefined,
             restAfterSec: restSec,
             setRecoverySec,
@@ -267,13 +295,21 @@ export function exportExternalSessionToJson(
         },
     ];
 
+    let summary = session.prescription.summary;
+    if (session.scaling?.reducedSummary) {
+        summary += `\n\nReduced version:\n${session.scaling.reducedSummary}`;
+    }
+    if (session.scaling?.fallback) {
+        summary += `\n\nIf weights are unavailable:\n${session.scaling.fallback}`;
+    }
+
     return {
         schemaVersion: 'canonical_workout_v1',
         title: session.title,
         workoutId: session.id,
         modality: session.gating.modality,
         targetDurationMin: session.gating.durationMin,
-        summary: session.prescription.summary,
+        summary,
         blocks,
         exportedAt: new Date().toISOString(),
     };

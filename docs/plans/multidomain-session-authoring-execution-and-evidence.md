@@ -806,9 +806,11 @@ validate-before-save step are all schema-version-aware; every M0.2 fixture valid
 v2 session's `definition` unmodified. Firestore rules needed a real fix, not a no-op:
 `hasValidExternalPlanRevision()` hard-coded the v1 schema literal and would have silently
 rejected every v2 write at the database layer — caught by re-running the emulator suite
-rather than trusting the original "no rules change needed" assumption in this plan. Deferred
-to M3.7 as originally scoped: fine-grained per-field content diffing for a v2 session
-(`externalPlanDiff.ts` reports a coarse "the session content changed" for either schema).
+rather than trusting the original "no rules change needed" assumption in this plan. Exporter-importer compliance was closed via `canonicalWorkoutAdapter.ts`, allowing workout
+export JSON (`canonical_workout_v1`) to be directly pasted and converted into normalized
+`SessionDefinition` instances within `SessionJsonImport.tsx`. Deferred to M3.7 as originally
+scoped: fine-grained per-field content diffing for a v2 session (`externalPlanDiff.ts`
+reports a coarse "the session content changed" for either schema).
 
 ### M3.7 `[-]` Full semantic import preview and diff
 
