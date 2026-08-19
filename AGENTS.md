@@ -134,6 +134,7 @@ app/src/engine/
   externalCritique.ts  # Advisory weekly review of a placed plan week. Cannot change a
                        #   verdict, and cannot import externalSession.ts (D-CRITIQUE)
   externalPlanHash.ts  # Canonical SHA-256 of a stored revision; the replay anchor (D-IMMUT)
+  authoredSessionGates.ts # Adjudicates authored occurrences against readiness/gates (ADR-0023)
   sequenceSearch.ts    # Phase 5.1 beam-search prototype -- measured, NOT in any live path
   shadowAgreement.ts   # Phase 9.0: pure engine-vs-athlete verdict classifier (evidence only)
   shadowLog.ts         # Phase 9.0: pure day-row joiner + CSV renderer for the export (evidence only)
@@ -149,6 +150,16 @@ app/src/engine/
                        #   runFatigueFusionComparison / runSubjectiveDriftComparison /
                        #   runSubjectiveDriftSensitivityComparison run the real planner twice
                        #   under a simulation-only policy override to measure a candidate
+
+app/src/sessions/
+  models.ts            # Source-neutral session definitions, prescriptions, occurrences, executions
+  validation.ts        # Canonical schema validators for definitions, prescriptions, occurrences, entries
+  sessionDefinitionResolver.ts # Pinned revision / occurrence resolution and hash verification
+  sessionDefinitionHash.ts # Canonical SHA-256 content hashing for definition and prescription
+  inputProfiles.ts     # Input card profiles (repetition, duration, distance, check-offs, gauges)
+  performedComparison.ts # Planned vs completed steps, volume, omissions, hold duration
+  legacyStrengthAdapter.ts # Two-way bridge between legacy strength_sessions and session_executions
+  catalogSessionAdapter.ts # Adapts catalog templates to source-neutral SessionDefinition
 ```
 
 This map is a routing aid, not a complete file listing. Where it disagrees with the
