@@ -21,16 +21,18 @@ export const SubjectiveScaleRow: React.FC<SubjectiveScaleRowProps> = ({
   isInverted = false,
   onChange,
 }) => {
+  // Severity-based accents: amber for warning, red for severe, neutral blue for normal/good
+  const isSevere = isInverted ? value >= 8 : value <= 3;
+  const isWarning = isInverted ? value >= 6 && value < 8 : value === 4;
+  const severityClass = isSevere ? 'status-severe' : isWarning ? 'status-warning' : 'status-normal';
+
   return (
-    <div className={`subjective-scale-row ${isInverted ? 'is-inverted' : ''}`} data-scale={id}>
+    <div className={`subjective-scale-row ${severityClass}`} data-scale={id}>
       <div className="scale-row-header">
-        <div className="scale-row-info">
-          <label htmlFor={`slider-${id}`} className="scale-row-label">
-            {label}
-          </label>
-          {desc && <span className="scale-row-desc">{desc}</span>}
-        </div>
-        <div className="scale-row-value-badge" aria-live="polite">
+        <label htmlFor={`slider-${id}`} className="scale-row-label">
+          {label}
+        </label>
+        <div className={`scale-row-value-badge ${severityClass}`} aria-live="polite">
           <span className="scale-value-number">{value}</span>
           <span className="scale-value-max">/10</span>
         </div>
@@ -45,11 +47,12 @@ export const SubjectiveScaleRow: React.FC<SubjectiveScaleRowProps> = ({
           step="1"
           value={value}
           onChange={(e) => onChange(Number(e.target.value))}
-          className="subjective-slider"
+          className={`subjective-slider ${severityClass}`}
           aria-valuemin={1}
           aria-valuemax={10}
           aria-valuenow={value}
           aria-label={label}
+          aria-description={desc}
         />
         <div className="scale-endpoint-labels">
           <span className="endpoint-label low">{lowLabel}</span>

@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { SubjectiveScaleRow } from './SubjectiveScaleRow';
 
 describe('SubjectiveScaleRow', () => {
-  it('renders label, description, endpoint labels and value badge', () => {
+  it('renders label, accessible description, endpoint labels and value badge', () => {
     const html = renderToStaticMarkup(
       <SubjectiveScaleRow
         id="fatigue"
@@ -18,11 +18,28 @@ describe('SubjectiveScaleRow', () => {
     );
 
     expect(html).toContain('Physical Fatigue');
-    expect(html).toContain('How much physical fatigue do you feel?');
+    expect(html).toContain('aria-description="How much physical fatigue do you feel?"');
     expect(html).toContain('1 Fresh');
     expect(html).toContain('10 Exhausted');
     expect(html).toContain('4');
-    expect(html).toContain('is-inverted');
+    expect(html).toContain('status-normal');
+  });
+
+  it('renders warning status for elevated inverted scale value', () => {
+    const html = renderToStaticMarkup(
+      <SubjectiveScaleRow
+        id="soreness"
+        label="Muscle Soreness"
+        value={7}
+        lowLabel="1 None"
+        highLabel="10 Severe"
+        isInverted={true}
+        onChange={() => {}}
+      />
+    );
+
+    expect(html).toContain('Muscle Soreness');
+    expect(html).toContain('status-warning');
   });
 
   it('renders standard non-inverted scale with slider input attributes', () => {
@@ -41,6 +58,6 @@ describe('SubjectiveScaleRow', () => {
     expect(html).toContain('value="8"');
     expect(html).toContain('min="1"');
     expect(html).toContain('max="10"');
-    expect(html).not.toContain('is-inverted');
+    expect(html).toContain('status-normal');
   });
 });

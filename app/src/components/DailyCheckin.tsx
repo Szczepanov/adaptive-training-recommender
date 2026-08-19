@@ -138,16 +138,16 @@ export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) 
         if (existing) {
           setCheckin(existing);
         } else {
-          // Initialize with sensible defaults
+          // Initialize with neutral defaults
           setCheckin({
             userId,
             date: today,
-            readiness: 7,
-            sleepQuality: 7,
-            fatigue: 3,
-            soreness: 2,
-            mentalStress: 3,
-            motivation: 8,
+            readiness: 5,
+            sleepQuality: 5,
+            fatigue: 5,
+            soreness: 5,
+            mentalStress: 5,
+            motivation: 5,
             painOrInjury: false,
             illnessSymptoms: false,
             unusuallyLimitedTime: false,
@@ -170,35 +170,7 @@ export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) 
         }
       } catch (serviceError: unknown) {
         console.error('Service error loading check-in:', serviceError);
-        const today = getLocalDateString();
-        setCheckin({
-          userId,
-          date: today,
-          readiness: 7,
-          sleepQuality: 7,
-          fatigue: 3,
-          soreness: 2,
-          mentalStress: 3,
-          motivation: 8,
-          painOrInjury: false,
-          illnessSymptoms: false,
-          unusuallyLimitedTime: false,
-          alreadyTrainedToday: false,
-          availability: {
-            timeAvailableMin: 60,
-            preferredModalityToday: null,
-            indoorOnly: false,
-          },
-          notes: null,
-          submittedAt: new Date().toISOString(),
-          dataQuality: {
-            isComplete: false,
-            missingFields: [],
-          },
-          schemaVersion: 1,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        } as DailySubjectiveCheckin);
+        setError(`Couldn't load today's check-in: ${getErrorMessage(serviceError)}`);
       }
     } catch (err) {
       console.error('Unexpected error loading check-in:', err);
@@ -215,6 +187,19 @@ export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) 
   const handleScaleChange = (field: ScaleConfig['key'], value: number) => {
     if (!checkin) return;
     setCheckin({ ...checkin, [field]: value });
+  };
+
+  const handleApplyTypicalPreset = () => {
+    if (!checkin) return;
+    setCheckin({
+      ...checkin,
+      readiness: 7,
+      sleepQuality: 7,
+      fatigue: 3,
+      soreness: 2,
+      mentalStress: 3,
+      motivation: 8,
+    });
   };
 
   const handleBooleanToggle = (field: 'painOrInjury' | 'illnessSymptoms' | 'unusuallyLimitedTime' | 'alreadyTrainedToday') => {
@@ -334,13 +319,29 @@ export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) 
     }
   };
 
-  const isExistingComplete = checkin?.dataQuality?.isComplete ?? false;
-
   if (loading) {
     return (
       <div className="checkin-container">
         <div className="loading-state">
           <p>Loading check-in...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error && !checkin) {
+    return (
+      <div className="checkin-container">
+        <div className="checkin-header-bar">
+          <button type="button" onClick={onBack ?? (() => onNavigate('home'))} className="back-btn">
+            ← Back
+          </button>
+        </div>
+        <div className="error-card" role="alert">
+          <p>{error}</p>
+          <button type="button" className="btn-primary" onClick={loadTodayCheckin}>
+            Retry
+          </button>
         </div>
       </div>
     );
@@ -400,11 +401,21 @@ export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) 
       )}
 
       <form className="checkin-form" onSubmit={handleSubmit}>
-        {/* Section 1: Subjective Scales */}
-        <section className="checkin-section" aria-label="Daily subjective scales">
+        {/* Section 1: Subjective State */}
+        <section className="checkin-section" aria-label="Subjective state assessment">
           <div className="section-title-wrap">
-            <h2>How do you feel today?</h2>
-            <p>Rapid 10-second assessment for today&apos;s training plan</p>
+            <h2>Subjective Recovery & State</h2>
+            <p>6 standard subjective dimensions scaled 1 to 10</p>
+          </div>
+
+          <div className="checkin-preset-bar">
+            <button
+              type="button"
+              className="btn-preset-typical"
+              onClick={handleApplyTypicalPreset}
+            >
+              ⚡ Feeling normal today? Use typical values
+            </button>
           </div>
 
           <div className="scales-list">
@@ -611,7 +622,7 @@ export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) 
                 type="number"
                 min="0"
                 max="1440"
-                value={checkin.availability?.timeAvailableMin || 60}
+                value={checkin.availability?.timeAvailableMin ?? 60}
                 onChange={(e) => handleAvailabilityChange('timeAvailableMin', Number(e.target.value))}
                 className="number-input"
               />
@@ -711,7 +722,7 @@ export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) 
             className="btn-primary checkin-submit-btn"
             disabled={saving}
           >
-            {saving ? 'Saving check-in…' : (isExistingComplete ? 'Save & see today\'s plan' : 'Save & see today\'s plan')}
+            {saving ? 'Saving check-in…' : "Save & see today's plan"}
           </button>
         </div>
       </form>

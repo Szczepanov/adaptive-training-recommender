@@ -2,8 +2,8 @@ import { useState, useEffect, useCallback, useMemo, useRef, memo } from 'react';
 import { decisionComposer } from '../engine/composer';
 import { evaluateTrainingWithIntent, evaluateNextDayPlanWithIntent, adjustSessionRecommendation, evaluateReadinessAndSafetyEnvelope } from '../engine/rules';
 import { mapSnapshotToEngineInput, mapCheckinToSubjectiveInput, mapContextFromGoalsAndTrainingSettings, mapGoalsToUserEvents } from '../engine/adapters';
-import { generateWeekAheadPlanWithIntent, trailingHistoryFromCompletedExposures, type WeekAheadPlan } from '../engine/planner';
-import { prepareTrainingHistorySnapshot, resolveTrainingIntent } from '../engine/trainingIntent';
+import { generateWeekAheadPlanWithIntent, type WeekAheadPlan } from '../engine/planner';
+import { prepareTrainingHistorySnapshot } from '../engine/trainingIntent';
 import type { TrainingHistorySnapshot } from '../engine/trainingHistorySnapshot';
 import { buildRecommendationAudit } from '../engine/provenance';
 import { evaluatePeriodizationPhase, getDaysToEvent } from '../engine/periodization';
@@ -12,7 +12,7 @@ import { resolveExecutionDose } from '../engine/dose';
 import { resolveAvailability } from '../engine/schedule';
 import { adjudicateAuthoredSession, createAuthoredSessionTemplate, estimateAuthoredSessionSystemicCost } from '../engine/authoredSessionGates';
 import { sessionOccurrenceService } from '../services/sessionOccurrenceService';
-import type { AuthoredPlanBlock, BodyRegion, DailyDecisionInput, Recommendation, NextDayPotentialPlan, DailyRecommendation, DecisionJournalEntry, ExternalPlacementAssignment, ExternalPlanPlacement, FixedActivity, ShadowVerdict } from '../engine/models';
+import type { AuthoredPlanBlock, BodyRegion, DailyDecisionInput, Recommendation, NextDayPotentialPlan, DailyRecommendation, DecisionJournalEntry, FixedActivity, ShadowVerdict } from '../engine/models';
 import type { SessionReferenceBinding } from '../sessions/models';
 import type { DataState } from '../engine/dataState';
 import { recommendationService } from '../services/recommendationService';
@@ -25,18 +25,13 @@ import { resolveEngineShadowVerdict } from '../engine/shadowAgreement';
 import { getPreviousLocalDateString, addDaysToLocalDateString } from '../utils/localDate';
 import { getPrescriptionLegend, resolveWorkoutPrescription } from '../workouts';
 import type { WorkoutPrescription } from '../workouts';
-import { computeInternalResponseStrain } from '../engine/fatigue';
-import { critiqueExternalWeek, type ExternalWeekCritique } from '../engine/externalCritique';
-import { applyConfirmedProposal, proposeReplacement, type ReplacementProposal } from '../engine/externalPlacement';
 import {
   activeExternalPlanService,
   externalPlanContextForDate,
   type ActiveExternalPlan,
 } from '../services/activeExternalPlanService';
-import { externalPlanService } from '../services/externalPlanService';
 import { checkinService } from '../services/checkinService';
 import { ExternalVerdictBanner } from './ExternalVerdictBanner';
-import { ExternalPlanWeek } from './ExternalPlanWeek';
 import { WorkoutExportMenu } from './WorkoutExportMenu';
 import { AdherencePrompt, type AdherenceAnswer } from './AdherencePrompt';
 import { DecisionJournalCard } from './DecisionJournalCard';
@@ -184,10 +179,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
   const [pendingAdherence, setPendingAdherence] = useState<{ date: string; recommendation: DailyRecommendation } | null>(null);
   const [, setTodaysJournalEntry] = useState<DecisionJournalEntry | null>(null);
   const [historySnapshot, setHistorySnapshot] = useState<TrainingHistorySnapshot | null>(null);
-  const [activeExternalPlan, setActiveExternalPlan] = useState<ActiveExternalPlan | null>(null);
-  const [externalWeekCritique, setExternalWeekCritique] = useState<ExternalWeekCritique | null>(null);
-  const [planWeekFixedActivities, setPlanWeekFixedActivities] = useState<FixedActivity[]>([]);
-  const [placementError, setPlacementError] = useState<string | null>(null);
+  const [, setActiveExternalPlan] = useState<ActiveExternalPlan | null>(null);
   const [hasPendingSessionResponse, setHasPendingSessionResponse] = useState(false);
   const pendingAdherenceRef = useRef(pendingAdherence);
   useEffect(() => { pendingAdherenceRef.current = pendingAdherence; }, [pendingAdherence]);
@@ -263,8 +255,6 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
 
   const clearExternalPlanState = useCallback(() => {
     setActiveExternalPlan(null);
-    setExternalWeekCritique(null);
-    setPlanWeekFixedActivities([]);
   }, []);
 
   const loadDashboardData = useCallback(async () => {
@@ -356,7 +346,6 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
           console.warn(`Fixed activities for the plan week could not be read (${planWeekActivitiesState.status}); placement falls back to the dates the plan itself implies.`);
         }
         const planWeekActivities = planWeekActivitiesState.status === 'AVAILABLE' ? planWeekActivitiesState.data : [];
-        setPlanWeekFixedActivities(planWeekActivities);
 
         const activeExternalState = await activeExternalPlanService.getActivePlanState(
           userId, input.date, planWeekActivities,
@@ -536,29 +525,6 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
         };
         setRecommendation(todayRec);
 
-        if (activeExternal) {
-          const intent = await resolveTrainingIntent(
-            userId, events, input.date, { subjective, objective }, 7, undefined, preparedSnapshot,
-            todayAndTomorrowPlanBlocks, input.trainingIntentProfile,
-          );
-          if (!isCurrent()) return;
-          setExternalWeekCritique(critiqueExternalWeek({
-            weekStartDate: input.date,
-            planId: activeExternal.plan.planId,
-            revision: activeExternal.plan.revision,
-            placed: activeExternal.placed,
-            microcycle: intent.microcycle,
-            fatigue: intent.fatigue,
-            internalStrain: computeInternalResponseStrain({ subjective, objective }),
-            internalStrainAsOf: input.date,
-            weeklyCommitment: intent.planningContext.profile.weeklyCommitment,
-            trailingHistory: trailingHistoryFromCompletedExposures(intent.history, input.date),
-            fixedActivities: planWeekActivities,
-          }));
-        } else {
-          setExternalWeekCritique(null);
-        }
-
         const tomorrowPlan = await evaluateNextDayPlanWithIntent(
           userId, events, { subjective, objective }, forecastContext, input.date, todayRec, undefined, preparedSnapshot,
           todayAndTomorrowFixedActivities, todayAndTomorrowPlanBlocks, input.trainingIntentProfile, input.preferences,
@@ -709,49 +675,6 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
     [fixedActivitiesState]
   );
 
-  const handleProposeReplacement = useCallback((sessionId: string, missedDate: string): ReplacementProposal => {
-    if (!activeExternalPlan) throw new Error('No imported plan is active.');
-    return proposeReplacement(
-      activeExternalPlan.plan, activeExternalPlan.placement, sessionId, missedDate,
-      { fixedActivities: planWeekFixedActivities },
-      decisionInput?.date ?? missedDate,
-    );
-  }, [activeExternalPlan, planWeekFixedActivities, decisionInput?.date]);
-
-  const persistAssignments = useCallback(async (assignments: ExternalPlacementAssignment[]) => {
-    if (!activeExternalPlan) return;
-    setPlacementError(null);
-    try {
-      await externalPlanService.savePlacement(userId, {
-        planId: activeExternalPlan.plan.planId,
-        revision: activeExternalPlan.plan.revision,
-        assignments,
-      });
-    } catch (err) {
-      console.error('Failed to save external plan placement:', err);
-      setPlacementError('That change could not be saved. Your plan is unchanged — check your connection and try again.');
-      throw err;
-    }
-    await loadDashboardData();
-  }, [activeExternalPlan, userId, loadDashboardData]);
-
-  const handleConfirmReplacement = useCallback(async (proposal: ReplacementProposal) => {
-    if (!activeExternalPlan) return;
-    const overlay: ExternalPlanPlacement = activeExternalPlan.placement ?? {
-      userId, planId: activeExternalPlan.plan.planId, revision: activeExternalPlan.plan.revision,
-      assignments: [], updatedAt: '',
-    };
-    await persistAssignments(applyConfirmedProposal(overlay, proposal).assignments);
-  }, [activeExternalPlan, userId, persistAssignments]);
-
-  const handleChooseDate = useCallback(async (sessionId: string, date: string) => {
-    if (!activeExternalPlan) return;
-    const existing = activeExternalPlan.placement?.assignments ?? [];
-    await persistAssignments([
-      ...existing.filter(item => item.sessionId !== sessionId),
-      { sessionId, date, status: 'moved' },
-    ]);
-  }, [activeExternalPlan, persistAssignments]);
   const [planBlocksState, setPlanBlocksState] = useState<DataState<AuthoredPlanBlock[]>>({ status: 'AVAILABLE', data: [], revision: null });
   useEffect(() => {
     let cancelled = false;
@@ -886,41 +809,59 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
         <div className="home-main-col">
           {/* State Summary Banner */}
           <div className="dashboard-card today-status-summary-card">
-            <div className="today-status-row">
-              <div className="status-item subjective-item">
-                <span className="status-item-label">Subjective Readiness</span>
-                <span className="status-item-val">
-                  {subjectiveReadiness !== null ? `${subjectiveReadiness}/10` : 'No check-in'}
+            <div className="today-status-header">
+              <div className="today-status-hero-text">
+                <span className="today-status-tag">Today&apos;s Readiness</span>
+                <h3 className="today-status-headline">
+                  {activeRec?.mode === 'recover'
+                    ? 'Recovery Day'
+                    : activeRec?.mode === 'modify'
+                    ? 'Train, but reduce load'
+                    : 'Ready to train'}
+                </h3>
+              </div>
+              {activeRec && (
+                <span className={`status-badge mode-${activeRec.mode}`}>
+                  {MODE_LABELS[activeRec.mode]}
                 </span>
-                {subjectiveReadinessLabel && <span className="status-item-sub">{subjectiveReadinessLabel}</span>}
-              </div>
+              )}
+            </div>
 
-              <div className="status-item mode-item">
-                <span className="status-item-label">Today&apos;s Load Mode</span>
-                {activeRec ? (
-                  <span className={`status-badge mode-${activeRec.mode}`}>
-                    {MODE_LABELS[activeRec.mode]}
-                  </span>
-                ) : (
-                  <span className="status-badge pending">Pending</span>
-                )}
+            {/* Direct Biomarker Chips */}
+            <div className="today-biomarkers-strip">
+              <div className="biomarker-chip">
+                <span className="biomarker-label">Readiness</span>
+                <span className="biomarker-value">
+                  {subjectiveReadiness !== null ? `${subjectiveReadiness}/10` : '--'}
+                </span>
               </div>
-
-              <div className="status-item garmin-item">
-                <span className="status-item-label">Garmin Recovery</span>
-                {decisionInput?.recoverySnapshot ? (
-                  <span className={`garmin-status-badge mode-${activeRec?.mode ?? 'train'}`}>
-                    {activeRec?.mode === 'recover' ? 'Needs recovery' : activeRec?.mode === 'modify' ? 'Cautious' : 'Good'}
-                  </span>
-                ) : (
-                  <span className="garmin-status-badge warning">No Data</span>
-                )}
-              </div>
+              {decisionInput?.recoverySnapshot && (
+                <>
+                  <div className="biomarker-chip">
+                    <span className="biomarker-label">Sleep</span>
+                    <span className="biomarker-value">
+                      {decisionInput.recoverySnapshot.raw.sleepScore ?? '--'}
+                    </span>
+                  </div>
+                  <div className="biomarker-chip">
+                    <span className="biomarker-label">HRV</span>
+                    <span className="biomarker-value">
+                      {decisionInput.recoverySnapshot.raw.hrvOvernightAvg ? `${decisionInput.recoverySnapshot.raw.hrvOvernightAvg} ms` : '--'}
+                    </span>
+                  </div>
+                  <div className="biomarker-chip">
+                    <span className="biomarker-label">Battery</span>
+                    <span className="biomarker-value">
+                      {decisionInput.recoverySnapshot.raw.bodyBatteryWake ? `${decisionInput.recoverySnapshot.raw.bodyBatteryWake}` : '--'}
+                    </span>
+                  </div>
+                </>
+              )}
             </div>
 
             {activeRec && (activeRec.mode === 'modify' || activeRec.mode === 'recover') && (
               <div className="mode-rationale-callout">
-                <strong>{activeRec.mode === 'recover' ? 'Recovery day:' : 'Reduced load:'}</strong> {activeRec.rationale}
+                <strong>{activeRec.mode === 'recover' ? 'Recovery reason:' : 'Reduced load reason:'}</strong> {activeRec.rationale}
               </div>
             )}
           </div>
@@ -1087,33 +1028,32 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
             )}
           </div>
 
-          {activeExternalPlan && decisionInput && (
-            <ExternalPlanWeek
-              userId={userId}
-              planTitle={activeExternalPlan.plan.title}
-              weekStartDate={decisionInput.date}
-              placed={activeExternalPlan.placed}
-              critique={externalWeekCritique}
-              today={decisionInput.date}
-              fixedActivities={planWeekFixedActivities}
-              onProposeReplacement={handleProposeReplacement}
-              onConfirmReplacement={handleConfirmReplacement}
-              onChooseDate={handleChooseDate}
-              writeError={placementError}
+          <div className="home-week-strip-section">
+            <div className="section-header-row">
+              <h4>7-Day Outlook</h4>
+              <button
+                type="button"
+                className="view-plan-link-btn"
+                onClick={() => onNavigate('plan')}
+              >
+                View full plan →
+              </button>
+            </div>
+            <WeekAheadStrip
+              plan={weekAheadPlan}
+              nextDayPlan={nextDayPlan}
+              selectedTier={selectedNextDayTier}
+              onSelectTier={setSelectedNextDayTier}
+              trainingIntentProfile={decisionInput?.trainingIntentProfile}
+              planningMode={resolvedPlanningMode}
             />
-          )}
-
-          <WeekAheadStrip
-            plan={weekAheadPlan}
-            nextDayPlan={nextDayPlan}
-            selectedTier={selectedNextDayTier}
-            onSelectTier={setSelectedNextDayTier}
-            trainingIntentProfile={decisionInput?.trainingIntentProfile}
-            planningMode={resolvedPlanningMode}
-          />
+          </div>
         </div>
 
         <div className="home-sidebar-col">
+          <details className="home-insights-disclosure">
+            <summary className="home-insights-summary">More insights & history ›</summary>
+            <div className="home-insights-content">
           {completeness < 100 && (
             <div className="completeness-card dashboard-card">
               <div className="completeness-header">
@@ -1311,6 +1251,8 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
               </button>
             )}
           </div>
+            </div>
+          </details>
         </div>
       </div>
     </div>

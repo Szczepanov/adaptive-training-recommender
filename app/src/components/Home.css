@@ -1076,3 +1076,138 @@
   color: #f87171;
   line-height: 1.4;
 }
+
+/* Today Status Hero & Direct Biomarkers */
+.today-status-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.today-status-hero-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.today-status-tag {
+  font-size: 0.725rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-accent-blue, #60a5fa);
+}
+
+.today-status-headline {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: var(--color-text-primary, #f8fafc);
+}
+
+.today-biomarkers-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(75px, 1fr));
+  gap: 8px;
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: var(--radius-control, 10px);
+  padding: 10px 12px;
+}
+
+.biomarker-chip {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.biomarker-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--color-text-muted, #94a3b8);
+}
+
+.biomarker-value {
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: var(--color-text-primary, #f8fafc);
+}
+
+/* Home 7-Day Outlook */
+.home-week-strip-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.section-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 4px;
+}
+
+.section-header-row h4 {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--color-text-secondary, #cbd5e1);
+}
+
+.view-plan-link-btn {
+  background: none;
+  border: none;
+  color: var(--color-accent-blue, #60a5fa);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 6px;
+  transition: opacity 0.15s ease;
+}
+
+.view-plan-link-btn:hover {
+  opacity: 0.8;
+  text-decoration: underline;
+}
+
+/* Insights Collapsible Disclosure */
+.home-insights-disclosure {
+  background: var(--color-bg-surface, #1e293b);
+  border: 1px solid var(--color-border, #334155);
+  border-radius: var(--radius-card, 14px);
+  overflow: hidden;
+  margin-top: 8px;
+}
+
+.home-insights-summary {
+  padding: 14px 16px;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--color-text-secondary, #cbd5e1);
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.home-insights-summary::-webkit-details-marker {
+  display: none;
+}
+
+.home-insights-summary:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.home-insights-content {
+  padding: 16px;
+  border-top: 1px solid var(--color-border, #334155);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}

@@ -240,6 +240,32 @@ const incompleteCheckin: DailySubjectiveCheckin = {
   dataQuality: { isComplete: false, missingFields: ['sleepQuality', 'fatigue', 'mentalStress', 'motivation'] },
 };
 
+const neutralCheckin: DailySubjectiveCheckin = {
+  ...checkin,
+  readiness: 5,
+  sleepQuality: 5,
+  fatigue: 5,
+  soreness: 5,
+  mentalStress: 5,
+  motivation: 5,
+  painOrInjury: false,
+  illnessSymptoms: false,
+  unusuallyLimitedTime: false,
+  alreadyTrainedToday: false,
+  notes: null,
+};
+
+const painExpandedCheckin: DailySubjectiveCheckin = {
+  ...checkin,
+  readiness: 4,
+  painOrInjury: true,
+  tissueResponses: {
+    knee: { region: 'knee', morningState: 'moderate', painDuringTraining: 'mild' },
+    achilles: { region: 'achilles', morningState: 'mild' },
+  },
+  notes: 'Knee discomfort during stairs and early morning stiffness.',
+};
+
 const restrictedSettings: TrainingSettings = {
   ...settings,
   guardrails: { ...settings.guardrails, avoid_high_impact: true, avoid_heavy_lower_body: true },
@@ -401,11 +427,39 @@ export const VISUAL_SCENARIOS: VisualScenario[] = [
     fixture: buildFixture({ recovery: null, checkin: incompleteCheckin }),
   },
   {
+    id: 'home-checkin-missing-with-garmin',
+    title: 'Home — check-in missing with synced Garmin',
+    screen: 'home',
+    expectedFocus: ['The morning check-in action gate leads and Garmin recovery strip is visible.'],
+    fixture: buildFixture({ checkin: null }),
+  },
+  {
+    id: 'home-incomplete-checkin',
+    title: 'Home — partially completed check-in',
+    screen: 'home',
+    expectedFocus: ['The incomplete check-in state guides athlete to finish check-in.'],
+    fixture: buildFixture({ checkin: incompleteCheckin }),
+  },
+  {
     id: 'checkin-complete',
     title: 'Daily check-in',
     screen: 'checkin',
     expectedFocus: ['Question framing and current recovery context are legible on first view.'],
     fixture: standardFixture,
+  },
+  {
+    id: 'checkin-pain-expanded',
+    title: 'Daily check-in — pain and affected tissue expanded',
+    screen: 'checkin',
+    expectedFocus: ['Affected body areas and tissue response levels are clearly displayed.'],
+    fixture: buildFixture({ checkin: painExpandedCheckin }),
+  },
+  {
+    id: 'checkin-new',
+    title: 'Daily check-in — neutral defaults and quick preset',
+    screen: 'checkin',
+    expectedFocus: ['Neutral values and quick preset CTA are accessible without visual bias.'],
+    fixture: buildFixture({ checkin: neutralCheckin }),
   },
   {
     id: 'goals-event',

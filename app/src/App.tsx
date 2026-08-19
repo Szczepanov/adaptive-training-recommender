@@ -21,7 +21,7 @@ const Goals = lazy(() => import('./components/Goals').then(m => ({ default: m.Go
 const TrainingSettings = lazy(() => import('./components/TrainingSettings').then(m => ({ default: m.TrainingSettings })));
 const Preferences = lazy(() => import('./components/Preferences').then(m => ({ default: m.Preferences })));
 const DataView = lazy(() => import('./components/DataView').then(m => ({ default: m.DataView })));
-const ExternalPlanImport = lazy(() => import('./components/ExternalPlanImport').then(m => ({ default: m.ExternalPlanImport })));
+const PlanView = lazy(() => import('./components/PlanView').then(m => ({ default: m.PlanView })));
 const StrengthOverloadHistory = lazy(() => import('./components/StrengthOverloadHistory').then(m => ({ default: m.StrengthOverloadHistory })));
 const StrengthSessionRunner = lazy(() => import('./components/StrengthSessionRunner').then(m => ({ default: m.StrengthSessionRunner })));
 const SessionRunner = lazy(() => import('./components/session/SessionRunner').then(m => ({ default: m.SessionRunner })));
@@ -81,19 +81,25 @@ function App() {
     setMobileMoreOpen(false);
   };
 
+  const isWorkoutRunnerActive =
+    (screen === 'sessions' && activeStructuredSession?.state === 'in_progress') ||
+    (screen === 'strength' && activeStrengthSession?.state === 'in_progress');
+
   // Main app with navigation
   return (
     <div className="app-container">
-      {/* Global Top Navbar */}
-      <Header
-        screen={screen}
-        handleNavigate={handleNavigate}
-        loadDecisionInput={loadDecisionInput}
-        desktopSettingsOpen={desktopSettingsOpen}
-        setDesktopSettingsOpen={setDesktopSettingsOpen}
-        userId={userId}
-        date={decisionInput?.date ?? getLocalDateString()}
-      />
+      {/* Global Top Navbar - Hidden during active workout execution for focused workout mode */}
+      {!isWorkoutRunnerActive && (
+        <Header
+          screen={screen}
+          handleNavigate={handleNavigate}
+          loadDecisionInput={loadDecisionInput}
+          desktopSettingsOpen={desktopSettingsOpen}
+          setDesktopSettingsOpen={setDesktopSettingsOpen}
+          userId={userId}
+          date={decisionInput?.date ?? getLocalDateString()}
+        />
+      )}
 
       {activeStrengthSession?.state === 'in_progress' && screen !== 'strength' && (
         <div className="active-session-banner" role="status">
@@ -222,10 +228,10 @@ function App() {
           )}
 
           {screen === 'plan' && (
-            <ExternalPlanImport
+            <PlanView
               userId={userId!}
-              onImported={() => {
-                // The imported plan changes what today's decision is made from, so the
+              onPlanChanged={() => {
+                // The imported/modified plan changes what today's decision is made from, so the
                 // composed input has to be refetched rather than left stale behind the nav.
                 loadDecisionInput();
               }}
@@ -234,10 +240,10 @@ function App() {
         </Suspense>
       </main>
 
-      {/* Mobile Bottom Navigation - Hidden during active workout execution to prevent accidental mis-taps */}
+      {/* Mobile Bottom Navigation - Hidden during check-in task mode or active workout execution to prevent accidental mis-taps */}
       {!(
-        (screen === 'sessions' && activeStructuredSession?.state === 'in_progress') ||
-        (screen === 'strength' && activeStrengthSession?.state === 'in_progress')
+        screen === 'checkin' ||
+        isWorkoutRunnerActive
       ) && (
         <MobileNav
           screen={screen}

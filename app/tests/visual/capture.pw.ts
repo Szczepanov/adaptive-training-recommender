@@ -25,14 +25,26 @@ async function capture(page: Page, scenario: VisualScenario, suffix = '', expect
   const projectName = test.info().project.name;
   const viewport = projectName === 'visual-mobile-narrow'
     ? 'mobile-narrow'
+    : projectName === 'visual-mobile-wide'
+    ? 'mobile-wide'
     : projectName === 'visual-mobile'
     ? 'mobile'
     : 'desktop';
   const id = `${scenario.id}${suffix ? `-${suffix}` : ''}`;
   const directory = resolve(artifactDir, viewport);
   const path = resolve(directory, `${id}.png`);
+  const viewportPath = resolve(directory, `${id}-viewport.png`);
   mkdirSync(directory, { recursive: true });
+
+  // Universal assertion: no unintended horizontal scroll overflow
+  expect(await page.locator('body').evaluate(body => body.scrollWidth <= window.innerWidth)).toBe(true);
+
+  // Capture full page
   await page.screenshot({ path, fullPage: true });
+
+  // Also capture above-the-fold first-viewport snapshot
+  await page.screenshot({ path: viewportPath, fullPage: false });
+
   appendFileSync(entriesPath, `${JSON.stringify({
     id: `${viewport}-${id}`,
     scenario: scenario.id,

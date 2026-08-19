@@ -1,0 +1,366 @@
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import {
+  activeExternalPlanService,
+  type ActiveExternalPlan,
+} from '../services/activeExternalPlanService';
+import { externalPlanService } from '../services/externalPlanService';
+import { fixedActivityService } from '../services/fixedActivityService';
+import { planBlockService } from '../services/planBlockService';
+import { decisionComposer } from '../engine/composer';
+import {
+  applyConfirmedProposal,
+  proposeReplacement,
+  type ReplacementProposal,
+} from '../engine/externalPlacement';
+import { critiqueExternalWeek, type ExternalWeekCritique } from '../engine/externalCritique';
+import { resolveTrainingIntent, prepareTrainingHistorySnapshot } from '../engine/trainingIntent';
+import { computeInternalResponseStrain } from '../engine/fatigue';
+import { generateWeekAheadPlanWithIntent, trailingHistoryFromCompletedExposures, type WeekAheadPlan } from '../engine/planner';
+import { mapSnapshotToEngineInput, mapCheckinToSubjectiveInput, mapGoalsToUserEvents, mapContextFromGoalsAndTrainingSettings } from '../engine/adapters';
+import { evaluateTrainingWithIntent, evaluateNextDayPlanWithIntent } from '../engine/rules';
+import { evaluatePeriodizationPhase } from '../engine/periodization';
+import { resolvePlanningContext } from '../engine/planningMode';
+import { addDaysToLocalDateString, getLocalDateString } from '../utils/localDate';
+import type {
+  ExternalPlacementAssignment,
+  ExternalPlanPlacement,
+  FixedActivity,
+  DailyDecisionInput,
+  NextDayPotentialPlan,
+} from '../engine/models';
+import { ExternalPlanWeek } from './ExternalPlanWeek';
+import { ExternalPlanImport } from './ExternalPlanImport';
+import { WeekAheadStrip } from './WeekAheadStrip';
+import './PlanView.css';
+
+interface PlanViewProps {
+  userId: string;
+  onPlanChanged?: () => void;
+}
+
+const WEEKDAY_FORMATTER = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+
+function formatWeekRange(startDateStr: string): string {
+  const start = new Date(`${startDateStr}T00:00:00Z`);
+  const end = new Date(`${addDaysToLocalDateString(startDateStr, 6)}T00:00:00Z`);
+  return `${WEEKDAY_FORMATTER.format(start)} – ${WEEKDAY_FORMATTER.format(end)}`;
+}
+
+export const PlanView: React.FC<PlanViewProps> = ({ userId, onPlanChanged }) => {
+  const today = useMemo(() => getLocalDateString(), []);
+  const [activePlan, setActivePlan] = useState<ActiveExternalPlan | null>(null);
+  const [critique, setCritique] = useState<ExternalWeekCritique | null>(null);
+  const [fixedActivities, setFixedActivities] = useState<FixedActivity[]>([]);
+  const [decisionInput, setDecisionInput] = useState<DailyDecisionInput | null>(null);
+  const [weekAheadPlan, setWeekAheadPlan] = useState<WeekAheadPlan | null>(null);
+  const [nextDayPlan, setNextDayPlan] = useState<NextDayPotentialPlan | null>(null);
+  const [selectedNextDayTier, setSelectedNextDayTier] = useState<'green' | 'yellow' | 'red'>('green');
+  const [viewMode, setViewMode] = useState<'imported' | 'ai_forecast'>('imported');
+  const [loading, setLoading] = useState<boolean>(true);
+  const [writeError, setWriteError] = useState<string | null>(null);
+  const [showImport, setShowImport] = useState<boolean>(false);
+
+  const loadPlanData = useCallback(async () => {
+    setLoading(true);
+    setWriteError(null);
+    try {
+      const weekEnd = addDaysToLocalDateString(today, 6);
+      const [actState, blocksState, input] = await Promise.all([
+        fixedActivityService.getActivitiesInRangeState(userId, today, weekEnd),
+        planBlockService.getBlocksInRangeState(userId, today, weekEnd),
+        decisionComposer.composeDailyDecisionInput(userId, today),
+      ]);
+
+      const acts = actState.status === 'AVAILABLE' ? actState.data : [];
+      const blocks = blocksState.status === 'AVAILABLE' ? blocksState.data : [];
+      setFixedActivities(acts);
+      setDecisionInput(input);
+
+      const activePlanState = await activeExternalPlanService.getActivePlanState(userId, today, acts);
+      const currentPlan = activePlanState.status === 'AVAILABLE' ? activePlanState.data : null;
+      setActivePlan(currentPlan);
+
+      if (input.recoverySnapshot) {
+        const subjective = mapCheckinToSubjectiveInput(input.subjectiveCheckin);
+        const objective = mapSnapshotToEngineInput(input.recoverySnapshot);
+        const events = mapGoalsToUserEvents(input.activeGoals);
+        const context = mapContextFromGoalsAndTrainingSettings(input.activeGoals, input.trainingSettings, input.preferences, today, input.subjectiveCheckin);
+        const forecastContext = mapContextFromGoalsAndTrainingSettings(input.activeGoals, input.trainingSettings, input.preferences, today, null);
+        const preparedSnapshot = await prepareTrainingHistorySnapshot(userId, today);
+
+        if (currentPlan) {
+          const intent = await resolveTrainingIntent(
+            userId,
+            events,
+            today,
+            { subjective, objective },
+            7,
+            undefined,
+            preparedSnapshot ?? undefined,
+            blocks,
+            input.trainingIntentProfile,
+          );
+
+          setCritique(
+            critiqueExternalWeek({
+              weekStartDate: today,
+              planId: currentPlan.plan.planId,
+              revision: currentPlan.plan.revision,
+              placed: currentPlan.placed,
+              microcycle: intent.microcycle,
+              fatigue: intent.fatigue,
+              internalStrain: computeInternalResponseStrain({ subjective, objective }),
+              internalStrainAsOf: today,
+              weeklyCommitment: intent.planningContext.profile.weeklyCommitment,
+              trailingHistory: trailingHistoryFromCompletedExposures(intent.history, today),
+              fixedActivities: acts,
+            }),
+          );
+        } else {
+          setCritique(null);
+        }
+
+        // Generate the 7-day AI forecast
+        if (preparedSnapshot) {
+          const baseRec = await evaluateTrainingWithIntent(
+            userId,
+            { subjective, objective, subjectiveBaseline: input.subjectiveBaseline },
+            context,
+            events,
+            today,
+            undefined,
+            undefined,
+            preparedSnapshot,
+            acts,
+            blocks,
+            input.trainingIntentProfile,
+            input.preferences,
+            'max',
+            null,
+          );
+
+          const tomorrowPlan = await evaluateNextDayPlanWithIntent(
+            userId,
+            events,
+            { subjective, objective },
+            forecastContext,
+            today,
+            baseRec,
+            undefined,
+            preparedSnapshot,
+            acts,
+            blocks,
+            input.trainingIntentProfile,
+            input.preferences,
+          );
+          setNextDayPlan(tomorrowPlan);
+
+          const tomorrowRec = tomorrowPlan?.branches[selectedNextDayTier]?.recommendation ?? tomorrowPlan?.branches.green.recommendation ?? null;
+
+          const forecast = await generateWeekAheadPlanWithIntent(
+            userId,
+            { subjective, objective },
+            forecastContext,
+            input.preferences,
+            events,
+            today,
+            baseRec,
+            tomorrowRec,
+            { days: 7, fixedActivities: acts, authoredPlanBlocks: blocks },
+            undefined,
+            preparedSnapshot,
+            input.trainingIntentProfile,
+          );
+          setWeekAheadPlan(forecast);
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to load plan or forecast:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, [userId, today, selectedNextDayTier]);
+
+  useEffect(() => {
+    loadPlanData();
+  }, [loadPlanData]);
+
+  const handleProposeReplacement = useCallback(
+    (sessionId: string, missedDate: string): ReplacementProposal => {
+      if (!activePlan) throw new Error('No imported plan is active.');
+      return proposeReplacement(
+        activePlan.plan,
+        activePlan.placement,
+        sessionId,
+        missedDate,
+        { fixedActivities },
+        today,
+      );
+    },
+    [activePlan, fixedActivities, today],
+  );
+
+  const persistAssignments = useCallback(
+    async (assignments: ExternalPlacementAssignment[]) => {
+      if (!activePlan) return;
+      setWriteError(null);
+      try {
+        await externalPlanService.savePlacement(userId, {
+          planId: activePlan.plan.planId,
+          revision: activePlan.plan.revision,
+          assignments,
+        });
+      } catch (err) {
+        console.error('Failed to save external plan placement:', err);
+        setWriteError('That change could not be saved. Check your connection and try again.');
+        throw err;
+      }
+      await loadPlanData();
+      onPlanChanged?.();
+    },
+    [activePlan, userId, loadPlanData, onPlanChanged],
+  );
+
+  const handleConfirmReplacement = useCallback(
+    async (proposal: ReplacementProposal) => {
+      if (!activePlan) return;
+      const overlay: ExternalPlanPlacement = activePlan.placement ?? {
+        userId,
+        planId: activePlan.plan.planId,
+        revision: activePlan.plan.revision,
+        assignments: [],
+        updatedAt: '',
+      };
+      await persistAssignments(applyConfirmedProposal(overlay, proposal).assignments);
+    },
+    [activePlan, userId, persistAssignments],
+  );
+
+  const handleChooseDate = useCallback(
+    async (sessionId: string, date: string) => {
+      if (!activePlan) return;
+      const existing = activePlan.placement?.assignments ?? [];
+      await persistAssignments([
+        ...existing.filter((item) => item.sessionId !== sessionId),
+        { sessionId, date, status: 'moved' },
+      ]);
+    },
+    [activePlan, persistAssignments],
+  );
+
+  const handlePlanImported = useCallback(() => {
+    setShowImport(false);
+    loadPlanData();
+    onPlanChanged?.();
+  }, [loadPlanData, onPlanChanged]);
+
+  const resolvedPlanningMode = useMemo(() => {
+    if (!decisionInput) return undefined;
+    const events = mapGoalsToUserEvents(decisionInput.activeGoals);
+    const todayPhase = evaluatePeriodizationPhase(events, today);
+    return resolvePlanningContext(decisionInput.trainingIntentProfile, todayPhase, today).mode;
+  }, [decisionInput, today]);
+
+  return (
+    <div className="plan-view-container">
+      <div className="plan-view-header">
+        <div className="plan-view-title-group">
+          <span className="plan-view-badge">Week Architecture</span>
+          <h2 className="plan-view-heading">Training Plan</h2>
+          <p className="plan-week-range">This week · {formatWeekRange(today)}</p>
+        </div>
+        <div className="plan-header-actions">
+          <button
+            type="button"
+            className="plan-toggle-import-btn"
+            onClick={() => setShowImport((prev) => !prev)}
+          >
+            {showImport ? '✕ Close Import' : activePlan ? '📥 Revise Plan' : '📥 Import Plan'}
+          </button>
+        </div>
+      </div>
+
+      {showImport && (
+        <section className="plan-import-section" aria-label="Plan import and revision tool">
+          <ExternalPlanImport userId={userId} onImported={handlePlanImported} />
+        </section>
+      )}
+
+      {activePlan && (
+        <div className="plan-view-mode-tabs" role="tablist" aria-label="Training plan views">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={viewMode === 'imported'}
+            className={`plan-tab-btn ${viewMode === 'imported' ? 'active' : ''}`}
+            onClick={() => setViewMode('imported')}
+          >
+            📋 Coach's Plan ({activePlan.plan.title})
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={viewMode === 'ai_forecast'}
+            className={`plan-tab-btn ${viewMode === 'ai_forecast' ? 'active' : ''}`}
+            onClick={() => setViewMode('ai_forecast')}
+          >
+            🤖 AI Adaptive Forecast (7 Days)
+          </button>
+        </div>
+      )}
+
+      {loading ? (
+        <div className="plan-loading-state">
+          <p>Loading active plan & weekly forecast…</p>
+        </div>
+      ) : activePlan && viewMode === 'imported' ? (
+        <div className="plan-active-content">
+          <ExternalPlanWeek
+            userId={userId}
+            planTitle={activePlan.plan.title}
+            weekStartDate={today}
+            placed={activePlan.placed}
+            critique={critique}
+            today={today}
+            fixedActivities={fixedActivities}
+            onProposeReplacement={handleProposeReplacement}
+            onConfirmReplacement={handleConfirmReplacement}
+            onChooseDate={handleChooseDate}
+            writeError={writeError}
+          />
+        </div>
+      ) : (
+        <div className="plan-evergreen-content">
+          <div className="plan-evergreen-banner">
+            <div className="plan-evergreen-text">
+              <h3>🤖 AI Adaptive Training Schedule</h3>
+              <p>
+                {activePlan
+                  ? 'Alternative 7-day projection dynamically optimized by the engine.'
+                  : 'The engine is dynamically prescribing and balancing workouts across your microcycle objectives based on daily recovery, readiness scores, and training goals.'}
+              </p>
+            </div>
+            {!activePlan && (
+              <button
+                type="button"
+                className="plan-import-subtle-btn"
+                onClick={() => setShowImport(true)}
+              >
+                📥 Have a coach's plan? Import it
+              </button>
+            )}
+          </div>
+
+          <WeekAheadStrip
+            plan={weekAheadPlan}
+            nextDayPlan={nextDayPlan}
+            selectedTier={selectedNextDayTier}
+            onSelectTier={setSelectedNextDayTier}
+            trainingIntentProfile={decisionInput?.trainingIntentProfile}
+            planningMode={resolvedPlanningMode}
+          />
+        </div>
+      )}
+    </div>
+  );
+};

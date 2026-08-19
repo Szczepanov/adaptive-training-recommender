@@ -33,17 +33,22 @@ Adaptive Training Recommendation
 | Adaptive Daily Decision | 7-Day Rolling Forecast & Adaptations |
 |:---:|:---:|
 | <img src="docs/screenshots/mobile-daily-recommendation.png" width="360" alt="Adaptive Daily Recommendation" /> | <img src="docs/screenshots/mobile-adaptive-reduction.png" width="360" alt="Reduced Load & Adaptive Rationale" /> |
-| *Personalized daily recommendation & readiness score* | *Auto-regulated adaptation & rationale breakdown* |
+| *Direct biomarker status, load mode badge & workout recommendation* | *Auto-regulated adaptation, progressive disclosure & rationale* |
 
 | Daily Subjective Check-in | Garmin Recovery & Biomarkers |
 |:---:|:---:|
 | <img src="docs/screenshots/mobile-daily-checkin.png" width="360" alt="Daily Subjective Check-in" /> | <img src="docs/screenshots/mobile-garmin-recovery.png" width="360" alt="Garmin Recovery & Biomarkers" /> |
-| *Readiness, fatigue, soreness, and availability check-in* | *Overnight HRV, resting HR, sleep score & 7d/28d baselines* |
+| *Neutral defaults, typical quick-fill preset & availability settings* | *Overnight HRV, resting HR, sleep score & 7d/28d baselines* |
 
-| Guided Session Runner | Telemetry & Power Distribution |
+| Guided Session Runner | Week Architecture & Training Plan |
 |:---:|:---:|
-| <img src="docs/screenshots/mobile-session-runner.png" width="360" alt="Guided Session Runner" /> | <img src="docs/screenshots/mobile-activity-telemetry.png" width="360" alt="Activity Telemetry & Power Distribution" /> |
-| *Real-time set logging & structured circuit execution* | *Power/HR zones, lap splits, and training load tracking* |
+| <img src="docs/screenshots/mobile-session-runner.png" width="360" alt="Guided Session Runner" /> | <img src="docs/screenshots/mobile-plan-architecture.png" width="360" alt="Week Architecture & Training Plan" /> |
+| *Real-time set logging & structured circuit execution* | *Week-level architecture, weekly critique & session rescheduling* |
+
+| Telemetry & Power Distribution | |
+|:---:|:---:|
+| <img src="docs/screenshots/mobile-activity-telemetry.png" width="360" alt="Activity Telemetry & Power Distribution" /> | |
+| *Power/HR zones, lap splits, and training load tracking* | |
 
 </div>
 
