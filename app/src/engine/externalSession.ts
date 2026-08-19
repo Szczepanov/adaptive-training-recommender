@@ -3,7 +3,10 @@ import { describeEligibilityReasons, evaluateTemplateEligibility, type Eligibili
 import { toGateableSession } from './externalSessionProfiles';
 import type { evaluateReadinessAndSafetyEnvelope } from './rules';
 import type { ResolvedAvailability } from './schedule';
-import type { DailyReadiness, ExternalPlanSession, PlanEnvelope, PlannedDose, UserContext } from './models';
+import type { DailyReadiness, PlanEnvelope, PlannedDose, UserContext } from './models';
+// M3.6: this module only ever reads scaling/gating/isEvent, identical on v1 and v2
+// sessions -- widened to accept either rather than kept v1-only.
+import type { AnyExternalPlanSession as ExternalPlanSession } from '../sessions/externalPlanV2';
 
 /** Mirror `rules.ts`'s own ceilings. Duplicated rather than imported so this module stays
  * off the selection path, and so exporting them would not drag a decision-affecting file

@@ -1,4 +1,8 @@
-import type { ExternalTrainingPlan } from '../engine/models';
+// M3.6: a plan may be either schema version; every field compared below except the final
+// content check is identical on v1 and v2 sessions. The content check itself stays a
+// coarse "changed"/"unchanged" for a v2 session -- fine-grained per-field content diffing
+// is M3.7's stated scope, not this one's.
+import { isV2Session, type AnyExternalTrainingPlan as ExternalTrainingPlan } from '../sessions/externalPlanV2';
 
 export interface PlanDiffRow {
     sessionId: string;
@@ -61,7 +65,11 @@ export function diffPlans(previous: ExternalTrainingPlan, next: ExternalTraining
         if (!sameStringSet(old.objectives, session.objectives)) changes.push('objective tags changed');
         if (!sameStructuredValue(old.scaling, session.scaling)) changes.push('scaling / fallback policy changed');
         if (Boolean(old.isEvent) !== Boolean(session.isEvent)) changes.push(session.isEvent ? 'now marked as an event' : 'no longer marked as an event');
-        if (!sameStructuredValue(old.prescription, session.prescription)) changes.push('the prescription changed');
+        // A coarse "changed"/"unchanged" content comparison. Fine-grained per-field content
+        // diffing (which side changed exactly what) is M3.7's stated job for both schemas.
+        const oldContent = isV2Session(old) ? old.definition : old.prescription;
+        const newContent = isV2Session(session) ? session.definition : session.prescription;
+        if (!sameStructuredValue(oldContent, newContent)) changes.push('the session content changed');
         if (changes.length > 0) rows.push({ sessionId: id, change: 'changed', detail: `“${session.title}”: ${changes.join('; ')}.` });
     }
 

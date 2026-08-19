@@ -9,15 +9,25 @@ import type { DataIssue, DataState } from '../engine/dataState';
 import { validateExternalPlanPlacement, validateExternalTrainingPlan } from '../engine/validation';
 import { computeContentHash } from '../engine/externalPlanHash';
 import { getErrorCode, getErrorMessage } from '../utils/errors';
+import { validateExternalTrainingPlanV2, EXTERNAL_PLAN_SCHEMA_V2, type ExternalTrainingPlanV2 } from '../sessions/externalPlanV2';
 
 /** Re-exported so existing callers keep one import site. The implementation lives in
  * `engine/externalPlanHash.ts` because `replay.ts` verifies against it and must not pull
  * a Firestore-bound module into the audit path. */
 export { computeContentHash } from '../engine/externalPlanHash';
 
+/** M3.6: dispatches to the v1 or v2 validator based on the raw document's own `schema`
+ * literal, mirroring the "back-inferred/branched on a discriminant" precedent
+ * `DailyRecommendation.schemaVersion` already uses. v1 stays the default so a malformed
+ * `schema` value fails against v1's stricter literal check rather than silently passing. */
+function validateAnyExternalTrainingPlan(raw: unknown) {
+    const schema = (raw as { schema?: unknown } | null)?.schema;
+    return schema === EXTERNAL_PLAN_SCHEMA_V2 ? validateExternalTrainingPlanV2(raw) : validateExternalTrainingPlan(raw);
+}
+
 export interface ImportResult {
     header: ExternalPlanHeader;
-    plan: ExternalTrainingPlan;
+    plan: ExternalTrainingPlan | ExternalTrainingPlanV2;
 }
 
 /** User-scoped persistence for externally-authored plans. A stored revision is immutable:
@@ -45,7 +55,7 @@ export class ExternalPlanService {
      * adjudicated keep their persisted recommendations and audits regardless.
      */
     async import(userId: string, raw: unknown, supersededFrom: string | null = null): Promise<DataState<ImportResult>> {
-        const parsed = validateExternalTrainingPlan(raw);
+        const parsed = validateAnyExternalTrainingPlan(raw);
         if (!parsed.isValid || !parsed.data) {
             const issues: DataIssue[] = parsed.errors.map(error => ({
                 code: 'schema-validation-failed',
@@ -127,12 +137,12 @@ export class ExternalPlanService {
 
     /** Re-validates on read. A revision that no longer satisfies the contract -- because
      * the contract moved, or the document was tampered with -- is `INVALID`, never coerced. */
-    async getRevisionState(userId: string, planId: string, revision: number): Promise<DataState<ExternalTrainingPlan>> {
+    async getRevisionState(userId: string, planId: string, revision: number): Promise<DataState<ExternalTrainingPlan | ExternalTrainingPlanV2>> {
         const documentPath = `users/${userId}/external_plans/${planId}/revisions/${revision}`;
         try {
             const snapshot = await getDoc(this.revisionRef(userId, planId, revision));
             if (!snapshot.exists()) return { status: 'MISSING' };
-            const parsed = validateExternalTrainingPlan(snapshot.data());
+            const parsed = validateAnyExternalTrainingPlan(snapshot.data());
             if (!parsed.isValid || !parsed.data) {
                 return {
                     status: 'INVALID',

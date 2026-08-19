@@ -62,6 +62,12 @@ const CHOICE_ACTION_KINDS = new Set<SessionChoiceAction['kind']>([
 
 const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 
+const SESSION_DEFINITION_KEYS = [
+    'schemaVersion', 'id', 'revision', 'title', 'summary', 'intent', 'modalities',
+    'dominantModality', 'duration', 'defaultScheduledDate', 'sessionTargets',
+    'prohibitedAdditions', 'importWarnings', 'companionSessions', 'blocks',
+];
+
 function isObject(val: unknown): val is Record<string, unknown> {
     return typeof val === 'object' && val !== null && !Array.isArray(val);
 }
@@ -133,6 +139,16 @@ export function validateSessionDefinition(raw: unknown): ValidationResult<Sessio
 
     if (!isObject(raw)) {
         return { ok: false, issues: [{ path: '', message: 'Expected object' }] };
+    }
+
+    // Top-level only (M3.6): an invented field here -- e.g. an authoring AI hallucinating
+    // `stimulusProfile` alongside the explicit `systemicCost` rejection below -- must fail
+    // closed rather than pass through silently. Deliberately not a deep sweep of every
+    // nested SessionStep/SessionBlock field; that risks rejecting a legitimate field this
+    // check wasn't updated to know about.
+    const unknownTopLevelKeys = Object.keys(raw).filter(key => !SESSION_DEFINITION_KEYS.includes(key));
+    if (unknownTopLevelKeys.length > 0) {
+        issues.push({ path: '', message: `Unrecognized session definition field(s): ${unknownTopLevelKeys.join(', ')}` });
     }
 
     if (raw.schemaVersion !== SESSION_SCHEMA_VERSION) {
@@ -267,17 +283,25 @@ export function validateSessionDefinition(raw: unknown): ValidationResult<Sessio
                     } else {
                         const dose = step.dose;
                         if (dose.kind === 'repetition') {
-                            if (typeof dose.sets !== 'number' || dose.sets <= 0) {
-                                issues.push({ path: `${sPath}.dose.sets`, message: 'Dose sets must be positive number' });
+                            if (typeof dose.sets !== 'number' || !Number.isInteger(dose.sets) || dose.sets <= 0) {
+                                issues.push({ path: `${sPath}.dose.sets`, message: 'Dose sets must be a positive integer' });
                             }
                             validateRangeOrNumber(dose.reps, `${sPath}.dose.reps`, issues, false);
                         } else if (dose.kind === 'duration') {
+                            if (dose.sets !== undefined && (typeof dose.sets !== 'number' || !Number.isInteger(dose.sets) || dose.sets <= 0)) {
+                                issues.push({ path: `${sPath}.dose.sets`, message: 'Dose sets must be a positive integer' });
+                            }
                             validateRangeOrNumber(dose.seconds, `${sPath}.dose.seconds`, issues, false);
                         } else if (dose.kind === 'distance') {
+                            if (dose.sets !== undefined && (typeof dose.sets !== 'number' || !Number.isInteger(dose.sets) || dose.sets <= 0)) {
+                                issues.push({ path: `${sPath}.dose.sets`, message: 'Dose sets must be a positive integer' });
+                            }
                             const distanceVal = dose.meters !== undefined ? dose.meters : dose.metres;
                             validateRangeOrNumber(distanceVal, `${sPath}.dose.meters`, issues, false);
                         } else if (dose.kind === 'checkoff') {
-                            // valid
+                            if (dose.rounds !== undefined && (typeof dose.rounds !== 'number' || !Number.isInteger(dose.rounds) || dose.rounds <= 0)) {
+                                issues.push({ path: `${sPath}.dose.rounds`, message: 'Dose rounds must be a positive integer' });
+                            }
                         } else {
                             issues.push({ path: `${sPath}.dose.kind`, message: `Invalid dose kind: ${String(dose.kind)}` });
                         }

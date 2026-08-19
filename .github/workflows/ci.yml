@@ -29,9 +29,18 @@ jobs:
       - name: Install dependencies
         run: uv sync --frozen
 
-      # Skip eslint hook here because frontend-build runs the complete ESLint check with Node/npm installed
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: app/package-lock.json
+
+      - name: Install app dependencies
+        run: npm --prefix app ci
+
       - name: Run pre-commit checks
-        run: SKIP=eslint uv run pre-commit run --all-files
+        run: uv run pre-commit run --all-files
 
       - name: Lint Python with ruff
         run: uv run ruff check .

@@ -7,6 +7,7 @@ import { computeContentHash } from '../engine/externalPlanHash';
 import { WORKOUTS } from '../workouts/catalog';
 import type { WorkoutDefinition } from '../workouts/models';
 import { adaptExternalPlanSessionToSessionDefinition } from './externalSessionAdapter';
+import { isV2Session } from './externalPlanV2';
 import { canonicalizeSessionData, hashSessionDefinition } from './sessionDefinitionHash';
 
 // Fixture imports
@@ -237,7 +238,13 @@ export async function resolveSessionDefinition(
             issues: [{ code: 'external-session-not-found', field: 'sessionId', documentPath }],
         };
     }
-    const definition = adaptExternalPlanSessionToSessionDefinition(session, source.revision);
+    // M3.6: a v2 session's content is already the canonical SessionDefinition -- no lossy
+    // adapter needed, unlike v1's flat/free-text prescription. Identity (id/revision) is
+    // still normalized to the wrapping session/plan, matching the v1 adapter's convention;
+    // hashSessionDefinition doesn't cover either field, so this has no hash consequence.
+    const definition = isV2Session(session)
+        ? { ...session.definition, id: session.id, revision: source.revision }
+        : adaptExternalPlanSessionToSessionDefinition(session, source.revision);
     return applyStoredPrescription(
         userId, definition, prescriptionHash, source, await hashSessionDefinition(definition),
         documentPath, source.contentHash,

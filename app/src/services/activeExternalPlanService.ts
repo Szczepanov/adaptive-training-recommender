@@ -4,11 +4,13 @@ import { resolvePlacement, type PlacedSession } from '../engine/externalPlacemen
 import type {
     ExternalPlanHeader,
     ExternalPlanPlacement,
-    ExternalTrainingPlan,
     FixedActivity,
 } from '../engine/models';
 import type { ExternalPlanContext } from '../engine/rules';
 import { externalPlanService, type ExternalPlanService } from './externalPlanService';
+// M3.6: an active plan may be either schema version -- resolvePlacement and everything
+// downstream of it only reads envelope fields, identical on both.
+import type { AnyExternalTrainingPlan as ExternalTrainingPlan } from '../sessions/externalPlanV2';
 
 export interface ActiveExternalPlan {
     header: ExternalPlanHeader;
