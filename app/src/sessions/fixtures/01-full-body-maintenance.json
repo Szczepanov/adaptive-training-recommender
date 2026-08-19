@@ -166,6 +166,81 @@
       "title": "Lower & Upper Strength Pairing",
       "role": "main",
       "executionMode": "alternating",
+      "optionSets": [
+        {
+          "id": "choice-squat-warmup",
+          "appliesAtStepId": "step-str-1",
+          "trigger": {
+            "kind": "athlete_observed",
+            "description": "How did the warm-up sets feel?"
+          },
+          "options": [
+            {
+              "id": "continue-squat",
+              "label": "Comfortable and controlled — continue as written",
+              "actions": []
+            },
+            {
+              "id": "reduce-squat-load",
+              "label": "Heavier than expected — reduce load 10%",
+              "actions": [
+                {
+                  "kind": "reduce_load_percent",
+                  "targetStepId": "step-str-1",
+                  "percent": 10
+                }
+              ]
+            },
+            {
+              "id": "reduce-squat-reps",
+              "label": "Still heavy — reduce to 3 reps per set",
+              "actions": [
+                {
+                  "kind": "reduce_reps",
+                  "targetStepId": "step-str-1",
+                  "reps": 3
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "choice-squat-symptom",
+          "appliesAtStepId": "step-str-1",
+          "trigger": {
+            "kind": "athlete_observed",
+            "description": "Any knee or back discomfort on the first working set?"
+          },
+          "options": [
+            {
+              "id": "continue-squat-symptom-free",
+              "label": "No discomfort — continue as written",
+              "actions": []
+            },
+            {
+              "id": "switch-goblet-squat",
+              "label": "Some discomfort — switch to Goblet Squat",
+              "actions": [
+                {
+                  "kind": "select_alternative",
+                  "targetStepId": "step-str-1",
+                  "alternativeId": "alt-goblet-squat"
+                }
+              ]
+            },
+            {
+              "id": "end-squat-block",
+              "label": "Sharp discomfort — end the block",
+              "actions": [
+                {
+                  "kind": "end_block",
+                  "targetBlockId": "block-strength"
+                }
+              ]
+            }
+          ]
+        }
+      ],
       "steps": [
         {
           "kind": "exercise",
@@ -193,7 +268,18 @@
           "rest": {
             "min": 120,
             "max": 180
-          }
+          },
+          "alternatives": [
+            {
+              "id": "alt-goblet-squat",
+              "title": "Goblet Squat (reduced axial load)",
+              "exerciseRef": { "kind": "catalog", "exerciseId": "goblet_squat" },
+              "load": {
+                "kind": "descriptive",
+                "display": "Use a comfortable dumbbell, well short of grinding."
+              }
+            }
+          ]
         },
         {
           "kind": "exercise",

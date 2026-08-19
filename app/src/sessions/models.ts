@@ -332,13 +332,27 @@ export type CheckoffEntryPayload = {
     completed: boolean;
 };
 
+/**
+ * Records an athlete's answer to an authored `SessionChoice` (D-MCHOICE): the option
+ * selected, and an optional reason. This is the execution event itself, not a performed
+ * set -- callers that count performed work per step (`groupProgression.ts`,
+ * `performedComparison.ts`) must exclude this payload kind from that accounting.
+ */
+export type ChoiceEntryPayload = {
+    kind: 'choice';
+    choiceId: string;
+    optionId: string;
+    reason?: string;
+};
+
 export type SessionEntryPayload =
     | RepetitionEntryPayload
     | DurationEntryPayload
     | DistanceEntryPayload
     | SprintEntryPayload
     | JumpAttemptEntryPayload
-    | CheckoffEntryPayload;
+    | CheckoffEntryPayload
+    | ChoiceEntryPayload;
 
 export interface SessionEntry {
     id: string;

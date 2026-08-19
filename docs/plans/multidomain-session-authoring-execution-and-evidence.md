@@ -302,7 +302,7 @@ rewritten as an outcome; an in-progress item retains its remaining acceptance wo
 | M3.7 | Full semantic import preview and diff | `[-]` | M3.6 semantic source and revision diff |
 | M3.8 | Manual block-first session builder | `[-]` | Authored option sets and fixture-equivalence acceptance |
 | M4.1 | Group execution modes | `[x]` | M2.5 |
-| M4.2 | Recorded athlete choices and alternatives | `[ ]` | M4.1, M3.5 |
+| M4.2 | Recorded athlete choices and alternatives | `[x]` | M4.1, M3.5 |
 | M4.3 | Companion occurrence and duplicate reconciliation | `[ ]` | M2.4, M3.3 |
 | M5.1 | Occurrence-linked response generalization | `[ ]` | M1.7, M2.6, M4.3 |
 | M5.2 | Later-day and next-morning follow-up | `[ ]` | M5.1 |
@@ -871,7 +871,7 @@ uneven step targets finish without inventing a skipped entry. `GroupProgress.tsx
 state, while `SessionRunner.tsx` performs the navigation. Tests cover alternating, circuit,
 superset, explicit rounds and optional movements.
 
-### M4.2 `[ ]` Recorded athlete choices and alternatives
+### M4.2 `[x]` Recorded athlete choices and alternatives
 
 **Change.** Implement D-MCHOICE. At an authored branch point the runner shows the trigger
 description and the bounded option set; the athlete selects; the selection, its optional reason
@@ -883,13 +883,226 @@ advisory and low-confidence.
 the recorded choices later show a stable, athlete-consistent rule, that becomes an M8 candidate
 with its own ship decision — not an assumption baked in here.
 
-**Files.** New `sessions/optionSets.ts`, `components/session/ChoiceCard.tsx`; eligibility
-adapter and tests.
+**What already exists (2026-08-19 audit).** The schema and rules groundwork for this milestone
+was already laid, ahead of the runner: `sessions/models.ts` already defines
+`SessionChoiceAction`, `SessionOption`, `SessionChoice` and `SessionBlock.optionSets`;
+`sessions/validation.ts` already validates `optionSets` structure and action-kind vocabulary;
+`SessionEntry.selectedOptionId` and `firestore.rules`' entry-payload validator already accept it;
+and fixtures 01/02 already carry one `optionSets` choice each (clean/floor-speed quality). What
+is entirely missing is the *runtime*: nothing renders a `SessionChoice`, nothing applies a
+`SessionChoiceAction`, and no `SessionEntry` payload shape exists to record one being answered.
+This item is that runtime.
+
+**Design.**
+
+1. **A new entry payload records the event, reusing the existing entries subcollection.**
+   `SessionEntry` already carries `stepId`/`selectedOptionId`/terminal-immutability semantics
+   (M2.3/M2.5) — a choice is another kind of thing that happened during execution, not a new
+   record lifecycle (D-MRECORDS is about distinct *lifecycles*, and this one is identical to an
+   entry's). Add to `sessions/models.ts`:
+   ```ts
+   export type ChoiceEntryPayload = {
+       kind: 'choice';
+       choiceId: string;   // SessionChoice.id
+       optionId: string;   // SessionOption.id selected
+       reason?: string;
+   };
+   ```
+   and include it in `SessionEntryPayload`. `payload.optionId` is authoritative;
+   `SessionEntry.selectedOptionId` continues to mirror it so the field already validated by
+   `firestore.rules` and consumed by any future query stays meaningful. `sessions/validation.ts`
+   gets a matching branch: `choiceId`/`optionId` must resolve to a real `SessionChoice`/
+   `SessionOption` reachable from the entry's block, `reason` if present is a string.
+   `app/firestore.rules`' entry-payload validator (`users/{userId}/session_executions/{id}/entries/{entryId}`)
+   gets one more `payload.kind` branch — `keys().hasOnly(['kind', 'choiceId', 'optionId', 'reason'])`
+   — no new collection, no change to the existing in-progress-only mutability rule.
+
+2. **Actions are derived, never applied to stored bytes.** ADR-0010 replay requires the
+   persisted `SessionDefinition`/`ExecutionPrescription` to stay exact; a choice must not mutate
+   it. Add pure `sessions/choiceResolution.ts`:
+   ```ts
+   export interface EffectiveSessionView {
+       definition: SessionDefinition;      // same block/step array shape and order; fields overridden in place
+       endedBlockIds: ReadonlySet<string>;  // navigation shortcut only
+       sessionEnded: boolean;               // navigation shortcut only
+   }
+   export function resolveEffectiveSession(
+       definition: SessionDefinition,
+       entries: readonly SessionEntry[],
+   ): EffectiveSessionView
+   ```
+   It folds every `choice`-kind entry's resolved `SessionChoiceAction[]` (looked up from the
+   original, immutable `definition` — never from a prior derived state) into an accumulator, in
+   entry order, later choices winning on a shared target field:
+   * `select_alternative` — overwrite the target step's `exerciseRef`/`dose`/`load` from the
+     matching `StepAlternative`, and set `step.resolutionNote` (the field already exists, used
+     today for unresolved free text) to name the substitution for display.
+   * `reduce_load_percent` — scale whichever numeric load field the step's `SessionLoad` carries
+     (`mass.kg`, `percent_max`/`percent_one_rm.percent`, both range-aware); a no-op, not a
+     failure, on `bodyweight`/`band`/`descriptive`/`unloaded` loads.
+   * `reduce_sets` / `reduce_reps` — override the target `RepetitionDose`'s `sets`/`reps`; a
+     no-op on any other dose kind.
+   * `omit_step` — set the target step's `optional = true`. This is the whole mechanism: it
+     makes the step invisible to `groupProgression.ts`'s `requiredSteps()` and to
+     `performedComparison.ts`'s required-omission accounting for free, with no signature change
+     to either — both already treat `optional` steps as not blocking completion.
+   * `end_block` — mark every not-yet-logged step in the target block `optional = true` (same
+     free ride through the two modules above) and add the block to `endedBlockIds`, which
+     `useSessionRunner`'s `nextStep()` uses only as a UX shortcut to jump straight to the next
+     block instead of stepping through now-optional steps one at a time.
+   * `end_session` — mark every not-yet-logged step across all remaining blocks `optional = true`
+     and set `sessionEnded = true`, which the runner uses to route straight to
+     `SessionCompletionSheet`.
+
+   The effective `definition`'s `blocks[].steps[]` array must keep the exact shape and order of
+   the original — only fields are overwritten in place — because `activeBlockIndex`/
+   `activeStepIndex` in `useSessionRunner` are raw array indices; inserting or removing an
+   element would desync navigation state after a reload.
+
+   `useSessionRunner` computes `effectiveView = useMemo(() => resolveEffectiveSession(definition, entries), [definition, entries])` once and threads `effectiveView.definition` everywhere `comparePlannedVsPerformed`/`getGroupProgress`/step rendering currently receive the raw `definition` — both of those pure functions already take a `definition` parameter, so this is a call-site change, not a signature change.
+
+   **Scoping decision.** A choice fires once per `choiceId` per execution — the runner treats a
+   choice as due only while no `choice`-kind entry with that `choiceId` exists yet. Nothing in
+   the current fixtures repeats a choice across rotation rounds, and re-prompting on every round
+   of a `circuit`/`alternating`/`superset` block is a different, unrequested feature; if an
+   authored session later needs a per-round choice, that is a follow-on to this item, not an
+   assumption built into it now.
+
+3. **Alternatives are gated through the existing per-exercise safety facets, not a new
+   judgment.** `components/session/*` and `hooks/*` may import any `engine/*` module that is not
+   `optimizer`/`planner`/`rules`/`weeklyAllocation`/`evergreenPlanning`/`sequenceSearch` — the
+   exact boundary `sessions/architecture.test.ts` already checks (see Tests below for the one
+   gap in that check).
+
+   **Correction found during implementation.** The original text here proposed matching the M3.5
+   `ExerciseDefinition.facets.safetyTags` heuristic labels against `TrainingSettings.guardrails`
+   (`Record<GuardrailKey, boolean>`), the same way `evaluateTemplateEligibility` gates a
+   `SessionTemplate`. That doesn't hold up: `facets.safetyTags` is a free-text, tissue-style
+   vocabulary (`'knee_swelling'`, `'painful_deep_knee_flexion'`) — the same values as
+   `ExerciseDefinition.contraindicationTags` — not `GuardrailKey`'s `'avoid_*'` vocabulary, so
+   the intersection would type-check only via an unsound cast and would silently match nothing at
+   runtime. Worse, neither `facets.safetyTags` nor `contraindicationTags` has any other live
+   consumer in the engine today — `engine/planningCandidate.ts` only surfaces
+   `contraindicationTags` as descriptive text for an external plan's candidate description.
+   Building a gate on either would look like a safety check without being one.
+
+   Add `engine/sessionChoiceEligibility.ts` gating on the one signal that is both real (already
+   resolved from active `InjuryConstraint[]`) and expressible on a bare alternative — its
+   resolved catalog exercise's `modality`:
+   ```ts
+   export function ineligibleAlternativeOptionIds(
+       definition: SessionDefinition,
+       restrictedModalities: readonly SessionTemplate['modality'][],
+   ): Set<string> // SessionOption.id values that must not be offered as selectable
+   ```
+   `resolveInjuryRestrictions` (`engine/injuryPolicy.ts`) already resolves `restrictedModalities`
+   in the capitalized `SessionTemplate['modality']` vocabulary; `ExerciseDefinition.modality`
+   (`workouts/models.ts`) uses the separate lowercase `WorkoutModality` vocabulary. The two name
+   the same real modalities, so the function carries a small `WORKOUT_TO_TEMPLATE_MODALITY`
+   lookup table to bridge them — a vocabulary bridge, not a second judgment.
+   Category-level (`restrictedCategories`) gating is intentionally **not** checked here: a single
+   exercise carries no `SessionTemplate` category, and the whole session already passed that gate
+   once at M3.3's `adjudicateAuthoredSession`. An alternative whose `exerciseRef.kind ===
+   'unresolved_free_text'`, or whose catalog id doesn't resolve, is never flagged ineligible
+   (unresolved free text is a legitimate C8 escape hatch); it renders as an ordinary option.
+
+   Threading: `App.tsx` does not build a `UserContext` at the scope `SessionRunner` mounts in,
+   and pulling the full engine context pipeline into a UI runner is heavier than this needs.
+   `useSessionRunner` instead reads `trainingSettingsService`'s persisted settings plus today's
+   `checkinService.getCheckin` (already imported here for the M1.7 response link) and calls the
+   already-existing `resolveEffectiveInjuryConstraints`/`resolveInjuryRestrictions` from
+   `engine/injuryPolicy.ts` — the exact same resolution `mapContextFromGoalsAndTrainingSettings`
+   performs for the day's recommendation — to get `restrictedModalities`, then calls
+   `ineligibleAlternativeOptionIds`. Recomputed once per session start/restore (it only depends
+   on the day's resolved constraints and the definition's authored alternatives), not on every
+   logged entry.
+
+4. **UI.** New `components/session/ChoiceCard.tsx`: renders when the active step has an
+   unanswered due choice (per the scoping decision above) on the current `SessionBlock.optionSets`.
+   Shows `choice.trigger.description`, then each `option.label` as a button — an option whose
+   only action is `select_alternative` into an ineligible alternative is shown disabled with the
+   restriction named, never silently offered as equal to an eligible one. Selecting an option
+   opens an optional one-line reason field (mobile-first, per M1.4/M1.6: one tap answers it,
+   the reason is not required to proceed) and calls a new `logChoice(choiceId, optionId, reason?)`
+   on `useSessionRunner`, mirroring `logEntry`'s write path through
+   `sessionExecutionService.logEntry` with a `choice`-kind payload. `SessionRunner.tsx` blocks
+   the step's other input controls until a due choice is answered — "no code path changes a
+   prescribed step without a recorded athlete action" means the runner cannot let the athlete
+   log a set past an unanswered branch point. The step's own entry list (already rendered per
+   step) shows an answered choice as a distinct row: the chosen option's label, reason if given,
+   and timestamp — satisfying "visible in history" without a new cross-session history screen
+   (that is M5.3's territory, not this item's).
+
+**Fixture gap.** The Done-when below names four worked examples from concept challenge C4, but
+today's fixtures only cover two (both clean/floor-speed quality, in fixtures 01 and 02). Neither
+"warm-up-heavy squat reduction" nor "symptom-based squat choice" exists yet: `back_squat` in
+fixture 01's `block-strength` (an `alternating` block — deliberately chosen to also exercise the
+once-per-execution scoping decision against a rotating block) has no `optionSets` and no
+`alternatives` today. This item must add, to that step:
+* `choice-squat-warmup` (`reduce_load_percent` and/or `reduce_reps` actions) for "how did the
+  warm-up sets feel";
+* `choice-squat-symptom`, offering `select_alternative` to `goblet_squat` (already catalog-defined,
+  low-impact, low-coordination-demand — a legitimate lower-symptom substitute) and `end_block` for
+  "sharp discomfort", plus a `StepAlternative` entry on `step-str-1` pointing at it.
+
+**Files.** `sessions/models.ts` (`ChoiceEntryPayload`), `sessions/validation.ts`, new
+`sessions/choiceResolution.ts` + `.test.ts`, `app/firestore.rules`, new
+`engine/sessionChoiceEligibility.ts` + `.test.ts`, `hooks/useSessionRunner.ts`
+(`logChoice`, `effectiveView`, constraint read, `nextStep` block-end/session-end shortcut), new
+`components/session/ChoiceCard.tsx` + `.css` + `.test.tsx`, `components/session/SessionRunner.tsx`,
+`sessions/fixtures/01-full-body-maintenance.json`.
+
+**Tests.** `choiceResolution.test.ts` covering each action kind, last-choice-wins on a shared
+target field, and array-shape stability; `sessionChoiceEligibility.test.ts` covering an
+ineligible alternative under an active guardrail/restricted category and an unresolved-free-text
+alternative rendered low-confidence rather than flagged; extend `sessions/validation.test.ts` and
+the Firestore emulator entries suite for the `choice` payload kind, including a cross-user and a
+completed-execution (terminal-immutability) rejection; extend `sessions/fixtures.test.ts` so the
+runner-loadability guarantee also covers the new squat `optionSets`; add
+`groupProgression.test.ts`/`performedComparison.test.ts` cases feeding an `omit_step`/`end_block`
+-derived effective definition through unchanged, to pin that the free ride via `optional` really
+holds. Extend `sessions/architecture.test.ts`'s UI-modules dependency check to also scan
+`hooks/useSessionRunner.ts` (currently only `components/session/*` and `services/session*` are
+scanned; the new `engine/injuryPolicy.ts`/`engine/sessionChoiceEligibility.ts` imports land in the
+hook, so the boundary should be checked where the import actually is, not only adjacent to it).
 
 **Done when.** Warm-up-heavy squat reduction, clean-catch load reduction, bar-speed end-block
 and symptom-based squat choice are each presented as an explicit choice, recorded with reason
-and timestamp, and visible in history; and no code path changes a prescribed step without a
-recorded athlete action.
+and timestamp, and visible in history; an alternative gated by an active restriction is visibly
+disabled rather than offered; and no code path changes a prescribed step without a recorded
+athlete action.
+
+**Outcome (2026-08-19).** Built as designed above, with one correction found during
+implementation: the eligibility gate originally proposed (M3.5 `facets.safetyTags` matched
+against `TrainingSettings.guardrails`) doesn't type-check honestly -- `facets.safetyTags` is a
+free-text tissue vocabulary, not `GuardrailKey`'s `'avoid_*'` vocabulary, and neither it nor
+`contraindicationTags` has any other live engine consumer. `engine/sessionChoiceEligibility.ts`
+instead gates on `restrictedModalities` (already resolved by `resolveInjuryRestrictions`) via a
+small vocabulary bridge to the catalog's separate `WorkoutModality` enum -- real, live, and
+honestly scoped rather than a gate that looks real but never fires. A second gap found only by
+running the code: `groupProgression.ts`'s `entryCount` and `performedComparison.ts`'s
+`entriesByStepId` both counted *any* entry sharing a step's id, so an answered choice would have
+been double-counted as a logged set; both now exclude `payload.kind === 'choice'`.
+
+Delivered: `ChoiceEntryPayload` on `SessionEntry` (`sessions/models.ts`), structural validation
+(`sessions/validation.ts`) and Firestore rules support; pure `sessions/choiceResolution.ts`
+folding recorded choices into an effective, index-stable view (`useSessionRunner`'s public
+`definition` is now this effective view, so `comparePlannedVsPerformed`/`getGroupProgress`/
+rendering needed no signature changes); `engine/sessionChoiceEligibility.ts`; `logChoice` and a
+choice-driven `nextStep`/`sessionEnded` shortcut on `useSessionRunner`; `ChoiceCard.tsx` wired
+into `SessionRunner.tsx`, blocking other step controls until a due choice is answered and
+showing answered choices in the step's own entry list. Fixture 01's `block-strength` (an
+`alternating` block, exercising the once-per-execution scoping decision against a rotating
+block) gained `choice-squat-warmup` and `choice-squat-symptom` (the latter's `select_alternative`
+resolving to `goblet_squat`), closing the gap between this item's Done-when and the fixture
+corpus. Verified by `sessions/choiceResolution.test.ts`, `engine/sessionChoiceEligibility.test.ts`,
+extended `validation.test.ts`/`groupProgression.test.ts`/`performedComparison.test.ts`, an
+extended Firestore-emulator scenario (in-progress recording, cross-user rejection, terminal
+immutability, malformed-payload rejection -- 77/77 emulator tests pass), and a full `npm run
+check` (typecheck, lint, 1585 unit tests, catalog validation) pass. A live-browser run through
+the actual runner was not possible in this environment (no real Firebase credentials); the
+architecture test extension to `hooks/useSessionRunner.ts` mechanically enforces the same
+optimizer/planner import boundary that a manual check would otherwise stand in for.
 
 ### M4.3 `[ ]` Companion occurrence and duplicate reconciliation
 

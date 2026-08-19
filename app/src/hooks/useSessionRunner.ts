@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { writeBatch } from 'firebase/firestore';
 import type {
     SessionDefinition,
@@ -13,12 +13,18 @@ import { getDb } from '../firebase';
 import { sessionExecutionService } from '../services/sessionExecutionService';
 import { checkinService } from '../services/checkinService';
 import { preferencesService } from '../services/preferencesService';
+import { trainingSettingsService } from '../services/trainingSettingsService';
 import { adaptNormalizedExecutionToStrengthSession } from '../sessions/legacyStrengthAdapter';
 import { getLocalDateString } from '../utils/localDate';
 import type { SessionCompletionPayload } from '../components/session/SessionCompletionSheet';
 import { resolveSessionDefinition } from '../sessions/sessionDefinitionResolver';
+import { resolveEffectiveSession } from '../sessions/choiceResolution';
+import { resolveEffectiveInjuryConstraints, resolveInjuryRestrictions } from '../engine/injuryPolicy';
+import { ineligibleAlternativeOptionIds } from '../engine/sessionChoiceEligibility';
 
 export interface UseSessionRunnerResult {
+    /** The effective, choice-resolved view (ADR-0023 D-MCHOICE) -- see `resolveEffectiveSession`.
+     * The persisted/replayed bytes are never mutated; this is a derived read. */
     definition: SessionDefinition | null;
     execution: SessionExecution | null;
     entries: SessionEntry[];
@@ -33,6 +39,10 @@ export interface UseSessionRunnerResult {
     syncStatus: 'synced' | 'pending' | 'unavailable';
     canUndo: boolean;
     lastRemovedEntry: SessionEntry | null;
+    /** True once a recorded choice ended the whole session (D-MCHOICE `end_session`). */
+    sessionEnded: boolean;
+    /** `SessionOption.id`s an athlete-observed choice must not offer as selectable right now. */
+    ineligibleOptionIds: ReadonlySet<string>;
 
     startFixtureSession: (fixture: SessionDefinition) => Promise<void>;
     startSession: (definition: SessionDefinition, source: SessionSourceRef, options?: { occurrenceId?: string; prescriptionHash?: string }) => Promise<void>;
@@ -41,6 +51,8 @@ export interface UseSessionRunnerResult {
     nextStep: () => void;
     prevStep: () => void;
     logEntry: (payload: SessionEntryPayload, side?: 'left' | 'right' | 'bilateral', selectedOptionId?: string) => Promise<void>;
+    /** Records an athlete's answer to an authored `SessionChoice` as its own execution event. */
+    logChoice: (choiceId: string, optionId: string, reason?: string) => Promise<void>;
     editEntry: (entryId: string, updatedPayload: Partial<SessionEntryPayload>) => Promise<void>;
     removeEntry: (entryId: string) => Promise<void>;
     undo: () => Promise<void>;
@@ -51,7 +63,8 @@ export interface UseSessionRunnerResult {
 }
 
 export function useSessionRunner(userId: string, fixtures: readonly SessionDefinition[] = []): UseSessionRunnerResult {
-    const [definition, setDefinition] = useState<SessionDefinition | null>(null);
+    const [rawDefinition, setRawDefinition] = useState<SessionDefinition | null>(null);
+    const [ineligibleOptionIds, setIneligibleOptionIds] = useState<ReadonlySet<string>>(new Set());
     const [execution, setExecution] = useState<SessionExecution | null>(null);
     const [entries, setEntries] = useState<SessionEntry[]>([]);
     const [activeBlockIndex, setActiveBlockIndex] = useState<number>(0);
@@ -82,7 +95,7 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
                         : null;
                 const existingEntries = await sessionExecutionService.getEntries(userId, existing.executionId);
                 if (cancelled) return;
-                if (resolved?.status === 'AVAILABLE') setDefinition(resolved.data);
+                if (resolved?.status === 'AVAILABLE') setRawDefinition(resolved.data);
                 else if (!fixture) setSyncStatus('unavailable');
                 setExecution(existing);
                 setEntries(existingEntries);
@@ -131,6 +144,46 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
         };
     }, [isRestRunning, restSecondsRemaining]);
 
+    // The athlete-facing effective view: recorded choices folded onto the raw, immutable
+    // definition. `resolveEffectiveSession` always resolves actions from `rawDefinition`
+    // itself, never from a prior derived result, so this is safe to recompute on every
+    // entries change. See `sessions/choiceResolution.ts`.
+    const effectiveView = useMemo(
+        () => (rawDefinition ? resolveEffectiveSession(rawDefinition, entries) : null),
+        [rawDefinition, entries],
+    );
+    const definition = effectiveView?.definition ?? null;
+    const sessionEnded = effectiveView?.sessionEnded ?? false;
+
+    // Alternative eligibility only depends on the day's resolved constraints and the
+    // (raw) definition's authored alternatives, not on entries -- recomputed once per
+    // session start/restore rather than on every logged entry.
+    useEffect(() => {
+        let cancelled = false;
+        // No sync setState here: with no definition there is no active step, so nothing
+        // ever reads a stale `ineligibleOptionIds` before the next session start
+        // recomputes it fresh below.
+        if (!rawDefinition) return undefined;
+        const today = getLocalDateString();
+        Promise.all([
+            trainingSettingsService.getTrainingSettings(userId),
+            checkinService.getCheckin(userId, today),
+        ]).then(([settings, todaysCheckin]) => {
+            if (cancelled) return;
+            const effectiveInjuries = resolveEffectiveInjuryConstraints(settings.injuries, todaysCheckin?.tissueResponses, today);
+            const { restrictedModalities } = resolveInjuryRestrictions(effectiveInjuries, today);
+            setIneligibleOptionIds(ineligibleAlternativeOptionIds(rawDefinition, restrictedModalities));
+        }).catch(() => {
+            // Fail closed on the display side, not on the write path: if constraints can't
+            // be read, no alternative is flagged eligible or ineligible either way -- the
+            // athlete still sees every authored option, same as before this feature existed.
+            if (!cancelled) setIneligibleOptionIds(new Set());
+        });
+        return () => {
+            cancelled = true;
+        };
+    }, [rawDefinition, userId]);
+
     const activeBlock = definition?.blocks[activeBlockIndex] ?? null;
     const activeStep = activeBlock?.steps[activeStepIndex] ?? null;
 
@@ -140,7 +193,7 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
         options: { occurrenceId?: string; prescriptionHash?: string } = {},
     ) => {
         if (isRestoring || execution?.state === 'in_progress') return;
-        setDefinition(nextDefinition);
+        setRawDefinition(nextDefinition);
         setActiveBlockIndex(0);
         setActiveStepIndex(0);
         setEntries([]);
@@ -160,7 +213,7 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
             setExecution(exec);
             setSyncStatus('synced');
         } catch (error) {
-            setDefinition(null);
+            setRawDefinition(null);
             setSyncStatus('unavailable');
             throw error;
         }
@@ -175,7 +228,7 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
     const restoreSessionDefinition = useCallback(async (nextDefinition: SessionDefinition) => {
         if (!execution || execution.state !== 'in_progress') return;
         const existingEntries = await sessionExecutionService.getEntries(userId, execution.executionId);
-        setDefinition(nextDefinition);
+        setRawDefinition(nextDefinition);
         setEntries(existingEntries);
         setElapsedSeconds(Math.max(0, Math.floor((Date.now() - Date.parse(execution.startedAt)) / 1000)));
     }, [execution, userId]);
@@ -193,13 +246,17 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
 
     const nextStep = useCallback(() => {
         if (!definition || !activeBlock) return;
-        if (activeStepIndex + 1 < activeBlock.steps.length) {
+        // A choice-driven end_block (D-MCHOICE) skips the block's remaining -- now
+        // optional, per resolveEffectiveSession -- steps rather than stepping through
+        // them one at a time.
+        const blockEnded = effectiveView?.endedBlockIds.has(activeBlock.id) ?? false;
+        if (!blockEnded && activeStepIndex + 1 < activeBlock.steps.length) {
             setActiveStepIndex(activeStepIndex + 1);
         } else if (activeBlockIndex + 1 < definition.blocks.length) {
             setActiveBlockIndex(activeBlockIndex + 1);
             setActiveStepIndex(0);
         }
-    }, [definition, activeBlock, activeBlockIndex, activeStepIndex]);
+    }, [definition, activeBlock, activeBlockIndex, activeStepIndex, effectiveView]);
 
     const prevStep = useCallback(() => {
         if (!definition) return;
@@ -257,6 +314,34 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
             }
         }
     }, [execution, activeStep, entries, userId]);
+
+    const logChoice = useCallback(async (choiceId: string, optionId: string, reason?: string) => {
+        if (!execution || execution.state !== 'in_progress' || !activeBlock) return;
+        const choice = activeBlock.optionSets?.find(candidate => candidate.id === choiceId);
+        if (!choice) return;
+        const entryId = `entry-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+        const now = new Date().toISOString();
+        const entry: SessionEntry = {
+            id: entryId,
+            executionId: execution.executionId,
+            stepId: choice.appliesAtStepId,
+            selectedOptionId: optionId,
+            completedAt: now,
+            createdAt: now,
+            updatedAt: now,
+            payload: { kind: 'choice', choiceId, optionId, ...(reason ? { reason } : {}) },
+        };
+
+        setEntries(prev => [...prev, entry]);
+        setSyncStatus('pending');
+
+        try {
+            await sessionExecutionService.logEntry(userId, execution.executionId, entry);
+            setSyncStatus('synced');
+        } catch {
+            setSyncStatus('unavailable');
+        }
+    }, [execution, activeBlock, userId]);
 
     const editEntry = useCallback(async (entryId: string, updatedPayload: Partial<SessionEntryPayload>) => {
         if (!execution || execution.state !== 'in_progress') return;
@@ -402,6 +487,8 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
         syncStatus,
         canUndo: lastRemovedEntry !== null,
         lastRemovedEntry,
+        sessionEnded,
+        ineligibleOptionIds,
 
         startFixtureSession,
         startSession,
@@ -410,6 +497,7 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
         nextStep,
         prevStep,
         logEntry,
+        logChoice,
         editEntry,
         removeEntry,
         undo,
