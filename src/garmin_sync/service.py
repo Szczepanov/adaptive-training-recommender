@@ -174,29 +174,57 @@ class GarminSyncService:
             return {}
 
         details: dict[str, CanonicalActivityDetail] = {}
-        for activity in canonical_activities:
-            # `canonical_activities` here is the full 3-day lookback window fetch_activities
-            # uses for activity discovery, not just target_iso's activities. D-DETAIL-GATE is
-            # explicitly scoped to "the target-date pass of sync_daily" only -- without this
-            # check a qualifying D-1/D-2 activity would get (re-)fetched and re-upserted on
-            # every subsequent day's sync too, well past the intended 3xN-per-run budget.
-            if activity.date != target_iso or not qualifies_for_activity_detail(activity):
-                continue
-            assert activity.activity_id is not None
-            try:
-                result = fetch_detail(activity.activity_id)
-                details[activity.activity_id] = result.canonical
-            except GarminConnectTooManyRequestsError as error:
-                logger.warning(
-                    f"[{target_iso}] Garmin activity-detail rate limit reached; "
-                    f"abandoning remaining detail fetches for this run: {error}"
-                )
-                break
-            except Exception as error:
-                logger.warning(
-                    f"[{target_iso}] Garmin activity detail failed for "
-                    f"activity=<ID-redacted>, continuing with the base record: {error}"
-                )
+
+        # `canonical_activities` here is the full 3-day lookback window fetch_activities
+        # uses for activity discovery, not just target_iso's activities. D-DETAIL-GATE is
+        # explicitly scoped to "the target-date pass of sync_daily" only -- without this
+        # check a qualifying D-1/D-2 activity would get (re-)fetched and re-upserted on
+        # every subsequent day's sync too, well past the intended 3xN-per-run budget.
+        qualifying_activities = [
+            activity
+            for activity in canonical_activities
+            if activity.date == target_iso
+            and qualifies_for_activity_detail(activity)
+            and activity.activity_id is not None
+        ]
+
+        if not qualifying_activities:
+            return details
+
+        import concurrent.futures
+
+        # Use a small number of workers to respect Garmin's API limits while
+        # still parallelizing the sequential wait times.
+        with concurrent.futures.ThreadPoolExecutor(
+            max_workers=min(len(qualifying_activities), 5)
+        ) as executor:
+            future_to_activity = {
+                executor.submit(fetch_detail, activity.activity_id): activity
+                for activity in qualifying_activities
+            }
+
+            for future in concurrent.futures.as_completed(future_to_activity):
+                activity = future_to_activity[future]
+                try:
+                    result = future.result()
+                    assert activity.activity_id is not None
+                    details[activity.activity_id] = result.canonical
+                except GarminConnectTooManyRequestsError as error:
+                    logger.warning(
+                        f"[{target_iso}] Garmin activity-detail rate limit reached; "
+                        f"abandoning remaining detail fetches for this run: {error}"
+                    )
+                    # Attempt to cancel any pending futures. This will not stop
+                    # futures that are already running, but prevents new ones from starting.
+                    for f in future_to_activity:
+                        f.cancel()
+                    break
+                except Exception as error:
+                    logger.warning(
+                        f"[{target_iso}] Garmin activity detail failed for "
+                        f"activity=<ID-redacted>, continuing with the base record: {error}"
+                    )
+
         return details
 
     def _seed_prehistory(
