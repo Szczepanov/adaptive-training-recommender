@@ -234,7 +234,9 @@ class GarminSyncService:
         w7_start = get_date_string(n_days_ago(target_date, 7))
         w28_start = get_date_string(n_days_ago(target_date, 28))
 
-        sorted_history_dates = [d for d in sorted(context.raw_memory_store.keys()) if d < context.target_iso]
+        sorted_history_dates = [
+            d for d in sorted(context.raw_memory_store.keys()) if d < context.target_iso
+        ]
         window_7d = [context.raw_memory_store[d] for d in sorted_history_dates if d >= w7_start]
         window_28d = [context.raw_memory_store[d] for d in sorted_history_dates if d >= w28_start]
 
