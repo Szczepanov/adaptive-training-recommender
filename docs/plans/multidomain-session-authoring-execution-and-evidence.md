@@ -576,12 +576,14 @@ That live branch and its policy-version bump were withdrawn rather than shipping
 that the accepted ADR explicitly forbids. Save, start-unplanned and schedule remain available;
 replace/add are visibly disabled pending the complete gate and replay path.
 
-The M3.4 retirement also failed its parity gate: the general repetition card does not preserve
-RIR, velocity-loss or technical gauges, prior-set context, the Strength completion/1RM path, or
-the existing overload read path. The plan's own rollback rule therefore applies: catalog
-Strength stays on the v1 runner, while other source-neutral sessions use `SessionRunner`.
-Both runners retain app-wide resume banners, and the general runner now restores non-fixture
-executions through their stored source/prescription binding.
+The M3.4 retirement's first attempt also failed its parity gate: the general repetition card
+did not yet preserve RIR, velocity-loss or technical gauges, prior-set context, the Strength
+completion/1RM path, or the existing overload read path (pre-correction context -- see M3.4
+below for the parity subsequently reached). The plan's rollback rule applied in the interim,
+and its dual-runner consequence remains the current state: catalog Strength stays on the v1
+runner, while other source-neutral sessions use `SessionRunner`. Both runners retain app-wide
+resume banners, and the general runner now restores non-fixture executions through their
+stored source/prescription binding.
 
 **Authoring MVP (2026-08-18).** The Sessions screen offers normalized `SessionDefinition` JSON
 import and a manual block editor (the latter already supports ID-stable block/step reorder and
@@ -593,12 +595,6 @@ This is not full M3.6–M3.8: it does not yet accept
 M3.8 adds below (load editing, option-set authoring, issue focus).
 
 ### M3.1 `[x]` Canonical serialization, hashing and source adapters
-
-**Progress (2026-08-18).** `sessionDefinitionHash.ts`, `catalogSessionAdapter.ts`,
-`externalSessionAdapter.ts` and `sessionDefinitionResolver.ts` exist with deterministic hash and
-source-hash tests. The unresolved portion is exact evaluated-catalog snapshot resolution: the
-resolver currently rebuilds a catalog definition from the live catalog rather than resolving the
-stored execution prescription that was selected.
 
 **Outcome (2026-08-18).** `resolveSessionDefinition`'s `catalog` branch now takes an optional
 `prescriptionHash` and fails closed (`catalog-prescription-hash-required`) when it's absent,

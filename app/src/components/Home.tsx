@@ -13,7 +13,6 @@ import type { AuthoredPlanBlock, BodyRegion, DailyDecisionInput, Recommendation,
 import type { DataState } from '../engine/dataState';
 import { recommendationService } from '../services/recommendationService';
 import { prepareCatalogSessionLaunch } from '../services/sessionAuthoringService';
-import { adaptCatalogPrescriptionToSessionDefinition } from '../sessions/catalogSessionAdapter';
 import { fixedActivityService } from '../services/fixedActivityService';
 import { planBlockService } from '../services/planBlockService';
 import { decisionJournalService } from '../services/decisionJournalService';
@@ -165,6 +164,8 @@ export function Home({ userId, onNavigate, onViewData, onStartCatalogSession }: 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showWorkoutDetails, setShowWorkoutDetails] = useState(false);
+  const [startingCatalogSession, setStartingCatalogSession] = useState(false);
+  const [catalogSessionLaunchError, setCatalogSessionLaunchError] = useState<string | null>(null);
   const [pendingAdherence, setPendingAdherence] = useState<{ date: string; recommendation: DailyRecommendation } | null>(null);
   const [recommendationRevealed, setRecommendationRevealed] = useState(false);
   const [todaysJournalEntry, setTodaysJournalEntry] = useState<DecisionJournalEntry | null>(null);
@@ -516,6 +517,24 @@ export function Home({ userId, onNavigate, onViewData, onStartCatalogSession }: 
     [computeAdjustedRecommendation, adjustmentDirection]
   );
 
+  // Prepares (and persists) a launch for whatever is actually on screen right now --
+  // base or load-adjusted -- instead of reusing the binding captured for the base
+  // prescription at load time. `prepareCatalogSessionLaunch` is idempotent/write-once,
+  // so this is safe to call on every click, including the unadjusted case.
+  const handleStartCatalogSession = useCallback(async () => {
+    if (!onStartCatalogSession || !activeRec?.prescription || !userId) return;
+    setCatalogSessionLaunchError(null);
+    setStartingCatalogSession(true);
+    try {
+      const launch = await prepareCatalogSessionLaunch(userId, activeRec.prescription);
+      onStartCatalogSession(launch);
+    } catch (err) {
+      setCatalogSessionLaunchError(err instanceof Error ? err.message : 'Could not start the session');
+    } finally {
+      setStartingCatalogSession(false);
+    }
+  }, [onStartCatalogSession, activeRec, userId]);
+
   const todaysEngineVerdict = activeRec && canGenerateNormalPlan
     ? resolveEngineShadowVerdict(activeRec.mode, activeRec.externalVerdict?.decision)
     : null;
@@ -782,16 +801,19 @@ export function Home({ userId, onNavigate, onViewData, onStartCatalogSession }: 
                       {showWorkoutDetails ? 'Hide workout' : 'View workout'}
                     </button>
                     {activeRec.prescription && activeRec.primarySession && onStartCatalogSession && (
-                      <button
-                        type="button"
-                        className="start-strength-btn-cta"
-                        onClick={() => onStartCatalogSession({
-                          definition: adaptCatalogPrescriptionToSessionDefinition(activeRec.prescription!),
-                          binding: activeRec.primarySession!,
-                        })}
-                      >
-                        {activeRec.template.modality === 'Strength' ? '🏋️' : '▶️'} Start / Resume Session →
-                      </button>
+                      <>
+                        <button
+                          type="button"
+                          className="start-strength-btn-cta"
+                          onClick={handleStartCatalogSession}
+                          disabled={startingCatalogSession}
+                        >
+                          {activeRec.template.modality === 'Strength' ? '🏋️' : '▶️'} {startingCatalogSession ? 'Starting…' : 'Start / Resume Session →'}
+                        </button>
+                        {catalogSessionLaunchError && (
+                          <p className="session-launch-error">{catalogSessionLaunchError}</p>
+                        )}
+                      </>
                     )}
                     {showWorkoutDetails && (
                       <DetailedTodayPlan

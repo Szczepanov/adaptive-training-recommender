@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { writeBatch } from 'firebase/firestore';
 import type {
     SessionDefinition,
     SessionExecution,
@@ -8,6 +9,7 @@ import type {
     SessionBlock,
     SessionSourceRef,
 } from '../sessions/models';
+import { getDb } from '../firebase';
 import { sessionExecutionService } from '../services/sessionExecutionService';
 import { checkinService } from '../services/checkinService';
 import { preferencesService } from '../services/preferencesService';
@@ -340,6 +342,12 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
 
         const now = new Date().toISOString();
 
+        // Both writes below are queued into one batch and committed together so a failed
+        // transition can never leave the 1RM derivation persisted against an execution that
+        // is still (or forever) `in_progress` -- see the completion/writeback atomicity note
+        // on `transitionExecution`/`applyOneRepMaxDerivations`.
+        const batch = writeBatch(getDb());
+
         // 1RM Derivation Writeback (M3.4 Strength Parity)
         if (entries.some(e => e.payload.kind === 'repetition')) {
             const adaptedSession = adaptNormalizedExecutionToStrengthSession({
@@ -354,14 +362,15 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
                 entries,
             });
             if (adaptedSession.exercises.length > 0) {
-                await preferencesService.applyOneRepMaxDerivations(userId, adaptedSession, now);
+                await preferencesService.applyOneRepMaxDerivations(userId, adaptedSession, now, batch);
             }
         }
 
         await sessionExecutionService.transitionExecution(userId, execution.executionId, 'completed', {
             sessionRpe: payload?.sessionRpe,
             notes: payload?.notes,
-        });
+        }, batch);
+        await batch.commit();
         setExecution(prev => prev ? { ...prev, state: 'completed', completedAt: now } : null);
     }, [entries, execution, userId]);
 

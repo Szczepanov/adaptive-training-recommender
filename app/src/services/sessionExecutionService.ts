@@ -9,6 +9,7 @@ import {
     where,
     orderBy,
     type Firestore,
+    type WriteBatch,
 } from 'firebase/firestore';
 import { getDb } from '../firebase';
 import type { DataState } from '../engine/dataState';
@@ -132,15 +133,32 @@ export class SessionExecutionService {
     }
 
     async getEntries(userId: string, executionId: string): Promise<SessionEntry[]> {
+        const { entries } = await this.getEntriesWithDiagnostics(userId, executionId);
+        return entries;
+    }
+
+    /**
+     * Same read as `getEntries`, but also reports how many entry documents under this
+     * execution failed to parse -- `getEntries` alone drops them silently, which let a
+     * malformed entry set disappear from range reads without incrementing `invalidRecords`.
+     */
+    private async getEntriesWithDiagnostics(
+        userId: string,
+        executionId: string,
+    ): Promise<{ entries: SessionEntry[]; invalidCount: number }> {
         const snap = await getDocs(this.entriesColl(userId, executionId));
         const entries: SessionEntry[] = [];
+        let invalidCount = 0;
         for (const docSnap of snap.docs) {
             const parsed = parseSessionEntryDocument(docSnap.data(), docSnap.ref.path);
             if (parsed.status === 'AVAILABLE') {
                 entries.push(parsed.data);
+            } else if (parsed.status === 'INVALID') {
+                invalidCount += 1;
             }
         }
-        return entries.sort((a, b) => a.completedAt.localeCompare(b.completedAt));
+        entries.sort((a, b) => a.completedAt.localeCompare(b.completedAt));
+        return { entries, invalidCount };
     }
 
     /**
@@ -162,11 +180,19 @@ export class SessionExecutionService {
         return candidates.sort((a, b) => b.startedAt.localeCompare(a.startedAt))[0] ?? null;
     }
 
+    /**
+     * Transitions an execution's state. Pass `batch` (e.g. shared with a preferences
+     * writeback) to queue this write into a caller-owned `WriteBatch` instead of committing
+     * it alone -- the caller commits once both writes are queued, so a completion and any
+     * derived data it depends on land atomically rather than as two independent writes that
+     * could leave the execution `in_progress` after the derived data was already persisted.
+     */
     async transitionExecution(
         userId: string,
         executionId: string,
         targetState: SessionExecutionState,
         data?: { sessionRpe?: number; notes?: string },
+        batch?: WriteBatch,
     ): Promise<void> {
         const now = new Date().toISOString();
         const patch: Partial<SessionExecution> = {
@@ -176,6 +202,10 @@ export class SessionExecutionService {
             ...(data?.sessionRpe !== undefined ? { sessionRpe: data.sessionRpe } : {}),
             ...(data?.notes !== undefined ? { notes: data.notes } : {}),
         };
+        if (batch) {
+            batch.set(this.executionRef(userId, executionId), patch, { merge: true });
+            return;
+        }
         await setDoc(this.executionRef(userId, executionId), patch, { merge: true });
     }
 
@@ -198,11 +228,12 @@ export class SessionExecutionService {
         for (const docSnap of snap.docs) {
             const parsed = parseSessionExecutionDocument(docSnap.data(), docSnap.ref.path);
             if (parsed.status === 'AVAILABLE') {
-                const entries = await this.getEntries(userId, parsed.data.executionId);
+                const { entries, invalidCount } = await this.getEntriesWithDiagnostics(userId, parsed.data.executionId);
                 executions.push({
                     execution: parsed.data,
                     entries,
                 });
+                invalidRecords += invalidCount;
             } else if (parsed.status === 'INVALID') {
                 invalidRecords += 1;
             }
