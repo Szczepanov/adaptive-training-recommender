@@ -24,6 +24,8 @@ M5.1 generalized occurrence-linked response
 M5.2 later-day / next-morning follow-up
 ```
 
+M3.7, bounded M3.8 and M4.3 are independently startable now; the arrows above express the product priority/cutline, not a false dependency between those three items. M5.1 and M5.2 remain dependency-ordered after M4.3.
+
 In parallel, Phase 9.0 should start its 4–6 week shadow block as soon as 9.0.1 unattended ingestion is proven. Work that changes recommendation policy, decision equality, or replay/provenance semantics should not be mixed into one shadow evidence segment.
 
 The rest of M6–M9 should mostly become **triggered capability work**, not scheduled roadmap debt. The current generic runner already handles repetitions, duration, distance, check-offs and strength gauges. Specialized sprint/COD/jump cards, protocol registries, benchmark UI, device adapters and assisted prose parsing should be built only when real use proves the generic path inadequate or a named testing/device workflow begins.
