@@ -62,9 +62,9 @@ for (const scenario of VISUAL_SCENARIOS) {
     await visitScenario(page, scenario);
 
     if (scenario.id === 'plan-import-expanded') {
-      const toggleBtn = page.locator('.plan-toggle-import-btn');
+      const toggleBtn = page.getByRole('button', { name: /Import Plan|Revise Plan|Close Import/i });
       if (await toggleBtn.count()) {
-        await toggleBtn.click();
+        await toggleBtn.first().click();
         await expect(page.locator('.plan-import-section')).toBeVisible();
       }
     }

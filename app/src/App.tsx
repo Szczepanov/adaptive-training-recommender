@@ -230,6 +230,7 @@ function App() {
           {screen === 'plan' && (
             <PlanView
               userId={userId!}
+              onNavigate={setScreen}
               onPlanChanged={() => {
                 // The imported/modified plan changes what today's decision is made from, so the
                 // composed input has to be refetched rather than left stale behind the nav.

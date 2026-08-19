@@ -20,6 +20,10 @@ import { mapSnapshotToEngineInput, mapCheckinToSubjectiveInput, mapGoalsToUserEv
 import { evaluateTrainingWithIntent, evaluateNextDayPlanWithIntent } from '../engine/rules';
 import { evaluatePeriodizationPhase } from '../engine/periodization';
 import { resolvePlanningContext } from '../engine/planningMode';
+import {
+  canGenerateNormalRecommendation,
+  getMinimumSafetyCheckinStatus,
+} from '../engine/safetyCheckin';
 import { addDaysToLocalDateString, getLocalDateString } from '../utils/localDate';
 import type {
   ExternalPlacementAssignment,
@@ -28,6 +32,7 @@ import type {
   DailyDecisionInput,
   NextDayPotentialPlan,
 } from '../engine/models';
+import type { Screen } from '../types/navigation';
 import { ExternalPlanWeek } from './ExternalPlanWeek';
 import { ExternalPlanImport } from './ExternalPlanImport';
 import { WeekAheadStrip } from './WeekAheadStrip';
@@ -35,6 +40,7 @@ import './PlanView.css';
 
 interface PlanViewProps {
   userId: string;
+  onNavigate?: (screen: Screen) => void;
   onPlanChanged?: () => void;
 }
 
@@ -46,7 +52,7 @@ function formatWeekRange(startDateStr: string): string {
   return `${WEEKDAY_FORMATTER.format(start)} – ${WEEKDAY_FORMATTER.format(end)}`;
 }
 
-export const PlanView: React.FC<PlanViewProps> = ({ userId, onPlanChanged }) => {
+export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanChanged }) => {
   const today = useMemo(() => getLocalDateString(), []);
   const [activePlan, setActivePlan] = useState<ActiveExternalPlan | null>(null);
   const [critique, setCritique] = useState<ExternalWeekCritique | null>(null);
@@ -123,11 +129,28 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onPlanChanged }) => 
       const blocks = blocksState.data;
       setFixedActivities(acts);
 
+      // P0: Fail closed on activeExternalPlanState errors. INVALID or UNAVAILABLE must never
+      // silently decay to MISSING / no plan, as that could discard athlete placements.
       const activePlanState = await activeExternalPlanService.getActivePlanState(userId, today, acts);
+      if (activePlanState.status === 'INVALID' || activePlanState.status === 'UNAVAILABLE') {
+        setForecastUnavailable(
+          activePlanState.status === 'UNAVAILABLE'
+            ? 'Your active coach plan is temporarily unavailable. Check your connection and retry.'
+            : 'Your active coach plan could not be verified. Retry before using this schedule.',
+        );
+        setFixedActivities([]);
+        setActivePlan(null);
+        return;
+      }
+
       const currentPlan = activePlanState.status === 'AVAILABLE' ? activePlanState.data : null;
       setActivePlan(currentPlan);
 
-      if (input.recoverySnapshot) {
+      // P0/P1: Verify minimum safety check-in status before generating normal adaptive forecast
+      const safetyStatus = getMinimumSafetyCheckinStatus(input.subjectiveCheckin);
+      const canGenerateNormalPlan = canGenerateNormalRecommendation(safetyStatus);
+
+      if (input.recoverySnapshot && canGenerateNormalPlan) {
         const subjective = mapCheckinToSubjectiveInput(input.subjectiveCheckin);
         const objective = mapSnapshotToEngineInput(input.recoverySnapshot);
         const events = mapGoalsToUserEvents(input.activeGoals);
@@ -324,6 +347,12 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onPlanChanged }) => 
     return resolvePlanningContext(decisionInput.trainingIntentProfile, todayPhase, today).mode;
   }, [decisionInput, today]);
 
+  const safetyCheckinStatus = useMemo(
+    () => getMinimumSafetyCheckinStatus(decisionInput?.subjectiveCheckin),
+    [decisionInput?.subjectiveCheckin],
+  );
+  const canGenerateAdaptiveForecast = canGenerateNormalRecommendation(safetyCheckinStatus);
+
   return (
     <div className="plan-view-container">
       <div className="plan-view-header">
@@ -432,9 +461,24 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onPlanChanged }) => 
           {!decisionInput?.recoverySnapshot ? (
             <div className="plan-missing-recovery-card">
               <p>
-                📊 No Garmin recovery data synced today yet. Sync your watch or complete your morning check-in
+                📊 No Garmin recovery data synced today yet. Sync your Garmin device
                 to compute the dynamic 7-day projection.
               </p>
+            </div>
+          ) : !canGenerateAdaptiveForecast ? (
+            <div className="plan-missing-checkin-card">
+              <p>
+                📋 Complete today's safety check-in to compute the dynamic 7-day adaptive forecast.
+              </p>
+              {onNavigate && (
+                <button
+                  type="button"
+                  className="plan-complete-checkin-btn"
+                  onClick={() => onNavigate('checkin')}
+                >
+                  Complete Morning Check-in →
+                </button>
+              )}
             </div>
           ) : (
             <WeekAheadStrip
