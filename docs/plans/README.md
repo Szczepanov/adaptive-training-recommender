@@ -63,9 +63,10 @@ M3.1–M3.6, and M4.1–M4.2 complete.
 
 For Multidomain delivery, the current evidence-first cutline from
 [`2026-08-19-product-scope-cutline-review.md`](../analysis/2026-08-19-product-scope-cutline-review.md)
-is `M3.7 → bounded M3.8 → M4.3 → M5.1 → M5.2`. M6/M7 are usage-triggered capability
-families, not the automatic continuation after M5; M8 may consume them only if athlete use
-justified them independently.
+is `M3.7 → bounded M3.8 → M4.3 → M5.1 → M5.2`. The immediate startable set includes
+M3.7, bounded M3.8, and M4.3; the response chain becomes startable as those dependencies
+land. M6/M7 are usage-triggered capability families, not the automatic continuation after
+M5; M8 may consume them only if athlete use justified them independently.
 
 The Phase 0–5 task boards are historical implementation records; the
 [follow-up analysis](../analysis/2026-08-09-phase-0-5-completion-review.md) records
