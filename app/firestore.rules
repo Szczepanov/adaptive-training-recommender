@@ -116,7 +116,7 @@ service cloud.firestore {
         && audit.candidateScores is list && audit.candidateScores.size() <= 64
         && (!('droppedContributorObjectives' in audit) || (audit.droppedContributorObjectives is list && audit.droppedContributorObjectives.size() <= 64))
         && (!('primarySession' in audit) || hasValidSessionReferenceBinding(audit.primarySession))
-        && (!('additionalSessions' in audit) || (audit.additionalSessions is list && audit.additionalSessions.size() <= 4))
+        && (!('additionalSessions' in audit) || hasValidAdditionalSessions(audit.additionalSessions))
         && (!('externalPlan' in audit) || (
           audit.externalPlan is map
           && audit.externalPlan.keys().hasOnly(['planId', 'revision', 'sessionId', 'contentHash'])
@@ -777,17 +777,28 @@ service cloud.firestore {
         && (!('occurrenceId' in binding) || (binding.occurrenceId is string && binding.occurrenceId.size() > 0));
     }
 
-    // Lighter than hasValidSessionReferenceBinding: checks shape and a recognized source
-    // kind, but not every per-kind field (workoutId/catalogVersion types, etc.) -- see
+    // Lighter than hasValidSessionSource: checks the recognized source kind plus presence
+    // of that kind's required fields, but skips hasOnly() (no rejection of stray extra
+    // fields) and per-field type/size checks (e.g. catalogVersion being a string) -- see
     // hasValidAdditionalSessions for why. The client (engine/validation.ts) still applies
     // the full per-kind check before any write reaches here; this is defense in depth
-    // against a client that skips it, not the only gate.
+    // against a client that skips it, not the only gate. This still closes the specific
+    // gap of a binding that names a valid `kind` but omits that kind's required fields
+    // entirely (e.g. `{ kind: 'catalog' }` with no workoutId/catalogVersion).
+    function hasValidAdditionalSessionSourceShape(source) {
+      return source is map && (
+        (source.kind == 'catalog' && source.keys().hasAll(['workoutId', 'catalogVersion']))
+        || (source.kind == 'external_plan' && source.keys().hasAll(['planId', 'revision', 'sessionId', 'contentHash']))
+        || (source.kind == 'manual' && source.keys().hasAll(['definitionId', 'revision', 'contentHash']))
+        || (source.kind == 'unplanned_fixture' && source.keys().hasAll(['fixtureId']))
+      );
+    }
+
     function hasValidAdditionalSessionBinding(binding) {
       return binding is map
         && binding.keys().hasOnly(['sessionSource', 'occurrenceId', 'prescriptionHash'])
         && binding.keys().hasAll(['sessionSource', 'prescriptionHash'])
-        && binding.sessionSource is map
-        && binding.sessionSource.kind in ['catalog', 'external_plan', 'manual', 'unplanned_fixture']
+        && hasValidAdditionalSessionSourceShape(binding.sessionSource)
         && binding.prescriptionHash is string && binding.prescriptionHash.size() > 0
         && (!('occurrenceId' in binding) || (binding.occurrenceId is string && binding.occurrenceId.size() > 0));
     }

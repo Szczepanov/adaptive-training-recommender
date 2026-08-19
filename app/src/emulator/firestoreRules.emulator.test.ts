@@ -1244,6 +1244,41 @@ emulatorDescribe('Firestore security rules', () => {
         }));
     });
 
+    it('rejects an additionalSessions binding whose sessionSource names a valid kind but omits that kind\'s required fields', async () => {
+        // hasValidAdditionalSessionBinding checked only sessionSource.kind, so a binding
+        // like `{ sessionSource: { kind: 'catalog' }, prescriptionHash: 'x' }` -- missing
+        // workoutId/catalogVersion entirely -- previously passed. Cover all three
+        // non-trivial kinds so the shape gap can't reopen for any one of them.
+        const base = validRecommendation();
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        const malformedSources = [
+            { kind: 'catalog' }, // missing workoutId, catalogVersion
+            { kind: 'manual', definitionId: 'manual-1' }, // missing revision, contentHash
+            { kind: 'external_plan', planId: 'autumn-block', revision: 1 }, // missing sessionId, contentHash
+        ];
+        for (const sessionSource of malformedSources) {
+            await assertFails(setDoc(doc(ownerDb, `users/${ownerId}/daily_recommendations/2026-08-07`), {
+                ...base,
+                additionalSessions: [{ sessionSource, prescriptionHash: 'presc-hash-1' }],
+            }));
+        }
+    });
+
+    it('rejects a recommendationAudit.additionalSessions entry that is not a valid binding', async () => {
+        // audit.additionalSessions previously only checked list-ness and length -- any
+        // non-binding value (including an empty map) was accepted here even though the
+        // top-level additionalSessions field was already shape-checked.
+        const base = validRecommendation();
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertFails(setDoc(doc(ownerDb, `users/${ownerId}/daily_recommendations/2026-08-07`), {
+            ...base,
+            recommendationAudit: {
+                ...base.recommendationAudit,
+                additionalSessions: [{ notABinding: true }],
+            },
+        }));
+    });
+
     it('allows an authored replacement occurrence provenance in a recommendation audit', async () => {
         const base = validRecommendation();
         const primarySession = {

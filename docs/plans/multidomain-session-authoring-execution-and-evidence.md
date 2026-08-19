@@ -612,16 +612,19 @@ transient `initialSession` object. The catalog resolver also rejects a source wh
 
 ### M3.2 `[x]` Recommendation source/occurrence persistence and replay
 
-**Progress (2026-08-18).** `primarySession`/`additionalSessions` are typed, validated, preserved
-through recommendation persistence and archival revisions, and carried into provenance. A
-write-once execution-prescription service also exists. Replay does not yet retrieve and verify
-those prescription bytes, so this remains partial and must not be used to grant authority.
+**Progress as of 2026-08-18 (superseded by the 2026-08-19 outcome below).**
+`primarySession`/`additionalSessions` were typed, validated, preserved through recommendation
+persistence and archival revisions, and carried into provenance. A write-once
+execution-prescription service also existed. Replay did not yet retrieve and verify those
+prescription bytes at this point, so the milestone remained partial and was not used to grant
+authority.
 
-**Current.** `Recommendation.externalPrescription` is derived in `rules.ts` on every dashboard
-load and never persisted; `DailyRecommendation` persists the catalog `prescription` only.
-`Home.tsx` recomputes the whole recommendation on load and then calls `saveRecommendation`, so
-the *display* survives reload by re-derivation — but the *runner* reads the persisted document
-and *replay* reads the persisted audit. Both are blind to authored content.
+**Gap as of 2026-08-18 (closed below).** `Recommendation.externalPrescription` was derived in
+`rules.ts` on every dashboard load and never persisted; `DailyRecommendation` persisted the
+catalog `prescription` only. `Home.tsx` recomputed the whole recommendation on load and then
+called `saveRecommendation`, so the *display* survived reload by re-derivation — but the
+*runner* read the persisted document and *replay* read the persisted audit. Both were blind to
+authored content.
 
 **Precondition (C11).** Do not start this inside an open Phase 9.0 shadow-mode comparison
 block. Changing decision equality, archived revision bytes and audit provenance mid-block
@@ -677,8 +680,8 @@ so a cheaper server-side shape or smaller schema was required before Add could s
 Coordinated with 9.0.1 per C11: Phase 9.0's shadow block had not started when this work
 began (still true at the outcome below, so this stayed clear of C11 throughout).
 
-**Outcome (2026-08-19).** All three remaining gaps closed, now that M3.3 (above) shipped the
-gate this was blocked on. In order:
+**Outcome (2026-08-19).** All three remaining gaps closed, now that the completed M3.3
+authority flow shipped the gate this was blocked on. In order:
 
 * **Firestore rules.** `additionalSessions` now gets real per-element shape validation
   (source kind, non-empty `prescriptionHash`) rather than length-only, at both the
@@ -709,8 +712,8 @@ gate this was blocked on. In order:
   `shadowLogService` already establishes elsewhere -- console-level only, no new UI
   surface, no persisted verification state.
 
-Manual/imported authority is no longer disabled (M3.3, above, shipped the complete gate),
-so the milestone's `Done when` criteria are met.
+Manual/imported authority is no longer disabled (the completed M3.3 authority flow shipped
+the complete gate), so the milestone's `Done when` criteria are met.
 
 ### M3.3 `[x]` Save/schedule/replace/add/start intent flow
 

@@ -145,16 +145,6 @@ export async function resolveSessionDefinition(
                 issues: [{ code: 'catalog-workout-not-found', documentPath: `workouts/${source.workoutId}` }],
             };
         }
-        if (String(workout.version) !== source.catalogVersion) {
-            return {
-                status: 'INVALID',
-                issues: [{
-                    code: 'catalog-version-mismatch',
-                    field: 'catalogVersion',
-                    documentPath: `workouts/${source.workoutId}`,
-                }],
-            };
-        }
         if (!prescriptionHash) {
             // Fail closed rather than fall back to re-deriving from the live catalog: the
             // live template can have been edited since this decision was made, and a
@@ -177,7 +167,20 @@ export async function resolveSessionDefinition(
         const meta = prescriptionState.data.displayMetadata;
         if (!meta) {
             // Written before M3.2 added displayMetadata: no historical snapshot to verify
-            // against, so this is unable to detect display drift -- no worse than before.
+            // against. Fall back to the live-catalog version check -- this is the only
+            // remaining signal that the live template hasn't drifted out from under this
+            // prescription's evaluated blocks -- and fail closed on drift rather than
+            // silently mixing a stale block set with a since-edited live template.
+            if (String(workout.version) !== source.catalogVersion) {
+                return {
+                    status: 'INVALID',
+                    issues: [{
+                        code: 'catalog-version-mismatch',
+                        field: 'catalogVersion',
+                        documentPath,
+                    }],
+                };
+            }
             return {
                 status: 'AVAILABLE',
                 data: { ...liveDefinition, blocks: prescriptionState.data.blocks },
@@ -187,8 +190,11 @@ export async function resolveSessionDefinition(
         // The historical definition is reconstructed entirely from the stored prescription
         // -- never merged with the live catalog -- so an edit to this workout's live entry
         // (title, duration, ...) after the day it was prescribed cannot silently rewrite
-        // what this recommendation actually displayed. Self-verified by recomputing the
-        // hash the same way createExecutionPrescriptionFromCatalog did at write time.
+        // what this recommendation actually displayed. This makes the definition
+        // self-verifying (via the hash check below), so it does not need the live catalog's
+        // `version` to still match this prescription's historical `catalogVersion` -- unlike
+        // the no-`meta` fallback above, replaying this snapshot never depends on the live
+        // catalog being unedited since the day it was prescribed.
         const reconstructed: SessionDefinition = {
             ...liveDefinition,
             title: meta.title,
