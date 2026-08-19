@@ -4,7 +4,7 @@
 
 Given the current implementation state, which remaining items in the Multidomain plan should be built now, reduced, deferred behind usage/evidence triggers, or left as later evidence work if the goal is maximum value for the athlete who actually uses this repository rather than maximum architectural completeness?
 
-This is a dated product/roadmap review, not a replacement for accepted ADRs and not an implementation plan. It does not change task status. If this cutline is accepted, the mutable plan in `docs/plans/multidomain-session-authoring-execution-and-evidence.md` should be updated separately.
+This is a dated product/roadmap review, not a replacement for accepted ADRs. The cutline below was accepted on 2026-08-19 and is reflected in the mutable plan at `docs/plans/multidomain-session-authoring-execution-and-evidence.md` and in `docs/plans/README.md`. It changes execution priority and capability startability, not accepted record boundaries or authority decisions.
 
 ## Executive verdict
 
@@ -149,14 +149,15 @@ The next milestone should not be “M7 exists”. It should be:
 
 If that is true, the repository has a trustworthy training operating loop. At that point the next feature should be chosen from observed friction or evidence, not from the longest remaining section of the roadmap.
 
-## Recommendation
+## Accepted roadmap mutation
 
-Accept this cutline and then update the mutable Multidomain plan so that:
+The cutline is now reflected in the mutable plans:
 
 * M3.8 is explicitly a bounded hardening item rather than an advanced-authoring completeness target;
 * M5.3 is report-first and UI-optional;
-* M6.2–M7.4 are usage-triggered rather than implicitly scheduled after their blockers land;
-* M8/M9 remain evidence/trigger work;
-* `docs/plans/README.md` lists the true near-term execution chain as M3.7 → M4.3 → M5.1 → M5.2, with M3.8 only as bounded hardening.
+* M6/M7 are usage-triggered rather than implicitly scheduled after their blockers land;
+* M8 cannot pull otherwise-untriggered M6/M7 work into scope merely to enrich a candidate analysis;
+* M9 remains trigger-gated;
+* `docs/plans/README.md` lists the true near-term execution chain as M3.7 → bounded M3.8 → M4.3 → M5.1 → M5.2.
 
 No ADR change is required for this cutline because it changes execution priority and product scope, not accepted record boundaries or authority rules. If a later scope reduction would remove an accepted invariant rather than merely defer a capability, that change should go through the relevant ADR process.
