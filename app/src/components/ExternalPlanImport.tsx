@@ -7,10 +7,12 @@ import { getLocalDateString } from '../utils/localDate';
 import { diffPlans, type PlanDiffRow } from './externalPlanDiff';
 import {
     validateExternalTrainingPlanV2,
+    isV2Session,
     EXTERNAL_PLAN_SCHEMA_V2,
     type AnyExternalTrainingPlan as ExternalTrainingPlan,
     type AnyExternalPlanSession,
 } from '../sessions/externalPlanV2';
+import { SessionDefinitionPreview } from './session/SessionDefinitionPreview';
 import './ExternalPlanImport.css';
 
 interface ExternalPlanImportProps {
@@ -328,7 +330,7 @@ function usePreviousRevision(userId: string, phase: Phase): ExternalTrainingPlan
     return loaded !== null && loaded.key === key ? loaded.plan : null;
 }
 
-interface PlanPreviewProps {
+export interface PlanPreviewProps {
     plan: ExternalTrainingPlan;
     previous: ExternalPlanHeader | null;
     diff: PlanDiffRow[] | null;
@@ -336,8 +338,20 @@ interface PlanPreviewProps {
     onCancel: () => void;
 }
 
-function PlanPreview({ plan, previous, diff, onConfirm, onCancel }: PlanPreviewProps) {
+/** Exported (not just used internally) so the acknowledgement-gating behavior is directly
+ * testable without driving the full paste-JSON → validate → preview state machine. */
+export function PlanPreview({ plan, previous, diff, onConfirm, onCancel }: PlanPreviewProps) {
     const notNewer = previous !== null && plan.revision <= previous.revision;
+
+    // M3.7: a diff row's `contentChanges` are only present for a matched v2/v2 session pair
+    // (`externalPlanDiff.ts`). Behavior-changing rows -- dose, load, laterality, optional vs
+    // required, an authored choice's actions -- must be explicitly acknowledged before the
+    // athlete can confirm; cosmetic-only rows (wording) never block.
+    const behaviorChangeCount = (diff ?? [])
+        .flatMap(row => row.contentChanges ?? [])
+        .filter(row => row.behaviorChanging).length;
+    const [acknowledged, setAcknowledged] = useState(false);
+    const blockedByUnreviewedChanges = behaviorChangeCount > 0 && !acknowledged;
 
     return (
         <section className="external-import-preview" aria-label="Plan preview">
@@ -359,7 +373,21 @@ function PlanPreview({ plan, previous, diff, onConfirm, onCancel }: PlanPreviewP
                     <h5>What changes against revision {previous?.revision}</h5>
                     <ul>
                         {diff.map(row => (
-                            <li key={`${row.change}-${row.sessionId}`} className={`diff-${row.change}`}>{row.detail}</li>
+                            <li key={`${row.change}-${row.sessionId}`} className={`diff-${row.change}`}>
+                                {row.detail}
+                                {row.contentChanges && row.contentChanges.length > 0 && (
+                                    <ul className="external-import-content-diff">
+                                        {row.contentChanges.map((change, index) => (
+                                            <li
+                                                key={`${row.sessionId}-${change.scope}-${change.id}-${index}`}
+                                                className={change.behaviorChanging ? 'content-diff-behavior' : 'content-diff-cosmetic'}
+                                            >
+                                                {change.behaviorChanging ? '⚠ ' : ''}{change.detail}
+                                            </li>
+                                        ))}
+                                    </ul>
+                                )}
+                            </li>
                         ))}
                     </ul>
                 </div>
@@ -378,12 +406,34 @@ function PlanPreview({ plan, previous, diff, onConfirm, onCancel }: PlanPreviewP
                             {' '}{session.gating.durationMin}–{session.gating.durationMax} min · {session.priority}
                             {session.isEvent && ' · event'}
                         </span>
+                        {isV2Session(session) && (
+                            <details className="external-import-session-detail">
+                                <summary>Full session content — every block and step, not just this summary line</summary>
+                                <SessionDefinitionPreview definition={session.definition} />
+                            </details>
+                        )}
                     </li>
                 ))}
             </ol>
 
+            {behaviorChangeCount > 0 && (
+                <label className="external-import-ack">
+                    <input
+                        type="checkbox"
+                        checked={acknowledged}
+                        onChange={event => setAcknowledged(event.target.checked)}
+                    />
+                    I reviewed the {behaviorChangeCount} behavior change{behaviorChangeCount === 1 ? '' : 's'} marked ⚠ above.
+                </label>
+            )}
+
             <div className="external-import-actions">
-                <button type="button" className="external-import-primary" onClick={onConfirm} disabled={notNewer}>
+                <button
+                    type="button"
+                    className="external-import-primary"
+                    onClick={onConfirm}
+                    disabled={notNewer || blockedByUnreviewedChanges}
+                >
                     Import this plan
                 </button>
                 <button type="button" className="external-import-secondary" onClick={onCancel}>
