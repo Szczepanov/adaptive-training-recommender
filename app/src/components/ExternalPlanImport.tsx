@@ -171,7 +171,7 @@ export function ExternalPlanImport({ userId, onImported }: ExternalPlanImportPro
                                 {promptCopied ? 'Copied prompt to clipboard!' : 'Copy AI prompt template'}
                             </button>
                             <span className="external-import-prompt-hint">
-                                Tip: For short intervals (e.g. 10s, 20s, 30s), use <code>durationSec: 20</code> instead of fractional minutes.
+                                Tip: For short intervals (e.g. 10s, 20s, 30s), use <code>{'"dose": {"kind": "duration", "seconds": 20}'}</code> instead of fractional minutes.
                             </span>
                         </div>
                         <pre className="external-import-prompt-text">{AI_PROMPT_TEMPLATE}</pre>

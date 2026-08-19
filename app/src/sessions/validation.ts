@@ -283,17 +283,25 @@ export function validateSessionDefinition(raw: unknown): ValidationResult<Sessio
                     } else {
                         const dose = step.dose;
                         if (dose.kind === 'repetition') {
-                            if (typeof dose.sets !== 'number' || dose.sets <= 0) {
-                                issues.push({ path: `${sPath}.dose.sets`, message: 'Dose sets must be positive number' });
+                            if (typeof dose.sets !== 'number' || !Number.isInteger(dose.sets) || dose.sets <= 0) {
+                                issues.push({ path: `${sPath}.dose.sets`, message: 'Dose sets must be a positive integer' });
                             }
                             validateRangeOrNumber(dose.reps, `${sPath}.dose.reps`, issues, false);
                         } else if (dose.kind === 'duration') {
+                            if (dose.sets !== undefined && (typeof dose.sets !== 'number' || !Number.isInteger(dose.sets) || dose.sets <= 0)) {
+                                issues.push({ path: `${sPath}.dose.sets`, message: 'Dose sets must be a positive integer' });
+                            }
                             validateRangeOrNumber(dose.seconds, `${sPath}.dose.seconds`, issues, false);
                         } else if (dose.kind === 'distance') {
+                            if (dose.sets !== undefined && (typeof dose.sets !== 'number' || !Number.isInteger(dose.sets) || dose.sets <= 0)) {
+                                issues.push({ path: `${sPath}.dose.sets`, message: 'Dose sets must be a positive integer' });
+                            }
                             const distanceVal = dose.meters !== undefined ? dose.meters : dose.metres;
                             validateRangeOrNumber(distanceVal, `${sPath}.dose.meters`, issues, false);
                         } else if (dose.kind === 'checkoff') {
-                            // valid
+                            if (dose.rounds !== undefined && (typeof dose.rounds !== 'number' || !Number.isInteger(dose.rounds) || dose.rounds <= 0)) {
+                                issues.push({ path: `${sPath}.dose.rounds`, message: 'Dose rounds must be a positive integer' });
+                            }
                         } else {
                             issues.push({ path: `${sPath}.dose.kind`, message: `Invalid dose kind: ${String(dose.kind)}` });
                         }

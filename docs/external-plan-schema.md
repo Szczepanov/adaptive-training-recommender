@@ -420,10 +420,11 @@ adapter is needed to execute one.
 `id`, optional `title`, `role`
 (`warmup`/`main`/`cooldown`/`accessory`/`test`/`recovery`), `executionMode`
 (`sequential`/`circuit`/`superset`/`density`/`amrap`/`alternating`), and `steps`. A step has
-`id`, `kind` (`"exercise"`), optional `title`, `exerciseRef` — always
-`{"kind": "unresolved_free_text", "name": "..."}` for an imported session, since there is
-no catalog identity to resolve to — `dose`, optional `rest` (seconds, or `{min, max}` for a
-range), optional `notes`. `dose` is one of:
+`id`, `kind` (`"exercise"` | `"transition"` | `"rest"`), optional `title`, optional `rest`
+(seconds, or `{min, max}` for a range), optional `notes`, and optional `dose`. When `kind` is
+`"exercise"`, `exerciseRef` is required — typically `{"kind": "unresolved_free_text", "name": "..."}`
+for imported sessions where no catalog identity is known, or `{"kind": "catalog", "exerciseId": "..."}`
+when referencing an existing catalog exercise. `dose` is one of:
 
 | `dose.kind` | Fields |
 |---|---|

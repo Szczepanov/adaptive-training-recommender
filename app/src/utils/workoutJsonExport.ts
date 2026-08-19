@@ -291,6 +291,17 @@ function stepDisplayName(step: SessionStep): string {
     return 'Step';
 }
 
+function extractStepLoad(load: SessionStep['load']): { weightKg?: number; weightPercent1Rm?: number } {
+    if (!load) return {};
+    if (load.kind === 'mass') {
+        return { weightKg: rangeMidpoint(load.kg) };
+    }
+    if (load.kind === 'percent_one_rm' || load.kind === 'percent_max') {
+        return { weightPercent1Rm: load.percent };
+    }
+    return {};
+}
+
 /**
  * v2 counterpart of `exportExternalSessionToJson`. Genuinely simpler: a v2 session's
  * content is already structured (`dose`/`effort`/`rest`), so this needs none of v1's
@@ -305,6 +316,7 @@ export function exportExternalSessionV2ToJson(session: ExternalPlanSessionV2): C
         role: block.role,
         steps: block.steps.map((step): CanonicalExportStep => {
             const durationSeconds = step.dose?.kind === 'duration' ? rangeMidpoint(step.dose.seconds) : undefined;
+            const { weightKg, weightPercent1Rm } = extractStepLoad(step.load);
             return {
                 id: step.id,
                 name: stepDisplayName(step),
@@ -312,6 +324,8 @@ export function exportExternalSessionV2ToJson(session: ExternalPlanSessionV2): C
                 durationSeconds,
                 sets: step.dose && 'sets' in step.dose ? step.dose.sets : undefined,
                 repetitions: step.dose?.kind === 'repetition' ? rangeMidpoint(step.dose.reps) : undefined,
+                weightKg,
+                weightPercent1Rm,
                 targetRpe: step.effort?.rpe !== undefined ? rangeMidpoint(step.effort.rpe) : undefined,
                 restAfterSec: rangeMidpoint(step.rest),
                 stopConditions: step.stopConditions,

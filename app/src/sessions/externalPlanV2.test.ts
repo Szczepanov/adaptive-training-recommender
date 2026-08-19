@@ -98,6 +98,26 @@ describe('external-plan@2 (M3.6)', () => {
         expect(result.errors.some(e => e.message.includes('preferredDay'))).toBe(true);
     });
 
+    describe('dose.sets integer validation', () => {
+        it.each([
+            ['repetition', { kind: 'repetition', sets: 2.5, reps: 10 }],
+            ['repetition zero', { kind: 'repetition', sets: 0, reps: 10 }],
+            ['repetition negative', { kind: 'repetition', sets: -3, reps: 10 }],
+            ['duration fractional', { kind: 'duration', sets: 1.5, seconds: 30 }],
+            ['duration zero', { kind: 'duration', sets: 0, seconds: 30 }],
+            ['duration negative', { kind: 'duration', sets: -2, seconds: 30 }],
+            ['distance fractional', { kind: 'distance', sets: 2.2, meters: 400 }],
+            ['distance zero', { kind: 'distance', sets: 0, meters: 400 }],
+            ['distance negative', { kind: 'distance', sets: -1, meters: 400 }],
+        ])('rejects %s with invalid sets', (_label, dose) => {
+            const def = structuredClone(fixture01) as unknown as SessionDefinition;
+            def.blocks[0].steps[0].dose = dose as never;
+            const result = validateExternalTrainingPlanV2(planV2(def));
+            expect(result.isValid).toBe(false);
+            expect(result.errors.some(e => e.field.includes('dose.sets'))).toBe(true);
+        });
+    });
+
     describe('type guards', () => {
         it('isV2Plan narrows on the schema literal', () => {
             expect(isV2Plan({ schema: EXTERNAL_PLAN_SCHEMA_V2 })).toBe(true);

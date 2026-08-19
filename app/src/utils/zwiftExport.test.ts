@@ -123,6 +123,27 @@ describe('zwiftExport', () => {
         expect(xml).toContain('<Cooldown Duration="600"');
     });
 
+    it('rejects non-sequential execution modes when exporting v2 session to Zwift', () => {
+        const session: ExternalPlanSessionV2 = {
+            id: 'ext-circuit-v2',
+            title: 'Circuit Ride',
+            priority: 'key',
+            placement: { week: 1, preferredDay: 'tuesday', flexibility: 'preferred', ifMissed: 'carry_forward' },
+            gating: { modality: 'cycling', intensity: 'hard', durationMin: 45, durationMax: 60, environment: 'indoor', equipment: ['indoor_bike'] },
+            definition: {
+                schemaVersion: 1, id: 'ext-circuit-v2', revision: 1, title: 'Circuit Ride', intent: 'training',
+                blocks: [
+                    {
+                        id: 'block-circuit', role: 'main', executionMode: 'circuit',
+                        steps: [{ id: 's1', kind: 'exercise', title: 'Sprint', exerciseRef: { kind: 'unresolved_free_text', name: 'Sprint' }, dose: { kind: 'duration', seconds: 30 } }],
+                    },
+                ],
+            },
+        };
+
+        expect(() => generateZwiftFromExternalSessionV2(session)).toThrowError(/circuit executionMode/);
+    });
+
     it('generates multi-set intervals in Zwift XML for 30/15 sessions', () => {
         const session: ExternalPlanSession = {
             id: 'w1-vo2',

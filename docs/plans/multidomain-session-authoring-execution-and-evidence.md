@@ -794,19 +794,6 @@ free-text movement is visibly low-confidence in the runner.
 
 ### M3.6 `[x]` External plan/session schema v2 adapter
 
-**Change.** Publish `external-plan@2` using normalized session definitions while retaining v1
-read/import compatibility. Validation remains strict and path-specific. Importers may not
-accept author-supplied calibrated engine cost or stimulus (ADR-0019 D-EXTTIER). Stale
-health/readiness narrative becomes a warning or narrative classification, never a reusable
-gate.
-
-**Files.** New `sessions/externalPlanV2.ts`, `engine/validation.ts`,
-`docs/external-plan-schema.md`, the prompt template in `ExternalPlanImport.tsx`, hash/diff
-tests.
-
-**Done when.** The M0.2 external fixtures validate; v1 remains importable; ranges, sides,
-option sets and companions survive hash and reload; unknown keys fail.
-
 **Outcome (2026-08-19).** Shipped as designed, plus JSON/Zwift export support (not in the
 original file list, added on request). `ExternalPlanSession`/`ExternalTrainingPlan`/
 `EXTERNAL_PLAN_SCHEMA` in `engine/models.ts` are untouched and keep meaning v1 exactly as

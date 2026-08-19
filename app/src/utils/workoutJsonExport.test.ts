@@ -107,6 +107,69 @@ describe('workoutJsonExport', () => {
         });
     });
 
+    it('exports a v2 external session with structured load (mass, percent_one_rm, percent_max)', () => {
+        const session: ExternalPlanSessionV2 = {
+            id: 'w1-strength-loaded',
+            title: 'Lower Body Strength',
+            priority: 'key',
+            placement: { week: 1, preferredDay: 'monday', flexibility: 'preferred', ifMissed: 'drop' },
+            gating: { modality: 'strength', intensity: 'hard', durationMin: 50, durationMax: 60, environment: 'indoor', equipment: ['free_weights'] },
+            definition: {
+                schemaVersion: 1, id: 'w1-strength-loaded', revision: 1, title: 'Lower Body Strength', intent: 'training',
+                blocks: [{
+                    id: 'block-main', role: 'main', executionMode: 'sequential',
+                    steps: [
+                        {
+                            id: 'step-squat-mass', kind: 'exercise', title: 'Squat Mass',
+                            exerciseRef: { kind: 'unresolved_free_text', name: 'Back Squat' },
+                            dose: { kind: 'repetition', sets: 4, reps: { min: 6, max: 8 } },
+                            load: { kind: 'mass', kg: { min: 95, max: 105 } },
+                            rest: 180,
+                        },
+                        {
+                            id: 'step-deadlift-1rm', kind: 'exercise', title: 'Deadlift 1RM',
+                            exerciseRef: { kind: 'unresolved_free_text', name: 'Deadlift' },
+                            dose: { kind: 'repetition', sets: 3, reps: 5 },
+                            load: { kind: 'percent_one_rm', percent: 82.5 },
+                            rest: 180,
+                        },
+                        {
+                            id: 'step-press-max', kind: 'exercise', title: 'Press Max',
+                            exerciseRef: { kind: 'unresolved_free_text', name: 'Overhead Press' },
+                            dose: { kind: 'repetition', sets: 3, reps: 8 },
+                            load: { kind: 'percent_max', percent: 75 },
+                            rest: 120,
+                        },
+                    ],
+                }],
+            },
+        };
+
+        const json = exportExternalSessionV2ToJson(session);
+        expect(json.blocks[0].steps).toHaveLength(3);
+        expect(json.blocks[0].steps[0]).toMatchObject({
+            name: 'Squat Mass',
+            sets: 4,
+            repetitions: 7,
+            weightKg: 100,
+            restAfterSec: 180,
+        });
+        expect(json.blocks[0].steps[1]).toMatchObject({
+            name: 'Deadlift 1RM',
+            sets: 3,
+            repetitions: 5,
+            weightPercent1Rm: 82.5,
+            restAfterSec: 180,
+        });
+        expect(json.blocks[0].steps[2]).toMatchObject({
+            name: 'Press Max',
+            sets: 3,
+            repetitions: 8,
+            weightPercent1Rm: 75,
+            restAfterSec: 120,
+        });
+    });
+
     it('exports a multi-set 30/15 workout with explicit structured fields', () => {
         const session: ExternalPlanSession = {
             id: 'w1-vo2',

@@ -4,6 +4,7 @@ import type { ExternalPlanSessionV2 } from '../sessions/externalPlanV2';
 import type { RangeOrNumber } from '../sessions/models';
 
 import { extractRecoverySecondsFromText, extractSetRecoverySecondsFromText, resolveSetsAndRepetitions } from './workoutJsonExport';
+import { validateSessionDefinition } from '../sessions/validation';
 
 export interface ZwiftExportOptions {
     ftpWatts?: number | null;
@@ -218,6 +219,15 @@ export function generateZwiftFromExternalSessionV2(
     session: ExternalPlanSessionV2,
     options: ZwiftExportOptions = {},
 ): string {
+    const valResult = validateSessionDefinition(session.definition);
+    if (!valResult.ok) {
+        throw new Error(`Invalid session definition for Zwift export: ${valResult.issues.map(i => i.message).join(', ')}`);
+    }
+    const nonSequentialBlock = session.definition.blocks.find(b => b.executionMode !== 'sequential');
+    if (nonSequentialBlock) {
+        throw new Error(`Cannot export session with ${nonSequentialBlock.executionMode} executionMode to Zwift: only sequential blocks are supported`);
+    }
+
     const author = options.author ?? 'Adaptive Training Recommender';
     const lines: string[] = [
         '<workout_file>',
