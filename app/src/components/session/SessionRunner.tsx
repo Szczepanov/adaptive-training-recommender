@@ -41,6 +41,18 @@ function formatRange(value: RangeOrNumber): string {
     return typeof value === 'number' ? String(value) : `${value.min}–${value.max}`;
 }
 
+/** M4.3: `notEarlierThanMinutesAfter` is an authored timing constraint (e.g. tissue/hydration
+ * recovery before a companion), not just documentation -- a companion with none set is always
+ * eligible immediately. */
+function isCompanionEligibleNow(
+    companion: { notEarlierThanMinutesAfter?: number },
+    finishedAt: number,
+    now: number,
+): boolean {
+    if (companion.notEarlierThanMinutesAfter === undefined) return true;
+    return now >= finishedAt + companion.notEarlierThanMinutesAfter * 60_000;
+}
+
 function formatEffort(step: SessionStep): string | null {
     const effort = step.effort;
     if (!effort) return null;
@@ -84,6 +96,25 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
     const [savedDefinitions, setSavedDefinitions] = useState<SessionDefinitionHeader[]>([]);
     const [savedDefinitionsError, setSavedDefinitionsError] = useState<string | null>(null);
     const [startingSavedDefinitionId, setStartingSavedDefinitionId] = useState<string | null>(null);
+    // M4.3: a companion is a separately executable session referenced from the one that just
+    // finished (SessionDefinition.companionSessions), never an embedded block -- those already
+    // render inline within the same execution. Starting one creates its own execution; it may
+    // just as well be skipped. `finishedTitle` is only for the prompt's header copy.
+    const [companionPrompt, setCompanionPrompt] = useState<{
+        finishedTitle: string;
+        finishedAt: number;
+        companions: NonNullable<SessionDefinition['companionSessions']>;
+    } | null>(null);
+    const [startingCompanionId, setStartingCompanionId] = useState<string | null>(null);
+    const [companionError, setCompanionError] = useState<string | null>(null);
+    // Ticks the companion prompt's "available in N minutes" copy toward eligibility -- only
+    // runs while the prompt is open, so it costs nothing the rest of the runner's lifetime.
+    const [companionPromptNow, setCompanionPromptNow] = useState(() => Date.now());
+    useEffect(() => {
+        if (!companionPrompt) return;
+        const interval = setInterval(() => setCompanionPromptNow(Date.now()), 15_000);
+        return () => clearInterval(interval);
+    }, [companionPrompt]);
     const [pendingGroupAdvance, setPendingGroupAdvance] = useState<{
         blockIndex: number;
         stepIndex: number;
@@ -179,6 +210,45 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
         }
     };
 
+    /** Resolves a companion's `definitionRef` the same two ways the fixture/saved-session
+     * pickers above already resolve a startable definition -- a known reviewed fixture
+     * (covers the M0.2 corpus's recovery-spin companion) or one of the athlete's own saved
+     * manual definitions -- and starts it as its own independent, no-selection-authority
+     * execution (D-MAUTH `unplanned_log`), exactly like starting any other unplanned session. */
+    const startCompanion = async (companion: NonNullable<SessionDefinition['companionSessions']>[number]) => {
+        if (companionPrompt && !isCompanionEligibleNow(companion, companionPrompt.finishedAt, companionPromptNow)) {
+            setCompanionError(`"${companion.definitionRef}" isn't available yet -- it opens ${companion.notEarlierThanMinutesAfter} minutes after the primary session finished.`);
+            return;
+        }
+        setStartingCompanionId(companion.id);
+        setCompanionError(null);
+        try {
+            const fixture = AVAILABLE_FIXTURES.find(candidate => candidate.id === companion.definitionRef);
+            if (fixture) {
+                await runner.startFixtureSession(fixture);
+                setCompanionPrompt(null);
+                return;
+            }
+            const header = savedDefinitions.find(candidate => candidate.definitionId === companion.definitionRef);
+            if (header) {
+                const result = await sessionDefinitionService.getDefinitionRevision(userId, header.definitionId, header.latestRevision);
+                if (result.status !== 'AVAILABLE') throw new Error('The companion session cannot be read safely.');
+                const launch = await prepareUnplannedSessionLaunch(userId, result.data);
+                await runner.startSession(launch.definition, launch.binding.sessionSource, {
+                    occurrenceId: launch.binding.occurrenceId,
+                    prescriptionHash: launch.binding.prescriptionHash,
+                });
+                setCompanionPrompt(null);
+                return;
+            }
+            throw new Error(`Could not find "${companion.definitionRef}" among reviewed fixtures or your saved sessions.`);
+        } catch (error) {
+            setCompanionError(error instanceof Error ? error.message : 'Could not start the companion session.');
+        } finally {
+            setStartingCompanionId(null);
+        }
+    };
+
     const handleEntrySubmit = async (payload: SessionEntryPayload) => {
         if (!runner.definition || !runner.activeBlock || !runner.activeStep) return;
 
@@ -223,6 +293,53 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
     }
 
     if (!runner.definition || !runner.execution || runner.execution.state !== 'in_progress') {
+        // M4.3: offered once, right after the primary session finishes (completed or
+        // abandoned) -- never concurrently with it. Starting a companion creates its own
+        // execution and takes over this same "active session" view normally; skipping just
+        // dismisses the prompt. Takes priority over the ordinary picker below.
+        if (companionPrompt) {
+            return (
+                <div className="session-runner-container no-active">
+                    <header className="session-runner-header">
+                        <h2>Companion session available</h2>
+                        <p className="session-runner-subtitle">
+                            {companionPrompt.finishedTitle} lists {companionPrompt.companions.length === 1 ? 'a' : companionPrompt.companions.length}
+                            {' '}separately executable companion{companionPrompt.companions.length === 1 ? '' : 's'}. Start now or later — skipping records nothing.
+                        </p>
+                    </header>
+                    {companionError && <p className="session-runner-error" role="alert">{companionError}</p>}
+                    <div className="fixture-grid">
+                        {companionPrompt.companions.map(companion => {
+                            const eligible = isCompanionEligibleNow(companion, companionPrompt.finishedAt, companionPromptNow);
+                            const minutesRemaining = eligible ? 0 : Math.ceil((companionPrompt.finishedAt + (companion.notEarlierThanMinutesAfter ?? 0) * 60_000 - companionPromptNow) / 60_000);
+                            return (
+                                <div key={companion.id} className="fixture-card">
+                                    <div className="fixture-info">
+                                        <span className="fixture-intent-badge">{companion.relation.replaceAll('_', ' ')}{companion.optional ? ' · optional' : ''}</span>
+                                        <h3 className="fixture-title">{companion.definitionRef}</h3>
+                                        {companion.note && <p className="fixture-summary">{companion.note}</p>}
+                                        {!eligible && <p className="fixture-summary">Available in {minutesRemaining} minute{minutesRemaining === 1 ? '' : 's'}.</p>}
+                                    </div>
+                                    <button
+                                        type="button"
+                                        className="start-fixture-btn"
+                                        disabled={startingCompanionId !== null || !eligible}
+                                        onClick={() => startCompanion(companion)}
+                                    >
+                                        {startingCompanionId === companion.id ? 'Starting…' : eligible ? 'Start companion →' : 'Not yet available'}
+                                    </button>
+                                </div>
+                            );
+                        })}
+                    </div>
+                    <div className="session-authoring-actions">
+                        <button type="button" className="start-fixture-btn secondary-authoring-btn" onClick={() => { setCompanionPrompt(null); onClose?.(); }}>
+                            Not now
+                        </button>
+                    </div>
+                </div>
+            );
+        }
         if (runner.execution?.state === 'in_progress') {
             return (
                 <div className="session-runner-container no-active">
@@ -608,23 +725,41 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                         setCompletionError(null);
                     }}
                     onComplete={async (payload) => {
+                        // Captured before completeSession() clears runner.definition, so the
+                        // companion prompt (if any) still knows what just finished and what it
+                        // separately unlocks.
+                        const finishedTitle = definition.title;
+                        const companions = definition.companionSessions;
                         try {
                             await runner.completeSession(payload);
                             setShowCompletionSheet(false);
                             setShowAbandonConfirmation(false);
                             setCompletionError(null);
-                            if (onClose) onClose();
+                            if (companions && companions.length > 0) {
+                                setCompanionPrompt({ finishedTitle, finishedAt: Date.now(), companions });
+                            } else if (onClose) {
+                                onClose();
+                            }
                         } catch {
                             setCompletionError('Could not save completion feedback. Your session is still open, so you can retry.');
                         }
                     }}
                     onAbandon={async () => {
+                        const finishedTitle = definition.title;
+                        const companions = definition.companionSessions;
                         try {
                             await runner.abandonSession();
                             setShowCompletionSheet(false);
                             setShowAbandonConfirmation(false);
                             setCompletionError(null);
-                            if (onClose) onClose();
+                            // A skipped/abandoned primary session still leaves an independently
+                            // executable companion (e.g. the recovery spin) worth offering --
+                            // it is never gated on the primary's own completion.
+                            if (companions && companions.length > 0) {
+                                setCompanionPrompt({ finishedTitle, finishedAt: Date.now(), companions });
+                            } else if (onClose) {
+                                onClose();
+                            }
                         } catch {
                             setCompletionError('Could not abandon the session. It remains open, so you can retry.');
                         }
