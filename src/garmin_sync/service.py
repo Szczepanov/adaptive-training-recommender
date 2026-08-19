@@ -142,18 +142,28 @@ class GarminSyncService:
         Safe to call unconditionally (no-op for an empty list). Activities without a
         Garmin activityId are skipped rather than written under a shared placeholder
         key, which would let one such activity silently overwrite another."""
+        activities_to_upsert = []
         for activity in canonical_activities:
             if activity.activity_id is None:
                 logger.warning("Skipping activity with no activityId (cannot archive safely).")
                 continue
-            self.repository.upsert_activity(
-                activity.activity_id,
-                normalize_activity(
-                    activity,
-                    sync_run_id,
-                    (details_by_activity_id or {}).get(activity.activity_id),
-                ),
+            payload = normalize_activity(
+                activity,
+                sync_run_id,
+                (details_by_activity_id or {}).get(activity.activity_id),
             )
+            activities_to_upsert.append((activity.activity_id, payload))
+
+        if not activities_to_upsert:
+            return
+
+        batch_method = getattr(self.repository, "upsert_activities", None)
+        if batch_method is not None:
+            batch_method(activities_to_upsert)
+        else:
+            # Fallback for mock repositories that haven't implemented the batch method
+            for activity_id, payload in activities_to_upsert:
+                self.repository.upsert_activity(activity_id, payload)
 
     def _fetch_activity_details(
         self,

@@ -139,15 +139,15 @@ def test_activity_detail_flag_controls_fetch_and_uses_single_enriched_upsert():
     disabled_service, disabled_repo = _detail_service(disabled_provider, enabled=False)
     assert disabled_service.sync_daily("2026-08-06", force=True, resync_lookback_days=0)
     assert disabled_provider.detail_calls == []
-    disabled_payload = disabled_repo.upsert_activity.call_args.args[1]
+    disabled_payload = disabled_repo.upsert_activities.call_args.args[0][0][1]
     assert "powerInZones" not in disabled_payload
 
     enabled_provider = DetailFakeProvider()
     enabled_service, enabled_repo = _detail_service(enabled_provider, enabled=True)
     assert enabled_service.sync_daily("2026-08-06", force=True, resync_lookback_days=0)
     assert enabled_provider.detail_calls == ["1"]
-    enabled_repo.upsert_activity.assert_called_once()
-    enabled_payload = enabled_repo.upsert_activity.call_args.args[1]
+    enabled_repo.upsert_activities.assert_called_once()
+    enabled_payload = enabled_repo.upsert_activities.call_args.args[0][0][1]
     assert enabled_payload["normalizedPower"] == 230.0
     assert enabled_payload["powerInZones"][0]["zoneNumber"] == 2
 
@@ -159,9 +159,9 @@ def test_detail_failure_does_not_fail_sync_or_drop_base_activity():
 
     assert service.sync_daily("2026-08-06", force=True, resync_lookback_days=0)
     repo.upsert_snapshot.assert_called_once()
-    repo.upsert_activity.assert_called_once()
-    assert repo.upsert_activity.call_args.args[1]["activityId"] == "1"
-    assert "powerInZones" not in repo.upsert_activity.call_args.args[1]
+    repo.upsert_activities.assert_called_once()
+    assert repo.upsert_activities.call_args.args[0][0][1]["activityId"] == "1"
+    assert "powerInZones" not in repo.upsert_activities.call_args.args[0][0][1]
 
 
 def test_rate_limit_stops_further_detail_fetches():
@@ -171,7 +171,10 @@ def test_rate_limit_stops_further_detail_fetches():
 
     assert service.sync_daily("2026-08-06", force=True, resync_lookback_days=0)
     assert provider.detail_calls == ["1"]
-    assert repo.upsert_activity.call_count == 2
+    assert (
+        repo.upsert_activities.call_count == 1
+        and len(repo.upsert_activities.call_args.args[0]) == 2
+    )
 
 
 def test_detail_fetch_skips_qualifying_activity_outside_target_date():
@@ -239,8 +242,8 @@ def test_backfill_with_include_details_fetches_and_persists_details():
         include_details=True,
     )
     assert provider.detail_calls == ["1"]
-    assert repo.upsert_activity.call_count == 1
-    payload = repo.upsert_activity.call_args.args[1]
+    assert repo.upsert_activities.call_count == 1
+    payload = repo.upsert_activities.call_args.args[0][0][1]
     assert payload["normalizedPower"] == 230.0
     assert payload["powerInZones"][0]["zoneNumber"] == 2
 
