@@ -2,14 +2,15 @@
 
 * **Status:** `In progress`
 * **Blocked by:** The successor [ADR-0023](../adr/0023-multidomain-session-authoring-execution-and-evidence.md)
-  is accepted. Only the item-level dependencies below remain.
+  is accepted. Only the item-level dependencies and explicit usage triggers below remain.
 * **Unlocks:** executable manual/external sessions; mixed strength/speed/field/power
-  tracking; occurrence-linked response; protocol-aware testing; evidence for later engine
-  policy decisions.
+  tracking; occurrence-linked response; protocol-aware testing when actually needed; evidence
+  for later engine policy decisions.
 * **Source analyses:**
   [`2026-08-18-multidomain-training-system-consolidated-analysis.md`](../analysis/2026-08-18-multidomain-training-system-consolidated-analysis.md),
   [`2026-08-18-strength-session-ui-ux-review.md`](../analysis/2026-08-18-strength-session-ui-ux-review.md),
-  [`2026-08-18-authored-composite-session-import-and-execution.md`](../analysis/2026-08-18-authored-composite-session-import-and-execution.md).
+  [`2026-08-18-authored-composite-session-import-and-execution.md`](../analysis/2026-08-18-authored-composite-session-import-and-execution.md),
+  [`2026-08-19-product-scope-cutline-review.md`](../analysis/2026-08-19-product-scope-cutline-review.md).
 
 > **Capability plan, not a numbered engine phase.** Work items use the `M*` prefix so they
 > cannot be mistaken for Phases 0–9. The plan is intentionally broader than the existing
@@ -27,6 +28,13 @@ existing engine authority and default-off evidence policy throughout.
 The deliverable is incremental, and **every milestone from M1 onward must end with
 something the athlete can use on a phone**. That constraint, not the layering of the domain
 model, drives the order below.
+
+**Current delivery cutline (2026-08-19).** The active product chain is
+`M3.7 → bounded M3.8 hardening → M4.3 → M5.1 → M5.2`. M6 and M7 are no longer a
+sequential continuation of that chain. They are usage-triggered capability groups: work starts
+only when real training or repeated testing exposes a concrete limitation in the generic
+runner/evidence model. M8 may consume those capabilities if they exist, but it must never be
+the reason to build them.
 
 ---
 
@@ -182,6 +190,20 @@ provenance mid-block would contaminate that comparison.
 
 **Change.** Added as an explicit precondition on M3.2 and to the risk table.
 
+### C12 — Capability numbering is not a delivery queue
+
+The 2026-08-19 product-scope review challenged the remaining implicit assumption that, once
+M5 lands, M6 and then M7 should follow simply because the IDs are sequential. M2 already
+executes repetition, duration, distance and check-off doses. Building dedicated sprint/COD,
+jump/throw/contact, metric-protocol and benchmark subsystems before real use proves those
+controls inadequate would optimize for architectural completeness rather than athlete value.
+
+**Change.** M6 and M7 gain explicit usage triggers and leave the near-term critical path.
+M4.3 → M5.1 → M5.2 is the evidence-producing structural chain. M5.3 starts as a report/export
+surface and only grows a dedicated history UI if the athlete actually uses it. M8 consumes
+whatever real evidence capabilities have been justified independently; **M8 is not allowed to
+pull M6/M7 forward just to make its own comparison harness richer**.
+
 ---
 
 ## Preconditions and non-negotiable decisions
@@ -220,52 +242,55 @@ D-CANDIDATE, D-IMMUT, D-EXTTIER or replay.
 
 ---
 
-## Dependency graph
+## Delivery graph and current cutline
 
 ```text
-M0 contract/ADR ──────────────┐
-                              │
-M1 v1 repair + response v0    │   (independent; needs only plan approval)
-                              ▼
-                    M2 executable session core
-                    types → persistence → runner → typed inputs → completion
-                              │
-                              ▼
-                    M3 authority, sources and authoring
-                    hashing → recommendation/replay → intent flow
-                    → catalog cutover → facets → external v2 → preview → builder
-                              │
-                              ▼
-                    M4 structure and choices
-                    groups → recorded alternatives → companion occurrences
-                              │
-                              ▼
-                    M5 response generalization
-                              │
-                              ▼
-                    M6 speed/field/power ──► M7 observations/testing/progress
-                                                        │
-                                                        ▼
-                                            M8 engine evidence candidates
-                                                        │
-                                                        ▼
-                                            M9 deferred capabilities
+COMPLETED FOUNDATION
+M0 contract/ADR
+      ↓
+M1 Strength repair + response v0
+      ↓
+M2 executable session core
+      ↓
+M3 authority / source normalization / authoring
+      ↓
+M4.1–M4.2 groups + recorded choices
+
+ACTIVE PRODUCT CHAIN
+M3.7 semantic preview ─┐
+M3.8 bounded hardening ├──► M4.3 companion/dedup ─► M5.1 response model ─► M5.2 follow-up
+                       │
+                       └── M3.8 may stop once current builder is sufficient
+
+USAGE-TRIGGERED CAPABILITIES — NOT THE NEXT PHASE
+real training gap ─► M6 speed/field/power specialization
+repeated standardized testing need ─► M7 observations/testing/progress
+
+EVIDENCE DECISIONS
+M8 candidates may consume M5 and any independently-triggered M6/M7 evidence that exists.
+M8 must not create the business/product justification for M6 or M7.
+
+DEFERRED
+M9 items start only when their own named trigger fires.
 ```
 
-M1 was independently startable before M0.1. ADR-0023 is now accepted, so M2 and later follow
-only their item-level dependencies. No M8 item may ship merely because its code exists.
+M1 was independently startable before M0.1. ADR-0023 is now accepted, so remaining work
+follows item-level dependencies **plus the usage triggers stated below**. A satisfied code
+dependency is not sufficient to start M6 or M7. No M8 item may ship merely because its code
+exists, and no M8 item may force an otherwise-untriggered M6/M7 capability into scope.
 
-### What each milestone puts in the athlete's hands
+### What each remaining milestone puts in the athlete's hands
 
 | After | The athlete can |
 |---|---|
-| M1 | Resume, correct, complete and abandon a Strength session safely, reach it from Today, and answer one linked response prompt. |
-| M2 | Start any of the seven fixture sessions unplanned and log reps, time, distance and check-offs natively. |
-| M3 | Import or build a session, schedule it, replace or add to today's recommendation, and have the decision replay. |
-| M4 | Execute circuits, supersets, authored alternatives and separately scheduled companion sessions. |
-| M5 | See later-day and next-morning response linked to the session that caused it. |
-| M6–M7 | Record sprint/COD/jump work in native units and run a protocol-locked test whose benchmarks are honestly comparable. |
-| M8 | Nothing new. This milestone produces decisions, not features. |
+| M3.7 | Review every behavior-changing imported-session field before confirmation. |
+| bounded M3.8 | Build common real sessions without JSON; hardening stops when that workflow is sufficient. |
+| M4.3 | Start companion sessions independently without double-counting the same physical work from Garmin/manual evidence. |
+| M5.1–M5.2 | Record and revisit immediate/later-day/next-morning response linked to the exact session occurrence. |
+| M5.3 | Export/inspect outcome and override evidence; a richer history UI is optional and usage-triggered. |
+| M6, **if triggered** | Capture field/speed/power details the generic runner demonstrably cannot represent. |
+| M7, **if triggered** | Run repeated protocol-locked tests whose benchmark comparisons are honest. |
+| M8 | Nothing new. This milestone produces evidence-backed ship/defer/reject decisions, not features. |
 
 ---
 
@@ -274,7 +299,7 @@ only their item-level dependencies. No M8 item may ship merely because its code 
 Item status: `[ ]` not started · `[-]` in progress · `[x]` finished. A finished item is
 rewritten as an outcome; an in-progress item retains its remaining acceptance work.
 
-| Item | Title | Status | Blocked by |
+| Item | Title | Status | Blocked by / trigger |
 |---|---|:---:|---|
 | M0.1 | Successor ADR and authority contract | `[x]` | — |
 | M0.2 | Canonical schema examples and fixture corpus | `[x]` | — |
@@ -300,27 +325,27 @@ rewritten as an outcome; an in-progress item retains its remaining acceptance wo
 | M3.5 | Bounded exercise/drill facet vocabulary | `[x]` | — |
 | M3.6 | External plan/session schema v2 adapter | `[x]` | Schema, validation, resolver/display wiring, export support shipped; M3.7's fine-grained diff remains |
 | M3.7 | Full semantic import preview and diff | `[-]` | M3.6 semantic source and revision diff |
-| M3.8 | Manual block-first session builder | `[-]` | Authored option sets and fixture-equivalence acceptance |
+| M3.8 | Manual block-first session builder | `[-]` | Bounded hardening only: option sets / fixture-equivalence / accessibility gaps that matter in real use; stop when current builder is sufficient |
 | M4.1 | Group execution modes | `[x]` | M2.5 |
 | M4.2 | Recorded athlete choices and alternatives | `[x]` | M4.1, M3.5 |
 | M4.3 | Companion occurrence and duplicate reconciliation | `[ ]` | M2.4, M3.3 |
 | M5.1 | Occurrence-linked response generalization | `[ ]` | M1.7, M2.6, M4.3 |
 | M5.2 | Later-day and next-morning follow-up | `[ ]` | M5.1 |
-| M5.3 | Outcome/override evidence views | `[ ]` | M5.2 |
-| M6.1 | Representative speed/field/power taxonomy v1 | `[ ]` | M3.5, M2.5 |
-| M6.2 | Sprint and field performed-entry cards | `[ ]` | M6.1 |
-| M6.3 | Jump/throw/contact performed-entry cards | `[ ]` | M6.1 |
-| M6.4 | Domain exposure read models | `[ ]` | M6.2, M6.3 |
-| M7.1 | Metric registry, protocols and comparable series | `[ ]` | M2.1, M6.1 |
+| M5.3 | Outcome/override evidence report | `[ ]` | M5.2; richer history UI only after a usage trigger |
+| M6.1 | Representative speed/field/power taxonomy v1 | `[ ]` | **Usage trigger:** recurring real session needs domain detail the generic runner cannot represent; then M3.5, M2.5 |
+| M6.2 | Sprint and field performed-entry cards | `[ ]` | M6.1 + a logged sprint/COD workflow proving generic distance/time inputs inadequate |
+| M6.3 | Jump/throw/contact performed-entry cards | `[ ]` | M6.1 + recurring measured jump/throw/contact use |
+| M6.4 | Domain exposure read models | `[ ]` | M6.2/M6.3 as applicable + enough history that an exposure view answers a real question |
+| M7.1 | Metric registry, protocols and comparable series | `[ ]` | **Usage trigger:** repeated standardized testing/benchmarking begins; M6.1 only if that test needs its taxonomy |
 | M7.2 | Metric observation persistence and adapters | `[ ]` | M7.1, M2.3 |
-| M7.3 | Protocol-locked testing mode | `[ ]` | M7.2, M6.2, M6.3 |
-| M7.4 | Benchmark derivation and quality-aware progress | `[ ]` | M7.3 |
-| M8.1 | Step-derived eligibility/profile candidate | `[ ]` | M3.4, M3.5 |
-| M8.2 | Response/exposure comparison harness | `[ ]` | M5.3, M6.4, M7.4 |
-| M8.3 | Policy ship/no-ship decision | `[ ]` | M8.1, M8.2, real history |
+| M7.3 | Protocol-locked testing mode | `[ ]` | M7.2 + only the domain input cards required by the tests actually being run |
+| M7.4 | Benchmark derivation and quality-aware progress | `[ ]` | M7.3 + enough repeated comparable attempts to make progress display useful |
+| M8.1 | Step-derived eligibility/profile candidate | `[ ]` | M3.4, M3.5; evidence candidate only |
+| M8.2 | Response/exposure comparison harness | `[ ]` | Real history + M5 evidence; consume M6/M7 only if those capabilities were independently triggered and the named candidate needs them |
+| M8.3 | Policy ship/no-ship decision | `[ ]` | The evidence required by the specific candidate; do not build unused M6/M7 solely to satisfy this row |
 | M9.1 | Aliases and user-confirmed custom movements | `[ ]` | M3.8; trigger below |
 | M9.2 | Assisted prose-to-draft import | `[ ]` | M3.7, M3.8; trigger below |
-| M9.3 | Device/integration adapter contracts | `[ ]` | M7.2; trigger below |
+| M9.3 | Device/integration adapter contracts | `[ ]` | device trigger below; activate the minimum M7 observation boundary only if required |
 
 ---
 
@@ -840,24 +865,30 @@ preview, and ID-stable block/step reordering and duplication. Pure `sessionDraft
 the structural operations. Authored option sets, richer load/effort fields, issue focus and
 full fixture-equivalence/mobile accessibility acceptance remain pending.
 
+**2026-08-19 scope cutline.** This is now a **bounded hardening task**, not a mandate to expose
+all `SessionDefinition` fields in UI. Finish only gaps required by the two representative real
+fixtures and by safe mobile use. If JSON import plus the current builder covers normal authoring,
+record the residual advanced fields as deferred rather than expanding the form for completeness.
+
 **Deliberately last (C7).** Until this lands, M0.2 fixtures plus M3.6 JSON import cover
 authoring. If the athlete who owns this repository finds those sufficient after M3.7, **not
-building this is a legitimate outcome** — record it rather than building by default.
+building more is a legitimate outcome** — record it rather than building by default.
 
-**Change.** Build a mobile authoring flow for title/intent/duration/global targets, blocks,
-group mode, movement search and recents, dose-specific fields, and collapsed advanced
-rest/tempo/cue/option-set settings. Support reorder, duplicate and preview. Reuse
-`SessionDefinitionPreview` from M3.7.
+**Change.** Harden the existing mobile authoring flow for the missing representative-fixture
+semantics: authored option sets where actually used, richer load/effort fields needed by the
+fixtures, validation issue focus, and mobile accessibility. Preserve reorder, duplicate and
+preview. Reuse `SessionDefinitionPreview` from M3.7. Do not add speculative editor controls.
 
-**Files.** New components under `components/session-builder/`, a pure reducer in
+**Files.** Existing components under `components/session/` / `components/session-builder/`,
 `sessions/sessionDraft.ts`, routing in `App.tsx`/navigation, the service from M2.2.
 
-**Tests.** Reducer operations, validation issue focus, reorder ID stability, mobile visual
-fixtures, keyboard and accessibility.
+**Tests.** Reducer operations, validation issue focus, reorder ID stability, representative
+fixture equivalence, mobile visual fixtures, keyboard and accessibility.
 
 **Done when.** The full-body maintenance and lower/Olympic fixtures can be built without
 editing JSON and preview identically to their normalized fixtures — **or** a dated note records
-that fixtures plus import proved sufficient and the builder is deferred.
+that the current builder plus import proved sufficient and the remaining advanced controls are
+deferred.
 
 ---
 
@@ -1126,7 +1157,8 @@ started or skipped independently; a matching Garmin ride is counted exactly once
 ## M5 — occurrence-linked response
 
 M1.7 already established the link against `strength_sessions`. This milestone generalizes it to
-any occurrence and adds the delayed windows and the evidence view.
+any occurrence and adds the delayed windows. M5.1 and M5.2 are the near-term evidence-producing
+chain after M4.3; M5.3 is deliberately narrower than the original UI-heavy proposal.
 
 ### M5.1 `[ ]` Occurrence-linked response generalization
 
@@ -1162,33 +1194,52 @@ model and may only tighten (ADR-0020 D-SUBJFLOOR).
 prompt; answers link to the correct occurrence; skipped prompts stay unknown; a favorable
 global readiness cannot override an adverse tissue response.
 
-### M5.3 `[ ]` Outcome/override evidence views
+### M5.3 `[ ]` Outcome/override evidence report — history UI only if triggered
 
 **Change.** Derive `passed | caution | reactive | unknown` as a versioned, evidence-only summary
 from the raw response windows. Record athlete override reason and planned/performed delta.
-Display history without claiming injury prediction or automatically learning a tolerance
-threshold.
+Start with a deterministic report/export and a compact inspectable view using existing data
+surfaces. Do **not** build a dedicated cross-session response dashboard merely because the
+model exists.
 
-**Files.** New `responses/outcome.ts`, `components/session/ResponseHistory.tsx`; reuse
+**Usage trigger for richer UI.** The athlete repeatedly opens/exports the evidence and has a
+specific question that a dedicated history surface would answer better (for example, comparing
+responses after a recurring lower-body session). Until then, the report/export is the product.
+
+**Files.** New `responses/outcome.ts`, report/export integration; reuse
 `SessionAdjustment.athleteReason` through a source-neutral override record rather than forcing
-every change into a strength adjustment.
+every change into a strength adjustment. Add `components/session/ResponseHistory.tsx` only if
+the UI trigger fires.
 
 **Done when.** Every outcome links to source facts and a policy version; missing later or next
-data returns `unknown`; and the M0.3 architecture test proves no selection module imports the
-outcome function.
+data returns `unknown`; the report exposes the evidence without injury-prediction claims; and
+the M0.3 architecture test proves no selection module imports the outcome function.
 
 ---
 
-## M6 — speed, field and power execution
+## M6 — speed, field and power execution — **usage-triggered**
 
-**Justification (C10).** These items stand on athlete-facing value: recording sprint, COD and
-jump work in native units with enough context that comparing two of them is honest. They are
-*not* justified by M8 candidacy. If every M8 candidate is later rejected, M6 and M7 remain
-worth having.
+**Not on the active delivery chain.** M2 already logs repetitions, time, distance and
+check-offs. M6 starts only when recurring real training demonstrates that these generic inputs
+lose decision-relevant field/speed/power information. A future M8 analysis is not a trigger.
+
+**M6 trigger.** At least one real, recurring session cannot be logged honestly enough with the
+existing runner for a named athlete-facing purpose — e.g. side/angle/validity/split context is
+being lost, or the athlete is maintaining the same information elsewhere because the app cannot
+represent it. Record the concrete gap before starting M6.1.
+
+**Justification (C10/C12).** If triggered, these items stand on athlete-facing value: recording
+sprint, COD and jump work in native units with enough context that comparing two of them is
+honest. They are *not* justified by M8 candidacy. If every M8 candidate is later rejected, an
+independently-triggered M6 still remains worth having.
 
 ### M6.1 `[ ]` Representative speed/field/power taxonomy v1
 
-**Change.** Add a deliberately small reviewed set:
+**Trigger condition.** The M6 group trigger is documented with at least one real session and
+named missing context. Build only the taxonomy needed by that evidence, not the full list below
+by default.
+
+**Candidate reviewed set, bounded by the trigger:**
 
 * 10/20 m acceleration and flying 10 m;
 * controlled and maximal deceleration;
@@ -1198,117 +1249,151 @@ worth having.
 * ball technical and small-sided/chaotic exposure descriptors.
 
 Record start, surface, approach/exit, angle, planned/reactive, side, contact intensity and
-measurement-profile facets only where relevant. Avoid a flat list.
+measurement-profile facets only where relevant. Avoid a flat list and do not add unused domains.
 
 **Files.** `workouts/exercises.ts`, `workouts/models.ts`, the catalog validator, new
-`sessions/domainFacets.ts`.
+`sessions/domainFacets.ts` only to the extent the triggered workflows need them.
 
-**Done when.** The Friday field fixture and one test and training session per domain validate
-with no irrelevant required fields, and planned COD cannot masquerade as reactive agility.
+**Done when.** The triggered real session plus its representative fixture validate with no
+irrelevant required fields, and materially different work (for example planned COD versus
+reactive agility) cannot masquerade as the same exposure.
 
 ### M6.2 `[ ]` Sprint and field performed-entry cards
 
-**Change.** Add sprint rep and COD/deceleration cards. Training mode supports completion,
-optional time and splits, rest, side, validity and notes, and a stop criterion. It does not
-force a timing device or promote a training rep to a benchmark.
+**Trigger condition.** A recurring sprint/COD/deceleration workflow has information the generic
+`DistanceInputCard` / duration/check-off controls cannot retain without side notes or external
+tracking.
+
+**Change.** Add only the input cards required by that workflow. Training mode may support
+completion, optional time and splits, rest, side, validity and notes, and a stop criterion. It
+does not force a timing device or promote a training rep to a benchmark.
 
 **Files.** `components/session/inputs/SprintEntry.tsx`, `CodEntry.tsx`, typed payload parsers
-and services, visual tests.
+and services as actually required; visual tests.
 
-**Done when.** Acceleration, deceleration, lateral/COD and ball-work fixtures execute on a
-390 px viewport; left and right remain first-class; missing timing is valid training data.
+**Done when.** The triggered acceleration/deceleration/COD workflow executes on a 390 px
+viewport without external notes; left/right remain first-class where relevant; missing timing
+is valid training data.
 
 ### M6.3 `[ ]` Jump/throw/contact performed-entry cards
 
-**Change.** Add a simple contact check/count and attempt-based jump/throw entry with native
-metrics when available. Store every attempt and its validity; the summary is derived. Do not
+**Trigger condition.** Jump/throw/contact work is being performed repeatedly and attempt/contact
+facts are currently lost or tracked elsewhere.
+
+**Change.** Add the smallest attempt/contact input needed by that workflow with native metrics
+when available. Store every recorded attempt and validity; summaries are derived. Do not
 require force-plate metrics from manual users.
 
-**Files.** New input cards and payload validators; the M7 observation seam.
+**Files.** Trigger-specific input cards and payload validators; keep the M7 observation seam
+only if repeated benchmarking is also triggered.
 
-**Done when.** Low pogo contact dose, CMJ height-only attempts, drop-jump height and contact
-time, and med-ball distance coexist without one generic "power score".
+**Done when.** The triggered jump/throw/contact workflow records its native facts without a
+generic "power score" and without forcing unused device fields.
 
 ### M6.4 `[ ]` Domain exposure read models
 
-**Change.** Derive transparent histories — days, reps, metres and contacts since acceleration,
-max velocity, braking/COD, elastic work and hard lower strength. Keep raw units and confidence;
-do not fuse them into ACWR or an injury probability.
+**Trigger condition.** Enough triggered M6 history exists that the athlete is asking a real
+exposure question (for example days/reps/metres since acceleration or hard braking) that cannot
+be answered from the execution list economically.
 
-**Files.** New `sessions/exposureHistory.ts`, progress components and tests.
+**Change.** Derive only the transparent histories needed by that question — days, reps, metres
+or contacts — keeping raw units and confidence. Do not fuse them into ACWR or an injury
+probability.
 
-**Done when.** The 7/14/28-day reports reconcile exactly to execution entries, unresolved
-free-text movements are reported separately, and no production engine module imports them.
+**Files.** `sessions/exposureHistory.ts`, the minimum report/progress surface and tests.
+
+**Done when.** The requested history reconciles exactly to execution entries, unresolved
+free-text movements are reported separately, and no production engine module imports it.
 
 ---
 
-## M7 — observation provenance, testing and progress
+## M7 — observation provenance, testing and progress — **usage-triggered**
+
+**Not on the active delivery chain.** M7 is for repeated standardized measurement, not for
+ordinary training logging. It starts only when the athlete is actually running a repeated test
+or benchmark workflow where protocol comparability matters. M6 completion is not a blanket
+precondition; only the domain vocabulary/input capability needed by the chosen test is required.
+
+**M7 trigger.** A test (e.g. sprint, jump, throw, optional bar velocity) will be repeated under
+a deliberately standardized protocol and the result will be compared over time. One-off
+training timings or curiosity measurements do not trigger M7.
 
 ### M7.1 `[ ]` Metric registry, protocols and comparable series
 
-**Change.** Add a static `MetricDefinition` registry and user-scoped immutable
-`MeasurementProtocol` revisions. Define unit, compatible entry kind, required context, summary
-methods and deterministic comparable-series key inputs. Device/source changes and material
-protocol changes create a new series or version.
+**Change after trigger.** Add the smallest static `MetricDefinition` registry and user-scoped
+immutable `MeasurementProtocol` revision set required by the actual repeated tests. Define
+unit, compatible entry kind, required context, summary methods and deterministic
+comparable-series key inputs. Device/source changes and material protocol changes create a new
+series or version.
 
-Start with sprint time and splits, jump height, contact time, RSI derivation, throw distance
-and optional bar velocity. Do not implement the full attached metric catalogue.
+Candidate metrics include sprint time/splits, jump height, contact time, RSI derivation, throw
+distance and optional bar velocity. Do not implement the catalogue until a test needs it.
 
 **Files.** New `observations/models.ts`, `observations/registry.ts`,
-`observations/comparability.ts`, protocol service, rules and parsers.
+`observations/comparability.ts`, protocol service, rules and parsers — bounded to triggered
+metrics.
 
-**Done when.** The same protocol, device and surface yield the same key; a material timing or
-drop-height change does not; units cannot mismatch registry definitions.
+**Done when.** The triggered test's same protocol/device/surface yields the same key; a material
+setup change does not; units cannot mismatch registry definitions.
 
 ### M7.2 `[ ]` Metric observation persistence and adapters
 
-**Change.** Persist raw observations with session and attempt, metric, value and unit,
-`observedAt`, source/device/protocol/comparison series, quality and validity, and a raw
-reference. Derived values carry an algorithm version and source observation IDs; raw values are
-never overwritten (ADR-0021 D-SETLOG, ADR-0005).
+**Change.** Persist the triggered raw observations with session/attempt, metric, value/unit,
+`observedAt`, source/device/protocol/comparison series, quality/validity and raw reference.
+Derived values carry an algorithm version and source observation IDs; raw values are never
+overwritten (ADR-0021 D-SETLOG, ADR-0005).
 
-Add the manual adapter only. Device adapters implement the same boundary later.
+Add the manual adapter first. Device adapters remain M9.3-triggered.
 
 **Files.** New `services/metricObservationService.ts`, parser, rules and tests,
 `observations/manualAdapter.ts`.
 
-**Done when.** Raw attempts survive recalculation, cross-user and source spoofing fail, and a
-derived RSI references height, contact, protocol and algorithm rather than a bare number.
+**Done when.** Raw attempts survive recalculation, cross-user and source spoofing fail, and any
+derived value references its raw observations, protocol and algorithm rather than a bare
+number.
 
 ### M7.3 `[ ]` Protocol-locked testing mode
 
-**Change.** Add a distinct Testing route and state with protocol confirmation, warm-up,
-practice/valid/invalid attempts and reason, rest and explicit finish. Training execution cannot
-promote its own result to a benchmark without a confirmation flow that creates a test attempt
-under a compatible protocol.
+**Change.** Add a distinct Testing route/state only for the triggered test workflow, with
+protocol confirmation, warm-up, practice/valid/invalid attempts and reason, rest and explicit
+finish. Training execution cannot promote its own result to a benchmark without a confirmation
+flow that creates a test attempt under a compatible protocol.
 
-**Files.** New `components/testing/`, route and navigation, session intent handling, tests.
+**Files.** New `components/testing/`, route/navigation, session intent handling and tests,
+limited to triggered tests.
 
-**Done when.** A 20 m sprint, CMJ and 505-style fixture record all attempts, sides and
-validity; the protocol is locked during the test; changing setup requires a new revision or
-series.
+**Done when.** The actual repeated test records attempts and validity under a locked protocol;
+changing setup requires a new revision/series; ordinary training still cannot silently become a
+benchmark.
 
 ### M7.4 `[ ]` Benchmark derivation and quality-aware progress
 
-**Change.** Derive best, mean and median summaries from valid comparable attempts. Store an
-optional rebuildable summary with an algorithm version; never overwrite tested values with
-estimated ones. Show change only within a comparable series and show data-quality and
-missing-protocol badges. Meaningful-change claims require separately reviewed error metadata.
+**Trigger condition.** There are enough repeated comparable observations that a progress view
+will be used; do not build benchmark UI immediately after the first test.
 
-**Files.** New `observations/benchmarks.ts`, `components/progress/` domain views and tests.
+**Change.** Derive the required best/mean/median summaries from valid comparable attempts.
+Store only rebuildable summaries with algorithm version; never overwrite tested values with
+estimated ones. Show change only within a comparable series and show data-quality/missing-
+protocol badges. Meaningful-change claims require separately reviewed error metadata.
 
-**Done when.** Invalid and practice attempts never become benchmarks; device or protocol
-mismatch prevents a default PR comparison; raw attempts remain accessible; no "athleticism
-score" is shown.
+**Files.** `observations/benchmarks.ts`, the minimum `components/progress/` view and tests.
+
+**Done when.** Invalid/practice attempts never become benchmarks; device/protocol mismatch
+prevents a default PR comparison; raw attempts remain accessible; no "athleticism score" is
+shown.
 
 ---
 
 ## M8 — engine evidence candidates
 
-**Expected outcome (C10).** This repository's record on measured candidates is D-BEAM built and
-not adopted, D-ZONECRED no-ship, D-STRCOST deferred, subjective drift still default-off. That is
-the discipline working. **A full sweep of no-ship results here is a success for M8** and changes
-nothing about M2–M7, which are justified independently.
+**Expected outcome (C10/C12).** This repository's record on measured candidates is D-BEAM built
+and not adopted, D-ZONECRED no-ship, D-STRCOST deferred, subjective drift still default-off.
+That is the discipline working. **A full sweep of no-ship results here is a success for M8.**
+
+**No upstream scope creation.** M8 is not a reason to implement M6 or M7. A candidate must use
+M5 plus whatever independently-justified evidence exists. If a candidate cannot be evaluated
+without an untriggered measurement subsystem, the correct result is `defer: evidence not yet
+collected`, not "build the subsystem so this experiment can run."
 
 ### M8.1 `[ ]` Step-derived eligibility/profile candidate
 
@@ -1329,27 +1414,30 @@ unchanged.
 
 ### M8.2 `[ ]` Response/exposure comparison harness
 
-**Change.** Add a de-identified real-history report joining authored, planned and performed
-work, domain exposure, responses and current decisions. Evaluate candidate spacing,
-substitution and progression, automatic option selection, and cost/stimulus mappings without
-exposing raw notes or health payloads. Report missing follow-up and provenance coverage.
+**Change.** Build a de-identified real-history report for a **named candidate question** using
+only the evidence streams that already exist and were justified independently. M5 response
+evidence is the baseline. Join M6 domain exposure or M7 observations only when those groups
+were already triggered by athlete use and the candidate genuinely needs them. Report missing
+follow-up and provenance coverage rather than manufacturing completeness.
 
-**Files.** New simulation and report commands under `engine/simulation/` and `scripts/`, output
-under gitignored `artifacts/`, and a reviewed analysis snapshot when run.
+**Files.** Candidate-specific simulation/report commands under `engine/simulation/` and
+`scripts/`, output under gitignored `artifacts/`, plus a reviewed analysis snapshot when run.
 
-**Done when.** The report reproduces its joins, names policy and algorithm versions, and
-distinguishes "no reaction" from "no response". Synthetic scenarios alone do not satisfy the
-real-history gate (ADR-0020 D-SUBJCAL).
+**Done when.** The report reproduces its joins, names policy/algorithm versions, distinguishes
+"no reaction" from "no response", and states explicitly which unavailable evidence prevented
+evaluation. Synthetic scenarios alone do not satisfy the real-history gate (ADR-0020
+D-SUBJCAL).
 
 ### M8.3 `[ ]` Policy ship/no-ship decision
 
-**Change.** Write a dated analysis and an ADR amendment or new ADR for each candidate. A ship
-requires no hard-gate regressions, reviewed real-history evidence, scenario invariants, a
-`POLICY_VERSION` increment, replay coverage and a rollback selector. A negative result completes
-the measurement item and leaves production unchanged (D-BEAM precedent).
+**Change.** Write a dated analysis and an ADR amendment/new ADR for each candidate that has
+sufficient evidence. A ship requires no hard-gate regressions, reviewed real-history evidence,
+scenario invariants, a `POLICY_VERSION` increment, replay coverage and a rollback selector. A
+negative result completes the measurement item and leaves production unchanged (D-BEAM
+precedent). Insufficient evidence is an explicit `defer`, not a request to expand M6/M7.
 
-**Done when.** Every candidate has an explicit ship, defer or reject result. "Code exists" is
-never treated as authorization.
+**Done when.** Every evaluated candidate has an explicit ship, defer or reject result. "Code
+exists" and "we could build more telemetry" are never treated as authorization.
 
 ---
 
@@ -1385,14 +1473,16 @@ field; failure falls back to manual or JSON; no client API key exists.
 
 ### M9.3 `[ ]` Device/integration adapter contracts
 
-**Trigger.** The athlete owns and uses one of the devices.
+**Trigger.** The athlete owns and repeatedly uses one of the devices **for data that has a
+product use**. Owning hardware alone is not enough.
 
-**Change.** Specify adapters for manual, Garmin/FIT, timing gate, VBT, GPS and force plate
-against `MetricObservation`. Implement only the one bounded spike the trigger names.
-Deduplication links sources to one occurrence or execution rather than creating duplicate
-completed sessions.
+**Change.** Specify the minimum adapter for the triggered device (manual, Garmin/FIT, timing
+gate, VBT, GPS or force plate) against `MetricObservation` if an observation boundary is
+required. If M7 has not otherwise been triggered, activate only the minimum provenance model
+needed by this device rather than the whole M7 roadmap. Deduplication links sources to one
+occurrence/execution rather than creating duplicate completed sessions.
 
-**Done when.** The adapter conformance suite proves units, protocol and source identity, and
+**Done when.** The bounded adapter conformance suite proves units, protocol/source identity and
 deduplication; no vendor-specific type enters session or engine domain logic.
 
 ---
@@ -1419,17 +1509,25 @@ Applies to M3.2, M3.3, M3.4, M4.3 and any M8 activation.
 
 ### Named end-to-end scenarios
 
+Always-active scenarios:
+
 1. manual full-body session: author → schedule → adjudicate → execute → correct → complete;
 2. imported lower/Olympic session: semantic review → recorded choices → replay;
 3. upper-only absorption: required-step gating does not fabricate heavy lower work;
 4. timed per-side tissue block: native entry and correct side history;
-5. Friday field: distances, sides, controlled intensity and stop/downgrade;
+5. Friday field: existing generic distance/time/check-off execution remains usable;
 6. optional later spin: separate occurrence and Garmin deduplication;
 7. offline kill/reopen/reconnect with a pending entry and no duplicate;
-8. sprint/CMJ/COD test: protocol lock, invalid attempt, comparable benchmark;
-9. later and next-morning response: occurrence linkage, unknown missing response, tighten-only
+8. later and next-morning response: occurrence linkage, unknown missing response, tighten-only
    tissue;
-10. legacy Strength: identical history and 1RM output through the v1 read model.
+9. legacy Strength: identical history and 1RM output through the v1 read model.
+
+Conditional scenarios, added only when the corresponding trigger fires:
+
+10. M6-triggered field/speed/power workflow: native domain details are retained without
+    external notes;
+11. M7-triggered test: protocol lock, invalid attempt and comparable benchmark for the actual
+    repeated test being used.
 
 ---
 
@@ -1468,6 +1566,11 @@ Applies to M3.2, M3.3, M3.4, M4.3 and any M8 activation.
 * [ ] Unresolved free-text movements are loggable but cannot claim precise engine metadata.
 * [ ] No universal readiness, load or athleticism score and no ACWR injury score is introduced.
 * [ ] No M8 candidate changes production without its own explicit ship decision.
+* [ ] M8 does not create an implementation requirement for otherwise-untriggered M6/M7 work.
+* [ ] The two metric-observation invariants above are unconditional (ADR-0023 D-MOBS). They
+      bind any code that writes a `MetricObservation`, including the bounded M9.3 device
+      boundary activated without a full M7 trigger. Deferring M6/M7 defers the capability,
+      never the provenance rules that apply once observations exist.
 
 ---
 
@@ -1475,39 +1578,43 @@ Applies to M3.2, M3.3, M3.4, M4.3 and any M8 activation.
 
 | Risk | Mitigation | Rollback |
 |---|---|---|
-| Plan stalls in the middle | Every milestone from M1 ends with a phone-usable capability; M2 ships without touching the engine | Stop after any milestone; nothing half-wired remains, because M2.2 rules deny unimplemented authorities |
-| Schema scope grows without bound | Fixture-led vocabulary; extension and versioning; speculative set/device types deferred to M9 | Keep v1 routes and import; reject unsupported v2 fields |
-| Two runners coexist indefinitely | M3.4 has an explicit retirement step and a parity gate; M1 items are labelled carried or disposable | If parity fails, keep v1 for catalog Strength only and cap it — do not re-invest in the disposable UI |
+| Plan stalls in the middle | Active cutline is M3.7/M3.8 → M4.3 → M5.1 → M5.2; M6/M7 are not queued by numbering | Stop after any useful capability; record the cutline rather than opening the next numbered milestone |
+| Premature M6/M7 expansion | Explicit real-use triggers; generic runner is the default until a named gap exists; M8 cannot pull work forward | Leave M6/M7 `[ ]`; record the missing evidence as a defer rather than building speculative telemetry |
+| Schema scope grows without bound | Fixture-led vocabulary; extension/versioning; speculative set/device types remain trigger-gated | Keep v1 routes/import; reject unsupported fields |
+| Two runners coexist indefinitely | M3.4 has an explicit retirement step and a parity gate; M1 items are labelled carried or disposable | If parity fails, keep v1 for catalog Strength only and cap it — do not re-invest in disposable UI |
 | Firestore nested validation stays weak | Performed entries are individual documents; D-MSNAP keeps nested content out of mutable rules-validated documents; immutable revision parsers validate bytes | Disable new writes; existing v1 data untouched |
 | Recommendation document outgrows its limits | D-MSNAP stores a hash, not a snapshot; the snapshot is a separate write-once document | The snapshot document is orphanable without touching decision history |
-| Phase 9.0 evidence contaminated by mid-block schema churn | M3.2 is gated on a shadow-block boundary and coordinated with 9.0.1 | Defer M3.2; M2 needs none of it |
+| Phase 9.0 evidence contaminated by mid-block schema churn | M4.3 is decision-affecting, not evidence-only — it rewrites `engine/completedTraining.ts` and `engine/trainingHistory.ts`, so it is gated on a shadow-block boundary exactly like M3.2/M3.3/M3.4; only M5's evidence-only work may proceed inside a running segment | Land M4.3 before 9.0.7 starts, or end the segment and record the policy/version boundary; never pool the two segments |
 | Offline concurrent correction conflicts | Stable entry IDs, parent lifecycle checks, idempotent writes, deterministic response IDs, emulator and browser tests | Keep the append-only v1 runner available during cutover |
-| Recommendation replay drifts | Persist the hash and include it in decision equality and audit; replay verifies against stored bytes | Fall back to catalog and external v1 replay paths; do not rewrite old audits |
-| Rich logging becomes slow | Measurement-profile controls, defaults, recent values, check-off modes, progressive disclosure | Hide advanced fields; retain the minimum performed payload |
+| Recommendation replay drifts | Persist the hash and include it in decision equality/audit; replay verifies stored bytes | Fall back to catalog/external v1 replay paths; do not rewrite old audits |
+| Rich logging becomes slow | Defaults, recent values, check-off modes and progressive disclosure; specialized controls only after trigger | Retain generic minimum performed payload; remove unused advanced controls |
 | Free-text metadata creates false safety | Fail-closed engine adapter; visible low-confidence state | Treat unresolved as generic evidence only |
-| Response data is mistaken for diagnosis | Raw language, transparent heuristics, no probability claims | Disable the derived outcome view; retain raw responses |
-| New detail silently changes selection | Evidence-only import guards, default-off candidates, M0.3 architecture tests | Remove the selector or import; the current production path remains |
-| Garmin and manual data double-count | Occurrence keys and explicit source reconciliation | Prefer one source and mark the other linked or ignored; never delete raw evidence |
-| The permanent v1 read model rots | M2.7 is explicitly permanent and keeps its own tests; it is a supported boundary, not scaffolding | None needed — that is the point of naming it permanent |
+| Response data is mistaken for diagnosis | Raw language, transparent heuristics, no probability claims | Disable derived outcome view; retain raw responses |
+| New detail silently changes selection | Evidence-only import guards, default-off candidates, M0.3 architecture tests | Remove selector/import; current production path remains |
+| Garmin and manual data double-count | Occurrence keys and explicit source reconciliation | Prefer one source and mark the other linked/ignored; never delete raw evidence |
+| Permanent v1 read model rots | M2.7 is explicitly permanent and keeps its own tests | None needed — that is the point of naming it permanent |
 
-UI cutover must be reversible until M3.4 parity is demonstrated. Historical documents and audits
-are never deleted during rollback.
+Historical documents and audits are never deleted during rollback.
 
 ### Stop conditions
 
-This plan has no engine-policy ship gate before M8, so it needs its own honest exits. Any of
-these is a valid place to stop and record the outcome, not a failure:
+This plan has no engine-policy ship gate before M8, so it needs honest exits. Any of these is
+a valid place to stop and record the outcome, not a failure:
 
-* **After M1.** If the repaired v1 logger plus the response link is enough, the multidomain
-  model stays unbuilt and the fixtures stay documentation.
-* **After M2.** If fixture-driven execution covers the athlete's real sessions, M3's authoring
-  and authority surface is deferred indefinitely.
-* **At M3.8.** If fixtures plus JSON import proved sufficient, the manual builder is a no-ship.
-  This is stated in the item itself.
-* **At M8.3.** A clean sweep of reject and defer results completes the milestone.
+* **At M3.8.** If the current builder plus JSON import covers real authoring, stop hardening and
+  defer residual advanced controls.
+* **After M5.2.** This is now the default product cutline. Let real session→response history
+  accumulate before deciding whether any further capability deserves implementation.
+* **At M5.3.** Keep report/export only unless repeated use proves a dedicated history UI useful.
+* **Before M6.** If no recurring real session exposes a generic-runner gap, M6 remains unstarted
+  indefinitely — this is success, not backlog debt.
+* **Before M7.** If no repeated standardized testing workflow exists, M7 remains unstarted
+  indefinitely.
+* **At M8.3.** A clean sweep of reject/defer results completes the evidence milestone; lack of
+  M6/M7 evidence is a valid reason to defer a candidate.
 
-A stop is recorded as a dated note in `docs/analysis/` and a status change here, following the
-same convention as D-BEAM and the zone-credit no-ship.
+A stop is recorded as a dated note in `docs/analysis/` and a status/startability change here,
+following the same convention as D-BEAM and the zone-credit no-ship.
 
 ---
 
@@ -1519,13 +1626,15 @@ same convention as D-BEAM and the zone-credit no-ship.
 * coach or team tenancy, permissions or dashboards;
 * a relational, warehouse or Databricks migration;
 * full force-plate, timing-gate, GPS, VBT or video integrations (M9.3 trigger only);
-* hundreds of exercises or metrics before the representative taxonomy passes end-to-end;
+* broad exercise/metric taxonomies before a real usage trigger;
+* dedicated response-history dashboards without repeated evidence use;
 * push-notification infrastructure;
 * changes to Garmin backend date or user-isolation semantics;
 * enabling ADR-0021 Strength cost solely because richer execution data exists;
 * a bulk migration of `strength_sessions` — the M2.7 read model is the permanent answer.
 
-Each may receive a separate plan after the dependency and evidence it needs exists.
+Each may receive a separate plan after the dependency, usage trigger and evidence it needs
+exists.
 
 ---
 
@@ -1533,14 +1642,14 @@ Each may receive a separate plan after the dependency and evidence it needs exis
 
 * accepted ADR-0023 and the `docs/README.md` ADR index as implementation details land;
 * `docs/architecture/recommendation-engine.md` for source-neutral adjudication and authority;
-* `docs/workout-library.md` for the definition/catalog adapter and ontology facets;
+* `docs/workout-library.md` for definition/catalog adapter and ontology facets;
 * `docs/external-plan-schema.md` for v2 and v1 compatibility;
-* a new living `docs/architecture/session-execution.md` after M2;
-* Firestore collection and schema documentation after M2, M5 and M7;
-* `docs/ops/` for any parser service or integration credentials and deployment;
-* this plan's task board and the plan-index status after every completed item;
-* dated analyses and policy ADRs for M8 measurement outcomes, and a dated note for any stop
-  condition exercised.
+* living `docs/architecture/session-execution.md` as M4/M5 behavior lands;
+* Firestore collection/schema documentation after M5, and after M6/M7 only if those groups are triggered;
+* `docs/ops/` for any triggered parser/integration credentials and deployment;
+* this plan's task board and the plan-index startability after every completed item or trigger decision;
+* dated analyses and policy ADRs for M8 measurement outcomes, and a dated note for any stop or
+  M6/M7 trigger decision.
 
 When this plan eventually becomes `Implemented`, remove or rewrite the present-tense problem
 statements and keep an outcome summary, per `docs/plans/README.md`.
