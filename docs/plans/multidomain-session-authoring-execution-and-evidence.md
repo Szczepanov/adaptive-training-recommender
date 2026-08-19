@@ -328,7 +328,7 @@ rewritten as an outcome; an in-progress item retains its remaining acceptance wo
 | M3.8 | Manual block-first session builder | `[x]` | — |
 | M4.1 | Group execution modes | `[x]` | M2.5 |
 | M4.2 | Recorded athlete choices and alternatives | `[x]` | M4.1, M3.5 |
-| M4.3 | Companion occurrence and duplicate reconciliation | `[ ]` | M2.4, M3.3 |
+| M4.3 | Companion occurrence and duplicate reconciliation | `[x]` | — |
 | M5.1 | Occurrence-linked response generalization | `[ ]` | M1.7, M2.6, M4.3 |
 | M5.2 | Later-day and next-morning follow-up | `[ ]` | M5.1 |
 | M5.3 | Outcome/override evidence report | `[ ]` | M5.2; richer history UI only after a usage trigger |
@@ -1248,7 +1248,7 @@ the actual runner was not possible in this environment (no real Firebase credent
 architecture test extension to `hooks/useSessionRunner.ts` mechanically enforces the same
 optimizer/planner import boundary that a manual check would otherwise stand in for.
 
-### M4.3 `[ ]` Companion occurrence and duplicate reconciliation
+### M4.3 `[x]` Companion occurrence and duplicate reconciliation
 
 **Change.** Distinguish embedded segments from later companion occurrences. Starting a
 companion creates its own execution. Extend occurrence keys and reconciliation so a manual
@@ -1259,6 +1259,48 @@ adapters, new `sessions/occurrenceReconciliation.ts`; UI companion card.
 
 **Done when.** An embedded bike warm-up stays inside Strength; a later recovery spin may be
 started or skipped independently; a matching Garmin ride is counted exactly once.
+
+**Outcome (2026-08-19).** The embedded-vs-companion distinction needed no new code: the model
+already keeps them apart structurally (`SessionDefinition.blocks` vs. `companionSessions[]`,
+rendered separately since M3.7), so fixture 01's embedded Olympic power block already stays
+inside its own execution with no change here.
+
+* **Starting a companion creates its own execution.** `SessionRunner.tsx` captures the
+  finishing session's `title`/`companionSessions` before `completeSession`/`abandonSession`
+  runs (both clear `runner.definition`), then — only once the primary session is no longer
+  active, never concurrently with it, since the runner architecture holds exactly one active
+  execution at a time — offers a "Companion session available" prompt. **Start** resolves the
+  companion's `definitionRef` the same two ways the existing fixture/saved-session pickers
+  already do (a reviewed fixture, e.g. `08-recovery-spin-companion`, or one of the athlete's own
+  saved manual definitions) and calls `runner.startFixtureSession`/`startSession` — the ordinary
+  unplanned-log path (D-MAUTH: no selection authority, no occurrence). The now-active companion
+  execution is then rendered by the runner's normal in-progress view; no separate companion-mode
+  UI was needed. **Skip** just dismisses the prompt and records nothing. The prompt also appears
+  after an *abandoned* primary session, not only a completed one — the companion's own value
+  (e.g. "looser legs") doesn't depend on the primary having finished.
+* **Occurrence keys and Garmin reconciliation.** New `sessions/occurrenceReconciliation.ts`:
+  `sessionExecutionOccurrenceKey` gives every execution a stable identity (`occurrence:{id}`
+  when it carries selection authority, `execution:{id}` otherwise — a companion execution has
+  no `occurrenceId` per D-MAUTH but still needs one idempotent key). `matchExecutionsToGarminActivities`
+  reconciles a set of executions against Garmin activities by same date, compatible resolved
+  modality, and comparable duration (20-minute tolerance, mirroring
+  `completedTraining.ts`'s own adherence-matching tolerance), claiming each Garmin activity for
+  at most one execution so a manually logged companion and its Garmin sync are recognized as
+  one physical occurrence rather than two.
+* **Deliberately not wired into the live engine pipeline.** Per D-MPOLICY, "domain exposure"
+  derived from general (non-Strength) session executions remains a default-off evidence
+  candidate until its own ship decision — the same discipline `deriveStrengthExposure`'s legacy
+  `manualTrainingPolicy` gate already applies to `strength_sessions`. Wiring
+  `occurrenceReconciliation.ts` into `buildTrainingHistorySnapshot`'s live cost/stimulus path
+  would grant a new engine-consumed evidence source without that decision. This module is
+  therefore forward-compatible plumbing — correct, tested, and ready for M6.4/M8 to consume if
+  and when general session-execution exposure is separately evidenced — not a silent
+  activation now. `engine/completedTraining.ts`/`trainingHistory.ts` are unchanged.
+
+Verified by `sessions/occurrenceReconciliation.test.ts` (12 cases: key derivation for both
+authority states, duration computation including the in-progress/no-completion case, date/
+modality/tolerance matching, and the one-activity-claims-at-most-one-execution exclusivity
+property) and a full unit/typecheck/lint/catalog-validation pass with no regressions.
 
 ---
 
