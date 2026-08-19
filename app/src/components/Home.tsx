@@ -31,12 +31,17 @@ import {
   type ActiveExternalPlan,
 } from '../services/activeExternalPlanService';
 import { checkinService } from '../services/checkinService';
+import { sessionExecutionService } from '../services/sessionExecutionService';
+import { sessionResponseService } from '../services/sessionResponseService';
+import { relevantFollowupRegions } from '../responses/followupSchedule';
+import { EXERCISES } from '../workouts/exercises';
 import { ExternalVerdictBanner } from './ExternalVerdictBanner';
 import { WorkoutExportMenu } from './WorkoutExportMenu';
 import { AdherencePrompt, type AdherenceAnswer } from './AdherencePrompt';
 import { DecisionJournalCard } from './DecisionJournalCard';
 import { MinimumSafetyCheckin } from './MinimumSafetyCheckin';
 import { WeekAheadStrip } from './WeekAheadStrip';
+import { LaterDayFollowupCard, type LaterDayFollowupTarget } from './session/LaterDayFollowupCard';
 import {
   canGenerateNormalRecommendation,
   createProvisionalSafetyRecommendation,
@@ -226,6 +231,75 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
     });
     return () => { cancelled = true; };
   }, [userId, decisionInput]);
+
+  // M5.2: same-day "later_day" follow-up -- distinct from the next-morning tissue prompt
+  // above, which the check-in model has no same-day field for. Gated on M3.5 tissue-tag
+  // relevance (relevantFollowupRegions) so an ordinary easy session with nothing
+  // tissue-relevant in it never nags; only offered once per execution per mount
+  // (dismissedLaterDayKeys), and never for a window a SessionResponse already answers.
+  const [laterDayFollowup, setLaterDayFollowup] = useState<LaterDayFollowupTarget | null>(null);
+  const [dismissedLaterDayKeys, setDismissedLaterDayKeys] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (!decisionInput) {
+      setLaterDayFollowup(null);
+      return;
+    }
+    let cancelled = false;
+    const today = decisionInput.date;
+    const tomorrow = addDaysToLocalDateString(today, 1);
+    (async () => {
+      try {
+        const { executions } = await sessionExecutionService.getExecutionsInRange(userId, today, tomorrow);
+        const finished = executions
+          .filter(item => item.execution.state !== 'in_progress')
+          .sort((a, b) => (b.execution.completedAt ?? b.execution.updatedAt).localeCompare(a.execution.completedAt ?? a.execution.updatedAt));
+
+        for (const { execution, entries } of finished) {
+          const key = `execution:${execution.executionId}`;
+          if (dismissedLaterDayKeys.has(key)) continue;
+
+          const exerciseIds: string[] = [];
+          for (const entry of entries) {
+            if (entry.exerciseRef?.kind === 'catalog') exerciseIds.push(entry.exerciseRef.exerciseId);
+          }
+          const facets = exerciseIds
+            .map(id => EXERCISES.find(item => item.id === id)?.facets)
+            .filter((facet): facet is NonNullable<typeof facet> => !!facet);
+          if (relevantFollowupRegions(facets).length === 0) continue;
+
+          const existing = await sessionResponseService.getResponseForWindow(
+            userId,
+            { kind: 'execution', id: execution.executionId },
+            'later_day',
+          );
+          if (existing) continue;
+
+          if (!cancelled) {
+            setLaterDayFollowup({
+              sourceSession: { kind: 'execution', id: execution.executionId, date: execution.date },
+              ...(execution.occurrenceId ? { occurrenceId: execution.occurrenceId } : {}),
+              date: execution.date,
+              title: 'today’s session',
+            });
+          }
+          return;
+        }
+        if (!cancelled) setLaterDayFollowup(null);
+      } catch {
+        if (!cancelled) setLaterDayFollowup(null);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [userId, decisionInput, dismissedLaterDayKeys]);
+
+  const dismissLaterDayFollowup = useCallback(() => {
+    setLaterDayFollowup(current => {
+      if (current) setDismissedLaterDayKeys(prev => new Set(prev).add(`execution:${current.sourceSession.id}`));
+      return null;
+    });
+  }, []);
+  const handleLaterDayAnswered = useCallback(() => setLaterDayFollowup(null), []);
   const activeSettings = useMemo(() => {
     if (!decisionInput) return [];
     const { equipment, guardrails, defaults } = decisionInput.trainingSettings;
@@ -777,6 +851,15 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
           </div>
           <button type="button" onClick={() => onNavigate('checkin')}>Answer follow-up</button>
         </aside>
+      )}
+
+      {laterDayFollowup && (
+        <LaterDayFollowupCard
+          userId={userId}
+          target={laterDayFollowup}
+          onAnswered={handleLaterDayAnswered}
+          onDismiss={dismissLaterDayFollowup}
+        />
       )}
 
       {isCheckinMissing && (
