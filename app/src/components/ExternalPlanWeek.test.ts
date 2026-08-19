@@ -131,4 +131,3 @@ describe('ExternalPlanWeek occupancy and scheduling contracts', () => {
         expect(html).toContain('Endurance Ride');
     });
 });
-
