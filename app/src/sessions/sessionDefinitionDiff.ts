@@ -26,6 +26,7 @@ import type {
     SessionQuality,
     SessionStep,
 } from './models';
+import { canonicalizeSessionData } from './sessionDefinitionHash';
 
 export interface SessionContentDiffRow {
     scope: 'session' | 'block' | 'step' | 'choice' | 'option';
@@ -39,23 +40,12 @@ function formatRangeOrNumber(value: RangeOrNumber): string {
     return typeof value === 'number' ? String(value) : `${value.min}–${value.max}`;
 }
 
-/** Recursively sorts object keys so structurally-identical values compare equal regardless
- * of property insertion order (e.g. two independently-generated JSON payloads for the same
- * dose). Arrays keep their order -- order is meaningful for them (steps, options, ...). */
-function canonicalize(value: unknown): unknown {
-    if (Array.isArray(value)) return value.map(canonicalize);
-    if (value !== null && typeof value === 'object') {
-        const sorted: Record<string, unknown> = {};
-        for (const key of Object.keys(value as Record<string, unknown>).sort()) {
-            sorted[key] = canonicalize((value as Record<string, unknown>)[key]);
-        }
-        return sorted;
-    }
-    return value;
-}
-
+// Reuses sessionDefinitionHash.ts's own key-sorting canonicalization (rather than a second,
+// subtly different local copy) so structurally-identical values compare equal regardless of
+// property insertion order (e.g. two independently-generated JSON payloads for the same
+// dose). Arrays keep their order -- order is meaningful for them (steps, options, ...).
 function sameJson(left: unknown, right: unknown): boolean {
-    return JSON.stringify(canonicalize(left ?? null)) === JSON.stringify(canonicalize(right ?? null));
+    return JSON.stringify(canonicalizeSessionData(left ?? null)) === JSON.stringify(canonicalizeSessionData(right ?? null));
 }
 
 function sameStringSet(left: readonly string[] | undefined, right: readonly string[] | undefined): boolean {

@@ -30,7 +30,19 @@ describe('validateSessionResponse', () => {
     });
 
     it.each(['immediate', 'later_day', 'next_morning'] as const)('accepts window %s', window => {
-        expect(validateSessionResponse(response({ window })).ok).toBe(true);
+        // date equals sourceSession.date for immediate, strictly later otherwise.
+        const date = window === 'immediate' ? '2026-08-19' : '2026-08-20';
+        expect(validateSessionResponse(response({ window, date })).ok).toBe(true);
+    });
+
+    it('rejects an immediate-window response whose date does not equal sourceSession.date', () => {
+        const result = validateSessionResponse(response({ window: 'immediate', date: '2026-08-20' }));
+        expect(result.ok).toBe(false);
+    });
+
+    it.each(['later_day', 'next_morning'] as const)('rejects a %s response whose date is not strictly later than sourceSession.date', window => {
+        const result = validateSessionResponse(response({ window, date: '2026-08-19' }));
+        expect(result.ok).toBe(false);
     });
 
     it('rejects an invalid window', () => {

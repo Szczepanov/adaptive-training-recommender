@@ -55,7 +55,19 @@ export function validateSessionResponse(raw: unknown): ValidationResult<SessionR
         issues.push({ path: 'window', message: `Invalid window: ${String(raw.window)}` });
     }
 
-    if (!isValidCalendarDate(raw.date)) issues.push({ path: 'date', message: 'date must be a YYYY-MM-DD string' });
+    if (!isValidCalendarDate(raw.date)) {
+        issues.push({ path: 'date', message: 'date must be a YYYY-MM-DD string' });
+    } else if (isObject(raw.sourceSession) && isValidCalendarDate(raw.sourceSession.date)) {
+        // `date` equals sourceSession.date for `immediate`, strictly later otherwise
+        // (models.ts's own documented invariant) -- ISO YYYY-MM-DD strings compare
+        // lexicographically the same as chronologically, mirroring firestore.rules.
+        const sourceDate = raw.sourceSession.date;
+        if (raw.window === 'immediate' && raw.date !== sourceDate) {
+            issues.push({ path: 'date', message: 'date must equal sourceSession.date for an immediate-window response' });
+        } else if (raw.window !== 'immediate' && raw.date <= sourceDate) {
+            issues.push({ path: 'date', message: 'date must be strictly later than sourceSession.date for a later_day/next_morning response' });
+        }
+    }
 
     if (!isObject(raw.checkinRef) || !isValidCalendarDate(raw.checkinRef.date)) {
         issues.push({ path: 'checkinRef', message: 'Invalid checkinRef: expected { date }' });
@@ -70,11 +82,13 @@ export function validateSessionResponse(raw: unknown): ValidationResult<SessionR
     if (raw.unexpectedFatigue !== undefined && typeof raw.unexpectedFatigue !== 'boolean') {
         issues.push({ path: 'unexpectedFatigue', message: 'unexpectedFatigue must be boolean' });
     }
-    if (raw.techniqueNote !== undefined && typeof raw.techniqueNote !== 'string') {
-        issues.push({ path: 'techniqueNote', message: 'techniqueNote must be a string' });
+    // 2000-char cap mirrors firestore.rules' size() <= 2000 check, so a too-long note fails
+    // here rather than surfacing as an unexplained permission-denied at write time.
+    if (raw.techniqueNote !== undefined && (typeof raw.techniqueNote !== 'string' || raw.techniqueNote.length > 2000)) {
+        issues.push({ path: 'techniqueNote', message: 'techniqueNote must be a string of at most 2000 characters' });
     }
-    if (raw.note !== undefined && typeof raw.note !== 'string') {
-        issues.push({ path: 'note', message: 'note must be a string' });
+    if (raw.note !== undefined && (typeof raw.note !== 'string' || raw.note.length > 2000)) {
+        issues.push({ path: 'note', message: 'note must be a string of at most 2000 characters' });
     }
 
     if (typeof raw.createdAt !== 'string' || raw.createdAt.length === 0) issues.push({ path: 'createdAt', message: 'Missing createdAt' });

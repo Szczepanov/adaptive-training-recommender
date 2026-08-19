@@ -14,6 +14,11 @@ import type { DataState } from '../engine/dataState';
 import type { ResponseWindow, SessionResponse, SessionResponseSourceRef } from '../responses/models';
 import { parseSessionResponseDocument } from '../persistence/parsers/sessionResponse';
 
+// Explicit chronological order -- not left to `ResponseWindow` values sorting correctly by
+// coincidence (they currently do, alphabetically, but nothing enforces that: a future added
+// or renamed window would silently break an localeCompare-based sort with no test to catch it).
+const RESPONSE_WINDOW_ORDER: Record<ResponseWindow, number> = { immediate: 0, later_day: 1, next_morning: 2 };
+
 /**
  * M5.1: user-scoped persistence for `SessionResponse` records. Per D-MRESP, this service
  * never writes a tissue value -- only linkage and the non-tissue session facts
@@ -32,8 +37,13 @@ export class SessionResponseService {
         return doc(this.db, 'users', userId, 'session_responses', responseId);
     }
 
-    private newResponseId(): string {
-        return `resp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    /** Deterministic, not random: a `(sourceSession, window)` pair has at most one answer
+     * (D-MRESP), so the id doubles as an idempotency key -- `recordResponse` can then detect
+     * (and reject) a second create for the same pair instead of a random id letting a
+     * double-tap/retry race silently produce two documents, only one of which any later read
+     * would ever find. */
+    private responseIdFor(sourceSession: SessionResponseSourceRef, window: ResponseWindow): string {
+        return `resp-${sourceSession.kind}-${encodeURIComponent(sourceSession.id)}-${window}`;
     }
 
     async getResponse(userId: string, responseId: string): Promise<DataState<SessionResponse>> {
@@ -64,7 +74,7 @@ export class SessionResponseService {
                 responses.push(parsed.data);
             }
         }
-        return responses.sort((a, b) => a.window.localeCompare(b.window));
+        return responses.sort((a, b) => RESPONSE_WINDOW_ORDER[a.window] - RESPONSE_WINDOW_ORDER[b.window]);
     }
 
     /** The response for one specific window, if the athlete ever answered it -- `null`
@@ -80,9 +90,11 @@ export class SessionResponseService {
     }
 
     /** Creates a new response for a `(sourceSession, window)` pair that has never been
-     * answered before. Callers must check `getResponseForWindow` first and call
-     * `updateResponseFacts` instead when one already exists -- this never silently
-     * overwrites an existing answer's `createdAt`/identity. */
+     * answered before. Callers should still check `getResponseForWindow` first and call
+     * `updateResponseFacts` instead when one already exists -- but the deterministic id
+     * backs that up: a second `recordResponse` for the same pair (e.g. a double-tap/retry
+     * race) throws rather than silently overwriting an existing answer's `createdAt`/facts
+     * or leaving two documents behind. */
     async recordResponse(
         userId: string,
         sourceSession: SessionResponseSourceRef,
@@ -93,9 +105,14 @@ export class SessionResponseService {
         occurrenceId?: string,
         now: string = new Date().toISOString(),
     ): Promise<SessionResponse> {
+        const responseId = this.responseIdFor(sourceSession, window);
+        const existing = await getDoc(this.responseRef(userId, responseId));
+        if (existing.exists()) {
+            throw new Error(`A response already exists for this session's ${window} window; call updateResponseFacts instead.`);
+        }
         const response: SessionResponse = {
             userId,
-            responseId: this.newResponseId(),
+            responseId,
             sourceSession,
             ...(occurrenceId ? { occurrenceId } : {}),
             window,

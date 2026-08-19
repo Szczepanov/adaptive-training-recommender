@@ -908,6 +908,10 @@ service cloud.firestore {
         && isValidActivityDate(data.sourceSession.date)
         && data.window in ['immediate', 'later_day', 'next_morning']
         && isValidActivityDate(data.date)
+        // `date` equals sourceSession.date for `immediate`, strictly later otherwise
+        // (models.ts's own documented invariant) -- ISO YYYY-MM-DD strings compare
+        // lexicographically the same as chronologically.
+        && (data.window == 'immediate' ? data.date == data.sourceSession.date : data.date > data.sourceSession.date)
         && data.checkinRef is map
         && data.checkinRef.keys().hasOnly(['date'])
         && isValidActivityDate(data.checkinRef.date)
@@ -930,9 +934,13 @@ service cloud.firestore {
       allow create: if hasValidSessionResponse(userId, responseId);
       allow update: if hasValidSessionResponse(userId, responseId)
         && keepsOwnership(userId)
-        // Edits preserve provenance: identity/window/createdAt never change after
-        // creation -- only the non-tissue facts and updatedAt may be revised.
+        // Edits preserve provenance: identity/occurrence/window/createdAt never change
+        // after creation -- only the non-tissue facts and updatedAt may be revised.
+        // occurrenceId's presence and value are both pinned (not just its value when
+        // present), so a response created without one can't have one added later either.
         && request.resource.data.sourceSession == resource.data.sourceSession
+        && ('occurrenceId' in request.resource.data) == ('occurrenceId' in resource.data)
+        && (!('occurrenceId' in resource.data) || request.resource.data.occurrenceId == resource.data.occurrenceId)
         && request.resource.data.window == resource.data.window
         && request.resource.data.date == resource.data.date
         && request.resource.data.createdAt == resource.data.createdAt;

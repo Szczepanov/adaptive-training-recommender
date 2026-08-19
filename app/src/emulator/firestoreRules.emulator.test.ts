@@ -1480,6 +1480,30 @@ emulatorDescribe('Firestore security rules', () => {
         await assertFails(setDoc(doc(ownerDb, sessionResponsePath), { ...validSessionResponse(), userId: otherUserId }));
     });
 
+    it('rejects an edit that adds or changes occurrenceId after creation (provenance)', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await expect(assertSucceeds(setDoc(doc(ownerDb, sessionOccPath), validSessionOccurrence()))).resolves.toBeUndefined();
+        await expect(assertSucceeds(setDoc(doc(ownerDb, `users/${ownerId}/session_occurrences/occ-unplanned-2`), {
+            ...validSessionOccurrence(), occurrenceId: 'occ-unplanned-2',
+        }))).resolves.toBeUndefined();
+
+        // Created with no occurrenceId (e.g. a companion/unplanned execution) -- an edit
+        // cannot retroactively grant it selection authority by adding one.
+        await expect(assertSucceeds(setDoc(doc(ownerDb, sessionResponsePath), validSessionResponse()))).resolves.toBeUndefined();
+        await assertFails(setDoc(doc(ownerDb, sessionResponsePath), {
+            ...validSessionResponse(), occurrenceId: 'occ-unplanned-1',
+        }));
+
+        // Created with an occurrenceId -- an edit cannot swap it for a different one.
+        const withOccurrencePath = `${sessionResponsePath}-with-occ`;
+        await expect(assertSucceeds(setDoc(doc(ownerDb, withOccurrencePath), {
+            ...validSessionResponse(), responseId: 'resp-1-with-occ', occurrenceId: 'occ-unplanned-1',
+        }))).resolves.toBeUndefined();
+        await assertFails(setDoc(doc(ownerDb, withOccurrencePath), {
+            ...validSessionResponse(), responseId: 'resp-1-with-occ', occurrenceId: 'occ-unplanned-2',
+        }));
+    });
+
     it('rejects a response whose occurrenceId does not reference a real occurrence of this user', async () => {
         const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
         // No session_occurrences/occ-unplanned-1 document has been written in this test.
