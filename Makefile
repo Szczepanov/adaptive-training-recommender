@@ -6,7 +6,9 @@
         test test-python test-frontend test-coverage \
         validate-workouts simulate simulate-scenarios simulate-diff \
         simulate-calibrate simulate-fatigue-fusion simulate-subjective-drift \
-        compare-sequence-search build build-frontend install clean
+        compare-sequence-search build build-frontend \
+        deploy deploy-hosting deploy-all deploy-rules deploy-indexes \
+        install clean
 
 # -----------------------------------------------------------------------------
 # Main Verification Targets
@@ -47,6 +49,29 @@ simulate: simulate-scenarios simulate-diff
 
 ## Build production frontend artifact
 build: build-frontend
+
+# -----------------------------------------------------------------------------
+# Deployment Targets (Production Firebase)
+# -----------------------------------------------------------------------------
+
+## Deploy frontend application to Firebase Hosting (builds first)
+deploy: deploy-hosting
+
+## Build and deploy frontend application to Firebase Hosting
+deploy-hosting: build-frontend
+	npm --prefix app exec -- firebase deploy --only hosting --project adaptive-training-recommender
+
+## Deploy all Firebase assets (Hosting, Firestore rules and indexes)
+deploy-all: build-frontend
+	npm --prefix app exec -- firebase deploy --project adaptive-training-recommender
+
+## Deploy Firestore security rules with drift check and emulator validation
+deploy-rules:
+	npm --prefix app run firestore:rules:deploy -- --confirm
+
+## Deploy Firestore indexes
+deploy-indexes:
+	npm --prefix app exec -- firebase deploy --only firestore:indexes --project adaptive-training-recommender
 
 # -----------------------------------------------------------------------------
 # Python Backend Targets
@@ -158,6 +183,10 @@ help:
 	@echo   make format            - Auto-format code across Python and Frontend
 	@echo   make simulate          - Run engine simulations and check baseline diff
 	@echo   make build             - Build frontend production bundle
+	@echo   make deploy            - Build and deploy frontend app to Firebase Hosting
+	@echo   make deploy-all        - Build and deploy all Firebase assets (Hosting + Rules + Indexes)
+	@echo   make deploy-rules      - Deploy Firestore security rules (with drift check)
+	@echo   make deploy-indexes    - Deploy Firestore indexes
 	@echo   make install           - Install all dependencies (uv sync + npm ci)
 	@echo --------------------------------------------------------------------------------
 	@echo Python Targets:

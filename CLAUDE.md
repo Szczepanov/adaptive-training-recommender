@@ -18,6 +18,9 @@ Quick guide for building, testing, and working on `adaptive-training-recommender
 - Auto-Format Code: `make format`
 - Run Simulations & Baseline Diff: `make simulate`
 - Build Frontend App: `make build`
+- Deploy Frontend to Production Firebase: `make deploy`
+- Deploy All Firebase Assets: `make deploy-all`
+- Deploy Firestore Rules: `make deploy-rules`
 - Install Dependencies: `make install`
 - Help / List Targets: `make help`
 

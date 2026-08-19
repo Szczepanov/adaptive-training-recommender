@@ -132,6 +132,9 @@ make test
 # Format code automatically
 make format
 
+# Build and deploy frontend to Firebase production
+make deploy
+
 # View all available targets
 make help
 ```
