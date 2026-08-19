@@ -29,12 +29,14 @@ The deliverable is incremental, and **every milestone from M1 onward must end wi
 something the athlete can use on a phone**. That constraint, not the layering of the domain
 model, drives the order below.
 
-**Current delivery cutline (2026-08-19).** The active product chain is
-`M3.7 → bounded M3.8 hardening → M4.3 → M5.1 → M5.2`. M6 and M7 are no longer a
-sequential continuation of that chain. They are usage-triggered capability groups: work starts
-only when real training or repeated testing exposes a concrete limitation in the generic
-runner/evidence model. M8 may consume those capabilities if they exist, but it must never be
-the reason to build them.
+**Current delivery cutline (2026-08-19).** The active product chain,
+`M3.7 → bounded M3.8 hardening → M4.3 → M5.1 → M5.2`, is now complete end to end. M6 and M7
+are not a sequential continuation of that chain. They are usage-triggered capability groups:
+work starts only when real training or repeated testing exposes a concrete limitation in the
+generic runner/evidence model. M8 may consume those capabilities if they exist, but it must
+never be the reason to build them. The next open item on the evidence-producing chain is
+M5.3 (outcome/override evidence report), which was outside this cutline's own scope but is
+now unblocked.
 
 ---
 
@@ -256,11 +258,13 @@ M3 authority / source normalization / authoring
       ↓
 M4.1–M4.2 groups + recorded choices
 
-ACTIVE PRODUCT CHAIN
+ACTIVE PRODUCT CHAIN -- complete (2026-08-19)
 M3.7 semantic preview ─┐
-M3.8 bounded hardening ├──► M4.3 companion/dedup ─► M5.1 response model ─► M5.2 follow-up
+M3.8 bounded hardening ├──► M4.3 companion/dedup ─► M5.1 response model ─► M5.2 follow-up ─► M5.3 (next, unblocked)
                        │
-                       └── M3.8 may stop once current builder is sufficient
+                       └── M3.8 stopped bounded per its own cutline (load/effort/choices
+                           shipped; rest ranges, quality fields, sessionTargets/
+                           prohibitedAdditions editing deferred, JSON import covers them)
 
 USAGE-TRIGGERED CAPABILITIES — NOT THE NEXT PHASE
 real training gap ─► M6 speed/field/power specialization
@@ -330,7 +334,7 @@ rewritten as an outcome; an in-progress item retains its remaining acceptance wo
 | M4.2 | Recorded athlete choices and alternatives | `[x]` | M4.1, M3.5 |
 | M4.3 | Companion occurrence and duplicate reconciliation | `[x]` | — |
 | M5.1 | Occurrence-linked response generalization | `[x]` | — |
-| M5.2 | Later-day and next-morning follow-up | `[ ]` | M5.1 |
+| M5.2 | Later-day and next-morning follow-up | `[x]` | — |
 | M5.3 | Outcome/override evidence report | `[ ]` | M5.2; richer history UI only after a usage trigger |
 | M6.1 | Representative speed/field/power taxonomy v1 | `[ ]` | **Usage trigger:** recurring real session needs domain detail the generic runner cannot represent; then M3.5, M2.5 |
 | M6.2 | Sprint and field performed-entry cards | `[ ]` | M6.1 + a logged sprint/COD workflow proving generic distance/time inputs inadequate |
@@ -1385,7 +1389,7 @@ occurrenceId-must-exist-for-this-user check both failing and then succeeding onc
 occurrence is written) -- 82/82 emulator tests total -- and a full `npm run check`
 (typecheck, lint, 1692 unit tests, catalog validation) pass with no regressions.
 
-### M5.2 `[ ]` Later-day and next-morning follow-up
+### M5.2 `[x]` Later-day and next-morning follow-up
 
 **Change.** Surface due follow-ups on Today and Check-in rather than requiring notifications.
 Use occurrence metadata and M3.5 tissue tags to ask only relevant regions. Next-morning answers
@@ -1398,6 +1402,62 @@ model and may only tighten (ADR-0020 D-SUBJFLOOR).
 **Done when.** A field or novel lower session creates one later-day and one next-morning
 prompt; answers link to the correct occurrence; skipped prompts stay unknown; a favorable
 global readiness cannot override an adverse tissue response.
+
+**Outcome (2026-08-19).** New pure `responses/followupSchedule.ts` (`relevantFollowupRegions`)
+maps a session's resolved catalog exercises' M3.5 `facets.tissueDemand`/`safetyTags` to
+`BodyRegion`s via a small, literal keyword table (an unrecognized tag contributes no region --
+the safe failure mode, not a guess). Both windows are gated on this: a session with no
+tissue-relevant movement in it (an easy aerobic spin, most field/mobility work) creates neither
+prompt, which is what keeps this from nagging after every session.
+
+* **`later_day` (new -- `Home.tsx` + new `components/session/LaterDayFollowupCard.tsx`).**
+  There is no same-day tissue field on `RegionTissueResponse` to reuse (the model has
+  `morningState`/`painDuringTraining`/`afterTrainingState`/`nextMorningReaction` only, and
+  D-MRESP's "without rewriting existing documents" ruled out adding one), so this window is
+  session-level, not region-level: "Feeling normal" / "Unexpectedly fatigued" / "Not now",
+  recorded as an M5.1 `SessionResponse` (`unexpectedFatigue`, no tissue value). Home resolves
+  today's finished (`completed`/`abandoned`) executions via
+  `sessionExecutionService.getExecutionsInRange`, derives relevant regions from their logged
+  entries' `exerciseRef`s, and skips a session once `sessionResponseService.getResponseForWindow`
+  shows it already has a `later_day` answer. "Not now" writes nothing -- a locally tracked
+  dismissal only prevents re-showing within the same mount, never persisted, so nothing here
+  can silently look like a passed response later.
+* **`next_morning` (generalized -- `DailyCheckin.tsx`).** M1.7's existing next-morning
+  mechanism already worked, but only prompted for a region the athlete had *manually* flagged
+  during/after the session. Candidate regions are now the union of that manual flag set
+  (unchanged, still takes priority so its `sourceSessionRef` is preserved) with regions derived
+  from yesterday's `session_executions` the same way `later_day` derives them -- so a session
+  the athlete never manually flagged anything for still gets asked about a region its own
+  movements make relevant. Answering still writes only to the canonical check-in's
+  `nextMorningReaction` (unchanged tissue path, D-SUBJFLOOR/`injuryPolicy.ts` untouched), and
+  now also records at most one session-level `next_morning` `SessionResponse` per session
+  (checked via `getResponseForWindow` first, since several regions can share one session and
+  must not create duplicates) -- again carrying no tissue value. Legacy standalone
+  `strength_sessions` are out of this generalization's scope; their manual-flag path is
+  unchanged from before M5.2.
+* **Skipped stays unknown; answers link to the correct occurrence.** Neither window's skip
+  path (`onDismiss` / `handleSkipFollowup`) writes anything. Every recorded response's
+  `sourceSession`/`occurrenceId` comes from the actual resolved `SessionExecution`, not
+  guessed or defaulted.
+* **D-SUBJFLOOR untouched.** Nothing here changes what `injuryPolicy.ts` reads or how it
+  reads it -- both windows write through the identical existing tissue-write path (checkin
+  `tissueResponses[region].nextMorningReaction`) or write no tissue value at all
+  (`later_day`'s `SessionResponse`). A favorable global readiness still cannot override an
+  adverse tissue response, because that adjudication is unchanged.
+
+**Files.** New `responses/followupSchedule.ts` (+ `.test.ts`), new
+`components/session/LaterDayFollowupCard.tsx`/`.css` (+ `.test.tsx`), `Home.tsx`,
+`DailyCheckin.tsx`. `checkinService.ts` needed no change -- the tissue write path it already
+exposed was sufficient.
+
+Verified by 7 `followupSchedule.test.ts` cases (the real back-squat/sprint fixture tag
+vocabulary, empty/no-exercise sessions, an unrecognized tag contributing nothing,
+dedup+sort, case-insensitivity), a `LaterDayFollowupCard` markup smoke test, and a full
+`npm run check` (typecheck, lint, 1700 unit tests, catalog validation) pass with no
+regressions. `Home.tsx`/`DailyCheckin.tsx` have no pre-existing component-test harness in
+this repo (confirmed: neither file has a test file today) -- the new logic's real complexity
+lives in the pure, directly-tested `followupSchedule.ts`; the component wiring is glue code
+over already-tested services, consistent with how this repo tests these two files elsewhere.
 
 ### M5.3 `[ ]` Outcome/override evidence report — history UI only if triggered
 

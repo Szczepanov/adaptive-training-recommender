@@ -1,6 +1,10 @@
 import { useState, useEffect, useCallback, useId } from 'react';
 import { checkinService } from '../services/checkinService';
 import { recoverySnapshotService } from '../services/recoverySnapshotService';
+import { sessionExecutionService } from '../services/sessionExecutionService';
+import { sessionResponseService } from '../services/sessionResponseService';
+import { relevantFollowupRegions } from '../responses/followupSchedule';
+import { EXERCISES } from '../workouts/exercises';
 import type { BodyRegion, DailySubjectiveCheckin, RegionTissueResponse, TissueResponseLevel } from '../engine/models';
 import { BODY_REGIONS, TISSUE_LEVELS } from '../engine/models';
 import { getLocalDateString, addDaysToLocalDateString } from '../utils/localDate';
@@ -119,21 +123,58 @@ export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) 
         const snapshot = await recoverySnapshotService.getRecoverySnapshotByDate(userId, today);
         setRecoverySnapshot(snapshot ?? null);
 
-        // Check if yesterday's checkin or session logged tissue reactions requiring follow-up (M1.7)
+        // Check if yesterday's checkin or session logged tissue reactions requiring
+        // follow-up (M1.7), generalized (M5.2) to also derive candidate regions from
+        // yesterday's own completed session_executions via M3.5 tissue tags -- so a novel
+        // session the athlete never manually flagged a region for during/after still gets
+        // asked about a region its own movements make relevant. A region the athlete's own
+        // manual tissueResponses flag already covers takes priority (keeps whatever
+        // sourceSessionRef that flag already carries); the session-derived scan only fills
+        // in what the athlete didn't already flag. Legacy strength_sessions are out of this
+        // generalization's scope -- their own manual tissueResponses flag still works
+        // unchanged, exactly as before M5.2.
         const yesterday = addDaysToLocalDateString(today, -1);
         const yesterdayCheckin = await checkinService.getCheckin(userId, yesterday);
+        const needed: Array<{ region: BodyRegion; sessionRef?: RegionTissueResponse['sourceSessionRef'] }> = [];
+        const coveredRegionSessionKeys = new Set<string>();
         if (yesterdayCheckin?.tissueResponses) {
-          const needed: Array<{ region: BodyRegion; sessionRef?: RegionTissueResponse['sourceSessionRef'] }> = [];
           for (const [regionKey, response] of Object.entries(yesterdayCheckin.tissueResponses)) {
             const region = regionKey as BodyRegion;
             if (response && (response.painDuringTraining || response.afterTrainingState || response.sourceSessionRef)) {
+              const sessionKey = response.sourceSessionRef ? `${response.sourceSessionRef.kind}:${response.sourceSessionRef.id}` : 'checkin';
+              coveredRegionSessionKeys.add(`${sessionKey}:${region}`);
               if (!existing?.tissueResponses?.[region]?.nextMorningReaction) {
                 needed.push({ region, sessionRef: response.sourceSessionRef });
               }
             }
           }
-          setPendingFollowups(needed);
         }
+        try {
+          const { executions } = await sessionExecutionService.getExecutionsInRange(userId, yesterday, today);
+          for (const { execution, entries } of executions) {
+            if (execution.state === 'in_progress') continue;
+            const exerciseIds: string[] = [];
+            for (const entry of entries) {
+              if (entry.exerciseRef?.kind === 'catalog') exerciseIds.push(entry.exerciseRef.exerciseId);
+            }
+            const facets = exerciseIds
+              .map(id => EXERCISES.find(item => item.id === id)?.facets)
+              .filter((facet): facet is NonNullable<typeof facet> => !!facet);
+            const sessionRef: RegionTissueResponse['sourceSessionRef'] = { kind: 'execution', id: execution.executionId, date: execution.date };
+            const sessionKey = `execution:${execution.executionId}`;
+            for (const region of relevantFollowupRegions(facets)) {
+              const key = `${sessionKey}:${region}`;
+              if (coveredRegionSessionKeys.has(key)) continue;
+              coveredRegionSessionKeys.add(key);
+              if (existing?.tissueResponses?.[region]?.nextMorningReaction) continue;
+              needed.push({ region, sessionRef });
+            }
+          }
+        } catch {
+          // Session-derived candidates are an enhancement, not a requirement -- a failed
+          // read here must not block the check-in itself from loading.
+        }
+        setPendingFollowups(needed);
 
         if (existing) {
           setCheckin(existing);
@@ -265,14 +306,29 @@ export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) 
       painOrInjury: level !== 'normal' ? true : checkin.painOrInjury,
     };
     setCheckin(updatedCheckin);
-    setPendingFollowups(prev => prev.filter(item => item.region !== region));
+    setPendingFollowups(prev => prev.filter(item => !(item.region === region && item.sessionRef?.id === sessionRef?.id && item.sessionRef?.kind === sessionRef?.kind)));
     if (checkin.userId && checkin.date) {
       await checkinService.upsertTodayCheckin(checkin.userId, updatedCheckin);
     }
+    // M5.2: one session-level SessionResponse per session for the next_morning window --
+    // several regions of the same session must not create duplicates, so an existing one
+    // is checked for first. The tissue value itself is never written here or duplicated
+    // into it (D-MRESP) -- the check-in write above is the only tissue authority.
+    if (sessionRef && checkin.userId && checkin.date) {
+      try {
+        const already = await sessionResponseService.getResponseForWindow(checkin.userId, sessionRef, 'next_morning');
+        if (!already) {
+          await sessionResponseService.recordResponse(checkin.userId, sessionRef, 'next_morning', checkin.date, checkin.date, {});
+        }
+      } catch {
+        // Best-effort session-level linkage; the tissue answer above already succeeded and
+        // remains the source of truth injuryPolicy.ts/D-SUBJFLOOR consume.
+      }
+    }
   };
 
-  const handleSkipFollowup = (region: BodyRegion) => {
-    setPendingFollowups(prev => prev.filter(item => item.region !== region));
+  const handleSkipFollowup = (region: BodyRegion, sessionRef?: RegionTissueResponse['sourceSessionRef']) => {
+    setPendingFollowups(prev => prev.filter(item => !(item.region === region && item.sessionRef?.id === sessionRef?.id && item.sessionRef?.kind === sessionRef?.kind)));
   };
 
   const handleAvailabilityChange = (field: string, value: number | string | boolean | null) => {
@@ -392,7 +448,7 @@ export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) 
             <button
               type="button"
               className="btn-followup-skip"
-              onClick={() => handleSkipFollowup(pendingFollowups[0].region)}
+              onClick={() => handleSkipFollowup(pendingFollowups[0].region, pendingFollowups[0].sessionRef)}
             >
               Skip
             </button>
