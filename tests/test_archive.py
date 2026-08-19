@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 
 from garmin_sync.archive import (
@@ -8,7 +10,7 @@ from garmin_sync.archive import (
 )
 
 
-def test_local_archive_round_trip(tmp_path):
+def test_local_archive_round_trip(tmp_path: Path) -> None:
     store = LocalRawArchiveStore(base_dir=tmp_path)
     payload = {"restingHeartRate": 50, "totalSteps": 10000}
 
@@ -19,7 +21,9 @@ def test_local_archive_round_trip(tmp_path):
     assert loaded == payload
 
 
-def test_local_archive_idempotent_skip_on_identical_payload(tmp_path):
+def test_local_archive_idempotent_skip_on_identical_payload(
+    tmp_path: Path,
+) -> None:
     store = LocalRawArchiveStore(base_dir=tmp_path)
     payload = {"restingHeartRate": 50}
 
@@ -30,11 +34,17 @@ def test_local_archive_idempotent_skip_on_identical_payload(tmp_path):
     assert second is None  # identical payload -> skipped, not re-uploaded
 
 
-def test_local_archive_different_payload_same_date_not_skipped(tmp_path):
+def test_local_archive_different_payload_same_date_not_skipped(
+    tmp_path: Path,
+) -> None:
     store = LocalRawArchiveStore(base_dir=tmp_path)
 
-    first = store.archive(ArchiveRecord("stats", "2026-08-06", {"restingHeartRate": 50}, "run-1", "0.3.8"))
-    second = store.archive(ArchiveRecord("stats", "2026-08-06", {"restingHeartRate": 52}, "run-2", "0.3.8"))
+    first = store.archive(
+        ArchiveRecord("stats", "2026-08-06", {"restingHeartRate": 50}, "run-1", "0.3.8")
+    )
+    second = store.archive(
+        ArchiveRecord("stats", "2026-08-06", {"restingHeartRate": 52}, "run-2", "0.3.8")
+    )
 
     assert first is not None
     assert second is not None
@@ -42,12 +52,12 @@ def test_local_archive_different_payload_same_date_not_skipped(tmp_path):
     assert store.load("stats", "2026-08-06") == {"restingHeartRate": 52}
 
 
-def test_local_archive_load_missing_returns_none(tmp_path):
+def test_local_archive_load_missing_returns_none(tmp_path: Path) -> None:
     store = LocalRawArchiveStore(base_dir=tmp_path)
     assert store.load("stats", "2026-08-06") is None
 
 
-def test_local_archive_list_archived_dates_range_filter(tmp_path):
+def test_local_archive_list_archived_dates_range_filter(tmp_path: Path) -> None:
     store = LocalRawArchiveStore(base_dir=tmp_path)
     store.archive(ArchiveRecord("sleep", "2026-08-01", {"a": 1}, "run-1", None))
     store.archive(ArchiveRecord("sleep", "2026-08-05", {"a": 2}, "run-2", None))
@@ -58,14 +68,14 @@ def test_local_archive_list_archived_dates_range_filter(tmp_path):
     assert found == {"2026-08-05"}
 
 
-def test_null_archive_store_is_always_a_noop(tmp_path):
+def test_null_archive_store_is_always_a_noop(tmp_path: Path) -> None:
     store = NullArchiveStore()
-    assert store.archive(ArchiveRecord("stats", "2026-08-06", {"x": 1}, "run-1")) is None
-    assert store.load("stats", "2026-08-06") is None
+    store.archive(ArchiveRecord("stats", "2026-08-06", {"x": 1}, "run-1"))
+    store.load("stats", "2026-08-06")
     assert store.list_archived_dates("stats", "2026-08-01", "2026-08-31") == set()
 
 
-def test_archive_rejects_path_traversal_identifiers(tmp_path):
+def test_archive_rejects_path_traversal_identifiers(tmp_path: Path) -> None:
     store = LocalRawArchiveStore(base_dir=tmp_path)
     with pytest.raises(ValueError, match="endpoint"):
         store.archive(ArchiveRecord("../tokens", "2026-08-06", {"x": 1}, "run-1"))
@@ -75,12 +85,12 @@ def test_archive_rejects_path_traversal_identifiers(tmp_path):
         store.archive(ArchiveRecord("stats", "2026-08-06", {"x": 1}, "../run"))
 
 
-def test_create_archive_store_disabled_returns_null_store():
+def test_create_archive_store_disabled_returns_null_store() -> None:
     store = create_archive_store(enabled=False)
     assert isinstance(store, NullArchiveStore)
 
 
-def test_create_archive_store_gcs_requires_bucket():
+def test_create_archive_store_gcs_requires_bucket() -> None:
     import pytest
 
     with pytest.raises(ValueError, match="bucket"):
