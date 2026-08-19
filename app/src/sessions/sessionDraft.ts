@@ -1,4 +1,4 @@
-import type { SessionBlock, SessionChoice, SessionChoiceAction, SessionStep } from './models';
+import type { SessionBlock, SessionChoice, SessionChoiceAction, SessionOption, SessionStep, StepAlternative } from './models';
 
 /** Moves an item without changing the identity of any item in the collection. */
 export function moveDraftItem<T>(items: readonly T[], fromIndex: number, toIndex: number): T[] {
@@ -50,4 +50,48 @@ export function duplicateDraftBlock(block: SessionBlock, createId: (prefix: 'blo
 
 export function duplicateDraftStep(step: SessionStep, createId: (prefix: 'step') => string): SessionStep {
     return { ...step, id: createId('step'), title: step.title ? `${step.title} (copy)` : 'Movement (copy)' };
+}
+
+/**
+ * M3.8 bounded hardening: default factories for authored option sets, used by the manual
+ * builder's choice editor. A new choice always starts with one no-op "continue as prescribed"
+ * option so an author can add branches incrementally without an ever-invalid interim state.
+ */
+export function createDraftChoice(appliesAtStepId: string, createId: (prefix: 'choice' | 'option') => string): SessionChoice {
+    return {
+        id: createId('choice'),
+        appliesAtStepId,
+        trigger: { kind: 'athlete_observed', description: '' },
+        options: [{ id: createId('option'), label: 'Continue as prescribed', actions: [] }],
+    };
+}
+
+export function createDraftOption(createId: (prefix: 'option') => string): SessionOption {
+    return { id: createId('option'), label: 'New option', actions: [] };
+}
+
+export function createDraftAlternative(exerciseId: string | undefined, title: string, createId: (prefix: 'alt') => string): StepAlternative {
+    return {
+        id: createId('alt'),
+        title,
+        exerciseRef: exerciseId ? { kind: 'catalog', exerciseId } : { kind: 'unresolved_free_text', name: title },
+    };
+}
+
+/** A blank default action for a newly added action row, given the block/step it lives on --
+ * `end_block`/`select_alternative` need an in-scope target to stay structurally valid the
+ * moment they're added, not just once the author fills every field in. */
+export function createDraftAction(
+    kind: SessionChoiceAction['kind'],
+    context: { stepId: string; blockId: string; firstAlternativeId?: string },
+): SessionChoiceAction {
+    switch (kind) {
+        case 'select_alternative': return { kind, targetStepId: context.stepId, alternativeId: context.firstAlternativeId ?? '' };
+        case 'reduce_load_percent': return { kind, targetStepId: context.stepId, percent: 10 };
+        case 'reduce_sets': return { kind, targetStepId: context.stepId, sets: 1 };
+        case 'reduce_reps': return { kind, targetStepId: context.stepId, reps: 1 };
+        case 'omit_step': return { kind, targetStepId: context.stepId };
+        case 'end_block': return { kind, targetBlockId: context.blockId };
+        case 'end_session': return { kind };
+    }
 }
