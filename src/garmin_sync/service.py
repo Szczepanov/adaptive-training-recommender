@@ -861,6 +861,24 @@ class GarminSyncService:
                 logger.debug(f"Could not load athlete FTP from Firestore profiles: {e}")
 
         garmin_payload = canonical_workout_to_garmin_payload(payload, athlete_ftp=athlete_ftp)
+
+        from . import __version__ as garmin_sync_version
+        from .workout_export import summarize_garmin_payload
+
+        summary = summarize_garmin_payload(payload, garmin_payload)
+        logger.info(
+            "Garmin transform summary for %s: workoutId=%s modality=%s "
+            "canonical_steps=%d garmin_top_level_steps=%d repeat_groups=%d "
+            "recovery_steps=%d transformer_version=%s",
+            target_date,
+            summary["workoutId"],
+            summary["modality"],
+            summary["canonicalStepCount"],
+            summary["garminTopLevelStepCount"],
+            summary["repeatGroupCount"],
+            summary["recoveryStepCount"],
+            garmin_sync_version,
+        )
         logger.info(
             f"Uploading workout '{garmin_payload.get('workoutName')}' to Garmin Connect for {target_date}..."
         )
