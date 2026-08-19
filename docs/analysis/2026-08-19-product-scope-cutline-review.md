@@ -26,7 +26,7 @@ M5.2 later-day / next-morning follow-up
 
 M3.7, bounded M3.8 and M4.3 are independently startable now; the arrows above express the product priority/cutline, not a false dependency between those three items. M5.1 and M5.2 remain dependency-ordered after M4.3.
 
-In parallel, Phase 9.0 should start its 4–6 week shadow block as soon as 9.0.1 unattended ingestion is proven. Work that changes recommendation policy, decision equality, or replay/provenance semantics should not be mixed into one shadow evidence segment.
+Phase 9.0 should start its 4–6 week shadow block as soon as 9.0.1 unattended ingestion is proven, but the two tracks are only partly parallel. Work that changes recommendation policy, decision equality, or replay/provenance semantics must not be mixed into one shadow evidence segment, and **M4.3 is such work** — it rewrites `engine/completedTraining.ts` and `engine/trainingHistory.ts`, which is why the plan lists it under "Required when recommendation behavior could change". M3.7, bounded M3.8 and M4.3 therefore land **before** 9.0.7 starts (or after ending the segment and recording the policy boundary). Only the evidence-only M5.1/M5.2 work runs alongside a live block.
 
 The rest of M6–M9 should mostly become **triggered capability work**, not scheduled roadmap debt. The current generic runner already handles repetitions, duration, distance, check-offs and strength gauges. Specialized sprint/COD/jump cards, protocol registries, benchmark UI, device adapters and assisted prose parsing should be built only when real use proves the generic path inadequate or a named testing/device workflow begins.
 
@@ -126,17 +126,20 @@ These are not rejected capabilities. They are removed from the **default obligat
 ### Track A — evidence clock
 
 1. Complete Phase 9.0.1 operational ingestion proof.
-2. Start Phase 9.0.7 immediately after the seven-day unattended-ingestion gate.
-3. Hold decision-affecting policy/provenance semantics stable within an evidence segment.
+2. Start Phase 9.0.7 once the seven-day unattended-ingestion gate passes **and** Track B's
+   decision-affecting items (M3.7, bounded M3.8, M4.3) have landed.
+3. Hold decision-affecting policy/provenance semantics stable within an evidence segment. If a
+   decision-affecting change becomes unavoidable, end the segment, record the policy/version
+   boundary, and report the segments separately.
 4. After the block, run 9.0.8 and Phase 9.8 using prospective data.
 
 ### Track B — product correctness and evidence capture
 
 1. Finish M3.7.
 2. Run a bounded M3.8 hardening pass; stop adding authoring features unless real use blocks.
-3. Build M4.3.
-4. Build M5.1.
-5. Build M5.2.
+3. Build M4.3 — decision-affecting; it must land before 9.0.7 opens an evidence segment.
+4. Build M5.1 (evidence-only; safe alongside a running block).
+5. Build M5.2 (evidence-only; safe alongside a running block).
 6. Use the system for real sessions and collect evidence.
 
 ### Track C — capability only when triggered

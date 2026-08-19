@@ -1560,14 +1560,17 @@ Conditional scenarios, added only when the corresponding trigger fires:
 
 * [ ] Planned and performed data are never the same record.
 * [ ] Tissue values live in exactly one collection — the canonical daily check-in.
+* [ ] Metric observations include unit, source, protocol, validity and comparison identity.
+* [ ] Invalid, practice and non-comparable attempts do not become default benchmarks.
 * [ ] Missing delayed response remains `unknown`.
 * [ ] Unresolved free-text movements are loggable but cannot claim precise engine metadata.
 * [ ] No universal readiness, load or athleticism score and no ACWR injury score is introduced.
 * [ ] No M8 candidate changes production without its own explicit ship decision.
 * [ ] M8 does not create an implementation requirement for otherwise-untriggered M6/M7 work.
-* [ ] **If M7 is triggered:** metric observations include unit, source, protocol, validity and
-      comparison identity, and invalid/practice/non-comparable attempts do not become default
-      benchmarks.
+* [ ] The two metric-observation invariants above are unconditional (ADR-0023 D-MOBS). They
+      bind any code that writes a `MetricObservation`, including the bounded M9.3 device
+      boundary activated without a full M7 trigger. Deferring M6/M7 defers the capability,
+      never the provenance rules that apply once observations exist.
 
 ---
 
@@ -1581,7 +1584,7 @@ Conditional scenarios, added only when the corresponding trigger fires:
 | Two runners coexist indefinitely | M3.4 has an explicit retirement step and a parity gate; M1 items are labelled carried or disposable | If parity fails, keep v1 for catalog Strength only and cap it — do not re-invest in disposable UI |
 | Firestore nested validation stays weak | Performed entries are individual documents; D-MSNAP keeps nested content out of mutable rules-validated documents; immutable revision parsers validate bytes | Disable new writes; existing v1 data untouched |
 | Recommendation document outgrows its limits | D-MSNAP stores a hash, not a snapshot; the snapshot is a separate write-once document | The snapshot document is orphanable without touching decision history |
-| Phase 9.0 evidence contaminated by mid-block schema churn | Recommendation-affecting changes remain coordinated with the shadow-block evidence boundary | Defer decision-affecting work or start a new evidence segment; M4/M5 evidence-only work should not silently change policy |
+| Phase 9.0 evidence contaminated by mid-block schema churn | M4.3 is decision-affecting, not evidence-only — it rewrites `engine/completedTraining.ts` and `engine/trainingHistory.ts`, so it is gated on a shadow-block boundary exactly like M3.2/M3.3/M3.4; only M5's evidence-only work may proceed inside a running segment | Land M4.3 before 9.0.7 starts, or end the segment and record the policy/version boundary; never pool the two segments |
 | Offline concurrent correction conflicts | Stable entry IDs, parent lifecycle checks, idempotent writes, deterministic response IDs, emulator and browser tests | Keep the append-only v1 runner available during cutover |
 | Recommendation replay drifts | Persist the hash and include it in decision equality/audit; replay verifies stored bytes | Fall back to catalog/external v1 replay paths; do not rewrite old audits |
 | Rich logging becomes slow | Defaults, recent values, check-off modes and progressive disclosure; specialized controls only after trigger | Retain generic minimum performed payload; remove unused advanced controls |
