@@ -39,8 +39,23 @@ function formatRangeOrNumber(value: RangeOrNumber): string {
     return typeof value === 'number' ? String(value) : `${value.min}–${value.max}`;
 }
 
+/** Recursively sorts object keys so structurally-identical values compare equal regardless
+ * of property insertion order (e.g. two independently-generated JSON payloads for the same
+ * dose). Arrays keep their order -- order is meaningful for them (steps, options, ...). */
+function canonicalize(value: unknown): unknown {
+    if (Array.isArray(value)) return value.map(canonicalize);
+    if (value !== null && typeof value === 'object') {
+        const sorted: Record<string, unknown> = {};
+        for (const key of Object.keys(value as Record<string, unknown>).sort()) {
+            sorted[key] = canonicalize((value as Record<string, unknown>)[key]);
+        }
+        return sorted;
+    }
+    return value;
+}
+
 function sameJson(left: unknown, right: unknown): boolean {
-    return JSON.stringify(left ?? null) === JSON.stringify(right ?? null);
+    return JSON.stringify(canonicalize(left ?? null)) === JSON.stringify(canonicalize(right ?? null));
 }
 
 function sameStringSet(left: readonly string[] | undefined, right: readonly string[] | undefined): boolean {
@@ -52,7 +67,10 @@ function formatDose(dose: SessionDose | undefined): string {
     switch (dose.kind) {
         case 'repetition': return `${dose.sets} × ${formatRangeOrNumber(dose.reps)} reps`;
         case 'duration': return `${dose.sets ?? 1} × ${formatRangeOrNumber(dose.seconds)} s`;
-        case 'distance': return `${formatRangeOrNumber(dose.meters ?? dose.metres ?? 0)} m`;
+        case 'distance': {
+            const meters = dose.meters ?? dose.metres;
+            return meters !== undefined ? `${formatRangeOrNumber(meters)} m` : 'no distance set';
+        }
         case 'checkoff': return `${dose.rounds ?? 1} rounds`;
     }
 }
@@ -91,12 +109,12 @@ function formatQuality(quality: SessionQuality | undefined): string {
 
 function formatAction(action: SessionChoiceAction): string {
     switch (action.kind) {
-        case 'select_alternative': return `use alternative ${action.alternativeId}`;
-        case 'reduce_load_percent': return `reduce load ${action.percent}%`;
-        case 'reduce_sets': return `reduce to ${action.sets} sets`;
-        case 'reduce_reps': return `reduce to ${action.reps} reps`;
-        case 'omit_step': return 'omit step';
-        case 'end_block': return 'end block';
+        case 'select_alternative': return `use alternative ${action.alternativeId} for step ${action.targetStepId}`;
+        case 'reduce_load_percent': return `reduce load ${action.percent}% on step ${action.targetStepId}`;
+        case 'reduce_sets': return `reduce to ${action.sets} sets on step ${action.targetStepId}`;
+        case 'reduce_reps': return `reduce to ${action.reps} reps on step ${action.targetStepId}`;
+        case 'omit_step': return `omit step ${action.targetStepId}`;
+        case 'end_block': return `end block ${action.targetBlockId}`;
         case 'end_session': return 'end session';
     }
 }
@@ -189,7 +207,9 @@ function diffStep(blockId: string, before: SessionStep, after: SessionStep): Ses
         behaviorChanging = true;
     }
     if (!sameJson(before.rest, after.rest)) {
-        changes.push(`rest ${before.rest !== undefined ? formatRangeOrNumber(before.rest) : 'none'} → ${after.rest !== undefined ? formatRangeOrNumber(after.rest) : 'none'} s`);
+        const fromRest = before.rest !== undefined ? `${formatRangeOrNumber(before.rest)} s` : 'none';
+        const toRest = after.rest !== undefined ? `${formatRangeOrNumber(after.rest)} s` : 'none';
+        changes.push(`rest ${fromRest} → ${toRest}`);
         behaviorChanging = true;
     }
     if (before.tempo !== after.tempo) {
