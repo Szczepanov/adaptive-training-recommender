@@ -1,17 +1,8 @@
 import React, { useState } from 'react';
-import type { SessionResponseSourceRef } from '../../responses/models';
-import { sessionResponseService } from '../../services/sessionResponseService';
+import { recordLaterDayFollowup, type LaterDayFollowupTarget } from './laterDayFollowupAction';
 import './LaterDayFollowupCard.css';
 
-export interface LaterDayFollowupTarget {
-    sourceSession: SessionResponseSourceRef;
-    occurrenceId?: string;
-    /** Warsaw-local date the session happened on -- this window's own `date` and the
-     * check-in it references are both this same day (M5.2: `later_day` is a same-day
-     * follow-up, distinct from the next-morning tissue prompt). */
-    date: string;
-    title: string;
-}
+export type { LaterDayFollowupTarget };
 
 interface LaterDayFollowupCardProps {
     userId: string;
@@ -35,15 +26,7 @@ export const LaterDayFollowupCard: React.FC<LaterDayFollowupCardProps> = ({ user
         setSaving(true);
         setError(null);
         try {
-            await sessionResponseService.recordResponse(
-                userId,
-                target.sourceSession,
-                'later_day',
-                target.date,
-                target.date,
-                { unexpectedFatigue },
-                target.occurrenceId,
-            );
+            await recordLaterDayFollowup(userId, target, unexpectedFatigue);
             onAnswered();
         } catch {
             setError('Could not save this. You can answer again later.');

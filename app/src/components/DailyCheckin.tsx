@@ -136,12 +136,13 @@ export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) 
         const yesterday = addDaysToLocalDateString(today, -1);
         const yesterdayCheckin = await checkinService.getCheckin(userId, yesterday);
         const needed: Array<{ region: BodyRegion; sessionRef?: RegionTissueResponse['sourceSessionRef'] }> = [];
-        const coveredRegions = new Set<BodyRegion>();
+        const coveredRegionSessionKeys = new Set<string>();
         if (yesterdayCheckin?.tissueResponses) {
           for (const [regionKey, response] of Object.entries(yesterdayCheckin.tissueResponses)) {
             const region = regionKey as BodyRegion;
             if (response && (response.painDuringTraining || response.afterTrainingState || response.sourceSessionRef)) {
-              coveredRegions.add(region);
+              const sessionKey = response.sourceSessionRef ? `${response.sourceSessionRef.kind}:${response.sourceSessionRef.id}` : 'checkin';
+              coveredRegionSessionKeys.add(`${sessionKey}:${region}`);
               if (!existing?.tissueResponses?.[region]?.nextMorningReaction) {
                 needed.push({ region, sessionRef: response.sourceSessionRef });
               }
@@ -160,10 +161,12 @@ export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) 
               .map(id => EXERCISES.find(item => item.id === id)?.facets)
               .filter((facet): facet is NonNullable<typeof facet> => !!facet);
             const sessionRef: RegionTissueResponse['sourceSessionRef'] = { kind: 'execution', id: execution.executionId, date: execution.date };
+            const sessionKey = `execution:${execution.executionId}`;
             for (const region of relevantFollowupRegions(facets)) {
-              if (coveredRegions.has(region)) continue;
+              const key = `${sessionKey}:${region}`;
+              if (coveredRegionSessionKeys.has(key)) continue;
+              coveredRegionSessionKeys.add(key);
               if (existing?.tissueResponses?.[region]?.nextMorningReaction) continue;
-              coveredRegions.add(region);
               needed.push({ region, sessionRef });
             }
           }
@@ -303,7 +306,7 @@ export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) 
       painOrInjury: level !== 'normal' ? true : checkin.painOrInjury,
     };
     setCheckin(updatedCheckin);
-    setPendingFollowups(prev => prev.filter(item => item.region !== region));
+    setPendingFollowups(prev => prev.filter(item => !(item.region === region && item.sessionRef?.id === sessionRef?.id && item.sessionRef?.kind === sessionRef?.kind)));
     if (checkin.userId && checkin.date) {
       await checkinService.upsertTodayCheckin(checkin.userId, updatedCheckin);
     }
@@ -324,8 +327,8 @@ export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) 
     }
   };
 
-  const handleSkipFollowup = (region: BodyRegion) => {
-    setPendingFollowups(prev => prev.filter(item => item.region !== region));
+  const handleSkipFollowup = (region: BodyRegion, sessionRef?: RegionTissueResponse['sourceSessionRef']) => {
+    setPendingFollowups(prev => prev.filter(item => !(item.region === region && item.sessionRef?.id === sessionRef?.id && item.sessionRef?.kind === sessionRef?.kind)));
   };
 
   const handleAvailabilityChange = (field: string, value: number | string | boolean | null) => {
@@ -445,7 +448,7 @@ export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) 
             <button
               type="button"
               className="btn-followup-skip"
-              onClick={() => handleSkipFollowup(pendingFollowups[0].region)}
+              onClick={() => handleSkipFollowup(pendingFollowups[0].region, pendingFollowups[0].sessionRef)}
             >
               Skip
             </button>

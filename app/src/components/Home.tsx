@@ -239,6 +239,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
   // (dismissedLaterDayKeys), and never for a window a SessionResponse already answers.
   const [laterDayFollowup, setLaterDayFollowup] = useState<LaterDayFollowupTarget | null>(null);
   const [dismissedLaterDayKeys, setDismissedLaterDayKeys] = useState<Set<string>>(new Set());
+  const [laterDayFollowupRevision, setLaterDayFollowupRevision] = useState(0);
 
   useEffect(() => {
     if (!decisionInput) {
@@ -291,7 +292,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
       }
     })();
     return () => { cancelled = true; };
-  }, [userId, decisionInput, dismissedLaterDayKeys]);
+  }, [userId, decisionInput, dismissedLaterDayKeys, laterDayFollowupRevision]);
 
   const dismissLaterDayFollowup = useCallback(() => {
     setLaterDayFollowup(current => {
@@ -299,7 +300,10 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
       return null;
     });
   }, []);
-  const handleLaterDayAnswered = useCallback(() => setLaterDayFollowup(null), []);
+  const handleLaterDayAnswered = useCallback(() => {
+    setLaterDayFollowup(null);
+    setLaterDayFollowupRevision(current => current + 1);
+  }, []);
   const activeSettings = useMemo(() => {
     if (!decisionInput) return [];
     const { equipment, guardrails, defaults } = decisionInput.trainingSettings;
