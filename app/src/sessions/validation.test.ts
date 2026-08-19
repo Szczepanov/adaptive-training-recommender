@@ -155,5 +155,40 @@ describe('Session Validation (M2.1 / ADR-0023)', () => {
             if (entry.ok) throw new Error('Expected invalid entry');
             expect(entry.issues.map(issue => issue.path)).toEqual(expect.arrayContaining(['payload.setIndex', 'payload.reps']));
         });
+
+        it('validates a recorded athlete choice (D-MCHOICE), with and without a reason', () => {
+            const withoutReason = validateSessionEntry({
+                id: 'entry-choice-1', executionId: 'exec-1', stepId: 'step-1',
+                selectedOptionId: 'opt-1', completedAt: '2026-08-18T10:05:00Z',
+                createdAt: '2026-08-18T10:05:00Z', updatedAt: '2026-08-18T10:05:00Z',
+                payload: { kind: 'choice', choiceId: 'choice-1', optionId: 'opt-1' },
+            });
+            expect(withoutReason.ok).toBe(true);
+
+            const withReason = validateSessionEntry({
+                id: 'entry-choice-2', executionId: 'exec-1', completedAt: '2026-08-18T10:05:00Z',
+                createdAt: '2026-08-18T10:05:00Z', updatedAt: '2026-08-18T10:05:00Z',
+                payload: { kind: 'choice', choiceId: 'choice-1', optionId: 'opt-2', reason: 'Warm-up felt heavy' },
+            });
+            expect(withReason.ok).toBe(true);
+        });
+
+        it('rejects a choice payload missing choiceId/optionId or with a non-string reason', () => {
+            const missingIds = validateSessionEntry({
+                id: 'entry-choice-3', executionId: 'exec-1', completedAt: '2026-08-18T10:05:00Z',
+                createdAt: '2026-08-18T10:05:00Z', updatedAt: '2026-08-18T10:05:00Z',
+                payload: { kind: 'choice' },
+            });
+            expect(missingIds.ok).toBe(false);
+            if (missingIds.ok) throw new Error('Expected invalid entry');
+            expect(missingIds.issues.map(issue => issue.path)).toEqual(expect.arrayContaining(['payload.choiceId', 'payload.optionId']));
+
+            const badReason = validateSessionEntry({
+                id: 'entry-choice-4', executionId: 'exec-1', completedAt: '2026-08-18T10:05:00Z',
+                createdAt: '2026-08-18T10:05:00Z', updatedAt: '2026-08-18T10:05:00Z',
+                payload: { kind: 'choice', choiceId: 'choice-1', optionId: 'opt-1', reason: 42 },
+            });
+            expect(badReason.ok).toBe(false);
+        });
     });
 });

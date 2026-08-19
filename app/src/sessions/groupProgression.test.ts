@@ -58,4 +58,20 @@ describe('group progression', () => {
         expect(targetEntriesForGroupStep(group, group.steps[0])).toBe(2);
         expect(getGroupProgress(group, completed, 1)).toMatchObject({ completedRounds: 2, totalRounds: 2, isComplete: true, nextStepIndex: null });
     });
+
+    it('excludes a recorded athlete choice (D-MCHOICE) from rotation progress', () => {
+        const group = block('alternating');
+        const choiceEntry: SessionEntry = {
+            id: 'choice-1',
+            executionId: 'exec',
+            stepId: 'press',
+            selectedOptionId: 'opt-continue',
+            completedAt: '2026-08-18T10:00:00.000Z',
+            createdAt: '2026-08-18T10:00:00.000Z',
+            updatedAt: '2026-08-18T10:00:00.000Z',
+            payload: { kind: 'choice', choiceId: 'choice-1', optionId: 'opt-continue' },
+        };
+        // A choice sharing 'press's entries would otherwise look like a logged set.
+        expect(getGroupProgress(group, [choiceEntry], 0)).toMatchObject({ completedRounds: 0, totalRounds: 3, nextStepIndex: 1 });
+    });
 });

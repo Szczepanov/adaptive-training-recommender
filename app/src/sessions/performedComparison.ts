@@ -39,7 +39,9 @@ export function comparePlannedVsPerformed(
 ): PerformedSessionComparison {
     const entriesByStepId = new Map<string, SessionEntry[]>();
     for (const entry of entries) {
-        if (entry.stepId) {
+        // A recorded athlete choice (D-MCHOICE) shares a step's entries subcollection but
+        // is not performed work -- it must never count toward set/step completion.
+        if (entry.stepId && entry.payload.kind !== 'choice') {
             const list = entriesByStepId.get(entry.stepId) ?? [];
             list.push(entry);
             entriesByStepId.set(entry.stepId, list);

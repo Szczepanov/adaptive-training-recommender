@@ -473,7 +473,7 @@ export function validateSessionEntry(raw: unknown): ValidationResult<SessionEntr
     } else {
         const payload = raw.payload;
         const kind = String(payload.kind);
-        if (!['repetition', 'duration', 'distance', 'sprint', 'jump_attempt', 'checkoff'].includes(kind)) {
+        if (!['repetition', 'duration', 'distance', 'sprint', 'jump_attempt', 'checkoff', 'choice'].includes(kind)) {
             issues.push({ path: 'payload.kind', message: `Invalid entry payload kind: ${kind}` });
         } else if (kind === 'repetition') {
             if (typeof payload.setIndex !== 'number' || !Number.isInteger(payload.setIndex) || payload.setIndex < 1) issues.push({ path: 'payload.setIndex', message: 'setIndex must be an integer >= 1' });
@@ -491,6 +491,10 @@ export function validateSessionEntry(raw: unknown): ValidationResult<SessionEntr
             if (typeof payload.heightInches !== 'number' && typeof payload.distanceMeters !== 'number') issues.push({ path: 'payload', message: 'jump_attempt requires heightInches or distanceMeters' });
         } else if (kind === 'checkoff' && typeof payload.completed !== 'boolean') {
             issues.push({ path: 'payload.completed', message: 'checkoff completed must be boolean' });
+        } else if (kind === 'choice') {
+            if (typeof payload.choiceId !== 'string' || payload.choiceId.length === 0) issues.push({ path: 'payload.choiceId', message: 'choiceId must be a non-empty string' });
+            if (typeof payload.optionId !== 'string' || payload.optionId.length === 0) issues.push({ path: 'payload.optionId', message: 'optionId must be a non-empty string' });
+            if (payload.reason !== undefined && typeof payload.reason !== 'string') issues.push({ path: 'payload.reason', message: 'reason must be a string' });
         }
     }
 

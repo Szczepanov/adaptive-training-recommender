@@ -864,6 +864,11 @@ service cloud.firestore {
             && payload.keys().hasOnly(['kind', 'roundIndex', 'completed'])
             && payload.completed is bool
             && (!('roundIndex' in payload) || (payload.roundIndex is int && payload.roundIndex >= 1)))
+          || (payload.kind == 'choice'
+            && payload.keys().hasOnly(['kind', 'choiceId', 'optionId', 'reason'])
+            && payload.choiceId is string && payload.choiceId.size() > 0
+            && payload.optionId is string && payload.optionId.size() > 0
+            && (!('reason' in payload) || payload.reason is string))
         );
     }
 

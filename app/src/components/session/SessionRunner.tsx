@@ -15,6 +15,7 @@ import { sessionDefinitionService, type SessionDefinitionHeader } from '../../se
 import { prepareUnplannedSessionLaunch } from '../../services/sessionAuthoringService';
 import { getGroupProgress } from '../../sessions/groupProgression';
 import { GroupProgress } from './GroupProgress';
+import { ChoiceCard } from './ChoiceCard';
 import './SessionRunner.css';
 
 // Import positive fixtures for quick unplanned session launch
@@ -210,6 +211,12 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
         if (nextBlockIndex >= 0) runner.selectStep(nextBlockIndex, 0);
     }, [pendingGroupAdvance, runner]);
 
+    // A choice-driven end_session (D-MCHOICE) routes straight to the completion sheet
+    // rather than requiring the athlete to step through every now-optional block.
+    useEffect(() => {
+        if (runner.sessionEnded) setShowCompletionSheet(true);
+    }, [runner.sessionEnded]);
+
     // If no active session, show fixture picker to start an unplanned session
     if (runner.isRestoring) {
         return <div className="session-runner-container no-active"><p>Restoring an active session…</p></div>;
@@ -275,6 +282,29 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
     const { definition, activeStep, entries } = runner;
     const activeStepEntries = entries.filter(e => e.stepId === activeStep?.id);
     const comparison = comparePlannedVsPerformed(definition, entries);
+
+    const answeredChoiceIds = new Set(
+        entries
+            .filter(e => e.payload.kind === 'choice')
+            .map(e => (e.payload as { choiceId: string }).choiceId),
+    );
+    // The choice due at the active step -- authored, not yet answered (D-MCHOICE). Other
+    // step controls stay blocked until it is resolved: no code path changes a prescribed
+    // step without a recorded athlete action.
+    const dueChoice = activeStep && runner.activeBlock
+        ? (runner.activeBlock.optionSets ?? []).find(choice => choice.appliesAtStepId === activeStep.id && !answeredChoiceIds.has(choice.id)) ?? null
+        : null;
+
+    function describeChoiceEntry(entry: SessionEntry): string {
+        if (entry.payload.kind !== 'choice') return '';
+        const { choiceId, optionId } = entry.payload;
+        for (const block of definition.blocks) {
+            const choice = block.optionSets?.find(c => c.id === choiceId);
+            const option = choice?.options.find(o => o.id === optionId);
+            if (option) return option.label;
+        }
+        return optionId;
+    }
 
     const stepSummaries: SessionStepSummary[] = comparison.stepComparisons.map((sc, idx) => ({
         exerciseIndex: idx,
@@ -357,7 +387,7 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                         <span className="block-role-label">{block.title || block.role}</span>
                         <div className="step-pills">
                             {block.steps.map((step, sIdx) => {
-                                const stepCompleted = entries.filter(e => e.stepId === step.id).length > 0;
+                                const stepCompleted = entries.filter(e => e.stepId === step.id && e.payload.kind !== 'choice').length > 0;
                                 const isCurrent = runner.activeBlockIndex === bIdx && runner.activeStepIndex === sIdx;
                                 const stepName = step.title || (step.exerciseRef?.kind === 'catalog' ? step.exerciseRef.exerciseId : (step.exerciseRef?.kind === 'unresolved_free_text' ? step.exerciseRef.name : step.id));
                                 return (
@@ -421,34 +451,45 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                         />
                     )}
 
-                    {/* Step Input Card */}
-                    <div className="input-card-container">
-                        {inputProfile === 'repetition_mass' || inputProfile === 'repetition_bodyweight' ? (
-                            <RepetitionInputCard
-                                key={activeStep.id}
-                                step={activeStep}
-                                onSubmit={handleEntrySubmit}
-                            />
-                        ) : inputProfile === 'duration_hold' ? (
-                            <DurationInputCard
-                                key={activeStep.id}
-                                step={activeStep}
-                                onSubmit={handleEntrySubmit}
-                            />
-                        ) : inputProfile === 'distance_split' ? (
-                            <DistanceInputCard
-                                key={activeStep.id}
-                                step={activeStep}
-                                onSubmit={handleEntrySubmit}
-                            />
-                        ) : (
-                            <CheckoffInputCard
-                                key={activeStep.id}
-                                step={activeStep}
-                                onSubmit={handleEntrySubmit}
-                            />
-                        )}
-                    </div>
+                    {/* An authored branch point blocks every other control at this step until
+                        it is answered (D-MCHOICE) -- no code path changes a prescribed step
+                        without a recorded athlete action. */}
+                    {dueChoice ? (
+                        <ChoiceCard
+                            choice={dueChoice}
+                            ineligibleOptionIds={runner.ineligibleOptionIds}
+                            onSelect={(optionId, reason) => runner.logChoice(dueChoice.id, optionId, reason)}
+                        />
+                    ) : (
+                        /* Step Input Card */
+                        <div className="input-card-container">
+                            {inputProfile === 'repetition_mass' || inputProfile === 'repetition_bodyweight' ? (
+                                <RepetitionInputCard
+                                    key={activeStep.id}
+                                    step={activeStep}
+                                    onSubmit={handleEntrySubmit}
+                                />
+                            ) : inputProfile === 'duration_hold' ? (
+                                <DurationInputCard
+                                    key={activeStep.id}
+                                    step={activeStep}
+                                    onSubmit={handleEntrySubmit}
+                                />
+                            ) : inputProfile === 'distance_split' ? (
+                                <DistanceInputCard
+                                    key={activeStep.id}
+                                    step={activeStep}
+                                    onSubmit={handleEntrySubmit}
+                                />
+                            ) : (
+                                <CheckoffInputCard
+                                    key={activeStep.id}
+                                    step={activeStep}
+                                    onSubmit={handleEntrySubmit}
+                                />
+                            )}
+                        </div>
+                    )}
 
                     {/* Logged Sets for Active Step */}
                     <div className="logged-entries-section">
@@ -503,6 +544,12 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                                                     )}
                                                     {entry.payload.kind === 'checkoff' && (
                                                         <span className="set-metrics">✓ Completed</span>
+                                                    )}
+                                                    {entry.payload.kind === 'choice' && (
+                                                        <span className="set-metrics">
+                                                            Chose: {describeChoiceEntry(entry)}
+                                                            {entry.payload.reason && ` — ${entry.payload.reason}`}
+                                                        </span>
                                                     )}
                                                 </div>
                                                 <div className="entry-actions">

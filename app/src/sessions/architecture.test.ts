@@ -122,8 +122,12 @@ describe('Multidomain sessions architecture and dependency boundaries (M0.3 / AD
         const sessionServices = Array.from(graph.keys()).filter(path => (
             path.startsWith('services/session') || path === 'services/executionPrescriptionService.ts'
         ));
+        // useSessionRunner is where M4.2's choice-eligibility gate imports engine/injuryPolicy
+        // and engine/sessionChoiceEligibility -- checked at the module that actually imports,
+        // not only at the components/session/ callers adjacent to it.
+        const sessionHooks = Array.from(graph.keys()).filter(path => path === 'hooks/useSessionRunner.ts');
 
-        for (const mod of [...uiModules, ...sessionServices]) {
+        for (const mod of [...uiModules, ...sessionServices, ...sessionHooks]) {
             const imports = graph.get(mod) ?? [];
             for (const imp of imports) {
                 for (const forbidden of forbiddenOptimizer) {

@@ -1365,4 +1365,52 @@ emulatorDescribe('Firestore security rules', () => {
             payload: { kind: 'repetition', setIndex: 0, reps: 0 },
         }));
     });
+
+    it('records a recorded athlete choice (D-MCHOICE) while in progress, rejects it once terminal or cross-user, and rejects a malformed one', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        const validChoiceEntry = {
+            id: 'entry-choice-1',
+            executionId: 'exec-1',
+            stepId: 'step-str-1',
+            selectedOptionId: 'reduce-squat-load',
+            completedAt: '2026-08-18T10:05:00Z',
+            createdAt: '2026-08-18T10:05:00Z',
+            updatedAt: '2026-08-18T10:05:00Z',
+            payload: { kind: 'choice', choiceId: 'choice-squat-warmup', optionId: 'reduce-squat-load', reason: 'Warm-up felt heavy' },
+        };
+
+        await expect(assertSucceeds(setDoc(doc(ownerDb, sessionExecPath), validSessionExecution()))).resolves.toBeUndefined();
+
+        // Recorded while in progress.
+        await expect(assertSucceeds(setDoc(
+            doc(ownerDb, `${sessionExecPath}/entries/entry-choice-1`),
+            validChoiceEntry,
+        ))).resolves.toBeUndefined();
+
+        // Malformed: missing optionId.
+        await assertFails(setDoc(doc(ownerDb, `${sessionExecPath}/entries/entry-choice-2`), {
+            ...validChoiceEntry,
+            id: 'entry-choice-2',
+            payload: { kind: 'choice', choiceId: 'choice-squat-warmup' },
+        }));
+
+        // Another user cannot write into this execution's entries at all.
+        const otherDb = testEnvironment.authenticatedContext(otherUserId).firestore();
+        await assertFails(setDoc(doc(otherDb, `${sessionExecPath}/entries/entry-choice-3`), {
+            ...validChoiceEntry,
+            id: 'entry-choice-3',
+        }));
+
+        // Terminal immutability: no new choice entry once the execution is completed.
+        await expect(assertSucceeds(setDoc(doc(ownerDb, sessionExecPath), {
+            ...validSessionExecution(),
+            state: 'completed',
+            completedAt: '2026-08-18T10:45:00Z',
+            updatedAt: '2026-08-18T10:45:00Z',
+        }))).resolves.toBeUndefined();
+        await assertFails(setDoc(doc(ownerDb, `${sessionExecPath}/entries/entry-choice-4`), {
+            ...validChoiceEntry,
+            id: 'entry-choice-4',
+        }));
+    });
 });
