@@ -1,22 +1,24 @@
 from unittest.mock import MagicMock
 
-from garmin_sync.archive import LocalRawArchiveStore
+from garmin_sync.archive import ArchiveRecord, LocalRawArchiveStore
 from garmin_sync.audit import run_audit
 from garmin_sync.config import Settings
 from garmin_sync.service import GarminSyncService
 
 
 def _seed_full_day(store: LocalRawArchiveStore, date_iso: str, run_id: str = "run-seed") -> None:
-    store.archive("stats", date_iso, {"restingHeartRate": 50, "totalSteps": 9000}, run_id, "0.3.8")
+    store.archive(ArchiveRecord("stats", date_iso, {"restingHeartRate": 50, "totalSteps": 9000}, run_id, "0.3.8"))
     store.archive(
-        "sleep",
-        date_iso,
-        {"dailySleepDTO": {"sleepScores": {"overall": {"value": 80}}}},
-        run_id,
-        "0.3.8",
+        ArchiveRecord(
+            "sleep",
+            date_iso,
+            {"dailySleepDTO": {"sleepScores": {"overall": {"value": 80}}}},
+            run_id,
+            "0.3.8",
+        )
     )
-    store.archive("hrv", date_iso, {"hrvSummary": {"lastNightAvg": 60}}, run_id, "0.3.8")
-    store.archive("activities", date_iso, [], run_id, "0.3.8")
+    store.archive(ArchiveRecord("hrv", date_iso, {"hrvSummary": {"lastNightAvg": 60}}, run_id, "0.3.8"))
+    store.archive(ArchiveRecord("activities", date_iso, [], run_id, "0.3.8"))
 
 
 def test_rebuild_reproduces_snapshot_from_archive_without_garmin_calls(tmp_path):
@@ -52,9 +54,9 @@ def test_rebuild_reproduces_snapshot_from_archive_without_garmin_calls(tmp_path)
 def test_rebuild_skips_date_missing_archived_payload(tmp_path):
     archive_store = LocalRawArchiveStore(base_dir=tmp_path)
     # Missing "activities" endpoint for this date -> not rebuildable
-    archive_store.archive("stats", "2026-08-06", {"restingHeartRate": 50}, "run-1", "0.3.8")
-    archive_store.archive("sleep", "2026-08-06", {}, "run-1", "0.3.8")
-    archive_store.archive("hrv", "2026-08-06", {}, "run-1", "0.3.8")
+    archive_store.archive(ArchiveRecord("stats", "2026-08-06", {"restingHeartRate": 50}, "run-1", "0.3.8"))
+    archive_store.archive(ArchiveRecord("sleep", "2026-08-06", {}, "run-1", "0.3.8"))
+    archive_store.archive(ArchiveRecord("hrv", "2026-08-06", {}, "run-1", "0.3.8"))
 
     settings = Settings(app_user_id="test_uid_789")
     mock_repo = MagicMock()
@@ -78,14 +80,14 @@ def test_rebuild_skips_date_missing_archived_payload(tmp_path):
 def test_rebuild_preserves_existing_firestore_history_on_skipped_dates(tmp_path):
     archive_store = LocalRawArchiveStore(base_dir=tmp_path)
     # Day 2 is fully archived
-    archive_store.archive("stats", "2026-08-07", {"restingHeartRate": 50}, "run-1", "0.3.8")
+    archive_store.archive(ArchiveRecord("stats", "2026-08-07", {"restingHeartRate": 50}, "run-1", "0.3.8"))
     archive_store.archive(
-        "sleep", "2026-08-07", {"sleepScores": {"overallScore": {"value": 80}}}, "run-1", "0.3.8"
+        ArchiveRecord("sleep", "2026-08-07", {"sleepScores": {"overallScore": {"value": 80}}}, "run-1", "0.3.8")
     )
     archive_store.archive(
-        "hrv", "2026-08-07", {"hrvSummary": {"weeklyAvg": 55, "lastNightAvg": 55}}, "run-1", "0.3.8"
+        ArchiveRecord("hrv", "2026-08-07", {"hrvSummary": {"weeklyAvg": 55, "lastNightAvg": 55}}, "run-1", "0.3.8")
     )
-    archive_store.archive("activities", "2026-08-07", [], "run-1", "0.3.8")
+    archive_store.archive(ArchiveRecord("activities", "2026-08-07", [], "run-1", "0.3.8"))
 
     settings = Settings(app_user_id="test_uid_789")
     mock_repo = MagicMock()

@@ -7,7 +7,7 @@ from typing import Any
 
 from garminconnect import GarminConnectTooManyRequestsError
 
-from .archive import RawArchiveStore, create_archive_store
+from .archive import ArchiveRecord, RawArchiveStore, create_archive_store
 from .canonical import CanonicalActivity, CanonicalActivityDetail, CanonicalDailyMetrics
 from .config import Settings
 from .dates import get_date_range, get_date_string, local_today, n_days_ago, parse_date_string
@@ -112,7 +112,13 @@ class GarminSyncService:
     ) -> None:
         """No-op when archiving is disabled (NullArchiveStore)."""
         self.archive_store.archive(
-            endpoint, logical_date, payload, sync_run_id, self.garminconnect_version
+            ArchiveRecord(
+                endpoint=endpoint,
+                logical_date=logical_date,
+                payload=payload,
+                sync_run_id=sync_run_id,
+                garminconnect_version=self.garminconnect_version,
+            )
         )
 
     def _archive_daily_payloads(
