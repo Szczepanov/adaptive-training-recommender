@@ -117,6 +117,72 @@
   color: var(--color-text-muted, #94a3b8);
 }
 
+.plan-error-card,
+.plan-unavailable-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 24px 20px;
+  background: var(--color-bg-surface, #1e293b);
+  border: 1px solid var(--color-border, #334155);
+  border-radius: var(--radius-card, 14px);
+  gap: 12px;
+}
+
+.plan-unavailable-card h3 {
+  margin: 0;
+  font-size: 1.1rem;
+  color: #fbbf24;
+}
+
+.plan-error-message {
+  margin: 0;
+  font-size: 0.92rem;
+  color: #f87171;
+  line-height: 1.45;
+}
+
+.plan-unavailable-message {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--color-text-muted, #94a3b8);
+  max-width: 480px;
+  line-height: 1.45;
+}
+
+.plan-retry-btn {
+  padding: 10px 18px;
+  min-height: 40px;
+  font-size: 0.88rem;
+  font-weight: 600;
+  background: var(--color-bg-elevated, #334155);
+  color: var(--color-text-primary, #f8fafc);
+  border: 1px solid var(--color-border, #475569);
+  border-radius: var(--radius-control, 8px);
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.plan-retry-btn:hover {
+  background: #475569;
+}
+
+.plan-missing-recovery-card {
+  padding: 20px 16px;
+  background: var(--color-bg-surface, #1e293b);
+  border: 1px solid var(--color-border, #334155);
+  border-radius: var(--radius-card, 14px);
+  text-align: center;
+}
+
+.plan-missing-recovery-card p {
+  margin: 0;
+  font-size: 0.88rem;
+  color: var(--color-text-muted, #94a3b8);
+  line-height: 1.45;
+}
+
 .plan-evergreen-content {
   display: flex;
   flex-direction: column;

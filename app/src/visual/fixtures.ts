@@ -17,7 +17,7 @@ export const VISUAL_USER_ID = 'visual-athlete';
 export const VISUAL_DATE = '2026-09-12';
 const TIMESTAMP = '2026-09-12T08:00:00.000+02:00';
 
-export type VisualScreen = 'home' | 'checkin' | 'goals' | 'data' | 'constraints' | 'preferences' | 'session';
+export type VisualScreen = 'home' | 'checkin' | 'goals' | 'data' | 'constraints' | 'preferences' | 'session' | 'plan';
 
 export interface VisualScenario {
   id: string;
@@ -518,6 +518,27 @@ export const VISUAL_SCENARIOS: VisualScenario[] = [
     title: 'Session Runner — grouped execution',
     screen: 'session',
     expectedFocus: ['The runner shows the current round and advances through a grouped rotation without horizontal overflow.'],
+    fixture: standardFixture,
+  },
+  {
+    id: 'plan-ai-forecast',
+    title: 'Training Plan — AI adaptive rolling forecast',
+    screen: 'plan',
+    expectedFocus: ['7-day forecast renders full microcycle projection and objective balance.'],
+    fixture: standardFixture,
+  },
+  {
+    id: 'plan-imported-active',
+    title: 'Training Plan — imported coach plan with critique',
+    screen: 'plan',
+    expectedFocus: ['Imported week renders with placed sessions, weekly critique, and AI forecast switcher.'],
+    fixture: buildFixture({ externalPlan: importedPlan }),
+  },
+  {
+    id: 'plan-import-expanded',
+    title: 'Training Plan — plan import & revision tool',
+    screen: 'plan',
+    expectedFocus: ['Plan import editor opens cleanly without horizontal overflow.'],
     fixture: standardFixture,
   },
 ];

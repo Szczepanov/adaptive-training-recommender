@@ -57,12 +57,20 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onPlanChanged }) => 
   const [selectedNextDayTier, setSelectedNextDayTier] = useState<'green' | 'yellow' | 'red'>('green');
   const [viewMode, setViewMode] = useState<'imported' | 'ai_forecast'>('imported');
   const [loading, setLoading] = useState<boolean>(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [forecastUnavailable, setForecastUnavailable] = useState<string | null>(null);
   const [writeError, setWriteError] = useState<string | null>(null);
   const [showImport, setShowImport] = useState<boolean>(false);
 
   const loadPlanData = useCallback(async () => {
+    // Clear stale state on every reload attempt
     setLoading(true);
-    setWriteError(null);
+    setLoadError(null);
+    setForecastUnavailable(null);
+    setWeekAheadPlan(null);
+    setNextDayPlan(null);
+    setCritique(null);
+
     try {
       const weekEnd = addDaysToLocalDateString(today, 6);
       const [actState, blocksState, input] = await Promise.all([
@@ -71,10 +79,49 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onPlanChanged }) => 
         decisionComposer.composeDailyDecisionInput(userId, today),
       ]);
 
-      const acts = actState.status === 'AVAILABLE' ? actState.data : [];
-      const blocks = blocksState.status === 'AVAILABLE' ? blocksState.data : [];
-      setFixedActivities(acts);
       setDecisionInput(input);
+
+      // P0: Enforce strict DataState semantics. Do NOT silently convert unavailable/invalid
+      // schedule data into empty arrays.
+      if (actState.status !== 'AVAILABLE' || blocksState.status !== 'AVAILABLE') {
+        const unavailMsg =
+          actState.status === 'UNAVAILABLE' || blocksState.status === 'UNAVAILABLE'
+            ? 'Some schedule inputs are temporarily unavailable. Check your connection and retry.'
+            : 'Schedule data could not be verified. Please retry before using this plan.';
+        setForecastUnavailable(unavailMsg);
+        setFixedActivities([]);
+        setActivePlan(null);
+        return;
+      }
+
+      // Check decision input source states like Home.tsx
+      const decisionSourceFailure =
+        input.sourceStates &&
+        [input.sourceStates.activeGoals, input.sourceStates.preferences, input.sourceStates.trainingSettings].find(
+          (state) => state.status === 'INVALID' || state.status === 'UNAVAILABLE',
+        );
+      if (decisionSourceFailure) {
+        setForecastUnavailable(
+          decisionSourceFailure.status === 'UNAVAILABLE'
+            ? 'Decision inputs are temporarily unavailable. Please retry before generating a plan.'
+            : 'Decision inputs need repair before generating a plan.',
+        );
+        return;
+      }
+
+      const recoveryState = input.sourceStates?.recoverySnapshot;
+      if (recoveryState && recoveryState.status !== 'AVAILABLE' && recoveryState.status !== 'MISSING') {
+        setForecastUnavailable(
+          recoveryState.status === 'UNAVAILABLE'
+            ? 'Recovery data is temporarily unavailable. Please retry before generating a plan.'
+            : 'Recovery data needs repair before generating a plan.',
+        );
+        return;
+      }
+
+      const acts = actState.data;
+      const blocks = blocksState.data;
+      setFixedActivities(acts);
 
       const activePlanState = await activeExternalPlanService.getActivePlanState(userId, today, acts);
       const currentPlan = activePlanState.status === 'AVAILABLE' ? activePlanState.data : null;
@@ -84,8 +131,20 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onPlanChanged }) => 
         const subjective = mapCheckinToSubjectiveInput(input.subjectiveCheckin);
         const objective = mapSnapshotToEngineInput(input.recoverySnapshot);
         const events = mapGoalsToUserEvents(input.activeGoals);
-        const context = mapContextFromGoalsAndTrainingSettings(input.activeGoals, input.trainingSettings, input.preferences, today, input.subjectiveCheckin);
-        const forecastContext = mapContextFromGoalsAndTrainingSettings(input.activeGoals, input.trainingSettings, input.preferences, today, null);
+        const context = mapContextFromGoalsAndTrainingSettings(
+          input.activeGoals,
+          input.trainingSettings,
+          input.preferences,
+          today,
+          input.subjectiveCheckin,
+        );
+        const forecastContext = mapContextFromGoalsAndTrainingSettings(
+          input.activeGoals,
+          input.trainingSettings,
+          input.preferences,
+          today,
+          null,
+        );
         const preparedSnapshot = await prepareTrainingHistorySnapshot(userId, today);
 
         if (currentPlan) {
@@ -155,7 +214,10 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onPlanChanged }) => 
           );
           setNextDayPlan(tomorrowPlan);
 
-          const tomorrowRec = tomorrowPlan?.branches[selectedNextDayTier]?.recommendation ?? tomorrowPlan?.branches.green.recommendation ?? null;
+          const tomorrowRec =
+            tomorrowPlan?.branches[selectedNextDayTier]?.recommendation ??
+            tomorrowPlan?.branches.green.recommendation ??
+            null;
 
           const forecast = await generateWeekAheadPlanWithIntent(
             userId,
@@ -175,7 +237,8 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onPlanChanged }) => 
         }
       }
     } catch (err) {
-      console.warn('Failed to load plan or forecast:', err);
+      console.error('Failed to load plan or forecast in PlanView:', err);
+      setLoadError('An unexpected error occurred while generating the plan. Please retry.');
     } finally {
       setLoading(false);
     }
@@ -267,7 +330,7 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onPlanChanged }) => 
         <div className="plan-view-title-group">
           <span className="plan-view-badge">Week Architecture</span>
           <h2 className="plan-view-heading">Training Plan</h2>
-          <p className="plan-week-range">This week · {formatWeekRange(today)}</p>
+          <p className="plan-week-range">Next 7 days · {formatWeekRange(today)}</p>
         </div>
         <div className="plan-header-actions">
           <button
@@ -313,6 +376,21 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onPlanChanged }) => 
         <div className="plan-loading-state">
           <p>Loading active plan & weekly forecast…</p>
         </div>
+      ) : loadError ? (
+        <div className="plan-error-card">
+          <p className="plan-error-message">⚠️ {loadError}</p>
+          <button type="button" className="plan-retry-btn" onClick={loadPlanData}>
+            🔄 Retry
+          </button>
+        </div>
+      ) : forecastUnavailable ? (
+        <div className="plan-unavailable-card">
+          <h3>7-Day Forecast Temporarily Unavailable</h3>
+          <p className="plan-unavailable-message">{forecastUnavailable}</p>
+          <button type="button" className="plan-retry-btn" onClick={loadPlanData}>
+            🔄 Retry
+          </button>
+        </div>
       ) : activePlan && viewMode === 'imported' ? (
         <div className="plan-active-content">
           <ExternalPlanWeek
@@ -337,7 +415,7 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onPlanChanged }) => 
               <p>
                 {activePlan
                   ? 'Alternative 7-day projection dynamically optimized by the engine.'
-                  : 'The engine is dynamically prescribing and balancing workouts across your microcycle objectives based on daily recovery, readiness scores, and training goals.'}
+                  : 'The engine dynamically prescribes and balances workouts across your microcycle objectives based on daily recovery, readiness scores, and training goals.'}
               </p>
             </div>
             {!activePlan && (
@@ -351,14 +429,23 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onPlanChanged }) => 
             )}
           </div>
 
-          <WeekAheadStrip
-            plan={weekAheadPlan}
-            nextDayPlan={nextDayPlan}
-            selectedTier={selectedNextDayTier}
-            onSelectTier={setSelectedNextDayTier}
-            trainingIntentProfile={decisionInput?.trainingIntentProfile}
-            planningMode={resolvedPlanningMode}
-          />
+          {!decisionInput?.recoverySnapshot ? (
+            <div className="plan-missing-recovery-card">
+              <p>
+                📊 No Garmin recovery data synced today yet. Sync your watch or complete your morning check-in
+                to compute the dynamic 7-day projection.
+              </p>
+            </div>
+          ) : (
+            <WeekAheadStrip
+              plan={weekAheadPlan}
+              nextDayPlan={nextDayPlan}
+              selectedTier={selectedNextDayTier}
+              onSelectTier={setSelectedNextDayTier}
+              trainingIntentProfile={decisionInput?.trainingIntentProfile}
+              planningMode={resolvedPlanningMode}
+            />
+          )}
         </div>
       )}
     </div>

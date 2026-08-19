@@ -256,13 +256,17 @@
 .subjective-slider {
   width: 100%;
   height: 8px;
-  border-radius: 4px;
+  min-height: 44px;
+  padding: 18px 0;
+  margin: 0;
+  box-sizing: content-box;
   background: rgba(255, 255, 255, 0.12);
+  background-clip: content-box;
+  border-radius: 4px;
   outline: none;
   -webkit-appearance: none;
   appearance: none;
   cursor: pointer;
-  margin: 0.35rem 0;
 }
 
 .subjective-slider::-webkit-slider-thumb {

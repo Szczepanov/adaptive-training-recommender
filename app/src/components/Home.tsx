@@ -1093,8 +1093,8 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
               <div className="card-header">
                 <h3>Today's Recovery</h3>
                 {decisionInput?.recoverySnapshot ? (
-                  <span className={`status-badge mode-${activeRec?.mode ?? 'train'}`}>
-                    {activeRec?.mode === 'recover' ? 'Needs recovery' : activeRec?.mode === 'modify' ? 'Cautious' : 'Good'}
+                  <span className="status-badge status-normal">
+                    Sleep {decisionInput.recoverySnapshot.raw.sleepScore ?? '--'} · HRV {decisionInput.recoverySnapshot.raw.hrvOvernightAvg ?? '--'}ms
                   </span>
                 ) : (
                   <span className="status-badge warning">No Data</span>

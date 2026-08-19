@@ -60,6 +60,15 @@ test.describe.configure({ mode: 'serial' });
 for (const scenario of VISUAL_SCENARIOS) {
   test(`captures ${scenario.id}`, async ({ page }) => {
     await visitScenario(page, scenario);
+
+    if (scenario.id === 'plan-import-expanded') {
+      const toggleBtn = page.locator('.plan-toggle-import-btn');
+      if (await toggleBtn.count()) {
+        await toggleBtn.click();
+        await expect(page.locator('.plan-import-section')).toBeVisible();
+      }
+    }
+
     await capture(page, scenario);
 
     if (scenario.id.startsWith('home-') && scenario.id !== 'home-missing-data') {
@@ -131,4 +140,23 @@ test('captures grouped session runner rotation without horizontal overflow', asy
   await capture(page, scenario, 'grouped-runner-active', [
     'The grouped runner presents clear superset/circuit context and large hit targets for mobile use.',
   ]);
+});
+
+test('captures plan view mode switching without horizontal overflow', async ({ page }) => {
+  const scenario = VISUAL_SCENARIOS.find(s => s.id === 'plan-imported-active');
+  if (!scenario) throw new Error('Missing plan-imported-active visual scenario');
+  await visitScenario(page, scenario);
+
+  await expect(page.locator('.plan-view-container')).toBeVisible();
+  expect(await page.locator('body').evaluate(body => body.scrollWidth <= window.innerWidth)).toBe(true);
+
+  const aiTab = page.getByRole('tab', { name: /AI Adaptive Forecast/ });
+  if (await aiTab.count()) {
+    await aiTab.click();
+    await expect(page.locator('.week-ahead-card')).toBeVisible();
+    expect(await page.locator('body').evaluate(body => body.scrollWidth <= window.innerWidth)).toBe(true);
+    await capture(page, scenario, 'ai-forecast-tab-active', [
+      'The plan view seamlessly presents the AI-generated rolling 7-day forecast alongside the coach plan.',
+    ]);
+  }
 });
