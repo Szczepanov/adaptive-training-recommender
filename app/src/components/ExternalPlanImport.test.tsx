@@ -1,8 +1,10 @@
-import { describe, expect, it } from 'vitest';
-import { diffPlans } from './externalPlanDiff';
+import { describe, expect, it, vi } from 'vitest';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { diffPlans, type PlanDiffRow } from './externalPlanDiff';
 import { EXTERNAL_PLAN_SCHEMA, type ExternalTrainingPlan } from '../engine/models';
 import { EXTERNAL_PLAN_SCHEMA_V2, type ExternalTrainingPlanV2 } from '../sessions/externalPlanV2';
 import type { SessionDefinition } from '../sessions/models';
+import { PlanPreview } from './ExternalPlanImport';
 
 function plan(): ExternalTrainingPlan {
     return {
@@ -145,5 +147,56 @@ describe('diffPlans — M3.7 fine-grained v2 content diff', () => {
         next.revision = 2;
 
         expect(diffPlans(previous, next)).toEqual([]);
+    });
+});
+
+/**
+ * PlanPreview's acknowledgement-gating (M3.7). This repo has no interactive component-test
+ * harness (no @testing-library/react), so this covers the reachable static-markup half of
+ * the requirement -- the initial disabled/enabled state on first render -- via `PlanPreview`
+ * directly (exported for exactly this). The other half (clicking the checkbox re-enables
+ * Import) needs simulated interaction this repo's tooling can't do; the underlying state
+ * (`acknowledged`) is a plain `useState` toggle with no logic of its own to hide a bug in.
+ */
+describe('PlanPreview — M3.7 import acknowledgement gating', () => {
+    function behaviorChangingDiff(): PlanDiffRow[] {
+        return [{
+            sessionId: 's1',
+            change: 'changed',
+            detail: '"Threshold": the session content changed (see below).',
+            contentChanges: [
+                { scope: 'step', id: 'block-main/step-interval', change: 'changed', behaviorChanging: true, detail: 'Step "Interval": dose changed.' },
+            ],
+        }];
+    }
+
+    function cosmeticOnlyDiff(): PlanDiffRow[] {
+        return [{
+            sessionId: 's1',
+            change: 'changed',
+            detail: '"Threshold": session wording changed (see below).',
+            contentChanges: [
+                { scope: 'session', id: 's1', change: 'changed', behaviorChanging: false, detail: 'Title or summary text changed.' },
+            ],
+        }];
+    }
+
+    it('renders Import disabled and shows the acknowledgement checkbox when unreviewed behavior changes exist', () => {
+        const html = renderToStaticMarkup(
+            <PlanPreview plan={v2Plan()} previous={null} diff={behaviorChangingDiff()} onConfirm={vi.fn()} onCancel={vi.fn()} />,
+        );
+        expect(html).toContain('I reviewed the 1 behavior change');
+        expect(html).toMatch(/Import this plan<\/button>/);
+        const importButtonMarkup = html.match(/<button[^>]*>Import this plan<\/button>/)?.[0] ?? '';
+        expect(importButtonMarkup).toContain('disabled=""');
+    });
+
+    it('renders Import enabled with no acknowledgement checkbox for a cosmetic-only diff', () => {
+        const html = renderToStaticMarkup(
+            <PlanPreview plan={v2Plan()} previous={null} diff={cosmeticOnlyDiff()} onConfirm={vi.fn()} onCancel={vi.fn()} />,
+        );
+        expect(html).not.toContain('I reviewed the');
+        const importButtonMarkup = html.match(/<button[^>]*>Import this plan<\/button>/)?.[0] ?? '';
+        expect(importButtonMarkup).not.toContain('disabled');
     });
 });

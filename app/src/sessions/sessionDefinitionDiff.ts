@@ -69,7 +69,8 @@ function formatDose(dose: SessionDose | undefined): string {
         case 'duration': return `${dose.sets ?? 1} × ${formatRangeOrNumber(dose.seconds)} s`;
         case 'distance': {
             const meters = dose.meters ?? dose.metres;
-            return meters !== undefined ? `${formatRangeOrNumber(meters)} m` : 'no distance set';
+            const sets = dose.sets ?? 1;
+            return meters !== undefined ? `${sets} × ${formatRangeOrNumber(meters)} m` : `${sets} × no distance set`;
         }
         case 'checkoff': return `${dose.rounds ?? 1} rounds`;
     }
@@ -125,6 +126,21 @@ function formatActions(actions: readonly SessionChoiceAction[]): string {
 
 function byId<T extends { id: string }>(items: readonly T[] | undefined): Map<string, T> {
     return new Map((items ?? []).map(item => [item.id, item]));
+}
+
+/** True only when both sides carry exactly the same set of ids in a different order --
+ * an add/remove already produces its own row elsewhere, and this must not double-report
+ * that as a reorder too. `byId()`-based comparison elsewhere in this module is
+ * intentionally order-blind (it diffs by identity, not position), which silently missed a
+ * same-membership reorder entirely -- swapping two existing steps/blocks changed nothing
+ * `byId` could see, even though it changes execution order. */
+function orderChanged<T extends { id: string }>(before: readonly T[] | undefined, after: readonly T[] | undefined): boolean {
+    const beforeIds = (before ?? []).map(item => item.id);
+    const afterIds = (after ?? []).map(item => item.id);
+    if (beforeIds.length !== afterIds.length) return false;
+    const beforeSet = new Set(beforeIds);
+    if (afterIds.some(id => !beforeSet.has(id))) return false;
+    return beforeIds.some((id, index) => id !== afterIds[index]);
 }
 
 function diffOptions(blockId: string, choiceId: string, before: readonly SessionOption[], after: readonly SessionOption[]): SessionContentDiffRow[] {
@@ -276,6 +292,9 @@ function diffBlock(before: SessionBlock, after: SessionBlock): SessionContentDif
         const stepRow = diffStep(after.id, old, step);
         if (stepRow) rows.push(stepRow);
     }
+    if (orderChanged(before.steps, after.steps)) {
+        rows.push({ scope: 'block', id: after.id, change: 'changed', behaviorChanging: true, detail: `Block "${blockLabel}": step order changed.` });
+    }
 
     rows.push(...diffChoices(after.id, before.optionSets, after.optionSets));
     return rows;
@@ -323,6 +342,9 @@ export function diffSessionDefinitions(previous: SessionDefinition, next: Sessio
             continue;
         }
         rows.push(...diffBlock(old, block));
+    }
+    if (orderChanged(previous.blocks, next.blocks)) {
+        rows.push({ scope: 'session', id: next.id, change: 'changed', behaviorChanging: true, detail: 'Block order changed.' });
     }
 
     return rows;

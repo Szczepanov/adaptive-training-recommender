@@ -330,7 +330,7 @@ function usePreviousRevision(userId: string, phase: Phase): ExternalTrainingPlan
     return loaded !== null && loaded.key === key ? loaded.plan : null;
 }
 
-interface PlanPreviewProps {
+export interface PlanPreviewProps {
     plan: ExternalTrainingPlan;
     previous: ExternalPlanHeader | null;
     diff: PlanDiffRow[] | null;
@@ -338,7 +338,9 @@ interface PlanPreviewProps {
     onCancel: () => void;
 }
 
-function PlanPreview({ plan, previous, diff, onConfirm, onCancel }: PlanPreviewProps) {
+/** Exported (not just used internally) so the acknowledgement-gating behavior is directly
+ * testable without driving the full paste-JSON → validate → preview state machine. */
+export function PlanPreview({ plan, previous, diff, onConfirm, onCancel }: PlanPreviewProps) {
     const notNewer = previous !== null && plan.revision <= previous.revision;
 
     // M3.7: a diff row's `contentChanges` are only present for a matched v2/v2 session pair

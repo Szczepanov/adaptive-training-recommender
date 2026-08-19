@@ -886,14 +886,34 @@ the preview shows every supplied workout step rather than one summary line.
   `behaviorChangeCount > 0`. A diff containing only cosmetic wording changes never shows the
   checkbox and never blocks.
 
-Verified by `sessions/sessionDefinitionDiff.test.ts` (identical-definition no-op, per-side↔
-bilateral, optional↔required, the end-block/reduce-load choice-action swap, dose/load
-before/after formatting, added/removed blocks and steps, cosmetic-only wording producing zero
-behavior rows) and new `externalPlanDiff.ts` cases in `ExternalPlanImport.test.ts` (a v2/v2
-pair surfaces `contentChanges` and the "(see below)" summary suffix; a title-only v2 change
-stays cosmetic; an unchanged v2 definition produces no diff row) — the pre-existing v1 diff
-tests pass unmodified. `sessions/architecture.test.ts` and `engine/externalArchitecture.test.ts`
-pass unchanged (the new diff module only imports `sessions/models.ts`). Full `npm run check`
+**Review correction (2026-08-19).** A repo-owner review of `sessionDefinitionDiff.ts` found
+four correctness issues, all fixed in a follow-up commit on this branch: `formatAction()`
+rendered no `targetStepId`/`targetBlockId`, so a choice option re-targeted to a different
+step/block printed identical before/after text; `sameJson()` used raw `JSON.stringify`,
+so two semantically identical objects with differently-ordered keys (a real risk given the
+import flow regenerates full plan JSON from an LLM on each revision) were reported as
+changed; `formatDose('distance')` fabricated "0 m" for an unset distance; and the rest-change
+message misattached its ` s` unit suffix to the literal `'none'`. A second review pass found
+two further gaps, also fixed: `formatDose('distance')` omitted `sets`, so a sets-only change
+on a distance dose produced identical text; and block/step comparison was purely by-id
+(`byId()`-keyed maps), so swapping two existing blocks or steps — a real execution-order
+change — produced no diff row at all and could bypass import acknowledgement. Both are now
+detected via a same-membership, different-position check (`orderChanged`) layered on top of
+the existing add/remove detection.
+
+Verified by `sessions/sessionDefinitionDiff.test.ts` (identical-definition no-op, laterality
+change in **both** directions, optional↔required, the end-block/reduce-load choice-action
+swap, dose/load before/after formatting, **both** an added step + removed block and a removed
+step + added block, distance-dose set-count changes, a same-membership block/step reorder
+distinct from add/remove, no false-positive reorder when order is unchanged, structurally
+identical objects with reordered keys producing no row, cosmetic-only wording producing zero
+behavior rows) and `externalPlanDiff.ts`/`PlanPreview` cases in `ExternalPlanImport.test.tsx`
+(a v2/v2 pair surfaces `contentChanges` and the "(see below)" summary suffix; a title-only v2
+change stays cosmetic; an unchanged v2 definition produces no diff row; `PlanPreview`'s Import
+button renders disabled with the acknowledgement checkbox shown for a behavior-changing diff,
+and enabled with no checkbox for a cosmetic-only one) — the pre-existing v1 diff tests pass
+unmodified. `sessions/architecture.test.ts` and `engine/externalArchitecture.test.ts` pass
+unchanged (the new diff module only imports `sessions/models.ts`). Full `npm run check`
 (typecheck, lint, unit tests, catalog validation) passes.
 
 ### M3.8 `[-]` Manual block-first session builder
