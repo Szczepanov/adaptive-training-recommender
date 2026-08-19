@@ -112,10 +112,7 @@ def main():
     failed = 0
 
     with ThreadPoolExecutor(max_workers=args.workers) as executor:
-        futures = {
-            executor.submit(migrate_file, bucket, archive_root, gz): gz
-            for gz in gz_files
-        }
+        futures = {executor.submit(migrate_file, bucket, archive_root, gz): gz for gz in gz_files}
 
         for future in as_completed(futures):
             gz = futures[future]
@@ -136,10 +133,7 @@ def main():
                 )
 
     elapsed = time.time() - start_time
-    print(
-        f"\nMigration finished in {elapsed:.1f}s! "
-        f"Uploaded: {uploaded}, Failed: {failed}."
-    )
+    print(f"\nMigration finished in {elapsed:.1f}s! Uploaded: {uploaded}, Failed: {failed}.")
 
 
 if __name__ == "__main__":

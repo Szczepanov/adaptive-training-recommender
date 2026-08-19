@@ -31,7 +31,7 @@ export class PreferencesService {
         try {
             const docRef = doc(getDb(), 'users', userId, this.collectionPath, this.singletonDocId);
             const docSnap = await getDoc(docRef);
-            
+
             if (docSnap.exists()) {
                 return docSnap.data() as UserPreferences;
             }
@@ -49,7 +49,7 @@ export class PreferencesService {
         try {
             // Get existing preferences to merge with
             const existingPrefs = existingPrefsArg !== undefined ? existingPrefsArg : await this.getPreferences(userId);
-            
+
             // Prepare data for validation
             const rawData = {
                 userId,
@@ -146,11 +146,11 @@ export class PreferencesService {
         timeOfDay?: 'morning' | 'midday' | 'evening' | 'flexible'
     ): Promise<UserPreferences> {
         const updates: Partial<UserPreferences> = {};
-        
+
         if (weekdayMinutes !== undefined) updates.defaultWeekdayTimeMin = weekdayMinutes;
         if (weekendMinutes !== undefined) updates.defaultWeekendTimeMin = weekendMinutes;
         if (timeOfDay !== undefined) updates.preferredTimeOfDay = timeOfDay;
-        
+
         return this.upsertPreferences(userId, updates);
     }
 
@@ -163,10 +163,10 @@ export class PreferencesService {
         avoided?: string[]
     ): Promise<UserPreferences> {
         const updates: Partial<UserPreferences> = {};
-        
+
         if (preferred !== undefined) updates.preferredModalities = preferred;
         if (avoided !== undefined) updates.avoidedModalities = avoided;
-        
+
         return this.upsertPreferences(userId, updates);
     }
 
@@ -342,7 +342,7 @@ export class PreferencesService {
     }> {
         try {
             const prefs = await this.getPreferences(userId);
-            
+
             if (!prefs) {
                 return {
                     hasPreferences: false,

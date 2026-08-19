@@ -107,5 +107,3 @@ describe('GarminWorkoutQueueService', () => {
         expect(unsub).toBe(unsubscribe);
     });
 });
-
-

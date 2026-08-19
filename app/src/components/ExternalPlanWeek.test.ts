@@ -88,4 +88,3 @@ describe('ExternalPlanWeek occupancy and scheduling contracts', () => {
         expect(html).toContain('hard · 60–75 min');
     });
 });
-

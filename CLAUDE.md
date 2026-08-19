@@ -12,8 +12,10 @@ Quick guide for building, testing, and working on `adaptive-training-recommender
 
 ### Python Environment
 - Install / Sync: `uv sync`
+- Pre-commit Run: `uv run pre-commit run --all-files`
 - Run Tests: `uv run pytest`
 - Lint Python: `uv run ruff check .`
+- Check Format: `uv run ruff format --check .` (format with `uv run ruff format .`)
 - Type Check Python: `uv run mypy src/garmin_sync`
 - Daily Sync CLI: `uv run python -m garmin_sync sync [--date YYYY-MM-DD] [--force]`
 - Backfill CLI: `uv run python -m garmin_sync backfill [--days N] [--force]`

@@ -533,4 +533,3 @@ describe('validateEventTiming', () => {
         expect(resultValid.status).toBe('AVAILABLE');
     });
 });
-

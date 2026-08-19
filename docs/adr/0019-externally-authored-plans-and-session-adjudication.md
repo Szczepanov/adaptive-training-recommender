@@ -1,6 +1,6 @@
 # ADR-0019: Externally-Authored Plans and Session Adjudication
 
-* **Status:** Accepted 
+* **Status:** Accepted
 * **Date:** 2026-08-15
 * **Deciders:** Repository owner
 * **Source analysis:** [2026-08-15 externally-authored plan feasibility](../analysis/2026-08-15-externally-authored-plan-feasibility.md) (verified against `bfda040`)

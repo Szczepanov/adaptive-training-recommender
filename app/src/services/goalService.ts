@@ -367,7 +367,7 @@ export class GoalService {
     }> {
         try {
             const goals = await this.listGoals(userId);
-            
+
             const stats = {
                 total: goals.length,
                 active: 0,

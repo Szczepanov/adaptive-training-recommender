@@ -57,11 +57,7 @@ def normalize_activity(
             {
                 "zoneNumber": bucket.zone_number,
                 "secondsInZone": bucket.seconds_in_zone,
-                **(
-                    {"lowBoundary": bucket.low_boundary}
-                    if bucket.low_boundary is not None
-                    else {}
-                ),
+                **({"lowBoundary": bucket.low_boundary} if bucket.low_boundary is not None else {}),
             }
             for bucket in detail.power_zones
         ]
@@ -70,11 +66,7 @@ def normalize_activity(
             {
                 "zoneNumber": bucket.zone_number,
                 "secondsInZone": bucket.seconds_in_zone,
-                **(
-                    {"lowBoundary": bucket.low_boundary}
-                    if bucket.low_boundary is not None
-                    else {}
-                ),
+                **({"lowBoundary": bucket.low_boundary} if bucket.low_boundary is not None else {}),
             }
             for bucket in detail.hr_zones
         ]
@@ -94,11 +86,7 @@ def normalize_activity(
                     if lap.average_power_watts is not None
                     else {}
                 ),
-                **(
-                    {"averageHrBpm": lap.average_hr_bpm}
-                    if lap.average_hr_bpm is not None
-                    else {}
-                ),
+                **({"averageHrBpm": lap.average_hr_bpm} if lap.average_hr_bpm is not None else {}),
             }
             for lap in detail.laps
         ]

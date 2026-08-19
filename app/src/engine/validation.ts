@@ -182,10 +182,10 @@ export function validateCheckin(raw: any): ValidationResult<DailySubjectiveCheck
         const value = normalizeEmptyToNull(raw[field]);
         if (value !== null) {
             if (!isInRange(value, 1, 10)) {
-                errors.push({ 
-                    field, 
+                errors.push({
+                    field,
                     message: `${field} must be between 1 and 10 or empty`,
-                    value 
+                    value
                 });
             }
         }
@@ -195,10 +195,10 @@ export function validateCheckin(raw: any): ValidationResult<DailySubjectiveCheck
     const booleanFlags = ['painOrInjury', 'illnessSymptoms', 'unusuallyLimitedTime', 'alreadyTrainedToday'];
     booleanFlags.forEach(field => {
         if (raw[field] !== undefined && typeof raw[field] !== 'boolean') {
-            errors.push({ 
-                field, 
+            errors.push({
+                field,
                 message: `${field} must be a boolean`,
-                value: raw[field] 
+                value: raw[field]
             });
         }
     });
@@ -215,7 +215,7 @@ export function validateCheckin(raw: any): ValidationResult<DailySubjectiveCheck
                 });
             }
         }
-        
+
         if (raw.availability.preferredModalityToday !== undefined) {
             const modality = normalizeEmptyToNull(raw.availability.preferredModalityToday);
             if (modality !== null && typeof modality !== 'string') {
@@ -363,7 +363,7 @@ export function validateDecisionJournalEntry(raw: any): ValidationResult<Decisio
 
 export function computeDataQuality(raw: any): { isComplete: boolean; missingFields: string[] } {
     const missingFields: string[] = [];
-    
+
     // Required fields for completeness
     const readinessFields = ['readiness', 'sleepQuality', 'fatigue', 'soreness', 'mentalStress', 'motivation'];
     readinessFields.forEach(field => {
@@ -420,26 +420,26 @@ export function validateGoal(raw: any): ValidationResult<UserGoal> {
     // Domain validation
     const validDomains: GoalDomain[] = ['endurance', 'strength', 'mobility', 'weight_loss', 'general_fitness', 'other'];
     if (!raw.domain || !validDomains.includes(raw.domain)) {
-        errors.push({ 
-            field: 'domain', 
-            message: `Domain must be one of: ${validDomains.join(', ')}` 
+        errors.push({
+            field: 'domain',
+            message: `Domain must be one of: ${validDomains.join(', ')}`
         });
     }
 
     // Priority validation (1-5)
     if (!isInRange(raw.priority, 1, 5) || !Number.isInteger(raw.priority)) {
-        errors.push({ 
-            field: 'priority', 
-            message: 'Priority must be an integer between 1 and 5' 
+        errors.push({
+            field: 'priority',
+            message: 'Priority must be an integer between 1 and 5'
         });
     }
 
     // Status validation
     const validStatuses: GoalStatus[] = ['active', 'paused', 'completed', 'archived'];
     if (!raw.status || !validStatuses.includes(raw.status)) {
-        errors.push({ 
-            field: 'status', 
-            message: `Status must be one of: ${validStatuses.join(', ')}` 
+        errors.push({
+            field: 'status',
+            message: `Status must be one of: ${validStatuses.join(', ')}`
         });
     }
 
@@ -615,27 +615,27 @@ export function validateConstraint(raw: any): ValidationResult<UserConstraint> {
     // Type validation
     const validTypes: ConstraintType[] = ['boolean', 'number', 'string', 'string_array'];
     if (!raw.type || !validTypes.includes(raw.type)) {
-        errors.push({ 
-            field: 'type', 
-            message: `Type must be one of: ${validTypes.join(', ')}` 
+        errors.push({
+            field: 'type',
+            message: `Type must be one of: ${validTypes.join(', ')}`
         });
     }
 
     // Severity validation
     const validSeverities: ConstraintSeverity[] = ['hard', 'soft'];
     if (!raw.severity || !validSeverities.includes(raw.severity)) {
-        errors.push({ 
-            field: 'severity', 
-            message: `Severity must be one of: ${validSeverities.join(', ')}` 
+        errors.push({
+            field: 'severity',
+            message: `Severity must be one of: ${validSeverities.join(', ')}`
         });
     }
 
     // Category validation
     const validCategories: ConstraintCategory[] = ['equipment', 'physical_caution', 'schedule', 'environment', 'custom'];
     if (!raw.category || !validCategories.includes(raw.category)) {
-        errors.push({ 
-            field: 'category', 
-            message: `Category must be one of: ${validCategories.join(', ')}` 
+        errors.push({
+            field: 'category',
+            message: `Category must be one of: ${validCategories.join(', ')}`
         });
     }
 
@@ -722,9 +722,9 @@ export function validatePreferences(raw: any): ValidationResult<UserPreferences>
     // Recovery style validation
     const validRecoveryStyles: RecoveryStyle[] = ['passive', 'active', 'mixed'];
     if (!raw.preferredRecoveryStyle || !validRecoveryStyles.includes(raw.preferredRecoveryStyle)) {
-        errors.push({ 
-            field: 'preferredRecoveryStyle', 
-            message: `Preferred recovery style must be one of: ${validRecoveryStyles.join(', ')}` 
+        errors.push({
+            field: 'preferredRecoveryStyle',
+            message: `Preferred recovery style must be one of: ${validRecoveryStyles.join(', ')}`
         });
     }
 
@@ -746,9 +746,9 @@ export function validatePreferences(raw: any): ValidationResult<UserPreferences>
     // Time of day validation
     const validTimesOfDay: TimeOfDay[] = ['morning', 'midday', 'evening', 'flexible'];
     if (!raw.preferredTimeOfDay || !validTimesOfDay.includes(raw.preferredTimeOfDay)) {
-        errors.push({ 
-            field: 'preferredTimeOfDay', 
-            message: `Preferred time of day must be one of: ${validTimesOfDay.join(', ')}` 
+        errors.push({
+            field: 'preferredTimeOfDay',
+            message: `Preferred time of day must be one of: ${validTimesOfDay.join(', ')}`
         });
     }
 
@@ -803,9 +803,9 @@ export function validatePreferences(raw: any): ValidationResult<UserPreferences>
     // Explanation verbosity validation
     const validVerbosity: ExplanationVerbosity[] = ['brief', 'detailed', 'technical'];
     if (!raw.explanationVerbosity || !validVerbosity.includes(raw.explanationVerbosity)) {
-        errors.push({ 
-            field: 'explanationVerbosity', 
-            message: `Explanation verbosity must be one of: ${validVerbosity.join(', ')}` 
+        errors.push({
+            field: 'explanationVerbosity',
+            message: `Explanation verbosity must be one of: ${validVerbosity.join(', ')}`
         });
     }
 

@@ -89,14 +89,20 @@ def test_endurance_workout_generates_repeat_group_with_child_steps():
     assert child_interval["stepType"]["stepTypeKey"] == "interval"
     assert child_interval["endConditionValue"] == 900
     assert "230-240 W" in child_interval["description"]
-    assert child_interval["targetType"] == {"workoutTargetTypeId": 2, "workoutTargetTypeKey": "power.zone"}
+    assert child_interval["targetType"] == {
+        "workoutTargetTypeId": 2,
+        "workoutTargetTypeKey": "power.zone",
+    }
     assert child_interval["targetValueOne"] == 230.0
     assert child_interval["targetValueTwo"] == 240.0
 
     child_recovery = repeat_group["workoutSteps"][1]
     assert child_recovery["stepType"]["stepTypeKey"] == "recovery"
     assert child_recovery["endConditionValue"] == 300
-    assert child_recovery["targetType"] == {"workoutTargetTypeId": 1, "workoutTargetTypeKey": "no.target"}
+    assert child_recovery["targetType"] == {
+        "workoutTargetTypeId": 1,
+        "workoutTargetTypeKey": "no.target",
+    }
 
 
 def test_extract_power_target_standard_range():
@@ -441,7 +447,3 @@ def test_notes_fallback_recovery_in_garmin_payload():
     assert child_steps[0]["endConditionValue"] == 30
     assert child_steps[1]["stepType"]["stepTypeKey"] == "recovery"
     assert child_steps[1]["endConditionValue"] == 15
-
-
-
-

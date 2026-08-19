@@ -97,4 +97,3 @@ def test_compute_derived_metrics_steps():
     assert derived.deltas.stepsVs7d == 14000.0
     assert derived.deltas.stepsVs28d == 14000.0
     assert derived.steps28dStdev == round(statistics.pstdev([5000, 6000, 7000, 6000] * 4), 1)
-

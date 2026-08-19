@@ -390,9 +390,42 @@ function renderSubjective(
         return lines;
     }
 
+    const latest = checkins[checkins.length - 1];
+
     lines.push('Higher is better for readiness, sleep quality and motivation; higher is worse for fatigue, soreness and mental stress.');
     lines.push('');
-    lines.push(`Averages across ${checkins.length} of ${windowDays} days:`);
+    lines.push(`Most recent check-in — ${latest.date}:`);
+    lines.push(`- Readiness ${round(latest.readiness ?? null)} · fatigue ${round(latest.fatigue ?? null)} · soreness ${round(latest.soreness ?? null)}`);
+    lines.push(`- Sleep quality ${round(latest.sleepQuality ?? null)} · motivation ${round(latest.motivation ?? null)} · mental stress ${round(latest.mentalStress ?? null)}`);
+
+    const latestFlags: string[] = [];
+    if (latest.painOrInjury) latestFlags.push('pain/injury flagged');
+    if (latest.illnessSymptoms) latestFlags.push('illness symptoms flagged');
+    if (latest.alreadyTrainedToday) latestFlags.push('already trained today');
+    if (latest.unusuallyLimitedTime) latestFlags.push('unusually limited time');
+    if (latest.availability?.timeAvailableMin != null) latestFlags.push(`${latest.availability.timeAvailableMin} min available`);
+    if (latest.availability?.preferredModalityToday) latestFlags.push(`preferred modality: ${latest.availability.preferredModalityToday}`);
+    if (latest.availability?.indoorOnly) latestFlags.push('indoor only');
+    if (latestFlags.length > 0) {
+        lines.push(`- Flags / availability: ${latestFlags.join(' · ')}`);
+    }
+
+    if (latest.tissueResponses) {
+        const trEntries = Object.entries(latest.tissueResponses).filter(([, tr]) => tr != null);
+        if (trEntries.length > 0) {
+            const trSummaries = trEntries.map(([region, tr]) => {
+                const parts = [`${region}: morning ${tr.morningState}`];
+                if (tr.painDuringTraining) parts.push(`during ${tr.painDuringTraining}`);
+                if (tr.afterTrainingState) parts.push(`after ${tr.afterTrainingState}`);
+                if (tr.nextMorningReaction) parts.push(`next morning ${tr.nextMorningReaction}`);
+                return parts.join(', ');
+            });
+            lines.push(`- Tissue response: ${trSummaries.join('; ')}`);
+        }
+    }
+
+    lines.push('');
+    lines.push(`Window averages (${checkins.length} of ${windowDays} days have data):`);
     lines.push(`- Readiness ${round(mean(checkins.map(c => c.readiness)))} · fatigue ${round(mean(checkins.map(c => c.fatigue)))} · soreness ${round(mean(checkins.map(c => c.soreness)))}`);
     lines.push(`- Sleep quality ${round(mean(checkins.map(c => c.sleepQuality)))} · motivation ${round(mean(checkins.map(c => c.motivation)))} · mental stress ${round(mean(checkins.map(c => c.mentalStress)))}`);
     lines.push(...renderSubjectiveBaseline(checkins, baselineCheckins, baselineDays, windowDays));
@@ -401,9 +434,11 @@ function renderSubjective(
     const painDays = checkins.filter(c => c.painOrInjury).map(c => c.date);
     const illnessDays = checkins.filter(c => c.illnessSymptoms).map(c => c.date);
     const limitedDays = checkins.filter(c => c.unusuallyLimitedTime).map(c => c.date);
+    const alreadyTrainedDays = checkins.filter(c => c.alreadyTrainedToday).map(c => c.date);
     lines.push(`- Pain or injury flagged: ${painDays.length > 0 ? `${painDays.length} day(s) — ${painDays.join(', ')}` : 'none'}`);
     lines.push(`- Illness symptoms flagged: ${illnessDays.length > 0 ? `${illnessDays.length} day(s) — ${illnessDays.join(', ')}` : 'none'}`);
     if (limitedDays.length > 0) lines.push(`- Unusually limited time: ${limitedDays.length} day(s) — ${limitedDays.join(', ')}`);
+    if (alreadyTrainedDays.length > 0) lines.push(`- Already trained today: ${alreadyTrainedDays.length} day(s) — ${alreadyTrainedDays.join(', ')}`);
 
     const notes = checkins.filter(c => c.notes && c.notes.trim().length > 0);
     if (notes.length > 0) {

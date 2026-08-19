@@ -130,7 +130,9 @@ def test_run_backfill_exception(mock_settings: Any, mock_service: Any) -> None:
     assert exit_code == 1
 
 
-def test_run_audit_cmd_success(mock_settings: Any, mock_service: Any, mock_run_audit: Any, mock_format_report: Any) -> None:
+def test_run_audit_cmd_success(
+    mock_settings: Any, mock_service: Any, mock_run_audit: Any, mock_format_report: Any
+) -> None:
     mock_service_instance = mock_service.return_value
     mock_run_audit.return_value = "report_data"
     mock_format_report.return_value = "Formatted Report"
@@ -151,7 +153,9 @@ def test_run_audit_cmd_success(mock_settings: Any, mock_service: Any, mock_run_a
     mock_format_report.assert_called_once_with("report_data")
 
 
-def test_run_audit_cmd_exception(mock_settings: Any, mock_service: Any, mock_run_audit: Any) -> None:
+def test_run_audit_cmd_exception(
+    mock_settings: Any, mock_service: Any, mock_run_audit: Any
+) -> None:
     mock_run_audit.side_effect = Exception("Test Error")
 
     exit_code = run_audit_cmd([])
@@ -234,11 +238,17 @@ def test_main_audit(mock_run_audit_cmd: Any) -> None:
 def test_main_rebuild(mock_run_rebuild_cmd: Any) -> None:
     mock_run_rebuild_cmd.return_value = 0
 
-    with patch.object(sys, "argv", ["garmin_sync", "rebuild", "--start-date", "2023-10-01", "--end-date", "2023-10-31"]):
+    with patch.object(
+        sys,
+        "argv",
+        ["garmin_sync", "rebuild", "--start-date", "2023-10-01", "--end-date", "2023-10-31"],
+    ):
         exit_code = main()
 
     assert exit_code == 0
-    mock_run_rebuild_cmd.assert_called_once_with(["--start-date", "2023-10-01", "--end-date", "2023-10-31"])
+    mock_run_rebuild_cmd.assert_called_once_with(
+        ["--start-date", "2023-10-01", "--end-date", "2023-10-31"]
+    )
 
 
 def test_main_missing_command() -> None:

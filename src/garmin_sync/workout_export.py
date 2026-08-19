@@ -133,12 +133,20 @@ def _extract_recovery_seconds(step: dict[str, Any]) -> int | None:
     text = f"{step.get('notes', '')} {step.get('name', '')} {step.get('description', '')}"
     if not text.strip():
         return None
-    m = re.search(r"followed\s+by\s+(\d+(?:\.\d+)?)\s*(s(?:ec(?:onds?)?)?|m(?:in(?:utes?)?)?)\b", text, re.IGNORECASE)
+    m = re.search(
+        r"followed\s+by\s+(\d+(?:\.\d+)?)\s*(s(?:ec(?:onds?)?)?|m(?:in(?:utes?)?)?)\b",
+        text,
+        re.IGNORECASE,
+    )
     if m:
         val = float(m.group(1))
         unit = m.group(2).lower()
         return round(val * 60) if unit.startswith("m") else round(val)
-    m2 = re.search(r"(\d+(?:\.\d+)?)\s*(s(?:ec(?:onds?)?)?|m(?:in(?:utes?)?)?)\s+(?:easy|rest|recovery|off)\b", text, re.IGNORECASE)
+    m2 = re.search(
+        r"(\d+(?:\.\d+)?)\s*(s(?:ec(?:onds?)?)?|m(?:in(?:utes?)?)?)\s+(?:easy|rest|recovery|off)\b",
+        text,
+        re.IGNORECASE,
+    )
     if m2:
         val = float(m2.group(1))
         unit = m2.group(2).lower()
@@ -157,7 +165,11 @@ def _extract_set_recovery_seconds(step: dict[str, Any]) -> int | None:
     text = f"{step.get('notes', '')} {step.get('description', '')}"
     if not text.strip():
         return None
-    m = re.search(r"(\d+(?:\.\d+)?)\s*(s(?:ec(?:onds?)?)?|m(?:in(?:utes?)?)?)(?:\s+(?:easy|rest|recovery|riding))?\s+between\s+sets\b", text, re.IGNORECASE)
+    m = re.search(
+        r"(\d+(?:\.\d+)?)\s*(s(?:ec(?:onds?)?)?|m(?:in(?:utes?)?)?)(?:\s+(?:easy|rest|recovery|riding))?\s+between\s+sets\b",
+        text,
+        re.IGNORECASE,
+    )
     if m:
         val = float(m.group(1))
         unit = m.group(2).lower()
@@ -271,7 +283,9 @@ def _build_step_dto(
             "stepOrder": step_order + 1,
             "stepType": STEP_TYPE_MAP["recovery"],
             "childStepId": None,
-            "description": f"Rest interval ({rec_target_str})" if rec_target_str else "Rest interval",
+            "description": f"Rest interval ({rec_target_str})"
+            if rec_target_str
+            else "Rest interval",
             "endCondition": END_CONDITION_MAP["time"],
             "endConditionValue": rest_sec,
             "targetType": rec_target_type,
@@ -336,7 +350,10 @@ def canonical_workout_to_garmin_payload(
                         "description": "Block recovery",
                         "endCondition": END_CONDITION_MAP["time"],
                         "endConditionValue": block_rest_sec,
-                        "targetType": {"workoutTargetTypeId": 1, "workoutTargetTypeKey": "no.target"},
+                        "targetType": {
+                            "workoutTargetTypeId": 1,
+                            "workoutTargetTypeKey": "no.target",
+                        },
                         "targetValueOne": None,
                         "targetValueTwo": None,
                         "zoneNumber": None,
@@ -363,7 +380,9 @@ def canonical_workout_to_garmin_payload(
                 sets = step.get("sets")
                 reps = step.get("repetitions")
                 set_recovery_sec = step.get("setRecoverySec")
-                if not set_recovery_sec and (sets or "between sets" in str(step.get("notes", "")).lower()):
+                if not set_recovery_sec and (
+                    sets or "between sets" in str(step.get("notes", "")).lower()
+                ):
                     set_recovery_sec = _extract_set_recovery_seconds(step)
 
                 # Case A: Multi-set intervals (e.g. 3 sets of 10 reps)
@@ -400,7 +419,10 @@ def canonical_workout_to_garmin_payload(
                                 "description": "Set recovery",
                                 "endCondition": END_CONDITION_MAP["time"],
                                 "endConditionValue": set_recovery_sec,
-                                "targetType": {"workoutTargetTypeId": 1, "workoutTargetTypeKey": "no.target"},
+                                "targetType": {
+                                    "workoutTargetTypeId": 1,
+                                    "workoutTargetTypeKey": "no.target",
+                                },
                                 "targetValueOne": None,
                                 "targetValueTwo": None,
                                 "zoneNumber": None,

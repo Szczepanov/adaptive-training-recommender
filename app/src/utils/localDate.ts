@@ -64,4 +64,3 @@ export function getDayDiff(dateStrA: string, dateStrB: string): number {
     const utcB = toUtcMidnight(dateStrB);
     return Math.round((utcA - utcB) / (24 * 60 * 60 * 1000));
 }
-
