@@ -41,6 +41,18 @@ function formatRange(value: RangeOrNumber): string {
     return typeof value === 'number' ? String(value) : `${value.min}–${value.max}`;
 }
 
+/** M4.3: `notEarlierThanMinutesAfter` is an authored timing constraint (e.g. tissue/hydration
+ * recovery before a companion), not just documentation -- a companion with none set is always
+ * eligible immediately. */
+function isCompanionEligibleNow(
+    companion: { notEarlierThanMinutesAfter?: number },
+    finishedAt: number,
+    now: number,
+): boolean {
+    if (companion.notEarlierThanMinutesAfter === undefined) return true;
+    return now >= finishedAt + companion.notEarlierThanMinutesAfter * 60_000;
+}
+
 function formatEffort(step: SessionStep): string | null {
     const effort = step.effort;
     if (!effort) return null;
@@ -90,10 +102,19 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
     // just as well be skipped. `finishedTitle` is only for the prompt's header copy.
     const [companionPrompt, setCompanionPrompt] = useState<{
         finishedTitle: string;
+        finishedAt: number;
         companions: NonNullable<SessionDefinition['companionSessions']>;
     } | null>(null);
     const [startingCompanionId, setStartingCompanionId] = useState<string | null>(null);
     const [companionError, setCompanionError] = useState<string | null>(null);
+    // Ticks the companion prompt's "available in N minutes" copy toward eligibility -- only
+    // runs while the prompt is open, so it costs nothing the rest of the runner's lifetime.
+    const [companionPromptNow, setCompanionPromptNow] = useState(() => Date.now());
+    useEffect(() => {
+        if (!companionPrompt) return;
+        const interval = setInterval(() => setCompanionPromptNow(Date.now()), 15_000);
+        return () => clearInterval(interval);
+    }, [companionPrompt]);
     const [pendingGroupAdvance, setPendingGroupAdvance] = useState<{
         blockIndex: number;
         stepIndex: number;
@@ -195,6 +216,10 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
      * manual definitions -- and starts it as its own independent, no-selection-authority
      * execution (D-MAUTH `unplanned_log`), exactly like starting any other unplanned session. */
     const startCompanion = async (companion: NonNullable<SessionDefinition['companionSessions']>[number]) => {
+        if (companionPrompt && !isCompanionEligibleNow(companion, companionPrompt.finishedAt, companionPromptNow)) {
+            setCompanionError(`"${companion.definitionRef}" isn't available yet -- it opens ${companion.notEarlierThanMinutesAfter} minutes after the primary session finished.`);
+            return;
+        }
         setStartingCompanionId(companion.id);
         setCompanionError(null);
         try {
@@ -284,23 +309,28 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                     </header>
                     {companionError && <p className="session-runner-error" role="alert">{companionError}</p>}
                     <div className="fixture-grid">
-                        {companionPrompt.companions.map(companion => (
-                            <div key={companion.id} className="fixture-card">
-                                <div className="fixture-info">
-                                    <span className="fixture-intent-badge">{companion.relation.replaceAll('_', ' ')}{companion.optional ? ' · optional' : ''}</span>
-                                    <h3 className="fixture-title">{companion.definitionRef}</h3>
-                                    {companion.note && <p className="fixture-summary">{companion.note}</p>}
+                        {companionPrompt.companions.map(companion => {
+                            const eligible = isCompanionEligibleNow(companion, companionPrompt.finishedAt, companionPromptNow);
+                            const minutesRemaining = eligible ? 0 : Math.ceil((companionPrompt.finishedAt + (companion.notEarlierThanMinutesAfter ?? 0) * 60_000 - companionPromptNow) / 60_000);
+                            return (
+                                <div key={companion.id} className="fixture-card">
+                                    <div className="fixture-info">
+                                        <span className="fixture-intent-badge">{companion.relation.replaceAll('_', ' ')}{companion.optional ? ' · optional' : ''}</span>
+                                        <h3 className="fixture-title">{companion.definitionRef}</h3>
+                                        {companion.note && <p className="fixture-summary">{companion.note}</p>}
+                                        {!eligible && <p className="fixture-summary">Available in {minutesRemaining} minute{minutesRemaining === 1 ? '' : 's'}.</p>}
+                                    </div>
+                                    <button
+                                        type="button"
+                                        className="start-fixture-btn"
+                                        disabled={startingCompanionId !== null || !eligible}
+                                        onClick={() => startCompanion(companion)}
+                                    >
+                                        {startingCompanionId === companion.id ? 'Starting…' : eligible ? 'Start companion →' : 'Not yet available'}
+                                    </button>
                                 </div>
-                                <button
-                                    type="button"
-                                    className="start-fixture-btn"
-                                    disabled={startingCompanionId !== null}
-                                    onClick={() => startCompanion(companion)}
-                                >
-                                    {startingCompanionId === companion.id ? 'Starting…' : 'Start companion →'}
-                                </button>
-                            </div>
-                        ))}
+                            );
+                        })}
                     </div>
                     <div className="session-authoring-actions">
                         <button type="button" className="start-fixture-btn secondary-authoring-btn" onClick={() => { setCompanionPrompt(null); onClose?.(); }}>
@@ -706,7 +736,7 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                             setShowAbandonConfirmation(false);
                             setCompletionError(null);
                             if (companions && companions.length > 0) {
-                                setCompanionPrompt({ finishedTitle, companions });
+                                setCompanionPrompt({ finishedTitle, finishedAt: Date.now(), companions });
                             } else if (onClose) {
                                 onClose();
                             }
@@ -726,7 +756,7 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                             // executable companion (e.g. the recovery spin) worth offering --
                             // it is never gated on the primary's own completion.
                             if (companions && companions.length > 0) {
-                                setCompanionPrompt({ finishedTitle, companions });
+                                setCompanionPrompt({ finishedTitle, finishedAt: Date.now(), companions });
                             } else if (onClose) {
                                 onClose();
                             }

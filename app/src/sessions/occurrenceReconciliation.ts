@@ -94,50 +94,62 @@ export interface ExecutionGarminMatch {
 }
 
 /**
- * For each execution, finds the closest same-date, compatible-modality, comparable-duration
- * Garmin activity not already claimed by an earlier (sorted) execution -- one activity
- * reconciles to at most one execution, mirroring `completedTraining.ts`'s own
- * adherence-to-Garmin matching tolerance and exclusivity so the two reconciliation paths
- * behave consistently. An execution with no resolved modality still matches on date and
- * duration alone; an execution with no completed duration is never matched (nothing to
- * compare yet, and "counted once" isn't at risk until it's counted at all).
+ * Finds the closest same-date, compatible-modality, comparable-duration Garmin activity for
+ * each execution -- one activity reconciles to at most one execution, mirroring
+ * `completedTraining.ts`'s own adherence-to-Garmin matching tolerance and exclusivity so the
+ * two reconciliation paths behave consistently. An execution with no resolved modality still
+ * matches on date and duration alone; an execution with no completed duration is never
+ * matched (nothing to compare yet, and "counted once" isn't at risk until it's counted at
+ * all).
+ *
+ * Matching is global, not per-execution-in-isolation: every valid (execution, activity) pair
+ * within tolerance is a candidate, and candidates are claimed in order of increasing duration
+ * difference. That way a Garmin activity contested by two executions goes to whichever one is
+ * genuinely the closer duration match, not whichever execution happens to sort first.
  */
 export function matchExecutionsToGarminActivities(
     executions: readonly ExecutionOccurrenceSummary[],
     activities: readonly NormalizedGarminActivity[],
     toleranceMinutes: number = DEFAULT_DURATION_TOLERANCE_MIN,
 ): ExecutionGarminMatch[] {
-    const claimedActivityIds = new Set<string>();
-    const matches: ExecutionGarminMatch[] = [];
+    interface Candidate {
+        execution: ExecutionOccurrenceSummary;
+        activity: NormalizedGarminActivity;
+        difference: number;
+    }
 
-    const orderedExecutions = [...executions].sort((left, right) => left.executionId.localeCompare(right.executionId));
-    for (const execution of orderedExecutions) {
+    const candidates: Candidate[] = [];
+    for (const execution of executions) {
         if (execution.durationMin === null) continue;
-
-        let bestActivity: NormalizedGarminActivity | null = null;
-        let bestDifference = Infinity;
         for (const activity of activities) {
-            if (claimedActivityIds.has(activity.activityId)) continue;
             if (activity.date !== execution.date) continue;
             if (activity.durationMin === null) continue;
             if (execution.modality && normalizedGarminModality(activity.type) !== execution.modality) continue;
             const difference = Math.abs(activity.durationMin - execution.durationMin);
             if (difference > toleranceMinutes) continue;
-            if (difference < bestDifference) {
-                bestDifference = difference;
-                bestActivity = activity;
-            }
+            candidates.push({ execution, activity, difference });
         }
+    }
 
-        if (bestActivity) {
-            claimedActivityIds.add(bestActivity.activityId);
-            matches.push({
-                executionId: execution.executionId,
-                activityId: bestActivity.activityId,
-                executionDurationMin: execution.durationMin,
-                activityDurationMin: bestActivity.durationMin!,
-            });
-        }
+    // Closest difference first; ties broken deterministically by id rather than input order.
+    candidates.sort((left, right) => left.difference - right.difference
+        || left.execution.executionId.localeCompare(right.execution.executionId)
+        || left.activity.activityId.localeCompare(right.activity.activityId));
+
+    const claimedActivityIds = new Set<string>();
+    const claimedExecutionIds = new Set<string>();
+    const matches: ExecutionGarminMatch[] = [];
+    for (const candidate of candidates) {
+        if (claimedActivityIds.has(candidate.activity.activityId)) continue;
+        if (claimedExecutionIds.has(candidate.execution.executionId)) continue;
+        claimedActivityIds.add(candidate.activity.activityId);
+        claimedExecutionIds.add(candidate.execution.executionId);
+        matches.push({
+            executionId: candidate.execution.executionId,
+            activityId: candidate.activity.activityId,
+            executionDurationMin: candidate.execution.durationMin!,
+            activityDurationMin: candidate.activity.durationMin!,
+        });
     }
 
     return matches;

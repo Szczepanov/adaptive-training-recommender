@@ -80,13 +80,14 @@ describe('matchExecutionsToGarminActivities', () => {
 
     it('claims each Garmin activity for at most one execution, preferring the closer duration match', () => {
         const matches = matchExecutionsToGarminActivities(
-            [execution({ executionId: 'exec-a', durationMin: 29 }), execution({ executionId: 'exec-b', durationMin: 20 })],
+            [execution({ executionId: 'exec-a', durationMin: 20 }), execution({ executionId: 'exec-b', durationMin: 29 })],
             [activity({ durationMin: 30 })],
         );
-        // Both are within tolerance of the same single activity; sorted execution order
-        // (exec-a before exec-b) claims it first -- exactly one match, never two, for one
-        // Garmin activity.
-        expect(matches).toEqual([{ executionId: 'exec-a', activityId: 'act-1', executionDurationMin: 29, activityDurationMin: 30 }]);
+        // Both are within tolerance of the same single activity; exec-a sorts first
+        // alphabetically but is the *worse* duration match (diff 10 vs exec-b's diff 1) -- the
+        // genuinely closer match must win regardless of execution order, and exactly one match
+        // is produced, never two, for one Garmin activity.
+        expect(matches).toEqual([{ executionId: 'exec-b', activityId: 'act-1', executionDurationMin: 29, activityDurationMin: 30 }]);
     });
 
     it('never matches the same Garmin activity to two different executions', () => {

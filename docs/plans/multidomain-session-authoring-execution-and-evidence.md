@@ -1267,9 +1267,11 @@ inside its own execution with no change here.
 
 * **Starting a companion creates its own execution.** `SessionRunner.tsx` captures the
   finishing session's `title`/`companionSessions` before `completeSession`/`abandonSession`
-  runs (both clear `runner.definition`), then — only once the primary session is no longer
+  runs, since neither clears `runner.definition` itself (it stays the just-finished session's
+  definition until the next `startSession` call overwrites it) — the capture is what the
+  companion prompt actually relies on. Then — only once the primary session is no longer
   active, never concurrently with it, since the runner architecture holds exactly one active
-  execution at a time — offers a "Companion session available" prompt. **Start** resolves the
+  execution at a time — it offers a "Companion session available" prompt. **Start** resolves the
   companion's `definitionRef` the same two ways the existing fixture/saved-session pickers
   already do (a reviewed fixture, e.g. `08-recovery-spin-companion`, or one of the athlete's own
   saved manual definitions) and calls `runner.startFixtureSession`/`startSession` — the ordinary
