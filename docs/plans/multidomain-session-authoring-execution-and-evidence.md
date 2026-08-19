@@ -298,7 +298,7 @@ rewritten as an outcome; an in-progress item retains its remaining acceptance wo
 | M3.3 | Save/schedule/replace/add/start intent flow | `[x]` | Full hard-gate and additional-session authority implemented and integrated |
 | M3.4 | Catalog-to-definition adapter and generic runner strength parity | `[x]` | Runner parity reached (RIR/gauges, context, 1RM writeback, shared read); dual-runner retained for safe transition |
 | M3.5 | Bounded exercise/drill facet vocabulary | `[x]` | — |
-| M3.6 | External plan/session schema v2 adapter | `[ ]` | M3.1 |
+| M3.6 | External plan/session schema v2 adapter | `[x]` | Schema, validation, resolver/display wiring, export support shipped; M3.7's fine-grained diff remains |
 | M3.7 | Full semantic import preview and diff | `[-]` | M3.6 semantic source and revision diff |
 | M3.8 | Manual block-first session builder | `[-]` | Authored option sets and fixture-equivalence acceptance |
 | M4.1 | Group execution modes | `[x]` | M2.5 |
@@ -792,7 +792,7 @@ cheapest correct resolution flow. M9.1 revisits this.
 invalid facets, old catalog workouts remain valid through optional defaults, and an unresolved
 free-text movement is visibly low-confidence in the runner.
 
-### M3.6 `[ ]` External plan/session schema v2 adapter
+### M3.6 `[x]` External plan/session schema v2 adapter
 
 **Change.** Publish `external-plan@2` using normalized session definitions while retaining v1
 read/import compatibility. Validation remains strict and path-specific. Importers may not
@@ -806,6 +806,22 @@ tests.
 
 **Done when.** The M0.2 external fixtures validate; v1 remains importable; ranges, sides,
 option sets and companions survive hash and reload; unknown keys fail.
+
+**Outcome (2026-08-19).** Shipped as designed, plus JSON/Zwift export support (not in the
+original file list, added on request). `ExternalPlanSession`/`ExternalTrainingPlan`/
+`EXTERNAL_PLAN_SCHEMA` in `engine/models.ts` are untouched and keep meaning v1 exactly as
+before — the envelope fields (`gating`/`placement`/`priority`/`objectives`/`scaling`/
+`isEvent`) are shared unchanged between schemas via extracted, reused validators
+(`validateExternalSessionEnvelope`/`validateExternalPlanEnvelope`); only `prescription` is
+replaced by an embedded `SessionDefinition` (`definition`). The session resolver, template
+synthesis, gating/adjudication, scheduling/placement, plan diffing, and the import UI's
+validate-before-save step are all schema-version-aware; every M0.2 fixture validates as a
+v2 session's `definition` unmodified. Firestore rules needed a real fix, not a no-op:
+`hasValidExternalPlanRevision()` hard-coded the v1 schema literal and would have silently
+rejected every v2 write at the database layer — caught by re-running the emulator suite
+rather than trusting the original "no rules change needed" assumption in this plan. Deferred
+to M3.7 as originally scoped: fine-grained per-field content diffing for a v2 session
+(`externalPlanDiff.ts` reports a coarse "the session content changed" for either schema).
 
 ### M3.7 `[-]` Full semantic import preview and diff
 

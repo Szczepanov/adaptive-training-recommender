@@ -3,9 +3,12 @@
 > **Status: implemented contract.** Accepted in
 > [ADR-0019](./adr/0019-externally-authored-plans-and-session-adjudication.md) and built in
 > [Phase 8](./plans/phase-8-externally-planned-mode.md). Field names, storage paths, and
-> validation rules below describe current behaviour; `app/src/engine/validation.ts`
-> `validateExternalTrainingPlan` is the enforcing authority, and where the two disagree the
-> code wins. The round-trip against a real generated plan required no schema change.
+> validation rules below describe **v1** (`external-plan@1`) current behaviour;
+> `app/src/engine/validation.ts` `validateExternalTrainingPlan` is the enforcing authority,
+> and where the two disagree the code wins. The round-trip against a real generated plan
+> required no schema change. **v2** (`external-plan@2`, M3.6) is documented separately
+> below — v1 remains fully importable and this document's v1 sections are otherwise
+> unchanged.
 
 The athlete authors a training plan with a general-purpose AI, which emits JSON against
 the schema below. This application imports it, validates it at the persistence boundary,
@@ -335,6 +338,136 @@ Paste this above the plan request when asking an AI to author or revise a plan.
 That last paragraph matters: without it an AI will helpfully invent a deload for a trip it
 was told about, and that dose reduction would then be applied twice — once by the plan and
 again by the travel block.
+
+---
+
+## Schema v2 (M3.6)
+
+> **Status: implemented contract.** `app/src/sessions/externalPlanV2.ts`
+> `validateExternalTrainingPlanV2` is the enforcing authority. v1 above is unaffected and
+> stays fully importable — a v2 plan is a different `schema` literal, not a replacement.
+
+Everything above this section — the plan envelope, `placement`, `gating`, `priority`,
+`objectives`, `scaling`, `isEvent`, the two design rules, the three rescheduling
+mechanisms, storage layout, and supersession — is **identical** between v1 and v2. The
+only thing v2 changes is the session's executable content: `prescription` (free text plus
+an optionally-structured flat step list) is replaced by `definition`, a normalized
+`SessionDefinition` — the same canonical vocabulary the M0.2 fixture corpus already uses
+for catalog and manually-authored sessions (`app/src/sessions/models.ts`).
+
+**Why.** v1's `prescription` adapts into `SessionDefinition` through
+`app/src/sessions/externalSessionAdapter.ts`, and that adaptation is lossy by necessity: it
+collapses every session into one flat block, and has no source concept of laterality
+(per-side/alternating work), option sets (athlete-observed branching), companion sessions,
+per-set recovery, or resolved exercise identity — an imported plan could never carry any of
+that. A v2 session embeds a `SessionDefinition` directly, so none of it is lost, and no
+adapter is needed to execute one.
+
+```jsonc
+{
+  "id": "w1-threshold",
+  "title": "Threshold 3×12",
+  "priority": "key",
+  "placement": { "week": 1, "preferredDay": "tuesday", "flexibility": "preferred", "ifMissed": "reschedule_within_week" },
+  "gating": { "modality": "cycling", "intensity": "hard", "durationMin": 60, "durationMax": 75, "environment": "indoor", "equipment": ["indoor_bike"] },
+  "objectives": ["threshold_quality"],
+
+  "definition": {
+    "schemaVersion": 1,
+    "id": "w1-threshold",
+    "revision": 1,
+    "title": "Threshold 3×12",
+    "summary": "3×12min at 100–105% FTP, 6min easy between.",
+    "intent": "training",
+    "dominantModality": "cycling",
+    "duration": { "min": 60, "max": 75 },
+    "blocks": [
+      {
+        "id": "block-main",
+        "role": "main",
+        "executionMode": "sequential",
+        "steps": [
+          {
+            "id": "step-interval",
+            "kind": "exercise",
+            "title": "Interval",
+            "exerciseRef": { "kind": "unresolved_free_text", "name": "Interval" },
+            "dose": { "kind": "duration", "sets": 3, "seconds": 720 },
+            "rest": 360,
+            "notes": "Hold the last rep only if the first two felt controlled."
+          }
+        ]
+      }
+    ]
+  },
+
+  "scaling": {
+    "reducible": true,
+    "reducedSummary": "2×12 instead of 3×12, same targets.",
+    "reducedDurationMin": 45,
+    "minimumUsefulDurationMin": 40
+  },
+  "isEvent": false
+}
+```
+
+### `definition` — the same contract catalog and manual sessions already use
+
+`definition` is a `SessionDefinition` (`app/src/sessions/models.ts`): `schemaVersion` (1),
+`id`, `revision`, `title`, optional `summary`, `intent`
+(`training`/`testing`/`competition`/`rehab_return`/`recovery`/`skill_technical`), optional
+`dominantModality`, optional `duration` (`{min, max}` minutes), and `blocks`. Each block has
+`id`, optional `title`, `role`
+(`warmup`/`main`/`cooldown`/`accessory`/`test`/`recovery`), `executionMode`
+(`sequential`/`circuit`/`superset`/`density`/`amrap`/`alternating`), and `steps`. A step has
+`id`, `kind` (`"exercise"`), optional `title`, `exerciseRef` — always
+`{"kind": "unresolved_free_text", "name": "..."}` for an imported session, since there is
+no catalog identity to resolve to — `dose`, optional `rest` (seconds, or `{min, max}` for a
+range), optional `notes`. `dose` is one of:
+
+| `dose.kind` | Fields |
+|---|---|
+| `repetition` | `sets` (integer), `reps` (integer or `{min, max}`) |
+| `duration` | `sets` (optional integer), `seconds` (integer or `{min, max}`) — always seconds, the same second-granularity rule v1's steps follow |
+| `distance` | `sets` (optional integer), `meters` (integer or `{min, max}`) |
+
+Unlike v1's flat model, `sets`/`reps` are not artificially split across two step-level
+fields (`repeat`/`sets`) — they live together on `dose`. As with v1's `gating`,
+**`systemicCost` is deliberately not an input** on `definition` — an authoring AI supplying
+one would silently move the `modify`-mode ceiling (ADR-0019 D-EXTTIER) — and
+`validateExternalTrainingPlanV2` fails closed on it, along with any other field
+`SessionDefinition` doesn't declare (an unrecognized top-level key, e.g. a hallucinated
+`stimulusProfile`, is rejected the same way v1's `unknownKeys()` sweep already rejects one
+on `gating`/`prescription`).
+
+`SessionDefinition` also supports `laterality`/`optionSets`/`companionSessions` at the step
+and block level — a v2 import may use them, though the current prompt block below only
+asks for the core vocabulary (blocks, steps, the three `dose` kinds). See the M0.2 fixture
+corpus (`app/src/sessions/fixtures/`) for worked examples of the richer vocabulary.
+
+### What does not change
+
+- **Hard gates and adjudication.** `gating` is untouched — a v2 session passes through
+  `evaluateTemplateEligibility`, the safety envelope, and the mode ceiling exactly as a v1
+  session does.
+- **Display, for consumers that expect the flat v1 shape.**
+  `Recommendation.externalPrescription` (what `Home.tsx`/`DetailedTodayPlan`/
+  `ExternalPlanWeek.tsx` render) keeps its v1 shape regardless of source schema — a v2
+  session's `definition.blocks` is flattened into it for display only
+  (`app/src/engine/externalSessionProfiles.ts`
+  `sessionDefinitionToDisplayPrescription`). The *execution* path
+  (`sessionDefinitionResolver.ts`) uses the full-fidelity `definition` directly, never this
+  flattened form.
+- **Storage, revisions, supersession, the placement overlay** — identical to v1, described
+  above.
+
+### Importing v2
+
+The in-app prompt block (`app/src/components/ExternalPlanImport.tsx`,
+`AI_PROMPT_TEMPLATE`) is the enforcing copy and now asks for `external-plan@2` by default;
+this document does not duplicate it verbatim to avoid the two drifting. Paste-in validation
+dispatches on the pasted document's own `schema` literal, so existing v1 JSON — including
+anything saved from the v1 prompt block above — keeps importing unchanged.
 
 ---
 
