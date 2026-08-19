@@ -10,6 +10,17 @@ Quick guide for building, testing, and working on `adaptive-training-recommender
 
 ## Essential Development Commands
 
+### All-in-One Commands (Makefile)
+- Run All Checks, Tests, Simulations & Build: `make all`
+- Run Full Validation Suite: `make check`
+- Run All Tests (Python + Frontend): `make test`
+- Run Linters: `make lint`
+- Auto-Format Code: `make format`
+- Run Simulations & Baseline Diff: `make simulate`
+- Build Frontend App: `make build`
+- Install Dependencies: `make install`
+- Help / List Targets: `make help`
+
 ### Python Environment
 - Install / Sync: `uv sync`
 - Pre-commit Run: `uv run pre-commit run --all-files`

@@ -117,6 +117,25 @@ Set the following environment variables (e.g. in `.env` locally or Secret Manage
 
 ## Local Development & Setup
 
+### Quickstart (Makefile)
+
+```bash
+# Run all code checks, test suites, simulations, and build
+make all
+
+# Run validation checks across Python and TypeScript codebases
+make check
+
+# Run all unit tests
+make test
+
+# Format code automatically
+make format
+
+# View all available targets
+make help
+```
+
 ### 1. Python Backend Setup
 
 ```bash
