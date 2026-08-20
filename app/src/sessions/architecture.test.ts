@@ -144,4 +144,29 @@ describe('Multidomain sessions architecture and dependency boundaries (M0.3 / AD
             }
         }
     });
+
+    it('no selection/ranking module imports the M5.3 outcome summary at runtime (D-MPOLICY)', () => {
+        // `responses/outcome.ts`'s `deriveSessionOutcome` is an evidence-only summary label
+        // (passed/caution/reactive/unknown) -- D-MPOLICY requires it stay a report input, never
+        // a live selection/eligibility signal, until a separate ship decision says otherwise.
+        const forbiddenSelection = [
+            'engine/optimizer',
+            'engine/planner',
+            'engine/rules',
+            'engine/weeklyAllocation',
+            'engine/evergreenPlanning',
+            'engine/sequenceSearch',
+        ];
+
+        for (const [mod, imports] of graph.entries()) {
+            const importsOutcome = imports.some(imp => imp === 'responses/outcome.ts');
+            if (!importsOutcome) continue;
+            for (const forbidden of forbiddenSelection) {
+                expect(
+                    mod.startsWith(forbidden),
+                    `Selection module "${mod}" must not import evidence-only "responses/outcome.ts"`,
+                ).toBe(false);
+            }
+        }
+    });
 });

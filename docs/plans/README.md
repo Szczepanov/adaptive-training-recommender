@@ -58,15 +58,16 @@ These implement the way forward in
 Phases 0–8 are **implemented**; Phase 9.0 and Phase 9 remain **In progress**.
 Among capability plans, Garmin per-activity telemetry (G) and Mobile UX/UI (UX) are
 **implemented**; Strength session logging (S) is **In progress (default-off)** with all
-numbered code delivered; Multidomain sessions (M) is **In progress** with M0–M2,
-M3.1–M3.6, and M4.1–M4.2 complete.
+numbered code delivered; Multidomain sessions (M) is **In progress** with M0–M5.3
+complete.
 
-For Multidomain delivery, the current evidence-first cutline from
-[`2026-08-19-product-scope-cutline-review.md`](../analysis/2026-08-19-product-scope-cutline-review.md)
-is `M3.7 → bounded M3.8 → M4.3 → M5.1 → M5.2`. The immediate startable set includes
-M3.7, bounded M3.8, and M4.3; the response chain becomes startable as those dependencies
-land. M6/M7 are usage-triggered capability families, not the automatic continuation after
-M5; M8 may consume them only if athlete use justified them independently.
+For Multidomain delivery, the 2026-08-19 evidence-first cutline chain from
+[`2026-08-19-product-scope-cutline-review.md`](../analysis/2026-08-19-product-scope-cutline-review.md),
+`M3.7 → bounded M3.8 → M4.3 → M5.1 → M5.2`, is complete, and M5.3 (the report-first
+outcome/override evidence summary that chain unlocked) landed 2026-08-20. M6/M7 are
+usage-triggered capability families, not the automatic continuation after M5; M8 may
+consume them only if athlete use justified them independently; M9 remains behind its own
+named triggers.
 
 The Phase 0–5 task boards are historical implementation records; the
 [follow-up analysis](../analysis/2026-08-09-phase-0-5-completion-review.md) records
@@ -94,7 +95,7 @@ all-`Ready` table became unusable.
 | 9 | [Subjective baselines in readiness mode](./phase-9-subjective-baselines.md) | **In progress** | only 9.8 remains (9.1–9.7 done — 9.8 needs Phase 9.0's prospective evidence) | — | self-normalises subjective scores as a tighten-only drift term, measured behind a default-off selector before any ship decision — not an original review finding |
 | G | [Garmin per-activity telemetry](./garmin-activity-telemetry-ingestion.md) | **Implemented** | none | none | ingests per-activity power/HR time-in-zone, normalized power and lap averages; the measured zone-credit candidate remains off after an evidence-backed no-ship decision |
 | S | [Strength session logging](./strength-session-logging.md) | **In progress (default-off)** | none; all numbered work is built | real logged-history evidence before enabling manual Strength load — [M1.7](./multidomain-session-authoring-execution-and-evidence.md) is the item that starts producing it | closes the strength return path — per-set logging, self-calibrating 1RM, and measured strength load — not an original review finding |
-| M | [Multidomain session authoring, execution & evidence](./multidomain-session-authoring-execution-and-evidence.md) | **In progress** | M3.7, bounded M3.8 (in progress), M4.3 | M5.1→M5.2 follow M4.3; M5.3 follows M5.2 but starts report-first; M6/M7 require explicit real-use triggers; M8 is evidence-gated and cannot pull untriggered M6/M7 into scope; M9 needs its own named triggers | source-neutral authored sessions, safe mixed-dose execution and occurrence-linked response first; specialized field/testing capability only when athlete use proves the generic runner/evidence model insufficient |
+| M | [Multidomain session authoring, execution & evidence](./multidomain-session-authoring-execution-and-evidence.md) | **In progress** | none | M6/M7 require explicit real-use triggers; M8 is evidence-gated and cannot pull untriggered M6/M7 into scope; M9 needs its own named triggers | source-neutral authored sessions, safe mixed-dose execution and occurrence-linked response first; specialized field/testing capability only when athlete use proves the generic runner/evidence model insufficient |
 | UX | [Mobile UX/UI redesign](./mobile_ux_implementation_plan.md) | **Implemented** | none | none | mobile-first daily decision flow, single-page rapid check-in, state-first Home layout, unblocked recommendation, 44px+ touch targets, and mobile layout tokens |
 
 Rows G, S, M, and UX are **not phases**. They are capability/surface plans whose work items are prefixed
