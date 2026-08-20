@@ -42,6 +42,16 @@ export function mapSnapshotToEngineInput(snapshot: DailyRecoverySnapshot): Engin
         ? Math.round(snapshot.raw.sleepDurationSec / 60)
         : null;
 
+    // Respiration deltas existed before the v3 median/MAD cutover, but those legacy deltas
+    // were computed against mean baselines. They must never enter the v3 robust-scoring
+    // path. A v3+ snapshot with no 28d MAD is also intentionally inert: substituting the
+    // scoring floor for an unavailable spread estimate would fabricate confidence rather
+    // than represent a measured personal baseline.
+    const hasRespirationMedianMadBaseline =
+        (snapshot.derived.baselineComputationVersion ?? 0) >= 3
+        && snapshot.derived.respiration28dMad !== null
+        && snapshot.derived.respiration28dMad !== undefined;
+
     return {
         total_steps: snapshot.raw.totalSteps,
         sleep_score: snapshot.raw.sleepScore,
@@ -53,11 +63,15 @@ export function mapSnapshotToEngineInput(snapshot: DailyRecoverySnapshot): Engin
         hrv_last_night: snapshot.raw.hrvOvernightAvg,
         hrv_delta: snapshot.derived.deltas.hrvVs7d,
         respiration: snapshot.raw.respirationAvg,
-        respiration_delta: snapshot.derived.deltas.respirationVs7d,
-        respiration_delta_28d: snapshot.derived.deltas.respirationVs28d,
-        // ?? null normalizes documents written before baselineComputationVersion 3, where
-        // this field is absent (undefined) rather than explicitly null.
-        respiration_mad_28d: snapshot.derived.respiration28dMad ?? null,
+        respiration_delta: hasRespirationMedianMadBaseline
+            ? snapshot.derived.deltas.respirationVs7d
+            : null,
+        respiration_delta_28d: hasRespirationMedianMadBaseline
+            ? snapshot.derived.deltas.respirationVs28d
+            : null,
+        respiration_mad_28d: hasRespirationMedianMadBaseline
+            ? snapshot.derived.respiration28dMad ?? null
+            : null,
         body_battery_wake: snapshot.raw.bodyBatteryWake,
         last_3_days_hard_sessions_count: snapshot.raw.last3DaysHardSessionsCount,
         yesterday_training: mapTrainingRecord(snapshot.raw.yesterdayTraining),
