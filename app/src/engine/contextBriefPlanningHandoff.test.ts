@@ -218,6 +218,14 @@ function handoffInput(overrides: Partial<ContextBriefPlanningHandoffInput> = {})
             status: 'planned',
             moved: false,
             isEvent: false,
+            prescription: {
+                summary: '3 x 10 min threshold with controlled recovery',
+                steps: [
+                    { name: 'Warm-up', durationMin: 15, target: 'easy' },
+                    { name: 'Threshold', sets: 3, durationMin: 10, target: 'RPE 7–8', recoverySec: 240 },
+                    { name: 'Cool-down', durationMin: 10, target: 'easy' },
+                ],
+            },
         }],
         unavailableSources: [],
         ...overrides,
@@ -291,13 +299,16 @@ describe('enhanceContextBriefForPlanning', () => {
         expect(text).toContain('Steps are the completed D-1 total');
     });
 
-    it('exports fixed commitments and already-imported sessions before asking for a new plan', () => {
+    it('exports fixed commitments, imported sessions and their authored prescriptions', () => {
         const text = enhanceContextBriefForPlanning(BASE, handoffInput());
 
         expect(text).toContain('## 7. Existing commitments / imported plan');
         expect(text).toContain('2026-08-21 | Imported plan: Race prep | Threshold quality | 60–75 min · hard | key · preferred');
         expect(text).toContain('2026-08-22 | Fixed activity | 6v6 football | 90 min | fixed | start 19:00 · outdoor');
         expect(text).toContain('Preserve these when proposing days unless the user explicitly asks');
+        expect(text).toContain('Imported-session prescription detail:');
+        expect(text).toContain('2026-08-21 — Threshold quality:** 3 x 10 min threshold with controlled recovery');
+        expect(text).toContain('Threshold: 3 sets · 10 min · RPE 7–8 · 240s recovery');
     });
 
     it('exports travel scaling overlays as constraints rather than workouts', () => {
