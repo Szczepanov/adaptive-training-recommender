@@ -42,7 +42,7 @@ jobs:
     name: Bootstrap Garmin token
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Authenticate to GCP (Workload Identity Federation, no key)
         uses: google-github-actions/auth@v2
