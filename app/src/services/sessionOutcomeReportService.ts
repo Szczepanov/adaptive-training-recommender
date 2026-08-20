@@ -5,7 +5,9 @@
  *
  *  - `sessionResponseService.getResponsesForSource` (M5.1) for recorded facts;
  *  - the canonical check-in (`checkinService`, D-MRESP's sole tissue authority) for any
- *    `RegionTissueResponse` whose `sourceSessionRef` matches this execution;
+ *    `RegionTissueResponse` whose `sourceSessionRef` matches this execution -- discovered by
+ *    scanning check-ins directly (see `tissueIndexInRange` below), never by way of whether a
+ *    `SessionResponse` happens to exist;
  *  - `resolveSessionDefinition` (M3.1) + `comparePlannedVsPerformed` (M2.6) for the
  *    planned-vs-performed delta, when the execution's prescription binding still resolves.
  *
@@ -15,6 +17,7 @@
  * pattern (M2.7) so this composition is unit-testable without the Firestore emulator.
  */
 import type { RegionTissueResponse } from '../engine/models';
+import { addDaysToLocalDateString } from '../utils/localDate';
 import { resolveSessionDefinition } from '../sessions/sessionDefinitionResolver';
 import { comparePlannedVsPerformed } from '../sessions/performedComparison';
 import { deriveSessionOutcome, type SessionOutcome } from '../responses/outcome';
@@ -22,6 +25,12 @@ import type { SessionResponseSourceRef } from '../responses/models';
 import { checkinService, type CheckinService } from './checkinService';
 import { sessionExecutionService, type SessionExecutionService } from './sessionExecutionService';
 import { sessionResponseService, type SessionResponseService } from './sessionResponseService';
+
+/** later_day answers land same-day and next_morning answers land the day after, but neither
+ * window has an expiry (M5.2 never times one out), so a late answer must still be found. This
+ * buffer is a bounded compromise, not a correctness guarantee for an answer recorded further
+ * out than a week later. */
+const TISSUE_LOOKAHEAD_DAYS = 7;
 
 export class SessionOutcomeReportService {
     private readonly executionService: SessionExecutionService;
@@ -39,6 +48,36 @@ export class SessionOutcomeReportService {
     }
 
     /**
+     * Every execution-linked `RegionTissueResponse` in `[startDateInclusive, throughDateExclusive
+     * + TISSUE_LOOKAHEAD_DAYS)`, indexed by the execution id its `sourceSessionRef` names --
+     * scanned directly from check-ins, independent of whether any `SessionResponse` was ever
+     * recorded for that execution. A manually-flagged tissue reaction (the pre-M5.1 check-in
+     * flow M5.2 left unchanged for legacy `strength_sessions`, still reachable for `execution`
+     * sources too) sets `sourceSessionRef` without necessarily creating a `SessionResponse`; a
+     * discovery keyed off `SessionResponse.checkinRef.date` would silently miss it.
+     */
+    private async tissueIndexInRange(
+        userId: string,
+        startDateInclusive: string,
+        throughDateExclusive: string,
+    ): Promise<Map<string, RegionTissueResponse[]>> {
+        const checkins = await this.checkins.getCheckinsInRange(
+            userId, startDateInclusive, addDaysToLocalDateString(throughDateExclusive, TISSUE_LOOKAHEAD_DAYS),
+        );
+        const index = new Map<string, RegionTissueResponse[]>();
+        for (const checkin of checkins) {
+            if (!checkin.tissueResponses) continue;
+            for (const region of Object.values(checkin.tissueResponses)) {
+                if (region.sourceSessionRef?.kind !== 'execution') continue;
+                const existing = index.get(region.sourceSessionRef.id) ?? [];
+                existing.push(region);
+                index.set(region.sourceSessionRef.id, existing);
+            }
+        }
+        return index;
+    }
+
+    /**
      * @param startDateInclusive Warsaw-local `YYYY-MM-DD`.
      * @param throughDateExclusive Warsaw-local `YYYY-MM-DD`, matching
      *   `sessionExecutionService.getExecutionsInRange`'s own exclusive-end convention.
@@ -48,22 +87,14 @@ export class SessionOutcomeReportService {
         startDateInclusive: string,
         throughDateExclusive: string,
     ): Promise<SessionOutcome[]> {
-        const { executions } = await this.executionService.getExecutionsInRange(
-            userId, startDateInclusive, throughDateExclusive,
-        );
+        const [{ executions }, tissueIndex] = await Promise.all([
+            this.executionService.getExecutionsInRange(userId, startDateInclusive, throughDateExclusive),
+            this.tissueIndexInRange(userId, startDateInclusive, throughDateExclusive),
+        ]);
         // An in-progress execution has no outcome yet -- reporting one now would silently
         // read as 'unknown' every time, indistinguishable from a genuinely unanswered
         // follow-up. Excluding it here keeps that distinction meaningful.
         const finished = executions.filter(item => item.execution.state !== 'in_progress');
-
-        const checkinCache = new Map<string, RegionTissueResponse[]>();
-        const tissueResponsesForDate = async (date: string): Promise<RegionTissueResponse[]> => {
-            if (!checkinCache.has(date)) {
-                const checkin = await this.checkins.getCheckinByDate(userId, date);
-                checkinCache.set(date, checkin?.tissueResponses ? Object.values(checkin.tissueResponses) : []);
-            }
-            return checkinCache.get(date) ?? [];
-        };
 
         const outcomes: SessionOutcome[] = [];
         for (const { execution, entries } of finished) {
@@ -71,17 +102,7 @@ export class SessionOutcomeReportService {
                 kind: 'execution', id: execution.executionId, date: execution.date,
             };
             const responses = await this.responseService.getResponsesForSource(userId, sourceSession);
-
-            const checkinDates = new Set(responses.map(response => response.checkinRef.date));
-            const tissueResponses: RegionTissueResponse[] = [];
-            for (const date of checkinDates) {
-                const regions = await tissueResponsesForDate(date);
-                for (const region of regions) {
-                    if (region.sourceSessionRef?.kind === 'execution' && region.sourceSessionRef.id === execution.executionId) {
-                        tissueResponses.push(region);
-                    }
-                }
-            }
+            const tissueResponses = tissueIndex.get(execution.executionId) ?? [];
 
             let comparison: ReturnType<typeof comparePlannedVsPerformed> | undefined;
             if (execution.state === 'completed') {

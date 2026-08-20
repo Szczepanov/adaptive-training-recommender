@@ -145,6 +145,18 @@ describe('deriveSessionOutcome', () => {
         expect(outcome.override.note).toBe('knee stiff');
     });
 
+    it('prefers a later_day/next_morning note over a more-recently-updated immediate note', () => {
+        const outcome = deriveSessionOutcome({
+            sourceSession,
+            responses: [
+                response({ responseId: 'resp-a', window: 'later_day', note: 'felt heavy', updatedAt: '2026-08-18T20:00:00.000Z' }),
+                response({ responseId: 'resp-b', window: 'immediate', note: 'warmed up fine', updatedAt: '2026-08-19T09:00:00.000Z' }),
+            ],
+            tissueResponses: [],
+        });
+        expect(outcome.override.note).toBe('felt heavy');
+    });
+
     it('links every contributing response id in sourceFacts', () => {
         const outcome = deriveSessionOutcome({
             sourceSession,

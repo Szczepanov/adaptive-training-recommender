@@ -42,9 +42,9 @@ function fakeResponseService(bySourceId: Record<string, SessionResponse[]>) {
     } as unknown as SessionResponseService;
 }
 
-function fakeCheckinService(byDate: Record<string, DailySubjectiveCheckin>) {
+function fakeCheckinService(checkins: DailySubjectiveCheckin[]) {
     return {
-        getCheckinByDate: vi.fn(async (_userId: string, date: string) => byDate[date] ?? null),
+        getCheckinsInRange: vi.fn().mockResolvedValue(checkins),
     } as unknown as CheckinService;
 }
 
@@ -71,7 +71,7 @@ describe('SessionOutcomeReportService', () => {
         const service = new SessionOutcomeReportService(
             fakeExecutionService([{ execution: execution({ state: 'in_progress', completedAt: undefined }), entries: [] }]),
             fakeResponseService({}),
-            fakeCheckinService({}),
+            fakeCheckinService([]),
         );
         const outcomes = await service.buildReport('u1', '2026-08-01', '2026-09-01');
         expect(outcomes).toEqual([]);
@@ -82,7 +82,7 @@ describe('SessionOutcomeReportService', () => {
         const service = new SessionOutcomeReportService(
             fakeExecutionService([{ execution: execution(), entries: [] }]),
             fakeResponseService({}),
-            fakeCheckinService({}),
+            fakeCheckinService([]),
         );
         const [outcome] = await service.buildReport('u1', '2026-08-01', '2026-09-01');
         expect(outcome.status).toBe('unknown');
@@ -94,20 +94,52 @@ describe('SessionOutcomeReportService', () => {
         const service = new SessionOutcomeReportService(
             fakeExecutionService([{ execution: execution(), entries: [] }]),
             fakeResponseService({ 'exec-1': [response()] }),
-            fakeCheckinService({
-                '2026-08-19': {
-                    userId: 'u1',
-                    date: '2026-08-19',
-                    tissueResponses: {
-                        knee: { region: 'knee', morningState: 'moderate', sourceSessionRef: { kind: 'execution', id: 'exec-1', date: '2026-08-18' } },
-                        hip: { region: 'hip', morningState: 'severe', sourceSessionRef: { kind: 'execution', id: 'exec-other', date: '2026-08-17' } },
-                    },
-                } as unknown as DailySubjectiveCheckin,
-            }),
+            fakeCheckinService([{
+                userId: 'u1',
+                date: '2026-08-19',
+                tissueResponses: {
+                    knee: { region: 'knee', morningState: 'moderate', sourceSessionRef: { kind: 'execution', id: 'exec-1', date: '2026-08-18' } },
+                    hip: { region: 'hip', morningState: 'severe', sourceSessionRef: { kind: 'execution', id: 'exec-other', date: '2026-08-17' } },
+                },
+            } as unknown as DailySubjectiveCheckin]),
         );
         const [outcome] = await service.buildReport('u1', '2026-08-01', '2026-09-01');
         expect(outcome.sourceFacts.tissueRegions).toEqual(['knee']);
         expect(outcome.status).toBe('reactive');
+    });
+
+    it('discovers a tissue reaction linked directly to the execution even with no SessionResponse ever recorded', async () => {
+        // Regression: a manually-flagged check-in tissue response sets sourceSessionRef
+        // without necessarily going through sessionResponseService.recordResponse (the legacy
+        // M1.7-era manual flag path M5.2 left unchanged). Discovery must not depend on a
+        // SessionResponse existing.
+        resolverMocks.resolveSessionDefinition.mockResolvedValue({ status: 'MISSING' });
+        const service = new SessionOutcomeReportService(
+            fakeExecutionService([{ execution: execution(), entries: [] }]),
+            fakeResponseService({}),
+            fakeCheckinService([{
+                userId: 'u1',
+                date: '2026-08-19',
+                tissueResponses: {
+                    knee: { region: 'knee', morningState: 'severe', sourceSessionRef: { kind: 'execution', id: 'exec-1', date: '2026-08-18' } },
+                },
+            } as unknown as DailySubjectiveCheckin]),
+        );
+        const [outcome] = await service.buildReport('u1', '2026-08-01', '2026-09-01');
+        expect(outcome.sourceFacts.tissueRegions).toEqual(['knee']);
+        expect(outcome.status).toBe('reactive');
+    });
+
+    it('queries check-ins across the report range extended by the tissue lookahead buffer', async () => {
+        resolverMocks.resolveSessionDefinition.mockResolvedValue({ status: 'MISSING' });
+        const checkins = fakeCheckinService([]);
+        const service = new SessionOutcomeReportService(
+            fakeExecutionService([{ execution: execution(), entries: [] }]),
+            fakeResponseService({}),
+            checkins,
+        );
+        await service.buildReport('u1', '2026-08-01', '2026-09-01');
+        expect(checkins.getCheckinsInRange).toHaveBeenCalledWith('u1', '2026-08-01', '2026-09-08');
     });
 
     it('resolves a planned/performed comparison only for a completed execution whose prescription still resolves', async () => {
@@ -121,7 +153,7 @@ describe('SessionOutcomeReportService', () => {
         const service = new SessionOutcomeReportService(
             fakeExecutionService([{ execution: execution(), entries: [] }]),
             fakeResponseService({ 'exec-1': [response()] }),
-            fakeCheckinService({}),
+            fakeCheckinService([]),
         );
         const [outcome] = await service.buildReport('u1', '2026-08-01', '2026-09-01');
         expect(outcome.override.totalPlannedSteps).toBe(0);
@@ -132,7 +164,7 @@ describe('SessionOutcomeReportService', () => {
         const service = new SessionOutcomeReportService(
             fakeExecutionService([{ execution: execution({ state: 'abandoned' }), entries: [] }]),
             fakeResponseService({}),
-            fakeCheckinService({}),
+            fakeCheckinService([]),
         );
         await service.buildReport('u1', '2026-08-01', '2026-09-01');
         expect(resolverMocks.resolveSessionDefinition).not.toHaveBeenCalled();
@@ -146,7 +178,7 @@ describe('SessionOutcomeReportService', () => {
                 { execution: execution({ executionId: 'exec-a', date: '2026-08-18' }), entries: [] },
             ]),
             fakeResponseService({}),
-            fakeCheckinService({}),
+            fakeCheckinService([]),
         );
         const outcomes = await service.buildReport('u1', '2026-08-01', '2026-09-01');
         expect(outcomes.map(outcome => outcome.sourceSession.id)).toEqual(['exec-a', 'exec-b']);

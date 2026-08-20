@@ -62,6 +62,12 @@ describe('sessionOutcomeReportToCsv', () => {
         expect(csv).toContain('"felt ""off"", a bit stiff\nnext day"');
     });
 
+    it('quotes a field containing a bare carriage return, not only a newline', () => {
+        const rows = buildSessionOutcomeReport([outcome({ override: { note: 'felt off\ra bit stiff' } })]);
+        const csv = sessionOutcomeReportToCsv(rows);
+        expect(csv).toContain('"felt off\ra bit stiff"');
+    });
+
     it('is deterministic: identical input produces byte-identical output', () => {
         const rows = buildSessionOutcomeReport([outcome(), outcome({ sourceSession: { kind: 'execution', id: 'exec-2', date: '2026-08-19' } })]);
         expect(sessionOutcomeReportToCsv(rows)).toBe(sessionOutcomeReportToCsv(rows));

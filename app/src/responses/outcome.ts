@@ -115,7 +115,9 @@ function worstTissueSeverity(tissueResponses: readonly RegionTissueResponse[]): 
 function mostRelevantNote(responses: readonly SessionResponse[]): string | undefined {
     const withNotes = responses.filter(response => response.note || response.techniqueNote);
     if (withNotes.length === 0) return undefined;
-    const sorted = [...withNotes].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    const followUpNotes = withNotes.filter(response => response.window !== 'immediate');
+    const candidates = followUpNotes.length > 0 ? followUpNotes : withNotes;
+    const sorted = [...candidates].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
     return sorted[0]?.note ?? sorted[0]?.techniqueNote;
 }
 

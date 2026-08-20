@@ -60,7 +60,7 @@ const CSV_COLUMNS: (keyof SessionOutcomeReportRow)[] = [
 
 function csvField(value: string | number | boolean): string {
     const text = String(value);
-    if (/[",\n]/.test(text)) return `"${text.replaceAll('"', '""')}"`;
+    if (/[",\r\n]/.test(text)) return `"${text.replaceAll('"', '""')}"`;
     return text;
 }
 

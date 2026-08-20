@@ -1460,24 +1460,10 @@ over already-tested services, consistent with how this repo tests these two file
 
 ### M5.3 `[x]` Outcome/override evidence report — history UI only if triggered
 
-**Change.** Derive `passed | caution | reactive | unknown` as a versioned, evidence-only summary
-from the raw response windows. Record athlete override reason and planned/performed delta.
-Start with a deterministic report/export and a compact inspectable view using existing data
-surfaces. Do **not** build a dedicated cross-session response dashboard merely because the
-model exists.
-
-**Usage trigger for richer UI.** The athlete repeatedly opens/exports the evidence and has a
-specific question that a dedicated history surface would answer better (for example, comparing
-responses after a recurring lower-body session). Until then, the report/export is the product.
-
-**Files.** New `responses/outcome.ts`, report/export integration; reuse
-`SessionAdjustment.athleteReason` through a source-neutral override record rather than forcing
-every change into a strength adjustment. Add `components/session/ResponseHistory.tsx` only if
-the UI trigger fires.
-
-**Done when.** Every outcome links to source facts and a policy version; missing later or next
-data returns `unknown`; the report exposes the evidence without injury-prediction claims; and
-the M0.3 architecture test proves no selection module imports the outcome function.
+**Future usage trigger for richer UI.** Keep `components/session/ResponseHistory.tsx` deferred
+until repeated evidence use creates a specific question that a dedicated history surface can
+answer better (for example, comparing responses after a recurring lower-body session). Until
+then, the report/export below is the product.
 
 **Outcome (2026-08-20).** Pure derivation, report/export and the wiring service all shipped;
 no dedicated history UI was built.
@@ -1499,7 +1485,8 @@ no dedicated history UI was built.
   reused per the plan's own instruction) -- the record shape exists for the moment a real
   capture point is built, but `deriveSessionOutcome` never invents a value for it.
   `override.note` is populated automatically from data that *does* already exist (the most
-  recently updated `SessionResponse.note`/`techniqueNote`).
+  recently updated `SessionResponse.note`/`techniqueNote`, preferring a `later_day`/
+  `next_morning` note over a merely-more-recent `immediate` one).
 * **Planned/performed delta.** Reuses M2.6's existing `comparePlannedVsPerformed`
   (`sessions/performedComparison.ts`) output (`completedStepsCount`/`missingRequiredStepsCount`/
   `totalPlannedSteps`) rather than recomputing it -- no new delta math was needed.
@@ -1510,25 +1497,33 @@ no dedicated history UI was built.
 * **`services/sessionOutcomeReportService.ts`.** The one new IO-touching module: for every
   finished (`completed`/`abandoned`) execution in a date range it composes
   `sessionExecutionService.getExecutionsInRange`, `sessionResponseService.getResponsesForSource`,
-  `checkinService.getCheckinByDate` and, for a `completed` execution,
+  `checkinService.getCheckinsInRange` and, for a `completed` execution,
   `resolveSessionDefinition` (M3.1) + `comparePlannedVsPerformed` (M2.6) -- every one of those
   already existed and was already tested. Constructor-injected dependencies with singleton
   defaults follow `StrengthHistoryReadService`'s established M2.7 pattern, so the composition
   is unit-testable without the Firestore emulator. An in-progress execution is excluded
   outright (an outcome computed for one would always read `unknown`, indistinguishably from a
-  genuinely unanswered follow-up).
+  genuinely unanswered follow-up). Tissue evidence is discovered by scanning every check-in in
+  range (plus a bounded lookahead buffer) for a `RegionTissueResponse.sourceSessionRef`
+  matching the execution, never by way of whether a `SessionResponse` happens to exist for it
+  -- an earlier draft keyed discovery off `SessionResponse.checkinRef.date` and so silently
+  missed a manually-flagged tissue reaction (the legacy pre-M5.1 check-in flow) that has no
+  corresponding `SessionResponse`; caught in review before merge.
 * **Architecture boundary.** `sessions/architecture.test.ts` gained a third check: no module
   under `engine/optimizer`, `engine/planner`, `engine/rules`, `engine/weeklyAllocation`,
-  `engine/evergreenPlanning` or `engine/sequenceSearch` may import `responses/outcome.ts` at
-  runtime -- the M0.3 boundary's Done-when requirement, applied to this specific evidence-only
-  summary per D-MPOLICY.
+  `engine/evergreenPlanning` or `engine/sequenceSearch` can reach `responses/outcome.ts` at
+  runtime, directly or through any transitive import chain -- the M0.3 boundary's Done-when
+  requirement, applied to this specific evidence-only summary per D-MPOLICY.
 
 **Files.** New `responses/outcome.ts` (+ `.test.ts`), `responses/outcomeReport.ts`
 (+ `.test.ts`), `services/sessionOutcomeReportService.ts` (+ `.test.ts`);
 `sessions/architecture.test.ts` extended. No `firestore.rules` change -- nothing new is
-persisted. Verified by 31 new unit tests, a full `npm run check` (typecheck, lint, 1760 unit
+persisted. Verified by 35 new unit tests, a full `npm run check` (typecheck, lint, 1764 unit
 tests, catalog validation) and the Firestore-emulator rules suite (83/83), all passing with no
-regressions.
+regressions. Four correctness issues raised in review (immediate-note precedence overriding a
+follow-up note, unquoted bare `\r` in CSV export, tissue discovery silently missing a
+`SessionResponse`-less check-in, and the architecture test only checking direct import edges)
+were fixed before merge; see the bullets above.
 
 ---
 
