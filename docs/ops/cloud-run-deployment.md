@@ -14,6 +14,11 @@ recurring jobs on Google Cloud Platform (GCP):
 Both share one container image and one runtime service account; only their
 `--args` differ. Run the sections below in order.
 
+**No local machine?** See [Deploying from GitHub Actions](#deploying-from-github-actions-no-local-machine)
+below instead -- it runs this same sequence as two `workflow_dispatch` workflows you trigger
+from the GitHub web UI (works from a phone/tablet browser), authenticating to GCP with no
+long-lived key. The sections below remain the reference for what each step does and why.
+
 ---
 
 ## 0. Prerequisites
@@ -235,3 +240,72 @@ already-`synced` item is skipped, never re-uploaded. Queue items older than
 `--max-age-days` (default 14, configurable on `push-pending-workouts`) are left
 pending rather than pushed, so an abandoned entry doesn't resurface on Garmin
 weeks later.
+
+---
+
+## Deploying from GitHub Actions (no local machine)
+
+Two `workflow_dispatch` workflows under `.github/workflows/` cover everything above without
+needing `gcloud` installed anywhere -- trigger them from **Actions** in the GitHub web UI
+(works from a phone/tablet browser). Both authenticate to GCP with **Workload Identity
+Federation**: no service-account JSON key is ever stored as a secret, only a provider
+resource name and a service-account email GitHub proves it's allowed to impersonate for that
+one run.
+
+### One-time setup
+
+1. Open **Cloud Shell** at [console.cloud.google.com](https://console.cloud.google.com)
+   (top-right terminal icon -- runs entirely in the browser, no local install) and clone this
+   repo, or paste the script directly.
+2. Run:
+   ```bash
+   export GCP_PROJECT=adaptive-training-recommender   # your Firebase/GCP project id
+   export GITHUB_REPO=OWNER/REPO                       # e.g. Szczepanov/adaptive-training-recommender
+   bash docs/ops/setup-workload-identity.sh
+   ```
+   This creates a Workload Identity Pool + OIDC Provider trusting GitHub Actions tokens **from
+   that one repo only**, a `github-deployer` service account with the roles the workflows
+   need, and the binding letting that repo's workflow runs impersonate it. It prints three
+   values at the end.
+3. Add those three, plus your Firebase UID and Garmin credentials, as **repo secrets**
+   (Settings -> Secrets and variables -> Actions -> New repository secret):
+
+   | Secret | Value |
+   |---|---|
+   | `GCP_PROJECT_ID` | printed by the script |
+   | `GCP_WORKLOAD_IDENTITY_PROVIDER` | printed by the script |
+   | `GCP_DEPLOYER_SA_EMAIL` | printed by the script |
+   | `APP_USER_ID` | your Firebase Authentication UID |
+   | `GARMIN_EMAIL` | your Garmin Connect email |
+   | `GARMIN_PASSWORD` | your Garmin Connect password |
+
+### Deploy
+
+Run the **Deploy Garmin Sync** workflow (Actions tab -> select it -> Run workflow) with
+`run_infra_setup` on and `run_smoke_test` **off** the first time -- there's no Garmin token
+yet, so a smoke test would fail (see the note in the workflow itself). This builds the
+container via Cloud Build, creates the token bucket/service accounts/Artifact Registry repo/
+Cloud Scheduler jobs, and deploys both Cloud Run Jobs.
+
+### Bootstrap the Garmin token
+
+Run the **Garmin Token Bootstrap** workflow once, after the deploy above:
+
+* **No 2FA on your Garmin account:** leave `mfa_code` blank and run it. Done.
+* **2FA enabled:** this is the one genuinely manual-timing step. Generate a code from your
+  authenticator app, then *immediately* trigger the workflow with that code as `mfa_code` --
+  the workflow is kept minimal specifically to shrink the gap between code and consumption.
+  This only works for an app-generated (TOTP) code you can produce on demand; an SMS/email
+  code that Garmin only sends once a login attempt starts can't be entered in advance here
+  (GitHub Actions can't pause a run mid-flight to collect a second input). For that case,
+  temporarily disable 2FA on your Garmin account, run the workflow once, then re-enable it --
+  the resulting OAuth token keeps working regardless of your account's current 2FA setting.
+
+Re-run **Deploy Garmin Sync** afterward with `run_infra_setup` off and `run_smoke_test` on to
+confirm `garmin-sync` actually logs in and pulls data end to end.
+
+### Re-deploying after a code change
+
+Run **Deploy Garmin Sync** again with `run_infra_setup` off -- it rebuilds the image and
+redeploys both Jobs (`gcloud run jobs deploy` upserts) without touching anything already
+configured.

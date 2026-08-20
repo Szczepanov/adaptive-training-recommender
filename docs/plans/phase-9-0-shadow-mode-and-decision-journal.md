@@ -36,7 +36,7 @@ The code in this phase collects evidence; it does not change recommendation poli
 
 Operational, not code:
 
-1. Deploy the Cloud Run Job and the **morning polling** Cloud Scheduler trigger documented in `docs/ops/cloud-run-deployment.md`: `*/15 5-9 * * *` in `Europe/Warsaw`, without `--force`. The Firestore freshness gate (`GARMIN_STALENESS_MINUTES`) is what keeps most scheduler ticks from calling Garmin.
+1. Deploy the Cloud Run Job and the **morning polling** Cloud Scheduler trigger documented in `docs/ops/cloud-run-deployment.md`: `*/15 5-9 * * *` in `Europe/Warsaw`, without `--force`. The Firestore freshness gate (`GARMIN_STALENESS_MINUTES`) is what keeps most scheduler ticks from calling Garmin. No local machine available: `docs/ops/cloud-run-deployment.md`'s [Deploying from GitHub Actions](../ops/cloud-run-deployment.md#deploying-from-github-actions-no-local-machine) section runs this same deploy from the GitHub web UI (2026-08-20).
 2. Run `uv run python -m garmin_sync backfill --days 56` so the 28-day objective baselines are mature before day 1.
 3. Run `uv run python -m garmin_sync audit` over the pre-block/backfill window and record the coverage result. Record the deployed scheduler expression and staleness setting with the operational evidence so the block can be reproduced.
 

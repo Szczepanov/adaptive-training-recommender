@@ -1,0 +1,68 @@
+name: Garmin Token Bootstrap
+
+# One-time (and, if the refresh token ever fully expires, occasional re-run) authentication
+# against Garmin Connect, uploading the resulting OAuth token to the private GCS bucket that
+# the Cloud Run Jobs read from. Kept deliberately separate from deploy-garmin-sync.yml and as
+# short as possible: if your Garmin account has 2FA, the code you enter below has maybe
+# 30-60 seconds of validity, and every extra step before this job reaches the login call eats
+# into that window.
+#
+# MFA timing note: this only works smoothly for an authenticator-app (TOTP) code, which you
+# can generate on demand right before triggering this workflow. An SMS/email code that Garmin
+# only sends once a login attempt actually starts cannot be entered in advance here -- GitHub
+# Actions has no way to pause mid-run and wait for a second human input. For that case,
+# temporarily disable 2FA on your Garmin account for this one run, then re-enable it
+# immediately after -- the resulting long-lived OAuth token does not depend on 2FA staying on.
+#
+# Prerequisite: deploy-garmin-sync.yml has run at least once with run_infra_setup on, so the
+# token bucket and GCP auth (see docs/ops/setup-workload-identity.sh) already exist.
+on:
+  workflow_dispatch:
+    inputs:
+      mfa_code:
+        description: "Garmin MFA code (leave blank if your account has no 2FA). Generate it, then trigger this workflow immediately."
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  bootstrap:
+    name: Bootstrap Garmin token
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to GCP (Workload Identity Federation, no key)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_DEPLOYER_SA_EMAIL }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      # The script's MFA prompt is a plain input() call, only ever reached if Garmin actually
+      # challenges this login for a code -- piped stdin is silently unused otherwise.
+      - name: Run Garmin login and upload token to GCS
+        env:
+          APP_USER_ID: ${{ secrets.APP_USER_ID }}
+          GARMIN_EMAIL: ${{ secrets.GARMIN_EMAIL }}
+          GARMIN_PASSWORD: ${{ secrets.GARMIN_PASSWORD }}
+          GARMIN_ALLOW_CREDENTIAL_LOGIN: "true"
+          MFA_CODE: ${{ inputs.mfa_code }}
+        run: |
+          echo "${MFA_CODE}" | uv run python scripts/bootstrap_garmin_tokens.py \
+            --bucket "${{ secrets.GCP_PROJECT_ID }}-garmin-tokens"
