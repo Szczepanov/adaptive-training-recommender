@@ -10,20 +10,19 @@
 # credentials, rather than in the CI-triggered deploy workflow: the ongoing GitHub Actions
 # identity (github-deployer, below) never needs project-IAM-admin, service-account-admin or
 # API-enablement power this way, only the bounded per-product roles deploying actually needs
-# (Cloud Run, Artifact Registry, Cloud Build, Cloud Scheduler). A workflow file compromised
-# or added later in this repo therefore cannot use that identity to grant itself broader
-# access -- it can deploy Cloud Run Jobs, not touch project IAM.
+# (Cloud Run, Artifact Registry, Cloud Scheduler). A workflow file compromised or added later
+# in this repo therefore cannot use that identity to grant itself broader access -- it can
+# deploy Cloud Run Jobs, not touch project IAM.
 #
 # What this creates:
 #   - A Workload Identity Pool + OIDC Provider trusting GitHub Actions tokens, restricted to
 #     one exact repository AND its main branch (`assertion.ref == refs/heads/main`) -- a
 #     workflow run from any other branch or a fork cannot obtain a token here at all.
-#   - The token bucket, Cloud Build's source-staging bucket, the two runtime/scheduler
-#     service accounts, the Artifact Registry repository -- everything the GitHub Actions
-#     workflows need to already exist.
+#   - The token bucket, the two runtime/scheduler service accounts, the Artifact Registry
+#     repository -- everything the GitHub Actions workflows need to already exist.
 #   - A "github-deployer" service account, scoped to deployment actions only (Cloud Run,
-#     Artifact Registry push, Cloud Build, Cloud Scheduler, and impersonating -- only --
-#     garmin-sync-job to attach it to the Jobs it deploys).
+#     Artifact Registry push, Cloud Scheduler, and impersonating -- only -- garmin-sync-job
+#     to attach it to the Jobs it deploys).
 #   - A separate "github-frontend-deployer" service account for deploy-frontend.yml, scoped
 #     only to Firebase Hosting and Firebase Rules -- kept apart from github-deployer so a
 #     compromised/buggy workflow touching one surface (Cloud Run Jobs vs. the web app +
@@ -59,8 +58,7 @@ echo "==> Enabling required APIs"
 gcloud services enable \
   iamcredentials.googleapis.com sts.googleapis.com \
   run.googleapis.com cloudscheduler.googleapis.com \
-  artifactregistry.googleapis.com cloudbuild.googleapis.com \
-  firestore.googleapis.com storage.googleapis.com \
+  artifactregistry.googleapis.com firestore.googleapis.com storage.googleapis.com \
   firebasehosting.googleapis.com firebaserules.googleapis.com
 
 PROJECT_NUMBER="$(gcloud projects describe "${GCP_PROJECT}" --format='value(projectNumber)')"
@@ -112,17 +110,6 @@ gcloud artifacts repositories describe garmin-sync --location="${REGION}" >/dev/
   gcloud artifacts repositories create garmin-sync \
     --repository-format=docker --location="${REGION}"
 
-# `gcloud builds submit` (deploy-garmin-sync.yml's image build step) uploads the checked-out
-# source as a tarball to this bucket before Cloud Build reads it -- the exact name/naming
-# scheme `gcloud builds submit` uses itself when no --gcs-source-staging-dir is given. Ensuring
-# it exists here (its IAM binding for github-deployer follows once that SA exists, below)
-# means the deploy workflow never needs any storage role of its own: everything it touches is
-# prepared once, in this one-time setup.
-CLOUDBUILD_STAGING_BUCKET="${GCP_PROJECT}_cloudbuild"
-echo "==> Ensuring the Cloud Build source-staging bucket exists"
-gcloud storage buckets describe "gs://${CLOUDBUILD_STAGING_BUCKET}" >/dev/null 2>&1 || \
-  gcloud storage buckets create "gs://${CLOUDBUILD_STAGING_BUCKET}" --location="${REGION}"
-
 echo "==> Creating github-deployer service account (skipping if it already exists)"
 if ! gcloud iam service-accounts describe "${DEPLOYER_SA_EMAIL}" >/dev/null 2>&1; then
   gcloud iam service-accounts create "${DEPLOYER_SA_NAME}" \
@@ -130,27 +117,38 @@ if ! gcloud iam service-accounts describe "${DEPLOYER_SA_EMAIL}" >/dev/null 2>&1
 fi
 
 # Deliberately narrow: each role is scoped to the one product deploy-garmin-sync.yml touches
-# (Cloud Run, Artifact Registry, Cloud Build, Cloud Scheduler) -- none of these grant IAM,
-# service-account or API-enablement authority over the project. Firestore access belongs to
-# garmin-sync-job (above), never to the deploy identity, which never reads/writes Firestore.
+# (Cloud Run, Artifact Registry, Cloud Scheduler) -- none of these grant IAM, service-account
+# or API-enablement authority over the project. Firestore access belongs to garmin-sync-job
+# (above), never to the deploy identity, which never reads/writes Firestore.
+#
+# The image build was originally `gcloud builds submit` (Cloud Build, uploading source to an
+# auto-managed GCS staging bucket). That repeatedly failed against github-deployer's
+# Workload-Identity-Federation-derived credentials with a "forbidden" error, regardless of
+# which storage role was granted on the bucket (storage.objectAdmin, then storage.admin --
+# both tried live, neither fixed it) -- a gsutil/WIF external_account-credential
+# compatibility issue, not an authorization gap. deploy-garmin-sync.yml now builds with plain
+# `docker build`/`docker push` instead, which only needs roles/artifactregistry.writer
+# (already below) and sidesteps Cloud Build entirely -- no staging bucket, no Cloud Build
+# role, no cloudbuild.googleapis.com dependency.
+#
+# roles/serviceusage.serviceUsageConsumer is NOT roles/serviceusage.serviceUsageAdmin (that
+# one grants enabling/disabling APIs and other IAM-adjacent power -- a real
+# privilege-escalation surface, deliberately omitted). Consumer only grants
+# serviceusage.services.use: permission for this identity's billed API calls to be
+# attributed to the project at all. Kept as defensive good practice even though it turned
+# out not to be the fix for the Cloud Build issue above.
 echo "==> Granting github-deployer deployment-only roles"
 for ROLE in \
   roles/run.admin \
   roles/artifactregistry.writer \
-  roles/cloudbuild.builds.editor \
   roles/cloudscheduler.admin \
+  roles/serviceusage.serviceUsageConsumer \
 ; do
   gcloud projects add-iam-policy-binding "${GCP_PROJECT}" \
     --member="serviceAccount:${DEPLOYER_SA_EMAIL}" \
     --role="${ROLE}" \
     --condition=None >/dev/null
 done
-
-# Resource-level, not project-wide: the only storage access github-deployer ever gets is
-# write access to Cloud Build's own source-staging bucket, created above.
-echo "==> Allowing github-deployer to upload build source"
-gcloud storage buckets add-iam-policy-binding "gs://${CLOUDBUILD_STAGING_BUCKET}" \
-  --member="serviceAccount:${DEPLOYER_SA_EMAIL}" --role="roles/storage.objectAdmin" >/dev/null
 
 # Resource-level, not project-wide: github-deployer may act as garmin-sync-job specifically
 # (required to attach it to a Cloud Run Job it deploys) and nothing else.

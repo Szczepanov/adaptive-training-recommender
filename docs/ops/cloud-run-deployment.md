@@ -257,7 +257,7 @@ one run.
 `setup-workload-identity.sh` provisions everything (APIs, buckets, service accounts, Artifact
 Registry repo) itself, run once with your own full-privilege `gcloud` session. The
 `github-deployer` identity that `deploy-garmin-sync.yml` authenticates as afterward only ever
-holds deployment-scoped roles -- Cloud Run, Artifact Registry push, Cloud Build, Cloud
+holds deployment-scoped roles -- Cloud Run, Artifact Registry push, Cloud
 Scheduler, and impersonating (only) `garmin-sync-job` to attach it to the Jobs it deploys --
 never project-IAM-admin or service-account-admin. A workflow file added or compromised later
 in this repo therefore cannot use it to widen its own access; it can deploy Cloud Run Jobs and
@@ -317,8 +317,9 @@ will be dropped on that first run.
 ### Deploy
 
 Run the **Deploy Garmin Sync** workflow (Actions tab -> select it -> Run workflow). This
-builds the container via Cloud Build and redeploys both Cloud Run Jobs against the infra
-`setup-workload-identity.sh` already created. Leave `run_smoke_test` off (its default) until
+builds the container with plain `docker build`/`docker push` against Artifact Registry (not
+Cloud Build -- see the workflow's own comments for why) and redeploys both Cloud Run Jobs
+against the infra `setup-workload-identity.sh` already created. Leave `run_smoke_test` off (its default) until
 you've confirmed a Garmin token already exists in the bucket
 (`docs/ops/verify-existing-deploy.sh` checks this) -- otherwise the smoke test fails for lack
 of one, which is expected on a first deploy.
