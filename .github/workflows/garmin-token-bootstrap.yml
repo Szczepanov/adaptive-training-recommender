@@ -1,0 +1,77 @@
+name: Garmin Token Bootstrap
+
+# One-time (and, if the refresh token ever fully expires, occasional re-run) authentication
+# against Garmin Connect, uploading the resulting OAuth token to the private GCS bucket that
+# the Cloud Run Jobs read from.
+#
+# MFA handling, in priority order:
+#  1. GARMIN_TOTP_SECRET repo secret set (recommended if your Garmin account has 2FA via an
+#     authenticator app): the code is computed live, at the exact moment Garmin's login flow
+#     actually asks for one -- inside bootstrap_garmin_tokens.py's _mfa_prompt(), well after
+#     checkout/auth/dependency install. No manually-entered code can go stale this way. Get
+#     the secret from the "manual entry key" / base32 string your authenticator app was given
+#     when you first enrolled it (not a 6-digit code) -- if you no longer have it, re-enrolling
+#     the authenticator on Garmin's side gives you a fresh one.
+#  2. No secret set, `mfa_code` input given: used as a pre-typed fallback. Generate it, then
+#     trigger this workflow *immediately* -- every step between trigger and the login call
+#     (checkout, auth, uv setup, dependency install) eats into a typical 30-60s TOTP window.
+#  3. Neither: only works if your Garmin account has no 2FA at all.
+#
+# An SMS/email code that Garmin only sends once a login attempt actually starts can't be used
+# with either 1 or 2 here -- GitHub Actions can't pause a run mid-flight to collect a second
+# input. For that case, temporarily disable 2FA on your Garmin account, run this once, then
+# re-enable it -- the resulting OAuth token keeps working regardless of your account's current
+# 2FA setting.
+#
+# Prerequisite: docs/ops/setup-workload-identity.sh has been run once, so the token bucket and
+# GCP auth already exist.
+on:
+  workflow_dispatch:
+    inputs:
+      mfa_code:
+        description: "Garmin MFA code -- only used as a fallback when GARMIN_TOTP_SECRET isn't set (leave blank if neither applies). Generate it, then trigger this workflow immediately."
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  bootstrap:
+    name: Bootstrap Garmin token
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to GCP (Workload Identity Federation, no key)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_DEPLOYER_SA_EMAIL }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
+          enable-cache: true # every second here narrows a pre-typed MFA code's validity window
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Run Garmin login and upload token to GCS
+        env:
+          APP_USER_ID: ${{ secrets.APP_USER_ID }}
+          GARMIN_EMAIL: ${{ secrets.GARMIN_EMAIL }}
+          GARMIN_PASSWORD: ${{ secrets.GARMIN_PASSWORD }}
+          GARMIN_ALLOW_CREDENTIAL_LOGIN: "true"
+          GARMIN_TOTP_SECRET: ${{ secrets.GARMIN_TOTP_SECRET }}
+          GARMIN_MFA_CODE: ${{ inputs.mfa_code }}
+        run: |
+          uv run python scripts/bootstrap_garmin_tokens.py \
+            --bucket "${{ secrets.GCP_PROJECT_ID }}-garmin-tokens"

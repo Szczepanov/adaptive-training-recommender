@@ -3,12 +3,37 @@ Helper utility to authenticate Garmin credentials locally and upload initial tok
 """
 
 import argparse
+import os
 import sys
 from pathlib import Path
+from typing import Callable
 
 from garmin_sync.config import load_settings
 from garmin_sync.garmin_client import GarminClientWrapper
 from garmin_sync.token_store import GcsTokenStore
+
+
+def _mfa_prompt() -> Callable[[], str]:
+    """Prefers a live-computed TOTP code over one typed in advance.
+
+    A code entered ahead of time (e.g. as a CI workflow input) can expire before this
+    point is ever reached -- checkout, auth, dependency install all happen first. When
+    GARMIN_TOTP_SECRET (the authenticator app's base32 shared secret, not a single code)
+    is set, the code is generated at the exact moment Garmin actually asks for one, which
+    eliminates that race entirely. Falls back to a pre-supplied GARMIN_MFA_CODE (piped
+    stdin in CI, or a plain prompt locally) when no TOTP secret is configured.
+    """
+    totp_secret = os.getenv("GARMIN_TOTP_SECRET")
+    if totp_secret:
+        import pyotp
+
+        totp = pyotp.TOTP(totp_secret)
+        return lambda: totp.now()
+
+    pre_supplied = os.getenv("GARMIN_MFA_CODE")
+    if pre_supplied:
+        return lambda: pre_supplied
+    return lambda: input("Garmin MFA code: ")
 
 
 def bootstrap(bucket_name: str | None = None, object_name: str = "garmin/garmin_tokens.json"):
@@ -19,7 +44,7 @@ def bootstrap(bucket_name: str | None = None, object_name: str = "garmin/garmin_
     wrapper = GarminClientWrapper(
         email=settings.garmin_email,
         password=settings.garmin_password,
-        prompt_mfa=lambda: input("Garmin MFA code: "),
+        prompt_mfa=_mfa_prompt(),
         allow_credential_login=True,
     )
     wrapper.login_with_tokens_or_credentials(local_file)

@@ -8,6 +8,7 @@ dependencies = [
     "firebase-admin",
     "garminconnect>=0.3.8,<0.4",
     "google-cloud-storage",
+    "pyotp>=2.9,<3",
     "python-dotenv",
     "tzdata",
 ]
@@ -36,6 +37,7 @@ testpaths = [
 ]
 pythonpath = [
     "src",
+    "scripts",
 ]
 
 [tool.ruff]

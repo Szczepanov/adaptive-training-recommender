@@ -1,0 +1,129 @@
+name: Deploy Garmin Sync
+
+# Runs the GCP Cloud Run + Cloud Scheduler deployment from docs/ops/cloud-run-deployment.md
+# without needing a local machine. One-time prerequisite: run
+# docs/ops/setup-workload-identity.sh once (from Cloud Shell or any machine with gcloud) --
+# it creates all the infra (bucket, service accounts, Artifact Registry repo) this workflow
+# assumes already exists, and add its printed values as the repo secrets this workflow reads
+# below. Deliberately does NOT provision infra itself: github-deployer only ever holds
+# deployment-scoped roles (Cloud Run, Artifact Registry, Cloud Build, Cloud Scheduler), never
+# project-IAM-admin or service-account-admin -- see the setup script's own comments for why.
+#
+# Safe to re-run: `gcloud run jobs deploy` upserts, and the Scheduler step tries update before
+# create, so running this again after a code change just rebuilds the image and redeploys the
+# two Jobs against what setup-workload-identity.sh already created.
+#
+# This workflow does NOT touch Garmin auth -- see garmin-token-bootstrap.yml for that.
+on:
+  workflow_dispatch:
+    inputs:
+      region:
+        description: "GCP region"
+        required: true
+        default: "europe-central2"
+      run_smoke_test:
+        description: "Execute the garmin-sync Job once and wait, after deploying (needs a Garmin token already bootstrapped -- see garmin-token-bootstrap.yml)"
+        type: boolean
+        required: true
+        default: false
+
+permissions:
+  contents: read
+  id-token: write # required for keyless Workload Identity Federation auth
+
+env:
+  GCP_PROJECT: ${{ secrets.GCP_PROJECT_ID }}
+  CLOUDSDK_CORE_PROJECT: ${{ secrets.GCP_PROJECT_ID }} # process-scoped; never mutates a persisted gcloud config
+  REGION: ${{ inputs.region }}
+  JOB_SA_EMAIL: garmin-sync-job@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com
+  SCHEDULER_SA_EMAIL: garmin-scheduler-invoker@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com
+  TOKEN_BUCKET: ${{ secrets.GCP_PROJECT_ID }}-garmin-tokens
+  IMAGE_TAG: ${{ inputs.region }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/garmin-sync/garmin-sync:${{ github.sha }}
+
+jobs:
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to GCP (Workload Identity Federation, no key)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_DEPLOYER_SA_EMAIL }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Disable interactive gcloud prompts
+        run: gcloud config set core/disable_prompts true
+
+      - name: Build and push container image (Cloud Build, no local Docker)
+        run: gcloud builds submit --tag "${IMAGE_TAG}"
+
+      - name: Render Cloud Run Job env vars
+        run: |
+          cat > cloud-run-job.env.yaml <<EOF
+          APP_USER_ID: "${{ secrets.APP_USER_ID }}"
+          APP_TIMEZONE: "Europe/Warsaw"
+          GARMIN_TOKEN_STORE: "gcs"
+          GARMIN_TOKEN_BUCKET: "${TOKEN_BUCKET}"
+          GARMIN_TOKEN_OBJECT: "garmin/garmin_tokens.json"
+          GARMIN_ALLOW_CREDENTIAL_LOGIN: "false"
+          GARMIN_ACTIVITY_DETAIL_ENABLED: "false"
+          GCP_PROJECT_ID: "${GCP_PROJECT}"
+          EOF
+
+      - name: Deploy the two Cloud Run Jobs
+        run: |
+          gcloud run jobs deploy garmin-sync \
+            --image="${IMAGE_TAG}" --region="${REGION}" \
+            --service-account="${JOB_SA_EMAIL}" \
+            --env-vars-file=cloud-run-job.env.yaml \
+            --args=sync --max-retries=0
+
+          gcloud run jobs deploy garmin-push-pending-workouts \
+            --image="${IMAGE_TAG}" --region="${REGION}" \
+            --service-account="${JOB_SA_EMAIL}" \
+            --env-vars-file=cloud-run-job.env.yaml \
+            --args=push-pending-workouts --max-retries=0
+
+      # roles/run.admin (github-deployer's own role, granted by setup-workload-identity.sh)
+      # covers setting IAM policy on a Cloud Run Job it deployed -- a Run-product-scoped
+      # action, not general project IAM.
+      - name: Grant Cloud Scheduler permission to run the Jobs
+        run: |
+          gcloud run jobs add-iam-policy-binding garmin-sync \
+            --region="${REGION}" --member="serviceAccount:${SCHEDULER_SA_EMAIL}" \
+            --role="roles/run.invoker" >/dev/null
+
+          gcloud run jobs add-iam-policy-binding garmin-push-pending-workouts \
+            --region="${REGION}" --member="serviceAccount:${SCHEDULER_SA_EMAIL}" \
+            --role="roles/run.invoker" >/dev/null
+
+      - name: Create/update Cloud Scheduler jobs
+        run: |
+          gcloud scheduler jobs update http garmin-sync-morning-poll --location="${REGION}" \
+            --schedule="*/15 5-9 * * *" --time-zone="Europe/Warsaw" \
+            --uri="https://run.googleapis.com/v2/projects/${GCP_PROJECT}/locations/${REGION}/jobs/garmin-sync:run" \
+            --http-method=POST --oauth-service-account-email="${SCHEDULER_SA_EMAIL}" \
+          || gcloud scheduler jobs create http garmin-sync-morning-poll --location="${REGION}" \
+            --schedule="*/15 5-9 * * *" --time-zone="Europe/Warsaw" \
+            --uri="https://run.googleapis.com/v2/projects/${GCP_PROJECT}/locations/${REGION}/jobs/garmin-sync:run" \
+            --http-method=POST --oauth-service-account-email="${SCHEDULER_SA_EMAIL}"
+
+          gcloud scheduler jobs update http garmin-push-pending-workouts-poll --location="${REGION}" \
+            --schedule="*/3 * * * *" --time-zone="Europe/Warsaw" \
+            --uri="https://run.googleapis.com/v2/projects/${GCP_PROJECT}/locations/${REGION}/jobs/garmin-push-pending-workouts:run" \
+            --http-method=POST --oauth-service-account-email="${SCHEDULER_SA_EMAIL}" \
+          || gcloud scheduler jobs create http garmin-push-pending-workouts-poll --location="${REGION}" \
+            --schedule="*/3 * * * *" --time-zone="Europe/Warsaw" \
+            --uri="https://run.googleapis.com/v2/projects/${GCP_PROJECT}/locations/${REGION}/jobs/garmin-push-pending-workouts:run" \
+            --http-method=POST --oauth-service-account-email="${SCHEDULER_SA_EMAIL}"
+
+      # Off by default: fails until the Garmin token has been bootstrapped at least once (see
+      # garmin-token-bootstrap.yml) -- garmin-sync runs with GARMIN_ALLOW_CREDENTIAL_LOGIN
+      # false, so with no token in the bucket yet it has nothing to log in with.
+      - name: Smoke test garmin-sync
+        if: inputs.run_smoke_test
+        run: gcloud run jobs execute garmin-sync --region="${REGION}" --wait
