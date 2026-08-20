@@ -1,6 +1,7 @@
 import importlib.metadata
 import logging
 import uuid
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -26,6 +27,15 @@ from .provider import WearableProvider
 from .token_store import create_token_store
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class SnapshotContext:
+    target_iso: str
+    canonical: CanonicalDailyMetrics
+    canonical_activities: list[CanonicalActivity]
+    raw_memory_store: dict[str, dict[str, Any]]
+    activities_through_iso: str | None = None
 
 
 def _new_sync_run_id(target_iso: str) -> str:
@@ -215,48 +225,46 @@ class GarminSyncService:
 
     def _build_and_store_snapshot(
         self,
-        target_iso: str,
-        canonical: CanonicalDailyMetrics,
-        canonical_activities: list[CanonicalActivity],
-        raw_memory_store: dict[str, dict[str, Any]],
-        activities_through_iso: str | None = None,
+        context: SnapshotContext,
     ) -> DailyRecoverySnapshot:
         """Shared derive -> map -> store pipeline. Single source of truth for how a
         snapshot is assembled from a date's canonical metrics, used by sync_daily,
         backfill, and rebuild so they can never drift from each other."""
-        target_date = parse_date_string(target_iso)
+        target_date = parse_date_string(context.target_iso)
         w7_start = get_date_string(n_days_ago(target_date, 7))
         w28_start = get_date_string(n_days_ago(target_date, 28))
 
-        sorted_history_dates = [d for d in sorted(raw_memory_store.keys()) if d < target_iso]
-        window_7d = [raw_memory_store[d] for d in sorted_history_dates if d >= w7_start]
-        window_28d = [raw_memory_store[d] for d in sorted_history_dates if d >= w28_start]
+        sorted_history_dates = [
+            d for d in sorted(context.raw_memory_store.keys()) if d < context.target_iso
+        ]
+        window_7d = [context.raw_memory_store[d] for d in sorted_history_dates if d >= w7_start]
+        window_28d = [context.raw_memory_store[d] for d in sorted_history_dates if d >= w28_start]
 
         dummy_current = {
-            "sleepScore": canonical.sleep_score,
-            "restingHr": canonical.resting_heart_rate_bpm,
-            "hrvOvernightAvg": canonical.hrv_overnight_avg_ms,
-            "respirationAvg": canonical.respiration_rate_brpm,
+            "sleepScore": context.canonical.sleep_score,
+            "restingHr": context.canonical.resting_heart_rate_bpm,
+            "hrvOvernightAvg": context.canonical.hrv_overnight_avg_ms,
+            "respirationAvg": context.canonical.respiration_rate_brpm,
             # `steps_count` is the completed D-1 value (see metricDates.steps),
             # so it must accompany the other current metrics when deriving its
             # trailing baseline and deltas.
-            "totalSteps": canonical.steps_count,
+            "totalSteps": context.canonical.steps_count,
         }
         derived = compute_derived_metrics(dummy_current, window_7d, window_28d)
 
         snapshot = build_snapshot_from_canonical(
             user_id=self.settings.app_user_id,
-            target_date_iso=target_iso,
-            canonical=canonical,
-            canonical_activities=canonical_activities,
+            target_date_iso=context.target_iso,
+            canonical=context.canonical,
+            canonical_activities=context.canonical_activities,
             derived_metrics=derived,
             timezone_name=self.settings.app_timezone,
             garminconnect_version=self.garminconnect_version,
-            activities_through_iso=activities_through_iso,
+            activities_through_iso=context.activities_through_iso,
         )
 
-        raw_memory_store[target_iso] = snapshot.raw.to_dict()
-        self.repository.upsert_snapshot(target_iso, snapshot.to_dict())
+        context.raw_memory_store[context.target_iso] = snapshot.raw.to_dict()
+        self.repository.upsert_snapshot(context.target_iso, snapshot.to_dict())
         return snapshot
 
     def _fetch_and_store_date(
@@ -325,10 +333,12 @@ class GarminSyncService:
         self._seed_prehistory(raw_memory_store, target_date)
 
         snapshot = self._build_and_store_snapshot(
-            target_iso=target_iso,
-            canonical=daily_result.canonical,
-            canonical_activities=activities_result.canonical,
-            raw_memory_store=raw_memory_store,
+            SnapshotContext(
+                target_iso=target_iso,
+                canonical=daily_result.canonical,
+                canonical_activities=activities_result.canonical,
+                raw_memory_store=raw_memory_store,
+            )
         )
 
         logger.info(
@@ -589,10 +599,12 @@ class GarminSyncService:
                 )
 
                 self._build_and_store_snapshot(
-                    target_iso=target_iso,
-                    canonical=daily_result.canonical,
-                    canonical_activities=date_canonical_activities,
-                    raw_memory_store=raw_memory_store,
+                    SnapshotContext(
+                        target_iso=target_iso,
+                        canonical=daily_result.canonical,
+                        canonical_activities=date_canonical_activities,
+                        raw_memory_store=raw_memory_store,
+                    )
                 )
                 logger.info(f"[{target_iso}] Backfill sync completed.")
 
@@ -694,17 +706,19 @@ class GarminSyncService:
                 )
 
                 self._build_and_store_snapshot(
-                    target_iso=target_iso,
-                    canonical=canonical,
-                    canonical_activities=canonical_activities,
-                    raw_memory_store=raw_memory_store,
-                    # Conservative: this archived "activities" entry may predate
-                    # same-day activity fetching (see mapper.build_snapshot_from_canonical),
-                    # so rebuild can't assert it covers through target_iso the way a live
-                    # sync_daily/backfill fetch can. todayTraining itself is still
-                    # populated from whatever canonical_activities actually contains --
-                    # only this coverage marker is deliberately understated.
-                    activities_through_iso=yesterday_iso,
+                    SnapshotContext(
+                        target_iso=target_iso,
+                        canonical=canonical,
+                        canonical_activities=canonical_activities,
+                        raw_memory_store=raw_memory_store,
+                        # Conservative: this archived "activities" entry may predate
+                        # same-day activity fetching (see mapper.build_snapshot_from_canonical),
+                        # so rebuild can't assert it covers through target_iso the way a live
+                        # sync_daily/backfill fetch can. todayTraining itself is still
+                        # populated from whatever canonical_activities actually contains --
+                        # only this coverage marker is deliberately understated.
+                        activities_through_iso=yesterday_iso,
+                    )
                 )
                 rebuilt_dates.append(target_iso)
                 logger.info(f"[{target_iso}] Rebuilt from archive.")
