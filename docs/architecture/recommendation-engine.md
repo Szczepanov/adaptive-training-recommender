@@ -183,6 +183,9 @@ ownership and constrain availability before candidates are selected.
 
 Three modes, not four: **`train`**, **`modify`**, **`recover`**.
 
+> "Separates acute deviation from longer-term adverse trend for decision support; it does
+> not diagnose non-functional overreaching or overtraining syndrome."
+
 Objective strain is a continuous, **self-normalised** score — not fixed absolute
 thresholds. Each of HRV, RHR and sleep score contributes two z-scored terms:
 
