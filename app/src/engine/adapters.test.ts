@@ -78,8 +78,19 @@ function respirationSnapshot(
 }
 
 describe('mapSnapshotToEngineInput respiration baseline compatibility', () => {
-    it('keeps pre-v3 mean-based respiration deltas inert', () => {
-        const objective = mapSnapshotToEngineInput(respirationSnapshot(2, undefined));
+    it('keeps respiration decision-inert by default even for a complete v3 median/MAD baseline', () => {
+        const objective = mapSnapshotToEngineInput(respirationSnapshot(3, 0.8));
+
+        expect(objective.respiration_delta).toBeNull();
+        expect(objective.respiration_delta_28d).toBeNull();
+        expect(objective.respiration_mad_28d).toBeNull();
+    });
+
+    it('keeps pre-v3 mean-based respiration deltas inert even when comparison scoring is enabled', () => {
+        const objective = mapSnapshotToEngineInput(
+            respirationSnapshot(2, undefined),
+            'median-mad-v1',
+        );
 
         expect(objective.respiration_delta).toBeNull();
         expect(objective.respiration_delta_28d).toBeNull();
@@ -87,15 +98,21 @@ describe('mapSnapshotToEngineInput respiration baseline compatibility', () => {
     });
 
     it('keeps v3+ respiration inert until a 28d MAD is actually available', () => {
-        const objective = mapSnapshotToEngineInput(respirationSnapshot(3, null));
+        const objective = mapSnapshotToEngineInput(
+            respirationSnapshot(3, null),
+            'median-mad-v1',
+        );
 
         expect(objective.respiration_delta).toBeNull();
         expect(objective.respiration_delta_28d).toBeNull();
         expect(objective.respiration_mad_28d).toBeNull();
     });
 
-    it('forwards the v3 median/MAD respiration signal once the robust spread exists', () => {
-        const objective = mapSnapshotToEngineInput(respirationSnapshot(3, 0.8));
+    it('forwards the v3 median/MAD signal only under the explicit comparison policy', () => {
+        const objective = mapSnapshotToEngineInput(
+            respirationSnapshot(3, 0.8),
+            'median-mad-v1',
+        );
 
         expect(objective.respiration_delta).toBe(2);
         expect(objective.respiration_delta_28d).toBe(3);
