@@ -28,7 +28,11 @@ vi.mock('./trainingIntentProfileService', () => ({ trainingIntentProfileService:
 vi.mock('./goalService', () => ({ goalService: { getActiveGoalsState: services.getActiveGoalsState } }));
 vi.mock('./fixedActivityService', () => ({ fixedActivityService: { getActivitiesInRangeState: services.getFixedActivitiesInRangeState } }));
 vi.mock('./planBlockService', () => ({ planBlockService: { getBlocksInRangeState: services.getPlanBlocksInRangeState } }));
-vi.mock('./activeExternalPlanService', () => ({ activeExternalPlanService: { getActivePlanState: services.getActivePlanState } }));
+vi.mock('./activeExternalPlanService', () => ({
+    activeExternalPlanService: { getActivePlanState: services.getActivePlanState },
+    placedSessionForDate: (active: { placed: Array<{ date: string; status: string }> }, date: string) =>
+        active.placed.find(item => item.date === date && (item.status === 'planned' || item.status === 'moved')) ?? null,
+}));
 
 import { ContextBriefService } from './contextBriefService';
 
@@ -187,7 +191,7 @@ describe('ContextBriefService', () => {
         expect(result.text).toContain('fixed-activity occupancy unavailable');
     });
 
-    it('renders an imported future session into the copied handoff', async () => {
+    it('renders an imported future session and its authored prescription into the copied handoff', async () => {
         services.getActivePlanState.mockImplementation(async (_userId: string, date: string) => {
             if (date !== '2026-08-17') return { status: 'MISSING' };
             return {
@@ -204,6 +208,10 @@ describe('ContextBriefService', () => {
                             priority: 'key',
                             placement: { flexibility: 'preferred' },
                             gating: { modality: 'cycling', intensity: 'hard', durationMin: 60, durationMax: 75 },
+                            prescription: {
+                                summary: '3 x 10 min threshold',
+                                steps: [{ name: 'Threshold', sets: 3, durationMin: 10, target: 'RPE 7–8', recoverySec: 240 }],
+                            },
                         },
                     }],
                 },
@@ -212,6 +220,8 @@ describe('ContextBriefService', () => {
 
         const result = await new ContextBriefService().build('u1', AS_OF, 14);
         expect(result.text).toContain('2026-08-17 | Imported plan: Race prep | Threshold quality | 60–75 min · hard | key · preferred');
+        expect(result.text).toContain('2026-08-17 — Threshold quality:** 3 x 10 min threshold');
+        expect(result.text).toContain('Threshold: 3 sets · 10 min · RPE 7–8 · 240s recovery');
     });
 
     it('still returns a brief when every source rejects', async () => {
