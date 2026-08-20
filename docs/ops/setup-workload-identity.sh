@@ -18,8 +18,9 @@
 #   - A Workload Identity Pool + OIDC Provider trusting GitHub Actions tokens, restricted to
 #     one exact repository AND its main branch (`assertion.ref == refs/heads/main`) -- a
 #     workflow run from any other branch or a fork cannot obtain a token here at all.
-#   - The token bucket, the two runtime/scheduler service accounts, the Artifact Registry
-#     repository -- everything the two GitHub Actions workflows need to already exist.
+#   - The token bucket, Cloud Build's source-staging bucket, the two runtime/scheduler
+#     service accounts, the Artifact Registry repository -- everything the two GitHub
+#     Actions workflows need to already exist.
 #   - A "github-deployer" service account, scoped to deployment actions only (Cloud Run,
 #     Artifact Registry push, Cloud Build, Cloud Scheduler, and impersonating -- only --
 #     garmin-sync-job to attach it to the Jobs it deploys).
@@ -102,6 +103,17 @@ gcloud artifacts repositories describe garmin-sync --location="${REGION}" >/dev/
   gcloud artifacts repositories create garmin-sync \
     --repository-format=docker --location="${REGION}"
 
+# `gcloud builds submit` (deploy-garmin-sync.yml's image build step) uploads the checked-out
+# source as a tarball to this bucket before Cloud Build reads it -- the exact name/naming
+# scheme `gcloud builds submit` uses itself when no --gcs-source-staging-dir is given. Ensuring
+# it exists here (its IAM binding for github-deployer follows once that SA exists, below)
+# means the deploy workflow never needs any storage role of its own: everything it touches is
+# prepared once, in this one-time setup.
+CLOUDBUILD_STAGING_BUCKET="${GCP_PROJECT}_cloudbuild"
+echo "==> Ensuring the Cloud Build source-staging bucket exists"
+gcloud storage buckets describe "gs://${CLOUDBUILD_STAGING_BUCKET}" >/dev/null 2>&1 || \
+  gcloud storage buckets create "gs://${CLOUDBUILD_STAGING_BUCKET}" --location="${REGION}"
+
 echo "==> Creating github-deployer service account (skipping if it already exists)"
 if ! gcloud iam service-accounts describe "${DEPLOYER_SA_EMAIL}" >/dev/null 2>&1; then
   gcloud iam service-accounts create "${DEPLOYER_SA_NAME}" \
@@ -124,6 +136,12 @@ for ROLE in \
     --role="${ROLE}" \
     --condition=None >/dev/null
 done
+
+# Resource-level, not project-wide: the only storage access github-deployer ever gets is
+# write access to Cloud Build's own source-staging bucket, created above.
+echo "==> Allowing github-deployer to upload build source"
+gcloud storage buckets add-iam-policy-binding "gs://${CLOUDBUILD_STAGING_BUCKET}" \
+  --member="serviceAccount:${DEPLOYER_SA_EMAIL}" --role="roles/storage.objectAdmin" >/dev/null
 
 # Resource-level, not project-wide: github-deployer may act as garmin-sync-job specifically
 # (required to attach it to a Cloud Run Job it deploys) and nothing else.
