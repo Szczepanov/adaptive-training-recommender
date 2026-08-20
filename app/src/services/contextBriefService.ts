@@ -16,6 +16,7 @@ import {
     UPCOMING_CONTEXT_DAYS,
     type UpcomingExternalPlanSession,
 } from '../engine/contextBriefPlanningHandoff';
+import { externalSessionDisplayPrescription } from '../engine/externalSessionProfiles';
 import { resolvePlanningContext } from '../engine/planningMode';
 import { evaluatePeriodizationPhase, goalToUserEvent } from '../engine/periodization';
 import { parseSubjectiveCheckin } from '../persistence/parsers/decisionInputs';
@@ -46,11 +47,11 @@ export interface ContextBriefResult {
 
 /**
  * `resolvePlanningContext` still accepts the v1 external-session type, while placement may
- * return either external-plan schema. Planning-mode authority only needs to know that a
- * real session is placed on the date; all envelope fields below are common to v1/v2. A
- * v2 definition is not translated into fake executable v1 content -- the placeholder
- * summary exists only to satisfy the legacy type at this authority boundary, and the
- * returned context's externalSession is deliberately not consumed by this brief.
+ * return either external-plan schema. Planning-mode authority only needs the presence and
+ * shared envelope of a session placed on this date. `externalSessionDisplayPrescription`
+ * is the repository's canonical v1/v2 display adapter, so the compatibility facade keeps
+ * truthful authored display content rather than inventing a prescription. The returned
+ * context's externalSession is deliberately not consumed by this brief.
  */
 function planningAuthoritySession(session: AnyExternalPlanSession): LegacyExternalPlanSession {
     if ('prescription' in session) return session;
@@ -60,10 +61,10 @@ function planningAuthoritySession(session: AnyExternalPlanSession): LegacyExtern
         priority: session.priority,
         placement: session.placement,
         gating: session.gating,
-        objectives: session.objectives,
-        prescription: { summary: session.title },
-        scaling: session.scaling,
-        isEvent: session.isEvent,
+        ...(session.objectives ? { objectives: [...session.objectives] } : {}),
+        prescription: externalSessionDisplayPrescription(session),
+        ...(session.scaling ? { scaling: session.scaling } : {}),
+        ...(session.isEvent !== undefined ? { isEvent: session.isEvent } : {}),
     };
 }
 
@@ -280,6 +281,7 @@ export class ContextBriefService {
                         status: placed.status === 'moved' ? 'moved' : 'planned',
                         moved: placed.moved,
                         isEvent: placed.session.isEvent === true,
+                        prescription: externalSessionDisplayPrescription(placed.session),
                     });
                 }
             }
