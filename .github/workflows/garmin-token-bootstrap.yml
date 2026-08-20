@@ -51,7 +51,7 @@ jobs:
           service_account: ${{ secrets.GCP_DEPLOYER_SA_EMAIL }}
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@v7
         with:
           version: "latest"
           enable-cache: true # every second here narrows a pre-typed MFA code's validity window
