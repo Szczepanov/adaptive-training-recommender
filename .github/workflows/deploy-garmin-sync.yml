@@ -39,6 +39,11 @@ env:
   SCHEDULER_SA_EMAIL: garmin-scheduler-invoker@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com
   TOKEN_BUCKET: ${{ secrets.GCP_PROJECT_ID }}-garmin-tokens
   IMAGE_TAG: ${{ inputs.region }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/garmin-sync/garmin-sync:${{ github.sha }}
+  # setup-workload-identity.sh both creates this bucket and grants github-deployer access to
+  # it -- passed explicitly rather than left to `gcloud builds submit`'s own default-bucket
+  # resolution, which was observed producing a "forbidden" error against that exact bucket
+  # even with matching IAM in place.
+  CLOUDBUILD_SOURCE_STAGING_DIR: gs://${{ secrets.GCP_PROJECT_ID }}_cloudbuild/source
 
 jobs:
   deploy:
@@ -59,7 +64,9 @@ jobs:
         run: gcloud config set core/disable_prompts true
 
       - name: Build and push container image (Cloud Build, no local Docker)
-        run: gcloud builds submit --tag "${IMAGE_TAG}"
+        run: |
+          gcloud builds submit --tag "${IMAGE_TAG}" \
+            --gcs-source-staging-dir="${CLOUDBUILD_SOURCE_STAGING_DIR}"
 
       - name: Render Cloud Run Job env vars
         run: |

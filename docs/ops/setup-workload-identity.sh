@@ -137,11 +137,15 @@ for ROLE in \
     --condition=None >/dev/null
 done
 
-# Resource-level, not project-wide: the only storage access github-deployer ever gets is
-# write access to Cloud Build's own source-staging bucket, created above.
+# Resource-level, not project-wide: the only storage access github-deployer ever gets is on
+# Cloud Build's own source-staging bucket, created above. roles/storage.admin here (not just
+# objectAdmin) because `gcloud builds submit` was observed failing against a bucket we
+# pre-created ourselves even after granting objectAdmin -- it also does bucket-level calls
+# (e.g. checking the bucket's own metadata/location), which objectAdmin's object-scoped
+# permissions don't cover.
 echo "==> Allowing github-deployer to upload build source"
 gcloud storage buckets add-iam-policy-binding "gs://${CLOUDBUILD_STAGING_BUCKET}" \
-  --member="serviceAccount:${DEPLOYER_SA_EMAIL}" --role="roles/storage.objectAdmin" >/dev/null
+  --member="serviceAccount:${DEPLOYER_SA_EMAIL}" --role="roles/storage.admin" >/dev/null
 
 # Resource-level, not project-wide: github-deployer may act as garmin-sync-job specifically
 # (required to attach it to a Cloud Run Job it deploys) and nothing else.
