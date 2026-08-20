@@ -19,10 +19,10 @@ on:
         required: true
         default: "europe-central2"
       run_infra_setup:
-        description: "Create/update APIs, bucket, service accounts, Artifact Registry, Scheduler jobs (turn off for a code-only redeploy once everything already exists)"
+        description: "Create/update APIs, bucket, service accounts, Artifact Registry, Scheduler jobs (defaults off: this project's infra is already deployed manually -- turn on only for a fresh project, or after docs/ops/verify-existing-deploy.sh shows something genuinely missing)"
         type: boolean
         required: true
-        default: true
+        default: false
       run_smoke_test:
         description: "Execute the garmin-sync Job once and wait, after deploying"
         type: boolean

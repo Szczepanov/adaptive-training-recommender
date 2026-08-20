@@ -254,16 +254,22 @@ one run.
 
 ### Already deployed manually? Check names line up first
 
-If you've already run the manual steps above once, `docs/ops/verify-existing-deploy.sh`
-read-only-checks whether your live resources exist under the exact names/region these
-workflows assume (`GCP_PROJECT=... REGION=europe-central2 bash docs/ops/verify-existing-deploy.sh`,
-from wherever you have `gcloud` -- Cloud Shell or local). If everything the workflows expect
-already exists under those names, `run_infra_setup` can stay on regardless -- every step it
-gates is create-if-missing, so it's a safe no-op against what you already have. It's still
-worth knowing before the first CI-driven redeploy: **`gcloud run jobs deploy` replaces the
-whole Job spec** with whatever `deploy-garmin-sync.yml` passes -- any env var or setting your
-manual deploy added beyond `docs/ops/cloud-run-job.env.yaml.example`'s fields will be dropped
-on that first run.
+`run_infra_setup` **defaults off**, because the common case for this repo is exactly this:
+infra (bucket, service accounts, Cloud Run Jobs, Scheduler jobs) already deployed by hand once
+per the sections above, and the workflow only needs to rebuild/redeploy after a code change.
+Before that first CI-driven run, confirm your live resources actually exist under the exact
+names/region the workflow assumes: `docs/ops/verify-existing-deploy.sh` read-only-checks this
+(`GCP_PROJECT=... REGION=europe-central2 bash docs/ops/verify-existing-deploy.sh`, from
+wherever you have `gcloud` -- Cloud Shell or local). If a name doesn't match (different
+service account name, different bucket, etc.), either rename the live resource to match, or
+turn `run_infra_setup` on for one run -- every step it gates is create-if-missing/upsert, so
+it will not touch or duplicate a resource that's already there under the name it expects; it
+only fills in whatever's genuinely absent.
+
+It's still worth knowing before that first CI-driven redeploy either way: **`gcloud run jobs
+deploy` replaces the whole Job spec** with whatever `deploy-garmin-sync.yml` passes -- any env
+var or setting your manual deploy added beyond `docs/ops/cloud-run-job.env.yaml.example`'s
+fields will be dropped on that first run.
 
 ### One-time setup
 
@@ -294,11 +300,17 @@ on that first run.
 
 ### Deploy
 
-Run the **Deploy Garmin Sync** workflow (Actions tab -> select it -> Run workflow) with
-`run_infra_setup` on and `run_smoke_test` **off** the first time -- there's no Garmin token
-yet, so a smoke test would fail (see the note in the workflow itself). This builds the
-container via Cloud Build, creates the token bucket/service accounts/Artifact Registry repo/
-Cloud Scheduler jobs, and deploys both Cloud Run Jobs.
+**Infra already exists (the default case for this repo):** run the **Deploy Garmin Sync**
+workflow (Actions tab -> select it -> Run workflow) with `run_infra_setup` left off. This
+builds the container via Cloud Build and redeploys both Cloud Run Jobs against what's already
+there. Leave `run_smoke_test` off too until you've confirmed a Garmin token already exists in
+the bucket (`docs/ops/verify-existing-deploy.sh` checks this) -- otherwise the smoke test
+fails for lack of one.
+
+**Fresh project, nothing deployed yet:** run it with `run_infra_setup` **on** and
+`run_smoke_test` **off** the first time -- there's no Garmin token yet, so a smoke test would
+fail (see the note in the workflow itself). This additionally creates the token bucket/service
+accounts/Artifact Registry repo/Cloud Scheduler jobs before deploying the Jobs.
 
 ### Bootstrap the Garmin token
 
