@@ -157,6 +157,18 @@ gcloud iam service-accounts add-iam-policy-binding "${JOB_SA_EMAIL}" \
   --member="serviceAccount:${DEPLOYER_SA_EMAIL}" \
   --role="roles/iam.serviceAccountUser" >/dev/null
 
+# Also resource-level, not project-wide: Cloud Scheduler requires the identity creating (or
+# updating the OAuth target of) an HTTP job to be able to actAs the service account named in
+# --oauth-service-account-email -- confirmed live: `gcloud scheduler jobs create http ...
+# --oauth-service-account-email=garmin-scheduler-invoker@...` failed with
+# `PERMISSION_DENIED: ... lacks IAM permission "iam.serviceAccounts.actAs" for the resource
+# "garmin-scheduler-invoker@..."` before this binding existed. Distinct from the Cloud Build
+# staging-bucket saga above -- this one really was a missing grant, not a WIF quirk.
+echo "==> Allowing github-deployer to act as garmin-scheduler-invoker only"
+gcloud iam service-accounts add-iam-policy-binding "${SCHEDULER_SA_EMAIL}" \
+  --member="serviceAccount:${DEPLOYER_SA_EMAIL}" \
+  --role="roles/iam.serviceAccountUser" >/dev/null
+
 echo "==> Allowing GitHub Actions runs in ${GITHUB_REPO}@main to impersonate github-deployer"
 gcloud iam service-accounts add-iam-policy-binding "${DEPLOYER_SA_EMAIL}" \
   --role="roles/iam.workloadIdentityUser" \
