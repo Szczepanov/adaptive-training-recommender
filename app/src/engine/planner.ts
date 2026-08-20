@@ -1139,7 +1139,7 @@ export function generateWeekAheadPlan(
                 cost: fixedActivityCostProfileForDate([activity], activity.date),
             }));
         applied.forEach(item => {
-            const template = ENRICHED_TEMPLATES.find(candidate => candidate.id === item.templateId);
+            const template = ENRICHED_TEMPLATES_BY_ID.get(item.templateId);
             if (!template) return;
             loads.push({ date: item.date, cost: enrichedCostProfile(item.templateId) });
             history.push(historyEntryFor(item.date, template));

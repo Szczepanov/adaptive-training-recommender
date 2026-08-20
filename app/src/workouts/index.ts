@@ -1,4 +1,8 @@
-export { WORKOUTS } from './catalog.ts';
+import { WORKOUTS as _WORKOUTS } from './catalog.ts';
+
+export const WORKOUTS = _WORKOUTS;
+export const WORKOUTS_BY_ID = new Map(WORKOUTS.map(w => [w.id, w]));
+
 export { EXERCISES } from './exercises.ts';
 export {
   SEPTEMBER_CYCLING_EVENT_SESSION_COVERAGE,
