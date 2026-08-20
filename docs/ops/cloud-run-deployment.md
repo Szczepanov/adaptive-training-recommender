@@ -254,7 +254,7 @@ one run.
 
 ### Design: infra setup and routine deploys use different identities
 
-`setup-workload-identity.sh` provisions everything (APIs, bucket, service accounts, Artifact
+`setup-workload-identity.sh` provisions everything (APIs, buckets, service accounts, Artifact
 Registry repo) itself, run once with your own full-privilege `gcloud` session. The
 `github-deployer` identity that `deploy-garmin-sync.yml` authenticates as afterward only ever
 holds deployment-scoped roles -- Cloud Run, Artifact Registry push, Cloud Build, Cloud
