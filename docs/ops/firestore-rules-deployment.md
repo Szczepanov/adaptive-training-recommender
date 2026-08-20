@@ -1,8 +1,14 @@
 # Firestore Rules Deployment
 
 Production Cloud Firestore rules for `adaptive-training-recommender` are owned by this
-repository and deployed by an authenticated local operator. This is intentionally a local
-workflow: no GitHub Actions deployment identity or Firebase credential is configured.
+repository. This document is the reference for what a rules deployment actually does and why
+-- drift check, mandatory emulator suite, deploy, post-deploy hash verification, rollback
+backup -- regardless of whether you run it locally (below) or via the **Deploy Frontend &
+Firestore Rules** GitHub Actions workflow (see
+[`frontend-deployment.md`](./frontend-deployment.md), which runs this same sequence with a
+narrowly-scoped Workload Identity Federation identity, no local machine needed). **Rollback
+stays a local-only, deliberate operation either way** -- see [Rollback](#rollback) below;
+`frontend-deployment.md` explains how to retrieve the backup file from a CI-driven deploy.
 
 Only `app/firestore.rules` is deployed. Hosting, functions, data, and indexes are outside
 this procedure.

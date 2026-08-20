@@ -56,6 +56,8 @@ check "Workload Identity Pool github-pool" \
   gcloud iam workload-identity-pools describe github-pool --location=global
 check "Service account github-deployer@${GCP_PROJECT}.iam.gserviceaccount.com" \
   gcloud iam service-accounts describe "github-deployer@${GCP_PROJECT}.iam.gserviceaccount.com"
+check "Service account github-frontend-deployer@${GCP_PROJECT}.iam.gserviceaccount.com" \
+  gcloud iam service-accounts describe "github-frontend-deployer@${GCP_PROJECT}.iam.gserviceaccount.com"
 
 echo
 echo "Any MISSING line above means re-running docs/ops/setup-workload-identity.sh will create"
