@@ -19,17 +19,49 @@ def _validate_gcs_object_name(object_name: str) -> str:
     return object_name
 
 
+def _chmod_secure(path: Path, mode: int) -> None:
+    """Securely change permissions avoiding TOCTOU symlink vulnerabilities."""
+    # Fast path for environments supporting follow_symlinks=False
+    if os.chmod in getattr(os, "supports_follow_symlinks", set()):
+        os.chmod(path, mode, follow_symlinks=False)
+        return
+
+    # Fallback to fchmod using file descriptors with O_NOFOLLOW if available
+    if hasattr(os, "fchmod"):
+        try:
+            flags = os.O_RDONLY
+            if hasattr(os, "O_NOFOLLOW"):
+                flags |= os.O_NOFOLLOW
+            if path.is_dir() and hasattr(os, "O_DIRECTORY"):
+                flags |= os.O_DIRECTORY
+
+            fd = os.open(path, flags)
+            try:
+                os.fchmod(fd, mode)
+            finally:
+                os.close(fd)
+            return
+        except OSError:
+            pass
+
+    # Fallback if fchmod/O_NOFOLLOW isn't supported and symlinks exist
+    if path.is_symlink():
+        logger.debug(f"Refusing to chmod symlink '{path}' directly.")
+        return
+    os.chmod(path, mode)
+
+
 def _set_secure_permissions(file_path: Path) -> None:
     """Ensure token file permissions are 0600 and parent directory is 0700 where OS permits."""
     try:
         parent = file_path.parent
         parent.mkdir(parents=True, exist_ok=True)
         if hasattr(os, "chmod"):
-            os.chmod(parent, 0o700)
+            _chmod_secure(parent, 0o700)
             if file_path.exists():
-                os.chmod(file_path, 0o600)
+                _chmod_secure(file_path, 0o600)
     except Exception as e:
-        logger.debug(f"Failed to set permissions on '{file_path}': {e}")
+        logger.debug(f"Failed to set permissions on '{file_path}': {type(e).__name__}")
 
 
 class TokenStore(Protocol):
