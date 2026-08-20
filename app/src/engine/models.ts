@@ -41,6 +41,19 @@ export interface EngineObjectiveInput {
     hrv_last_night: number | null;
     hrv_delta: number | null;
     respiration: number | null;
+    /** Current respiration rate vs its own trailing 7d/28d baseline (current - median),
+     *  the same acute/chronic pairing as hrv_delta/hrv_delta_28d above -- see
+     *  respiration_mad_28d for the matching noise-floor denominator. Optional/undefined on
+     *  documents whose baseline predates respiration28dMad (baselineComputationVersion < 3)
+     *  rather than required, following the steps_* fields' precedent for a later addition. */
+    respiration_delta?: number | null;
+    respiration_delta_28d?: number | null;
+    /** This person's own trailing 28-day median absolute deviation (scaled to be
+     *  stdev-comparable), not population stdev -- respiration's baseline is median-based
+     *  (see DerivedMetrics.respiration28dMad's docstring on the Python side) specifically
+     *  because a prior illness episode inside the window is exactly the kind of deviation
+     *  this metric exists to detect, and a mean/stdev pair gets contaminated by it. */
+    respiration_mad_28d?: number | null;
     body_battery_wake: number | null;
     last_3_days_hard_sessions_count: number;
     yesterday_training: TrainingRecord | null;
@@ -895,6 +908,10 @@ export interface DailyRecoverySnapshot {
         hrv28dStdev?: number | null;
         restingHr28dStdev?: number | null;
         sleepScore28dStdev?: number | null;
+        /** Median absolute deviation (scaled by 1.4826), not population stdev -- see
+         *  EngineObjectiveInput.respiration_mad_28d. Absent (undefined) on documents
+         *  written before baselineComputationVersion 3. */
+        respiration28dMad?: number | null;
         steps7dAvg?: number | null;
         steps28dAvg?: number | null;
         steps28dStdev?: number | null;

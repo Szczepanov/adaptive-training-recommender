@@ -53,9 +53,43 @@ than `max()` and was therefore the worse candidate in that comparison. The engin
 remains the release authority for subsequent policy changes, and any new fusion model
 requires new measured-response evidence plus a recorded comparison.
 
+### Amendment (2026-08-20): respiration rate — median/MAD baseline and strain wiring
+
+Respiration rate's `respiration7dAvg`/`respiration28dAvg`/deltas were computed and persisted
+from the start of this ADR but never consumed by `evaluateReadinessAndSafetyEnvelope` --
+observed and recorded, not decision-relevant (the pattern `RawMetrics`'s docstring calls out
+for other unwired enrichment fields). Two changes close that gap:
+
+1. **Median, not mean, for the respiration baseline** (`calculate_median` in
+   `src/garmin_sync/metrics.py`, `BASELINE_COMPUTATION_VERSION` 3). Elevated respiration
+   during illness is exactly the deviation this baseline exists to detect, so a trailing
+   window that itself contains a prior illness episode drags a *mean* baseline upward and
+   desensitizes detection for weeks afterward. The median resists that contamination. The
+   matching spread estimator, `respiration28dMad` (`calculate_mad`, median absolute
+   deviation scaled by 1.4826), replaces population stdev as the strain z-score denominator
+   for the same reason -- see both functions' docstrings.
+2. **`respirationStrain` wired into `metricStrain`** (`app/src/engine/rules.ts`), weighted
+   at `RESPIRATION_STRAIN_WEIGHT = 0.3` (comparable to RHR) with `sign = -1` (elevated
+   respiration is worse, same convention as RHR). This is now decision-relevant: it can move
+   `objectiveStrain` and therefore `mode`. Like `HRV_STRAIN_WEIGHT`/`RHR_STRAIN_WEIGHT`/
+   `SLEEP_STRAIN_WEIGHT`, the weight is a first-pass heuristic, not yet run through the
+   9.6-style sensitivity/simulation harness.
+
+Documents written before `baselineComputationVersion` 3 lack `respiration28dMad` and hold a
+*mean* (not median) in `respiration7dAvg`/`respiration28dAvg` -- readers must check the
+version rather than assume either. `respiration_delta`/`respiration_delta_28d`/
+`respiration_mad_28d` on `EngineObjectiveInput` are optional for the same reason,
+following the `steps_*` fields' precedent for a later addition; `metricStrain` reads a
+missing value as `null`, which resolves to zero strain contribution, not fabricated signal.
+
 ### Positive
 * Transparent, debuggable strain metrics provided alongside every workout recommendation.
 * Accurately distinguishes between temporary acute fatigue and accumulated chronic overtraining.
+* Respiration-rate elevation -- one of the earliest, most specific illness signals -- now
+  actually influences the recommended training mode instead of being recorded and ignored.
 
 ### Negative
 * Requires maintaining robust baseline calculation algorithms in both Python ingestion (historical calculations) and TypeScript frontend types.
+* Respiration now has a second baseline-statistic convention (median/MAD) alongside the
+  mean/stdev pair used for HRV, RHR, and sleep score -- a reader of `metrics.py` or
+  `rules.ts` has to know which metric uses which, rather than one uniform rule.

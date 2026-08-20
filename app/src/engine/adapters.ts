@@ -53,6 +53,11 @@ export function mapSnapshotToEngineInput(snapshot: DailyRecoverySnapshot): Engin
         hrv_last_night: snapshot.raw.hrvOvernightAvg,
         hrv_delta: snapshot.derived.deltas.hrvVs7d,
         respiration: snapshot.raw.respirationAvg,
+        respiration_delta: snapshot.derived.deltas.respirationVs7d,
+        respiration_delta_28d: snapshot.derived.deltas.respirationVs28d,
+        // ?? null normalizes documents written before baselineComputationVersion 3, where
+        // this field is absent (undefined) rather than explicitly null.
+        respiration_mad_28d: snapshot.derived.respiration28dMad ?? null,
         body_battery_wake: snapshot.raw.bodyBatteryWake,
         last_3_days_hard_sessions_count: snapshot.raw.last3DaysHardSessionsCount,
         yesterday_training: mapTrainingRecord(snapshot.raw.yesterdayTraining),

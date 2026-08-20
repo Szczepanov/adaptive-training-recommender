@@ -220,6 +220,18 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery' }: Dat
             <span className="data-label">Steps 28d Stdev:</span>
             <span className="data-value">{decisionInput.recoverySnapshot?.derived.steps28dStdev ?? 'N/A'}</span>
           </div>
+          <div className="data-item">
+            <span className="data-label">Respiration 7d Median:</span>
+            <span className="data-value">{decisionInput.recoverySnapshot?.derived.respiration7dAvg ?? 'N/A'}</span>
+          </div>
+          <div className="data-item">
+            <span className="data-label">Respiration 28d Median:</span>
+            <span className="data-value">{decisionInput.recoverySnapshot?.derived.respiration28dAvg ?? 'N/A'}</span>
+          </div>
+          <div className="data-item">
+            <span className="data-label">Respiration 28d MAD:</span>
+            <span className="data-value">{decisionInput.recoverySnapshot?.derived.respiration28dMad ?? 'N/A'}</span>
+          </div>
         </div>
 
         <div className="data-group">

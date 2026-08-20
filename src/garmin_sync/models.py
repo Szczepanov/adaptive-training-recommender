@@ -6,7 +6,14 @@ SCHEMA_VERSION = 3
 # restingHr28dStdev, sleepScore28dStdev), consumed by the engine's baseline-relative
 # strain scoring (see app/src/engine/rules.ts metricStrain). Older documents simply
 # lack these fields -- readers must treat them as optional/None, never assume presence.
-BASELINE_COMPUTATION_VERSION = 2
+# v3: respiration7dAvg/respiration28dAvg are now the *median* (not mean) of the window,
+# and respiration28dMad (median absolute deviation, scaled to be stdev-comparable) was
+# added alongside them -- see calculate_median/calculate_mad in metrics.py for why. This
+# changes the *meaning* of an existing field rather than only adding a new one: a document
+# written at version 2 or earlier holds a mean in respiration7dAvg/28dAvg, not a median.
+# Readers that need the distinction should check baselineComputationVersion; the rebuild
+# pipeline (ADR-0005) recomputes older documents onto the current version.
+BASELINE_COMPUTATION_VERSION = 3
 
 
 @dataclass
@@ -200,6 +207,10 @@ class DerivedMetrics:
     hrv28dStdev: float | None = None
     restingHr28dStdev: float | None = None
     sleepScore28dStdev: float | None = None
+    # Median absolute deviation (scaled by 1.4826), not population stdev -- respiration's
+    # baseline is median-based (see BASELINE_COMPUTATION_VERSION v3 note above), so its
+    # spread estimator is the matching robust one. Absent on documents written before v3.
+    respiration28dMad: float | None = None
     steps7dAvg: float | None = None
     steps28dAvg: float | None = None
     steps28dStdev: float | None = None

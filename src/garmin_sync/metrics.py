@@ -35,6 +35,37 @@ def calculate_stdev(values: list[float | int | None], min_required: int) -> floa
     return None
 
 
+def calculate_median(values: list[float | int | None], min_required: int) -> float | None:
+    """Median of non-None values if count meets min_required threshold.
+
+    Used for respiration rate instead of calculate_average: a trailing window can contain
+    a prior illness episode -- the exact deviation this baseline exists to detect -- and a
+    mean baseline gets dragged upward by those elevated nights, blunting sensitivity for
+    weeks after recovery. The median resists that contamination. See calculate_mad for the
+    matching outlier-resistant spread estimator.
+    """
+    valid_values = [v for v in values if v is not None]
+    if len(valid_values) >= min_required:
+        return statistics.median(valid_values)
+    return None
+
+
+def calculate_mad(values: list[float | int | None], min_required: int) -> float | None:
+    """Median absolute deviation of non-None values, scaled by 1.4826 (the consistency
+    constant for a normal distribution) so it's comparable in magnitude to calculate_stdev's
+    population stdev and usable as a drop-in noise-floor denominator the same way (see
+    metricStrain in app/src/engine/rules.ts). A few elevated nights from a prior illness
+    episode barely move it, unlike population stdev, which those same nights inflate --
+    widening the "normal" band and desensitizing z-score-style strain detection.
+    """
+    valid_values = [v for v in values if v is not None]
+    if len(valid_values) >= min_required:
+        med = statistics.median(valid_values)
+        mad = statistics.median([abs(v - med) for v in valid_values])
+        return mad * 1.4826
+    return None
+
+
 def classify_activity_intensity(
     training_effect: float,
     average_hr: float | None,
@@ -86,8 +117,11 @@ def compute_derived_metrics(
     hrv_7d = calculate_average([d.get("hrvOvernightAvg") for d in window_7d_raws], 4)
     hrv_28d = calculate_average([d.get("hrvOvernightAvg") for d in window_28d_raws], 14)
 
-    resp_7d = calculate_average([d.get("respirationAvg") for d in window_7d_raws], 4)
-    resp_28d = calculate_average([d.get("respirationAvg") for d in window_28d_raws], 14)
+    # Median, not mean -- see calculate_median's docstring: a mean baseline gets dragged
+    # upward by a prior illness episode sitting inside the trailing window, which is
+    # exactly the deviation this baseline exists to detect.
+    resp_7d = calculate_median([d.get("respirationAvg") for d in window_7d_raws], 4)
+    resp_28d = calculate_median([d.get("respirationAvg") for d in window_28d_raws], 14)
 
     steps_7d = calculate_average([d.get("totalSteps") for d in window_7d_raws], 4)
     steps_28d = calculate_average([d.get("totalSteps") for d in window_28d_raws], 14)
@@ -99,6 +133,9 @@ def compute_derived_metrics(
     rhr_sd28 = calculate_stdev([d.get("restingHr") for d in window_28d_raws], 14)
     sleep_sd28 = calculate_stdev([d.get("sleepScore") for d in window_28d_raws], 14)
     steps_sd28 = calculate_stdev([d.get("totalSteps") for d in window_28d_raws], 14)
+    # MAD, not population stdev -- see calculate_mad's docstring: it stays stable across a
+    # prior illness episode inside the window instead of being widened by it.
+    resp_mad28 = calculate_mad([d.get("respirationAvg") for d in window_28d_raws], 14)
 
     def _round(val: float | None) -> float | None:
         return round(val, 1) if val is not None else None
@@ -129,6 +166,7 @@ def compute_derived_metrics(
         hrv28dStdev=_round(hrv_sd28),
         restingHr28dStdev=_round(rhr_sd28),
         sleepScore28dStdev=_round(sleep_sd28),
+        respiration28dMad=_round(resp_mad28),
         steps7dAvg=_round(steps_7d),
         steps28dAvg=_round(steps_28d),
         steps28dStdev=_round(steps_sd28),

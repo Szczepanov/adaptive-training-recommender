@@ -3,6 +3,8 @@ import statistics
 from garmin_sync.metrics import (
     calculate_average,
     calculate_delta,
+    calculate_mad,
+    calculate_median,
     calculate_stdev,
     compute_derived_metrics,
 )
@@ -31,6 +33,51 @@ def test_calculate_stdev_thresholds():
 def test_calculate_stdev_matches_population_stdev():
     values = [10, 12, 14, 16, 18, 20]
     assert calculate_stdev(values, 3) == statistics.pstdev(values)
+
+
+def test_calculate_median_thresholds():
+    values = [14.0, 14.2, None, 14.1]  # 3 valid values
+    assert calculate_median(values, 4) is None
+    assert calculate_median(values, 3) == 14.1  # median of [14.0, 14.1, 14.2]
+
+
+def test_calculate_median_even_count_averages_middle_two():
+    values = [14.0, 14.2, 14.1, 14.3]
+    assert calculate_median(values, 4) == statistics.median(values)
+
+
+def test_calculate_median_resists_illness_contamination_better_than_mean():
+    # 25 healthy nights around 14 br/min, plus 3 nights of a prior illness episode
+    # spiking to 20 br/min, inside the same 28-day trailing window.
+    healthy = [14.0] * 25
+    illness_spike = [20.0] * 3
+    window = healthy + illness_spike
+
+    median = calculate_median(window, 14)
+    mean = calculate_average(window, 14)
+
+    assert median == 14.0  # unmoved by the spike
+    assert mean is not None and mean > 14.0  # dragged upward by it
+    assert mean - median > 0.5
+
+
+def test_calculate_mad_thresholds():
+    values = [10, 12, None, 14, 16]  # 4 valid values
+    assert calculate_mad(values, 5) is None
+    # median=13, abs deviations=[3,1,1,3], median of those=2, scaled by 1.4826
+    assert calculate_mad(values, 4) == round(2 * 1.4826, 10)
+
+
+def test_calculate_mad_resists_illness_contamination_better_than_stdev():
+    healthy = [14.0] * 25
+    illness_spike = [20.0] * 3
+    window = healthy + illness_spike
+
+    mad = calculate_mad(window, 14)
+    sd = calculate_stdev(window, 14)
+
+    assert mad == 0.0  # more than half the window is exactly 14.0
+    assert sd is not None and sd > 0.0  # population stdev is inflated by the spike
 
 
 def test_compute_derived_metrics_excludes_current_day():
@@ -68,6 +115,38 @@ def test_compute_derived_metrics_includes_28d_stdev():
     assert derived.hrv28dStdev == expected_hrv_sd
     assert derived.restingHr28dStdev == round(statistics.pstdev([50, 52, 51, 53] * 4), 1)
     assert derived.sleepScore28dStdev == round(statistics.pstdev([80, 82, 84, 86] * 4), 1)
+
+
+def test_compute_derived_metrics_respiration_uses_median_and_mad():
+    window_7d = [
+        {"respirationAvg": 14.0},
+        {"respirationAvg": 14.2},
+        {"respirationAvg": 14.1},
+        {"respirationAvg": 14.3},
+    ]
+    window_28d = window_7d * 4  # 16 items
+    curr = {"respirationAvg": 14.0}
+
+    derived = compute_derived_metrics(curr, window_7d, window_28d)
+
+    assert derived.respiration7dAvg == round(
+        calculate_median([d["respirationAvg"] for d in window_7d], 4), 1
+    )
+    assert derived.respiration28dAvg == round(
+        calculate_median([d["respirationAvg"] for d in window_28d], 14), 1
+    )
+    assert derived.respiration28dMad == round(
+        calculate_mad([d["respirationAvg"] for d in window_28d], 14), 1
+    )
+
+
+def test_compute_derived_metrics_respiration_mad_none_below_min_required():
+    window_7d = [{"respirationAvg": 14.0}] * 4
+    window_28d = [{"respirationAvg": 14.0}] * 10  # below the 14-point minimum
+    curr = {"respirationAvg": 14.0}
+
+    derived = compute_derived_metrics(curr, window_7d, window_28d)
+    assert derived.respiration28dMad is None
 
 
 def test_compute_derived_metrics_stdev_none_below_min_required():
