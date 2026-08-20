@@ -317,6 +317,7 @@ def _determine_step_type(step_name: str, default_step_type: dict[str, Any]) -> d
         return STEP_TYPE_MAP["recovery"]
     return default_step_type
 
+
 def _compile_target_sources(step: dict[str, Any]) -> list[str]:
     targets = step.get("targets")
     target_sources: list[str] = []
@@ -328,11 +329,13 @@ def _compile_target_sources(step: dict[str, Any]) -> list[str]:
             target_sources.append(val)
     return target_sources
 
+
 def _build_step_description(step_name: str, targets: Any) -> str | None:
     desc_parts = [step_name] if step_name else []
     if targets and isinstance(targets, list) and targets:
         desc_parts.append(f"({'; '.join(targets)})")
     return " ".join(desc_parts) if desc_parts else None
+
 
 def _resolve_target_values(
     modality: str,
@@ -361,12 +364,14 @@ def _resolve_target_values(
         None,
     )
 
+
 def _resolve_end_condition(
     modality: str, reps: int | None, duration_sec: int
 ) -> tuple[dict[str, Any], Any]:
     if reps and modality == "strength":
         return END_CONDITION_MAP["reps"], reps
     return END_CONDITION_MAP["time"], duration_sec
+
 
 def _build_rest_dto(
     step: dict[str, Any], step_order: int, modality: str, ftp: float | None
@@ -415,6 +420,7 @@ def _build_rest_dto(
         "targetValueTwo": rec_val_two,
         "zoneNumber": rec_zone_num,
     }
+
 
 def _build_step_dto(
     step: dict[str, Any],
