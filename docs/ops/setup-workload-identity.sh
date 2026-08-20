@@ -124,12 +124,22 @@ fi
 # (Cloud Run, Artifact Registry, Cloud Build, Cloud Scheduler) -- none of these grant IAM,
 # service-account or API-enablement authority over the project. Firestore access belongs to
 # garmin-sync-job (above), never to the deploy identity, which never reads/writes Firestore.
+#
+# roles/serviceusage.serviceUsageConsumer is NOT the roles/serviceusage.serviceUsageAdmin role
+# this script deliberately omits elsewhere (that one grants enabling/disabling APIs and other
+# IAM-adjacent power -- a real privilege-escalation surface). Consumer only grants
+# serviceusage.services.use: permission to make already-enabled APIs' calls billed/quota
+# -attributed to this project at all. Without it, `gcloud builds submit` fails with a
+# "forbidden" error that reads like a storage/bucket permission problem but isn't one --
+# confirmed live: it still failed with roles/storage.admin already granted on the staging
+# bucket, and only this role actually fixed it.
 echo "==> Granting github-deployer deployment-only roles"
 for ROLE in \
   roles/run.admin \
   roles/artifactregistry.writer \
   roles/cloudbuild.builds.editor \
   roles/cloudscheduler.admin \
+  roles/serviceusage.serviceUsageConsumer \
 ; do
   gcloud projects add-iam-policy-binding "${GCP_PROJECT}" \
     --member="serviceAccount:${DEPLOYER_SA_EMAIL}" \
