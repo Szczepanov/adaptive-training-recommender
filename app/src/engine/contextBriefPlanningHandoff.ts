@@ -5,11 +5,12 @@ import type {
     DailySubjectiveCheckin,
     FixedActivity,
     NormalizedGarminActivity,
-    TrainingIntentProfile,
+    PlanningMode,
     TrainingSettings,
     UserGoal,
     UserPreferences,
 } from './models';
+import { EVENT_PRESETS, resolveDemandProfile } from './eventPresets';
 import { addDaysToLocalDateString } from '../utils/localDate';
 
 export const UPCOMING_CONTEXT_DAYS = 7;
@@ -41,7 +42,9 @@ export interface ContextBriefPlanningHandoffInput {
     recommendations: readonly DailyRecommendation[];
     trainingSettings: TrainingSettings | null;
     preferences: UserPreferences | null;
-    intentProfile: TrainingIntentProfile | null;
+    planningMode: PlanningMode;
+    externalFallback: boolean;
+    eventStrategy: 'structured_plan' | 'demand_derived' | null;
     goals: readonly UserGoal[];
     upcomingFixedActivities: readonly FixedActivity[];
     upcomingPlanBlocks: readonly AuthoredPlanBlock[];
@@ -54,8 +57,8 @@ function latestByDate<T extends { date: string }>(items: readonly T[]): T | null
     return [...items].sort((a, b) => b.date.localeCompare(a.date))[0];
 }
 
-function textNumber(value: number | null | undefined, suffix = ''): string {
-    return typeof value === 'number' && Number.isFinite(value) ? `${value}${suffix}` : '—';
+function textNumber(value: number | null | undefined): string {
+    return typeof value === 'number' && Number.isFinite(value) ? String(value) : '—';
 }
 
 function compactText(value: string): string {
@@ -77,12 +80,18 @@ function renderDataHandoff(input: ContextBriefPlanningHandoffInput): string {
         .filter(item => item.date === input.asOfDate)
         .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0] ?? null;
 
+    const modeDetail = input.externalFallback
+        ? `${input.planningMode} (external-plan fallback today: no imported session is placed on this date)`
+        : input.eventStrategy
+            ? `${input.planningMode} (${input.eventStrategy.replace('_', ' ')})`
+            : input.planningMode;
+
     const lines: string[] = [
         '## 0. Planning handoff & data currency',
         '',
         '**Use this as context for the conversation, not as a standalone command.** Answer the user\'s actual question that accompanies or follows this brief; do not generate a new plan merely because the brief was pasted.',
         `- Planning date: ${input.asOfDate} (Europe/Warsaw calendar date).`,
-        `- Planning mode: ${input.intentProfile?.planningMode ?? 'not configured'}.`,
+        `- Effective planning mode today: ${modeDetail}.`,
     ];
 
     if (input.trainingSettings) {
@@ -206,7 +215,17 @@ function renderGoalSpecifics(goals: readonly UserGoal[]): string {
         if (goal.targetMetric && goal.targetValue !== null && goal.targetValue !== undefined) {
             details.push(`target: ${goal.targetMetric} ${goal.targetValue}${goal.targetUnit ? ` ${goal.targetUnit}` : ''}`);
         }
-        if (goal.eventPreset) details.push(`event preset: ${goal.eventPreset}`);
+        if (goal.eventCategory) {
+            const preset = EVENT_PRESETS[goal.eventCategory].find(item => item.id === goal.eventPreset)
+                ?? EVENT_PRESETS[goal.eventCategory][0];
+            const demand = resolveDemandProfile(goal.eventCategory, goal.eventPreset);
+            details.push(`event: ${preset.label} (${goal.eventCategory}, preset ${preset.id})`);
+            details.push(
+                `demand 0–1: endurance ${demand.aerobicEndurance} · threshold ${demand.thresholdPower} · `
+                + `VO2 ${demand.vo2MaxPower} · repeated surges ${demand.repeatedSurges} · sprint ${demand.sprintPower} · `
+                + `fatigue resistance ${demand.fatigueResistance} · neuromuscular ${demand.neuromuscular}`,
+            );
+        }
         if (goal.timing) {
             const timing = goal.timing.confirmedDate
                 ? `confirmed ${goal.timing.confirmedDate}`
@@ -271,13 +290,14 @@ function renderUpcoming(input: ContextBriefPlanningHandoffInput): string {
         'Preserve these when proposing days unless the user explicitly asks to move, replace or re-plan them. Authored travel blocks scale the surrounding plan rather than representing an extra workout.',
     ];
 
+    if (input.externalFallback && external.length === 0) {
+        lines.push('', '> External-plan fallback is active today and no imported session is visible in this 7-day horizon. Do not silently invent a replacement block; the imported block may have ended, start later, or be unavailable.');
+    } else if (input.externalFallback && external.length > 0) {
+        lines.push('', '> External-plan fallback is active today because no imported session is placed today; imported sessions later in this horizon remain authoritative on their placed dates, subject to readiness/safety gating.');
+    }
+
     if (rows.length === 0) {
-        lines.push('');
-        if (input.intentProfile?.planningMode === 'externally_planned') {
-            lines.push('> Planning mode is `externally_planned`, but no active imported session was found in this 7-day horizon. Do not silently replace the plan; clarify whether the prior block ended, the next block starts later, or plan data is unavailable.');
-        } else {
-            lines.push('No fixed activity, travel block or imported-plan session is recorded in this 7-day horizon. This only describes app-held commitments; it does not prove the athlete has no calendar constraints outside the app.');
-        }
+        lines.push('', 'No fixed activity, travel block or imported-plan session is recorded in this 7-day horizon. This only describes app-held commitments; it does not prove the athlete has no calendar constraints outside the app.');
         return lines.join('\n');
     }
 
