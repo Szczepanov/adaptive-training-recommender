@@ -19,6 +19,7 @@ import { activityService } from './activityService';
 import { checkinService } from './checkinService';
 import { fixedActivityService } from './fixedActivityService';
 import { goalService } from './goalService';
+import { planBlockService } from './planBlockService';
 import { preferencesService } from './preferencesService';
 import { recommendationService } from './recommendationService';
 import { recoverySnapshotService } from './recoverySnapshotService';
@@ -68,28 +69,41 @@ export class ContextBriefService {
             (_, offset) => addDaysToLocalDateString(startDate, offset),
         );
 
-        const [snapshotResults, checkinResult, activityResult, recommendationResult, settingsResult, preferencesResult, intentResult, goalsResult, fixedActivityResult] =
-            await Promise.allSettled([
-                // getRecoverySnapshotByDate collapses UNAVAILABLE and MISSING to null, so a
-                // read outage would be indistinguishable from "no data that day" and the
-                // brief would silently under-report the window. Read the state instead.
-                Promise.all(snapshotDates.map(date => recoverySnapshotService.getRecoverySnapshotState(userId, date))),
-                // Activity, recommendation, and check-in range queries are end-exclusive;
-                // the brief window is inclusive of targetDate, so the fetch reaches throughExclusive.
-                checkinService.getCheckinsInRange(userId, baselineStart, throughExclusive),
-                activityService.getActivitiesInRange(userId, startDate, throughExclusive),
-                recommendationService.getRecommendationsInRange(userId, startDate, throughExclusive),
-                // peek, not get: the brief is read-only and must not create a settings
-                // profile as a side effect of being looked at (DataView presents it as
-                // "generating it changes nothing").
-                trainingSettingsService.peekTrainingSettingsState(userId),
-                preferencesService.getPreferencesState(userId),
-                trainingIntentProfileService.getProfileState(userId),
-                goalService.getActiveGoalsState(userId),
-                // Fixed activities are fetched slightly wider than the visible handoff so
-                // imported-plan placement has the full occupancy of every intersecting week.
-                fixedActivityService.getActivitiesInRangeState(userId, placementOccupancyStart, placementOccupancyEnd),
-            ] as const);
+        const [
+            snapshotResults,
+            checkinResult,
+            activityResult,
+            recommendationResult,
+            settingsResult,
+            preferencesResult,
+            intentResult,
+            goalsResult,
+            fixedActivityResult,
+            planBlockResult,
+        ] = await Promise.allSettled([
+            // getRecoverySnapshotByDate collapses UNAVAILABLE and MISSING to null, so a
+            // read outage would be indistinguishable from "no data that day" and the
+            // brief would silently under-report the window. Read the state instead.
+            Promise.all(snapshotDates.map(date => recoverySnapshotService.getRecoverySnapshotState(userId, date))),
+            // Activity, recommendation, and check-in range queries are end-exclusive;
+            // the brief window is inclusive of targetDate, so the fetch reaches throughExclusive.
+            checkinService.getCheckinsInRange(userId, baselineStart, throughExclusive),
+            activityService.getActivitiesInRange(userId, startDate, throughExclusive),
+            recommendationService.getRecommendationsInRange(userId, startDate, throughExclusive),
+            // peek, not get: the brief is read-only and must not create a settings
+            // profile as a side effect of being looked at (DataView presents it as
+            // "generating it changes nothing").
+            trainingSettingsService.peekTrainingSettingsState(userId),
+            preferencesService.getPreferencesState(userId),
+            trainingIntentProfileService.getProfileState(userId),
+            goalService.getActiveGoalsState(userId),
+            // Fixed activities are fetched slightly wider than the visible handoff so
+            // imported-plan placement has the full occupancy of every intersecting week.
+            fixedActivityService.getActivitiesInRangeState(userId, placementOccupancyStart, placementOccupancyEnd),
+            // Plan blocks are range-overlays (currently explicit travel) and the service
+            // returns any block intersecting this visible horizon, including one that began earlier.
+            planBlockService.getBlocksInRangeState(userId, targetDate, upcomingEndDate),
+        ] as const);
 
         const snapshots: DailyRecoverySnapshot[] = [];
         if (snapshotResults.status === 'fulfilled') {
@@ -184,6 +198,13 @@ export class ContextBriefService {
             unavailableSources.push('future fixed activities');
         }
 
+        const upcomingPlanBlocks = planBlockResult.status === 'fulfilled' && planBlockResult.value.status === 'AVAILABLE'
+            ? planBlockResult.value.data
+            : [];
+        if (planBlockResult.status !== 'fulfilled' || !['AVAILABLE', 'MISSING'].includes(planBlockResult.value.status)) {
+            unavailableSources.push('plan blocks / travel overlays');
+        }
+
         const upcomingExternalSessions: UpcomingExternalPlanSession[] = [];
         if (fixedActivitiesReadable) {
             // Resolve the active plan independently for each future date so plan revision
@@ -257,8 +278,12 @@ export class ContextBriefService {
             checkins,
             activities,
             recommendations,
+            trainingSettings,
+            preferences,
             intentProfile,
+            goals,
             upcomingFixedActivities,
+            upcomingPlanBlocks,
             upcomingExternalSessions,
             unavailableSources,
         });
