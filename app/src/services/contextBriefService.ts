@@ -7,10 +7,17 @@ import {
     type ContextBriefInput,
 } from '../engine/contextBrief';
 import { injectActivityTelemetryIntoContextBrief } from '../engine/contextBriefActivityTelemetry';
+import {
+    enhanceContextBriefForPlanning,
+    UPCOMING_CONTEXT_DAYS,
+    type UpcomingExternalPlanSession,
+} from '../engine/contextBriefPlanningHandoff';
 import { parseSubjectiveCheckin } from '../persistence/parsers/decisionInputs';
 import { addDaysToLocalDateString, getLocalDateString } from '../utils/localDate';
+import { activeExternalPlanService } from './activeExternalPlanService';
 import { activityService } from './activityService';
 import { checkinService } from './checkinService';
+import { fixedActivityService } from './fixedActivityService';
 import { goalService } from './goalService';
 import { preferencesService } from './preferencesService';
 import { recommendationService } from './recommendationService';
@@ -42,6 +49,11 @@ export class ContextBriefService {
         // Activity and recommendation range queries are end-exclusive; the brief window
         // is inclusive of targetDate, so the fetch reaches one day further.
         const throughExclusive = addDaysToLocalDateString(targetDate, 1);
+        const upcomingEndDate = addDaysToLocalDateString(targetDate, UPCOMING_CONTEXT_DAYS - 1);
+        const upcomingDates = Array.from(
+            { length: UPCOMING_CONTEXT_DAYS },
+            (_, offset) => addDaysToLocalDateString(targetDate, offset),
+        );
         const unavailableSources: string[] = [];
 
         const snapshotDates = Array.from(
@@ -49,7 +61,7 @@ export class ContextBriefService {
             (_, offset) => addDaysToLocalDateString(startDate, offset),
         );
 
-        const [snapshotResults, checkinResult, activityResult, recommendationResult, settingsResult, preferencesResult, intentResult, goalsResult] =
+        const [snapshotResults, checkinResult, activityResult, recommendationResult, settingsResult, preferencesResult, intentResult, goalsResult, fixedActivityResult] =
             await Promise.allSettled([
                 // getRecoverySnapshotByDate collapses UNAVAILABLE and MISSING to null, so a
                 // read outage would be indistinguishable from "no data that day" and the
@@ -67,6 +79,9 @@ export class ContextBriefService {
                 preferencesService.getPreferencesState(userId),
                 trainingIntentProfileService.getProfileState(userId),
                 goalService.getActiveGoalsState(userId),
+                // Future fixed activities are part of the planning state, not history.
+                // The query is inclusive at both ends, matching FixedActivityService.
+                fixedActivityService.getActivitiesInRangeState(userId, targetDate, upcomingEndDate),
             ] as const);
 
         const snapshots: DailyRecoverySnapshot[] = [];
@@ -147,6 +162,70 @@ export class ContextBriefService {
         const goals = goalsResult.status === 'fulfilled' && goalsResult.value.status === 'AVAILABLE'
             ? goalsResult.value.data
             : [];
+        if (goalsResult.status !== 'fulfilled' || !['AVAILABLE', 'MISSING'].includes(goalsResult.value.status)) {
+            unavailableSources.push('active goals');
+        }
+
+        const fixedActivitiesReadable = fixedActivityResult.status === 'fulfilled'
+            && ['AVAILABLE', 'MISSING'].includes(fixedActivityResult.value.status);
+        const upcomingFixedActivities = fixedActivityResult.status === 'fulfilled' && fixedActivityResult.value.status === 'AVAILABLE'
+            ? fixedActivityResult.value.data.filter(activity => !activity.isCompleted)
+            : [];
+        if (!fixedActivitiesReadable) {
+            unavailableSources.push('future fixed activities');
+        }
+
+        const upcomingExternalSessions: UpcomingExternalPlanSession[] = [];
+        if (fixedActivitiesReadable) {
+            // Resolve the active plan independently for each future date so plan revision
+            // effective-from boundaries and overlapping re-imports are respected. The same
+            // fixed-activity occupancy is supplied to every placement resolution.
+            const activePlanResults = await Promise.allSettled(
+                upcomingDates.map(date => activeExternalPlanService.getActivePlanState(userId, date, upcomingFixedActivities)),
+            );
+            let unreadablePlanDays = 0;
+            for (let index = 0; index < activePlanResults.length; index++) {
+                const date = upcomingDates[index];
+                const settled = activePlanResults[index];
+                if (settled.status === 'rejected') {
+                    unreadablePlanDays += 1;
+                    continue;
+                }
+                const state = settled.value;
+                if (state.status === 'MISSING') continue;
+                if (state.status !== 'AVAILABLE') {
+                    unreadablePlanDays += 1;
+                    continue;
+                }
+                for (const placed of state.data.placed.filter(item =>
+                    item.date === date && (item.status === 'planned' || item.status === 'moved'))) {
+                    upcomingExternalSessions.push({
+                        date,
+                        planId: state.data.header.planId,
+                        planTitle: state.data.header.title,
+                        revision: state.data.header.revision,
+                        sessionId: placed.session.id,
+                        title: placed.session.title,
+                        priority: placed.session.priority,
+                        modality: placed.session.gating.modality,
+                        intensity: placed.session.gating.intensity,
+                        durationMin: placed.session.gating.durationMin,
+                        durationMax: placed.session.gating.durationMax,
+                        flexibility: placed.session.placement.flexibility,
+                        status: placed.status === 'moved' ? 'moved' : 'planned',
+                        moved: placed.moved,
+                        isEvent: placed.session.isEvent === true,
+                    });
+                }
+            }
+            if (unreadablePlanDays > 0) {
+                unavailableSources.push(`external plan schedule (${unreadablePlanDays} day(s) unreadable)`);
+            }
+        } else {
+            // Placement depends on fixed-activity occupancy; showing a schedule resolved
+            // against an unknown occupancy set would be confidently wrong.
+            unavailableSources.push('external plan schedule (fixed-activity occupancy unavailable)');
+        }
 
         const input: ContextBriefInput = {
             asOfDate: targetDate,
@@ -161,7 +240,18 @@ export class ContextBriefService {
             intentProfile,
             goals,
         };
-        const text = injectActivityTelemetryIntoContextBrief(buildContextBrief(input), activities);
+        const retrospectiveText = injectActivityTelemetryIntoContextBrief(buildContextBrief(input), activities);
+        const text = enhanceContextBriefForPlanning(retrospectiveText, {
+            asOfDate: targetDate,
+            snapshots,
+            checkins,
+            activities,
+            recommendations,
+            intentProfile,
+            upcomingFixedActivities,
+            upcomingExternalSessions,
+            unavailableSources,
+        });
 
         return {
             text,
