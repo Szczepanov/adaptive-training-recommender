@@ -5,7 +5,6 @@ import type {
     DailyRecoverySnapshot,
     DailySubjectiveCheckin,
     FixedActivity,
-    TrainingIntentProfile,
     TrainingSettings,
     UserGoal,
     UserPreferences,
@@ -133,17 +132,6 @@ function checkin(date = AS_OF): DailySubjectiveCheckin {
     };
 }
 
-const intentProfile: TrainingIntentProfile = {
-    userId: 'u1',
-    planningMode: 'externally_planned',
-    priorities: ['endurance'],
-    weeklyCommitment: { minSessions: 4, targetSessions: 5, maxSessions: 7 },
-    organizationPreference: 'auto',
-    schemaVersion: 1,
-    createdAt: '2026-08-01T00:00:00Z',
-    updatedAt: '2026-08-01T00:00:00Z',
-};
-
 function recommendation(): DailyRecommendation {
     return {
         userId: 'u1',
@@ -208,7 +196,9 @@ function handoffInput(overrides: Partial<ContextBriefPlanningHandoffInput> = {})
         recommendations: [recommendation()],
         trainingSettings: null,
         preferences: null,
-        intentProfile,
+        planningMode: 'externally_planned',
+        externalFallback: false,
+        eventStrategy: null,
         goals: [],
         upcomingFixedActivities: [fixedActivity()],
         upcomingPlanBlocks: [],
@@ -255,14 +245,24 @@ describe('enhanceContextBriefForPlanning', () => {
         expect(text).toContain('means "unknown", not "none"');
     });
 
-    it('exports data freshness, planning mode and the app recommendation without making it authoritative', () => {
+    it('exports data freshness, resolved planning mode and the app recommendation without making it authoritative', () => {
         const text = enhanceContextBriefForPlanning(BASE, handoffInput());
 
-        expect(text).toContain('Planning mode: externally_planned');
+        expect(text).toContain('Effective planning mode today: externally_planned');
         expect(text).toContain('Garmin sync timestamp 2026-08-20T05:20:00Z');
         expect(text).toContain('activities through 2026-08-20');
         expect(text).toContain('App recommendation for 2026-08-20: train — Zone 2 ride (Cycling)');
         expect(text).toContain('not as authority over current symptoms or tissue response');
+    });
+
+    it('explains an authority-resolved external fallback instead of pretending the persisted mode is effective', () => {
+        const text = enhanceContextBriefForPlanning(BASE, handoffInput({
+            planningMode: 'evergreen',
+            externalFallback: true,
+        }));
+
+        expect(text).toContain('Effective planning mode today: evergreen (external-plan fallback today: no imported session is placed on this date)');
+        expect(text).toContain('imported sessions later in this horizon remain authoritative');
     });
 
     it('exports sensor capability and planning preferences so prescriptions are executable', () => {
@@ -307,7 +307,7 @@ describe('enhanceContextBriefForPlanning', () => {
         expect(text).toContain('Authored travel blocks scale the surrounding plan rather than representing an extra workout');
     });
 
-    it('adds specific goal outcomes and uncertain timing when those fields exist', () => {
+    it('adds specific goal outcomes, resolved event demands and uncertain timing', () => {
         const goal = {
             title: 'September road race',
             status: 'active',
@@ -315,7 +315,8 @@ describe('enhanceContextBriefForPlanning', () => {
             targetMetric: 'finish_time',
             targetValue: 50,
             targetUnit: 'min',
-            eventPreset: 'short_road_race',
+            eventCategory: 'cycling_event',
+            eventPreset: 'road_race',
             timing: {
                 earliestDate: '2026-09-12',
                 latestDate: '2026-09-20',
@@ -328,19 +329,22 @@ describe('enhanceContextBriefForPlanning', () => {
         expect(text).toContain('### Goal specifics relevant to planning');
         expect(text).toContain('success: Be competitive over ~50 minutes with repeated surges');
         expect(text).toContain('target: finish_time 50 min');
-        expect(text).toContain('event preset: short_road_race');
+        expect(text).toContain('event: Road race (cycling_event, preset road_race)');
+        expect(text).toContain('demand 0–1: endurance 0.8 · threshold 0.75 · VO2 0.4 · repeated surges 0.6 · sprint 0.3 · fatigue resistance 0.8 · neuromuscular 0.3');
         expect(text).toContain('window 2026-09-12–2026-09-20, planning date 2026-09-12');
     });
 
-    it('warns instead of inventing a replacement when externally planned mode has no visible session', () => {
+    it('warns instead of inventing a replacement when external fallback has no visible imported session', () => {
         const text = enhanceContextBriefForPlanning(BASE, handoffInput({
+            planningMode: 'evergreen',
+            externalFallback: true,
             upcomingFixedActivities: [],
             upcomingPlanBlocks: [],
             upcomingExternalSessions: [],
         }));
 
-        expect(text).toContain('Planning mode is `externally_planned`, but no active imported session was found');
-        expect(text).toContain('Do not silently replace the plan');
+        expect(text).toContain('External-plan fallback is active today and no imported session is visible in this 7-day horizon');
+        expect(text).toContain('Do not silently invent a replacement block');
     });
 
     it('warns when current-day subjective data is stale', () => {
