@@ -124,9 +124,17 @@ function applyModalityPreference(
 const HRV_STRAIN_WEIGHT = 0.5;
 const RHR_STRAIN_WEIGHT = 0.3;
 const SLEEP_STRAIN_WEIGHT = 0.2;
+// Respiration rate elevation is one of the earliest, most specific signals of oncoming
+// illness (see docs/adr/0006's respiration amendment) -- weighted comparably to RHR
+// rather than folded in at a token weight. Like the other three weights above, this is a
+// first-pass heuristic, not yet run through the 9.6-style sensitivity/simulation harness.
+const RESPIRATION_STRAIN_WEIGHT = 0.3;
 const HRV_STDEV_FLOOR_MS = 3;
 const RHR_STDEV_FLOOR_BPM = 1.5;
 const SLEEP_STDEV_FLOOR_PTS = 4;
+// Below Garmin's ~1 br/min effective rounding resolution, a respiration MAD is noise
+// rather than signal -- see RESPIRATION_STRAIN_WEIGHT above.
+const RESPIRATION_MAD_FLOOR_BR = 1.0;
 const STRAIN_Z_CAP = 2.0;
 const CHRONIC_STRAIN_MULTIPLIER = 1.5;
 const SLEEP_SCORE_ABSOLUTE_FLOOR = 50;
@@ -267,8 +275,12 @@ export function evaluateReadinessAndSafetyEnvelope(
     const hrvStrain = metricStrain(objective.hrv_delta, objective.hrv_delta_28d, objective.hrv_stdev_28d, HRV_STDEV_FLOOR_MS, HRV_STRAIN_WEIGHT, 1);
     const rhrStrain = metricStrain(objective.rhr_delta, objective.rhr_delta_28d, objective.rhr_stdev_28d, RHR_STDEV_FLOOR_BPM, RHR_STRAIN_WEIGHT, -1);
     const sleepStrain = metricStrain(objective.sleep_score_delta_7d, objective.sleep_score_delta_28d, objective.sleep_score_stdev_28d, SLEEP_STDEV_FLOOR_PTS, SLEEP_STRAIN_WEIGHT, 1);
-    const totalAcuteDeviation = hrvStrain.acuteDeviation + rhrStrain.acuteDeviation + sleepStrain.acuteDeviation;
-    const totalMultiDayDrift = hrvStrain.multiDayDrift + rhrStrain.multiDayDrift + sleepStrain.multiDayDrift;
+    // Elevated respiration is worse (sign -1, same convention as RHR); the MAD arg is a
+    // robust spread estimator, not the population stdev metricStrain's name suggests --
+    // see RESPIRATION_MAD_FLOOR_BR above. ?? null covers documents predating this field.
+    const respirationStrain = metricStrain(objective.respiration_delta ?? null, objective.respiration_delta_28d ?? null, objective.respiration_mad_28d ?? null, RESPIRATION_MAD_FLOOR_BR, RESPIRATION_STRAIN_WEIGHT, -1);
+    const totalAcuteDeviation = hrvStrain.acuteDeviation + rhrStrain.acuteDeviation + sleepStrain.acuteDeviation + respirationStrain.acuteDeviation;
+    const totalMultiDayDrift = hrvStrain.multiDayDrift + rhrStrain.multiDayDrift + sleepStrain.multiDayDrift + respirationStrain.multiDayDrift;
     const totalMetricStrain = totalAcuteDeviation + totalMultiDayDrift;
 
     const sleepFloorPenalty = objective.sleep_score !== null && objective.sleep_score < SLEEP_SCORE_ABSOLUTE_FLOOR
