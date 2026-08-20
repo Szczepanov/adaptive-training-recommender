@@ -29,14 +29,13 @@ The deliverable is incremental, and **every milestone from M1 onward must end wi
 something the athlete can use on a phone**. That constraint, not the layering of the domain
 model, drives the order below.
 
-**Current delivery cutline (2026-08-19).** The active product chain,
-`M3.7 → bounded M3.8 hardening → M4.3 → M5.1 → M5.2`, is now complete end to end. M6 and M7
-are not a sequential continuation of that chain. They are usage-triggered capability groups:
-work starts only when real training or repeated testing exposes a concrete limitation in the
-generic runner/evidence model. M8 may consume those capabilities if they exist, but it must
-never be the reason to build them. The next open item on the evidence-producing chain is
-M5.3 (outcome/override evidence report), which was outside this cutline's own scope but is
-now unblocked.
+**Current delivery cutline (2026-08-19, extended 2026-08-20).** The active product chain,
+`M3.7 → bounded M3.8 hardening → M4.3 → M5.1 → M5.2 → M5.3`, is now complete end to end. M6
+and M7 are not a sequential continuation of that chain. They are usage-triggered capability
+groups: work starts only when real training or repeated testing exposes a concrete
+limitation in the generic runner/evidence model. M8 may consume those capabilities if they
+exist, but it must never be the reason to build them. Nothing on the evidence-producing
+chain remains open; every further `M*` item now waits on its own named usage trigger.
 
 ---
 
@@ -258,9 +257,9 @@ M3 authority / source normalization / authoring
       ↓
 M4.1–M4.2 groups + recorded choices
 
-ACTIVE PRODUCT CHAIN -- complete (2026-08-19)
+ACTIVE PRODUCT CHAIN -- complete (2026-08-20)
 M3.7 semantic preview ─┐
-M3.8 bounded hardening ├──► M4.3 companion/dedup ─► M5.1 response model ─► M5.2 follow-up ─► M5.3 (next, unblocked)
+M3.8 bounded hardening ├──► M4.3 companion/dedup ─► M5.1 response model ─► M5.2 follow-up ─► M5.3 outcome report
                        │
                        └── M3.8 stopped bounded per its own cutline (load/effort/choices
                            shipped; rest ranges, quality fields, sessionTargets/
@@ -291,7 +290,7 @@ exists, and no M8 item may force an otherwise-untriggered M6/M7 capability into 
 | bounded M3.8 | Build common real sessions without JSON; hardening stops when that workflow is sufficient. |
 | M4.3 | Start companion sessions independently without double-counting the same physical work from Garmin/manual evidence. |
 | M5.1–M5.2 | Record and revisit immediate/later-day/next-morning response linked to the exact session occurrence. |
-| M5.3 | Export/inspect outcome and override evidence; a richer history UI is optional and usage-triggered. |
+| M5.3 | Export/inspect a versioned passed/caution/reactive/unknown summary plus the planned-vs-performed delta for any completed session; a richer history UI remains optional and usage-triggered. |
 | M6, **if triggered** | Capture field/speed/power details the generic runner demonstrably cannot represent. |
 | M7, **if triggered** | Run repeated protocol-locked tests whose benchmark comparisons are honest. |
 | M8 | Nothing new. This milestone produces evidence-backed ship/defer/reject decisions, not features. |
@@ -335,7 +334,7 @@ rewritten as an outcome; an in-progress item retains its remaining acceptance wo
 | M4.3 | Companion occurrence and duplicate reconciliation | `[x]` | — |
 | M5.1 | Occurrence-linked response generalization | `[x]` | — |
 | M5.2 | Later-day and next-morning follow-up | `[x]` | — |
-| M5.3 | Outcome/override evidence report | `[ ]` | M5.2; richer history UI only after a usage trigger |
+| M5.3 | Outcome/override evidence report | `[x]` | — |
 | M6.1 | Representative speed/field/power taxonomy v1 | `[ ]` | **Usage trigger:** recurring real session needs domain detail the generic runner cannot represent; then M3.5, M2.5 |
 | M6.2 | Sprint and field performed-entry cards | `[ ]` | M6.1 + a logged sprint/COD workflow proving generic distance/time inputs inadequate |
 | M6.3 | Jump/throw/contact performed-entry cards | `[ ]` | M6.1 + recurring measured jump/throw/contact use |
@@ -1459,26 +1458,72 @@ this repo (confirmed: neither file has a test file today) -- the new logic's rea
 lives in the pure, directly-tested `followupSchedule.ts`; the component wiring is glue code
 over already-tested services, consistent with how this repo tests these two files elsewhere.
 
-### M5.3 `[ ]` Outcome/override evidence report — history UI only if triggered
+### M5.3 `[x]` Outcome/override evidence report — history UI only if triggered
 
-**Change.** Derive `passed | caution | reactive | unknown` as a versioned, evidence-only summary
-from the raw response windows. Record athlete override reason and planned/performed delta.
-Start with a deterministic report/export and a compact inspectable view using existing data
-surfaces. Do **not** build a dedicated cross-session response dashboard merely because the
-model exists.
+**Future usage trigger for richer UI.** Keep `components/session/ResponseHistory.tsx` deferred
+until repeated evidence use creates a specific question that a dedicated history surface can
+answer better (for example, comparing responses after a recurring lower-body session). Until
+then, the report/export below is the product.
 
-**Usage trigger for richer UI.** The athlete repeatedly opens/exports the evidence and has a
-specific question that a dedicated history surface would answer better (for example, comparing
-responses after a recurring lower-body session). Until then, the report/export is the product.
+**Outcome (2026-08-20).** Pure derivation, report/export and the wiring service all shipped;
+no dedicated history UI was built.
 
-**Files.** New `responses/outcome.ts`, report/export integration; reuse
-`SessionAdjustment.athleteReason` through a source-neutral override record rather than forcing
-every change into a strength adjustment. Add `components/session/ResponseHistory.tsx` only if
-the UI trigger fires.
+* **`responses/outcome.ts`.** `deriveSessionOutcome` derives `passed | caution | reactive |
+  unknown` from already-recorded M5.1/M5.2 `SessionResponse[]` plus the canonical check-in's
+  linked `RegionTissueResponse[]` (caller-resolved; this module still never queries a
+  check-in itself, D-MRESP). It reuses `engine/injuryPolicy.ts`'s existing
+  `deriveTissueSeverity` worst-signal mapping rather than restating a second threshold table
+  for the same four-level tissue scale. `unknown` is returned both for zero data and for
+  immediate-only data with no later_day/next_morning signal yet -- a `passed` claim requires
+  actual follow-up to have happened, never a fabricated default. `SESSION_OUTCOME_POLICY_VERSION`
+  (`'m5.3-outcome-v1'`) is carried on every result.
+* **Scoping decision: no new persisted "reason" field.** The plan asks this to "record
+  athlete override reason." No UI anywhere in the repository currently captures a structured
+  reason for *any* session (`SessionAdjustment.athleteReason` itself has no writer today).
+  Rather than add a second unused enum field, `SessionOutcomeInput.overrideReason` is threaded
+  through as a plain optional parameter typed as `AthleteOverrideReason` (`NonNullable<SessionAdjustment['athleteReason']>`,
+  reused per the plan's own instruction) -- the record shape exists for the moment a real
+  capture point is built, but `deriveSessionOutcome` never invents a value for it.
+  `override.note` is populated automatically from data that *does* already exist (the most
+  recently updated `SessionResponse.note`/`techniqueNote`, preferring a `later_day`/
+  `next_morning` note over a merely-more-recent `immediate` one).
+* **Planned/performed delta.** Reuses M2.6's existing `comparePlannedVsPerformed`
+  (`sessions/performedComparison.ts`) output (`completedStepsCount`/`missingRequiredStepsCount`/
+  `totalPlannedSteps`) rather than recomputing it -- no new delta math was needed.
+* **`responses/outcomeReport.ts`.** `buildSessionOutcomeReport` flattens `SessionOutcome[]`
+  into a deterministic, chronologically sorted row set; `sessionOutcomeReportToCsv` is a pure
+  RFC-4180-shaped serializer. This is the "compact inspectable view" -- `components/session/ResponseHistory.tsx`
+  remains unbuilt; the usage trigger has not fired.
+* **`services/sessionOutcomeReportService.ts`.** The one new IO-touching module: for every
+  finished (`completed`/`abandoned`) execution in a date range it composes
+  `sessionExecutionService.getExecutionsInRange`, `sessionResponseService.getResponsesForSource`,
+  `checkinService.getCheckinsInRange` and, for a `completed` execution,
+  `resolveSessionDefinition` (M3.1) + `comparePlannedVsPerformed` (M2.6) -- every one of those
+  already existed and was already tested. Constructor-injected dependencies with singleton
+  defaults follow `StrengthHistoryReadService`'s established M2.7 pattern, so the composition
+  is unit-testable without the Firestore emulator. An in-progress execution is excluded
+  outright (an outcome computed for one would always read `unknown`, indistinguishably from a
+  genuinely unanswered follow-up). Tissue evidence is discovered by scanning every check-in in
+  range (plus a bounded lookahead buffer) for a `RegionTissueResponse.sourceSessionRef`
+  matching the execution, never by way of whether a `SessionResponse` happens to exist for it
+  -- an earlier draft keyed discovery off `SessionResponse.checkinRef.date` and so silently
+  missed a manually-flagged tissue reaction (the legacy pre-M5.1 check-in flow) that has no
+  corresponding `SessionResponse`; caught in review before merge.
+* **Architecture boundary.** `sessions/architecture.test.ts` gained a third check: no module
+  under `engine/optimizer`, `engine/planner`, `engine/rules`, `engine/weeklyAllocation`,
+  `engine/evergreenPlanning` or `engine/sequenceSearch` can reach `responses/outcome.ts` at
+  runtime, directly or through any transitive import chain -- the M0.3 boundary's Done-when
+  requirement, applied to this specific evidence-only summary per D-MPOLICY.
 
-**Done when.** Every outcome links to source facts and a policy version; missing later or next
-data returns `unknown`; the report exposes the evidence without injury-prediction claims; and
-the M0.3 architecture test proves no selection module imports the outcome function.
+**Files.** New `responses/outcome.ts` (+ `.test.ts`), `responses/outcomeReport.ts`
+(+ `.test.ts`), `services/sessionOutcomeReportService.ts` (+ `.test.ts`);
+`sessions/architecture.test.ts` extended. No `firestore.rules` change -- nothing new is
+persisted. Verified by 35 new unit tests, a full `npm run check` (typecheck, lint, 1764 unit
+tests, catalog validation) and the Firestore-emulator rules suite (83/83), all passing with no
+regressions. Four correctness issues raised in review (immediate-note precedence overriding a
+follow-up note, unquoted bare `\r` in CSV export, tissue discovery silently missing a
+`SessionResponse`-less check-in, and the architecture test only checking direct import edges)
+were fixed before merge; see the bullets above.
 
 ---
 

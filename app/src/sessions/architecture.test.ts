@@ -144,4 +144,51 @@ describe('Multidomain sessions architecture and dependency boundaries (M0.3 / AD
             }
         }
     });
+
+    it('no selection/ranking module can reach the M5.3 outcome summary at runtime, directly or transitively (D-MPOLICY)', () => {
+        // `responses/outcome.ts`'s `deriveSessionOutcome` is an evidence-only summary label
+        // (passed/caution/reactive/unknown) -- D-MPOLICY requires it stay a report input, never
+        // a live selection/eligibility signal, until a separate ship decision says otherwise.
+        // A direct-edge-only check would pass a path like
+        // `engine/optimizer/foo.ts -> services/report.ts -> responses/outcome.ts`, so this
+        // walks the full reverse-reachability set instead: every module that can reach
+        // `responses/outcome.ts` through any chain of imports.
+        const forbiddenSelection = [
+            'engine/optimizer',
+            'engine/planner',
+            'engine/rules',
+            'engine/weeklyAllocation',
+            'engine/evergreenPlanning',
+            'engine/sequenceSearch',
+        ];
+
+        const reverseGraph = new Map<string, string[]>();
+        for (const [mod, imports] of graph.entries()) {
+            for (const imp of imports) {
+                const importers = reverseGraph.get(imp) ?? [];
+                importers.push(mod);
+                reverseGraph.set(imp, importers);
+            }
+        }
+
+        // BFS over the reverse graph from 'responses/outcome.ts': every module reached this
+        // way can, through some chain, cause 'responses/outcome.ts' to run.
+        const ancestors = new Set<string>();
+        const queue = [...(reverseGraph.get('responses/outcome.ts') ?? [])];
+        while (queue.length > 0) {
+            const mod = queue.pop()!;
+            if (ancestors.has(mod)) continue;
+            ancestors.add(mod);
+            queue.push(...(reverseGraph.get(mod) ?? []));
+        }
+
+        for (const mod of ancestors) {
+            for (const forbidden of forbiddenSelection) {
+                expect(
+                    mod.startsWith(forbidden),
+                    `Selection module "${mod}" must not be able to reach evidence-only "responses/outcome.ts" (directly or transitively)`,
+                ).toBe(false);
+            }
+        }
+    });
 });
