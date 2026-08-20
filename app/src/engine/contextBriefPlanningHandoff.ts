@@ -146,7 +146,8 @@ function renderRecoveryTimeline(input: ContextBriefPlanningHandoffInput): string
         const flags: string[] = [];
         if (activities.length > 0) {
             const hard = activities.filter(item => item.intensityTag === 'hard').length;
-            flags.push(`${activities.length} activity${activities.length === 1 ? '' : 'ies'}${hard > 0 ? ` (${hard} hard)` : ''}`);
+            const activityLabel = activities.length === 1 ? 'activity' : 'activities';
+            flags.push(`${activities.length} ${activityLabel}${hard > 0 ? ` (${hard} hard)` : ''}`);
         }
         if (checkin?.alreadyTrainedToday && activities.length === 0) flags.push('reported trained');
         if (checkin?.painOrInjury) flags.push('pain/injury');
