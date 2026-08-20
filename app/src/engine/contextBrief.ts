@@ -114,6 +114,28 @@ function metricLine(
     return `- ${label}: ${round(current)} ${unit} (${baselines}) — ${deltas}`;
 }
 
+/** Observation-only robust baseline renderer. Keeping this separate from metricLine makes
+ * the estimator semantics explicit in the exported text instead of letting an external AI
+ * mistake median/MAD candidate statistics for the live mean/stdev engine inputs. */
+function candidateBaselineLine(
+    label: string,
+    unit: string,
+    current: number | null | undefined,
+    median7d: number | null | undefined,
+    median28d: number | null | undefined,
+    mad28d: number | null | undefined,
+    deltaVs7dMedian: number | null | undefined,
+    deltaVs28dMedian: number | null | undefined,
+): string {
+    const currentValue = typeof current === 'number' && Number.isFinite(current) ? current : null;
+    const median7 = typeof median7d === 'number' && Number.isFinite(median7d) ? median7d : null;
+    const median28 = typeof median28d === 'number' && Number.isFinite(median28d) ? median28d : null;
+    const mad28 = typeof mad28d === 'number' && Number.isFinite(mad28d) ? mad28d : null;
+    const baselines = `7d median ${round(median7)}, 28d median ${round(median28)}, 28d MAD ${round(mad28)}`;
+    const deltas = `${signed(deltaVs7dMedian)} vs 7d median, ${signed(deltaVs28dMedian)} vs 28d median`;
+    return `- ${label}: ${round(currentValue)} ${unit} (${baselines}) — ${deltas}`;
+}
+
 function withinWindow(date: string, startDate: string, asOfDate: string): boolean {
     return date >= startDate && date <= asOfDate;
 }
@@ -171,6 +193,7 @@ function renderObjective(snapshots: readonly DailyRecoverySnapshot[], windowDays
     }
     const latest = snapshots[snapshots.length - 1];
     const { raw, derived, dataQuality } = latest;
+    const baselineVersion = derived.baselineComputationVersion ?? 0;
 
     lines.push(`Most recent reading — ${latest.date}:`);
     lines.push(metricLine('HRV (overnight avg)', 'ms', raw.hrvOvernightAvg, derived.hrv7dAvg, derived.hrv28dAvg, derived.deltas.hrvVs7d, derived.deltas.hrvVs28d));
@@ -179,7 +202,19 @@ function renderObjective(snapshots: readonly DailyRecoverySnapshot[], windowDays
     if (raw.totalSteps !== null) {
         lines.push(metricLine('Steps (yesterday D-1)', 'steps', raw.totalSteps, derived.steps7dAvg ?? null, derived.steps28dAvg ?? null, derived.deltas.stepsVs7d ?? null, derived.deltas.stepsVs28d ?? null));
     }
+    if (baselineVersion >= 3) {
+        lines.push(candidateBaselineLine(
+            'Respiration robust baseline', 'br/min', raw.respirationAvg,
+            derived.respiration7dAvg, derived.respiration28dAvg, derived.respiration28dMad,
+            derived.deltas.respirationVs7d, derived.deltas.respirationVs28d,
+        ));
+    } else if (raw.respirationAvg !== null) {
+        lines.push(`- Respiration: ${round(raw.respirationAvg)} br/min (legacy pre-v3 baseline fields use mean; robust median/MAD unavailable)`);
+    }
     if (raw.bodyBatteryWake !== null) lines.push(`- Body battery on waking: ${raw.bodyBatteryWake}`);
+    if (raw.stress?.avg != null || raw.stress?.max != null) {
+        lines.push(`- Device stress: avg ${raw.stress?.avg ?? '—'} · max ${raw.stress?.max ?? '—'}`);
+    }
     if (raw.hrvStatus) lines.push(`- HRV status (device): ${raw.hrvStatus}`);
     if (raw.trainingReadiness?.score != null) {
         lines.push(`- Device training readiness: ${raw.trainingReadiness.score}${raw.trainingReadiness.level ? ` (${raw.trainingReadiness.level})` : ''}`);
@@ -194,6 +229,62 @@ function renderObjective(snapshots: readonly DailyRecoverySnapshot[], windowDays
         if (status.vo2MaxCycling != null) statusParts.push(`VO2max cycling ${status.vo2MaxCycling}`);
         if (status.vo2MaxRunning != null) statusParts.push(`VO2max running ${status.vo2MaxRunning}`);
         if (statusParts.length > 0) lines.push(`- Device training status: ${statusParts.join(' · ')}`);
+    }
+
+    if (baselineVersion >= 3) {
+        lines.push('');
+        lines.push('> Respiration robust baseline is exported for context, but production respiration strain scoring is currently OFF by default. Do not treat it as an additional live readiness penalty.');
+    }
+
+    if (baselineVersion >= 4) {
+        lines.push('');
+        lines.push('Observation-only candidate baselines (not independent engine inputs):');
+        lines.push('These median/MAD summaries are exported for inspection and future calibration. They do not replace the live mean/stdev paths and must not be stacked as extra strain votes.');
+        lines.push(candidateBaselineLine(
+            'Sleep score candidate', 'pts', raw.sleepScore,
+            derived.sleepScore7dMedian, derived.sleepScore28dMedian, derived.sleepScore28dMad,
+            derived.deltas.sleepScoreVs7dMedian, derived.deltas.sleepScoreVs28dMedian,
+        ));
+        lines.push(candidateBaselineLine(
+            'Resting HR candidate', 'bpm', raw.restingHr,
+            derived.restingHr7dMedian, derived.restingHr28dMedian, derived.restingHr28dMad,
+            derived.deltas.restingHrVs7dMedian, derived.deltas.restingHrVs28dMedian,
+        ));
+        lines.push(candidateBaselineLine(
+            'HRV candidate', 'ms', raw.hrvOvernightAvg,
+            derived.hrv7dMedian, derived.hrv28dMedian, derived.hrv28dMad,
+            derived.deltas.hrvVs7dMedian, derived.deltas.hrvVs28dMedian,
+        ));
+        lines.push(candidateBaselineLine(
+            'Steps candidate (yesterday D-1)', 'steps', raw.totalSteps,
+            derived.steps7dMedian, derived.steps28dMedian, derived.steps28dMad,
+            derived.deltas.stepsVs7dMedian, derived.deltas.stepsVs28dMedian,
+        ));
+    }
+
+    if (baselineVersion >= 5) {
+        lines.push(candidateBaselineLine(
+            'Body Battery wake candidate', 'pts', raw.bodyBatteryWake,
+            derived.bodyBatteryWake7dMedian, derived.bodyBatteryWake28dMedian, derived.bodyBatteryWake28dMad,
+            derived.deltas.bodyBatteryWakeVs7dMedian, derived.deltas.bodyBatteryWakeVs28dMedian,
+        ));
+        lines.push(candidateBaselineLine(
+            'Stress avg candidate', 'pts', raw.stress?.avg,
+            derived.stressAvg7dMedian, derived.stressAvg28dMedian, derived.stressAvg28dMad,
+            derived.deltas.stressAvgVs7dMedian, derived.deltas.stressAvgVs28dMedian,
+        ));
+        lines.push(candidateBaselineLine(
+            'Stress max candidate', 'pts', raw.stress?.max,
+            derived.stressMax7dMedian, derived.stressMax28dMedian, derived.stressMax28dMad,
+            derived.deltas.stressMaxVs7dMedian, derived.deltas.stressMaxVs28dMedian,
+        ));
+        lines.push(candidateBaselineLine(
+            'Training Readiness score candidate', 'pts', raw.trainingReadiness?.score,
+            derived.trainingReadinessScore7dMedian, derived.trainingReadinessScore28dMedian, derived.trainingReadinessScore28dMad,
+            derived.deltas.trainingReadinessScoreVs7dMedian, derived.deltas.trainingReadinessScoreVs28dMedian,
+        ));
+        lines.push('');
+        lines.push('> Correlation caution: Body Battery, stress and Training Readiness overlap upstream with HRV, sleep, stress and load physiology. Treat them as correlated observations, not independent additive evidence.');
     }
 
     lines.push('');
