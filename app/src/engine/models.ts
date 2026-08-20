@@ -933,6 +933,23 @@ export interface DailyRecoverySnapshot {
         steps7dMedian?: number | null;
         steps28dMedian?: number | null;
         steps28dMad?: number | null;
+        /** Observation-only median/MAD baselines for body battery wake and the "metric
+         *  enrichment" fields (stress avg/max, training readiness score) -- see
+         *  docs/adr/0006's v5 amendment. Unlike the fields above, these metrics have no
+         *  mean/stdev counterpart at all yet. Nothing in rules.ts/fatigue.ts reads these.
+         *  Absent (undefined) on documents written before baselineComputationVersion 5. */
+        bodyBatteryWake7dMedian?: number | null;
+        bodyBatteryWake28dMedian?: number | null;
+        bodyBatteryWake28dMad?: number | null;
+        stressAvg7dMedian?: number | null;
+        stressAvg28dMedian?: number | null;
+        stressAvg28dMad?: number | null;
+        stressMax7dMedian?: number | null;
+        stressMax28dMedian?: number | null;
+        stressMax28dMad?: number | null;
+        trainingReadinessScore7dMedian?: number | null;
+        trainingReadinessScore28dMedian?: number | null;
+        trainingReadinessScore28dMad?: number | null;
         deltas: {
             sleepScoreVs7d: number | null;
             sleepScoreVs28d: number | null;
@@ -953,6 +970,16 @@ export interface DailyRecoverySnapshot {
             hrvVs28dMedian?: number | null;
             stepsVs7dMedian?: number | null;
             stepsVs28dMedian?: number | null;
+            /** Observation-only median-baseline deltas for body battery wake / stress /
+             *  training readiness -- see the sibling comment above. */
+            bodyBatteryWakeVs7dMedian?: number | null;
+            bodyBatteryWakeVs28dMedian?: number | null;
+            stressAvgVs7dMedian?: number | null;
+            stressAvgVs28dMedian?: number | null;
+            stressMaxVs7dMedian?: number | null;
+            stressMaxVs28dMedian?: number | null;
+            trainingReadinessScoreVs7dMedian?: number | null;
+            trainingReadinessScoreVs28dMedian?: number | null;
         };
     };
     dataQuality: {

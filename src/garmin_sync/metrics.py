@@ -157,6 +157,44 @@ def compute_derived_metrics(
     hrv_mad28 = calculate_mad([d.get("hrvOvernightAvg") for d in window_28d_raws], 14)
     steps_mad28 = calculate_mad([d.get("totalSteps") for d in window_28d_raws], 14)
 
+    # v5 (docs/adr/0006 amendment): observation-only 7d/28d median + 28d MAD baselines for
+    # body battery wake and the "metric enrichment" fields (stress avg/max, training
+    # readiness score) -- unlike v4's sleep/RHR/HRV/steps, none of these had *any* baseline
+    # (mean or median) before this. Not read by rules.ts/fatigue.ts yet -- same
+    # observation-before-wiring posture CanonicalDailyMetrics's own docstring already
+    # applies to stress/training readiness/training status/heart rate zones.
+    def _stress_avg(d: dict[str, Any]) -> float | int | None:
+        return (d.get("stress") or {}).get("avg")
+
+    def _stress_max(d: dict[str, Any]) -> float | int | None:
+        return (d.get("stress") or {}).get("max")
+
+    def _training_readiness_score(d: dict[str, Any]) -> float | int | None:
+        return (d.get("trainingReadiness") or {}).get("score")
+
+    bb_wake_7d_median = calculate_median([d.get("bodyBatteryWake") for d in window_7d_raws], 4)
+    bb_wake_28d_median = calculate_median([d.get("bodyBatteryWake") for d in window_28d_raws], 14)
+    bb_wake_mad28 = calculate_mad([d.get("bodyBatteryWake") for d in window_28d_raws], 14)
+
+    stress_avg_7d_median = calculate_median([_stress_avg(d) for d in window_7d_raws], 4)
+    stress_avg_28d_median = calculate_median([_stress_avg(d) for d in window_28d_raws], 14)
+    stress_avg_mad28 = calculate_mad([_stress_avg(d) for d in window_28d_raws], 14)
+
+    stress_max_7d_median = calculate_median([_stress_max(d) for d in window_7d_raws], 4)
+    stress_max_28d_median = calculate_median([_stress_max(d) for d in window_28d_raws], 14)
+    stress_max_mad28 = calculate_mad([_stress_max(d) for d in window_28d_raws], 14)
+
+    readiness_7d_median = calculate_median(
+        [_training_readiness_score(d) for d in window_7d_raws], 4
+    )
+    readiness_28d_median = calculate_median(
+        [_training_readiness_score(d) for d in window_28d_raws], 14
+    )
+    readiness_mad28 = calculate_mad([_training_readiness_score(d) for d in window_28d_raws], 14)
+
+    current_stress = raw_current.get("stress") or {}
+    current_readiness = raw_current.get("trainingReadiness") or {}
+
     def _round(val: float | None) -> float | None:
         return round(val, 1) if val is not None else None
 
@@ -184,6 +222,32 @@ def compute_derived_metrics(
         hrvVs28dMedian=_round(calculate_delta(raw_current.get("hrvOvernightAvg"), hrv_28d_median)),
         stepsVs7dMedian=_round(calculate_delta(raw_current.get("totalSteps"), steps_7d_median)),
         stepsVs28dMedian=_round(calculate_delta(raw_current.get("totalSteps"), steps_28d_median)),
+        # v5: median-baseline deltas for body battery wake / stress / training readiness,
+        # observation-only -- see the v5 comment above.
+        bodyBatteryWakeVs7dMedian=_round(
+            calculate_delta(raw_current.get("bodyBatteryWake"), bb_wake_7d_median)
+        ),
+        bodyBatteryWakeVs28dMedian=_round(
+            calculate_delta(raw_current.get("bodyBatteryWake"), bb_wake_28d_median)
+        ),
+        stressAvgVs7dMedian=_round(
+            calculate_delta(current_stress.get("avg"), stress_avg_7d_median)
+        ),
+        stressAvgVs28dMedian=_round(
+            calculate_delta(current_stress.get("avg"), stress_avg_28d_median)
+        ),
+        stressMaxVs7dMedian=_round(
+            calculate_delta(current_stress.get("max"), stress_max_7d_median)
+        ),
+        stressMaxVs28dMedian=_round(
+            calculate_delta(current_stress.get("max"), stress_max_28d_median)
+        ),
+        trainingReadinessScoreVs7dMedian=_round(
+            calculate_delta(current_readiness.get("score"), readiness_7d_median)
+        ),
+        trainingReadinessScoreVs28dMedian=_round(
+            calculate_delta(current_readiness.get("score"), readiness_28d_median)
+        ),
     )
 
     return DerivedMetrics(
@@ -216,5 +280,18 @@ def compute_derived_metrics(
         steps7dMedian=_round(steps_7d_median),
         steps28dMedian=_round(steps_28d_median),
         steps28dMad=_round(steps_mad28),
+        # v5: observation-only median/MAD baselines -- see the v5 comment above.
+        bodyBatteryWake7dMedian=_round(bb_wake_7d_median),
+        bodyBatteryWake28dMedian=_round(bb_wake_28d_median),
+        bodyBatteryWake28dMad=_round(bb_wake_mad28),
+        stressAvg7dMedian=_round(stress_avg_7d_median),
+        stressAvg28dMedian=_round(stress_avg_28d_median),
+        stressAvg28dMad=_round(stress_avg_mad28),
+        stressMax7dMedian=_round(stress_max_7d_median),
+        stressMax28dMedian=_round(stress_max_28d_median),
+        stressMax28dMad=_round(stress_max_mad28),
+        trainingReadinessScore7dMedian=_round(readiness_7d_median),
+        trainingReadinessScore28dMedian=_round(readiness_28d_median),
+        trainingReadinessScore28dMad=_round(readiness_mad28),
         deltas=deltas,
     )

@@ -207,6 +207,78 @@ def test_compute_derived_metrics_v4_fields_none_below_min_required():
     assert derived.deltas.sleepScoreVs7dMedian is None
 
 
+def test_compute_derived_metrics_v5_body_battery_stress_training_readiness():
+    # An asymmetric window, and current-day values that differ from every window entry,
+    # so every v5 baseline/delta is exercised with a non-trivial result.
+    window_7d = [
+        {
+            "bodyBatteryWake": 40,
+            "stress": {"avg": 20, "max": 60},
+            "trainingReadiness": {"score": 50},
+        },
+        {
+            "bodyBatteryWake": 60,
+            "stress": {"avg": 25, "max": 55},
+            "trainingReadiness": {"score": 55},
+        },
+        {
+            "bodyBatteryWake": 70,
+            "stress": {"avg": 30, "max": 50},
+            "trainingReadiness": {"score": 60},
+        },
+        {
+            "bodyBatteryWake": 90,
+            "stress": {"avg": 15, "max": 90},
+            "trainingReadiness": {"score": 80},
+        },
+    ]
+    window_28d = window_7d * 4  # 16 items
+    curr = {
+        "bodyBatteryWake": 75,
+        "stress": {"avg": 22, "max": 65},
+        "trainingReadiness": {"score": 65},
+    }
+
+    derived = compute_derived_metrics(curr, window_7d, window_28d)
+
+    expected_bb_median = calculate_median([40, 60, 70, 90], 4)
+    assert derived.bodyBatteryWake7dMedian == round(expected_bb_median, 1)
+    assert derived.bodyBatteryWake28dMedian == round(expected_bb_median, 1)
+    assert derived.bodyBatteryWake28dMad == round(calculate_mad([40, 60, 70, 90] * 4, 14), 1)
+    assert derived.deltas.bodyBatteryWakeVs7dMedian == round(75 - expected_bb_median, 1)
+
+    expected_stress_avg_median = calculate_median([20, 25, 30, 15], 4)
+    assert derived.stressAvg7dMedian == round(expected_stress_avg_median, 1)
+    assert derived.stressAvg28dMad == round(calculate_mad([20, 25, 30, 15] * 4, 14), 1)
+    assert derived.deltas.stressAvgVs7dMedian == round(22 - expected_stress_avg_median, 1)
+
+    expected_stress_max_median = calculate_median([60, 55, 50, 90], 4)
+    assert derived.stressMax7dMedian == round(expected_stress_max_median, 1)
+    assert derived.deltas.stressMaxVs7dMedian == round(65 - expected_stress_max_median, 1)
+
+    expected_readiness_median = calculate_median([50, 55, 60, 80], 4)
+    assert derived.trainingReadinessScore7dMedian == round(expected_readiness_median, 1)
+    assert derived.deltas.trainingReadinessScoreVs7dMedian == round(
+        65 - expected_readiness_median, 1
+    )
+
+
+def test_compute_derived_metrics_v5_fields_none_when_stress_and_readiness_absent():
+    # Days where stress/trainingReadiness were never populated (common while these
+    # remain "not yet consumed" enrichment fields per CanonicalDailyMetrics's docstring).
+    window_7d = [{"bodyBatteryWake": 70}] * 4
+    window_28d = [{"bodyBatteryWake": 70}] * 14
+    curr = {"bodyBatteryWake": 70}
+
+    derived = compute_derived_metrics(curr, window_7d, window_28d)
+    assert derived.bodyBatteryWake7dMedian == 70.0
+    assert derived.stressAvg7dMedian is None
+    assert derived.stressMax7dMedian is None
+    assert derived.trainingReadinessScore7dMedian is None
+    assert derived.deltas.stressAvgVs7dMedian is None
+    assert derived.deltas.trainingReadinessScoreVs7dMedian is None
+
+
 def test_compute_derived_metrics_stdev_none_below_min_required():
     # Only 10 valid points in the 28d window -- below the 14-point minimum.
     window_7d = [{"hrvOvernightAvg": 60}] * 4

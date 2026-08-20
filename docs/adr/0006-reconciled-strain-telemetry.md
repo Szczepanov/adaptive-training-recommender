@@ -122,3 +122,29 @@ Documents written before `baselineComputationVersion` 4 simply lack these fields
 mirrors them on `DailyRecoverySnapshot.derived` for the same reason, but they are
 deliberately **not** threaded into `EngineObjectiveInput`/`adapters.ts`: unlike respiration's
 fields, nothing downstream of the canonical snapshot is meant to consume them yet.
+
+### Amendment (2026-08-20): median/MAD extended to body battery wake, stress, training readiness
+
+Same additive-only posture as the amendment above, extended to three more metrics: body
+battery wake, stress (avg/max), and training readiness score. The difference from the
+sleep/RHR/HRV/steps amendment is that none of these three had *any* baseline before --
+body battery wake is read live in `rules.ts` (`BODY_BATTERY_LOW_ANCHOR`,
+`BODY_BATTERY_RECOVER_THRESHOLD`) but only against fixed absolute thresholds, never a
+personal baseline; stress and training readiness are `CanonicalDailyMetrics`'s own
+"metric enrichment" fields, its docstring already flagging them as "not yet consumed...
+expose to rules only after measuring real-world availability" -- the same posture this
+amendment applies, just spelled out as a concrete baseline computation now available to
+measure.
+
+`BASELINE_COMPUTATION_VERSION` 5 adds `bodyBatteryWake7dMedian`/`28dMedian`/`28dMad`,
+`stressAvg7dMedian`/`28dMedian`/`28dMad`, `stressMax7dMedian`/`28dMedian`/`28dMad`, and
+`trainingReadinessScore7dMedian`/`28dMedian`/`28dMad`, plus the matching
+`*Vs7dMedian`/`*Vs28dMedian` deltas. `_build_and_store_snapshot` in `service.py` had to
+start passing `bodyBatteryWake`/`stress`/`trainingReadiness` into `compute_derived_metrics`'s
+`raw_current` argument (it previously only passed sleep/RHR/HRV/respiration/steps) --
+without that, every delta for these three metrics would resolve to `None` regardless of
+window data, since a delta needs today's value alongside the baseline. No `POLICY_VERSION`
+bump: `rules.ts`/`fatigue.ts` are unchanged.
+
+Same absence/optionality rule as before: documents written before `baselineComputationVersion`
+5 lack these fields entirely, and none of it is threaded into `EngineObjectiveInput`.

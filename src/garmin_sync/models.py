@@ -20,7 +20,12 @@ SCHEMA_VERSION = 3
 # median/MAD baseline would have scored real history before any of these four metrics'
 # live mean/stdev is replaced (see ADR-0014's precedent for that bar). Absent on documents
 # written before v4.
-BASELINE_COMPUTATION_VERSION = 4
+# v5 (docs/adr/0006 amendment): adds observation-only 7d/28d median + 28d MAD baselines for
+# body battery wake and the "metric enrichment" fields stress avg/max and training
+# readiness score (bodyBatteryWake28dMad, stressAvg7dMedian, etc.). Unlike v4, none of
+# these had *any* baseline before -- this is new, not an alternate stat alongside an
+# existing mean. Still not consumed by the engine. Absent on documents written before v5.
+BASELINE_COMPUTATION_VERSION = 5
 
 
 @dataclass
@@ -202,6 +207,16 @@ class DerivedDeltas:
     hrvVs28dMedian: float | None = None
     stepsVs7dMedian: float | None = None
     stepsVs28dMedian: float | None = None
+    # v5: median-baseline deltas for body battery wake / stress / training readiness,
+    # observation-only -- see BASELINE_COMPUTATION_VERSION's v5 note.
+    bodyBatteryWakeVs7dMedian: float | None = None
+    bodyBatteryWakeVs28dMedian: float | None = None
+    stressAvgVs7dMedian: float | None = None
+    stressAvgVs28dMedian: float | None = None
+    stressMaxVs7dMedian: float | None = None
+    stressMaxVs28dMedian: float | None = None
+    trainingReadinessScoreVs7dMedian: float | None = None
+    trainingReadinessScoreVs28dMedian: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -246,6 +261,22 @@ class DerivedMetrics:
     steps7dMedian: float | None = None
     steps28dMedian: float | None = None
     steps28dMad: float | None = None
+    # v5: observation-only median/MAD baselines for body battery wake and the "metric
+    # enrichment" fields -- see BASELINE_COMPUTATION_VERSION's v5 note. Unlike the fields
+    # above, these metrics have no mean/stdev counterpart at all yet. Not consumed by
+    # rules.ts or fatigue.ts. Absent on documents written before v5.
+    bodyBatteryWake7dMedian: float | None = None
+    bodyBatteryWake28dMedian: float | None = None
+    bodyBatteryWake28dMad: float | None = None
+    stressAvg7dMedian: float | None = None
+    stressAvg28dMedian: float | None = None
+    stressAvg28dMad: float | None = None
+    stressMax7dMedian: float | None = None
+    stressMax28dMedian: float | None = None
+    stressMax28dMad: float | None = None
+    trainingReadinessScore7dMedian: float | None = None
+    trainingReadinessScore28dMedian: float | None = None
+    trainingReadinessScore28dMad: float | None = None
     deltas: DerivedDeltas = field(default_factory=DerivedDeltas)
 
     def to_dict(self) -> dict[str, Any]:
