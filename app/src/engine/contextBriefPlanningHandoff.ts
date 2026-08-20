@@ -1,10 +1,14 @@
 import type {
+    AuthoredPlanBlock,
     DailyRecommendation,
     DailyRecoverySnapshot,
     DailySubjectiveCheckin,
     FixedActivity,
     NormalizedGarminActivity,
     TrainingIntentProfile,
+    TrainingSettings,
+    UserGoal,
+    UserPreferences,
 } from './models';
 import { addDaysToLocalDateString } from '../utils/localDate';
 
@@ -35,8 +39,12 @@ export interface ContextBriefPlanningHandoffInput {
     checkins: readonly DailySubjectiveCheckin[];
     activities: readonly NormalizedGarminActivity[];
     recommendations: readonly DailyRecommendation[];
+    trainingSettings: TrainingSettings | null;
+    preferences: UserPreferences | null;
     intentProfile: TrainingIntentProfile | null;
+    goals: readonly UserGoal[];
     upcomingFixedActivities: readonly FixedActivity[];
+    upcomingPlanBlocks: readonly AuthoredPlanBlock[];
     upcomingExternalSessions: readonly UpcomingExternalPlanSession[];
     unavailableSources: readonly string[];
 }
@@ -48,6 +56,16 @@ function latestByDate<T extends { date: string }>(items: readonly T[]): T | null
 
 function textNumber(value: number | null | undefined, suffix = ''): string {
     return typeof value === 'number' && Number.isFinite(value) ? `${value}${suffix}` : '—';
+}
+
+function compactText(value: string): string {
+    return value.replace(/\s+/g, ' ').trim();
+}
+
+function yesNoUnknown(value: boolean | undefined): string {
+    if (value === true) return 'yes';
+    if (value === false) return 'no';
+    return 'unknown';
 }
 
 function renderDataHandoff(input: ContextBriefPlanningHandoffInput): string {
@@ -66,6 +84,26 @@ function renderDataHandoff(input: ContextBriefPlanningHandoffInput): string {
         `- Planning date: ${input.asOfDate} (Europe/Warsaw calendar date).`,
         `- Planning mode: ${input.intentProfile?.planningMode ?? 'not configured'}.`,
     ];
+
+    if (input.trainingSettings) {
+        const capabilities = input.trainingSettings.capabilities;
+        lines.push(
+            `- Sensor capabilities: power meter ${yesNoUnknown(capabilities?.powerMeter)} · `
+            + `heart-rate monitor ${yesNoUnknown(capabilities?.heartRateMonitor)} · `
+            + `cadence data ${yesNoUnknown(capabilities?.cadenceData)}.`,
+        );
+    }
+    if (input.preferences) {
+        const margin = input.preferences.extraRecoveryMargin === undefined
+            ? 'not set'
+            : input.preferences.extraRecoveryMargin ? 'on' : 'off';
+        lines.push(
+            `- Planning preferences: recovery style ${input.preferences.preferredRecoveryStyle} · `
+            + `preferred time ${input.preferences.preferredTimeOfDay} · `
+            + `conservative bias ${input.preferences.conservativeBias ? 'on' : 'off'} · `
+            + `extra recovery margin ${margin}.`,
+        );
+    }
 
     if (latestSnapshot) {
         const source = latestSnapshot.source;
@@ -132,10 +170,10 @@ function renderRecoveryTimeline(input: ContextBriefPlanningHandoffInput): string
     const lines = [
         '### Recent 7-day recovery timeline',
         '',
-        'Calendar-day rows preserve direction and clustering that window averages can hide. “—” means not recorded.',
+        'Calendar-day rows preserve direction and clustering that window averages can hide. Steps are the completed D-1 total carried by that morning\'s snapshot. “—” means not recorded.',
         '',
-        '| Date | Sleep | HRV | RHR | Resp | BB | Stress | Ready | Fatigue | Sore | Training / flags |',
-        '|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|',
+        '| Date | Sleep | HRV | RHR | Resp | BB | Stress | Steps D-1 | Ready | Fatigue | Sore | Training / flags |',
+        '|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|',
     ];
 
     for (let offset = 0; offset < RECOVERY_TIMELINE_DAYS; offset++) {
@@ -154,10 +192,32 @@ function renderRecoveryTimeline(input: ContextBriefPlanningHandoffInput): string
         if (checkin?.illnessSymptoms) flags.push('illness');
         if (checkin?.unusuallyLimitedTime) flags.push('limited time');
 
-        lines.push(`| ${date} | ${textNumber(snapshot?.raw.sleepScore)} | ${textNumber(snapshot?.raw.hrvOvernightAvg)} | ${textNumber(snapshot?.raw.restingHr)} | ${textNumber(snapshot?.raw.respirationAvg)} | ${textNumber(snapshot?.raw.bodyBatteryWake)} | ${textNumber(snapshot?.raw.stress?.avg)} | ${textNumber(checkin?.readiness)} | ${textNumber(checkin?.fatigue)} | ${textNumber(checkin?.soreness)} | ${flags.join(', ') || '—'} |`);
+        lines.push(`| ${date} | ${textNumber(snapshot?.raw.sleepScore)} | ${textNumber(snapshot?.raw.hrvOvernightAvg)} | ${textNumber(snapshot?.raw.restingHr)} | ${textNumber(snapshot?.raw.respirationAvg)} | ${textNumber(snapshot?.raw.bodyBatteryWake)} | ${textNumber(snapshot?.raw.stress?.avg)} | ${textNumber(snapshot?.raw.totalSteps)} | ${textNumber(checkin?.readiness)} | ${textNumber(checkin?.fatigue)} | ${textNumber(checkin?.soreness)} | ${flags.join(', ') || '—'} |`);
     }
 
     return lines.join('\n');
+}
+
+function renderGoalSpecifics(goals: readonly UserGoal[]): string {
+    const lines: string[] = [];
+    for (const goal of goals.filter(item => item.status === 'active')) {
+        const details: string[] = [];
+        if (goal.targetOutcome) details.push(`success: ${compactText(goal.targetOutcome)}`);
+        if (goal.targetMetric && goal.targetValue !== null && goal.targetValue !== undefined) {
+            details.push(`target: ${goal.targetMetric} ${goal.targetValue}${goal.targetUnit ? ` ${goal.targetUnit}` : ''}`);
+        }
+        if (goal.eventPreset) details.push(`event preset: ${goal.eventPreset}`);
+        if (goal.timing) {
+            const timing = goal.timing.confirmedDate
+                ? `confirmed ${goal.timing.confirmedDate}`
+                : `window ${goal.timing.earliestDate}–${goal.timing.latestDate}, planning date ${goal.timing.planningDate}`;
+            details.push(`timing: ${timing}`);
+        }
+        if (goal.description) details.push(`description: ${compactText(goal.description)}`);
+        if (details.length > 0) lines.push(`- **${goal.title}** — ${details.join(' · ')}`);
+    }
+    if (lines.length === 0) return '';
+    return ['### Goal specifics relevant to planning', '', ...lines].join('\n');
 }
 
 function renderUpcoming(input: ContextBriefPlanningHandoffInput): string {
@@ -177,6 +237,22 @@ function renderUpcoming(input: ContextBriefPlanningHandoffInput): string {
                 item.availabilityContextOverride?.environment ? `day environment ${item.availabilityContextOverride.environment}` : null,
             ].filter((value): value is string => value !== null).join(' · '),
         }));
+    const travel = input.upcomingPlanBlocks
+        .filter(item => item.endDate >= input.asOfDate && item.startDate <= endDate)
+        .map(item => {
+            const visibleStart = item.startDate < input.asOfDate ? input.asOfDate : item.startDate;
+            const visibleEnd = item.endDate > endDate ? endDate : item.endDate;
+            return {
+                date: visibleStart === visibleEnd ? visibleStart : `${visibleStart}→${visibleEnd}`,
+                source: 'Plan block',
+                title: 'Travel',
+                dose: `volume ×${item.volumeScale} · intensity ×${item.intensityScale}`,
+                authority: 'authored overlay',
+                notes: item.startDate === visibleStart && item.endDate === visibleEnd
+                    ? 'travel block'
+                    : `full block ${item.startDate}→${item.endDate}`,
+            };
+        });
     const external = input.upcomingExternalSessions
         .filter(item => item.date >= input.asOfDate && item.date <= endDate)
         .map(item => ({
@@ -187,12 +263,12 @@ function renderUpcoming(input: ContextBriefPlanningHandoffInput): string {
             authority: `${item.priority} · ${item.flexibility}${item.moved ? ' · moved' : ''}${item.isEvent ? ' · EVENT' : ''}`,
             notes: `revision ${item.revision}`,
         }));
-    const rows = [...fixed, ...external].sort((a, b) => a.date.localeCompare(b.date) || a.source.localeCompare(b.source));
+    const rows = [...fixed, ...travel, ...external].sort((a, b) => a.date.localeCompare(b.date) || a.source.localeCompare(b.source));
 
     const lines: string[] = [
         `## 7. Existing commitments / imported plan (${input.asOfDate} → ${endDate})`,
         '',
-        'Preserve these when proposing days unless the user explicitly asks to move, replace or re-plan them.',
+        'Preserve these when proposing days unless the user explicitly asks to move, replace or re-plan them. Authored travel blocks scale the surrounding plan rather than representing an extra workout.',
     ];
 
     if (rows.length === 0) {
@@ -200,12 +276,12 @@ function renderUpcoming(input: ContextBriefPlanningHandoffInput): string {
         if (input.intentProfile?.planningMode === 'externally_planned') {
             lines.push('> Planning mode is `externally_planned`, but no active imported session was found in this 7-day horizon. Do not silently replace the plan; clarify whether the prior block ended, the next block starts later, or plan data is unavailable.');
         } else {
-            lines.push('No fixed activity or imported-plan session is recorded in this 7-day horizon. This only describes app-held commitments; it does not prove the athlete has no calendar constraints outside the app.');
+            lines.push('No fixed activity, travel block or imported-plan session is recorded in this 7-day horizon. This only describes app-held commitments; it does not prove the athlete has no calendar constraints outside the app.');
         }
         return lines.join('\n');
     }
 
-    lines.push('', '| Date | Source | Session / commitment | Dose | Priority / flexibility | Notes |', '|---|---|---|---|---|---|');
+    lines.push('', '| Date / range | Source | Session / commitment | Dose / scaling | Priority / flexibility | Notes |', '|---|---|---|---|---|---|');
     for (const row of rows) {
         lines.push(`| ${row.date} | ${row.source} | ${row.title} | ${row.dose} | ${row.authority} | ${row.notes || '—'} |`);
     }
@@ -221,7 +297,8 @@ function renderUseInstructions(): string {
         '- For **future days**, preserve the intended purpose and hard/easy spacing of key sessions. Do not pre-emptively downgrade a future quality day merely because the preceding planned work may create normal fatigue; reassess that day when current data exists.',
         '- Favorable recovery metrics may support proceeding with the intended dose, but are not a reason by themselves to add volume or intensity beyond the plan.',
         '- Treat respiration robust statistics and the observation-only median/MAD fields as context for pattern recognition, not independent additive penalties.',
-        '- Respect fixed activities and imported-plan sessions above. If a change is warranted, explain which constraint or new evidence justifies it.',
+        '- Respect fixed activities, travel scaling blocks and imported-plan sessions above. If a change is warranted, explain which constraint or new evidence justifies it.',
+        '- Honor recorded sensor capabilities. If a sensor is unknown or unavailable, do not make the session depend solely on that sensor; provide an executable RPE/HR/feel alternative as appropriate.',
         '- Prefer dated/current records when information conflicts. Explicitly call out missing or stale data instead of assuming normality.',
         '',
         '### If the user asks for an importable schedule',
@@ -265,5 +342,7 @@ export function enhanceContextBriefForPlanning(
         ? `${withHandoff.slice(0, trainingIndex)}\n\n${timeline}${withHandoff.slice(trainingIndex)}`
         : timeline ? `${withHandoff}\n\n${timeline}` : withHandoff;
 
-    return `${withTimeline.trimEnd()}\n\n${renderUpcoming(input)}\n\n${renderUseInstructions()}\n`;
+    const goalSpecifics = renderGoalSpecifics(input.goals);
+    const goalDetail = goalSpecifics ? `\n\n${goalSpecifics}` : '';
+    return `${withTimeline.trimEnd()}${goalDetail}\n\n${renderUpcoming(input)}\n\n${renderUseInstructions()}\n`;
 }
