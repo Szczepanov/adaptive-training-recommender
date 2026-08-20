@@ -268,6 +268,17 @@ A synthetic sweep is useful for exposing thresholds but is **not** sufficient ca
 its own. Historical replay or prospectively collected labelled data remains required before a
 new weight/estimator is enabled in production.
 
+### Evidence status
+
+`scripts/respiration_baseline_evidence.py` runs a first synthetic sweep for respiration:
+stable-healthy, noisy-but-healthy, self-resolving "mild cold", sustained-illness, and
+quantized/tied-values profiles against the real `calculate_median`/`calculate_mad` estimators,
+reporting mean-minus-median divergence, zero-MAD/tied-majority frequency, and a
+strain-contribution comparison against a mirrored mean/stdev counterfactual. This satisfies
+none of the release criteria above by itself -- it is threshold-discovery evidence only, with
+no historical replay and no labelled illness episodes. `RespirationStrainPolicy` remains
+`'off'` in production until that evidence exists.
+
 ---
 
 ## Consequences
