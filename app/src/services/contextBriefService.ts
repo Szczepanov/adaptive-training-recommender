@@ -54,6 +54,13 @@ export class ContextBriefService {
             { length: UPCOMING_CONTEXT_DAYS },
             (_, offset) => addDaysToLocalDateString(targetDate, offset),
         );
+        // External-plan placement spreads flexible sessions within their whole plan week.
+        // A fixed activity just before or after the 7-day handoff horizon can therefore
+        // change which date a session resolves onto inside the horizon. Six calendar days
+        // of padding on both sides fully covers every Monday-Sunday plan week intersecting
+        // the handoff, without requiring timezone-sensitive weekday arithmetic here.
+        const placementOccupancyStart = addDaysToLocalDateString(targetDate, -6);
+        const placementOccupancyEnd = addDaysToLocalDateString(upcomingEndDate, 6);
         const unavailableSources: string[] = [];
 
         const snapshotDates = Array.from(
@@ -79,9 +86,9 @@ export class ContextBriefService {
                 preferencesService.getPreferencesState(userId),
                 trainingIntentProfileService.getProfileState(userId),
                 goalService.getActiveGoalsState(userId),
-                // Future fixed activities are part of the planning state, not history.
-                // The query is inclusive at both ends, matching FixedActivityService.
-                fixedActivityService.getActivitiesInRangeState(userId, targetDate, upcomingEndDate),
+                // Fixed activities are fetched slightly wider than the visible handoff so
+                // imported-plan placement has the full occupancy of every intersecting week.
+                fixedActivityService.getActivitiesInRangeState(userId, placementOccupancyStart, placementOccupancyEnd),
             ] as const);
 
         const snapshots: DailyRecoverySnapshot[] = [];
@@ -168,9 +175,11 @@ export class ContextBriefService {
 
         const fixedActivitiesReadable = fixedActivityResult.status === 'fulfilled'
             && ['AVAILABLE', 'MISSING'].includes(fixedActivityResult.value.status);
-        const upcomingFixedActivities = fixedActivityResult.status === 'fulfilled' && fixedActivityResult.value.status === 'AVAILABLE'
+        const placementFixedActivities = fixedActivityResult.status === 'fulfilled' && fixedActivityResult.value.status === 'AVAILABLE'
             ? fixedActivityResult.value.data.filter(activity => !activity.isCompleted)
             : [];
+        const upcomingFixedActivities = placementFixedActivities.filter(activity =>
+            activity.date >= targetDate && activity.date <= upcomingEndDate);
         if (!fixedActivitiesReadable) {
             unavailableSources.push('future fixed activities');
         }
@@ -178,10 +187,11 @@ export class ContextBriefService {
         const upcomingExternalSessions: UpcomingExternalPlanSession[] = [];
         if (fixedActivitiesReadable) {
             // Resolve the active plan independently for each future date so plan revision
-            // effective-from boundaries and overlapping re-imports are respected. The same
-            // fixed-activity occupancy is supplied to every placement resolution.
+            // effective-from boundaries and overlapping re-imports are respected. Use the
+            // padded occupancy set above, not only visible future commitments, because an
+            // earlier/later fixed day in the same plan week can move a flexible session.
             const activePlanResults = await Promise.allSettled(
-                upcomingDates.map(date => activeExternalPlanService.getActivePlanState(userId, date, upcomingFixedActivities)),
+                upcomingDates.map(date => activeExternalPlanService.getActivePlanState(userId, date, placementFixedActivities)),
             );
             let unreadablePlanDays = 0;
             for (let index = 0; index < activePlanResults.length; index++) {
