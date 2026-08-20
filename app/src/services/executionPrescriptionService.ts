@@ -18,22 +18,6 @@ function hasSessionSource(value: unknown): boolean {
     return source.kind === 'unplanned_fixture' && typeof source.fixtureId === 'string';
 }
 
-/** Optional (M3.2): absent on prescriptions written before this field existed. */
-function hasValidDisplayMetadata(value: unknown): boolean {
-    if (value === undefined) return true;
-    if (!value || typeof value !== 'object') return false;
-    const meta = value as Record<string, unknown>;
-    if (typeof meta.title !== 'string' || typeof meta.intent !== 'string') return false;
-    if (meta.summary !== undefined && typeof meta.summary !== 'string') return false;
-    if (meta.dominantModality !== undefined && typeof meta.dominantModality !== 'string') return false;
-    if (meta.duration !== undefined) {
-        if (!meta.duration || typeof meta.duration !== 'object') return false;
-        const duration = meta.duration as Record<string, unknown>;
-        if (typeof duration.min !== 'number' || typeof duration.max !== 'number') return false;
-    }
-    return true;
-}
-
 export class ExecutionPrescriptionService {
     private readonly db: Firestore;
 
@@ -81,8 +65,7 @@ export class ExecutionPrescriptionService {
                 typeof data.prescriptionHash === 'string' &&
                 hasSessionSource(data.sessionSource) &&
                 typeof data.definitionHash === 'string' &&
-                Array.isArray(data.blocks) &&
-                hasValidDisplayMetadata(data.displayMetadata)
+                Array.isArray(data.blocks)
             ) {
                 const prescription = data as unknown as ExecutionPrescription;
                 if (await hashExecutionPrescription(prescription) !== prescriptionHash) {

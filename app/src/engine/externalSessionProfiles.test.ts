@@ -1,12 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import {
-    deriveExternalSessionProfiles, externalEventAsFixedActivity, toGateableSession,
-    externalSessionDisplaySummary, externalSessionDisplayPrescription, sessionDefinitionToDisplayPrescription,
-} from './externalSessionProfiles';
+import { deriveExternalSessionProfiles, externalEventAsFixedActivity, toGateableSession } from './externalSessionProfiles';
 import { DEFAULT_COST_BY_MODALITY } from './completedTraining';
 import type { ExternalPlanSession, ExternalSessionIntensity, ExternalSessionModality } from './models';
-import type { ExternalPlanSessionV2 } from '../sessions/externalPlanV2';
-import type { SessionDefinition } from '../sessions/models';
 
 function session(modality: ExternalSessionModality, intensity: ExternalSessionIntensity, overrides: Partial<ExternalPlanSession> = {}): ExternalPlanSession {
     return {
@@ -121,51 +116,5 @@ describe('toGateableSession', () => {
     it('assigns a recovery-intensity session to a recovery category', () => {
         expect(toGateableSession(session('cycling', 'recovery')).category).toBe('Mobility/Recovery');
         expect(toGateableSession(session('cycling', 'hard')).category).toBe('Hard Endurance');
-    });
-});
-
-describe('display helpers (M3.6: v1 and v2 sessions render identically)', () => {
-    const v2Definition: SessionDefinition = {
-        schemaVersion: 1, id: 'w1', revision: 1, title: 'V2 Session', summary: 'A v2 session summary.', intent: 'training',
-        blocks: [{
-            id: 'block-main', role: 'main', executionMode: 'sequential',
-            steps: [{
-                id: 'step-1', kind: 'exercise', title: 'Threshold interval',
-                exerciseRef: { kind: 'unresolved_free_text', name: 'Threshold interval' },
-                dose: { kind: 'duration', sets: 3, seconds: 600 },
-                rest: 120,
-                notes: 'Hold steady power.',
-            }],
-        }],
-    };
-    const v2Session: ExternalPlanSessionV2 = {
-        id: 's1', title: 'Session', priority: 'key',
-        placement: { week: 1, flexibility: 'any_day', ifMissed: 'drop' },
-        gating: { modality: 'cycling', intensity: 'hard', durationMin: 60, durationMax: 75, environment: 'either', equipment: [] },
-        definition: v2Definition,
-    };
-
-    it('externalSessionDisplaySummary falls back to title when a v2 definition has no summary, and reads prescription.summary for v1', () => {
-        expect(externalSessionDisplaySummary(session('cycling', 'hard', { prescription: { summary: 'v1 summary' } }))).toBe('v1 summary');
-        expect(externalSessionDisplaySummary(v2Session)).toBe('A v2 session summary.');
-        expect(externalSessionDisplaySummary({ ...v2Session, definition: { ...v2Definition, summary: undefined } }))
-            .toBe('V2 Session');
-    });
-
-    it('sessionDefinitionToDisplayPrescription flattens a v2 definition into the v1 flat step shape', () => {
-        const prescription = sessionDefinitionToDisplayPrescription(v2Definition);
-        expect(prescription.summary).toBe('A v2 session summary.');
-        expect(prescription.steps).toHaveLength(1);
-        expect(prescription.steps![0]).toMatchObject({
-            name: 'Threshold interval', sets: 3, durationSec: 600, recoverySec: 120, notes: 'Hold steady power.',
-        });
-    });
-
-    it('externalSessionDisplayPrescription dispatches on schema without the caller needing to know which one it has', () => {
-        const v1Result = externalSessionDisplayPrescription(session('cycling', 'hard', { prescription: { summary: 'v1', steps: [{ name: 'Warm-up', durationMin: 10 }] } }));
-        expect(v1Result.steps).toHaveLength(1);
-        const v2Result = externalSessionDisplayPrescription(v2Session);
-        expect(v2Result.steps).toHaveLength(1);
-        expect(v2Result.steps![0].name).toBe('Threshold interval');
     });
 });

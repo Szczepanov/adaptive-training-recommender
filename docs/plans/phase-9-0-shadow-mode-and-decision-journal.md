@@ -26,7 +26,6 @@ The code in this phase collects evidence; it does not change recommendation poli
 
 * **9.0.1 must be complete before the block starts.** Shadowing against ingestion gaps measures the sync, not the engine.
 * The athlete keeps prompting their AI exactly as today. Changing the manual loop mid-block invalidates the comparison.
-* **Keep the decision policy stable during the block.** Once 9.0.7 starts, do not change recommendation thresholds, selection behavior, decision-field equality, or replay/provenance semantics inside the same evidence segment. Evidence-only/UI work may continue when it cannot reach the engine or change reveal/journal ordering. If a decision-affecting change is unavoidable, end the segment, record the policy/version boundary, and report the segments separately rather than pooling them as one stable-policy block.
 
 ---
 
@@ -36,11 +35,11 @@ The code in this phase collects evidence; it does not change recommendation poli
 
 Operational, not code:
 
-1. Deploy the Cloud Run Job and the **morning polling** Cloud Scheduler trigger documented in `docs/ops/cloud-run-deployment.md`: `*/15 5-9 * * *` in `Europe/Warsaw`, without `--force`. The Firestore freshness gate (`GARMIN_STALENESS_MINUTES`) is what keeps most scheduler ticks from calling Garmin.
+1. Deploy the Cloud Run Job and Cloud Scheduler trigger documented in `docs/ops/cloud-run-deployment.md`, scheduled daily at `05:00 Europe/Warsaw` (`0 5 * * *`).
 2. Run `uv run python -m garmin_sync backfill --days 56` so the 28-day objective baselines are mature before day 1.
-3. Run `uv run python -m garmin_sync audit` over the pre-block/backfill window and record the coverage result. Record the deployed scheduler expression and staleness setting with the operational evidence so the block can be reproduced.
+3. Run `uv run python -m garmin_sync audit` over the block window and record the coverage result.
 
-**Done when.** Seven consecutive days land unattended under the documented polling schedule and the audit reports no gap in the backfilled window. A gap discovered mid-block is a confound, not a data point.
+**Done when.** Seven consecutive days land unattended and the audit reports no gap in the backfilled window. A gap discovered mid-block is a confound, not a data point.
 
 ---
 
@@ -158,8 +157,6 @@ This boundary is load-bearing: a journal that can influence the decision it meas
 
 Not a code task. Run 4–6 weeks of: check-in, record the AI verdict, read the engine verdict, answer adherence.
 
-Keep each day's `policyVersion` in the export as already designed. If a decision-affecting version boundary occurs despite the precondition above, treat it as a new evidence segment and report agreement separately by stable-policy segment.
-
 **Done when** the export contains:
 
 * **≥ 28 days** with both engine and external verdicts;
@@ -175,7 +172,6 @@ If the third gate is not met, the data may still support Phase 9's corpus, but a
 Write a dated analysis in `docs/analysis/` reporting:
 
 * agreement overall and split by `sawEngineVerdictFirst`;
-* agreement split by stable `policyVersion` segment if the block crossed a decision-affecting version boundary;
 * every disagreement row with the athlete's journal note;
 * directional bias (engine systematically more or less conservative);
 * whether disagreements concentrate on days where subjective scores diverge from the athlete's own trailing average, the hypothesis in [ADR-0020](../adr/0020-subjective-baselines-in-readiness-mode.md).
@@ -210,7 +206,6 @@ Then choose one:
 | Selective evidence editing/deletion. | Morning verdict, note, anchoring flag, and creation timestamp are immutable; journal deletion is denied. |
 | Malformed rows silently improve apparent coverage. | Strict parser plus explicit invalid-record count in export source status. |
 | Exact imported verdict is lost behind the three-value mode. | Persist exact five-value `engineVerdict`; legacy fallback only for rows that predate it. |
-| Decision policy changes during the block and contaminates the comparison. | Keep policy/equality/replay semantics stable; if an unavoidable decision-affecting change lands, end the evidence segment and report the versions separately rather than pooling them. |
 | The log starts influencing recommendations. | 9.0.6 makes that a structural test failure. |
 | The athlete stops recording. | Report the lapse rather than silently retry/backfill; daily-use viability is itself evidence. |
 | Five values flatten nuance. | Keep `externalNote` verbatim and inspect all disagreement rows in 9.0.8. |

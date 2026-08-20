@@ -6,7 +6,6 @@ import {
     SUBJECTIVE_BASELINE_DAYS,
     type ContextBriefInput,
 } from '../engine/contextBrief';
-import { injectActivityTelemetryIntoContextBrief } from '../engine/contextBriefActivityTelemetry';
 import { parseSubjectiveCheckin } from '../persistence/parsers/decisionInputs';
 import { addDaysToLocalDateString, getLocalDateString } from '../utils/localDate';
 import { activityService } from './activityService';
@@ -161,10 +160,9 @@ export class ContextBriefService {
             intentProfile,
             goals,
         };
-        const text = injectActivityTelemetryIntoContextBrief(buildContextBrief(input), activities);
 
         return {
-            text,
+            text: buildContextBrief(input),
             startDate,
             asOfDate: targetDate,
             windowDays,

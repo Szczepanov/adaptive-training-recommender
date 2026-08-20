@@ -2,22 +2,16 @@ import { DEFAULT_COST_BY_MODALITY, DEFAULT_STIMULUS_BY_MODALITY } from './comple
 import type { GateableSession } from './eligibility';
 import { ENRICHED_TEMPLATES } from './templates';
 import type {
+    ExternalPlanSession,
     GuardrailKey,
     CompletedTrainingIntensity,
     ExternalSessionIntensity,
     ExternalSessionModality,
-    ExternalPrescription,
-    ExternalPrescriptionStep,
     FixedActivity,
     SessionTemplate,
     WorkoutCostProfile,
     WorkoutStimulusProfile,
 } from './models';
-// M3.6: most of this module only ever reads gating/isEvent/id/title, identical on v1 and
-// v2 sessions -- widened to accept either rather than kept v1-only. `toSyntheticTemplate`
-// additionally needs a display summary, which the two schemas carry differently.
-import { isV2Session, type AnyExternalPlanSession as ExternalPlanSession } from '../sessions/externalPlanV2';
-import type { RangeOrNumber, SessionDefinition, SessionStep } from '../sessions/models';
 
 /** The import vocabulary is lowercase and sport-facing; the engine's is capitalised and
  * template-facing. One explicit table rather than a case-insensitive match, so an
@@ -244,67 +238,13 @@ export function isExternalTemplateId(templateId: string): boolean {
  * -- is more honest in the type system and touches six modules. The reserved `ext:`
  * namespace and `externalTemplateNeverInCatalog.test.ts` keep the two populations apart.
  */
-/** v1 requires `prescription.summary`; a v2 session's content is a `SessionDefinition`,
- * whose `summary` is optional (falls back to `title`, which is guaranteed on both). */
-export function externalSessionDisplaySummary(session: ExternalPlanSession): string {
-    return isV2Session(session) ? (session.definition.summary ?? session.definition.title) : session.prescription.summary;
-}
-
-function rangeMidpoint(value: RangeOrNumber | undefined): number | undefined {
-    if (value === undefined) return undefined;
-    return typeof value === 'number' ? value : Math.round((value.min + value.max) / 2);
-}
-
-function stepDisplayName(step: SessionStep): string {
-    if (step.title) return step.title;
-    if (step.exerciseRef?.kind === 'unresolved_free_text') return step.exerciseRef.name;
-    if (step.exerciseRef?.kind === 'catalog') return step.exerciseRef.exerciseId;
-    return 'Step';
-}
-
-/**
- * Flattens a v2 session's normalized `SessionDefinition` into v1's flat
- * `Recommendation.externalPrescription` shape, so every existing display consumer
- * (Home.tsx, DetailedTodayPlan, ...) keeps working unchanged (M3.6). Lossy for display
- * only -- laterality, load, option sets and companions have no v1 display equivalent and
- * are dropped here; `sessionDefinitionResolver.ts` uses the full-fidelity definition for
- * execution instead.
- */
-export function sessionDefinitionToDisplayPrescription(definition: SessionDefinition): ExternalPrescription {
-    const steps: ExternalPrescriptionStep[] = definition.blocks.flatMap(block =>
-        block.steps.map((step): ExternalPrescriptionStep => {
-            const durationSec = step.dose?.kind === 'duration' ? rangeMidpoint(step.dose.seconds) : undefined;
-            const recoverySec = rangeMidpoint(step.rest);
-            const sets = step.dose && 'sets' in step.dose ? step.dose.sets : undefined;
-            return {
-                name: stepDisplayName(step),
-                ...(sets !== undefined ? { sets } : {}),
-                ...(step.dose?.kind === 'repetition' ? { repeat: rangeMidpoint(step.dose.reps) } : {}),
-                ...(durationSec !== undefined ? { durationSec } : {}),
-                ...(recoverySec !== undefined ? { recoverySec } : {}),
-                ...(step.notes ? { notes: step.notes } : {}),
-            };
-        }),
-    );
-    return {
-        summary: definition.summary ?? definition.title,
-        ...(steps.length > 0 ? { steps } : {}),
-    };
-}
-
-/** The single dispatch point every display consumer (rules.ts, ExternalPlanWeek.tsx, ...)
- * should use rather than reading `.prescription` directly, which only exists on v1. */
-export function externalSessionDisplayPrescription(session: ExternalPlanSession): ExternalPrescription {
-    return isV2Session(session) ? sessionDefinitionToDisplayPrescription(session.definition) : session.prescription;
-}
-
 export function toSyntheticTemplate(session: ExternalPlanSession, planId: string, revision: number): SessionTemplate {
     const gateable = toGateableSession(session);
     const profiles = deriveExternalSessionProfiles(session);
     return {
         id: externalTemplateId(planId, revision, session.id),
         title: session.title,
-        description: externalSessionDisplaySummary(session),
+        description: session.prescription.summary,
         category: gateable.category,
         modality: gateable.modality,
         durationMin: gateable.durationMin,

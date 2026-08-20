@@ -1,8 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { generateZwiftFromPrescription, generateZwiftFromExternalSession, generateZwiftFromExternalSessionV2 } from './zwiftExport';
+import { generateZwiftFromPrescription, generateZwiftFromExternalSession } from './zwiftExport';
 import type { WorkoutPrescription } from '../workouts/models';
 import type { ExternalPlanSession } from '../engine/models';
-import type { ExternalPlanSessionV2 } from '../sessions/externalPlanV2';
 
 describe('zwiftExport', () => {
     it('generates valid Zwift XML from a cycling workout prescription', () => {
@@ -89,61 +88,6 @@ describe('zwiftExport', () => {
         expect(xml).toContain('<Cooldown Duration="600"');
     });
 
-    it('generates valid Zwift XML from a v2 external plan session using block roles instead of name-text regex (M3.6)', () => {
-        const session: ExternalPlanSessionV2 = {
-            id: 'ext-s1-v2',
-            title: 'Threshold 3x12',
-            priority: 'key',
-            placement: { week: 1, preferredDay: 'tuesday', flexibility: 'preferred', ifMissed: 'carry_forward' },
-            gating: { modality: 'cycling', intensity: 'hard', durationMin: 75, durationMax: 90, environment: 'either', equipment: [] },
-            definition: {
-                schemaVersion: 1, id: 'ext-s1-v2', revision: 1, title: 'Threshold 3x12', summary: '3x12 at threshold.', intent: 'training',
-                blocks: [
-                    {
-                        id: 'block-warmup', role: 'warmup', executionMode: 'sequential',
-                        steps: [{ id: 's1', kind: 'exercise', title: 'Warm-up', exerciseRef: { kind: 'unresolved_free_text', name: 'Warm-up' }, dose: { kind: 'duration', seconds: 900 } }],
-                    },
-                    {
-                        id: 'block-main', role: 'main', executionMode: 'sequential',
-                        steps: [{ id: 's2', kind: 'exercise', title: 'Interval', exerciseRef: { kind: 'unresolved_free_text', name: 'Interval' }, dose: { kind: 'duration', sets: 3, seconds: 720 }, rest: 240 }],
-                    },
-                    {
-                        id: 'block-cooldown', role: 'cooldown', executionMode: 'sequential',
-                        steps: [{ id: 's3', kind: 'exercise', title: 'Cool-down', exerciseRef: { kind: 'unresolved_free_text', name: 'Cool-down' }, dose: { kind: 'duration', seconds: 600 } }],
-                    },
-                ],
-            },
-        };
-
-        const xml = generateZwiftFromExternalSessionV2(session);
-        expect(xml).toContain('<workout_file>');
-        expect(xml).toContain('<name>Threshold 3x12</name>');
-        expect(xml).toContain('<Warmup Duration="900"');
-        expect(xml).toContain('<Intervals Repeat="3" OnDuration="720" OffDuration="240"');
-        expect(xml).toContain('<Cooldown Duration="600"');
-    });
-
-    it('rejects non-sequential execution modes when exporting v2 session to Zwift', () => {
-        const session: ExternalPlanSessionV2 = {
-            id: 'ext-circuit-v2',
-            title: 'Circuit Ride',
-            priority: 'key',
-            placement: { week: 1, preferredDay: 'tuesday', flexibility: 'preferred', ifMissed: 'carry_forward' },
-            gating: { modality: 'cycling', intensity: 'hard', durationMin: 45, durationMax: 60, environment: 'indoor', equipment: ['indoor_bike'] },
-            definition: {
-                schemaVersion: 1, id: 'ext-circuit-v2', revision: 1, title: 'Circuit Ride', intent: 'training',
-                blocks: [
-                    {
-                        id: 'block-circuit', role: 'main', executionMode: 'circuit',
-                        steps: [{ id: 's1', kind: 'exercise', title: 'Sprint', exerciseRef: { kind: 'unresolved_free_text', name: 'Sprint' }, dose: { kind: 'duration', seconds: 30 } }],
-                    },
-                ],
-            },
-        };
-
-        expect(() => generateZwiftFromExternalSessionV2(session)).toThrowError(/circuit executionMode/);
-    });
-
     it('generates multi-set intervals in Zwift XML for 30/15 sessions', () => {
         const session: ExternalPlanSession = {
             id: 'w1-vo2',
@@ -191,31 +135,5 @@ describe('zwiftExport', () => {
 
         const withFtp = generateZwiftFromExternalSession(session, { ftpWatts: 300 });
         expect(withFtp).toContain('<SteadyState Duration="1200" Power="1.00"/>');
-    });
-
-    it('parses power targets from notes for v2 sessions when athlete FTP is provided', () => {
-        const session: ExternalPlanSessionV2 = {
-            id: 'w1-z2-v2',
-            title: 'Zone 2 cycling',
-            priority: 'supporting',
-            placement: { week: 1, preferredDay: 'tuesday', flexibility: 'any_day', ifMissed: 'drop' },
-            gating: { modality: 'cycling', intensity: 'moderate', durationMin: 60, durationMax: 60, environment: 'outdoor', equipment: [] },
-            definition: {
-                schemaVersion: 1, id: 'w1-z2-v2', revision: 1, title: 'Zone 2 cycling', intent: 'training',
-                blocks: [{
-                    id: 'block-main', role: 'main', executionMode: 'sequential',
-                    steps: [{
-                        id: 'step-z2', kind: 'exercise', title: 'Zone 2 cycling',
-                        exerciseRef: { kind: 'unresolved_free_text', name: 'Zone 2 cycling' },
-                        dose: { kind: 'duration', seconds: 3600 },
-                        notes: 'Approximately 140-175 W with smooth cadence and minimal power variability.',
-                    }],
-                }],
-            },
-        };
-
-        const withFtp = generateZwiftFromExternalSessionV2(session, { ftpWatts: 250 });
-        // Average watts = 157.5 W, 157.5 / 250 = 0.63
-        expect(withFtp).toContain('<SteadyState Duration="3600" Power="0.63"/>');
     });
 });

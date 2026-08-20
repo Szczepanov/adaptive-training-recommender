@@ -15,7 +15,6 @@ import { sessionDefinitionService, type SessionDefinitionHeader } from '../../se
 import { prepareUnplannedSessionLaunch } from '../../services/sessionAuthoringService';
 import { getGroupProgress } from '../../sessions/groupProgression';
 import { GroupProgress } from './GroupProgress';
-import { ChoiceCard } from './ChoiceCard';
 import './SessionRunner.css';
 
 // Import positive fixtures for quick unplanned session launch
@@ -39,18 +38,6 @@ const AVAILABLE_FIXTURES: SessionDefinition[] = [
 
 function formatRange(value: RangeOrNumber): string {
     return typeof value === 'number' ? String(value) : `${value.min}–${value.max}`;
-}
-
-/** M4.3: `notEarlierThanMinutesAfter` is an authored timing constraint (e.g. tissue/hydration
- * recovery before a companion), not just documentation -- a companion with none set is always
- * eligible immediately. */
-function isCompanionEligibleNow(
-    companion: { notEarlierThanMinutesAfter?: number },
-    finishedAt: number,
-    now: number,
-): boolean {
-    if (companion.notEarlierThanMinutesAfter === undefined) return true;
-    return now >= finishedAt + companion.notEarlierThanMinutesAfter * 60_000;
 }
 
 function formatEffort(step: SessionStep): string | null {
@@ -96,30 +83,6 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
     const [savedDefinitions, setSavedDefinitions] = useState<SessionDefinitionHeader[]>([]);
     const [savedDefinitionsError, setSavedDefinitionsError] = useState<string | null>(null);
     const [startingSavedDefinitionId, setStartingSavedDefinitionId] = useState<string | null>(null);
-    // M4.3: a companion is a separately executable session referenced from the one that just
-    // finished (SessionDefinition.companionSessions), never an embedded block -- those already
-    // render inline within the same execution. Starting one creates its own execution; it may
-    // just as well be skipped. `finishedTitle` is only for the prompt's header copy.
-    const [companionPrompt, setCompanionPrompt] = useState<{
-        finishedTitle: string;
-        finishedAt: number;
-        companions: NonNullable<SessionDefinition['companionSessions']>;
-    } | null>(null);
-    const [startingCompanionId, setStartingCompanionId] = useState<string | null>(null);
-    const [companionError, setCompanionError] = useState<string | null>(null);
-    // Ticks the companion prompt's "available in N minutes" copy toward eligibility -- only
-    // runs while the prompt is open, so it costs nothing the rest of the runner's lifetime.
-    // Re-synced to Date.now() the instant the prompt opens (not just on the first interval
-    // tick) -- otherwise this would hold whatever stale value it had from mount/the previous
-    // prompt (e.g. from ~40 minutes into a completed session) for up to 15 seconds, making an
-    // immediately-eligible companion appear falsely gated.
-    const [companionPromptNow, setCompanionPromptNow] = useState(() => Date.now());
-    useEffect(() => {
-        if (!companionPrompt) return;
-        setCompanionPromptNow(Date.now());
-        const interval = setInterval(() => setCompanionPromptNow(Date.now()), 15_000);
-        return () => clearInterval(interval);
-    }, [companionPrompt]);
     const [pendingGroupAdvance, setPendingGroupAdvance] = useState<{
         blockIndex: number;
         stepIndex: number;
@@ -215,45 +178,6 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
         }
     };
 
-    /** Resolves a companion's `definitionRef` the same two ways the fixture/saved-session
-     * pickers above already resolve a startable definition -- a known reviewed fixture
-     * (covers the M0.2 corpus's recovery-spin companion) or one of the athlete's own saved
-     * manual definitions -- and starts it as its own independent, no-selection-authority
-     * execution (D-MAUTH `unplanned_log`), exactly like starting any other unplanned session. */
-    const startCompanion = async (companion: NonNullable<SessionDefinition['companionSessions']>[number]) => {
-        if (companionPrompt && !isCompanionEligibleNow(companion, companionPrompt.finishedAt, companionPromptNow)) {
-            setCompanionError(`"${companion.definitionRef}" isn't available yet -- it opens ${companion.notEarlierThanMinutesAfter} minutes after the primary session finished.`);
-            return;
-        }
-        setStartingCompanionId(companion.id);
-        setCompanionError(null);
-        try {
-            const fixture = AVAILABLE_FIXTURES.find(candidate => candidate.id === companion.definitionRef);
-            if (fixture) {
-                await runner.startFixtureSession(fixture);
-                setCompanionPrompt(null);
-                return;
-            }
-            const header = savedDefinitions.find(candidate => candidate.definitionId === companion.definitionRef);
-            if (header) {
-                const result = await sessionDefinitionService.getDefinitionRevision(userId, header.definitionId, header.latestRevision);
-                if (result.status !== 'AVAILABLE') throw new Error('The companion session cannot be read safely.');
-                const launch = await prepareUnplannedSessionLaunch(userId, result.data);
-                await runner.startSession(launch.definition, launch.binding.sessionSource, {
-                    occurrenceId: launch.binding.occurrenceId,
-                    prescriptionHash: launch.binding.prescriptionHash,
-                });
-                setCompanionPrompt(null);
-                return;
-            }
-            throw new Error(`Could not find "${companion.definitionRef}" among reviewed fixtures or your saved sessions.`);
-        } catch (error) {
-            setCompanionError(error instanceof Error ? error.message : 'Could not start the companion session.');
-        } finally {
-            setStartingCompanionId(null);
-        }
-    };
-
     const handleEntrySubmit = async (payload: SessionEntryPayload) => {
         if (!runner.definition || !runner.activeBlock || !runner.activeStep) return;
 
@@ -286,65 +210,12 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
         if (nextBlockIndex >= 0) runner.selectStep(nextBlockIndex, 0);
     }, [pendingGroupAdvance, runner]);
 
-    // A choice-driven end_session (D-MCHOICE) routes straight to the completion sheet
-    // rather than requiring the athlete to step through every now-optional block.
-    useEffect(() => {
-        if (runner.sessionEnded) setShowCompletionSheet(true);
-    }, [runner.sessionEnded]);
-
     // If no active session, show fixture picker to start an unplanned session
     if (runner.isRestoring) {
         return <div className="session-runner-container no-active"><p>Restoring an active session…</p></div>;
     }
 
     if (!runner.definition || !runner.execution || runner.execution.state !== 'in_progress') {
-        // M4.3: offered once, right after the primary session finishes (completed or
-        // abandoned) -- never concurrently with it. Starting a companion creates its own
-        // execution and takes over this same "active session" view normally; skipping just
-        // dismisses the prompt. Takes priority over the ordinary picker below.
-        if (companionPrompt) {
-            return (
-                <div className="session-runner-container no-active">
-                    <header className="session-runner-header">
-                        <h2>Companion session available</h2>
-                        <p className="session-runner-subtitle">
-                            {companionPrompt.finishedTitle} lists {companionPrompt.companions.length === 1 ? 'a' : companionPrompt.companions.length}
-                            {' '}separately executable companion{companionPrompt.companions.length === 1 ? '' : 's'}. Start now or later — skipping records nothing.
-                        </p>
-                    </header>
-                    {companionError && <p className="session-runner-error" role="alert">{companionError}</p>}
-                    <div className="fixture-grid">
-                        {companionPrompt.companions.map(companion => {
-                            const eligible = isCompanionEligibleNow(companion, companionPrompt.finishedAt, companionPromptNow);
-                            const minutesRemaining = eligible ? 0 : Math.ceil((companionPrompt.finishedAt + (companion.notEarlierThanMinutesAfter ?? 0) * 60_000 - companionPromptNow) / 60_000);
-                            return (
-                                <div key={companion.id} className="fixture-card">
-                                    <div className="fixture-info">
-                                        <span className="fixture-intent-badge">{companion.relation.replaceAll('_', ' ')}{companion.optional ? ' · optional' : ''}</span>
-                                        <h3 className="fixture-title">{companion.definitionRef}</h3>
-                                        {companion.note && <p className="fixture-summary">{companion.note}</p>}
-                                        {!eligible && <p className="fixture-summary">Available in {minutesRemaining} minute{minutesRemaining === 1 ? '' : 's'}.</p>}
-                                    </div>
-                                    <button
-                                        type="button"
-                                        className="start-fixture-btn"
-                                        disabled={startingCompanionId !== null || !eligible}
-                                        onClick={() => startCompanion(companion)}
-                                    >
-                                        {startingCompanionId === companion.id ? 'Starting…' : eligible ? 'Start companion →' : 'Not yet available'}
-                                    </button>
-                                </div>
-                            );
-                        })}
-                    </div>
-                    <div className="session-authoring-actions">
-                        <button type="button" className="start-fixture-btn secondary-authoring-btn" onClick={() => { setCompanionPrompt(null); onClose?.(); }}>
-                            Not now
-                        </button>
-                    </div>
-                </div>
-            );
-        }
         if (runner.execution?.state === 'in_progress') {
             return (
                 <div className="session-runner-container no-active">
@@ -404,29 +275,6 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
     const { definition, activeStep, entries } = runner;
     const activeStepEntries = entries.filter(e => e.stepId === activeStep?.id);
     const comparison = comparePlannedVsPerformed(definition, entries);
-
-    const answeredChoiceIds = new Set(
-        entries
-            .filter(e => e.payload.kind === 'choice')
-            .map(e => (e.payload as { choiceId: string }).choiceId),
-    );
-    // The choice due at the active step -- authored, not yet answered (D-MCHOICE). Other
-    // step controls stay blocked until it is resolved: no code path changes a prescribed
-    // step without a recorded athlete action.
-    const dueChoice = activeStep && runner.activeBlock
-        ? (runner.activeBlock.optionSets ?? []).find(choice => choice.appliesAtStepId === activeStep.id && !answeredChoiceIds.has(choice.id)) ?? null
-        : null;
-
-    function describeChoiceEntry(entry: SessionEntry): string {
-        if (entry.payload.kind !== 'choice') return '';
-        const { choiceId, optionId } = entry.payload;
-        for (const block of definition.blocks) {
-            const choice = block.optionSets?.find(c => c.id === choiceId);
-            const option = choice?.options.find(o => o.id === optionId);
-            if (option) return option.label;
-        }
-        return optionId;
-    }
 
     const stepSummaries: SessionStepSummary[] = comparison.stepComparisons.map((sc, idx) => ({
         exerciseIndex: idx,
@@ -509,7 +357,7 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                         <span className="block-role-label">{block.title || block.role}</span>
                         <div className="step-pills">
                             {block.steps.map((step, sIdx) => {
-                                const stepCompleted = entries.filter(e => e.stepId === step.id && e.payload.kind !== 'choice').length > 0;
+                                const stepCompleted = entries.filter(e => e.stepId === step.id).length > 0;
                                 const isCurrent = runner.activeBlockIndex === bIdx && runner.activeStepIndex === sIdx;
                                 const stepName = step.title || (step.exerciseRef?.kind === 'catalog' ? step.exerciseRef.exerciseId : (step.exerciseRef?.kind === 'unresolved_free_text' ? step.exerciseRef.name : step.id));
                                 return (
@@ -573,45 +421,34 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                         />
                     )}
 
-                    {/* An authored branch point blocks every other control at this step until
-                        it is answered (D-MCHOICE) -- no code path changes a prescribed step
-                        without a recorded athlete action. */}
-                    {dueChoice ? (
-                        <ChoiceCard
-                            choice={dueChoice}
-                            ineligibleOptionIds={runner.ineligibleOptionIds}
-                            onSelect={(optionId, reason) => runner.logChoice(dueChoice.id, optionId, reason)}
-                        />
-                    ) : (
-                        /* Step Input Card */
-                        <div className="input-card-container">
-                            {inputProfile === 'repetition_mass' || inputProfile === 'repetition_bodyweight' ? (
-                                <RepetitionInputCard
-                                    key={activeStep.id}
-                                    step={activeStep}
-                                    onSubmit={handleEntrySubmit}
-                                />
-                            ) : inputProfile === 'duration_hold' ? (
-                                <DurationInputCard
-                                    key={activeStep.id}
-                                    step={activeStep}
-                                    onSubmit={handleEntrySubmit}
-                                />
-                            ) : inputProfile === 'distance_split' ? (
-                                <DistanceInputCard
-                                    key={activeStep.id}
-                                    step={activeStep}
-                                    onSubmit={handleEntrySubmit}
-                                />
-                            ) : (
-                                <CheckoffInputCard
-                                    key={activeStep.id}
-                                    step={activeStep}
-                                    onSubmit={handleEntrySubmit}
-                                />
-                            )}
-                        </div>
-                    )}
+                    {/* Step Input Card */}
+                    <div className="input-card-container">
+                        {inputProfile === 'repetition_mass' || inputProfile === 'repetition_bodyweight' ? (
+                            <RepetitionInputCard
+                                key={activeStep.id}
+                                step={activeStep}
+                                onSubmit={handleEntrySubmit}
+                            />
+                        ) : inputProfile === 'duration_hold' ? (
+                            <DurationInputCard
+                                key={activeStep.id}
+                                step={activeStep}
+                                onSubmit={handleEntrySubmit}
+                            />
+                        ) : inputProfile === 'distance_split' ? (
+                            <DistanceInputCard
+                                key={activeStep.id}
+                                step={activeStep}
+                                onSubmit={handleEntrySubmit}
+                            />
+                        ) : (
+                            <CheckoffInputCard
+                                key={activeStep.id}
+                                step={activeStep}
+                                onSubmit={handleEntrySubmit}
+                            />
+                        )}
+                    </div>
 
                     {/* Logged Sets for Active Step */}
                     <div className="logged-entries-section">
@@ -666,12 +503,6 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                                                     )}
                                                     {entry.payload.kind === 'checkoff' && (
                                                         <span className="set-metrics">✓ Completed</span>
-                                                    )}
-                                                    {entry.payload.kind === 'choice' && (
-                                                        <span className="set-metrics">
-                                                            Chose: {describeChoiceEntry(entry)}
-                                                            {entry.payload.reason && ` — ${entry.payload.reason}`}
-                                                        </span>
                                                     )}
                                                 </div>
                                                 <div className="entry-actions">
@@ -730,41 +561,23 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                         setCompletionError(null);
                     }}
                     onComplete={async (payload) => {
-                        // Captured before completeSession() clears runner.definition, so the
-                        // companion prompt (if any) still knows what just finished and what it
-                        // separately unlocks.
-                        const finishedTitle = definition.title;
-                        const companions = definition.companionSessions;
                         try {
                             await runner.completeSession(payload);
                             setShowCompletionSheet(false);
                             setShowAbandonConfirmation(false);
                             setCompletionError(null);
-                            if (companions && companions.length > 0) {
-                                setCompanionPrompt({ finishedTitle, finishedAt: Date.now(), companions });
-                            } else if (onClose) {
-                                onClose();
-                            }
+                            if (onClose) onClose();
                         } catch {
                             setCompletionError('Could not save completion feedback. Your session is still open, so you can retry.');
                         }
                     }}
                     onAbandon={async () => {
-                        const finishedTitle = definition.title;
-                        const companions = definition.companionSessions;
                         try {
                             await runner.abandonSession();
                             setShowCompletionSheet(false);
                             setShowAbandonConfirmation(false);
                             setCompletionError(null);
-                            // A skipped/abandoned primary session still leaves an independently
-                            // executable companion (e.g. the recovery spin) worth offering --
-                            // it is never gated on the primary's own completion.
-                            if (companions && companions.length > 0) {
-                                setCompanionPrompt({ finishedTitle, finishedAt: Date.now(), companions });
-                            } else if (onClose) {
-                                onClose();
-                            }
+                            if (onClose) onClose();
                         } catch {
                             setCompletionError('Could not abandon the session. It remains open, so you can retry.');
                         }

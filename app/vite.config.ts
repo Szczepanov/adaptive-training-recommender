@@ -26,22 +26,14 @@ export default defineConfig({
     })
   ],
   build: {
-    chunkSizeWarningLimit: 600,
     rollupOptions: {
       output: {
-        manualChunks(rawId) {
-          const id = rawId.replace(/\\/g, '/');
-          if (id.includes('@firebase/firestore') || id.includes('firebase/firestore')) {
-            return 'firebase-firestore';
+        manualChunks(id) {
+          if (id.includes('node_modules/firebase')) {
+            return 'firebase';
           }
-          if (id.includes('@firebase/auth') || id.includes('firebase/auth')) {
-            return 'firebase-auth';
-          }
-          if (id.includes('@firebase/app') || id.includes('firebase/app') || id.includes('@firebase/component') || id.includes('@firebase/util')) {
-            return 'firebase-core';
-          }
-          if (id.includes('node_modules/react/') || id.includes('node_modules/react-dom/') || id.includes('node_modules/scheduler/')) {
-            return 'react-vendor';
+          if (id.includes('node_modules/react')) {
+            return 'vendor';
           }
         }
       }

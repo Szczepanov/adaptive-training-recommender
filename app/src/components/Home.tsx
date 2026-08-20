@@ -2,8 +2,8 @@ import { useState, useEffect, useCallback, useMemo, useRef, memo } from 'react';
 import { decisionComposer } from '../engine/composer';
 import { evaluateTrainingWithIntent, evaluateNextDayPlanWithIntent, adjustSessionRecommendation, evaluateReadinessAndSafetyEnvelope } from '../engine/rules';
 import { mapSnapshotToEngineInput, mapCheckinToSubjectiveInput, mapContextFromGoalsAndTrainingSettings, mapGoalsToUserEvents } from '../engine/adapters';
-import { generateWeekAheadPlanWithIntent, type WeekAheadPlan } from '../engine/planner';
-import { prepareTrainingHistorySnapshot } from '../engine/trainingIntent';
+import { generateWeekAheadPlanWithIntent, trailingHistoryFromCompletedExposures, type WeekAheadPlan } from '../engine/planner';
+import { prepareTrainingHistorySnapshot, resolveTrainingIntent } from '../engine/trainingIntent';
 import type { TrainingHistorySnapshot } from '../engine/trainingHistorySnapshot';
 import { buildRecommendationAudit } from '../engine/provenance';
 import { evaluatePeriodizationPhase, getDaysToEvent } from '../engine/periodization';
@@ -12,7 +12,7 @@ import { resolveExecutionDose } from '../engine/dose';
 import { resolveAvailability } from '../engine/schedule';
 import { adjudicateAuthoredSession, createAuthoredSessionTemplate, estimateAuthoredSessionSystemicCost } from '../engine/authoredSessionGates';
 import { sessionOccurrenceService } from '../services/sessionOccurrenceService';
-import type { AuthoredPlanBlock, BodyRegion, DailyDecisionInput, Recommendation, NextDayPotentialPlan, DailyRecommendation, DecisionJournalEntry, FixedActivity, ShadowVerdict } from '../engine/models';
+import type { AuthoredPlanBlock, BodyRegion, DailyDecisionInput, Recommendation, NextDayPotentialPlan, DailyRecommendation, DecisionJournalEntry, ExternalPlacementAssignment, ExternalPlanPlacement, FixedActivity, ShadowVerdict } from '../engine/models';
 import type { SessionReferenceBinding } from '../sessions/models';
 import type { DataState } from '../engine/dataState';
 import { recommendationService } from '../services/recommendationService';
@@ -25,23 +25,23 @@ import { resolveEngineShadowVerdict } from '../engine/shadowAgreement';
 import { getPreviousLocalDateString, addDaysToLocalDateString } from '../utils/localDate';
 import { getPrescriptionLegend, resolveWorkoutPrescription } from '../workouts';
 import type { WorkoutPrescription } from '../workouts';
+import { computeInternalResponseStrain } from '../engine/fatigue';
+import { critiqueExternalWeek, type ExternalWeekCritique } from '../engine/externalCritique';
+import { applyConfirmedProposal, proposeReplacement, type ReplacementProposal } from '../engine/externalPlacement';
 import {
   activeExternalPlanService,
   externalPlanContextForDate,
   type ActiveExternalPlan,
 } from '../services/activeExternalPlanService';
+import { externalPlanService } from '../services/externalPlanService';
 import { checkinService } from '../services/checkinService';
-import { sessionExecutionService } from '../services/sessionExecutionService';
-import { sessionResponseService } from '../services/sessionResponseService';
-import { relevantFollowupRegions } from '../responses/followupSchedule';
-import { EXERCISES } from '../workouts/exercises';
 import { ExternalVerdictBanner } from './ExternalVerdictBanner';
+import { ExternalPlanWeek } from './ExternalPlanWeek';
 import { WorkoutExportMenu } from './WorkoutExportMenu';
 import { AdherencePrompt, type AdherenceAnswer } from './AdherencePrompt';
 import { DecisionJournalCard } from './DecisionJournalCard';
 import { MinimumSafetyCheckin } from './MinimumSafetyCheckin';
 import { WeekAheadStrip } from './WeekAheadStrip';
-import { LaterDayFollowupCard, type LaterDayFollowupTarget } from './session/LaterDayFollowupCard';
 import {
   canGenerateNormalRecommendation,
   createProvisionalSafetyRecommendation,
@@ -71,26 +71,9 @@ function formatEventTiming(daysToEvent: number | null): string {
   return daysToEvent > 0 ? `In ${daysToEvent} days` : `${Math.abs(daysToEvent)} days ago`;
 }
 
-
-/**
- * Fire-and-forget self-check (M3.2): confirms a just-saved decision's session bindings
- * actually replay against their stored bytes. Skips a day with no bindings at all, so an
- * ordinary catalog/no-session day doesn't pay two extra Firestore reads on every save.
- * Non-fatal by design, matching saveRecommendation's own "shouldn't block the dashboard"
- * idiom -- reports via console.warn only, same as every other integrity check in this
- * codebase (see shadowLogService). Lazily imported so replay.ts stays free of a live
- * Firestore dependency for every other caller (see its own module comment).
- */
-function verifySessionBindingReplay(userId: string, saved: DailyRecommendation | null): void {
-  if (!saved || (!saved.primarySession && !saved.additionalSessions)) return;
-  import('../engine/replay')
-    .then(({ replayRecommendationAuditAgainstSessions }) => replayRecommendationAuditAgainstSessions(userId, saved))
-    .then(result => {
-      if (!result.reproducible) {
-        console.warn(`Recommendation for ${saved.date} does not replay against its stored session bindings:`, result.errors);
-      }
-    })
-    .catch(err => console.warn(`Failed to verify session-binding replay for ${saved.date}:`, err));
+function mondayOf(date: string): string {
+  const weekday = new Date(`${date}T00:00:00Z`).getUTCDay();
+  return addDaysToLocalDateString(date, -((weekday + 6) % 7));
 }
 
 const DetailedTodayPlan = memo(function DetailedTodayPlan({
@@ -107,7 +90,7 @@ const DetailedTodayPlan = memo(function DetailedTodayPlan({
   modality: string;
 }) {
   return (
-    <section className="detailed-plan" aria-label={`Workout details for ${title}`}>
+    <section className="detailed-plan" aria-label="Detailed training plan">
       <div className="detailed-plan-header">
         <div>
           <h5>Today&apos;s Plan</h5>
@@ -182,9 +165,13 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
   const [error, setError] = useState<string | null>(null);
   const [showWorkoutDetails, setShowWorkoutDetails] = useState(false);
   const [pendingAdherence, setPendingAdherence] = useState<{ date: string; recommendation: DailyRecommendation } | null>(null);
-  const [, setTodaysJournalEntry] = useState<DecisionJournalEntry | null>(null);
+  const [recommendationRevealed, setRecommendationRevealed] = useState(false);
+  const [todaysJournalEntry, setTodaysJournalEntry] = useState<DecisionJournalEntry | null>(null);
   const [historySnapshot, setHistorySnapshot] = useState<TrainingHistorySnapshot | null>(null);
-  const [, setActiveExternalPlan] = useState<ActiveExternalPlan | null>(null);
+  const [activeExternalPlan, setActiveExternalPlan] = useState<ActiveExternalPlan | null>(null);
+  const [externalWeekCritique, setExternalWeekCritique] = useState<ExternalWeekCritique | null>(null);
+  const [planWeekFixedActivities, setPlanWeekFixedActivities] = useState<FixedActivity[]>([]);
+  const [placementError, setPlacementError] = useState<string | null>(null);
   const [hasPendingSessionResponse, setHasPendingSessionResponse] = useState(false);
   const pendingAdherenceRef = useRef(pendingAdherence);
   useEffect(() => { pendingAdherenceRef.current = pendingAdherence; }, [pendingAdherence]);
@@ -204,6 +191,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
         .catch(err => console.warn('Failed to sync decision journal actualVerdict from adherence:', err));
     }
   }, [userId]);
+  const handleRevealRecommendation = useCallback(() => setRecommendationRevealed(true), []);
   const handleJournalEntryChange = useCallback((entry: DecisionJournalEntry | null) => setTodaysJournalEntry(entry), []);
   const dashboardRequest = useRef(0);
 
@@ -231,79 +219,6 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
     });
     return () => { cancelled = true; };
   }, [userId, decisionInput]);
-
-  // M5.2: same-day "later_day" follow-up -- distinct from the next-morning tissue prompt
-  // above, which the check-in model has no same-day field for. Gated on M3.5 tissue-tag
-  // relevance (relevantFollowupRegions) so an ordinary easy session with nothing
-  // tissue-relevant in it never nags; only offered once per execution per mount
-  // (dismissedLaterDayKeys), and never for a window a SessionResponse already answers.
-  const [laterDayFollowup, setLaterDayFollowup] = useState<LaterDayFollowupTarget | null>(null);
-  const [dismissedLaterDayKeys, setDismissedLaterDayKeys] = useState<Set<string>>(new Set());
-  const [laterDayFollowupRevision, setLaterDayFollowupRevision] = useState(0);
-
-  useEffect(() => {
-    if (!decisionInput) {
-      setLaterDayFollowup(null);
-      return;
-    }
-    let cancelled = false;
-    const today = decisionInput.date;
-    const tomorrow = addDaysToLocalDateString(today, 1);
-    (async () => {
-      try {
-        const { executions } = await sessionExecutionService.getExecutionsInRange(userId, today, tomorrow);
-        const finished = executions
-          .filter(item => item.execution.state !== 'in_progress')
-          .sort((a, b) => (b.execution.completedAt ?? b.execution.updatedAt).localeCompare(a.execution.completedAt ?? a.execution.updatedAt));
-
-        for (const { execution, entries } of finished) {
-          const key = `execution:${execution.executionId}`;
-          if (dismissedLaterDayKeys.has(key)) continue;
-
-          const exerciseIds: string[] = [];
-          for (const entry of entries) {
-            if (entry.exerciseRef?.kind === 'catalog') exerciseIds.push(entry.exerciseRef.exerciseId);
-          }
-          const facets = exerciseIds
-            .map(id => EXERCISES.find(item => item.id === id)?.facets)
-            .filter((facet): facet is NonNullable<typeof facet> => !!facet);
-          if (relevantFollowupRegions(facets).length === 0) continue;
-
-          const existing = await sessionResponseService.getResponseForWindow(
-            userId,
-            { kind: 'execution', id: execution.executionId },
-            'later_day',
-          );
-          if (existing) continue;
-
-          if (!cancelled) {
-            setLaterDayFollowup({
-              sourceSession: { kind: 'execution', id: execution.executionId, date: execution.date },
-              ...(execution.occurrenceId ? { occurrenceId: execution.occurrenceId } : {}),
-              date: execution.date,
-              title: 'today’s session',
-            });
-          }
-          return;
-        }
-        if (!cancelled) setLaterDayFollowup(null);
-      } catch {
-        if (!cancelled) setLaterDayFollowup(null);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [userId, decisionInput, dismissedLaterDayKeys, laterDayFollowupRevision]);
-
-  const dismissLaterDayFollowup = useCallback(() => {
-    setLaterDayFollowup(current => {
-      if (current) setDismissedLaterDayKeys(prev => new Set(prev).add(`execution:${current.sourceSession.id}`));
-      return null;
-    });
-  }, []);
-  const handleLaterDayAnswered = useCallback(() => {
-    setLaterDayFollowup(null);
-    setLaterDayFollowupRevision(current => current + 1);
-  }, []);
   const activeSettings = useMemo(() => {
     if (!decisionInput) return [];
     const { equipment, guardrails, defaults } = decisionInput.trainingSettings;
@@ -333,6 +248,8 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
 
   const clearExternalPlanState = useCallback(() => {
     setActiveExternalPlan(null);
+    setExternalWeekCritique(null);
+    setPlanWeekFixedActivities([]);
   }, []);
 
   const loadDashboardData = useCallback(async () => {
@@ -416,14 +333,16 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
         }
         setHistorySnapshot(preparedSnapshot);
 
+        const planWeekStart = mondayOf(input.date);
         const planWeekActivitiesState = await fixedActivityService.getActivitiesInRangeState(
-          userId, input.date, addDaysToLocalDateString(input.date, 6),
+          userId, planWeekStart, addDaysToLocalDateString(planWeekStart, 6),
         );
         if (!isCurrent()) return;
         if (planWeekActivitiesState.status !== 'AVAILABLE') {
           console.warn(`Fixed activities for the plan week could not be read (${planWeekActivitiesState.status}); placement falls back to the dates the plan itself implies.`);
         }
         const planWeekActivities = planWeekActivitiesState.status === 'AVAILABLE' ? planWeekActivitiesState.data : [];
+        setPlanWeekFixedActivities(planWeekActivities);
 
         const activeExternalState = await activeExternalPlanService.getActivePlanState(
           userId, input.date, planWeekActivities,
@@ -603,6 +522,29 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
         };
         setRecommendation(todayRec);
 
+        if (activeExternal) {
+          const intent = await resolveTrainingIntent(
+            userId, events, input.date, { subjective, objective }, 7, undefined, preparedSnapshot,
+            todayAndTomorrowPlanBlocks, input.trainingIntentProfile,
+          );
+          if (!isCurrent()) return;
+          setExternalWeekCritique(critiqueExternalWeek({
+            weekStartDate: mondayOf(input.date),
+            planId: activeExternal.plan.planId,
+            revision: activeExternal.plan.revision,
+            placed: activeExternal.placed,
+            microcycle: intent.microcycle,
+            fatigue: intent.fatigue,
+            internalStrain: computeInternalResponseStrain({ subjective, objective }),
+            internalStrainAsOf: input.date,
+            weeklyCommitment: intent.planningContext.profile.weeklyCommitment,
+            trailingHistory: trailingHistoryFromCompletedExposures(intent.history, input.date),
+            fixedActivities: planWeekActivities,
+          }));
+        } else {
+          setExternalWeekCritique(null);
+        }
+
         const tomorrowPlan = await evaluateNextDayPlanWithIntent(
           userId, events, { subjective, objective }, forecastContext, input.date, todayRec, undefined, preparedSnapshot,
           todayAndTomorrowFixedActivities, todayAndTomorrowPlanBlocks, input.trainingIntentProfile, input.preferences,
@@ -610,9 +552,9 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
         if (!isCurrent()) return;
         setNextDayPlan(tomorrowPlan);
 
-        recommendationService.saveRecommendation(userId, input.date, todayRec)
-          .then(saved => verifySessionBindingReplay(userId, saved))
-          .catch(err => console.warn('Failed to persist recommendation:', err));
+        recommendationService.saveRecommendation(userId, input.date, todayRec).catch(err =>
+          console.warn('Failed to persist recommendation:', err)
+        );
       } else if (input.recoverySnapshot && safetyStatus !== 'complete') {
         setRecommendation(createProvisionalSafetyRecommendation(safetyStatus));
         setAdjustmentDirection(null);
@@ -639,6 +581,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
   }, [loadDashboardData]);
 
   useEffect(() => {
+    setRecommendationRevealed(false);
     setTodaysJournalEntry(null);
   }, [decisionInput?.date]);
 
@@ -697,9 +640,9 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
     recommendationService.saveRecommendation(userId, decisionInput.date, {
       ...recommendation,
       adjustment: direction ? adjusted?.adjustment : undefined,
-    })
-      .then(saved => verifySessionBindingReplay(userId, saved))
-      .catch(err => console.warn('Failed to persist adjusted recommendation:', err));
+    }).catch(err =>
+      console.warn('Failed to persist adjusted recommendation:', err)
+    );
   }, [recommendation, canGenerateNormalPlan, decisionInput, computeAdjustedRecommendation, userId]);
 
   const activeRec = useMemo(
@@ -710,7 +653,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
   const todaysEngineVerdict = activeRec && canGenerateNormalPlan
     ? resolveEngineShadowVerdict(activeRec.mode, activeRec.externalVerdict?.decision)
     : null;
-  const recommendationEffectivelyRevealed = true;
+  const recommendationEffectivelyRevealed = recommendationRevealed || !!todaysJournalEntry;
 
   const eventPeriodization = useMemo(() => {
     if (!decisionInput) return null;
@@ -753,6 +696,49 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
     [fixedActivitiesState]
   );
 
+  const handleProposeReplacement = useCallback((sessionId: string, missedDate: string): ReplacementProposal => {
+    if (!activeExternalPlan) throw new Error('No imported plan is active.');
+    return proposeReplacement(
+      activeExternalPlan.plan, activeExternalPlan.placement, sessionId, missedDate,
+      { fixedActivities: planWeekFixedActivities },
+      decisionInput?.date ?? missedDate,
+    );
+  }, [activeExternalPlan, planWeekFixedActivities, decisionInput?.date]);
+
+  const persistAssignments = useCallback(async (assignments: ExternalPlacementAssignment[]) => {
+    if (!activeExternalPlan) return;
+    setPlacementError(null);
+    try {
+      await externalPlanService.savePlacement(userId, {
+        planId: activeExternalPlan.plan.planId,
+        revision: activeExternalPlan.plan.revision,
+        assignments,
+      });
+    } catch (err) {
+      console.error('Failed to save external plan placement:', err);
+      setPlacementError('That change could not be saved. Your plan is unchanged — check your connection and try again.');
+      throw err;
+    }
+    await loadDashboardData();
+  }, [activeExternalPlan, userId, loadDashboardData]);
+
+  const handleConfirmReplacement = useCallback(async (proposal: ReplacementProposal) => {
+    if (!activeExternalPlan) return;
+    const overlay: ExternalPlanPlacement = activeExternalPlan.placement ?? {
+      userId, planId: activeExternalPlan.plan.planId, revision: activeExternalPlan.plan.revision,
+      assignments: [], updatedAt: '',
+    };
+    await persistAssignments(applyConfirmedProposal(overlay, proposal).assignments);
+  }, [activeExternalPlan, userId, persistAssignments]);
+
+  const handleChooseDate = useCallback(async (sessionId: string, date: string) => {
+    if (!activeExternalPlan) return;
+    const existing = activeExternalPlan.placement?.assignments ?? [];
+    await persistAssignments([
+      ...existing.filter(item => item.sessionId !== sessionId),
+      { sessionId, date, status: 'moved' },
+    ]);
+  }, [activeExternalPlan, persistAssignments]);
   const [planBlocksState, setPlanBlocksState] = useState<DataState<AuthoredPlanBlock[]>>({ status: 'AVAILABLE', data: [], revision: null });
   useEffect(() => {
     let cancelled = false;
@@ -838,12 +824,22 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
 
   const completeness = getDataCompleteness();
   const periodizationToday = eventPeriodization?.today ?? null;
-  const subjectiveReadiness = decisionInput?.subjectiveCheckin?.readiness ?? null;
-  const subjectiveReadinessLabel = subjectiveReadiness === null
+  const checkinValues = decisionInput?.subjectiveCheckin
+    ? [
+        decisionInput.subjectiveCheckin.readiness,
+        decisionInput.subjectiveCheckin.sleepQuality,
+        decisionInput.subjectiveCheckin.fatigue,
+        decisionInput.subjectiveCheckin.soreness,
+        decisionInput.subjectiveCheckin.mentalStress,
+        decisionInput.subjectiveCheckin.motivation,
+      ].filter((value): value is number => value !== null)
+    : [];
+  const readinessScore = checkinValues.length > 0
+    ? Math.round(checkinValues.reduce((sum, value) => sum + value, 0) / checkinValues.length)
+    : null;
+  const readinessLabel = readinessScore === null
     ? null
-    : subjectiveReadiness >= 8 ? 'High' : subjectiveReadiness >= 5 ? 'Moderate' : 'Low';
-
-  const isCheckinMissing = !decisionInput?.dataQuality.hasSubjectiveCheckin;
+    : readinessScore >= 8 ? 'High' : readinessScore >= 5 ? 'Moderate' : 'Low';
 
   return (
     <div className="home-container">
@@ -856,115 +852,29 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
           <button type="button" onClick={() => onNavigate('checkin')}>Answer follow-up</button>
         </aside>
       )}
-
-      {laterDayFollowup && (
-        <LaterDayFollowupCard
-          userId={userId}
-          target={laterDayFollowup}
-          onAnswered={handleLaterDayAnswered}
-          onDismiss={dismissLaterDayFollowup}
-        />
-      )}
-
-      {isCheckinMissing && (
-        <section className="checkin-action-gate-card" aria-label="Morning check-in required">
-          <div className="gate-content">
-            <div className="gate-text">
-              <h3>Good morning</h3>
-              <p>Complete your morning check-in (~10 sec) to generate today&apos;s plan.</p>
-            </div>
-            <button
-              type="button"
-              className="btn-primary start-checkin-gate-btn"
-              onClick={() => onNavigate('checkin')}
-            >
-              Start Check-in ✓
-            </button>
-          </div>
-          {decisionInput?.recoverySnapshot && (
-            <div className="gate-garmin-strip">
-              <span className="strip-item">Sleep <strong>{decisionInput.recoverySnapshot.raw.sleepScore ?? '--'}</strong></span>
-              <span className="strip-item">HRV <strong>{decisionInput.recoverySnapshot.raw.hrvOvernightAvg ?? '--'} ms</strong></span>
-              <span className="strip-item">RHR <strong>{decisionInput.recoverySnapshot.raw.restingHr ?? '--'} bpm</strong></span>
-              <span className="strip-item">Battery <strong>{decisionInput.recoverySnapshot.raw.bodyBatteryWake ?? '--'}</strong></span>
-            </div>
-          )}
-        </section>
-      )}
-
       <div className="home-dashboard-layout">
         <div className="home-main-col">
-          {/* State Summary Banner */}
-          <div className="dashboard-card today-status-summary-card">
-            <div className="today-status-header">
-              <div className="today-status-hero-text">
-                <span className="today-status-tag">Today&apos;s Readiness</span>
-                <h3 className="today-status-headline">
-                  {activeRec?.mode === 'recover'
-                    ? 'Recovery Day'
-                    : activeRec?.mode === 'modify'
-                    ? 'Train, but reduce load'
-                    : 'Ready to train'}
-                </h3>
-              </div>
-              {activeRec && (
-                <span className={`status-badge mode-${activeRec.mode}`}>
-                  {MODE_LABELS[activeRec.mode]}
-                </span>
-              )}
-            </div>
-
-            {/* Direct Biomarker Chips */}
-            <div className="today-biomarkers-strip">
-              <div className="biomarker-chip">
-                <span className="biomarker-label">Readiness</span>
-                <span className="biomarker-value">
-                  {subjectiveReadiness !== null ? `${subjectiveReadiness}/10` : '--'}
-                </span>
-              </div>
-              {decisionInput?.recoverySnapshot && (
-                <>
-                  <div className="biomarker-chip">
-                    <span className="biomarker-label">Sleep</span>
-                    <span className="biomarker-value">
-                      {decisionInput.recoverySnapshot.raw.sleepScore ?? '--'}
-                    </span>
-                  </div>
-                  <div className="biomarker-chip">
-                    <span className="biomarker-label">HRV</span>
-                    <span className="biomarker-value">
-                      {decisionInput.recoverySnapshot.raw.hrvOvernightAvg ? `${decisionInput.recoverySnapshot.raw.hrvOvernightAvg} ms` : '--'}
-                    </span>
-                  </div>
-                  <div className="biomarker-chip">
-                    <span className="biomarker-label">Battery</span>
-                    <span className="biomarker-value">
-                      {decisionInput.recoverySnapshot.raw.bodyBatteryWake ? `${decisionInput.recoverySnapshot.raw.bodyBatteryWake}` : '--'}
-                    </span>
-                  </div>
-                </>
-              )}
-            </div>
-
-            {activeRec && (activeRec.mode === 'modify' || activeRec.mode === 'recover') && (
-              <div className="mode-rationale-callout">
-                <strong>{activeRec.mode === 'recover' ? 'Recovery reason:' : 'Reduced load reason:'}</strong> {activeRec.rationale}
-              </div>
-            )}
-          </div>
-
-          {/* Today's Recommendation Card */}
           <div className="dashboard-card recommendation-card">
             <div className="card-header">
-              <h3>Today&apos;s Training</h3>
-              {activeRec && (
+              <h3>Today's Recommendation</h3>
+              {activeRec && (!canGenerateNormalPlan || recommendationEffectivelyRevealed) && (
                 <span className={`status-badge mode-${activeRec.mode}`}>
                   {MODE_LABELS[activeRec.mode]}
                 </span>
               )}
             </div>
-
             {activeRec ? (
+              canGenerateNormalPlan && !recommendationEffectivelyRevealed ? (
+                <div className="recommendation-hidden">
+                  <p className="card-empty">Today's recommendation is ready.</p>
+                  <button type="button" className="reveal-recommendation-btn" onClick={handleRevealRecommendation}>
+                    👁️ Reveal today's recommendation
+                  </button>
+                  <p className="reveal-hint">
+                    Recording your own plan's verdict first is what the Decision Journal card measures.
+                  </p>
+                </div>
+              ) : (
               <div className="recommendation-content">
                 {activeRec.externalPrescription && activeRec.externalVerdict && (
                   <ExternalVerdictBanner
@@ -972,74 +882,22 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
                     verdict={activeRec.externalVerdict}
                   />
                 )}
-
                 <h4 className="recommendation-title">
                   {activeRec.template.title}
                   {activeRec.activeDose && (
                     <span className="dose-badge">{activeRec.activeDose.label}</span>
                   )}
                 </h4>
-
                 <p className="recommendation-meta">
-                  {activeRec.template.category} · {activeRec.activeDose ? `${activeRec.activeDose.durationMin}-${activeRec.activeDose.durationMax}` : `${activeRec.template.durationMin}-${activeRec.template.durationMax}`} min · {activeRec.template.modality}
+                  {activeRec.template.category} · {activeRec.activeDose ? `${activeRec.activeDose.durationMin}-${activeRec.activeDose.durationMax}` : `${activeRec.template.durationMin}-${activeRec.template.durationMax}`} min
                 </p>
-
                 <p className="recommendation-description">
                   {activeRec.activeDose ? activeRec.activeDose.prescriptionSummary : activeRec.template.description}
                 </p>
-
-                {/* Primary Dominant Start Workout Action */}
-                {activeRec.primarySession && onStartSession && (
-                  <div className="primary-action-cta-wrap">
-                    <button
-                      type="button"
-                      className="btn-primary start-workout-dominant-cta"
-                      onClick={() => { void onStartSession(activeRec.primarySession!); }}
-                    >
-                      {activeRec.template.modality === 'Strength' ? '🏋️' : '▶️'} Start Session →
-                    </button>
-                  </div>
-                )}
-
-                {/* Secondary Actions Row */}
-                {activeRec.prescription && (
-                  <div className="recommendation-secondary-actions">
-                    <button
-                      type="button"
-                      className="btn-secondary toggle-workout-btn view-workout-btn"
-                      onClick={() => setShowWorkoutDetails((isOpen) => !isOpen)}
-                      aria-expanded={showWorkoutDetails}
-                    >
-                      {showWorkoutDetails ? 'Hide workout' : 'View workout'}
-                    </button>
-                    <WorkoutExportMenu
-                      userId={userId}
-                      date={decisionInput?.date ?? ''}
-                      title={activeRec.template.title}
-                      modality={activeRec.template.modality}
-                      prescription={activeRec.prescription}
-                    />
-                  </div>
-                )}
-
-                {showWorkoutDetails && activeRec.prescription && (
-                  <DetailedTodayPlan
-                    prescription={activeRec.prescription}
-                    userId={userId}
-                    date={decisionInput?.date ?? ''}
-                    title={activeRec.template.title}
-                    modality={activeRec.template.modality}
-                  />
-                )}
-
-                {/* Collapsible Rationale */}
-                <details className="recommendation-why-disclosure">
-                  <summary>Why this today? ›</summary>
-                  <div className="why-content">
-                    <p>{activeRec.rationale}</p>
-                  </div>
-                </details>
-
+                <section className="recommendation-why" aria-label="Why this recommendation">
+                  <h5>Why this today?</h5>
+                  <p>{activeRec.rationale}</p>
+                </section>
                 {!canGenerateNormalPlan && (
                   <MinimumSafetyCheckin
                     userId={userId}
@@ -1047,63 +905,88 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
                     onCompleted={loadDashboardData}
                   />
                 )}
-
-                {/* Load Adjustment Section */}
-                {canGenerateNormalPlan && (
-                  <details className="adjustment-disclosure">
-                    <summary>Adjust session load ›</summary>
-                    <div className="adjustment-control-section">
-                      <span className="adjustment-label">Select load variation:</span>
-                      <div className="adjustment-button-group">
-                        <button
-                          type="button"
-                          className={`adjustment-btn ${adjustmentDirection === 'easier' ? 'active' : ''}`}
-                          onClick={() => handleAdjustSession(adjustmentDirection === 'easier' ? null : 'easier')}
-                        >
-                          Easier
-                        </button>
-                        <button
-                          type="button"
-                          className={`adjustment-btn ${adjustmentDirection === null ? 'active' : ''}`}
-                          onClick={() => handleAdjustSession(null)}
-                        >
-                          As Recommended
-                        </button>
-                        <button
-                          type="button"
-                          className={`adjustment-btn ${adjustmentDirection === 'harder' ? 'active' : ''}`}
-                          disabled={recommendation?.envelopes?.safety.clinicalFlagActive}
-                          title={recommendation?.envelopes?.safety.clinicalFlagActive ? 'Harder option disabled due to active pain/injury flag.' : 'Increase session load'}
-                          onClick={() => handleAdjustSession(adjustmentDirection === 'harder' ? null : 'harder')}
-                        >
-                          Harder
-                        </button>
-                      </div>
-
-                      {recommendation?.envelopes?.safety.clinicalFlagActive && (
-                        <p className="adjustment-notice safety-notice">
-                          ⚠️ Harder option is unavailable today because an active pain/injury flag restricts physical loading.
-                        </p>
-                      )}
-
-                      {activeRec.adjustment && (
-                        <div className="adjustment-summary-box">
-                          <p>
-                            <strong>Session Adjusted ({activeRec.adjustment.direction}):</strong> {activeRec.adjustment.rationale}
-                          </p>
-                          <button
-                            type="button"
-                            className="reset-adjustment-btn"
-                            onClick={() => handleAdjustSession(null)}
-                          >
-                            ↺ Reset to As Recommended
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </details>
+                {activeRec.prescription && (
+                  <>
+                    <button
+                      type="button"
+                      className="view-workout-btn"
+                      onClick={() => setShowWorkoutDetails((isOpen) => !isOpen)}
+                      aria-expanded={showWorkoutDetails}
+                    >
+                      {showWorkoutDetails ? 'Hide workout' : 'View workout'}
+                    </button>
+                    {showWorkoutDetails && (
+                      <DetailedTodayPlan
+                        prescription={activeRec.prescription}
+                        userId={userId}
+                        date={decisionInput?.date ?? ''}
+                        title={activeRec.template.title}
+                        modality={activeRec.template.modality}
+                      />
+                    )}
+                  </>
                 )}
+                {activeRec.primarySession && onStartSession && (
+                  <button
+                    type="button"
+                    className="start-strength-btn-cta"
+                    onClick={() => { void onStartSession(activeRec.primarySession!); }}
+                  >
+                    {activeRec.template.modality === 'Strength' ? '🏋️' : '▶️'} Start / Resume Session →
+                  </button>
+                )}
+
+                {canGenerateNormalPlan && <div className="adjustment-control-section">
+                  <span className="adjustment-label">Adjust Today's Session Load:</span>
+                  <div className="adjustment-button-group">
+                    <button
+                      type="button"
+                      className={`adjustment-btn ${adjustmentDirection === 'easier' ? 'active' : ''}`}
+                      onClick={() => handleAdjustSession(adjustmentDirection === 'easier' ? null : 'easier')}
+                    >
+                      Easier
+                    </button>
+                    <button
+                      type="button"
+                      className={`adjustment-btn ${adjustmentDirection === null ? 'active' : ''}`}
+                      onClick={() => handleAdjustSession(null)}
+                    >
+                      As Recommended
+                    </button>
+                    <button
+                      type="button"
+                      className={`adjustment-btn ${adjustmentDirection === 'harder' ? 'active' : ''}`}
+                      disabled={recommendation?.envelopes?.safety.clinicalFlagActive}
+                      title={recommendation?.envelopes?.safety.clinicalFlagActive ? 'Harder option disabled due to active pain/injury flag.' : 'Increase session load'}
+                      onClick={() => handleAdjustSession(adjustmentDirection === 'harder' ? null : 'harder')}
+                    >
+                      Harder
+                    </button>
+                  </div>
+
+                  {recommendation?.envelopes?.safety.clinicalFlagActive && (
+                    <p className="adjustment-notice safety-notice">
+                      ⚠️ Harder option is unavailable today because an active pain/injury flag restricts physical loading.
+                    </p>
+                  )}
+
+                  {activeRec.adjustment && (
+                    <div className="adjustment-summary-box">
+                      <p>
+                        <strong>Session Adjusted ({activeRec.adjustment.direction}):</strong> {activeRec.adjustment.rationale}
+                      </p>
+                      <button
+                        type="button"
+                        className="reset-adjustment-btn"
+                        onClick={() => handleAdjustSession(null)}
+                      >
+                        ↺ Reset to As Recommended
+                      </button>
+                    </div>
+                  )}
+                </div>}
               </div>
+              )
             ) : (
               <p className="card-empty">
                 {!decisionInput?.dataQuality.hasRecoverySnapshot
@@ -1115,32 +998,33 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
             )}
           </div>
 
-          <div className="home-week-strip-section">
-            <div className="section-header-row">
-              <h4>7-Day Outlook</h4>
-              <button
-                type="button"
-                className="view-plan-link-btn"
-                onClick={() => onNavigate('plan')}
-              >
-                View full plan →
-              </button>
-            </div>
-            <WeekAheadStrip
-              plan={weekAheadPlan}
-              nextDayPlan={nextDayPlan}
-              selectedTier={selectedNextDayTier}
-              onSelectTier={setSelectedNextDayTier}
-              trainingIntentProfile={decisionInput?.trainingIntentProfile}
-              planningMode={resolvedPlanningMode}
+          {activeExternalPlan && decisionInput && (
+            <ExternalPlanWeek
+              userId={userId}
+              planTitle={activeExternalPlan.plan.title}
+              weekStartDate={mondayOf(decisionInput.date)}
+              placed={activeExternalPlan.placed}
+              critique={externalWeekCritique}
+              today={decisionInput.date}
+              fixedActivities={planWeekFixedActivities}
+              onProposeReplacement={handleProposeReplacement}
+              onConfirmReplacement={handleConfirmReplacement}
+              onChooseDate={handleChooseDate}
+              writeError={placementError}
             />
-          </div>
+          )}
+
+          <WeekAheadStrip
+            plan={weekAheadPlan}
+            nextDayPlan={nextDayPlan}
+            selectedTier={selectedNextDayTier}
+            onSelectTier={setSelectedNextDayTier}
+            trainingIntentProfile={decisionInput?.trainingIntentProfile}
+            planningMode={resolvedPlanningMode}
+          />
         </div>
 
         <div className="home-sidebar-col">
-          <details className="home-insights-disclosure">
-            <summary className="home-insights-summary">More insights & history ›</summary>
-            <div className="home-insights-content">
           {completeness < 100 && (
             <div className="completeness-card dashboard-card">
               <div className="completeness-header">
@@ -1180,8 +1064,8 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
               <div className="card-header">
                 <h3>Today's Recovery</h3>
                 {decisionInput?.recoverySnapshot ? (
-                  <span className="status-badge status-normal">
-                    Sleep {decisionInput.recoverySnapshot.raw.sleepScore ?? '--'} · HRV {decisionInput.recoverySnapshot.raw.hrvOvernightAvg ?? '--'}ms
+                  <span className={`status-badge mode-${activeRec?.mode ?? 'train'}`}>
+                    {activeRec?.mode === 'recover' ? 'Needs recovery' : activeRec?.mode === 'modify' ? 'Cautious' : 'Good'}
                   </span>
                 ) : (
                   <span className="status-badge warning">No Data</span>
@@ -1235,9 +1119,9 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
               {decisionInput?.subjectiveCheckin ? (
                 <div className="checkin-summary">
                   <div className="readiness-score">
-                    <span className="score-label">Subjective Readiness</span>
-                    <span className="score-value">{subjectiveReadiness ?? '--'}{subjectiveReadiness !== null && <small>/10</small>}</span>
-                    {subjectiveReadinessLabel && <span className="readiness-label">{subjectiveReadinessLabel}</span>}
+                    <span className="score-label">Readiness</span>
+                    <span className="score-value">{readinessScore ?? '--'}{readinessScore !== null && <small>/10</small>}</span>
+                    {readinessLabel && <span className="readiness-label">{readinessLabel}</span>}
                   </div>
                   <p className="card-action">Edit check-in</p>
                 </div>
@@ -1338,8 +1222,6 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
               </button>
             )}
           </div>
-            </div>
-          </details>
         </div>
       </div>
     </div>

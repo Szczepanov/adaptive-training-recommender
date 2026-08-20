@@ -242,22 +242,6 @@ export interface SessionOccurrence {
     updatedAt: string;
 }
 
-/**
- * The non-`blocks` fields `definitionHash` was computed over (M3.2), snapshotted so a
- * `catalog` source can be replayed with historical fidelity: the live catalog entry a
- * `SessionSourceRef` points at can be edited (title, duration, ...) after the day it was
- * prescribed, but the hash alone can't be inverted back into the original values. Optional
- * because prescriptions written before this field existed don't have it -- resolvers must
- * fall back to the live catalog for those, exactly as before.
- */
-export interface SessionDisplayMetadata {
-    title: string;
-    summary?: string;
-    intent: SessionIntent;
-    dominantModality?: string;
-    duration?: NumericRange;
-}
-
 export interface ExecutionPrescription {
     schemaVersion: number;
     prescriptionHash: string;
@@ -265,7 +249,6 @@ export interface ExecutionPrescription {
     sessionSource: SessionSourceRef;
     definitionHash: string;
     blocks: SessionBlock[];
-    displayMetadata?: SessionDisplayMetadata;
     createdAt: string;
 }
 
@@ -332,27 +315,13 @@ export type CheckoffEntryPayload = {
     completed: boolean;
 };
 
-/**
- * Records an athlete's answer to an authored `SessionChoice` (D-MCHOICE): the option
- * selected, and an optional reason. This is the execution event itself, not a performed
- * set -- callers that count performed work per step (`groupProgression.ts`,
- * `performedComparison.ts`) must exclude this payload kind from that accounting.
- */
-export type ChoiceEntryPayload = {
-    kind: 'choice';
-    choiceId: string;
-    optionId: string;
-    reason?: string;
-};
-
 export type SessionEntryPayload =
     | RepetitionEntryPayload
     | DurationEntryPayload
     | DistanceEntryPayload
     | SprintEntryPayload
     | JumpAttemptEntryPayload
-    | CheckoffEntryPayload
-    | ChoiceEntryPayload;
+    | CheckoffEntryPayload;
 
 export interface SessionEntry {
     id: string;

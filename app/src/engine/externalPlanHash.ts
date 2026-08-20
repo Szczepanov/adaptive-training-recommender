@@ -1,3 +1,5 @@
+import type { ExternalTrainingPlan } from './models';
+
 /** Stable ordering so the same document always hashes the same. `JSON.stringify` preserves
  * insertion order, which differs between a freshly-parsed import and a Firestore read. */
 export function canonicalise(value: unknown): unknown {
@@ -20,11 +22,7 @@ export function canonicalise(value: unknown): unknown {
  * against it and must stay free of I/O — a decision has to be checkable from persisted
  * inputs alone, with no database in the loop.
  */
-/** M3.6: generic rather than the v1-specific `ExternalTrainingPlan` -- canonicalise/hash
- * only ever need *an* object, regardless of schema version, and this module deliberately
- * stays free of any dependency on `sessions/` (where the v2 type lives) beyond what it
- * already needs. */
-export async function computeContentHash<T extends { schema: string }>(plan: T): Promise<string> {
+export async function computeContentHash(plan: ExternalTrainingPlan): Promise<string> {
     const canonical = JSON.stringify(canonicalise(plan));
     const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(canonical));
     return Array.from(new Uint8Array(digest)).map(byte => byte.toString(16).padStart(2, '0')).join('');

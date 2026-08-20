@@ -7,7 +7,6 @@ import { Home } from '../components/Home';
 import { Preferences } from '../components/Preferences';
 import { SessionRunner } from '../components/session/SessionRunner';
 import { TrainingSettings } from '../components/TrainingSettings';
-import { PlanView } from '../components/PlanView';
 import { Header } from '../components/Header';
 import { MobileNav } from '../components/MobileNav';
 import type { Screen } from '../types/navigation';
@@ -19,8 +18,7 @@ interface VisualReviewAppProps {
 
 function mapScreenToVisual(s: Screen): VisualScreen {
   if (s === 'strength' || s === 'sessions') return 'session';
-  if (s === 'brief') return 'home';
-  if (s === 'plan') return 'plan';
+  if (s === 'plan' || s === 'brief') return 'home';
   return s;
 }
 
@@ -52,7 +50,6 @@ export function VisualReviewApp({ scenario }: VisualReviewAppProps) {
 
       <main className="app-content">
         {screen === 'home' && <Home userId={VISUAL_USER_ID} onNavigate={handleAppNavigate} onViewData={() => navigate('data')} />}
-        {screen === 'plan' && <PlanView userId={VISUAL_USER_ID} onNavigate={handleAppNavigate} />}
         {screen === 'checkin' && <DailyCheckin userId={VISUAL_USER_ID} onNavigate={handleAppNavigate} onBack={() => navigate('home')} />}
         {screen === 'goals' && <Goals userId={VISUAL_USER_ID} onNavigate={handleAppNavigate} />}
         {screen === 'data' && <DataView decisionInput={scenario.fixture.input} userId={VISUAL_USER_ID} onBack={() => navigate('home')} initialTab={scenario.initialDataTab} />}

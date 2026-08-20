@@ -2,15 +2,14 @@
 
 * **Status:** `In progress`
 * **Blocked by:** The successor [ADR-0023](../adr/0023-multidomain-session-authoring-execution-and-evidence.md)
-  is accepted. Only the item-level dependencies and explicit usage triggers below remain.
+  is accepted. Only the item-level dependencies below remain.
 * **Unlocks:** executable manual/external sessions; mixed strength/speed/field/power
-  tracking; occurrence-linked response; protocol-aware testing when actually needed; evidence
-  for later engine policy decisions.
+  tracking; occurrence-linked response; protocol-aware testing; evidence for later engine
+  policy decisions.
 * **Source analyses:**
   [`2026-08-18-multidomain-training-system-consolidated-analysis.md`](../analysis/2026-08-18-multidomain-training-system-consolidated-analysis.md),
   [`2026-08-18-strength-session-ui-ux-review.md`](../analysis/2026-08-18-strength-session-ui-ux-review.md),
-  [`2026-08-18-authored-composite-session-import-and-execution.md`](../analysis/2026-08-18-authored-composite-session-import-and-execution.md),
-  [`2026-08-19-product-scope-cutline-review.md`](../analysis/2026-08-19-product-scope-cutline-review.md).
+  [`2026-08-18-authored-composite-session-import-and-execution.md`](../analysis/2026-08-18-authored-composite-session-import-and-execution.md).
 
 > **Capability plan, not a numbered engine phase.** Work items use the `M*` prefix so they
 > cannot be mistaken for Phases 0–9. The plan is intentionally broader than the existing
@@ -28,15 +27,6 @@ existing engine authority and default-off evidence policy throughout.
 The deliverable is incremental, and **every milestone from M1 onward must end with
 something the athlete can use on a phone**. That constraint, not the layering of the domain
 model, drives the order below.
-
-**Current delivery cutline (2026-08-19).** The active product chain,
-`M3.7 → bounded M3.8 hardening → M4.3 → M5.1 → M5.2`, is now complete end to end. M6 and M7
-are not a sequential continuation of that chain. They are usage-triggered capability groups:
-work starts only when real training or repeated testing exposes a concrete limitation in the
-generic runner/evidence model. M8 may consume those capabilities if they exist, but it must
-never be the reason to build them. The next open item on the evidence-producing chain is
-M5.3 (outcome/override evidence report), which was outside this cutline's own scope but is
-now unblocked.
 
 ---
 
@@ -192,20 +182,6 @@ provenance mid-block would contaminate that comparison.
 
 **Change.** Added as an explicit precondition on M3.2 and to the risk table.
 
-### C12 — Capability numbering is not a delivery queue
-
-The 2026-08-19 product-scope review challenged the remaining implicit assumption that, once
-M5 lands, M6 and then M7 should follow simply because the IDs are sequential. M2 already
-executes repetition, duration, distance and check-off doses. Building dedicated sprint/COD,
-jump/throw/contact, metric-protocol and benchmark subsystems before real use proves those
-controls inadequate would optimize for architectural completeness rather than athlete value.
-
-**Change.** M6 and M7 gain explicit usage triggers and leave the near-term critical path.
-M4.3 → M5.1 → M5.2 is the evidence-producing structural chain. M5.3 starts as a report/export
-surface and only grows a dedicated history UI if the athlete actually uses it. M8 consumes
-whatever real evidence capabilities have been justified independently; **M8 is not allowed to
-pull M6/M7 forward just to make its own comparison harness richer**.
-
 ---
 
 ## Preconditions and non-negotiable decisions
@@ -244,57 +220,52 @@ D-CANDIDATE, D-IMMUT, D-EXTTIER or replay.
 
 ---
 
-## Delivery graph and current cutline
+## Dependency graph
 
 ```text
-COMPLETED FOUNDATION
-M0 contract/ADR
-      ↓
-M1 Strength repair + response v0
-      ↓
-M2 executable session core
-      ↓
-M3 authority / source normalization / authoring
-      ↓
-M4.1–M4.2 groups + recorded choices
-
-ACTIVE PRODUCT CHAIN -- complete (2026-08-19)
-M3.7 semantic preview ─┐
-M3.8 bounded hardening ├──► M4.3 companion/dedup ─► M5.1 response model ─► M5.2 follow-up ─► M5.3 (next, unblocked)
-                       │
-                       └── M3.8 stopped bounded per its own cutline (load/effort/choices
-                           shipped; rest ranges, quality fields, sessionTargets/
-                           prohibitedAdditions editing deferred, JSON import covers them)
-
-USAGE-TRIGGERED CAPABILITIES — NOT THE NEXT PHASE
-real training gap ─► M6 speed/field/power specialization
-repeated standardized testing need ─► M7 observations/testing/progress
-
-EVIDENCE DECISIONS
-M8 candidates may consume M5 and any independently-triggered M6/M7 evidence that exists.
-M8 must not create the business/product justification for M6 or M7.
-
-DEFERRED
-M9 items start only when their own named trigger fires.
+M0 contract/ADR ──────────────┐
+                              │
+M1 v1 repair + response v0    │   (independent; needs only plan approval)
+                              ▼
+                    M2 executable session core
+                    types → persistence → runner → typed inputs → completion
+                              │
+                              ▼
+                    M3 authority, sources and authoring
+                    hashing → recommendation/replay → intent flow
+                    → catalog cutover → facets → external v2 → preview → builder
+                              │
+                              ▼
+                    M4 structure and choices
+                    groups → recorded alternatives → companion occurrences
+                              │
+                              ▼
+                    M5 response generalization
+                              │
+                              ▼
+                    M6 speed/field/power ──► M7 observations/testing/progress
+                                                        │
+                                                        ▼
+                                            M8 engine evidence candidates
+                                                        │
+                                                        ▼
+                                            M9 deferred capabilities
 ```
 
-M1 was independently startable before M0.1. ADR-0023 is now accepted, so remaining work
-follows item-level dependencies **plus the usage triggers stated below**. A satisfied code
-dependency is not sufficient to start M6 or M7. No M8 item may ship merely because its code
-exists, and no M8 item may force an otherwise-untriggered M6/M7 capability into scope.
+M1 was independently startable before M0.1. ADR-0023 is now accepted, so M2 and later follow
+only their item-level dependencies. No M8 item may ship merely because its code exists.
 
-### What each remaining milestone puts in the athlete's hands
+### What each milestone puts in the athlete's hands
 
 | After | The athlete can |
 |---|---|
-| M3.7 | Review every behavior-changing imported-session field before confirmation. |
-| bounded M3.8 | Build common real sessions without JSON; hardening stops when that workflow is sufficient. |
-| M4.3 | Start companion sessions independently without double-counting the same physical work from Garmin/manual evidence. |
-| M5.1–M5.2 | Record and revisit immediate/later-day/next-morning response linked to the exact session occurrence. |
-| M5.3 | Export/inspect outcome and override evidence; a richer history UI is optional and usage-triggered. |
-| M6, **if triggered** | Capture field/speed/power details the generic runner demonstrably cannot represent. |
-| M7, **if triggered** | Run repeated protocol-locked tests whose benchmark comparisons are honest. |
-| M8 | Nothing new. This milestone produces evidence-backed ship/defer/reject decisions, not features. |
+| M1 | Resume, correct, complete and abandon a Strength session safely, reach it from Today, and answer one linked response prompt. |
+| M2 | Start any of the seven fixture sessions unplanned and log reps, time, distance and check-offs natively. |
+| M3 | Import or build a session, schedule it, replace or add to today's recommendation, and have the decision replay. |
+| M4 | Execute circuits, supersets, authored alternatives and separately scheduled companion sessions. |
+| M5 | See later-day and next-morning response linked to the session that caused it. |
+| M6–M7 | Record sprint/COD/jump work in native units and run a protocol-locked test whose benchmarks are honestly comparable. |
+| M8 | Nothing new. This milestone produces decisions, not features. |
 
 ---
 
@@ -303,7 +274,7 @@ exists, and no M8 item may force an otherwise-untriggered M6/M7 capability into 
 Item status: `[ ]` not started · `[-]` in progress · `[x]` finished. A finished item is
 rewritten as an outcome; an in-progress item retains its remaining acceptance work.
 
-| Item | Title | Status | Blocked by / trigger |
+| Item | Title | Status | Blocked by |
 |---|---|:---:|---|
 | M0.1 | Successor ADR and authority contract | `[x]` | — |
 | M0.2 | Canonical schema examples and fixture corpus | `[x]` | — |
@@ -323,33 +294,33 @@ rewritten as an outcome; an in-progress item retains its remaining acceptance wo
 | M2.6 | General completion, comparison and response | `[x]` | — |
 | M2.7 | Strength v1 compatibility read model | `[x]` | — |
 | M3.1 | Canonical serialization, hashing and source adapters | `[x]` | — |
-| M3.2 | Recommendation source/occurrence persistence and replay | `[x]` | Production replay wiring and catalog display-metadata fidelity closed |
+| M3.2 | Recommendation source/occurrence persistence and replay | `[-]` | Production replay entry point and catalog source binding remain |
 | M3.3 | Save/schedule/replace/add/start intent flow | `[x]` | Full hard-gate and additional-session authority implemented and integrated |
 | M3.4 | Catalog-to-definition adapter and generic runner strength parity | `[x]` | Runner parity reached (RIR/gauges, context, 1RM writeback, shared read); dual-runner retained for safe transition |
 | M3.5 | Bounded exercise/drill facet vocabulary | `[x]` | — |
-| M3.6 | External plan/session schema v2 adapter | `[x]` | Schema, validation, resolver/display wiring, export support shipped; M3.7's fine-grained diff remains |
-| M3.7 | Full semantic import preview and diff | `[x]` | — |
-| M3.8 | Manual block-first session builder | `[x]` | — |
+| M3.6 | External plan/session schema v2 adapter | `[ ]` | M3.1 |
+| M3.7 | Full semantic import preview and diff | `[-]` | M3.6 semantic source and revision diff |
+| M3.8 | Manual block-first session builder | `[-]` | Authored option sets and fixture-equivalence acceptance |
 | M4.1 | Group execution modes | `[x]` | M2.5 |
-| M4.2 | Recorded athlete choices and alternatives | `[x]` | M4.1, M3.5 |
-| M4.3 | Companion occurrence and duplicate reconciliation | `[x]` | — |
-| M5.1 | Occurrence-linked response generalization | `[x]` | — |
-| M5.2 | Later-day and next-morning follow-up | `[x]` | — |
-| M5.3 | Outcome/override evidence report | `[ ]` | M5.2; richer history UI only after a usage trigger |
-| M6.1 | Representative speed/field/power taxonomy v1 | `[ ]` | **Usage trigger:** recurring real session needs domain detail the generic runner cannot represent; then M3.5, M2.5 |
-| M6.2 | Sprint and field performed-entry cards | `[ ]` | M6.1 + a logged sprint/COD workflow proving generic distance/time inputs inadequate |
-| M6.3 | Jump/throw/contact performed-entry cards | `[ ]` | M6.1 + recurring measured jump/throw/contact use |
-| M6.4 | Domain exposure read models | `[ ]` | M6.2/M6.3 as applicable + enough history that an exposure view answers a real question |
-| M7.1 | Metric registry, protocols and comparable series | `[ ]` | **Usage trigger:** repeated standardized testing/benchmarking begins; M6.1 only if that test needs its taxonomy |
+| M4.2 | Recorded athlete choices and alternatives | `[ ]` | M4.1, M3.5 |
+| M4.3 | Companion occurrence and duplicate reconciliation | `[ ]` | M2.4, M3.3 |
+| M5.1 | Occurrence-linked response generalization | `[ ]` | M1.7, M2.6, M4.3 |
+| M5.2 | Later-day and next-morning follow-up | `[ ]` | M5.1 |
+| M5.3 | Outcome/override evidence views | `[ ]` | M5.2 |
+| M6.1 | Representative speed/field/power taxonomy v1 | `[ ]` | M3.5, M2.5 |
+| M6.2 | Sprint and field performed-entry cards | `[ ]` | M6.1 |
+| M6.3 | Jump/throw/contact performed-entry cards | `[ ]` | M6.1 |
+| M6.4 | Domain exposure read models | `[ ]` | M6.2, M6.3 |
+| M7.1 | Metric registry, protocols and comparable series | `[ ]` | M2.1, M6.1 |
 | M7.2 | Metric observation persistence and adapters | `[ ]` | M7.1, M2.3 |
-| M7.3 | Protocol-locked testing mode | `[ ]` | M7.2 + only the domain input cards required by the tests actually being run |
-| M7.4 | Benchmark derivation and quality-aware progress | `[ ]` | M7.3 + enough repeated comparable attempts to make progress display useful |
-| M8.1 | Step-derived eligibility/profile candidate | `[ ]` | M3.4, M3.5; evidence candidate only |
-| M8.2 | Response/exposure comparison harness | `[ ]` | Real history + M5 evidence; consume M6/M7 only if those capabilities were independently triggered and the named candidate needs them |
-| M8.3 | Policy ship/no-ship decision | `[ ]` | The evidence required by the specific candidate; do not build unused M6/M7 solely to satisfy this row |
+| M7.3 | Protocol-locked testing mode | `[ ]` | M7.2, M6.2, M6.3 |
+| M7.4 | Benchmark derivation and quality-aware progress | `[ ]` | M7.3 |
+| M8.1 | Step-derived eligibility/profile candidate | `[ ]` | M3.4, M3.5 |
+| M8.2 | Response/exposure comparison harness | `[ ]` | M5.3, M6.4, M7.4 |
+| M8.3 | Policy ship/no-ship decision | `[ ]` | M8.1, M8.2, real history |
 | M9.1 | Aliases and user-confirmed custom movements | `[ ]` | M3.8; trigger below |
 | M9.2 | Assisted prose-to-draft import | `[ ]` | M3.7, M3.8; trigger below |
-| M9.3 | Device/integration adapter contracts | `[ ]` | device trigger below; activate the minimum M7 observation boundary only if required |
+| M9.3 | Device/integration adapter contracts | `[ ]` | M7.2; trigger below |
 
 ---
 
@@ -639,21 +610,18 @@ execution through its stored source plus `prescriptionHash`, so reload no longer
 transient `initialSession` object. The catalog resolver also rejects a source whose stored
 `catalogVersion` no longer matches the available catalog definition.
 
-### M3.2 `[x]` Recommendation source/occurrence persistence and replay
+### M3.2 `[-]` Recommendation source/occurrence persistence and replay
 
-**Progress as of 2026-08-18 (superseded by the 2026-08-19 outcome below).**
-`primarySession`/`additionalSessions` were typed, validated, preserved through recommendation
-persistence and archival revisions, and carried into provenance. A write-once
-execution-prescription service also existed. Replay did not yet retrieve and verify those
-prescription bytes at this point, so the milestone remained partial and was not used to grant
-authority.
+**Progress (2026-08-18).** `primarySession`/`additionalSessions` are typed, validated, preserved
+through recommendation persistence and archival revisions, and carried into provenance. A
+write-once execution-prescription service also exists. Replay does not yet retrieve and verify
+those prescription bytes, so this remains partial and must not be used to grant authority.
 
-**Gap as of 2026-08-18 (closed below).** `Recommendation.externalPrescription` was derived in
-`rules.ts` on every dashboard load and never persisted; `DailyRecommendation` persisted the
-catalog `prescription` only. `Home.tsx` recomputed the whole recommendation on load and then
-called `saveRecommendation`, so the *display* survived reload by re-derivation — but the
-*runner* read the persisted document and *replay* read the persisted audit. Both were blind to
-authored content.
+**Current.** `Recommendation.externalPrescription` is derived in `rules.ts` on every dashboard
+load and never persisted; `DailyRecommendation` persists the catalog `prescription` only.
+`Home.tsx` recomputes the whole recommendation on load and then calls `saveRecommendation`, so
+the *display* survives reload by re-derivation — but the *runner* reads the persisted document
+and *replay* reads the persisted audit. Both are blind to authored content.
 
 **Precondition (C11).** Do not start this inside an open Phase 9.0 shadow-mode comparison
 block. Changing decision equality, archived revision bytes and audit provenance mid-block
@@ -698,51 +666,15 @@ hash-only set; manual, external and fixture sources also verify that the prescri
 usage text that it cannot verify session bindings (no live Firestore connection); the app's
 own replay path is expected to call the new async wrapper.
 
-This remained partial through 2026-08-18: no production caller invoked that wrapper, and
-catalog schema v1 stored evaluated blocks plus a definition hash but not enough historical
-display metadata to recompute the complete catalog definition hash after a catalog edit.
-Manual/imported authority is also intentionally disabled under M3.3, so its
-persisted-decision acceptance scenario had not passed. Firestore rules bound
-`additionalSessions` length but did not validate every nested member; a direct 16-element
-expansion exceeded the emulator's 1,000-expression budget on valid revision/archive updates,
-so a cheaper server-side shape or smaller schema was required before Add could ship.
-Coordinated with 9.0.1 per C11: Phase 9.0's shadow block had not started when this work
-began (still true at the outcome below, so this stayed clear of C11 throughout).
-
-**Outcome (2026-08-19).** All three remaining gaps closed, now that the completed M3.3
-authority flow shipped the gate this was blocked on. In order:
-
-* **Firestore rules.** `additionalSessions` now gets real per-element shape validation
-  (source kind, non-empty `prescriptionHash`) rather than length-only, at both the
-  top-level field (previously *unvalidated entirely* -- only `keys().hasOnly()` gated its
-  presence) and the audit's copy. Fitting this in the expression budget needed two things:
-  `decisionFieldsUnchanged()` was being evaluated three times over in the update rule
-  purely because the rules language doesn't memoize function calls (now computed once via
-  a `let` binding and threaded through, `canUpdateRecommendation()`); and additional
-  session elements get a lighter structural check than `primarySession`'s full per-kind
-  field rigor (still real validation -- shape, recognized source kind, non-empty hash --
-  just cheap enough to unroll across elements; the client already applies the full
-  per-kind check before any write reaches here). Bound dropped from 16 to 4 -- an isolated
-  number with no other dependents, comfortably above what `adjudicateAuthoredSession`'s
-  systemic-cost ceiling ever actually admits in one day.
-* **Catalog display fidelity.** `ExecutionPrescription` gained an optional
-  `displayMetadata` snapshot (title/summary/intent/dominantModality/duration) at
-  catalog-launch time, included in `prescriptionHash`'s own covered content
-  (backward-compatible: absent on older prescriptions, so their hash is unaffected).
-  `resolveSessionDefinition`'s `catalog` branch now reconstructs the historical
-  `SessionDefinition` entirely from the stored prescription and self-verifies by
-  recomputing the hash the same way it was computed at write time, instead of always
-  merging in live catalog metadata with `expectedDefinitionHash: null`. Falls back to the
-  old live-catalog-merge behavior only for prescriptions written before this existed.
-* **Production replay entry point.** `Home.tsx`'s two `saveRecommendation` call sites now
-  fire an unawaited `replayRecommendationAuditAgainstSessions` self-check whenever the
-  saved decision carries a session binding, following the exact non-fatal
-  `.catch(console.warn)` idiom already used at both sites and the quiet-report shape
-  `shadowLogService` already establishes elsewhere -- console-level only, no new UI
-  surface, no persisted verification state.
-
-Manual/imported authority is no longer disabled (the completed M3.3 authority flow shipped
-the complete gate), so the milestone's `Done when` criteria are met.
+This remains partial: no production caller invokes that wrapper, and catalog schema v1 stores
+evaluated blocks plus a definition hash but not enough historical display metadata to
+recompute the complete catalog definition hash after a catalog edit. Manual/imported
+authority is also intentionally disabled under M3.3, so its persisted-decision acceptance
+scenario has not passed. Firestore rules currently bound `additionalSessions` length but do
+not validate every nested member; a direct 16-element expansion exceeded the emulator's
+1,000-expression budget on valid revision/archive updates, so a cheaper server-side shape or
+smaller schema is still required before Add can ship. Coordinated with 9.0.1 per C11: Phase
+9.0's shadow block had not started when this work began.
 
 ### M3.3 `[x]` Save/schedule/replace/add/start intent flow
 
@@ -821,27 +753,22 @@ cheapest correct resolution flow. M9.1 revisits this.
 invalid facets, old catalog workouts remain valid through optional defaults, and an unresolved
 free-text movement is visibly low-confidence in the runner.
 
-### M3.6 `[x]` External plan/session schema v2 adapter
+### M3.6 `[ ]` External plan/session schema v2 adapter
 
-**Outcome (2026-08-19).** Shipped as designed, plus JSON/Zwift export support (not in the
-original file list, added on request). `ExternalPlanSession`/`ExternalTrainingPlan`/
-`EXTERNAL_PLAN_SCHEMA` in `engine/models.ts` are untouched and keep meaning v1 exactly as
-before — the envelope fields (`gating`/`placement`/`priority`/`objectives`/`scaling`/
-`isEvent`) are shared unchanged between schemas via extracted, reused validators
-(`validateExternalSessionEnvelope`/`validateExternalPlanEnvelope`); only `prescription` is
-replaced by an embedded `SessionDefinition` (`definition`). The session resolver, template
-synthesis, gating/adjudication, scheduling/placement, plan diffing, and the import UI's
-validate-before-save step are all schema-version-aware; every M0.2 fixture validates as a
-v2 session's `definition` unmodified. Firestore rules needed a real fix, not a no-op:
-`hasValidExternalPlanRevision()` hard-coded the v1 schema literal and would have silently
-rejected every v2 write at the database layer — caught by re-running the emulator suite
-rather than trusting the original "no rules change needed" assumption in this plan. Exporter-importer compliance was closed via `canonicalWorkoutAdapter.ts`, allowing workout
-export JSON (`canonical_workout_v1`) to be directly pasted and converted into normalized
-`SessionDefinition` instances within `SessionJsonImport.tsx`. Deferred to M3.7 as originally
-scoped: fine-grained per-field content diffing for a v2 session (`externalPlanDiff.ts`
-reports a coarse "the session content changed" for either schema).
+**Change.** Publish `external-plan@2` using normalized session definitions while retaining v1
+read/import compatibility. Validation remains strict and path-specific. Importers may not
+accept author-supplied calibrated engine cost or stimulus (ADR-0019 D-EXTTIER). Stale
+health/readiness narrative becomes a warning or narrative classification, never a reusable
+gate.
 
-### M3.7 `[x]` Full semantic import preview and diff
+**Files.** New `sessions/externalPlanV2.ts`, `engine/validation.ts`,
+`docs/external-plan-schema.md`, the prompt template in `ExternalPlanImport.tsx`, hash/diff
+tests.
+
+**Done when.** The M0.2 external fixtures validate; v1 remains importable; ranges, sides,
+option sets and companions survive hash and reload; unknown keys fail.
+
+### M3.7 `[-]` Full semantic import preview and diff
 
 **Progress (2026-08-18).** `SessionDefinitionPreview` shows normalized blocks and groups, dose,
 effort, rest, tempo, optionality, unresolved movement status, authored option triggers/effects,
@@ -860,67 +787,7 @@ revision diff flags every behavior-changing field.
 to bilateral, optional to required, or end-block to reduce-load is visible before confirm; and
 the preview shows every supplied workout step rather than one summary line.
 
-**Outcome (2026-08-19).** The two remaining gaps from the 2026-08-18 progress note are closed.
-
-* **`external-plan@2` full-content preview.** `PlanPreview`'s per-session summary row now
-  renders an expandable "Full session content" `<details>` (closed by default so the scannable
-  list stays intact) that mounts the existing `SessionDefinitionPreview` against
-  `session.definition` for every v2 session — the same block/step/dose/effort/option-set
-  rendering JSON/manual authoring already had. v1 sessions are unaffected: `prescription` isn't
-  a `SessionDefinition`, so the summary line remains their only preview, matching what the
-  schema can express.
-* **Fine-grained revision diff.** New pure `sessions/sessionDefinitionDiff.ts`
-  (`diffSessionDefinitions`) replaces the coarse "the session content changed" line with
-  block/step/choice-level rows, each tagged `behaviorChanging`. Per-side to bilateral,
-  optional to required, dose/load/effort/quality/rest/tempo changes, an authored choice's
-  actions changing (including the named end-block-to-reduce-load example), and added/removed
-  blocks/steps/choices/options are all `behaviorChanging: true`; title/notes/summary/trigger
-  wording are `false`. `externalPlanDiff.ts` calls it only when both the stored and pasted
-  session are v2 (`isV2Session` on both sides) — v1's flat `ExternalPrescription` has no
-  comparable block/step structure and keeps the coarse check, so the existing v1 diff test's
-  literal "the session content changed" expectation still holds unmodified.
-* **Blocking on unreviewed behavior changes.** Referential-integrity blocking (an option
-  action's `targetStepId`/`targetBlockId` not resolving) was already enforced pre-preview by
-  `validateSessionDefinition`, itself already called on every v2 session's `definition` inside
-  `validateExternalTrainingPlanV2` — that half of the "Done when" line was already true going
-  in. What was missing was making a *behavior-changing* diff impossible to scroll past: the
-  preview now lists every fine-grained row inline under its session (⚠-prefixed and
-  red-highlighted when `behaviorChanging`), and renders a checkbox — "I reviewed the N behavior
-  changes marked ⚠ above" — that must be checked before **Import this plan** enables, whenever
-  `behaviorChangeCount > 0`. A diff containing only cosmetic wording changes never shows the
-  checkbox and never blocks.
-
-**Review correction (2026-08-19).** A repo-owner review of `sessionDefinitionDiff.ts` found
-four correctness issues, all fixed in a follow-up commit on this branch: `formatAction()`
-rendered no `targetStepId`/`targetBlockId`, so a choice option re-targeted to a different
-step/block printed identical before/after text; `sameJson()` used raw `JSON.stringify`,
-so two semantically identical objects with differently-ordered keys (a real risk given the
-import flow regenerates full plan JSON from an LLM on each revision) were reported as
-changed; `formatDose('distance')` fabricated "0 m" for an unset distance; and the rest-change
-message misattached its ` s` unit suffix to the literal `'none'`. A second review pass found
-two further gaps, also fixed: `formatDose('distance')` omitted `sets`, so a sets-only change
-on a distance dose produced identical text; and block/step comparison was purely by-id
-(`byId()`-keyed maps), so swapping two existing blocks or steps — a real execution-order
-change — produced no diff row at all and could bypass import acknowledgement. Both are now
-detected via a same-membership, different-position check (`orderChanged`) layered on top of
-the existing add/remove detection.
-
-Verified by `sessions/sessionDefinitionDiff.test.ts` (identical-definition no-op, laterality
-change in **both** directions, optional↔required, the end-block/reduce-load choice-action
-swap, dose/load before/after formatting, **both** an added step + removed block and a removed
-step + added block, distance-dose set-count changes, a same-membership block/step reorder
-distinct from add/remove, no false-positive reorder when order is unchanged, structurally
-identical objects with reordered keys producing no row, cosmetic-only wording producing zero
-behavior rows) and `externalPlanDiff.ts`/`PlanPreview` cases in `ExternalPlanImport.test.tsx`
-(a v2/v2 pair surfaces `contentChanges` and the "(see below)" summary suffix; a title-only v2
-change stays cosmetic; an unchanged v2 definition produces no diff row; `PlanPreview`'s Import
-button renders disabled with the acknowledgement checkbox shown for a behavior-changing diff,
-and enabled with no checkbox for a cosmetic-only one) — the pre-existing v1 diff tests pass
-unmodified. `sessions/architecture.test.ts` and `engine/externalArchitecture.test.ts` pass
-unchanged (the new diff module only imports `sessions/models.ts`). Full `npm run check`
-(typecheck, lint, unit tests, catalog validation) passes.
-
-### M3.8 `[x]` Manual block-first session builder
+### M3.8 `[-]` Manual block-first session builder
 
 **Progress (2026-08-18).** The current mobile-capable editor supports title, modality, duration,
 notes, blocks, group modes and rounds, catalog/free-text movement selection, repetition/timed/
@@ -929,78 +796,24 @@ preview, and ID-stable block/step reordering and duplication. Pure `sessionDraft
 the structural operations. Authored option sets, richer load/effort fields, issue focus and
 full fixture-equivalence/mobile accessibility acceptance remain pending.
 
-**2026-08-19 scope cutline.** This is now a **bounded hardening task**, not a mandate to expose
-all `SessionDefinition` fields in UI. Finish only gaps required by the two representative real
-fixtures and by safe mobile use. If JSON import plus the current builder covers normal authoring,
-record the residual advanced fields as deferred rather than expanding the form for completeness.
-
 **Deliberately last (C7).** Until this lands, M0.2 fixtures plus M3.6 JSON import cover
 authoring. If the athlete who owns this repository finds those sufficient after M3.7, **not
-building more is a legitimate outcome** — record it rather than building by default.
+building this is a legitimate outcome** — record it rather than building by default.
 
-**Change.** Harden the existing mobile authoring flow for the missing representative-fixture
-semantics: authored option sets where actually used, richer load/effort fields needed by the
-fixtures, validation issue focus, and mobile accessibility. Preserve reorder, duplicate and
-preview. Reuse `SessionDefinitionPreview` from M3.7. Do not add speculative editor controls.
+**Change.** Build a mobile authoring flow for title/intent/duration/global targets, blocks,
+group mode, movement search and recents, dose-specific fields, and collapsed advanced
+rest/tempo/cue/option-set settings. Support reorder, duplicate and preview. Reuse
+`SessionDefinitionPreview` from M3.7.
 
-**Files.** Existing components under `components/session/` / `components/session-builder/`,
+**Files.** New components under `components/session-builder/`, a pure reducer in
 `sessions/sessionDraft.ts`, routing in `App.tsx`/navigation, the service from M2.2.
 
-**Tests.** Reducer operations, validation issue focus, reorder ID stability, representative
-fixture equivalence, mobile visual fixtures, keyboard and accessibility.
+**Tests.** Reducer operations, validation issue focus, reorder ID stability, mobile visual
+fixtures, keyboard and accessibility.
 
 **Done when.** The full-body maintenance and lower/Olympic fixtures can be built without
 editing JSON and preview identically to their normalized fixtures — **or** a dated note records
-that the current builder plus import proved sufficient and the remaining advanced controls are
-deferred.
-
-**Outcome (2026-08-19).** Built the two gaps the Change section actually named — "authored
-option sets where actually used" and "richer load/effort fields needed by the fixtures" — then
-stopped there per the cutline's own instruction not to expand the form for completeness.
-
-* **Load editor.** Every well-defined `SessionLoad` kind the fixtures use is now editable:
-  bodyweight, mass (kg), % of max, % of 1RM, resistance band, descriptive (free-text "last
-  reviewed load"), and unloaded. `relative_step` is exposed as a labelled option but not yet
-  field-editable (no fixture uses it and it needs a same-block step picker; deferred, not
-  silently dropped).
-* **Effort.** The RPE-only field became an effort-kind selector (none/RPE/RIR) with a target
-  input — fixture 01's back squat and bench press steps both prescribe RIR, which the builder
-  could not previously express at all.
-* **Authored choices (D-MCHOICE).** A block-scoped "Authored choices" editor: add/remove a
-  choice, edit its trigger description and which step it applies at, add/remove options per
-  choice, edit an option's label, and add/remove/edit that option's actions (all seven
-  `SessionChoiceAction` kinds, via `sessionDraft.ts`'s new `createDraftAction` factory scoped to
-  the authoring step/block so a freshly added `end_block`/`select_alternative` action is
-  structurally valid the instant it's added, not just once every field is filled in).
-* **Step alternatives.** A per-step alternatives editor (catalog-or-free-text movement, title)
-  so `select_alternative` actions have somewhere real to point — fixture 01's
-  warm-up-heavy-squat/symptom choices both depend on this.
-
-New pure factories in `sessions/sessionDraft.ts` (`createDraftChoice`, `createDraftOption`,
-`createDraftAlternative`, `createDraftAction`) carry the default-value logic and are unit
-tested directly (`sessionDraft.test.ts`); `ManualSessionBuilder.tsx` wires them through the
-same immutable block-array update pattern the existing step/block editors already use, keyed by
-choice/option id rather than index since an option's action list changes length independently
-of its siblings. `ManualSessionBuilder.test.tsx` (new; this repo has no interactive
-component-test harness, so it's a markup-level smoke test matching the existing convention for
-sibling session components) confirms the new controls render.
-
-**Deferred, not built (recorded rather than silently dropped, per the cutline's own escape
-hatch).** Full fixture-equivalence with fixtures 01/02 needs more than this: `rest` stays a
-single number in the builder (fixtures use `{min, max}` ranges), `quality`/technical stop-rule
-fields have no editor (and are already unvalidated/loosely typed even in the canonical fixture
-JSON — a pre-existing model/fixture mismatch outside this item's scope, flagged separately
-rather than fixed here), and session-level `sessionTargets`/`prohibitedAdditions` have no UI.
-None of these block authoring a real session — every fixture remains buildable via JSON import
-(M3.6), and a built session that skips these fields is still a valid, executable
-`SessionDefinition`; they are narrower prescription-fidelity gaps, not missing capability. Given
-the athlete who owns this repository already has working JSON import, expanding the form to
-close every one of these before real use demonstrates a need would be exactly the "building by
-default" the cutline warns against (C7).
-
-Verified by `sessionDraft.test.ts` (8 new cases covering every factory), the new
-`ManualSessionBuilder.test.tsx`, and a full `npm run check`-equivalent pass (typecheck, lint,
-1654 unit tests, catalog validation) with no regressions.
+that fixtures plus import proved sufficient and the builder is deferred.
 
 ---
 
@@ -1019,7 +832,7 @@ uneven step targets finish without inventing a skipped entry. `GroupProgress.tsx
 state, while `SessionRunner.tsx` performs the navigation. Tests cover alternating, circuit,
 superset, explicit rounds and optional movements.
 
-### M4.2 `[x]` Recorded athlete choices and alternatives
+### M4.2 `[ ]` Recorded athlete choices and alternatives
 
 **Change.** Implement D-MCHOICE. At an authored branch point the runner shows the trigger
 description and the bounded option set; the athlete selects; the selection, its optional reason
@@ -1031,228 +844,15 @@ advisory and low-confidence.
 the recorded choices later show a stable, athlete-consistent rule, that becomes an M8 candidate
 with its own ship decision — not an assumption baked in here.
 
-**What already exists (2026-08-19 audit).** The schema and rules groundwork for this milestone
-was already laid, ahead of the runner: `sessions/models.ts` already defines
-`SessionChoiceAction`, `SessionOption`, `SessionChoice` and `SessionBlock.optionSets`;
-`sessions/validation.ts` already validates `optionSets` structure and action-kind vocabulary;
-`SessionEntry.selectedOptionId` and `firestore.rules`' entry-payload validator already accept it;
-and fixtures 01/02 already carry one `optionSets` choice each (clean/floor-speed quality). What
-is entirely missing is the *runtime*: nothing renders a `SessionChoice`, nothing applies a
-`SessionChoiceAction`, and no `SessionEntry` payload shape exists to record one being answered.
-This item is that runtime.
-
-**Design.**
-
-1. **A new entry payload records the event, reusing the existing entries subcollection.**
-   `SessionEntry` already carries `stepId`/`selectedOptionId`/terminal-immutability semantics
-   (M2.3/M2.5) — a choice is another kind of thing that happened during execution, not a new
-   record lifecycle (D-MRECORDS is about distinct *lifecycles*, and this one is identical to an
-   entry's). Add to `sessions/models.ts`:
-   ```ts
-   export type ChoiceEntryPayload = {
-       kind: 'choice';
-       choiceId: string;   // SessionChoice.id
-       optionId: string;   // SessionOption.id selected
-       reason?: string;
-   };
-   ```
-   and include it in `SessionEntryPayload`. `payload.optionId` is authoritative;
-   `SessionEntry.selectedOptionId` continues to mirror it so the field already validated by
-   `firestore.rules` and consumed by any future query stays meaningful. `sessions/validation.ts`
-   gets a matching branch: `choiceId`/`optionId` must resolve to a real `SessionChoice`/
-   `SessionOption` reachable from the entry's block, `reason` if present is a string.
-   `app/firestore.rules`' entry-payload validator (`users/{userId}/session_executions/{id}/entries/{entryId}`)
-   gets one more `payload.kind` branch — `keys().hasOnly(['kind', 'choiceId', 'optionId', 'reason'])`
-   — no new collection, no change to the existing in-progress-only mutability rule.
-
-2. **Actions are derived, never applied to stored bytes.** ADR-0010 replay requires the
-   persisted `SessionDefinition`/`ExecutionPrescription` to stay exact; a choice must not mutate
-   it. Add pure `sessions/choiceResolution.ts`:
-   ```ts
-   export interface EffectiveSessionView {
-       definition: SessionDefinition;      // same block/step array shape and order; fields overridden in place
-       endedBlockIds: ReadonlySet<string>;  // navigation shortcut only
-       sessionEnded: boolean;               // navigation shortcut only
-   }
-   export function resolveEffectiveSession(
-       definition: SessionDefinition,
-       entries: readonly SessionEntry[],
-   ): EffectiveSessionView
-   ```
-   It folds every `choice`-kind entry's resolved `SessionChoiceAction[]` (looked up from the
-   original, immutable `definition` — never from a prior derived state) into an accumulator, in
-   entry order, later choices winning on a shared target field:
-   * `select_alternative` — overwrite the target step's `exerciseRef`/`dose`/`load` from the
-     matching `StepAlternative`, and set `step.resolutionNote` (the field already exists, used
-     today for unresolved free text) to name the substitution for display.
-   * `reduce_load_percent` — scale whichever numeric load field the step's `SessionLoad` carries
-     (`mass.kg`, `percent_max`/`percent_one_rm.percent`, both range-aware); a no-op, not a
-     failure, on `bodyweight`/`band`/`descriptive`/`unloaded` loads.
-   * `reduce_sets` / `reduce_reps` — override the target `RepetitionDose`'s `sets`/`reps`; a
-     no-op on any other dose kind.
-   * `omit_step` — set the target step's `optional = true`. This is the whole mechanism: it
-     makes the step invisible to `groupProgression.ts`'s `requiredSteps()` and to
-     `performedComparison.ts`'s required-omission accounting for free, with no signature change
-     to either — both already treat `optional` steps as not blocking completion.
-   * `end_block` — mark every not-yet-logged step in the target block `optional = true` (same
-     free ride through the two modules above) and add the block to `endedBlockIds`, which
-     `useSessionRunner`'s `nextStep()` uses only as a UX shortcut to jump straight to the next
-     block instead of stepping through now-optional steps one at a time.
-   * `end_session` — mark every not-yet-logged step across all remaining blocks `optional = true`
-     and set `sessionEnded = true`, which the runner uses to route straight to
-     `SessionCompletionSheet`.
-
-   The effective `definition`'s `blocks[].steps[]` array must keep the exact shape and order of
-   the original — only fields are overwritten in place — because `activeBlockIndex`/
-   `activeStepIndex` in `useSessionRunner` are raw array indices; inserting or removing an
-   element would desync navigation state after a reload.
-
-   `useSessionRunner` computes `effectiveView = useMemo(() => resolveEffectiveSession(definition, entries), [definition, entries])` once and threads `effectiveView.definition` everywhere `comparePlannedVsPerformed`/`getGroupProgress`/step rendering currently receive the raw `definition` — both of those pure functions already take a `definition` parameter, so this is a call-site change, not a signature change.
-
-   **Scoping decision.** A choice fires once per `choiceId` per execution — the runner treats a
-   choice as due only while no `choice`-kind entry with that `choiceId` exists yet. Nothing in
-   the current fixtures repeats a choice across rotation rounds, and re-prompting on every round
-   of a `circuit`/`alternating`/`superset` block is a different, unrequested feature; if an
-   authored session later needs a per-round choice, that is a follow-on to this item, not an
-   assumption built into it now.
-
-3. **Alternatives are gated through the existing per-exercise safety facets, not a new
-   judgment.** `components/session/*` and `hooks/*` may import any `engine/*` module that is not
-   `optimizer`/`planner`/`rules`/`weeklyAllocation`/`evergreenPlanning`/`sequenceSearch` — the
-   exact boundary `sessions/architecture.test.ts` already checks (see Tests below for the one
-   gap in that check).
-
-   **Correction found during implementation.** The original text here proposed matching the M3.5
-   `ExerciseDefinition.facets.safetyTags` heuristic labels against `TrainingSettings.guardrails`
-   (`Record<GuardrailKey, boolean>`), the same way `evaluateTemplateEligibility` gates a
-   `SessionTemplate`. That doesn't hold up: `facets.safetyTags` is a free-text, tissue-style
-   vocabulary (`'knee_swelling'`, `'painful_deep_knee_flexion'`) — the same values as
-   `ExerciseDefinition.contraindicationTags` — not `GuardrailKey`'s `'avoid_*'` vocabulary, so
-   the intersection would type-check only via an unsound cast and would silently match nothing at
-   runtime. Worse, neither `facets.safetyTags` nor `contraindicationTags` has any other live
-   consumer in the engine today — `engine/planningCandidate.ts` only surfaces
-   `contraindicationTags` as descriptive text for an external plan's candidate description.
-   Building a gate on either would look like a safety check without being one.
-
-   Add `engine/sessionChoiceEligibility.ts` gating on the one signal that is both real (already
-   resolved from active `InjuryConstraint[]`) and expressible on a bare alternative — its
-   resolved catalog exercise's `modality`:
-   ```ts
-   export function ineligibleAlternativeOptionIds(
-       definition: SessionDefinition,
-       restrictedModalities: readonly SessionTemplate['modality'][],
-   ): Set<string> // SessionOption.id values that must not be offered as selectable
-   ```
-   `resolveInjuryRestrictions` (`engine/injuryPolicy.ts`) already resolves `restrictedModalities`
-   in the capitalized `SessionTemplate['modality']` vocabulary; `ExerciseDefinition.modality`
-   (`workouts/models.ts`) uses the separate lowercase `WorkoutModality` vocabulary. The two name
-   the same real modalities, so the function carries a small `WORKOUT_TO_TEMPLATE_MODALITY`
-   lookup table to bridge them — a vocabulary bridge, not a second judgment.
-   Category-level (`restrictedCategories`) gating is intentionally **not** checked here: a single
-   exercise carries no `SessionTemplate` category, and the whole session already passed that gate
-   once at M3.3's `adjudicateAuthoredSession`. An alternative whose `exerciseRef.kind ===
-   'unresolved_free_text'`, or whose catalog id doesn't resolve, is never flagged ineligible
-   (unresolved free text is a legitimate C8 escape hatch); it renders as an ordinary option.
-
-   Threading: `App.tsx` does not build a `UserContext` at the scope `SessionRunner` mounts in,
-   and pulling the full engine context pipeline into a UI runner is heavier than this needs.
-   `useSessionRunner` instead reads `trainingSettingsService`'s persisted settings plus today's
-   `checkinService.getCheckin` (already imported here for the M1.7 response link) and calls the
-   already-existing `resolveEffectiveInjuryConstraints`/`resolveInjuryRestrictions` from
-   `engine/injuryPolicy.ts` — the exact same resolution `mapContextFromGoalsAndTrainingSettings`
-   performs for the day's recommendation — to get `restrictedModalities`, then calls
-   `ineligibleAlternativeOptionIds`. Recomputed once per session start/restore (it only depends
-   on the day's resolved constraints and the definition's authored alternatives), not on every
-   logged entry.
-
-4. **UI.** New `components/session/ChoiceCard.tsx`: renders when the active step has an
-   unanswered due choice (per the scoping decision above) on the current `SessionBlock.optionSets`.
-   Shows `choice.trigger.description`, then each `option.label` as a button — an option whose
-   only action is `select_alternative` into an ineligible alternative is shown disabled with the
-   restriction named, never silently offered as equal to an eligible one. Selecting an option
-   opens an optional one-line reason field (mobile-first, per M1.4/M1.6: one tap answers it,
-   the reason is not required to proceed) and calls a new `logChoice(choiceId, optionId, reason?)`
-   on `useSessionRunner`, mirroring `logEntry`'s write path through
-   `sessionExecutionService.logEntry` with a `choice`-kind payload. `SessionRunner.tsx` blocks
-   the step's other input controls until a due choice is answered — "no code path changes a
-   prescribed step without a recorded athlete action" means the runner cannot let the athlete
-   log a set past an unanswered branch point. The step's own entry list (already rendered per
-   step) shows an answered choice as a distinct row: the chosen option's label, reason if given,
-   and timestamp — satisfying "visible in history" without a new cross-session history screen
-   (that is M5.3's territory, not this item's).
-
-**Fixture gap.** The Done-when below names four worked examples from concept challenge C4, but
-today's fixtures only cover two (both clean/floor-speed quality, in fixtures 01 and 02). Neither
-"warm-up-heavy squat reduction" nor "symptom-based squat choice" exists yet: `back_squat` in
-fixture 01's `block-strength` (an `alternating` block — deliberately chosen to also exercise the
-once-per-execution scoping decision against a rotating block) has no `optionSets` and no
-`alternatives` today. This item must add, to that step:
-* `choice-squat-warmup` (`reduce_load_percent` and/or `reduce_reps` actions) for "how did the
-  warm-up sets feel";
-* `choice-squat-symptom`, offering `select_alternative` to `goblet_squat` (already catalog-defined,
-  low-impact, low-coordination-demand — a legitimate lower-symptom substitute) and `end_block` for
-  "sharp discomfort", plus a `StepAlternative` entry on `step-str-1` pointing at it.
-
-**Files.** `sessions/models.ts` (`ChoiceEntryPayload`), `sessions/validation.ts`, new
-`sessions/choiceResolution.ts` + `.test.ts`, `app/firestore.rules`, new
-`engine/sessionChoiceEligibility.ts` + `.test.ts`, `hooks/useSessionRunner.ts`
-(`logChoice`, `effectiveView`, constraint read, `nextStep` block-end/session-end shortcut), new
-`components/session/ChoiceCard.tsx` + `.css` + `.test.tsx`, `components/session/SessionRunner.tsx`,
-`sessions/fixtures/01-full-body-maintenance.json`.
-
-**Tests.** `choiceResolution.test.ts` covering each action kind, last-choice-wins on a shared
-target field, and array-shape stability; `sessionChoiceEligibility.test.ts` covering an
-ineligible alternative under an active guardrail/restricted category and an unresolved-free-text
-alternative rendered low-confidence rather than flagged; extend `sessions/validation.test.ts` and
-the Firestore emulator entries suite for the `choice` payload kind, including a cross-user and a
-completed-execution (terminal-immutability) rejection; extend `sessions/fixtures.test.ts` so the
-runner-loadability guarantee also covers the new squat `optionSets`; add
-`groupProgression.test.ts`/`performedComparison.test.ts` cases feeding an `omit_step`/`end_block`
--derived effective definition through unchanged, to pin that the free ride via `optional` really
-holds. Extend `sessions/architecture.test.ts`'s UI-modules dependency check to also scan
-`hooks/useSessionRunner.ts` (currently only `components/session/*` and `services/session*` are
-scanned; the new `engine/injuryPolicy.ts`/`engine/sessionChoiceEligibility.ts` imports land in the
-hook, so the boundary should be checked where the import actually is, not only adjacent to it).
+**Files.** New `sessions/optionSets.ts`, `components/session/ChoiceCard.tsx`; eligibility
+adapter and tests.
 
 **Done when.** Warm-up-heavy squat reduction, clean-catch load reduction, bar-speed end-block
 and symptom-based squat choice are each presented as an explicit choice, recorded with reason
-and timestamp, and visible in history; an alternative gated by an active restriction is visibly
-disabled rather than offered; and no code path changes a prescribed step without a recorded
-athlete action.
+and timestamp, and visible in history; and no code path changes a prescribed step without a
+recorded athlete action.
 
-**Outcome (2026-08-19).** Built as designed above, with one correction found during
-implementation: the eligibility gate originally proposed (M3.5 `facets.safetyTags` matched
-against `TrainingSettings.guardrails`) doesn't type-check honestly -- `facets.safetyTags` is a
-free-text tissue vocabulary, not `GuardrailKey`'s `'avoid_*'` vocabulary, and neither it nor
-`contraindicationTags` has any other live engine consumer. `engine/sessionChoiceEligibility.ts`
-instead gates on `restrictedModalities` (already resolved by `resolveInjuryRestrictions`) via a
-small vocabulary bridge to the catalog's separate `WorkoutModality` enum -- real, live, and
-honestly scoped rather than a gate that looks real but never fires. A second gap found only by
-running the code: `groupProgression.ts`'s `entryCount` and `performedComparison.ts`'s
-`entriesByStepId` both counted *any* entry sharing a step's id, so an answered choice would have
-been double-counted as a logged set; both now exclude `payload.kind === 'choice'`.
-
-Delivered: `ChoiceEntryPayload` on `SessionEntry` (`sessions/models.ts`), structural validation
-(`sessions/validation.ts`) and Firestore rules support; pure `sessions/choiceResolution.ts`
-folding recorded choices into an effective, index-stable view (`useSessionRunner`'s public
-`definition` is now this effective view, so `comparePlannedVsPerformed`/`getGroupProgress`/
-rendering needed no signature changes); `engine/sessionChoiceEligibility.ts`; `logChoice` and a
-choice-driven `nextStep`/`sessionEnded` shortcut on `useSessionRunner`; `ChoiceCard.tsx` wired
-into `SessionRunner.tsx`, blocking other step controls until a due choice is answered and
-showing answered choices in the step's own entry list. Fixture 01's `block-strength` (an
-`alternating` block, exercising the once-per-execution scoping decision against a rotating
-block) gained `choice-squat-warmup` and `choice-squat-symptom` (the latter's `select_alternative`
-resolving to `goblet_squat`), closing the gap between this item's Done-when and the fixture
-corpus. Verified by `sessions/choiceResolution.test.ts`, `engine/sessionChoiceEligibility.test.ts`,
-extended `validation.test.ts`/`groupProgression.test.ts`/`performedComparison.test.ts`, an
-extended Firestore-emulator scenario (in-progress recording, cross-user rejection, terminal
-immutability, malformed-payload rejection -- 77/77 emulator tests pass), and a full `npm run
-check` (typecheck, lint, 1585 unit tests, catalog validation) pass. A live-browser run through
-the actual runner was not possible in this environment (no real Firebase credentials); the
-architecture test extension to `hooks/useSessionRunner.ts` mechanically enforces the same
-optimizer/planner import boundary that a manual check would otherwise stand in for.
-
-### M4.3 `[x]` Companion occurrence and duplicate reconciliation
+### M4.3 `[ ]` Companion occurrence and duplicate reconciliation
 
 **Change.** Distinguish embedded segments from later companion occurrences. Starting a
 companion creates its own execution. Extend occurrence keys and reconciliation so a manual
@@ -1264,59 +864,14 @@ adapters, new `sessions/occurrenceReconciliation.ts`; UI companion card.
 **Done when.** An embedded bike warm-up stays inside Strength; a later recovery spin may be
 started or skipped independently; a matching Garmin ride is counted exactly once.
 
-**Outcome (2026-08-19).** The embedded-vs-companion distinction needed no new code: the model
-already keeps them apart structurally (`SessionDefinition.blocks` vs. `companionSessions[]`,
-rendered separately since M3.7), so fixture 01's embedded Olympic power block already stays
-inside its own execution with no change here.
-
-* **Starting a companion creates its own execution.** `SessionRunner.tsx` captures the
-  finishing session's `title`/`companionSessions` before `completeSession`/`abandonSession`
-  runs, since neither clears `runner.definition` itself (it stays the just-finished session's
-  definition until the next `startSession` call overwrites it) — the capture is what the
-  companion prompt actually relies on. Then — only once the primary session is no longer
-  active, never concurrently with it, since the runner architecture holds exactly one active
-  execution at a time — it offers a "Companion session available" prompt. **Start** resolves the
-  companion's `definitionRef` the same two ways the existing fixture/saved-session pickers
-  already do (a reviewed fixture, e.g. `08-recovery-spin-companion`, or one of the athlete's own
-  saved manual definitions) and calls `runner.startFixtureSession`/`startSession` — the ordinary
-  unplanned-log path (D-MAUTH: no selection authority, no occurrence). The now-active companion
-  execution is then rendered by the runner's normal in-progress view; no separate companion-mode
-  UI was needed. **Skip** just dismisses the prompt and records nothing. The prompt also appears
-  after an *abandoned* primary session, not only a completed one — the companion's own value
-  (e.g. "looser legs") doesn't depend on the primary having finished.
-* **Occurrence keys and Garmin reconciliation.** New `sessions/occurrenceReconciliation.ts`:
-  `sessionExecutionOccurrenceKey` gives every execution a stable identity (`occurrence:{id}`
-  when it carries selection authority, `execution:{id}` otherwise — a companion execution has
-  no `occurrenceId` per D-MAUTH but still needs one idempotent key). `matchExecutionsToGarminActivities`
-  reconciles a set of executions against Garmin activities by same date, compatible resolved
-  modality, and comparable duration (20-minute tolerance, mirroring
-  `completedTraining.ts`'s own adherence-matching tolerance), claiming each Garmin activity for
-  at most one execution so a manually logged companion and its Garmin sync are recognized as
-  one physical occurrence rather than two.
-* **Deliberately not wired into the live engine pipeline.** Per D-MPOLICY, "domain exposure"
-  derived from general (non-Strength) session executions remains a default-off evidence
-  candidate until its own ship decision — the same discipline `deriveStrengthExposure`'s legacy
-  `manualTrainingPolicy` gate already applies to `strength_sessions`. Wiring
-  `occurrenceReconciliation.ts` into `buildTrainingHistorySnapshot`'s live cost/stimulus path
-  would grant a new engine-consumed evidence source without that decision. This module is
-  therefore forward-compatible plumbing — correct, tested, and ready for M6.4/M8 to consume if
-  and when general session-execution exposure is separately evidenced — not a silent
-  activation now. `engine/completedTraining.ts`/`trainingHistory.ts` are unchanged.
-
-Verified by `sessions/occurrenceReconciliation.test.ts` (12 cases: key derivation for both
-authority states, duration computation including the in-progress/no-completion case, date/
-modality/tolerance matching, and the one-activity-claims-at-most-one-execution exclusivity
-property) and a full unit/typecheck/lint/catalog-validation pass with no regressions.
-
 ---
 
 ## M5 — occurrence-linked response
 
 M1.7 already established the link against `strength_sessions`. This milestone generalizes it to
-any occurrence and adds the delayed windows. M5.1 and M5.2 are the near-term evidence-producing
-chain after M4.3; M5.3 is deliberately narrower than the original UI-heavy proposal.
+any occurrence and adds the delayed windows and the evidence view.
 
-### M5.1 `[x]` Occurrence-linked response generalization
+### M5.1 `[ ]` Occurrence-linked response generalization
 
 **Change.** Add `SessionResponse` with occurrence/execution identity and window
 `immediate | later_day | next_morning`. Per D-MRESP it stores **linkage and non-tissue session
@@ -1336,60 +891,7 @@ rules/emulator tests.
 validated; edits preserve provenance; missing follow-up is distinguishable from normal; and a
 tissue value appears in exactly one collection.
 
-**Outcome (2026-08-19).** New `responses/` domain (own distinct lifecycle, per D-MRECORDS,
-alongside `sessions/`): `responses/models.ts` (`SessionResponse`, `ResponseWindow`,
-`SessionResponseSourceRef`), `responses/validation.ts` (`validateSessionResponse`, a
-self-contained strict validator mirroring `sessions/validation.ts`'s own conventions),
-`persistence/parsers/sessionResponse.ts`, and `services/sessionResponseService.ts`
-(`recordResponse`, `updateResponseFacts`, `getResponsesForSource`, `getResponseForWindow`).
-
-* **Reuses, not migrates, M1.7/M2.6's linkage shape.** `SessionResponseSourceRef` is exactly
-  the `{kind: 'strength'|'execution', id, date}` shape `RegionTissueResponse.sourceSessionRef`
-  already writes (M2.6 had already generalized `kind` beyond strength-only, ahead of this
-  item) -- reused rather than reinvented so a `SessionResponse` and the check-in's own
-  tissue-side linkage join on identical fields for the same session. No existing check-in
-  document needed rewriting; `sourceSessionRef` itself is untouched.
-* **Linkage and non-tissue facts only (D-MRESP).** `SessionResponse` stores `window`
-  (`immediate | later_day | next_morning`), `sessionRpe`, `completedFraction`,
-  `unexpectedFatigue`, `techniqueNote`, `note`, and a `checkinRef: { date }` pointing at the
-  canonical check-in that holds this window's tissue values -- never a tissue value itself.
-  `DailySubjectiveCheckin.tissueResponses` remains the sole tissue authority; nothing here
-  duplicates it.
-* **Missing follow-up is distinguishable from normal.** No `SessionResponse` document is ever
-  created except in direct answer to an athlete action (`recordResponse` is the only write
-  path that creates one); `getResponseForWindow` returns `null` -- never a fabricated
-  default -- when a window was never answered, so callers (M5.2's schedule, M5.3's outcome
-  report) can tell "never asked/answered" from every actual answer, including a normal one.
-* **Edits preserve provenance.** `updateResponseFacts` only ever patches the five non-tissue
-  fact fields plus `updatedAt`; `sourceSession`/`occurrenceId`/`window`/`date`/`createdAt` have
-  no code path that changes them after creation. Firestore rules enforce the same constraint
-  server-side (`request.resource.data.sourceSession/window/date/createdAt ==
-  resource.data....`), not just client discipline.
-* **Cannot reference another user's occurrence.** Beyond the standard owner-scoped path and
-  `userId` match, the rules require an `occurrenceId` (when present) to resolve via `exists()`
-  against `users/{userId}/session_occurrences/{occurrenceId}` under that same authenticated
-  user's own path -- a cross-user id structurally cannot resolve there, and a garbage/mistyped
-  id is rejected rather than silently stored.
-* **Window/date validated at both layers.** `window` and `sourceSession.kind` are checked
-  against their exact enums, and every date field (`date`, `sourceSession.date`,
-  `checkinRef.date`) is checked as a real calendar date, in both the TypeScript validator and
-  the Firestore rules (`isValidActivityDate`) -- the same fail-closed, two-layer pattern every
-  other M2/M3 record already uses.
-
-**Files.** `responses/models.ts`, `responses/validation.ts` (+ `.test.ts`),
-`persistence/parsers/sessionResponse.ts` (+ `.test.ts`), `services/sessionResponseService.ts`
-(+ `.test.ts`), `firestore.rules`, `emulator/firestoreRules.emulator.test.ts`. Extended
-`sessions/architecture.test.ts`'s optimizer/planner boundary check to also scan `responses/`
-(a second distinct-lifecycle domain now exists, not only `sessions/`).
-
-Verified by 15 validator cases, 8 service cases, 3 parser cases, 5 new Firestore-emulator
-cases (record + revise, provenance-preserving edit rejection on each of the four immutable
-fields, malformed-shape rejection, foreign-`userId` rejection, and the
-occurrenceId-must-exist-for-this-user check both failing and then succeeding once the
-occurrence is written) -- 82/82 emulator tests total -- and a full `npm run check`
-(typecheck, lint, 1692 unit tests, catalog validation) pass with no regressions.
-
-### M5.2 `[x]` Later-day and next-morning follow-up
+### M5.2 `[ ]` Later-day and next-morning follow-up
 
 **Change.** Surface due follow-ups on Today and Check-in rather than requiring notifications.
 Use occurrence metadata and M3.5 tissue tags to ask only relevant regions. Next-morning answers
@@ -1403,108 +905,33 @@ model and may only tighten (ADR-0020 D-SUBJFLOOR).
 prompt; answers link to the correct occurrence; skipped prompts stay unknown; a favorable
 global readiness cannot override an adverse tissue response.
 
-**Outcome (2026-08-19).** New pure `responses/followupSchedule.ts` (`relevantFollowupRegions`)
-maps a session's resolved catalog exercises' M3.5 `facets.tissueDemand`/`safetyTags` to
-`BodyRegion`s via a small, literal keyword table (an unrecognized tag contributes no region --
-the safe failure mode, not a guess). Both windows are gated on this: a session with no
-tissue-relevant movement in it (an easy aerobic spin, most field/mobility work) creates neither
-prompt, which is what keeps this from nagging after every session.
-
-* **`later_day` (new -- `Home.tsx` + new `components/session/LaterDayFollowupCard.tsx`).**
-  There is no same-day tissue field on `RegionTissueResponse` to reuse (the model has
-  `morningState`/`painDuringTraining`/`afterTrainingState`/`nextMorningReaction` only, and
-  D-MRESP's "without rewriting existing documents" ruled out adding one), so this window is
-  session-level, not region-level: "Feeling normal" / "Unexpectedly fatigued" / "Not now",
-  recorded as an M5.1 `SessionResponse` (`unexpectedFatigue`, no tissue value). Home resolves
-  today's finished (`completed`/`abandoned`) executions via
-  `sessionExecutionService.getExecutionsInRange`, derives relevant regions from their logged
-  entries' `exerciseRef`s, and skips a session once `sessionResponseService.getResponseForWindow`
-  shows it already has a `later_day` answer. "Not now" writes nothing -- a locally tracked
-  dismissal only prevents re-showing within the same mount, never persisted, so nothing here
-  can silently look like a passed response later.
-* **`next_morning` (generalized -- `DailyCheckin.tsx`).** M1.7's existing next-morning
-  mechanism already worked, but only prompted for a region the athlete had *manually* flagged
-  during/after the session. Candidate regions are now the union of that manual flag set
-  (unchanged, still takes priority so its `sourceSessionRef` is preserved) with regions derived
-  from yesterday's `session_executions` the same way `later_day` derives them -- so a session
-  the athlete never manually flagged anything for still gets asked about a region its own
-  movements make relevant. Answering still writes only to the canonical check-in's
-  `nextMorningReaction` (unchanged tissue path, D-SUBJFLOOR/`injuryPolicy.ts` untouched), and
-  now also records at most one session-level `next_morning` `SessionResponse` per session
-  (checked via `getResponseForWindow` first, since several regions can share one session and
-  must not create duplicates) -- again carrying no tissue value. Legacy standalone
-  `strength_sessions` are out of this generalization's scope; their manual-flag path is
-  unchanged from before M5.2.
-* **Skipped stays unknown; answers link to the correct occurrence.** Neither window's skip
-  path (`onDismiss` / `handleSkipFollowup`) writes anything. Every recorded response's
-  `sourceSession`/`occurrenceId` comes from the actual resolved `SessionExecution`, not
-  guessed or defaulted.
-* **D-SUBJFLOOR untouched.** Nothing here changes what `injuryPolicy.ts` reads or how it
-  reads it -- both windows write through the identical existing tissue-write path (checkin
-  `tissueResponses[region].nextMorningReaction`) or write no tissue value at all
-  (`later_day`'s `SessionResponse`). A favorable global readiness still cannot override an
-  adverse tissue response, because that adjudication is unchanged.
-
-**Files.** New `responses/followupSchedule.ts` (+ `.test.ts`), new
-`components/session/LaterDayFollowupCard.tsx`/`.css` (+ `.test.tsx`), `Home.tsx`,
-`DailyCheckin.tsx`. `checkinService.ts` needed no change -- the tissue write path it already
-exposed was sufficient.
-
-Verified by 7 `followupSchedule.test.ts` cases (the real back-squat/sprint fixture tag
-vocabulary, empty/no-exercise sessions, an unrecognized tag contributing nothing,
-dedup+sort, case-insensitivity), a `LaterDayFollowupCard` markup smoke test, and a full
-`npm run check` (typecheck, lint, 1700 unit tests, catalog validation) pass with no
-regressions. `Home.tsx`/`DailyCheckin.tsx` have no pre-existing component-test harness in
-this repo (confirmed: neither file has a test file today) -- the new logic's real complexity
-lives in the pure, directly-tested `followupSchedule.ts`; the component wiring is glue code
-over already-tested services, consistent with how this repo tests these two files elsewhere.
-
-### M5.3 `[ ]` Outcome/override evidence report — history UI only if triggered
+### M5.3 `[ ]` Outcome/override evidence views
 
 **Change.** Derive `passed | caution | reactive | unknown` as a versioned, evidence-only summary
 from the raw response windows. Record athlete override reason and planned/performed delta.
-Start with a deterministic report/export and a compact inspectable view using existing data
-surfaces. Do **not** build a dedicated cross-session response dashboard merely because the
-model exists.
+Display history without claiming injury prediction or automatically learning a tolerance
+threshold.
 
-**Usage trigger for richer UI.** The athlete repeatedly opens/exports the evidence and has a
-specific question that a dedicated history surface would answer better (for example, comparing
-responses after a recurring lower-body session). Until then, the report/export is the product.
-
-**Files.** New `responses/outcome.ts`, report/export integration; reuse
+**Files.** New `responses/outcome.ts`, `components/session/ResponseHistory.tsx`; reuse
 `SessionAdjustment.athleteReason` through a source-neutral override record rather than forcing
-every change into a strength adjustment. Add `components/session/ResponseHistory.tsx` only if
-the UI trigger fires.
+every change into a strength adjustment.
 
 **Done when.** Every outcome links to source facts and a policy version; missing later or next
-data returns `unknown`; the report exposes the evidence without injury-prediction claims; and
-the M0.3 architecture test proves no selection module imports the outcome function.
+data returns `unknown`; and the M0.3 architecture test proves no selection module imports the
+outcome function.
 
 ---
 
-## M6 — speed, field and power execution — **usage-triggered**
+## M6 — speed, field and power execution
 
-**Not on the active delivery chain.** M2 already logs repetitions, time, distance and
-check-offs. M6 starts only when recurring real training demonstrates that these generic inputs
-lose decision-relevant field/speed/power information. A future M8 analysis is not a trigger.
-
-**M6 trigger.** At least one real, recurring session cannot be logged honestly enough with the
-existing runner for a named athlete-facing purpose — e.g. side/angle/validity/split context is
-being lost, or the athlete is maintaining the same information elsewhere because the app cannot
-represent it. Record the concrete gap before starting M6.1.
-
-**Justification (C10/C12).** If triggered, these items stand on athlete-facing value: recording
-sprint, COD and jump work in native units with enough context that comparing two of them is
-honest. They are *not* justified by M8 candidacy. If every M8 candidate is later rejected, an
-independently-triggered M6 still remains worth having.
+**Justification (C10).** These items stand on athlete-facing value: recording sprint, COD and
+jump work in native units with enough context that comparing two of them is honest. They are
+*not* justified by M8 candidacy. If every M8 candidate is later rejected, M6 and M7 remain
+worth having.
 
 ### M6.1 `[ ]` Representative speed/field/power taxonomy v1
 
-**Trigger condition.** The M6 group trigger is documented with at least one real session and
-named missing context. Build only the taxonomy needed by that evidence, not the full list below
-by default.
-
-**Candidate reviewed set, bounded by the trigger:**
+**Change.** Add a deliberately small reviewed set:
 
 * 10/20 m acceleration and flying 10 m;
 * controlled and maximal deceleration;
@@ -1514,151 +941,117 @@ by default.
 * ball technical and small-sided/chaotic exposure descriptors.
 
 Record start, surface, approach/exit, angle, planned/reactive, side, contact intensity and
-measurement-profile facets only where relevant. Avoid a flat list and do not add unused domains.
+measurement-profile facets only where relevant. Avoid a flat list.
 
 **Files.** `workouts/exercises.ts`, `workouts/models.ts`, the catalog validator, new
-`sessions/domainFacets.ts` only to the extent the triggered workflows need them.
+`sessions/domainFacets.ts`.
 
-**Done when.** The triggered real session plus its representative fixture validate with no
-irrelevant required fields, and materially different work (for example planned COD versus
-reactive agility) cannot masquerade as the same exposure.
+**Done when.** The Friday field fixture and one test and training session per domain validate
+with no irrelevant required fields, and planned COD cannot masquerade as reactive agility.
 
 ### M6.2 `[ ]` Sprint and field performed-entry cards
 
-**Trigger condition.** A recurring sprint/COD/deceleration workflow has information the generic
-`DistanceInputCard` / duration/check-off controls cannot retain without side notes or external
-tracking.
-
-**Change.** Add only the input cards required by that workflow. Training mode may support
-completion, optional time and splits, rest, side, validity and notes, and a stop criterion. It
-does not force a timing device or promote a training rep to a benchmark.
+**Change.** Add sprint rep and COD/deceleration cards. Training mode supports completion,
+optional time and splits, rest, side, validity and notes, and a stop criterion. It does not
+force a timing device or promote a training rep to a benchmark.
 
 **Files.** `components/session/inputs/SprintEntry.tsx`, `CodEntry.tsx`, typed payload parsers
-and services as actually required; visual tests.
+and services, visual tests.
 
-**Done when.** The triggered acceleration/deceleration/COD workflow executes on a 390 px
-viewport without external notes; left/right remain first-class where relevant; missing timing
-is valid training data.
+**Done when.** Acceleration, deceleration, lateral/COD and ball-work fixtures execute on a
+390 px viewport; left and right remain first-class; missing timing is valid training data.
 
 ### M6.3 `[ ]` Jump/throw/contact performed-entry cards
 
-**Trigger condition.** Jump/throw/contact work is being performed repeatedly and attempt/contact
-facts are currently lost or tracked elsewhere.
-
-**Change.** Add the smallest attempt/contact input needed by that workflow with native metrics
-when available. Store every recorded attempt and validity; summaries are derived. Do not
+**Change.** Add a simple contact check/count and attempt-based jump/throw entry with native
+metrics when available. Store every attempt and its validity; the summary is derived. Do not
 require force-plate metrics from manual users.
 
-**Files.** Trigger-specific input cards and payload validators; keep the M7 observation seam
-only if repeated benchmarking is also triggered.
+**Files.** New input cards and payload validators; the M7 observation seam.
 
-**Done when.** The triggered jump/throw/contact workflow records its native facts without a
-generic "power score" and without forcing unused device fields.
+**Done when.** Low pogo contact dose, CMJ height-only attempts, drop-jump height and contact
+time, and med-ball distance coexist without one generic "power score".
 
 ### M6.4 `[ ]` Domain exposure read models
 
-**Trigger condition.** Enough triggered M6 history exists that the athlete is asking a real
-exposure question (for example days/reps/metres since acceleration or hard braking) that cannot
-be answered from the execution list economically.
+**Change.** Derive transparent histories — days, reps, metres and contacts since acceleration,
+max velocity, braking/COD, elastic work and hard lower strength. Keep raw units and confidence;
+do not fuse them into ACWR or an injury probability.
 
-**Change.** Derive only the transparent histories needed by that question — days, reps, metres
-or contacts — keeping raw units and confidence. Do not fuse them into ACWR or an injury
-probability.
+**Files.** New `sessions/exposureHistory.ts`, progress components and tests.
 
-**Files.** `sessions/exposureHistory.ts`, the minimum report/progress surface and tests.
-
-**Done when.** The requested history reconciles exactly to execution entries, unresolved
-free-text movements are reported separately, and no production engine module imports it.
+**Done when.** The 7/14/28-day reports reconcile exactly to execution entries, unresolved
+free-text movements are reported separately, and no production engine module imports them.
 
 ---
 
-## M7 — observation provenance, testing and progress — **usage-triggered**
-
-**Not on the active delivery chain.** M7 is for repeated standardized measurement, not for
-ordinary training logging. It starts only when the athlete is actually running a repeated test
-or benchmark workflow where protocol comparability matters. M6 completion is not a blanket
-precondition; only the domain vocabulary/input capability needed by the chosen test is required.
-
-**M7 trigger.** A test (e.g. sprint, jump, throw, optional bar velocity) will be repeated under
-a deliberately standardized protocol and the result will be compared over time. One-off
-training timings or curiosity measurements do not trigger M7.
+## M7 — observation provenance, testing and progress
 
 ### M7.1 `[ ]` Metric registry, protocols and comparable series
 
-**Change after trigger.** Add the smallest static `MetricDefinition` registry and user-scoped
-immutable `MeasurementProtocol` revision set required by the actual repeated tests. Define
-unit, compatible entry kind, required context, summary methods and deterministic
-comparable-series key inputs. Device/source changes and material protocol changes create a new
-series or version.
+**Change.** Add a static `MetricDefinition` registry and user-scoped immutable
+`MeasurementProtocol` revisions. Define unit, compatible entry kind, required context, summary
+methods and deterministic comparable-series key inputs. Device/source changes and material
+protocol changes create a new series or version.
 
-Candidate metrics include sprint time/splits, jump height, contact time, RSI derivation, throw
-distance and optional bar velocity. Do not implement the catalogue until a test needs it.
+Start with sprint time and splits, jump height, contact time, RSI derivation, throw distance
+and optional bar velocity. Do not implement the full attached metric catalogue.
 
 **Files.** New `observations/models.ts`, `observations/registry.ts`,
-`observations/comparability.ts`, protocol service, rules and parsers — bounded to triggered
-metrics.
+`observations/comparability.ts`, protocol service, rules and parsers.
 
-**Done when.** The triggered test's same protocol/device/surface yields the same key; a material
-setup change does not; units cannot mismatch registry definitions.
+**Done when.** The same protocol, device and surface yield the same key; a material timing or
+drop-height change does not; units cannot mismatch registry definitions.
 
 ### M7.2 `[ ]` Metric observation persistence and adapters
 
-**Change.** Persist the triggered raw observations with session/attempt, metric, value/unit,
-`observedAt`, source/device/protocol/comparison series, quality/validity and raw reference.
-Derived values carry an algorithm version and source observation IDs; raw values are never
-overwritten (ADR-0021 D-SETLOG, ADR-0005).
+**Change.** Persist raw observations with session and attempt, metric, value and unit,
+`observedAt`, source/device/protocol/comparison series, quality and validity, and a raw
+reference. Derived values carry an algorithm version and source observation IDs; raw values are
+never overwritten (ADR-0021 D-SETLOG, ADR-0005).
 
-Add the manual adapter first. Device adapters remain M9.3-triggered.
+Add the manual adapter only. Device adapters implement the same boundary later.
 
 **Files.** New `services/metricObservationService.ts`, parser, rules and tests,
 `observations/manualAdapter.ts`.
 
-**Done when.** Raw attempts survive recalculation, cross-user and source spoofing fail, and any
-derived value references its raw observations, protocol and algorithm rather than a bare
-number.
+**Done when.** Raw attempts survive recalculation, cross-user and source spoofing fail, and a
+derived RSI references height, contact, protocol and algorithm rather than a bare number.
 
 ### M7.3 `[ ]` Protocol-locked testing mode
 
-**Change.** Add a distinct Testing route/state only for the triggered test workflow, with
-protocol confirmation, warm-up, practice/valid/invalid attempts and reason, rest and explicit
-finish. Training execution cannot promote its own result to a benchmark without a confirmation
-flow that creates a test attempt under a compatible protocol.
+**Change.** Add a distinct Testing route and state with protocol confirmation, warm-up,
+practice/valid/invalid attempts and reason, rest and explicit finish. Training execution cannot
+promote its own result to a benchmark without a confirmation flow that creates a test attempt
+under a compatible protocol.
 
-**Files.** New `components/testing/`, route/navigation, session intent handling and tests,
-limited to triggered tests.
+**Files.** New `components/testing/`, route and navigation, session intent handling, tests.
 
-**Done when.** The actual repeated test records attempts and validity under a locked protocol;
-changing setup requires a new revision/series; ordinary training still cannot silently become a
-benchmark.
+**Done when.** A 20 m sprint, CMJ and 505-style fixture record all attempts, sides and
+validity; the protocol is locked during the test; changing setup requires a new revision or
+series.
 
 ### M7.4 `[ ]` Benchmark derivation and quality-aware progress
 
-**Trigger condition.** There are enough repeated comparable observations that a progress view
-will be used; do not build benchmark UI immediately after the first test.
+**Change.** Derive best, mean and median summaries from valid comparable attempts. Store an
+optional rebuildable summary with an algorithm version; never overwrite tested values with
+estimated ones. Show change only within a comparable series and show data-quality and
+missing-protocol badges. Meaningful-change claims require separately reviewed error metadata.
 
-**Change.** Derive the required best/mean/median summaries from valid comparable attempts.
-Store only rebuildable summaries with algorithm version; never overwrite tested values with
-estimated ones. Show change only within a comparable series and show data-quality/missing-
-protocol badges. Meaningful-change claims require separately reviewed error metadata.
+**Files.** New `observations/benchmarks.ts`, `components/progress/` domain views and tests.
 
-**Files.** `observations/benchmarks.ts`, the minimum `components/progress/` view and tests.
-
-**Done when.** Invalid/practice attempts never become benchmarks; device/protocol mismatch
-prevents a default PR comparison; raw attempts remain accessible; no "athleticism score" is
-shown.
+**Done when.** Invalid and practice attempts never become benchmarks; device or protocol
+mismatch prevents a default PR comparison; raw attempts remain accessible; no "athleticism
+score" is shown.
 
 ---
 
 ## M8 — engine evidence candidates
 
-**Expected outcome (C10/C12).** This repository's record on measured candidates is D-BEAM built
-and not adopted, D-ZONECRED no-ship, D-STRCOST deferred, subjective drift still default-off.
-That is the discipline working. **A full sweep of no-ship results here is a success for M8.**
-
-**No upstream scope creation.** M8 is not a reason to implement M6 or M7. A candidate must use
-M5 plus whatever independently-justified evidence exists. If a candidate cannot be evaluated
-without an untriggered measurement subsystem, the correct result is `defer: evidence not yet
-collected`, not "build the subsystem so this experiment can run."
+**Expected outcome (C10).** This repository's record on measured candidates is D-BEAM built and
+not adopted, D-ZONECRED no-ship, D-STRCOST deferred, subjective drift still default-off. That is
+the discipline working. **A full sweep of no-ship results here is a success for M8** and changes
+nothing about M2–M7, which are justified independently.
 
 ### M8.1 `[ ]` Step-derived eligibility/profile candidate
 
@@ -1679,30 +1072,27 @@ unchanged.
 
 ### M8.2 `[ ]` Response/exposure comparison harness
 
-**Change.** Build a de-identified real-history report for a **named candidate question** using
-only the evidence streams that already exist and were justified independently. M5 response
-evidence is the baseline. Join M6 domain exposure or M7 observations only when those groups
-were already triggered by athlete use and the candidate genuinely needs them. Report missing
-follow-up and provenance coverage rather than manufacturing completeness.
+**Change.** Add a de-identified real-history report joining authored, planned and performed
+work, domain exposure, responses and current decisions. Evaluate candidate spacing,
+substitution and progression, automatic option selection, and cost/stimulus mappings without
+exposing raw notes or health payloads. Report missing follow-up and provenance coverage.
 
-**Files.** Candidate-specific simulation/report commands under `engine/simulation/` and
-`scripts/`, output under gitignored `artifacts/`, plus a reviewed analysis snapshot when run.
+**Files.** New simulation and report commands under `engine/simulation/` and `scripts/`, output
+under gitignored `artifacts/`, and a reviewed analysis snapshot when run.
 
-**Done when.** The report reproduces its joins, names policy/algorithm versions, distinguishes
-"no reaction" from "no response", and states explicitly which unavailable evidence prevented
-evaluation. Synthetic scenarios alone do not satisfy the real-history gate (ADR-0020
-D-SUBJCAL).
+**Done when.** The report reproduces its joins, names policy and algorithm versions, and
+distinguishes "no reaction" from "no response". Synthetic scenarios alone do not satisfy the
+real-history gate (ADR-0020 D-SUBJCAL).
 
 ### M8.3 `[ ]` Policy ship/no-ship decision
 
-**Change.** Write a dated analysis and an ADR amendment/new ADR for each candidate that has
-sufficient evidence. A ship requires no hard-gate regressions, reviewed real-history evidence,
-scenario invariants, a `POLICY_VERSION` increment, replay coverage and a rollback selector. A
-negative result completes the measurement item and leaves production unchanged (D-BEAM
-precedent). Insufficient evidence is an explicit `defer`, not a request to expand M6/M7.
+**Change.** Write a dated analysis and an ADR amendment or new ADR for each candidate. A ship
+requires no hard-gate regressions, reviewed real-history evidence, scenario invariants, a
+`POLICY_VERSION` increment, replay coverage and a rollback selector. A negative result completes
+the measurement item and leaves production unchanged (D-BEAM precedent).
 
-**Done when.** Every evaluated candidate has an explicit ship, defer or reject result. "Code
-exists" and "we could build more telemetry" are never treated as authorization.
+**Done when.** Every candidate has an explicit ship, defer or reject result. "Code exists" is
+never treated as authorization.
 
 ---
 
@@ -1738,16 +1128,14 @@ field; failure falls back to manual or JSON; no client API key exists.
 
 ### M9.3 `[ ]` Device/integration adapter contracts
 
-**Trigger.** The athlete owns and repeatedly uses one of the devices **for data that has a
-product use**. Owning hardware alone is not enough.
+**Trigger.** The athlete owns and uses one of the devices.
 
-**Change.** Specify the minimum adapter for the triggered device (manual, Garmin/FIT, timing
-gate, VBT, GPS or force plate) against `MetricObservation` if an observation boundary is
-required. If M7 has not otherwise been triggered, activate only the minimum provenance model
-needed by this device rather than the whole M7 roadmap. Deduplication links sources to one
-occurrence/execution rather than creating duplicate completed sessions.
+**Change.** Specify adapters for manual, Garmin/FIT, timing gate, VBT, GPS and force plate
+against `MetricObservation`. Implement only the one bounded spike the trigger names.
+Deduplication links sources to one occurrence or execution rather than creating duplicate
+completed sessions.
 
-**Done when.** The bounded adapter conformance suite proves units, protocol/source identity and
+**Done when.** The adapter conformance suite proves units, protocol and source identity, and
 deduplication; no vendor-specific type enters session or engine domain logic.
 
 ---
@@ -1774,25 +1162,17 @@ Applies to M3.2, M3.3, M3.4, M4.3 and any M8 activation.
 
 ### Named end-to-end scenarios
 
-Always-active scenarios:
-
 1. manual full-body session: author → schedule → adjudicate → execute → correct → complete;
 2. imported lower/Olympic session: semantic review → recorded choices → replay;
 3. upper-only absorption: required-step gating does not fabricate heavy lower work;
 4. timed per-side tissue block: native entry and correct side history;
-5. Friday field: existing generic distance/time/check-off execution remains usable;
+5. Friday field: distances, sides, controlled intensity and stop/downgrade;
 6. optional later spin: separate occurrence and Garmin deduplication;
 7. offline kill/reopen/reconnect with a pending entry and no duplicate;
-8. later and next-morning response: occurrence linkage, unknown missing response, tighten-only
+8. sprint/CMJ/COD test: protocol lock, invalid attempt, comparable benchmark;
+9. later and next-morning response: occurrence linkage, unknown missing response, tighten-only
    tissue;
-9. legacy Strength: identical history and 1RM output through the v1 read model.
-
-Conditional scenarios, added only when the corresponding trigger fires:
-
-10. M6-triggered field/speed/power workflow: native domain details are retained without
-    external notes;
-11. M7-triggered test: protocol lock, invalid attempt and comparable benchmark for the actual
-    repeated test being used.
+10. legacy Strength: identical history and 1RM output through the v1 read model.
 
 ---
 
@@ -1831,11 +1211,6 @@ Conditional scenarios, added only when the corresponding trigger fires:
 * [ ] Unresolved free-text movements are loggable but cannot claim precise engine metadata.
 * [ ] No universal readiness, load or athleticism score and no ACWR injury score is introduced.
 * [ ] No M8 candidate changes production without its own explicit ship decision.
-* [ ] M8 does not create an implementation requirement for otherwise-untriggered M6/M7 work.
-* [ ] The two metric-observation invariants above are unconditional (ADR-0023 D-MOBS). They
-      bind any code that writes a `MetricObservation`, including the bounded M9.3 device
-      boundary activated without a full M7 trigger. Deferring M6/M7 defers the capability,
-      never the provenance rules that apply once observations exist.
 
 ---
 
@@ -1843,43 +1218,39 @@ Conditional scenarios, added only when the corresponding trigger fires:
 
 | Risk | Mitigation | Rollback |
 |---|---|---|
-| Plan stalls in the middle | Active cutline is M3.7/M3.8 → M4.3 → M5.1 → M5.2; M6/M7 are not queued by numbering | Stop after any useful capability; record the cutline rather than opening the next numbered milestone |
-| Premature M6/M7 expansion | Explicit real-use triggers; generic runner is the default until a named gap exists; M8 cannot pull work forward | Leave M6/M7 `[ ]`; record the missing evidence as a defer rather than building speculative telemetry |
-| Schema scope grows without bound | Fixture-led vocabulary; extension/versioning; speculative set/device types remain trigger-gated | Keep v1 routes/import; reject unsupported fields |
-| Two runners coexist indefinitely | M3.4 has an explicit retirement step and a parity gate; M1 items are labelled carried or disposable | If parity fails, keep v1 for catalog Strength only and cap it — do not re-invest in disposable UI |
+| Plan stalls in the middle | Every milestone from M1 ends with a phone-usable capability; M2 ships without touching the engine | Stop after any milestone; nothing half-wired remains, because M2.2 rules deny unimplemented authorities |
+| Schema scope grows without bound | Fixture-led vocabulary; extension and versioning; speculative set/device types deferred to M9 | Keep v1 routes and import; reject unsupported v2 fields |
+| Two runners coexist indefinitely | M3.4 has an explicit retirement step and a parity gate; M1 items are labelled carried or disposable | If parity fails, keep v1 for catalog Strength only and cap it — do not re-invest in the disposable UI |
 | Firestore nested validation stays weak | Performed entries are individual documents; D-MSNAP keeps nested content out of mutable rules-validated documents; immutable revision parsers validate bytes | Disable new writes; existing v1 data untouched |
 | Recommendation document outgrows its limits | D-MSNAP stores a hash, not a snapshot; the snapshot is a separate write-once document | The snapshot document is orphanable without touching decision history |
-| Phase 9.0 evidence contaminated by mid-block schema churn | M4.3 is decision-affecting, not evidence-only — it rewrites `engine/completedTraining.ts` and `engine/trainingHistory.ts`, so it is gated on a shadow-block boundary exactly like M3.2/M3.3/M3.4; only M5's evidence-only work may proceed inside a running segment | Land M4.3 before 9.0.7 starts, or end the segment and record the policy/version boundary; never pool the two segments |
+| Phase 9.0 evidence contaminated by mid-block schema churn | M3.2 is gated on a shadow-block boundary and coordinated with 9.0.1 | Defer M3.2; M2 needs none of it |
 | Offline concurrent correction conflicts | Stable entry IDs, parent lifecycle checks, idempotent writes, deterministic response IDs, emulator and browser tests | Keep the append-only v1 runner available during cutover |
-| Recommendation replay drifts | Persist the hash and include it in decision equality/audit; replay verifies stored bytes | Fall back to catalog/external v1 replay paths; do not rewrite old audits |
-| Rich logging becomes slow | Defaults, recent values, check-off modes and progressive disclosure; specialized controls only after trigger | Retain generic minimum performed payload; remove unused advanced controls |
+| Recommendation replay drifts | Persist the hash and include it in decision equality and audit; replay verifies against stored bytes | Fall back to catalog and external v1 replay paths; do not rewrite old audits |
+| Rich logging becomes slow | Measurement-profile controls, defaults, recent values, check-off modes, progressive disclosure | Hide advanced fields; retain the minimum performed payload |
 | Free-text metadata creates false safety | Fail-closed engine adapter; visible low-confidence state | Treat unresolved as generic evidence only |
-| Response data is mistaken for diagnosis | Raw language, transparent heuristics, no probability claims | Disable derived outcome view; retain raw responses |
-| New detail silently changes selection | Evidence-only import guards, default-off candidates, M0.3 architecture tests | Remove selector/import; current production path remains |
-| Garmin and manual data double-count | Occurrence keys and explicit source reconciliation | Prefer one source and mark the other linked/ignored; never delete raw evidence |
-| Permanent v1 read model rots | M2.7 is explicitly permanent and keeps its own tests | None needed — that is the point of naming it permanent |
+| Response data is mistaken for diagnosis | Raw language, transparent heuristics, no probability claims | Disable the derived outcome view; retain raw responses |
+| New detail silently changes selection | Evidence-only import guards, default-off candidates, M0.3 architecture tests | Remove the selector or import; the current production path remains |
+| Garmin and manual data double-count | Occurrence keys and explicit source reconciliation | Prefer one source and mark the other linked or ignored; never delete raw evidence |
+| The permanent v1 read model rots | M2.7 is explicitly permanent and keeps its own tests; it is a supported boundary, not scaffolding | None needed — that is the point of naming it permanent |
 
-Historical documents and audits are never deleted during rollback.
+UI cutover must be reversible until M3.4 parity is demonstrated. Historical documents and audits
+are never deleted during rollback.
 
 ### Stop conditions
 
-This plan has no engine-policy ship gate before M8, so it needs honest exits. Any of these is
-a valid place to stop and record the outcome, not a failure:
+This plan has no engine-policy ship gate before M8, so it needs its own honest exits. Any of
+these is a valid place to stop and record the outcome, not a failure:
 
-* **At M3.8.** If the current builder plus JSON import covers real authoring, stop hardening and
-  defer residual advanced controls.
-* **After M5.2.** This is now the default product cutline. Let real session→response history
-  accumulate before deciding whether any further capability deserves implementation.
-* **At M5.3.** Keep report/export only unless repeated use proves a dedicated history UI useful.
-* **Before M6.** If no recurring real session exposes a generic-runner gap, M6 remains unstarted
-  indefinitely — this is success, not backlog debt.
-* **Before M7.** If no repeated standardized testing workflow exists, M7 remains unstarted
-  indefinitely.
-* **At M8.3.** A clean sweep of reject/defer results completes the evidence milestone; lack of
-  M6/M7 evidence is a valid reason to defer a candidate.
+* **After M1.** If the repaired v1 logger plus the response link is enough, the multidomain
+  model stays unbuilt and the fixtures stay documentation.
+* **After M2.** If fixture-driven execution covers the athlete's real sessions, M3's authoring
+  and authority surface is deferred indefinitely.
+* **At M3.8.** If fixtures plus JSON import proved sufficient, the manual builder is a no-ship.
+  This is stated in the item itself.
+* **At M8.3.** A clean sweep of reject and defer results completes the milestone.
 
-A stop is recorded as a dated note in `docs/analysis/` and a status/startability change here,
-following the same convention as D-BEAM and the zone-credit no-ship.
+A stop is recorded as a dated note in `docs/analysis/` and a status change here, following the
+same convention as D-BEAM and the zone-credit no-ship.
 
 ---
 
@@ -1891,15 +1262,13 @@ following the same convention as D-BEAM and the zone-credit no-ship.
 * coach or team tenancy, permissions or dashboards;
 * a relational, warehouse or Databricks migration;
 * full force-plate, timing-gate, GPS, VBT or video integrations (M9.3 trigger only);
-* broad exercise/metric taxonomies before a real usage trigger;
-* dedicated response-history dashboards without repeated evidence use;
+* hundreds of exercises or metrics before the representative taxonomy passes end-to-end;
 * push-notification infrastructure;
 * changes to Garmin backend date or user-isolation semantics;
 * enabling ADR-0021 Strength cost solely because richer execution data exists;
 * a bulk migration of `strength_sessions` — the M2.7 read model is the permanent answer.
 
-Each may receive a separate plan after the dependency, usage trigger and evidence it needs
-exists.
+Each may receive a separate plan after the dependency and evidence it needs exists.
 
 ---
 
@@ -1907,14 +1276,14 @@ exists.
 
 * accepted ADR-0023 and the `docs/README.md` ADR index as implementation details land;
 * `docs/architecture/recommendation-engine.md` for source-neutral adjudication and authority;
-* `docs/workout-library.md` for definition/catalog adapter and ontology facets;
+* `docs/workout-library.md` for the definition/catalog adapter and ontology facets;
 * `docs/external-plan-schema.md` for v2 and v1 compatibility;
-* living `docs/architecture/session-execution.md` as M4/M5 behavior lands;
-* Firestore collection/schema documentation after M5, and after M6/M7 only if those groups are triggered;
-* `docs/ops/` for any triggered parser/integration credentials and deployment;
-* this plan's task board and the plan-index startability after every completed item or trigger decision;
-* dated analyses and policy ADRs for M8 measurement outcomes, and a dated note for any stop or
-  M6/M7 trigger decision.
+* a new living `docs/architecture/session-execution.md` after M2;
+* Firestore collection and schema documentation after M2, M5 and M7;
+* `docs/ops/` for any parser service or integration credentials and deployment;
+* this plan's task board and the plan-index status after every completed item;
+* dated analyses and policy ADRs for M8 measurement outcomes, and a dated note for any stop
+  condition exercised.
 
 When this plan eventually becomes `Implemented`, remove or rewrite the present-tense problem
 statements and keep an outcome summary, per `docs/plans/README.md`.

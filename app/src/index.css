@@ -14,15 +14,6 @@
   --tier-green-bg: rgba(34, 197, 94, 0.15);
   --tier-yellow-bg: rgba(234, 179, 8, 0.15);
   --tier-red-bg: rgba(239, 68, 68, 0.15);
-
-  /* Mobile layout tokens */
-  --mobile-page-gutter: 16px;
-  --mobile-card-padding: 16px;
-  --mobile-section-gap: 16px;
-  --mobile-compact-gap: 8px;
-  --touch-target-min: 44px;
-  --radius-card: 14px;
-  --radius-control: 10px;
 }
 
 body {

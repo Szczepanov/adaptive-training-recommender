@@ -1,16 +1,11 @@
-import { useState, useEffect, useCallback, useId } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { checkinService } from '../services/checkinService';
 import { recoverySnapshotService } from '../services/recoverySnapshotService';
-import { sessionExecutionService } from '../services/sessionExecutionService';
-import { sessionResponseService } from '../services/sessionResponseService';
-import { relevantFollowupRegions } from '../responses/followupSchedule';
-import { EXERCISES } from '../workouts/exercises';
 import type { BodyRegion, DailySubjectiveCheckin, RegionTissueResponse, TissueResponseLevel } from '../engine/models';
 import { BODY_REGIONS, TISSUE_LEVELS } from '../engine/models';
 import { getLocalDateString, addDaysToLocalDateString } from '../utils/localDate';
 import { getErrorMessage } from '../utils/errors';
 import type { Screen } from '../types/navigation';
-import { SubjectiveScaleRow } from './checkin/SubjectiveScaleRow';
 import './DailyCheckin.css';
 
 interface DailyCheckinProps {
@@ -20,82 +15,22 @@ interface DailyCheckinProps {
 }
 
 const REGION_LABELS: Record<BodyRegion, string> = {
-  knee: 'Knee',
-  achilles: 'Achilles',
-  ankle: 'Ankle',
-  calf: 'Calf',
-  hamstring: 'Hamstring',
-  quadriceps: 'Quadriceps',
-  adductor_groin: 'Adductor/Groin',
-  hip: 'Hip',
-  lower_back: 'Lower Back',
-  shoulder: 'Shoulder',
-  elbow: 'Elbow',
-  wrist: 'Wrist',
+  knee: 'Knee', achilles: 'Achilles', ankle: 'Ankle', calf: 'Calf',
+  hamstring: 'Hamstring', quadriceps: 'Quadriceps', adductor_groin: 'Adductor/Groin',
+  hip: 'Hip', lower_back: 'Lower Back', shoulder: 'Shoulder', elbow: 'Elbow', wrist: 'Wrist',
 };
 
 const TISSUE_LEVEL_LABELS: Record<TissueResponseLevel, string> = {
-  normal: 'Normal',
-  mild: 'Mild',
-  moderate: 'Moderate',
-  severe: 'Severe',
+  normal: 'Normal', mild: 'Mild', moderate: 'Moderate', severe: 'Severe',
 };
 
-interface ScaleConfig {
-  key: keyof Pick<DailySubjectiveCheckin, 'readiness' | 'sleepQuality' | 'fatigue' | 'soreness' | 'mentalStress' | 'motivation'>;
-  label: string;
-  desc: string;
-  lowLabel: string;
-  highLabel: string;
-  isInverted?: boolean;
-}
-
-const SCALES: ScaleConfig[] = [
-  {
-    key: 'readiness',
-    label: 'Overall Readiness',
-    desc: 'How ready do you feel to train today?',
-    lowLabel: '1 Not ready',
-    highLabel: '10 Fully ready',
-  },
-  {
-    key: 'sleepQuality',
-    label: 'Sleep Quality',
-    desc: 'How well did you sleep last night?',
-    lowLabel: '1 Poor',
-    highLabel: '10 Restful',
-  },
-  {
-    key: 'fatigue',
-    label: 'Physical Fatigue',
-    desc: 'How much physical fatigue do you feel?',
-    lowLabel: '1 Fresh',
-    highLabel: '10 Exhausted',
-    isInverted: true,
-  },
-  {
-    key: 'soreness',
-    label: 'Muscle Soreness',
-    desc: 'How sore are your muscles?',
-    lowLabel: '1 None',
-    highLabel: '10 Severe',
-    isInverted: true,
-  },
-  {
-    key: 'mentalStress',
-    label: 'Mental Stress',
-    desc: 'What is your current stress level?',
-    lowLabel: '1 Low',
-    highLabel: '10 Extreme',
-    isInverted: true,
-  },
-  {
-    key: 'motivation',
-    label: 'Motivation',
-    desc: 'How motivated are you to exercise?',
-    lowLabel: '1 Low',
-    highLabel: '10 High',
-  },
+const READINESS_FIELDS = [
+  { key: 'readiness', label: 'Overall Readiness', desc: 'How ready do you feel to train today?' },
+  { key: 'sleepQuality', label: 'Sleep Quality', desc: 'How well did you sleep last night?' },
+  { key: 'fatigue', label: 'Physical Fatigue', desc: 'How much physical fatigue do you feel?' },
+  { key: 'soreness', label: 'Muscle Soreness', desc: 'How sore are your muscles?' },
+  { key: 'mentalStress', label: 'Mental Stress', desc: 'What is your current stress level?' },
+  { key: 'motivation', label: 'Motivation', desc: 'How motivated are you to exercise?' }
 ];
 
 export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) {
@@ -103,14 +38,11 @@ export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [showGarminComparison, setShowGarminComparison] = useState(false);
+  const [currentStep, setCurrentStep] = useState(0);
+  const [isEditing, setIsEditing] = useState(false);
   const [recoverySnapshot, setRecoverySnapshot] = useState<Awaited<ReturnType<typeof recoverySnapshotService.getRecoverySnapshotByDate>>>(null);
   const [pendingFollowups, setPendingFollowups] = useState<Array<{ region: BodyRegion; sessionRef?: RegionTissueResponse['sourceSessionRef'] }>>([]);
-
-  const tissueSelectId = useId();
-  const timeInputId = useId();
-  const modalitySelectId = useId();
-  const notesInputId = useId();
+  const readinessFields = READINESS_FIELDS;
 
   const loadTodayCheckin = useCallback(async () => {
     try {
@@ -123,63 +55,29 @@ export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) 
         const snapshot = await recoverySnapshotService.getRecoverySnapshotByDate(userId, today);
         setRecoverySnapshot(snapshot ?? null);
 
-        // Check if yesterday's checkin or session logged tissue reactions requiring
-        // follow-up (M1.7), generalized (M5.2) to also derive candidate regions from
-        // yesterday's own completed session_executions via M3.5 tissue tags -- so a novel
-        // session the athlete never manually flagged a region for during/after still gets
-        // asked about a region its own movements make relevant. A region the athlete's own
-        // manual tissueResponses flag already covers takes priority (keeps whatever
-        // sourceSessionRef that flag already carries); the session-derived scan only fills
-        // in what the athlete didn't already flag. Legacy strength_sessions are out of this
-        // generalization's scope -- their own manual tissueResponses flag still works
-        // unchanged, exactly as before M5.2.
+        // Check if yesterday's checkin or session logged tissue reactions requiring follow-up (M1.7)
         const yesterday = addDaysToLocalDateString(today, -1);
         const yesterdayCheckin = await checkinService.getCheckin(userId, yesterday);
-        const needed: Array<{ region: BodyRegion; sessionRef?: RegionTissueResponse['sourceSessionRef'] }> = [];
-        const coveredRegionSessionKeys = new Set<string>();
         if (yesterdayCheckin?.tissueResponses) {
+          const needed: Array<{ region: BodyRegion; sessionRef?: RegionTissueResponse['sourceSessionRef'] }> = [];
           for (const [regionKey, response] of Object.entries(yesterdayCheckin.tissueResponses)) {
             const region = regionKey as BodyRegion;
             if (response && (response.painDuringTraining || response.afterTrainingState || response.sourceSessionRef)) {
-              const sessionKey = response.sourceSessionRef ? `${response.sourceSessionRef.kind}:${response.sourceSessionRef.id}` : 'checkin';
-              coveredRegionSessionKeys.add(`${sessionKey}:${region}`);
               if (!existing?.tissueResponses?.[region]?.nextMorningReaction) {
                 needed.push({ region, sessionRef: response.sourceSessionRef });
               }
             }
           }
+          setPendingFollowups(needed);
         }
-        try {
-          const { executions } = await sessionExecutionService.getExecutionsInRange(userId, yesterday, today);
-          for (const { execution, entries } of executions) {
-            if (execution.state === 'in_progress') continue;
-            const exerciseIds: string[] = [];
-            for (const entry of entries) {
-              if (entry.exerciseRef?.kind === 'catalog') exerciseIds.push(entry.exerciseRef.exerciseId);
-            }
-            const facets = exerciseIds
-              .map(id => EXERCISES.find(item => item.id === id)?.facets)
-              .filter((facet): facet is NonNullable<typeof facet> => !!facet);
-            const sessionRef: RegionTissueResponse['sourceSessionRef'] = { kind: 'execution', id: execution.executionId, date: execution.date };
-            const sessionKey = `execution:${execution.executionId}`;
-            for (const region of relevantFollowupRegions(facets)) {
-              const key = `${sessionKey}:${region}`;
-              if (coveredRegionSessionKeys.has(key)) continue;
-              coveredRegionSessionKeys.add(key);
-              if (existing?.tissueResponses?.[region]?.nextMorningReaction) continue;
-              needed.push({ region, sessionRef });
-            }
-          }
-        } catch {
-          // Session-derived candidates are an enhancement, not a requirement -- a failed
-          // read here must not block the check-in itself from loading.
-        }
-        setPendingFollowups(needed);
 
         if (existing) {
           setCheckin(existing);
+          if (existing.dataQuality?.isComplete) {
+            setIsEditing(false);
+          }
         } else {
-          // Initialize with neutral defaults
+          // Initialize with defaults
           setCheckin({
             userId,
             date: today,
@@ -196,22 +94,52 @@ export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) 
             availability: {
               timeAvailableMin: 60,
               preferredModalityToday: null,
-              indoorOnly: false,
+              indoorOnly: false
             },
             notes: null,
             submittedAt: new Date().toISOString(),
             dataQuality: {
               isComplete: false,
-              missingFields: [],
+              missingFields: []
             },
             schemaVersion: 1,
             createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
           } as DailySubjectiveCheckin);
+          setIsEditing(true);
         }
       } catch (serviceError: unknown) {
         console.error('Service error loading check-in:', serviceError);
-        setError(`Couldn't load today's check-in: ${getErrorMessage(serviceError)}`);
+        const today = getLocalDateString();
+        setCheckin({
+          userId,
+          date: today,
+          readiness: 5,
+          sleepQuality: 5,
+          fatigue: 5,
+          soreness: 5,
+          mentalStress: 5,
+          motivation: 5,
+          painOrInjury: false,
+          illnessSymptoms: false,
+          unusuallyLimitedTime: false,
+          alreadyTrainedToday: false,
+          availability: {
+            timeAvailableMin: 60,
+            preferredModalityToday: null,
+            indoorOnly: false
+          },
+          notes: null,
+          submittedAt: new Date().toISOString(),
+          dataQuality: {
+            isComplete: false,
+            missingFields: []
+          },
+          schemaVersion: 1,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        } as DailySubjectiveCheckin);
+        setIsEditing(true);
       }
     } catch (err) {
       console.error('Unexpected error loading check-in:', err);
@@ -225,29 +153,22 @@ export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) 
     loadTodayCheckin();
   }, [loadTodayCheckin]);
 
-  const handleScaleChange = (field: ScaleConfig['key'], value: number) => {
+  const handleSliderChange = (value: number) => {
     if (!checkin) return;
+    const field = readinessFields[currentStep].key as keyof DailySubjectiveCheckin;
     setCheckin({ ...checkin, [field]: value });
-  };
-
-  const handleApplyTypicalPreset = () => {
-    if (!checkin) return;
-    setCheckin({
-      ...checkin,
-      readiness: 7,
-      sleepQuality: 7,
-      fatigue: 3,
-      soreness: 2,
-      mentalStress: 3,
-      motivation: 8,
-    });
   };
 
   const handleBooleanToggle = (field: 'painOrInjury' | 'illnessSymptoms' | 'unusuallyLimitedTime' | 'alreadyTrainedToday') => {
     if (!checkin) return;
     const next = !checkin[field];
     if (field === 'painOrInjury' && !next) {
-      // Clear tissueResponses when pain/injury is turned off
+      // The tissue-response editor below only renders while painOrInjury is true -- clear
+      // any previously entered tissueResponses the moment the flag flips false, rather than
+      // leaving them hidden-but-persisted. mapContextFromGoalsAndTrainingSettings consumes
+      // tissueResponses regardless of this flag, so a stale entry would keep restricting
+      // the athlete on a region they can no longer see or edit, after explicitly reporting
+      // "no pain/injury".
       const cleared: Partial<DailySubjectiveCheckin> = { ...checkin, [field]: next };
       delete cleared.tissueResponses;
       setCheckin(cleared);
@@ -256,6 +177,9 @@ export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) 
     setCheckin({ ...checkin, [field]: next });
   };
 
+  // Per-region tissue response (Phase 5.4) -- see injuryPolicy.ts resolveEffectiveInjuryConstraints
+  // for how these feed the engine: preserve-or-tighten only against the athlete's
+  // standing InjuryConstraint[], never persisted anywhere but this day's check-in.
   const handleAddTissueRegion = (region: BodyRegion) => {
     if (!checkin) return;
     const existing = checkin.tissueResponses ?? {};
@@ -274,7 +198,7 @@ export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) 
   const handleTissueFieldChange = (
     region: BodyRegion,
     field: keyof RegionTissueResponse,
-    value: TissueResponseLevel | '',
+    value: TissueResponseLevel | ''
   ) => {
     if (!checkin) return;
     const existing = checkin.tissueResponses?.[region];
@@ -306,29 +230,14 @@ export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) 
       painOrInjury: level !== 'normal' ? true : checkin.painOrInjury,
     };
     setCheckin(updatedCheckin);
-    setPendingFollowups(prev => prev.filter(item => !(item.region === region && item.sessionRef?.id === sessionRef?.id && item.sessionRef?.kind === sessionRef?.kind)));
+    setPendingFollowups(prev => prev.filter(item => item.region !== region));
     if (checkin.userId && checkin.date) {
       await checkinService.upsertTodayCheckin(checkin.userId, updatedCheckin);
     }
-    // M5.2: one session-level SessionResponse per session for the next_morning window --
-    // several regions of the same session must not create duplicates, so an existing one
-    // is checked for first. The tissue value itself is never written here or duplicated
-    // into it (D-MRESP) -- the check-in write above is the only tissue authority.
-    if (sessionRef && checkin.userId && checkin.date) {
-      try {
-        const already = await sessionResponseService.getResponseForWindow(checkin.userId, sessionRef, 'next_morning');
-        if (!already) {
-          await sessionResponseService.recordResponse(checkin.userId, sessionRef, 'next_morning', checkin.date, checkin.date, {});
-        }
-      } catch {
-        // Best-effort session-level linkage; the tissue answer above already succeeded and
-        // remains the source of truth injuryPolicy.ts/D-SUBJFLOOR consume.
-      }
-    }
   };
 
-  const handleSkipFollowup = (region: BodyRegion, sessionRef?: RegionTissueResponse['sourceSessionRef']) => {
-    setPendingFollowups(prev => prev.filter(item => !(item.region === region && item.sessionRef?.id === sessionRef?.id && item.sessionRef?.kind === sessionRef?.kind)));
+  const handleSkipFollowup = (region: BodyRegion) => {
+    setPendingFollowups(prev => prev.filter(item => item.region !== region));
   };
 
   const handleAvailabilityChange = (field: string, value: number | string | boolean | null) => {
@@ -337,8 +246,8 @@ export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) 
       ...checkin,
       availability: {
         ...checkin.availability,
-        [field]: value,
-      } as DailySubjectiveCheckin['availability'],
+        [field]: value
+      } as DailySubjectiveCheckin['availability']
     });
   };
 
@@ -347,8 +256,55 @@ export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) 
     setCheckin({ ...checkin, notes: value || null });
   };
 
-  const handleSubmit = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
+  const handleNext = useCallback(() => {
+    const finalStepIndex = readinessFields.length + 1;
+    if (currentStep < finalStepIndex) {
+      setCurrentStep(prev => prev + 1);
+    }
+  }, [currentStep, readinessFields.length]);
+
+  const handleBack = () => {
+    if (currentStep > 0) {
+      setCurrentStep(currentStep - 1);
+    } else if (onBack) {
+      onBack();
+    }
+  };
+
+  // Keyboard navigation for rapid 5-second check-ins
+  useEffect(() => {
+    if (!checkin) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const activeTag = document.activeElement?.tagName.toLowerCase();
+      if (activeTag === 'input' || activeTag === 'textarea' || activeTag === 'select') return;
+
+      if (currentStep < READINESS_FIELDS.length) {
+        const fieldKey = READINESS_FIELDS[currentStep].key as keyof DailySubjectiveCheckin;
+        const currentVal = (checkin[fieldKey] as number) || 5;
+
+        if (e.key >= '1' && e.key <= '9') {
+          setCheckin(prev => prev ? { ...prev, [fieldKey]: Number(e.key) } : prev);
+        } else if (e.key === '0') {
+          setCheckin(prev => prev ? { ...prev, [fieldKey]: 10 } : prev);
+        } else if (e.key === 'ArrowRight' || e.key === 'ArrowUp') {
+          e.preventDefault();
+          setCheckin(prev => prev ? { ...prev, [fieldKey]: Math.min(10, currentVal + 1) } : prev);
+        } else if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') {
+          e.preventDefault();
+          setCheckin(prev => prev ? { ...prev, [fieldKey]: Math.max(1, currentVal - 1) } : prev);
+        } else if (e.key === 'Enter') {
+          e.preventDefault();
+          handleNext();
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [currentStep, checkin, handleNext]);
+
+  const handleSubmit = async () => {
     if (!checkin) return;
 
     try {
@@ -366,7 +322,7 @@ export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) 
 
       const result = await checkinService.upsertTodayCheckin(userId, checkinToSave);
       setCheckin(result);
-      onNavigate('home');
+      setIsEditing(false);
     } catch (err: unknown) {
       console.error('Unexpected error saving check-in:', err);
       setError(getErrorMessage(err) || 'Failed to save check-in');
@@ -374,6 +330,8 @@ export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) 
       setSaving(false);
     }
   };
+
+  const isComplete = checkin?.dataQuality?.isComplete ?? false;
 
   if (loading) {
     return (
@@ -385,194 +343,314 @@ export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) 
     );
   }
 
-  if (error && !checkin) {
-    return (
-      <div className="checkin-container">
-        <div className="checkin-header-bar">
-          <button type="button" onClick={onBack ?? (() => onNavigate('home'))} className="back-btn">
-            ← Back
-          </button>
-        </div>
-        <div className="error-card" role="alert">
-          <p>{error}</p>
-          <button type="button" className="btn-primary" onClick={loadTodayCheckin}>
-            Retry
-          </button>
-        </div>
-      </div>
-    );
-  }
-
   if (!checkin) {
     return (
       <div className="checkin-container">
         <div className="error-state">
           <p>Failed to load check-in</p>
-          <button type="button" onClick={loadTodayCheckin}>Retry</button>
+          <button onClick={loadTodayCheckin}>Retry</button>
         </div>
       </div>
     );
   }
 
-  return (
-    <div className="checkin-container">
-      <div className="checkin-header-bar">
-        {onBack && (
-          <button type="button" className="back-btn" onClick={onBack} aria-label="Back">
-            ← Back
-          </button>
-        )}
-        <div className="checkin-title-group">
-          <h1>Morning Check-in</h1>
-          <span className="checkin-date-badge">Today · {checkin.date || getLocalDateString()}</span>
+  // Render Post-Submission Comparison View when check-in is complete and not currently editing
+  if (isComplete && !isEditing) {
+    const sleepDelta = recoverySnapshot?.derived.deltas.sleepScoreVs7d;
+    const rhrDelta = recoverySnapshot?.derived.deltas.restingHrVs7d;
+    const hrvDelta = recoverySnapshot?.derived.deltas.hrvVs7d;
+
+    return (
+      <div className="checkin-container">
+        <button className="back-btn" onClick={() => onNavigate('home')}>
+          ← Back to Dashboard
+        </button>
+
+        <div className="post-submission-card">
+          <div className="post-submission-header">
+            <h2>Check-in Complete ✓</h2>
+            <p>Your subjective observations have been saved for today.</p>
+          </div>
+
+          <div className="post-submission-grid">
+            {/* Neutral Column 1: YOUR CHECK-IN */}
+            <div className="comparison-column subjective">
+              <h3>YOUR CHECK-IN</h3>
+              <div className="summary-item">
+                <span className="summary-label">Readiness:</span>
+                <span className="summary-val">{checkin.readiness}/10</span>
+              </div>
+              <div className="summary-item">
+                <span className="summary-label">Sleep Quality:</span>
+                <span className="summary-val">{checkin.sleepQuality}/10</span>
+              </div>
+              <div className="summary-item">
+                <span className="summary-label">Physical Fatigue:</span>
+                <span className="summary-val">{checkin.fatigue}/10</span>
+              </div>
+              <div className="summary-item">
+                <span className="summary-label">Muscle Soreness:</span>
+                <span className="summary-val">{checkin.soreness}/10</span>
+              </div>
+              <div className="summary-item">
+                <span className="summary-label">Stress / Motivation:</span>
+                <span className="summary-val">{checkin.mentalStress}/10 · {checkin.motivation}/10</span>
+              </div>
+              <div className="summary-item">
+                <span className="summary-label">Pain / Illness:</span>
+                <span className="summary-val">
+                  {checkin.painOrInjury ? 'Pain Flag' : checkin.illnessSymptoms ? 'Unwell' : 'None'}
+                </span>
+              </div>
+              {checkin.tissueResponses && Object.keys(checkin.tissueResponses).length > 0 && (
+                <div className="summary-item">
+                  <span className="summary-label">Affected Areas:</span>
+                  <span className="summary-val">
+                    {Object.values(checkin.tissueResponses)
+                      .filter((response): response is NonNullable<typeof response> => !!response)
+                      .map(response => REGION_LABELS[response.region])
+                      .join(', ')}
+                  </span>
+                </div>
+              )}
+              <div className="summary-item">
+                <span className="summary-label">Time Available:</span>
+                <span className="summary-val">{checkin.availability?.timeAvailableMin ?? 60} min</span>
+              </div>
+            </div>
+
+            {/* Neutral Column 2: GARMIN CONTEXT */}
+            <div className="comparison-column wearable">
+              <h3>GARMIN CONTEXT</h3>
+              {recoverySnapshot ? (
+                <>
+                  <div className="summary-item">
+                    <span className="summary-label">Sleep Score:</span>
+                    <span className="summary-val">
+                      {recoverySnapshot.raw.sleepScore ?? '--'}
+                      {sleepDelta !== null && sleepDelta !== undefined && (
+                        <span className="summary-delta">({sleepDelta > 0 ? `+${sleepDelta}` : sleepDelta} vs 7d)</span>
+                      )}
+                    </span>
+                  </div>
+                  <div className="summary-item">
+                    <span className="summary-label">Resting HR:</span>
+                    <span className="summary-val">
+                      {recoverySnapshot.raw.restingHr ? `${recoverySnapshot.raw.restingHr} bpm` : '--'}
+                      {rhrDelta !== null && rhrDelta !== undefined && (
+                        <span className="summary-delta">({rhrDelta > 0 ? `+${rhrDelta}` : rhrDelta} vs 7d)</span>
+                      )}
+                    </span>
+                  </div>
+                  <div className="summary-item">
+                    <span className="summary-label">HRV Overnight:</span>
+                    <span className="summary-val">
+                      {recoverySnapshot.raw.hrvOvernightAvg ? `${recoverySnapshot.raw.hrvOvernightAvg} ms` : '--'}
+                      {hrvDelta !== null && hrvDelta !== undefined && (
+                        <span className="summary-delta">({hrvDelta > 0 ? `+${hrvDelta}` : hrvDelta} vs 7d)</span>
+                      )}
+                    </span>
+                  </div>
+                  <div className="summary-item">
+                    <span className="summary-label">Body Battery:</span>
+                    <span className="summary-val">{recoverySnapshot.raw.bodyBatteryWake ?? '--'} / 100</span>
+                  </div>
+                </>
+              ) : (
+                <div className="wearable-fallback-note">
+                  Your check-in is saved. Garmin recovery data hasn&apos;t synced yet today; today&apos;s recommendation will update automatically when Garmin data becomes available.
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="post-submission-actions">
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={() => {
+                setIsEditing(true);
+                setCurrentStep(0);
+              }}
+            >
+              Edit Check-in
+            </button>
+            <button
+              type="button"
+              className="btn-primary"
+              onClick={() => onNavigate('home')}
+            >
+              Done & Return Home
+            </button>
+          </div>
         </div>
       </div>
+    );
+  }
 
-      {pendingFollowups.length > 0 && (
-        <aside className="followup-tissue-prompt" aria-label="Yesterday reaction prompt">
-          <h4>Yesterday&apos;s Training Follow-up</h4>
-          <p>
-            How did your <strong>{REGION_LABELS[pendingFollowups[0].region]}</strong> react this morning after training?
-          </p>
-          <div className="followup-actions">
-            {(['normal', 'mild', 'moderate', 'severe'] as const).map(lvl => (
+  // Render readiness sliders (Steps 1 to 6)
+  if (currentStep < readinessFields.length) {
+    const field = readinessFields[currentStep];
+    const value = checkin[field.key as keyof DailySubjectiveCheckin] as number || 5;
+
+    return (
+      <div className="checkin-container">
+        <button className="back-btn" onClick={handleBack}>
+          ← Back
+        </button>
+
+        {pendingFollowups.length > 0 && (
+          <div className="followup-tissue-prompt">
+            <h4>Yesterday's Session Reaction</h4>
+            <p>
+              How did your <strong>{REGION_LABELS[pendingFollowups[0].region]}</strong> react this morning after yesterday's training?
+            </p>
+            <div className="followup-actions">
+              {(['normal', 'mild', 'moderate', 'severe'] as const).map(lvl => (
+                <button
+                  key={lvl}
+                  type="button"
+                  className="btn-followup-pill"
+                  onClick={() => void handleAnswerFollowup(pendingFollowups[0].region, lvl, pendingFollowups[0].sessionRef)}
+                >
+                  {TISSUE_LEVEL_LABELS[lvl]}
+                </button>
+              ))}
               <button
-                key={lvl}
                 type="button"
-                className="btn-followup-pill"
-                onClick={() => void handleAnswerFollowup(pendingFollowups[0].region, lvl, pendingFollowups[0].sessionRef)}
+                className="btn-followup-skip"
+                onClick={() => handleSkipFollowup(pendingFollowups[0].region)}
               >
-                {TISSUE_LEVEL_LABELS[lvl]}
+                Skip
               </button>
-            ))}
-            <button
-              type="button"
-              className="btn-followup-skip"
-              onClick={() => handleSkipFollowup(pendingFollowups[0].region, pendingFollowups[0].sessionRef)}
-            >
-              Skip
-            </button>
+            </div>
           </div>
-        </aside>
-      )}
+        )}
 
-      <form className="checkin-form" onSubmit={handleSubmit}>
-        {/* Section 1: Subjective State */}
-        <section className="checkin-section" aria-label="Subjective state assessment">
-          <div className="section-title-wrap">
-            <h2>Subjective Recovery & State</h2>
-            <p>6 standard subjective dimensions scaled 1 to 10</p>
-          </div>
+        <div className="step-indicator">
+          Step {currentStep + 1} of {readinessFields.length + 2}
+        </div>
 
-          <div className="checkin-preset-bar">
-            <button
-              type="button"
-              className="btn-preset-typical"
-              onClick={handleApplyTypicalPreset}
-            >
-              ⚡ Feeling normal today? Use typical values
-            </button>
-          </div>
+        <div className="question-card">
+          <h2>{field.label}</h2>
+          <p>{field.desc}</p>
 
-          <div className="scales-list">
-            {SCALES.map((scale) => {
-              const val = (checkin[scale.key] as number) ?? 5;
-              return (
-                <SubjectiveScaleRow
-                  key={scale.key}
-                  id={scale.key}
-                  label={scale.label}
-                  desc={scale.desc}
-                  value={val}
-                  lowLabel={scale.lowLabel}
-                  highLabel={scale.highLabel}
-                  isInverted={scale.isInverted}
-                  onChange={(nextVal) => handleScaleChange(scale.key, nextVal)}
-                />
-              );
-            })}
-          </div>
-        </section>
-
-        {/* Section 2: Health & Safety Flags */}
-        <section className="checkin-section" aria-label="Health and safety status">
-          <div className="section-title-wrap">
-            <h2>Health & Safety</h2>
-            <p>Safety constraints that protect your recovery and tissue health</p>
+          <div className="slider-container">
+            <div className="slider-labels">
+              <span>Low (1)</span>
+              <span>High (10)</span>
+            </div>
+            <input
+              type="range"
+              min="1"
+              max="10"
+              value={value}
+              onChange={(e) => handleSliderChange(Number(e.target.value))}
+              className="readiness-slider"
+            />
+            <div className="slider-value">
+              {value}
+            </div>
           </div>
 
-          <div className="boolean-options-grid">
-            <label className={`boolean-toggle-card ${checkin.painOrInjury ? 'is-active is-warning' : ''}`}>
+          <button className="next-btn" onClick={handleNext}>
+            Next
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Render boolean flags (Step 7)
+  if (currentStep === readinessFields.length) {
+    return (
+      <div className="checkin-container">
+        <button className="back-btn" onClick={handleBack}>
+          ← Back
+        </button>
+
+        <div className="step-indicator">
+          Step {readinessFields.length + 1} of {readinessFields.length + 2}
+        </div>
+
+        <div className="question-card">
+          <h2>Health Status</h2>
+          <p>Let us know about any current issues</p>
+
+          <div className="boolean-options">
+            <label className="boolean-option">
               <input
                 type="checkbox"
+                id="painOrInjury"
                 checked={checkin.painOrInjury || false}
                 onChange={() => handleBooleanToggle('painOrInjury')}
               />
-              <span className="toggle-checkmark"></span>
-              <div className="toggle-info">
+              <span className="checkmark"></span>
+              <div className="option-content">
                 <strong>Pain or Injury</strong>
-                <span>Active physical issue requiring load restriction</span>
+                <span>Currently experiencing any pain or injury</span>
               </div>
             </label>
 
-            <label className={`boolean-toggle-card ${checkin.illnessSymptoms ? 'is-active is-warning' : ''}`}>
+            <label className="boolean-option">
               <input
                 type="checkbox"
+                id="illnessSymptoms"
                 checked={checkin.illnessSymptoms || false}
                 onChange={() => handleBooleanToggle('illnessSymptoms')}
               />
-              <span className="toggle-checkmark"></span>
-              <div className="toggle-info">
+              <span className="checkmark"></span>
+              <div className="option-content">
                 <strong>Illness Symptoms</strong>
-                <span>Feeling sick, feverish, or unwell</span>
+                <span>Feeling sick or unwell</span>
               </div>
             </label>
 
-            <label className={`boolean-toggle-card ${checkin.unusuallyLimitedTime ? 'is-active' : ''}`}>
+            <label className="boolean-option">
               <input
                 type="checkbox"
+                id="unusuallyLimitedTime"
                 checked={checkin.unusuallyLimitedTime || false}
                 onChange={() => handleBooleanToggle('unusuallyLimitedTime')}
               />
-              <span className="toggle-checkmark"></span>
-              <div className="toggle-info">
-                <strong>Limited Time</strong>
-                <span>Have less time available than normal</span>
+              <span className="checkmark"></span>
+              <div className="option-content">
+                <strong>Limited Time Today</strong>
+                <span>Have less time than usual for training</span>
               </div>
             </label>
 
-            <label className={`boolean-toggle-card ${checkin.alreadyTrainedToday ? 'is-active' : ''}`}>
+            <label className="boolean-option">
               <input
                 type="checkbox"
+                id="alreadyTrainedToday"
                 checked={checkin.alreadyTrainedToday || false}
                 onChange={() => handleBooleanToggle('alreadyTrainedToday')}
               />
-              <span className="toggle-checkmark"></span>
-              <div className="toggle-info">
+              <span className="checkmark"></span>
+              <div className="option-content">
                 <strong>Already Trained Today</strong>
-                <span>Recommend rest or recovery only</span>
+                <span>I already completed a session today -- recommend rest/recovery only</span>
               </div>
             </label>
           </div>
 
           {checkin.painOrInjury && (
-            <div className="tissue-response-expanded">
-              <div className="tissue-response-intro">
-                <h3>Affected Body Regions</h3>
-                <p>Pinpointing where and when helps calibrate safe session substitutions.</p>
-              </div>
+            <div className="tissue-response-section">
+              <h3>Which areas?</h3>
+              <p>Pinpointing where and when helps distinguish a sore knee from general fatigue.</p>
 
-              <div className="form-group add-region-group">
-                <label htmlFor={tissueSelectId}>Add affected body area</label>
+              <div className="form-group">
+                <label htmlFor="add-tissue-region">Add affected area</label>
                 <select
-                  id={tissueSelectId}
+                  id="add-tissue-region"
                   className="select-input"
                   value=""
                   onChange={(e) => {
                     if (e.target.value) handleAddTissueRegion(e.target.value as BodyRegion);
                   }}
                 >
-                  <option value="">Select an affected region…</option>
+                  <option value="">Select a region...</option>
                   {BODY_REGIONS.filter(region => !checkin.tissueResponses?.[region]).map(region => (
                     <option key={region} value={region}>{REGION_LABELS[region]}</option>
                   ))}
@@ -583,7 +661,7 @@ export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) 
                 if (!response) return null;
                 const region = response.region;
                 return (
-                  <article className="tissue-region-card" key={region}>
+                  <div className="tissue-region-card" key={region}>
                     <div className="tissue-region-header">
                       <strong>{REGION_LABELS[region]}</strong>
                       <button
@@ -592,13 +670,13 @@ export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) 
                         onClick={() => handleRemoveTissueRegion(region)}
                         aria-label={`Remove ${REGION_LABELS[region]}`}
                       >
-                        ✕ Remove
+                        ✕
                       </button>
                     </div>
 
                     <div className="tissue-region-fields">
                       <div className="form-group">
-                        <label htmlFor={`${region}-morningState`}>This morning (resting/waking)</label>
+                        <label htmlFor={`${region}-morningState`}>This morning (before training)</label>
                         <select
                           id={`${region}-morningState`}
                           className="select-input"
@@ -642,7 +720,7 @@ export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) 
                       </div>
 
                       <div className="form-group">
-                        <label htmlFor={`${region}-nextMorningReaction`}>Reaction to yesterday&apos;s session</label>
+                        <label htmlFor={`${region}-nextMorningReaction`}>This morning's reaction to yesterday's session</label>
                         <select
                           id={`${region}-nextMorningReaction`}
                           className="select-input"
@@ -656,132 +734,104 @@ export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) 
                         </select>
                       </div>
                     </div>
-                  </article>
+                  </div>
                 );
               })}
             </div>
           )}
-        </section>
 
-        {/* Section 3: Availability & Notes */}
-        <section className="checkin-section" aria-label="Session availability">
-          <div className="section-title-wrap">
-            <h2>Today&apos;s Availability</h2>
-            <p>Time and environment preferences for today&apos;s session</p>
+          <button className="next-btn" onClick={handleNext}>
+            Next
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Render availability and notes (Step 8)
+  return (
+    <div className="checkin-container">
+      <button className="back-btn" onClick={handleBack}>
+        ← Back
+      </button>
+
+      <div className="step-indicator">
+        Step {readinessFields.length + 2} of {readinessFields.length + 2}
+      </div>
+
+      <div className="question-card">
+        <h2>Availability & Notes</h2>
+        <p>Help us plan the perfect session</p>
+
+        <div className="availability-section">
+          <div className="form-group">
+            <label>Time Available (minutes)</label>
+            <input
+              type="number"
+              min="0"
+              max="1440"
+              value={checkin.availability?.timeAvailableMin || 60}
+              onChange={(e) => handleAvailabilityChange('timeAvailableMin', Number(e.target.value))}
+              className="number-input"
+            />
           </div>
 
-          <div className="availability-grid">
-            <div className="form-group">
-              <label htmlFor={timeInputId}>Time Available (minutes)</label>
-              <input
-                id={timeInputId}
-                type="number"
-                min="0"
-                max="1440"
-                value={checkin.availability?.timeAvailableMin ?? 60}
-                onChange={(e) => handleAvailabilityChange('timeAvailableMin', Number(e.target.value))}
-                className="number-input"
-              />
-            </div>
-
-            <div className="form-group">
-              <label htmlFor={modalitySelectId}>Preferred Modality</label>
-              <select
-                id={modalitySelectId}
-                value={checkin.availability?.preferredModalityToday || ''}
-                onChange={(e) => handleAvailabilityChange('preferredModalityToday', e.target.value || null)}
-                className="select-input"
-              >
-                <option value="">Coach Choice / No preference</option>
-                <option value="Running">Running</option>
-                <option value="Cycling">Cycling</option>
-                <option value="Strength">Strength Training</option>
-                <option value="Mobility">Mobility/Recovery</option>
-                <option value="Swimming">Swimming</option>
-                <option value="Other">Other</option>
-              </select>
-            </div>
+          <div className="form-group">
+            <label>Preferred Modality</label>
+            <select
+              value={checkin.availability?.preferredModalityToday || ''}
+              onChange={(e) => handleAvailabilityChange('preferredModalityToday', e.target.value || null)}
+              className="select-input"
+            >
+              <option value="">No preference</option>
+              <option value="Running">Running</option>
+              <option value="Cycling">Cycling</option>
+              <option value="Strength">Strength Training</option>
+              <option value="Mobility">Mobility/Recovery</option>
+              <option value="Swimming">Swimming</option>
+              <option value="Other">Other</option>
+            </select>
           </div>
 
-          <label className={`boolean-toggle-card indoor-toggle ${checkin.availability?.indoorOnly ? 'is-active' : ''}`}>
+          <label className="boolean-option">
             <input
               type="checkbox"
               checked={checkin.availability?.indoorOnly || false}
               onChange={(e) => handleAvailabilityChange('indoorOnly', e.target.checked)}
             />
-            <span className="toggle-checkmark"></span>
-            <div className="toggle-info">
+            <span className="checkmark"></span>
+            <div className="option-content">
               <strong>Indoor Only</strong>
-              <span>Limit session to indoor options (trainer, treadmill, gym)</span>
+              <span>Limited to indoor training options</span>
             </div>
           </label>
 
-          <div className="form-group notes-group">
-            <label htmlFor={notesInputId}>Athlete Notes (optional)</label>
+          <div className="form-group">
+            <label>Notes (optional)</label>
             <textarea
-              id={notesInputId}
               value={checkin.notes || ''}
               onChange={(e) => handleNotesChange(e.target.value)}
-              placeholder="Any sensations, soreness notes, or travel context..."
-              rows={2}
+              placeholder="Any additional information..."
+              rows={3}
               className="textarea-input"
             />
           </div>
-        </section>
-
-        {/* Section 4: Secondary Garmin Recovery Context Disclosure */}
-        {recoverySnapshot && (
-          <section className="checkin-garmin-disclosure">
-            <button
-              type="button"
-              className="garmin-context-toggle"
-              onClick={() => setShowGarminComparison(prev => !prev)}
-              aria-expanded={showGarminComparison}
-            >
-              <span>📊 Garmin Context ({recoverySnapshot.raw.sleepScore ? `Sleep ${recoverySnapshot.raw.sleepScore}` : 'Synced'})</span>
-              <span className="toggle-arrow">{showGarminComparison ? '▲' : '▼'}</span>
-            </button>
-
-            {showGarminComparison && (
-              <div className="garmin-context-content">
-                <div className="garmin-metric-pill">
-                  <span className="pill-label">Sleep Score</span>
-                  <span className="pill-val">{recoverySnapshot.raw.sleepScore ?? '--'}</span>
-                </div>
-                <div className="garmin-metric-pill">
-                  <span className="pill-label">Resting HR</span>
-                  <span className="pill-val">{recoverySnapshot.raw.restingHr ? `${recoverySnapshot.raw.restingHr} bpm` : '--'}</span>
-                </div>
-                <div className="garmin-metric-pill">
-                  <span className="pill-label">HRV Overnight</span>
-                  <span className="pill-val">{recoverySnapshot.raw.hrvOvernightAvg ? `${recoverySnapshot.raw.hrvOvernightAvg} ms` : '--'}</span>
-                </div>
-                <div className="garmin-metric-pill">
-                  <span className="pill-label">Body Battery</span>
-                  <span className="pill-val">{recoverySnapshot.raw.bodyBatteryWake ?? '--'} / 100</span>
-                </div>
-              </div>
-            )}
-          </section>
-        )}
+        </div>
 
         {error && (
-          <div className="error-message" role="alert">
+          <div className="error-message">
             {error}
           </div>
         )}
 
-        {/* Sticky Action Footer */}
-        <div className="checkin-sticky-footer">
-          <button
-            type="submit"
-            className="btn-primary checkin-submit-btn"
-            disabled={saving}
-          >
-            {saving ? 'Saving check-in…' : "Save & see today's plan"}
-          </button>
-        </div>
-      </form>
+        <button
+          className="submit-btn"
+          onClick={handleSubmit}
+          disabled={saving}
+        >
+          {saving ? 'Saving...' : (isComplete ? 'Save & Review' : 'Complete Check-in')}
+        </button>
+      </div>
     </div>
   );
 }

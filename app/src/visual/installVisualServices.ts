@@ -15,8 +15,6 @@ import { sessionDefinitionService } from '../services/sessionDefinitionService';
 import { executionPrescriptionService } from '../services/executionPrescriptionService';
 import { externalPlanService } from '../services/externalPlanService';
 import { fixedActivityService } from '../services/fixedActivityService';
-import { sessionOccurrenceService } from '../services/sessionOccurrenceService';
-import { decisionJournalService } from '../services/decisionJournalService';
 import { computeContentHash } from '../engine/externalPlanHash';
 import type { VisualFixture } from './fixtures';
 
@@ -177,34 +175,6 @@ export function installVisualServices(fixture: VisualFixture): void {
   // Home persists the content-addressed catalog prescription before exposing its Start CTA.
   // Keep that evidence write inside the visual harness rather than waiting on real Firestore.
   executionPrescriptionService.savePrescription = async () => {};
-
-  sessionOccurrenceService.getReplaceOccurrenceForDate = async () => null;
-  sessionOccurrenceService.getAdditionalOccurrencesForDate = async () => [];
-  sessionOccurrenceService.getOccurrencesForDate = async () => [];
-  sessionOccurrenceService.getOccurrence = async () => ({ status: 'MISSING' });
-  sessionOccurrenceService.saveOccurrence = async () => {};
-
-  decisionJournalService.getEntryState = async () => ({ status: 'MISSING' });
-  decisionJournalService.getEntry = async () => null;
-  decisionJournalService.recordActualVerdict = async (_userId, _date, actualVerdict) => ({
-    userId: fixture.input.userId,
-    date: fixture.input.date,
-    externalVerdict: 'proceed',
-    actualVerdict,
-    sawEngineVerdictFirst: false,
-    schemaVersion: 1,
-    createdAt: fixture.input.date,
-    updatedAt: fixture.input.date,
-  });
-  decisionJournalService.recordMorningEntry = async () => ({
-    userId: fixture.input.userId,
-    date: fixture.input.date,
-    externalVerdict: 'proceed',
-    sawEngineVerdictFirst: false,
-    schemaVersion: 1,
-    createdAt: fixture.input.date,
-    updatedAt: fixture.input.date,
-  });
 
   recommendationService.getAdherenceStats = async () => ({
     totalRecommendations: 14,

@@ -88,35 +88,3 @@
   color: var(--text-secondary, #94a3b8);
   margin-top: 0.1rem;
 }
-
-.workout-export-item.primary-action:disabled {
-  cursor: not-allowed;
-  opacity: 0.6;
-}
-
-.workout-export-fidelity {
-  border-radius: 6px;
-  padding: 0.5rem 0.6rem;
-  font-size: 0.72rem;
-  line-height: 1.35;
-}
-
-.workout-export-fidelity p {
-  margin: 0;
-}
-
-.workout-export-fidelity p + p {
-  margin-top: 0.35rem;
-}
-
-.workout-export-fidelity-error {
-  background: rgba(248, 113, 113, 0.12);
-  border: 1px solid rgba(248, 113, 113, 0.35);
-  color: #fecaca;
-}
-
-.workout-export-fidelity-warning {
-  background: rgba(250, 204, 21, 0.1);
-  border: 1px solid rgba(250, 204, 21, 0.3);
-  color: #fde68a;
-}

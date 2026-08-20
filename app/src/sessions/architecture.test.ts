@@ -80,7 +80,7 @@ function runtimeImportGraph(): Map<string, string[]> {
 describe('Multidomain sessions architecture and dependency boundaries (M0.3 / ADR-0023)', () => {
     const graph = runtimeImportGraph();
 
-    it('sessions/ and responses/ domain modules do not import engine optimizer or planner modules at runtime', () => {
+    it('sessions/ domain modules do not import engine optimizer or planner modules at runtime', () => {
         const forbiddenPrefixes = [
             'engine/optimizer',
             'engine/planner',
@@ -90,20 +90,15 @@ describe('Multidomain sessions architecture and dependency boundaries (M0.3 / AD
             'engine/sequenceSearch',
         ];
 
-        // M5.1 adds responses/ as a second distinct-lifecycle domain (D-MRECORDS) alongside
-        // sessions/ -- the M0.3 boundary ("sessions/ and observations/ domain types do not
-        // import selection/ranking modules") applies here for the same reason: a session's
-        // or a response's own record shape must never depend on how the engine ranks or
-        // selects anything.
-        const domainModules = Array.from(graph.keys()).filter(path => path.startsWith('sessions/') || path.startsWith('responses/'));
+        const sessionModules = Array.from(graph.keys()).filter(path => path.startsWith('sessions/'));
 
-        for (const mod of domainModules) {
+        for (const mod of sessionModules) {
             const imports = graph.get(mod) ?? [];
             for (const imp of imports) {
                 for (const forbidden of forbiddenPrefixes) {
                     expect(
                         imp.startsWith(forbidden),
-                        `Domain module "${mod}" must not import selection/ranking module "${imp}"`,
+                        `Session domain module "${mod}" must not import selection/ranking module "${imp}"`,
                     ).toBe(false);
                 }
             }
@@ -127,12 +122,8 @@ describe('Multidomain sessions architecture and dependency boundaries (M0.3 / AD
         const sessionServices = Array.from(graph.keys()).filter(path => (
             path.startsWith('services/session') || path === 'services/executionPrescriptionService.ts'
         ));
-        // useSessionRunner is where M4.2's choice-eligibility gate imports engine/injuryPolicy
-        // and engine/sessionChoiceEligibility -- checked at the module that actually imports,
-        // not only at the components/session/ callers adjacent to it.
-        const sessionHooks = Array.from(graph.keys()).filter(path => path === 'hooks/useSessionRunner.ts');
 
-        for (const mod of [...uiModules, ...sessionServices, ...sessionHooks]) {
+        for (const mod of [...uiModules, ...sessionServices]) {
             const imports = graph.get(mod) ?? [];
             for (const imp of imports) {
                 for (const forbidden of forbiddenOptimizer) {

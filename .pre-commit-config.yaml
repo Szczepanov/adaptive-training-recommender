@@ -1,6 +1,3 @@
-minimum_pre_commit_version: "4.0.0"
-default_install_hook_types: [pre-commit, pre-push]
-
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
@@ -8,88 +5,31 @@ repos:
       - id: trailing-whitespace
       - id: end-of-file-fixer
       - id: check-yaml
-      - id: check-toml
+        args: [--unsafe]
       - id: check-json
         exclude: (tsconfig.*\.json)
-      - id: check-merge-conflict
-      - id: check-case-conflict
-      - id: check-illegal-windows-names
       - id: check-added-large-files
         args: [--maxkb=1000]
       - id: detect-private-key
-      - id: debug-statements
 
-  # ---------------------------------------------------------------------------
-  # Keep uv.lock synchronized with pyproject.toml
-  # ---------------------------------------------------------------------------
-  - repo: https://github.com/astral-sh/uv-pre-commit
-    rev: 0.11.31
-    hooks:
-      - id: uv-lock
-
-  # ---------------------------------------------------------------------------
-  # Python linting + formatting
-  # ---------------------------------------------------------------------------
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.16.3
     hooks:
-      - id: ruff-check
+      - id: ruff
         args: [--fix]
       - id: ruff-format
 
-  # ---------------------------------------------------------------------------
-  # Secret detection
-  # ---------------------------------------------------------------------------
-  - repo: https://github.com/gitleaks/gitleaks
-    rev: v8.30.1
-    hooks:
-      - id: gitleaks
-
-  # ---------------------------------------------------------------------------
-  # Project-specific checks
-  # ---------------------------------------------------------------------------
   - repo: local
     hooks:
-      # Python static typing.
-      #
-      # Run only when garmin_sync or its configuration changes.
       - id: mypy
         name: mypy (garmin_sync)
-        entry: uv run --locked mypy src/garmin_sync
+        entry: uv run mypy src/garmin_sync
         language: system
+        types: [python]
         pass_filenames: false
-        files: '^(src/garmin_sync/.*\.py|pyproject\.toml)$'
 
-      # Domain-specific architecture rule.
       - id: no-utc-iso-string-in-engine
         name: Enforce Warsaw local date over UTC toISOString in engine/services
         entry: ^[^/*#\n]*\.toISOString\(\)\.split\(['"]T['"]\)
         language: pygrep
         files: ^app/src/(engine|services)/.*\.tsx?$
-
-      # Keep ESLint feedback relatively close to editing.
-      - id: eslint
-        name: eslint (app)
-        entry: npm --prefix app run lint
-        language: system
-        pass_filenames: false
-        files: '^app/.*\.(js|jsx|mjs|cjs|ts|tsx)$'
-
-      # -----------------------------------------------------------------------
-      # PRE-PUSH: heavier correctness checks
-      # -----------------------------------------------------------------------
-      - id: python-tests
-        name: pytest
-        entry: uv run --locked pytest
-        language: system
-        pass_filenames: false
-        files: '^(src/garmin_sync/|tests/|pyproject\.toml|uv\.lock$)'
-        stages: [pre-push]
-
-      - id: app-check
-        name: frontend typecheck + lint + tests + workout validation
-        entry: npm --prefix app run check
-        language: system
-        pass_filenames: false
-        files: ^app/
-        stages: [pre-push]

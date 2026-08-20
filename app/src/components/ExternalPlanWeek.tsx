@@ -2,8 +2,6 @@ import { useMemo, useState } from 'react';
 import type { ExternalCritiqueFinding, ExternalWeekCritique } from '../engine/externalCritique';
 import type { PlacedSession, ReplacementProposal } from '../engine/externalPlacement';
 import type { FixedActivity } from '../engine/models';
-import { externalSessionDisplayPrescription } from '../engine/externalSessionProfiles';
-import type { ExternalPrescriptionStep } from '../engine/models';
 import { addDaysToLocalDateString } from '../utils/localDate';
 import { stepTiming } from './externalPrescriptionUtils';
 import { WorkoutExportMenu } from './WorkoutExportMenu';
@@ -153,8 +151,7 @@ export function ExternalPlanWeek({
                                 {sessions.length === 0 && <p className="external-week-empty">Nothing placed</p>}
                                 {sessions.map(item => {
                                     const isExpanded = expandedSessionIds.has(item.session.id);
-                                    const displayPrescription = externalSessionDisplayPrescription(item.session);
-                                    const steps: ExternalPrescriptionStep[] = displayPrescription.steps ?? [];
+                                    const steps = item.session.prescription.steps ?? [];
                                     return (
                                         <div key={item.session.id} className="external-week-session-item">
                                             <div className={`external-week-session status-${item.status}`}>
@@ -201,7 +198,7 @@ export function ExternalPlanWeek({
                                                     <div className="external-prescription">
                                                         <h5>As your plan wrote it</h5>
                                                         <p className="external-prescription-summary">
-                                                            {displayPrescription.summary}
+                                                            {item.session.prescription.summary}
                                                         </p>
                                                         {steps.length > 0 && (
                                                             <ol className="external-prescription-steps">

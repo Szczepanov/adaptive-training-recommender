@@ -619,15 +619,6 @@ emulatorDescribe('Firestore security rules', () => {
         await assertSucceeds(setDoc(doc(ownerDb, externalPlacementPath), validExternalPlacement()));
     });
 
-    it('stores a v2 external plan revision (M3.6) -- rules bound sessions but never deep-validate them either version', async () => {
-        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
-        await assertSucceeds(setDoc(doc(ownerDb, externalRevisionPath), {
-            ...validExternalPlanRevision(),
-            schema: 'adaptive-training-recommender/external-plan@2',
-            sessions: [{ id: 'w1-a', title: 'Threshold', priority: 'key', definition: { schemaVersion: 1, title: 'Threshold', intent: 'training', blocks: [] } }],
-        }));
-    });
-
     it('makes a stored revision create-only, so an audited decision stays verifiable', async () => {
         await testEnvironment.withSecurityRulesDisabled(async context => {
             await setDoc(doc(context.firestore(), externalRevisionPath), validExternalPlanRevision());
@@ -653,7 +644,7 @@ emulatorDescribe('Firestore security rules', () => {
         await assertFails(setDoc(doc(ownerDb, externalPlanPath), { ...validExternalPlanHeader(), weekCount: 27 }));
         await assertFails(setDoc(doc(ownerDb, externalRevisionPath), {
             ...validExternalPlanRevision(),
-            schema: 'adaptive-training-recommender/external-plan@3',
+            schema: 'adaptive-training-recommender/external-plan@2',
         }));
         await assertFails(setDoc(doc(ownerDb, externalRevisionPath), { ...validExternalPlanRevision(), sessions: [] }));
         await assertFails(setDoc(doc(ownerDb, `users/${ownerId}/external_plans/autumn-block/revisions/4`), {
@@ -1078,24 +1069,6 @@ emulatorDescribe('Firestore security rules', () => {
         };
     }
 
-    // --- M5.1: SessionResponse (occurrence-linked response generalization) ---
-
-    const sessionResponsePath = `users/${ownerId}/session_responses/resp-1`;
-
-    function validSessionResponse() {
-        return {
-            userId: ownerId,
-            responseId: 'resp-1',
-            sourceSession: { kind: 'execution', id: 'exec-1', date: '2026-08-18' },
-            window: 'immediate',
-            date: '2026-08-18',
-            checkinRef: { date: '2026-08-18' },
-            sessionRpe: 7,
-            createdAt: '2026-08-18T10:45:00Z',
-            updatedAt: '2026-08-18T10:45:00Z',
-        };
-    }
-
     it('allows an owner to manage session definition header and write-once revision', async () => {
         const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
         await expect(assertSucceeds(setDoc(doc(ownerDb, sessionDefHeaderPath), validSessionDefHeader()))).resolves.toBeUndefined();
@@ -1148,24 +1121,6 @@ emulatorDescribe('Firestore security rules', () => {
         // Cross-user denied
         const otherDb = testEnvironment.authenticatedContext(otherUserId).firestore();
         await assertFails(getDoc(doc(otherDb, executionPrescriptionPath)));
-    });
-
-    it('allows a catalog execution prescription with a valid displayMetadata snapshot (M3.2)', async () => {
-        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
-        await expect(assertSucceeds(setDoc(doc(ownerDb, executionPrescriptionPath), {
-            ...validExecutionPrescription(),
-            displayMetadata: {
-                title: 'Full Body Maintenance', intent: 'training', dominantModality: 'Strength', duration: { min: 30, max: 60 },
-            },
-        }))).resolves.toBeUndefined();
-    });
-
-    it('rejects an execution prescription with a malformed displayMetadata snapshot', async () => {
-        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
-        await assertFails(setDoc(doc(ownerDb, executionPrescriptionPath), {
-            ...validExecutionPrescription(),
-            displayMetadata: { intent: 'training' }, // missing required title
-        }));
     });
 
     it('allows valid occurrence authorities in M3 (unplanned_log, schedule, replace, additional) and rejects invalid ones', async () => {
@@ -1226,84 +1181,6 @@ emulatorDescribe('Firestore security rules', () => {
         };
         const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
         await expect(assertSucceeds(setDoc(doc(ownerDb, `users/${ownerId}/daily_recommendations/2026-08-07`), recWithBindings))).resolves.toBeUndefined();
-    });
-
-    it('allows additionalSessions at the full 4-element bound without exceeding the rule-evaluation budget', async () => {
-        // Regression test: a prior attempt at real per-element validation at the schema's
-        // historical 16-element bound blew the emulator's ~1000-expression budget. This
-        // proves per-element validation at the current 4-element bound actually works,
-        // not just the single-element case the test above already covers.
-        const binding = (i: number) => ({
-            sessionSource: { kind: 'unplanned_fixture', fixtureId: `0${i}-full-body-maintenance` },
-            prescriptionHash: `presc-hash-${i}`,
-        });
-        const base = validRecommendation();
-        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
-        await expect(assertSucceeds(setDoc(doc(ownerDb, `users/${ownerId}/daily_recommendations/2026-08-07`), {
-            ...base,
-            additionalSessions: [binding(1), binding(2), binding(3), binding(4)],
-        }))).resolves.toBeUndefined();
-    });
-
-    it('rejects additionalSessions beyond the 4-element bound', async () => {
-        const binding = (i: number) => ({
-            sessionSource: { kind: 'unplanned_fixture', fixtureId: `0${i}-full-body-maintenance` },
-            prescriptionHash: `presc-hash-${i}`,
-        });
-        const base = validRecommendation();
-        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
-        await assertFails(setDoc(doc(ownerDb, `users/${ownerId}/daily_recommendations/2026-08-07`), {
-            ...base,
-            additionalSessions: [binding(1), binding(2), binding(3), binding(4), binding(5)],
-        }));
-    });
-
-    it('rejects a top-level additionalSessions entry with a malformed binding', async () => {
-        // Prior to hasValidAdditionalSessions, the top-level additionalSessions field had
-        // no shape validation at all -- only keys().hasOnly() gated its presence.
-        const base = validRecommendation();
-        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
-        await assertFails(setDoc(doc(ownerDb, `users/${ownerId}/daily_recommendations/2026-08-07`), {
-            ...base,
-            additionalSessions: [
-                { sessionSource: { kind: 'unplanned_fixture', fixtureId: '01-full-body-maintenance' } }, // missing prescriptionHash
-            ],
-        }));
-    });
-
-    it('rejects an additionalSessions binding whose sessionSource names a valid kind but omits that kind\'s required fields', async () => {
-        // hasValidAdditionalSessionBinding checked only sessionSource.kind, so a binding
-        // like `{ sessionSource: { kind: 'catalog' }, prescriptionHash: 'x' }` -- missing
-        // workoutId/catalogVersion entirely -- previously passed. Cover all three
-        // non-trivial kinds so the shape gap can't reopen for any one of them.
-        const base = validRecommendation();
-        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
-        const malformedSources = [
-            { kind: 'catalog' }, // missing workoutId, catalogVersion
-            { kind: 'manual', definitionId: 'manual-1' }, // missing revision, contentHash
-            { kind: 'external_plan', planId: 'autumn-block', revision: 1 }, // missing sessionId, contentHash
-        ];
-        for (const sessionSource of malformedSources) {
-            await assertFails(setDoc(doc(ownerDb, `users/${ownerId}/daily_recommendations/2026-08-07`), {
-                ...base,
-                additionalSessions: [{ sessionSource, prescriptionHash: 'presc-hash-1' }],
-            }));
-        }
-    });
-
-    it('rejects a recommendationAudit.additionalSessions entry that is not a valid binding', async () => {
-        // audit.additionalSessions previously only checked list-ness and length -- any
-        // non-binding value (including an empty map) was accepted here even though the
-        // top-level additionalSessions field was already shape-checked.
-        const base = validRecommendation();
-        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
-        await assertFails(setDoc(doc(ownerDb, `users/${ownerId}/daily_recommendations/2026-08-07`), {
-            ...base,
-            recommendationAudit: {
-                ...base.recommendationAudit,
-                additionalSessions: [{ notABinding: true }],
-            },
-        }));
     });
 
     it('allows an authored replacement occurrence provenance in a recommendation audit', async () => {
@@ -1382,140 +1259,5 @@ emulatorDescribe('Firestore security rules', () => {
             ...validSessionEntry(),
             payload: { kind: 'repetition', setIndex: 0, reps: 0 },
         }));
-    });
-
-    it('records a recorded athlete choice (D-MCHOICE) while in progress, rejects it once terminal or cross-user, and rejects a malformed one', async () => {
-        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
-        const validChoiceEntry = {
-            id: 'entry-choice-1',
-            executionId: 'exec-1',
-            stepId: 'step-str-1',
-            selectedOptionId: 'reduce-squat-load',
-            completedAt: '2026-08-18T10:05:00Z',
-            createdAt: '2026-08-18T10:05:00Z',
-            updatedAt: '2026-08-18T10:05:00Z',
-            payload: { kind: 'choice', choiceId: 'choice-squat-warmup', optionId: 'reduce-squat-load', reason: 'Warm-up felt heavy' },
-        };
-
-        await expect(assertSucceeds(setDoc(doc(ownerDb, sessionExecPath), validSessionExecution()))).resolves.toBeUndefined();
-
-        // Recorded while in progress.
-        await expect(assertSucceeds(setDoc(
-            doc(ownerDb, `${sessionExecPath}/entries/entry-choice-1`),
-            validChoiceEntry,
-        ))).resolves.toBeUndefined();
-
-        // Malformed: missing optionId.
-        await assertFails(setDoc(doc(ownerDb, `${sessionExecPath}/entries/entry-choice-2`), {
-            ...validChoiceEntry,
-            id: 'entry-choice-2',
-            payload: { kind: 'choice', choiceId: 'choice-squat-warmup' },
-        }));
-
-        // Another user cannot write into this execution's entries at all.
-        const otherDb = testEnvironment.authenticatedContext(otherUserId).firestore();
-        await assertFails(setDoc(doc(otherDb, `${sessionExecPath}/entries/entry-choice-3`), {
-            ...validChoiceEntry,
-            id: 'entry-choice-3',
-        }));
-
-        // Terminal immutability: no new choice entry once the execution is completed.
-        await expect(assertSucceeds(setDoc(doc(ownerDb, sessionExecPath), {
-            ...validSessionExecution(),
-            state: 'completed',
-            completedAt: '2026-08-18T10:45:00Z',
-            updatedAt: '2026-08-18T10:45:00Z',
-        }))).resolves.toBeUndefined();
-        await assertFails(setDoc(doc(ownerDb, `${sessionExecPath}/entries/entry-choice-4`), {
-            ...validChoiceEntry,
-            id: 'entry-choice-4',
-        }));
-    });
-
-    it('allows an owner to record and revise a session response, and rejects a cross-user read/write', async () => {
-        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
-        await expect(assertSucceeds(setDoc(doc(ownerDb, sessionResponsePath), validSessionResponse()))).resolves.toBeUndefined();
-
-        // Edits preserve provenance: only non-tissue facts and updatedAt may change.
-        await expect(assertSucceeds(setDoc(doc(ownerDb, sessionResponsePath), {
-            ...validSessionResponse(),
-            sessionRpe: 8,
-            note: 'legs felt heavier than expected',
-            updatedAt: '2026-08-18T11:00:00Z',
-        }))).resolves.toBeUndefined();
-
-        // Another user can neither read nor write this response.
-        const otherDb = testEnvironment.authenticatedContext(otherUserId).firestore();
-        await assertFails(getDoc(doc(otherDb, sessionResponsePath)));
-        await assertFails(setDoc(doc(otherDb, sessionResponsePath), validSessionResponse()));
-    });
-
-    it('rejects an edit that changes sourceSession, window, date or createdAt (provenance)', async () => {
-        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
-        await expect(assertSucceeds(setDoc(doc(ownerDb, sessionResponsePath), validSessionResponse()))).resolves.toBeUndefined();
-
-        await assertFails(setDoc(doc(ownerDb, sessionResponsePath), {
-            ...validSessionResponse(),
-            sourceSession: { kind: 'strength', id: 'strength-1', date: '2026-08-18' },
-        }));
-        await assertFails(setDoc(doc(ownerDb, sessionResponsePath), { ...validSessionResponse(), window: 'later_day' }));
-        await assertFails(setDoc(doc(ownerDb, sessionResponsePath), { ...validSessionResponse(), date: '2026-08-19' }));
-        await assertFails(setDoc(doc(ownerDb, sessionResponsePath), { ...validSessionResponse(), createdAt: '2026-08-19T00:00:00Z' }));
-    });
-
-    it('rejects a malformed session response: bad window, out-of-range sessionRpe/completedFraction, extra field, foreign userId', async () => {
-        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
-        await assertFails(setDoc(doc(ownerDb, `${sessionResponsePath}-bad-window`), {
-            ...validSessionResponse(), responseId: 'resp-1-bad-window', window: 'next_week',
-        }));
-        await assertFails(setDoc(doc(ownerDb, `${sessionResponsePath}-bad-rpe`), {
-            ...validSessionResponse(), responseId: 'resp-1-bad-rpe', sessionRpe: 11,
-        }));
-        await assertFails(setDoc(doc(ownerDb, `${sessionResponsePath}-bad-fraction`), {
-            ...validSessionResponse(), responseId: 'resp-1-bad-fraction', completedFraction: 1.5,
-        }));
-        await assertFails(setDoc(doc(ownerDb, `${sessionResponsePath}-extra`), {
-            ...validSessionResponse(), responseId: 'resp-1-extra', unexpectedField: true,
-        }));
-        await assertFails(setDoc(doc(ownerDb, sessionResponsePath), { ...validSessionResponse(), userId: otherUserId }));
-    });
-
-    it('rejects an edit that adds or changes occurrenceId after creation (provenance)', async () => {
-        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
-        await expect(assertSucceeds(setDoc(doc(ownerDb, sessionOccPath), validSessionOccurrence()))).resolves.toBeUndefined();
-        await expect(assertSucceeds(setDoc(doc(ownerDb, `users/${ownerId}/session_occurrences/occ-unplanned-2`), {
-            ...validSessionOccurrence(), occurrenceId: 'occ-unplanned-2',
-        }))).resolves.toBeUndefined();
-
-        // Created with no occurrenceId (e.g. a companion/unplanned execution) -- an edit
-        // cannot retroactively grant it selection authority by adding one.
-        await expect(assertSucceeds(setDoc(doc(ownerDb, sessionResponsePath), validSessionResponse()))).resolves.toBeUndefined();
-        await assertFails(setDoc(doc(ownerDb, sessionResponsePath), {
-            ...validSessionResponse(), occurrenceId: 'occ-unplanned-1',
-        }));
-
-        // Created with an occurrenceId -- an edit cannot swap it for a different one.
-        const withOccurrencePath = `${sessionResponsePath}-with-occ`;
-        await expect(assertSucceeds(setDoc(doc(ownerDb, withOccurrencePath), {
-            ...validSessionResponse(), responseId: 'resp-1-with-occ', occurrenceId: 'occ-unplanned-1',
-        }))).resolves.toBeUndefined();
-        await assertFails(setDoc(doc(ownerDb, withOccurrencePath), {
-            ...validSessionResponse(), responseId: 'resp-1-with-occ', occurrenceId: 'occ-unplanned-2',
-        }));
-    });
-
-    it('rejects a response whose occurrenceId does not reference a real occurrence of this user', async () => {
-        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
-        // No session_occurrences/occ-unplanned-1 document has been written in this test.
-        await assertFails(setDoc(doc(ownerDb, sessionResponsePath), {
-            ...validSessionResponse(),
-            occurrenceId: 'occ-unplanned-1',
-        }));
-
-        await expect(assertSucceeds(setDoc(doc(ownerDb, sessionOccPath), validSessionOccurrence()))).resolves.toBeUndefined();
-        await expect(assertSucceeds(setDoc(doc(ownerDb, sessionResponsePath), {
-            ...validSessionResponse(),
-            occurrenceId: 'occ-unplanned-1',
-        }))).resolves.toBeUndefined();
     });
 });

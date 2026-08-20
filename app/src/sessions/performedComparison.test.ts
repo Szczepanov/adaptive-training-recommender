@@ -64,49 +64,4 @@ describe('Performed Session Comparison (M2.6 / ADR-0023)', () => {
         expect(comparison.summary.totalReps).toBe(10);
         expect(comparison.summary.totalTonnageKg).toBe(800); // 10 * 80kg
     });
-
-    it('excludes a recorded athlete choice (D-MCHOICE) from set/step completion accounting', () => {
-        const definition: SessionDefinition = {
-            schemaVersion: 1,
-            id: 'test-def-choice',
-            revision: 1,
-            title: 'Squat with choice',
-            intent: 'training',
-            blocks: [
-                {
-                    id: 'b1',
-                    role: 'main',
-                    executionMode: 'sequential',
-                    steps: [
-                        {
-                            id: 'step-squat',
-                            kind: 'exercise',
-                            exerciseRef: { kind: 'catalog', exerciseId: 'back_squat' },
-                            dose: { kind: 'repetition', sets: 2, reps: 5 },
-                        },
-                    ],
-                },
-            ],
-        };
-
-        const entries: SessionEntry[] = [
-            {
-                id: 'choice-1',
-                executionId: 'exec-1',
-                stepId: 'step-squat',
-                selectedOptionId: 'opt-continue',
-                completedAt: '2026-08-18T10:00:00Z',
-                createdAt: '2026-08-18T10:00:00Z',
-                updatedAt: '2026-08-18T10:00:00Z',
-                payload: { kind: 'choice', choiceId: 'choice-1', optionId: 'opt-continue' },
-            },
-        ];
-
-        const comparison = comparePlannedVsPerformed(definition, entries);
-
-        expect(comparison.stepComparisons[0].completedSets).toBe(0);
-        expect(comparison.stepComparisons[0].entries).toEqual([]);
-        expect(comparison.completedStepsCount).toBe(0);
-        expect(comparison.missingRequiredStepsCount).toBe(1);
-    });
 });

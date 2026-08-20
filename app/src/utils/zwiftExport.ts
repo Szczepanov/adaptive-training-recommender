@@ -1,10 +1,7 @@
 import type { WorkoutPrescription } from '../workouts/models';
 import type { ExternalPlanSession } from '../engine/models';
-import type { ExternalPlanSessionV2 } from '../sessions/externalPlanV2';
-import type { RangeOrNumber } from '../sessions/models';
 
 import { extractRecoverySecondsFromText, extractSetRecoverySecondsFromText, resolveSetsAndRepetitions } from './workoutJsonExport';
-import { validateSessionDefinition } from '../sessions/validation';
 
 export interface ZwiftExportOptions {
     ftpWatts?: number | null;
@@ -194,79 +191,6 @@ export function generateZwiftFromExternalSession(
                 lines.push(
                     `        <SteadyState Duration="${stepDurationSec}" Power="${power.toFixed(2)}"/>`,
                 );
-            }
-        }
-    }
-
-    lines.push('    </workout>', '</workout_file>');
-    return lines.join('\n');
-}
-
-function rangeMidpointSec(value: RangeOrNumber | undefined): number | undefined {
-    if (value === undefined) return undefined;
-    return typeof value === 'number' ? value : Math.round((value.min + value.max) / 2);
-}
-
-/**
- * v2 counterpart of `generateZwiftFromExternalSession`. Sequential blocks/steps only --
- * circuit/superset execution modes aren't realistic for an imported cycling plan and Zwift
- * has no equivalent primitive. Power comes from `gating.intensity` (unchanged on v2
- * sessions, so this reuses the exact same heuristic v1 does) with `block.role` deciding
- * warmup/cooldown, rather than v1's name-text regex -- a normalized `SessionDefinition`
- * already carries that as a real field (M3.6).
- */
-export function generateZwiftFromExternalSessionV2(
-    session: ExternalPlanSessionV2,
-    options: ZwiftExportOptions = {},
-): string {
-    const valResult = validateSessionDefinition(session.definition);
-    if (!valResult.ok) {
-        throw new Error(`Invalid session definition for Zwift export: ${valResult.issues.map(i => i.message).join(', ')}`);
-    }
-    const nonSequentialBlock = session.definition.blocks.find(b => b.executionMode !== 'sequential');
-    if (nonSequentialBlock) {
-        throw new Error(`Cannot export session with ${nonSequentialBlock.executionMode} executionMode to Zwift: only sequential blocks are supported`);
-    }
-
-    const author = options.author ?? 'Adaptive Training Recommender';
-    const lines: string[] = [
-        '<workout_file>',
-        `    <author>${escapeXml(author)}</author>`,
-        `    <name>${escapeXml(session.title)}</name>`,
-        `    <description>${escapeXml(session.definition.summary ?? session.definition.title)}</description>`,
-        '    <sportType>bike</sportType>',
-        '    <workout>',
-    ];
-
-    const basePower = session.gating.intensity === 'hard' || session.gating.intensity === 'max' ? 0.90
-        : session.gating.intensity === 'recovery' ? 0.55
-            : 0.70;
-
-    const steps = session.definition.blocks.flatMap(block => block.steps.map(step => ({ block, step })));
-    if (steps.length === 0) {
-        const durationSec = (session.gating.durationMin || 60) * 60;
-        lines.push(`        <SteadyState Duration="${durationSec}" Power="${basePower.toFixed(2)}"/>`);
-    } else {
-        for (const { block, step } of steps) {
-            const isWarmup = block.role === 'warmup';
-            const isCooldown = block.role === 'cooldown';
-            const targetText = `${step.notes ?? ''} ${step.title ?? ''}`;
-            const parsedFraction = parseFractionFtpFromTargetText(targetText, options.ftpWatts);
-            const power = parsedFraction !== null ? parsedFraction : (isWarmup ? 0.60 : isCooldown ? 0.50 : basePower);
-            const durationSec = (step.dose?.kind === 'duration' ? rangeMidpointSec(step.dose.seconds) : undefined) ?? 300;
-            const repeats = step.dose?.kind === 'duration' ? (step.dose.sets ?? 1) : 1;
-            const restSec = rangeMidpointSec(step.rest);
-
-            if (repeats > 1) {
-                lines.push(
-                    `        <Intervals Repeat="${repeats}" OnDuration="${durationSec}" OffDuration="${restSec ?? 120}" OnPower="${power.toFixed(2)}" OffPower="0.50"/>`,
-                );
-            } else if (isWarmup) {
-                lines.push(`        <Warmup Duration="${durationSec}" PowerLow="0.50" PowerHigh="${power.toFixed(2)}"/>`);
-            } else if (isCooldown) {
-                lines.push(`        <Cooldown Duration="${durationSec}" PowerLow="${power.toFixed(2)}" PowerHigh="0.45"/>`);
-            } else {
-                lines.push(`        <SteadyState Duration="${durationSec}" Power="${power.toFixed(2)}"/>`);
             }
         }
     }

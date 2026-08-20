@@ -151,14 +151,8 @@
 }
 
 .step-unresolved {
-    color: #94a3b8;
+    color: #fbbf24;
     font-size: 0.75rem;
-}
-
-.step-catalog-tag {
-    color: #38bdf8;
-    font-size: 0.75rem;
-    font-weight: 500;
 }
 
 .step-dose {

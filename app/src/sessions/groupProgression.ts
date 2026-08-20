@@ -46,9 +46,7 @@ function requiredSteps(block: SessionBlock): Array<{ step: SessionStep; index: n
 }
 
 function entryCount(entries: readonly SessionEntry[], stepId: string): number {
-    // A recorded athlete choice (D-MCHOICE) shares a step's entries subcollection but is
-    // not performed work -- it must never advance rotation progress.
-    return entries.reduce((count, entry) => count + (entry.stepId === stepId && entry.payload.kind !== 'choice' ? 1 : 0), 0);
+    return entries.reduce((count, entry) => count + (entry.stepId === stepId ? 1 : 0), 0);
 }
 
 function firstAfter(indices: readonly number[], afterIndex: number): number {

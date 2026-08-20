@@ -31,10 +31,8 @@ import { resolveExecutionDose } from './dose';
 import { isTemplatePhaseEligible } from './periodization';
 import { resolveMinimumDaysAfterHardLowerBody } from './planningCandidate';
 import { adjudicateExternalSession } from './externalSession';
-import { externalEventAsFixedActivity, toSyntheticTemplate, externalSessionDisplayPrescription } from './externalSessionProfiles';
-// M3.6: this module only ever reads gating/isEvent/id/title, identical on v1 and v2
-// sessions -- widened to accept either rather than kept v1-only.
-import type { AnyExternalPlanSession as ExternalPlanSession } from '../sessions/externalPlanV2';
+import { externalEventAsFixedActivity, toSyntheticTemplate } from './externalSessionProfiles';
+import type { ExternalPlanSession } from './models';
 import { applyFixedActivityStimulusCredit } from './planner';
 import { getUnresolvedObjectives } from './microcycle';
 import { applyCompletedSessionLoad, type FatigueFusionPolicy } from './fatigue';
@@ -461,7 +459,7 @@ function externalPrescriptionFor(externalPlan: ExternalPlanContext): NonNullable
     const { session, planId, revision } = externalPlan;
     return {
         planId, revision, sessionId: session.id, title: session.title,
-        prescription: externalSessionDisplayPrescription(session),
+        prescription: session.prescription,
         ...(session.scaling ? { scaling: session.scaling } : {}),
         ...(session.isEvent ? { isEvent: true } : {}),
     };

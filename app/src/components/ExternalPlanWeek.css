@@ -302,31 +302,3 @@
   background: rgba(248, 113, 113, 0.1);
   border: 1px solid rgba(248, 113, 113, 0.3);
 }
-
-@media (max-width: 640px) {
-  .external-week-day {
-    display: flex;
-    flex-direction: column;
-    gap: 0.45rem;
-    padding: 0.6rem;
-  }
-
-  .external-week-daylabel {
-    flex-direction: row;
-    gap: 0.4rem;
-    align-items: baseline;
-  }
-
-  .external-week-session {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 0.5rem;
-    padding: 0.6rem;
-  }
-
-  .external-week-session-actions {
-    width: 100%;
-    justify-content: flex-start;
-    gap: 0.4rem;
-  }
-}

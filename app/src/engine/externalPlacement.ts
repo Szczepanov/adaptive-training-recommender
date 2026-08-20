@@ -2,12 +2,11 @@ import { addDaysToLocalDateString, getDayDiff } from '../utils/localDate';
 import type {
     ExternalPlacementAssignment,
     ExternalPlanPlacement,
+    ExternalPlanSession,
+    ExternalTrainingPlan,
     ExternalWeekday,
     FixedActivity,
 } from './models';
-// M3.6: these functions only ever read placement/id fields, identical on v1 and v2
-// sessions -- widened to accept either rather than kept v1-only.
-import type { AnyExternalTrainingPlan as ExternalTrainingPlan, AnyExternalPlanSession as ExternalPlanSession } from '../sessions/externalPlanV2';
 
 const WEEKDAY_OFFSET: Record<ExternalWeekday, number> = {
     monday: 0, tuesday: 1, wednesday: 2, thursday: 3, friday: 4, saturday: 5, sunday: 6,

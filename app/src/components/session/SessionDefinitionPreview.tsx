@@ -1,6 +1,5 @@
 import React from 'react';
 import type { RangeOrNumber, SessionChoiceAction, SessionDefinition, SessionStep } from '../../sessions/models';
-import { EXERCISES } from '../../workouts/exercises';
 import './SessionDefinitionPreview.css';
 
 interface SessionDefinitionPreviewProps {
@@ -15,11 +14,7 @@ function formatRange(value: RangeOrNumber): string {
 
 function stepName(step: SessionStep): string {
     if (step.title) return step.title;
-    if (step.exerciseRef?.kind === 'catalog') {
-        const id = step.exerciseRef.exerciseId;
-        const found = EXERCISES.find(e => e.id === id);
-        return found ? found.name : id;
-    }
+    if (step.exerciseRef?.kind === 'catalog') return step.exerciseRef.exerciseId;
     if (step.exerciseRef?.kind === 'unresolved_free_text') return step.exerciseRef.name;
     return step.id;
 }
@@ -80,21 +75,12 @@ export const SessionDefinitionPreview: React.FC<SessionDefinitionPreviewProps> =
                             {block.steps.map((step, sIdx) => {
                                 const effort = effortText(step);
                                 const isUnresolved = step.exerciseRef?.kind === 'unresolved_free_text';
-                                const ref = step.exerciseRef;
-                                const catalogItem = ref?.kind === 'catalog'
-                                    ? EXERCISES.find(e => e.id === ref.exerciseId)
-                                    : undefined;
                                 return <li key={step.id ?? sIdx} className="preview-step-item">
                                     <div className="step-main">
                                         <span className="step-number">{sIdx + 1}.</span>
                                         <div className="step-details">
                                             <span className="step-title">{stepName(step)} {step.optional && <em>(optional)</em>}</span>
-                                            {catalogItem && (
-                                                <span className="step-catalog-tag">
-                                                    Catalog: {catalogItem.name}{catalogItem.equipment.length > 0 ? ` · ${catalogItem.equipment.join(', ')}` : ''}
-                                                </span>
-                                            )}
-                                            {isUnresolved && <span className="step-unresolved">Custom movement</span>}
+                                            {isUnresolved && <span className="step-unresolved">Custom movement — no catalog-derived metadata</span>}
                                             {step.dose && (
                                                 <span className="step-dose">
                                                     {step.dose.kind === 'repetition' && `${step.dose.sets} sets × ${typeof step.dose.reps === 'object' ? `${step.dose.reps.min}-${step.dose.reps.max}` : step.dose.reps} reps`}
