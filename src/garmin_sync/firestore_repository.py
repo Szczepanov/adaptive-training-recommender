@@ -197,6 +197,25 @@ class FirestoreRecoveryRepository:
         )
         doc_ref.set(payload, merge=True)
 
+    def upsert_activities(self, activities: list[tuple[str | int, dict[str, Any]]]) -> None:
+        """Batch upsert normalized activity records.
+        Handles Firestore's 500 document limit per batch automatically."""
+        if not activities:
+            return
+
+        db = self._get_db()
+        collection_ref = db.collection("users").document(self.user_id).collection("activities")
+
+        # Firestore batches are limited to 500 operations
+        batch_size = 500
+        for i in range(0, len(activities), batch_size):
+            chunk = activities[i : i + batch_size]
+            batch = db.batch()
+            for activity_id, payload in chunk:
+                doc_ref = collection_ref.document(str(activity_id))
+                batch.set(doc_ref, payload, merge=True)
+            batch.commit()
+
     def upsert_garmin_performance_targets(self, targets: Any) -> None:
         """Merge Garmin's current targets into the user's preference profile.
 
