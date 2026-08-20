@@ -3,7 +3,7 @@ import { useStrengthSessionRunner } from '../hooks/useStrengthSessionRunner';
 import { useElapsedSeconds } from '../hooks/useElapsedSeconds';
 import { useOverloadHistory } from '../hooks/useOverloadHistory';
 import type { IntensityGauge, StrengthSession } from '../engine/models';
-import { EXERCISES } from '../workouts/exercises';
+import { EXERCISES, EXERCISES_BY_ID } from '../workouts/exercises';
 import { formatElapsed, latestCompletedSet } from '../workouts/restTimer';
 import { SessionStepNavigator } from './session/SessionStepNavigator';
 import { SessionCompletionSheet, type SessionCompletionPayload } from './session/SessionCompletionSheet';
@@ -218,7 +218,7 @@ export function StrengthSessionRunner({ userId, onSessionStateChange }: Strength
                     <div className="active-exercise-header">
                         <h4>
                             {activeExercise.exerciseId
-                                ? (STRENGTH_EXERCISES.find(e => e.id === activeExercise.exerciseId)?.name ?? activeExercise.exerciseId)
+                                ? (EXERCISES_BY_ID.get(activeExercise.exerciseId)?.name ?? activeExercise.exerciseId)
                                 : activeExercise.freeTextName}
                         </h4>
                         {pastSummary && (

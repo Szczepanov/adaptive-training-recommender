@@ -9,7 +9,7 @@ import type { TrainingHistoryProvider } from './trainingHistory';
 import type { DailyReadiness, UserContext, EngineObjectiveInput, SubjectiveInput, TrainingSettings } from './models';
 import type { SubjectiveBaseline, SubjectiveBaselineMetric, SubjectiveMetricBaseline } from './subjectiveBaseline';
 import { mapContextFromGoalsAndTrainingSettings } from './adapters';
-import { TEMPLATES } from './templates';
+import { TEMPLATES_BY_ID } from './templates';
 
 // --- Fixtures --------------------------------------------------------------
 
@@ -558,7 +558,7 @@ describe('session adjustment engine', () => {
             createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z',
         };
         const baseRec = evaluateTraining(readiness, baseContext(), '2026-08-07');
-        baseRec.template = TEMPLATES.find(template => template.id === 'end_hard_01')!;
+        baseRec.template = TEMPLATES_BY_ID.get('end_hard_01')!;
         expect(adjustSessionRecommendation(baseRec, 'harder', readiness, context, '2026-08-07')).toBeNull();
     });
 
@@ -781,7 +781,7 @@ describe('session adjustment engine', () => {
         context.constraints.hasFreeWeights = true;
         const date = '2026-08-07';
         const baseRec = evaluateTraining(readiness, context, date);
-        const strFull03 = TEMPLATES.find(t => t.id === 'str_full_03')!;
+        const strFull03 = TEMPLATES_BY_ID.get('str_full_03')!;
         baseRec.template = strFull03;
 
         const adjusted = adjustSessionRecommendation(baseRec, 'easier', readiness, context, date);
@@ -799,7 +799,7 @@ describe('session adjustment engine', () => {
         context.constraints.hasFreeWeights = true;
         const date = '2026-08-07';
         const baseRec = evaluateTraining(readiness, context, date);
-        const strFull03 = TEMPLATES.find(t => t.id === 'str_full_03')!;
+        const strFull03 = TEMPLATES_BY_ID.get('str_full_03')!;
         baseRec.template = strFull03;
 
         const adjusted = adjustSessionRecommendation(baseRec, 'harder', readiness, context, date);

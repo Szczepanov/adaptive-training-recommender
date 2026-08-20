@@ -4,7 +4,7 @@ import { sessionDefinitionService } from '../services/sessionDefinitionService';
 import { externalPlanService } from '../services/externalPlanService';
 import { executionPrescriptionService } from '../services/executionPrescriptionService';
 import { computeContentHash } from '../engine/externalPlanHash';
-import { WORKOUTS } from '../workouts/catalog';
+import { WORKOUTS_BY_ID } from '../workouts/catalog';
 import type { WorkoutDefinition } from '../workouts/models';
 import { adaptExternalPlanSessionToSessionDefinition } from './externalSessionAdapter';
 import { canonicalizeSessionData, hashSessionDefinition } from './sessionDefinitionHash';
@@ -138,7 +138,7 @@ export async function resolveSessionDefinition(
     }
 
     if (source.kind === 'catalog') {
-        const workout = WORKOUTS.find(w => w.id === source.workoutId);
+        const workout = WORKOUTS_BY_ID.get(source.workoutId);
         if (!workout) {
             return {
                 status: 'INVALID',

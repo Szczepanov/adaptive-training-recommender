@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import type { BlockExecutionMode, BlockRole, SessionBlock, SessionDefinition, SessionDose, SessionStep } from '../../sessions/models';
 import { validateSessionDefinition } from '../../sessions/validation';
-import { EXERCISES } from '../../workouts/exercises';
+import { EXERCISES, EXERCISES_BY_ID } from '../../workouts/exercises';
 import { duplicateDraftBlock, duplicateDraftStep, moveDraftItem } from '../../sessions/sessionDraft';
 import { SessionDefinitionPreview } from './SessionDefinitionPreview';
 import { type PreparedSessionLaunch, SessionDestinationSheet } from './SessionDestinationSheet';
@@ -190,7 +190,7 @@ export const ManualSessionBuilder: React.FC<ManualSessionBuilderProps> = ({ user
                                         </div>
                                         <div className="builder-step-fields">
                                             <label>Movement<select value={selectedExercise} onChange={event => {
-                                                const exercise = EXERCISES.find(item => item.id === event.target.value);
+                                                const exercise = EXERCISES_BY_ID.get(event.target.value);
                                                 updateStep(blockIndex, stepIndex, exercise
                                                     ? { title: exercise.name, exerciseRef: { kind: 'catalog', exerciseId: exercise.id }, resolutionNote: undefined }
                                                     : { exerciseRef: { kind: 'unresolved_free_text', name: step.title ?? 'Custom movement' }, resolutionNote: 'Custom movement: executable and loggable, but it has no catalog-derived safety, cost, stimulus, PR or 1RM semantics.' });

@@ -30,3 +30,4 @@ export const WORKOUTS: WorkoutDefinition[] = [
   ...RECOVERY_WORKOUTS,
   ...TAPER_RACE_WORKOUTS
 ];
+export const WORKOUTS_BY_ID = new Map(WORKOUTS.map(w => [w.id, w]));

@@ -1,5 +1,5 @@
 import type { WorkoutPrescription, PrescriptionBlock, PrescriptionStep, WorkoutBlock, WorkoutStep } from '../workouts/models';
-import { WORKOUTS } from '../workouts/catalog';
+import { WORKOUTS_BY_ID } from '../workouts/catalog';
 import type {
     SessionDefinition,
     SessionBlock,
@@ -152,7 +152,7 @@ function adaptCatalogWorkoutBlock(block: WorkoutBlock, displayById: ReadonlyMap<
 export function adaptCatalogPrescriptionToSessionDefinition(
     prescription: WorkoutPrescription,
 ): SessionDefinition {
-    const workout = WORKOUTS.find(w => w.id === prescription.workoutId);
+    const workout = WORKOUTS_BY_ID.get(prescription.workoutId);
     const modality = workout?.modality;
 
     const intent: SessionIntent =
