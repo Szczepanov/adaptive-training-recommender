@@ -137,6 +137,26 @@ def compute_derived_metrics(
     # prior illness episode inside the window instead of being widened by it.
     resp_mad28 = calculate_mad([d.get("respirationAvg") for d in window_28d_raws], 14)
 
+    # v4 (docs/adr/0006 amendment): median/MAD computed *alongside* the existing mean/stdev
+    # for sleep, RHR, HRV, and steps -- observation-only, exactly like respiration was
+    # before its own v3 cutover. Not read by rules.ts/fatigue.ts yet; these exist so a
+    # comparison harness can measure how often/how much a median/MAD baseline would change
+    # `mode` before any of these four metrics' live mean/stdev gets replaced (see ADR-0014's
+    # precedent: a live decision function only changes after a recorded comparison).
+    sleep_7d_median = calculate_median([d.get("sleepScore") for d in window_7d_raws], 4)
+    sleep_28d_median = calculate_median([d.get("sleepScore") for d in window_28d_raws], 14)
+    rhr_7d_median = calculate_median([d.get("restingHr") for d in window_7d_raws], 4)
+    rhr_28d_median = calculate_median([d.get("restingHr") for d in window_28d_raws], 14)
+    hrv_7d_median = calculate_median([d.get("hrvOvernightAvg") for d in window_7d_raws], 4)
+    hrv_28d_median = calculate_median([d.get("hrvOvernightAvg") for d in window_28d_raws], 14)
+    steps_7d_median = calculate_median([d.get("totalSteps") for d in window_7d_raws], 4)
+    steps_28d_median = calculate_median([d.get("totalSteps") for d in window_28d_raws], 14)
+
+    sleep_mad28 = calculate_mad([d.get("sleepScore") for d in window_28d_raws], 14)
+    rhr_mad28 = calculate_mad([d.get("restingHr") for d in window_28d_raws], 14)
+    hrv_mad28 = calculate_mad([d.get("hrvOvernightAvg") for d in window_28d_raws], 14)
+    steps_mad28 = calculate_mad([d.get("totalSteps") for d in window_28d_raws], 14)
+
     def _round(val: float | None) -> float | None:
         return round(val, 1) if val is not None else None
 
@@ -151,6 +171,19 @@ def compute_derived_metrics(
         respirationVs28d=_round(calculate_delta(raw_current.get("respirationAvg"), resp_28d)),
         stepsVs7d=_round(calculate_delta(raw_current.get("totalSteps"), steps_7d)),
         stepsVs28d=_round(calculate_delta(raw_current.get("totalSteps"), steps_28d)),
+        # v4: median-baseline deltas, observation-only -- see the median/MAD comment above.
+        sleepScoreVs7dMedian=_round(
+            calculate_delta(raw_current.get("sleepScore"), sleep_7d_median)
+        ),
+        sleepScoreVs28dMedian=_round(
+            calculate_delta(raw_current.get("sleepScore"), sleep_28d_median)
+        ),
+        restingHrVs7dMedian=_round(calculate_delta(raw_current.get("restingHr"), rhr_7d_median)),
+        restingHrVs28dMedian=_round(calculate_delta(raw_current.get("restingHr"), rhr_28d_median)),
+        hrvVs7dMedian=_round(calculate_delta(raw_current.get("hrvOvernightAvg"), hrv_7d_median)),
+        hrvVs28dMedian=_round(calculate_delta(raw_current.get("hrvOvernightAvg"), hrv_28d_median)),
+        stepsVs7dMedian=_round(calculate_delta(raw_current.get("totalSteps"), steps_7d_median)),
+        stepsVs28dMedian=_round(calculate_delta(raw_current.get("totalSteps"), steps_28d_median)),
     )
 
     return DerivedMetrics(
@@ -170,5 +203,18 @@ def compute_derived_metrics(
         steps7dAvg=_round(steps_7d),
         steps28dAvg=_round(steps_28d),
         steps28dStdev=_round(steps_sd28),
+        # v4: observation-only median/MAD baselines -- see the comment above compute_derived_metrics.
+        sleepScore7dMedian=_round(sleep_7d_median),
+        sleepScore28dMedian=_round(sleep_28d_median),
+        sleepScore28dMad=_round(sleep_mad28),
+        restingHr7dMedian=_round(rhr_7d_median),
+        restingHr28dMedian=_round(rhr_28d_median),
+        restingHr28dMad=_round(rhr_mad28),
+        hrv7dMedian=_round(hrv_7d_median),
+        hrv28dMedian=_round(hrv_28d_median),
+        hrv28dMad=_round(hrv_mad28),
+        steps7dMedian=_round(steps_7d_median),
+        steps28dMedian=_round(steps_28d_median),
+        steps28dMad=_round(steps_mad28),
         deltas=deltas,
     )

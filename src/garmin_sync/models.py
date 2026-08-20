@@ -13,7 +13,14 @@ SCHEMA_VERSION = 3
 # written at version 2 or earlier holds a mean in respiration7dAvg/28dAvg, not a median.
 # Readers that need the distinction should check baselineComputationVersion; the rebuild
 # pipeline (ADR-0005) recomputes older documents onto the current version.
-BASELINE_COMPUTATION_VERSION = 3
+# v4 (docs/adr/0006 amendment): adds median/MAD fields for sleep score, RHR, HRV, and steps
+# *alongside* their existing mean/stdev fields (sleepScore7dMedian, restingHr28dMad, etc.)
+# -- purely additive, unlike v3's respiration change. These are observation-only: nothing
+# in the engine reads them yet. They exist so a comparison harness can measure how a
+# median/MAD baseline would have scored real history before any of these four metrics'
+# live mean/stdev is replaced (see ADR-0014's precedent for that bar). Absent on documents
+# written before v4.
+BASELINE_COMPUTATION_VERSION = 4
 
 
 @dataclass
@@ -185,6 +192,16 @@ class DerivedDeltas:
     respirationVs28d: float | None = None
     stepsVs7d: float | None = None
     stepsVs28d: float | None = None
+    # v4: median-baseline deltas, observation-only -- see BASELINE_COMPUTATION_VERSION's v4
+    # note. Current value minus the corresponding *dMedian field below, not the *dAvg one.
+    sleepScoreVs7dMedian: float | None = None
+    sleepScoreVs28dMedian: float | None = None
+    restingHrVs7dMedian: float | None = None
+    restingHrVs28dMedian: float | None = None
+    hrvVs7dMedian: float | None = None
+    hrvVs28dMedian: float | None = None
+    stepsVs7dMedian: float | None = None
+    stepsVs28dMedian: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -214,6 +231,21 @@ class DerivedMetrics:
     steps7dAvg: float | None = None
     steps28dAvg: float | None = None
     steps28dStdev: float | None = None
+    # v4: observation-only median/MAD baselines, computed alongside the mean/stdev fields
+    # above -- see BASELINE_COMPUTATION_VERSION's v4 note. Not consumed by rules.ts or
+    # fatigue.ts yet. Absent on documents written before v4.
+    sleepScore7dMedian: float | None = None
+    sleepScore28dMedian: float | None = None
+    sleepScore28dMad: float | None = None
+    restingHr7dMedian: float | None = None
+    restingHr28dMedian: float | None = None
+    restingHr28dMad: float | None = None
+    hrv7dMedian: float | None = None
+    hrv28dMedian: float | None = None
+    hrv28dMad: float | None = None
+    steps7dMedian: float | None = None
+    steps28dMedian: float | None = None
+    steps28dMad: float | None = None
     deltas: DerivedDeltas = field(default_factory=DerivedDeltas)
 
     def to_dict(self) -> dict[str, Any]:

@@ -915,6 +915,24 @@ export interface DailyRecoverySnapshot {
         steps7dAvg?: number | null;
         steps28dAvg?: number | null;
         steps28dStdev?: number | null;
+        /** Observation-only median/MAD baselines for sleep score, RHR, HRV, and steps,
+         *  computed *alongside* the mean/stdev fields above rather than replacing them --
+         *  see docs/adr/0006's v4 amendment. Nothing in rules.ts/fatigue.ts reads these
+         *  yet; they exist for a future comparison against the live mean/stdev baselines
+         *  before either one is cut over (matching ADR-0014's precedent for that decision).
+         *  Absent (undefined) on documents written before baselineComputationVersion 4. */
+        sleepScore7dMedian?: number | null;
+        sleepScore28dMedian?: number | null;
+        sleepScore28dMad?: number | null;
+        restingHr7dMedian?: number | null;
+        restingHr28dMedian?: number | null;
+        restingHr28dMad?: number | null;
+        hrv7dMedian?: number | null;
+        hrv28dMedian?: number | null;
+        hrv28dMad?: number | null;
+        steps7dMedian?: number | null;
+        steps28dMedian?: number | null;
+        steps28dMad?: number | null;
         deltas: {
             sleepScoreVs7d: number | null;
             sleepScoreVs28d: number | null;
@@ -926,6 +944,15 @@ export interface DailyRecoverySnapshot {
             respirationVs28d: number | null;
             stepsVs7d?: number | null;
             stepsVs28d?: number | null;
+            /** Observation-only median-baseline deltas -- see the sibling comment above. */
+            sleepScoreVs7dMedian?: number | null;
+            sleepScoreVs28dMedian?: number | null;
+            restingHrVs7dMedian?: number | null;
+            restingHrVs28dMedian?: number | null;
+            hrvVs7dMedian?: number | null;
+            hrvVs28dMedian?: number | null;
+            stepsVs7dMedian?: number | null;
+            stepsVs28dMedian?: number | null;
         };
     };
     dataQuality: {

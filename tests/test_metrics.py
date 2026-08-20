@@ -149,6 +149,64 @@ def test_compute_derived_metrics_respiration_mad_none_below_min_required():
     assert derived.respiration28dMad is None
 
 
+def test_compute_derived_metrics_v4_median_mad_are_additive_alongside_mean_stdev():
+    # An asymmetric window (unlike the *4-repeated fixtures above) so mean/median and
+    # stdev/MAD can actually diverge, proving both statistics are computed independently
+    # rather than one silently aliasing the other.
+    window_7d = [
+        {"sleepScore": 70, "restingHr": 60, "hrvOvernightAvg": 50, "totalSteps": 4000},
+        {"sleepScore": 75, "restingHr": 55, "hrvOvernightAvg": 55, "totalSteps": 5000},
+        {"sleepScore": 80, "restingHr": 52, "hrvOvernightAvg": 60, "totalSteps": 6000},
+        {"sleepScore": 100, "restingHr": 50, "hrvOvernightAvg": 90, "totalSteps": 20000},
+    ]
+    window_28d = window_7d * 4  # 16 items
+    curr = {"sleepScore": 85, "restingHr": 51, "hrvOvernightAvg": 65, "totalSteps": 7000}
+
+    derived = compute_derived_metrics(curr, window_7d, window_28d)
+
+    # v4 fields exist and disagree with the pre-existing mean/stdev fields on this
+    # asymmetric window -- both statistics are genuinely computed, not aliased.
+    assert derived.sleepScore7dMedian is not None
+    assert derived.sleepScore7dMedian != derived.sleepScore7dAvg
+    assert derived.restingHr7dMedian is not None
+    assert derived.restingHr7dMedian != derived.restingHr7dAvg
+    assert derived.hrv7dMedian is not None
+    assert derived.hrv7dMedian != derived.hrv7dAvg
+    assert derived.steps7dMedian is not None
+    assert derived.steps7dMedian != derived.steps7dAvg
+
+    assert derived.sleepScore28dMad is not None
+    assert derived.sleepScore28dMad != derived.sleepScore28dStdev
+    assert derived.restingHr28dMad is not None
+    assert derived.restingHr28dMad != derived.restingHr28dStdev
+    assert derived.hrv28dMad is not None
+    assert derived.hrv28dMad != derived.hrv28dStdev
+    assert derived.steps28dMad is not None
+    assert derived.steps28dMad != derived.steps28dStdev
+
+    # Median-baseline deltas are current minus the median, not the mean.
+    assert derived.deltas.sleepScoreVs7dMedian == round(
+        curr["sleepScore"] - derived.sleepScore7dMedian, 1
+    )
+    assert derived.deltas.restingHrVs7dMedian == round(
+        curr["restingHr"] - derived.restingHr7dMedian, 1
+    )
+    assert derived.deltas.hrvVs7dMedian == round(curr["hrvOvernightAvg"] - derived.hrv7dMedian, 1)
+    assert derived.deltas.stepsVs7dMedian == round(curr["totalSteps"] - derived.steps7dMedian, 1)
+
+
+def test_compute_derived_metrics_v4_fields_none_below_min_required():
+    window_7d = [{"sleepScore": 80}] * 3  # below the 4-point minimum
+    window_28d = [{"sleepScore": 80}] * 10  # below the 14-point minimum
+    curr = {"sleepScore": 80}
+
+    derived = compute_derived_metrics(curr, window_7d, window_28d)
+    assert derived.sleepScore7dMedian is None
+    assert derived.sleepScore28dMedian is None
+    assert derived.sleepScore28dMad is None
+    assert derived.deltas.sleepScoreVs7dMedian is None
+
+
 def test_compute_derived_metrics_stdev_none_below_min_required():
     # Only 10 valid points in the 28d window -- below the 14-point minimum.
     window_7d = [{"hrvOvernightAvg": 60}] * 4

@@ -93,3 +93,32 @@ missing value as `null`, which resolves to zero strain contribution, not fabrica
 * Respiration now has a second baseline-statistic convention (median/MAD) alongside the
   mean/stdev pair used for HRV, RHR, and sleep score -- a reader of `metrics.py` or
   `rules.ts` has to know which metric uses which, rather than one uniform rule.
+
+### Amendment (2026-08-20): median/MAD added, observation-only, for sleep/RHR/HRV/steps
+
+The respiration amendment above swapped that metric's baseline outright because it was
+*dormant* -- computed but never read by the engine, so changing what it meant changed no
+real decision. Sleep score, RHR, and HRV are the opposite: their mean/stdev baselines are
+live inputs to `metricStrain` today, and steps' mean (`steps_7d_avg`) is a live input to
+`fatigue.ts`'s ambulatory-surge check (`steps28dStdev` itself is currently dormant, same as
+respiration was). Swapping any of those outright would change real recommendations without
+the evidence this project requires first -- ADR-0014 set that bar explicitly: "any new
+fusion model requires new measured-response evidence plus a recorded comparison" before a
+live decision function changes.
+
+So this step is **additive only**: `BASELINE_COMPUTATION_VERSION` 4 adds
+`sleepScore7dMedian`/`28dMedian`/`28dMad`, `restingHr7dMedian`/`28dMedian`/`28dMad`,
+`hrv7dMedian`/`28dMedian`/`28dMad`, and `steps7dMedian`/`28dMedian`/`28dMad` (plus the
+matching `*Vs7dMedian`/`*Vs28dMedian` deltas on `DerivedDeltas`) computed *alongside* the
+existing mean/stdev fields, not replacing them. Nothing in `rules.ts` or `fatigue.ts` reads
+these yet -- they exist so a future comparison harness (extending `simulate:scenarios`/the
+replay tooling, or a script over the ADR-0005 raw archive) can measure how often and by how
+much a median/MAD baseline would have changed `mode` before any of these four metrics'
+live statistic is actually replaced. That comparison, and any resulting cutover, is
+deliberately **not** part of this amendment.
+
+Documents written before `baselineComputationVersion` 4 simply lack these fields
+(`undefined`, not `null`) -- readers must treat them as optional. `app/src/engine/models.ts`
+mirrors them on `DailyRecoverySnapshot.derived` for the same reason, but they are
+deliberately **not** threaded into `EngineObjectiveInput`/`adapters.ts`: unlike respiration's
+fields, nothing downstream of the canonical snapshot is meant to consume them yet.
