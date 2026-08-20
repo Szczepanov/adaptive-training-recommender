@@ -38,11 +38,10 @@ def calculate_stdev(values: list[float | int | None], min_required: int) -> floa
 def calculate_median(values: list[float | int | None], min_required: int) -> float | None:
     """Median of non-None values if count meets min_required threshold.
 
-    Used for respiration rate instead of calculate_average: a trailing window can contain
-    a prior illness episode -- the exact deviation this baseline exists to detect -- and a
-    mean baseline gets dragged upward by those elevated nights, blunting sensitivity for
-    weeks after recovery. The median resists that contamination. See calculate_mad for the
-    matching outlier-resistant spread estimator.
+    Median is an outlier-resistant location estimator. Respiration uses it for the v3
+    robust-baseline candidate because transient elevated nights can contaminate a trailing
+    mean. Other metrics also persist medians for observation/comparison, but that does not
+    imply median is their preferred production estimator; see ADR-0024.
     """
     valid_values = [v for v in values if v is not None]
     if len(valid_values) >= min_required:
@@ -51,12 +50,13 @@ def calculate_median(values: list[float | int | None], min_required: int) -> flo
 
 
 def calculate_mad(values: list[float | int | None], min_required: int) -> float | None:
-    """Median absolute deviation of non-None values, scaled by 1.4826 (the consistency
-    constant for a normal distribution) so it's comparable in magnitude to calculate_stdev's
-    population stdev and usable as a drop-in noise-floor denominator the same way (see
-    metricStrain in app/src/engine/rules.ts). A few elevated nights from a prior illness
-    episode barely move it, unlike population stdev, which those same nights inflate --
-    widening the "normal" band and desensitizing z-score-style strain detection.
+    """Return the median absolute deviation scaled by the normal-consistency factor 1.4826.
+
+    Under an approximately Gaussian distribution this scaled MAD has a magnitude comparable
+    to standard deviation while retaining strong resistance to outliers. It is *not* a
+    universal drop-in replacement for standard deviation on bounded, skewed, multimodal or
+    quantized wearable metrics. Ties can also yield MAD == 0; any downstream floor then
+    becomes an explicit modelling assumption rather than measured variability. See ADR-0024.
     """
     valid_values = [v for v in values if v is not None]
     if len(valid_values) >= min_required:
@@ -117,9 +117,9 @@ def compute_derived_metrics(
     hrv_7d = calculate_average([d.get("hrvOvernightAvg") for d in window_7d_raws], 4)
     hrv_28d = calculate_average([d.get("hrvOvernightAvg") for d in window_28d_raws], 14)
 
-    # Median, not mean -- see calculate_median's docstring: a mean baseline gets dragged
-    # upward by a prior illness episode sitting inside the trailing window, which is
-    # exactly the deviation this baseline exists to detect.
+    # Respiration's v3 robust-baseline candidate uses median so a small number of elevated
+    # nights do not redefine the trailing center. Production scoring remains default-off
+    # pending replay/calibration; see ADR-0006 and ADR-0024.
     resp_7d = calculate_median([d.get("respirationAvg") for d in window_7d_raws], 4)
     resp_28d = calculate_median([d.get("respirationAvg") for d in window_28d_raws], 14)
 
@@ -133,16 +133,13 @@ def compute_derived_metrics(
     rhr_sd28 = calculate_stdev([d.get("restingHr") for d in window_28d_raws], 14)
     sleep_sd28 = calculate_stdev([d.get("sleepScore") for d in window_28d_raws], 14)
     steps_sd28 = calculate_stdev([d.get("totalSteps") for d in window_28d_raws], 14)
-    # MAD, not population stdev -- see calculate_mad's docstring: it stays stable across a
-    # prior illness episode inside the window instead of being widened by it.
+    # Respiration's candidate robust spread is persisted for comparison. Scaled MAD is
+    # normal-consistent, not universally equivalent to stdev; see calculate_mad/ADR-0024.
     resp_mad28 = calculate_mad([d.get("respirationAvg") for d in window_28d_raws], 14)
 
-    # v4 (docs/adr/0006 amendment): median/MAD computed *alongside* the existing mean/stdev
-    # for sleep, RHR, HRV, and steps -- observation-only, exactly like respiration was
-    # before its own v3 cutover. Not read by rules.ts/fatigue.ts yet; these exist so a
-    # comparison harness can measure how often/how much a median/MAD baseline would change
-    # `mode` before any of these four metrics' live mean/stdev gets replaced (see ADR-0014's
-    # precedent: a live decision function only changes after a recorded comparison).
+    # v4: candidate median/MAD summaries alongside the existing live estimators. These are
+    # observation-only. ADR-0024 explicitly rejects treating them as a presumed successor
+    # for every metric (notably HRV, steps and bounded sleep score).
     sleep_7d_median = calculate_median([d.get("sleepScore") for d in window_7d_raws], 4)
     sleep_28d_median = calculate_median([d.get("sleepScore") for d in window_28d_raws], 14)
     rhr_7d_median = calculate_median([d.get("restingHr") for d in window_7d_raws], 4)
@@ -157,12 +154,9 @@ def compute_derived_metrics(
     hrv_mad28 = calculate_mad([d.get("hrvOvernightAvg") for d in window_28d_raws], 14)
     steps_mad28 = calculate_mad([d.get("totalSteps") for d in window_28d_raws], 14)
 
-    # v5 (docs/adr/0006 amendment): observation-only 7d/28d median + 28d MAD baselines for
-    # body battery wake and the "metric enrichment" fields (stress avg/max, training
-    # readiness score) -- unlike v4's sleep/RHR/HRV/steps, none of these had *any* baseline
-    # (mean or median) before this. Not read by rules.ts/fatigue.ts yet -- same
-    # observation-before-wiring posture CanonicalDailyMetrics's own docstring already
-    # applies to stress/training readiness/training status/heart rate zones.
+    # v5: observation-only candidate baselines for provider composites/enrichment fields.
+    # These overlap upstream physiology (for example HRV/sleep/stress) and must not simply
+    # become additive strain terms; ADR-0024 requires correlation/double-counting analysis.
     def _stress_avg(d: dict[str, Any]) -> float | int | None:
         return (d.get("stress") or {}).get("avg")
 
@@ -267,7 +261,7 @@ def compute_derived_metrics(
         steps7dAvg=_round(steps_7d),
         steps28dAvg=_round(steps_28d),
         steps28dStdev=_round(steps_sd28),
-        # v4: observation-only median/MAD baselines -- see the comment above compute_derived_metrics.
+        # v4: observation-only median/MAD baselines -- see ADR-0024 for metric-specific candidates.
         sleepScore7dMedian=_round(sleep_7d_median),
         sleepScore28dMedian=_round(sleep_28d_median),
         sleepScore28dMad=_round(sleep_mad28),
@@ -280,7 +274,7 @@ def compute_derived_metrics(
         steps7dMedian=_round(steps_7d_median),
         steps28dMedian=_round(steps_28d_median),
         steps28dMad=_round(steps_mad28),
-        # v5: observation-only median/MAD baselines -- see the v5 comment above.
+        # v5: observation-only median/MAD baselines -- keep composite signals non-additive.
         bodyBatteryWake7dMedian=_round(bb_wake_7d_median),
         bodyBatteryWake28dMedian=_round(bb_wake_28d_median),
         bodyBatteryWake28dMad=_round(bb_wake_mad28),
