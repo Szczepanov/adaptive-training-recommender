@@ -316,6 +316,121 @@ def _build_strength_step_or_group(
     return garmin_step, step_order + 1
 
 
+def _determine_step_type(step_name: str, default_step_type: dict[str, Any]) -> dict[str, Any]:
+    step_name_lower = step_name.lower()
+    if "warm" in step_name_lower:
+        return STEP_TYPE_MAP["warmup"]
+    elif "cool" in step_name_lower:
+        return STEP_TYPE_MAP["cooldown"]
+    elif "rest" in step_name_lower or "recovery" in step_name_lower:
+        return STEP_TYPE_MAP["recovery"]
+    return default_step_type
+
+
+def _compile_target_sources(step: dict[str, Any]) -> list[str]:
+    targets = step.get("targets")
+    target_sources: list[str] = []
+    if targets and isinstance(targets, list):
+        target_sources.extend([t for t in targets if isinstance(t, str) and t.strip()])
+    for key in ("notes", "description", "name"):
+        val = step.get(key)
+        if isinstance(val, str) and val.strip() and val not in target_sources:
+            target_sources.append(val)
+    return target_sources
+
+
+def _build_step_description(step_name: str, targets: Any) -> str | None:
+    desc_parts = [step_name] if step_name else []
+    if targets and isinstance(targets, list) and targets:
+        desc_parts.append(f"({'; '.join(targets)})")
+    return " ".join(desc_parts) if desc_parts else None
+
+
+def _resolve_target_values(
+    modality: str,
+    power_target: tuple[float, float] | None,
+    zone_target: int | None,
+) -> tuple[dict[str, Any], float | None, float | None, int | None]:
+    if modality in ["cycling", "bike"]:
+        if power_target:
+            return (
+                {"workoutTargetTypeId": 2, "workoutTargetTypeKey": "power.zone"},
+                power_target[0],
+                power_target[1],
+                None,
+            )
+        elif zone_target:
+            return (
+                {"workoutTargetTypeId": 2, "workoutTargetTypeKey": "power.zone"},
+                None,
+                None,
+                zone_target,
+            )
+    return (
+        {"workoutTargetTypeId": 1, "workoutTargetTypeKey": "no.target"},
+        None,
+        None,
+        None,
+    )
+
+
+def _resolve_end_condition(
+    modality: str, reps: int | None, duration_sec: int
+) -> tuple[dict[str, Any], Any]:
+    if reps and modality == "strength":
+        return END_CONDITION_MAP["reps"], reps
+    return END_CONDITION_MAP["time"], duration_sec
+
+
+def _build_rest_dto(
+    step: dict[str, Any], step_order: int, modality: str, ftp: float | None
+) -> dict[str, Any] | None:
+    rest_sec = step.get("restAfterSec")
+    if not rest_sec:
+        rest_sec = _extract_recovery_seconds(step)
+
+    if not rest_sec or rest_sec <= 0:
+        return None
+
+    rec_target_str = step.get("recoveryTarget")
+    rec_sources: list[str] = []
+    if rec_target_str and isinstance(rec_target_str, str):
+        rec_sources.append(rec_target_str)
+
+    step_notes = str(step.get("notes", ""))
+    rec_match = re.search(
+        r"(?:followed\s+by|with)\s+[^.,;]*\s+(?:at|around|approximately|about)\s+([^.,;]+)",
+        step_notes,
+        re.IGNORECASE,
+    )
+    if rec_match:
+        rec_sources.append(rec_match.group(1).strip())
+    elif step_notes:
+        rec_sources.append(step_notes)
+
+    rec_power = _extract_power_target(rec_sources, ftp_watts=ftp) if rec_sources else None
+    rec_zone = _extract_zone_target(rec_sources) if (rec_sources and not rec_power) else None
+
+    rec_target_type, rec_val_one, rec_val_two, rec_zone_num = _resolve_target_values(
+        modality, rec_power, rec_zone
+    )
+
+    return {
+        "type": "ExecutableStepDTO",
+        "stepId": None,
+        "stepOrder": step_order,
+        "stepType": STEP_TYPE_MAP["recovery"],
+        "childStepId": None,
+        "description": f"Rest interval ({rec_target_str})" if rec_target_str else "Rest interval",
+        "endCondition": END_CONDITION_MAP["time"],
+        "endConditionValue": rest_sec,
+        "targetType": rec_target_type,
+        "targetValueOne": rec_val_one,
+        "targetValueTwo": rec_val_two,
+        "zoneNumber": rec_zone_num,
+    }
+
+
 def _build_step_dto(
     step: dict[str, Any],
     step_order: int,
@@ -328,61 +443,20 @@ def _build_step_dto(
     # target — only `repetitions` (reps inside one set) counts here.
     reps = step.get("repetitions")
 
-    step_type = default_step_type
     step_name = str(step.get("name", "")).strip()
-    step_name_lower = step_name.lower()
-    if "warm" in step_name_lower:
-        step_type = STEP_TYPE_MAP["warmup"]
-    elif "cool" in step_name_lower:
-        step_type = STEP_TYPE_MAP["cooldown"]
-    elif "rest" in step_name_lower or "recovery" in step_name_lower:
-        step_type = STEP_TYPE_MAP["recovery"]
+    step_type = _determine_step_type(step_name, default_step_type)
 
-    targets = step.get("targets")
-    target_sources: list[str] = []
-    if targets and isinstance(targets, list):
-        target_sources.extend([t for t in targets if isinstance(t, str) and t.strip()])
-    for key in ("notes", "description", "name"):
-        val = step.get(key)
-        if isinstance(val, str) and val.strip() and val not in target_sources:
-            target_sources.append(val)
-
-    desc_parts = [step_name] if step_name else []
-    if targets and isinstance(targets, list) and targets:
-        desc_parts.append(f"({'; '.join(targets)})")
-    step_desc = " ".join(desc_parts) if desc_parts else None
+    target_sources = _compile_target_sources(step)
+    step_desc = _build_step_description(step_name, step.get("targets"))
 
     power_target = _extract_power_target(target_sources, ftp_watts=ftp)
     zone_target = _extract_zone_target(target_sources) if not power_target else None
 
-    if modality in ["cycling", "bike"]:
-        if power_target:
-            target_type = {"workoutTargetTypeId": 2, "workoutTargetTypeKey": "power.zone"}
-            target_val_one: float | None = power_target[0]
-            target_val_two: float | None = power_target[1]
-            zone_num: int | None = None
-        elif zone_target:
-            target_type = {"workoutTargetTypeId": 2, "workoutTargetTypeKey": "power.zone"}
-            target_val_one = None
-            target_val_two = None
-            zone_num = zone_target
-        else:
-            target_type = {"workoutTargetTypeId": 1, "workoutTargetTypeKey": "no.target"}
-            target_val_one = None
-            target_val_two = None
-            zone_num = None
-    else:
-        target_type = {"workoutTargetTypeId": 1, "workoutTargetTypeKey": "no.target"}
-        target_val_one = None
-        target_val_two = None
-        zone_num = None
+    target_type, target_val_one, target_val_two, zone_num = _resolve_target_values(
+        modality, power_target, zone_target
+    )
 
-    if reps and modality == "strength":
-        end_condition = END_CONDITION_MAP["reps"]
-        end_condition_value = reps
-    else:
-        end_condition = END_CONDITION_MAP["time"]
-        end_condition_value = duration_sec
+    end_condition, end_condition_value = _resolve_end_condition(modality, reps, duration_sec)
 
     main_dto: dict[str, Any] = {
         "type": "ExecutableStepDTO",
@@ -399,62 +473,7 @@ def _build_step_dto(
         "zoneNumber": zone_num,
     }
 
-    rest_dto: dict[str, Any] | None = None
-    rest_sec = step.get("restAfterSec")
-    if not rest_sec:
-        rest_sec = _extract_recovery_seconds(step)
-
-    if rest_sec and rest_sec > 0:
-        rec_target_str = step.get("recoveryTarget")
-        rec_sources: list[str] = []
-        if rec_target_str and isinstance(rec_target_str, str):
-            rec_sources.append(rec_target_str)
-        step_notes = str(step.get("notes", ""))
-        rec_match = re.search(
-            r"(?:followed\s+by|with)\s+[^.,;]*\s+(?:at|around|approximately|about)\s+([^.,;]+)",
-            step_notes,
-            re.IGNORECASE,
-        )
-        if rec_match:
-            rec_sources.append(rec_match.group(1).strip())
-        elif step_notes:
-            rec_sources.append(step_notes)
-
-        rec_power = _extract_power_target(rec_sources, ftp_watts=ftp) if rec_sources else None
-        rec_zone = _extract_zone_target(rec_sources) if (rec_sources and not rec_power) else None
-
-        if modality in ["cycling", "bike"] and rec_power:
-            rec_target_type = {"workoutTargetTypeId": 2, "workoutTargetTypeKey": "power.zone"}
-            rec_val_one: float | None = rec_power[0]
-            rec_val_two: float | None = rec_power[1]
-            rec_zone_num: int | None = None
-        elif modality in ["cycling", "bike"] and rec_zone:
-            rec_target_type = {"workoutTargetTypeId": 2, "workoutTargetTypeKey": "power.zone"}
-            rec_val_one = None
-            rec_val_two = None
-            rec_zone_num = rec_zone
-        else:
-            rec_target_type = {"workoutTargetTypeId": 1, "workoutTargetTypeKey": "no.target"}
-            rec_val_one = None
-            rec_val_two = None
-            rec_zone_num = None
-
-        rest_dto = {
-            "type": "ExecutableStepDTO",
-            "stepId": None,
-            "stepOrder": step_order + 1,
-            "stepType": STEP_TYPE_MAP["recovery"],
-            "childStepId": None,
-            "description": f"Rest interval ({rec_target_str})"
-            if rec_target_str
-            else "Rest interval",
-            "endCondition": END_CONDITION_MAP["time"],
-            "endConditionValue": rest_sec,
-            "targetType": rec_target_type,
-            "targetValueOne": rec_val_one,
-            "targetValueTwo": rec_val_two,
-            "zoneNumber": rec_zone_num,
-        }
+    rest_dto = _build_rest_dto(step, step_order + 1, modality, ftp)
 
     return main_dto, rest_dto
 
