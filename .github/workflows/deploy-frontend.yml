@@ -1,0 +1,120 @@
+name: Deploy Frontend & Firestore Rules
+
+# Deploys the web app to Firebase Hosting and/or Firestore Security Rules without needing a
+# local machine -- works the same way as deploy-garmin-sync.yml (see that workflow and
+# docs/ops/setup-workload-identity.sh for the design rationale). One-time prerequisite: rerun
+# docs/ops/setup-workload-identity.sh (idempotent) -- it now also provisions the
+# github-frontend-deployer identity this workflow authenticates as, and prints the repo
+# secret this workflow reads below.
+#
+# Deliberately a SEPARATE identity from garmin-sync's github-deployer: github-frontend-deployer
+# holds only roles/firebasehosting.admin and roles/firebaserules.admin, nothing about Cloud
+# Run, Artifact Registry, or Cloud Scheduler, and vice versa -- see docs/ops/frontend-deployment.md.
+#
+# Firestore indexes are deliberately out of scope here too, same as the local
+# `npm run firestore:rules:deploy` procedure this mirrors (docs/ops/firestore-rules-deployment.md)
+# -- use `make deploy-indexes` locally for those.
+on:
+  workflow_dispatch:
+    inputs:
+      deploy_hosting:
+        description: "Build and deploy the web app to Firebase Hosting"
+        type: boolean
+        required: true
+        default: true
+      deploy_rules:
+        description: "Deploy app/firestore.rules (drift-checked first; refuses to overwrite on mismatch)"
+        type: boolean
+        required: true
+        default: true
+
+permissions:
+  contents: read
+  id-token: write # required for keyless Workload Identity Federation auth
+
+env:
+  GCP_PROJECT: ${{ secrets.GCP_PROJECT_ID }}
+  CLOUDSDK_CORE_PROJECT: ${{ secrets.GCP_PROJECT_ID }} # process-scoped; never mutates a persisted gcloud config
+
+jobs:
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to GCP (Workload Identity Federation, no key)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_FRONTEND_DEPLOYER_SA_EMAIL }}
+
+      # Needed for `gcloud auth application-default print-access-token`, which
+      # scripts/check-firestore-rules-drift.mjs calls to read the deployed ruleset via the
+      # Firebase Rules REST API -- it picks up the WIF credentials the auth step just wrote to
+      # GOOGLE_APPLICATION_CREDENTIALS as Application Default Credentials automatically.
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: app/package-lock.json
+
+      # Only firestore:rules:deploy needs this (it runs the emulator suite before deploying),
+      # but it's cheap enough to always install rather than condition on deploy_rules.
+      - name: Set up Java for Firestore Emulator
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      # `npm run build` runs the full `npm run check` first (typecheck, lint, unit tests,
+      # workout-catalog validation) -- never deploy a build that hasn't passed those.
+      - name: Build frontend
+        if: ${{ inputs.deploy_hosting }}
+        env:
+          VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
+          VITE_FIREBASE_AUTH_DOMAIN: ${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}
+          VITE_FIREBASE_PROJECT_ID: ${{ secrets.VITE_FIREBASE_PROJECT_ID }}
+          VITE_FIREBASE_STORAGE_BUCKET: ${{ secrets.VITE_FIREBASE_STORAGE_BUCKET }}
+          VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID }}
+          VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
+          VITE_FIREBASE_MEASUREMENT_ID: ${{ secrets.VITE_FIREBASE_MEASUREMENT_ID }}
+        run: npm run build
+
+      - name: Deploy to Firebase Hosting
+        if: ${{ inputs.deploy_hosting }}
+        run: npx firebase deploy --only hosting --project "${GCP_PROJECT}" --non-interactive
+
+      # Fails closed on drift, same as the documented local procedure: if the deployed rules
+      # don't match app/firestore.rules, stop here rather than overwrite blindly. Investigate
+      # (docs/ops/firestore-rules-deployment.md#drift-and-remediation) and rerun once resolved.
+      - name: Check Firestore rules drift (safety gate)
+        if: ${{ inputs.deploy_rules }}
+        run: npm run firestore:rules:drift
+
+      - name: Deploy Firestore security rules
+        if: ${{ inputs.deploy_rules }}
+        run: npm run firestore:rules:deploy -- --confirm
+
+      # The deploy script writes a rollback JSON to app/artifacts/firestore-rules-rollbacks/
+      # (gitignored, and the runner is thrown away after this job) -- upload it so a rollback
+      # is still possible after the fact. Download it and run
+      # `npm run firestore:rules:rollback -- --backup <file> --confirm` locally per
+      # docs/ops/firestore-rules-deployment.md#rollback (rollback itself stays a local,
+      # deliberate operation, same as before this workflow existed).
+      - name: Upload Firestore rules rollback backup
+        if: always() && inputs.deploy_rules
+        uses: actions/upload-artifact@v4
+        with:
+          name: firestore-rules-rollback-backup
+          path: app/artifacts/firestore-rules-rollbacks/
+          if-no-files-found: ignore

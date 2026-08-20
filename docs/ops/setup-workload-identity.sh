@@ -19,11 +19,17 @@
 #     one exact repository AND its main branch (`assertion.ref == refs/heads/main`) -- a
 #     workflow run from any other branch or a fork cannot obtain a token here at all.
 #   - The token bucket, Cloud Build's source-staging bucket, the two runtime/scheduler
-#     service accounts, the Artifact Registry repository -- everything the two GitHub
-#     Actions workflows need to already exist.
+#     service accounts, the Artifact Registry repository -- everything the GitHub Actions
+#     workflows need to already exist.
 #   - A "github-deployer" service account, scoped to deployment actions only (Cloud Run,
 #     Artifact Registry push, Cloud Build, Cloud Scheduler, and impersonating -- only --
 #     garmin-sync-job to attach it to the Jobs it deploys).
+#   - A separate "github-frontend-deployer" service account for deploy-frontend.yml, scoped
+#     only to Firebase Hosting and Firebase Rules -- kept apart from github-deployer so a
+#     compromised/buggy workflow touching one surface (Cloud Run Jobs vs. the web app +
+#     Firestore rules) can't reach the other's resources. Both trust the same Workload
+#     Identity Pool/Provider above; only which service account a workflow asks to
+#     impersonate differs.
 #
 # After this script finishes, copy its final output into GitHub repo secrets
 # (Settings -> Secrets and variables -> Actions) exactly as printed.
@@ -37,6 +43,8 @@ POOL_ID="github-pool"
 PROVIDER_ID="github-provider"
 DEPLOYER_SA_NAME="github-deployer"
 DEPLOYER_SA_EMAIL="${DEPLOYER_SA_NAME}@${GCP_PROJECT}.iam.gserviceaccount.com"
+FRONTEND_DEPLOYER_SA_NAME="github-frontend-deployer"
+FRONTEND_DEPLOYER_SA_EMAIL="${FRONTEND_DEPLOYER_SA_NAME}@${GCP_PROJECT}.iam.gserviceaccount.com"
 JOB_SA_EMAIL="garmin-sync-job@${GCP_PROJECT}.iam.gserviceaccount.com"
 SCHEDULER_SA_EMAIL="garmin-scheduler-invoker@${GCP_PROJECT}.iam.gserviceaccount.com"
 TOKEN_BUCKET="${GCP_PROJECT}-garmin-tokens"
@@ -52,7 +60,8 @@ gcloud services enable \
   iamcredentials.googleapis.com sts.googleapis.com \
   run.googleapis.com cloudscheduler.googleapis.com \
   artifactregistry.googleapis.com cloudbuild.googleapis.com \
-  firestore.googleapis.com storage.googleapis.com
+  firestore.googleapis.com storage.googleapis.com \
+  firebasehosting.googleapis.com firebaserules.googleapis.com
 
 PROJECT_NUMBER="$(gcloud projects describe "${GCP_PROJECT}" --format='value(projectNumber)')"
 
@@ -155,6 +164,32 @@ gcloud iam service-accounts add-iam-policy-binding "${DEPLOYER_SA_EMAIL}" \
   --role="roles/iam.workloadIdentityUser" \
   --member="principalSet://iam.googleapis.com/projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/${POOL_ID}/attribute.repository/${GITHUB_REPO}"
 
+echo "==> Creating github-frontend-deployer service account (skipping if it already exists)"
+if ! gcloud iam service-accounts describe "${FRONTEND_DEPLOYER_SA_EMAIL}" >/dev/null 2>&1; then
+  gcloud iam service-accounts create "${FRONTEND_DEPLOYER_SA_NAME}" \
+    --display-name="GitHub Actions frontend/rules deploy identity (WIF, no key)"
+fi
+
+# Deliberately just these two: Firebase Hosting releases and Firebase Security Rules
+# (Firestore rules) are the only two things deploy-frontend.yml touches. No Cloud Run,
+# Artifact Registry, Cloud Scheduler, or Firestore data/index access -- see that workflow's
+# own comments and docs/ops/frontend-deployment.md.
+echo "==> Granting github-frontend-deployer deployment-only roles"
+for ROLE in \
+  roles/firebasehosting.admin \
+  roles/firebaserules.admin \
+; do
+  gcloud projects add-iam-policy-binding "${GCP_PROJECT}" \
+    --member="serviceAccount:${FRONTEND_DEPLOYER_SA_EMAIL}" \
+    --role="${ROLE}" \
+    --condition=None >/dev/null
+done
+
+echo "==> Allowing GitHub Actions runs in ${GITHUB_REPO}@main to impersonate github-frontend-deployer"
+gcloud iam service-accounts add-iam-policy-binding "${FRONTEND_DEPLOYER_SA_EMAIL}" \
+  --role="roles/iam.workloadIdentityUser" \
+  --member="principalSet://iam.googleapis.com/projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/${POOL_ID}/attribute.repository/${GITHUB_REPO}"
+
 WIF_PROVIDER="projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/${POOL_ID}/providers/${PROVIDER_ID}"
 
 cat <<EOF
@@ -163,9 +198,10 @@ cat <<EOF
 Setup complete. Add these as GitHub repo secrets
 (Settings -> Secrets and variables -> Actions -> New repository secret):
 
-  GCP_PROJECT_ID                  = ${GCP_PROJECT}
-  GCP_WORKLOAD_IDENTITY_PROVIDER  = ${WIF_PROVIDER}
-  GCP_DEPLOYER_SA_EMAIL           = ${DEPLOYER_SA_EMAIL}
+  GCP_PROJECT_ID                    = ${GCP_PROJECT}
+  GCP_WORKLOAD_IDENTITY_PROVIDER    = ${WIF_PROVIDER}
+  GCP_DEPLOYER_SA_EMAIL             = ${DEPLOYER_SA_EMAIL}
+  GCP_FRONTEND_DEPLOYER_SA_EMAIL    = ${FRONTEND_DEPLOYER_SA_EMAIL}
 
 You'll also need (see docs/ops/cloud-run-deployment.md for what each is for):
 
@@ -179,6 +215,19 @@ account has 2FA via an authenticator app -- see that workflow's own notes):
   GARMIN_TOTP_SECRET = the base32 shared secret your authenticator app was
                         given when you enrolled it (not a 6-digit code)
 
-Then run the "Deploy Garmin Sync" workflow from the Actions tab.
+For the "Deploy Frontend & Firestore Rules" workflow (see
+docs/ops/frontend-deployment.md), also add your production Firebase web app
+config -- Project settings -> General -> Your apps in the Firebase console:
+
+  VITE_FIREBASE_API_KEY
+  VITE_FIREBASE_AUTH_DOMAIN
+  VITE_FIREBASE_PROJECT_ID
+  VITE_FIREBASE_STORAGE_BUCKET
+  VITE_FIREBASE_MESSAGING_SENDER_ID
+  VITE_FIREBASE_APP_ID
+  VITE_FIREBASE_MEASUREMENT_ID (optional -- only if you use Analytics)
+
+Then run the "Deploy Garmin Sync" and/or "Deploy Frontend & Firestore Rules"
+workflows from the Actions tab.
 ==============================================================================
 EOF
