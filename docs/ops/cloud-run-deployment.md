@@ -252,6 +252,19 @@ Federation**: no service-account JSON key is ever stored as a secret, only a pro
 resource name and a service-account email GitHub proves it's allowed to impersonate for that
 one run.
 
+### Already deployed manually? Check names line up first
+
+If you've already run the manual steps above once, `docs/ops/verify-existing-deploy.sh`
+read-only-checks whether your live resources exist under the exact names/region these
+workflows assume (`GCP_PROJECT=... REGION=europe-central2 bash docs/ops/verify-existing-deploy.sh`,
+from wherever you have `gcloud` -- Cloud Shell or local). If everything the workflows expect
+already exists under those names, `run_infra_setup` can stay on regardless -- every step it
+gates is create-if-missing, so it's a safe no-op against what you already have. It's still
+worth knowing before the first CI-driven redeploy: **`gcloud run jobs deploy` replaces the
+whole Job spec** with whatever `deploy-garmin-sync.yml` passes -- any env var or setting your
+manual deploy added beyond `docs/ops/cloud-run-job.env.yaml.example`'s fields will be dropped
+on that first run.
+
 ### One-time setup
 
 1. Open **Cloud Shell** at [console.cloud.google.com](https://console.cloud.google.com)

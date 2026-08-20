@@ -56,6 +56,14 @@ jobs:
 
       - uses: google-github-actions/setup-gcloud@v2
 
+      # auth@v2 sets up Application Default Credentials but does not itself set an active
+      # gcloud project or suppress interactive confirmation prompts -- both matter on a
+      # non-interactive CI runner.
+      - name: Configure gcloud project and non-interactive mode
+        run: |
+          gcloud config set project "${GCP_PROJECT}"
+          gcloud config set core/disable_prompts true
+
       - name: Enable required APIs
         if: inputs.run_infra_setup
         run: |
