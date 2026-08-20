@@ -53,75 +53,97 @@ than `max()` and was therefore the worse candidate in that comparison. The engin
 remains the release authority for subsequent policy changes, and any new fusion model
 requires new measured-response evidence plus a recorded comparison.
 
-### Amendment (2026-08-20): respiration rate — median/MAD baseline and strain wiring
+### Amendment (2026-08-20): respiration rate — median/MAD baseline and comparison-only strain plumbing
 
 Respiration rate's `respiration7dAvg`/`respiration28dAvg`/deltas were computed and persisted
 from the start of this ADR but never consumed by `evaluateReadinessAndSafetyEnvelope` --
 observed and recorded, not decision-relevant (the pattern `RawMetrics`'s docstring calls out
-for other unwired enrichment fields). Two changes close that gap:
+for other unwired enrichment fields). The v3 work adds a robust baseline and the plumbing
+needed to compare a respiration strain candidate without enabling it in production by
+default:
 
 1. **Median, not mean, for the respiration baseline** (`calculate_median` in
    `src/garmin_sync/metrics.py`, `BASELINE_COMPUTATION_VERSION` 3). Elevated respiration
-   during illness is exactly the deviation this baseline exists to detect, so a trailing
-   window that itself contains a prior illness episode drags a *mean* baseline upward and
-   desensitizes detection for weeks afterward. The median resists that contamination. The
-   matching spread estimator, `respiration28dMad` (`calculate_mad`, median absolute
-   deviation scaled by 1.4826), replaces population stdev as the strain z-score denominator
-   for the same reason -- see both functions' docstrings.
-2. **`respirationStrain` wired into `metricStrain`** (`app/src/engine/rules.ts`), weighted
-   at `RESPIRATION_STRAIN_WEIGHT = 0.3` (comparable to RHR) with `sign = -1` (elevated
-   respiration is worse, same convention as RHR). This is now decision-relevant: it can move
-   `objectiveStrain` and therefore `mode`. Like `HRV_STRAIN_WEIGHT`/`RHR_STRAIN_WEIGHT`/
-   `SLEEP_STRAIN_WEIGHT`, the weight is a first-pass heuristic, not yet run through the
-   9.6-style sensitivity/simulation harness.
+   during illness or another transient physiological disturbance can contaminate a trailing
+   mean baseline and inflate population stdev. Median/MAD is therefore a reasonable robust
+   anomaly-detection candidate. The matching spread estimator is `respiration28dMad`
+   (`calculate_mad`, raw MAD multiplied by the normal-consistency constant `1.4826`). That
+   scaling makes MAD approximately stdev-comparable under a Gaussian distribution; it does
+   **not** make MAD universally equivalent to standard deviation for arbitrary wearable data.
+2. **`respirationStrain` exists in `metricStrain` as a latent comparison path**
+   (`app/src/engine/rules.ts`), with reference weight `RESPIRATION_STRAIN_WEIGHT = 0.3` and
+   `sign = -1` (elevated respiration is adverse, same sign convention as RHR). The weight and
+   the 1.0 br/min floor are first-pass modelling heuristics, not calibrated production
+   parameters. `mapSnapshotToEngineInput` therefore exposes a `RespirationStrainPolicy`
+   selector whose default is `'off'`; normal production calls emit `null` respiration strain
+   inputs. Replay/comparison tooling may explicitly request `'median-mad-v1'` to exercise the
+   real engine path without duplicating scoring logic.
 
-Documents written before `baselineComputationVersion` 3 lack `respiration28dMad` and hold a
-*mean* (not median) in `respiration7dAvg`/`respiration28dAvg` -- readers must check the
-version rather than assume either. `respiration_delta`/`respiration_delta_28d`/
-`respiration_mad_28d` on `EngineObjectiveInput` are optional for the same reason,
-following the `steps_*` fields' precedent for a later addition; `metricStrain` reads a
-missing value as `null`, which resolves to zero strain contribution, not fabricated signal.
+Compatibility and data-availability rules are strict:
+
+* documents with `baselineComputationVersion < 3` may already contain non-null respiration
+  deltas, but those deltas were computed against **mean** baselines and must never enter the
+  median/MAD scoring path;
+* a v3+ document without a measured `respiration28dMad` is also decision-inert -- the engine
+  must not substitute a generic scoring floor for an unavailable personal spread estimate;
+* only explicit `'median-mad-v1'` comparison calls with v3+ data **and** a measured MAD may
+  forward respiration deltas/MAD into `EngineObjectiveInput`.
+
+The 1.0 br/min floor must not be described as Garmin device/export resolution without direct
+provider documentation or raw-data evidence. It is only a candidate scoring floor to be
+challenged by replay. Likewise, the evidence supports respiration as a potentially useful
+early illness/anomaly signal, but not as a disease-specific detector.
+
+ADR-0024 records the metric-specific estimator policy and the evidence/release criteria that
+must be satisfied before this candidate can become live.
 
 ### Positive
 * Transparent, debuggable strain metrics provided alongside every workout recommendation.
 * Accurately distinguishes between temporary acute fatigue and accumulated chronic overtraining.
-* Respiration-rate elevation -- one of the earliest, most specific illness signals -- now
-  actually influences the recommended training mode instead of being recorded and ignored.
+* Respiration median/MAD data and the real scoring path are available for replay/sensitivity
+  analysis without silently changing production recommendations.
 
 ### Negative
 * Requires maintaining robust baseline calculation algorithms in both Python ingestion (historical calculations) and TypeScript frontend types.
 * Respiration now has a second baseline-statistic convention (median/MAD) alongside the
   mean/stdev pair used for HRV, RHR, and sleep score -- a reader of `metrics.py` or
   `rules.ts` has to know which metric uses which, rather than one uniform rule.
+* The latent respiration scoring code and reference weight must not be mistaken for validated
+  production policy merely because they compile and are testable.
 
 ### Amendment (2026-08-20): median/MAD added, observation-only, for sleep/RHR/HRV/steps
 
-The respiration amendment above swapped that metric's baseline outright because it was
-*dormant* -- computed but never read by the engine, so changing what it meant changed no
-real decision. Sleep score, RHR, and HRV are the opposite: their mean/stdev baselines are
-live inputs to `metricStrain` today, and steps' mean (`steps_7d_avg`) is a live input to
-`fatigue.ts`'s ambulatory-surge check (`steps28dStdev` itself is currently dormant, same as
-respiration was). Swapping any of those outright would change real recommendations without
-the evidence this project requires first -- ADR-0014 set that bar explicitly: "any new
-fusion model requires new measured-response evidence plus a recorded comparison" before a
-live decision function changes.
+The respiration amendment above changed that metric's persisted baseline because its old
+mean/stdev baseline was dormant at the time of the estimator change. Sleep score, RHR, and
+HRV are different: their mean/stdev baselines are live inputs to `metricStrain` today, and
+steps' mean (`steps_7d_avg`) is a live input to `fatigue.ts`'s ambulatory-surge check
+(`steps28dStdev` itself is currently dormant). Swapping any of those outright would change
+real recommendations without the evidence this project requires first -- ADR-0014 set that
+bar explicitly: a live decision function changes only after measured-response evidence and a
+recorded comparison.
 
 So this step is **additive only**: `BASELINE_COMPUTATION_VERSION` 4 adds
 `sleepScore7dMedian`/`28dMedian`/`28dMad`, `restingHr7dMedian`/`28dMedian`/`28dMad`,
 `hrv7dMedian`/`28dMedian`/`28dMad`, and `steps7dMedian`/`28dMedian`/`28dMad` (plus the
 matching `*Vs7dMedian`/`*Vs28dMedian` deltas on `DerivedDeltas`) computed *alongside* the
 existing mean/stdev fields, not replacing them. Nothing in `rules.ts` or `fatigue.ts` reads
-these yet -- they exist so a future comparison harness (extending `simulate:scenarios`/the
-replay tooling, or a script over the ADR-0005 raw archive) can measure how often and by how
-much a median/MAD baseline would have changed `mode` before any of these four metrics'
-live statistic is actually replaced. That comparison, and any resulting cutover, is
-deliberately **not** part of this amendment.
+these yet.
+
+Crucially, these fields do **not** imply that median/MAD is the preferred future estimator for
+all four metrics. ADR-0024 records the current research-based candidate set:
+
+* RHR: compare robust median for anomaly detection against mean/EWMA for gradual drift;
+* HRV: compare median/MAD against log-domain rolling mean plus CV/SD rather than assuming a
+  robust cutover;
+* sleep score: keep personal baselines descriptive and compare them against absolute and
+  short multi-night semantics because the score is a bounded vendor composite;
+* steps: separate habitual-activity baseline semantics from actual mechanical/load semantics,
+  and test weekday-aware baselines.
 
 Documents written before `baselineComputationVersion` 4 simply lack these fields
 (`undefined`, not `null`) -- readers must treat them as optional. `app/src/engine/models.ts`
 mirrors them on `DailyRecoverySnapshot.derived` for the same reason, but they are
-deliberately **not** threaded into `EngineObjectiveInput`/`adapters.ts`: unlike respiration's
-fields, nothing downstream of the canonical snapshot is meant to consume them yet.
+deliberately **not** threaded into `EngineObjectiveInput`/`adapters.ts`.
 
 ### Amendment (2026-08-20): median/MAD extended to body battery wake, stress, training readiness
 
@@ -132,19 +154,21 @@ body battery wake is read live in `rules.ts` (`BODY_BATTERY_LOW_ANCHOR`,
 `BODY_BATTERY_RECOVER_THRESHOLD`) but only against fixed absolute thresholds, never a
 personal baseline; stress and training readiness are `CanonicalDailyMetrics`'s own
 "metric enrichment" fields, its docstring already flagging them as "not yet consumed...
-expose to rules only after measuring real-world availability" -- the same posture this
-amendment applies, just spelled out as a concrete baseline computation now available to
-measure.
+expose to rules only after measuring real-world availability".
 
 `BASELINE_COMPUTATION_VERSION` 5 adds `bodyBatteryWake7dMedian`/`28dMedian`/`28dMad`,
 `stressAvg7dMedian`/`28dMedian`/`28dMad`, `stressMax7dMedian`/`28dMedian`/`28dMad`, and
 `trainingReadinessScore7dMedian`/`28dMedian`/`28dMad`, plus the matching
-`*Vs7dMedian`/`*Vs28dMedian` deltas. `_build_and_store_snapshot` in `service.py` had to
-start passing `bodyBatteryWake`/`stress`/`trainingReadiness` into `compute_derived_metrics`'s
-`raw_current` argument (it previously only passed sleep/RHR/HRV/respiration/steps) --
-without that, every delta for these three metrics would resolve to `None` regardless of
-window data, since a delta needs today's value alongside the baseline. No `POLICY_VERSION`
-bump: `rules.ts`/`fatigue.ts` are unchanged.
+`*Vs7dMedian`/`*Vs28dMedian` deltas. `_build_and_store_snapshot` in `service.py` also passes
+`bodyBatteryWake`/`stress`/`trainingReadiness` into `compute_derived_metrics`'s `raw_current`
+argument so the observation-only deltas can be computed.
+
+These metrics must remain observation-only until correlation/double-counting is addressed.
+Garmin's stress, sleep, Body Battery and Training Readiness are overlapping composites rather
+than independent physiological channels; blindly summing positive strain weights for all of
+them would count substantially shared HRV/sleep/stress information multiple times. ADR-0024
+requires either a weak Garmin-composite prior or the project's own constituent-signal model
+to be evaluated explicitly rather than summing both.
 
 Same absence/optionality rule as before: documents written before `baselineComputationVersion`
 5 lack these fields entirely, and none of it is threaded into `EngineObjectiveInput`.
