@@ -66,7 +66,6 @@ jobs:
 
       - name: Python dependency audit
         run: uvx pip-audit
-        continue-on-error: true
 
   frontend-build:
     name: Frontend Build & Firestore Rules
@@ -141,7 +140,6 @@ jobs:
 
       - name: Node dependency audit
         run: npm audit --audit-level=high
-        continue-on-error: true
 
   docker-build:
     name: Docker Image Build
