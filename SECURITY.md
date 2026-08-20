@@ -19,7 +19,8 @@ This opens a private discussion with the maintainer that isn't visible to
 other users until a fix is available.
 
 If private reporting is not enabled for this repository, please reach out to
-the maintainer through their GitHub profile instead of filing a public issue.
+the maintainer via their GitHub profile (https://github.com/Szczepanov)
+instead of filing a public issue.
 
 ## Scope
 
