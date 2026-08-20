@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import type {
+    AuthoredPlanBlock,
     DailyRecommendation,
     DailyRecoverySnapshot,
     DailySubjectiveCheckin,
     FixedActivity,
     TrainingIntentProfile,
+    TrainingSettings,
+    UserGoal,
+    UserPreferences,
 } from './models';
 import {
     enhanceContextBriefForPlanning,
@@ -181,6 +185,20 @@ function fixedActivity(): FixedActivity {
     };
 }
 
+function travelBlock(): AuthoredPlanBlock {
+    return {
+        id: 'travel-1',
+        userId: 'u1',
+        phase: 'travel',
+        startDate: '2026-08-23',
+        endDate: '2026-08-25',
+        volumeScale: 0.65,
+        intensityScale: 0.8,
+        createdAt: '2026-08-01T00:00:00Z',
+        updatedAt: '2026-08-01T00:00:00Z',
+    };
+}
+
 function handoffInput(overrides: Partial<ContextBriefPlanningHandoffInput> = {}): ContextBriefPlanningHandoffInput {
     return {
         asOfDate: AS_OF,
@@ -188,8 +206,12 @@ function handoffInput(overrides: Partial<ContextBriefPlanningHandoffInput> = {})
         checkins: [checkin()],
         activities: [],
         recommendations: [recommendation()],
+        trainingSettings: null,
+        preferences: null,
         intentProfile,
+        goals: [],
         upcomingFixedActivities: [fixedActivity()],
+        upcomingPlanBlocks: [],
         upcomingExternalSessions: [{
             date: '2026-08-21',
             planId: 'p1',
@@ -243,12 +265,30 @@ describe('enhanceContextBriefForPlanning', () => {
         expect(text).toContain('not as authority over current symptoms or tissue response');
     });
 
+    it('exports sensor capability and planning preferences so prescriptions are executable', () => {
+        const trainingSettings = {
+            capabilities: { powerMeter: true, heartRateMonitor: true, cadenceData: false },
+        } as TrainingSettings;
+        const preferences = {
+            preferredRecoveryStyle: 'active',
+            preferredTimeOfDay: 'morning',
+            conservativeBias: true,
+            extraRecoveryMargin: false,
+        } as UserPreferences;
+        const text = enhanceContextBriefForPlanning(BASE, handoffInput({ trainingSettings, preferences }));
+
+        expect(text).toContain('Sensor capabilities: power meter yes · heart-rate monitor yes · cadence data no');
+        expect(text).toContain('Planning preferences: recovery style active · preferred time morning · conservative bias on · extra recovery margin off');
+        expect(text).toContain('If a sensor is unknown or unavailable');
+    });
+
     it('adds a seven-day cross-signal timeline rather than only window averages', () => {
         const text = enhanceContextBriefForPlanning(BASE, handoffInput());
 
         expect(text).toContain('### Recent 7-day recovery timeline');
-        expect(text).toContain('| 2026-08-20 | 88 | 70 | 44 | 13 | 82 | 22 | 8 | 2 | 3 |');
-        expect(text).toContain('| 2026-08-14 | — | — | — | — | — | — | — | — | — |');
+        expect(text).toContain('| 2026-08-20 | 88 | 70 | 44 | 13 | 82 | 22 | 9000 | 8 | 2 | 3 |');
+        expect(text).toContain('| 2026-08-14 | — | — | — | — | — | — | — | — | — | — |');
+        expect(text).toContain('Steps are the completed D-1 total');
     });
 
     it('exports fixed commitments and already-imported sessions before asking for a new plan', () => {
@@ -260,9 +300,42 @@ describe('enhanceContextBriefForPlanning', () => {
         expect(text).toContain('Preserve these when proposing days unless the user explicitly asks');
     });
 
+    it('exports travel scaling overlays as constraints rather than workouts', () => {
+        const text = enhanceContextBriefForPlanning(BASE, handoffInput({ upcomingPlanBlocks: [travelBlock()] }));
+
+        expect(text).toContain('2026-08-23→2026-08-25 | Plan block | Travel | volume ×0.65 · intensity ×0.8 | authored overlay');
+        expect(text).toContain('Authored travel blocks scale the surrounding plan rather than representing an extra workout');
+    });
+
+    it('adds specific goal outcomes and uncertain timing when those fields exist', () => {
+        const goal = {
+            title: 'September road race',
+            status: 'active',
+            targetOutcome: 'Be competitive over ~50 minutes with repeated surges',
+            targetMetric: 'finish_time',
+            targetValue: 50,
+            targetUnit: 'min',
+            eventPreset: 'short_road_race',
+            timing: {
+                earliestDate: '2026-09-12',
+                latestDate: '2026-09-20',
+                planningDate: '2026-09-12',
+            },
+            description: 'Repeated accelerations; preserve football readiness.',
+        } as UserGoal;
+        const text = enhanceContextBriefForPlanning(BASE, handoffInput({ goals: [goal] }));
+
+        expect(text).toContain('### Goal specifics relevant to planning');
+        expect(text).toContain('success: Be competitive over ~50 minutes with repeated surges');
+        expect(text).toContain('target: finish_time 50 min');
+        expect(text).toContain('event preset: short_road_race');
+        expect(text).toContain('window 2026-09-12–2026-09-20, planning date 2026-09-12');
+    });
+
     it('warns instead of inventing a replacement when externally planned mode has no visible session', () => {
         const text = enhanceContextBriefForPlanning(BASE, handoffInput({
             upcomingFixedActivities: [],
+            upcomingPlanBlocks: [],
             upcomingExternalSessions: [],
         }));
 
