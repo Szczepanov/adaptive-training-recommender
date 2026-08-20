@@ -300,11 +300,12 @@ export async function replayRecommendationAuditAgainstSessions(
             if (expectedAuthority && occurrence.data.authority !== expectedAuthority) continue;
         }
 
-        // The resolver binds the hash-covered source identity and manual/external/fixture
-        // prescription.definitionHash to the
-        // exact source bytes and verifies catalog id/version before returning executable
-        // stored blocks. Catalog v1 cannot recompute historical display metadata; see the
-        // resolver's explicit limitation.
+        // The resolver binds the hash-covered source identity and prescription.definitionHash
+        // to the exact source bytes for every source kind (M3.2 gave `catalog` the same
+        // definitionHash verification manual/external/fixture already had, reconstructed
+        // from the stored prescription's displayMetadata snapshot rather than the live
+        // catalog -- see the resolver for the one-time fallback on pre-M3.2 prescriptions
+        // that predate that snapshot).
         resolvedBindings.add(sessionBindingEvidenceKey(binding));
     }
     return replayRecommendationAudit(recommendation, externalRevision, { resolvedBindings });

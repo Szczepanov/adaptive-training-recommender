@@ -186,6 +186,41 @@
 .external-import-diff .diff-removed { color: #fca5a5; }
 .external-import-diff .diff-changed { color: #fcd34d; }
 
+.external-import-content-diff {
+  margin: 0.3rem 0 0.15rem;
+  padding-left: 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+}
+
+.external-import-content-diff .content-diff-behavior {
+  color: #fca5a5;
+}
+
+.external-import-content-diff .content-diff-cosmetic {
+  color: var(--text-secondary);
+}
+
+.external-import-ack {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin-top: 0.85rem;
+  padding: 0.55rem 0.7rem;
+  border-radius: 6px;
+  font-size: 0.82rem;
+  line-height: 1.4;
+  background: rgba(252, 211, 77, 0.08);
+  border: 1px solid rgba(252, 211, 77, 0.3);
+}
+
+.external-import-ack input {
+  margin-top: 0.2rem;
+}
+
 .external-import-sessions {
   list-style: none;
   margin: 0.85rem 0 0;
@@ -219,6 +254,26 @@
 .external-import-session-meta {
   font-size: 0.75rem;
   color: var(--text-secondary);
+}
+
+.external-import-session-detail {
+  grid-column: 1 / -1;
+  margin-top: 0.3rem;
+}
+
+.external-import-session-detail summary {
+  cursor: pointer;
+  font-size: 0.75rem;
+  color: #93c5fd;
+  user-select: none;
+}
+
+.external-import-session-detail summary:hover {
+  color: #bfdbfe;
+}
+
+.external-import-session-detail .session-def-preview {
+  margin-top: 0.5rem;
 }
 
 .external-import-objectives {

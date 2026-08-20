@@ -22,6 +22,8 @@ export default defineConfig({
   },
   projects: [
     { name: 'visual-desktop', use: { ...devices['Desktop Chrome'], browserName: 'chromium', viewport: { width: 1440, height: 1000 } } },
+    { name: 'visual-mobile-narrow', use: { ...devices['Galaxy S8'], browserName: 'chromium', viewport: { width: 360, height: 800 } } },
     { name: 'visual-mobile', use: { ...devices['iPhone 13'], browserName: 'chromium', viewport: { width: 390, height: 844 } } },
+    { name: 'visual-mobile-wide', use: { ...devices['Pixel 7'], browserName: 'chromium', viewport: { width: 412, height: 915 } } },
   ],
 });

@@ -1150,10 +1150,15 @@ export function validateRecommendation(raw: any): ValidationResult<DailyRecommen
     if (raw.primarySession !== undefined && !isValidSessionReferenceBinding(raw.primarySession)) {
         errors.push({ field: 'primarySession', message: 'primarySession must be a valid source/occurrence/prescription binding' });
     }
+    // Bounded to 4, matching firestore.rules' hasValidAdditionalSessions -- the server-side
+    // check unrolls per-element validation by index (the rules language has no iteration),
+    // and a prior attempt at that with the schema's historical 16-element bound exceeded the
+    // emulator's rule-evaluation budget. 4 is a real bound, not a compromise: the systemic-cost
+    // ceiling in adjudicateAuthoredSession never admits more than a handful of same-day sessions.
     if (raw.additionalSessions !== undefined && (!Array.isArray(raw.additionalSessions)
-        || raw.additionalSessions.length > 16
+        || raw.additionalSessions.length > 4
         || !raw.additionalSessions.every(isValidSessionReferenceBinding))) {
-        errors.push({ field: 'additionalSessions', message: 'additionalSessions must contain at most 16 valid bindings' });
+        errors.push({ field: 'additionalSessions', message: 'additionalSessions must contain at most 4 valid bindings' });
     }
 
     let recommendationAudit: DailyRecommendation['recommendationAudit'] | undefined;
@@ -1458,14 +1463,16 @@ function validateExternalStep(raw: any, path: string, errors: ValidationError[])
     }
 }
 
-function validateExternalSession(raw: any, index: number, weekCount: number, errors: ValidationError[]): void {
+/**
+ * Everything about an external-plan session that has no equivalent in `SessionDefinition`
+ * and so is shared, unchanged, between v1 (`prescription`) and v2 (`definition`) sessions:
+ * scheduling, hard-gate feasibility, priority, and event reconciliation (M3.6). Does not
+ * check `raw`'s own top-level unknown-key set or its content field (`prescription`/
+ * `definition`) -- each schema version's own validator does that with its own allow-list.
+ * Exported for `sessions/externalPlanV2.ts`'s v2 validator to reuse.
+ */
+export function validateExternalSessionEnvelope(raw: any, index: number, weekCount: number, errors: ValidationError[]): void {
     const path = `sessions[${index}]`;
-    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
-        errors.push({ field: path, message: 'Session must be an object' });
-        return;
-    }
-    const extra = unknownKeys(raw, SESSION_KEYS);
-    if (extra.length) errors.push({ field: path, message: `Unrecognized session field(s): ${extra.join(', ')}` });
     if (typeof raw.id !== 'string' || !raw.id) errors.push({ field: `${path}.id`, message: 'Session id is required' });
     if (typeof raw.title !== 'string' || !raw.title) errors.push({ field: `${path}.title`, message: 'Session title is required' });
     if (!EXTERNAL_PRIORITIES.includes(raw.priority)) errors.push({ field: `${path}.priority`, message: 'Unsupported priority' });
@@ -1517,23 +1524,6 @@ function validateExternalSession(raw: any, index: number, weekCount: number, err
         }
     }
 
-    const prescription = raw.prescription;
-    if (!prescription || typeof prescription !== 'object' || Array.isArray(prescription)) {
-        errors.push({ field: `${path}.prescription`, message: 'Prescription is required' });
-    } else {
-        if (typeof prescription.summary !== 'string' || !prescription.summary) {
-            errors.push({ field: `${path}.prescription.summary`, message: 'Prescription summary is required' });
-        }
-        if (prescription.steps !== undefined) {
-            if (!Array.isArray(prescription.steps)) {
-                errors.push({ field: `${path}.prescription.steps`, message: 'Steps must be a list' });
-            } else {
-                prescription.steps.forEach((step: unknown, stepIndex: number) =>
-                    validateExternalStep(step, `${path}.prescription.steps[${stepIndex}]`, errors));
-            }
-        }
-    }
-
     const scaling = raw.scaling;
     if (scaling !== undefined) {
         if (!scaling || typeof scaling !== 'object' || Array.isArray(scaling)) {
@@ -1563,18 +1553,48 @@ function validateExternalSession(raw: any, index: number, weekCount: number, err
     }
 }
 
-/** Strict boundary for an imported plan revision. Rejects the whole document rather than
- * storing a partially-understood plan: a silently dropped session is a session the athlete
- * believes was imported. */
-export function validateExternalTrainingPlan(raw: any): ValidationResult<ExternalTrainingPlan> {
-    const errors: ValidationError[] = [];
+function validateExternalSession(raw: any, index: number, weekCount: number, errors: ValidationError[]): void {
+    const path = `sessions[${index}]`;
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
-        return { isValid: false, errors: [{ field: 'plan', message: 'Plan must be an object' }] };
+        errors.push({ field: path, message: 'Session must be an object' });
+        return;
     }
+    const extra = unknownKeys(raw, SESSION_KEYS);
+    if (extra.length) errors.push({ field: path, message: `Unrecognized session field(s): ${extra.join(', ')}` });
+    validateExternalSessionEnvelope(raw, index, weekCount, errors);
+
+    const prescription = raw.prescription;
+    if (!prescription || typeof prescription !== 'object' || Array.isArray(prescription)) {
+        errors.push({ field: `${path}.prescription`, message: 'Prescription is required' });
+    } else {
+        if (typeof prescription.summary !== 'string' || !prescription.summary) {
+            errors.push({ field: `${path}.prescription.summary`, message: 'Prescription summary is required' });
+        }
+        if (prescription.steps !== undefined) {
+            if (!Array.isArray(prescription.steps)) {
+                errors.push({ field: `${path}.prescription.steps`, message: 'Steps must be a list' });
+            } else {
+                prescription.steps.forEach((step: unknown, stepIndex: number) =>
+                    validateExternalStep(step, `${path}.prescription.steps[${stepIndex}]`, errors));
+            }
+        }
+    }
+}
+
+/**
+ * Plan-level fields common to every schema version -- everything except `schema` itself
+ * (each version checks its own literal) and how a session's content field is validated
+ * (each version passes its own `validateSession` for that). Exported for
+ * `sessions/externalPlanV2.ts`'s v2 validator to reuse (M3.6).
+ */
+export function validateExternalPlanEnvelope(
+    raw: any,
+    errors: ValidationError[],
+    validateSession: (session: unknown, index: number, weekCount: number, errors: ValidationError[]) => void,
+): void {
     const extra = unknownKeys(raw, PLAN_KEYS);
     if (extra.length) errors.push({ field: 'plan', message: `Unrecognized field(s): ${extra.join(', ')}` });
 
-    if (raw.schema !== EXTERNAL_PLAN_SCHEMA) errors.push({ field: 'schema', message: `Schema must be "${EXTERNAL_PLAN_SCHEMA}"` });
     if (typeof raw.planId !== 'string' || !/^[a-z0-9-]{1,64}$/.test(raw.planId)) {
         errors.push({ field: 'planId', message: 'planId must be a lowercase slug of 1-64 characters' });
     }
@@ -1593,10 +1613,22 @@ export function validateExternalTrainingPlan(raw: any): ValidationResult<Externa
         errors.push({ field: 'sessions', message: `At most ${EXTERNAL_PLAN_MAX_SESSIONS} sessions are supported` });
     } else {
         const weekCount = isPositiveInt(raw.weekCount, 1, EXTERNAL_PLAN_MAX_WEEKS) ? raw.weekCount : EXTERNAL_PLAN_MAX_WEEKS;
-        raw.sessions.forEach((session: unknown, index: number) => validateExternalSession(session, index, weekCount, errors));
+        raw.sessions.forEach((session: unknown, index: number) => validateSession(session, index, weekCount, errors));
         const ids = raw.sessions.map((session: any) => session?.id).filter((id: unknown) => typeof id === 'string');
         if (new Set(ids).size !== ids.length) errors.push({ field: 'sessions', message: 'Session ids must be unique within the plan' });
     }
+}
+
+/** Strict boundary for an imported plan revision. Rejects the whole document rather than
+ * storing a partially-understood plan: a silently dropped session is a session the athlete
+ * believes was imported. */
+export function validateExternalTrainingPlan(raw: any): ValidationResult<ExternalTrainingPlan> {
+    const errors: ValidationError[] = [];
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+        return { isValid: false, errors: [{ field: 'plan', message: 'Plan must be an object' }] };
+    }
+    if (raw.schema !== EXTERNAL_PLAN_SCHEMA) errors.push({ field: 'schema', message: `Schema must be "${EXTERNAL_PLAN_SCHEMA}"` });
+    validateExternalPlanEnvelope(raw, errors, validateExternalSession);
 
     if (errors.length > 0) return { isValid: false, errors };
     return { isValid: true, errors: [], data: raw as ExternalTrainingPlan };

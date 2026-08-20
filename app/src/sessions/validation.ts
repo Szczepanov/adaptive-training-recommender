@@ -62,6 +62,12 @@ const CHOICE_ACTION_KINDS = new Set<SessionChoiceAction['kind']>([
 
 const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 
+const SESSION_DEFINITION_KEYS = [
+    'schemaVersion', 'id', 'revision', 'title', 'summary', 'intent', 'modalities',
+    'dominantModality', 'duration', 'defaultScheduledDate', 'sessionTargets',
+    'prohibitedAdditions', 'importWarnings', 'companionSessions', 'blocks',
+];
+
 function isObject(val: unknown): val is Record<string, unknown> {
     return typeof val === 'object' && val !== null && !Array.isArray(val);
 }
@@ -135,6 +141,16 @@ export function validateSessionDefinition(raw: unknown): ValidationResult<Sessio
         return { ok: false, issues: [{ path: '', message: 'Expected object' }] };
     }
 
+    // Top-level only (M3.6): an invented field here -- e.g. an authoring AI hallucinating
+    // `stimulusProfile` alongside the explicit `systemicCost` rejection below -- must fail
+    // closed rather than pass through silently. Deliberately not a deep sweep of every
+    // nested SessionStep/SessionBlock field; that risks rejecting a legitimate field this
+    // check wasn't updated to know about.
+    const unknownTopLevelKeys = Object.keys(raw).filter(key => !SESSION_DEFINITION_KEYS.includes(key));
+    if (unknownTopLevelKeys.length > 0) {
+        issues.push({ path: '', message: `Unrecognized session definition field(s): ${unknownTopLevelKeys.join(', ')}` });
+    }
+
     if (raw.schemaVersion !== SESSION_SCHEMA_VERSION) {
         issues.push({ path: 'schemaVersion', message: `Expected schemaVersion ${SESSION_SCHEMA_VERSION}` });
     }
@@ -177,6 +193,7 @@ export function validateSessionDefinition(raw: unknown): ValidationResult<Sessio
     const blockIds = new Set<string>();
     const allStepIds = new Set<string>();
     const stepOrder: string[] = [];
+    const stepAlternativeIds = new Map<string, Set<string>>();
 
     // First pass to collect step IDs and check duplicates
     raw.blocks.forEach((block, bIdx) => {
@@ -201,6 +218,13 @@ export function validateSessionDefinition(raw: unknown): ValidationResult<Sessio
                     }
                     allStepIds.add(step.id);
                     stepOrder.push(step.id);
+                    const altIds = new Set<string>();
+                    if (Array.isArray(step.alternatives)) {
+                        step.alternatives.forEach(alt => {
+                            if (isObject(alt) && typeof alt.id === 'string' && alt.id.length > 0) altIds.add(alt.id);
+                        });
+                    }
+                    stepAlternativeIds.set(step.id, altIds);
                 }
             });
         }
@@ -267,17 +291,25 @@ export function validateSessionDefinition(raw: unknown): ValidationResult<Sessio
                     } else {
                         const dose = step.dose;
                         if (dose.kind === 'repetition') {
-                            if (typeof dose.sets !== 'number' || dose.sets <= 0) {
-                                issues.push({ path: `${sPath}.dose.sets`, message: 'Dose sets must be positive number' });
+                            if (typeof dose.sets !== 'number' || !Number.isInteger(dose.sets) || dose.sets <= 0) {
+                                issues.push({ path: `${sPath}.dose.sets`, message: 'Dose sets must be a positive integer' });
                             }
                             validateRangeOrNumber(dose.reps, `${sPath}.dose.reps`, issues, false);
                         } else if (dose.kind === 'duration') {
+                            if (dose.sets !== undefined && (typeof dose.sets !== 'number' || !Number.isInteger(dose.sets) || dose.sets <= 0)) {
+                                issues.push({ path: `${sPath}.dose.sets`, message: 'Dose sets must be a positive integer' });
+                            }
                             validateRangeOrNumber(dose.seconds, `${sPath}.dose.seconds`, issues, false);
                         } else if (dose.kind === 'distance') {
+                            if (dose.sets !== undefined && (typeof dose.sets !== 'number' || !Number.isInteger(dose.sets) || dose.sets <= 0)) {
+                                issues.push({ path: `${sPath}.dose.sets`, message: 'Dose sets must be a positive integer' });
+                            }
                             const distanceVal = dose.meters !== undefined ? dose.meters : dose.metres;
                             validateRangeOrNumber(distanceVal, `${sPath}.dose.meters`, issues, false);
                         } else if (dose.kind === 'checkoff') {
-                            // valid
+                            if (dose.rounds !== undefined && (typeof dose.rounds !== 'number' || !Number.isInteger(dose.rounds) || dose.rounds <= 0)) {
+                                issues.push({ path: `${sPath}.dose.rounds`, message: 'Dose rounds must be a positive integer' });
+                            }
                         } else {
                             issues.push({ path: `${sPath}.dose.kind`, message: `Invalid dose kind: ${String(dose.kind)}` });
                         }
@@ -340,6 +372,8 @@ export function validateSessionDefinition(raw: unknown): ValidationResult<Sessio
                 }
                 if (!Array.isArray(choice.options)) {
                     issues.push({ path: `${cPath}.options`, message: 'Choice options must be an array' });
+                } else if (choice.options.length === 0) {
+                    issues.push({ path: `${cPath}.options`, message: 'Choice options must contain at least one option' });
                 } else {
                     choice.options.forEach((opt, oIdx) => {
                         const oPath = `${cPath}.options[${oIdx}]`;
@@ -365,6 +399,12 @@ export function validateSessionDefinition(raw: unknown): ValidationResult<Sessio
                                 }
                                 if ('targetBlockId' in act && (typeof act.targetBlockId !== 'string' || !blockIds.has(act.targetBlockId))) {
                                     issues.push({ path: `${aPath}.targetBlockId`, message: `targetBlockId '${String(act.targetBlockId)}' not found in definition` });
+                                }
+                                if (kind === 'select_alternative') {
+                                    const validAlternativeIds = typeof act.targetStepId === 'string' ? stepAlternativeIds.get(act.targetStepId) : undefined;
+                                    if (typeof act.alternativeId !== 'string' || act.alternativeId.length === 0 || !validAlternativeIds?.has(act.alternativeId)) {
+                                        issues.push({ path: `${aPath}.alternativeId`, message: `alternativeId '${String(act.alternativeId)}' not found among targetStepId's alternatives` });
+                                    }
                                 }
                             });
                         }
@@ -449,7 +489,7 @@ export function validateSessionEntry(raw: unknown): ValidationResult<SessionEntr
     } else {
         const payload = raw.payload;
         const kind = String(payload.kind);
-        if (!['repetition', 'duration', 'distance', 'sprint', 'jump_attempt', 'checkoff'].includes(kind)) {
+        if (!['repetition', 'duration', 'distance', 'sprint', 'jump_attempt', 'checkoff', 'choice'].includes(kind)) {
             issues.push({ path: 'payload.kind', message: `Invalid entry payload kind: ${kind}` });
         } else if (kind === 'repetition') {
             if (typeof payload.setIndex !== 'number' || !Number.isInteger(payload.setIndex) || payload.setIndex < 1) issues.push({ path: 'payload.setIndex', message: 'setIndex must be an integer >= 1' });
@@ -467,6 +507,10 @@ export function validateSessionEntry(raw: unknown): ValidationResult<SessionEntr
             if (typeof payload.heightInches !== 'number' && typeof payload.distanceMeters !== 'number') issues.push({ path: 'payload', message: 'jump_attempt requires heightInches or distanceMeters' });
         } else if (kind === 'checkoff' && typeof payload.completed !== 'boolean') {
             issues.push({ path: 'payload.completed', message: 'checkoff completed must be boolean' });
+        } else if (kind === 'choice') {
+            if (typeof payload.choiceId !== 'string' || payload.choiceId.length === 0) issues.push({ path: 'payload.choiceId', message: 'choiceId must be a non-empty string' });
+            if (typeof payload.optionId !== 'string' || payload.optionId.length === 0) issues.push({ path: 'payload.optionId', message: 'optionId must be a non-empty string' });
+            if (payload.reason !== undefined && typeof payload.reason !== 'string') issues.push({ path: 'payload.reason', message: 'reason must be a string' });
         }
     }
 

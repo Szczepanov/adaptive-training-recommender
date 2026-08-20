@@ -1,5 +1,7 @@
 import type { WorkoutPrescription, DisplayTarget, TechnicalRequirements } from '../workouts/models';
 import type { ExternalPlanSession } from '../engine/models';
+import type { ExternalPlanSessionV2 } from '../sessions/externalPlanV2';
+import type { RangeOrNumber, SessionEffort, SessionStep } from '../sessions/models';
 
 export interface CanonicalExportStep {
     id?: string;
@@ -48,17 +50,23 @@ function parseDoseToMetrics(dose: string): { durationSeconds?: number; sets?: nu
     const minMatch = dose.match(/(\d+(?:\.\d+)?)\s*(?:min|m\b)/i);
     if (minMatch) res.durationSeconds = Math.round(parseFloat(minMatch[1]) * 60);
 
-    const repsMatch = dose.match(/(\d+)\s*(?:reps|r\b)/i);
+    const repsMatch = dose.match(/(\d+)\s*(?:reps|repetitions?|r\b)/i);
     if (repsMatch) res.repetitions = parseInt(repsMatch[1], 10);
 
-    const setsRepsMatch = dose.match(/(\d+)\s*[x×]\s*(\d+)/i);
+    const setsRepsMatch = dose.match(/(\d+)\s*(?:sets\s*)?[x×]\s*(\d+)(?:\s*[-–]\s*(\d+))?/i);
     if (setsRepsMatch) {
         res.sets = parseInt(setsRepsMatch[1], 10);
-        res.repetitions = parseInt(setsRepsMatch[2], 10);
+        const minReps = parseInt(setsRepsMatch[2], 10);
+        const maxReps = setsRepsMatch[3] ? parseInt(setsRepsMatch[3], 10) : minReps;
+        res.repetitions = Math.round((minReps + maxReps) / 2);
     }
 
-    const rpeMatch = dose.match(/RPE\s*(\d+(?:\.\d+)?)/i);
-    if (rpeMatch) res.rpe = parseFloat(rpeMatch[1]);
+    const rpeMatch = dose.match(/RPE\s*(\d+(?:\.\d+)?)(?:\s*[-–]\s*(\d+(?:\.\d+)?))?/i);
+    if (rpeMatch) {
+        const minRpe = parseFloat(rpeMatch[1]);
+        const maxRpe = rpeMatch[2] ? parseFloat(rpeMatch[2]) : minRpe;
+        res.rpe = (minRpe + maxRpe) / 2;
+    }
 
     return res;
 }
@@ -113,11 +121,24 @@ export function extractSetRecoverySecondsFromText(text: string): number | undefi
 
 export function extractSetsAndRepsFromText(text: string): { sets?: number; repetitions?: number } {
     if (!text) return {};
-    const match = text.match(/(\d+)\s+sets\s+of\s+(\d+)/i);
-    if (match) {
+    const setsOfMatch = text.match(/(\d+)\s+sets\s+of\s+(\d+)(?:\s*[-–]\s*(\d+))?/i);
+    if (setsOfMatch) {
+        const sets = parseInt(setsOfMatch[1], 10);
+        const minR = parseInt(setsOfMatch[2], 10);
+        const maxR = setsOfMatch[3] ? parseInt(setsOfMatch[3], 10) : minR;
         return {
-            sets: parseInt(match[1], 10),
-            repetitions: parseInt(match[2], 10),
+            sets,
+            repetitions: Math.round((minR + maxR) / 2),
+        };
+    }
+    const xMatch = text.match(/(\d+)\s*(?:sets\s*)?[x×]\s*(\d+)(?:\s*[-–]\s*(\d+))?/i);
+    if (xMatch) {
+        const sets = parseInt(xMatch[1], 10);
+        const minR = parseInt(xMatch[2], 10);
+        const maxR = xMatch[3] ? parseInt(xMatch[3], 10) : minR;
+        return {
+            sets,
+            repetitions: Math.round((minR + maxR) / 2),
         };
     }
     return {};
@@ -156,6 +177,133 @@ export function resolveSetsAndRepetitions(
     return inferred;
 }
 
+/**
+ * Detects whether free text contains more than one distinct `sets x reps`
+ * prescription, e.g. "2 x 3-5 squat or split-squat repetitions plus 2 x 4-6
+ * hinge repetitions". `extractSetsAndRepsFromText` only ever returns the
+ * first match, so a step flagged here is losing whichever prescription
+ * comes after the first unless it is atomized into separate steps upstream.
+ *
+ * This is a coarse structural signal only: it cannot tell whether the two
+ * matches are genuinely distinct exercises, so callers must not use it to
+ * auto-split prose -- only to surface the ambiguity.
+ */
+export function hasMultipleSetsAndRepsPrescriptions(text: string): boolean {
+    if (!text) return false;
+    const pattern = /(\d+)\s*(?:sets\s*)?[x×]\s*(\d+)(?:\s*[-–]\s*(\d+))?/gi;
+    const matches = text.match(pattern);
+    return !!matches && matches.length > 1;
+}
+
+export interface GarminExportFidelityIssue {
+    level: 'error' | 'warning';
+    blockName?: string;
+    stepName: string;
+    code:
+        | 'multiple_prescriptions'
+        | 'no_usable_dose'
+        | 'invalid_dose'
+        | 'no_explicit_rest'
+        | 'rep_range_reduced'
+        | 'time_based_block';
+    message: string;
+}
+
+/**
+ * Source-neutral pre-sync validation. Runs over the already-built canonical
+ * export (not the source prose) so it applies equally to v1- and
+ * v2-authored sessions and to catalog prescriptions.
+ *
+ * `error` issues mean sync would silently lose or misrepresent a
+ * prescription and should block sync until resolved; `warning` issues are
+ * safe to sync but worth surfacing (e.g. an unspecified rest, or a rep
+ * range collapsed to Garmin's single numeric target).
+ */
+export function validateGarminExportFidelity(workout: CanonicalWorkoutExport): GarminExportFidelityIssue[] {
+    const issues: GarminExportFidelityIssue[] = [];
+    const isStrength = workout.modality === 'strength';
+    const repRangePattern = /\b\d+\s*[-–]\s*\d+\b/;
+
+    for (const block of workout.blocks) {
+        for (const step of block.steps) {
+            const rawText = `${step.notes ?? ''} ${step.name} ${(step.targets ?? []).join(' ')}`.trim();
+
+            if (hasMultipleSetsAndRepsPrescriptions(rawText)) {
+                issues.push({
+                    level: 'error',
+                    blockName: block.name,
+                    stepName: step.name,
+                    code: 'multiple_prescriptions',
+                    message: `Cannot faithfully sync "${step.name}": this step contains more than one set/rep prescription. Split it into separate executable steps before Garmin sync.`,
+                });
+                // A step already flagged as lossy shouldn't also collect
+                // secondary warnings that assume a single resolved dose.
+                continue;
+            }
+
+            if (!isStrength) continue;
+
+            const hasSets = step.sets !== undefined;
+            const hasReps = step.repetitions !== undefined;
+            const hasDuration = step.durationSeconds !== undefined && step.durationSeconds > 0;
+
+            if ((hasSets && (step.sets as number) <= 0) || (hasReps && (step.repetitions as number) <= 0)) {
+                issues.push({
+                    level: 'error',
+                    blockName: block.name,
+                    stepName: step.name,
+                    code: 'invalid_dose',
+                    message: `"${step.name}" has an invalid sets/repetitions value; sets and repetitions must be greater than zero.`,
+                });
+                continue;
+            }
+
+            if (hasSets && (step.sets as number) > 1 && !hasReps && !hasDuration) {
+                issues.push({
+                    level: 'error',
+                    blockName: block.name,
+                    stepName: step.name,
+                    code: 'no_usable_dose',
+                    message: `"${step.name}" has ${step.sets} sets but no repetition target or duration. Add reps or a duration before syncing.`,
+                });
+                continue;
+            }
+
+            if (hasSets && (step.sets as number) > 1 && hasReps && !step.restAfterSec && !step.setRecoverySec) {
+                issues.push({
+                    level: 'warning',
+                    blockName: block.name,
+                    stepName: step.name,
+                    code: 'no_explicit_rest',
+                    message: `"${step.name}" has no explicit rest between sets; Garmin will not show a recovery step.`,
+                });
+            }
+
+            if (hasReps && repRangePattern.test(rawText)) {
+                issues.push({
+                    level: 'warning',
+                    blockName: block.name,
+                    stepName: step.name,
+                    code: 'rep_range_reduced',
+                    message: `"${step.name}"'s rep range was reduced to a single Garmin target of ${step.repetitions}; the original range is preserved in the description only.`,
+                });
+            }
+
+            if (!hasSets && !hasReps && hasDuration) {
+                issues.push({
+                    level: 'warning',
+                    blockName: block.name,
+                    stepName: step.name,
+                    code: 'time_based_block',
+                    message: `"${step.name}" will sync as a ${Math.round((step.durationSeconds ?? 0) / 60)}-minute time block rather than explicit sets/reps.`,
+                });
+            }
+        }
+    }
+
+    return issues;
+}
+
 export function extractRecoveryTargetFromText(text: string): string | undefined {
     if (!text) return undefined;
     const match = text.match(/followed\s+by\s+\d+\s*(?:s|sec|min|m)?\s+(?:at|below|around|approximately|about)\s+([^.,;]+)/i);
@@ -163,6 +311,31 @@ export function extractRecoveryTargetFromText(text: string): string | undefined 
         return match[1].replace(/^(?:at|below|around|approximately|about)\s+/i, '').trim();
     }
     return undefined;
+}
+
+export function extractTargetsFromStepNotes(notes: string | undefined, effort?: SessionEffort): string[] | undefined {
+    const targets: string[] = [];
+    if (effort?.kind === 'power' && effort.target !== undefined) {
+        targets.push(typeof effort.target === 'number' ? `${effort.target} W` : `${effort.target.min}-${effort.target.max} W`);
+    }
+    if (notes) {
+        // Match explicit wattage ranges or single wattage: "140-175 W", "235-245 W", "200W", etc.
+        const wattsMatch = notes.match(/(\d+(?:\.\d+)?\s*[-–—]\s*\d+(?:\.\d+)?\s*W\b|\d+(?:\.\d+)?\s*W\b)/i);
+        if (wattsMatch) {
+            targets.push(wattsMatch[1].trim());
+        }
+        // Match % FTP: "65-75% FTP", "90-95% FTP", "80% FTP"
+        const ftpMatch = notes.match(/(\d+(?:\.\d+)?\s*[-–—]\s*\d+(?:\.\d+)?\s*%\s*(?:FTP)?|\d+(?:\.\d+)?\s*%\s*FTP\b)/i);
+        if (ftpMatch && !targets.some(t => t.toLowerCase().includes('ftp'))) {
+            targets.push(ftpMatch[1].trim());
+        }
+        // Match Zones: "Zone 2", "Z2", "Zone-2"
+        const zoneMatch = notes.match(/\b(?:zone|z)\s*[-–—]?\s*[1-7]\b/i);
+        if (zoneMatch && !targets.some(t => /zone|z/i.test(t))) {
+            targets.push(zoneMatch[0].trim());
+        }
+    }
+    return targets.length > 0 ? targets : undefined;
 }
 
 export function exportWorkoutPrescriptionToJson(
@@ -219,8 +392,16 @@ export function exportExternalSessionToJson(
         const isWarmup = /warm-?up/i.test(step.name);
         const isCooldown = /cool-?down/i.test(step.name);
 
-        const stepText = `${step.notes ?? ''} ${step.name}`;
+        const stepText = `${step.notes ?? ''} ${step.name} ${step.target ?? ''}`;
         const sessionText = `${stepText} ${session.title} ${session.prescription.summary}`;
+
+        let targetRpe: number | undefined;
+        const rpeMatch = stepText.match(/RPE\s*(\d+(?:\.\d+)?)(?:\s*[-–]\s*(\d+(?:\.\d+)?))?/i);
+        if (rpeMatch) {
+            const minR = parseFloat(rpeMatch[1]);
+            const maxR = rpeMatch[2] ? parseFloat(rpeMatch[2]) : minR;
+            targetRpe = (minR + maxR) / 2;
+        }
 
         if (!isWarmup && !isCooldown) {
             // Infer sets & repetitions if missing or if repeat was flattened
@@ -238,13 +419,15 @@ export function exportExternalSessionToJson(
         }
 
         const recoveryTarget = extractRecoveryTargetFromText(step.notes ?? '');
+        const targets = step.target ? [step.target] : extractTargetsFromStepNotes(step.notes);
 
         return {
             name: step.name,
             durationSeconds: durationSec,
             sets,
             repetitions,
-            targets: step.target ? [step.target] : undefined,
+            targetRpe,
+            targets,
             restAfterSec: restSec,
             setRecoverySec,
             recoveryTarget,
@@ -265,13 +448,93 @@ export function exportExternalSessionToJson(
         },
     ];
 
+    let summary = session.prescription.summary;
+    if (session.scaling?.reducedSummary) {
+        summary += `\n\nReduced version:\n${session.scaling.reducedSummary}`;
+    }
+    if (session.scaling?.fallback) {
+        summary += `\n\nIf weights are unavailable:\n${session.scaling.fallback}`;
+    }
+
     return {
         schemaVersion: 'canonical_workout_v1',
         title: session.title,
         workoutId: session.id,
         modality: session.gating.modality,
         targetDurationMin: session.gating.durationMin,
-        summary: session.prescription.summary,
+        summary,
+        blocks,
+        exportedAt: new Date().toISOString(),
+    };
+}
+
+function rangeMidpoint(value: RangeOrNumber | undefined): number | undefined {
+    if (value === undefined) return undefined;
+    return typeof value === 'number' ? value : Math.round((value.min + value.max) / 2);
+}
+
+function stepDisplayName(step: SessionStep): string {
+    if (step.title) return step.title;
+    if (step.exerciseRef?.kind === 'unresolved_free_text') return step.exerciseRef.name;
+    if (step.exerciseRef?.kind === 'catalog') return step.exerciseRef.exerciseId;
+    return 'Step';
+}
+
+function extractStepLoad(load: SessionStep['load']): { weightKg?: number; weightPercent1Rm?: number } {
+    if (!load) return {};
+    if (load.kind === 'mass') {
+        return { weightKg: rangeMidpoint(load.kg) };
+    }
+    if (load.kind === 'percent_one_rm' || load.kind === 'percent_max') {
+        return { weightPercent1Rm: load.percent };
+    }
+    return {};
+}
+
+/**
+ * v2 counterpart of `exportExternalSessionToJson`. Genuinely simpler: a v2 session's
+ * content is already structured (`dose`/`effort`/`rest`), so this needs none of v1's
+ * free-text parsing (`parseDoseToMetrics`, `extractRecoverySecondsFromText`, ...) -- it's a
+ * direct field mapping, the same way `exportWorkoutPrescriptionToJson` maps a catalog
+ * prescription's already-structured `displayBlocks` (M3.6).
+ */
+export function exportExternalSessionV2ToJson(session: ExternalPlanSessionV2): CanonicalWorkoutExport {
+    const blocks: CanonicalExportBlock[] = session.definition.blocks.map(block => ({
+        id: block.id,
+        name: block.title ?? block.role,
+        role: block.role,
+        steps: block.steps.map((step): CanonicalExportStep => {
+            const durationSeconds = step.dose?.kind === 'duration' ? rangeMidpoint(step.dose.seconds) : undefined;
+            const { weightKg, weightPercent1Rm } = extractStepLoad(step.load);
+            const targets = extractTargetsFromStepNotes(step.notes, step.effort);
+            const recoveryTarget = extractRecoveryTargetFromText(step.notes ?? '');
+            return {
+                id: step.id,
+                name: stepDisplayName(step),
+                exerciseId: step.exerciseRef?.kind === 'catalog' ? step.exerciseRef.exerciseId : undefined,
+                durationSeconds,
+                sets: step.dose && 'sets' in step.dose ? step.dose.sets : undefined,
+                repetitions: step.dose?.kind === 'repetition' ? rangeMidpoint(step.dose.reps) : undefined,
+                weightKg,
+                weightPercent1Rm,
+                targetRpe: step.effort?.rpe !== undefined ? rangeMidpoint(step.effort.rpe) : undefined,
+                targets,
+                restAfterSec: rangeMidpoint(step.rest),
+                recoveryTarget,
+                stopConditions: step.stopConditions,
+                optional: step.optional,
+                notes: step.notes,
+            };
+        }),
+    }));
+
+    return {
+        schemaVersion: 'canonical_workout_v1',
+        title: session.title,
+        workoutId: session.id,
+        modality: session.gating.modality,
+        targetDurationMin: session.gating.durationMin,
+        summary: session.definition.summary ?? session.definition.title,
         blocks,
         exportedAt: new Date().toISOString(),
     };

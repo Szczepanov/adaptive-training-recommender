@@ -17,7 +17,7 @@ export const VISUAL_USER_ID = 'visual-athlete';
 export const VISUAL_DATE = '2026-09-12';
 const TIMESTAMP = '2026-09-12T08:00:00.000+02:00';
 
-export type VisualScreen = 'home' | 'checkin' | 'goals' | 'data' | 'constraints' | 'preferences' | 'session';
+export type VisualScreen = 'home' | 'checkin' | 'goals' | 'data' | 'constraints' | 'preferences' | 'session' | 'plan';
 
 export interface VisualScenario {
   id: string;
@@ -240,6 +240,32 @@ const incompleteCheckin: DailySubjectiveCheckin = {
   dataQuality: { isComplete: false, missingFields: ['sleepQuality', 'fatigue', 'mentalStress', 'motivation'] },
 };
 
+const neutralCheckin: DailySubjectiveCheckin = {
+  ...checkin,
+  readiness: 5,
+  sleepQuality: 5,
+  fatigue: 5,
+  soreness: 5,
+  mentalStress: 5,
+  motivation: 5,
+  painOrInjury: false,
+  illnessSymptoms: false,
+  unusuallyLimitedTime: false,
+  alreadyTrainedToday: false,
+  notes: null,
+};
+
+const painExpandedCheckin: DailySubjectiveCheckin = {
+  ...checkin,
+  readiness: 4,
+  painOrInjury: true,
+  tissueResponses: {
+    knee: { region: 'knee', morningState: 'moderate', painDuringTraining: 'mild' },
+    achilles: { region: 'achilles', morningState: 'mild' },
+  },
+  notes: 'Knee discomfort during stairs and early morning stiffness.',
+};
+
 const restrictedSettings: TrainingSettings = {
   ...settings,
   guardrails: { ...settings.guardrails, avoid_high_impact: true, avoid_heavy_lower_body: true },
@@ -401,11 +427,39 @@ export const VISUAL_SCENARIOS: VisualScenario[] = [
     fixture: buildFixture({ recovery: null, checkin: incompleteCheckin }),
   },
   {
+    id: 'home-checkin-missing-with-garmin',
+    title: 'Home — check-in missing with synced Garmin',
+    screen: 'home',
+    expectedFocus: ['The morning check-in action gate leads and Garmin recovery strip is visible.'],
+    fixture: buildFixture({ checkin: null }),
+  },
+  {
+    id: 'home-incomplete-checkin',
+    title: 'Home — partially completed check-in',
+    screen: 'home',
+    expectedFocus: ['The incomplete check-in state guides athlete to finish check-in.'],
+    fixture: buildFixture({ checkin: incompleteCheckin }),
+  },
+  {
     id: 'checkin-complete',
     title: 'Daily check-in',
     screen: 'checkin',
     expectedFocus: ['Question framing and current recovery context are legible on first view.'],
     fixture: standardFixture,
+  },
+  {
+    id: 'checkin-pain-expanded',
+    title: 'Daily check-in — pain and affected tissue expanded',
+    screen: 'checkin',
+    expectedFocus: ['Affected body areas and tissue response levels are clearly displayed.'],
+    fixture: buildFixture({ checkin: painExpandedCheckin }),
+  },
+  {
+    id: 'checkin-new',
+    title: 'Daily check-in — neutral defaults and quick preset',
+    screen: 'checkin',
+    expectedFocus: ['Neutral values and quick preset CTA are accessible without visual bias.'],
+    fixture: buildFixture({ checkin: neutralCheckin }),
   },
   {
     id: 'goals-event',
@@ -464,6 +518,27 @@ export const VISUAL_SCENARIOS: VisualScenario[] = [
     title: 'Session Runner — grouped execution',
     screen: 'session',
     expectedFocus: ['The runner shows the current round and advances through a grouped rotation without horizontal overflow.'],
+    fixture: standardFixture,
+  },
+  {
+    id: 'plan-ai-forecast',
+    title: 'Training Plan — AI adaptive rolling forecast',
+    screen: 'plan',
+    expectedFocus: ['7-day forecast renders full microcycle projection and objective balance.'],
+    fixture: standardFixture,
+  },
+  {
+    id: 'plan-imported-active',
+    title: 'Training Plan — imported coach plan with critique',
+    screen: 'plan',
+    expectedFocus: ['Imported week renders with placed sessions, weekly critique, and AI forecast switcher.'],
+    fixture: buildFixture({ externalPlan: importedPlan }),
+  },
+  {
+    id: 'plan-import-expanded',
+    title: 'Training Plan — plan import & revision tool',
+    screen: 'plan',
+    expectedFocus: ['Plan import editor opens cleanly without horizontal overflow.'],
     fixture: standardFixture,
   },
 ];

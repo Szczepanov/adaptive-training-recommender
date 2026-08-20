@@ -177,6 +177,145 @@ def _extract_set_recovery_seconds(step: dict[str, Any]) -> int | None:
     return None
 
 
+def _resolve_strength_rest_seconds(step: dict[str, Any]) -> int | None:
+    """Resolve inter-set rest for a strength step with explicit precedence:
+
+    1. ``setRecoverySec`` (v1 ``ExternalPrescriptionStep`` dedicated field)
+    2. ``restAfterSec`` (v2/catalog generic per-step rest, used as a
+       fallback for strength inter-set recovery)
+    3. ``None`` — no rest step. The transformer must never invent a rest
+       duration; it preserves instructions, it does not author them.
+    """
+    set_recovery = step.get("setRecoverySec")
+    if set_recovery and set_recovery > 0:
+        return int(set_recovery)
+    rest_after = step.get("restAfterSec")
+    if rest_after and rest_after > 0:
+        return int(rest_after)
+    return None
+
+
+def _get_strength_step_desc(step: dict[str, Any], step_name: str) -> str | None:
+    targets = step.get("targets")
+    desc_parts = [step_name] if step_name else []
+    if targets and isinstance(targets, list) and targets:
+        desc_parts.append(f"({'; '.join(targets)})")
+    return " ".join(desc_parts) if desc_parts else None
+
+
+def _get_strength_step_type(
+    step_name_lower: str, default_step_type: dict[str, Any]
+) -> dict[str, Any]:
+    if "warm" in step_name_lower:
+        return STEP_TYPE_MAP["warmup"]
+    if "cool" in step_name_lower:
+        return STEP_TYPE_MAP["cooldown"]
+    return default_step_type
+
+
+def _get_strength_end_condition(reps: Any, duration_sec: Any) -> tuple[dict[str, Any], Any]:
+    if reps and reps > 0:
+        return END_CONDITION_MAP["reps"], reps
+    if duration_sec and duration_sec > 0:
+        return END_CONDITION_MAP["time"], duration_sec
+    # No usable rep target and no duration: prefer an explicit/manual
+    # completion condition over fabricating a duration or using the
+    # set count as the rep target.
+    return END_CONDITION_MAP["lap_button"], None
+
+
+def _build_strength_step_or_group(
+    step: dict[str, Any],
+    step_order: int,
+    default_step_type: dict[str, Any],
+) -> tuple[dict[str, Any], int]:
+    """Build the Garmin step (or ``RepeatGroupDTO``) for one strength exercise.
+
+    Strength semantics are distinct from endurance intervals and are kept in
+    their own branch rather than folded into the cycling/running repeat-group
+    logic:
+
+    - ``sets`` is a working-set count and is never used as a repetition
+      target.
+    - ``repetitions`` is the rep target inside one set; when present, the
+      exercise gets a ``reps`` end condition and (when ``sets > 1``) is
+      wrapped in a ``RepeatGroupDTO`` with ``numberOfIterations == sets``.
+    - when there is no repetition target, ``durationSeconds`` is used
+      as-is (a genuinely time-based block); ``sets`` does not turn a
+      duration block into a fabricated repeat.
+    - when neither a repetition target nor a duration is available, the
+      step falls back to a manual/lap-button end condition rather than
+      inventing a duration or aliasing ``sets`` as reps.
+
+    Returns ``(garmin_step, next_step_order)``.
+    """
+    sets = step.get("sets")
+    reps = step.get("repetitions")
+    duration_sec = step.get("durationSeconds")
+
+    step_name = str(step.get("name", "")).strip()
+    step_name_lower = step_name.lower()
+
+    step_desc = _get_strength_step_desc(step, step_name)
+    step_type = _get_strength_step_type(step_name_lower, default_step_type)
+    end_condition, end_condition_value = _get_strength_end_condition(reps, duration_sec)
+
+    exercise_dto: dict[str, Any] = {
+        "type": "ExecutableStepDTO",
+        "stepId": None,
+        "stepOrder": 1,
+        "stepType": step_type,
+        "childStepId": None,
+        "description": step_desc,
+        "endCondition": end_condition,
+        "endConditionValue": end_condition_value,
+        "targetType": {"workoutTargetTypeId": 1, "workoutTargetTypeKey": "no.target"},
+        "targetValueOne": None,
+        "targetValueTwo": None,
+        "zoneNumber": None,
+    }
+
+    if sets and sets > 1 and reps and reps > 0:
+        rest_sec = _resolve_strength_rest_seconds(step)
+        child_steps = [exercise_dto]
+        if rest_sec:
+            child_steps.append(
+                {
+                    "type": "ExecutableStepDTO",
+                    "stepId": None,
+                    "stepOrder": 2,
+                    "stepType": STEP_TYPE_MAP["recovery"],
+                    "childStepId": None,
+                    "description": "Set recovery",
+                    "endCondition": END_CONDITION_MAP["time"],
+                    "endConditionValue": rest_sec,
+                    "targetType": {
+                        "workoutTargetTypeId": 1,
+                        "workoutTargetTypeKey": "no.target",
+                    },
+                    "targetValueOne": None,
+                    "targetValueTwo": None,
+                    "zoneNumber": None,
+                }
+            )
+
+        garmin_step: dict[str, Any] = {
+            "type": "RepeatGroupDTO",
+            "stepId": None,
+            "stepOrder": step_order,
+            "stepType": {"stepTypeId": 6, "stepTypeKey": "repeat"},
+            "childStepId": 1,
+            "numberOfIterations": sets,
+            "smartRepeat": False,
+            "workoutSteps": child_steps,
+        }
+    else:
+        exercise_dto["stepOrder"] = step_order
+        garmin_step = exercise_dto
+
+    return garmin_step, step_order + 1
+
+
 def _build_step_dto(
     step: dict[str, Any],
     step_order: int,
@@ -185,7 +324,9 @@ def _build_step_dto(
     ftp: float | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any] | None]:
     duration_sec = step.get("durationSeconds") or 300
-    reps = step.get("repetitions") or step.get("sets")
+    # `sets` (a working-set count) must never be aliased as a repetition
+    # target — only `repetitions` (reps inside one set) counts here.
+    reps = step.get("repetitions")
 
     step_type = default_step_type
     step_name = str(step.get("name", "")).strip()
@@ -198,13 +339,21 @@ def _build_step_dto(
         step_type = STEP_TYPE_MAP["recovery"]
 
     targets = step.get("targets")
+    target_sources: list[str] = []
+    if targets and isinstance(targets, list):
+        target_sources.extend([t for t in targets if isinstance(t, str) and t.strip()])
+    for key in ("notes", "description", "name"):
+        val = step.get(key)
+        if isinstance(val, str) and val.strip() and val not in target_sources:
+            target_sources.append(val)
+
     desc_parts = [step_name] if step_name else []
     if targets and isinstance(targets, list) and targets:
         desc_parts.append(f"({'; '.join(targets)})")
     step_desc = " ".join(desc_parts) if desc_parts else None
 
-    power_target = _extract_power_target(targets, ftp_watts=ftp)
-    zone_target = _extract_zone_target(targets) if not power_target else None
+    power_target = _extract_power_target(target_sources, ftp_watts=ftp)
+    zone_target = _extract_zone_target(target_sources) if not power_target else None
 
     if modality in ["cycling", "bike"]:
         if power_target:
@@ -257,9 +406,22 @@ def _build_step_dto(
 
     if rest_sec and rest_sec > 0:
         rec_target_str = step.get("recoveryTarget")
-        rec_targets = [rec_target_str] if rec_target_str else None
-        rec_power = _extract_power_target(rec_targets, ftp_watts=ftp)
-        rec_zone = _extract_zone_target(rec_targets) if not rec_power else None
+        rec_sources: list[str] = []
+        if rec_target_str and isinstance(rec_target_str, str):
+            rec_sources.append(rec_target_str)
+        step_notes = str(step.get("notes", ""))
+        rec_match = re.search(
+            r"(?:followed\s+by|with)\s+[^.,;]*\s+(?:at|around|approximately|about)\s+([^.,;]+)",
+            step_notes,
+            re.IGNORECASE,
+        )
+        if rec_match:
+            rec_sources.append(rec_match.group(1).strip())
+        elif step_notes:
+            rec_sources.append(step_notes)
+
+        rec_power = _extract_power_target(rec_sources, ftp_watts=ftp) if rec_sources else None
+        rec_zone = _extract_zone_target(rec_sources) if (rec_sources and not rec_power) else None
 
         if modality in ["cycling", "bike"] and rec_power:
             rec_target_type = {"workoutTargetTypeId": 2, "workoutTargetTypeKey": "power.zone"}
@@ -295,6 +457,40 @@ def _build_step_dto(
         }
 
     return main_dto, rest_dto
+
+
+def summarize_garmin_payload(
+    workout: dict[str, Any], garmin_payload: dict[str, Any]
+) -> dict[str, Any]:
+    """Small transform-observability summary, meant for logging only.
+
+    Lets a report like "Garmin only shows three exercises" be diagnosed from
+    logs without first reproducing the whole UI flow. Contains only shape
+    metadata (ids, counts) -- never credentials, tokens, or raw health data.
+    """
+
+    def _count_recovery_steps(step_list: list[dict[str, Any]]) -> int:
+        count = 0
+        for s in step_list:
+            if s.get("stepType", {}).get("stepTypeKey") == "recovery":
+                count += 1
+            if s.get("type") == "RepeatGroupDTO":
+                count += _count_recovery_steps(s.get("workoutSteps", []))
+        return count
+
+    top_level_steps = garmin_payload.get("workoutSegments", [{}])[0].get("workoutSteps", [])
+    canonical_step_count = sum(len(block.get("steps", [])) for block in workout.get("blocks", []))
+    repeat_group_count = sum(1 for s in top_level_steps if s.get("type") == "RepeatGroupDTO")
+
+    return {
+        "workoutId": workout.get("workoutId"),
+        "title": workout.get("title"),
+        "modality": workout.get("modality"),
+        "canonicalStepCount": canonical_step_count,
+        "garminTopLevelStepCount": len(top_level_steps),
+        "repeatGroupCount": repeat_group_count,
+        "recoveryStepCount": _count_recovery_steps(top_level_steps),
+    }
 
 
 def canonical_workout_to_garmin_payload(
@@ -377,6 +573,16 @@ def canonical_workout_to_garmin_payload(
         else:
             # 2. Step-level repeat or sequential execution
             for step in block_steps:
+                if modality == "strength":
+                    # Strength has its own sets/reps/rest semantics and is
+                    # handled by a dedicated builder rather than the
+                    # endurance repeat-group cases below.
+                    garmin_step, step_order = _build_strength_step_or_group(
+                        step, step_order, default_step_type
+                    )
+                    workout_steps.append(garmin_step)
+                    continue
+
                 sets = step.get("sets")
                 reps = step.get("repetitions")
                 set_recovery_sec = step.get("setRecoverySec")

@@ -1,10 +1,18 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { validateExternalTrainingPlan } from '../engine/validation';
 import { impliedDate } from '../engine/externalPlacement';
-import { EXTERNAL_PLAN_SCHEMA, type ExternalPlanHeader, type ExternalTrainingPlan, type ObjectiveKey } from '../engine/models';
+import { EXTERNAL_PLAN_SCHEMA, type ExternalPlanHeader, type ObjectiveKey } from '../engine/models';
 import { externalPlanService } from '../services/externalPlanService';
 import { getLocalDateString } from '../utils/localDate';
 import { diffPlans, type PlanDiffRow } from './externalPlanDiff';
+import {
+    validateExternalTrainingPlanV2,
+    isV2Session,
+    EXTERNAL_PLAN_SCHEMA_V2,
+    type AnyExternalTrainingPlan as ExternalTrainingPlan,
+    type AnyExternalPlanSession,
+} from '../sessions/externalPlanV2';
+import { SessionDefinitionPreview } from './session/SessionDefinitionPreview';
 import './ExternalPlanImport.css';
 
 interface ExternalPlanImportProps {
@@ -17,8 +25,17 @@ type Phase =
     | { kind: 'invalid'; issues: { field: string; message: string }[] }
     | { kind: 'previewing'; plan: ExternalTrainingPlan; previous: ExternalPlanHeader | null }
     | { kind: 'saving' }
-    | { kind: 'saved'; plan: ExternalTrainingPlan; untagged: ExternalTrainingPlan['sessions'] }
+    | { kind: 'saved'; plan: ExternalTrainingPlan; untagged: AnyExternalPlanSession[] }
     | { kind: 'failed'; message: string };
+
+/** M3.6: dispatches to the v1 or v2 validator based on the pasted document's own `schema`
+ * literal, mirroring `externalPlanService.ts`'s own dispatcher (kept separate rather than
+ * imported from there since that one isn't exported, and a UI validate-before-save step
+ * has no service dependency otherwise). */
+function validateAnyExternalTrainingPlan(raw: unknown) {
+    const schema = (raw as { schema?: unknown } | null)?.schema;
+    return schema === EXTERNAL_PLAN_SCHEMA_V2 ? validateExternalTrainingPlanV2(raw) : validateExternalTrainingPlan(raw);
+}
 
 /** Objective keys the engine can credit, offered when a session declared none. */
 const OBJECTIVE_CHOICES: ObjectiveKey[] = [
@@ -36,20 +53,24 @@ function parseJson(text: string): { value: unknown } | { error: string } {
 
 const AI_PROMPT_TEMPLATE = `Output the plan as a single JSON document and nothing else. Follow this contract exactly.
 
-Top level: schema (literal "${EXTERNAL_PLAN_SCHEMA}"), planId (lowercase slug, unchanged between revisions of the same plan), revision (integer, increment when revising), title, startDate (the Monday week 1 begins, YYYY-MM-DD), weekCount, optional notes, and sessions.
+Top level: schema (literal "${EXTERNAL_PLAN_SCHEMA_V2}"), planId (lowercase slug, unchanged between revisions of the same plan), revision (integer, increment when revising), title, startDate (the Monday week 1 begins, YYYY-MM-DD), weekCount, optional notes, and sessions.
 
 Do not compute calendar dates for sessions and do not include rest days. Each session has id, title, priority (key/supporting/optional), and:
 
 - placement: week (1-based), optional preferredDay (lowercase weekday), flexibility (fixed/preferred/any_day), ifMissed (drop/reschedule_within_week/carry_forward).
 - gating: modality (cycling/running/strength/field/mobility/cross_training), intensity (recovery/easy/moderate/hard/max), durationMin, durationMax (minutes), environment (indoor/outdoor/either), equipment (subset of free_weights, cable_machine, treadmill, indoor_bike, pullup_bar).
 - objectives: zero or more of threshold_quality, surge_repeatability, zone2_aerobic, strength_maintenance, strength_development, race_specific_endurance, vo2_max.
-- prescription: summary, plus optional steps. A step has name, target, and either durationMin (integer minutes) or durationSec (integer seconds) — use seconds for anything under two minutes (e.g. 10s, 20s, 30s). For interval workouts, explicitly set structured fields: repeat (repetitions per set), recoverySec/recoveryMin (rest between repetitions), sets (number of sets), setRecoveryMin/setRecoverySec (rest between sets). Example 3 sets of 10 x 30s/15s: {"name": "30-second work", "durationSec": 30, "recoverySec": 15, "repeat": 10, "sets": 3, "setRecoveryMin": 4, "target": "320-350 W"}.
+- definition: the executable content — schemaVersion (1), id (same as the session's own id), revision (1), title, optional summary, intent (training/testing/competition/rehab_return/recovery/skill_technical), optional dominantModality (matching gating.modality), optional duration ({min, max} minutes), and blocks. Each block has id, optional title, role (warmup/main/cooldown/accessory/test/recovery), executionMode (sequential/circuit/superset/density/amrap/alternating), and steps. Each step has id, kind ("exercise"), optional title, exerciseRef (prefer {"kind": "catalog", "exerciseId": "<id>"} when matching known movements — e.g. bike_progressive_warmup, bike_easy_spin, bike_threshold_interval, bike_vo2_interval, bike_float_interval, bike_over_under_interval, bike_short_surge, bike_hard_finish, bike_race_simulation, bike_race_opener, bike_cooldown, goblet_squat, front_squat, back_squat, rear_foot_elevated_split_squat, romanian_deadlift, kettlebell_deadlift, hip_thrust, bench_press, push_up, pull_up, dumbbell_row, chest_supported_dumbbell_row, dead_bug, side_plank, plank, copenhagen_plank, seated_soleus_iso, calf_isometric, easy_continuous_run, run_tempo_interval, run_vo2_interval, mobility_flow — or use {"kind": "unresolved_free_text", "name": "..."} for custom movements), dose, optional rest (seconds, or {min, max} for a range), optional notes. dose is one of: {"kind": "repetition", "sets": N, "reps": N or {min,max}}; {"kind": "duration", "sets": N (optional), "seconds": N or {min,max}} — use seconds for anything under two minutes (e.g. 10, 20, 30), never fractional minutes; {"kind": "distance", "sets": N (optional), "meters": N or {min,max}}. Example a 30-second-on/15-second-off interval step, 10 reps per set, 3 sets: {"id": "step-1", "kind": "exercise", "title": "30-second work", "exerciseRef": {"kind": "catalog", "exerciseId": "bike_vo2_interval"}, "dose": {"kind": "duration", "sets": 3, "seconds": 30}, "rest": 15}.
 - isEvent: true only on the target event itself (a race, a test event). An event session must also use flexibility: "fixed" with a preferredDay. Do not mark ordinary hard sessions as events.
-- scaling: reducible (false when the session has no useful reduced form — a race simulation, a test — in which case say so rather than inventing a compromised version), reducedSummary (how to cut this session down while keeping its purpose), reducedDurationMin, minimumUsefulDurationMin (below this, skipping is better than a fragment), fallback (advisory author suggestion shown if the equipment or venue is unavailable; it is not an executable substitute).
+- scaling: reducible (boolean; set to false when the session has no useful reduced form — e.g. a race simulation or test. When reducible is false, omit reducedSummary and reducedDurationMin entirely), reducedSummary (how to cut this session down while keeping its purpose; only include when reducible is true), reducedDurationMin (minutes; only include when reducible is true), minimumUsefulDurationMin (below this, skipping is better than a fragment), fallback (advisory author suggestion shown if the equipment or venue is unavailable; it is not an executable substitute).
 
 Do not include travel weeks, illness, or time off — those are handled separately by the app's own calendar. Plan as if every scheduled day is available.
 
-Do not encode readiness or autoregulation rules anywhere, including notes. The app adjudicates each session against that morning's data and owns all green/yellow/red decisions. Use notes only for context the app cannot know: which power meter is the reference, whether wattage targets or RPE take precedence, what block preceded this one.`;
+Do not encode readiness or autoregulation rules anywhere, including notes. The app adjudicates each session against that morning's data and owns all green/yellow/red decisions. Use notes only for context the app cannot know: which power meter is the reference, whether wattage targets or RPE take precedence, what block preceded this one.
+
+Never include a "systemicCost" or similar calibrated load figure anywhere in definition — the app derives that itself from modality, intensity and duration.
+
+Output as a downloadable JSON file.`;
 
 /**
  * Paste → validate → preview → confirm.
@@ -87,7 +108,7 @@ export function ExternalPlanImport({ userId, onImported }: ExternalPlanImportPro
             setPhase({ kind: 'invalid', issues: [{ field: 'document', message: `Not valid JSON: ${parsed.error}` }] });
             return;
         }
-        const result = validateExternalTrainingPlan(parsed.value);
+        const result = validateAnyExternalTrainingPlan(parsed.value);
         if (!result.isValid || !result.data) {
             setPhase({ kind: 'invalid', issues: result.errors.map(error => ({ field: error.field, message: error.message })) });
             return;
@@ -154,7 +175,7 @@ export function ExternalPlanImport({ userId, onImported }: ExternalPlanImportPro
                                 {promptCopied ? 'Copied prompt to clipboard!' : 'Copy AI prompt template'}
                             </button>
                             <span className="external-import-prompt-hint">
-                                Tip: For short intervals (e.g. 10s, 20s, 30s), use <code>durationSec: 20</code> instead of fractional minutes.
+                                Tip: For short intervals (e.g. 10s, 20s, 30s), use <code>{'"dose": {"kind": "duration", "seconds": 20}'}</code> instead of fractional minutes.
                             </span>
                         </div>
                         <pre className="external-import-prompt-text">{AI_PROMPT_TEMPLATE}</pre>
@@ -261,14 +282,18 @@ export function ExternalPlanImport({ userId, onImported }: ExternalPlanImportPro
                                     type="button"
                                     className="external-import-primary"
                                     onClick={() => {
-                                        const tagged: ExternalTrainingPlan = {
+                                        // TS distributes a plan-union spread/rebuild as ExternalPlanSession[] |
+                                        // ExternalPlanSessionV2[] (never a mixed array) and can't itself prove
+                                        // this same-shape-in/same-shape-out map preserves that per element --
+                                        // it does, at runtime, since `session` is only ever spread into itself.
+                                        const tagged = {
                                             ...phase.plan,
                                             revision: phase.plan.revision + 1,
                                             sessions: phase.plan.sessions.map(session => {
                                                 const chosen = objectiveEdits[session.id];
                                                 return chosen && chosen.length > 0 ? { ...session, objectives: chosen } : session;
                                             }),
-                                        };
+                                        } as ExternalTrainingPlan;
                                         handleTextChange(JSON.stringify(tagged, null, 2));
                                     }}
                                     disabled={Object.values(objectiveEdits).every(list => list.length === 0)}
@@ -307,7 +332,7 @@ function usePreviousRevision(userId: string, phase: Phase): ExternalTrainingPlan
     return loaded !== null && loaded.key === key ? loaded.plan : null;
 }
 
-interface PlanPreviewProps {
+export interface PlanPreviewProps {
     plan: ExternalTrainingPlan;
     previous: ExternalPlanHeader | null;
     diff: PlanDiffRow[] | null;
@@ -315,8 +340,20 @@ interface PlanPreviewProps {
     onCancel: () => void;
 }
 
-function PlanPreview({ plan, previous, diff, onConfirm, onCancel }: PlanPreviewProps) {
+/** Exported (not just used internally) so the acknowledgement-gating behavior is directly
+ * testable without driving the full paste-JSON → validate → preview state machine. */
+export function PlanPreview({ plan, previous, diff, onConfirm, onCancel }: PlanPreviewProps) {
     const notNewer = previous !== null && plan.revision <= previous.revision;
+
+    // M3.7: a diff row's `contentChanges` are only present for a matched v2/v2 session pair
+    // (`externalPlanDiff.ts`). Behavior-changing rows -- dose, load, laterality, optional vs
+    // required, an authored choice's actions -- must be explicitly acknowledged before the
+    // athlete can confirm; cosmetic-only rows (wording) never block.
+    const behaviorChangeCount = (diff ?? [])
+        .flatMap(row => row.contentChanges ?? [])
+        .filter(row => row.behaviorChanging).length;
+    const [acknowledged, setAcknowledged] = useState(false);
+    const blockedByUnreviewedChanges = behaviorChangeCount > 0 && !acknowledged;
 
     return (
         <section className="external-import-preview" aria-label="Plan preview">
@@ -338,7 +375,21 @@ function PlanPreview({ plan, previous, diff, onConfirm, onCancel }: PlanPreviewP
                     <h5>What changes against revision {previous?.revision}</h5>
                     <ul>
                         {diff.map(row => (
-                            <li key={`${row.change}-${row.sessionId}`} className={`diff-${row.change}`}>{row.detail}</li>
+                            <li key={`${row.change}-${row.sessionId}`} className={`diff-${row.change}`}>
+                                {row.detail}
+                                {row.contentChanges && row.contentChanges.length > 0 && (
+                                    <ul className="external-import-content-diff">
+                                        {row.contentChanges.map((change, index) => (
+                                            <li
+                                                key={`${row.sessionId}-${change.scope}-${change.id}-${index}`}
+                                                className={change.behaviorChanging ? 'content-diff-behavior' : 'content-diff-cosmetic'}
+                                            >
+                                                {change.behaviorChanging ? '⚠ ' : ''}{change.detail}
+                                            </li>
+                                        ))}
+                                    </ul>
+                                )}
+                            </li>
                         ))}
                     </ul>
                 </div>
@@ -357,12 +408,34 @@ function PlanPreview({ plan, previous, diff, onConfirm, onCancel }: PlanPreviewP
                             {' '}{session.gating.durationMin}–{session.gating.durationMax} min · {session.priority}
                             {session.isEvent && ' · event'}
                         </span>
+                        {isV2Session(session) && (
+                            <details className="external-import-session-detail">
+                                <summary>Full session content — every block and step, not just this summary line</summary>
+                                <SessionDefinitionPreview definition={session.definition} />
+                            </details>
+                        )}
                     </li>
                 ))}
             </ol>
 
+            {behaviorChangeCount > 0 && (
+                <label className="external-import-ack">
+                    <input
+                        type="checkbox"
+                        checked={acknowledged}
+                        onChange={event => setAcknowledged(event.target.checked)}
+                    />
+                    I reviewed the {behaviorChangeCount} behavior change{behaviorChangeCount === 1 ? '' : 's'} marked ⚠ above.
+                </label>
+            )}
+
             <div className="external-import-actions">
-                <button type="button" className="external-import-primary" onClick={onConfirm} disabled={notNewer}>
+                <button
+                    type="button"
+                    className="external-import-primary"
+                    onClick={onConfirm}
+                    disabled={notNewer || blockedByUnreviewedChanges}
+                >
                     Import this plan
                 </button>
                 <button type="button" className="external-import-secondary" onClick={onCancel}>

@@ -42,6 +42,11 @@ declared per work item, not only per phase** — a phase can be part-startable, 
 "depends on nothing" at the header while an individual item requires the Phase-0 harness is
 how a plan stops being executable.
 
+A dependency being satisfied is not always enough to make optional capability work startable.
+Where a plan declares an explicit **usage trigger**, the trigger is part of `Blocked by` even
+when every code dependency has landed. This keeps capability numbering from silently becoming
+a delivery queue.
+
 ---
 
 ## Current plans
@@ -51,6 +56,18 @@ These implement the way forward in
 §7.5. Finding IDs (`F1`, `F16`, …) refer to that document.
 
 Phases 0–8 are **implemented**; Phase 9.0 and Phase 9 remain **In progress**.
+Among capability plans, Garmin per-activity telemetry (G) and Mobile UX/UI (UX) are
+**implemented**; Strength session logging (S) is **In progress (default-off)** with all
+numbered code delivered; Multidomain sessions (M) is **In progress** with M0–M2,
+M3.1–M3.6, and M4.1–M4.2 complete.
+
+For Multidomain delivery, the current evidence-first cutline from
+[`2026-08-19-product-scope-cutline-review.md`](../analysis/2026-08-19-product-scope-cutline-review.md)
+is `M3.7 → bounded M3.8 → M4.3 → M5.1 → M5.2`. The immediate startable set includes
+M3.7, bounded M3.8, and M4.3; the response chain becomes startable as those dependencies
+land. M6/M7 are usage-triggered capability families, not the automatic continuation after
+M5; M8 may consume them only if athlete use justified them independently.
+
 The Phase 0–5 task boards are historical implementation records; the
 [follow-up analysis](../analysis/2026-08-09-phase-0-5-completion-review.md) records
 which original findings are fully closed and which remain ongoing work.
@@ -77,11 +94,13 @@ all-`Ready` table became unusable.
 | 9 | [Subjective baselines in readiness mode](./phase-9-subjective-baselines.md) | **In progress** | only 9.8 remains (9.1–9.7 done — 9.8 needs Phase 9.0's prospective evidence) | — | self-normalises subjective scores as a tighten-only drift term, measured behind a default-off selector before any ship decision — not an original review finding |
 | G | [Garmin per-activity telemetry](./garmin-activity-telemetry-ingestion.md) | **Implemented** | none | none | ingests per-activity power/HR time-in-zone, normalized power and lap averages; the measured zone-credit candidate remains off after an evidence-backed no-ship decision |
 | S | [Strength session logging](./strength-session-logging.md) | **In progress (default-off)** | none; all numbered work is built | real logged-history evidence before enabling manual Strength load — [M1.7](./multidomain-session-authoring-execution-and-evidence.md) is the item that starts producing it | closes the strength return path — per-set logging, self-calibrating 1RM, and measured strength load — not an original review finding |
-| M | [Multidomain session authoring, execution & evidence](./multidomain-session-authoring-execution-and-evidence.md) | **In progress** | M0.2–M0.3, M1.6 | M2+ also require the successor ADR from M0.1 | source-neutral authored sessions, safe mixed-dose execution, occurrence-linked response, and protocol-aware field/speed/power evidence — ordered so every milestone from M1 ends with a phone-usable capability, and so the session→response evidence link ships with the M1 Strength repairs rather than five milestones later |
+| M | [Multidomain session authoring, execution & evidence](./multidomain-session-authoring-execution-and-evidence.md) | **In progress** | M3.7, bounded M3.8 (in progress), M4.3 | M5.1→M5.2 follow M4.3; M5.3 follows M5.2 but starts report-first; M6/M7 require explicit real-use triggers; M8 is evidence-gated and cannot pull untriggered M6/M7 into scope; M9 needs its own named triggers | source-neutral authored sessions, safe mixed-dose execution and occurrence-linked response first; specialized field/testing capability only when athlete use proves the generic runner/evidence model insufficient |
+| UX | [Mobile UX/UI redesign](./mobile_ux_implementation_plan.md) | **Implemented** | none | none | mobile-first daily decision flow, single-page rapid check-in, state-first Home layout, unblocked recommendation, 44px+ touch targets, and mobile layout tokens |
 
-Rows G, S and M are **not phases**. They are capability plans whose work items are prefixed
-`G*`, `S*` and `M*` precisely so they cannot be mistaken for the `Phase 0`–`9` sequence;
-the `#` column carries that prefix rather than a phase number.
+Rows G, S, M, and UX are **not phases**. They are capability/surface plans whose work items are prefixed
+`G*`, `S*`, `M*`, `UX*` precisely so they cannot be mistaken for the `Phase 0`–`9` sequence;
+the `#` column carries that prefix rather than a phase number. For capability plans, an item
+with satisfied dependencies but an unmet usage trigger is **not** listed as startable.
 
 Phases 0–8 are implemented. Phase 6 delivered explicit scenario evidence, calibration
 traces, coverage visibility, a verified repository-owned local Firestore-rules deployment
@@ -163,6 +182,15 @@ contradicted the accepted ADRs and the implemented plans.
 | **D-NOPARSE** | JSON import only; no in-app model call in this phase | [ADR-0019](../adr/0019-externally-authored-plans-and-session-adjudication.md) | A non-deterministic transform at the persistence boundary conflicts with ADR-0010 |
 | **D-EVENT** | A target event reconciles onto `FixedActivity` and is adjudicated for advice, never permission | [ADR-0019](../adr/0019-externally-authored-plans-and-session-adjudication.md) | Telling an athlete to skip a race they entered is not the speech act the app has standing to make |
 | **D-IRREDUCIBLE** | `scaling.reducible: false` sends a short-of-full readiness to `defer`, not to a prescribed compromise | [ADR-0019](../adr/0019-externally-authored-plans-and-session-adjudication.md) | Otherwise "ride easy and retry Thursday" gets prescribed as the same session at lower volume |
+| **D-MSESSION** | `SessionDefinition` is the source-neutral executable content contract; catalog, external and manual sources adapt to it | [ADR-0023](../adr/0023-multidomain-session-authoring-execution-and-evidence.md) | Eliminates separate source models across runner, authoring, and planning |
+| **D-MRECORDS** | Definition, occurrence, execution prescription and performed execution are distinct records/lifecycles | [ADR-0023](../adr/0023-multidomain-session-authoring-execution-and-evidence.md) | Separates static authored definitions from mutable execution state and historical audit |
+| **D-MAUTH** | Date-scoped athlete occurrences explicitly replace/add; `save_only` creates no occurrence, `schedule`/`unplanned_log` have no engine surface | [ADR-0023](../adr/0023-multidomain-session-authoring-execution-and-evidence.md) | Enforces hard clinical/readiness gating while keeping execution runners accessible without engine entanglement |
+| **D-MENTRY** | Performed rows are subcollection entries; v1 Strength arrays remain read-only compatible | [ADR-0023](../adr/0023-multidomain-session-authoring-execution-and-evidence.md) | Prevents document write contention during live set logging and avoids bulk migrations |
+| **D-MSNAP** | Recommendations store reference-only bindings (`prescriptionHash`); snapshots live in separate write-once content-addressed documents | [ADR-0023](../adr/0023-multidomain-session-authoring-execution-and-evidence.md) | Eliminates Firestore document size pressure while preserving bit-exact replay |
+| **D-MCHOICE** | Authored branch points are bounded option sets presented to the athlete, not evaluated rules | [ADR-0023](../adr/0023-multidomain-session-authoring-execution-and-evidence.md) | Keeps execution purely deterministic without runtime script evaluation |
+| **D-MOBS** | Metrics retain unit, source, protocol, validity and comparison-series provenance | [ADR-0023](../adr/0023-multidomain-session-authoring-execution-and-evidence.md) | Prevents uncalibrated comparisons across disparate testing conditions |
+| **D-MRESP** | `DailySubjectiveCheckin.tissueResponses` remains the sole tissue authority; response records store occurrence linkage | [ADR-0023](../adr/0023-multidomain-session-authoring-execution-and-evidence.md) | Preserves single source of truth for tissue readiness |
+| **D-MPOLICY** | Step-derived profiles, response-based progression, automatic option selection and domain exposure remain default-off evidence candidates | [ADR-0023](../adr/0023-multidomain-session-authoring-execution-and-evidence.md) | Adheres to repository evidence discipline before promoting candidates to production |
 
 Five of the **accepted** decisions — **D-KWD**, **D-GATE**, **D-LIFE**, **D-RECOV**, and the
 withdrawal inside **D-FUSE** — correct errors in earlier drafts and came out of PR #5 review
