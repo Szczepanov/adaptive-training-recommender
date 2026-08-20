@@ -6,7 +6,7 @@ name: Deploy Garmin Sync
 # it creates all the infra (bucket, service accounts, Artifact Registry repo) this workflow
 # assumes already exists, and add its printed values as the repo secrets this workflow reads
 # below. Deliberately does NOT provision infra itself: github-deployer only ever holds
-# deployment-scoped roles (Cloud Run, Artifact Registry, Cloud Build, Cloud Scheduler), never
+# deployment-scoped roles (Cloud Run, Artifact Registry, Cloud Scheduler), never
 # project-IAM-admin or service-account-admin -- see the setup script's own comments for why.
 #
 # Safe to re-run: `gcloud run jobs deploy` upserts, and the Scheduler step tries update before
@@ -39,11 +39,6 @@ env:
   SCHEDULER_SA_EMAIL: garmin-scheduler-invoker@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com
   TOKEN_BUCKET: ${{ secrets.GCP_PROJECT_ID }}-garmin-tokens
   IMAGE_TAG: ${{ inputs.region }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/garmin-sync/garmin-sync:${{ github.sha }}
-  # setup-workload-identity.sh both creates this bucket and grants github-deployer access to
-  # it -- passed explicitly rather than left to `gcloud builds submit`'s own default-bucket
-  # resolution, which was observed producing a "forbidden" error against that exact bucket
-  # even with matching IAM in place.
-  CLOUDBUILD_SOURCE_STAGING_DIR: gs://${{ secrets.GCP_PROJECT_ID }}_cloudbuild/source
 
 jobs:
   deploy:
@@ -63,10 +58,22 @@ jobs:
       - name: Disable interactive gcloud prompts
         run: gcloud config set core/disable_prompts true
 
-      - name: Build and push container image (Cloud Build, no local Docker)
+      # `gcloud builds submit`'s local-source upload (via a Cloud Build-managed GCS staging
+      # bucket) repeatedly failed with a "forbidden" error against Workload-Identity-Federation
+      # -derived credentials, regardless of which IAM role was granted to github-deployer
+      # (storage.objectAdmin, storage.admin, serviceusage.serviceUsageConsumer -- all tried
+      # live, none fixed it) -- a known class of gsutil/WIF external_account-credential
+      # compatibility issue, not an authorization gap. Plain `docker build`/`docker push`
+      # against Artifact Registry sidesteps Cloud Build (and its staging bucket) entirely;
+      # docker registry auth via `gcloud auth configure-docker` is a standard, well-supported
+      # WIF path. Needs only roles/artifactregistry.writer, already granted.
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
+
+      - name: Build and push container image
         run: |
-          gcloud builds submit --tag "${IMAGE_TAG}" \
-            --gcs-source-staging-dir="${CLOUDBUILD_SOURCE_STAGING_DIR}"
+          docker build -t "${IMAGE_TAG}" .
+          docker push "${IMAGE_TAG}"
 
       - name: Render Cloud Run Job env vars
         run: |
