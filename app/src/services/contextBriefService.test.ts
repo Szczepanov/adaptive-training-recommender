@@ -60,13 +60,39 @@ describe('ContextBriefService', () => {
         expect(services.getCheckinsInRange).toHaveBeenCalledWith('u1', '2026-06-21', '2026-08-16');
     });
 
-    it('reads fixed commitments and resolves active imported sessions across the next seven days', async () => {
+    it('reads padded fixed-activity occupancy and resolves active imported sessions across the next seven days', async () => {
         await new ContextBriefService().build('u1', AS_OF, 14);
 
-        expect(services.getFixedActivitiesInRangeState).toHaveBeenCalledWith('u1', '2026-08-15', '2026-08-21');
+        // Visible handoff is 2026-08-15..21. Six days of padding on both sides covers
+        // every whole plan week that can affect a flexible placement in that horizon.
+        expect(services.getFixedActivitiesInRangeState).toHaveBeenCalledWith('u1', '2026-08-09', '2026-08-27');
         expect(services.getActivePlanState).toHaveBeenCalledTimes(7);
         expect(services.getActivePlanState).toHaveBeenNthCalledWith(1, 'u1', '2026-08-15', []);
         expect(services.getActivePlanState).toHaveBeenNthCalledWith(7, 'u1', '2026-08-21', []);
+    });
+
+    it('uses padded fixed activities for placement but only exports commitments inside the visible horizon', async () => {
+        const priorWeekOccupancy = {
+            id: 'fixed-prior',
+            userId: 'u1',
+            title: 'Prior fixed commitment',
+            date: '2026-08-12',
+            durationMin: 60,
+            fixed: true,
+            environment: 'either',
+            equipment: [],
+            isCompleted: false,
+            createdAt: '2026-08-01T00:00:00Z',
+            updatedAt: '2026-08-01T00:00:00Z',
+        };
+        services.getFixedActivitiesInRangeState.mockResolvedValue({
+            status: 'AVAILABLE', data: [priorWeekOccupancy], revision: 'r1',
+        });
+
+        const result = await new ContextBriefService().build('u1', AS_OF, 14);
+
+        expect(services.getActivePlanState).toHaveBeenNthCalledWith(1, 'u1', '2026-08-15', [priorWeekOccupancy]);
+        expect(result.text).not.toContain('Prior fixed commitment');
     });
 
     it('does not report missing snapshot days as a read failure', async () => {
