@@ -32,11 +32,21 @@ function mapTrainingRecord(raw: RawActivitySummary | null | undefined): Training
 }
 
 /**
+ * Respiration scoring is deliberately default-off until historical replay/sensitivity
+ * establishes a weight/noise-floor policy. The non-default member exists so comparison
+ * tooling can exercise the real engine path without creating a second implementation.
+ */
+export type RespirationStrainPolicy = 'off' | 'median-mad-v1';
+
+/**
  * Maps the Firestore canonical model (DailyRecoverySnapshot) to the internal engine
  * input model (EngineObjectiveInput) expected by the rules engine.
  * This decouples the rules engine from the Firestore schema.
  */
-export function mapSnapshotToEngineInput(snapshot: DailyRecoverySnapshot): EngineObjectiveInput {
+export function mapSnapshotToEngineInput(
+    snapshot: DailyRecoverySnapshot,
+    respirationStrainPolicy: RespirationStrainPolicy = 'off',
+): EngineObjectiveInput {
     // Determine the sleep_min: convert from seconds
     const sleepDurationMin = snapshot.raw.sleepDurationSec
         ? Math.round(snapshot.raw.sleepDurationSec / 60)
@@ -48,7 +58,8 @@ export function mapSnapshotToEngineInput(snapshot: DailyRecoverySnapshot): Engin
     // scoring floor for an unavailable spread estimate would fabricate confidence rather
     // than represent a measured personal baseline.
     const hasRespirationMedianMadBaseline =
-        (snapshot.derived.baselineComputationVersion ?? 0) >= 3
+        respirationStrainPolicy === 'median-mad-v1'
+        && (snapshot.derived.baselineComputationVersion ?? 0) >= 3
         && snapshot.derived.respiration28dMad !== null
         && snapshot.derived.respiration28dMad !== undefined;
 
