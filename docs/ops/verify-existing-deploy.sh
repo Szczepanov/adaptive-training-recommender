@@ -8,7 +8,8 @@ set -uo pipefail
 : "${GCP_PROJECT:?Set GCP_PROJECT to your GCP/Firebase project id}"
 : "${REGION:=europe-central2}"
 
-gcloud config set project "${GCP_PROJECT}" >/dev/null
+# Process-scoped only -- never mutates your persisted gcloud configuration.
+export CLOUDSDK_CORE_PROJECT="${GCP_PROJECT}"
 
 check() {
   local desc="$1"; shift
@@ -57,7 +58,8 @@ check "Service account github-deployer@${GCP_PROJECT}.iam.gserviceaccount.com" \
   gcloud iam service-accounts describe "github-deployer@${GCP_PROJECT}.iam.gserviceaccount.com"
 
 echo
-echo "Any MISSING line above means deploy-garmin-sync.yml's matching step will create it on"
-echo "its next run (run_infra_setup on) rather than find it already there -- that's expected"
-echo "and safe, not an error. A row you expected OK but got MISSING is worth a second look:"
-echo "either the manual deploy used a different name/region, or that piece genuinely wasn't done."
+echo "Any MISSING line above means re-running docs/ops/setup-workload-identity.sh will create"
+echo "it (idempotent) -- deploy-garmin-sync.yml itself no longer provisions infra, only"
+echo "deploys against what already exists. A row you expected OK but got MISSING is worth a"
+echo "second look: either the manual deploy used a different name/region, or that piece"
+echo "genuinely wasn't done."
