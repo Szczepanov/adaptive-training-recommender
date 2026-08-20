@@ -45,7 +45,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Authenticate to GCP (Workload Identity Federation, no key)
-        uses: google-github-actions/auth@v2
+        uses: google-github-actions/auth@v3
         with:
           workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ secrets.GCP_DEPLOYER_SA_EMAIL }}
