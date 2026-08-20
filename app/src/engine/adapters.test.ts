@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { mapContextFromGoalsAndTrainingSettings } from './adapters';
-import type { DailySubjectiveCheckin, TrainingSettings, UserPreferences } from './models';
+import { mapContextFromGoalsAndTrainingSettings, mapSnapshotToEngineInput } from './adapters';
+import type {
+    DailyRecoverySnapshot,
+    DailySubjectiveCheckin,
+    TrainingSettings,
+    UserPreferences,
+} from './models';
 
 function testTrainingSettings(overrides: Partial<TrainingSettings> = {}): TrainingSettings {
     return {
@@ -27,6 +32,76 @@ function testCheckin(overrides: Partial<DailySubjectiveCheckin> = {}): DailySubj
         ...overrides,
     };
 }
+
+function respirationSnapshot(
+    baselineComputationVersion: number,
+    respiration28dMad: number | null | undefined,
+): DailyRecoverySnapshot {
+    return {
+        raw: {
+            totalSteps: null,
+            sleepScore: null,
+            sleepDurationSec: null,
+            restingHr: null,
+            hrvOvernightAvg: null,
+            respirationAvg: 17,
+            bodyBatteryWake: null,
+            last3DaysHardSessionsCount: 0,
+            yesterdayTraining: null,
+            todayTraining: null,
+        },
+        derived: {
+            baselineComputationVersion,
+            restingHr7dAvg: null,
+            hrv7dAvg: null,
+            steps7dAvg: null,
+            steps28dAvg: null,
+            hrv28dStdev: null,
+            restingHr28dStdev: null,
+            sleepScore28dStdev: null,
+            steps28dStdev: null,
+            respiration28dMad,
+            deltas: {
+                sleepScoreVs7d: null,
+                sleepScoreVs28d: null,
+                restingHrVs7d: null,
+                restingHrVs28d: null,
+                hrvVs7d: null,
+                hrvVs28d: null,
+                respirationVs7d: 2,
+                respirationVs28d: 3,
+                stepsVs7d: null,
+                stepsVs28d: null,
+            },
+        },
+    } as unknown as DailyRecoverySnapshot;
+}
+
+describe('mapSnapshotToEngineInput respiration baseline compatibility', () => {
+    it('keeps pre-v3 mean-based respiration deltas inert', () => {
+        const objective = mapSnapshotToEngineInput(respirationSnapshot(2, undefined));
+
+        expect(objective.respiration_delta).toBeNull();
+        expect(objective.respiration_delta_28d).toBeNull();
+        expect(objective.respiration_mad_28d).toBeNull();
+    });
+
+    it('keeps v3+ respiration inert until a 28d MAD is actually available', () => {
+        const objective = mapSnapshotToEngineInput(respirationSnapshot(3, null));
+
+        expect(objective.respiration_delta).toBeNull();
+        expect(objective.respiration_delta_28d).toBeNull();
+        expect(objective.respiration_mad_28d).toBeNull();
+    });
+
+    it('forwards the v3 median/MAD respiration signal once the robust spread exists', () => {
+        const objective = mapSnapshotToEngineInput(respirationSnapshot(3, 0.8));
+
+        expect(objective.respiration_delta).toBe(2);
+        expect(objective.respiration_delta_28d).toBe(3);
+        expect(objective.respiration_mad_28d).toBe(0.8);
+    });
+});
 
 describe('mapContextFromGoalsAndTrainingSettings (Phase 5.4 tissue response wiring)', () => {
     it('turns persisted unavailable modalities into hard engine restrictions', () => {
