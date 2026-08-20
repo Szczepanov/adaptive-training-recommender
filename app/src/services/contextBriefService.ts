@@ -1,4 +1,8 @@
-import type { DailyRecoverySnapshot, DailySubjectiveCheckin } from '../engine/models';
+import type {
+    DailyRecoverySnapshot,
+    DailySubjectiveCheckin,
+    ExternalPlanSession as LegacyExternalPlanSession,
+} from '../engine/models';
 import {
     briefWindowStart,
     buildContextBrief,
@@ -12,9 +16,12 @@ import {
     UPCOMING_CONTEXT_DAYS,
     type UpcomingExternalPlanSession,
 } from '../engine/contextBriefPlanningHandoff';
+import { resolvePlanningContext } from '../engine/planningMode';
+import { evaluatePeriodizationPhase, goalToUserEvent } from '../engine/periodization';
 import { parseSubjectiveCheckin } from '../persistence/parsers/decisionInputs';
+import type { AnyExternalPlanSession } from '../sessions/externalPlanV2';
 import { addDaysToLocalDateString, getLocalDateString } from '../utils/localDate';
-import { activeExternalPlanService } from './activeExternalPlanService';
+import { activeExternalPlanService, placedSessionForDate } from './activeExternalPlanService';
 import { activityService } from './activityService';
 import { checkinService } from './checkinService';
 import { fixedActivityService } from './fixedActivityService';
@@ -35,6 +42,29 @@ export interface ContextBriefResult {
     /** Sources that could not be read. The brief still renders; it says what is missing
      * rather than presenting a partial window as complete. */
     unavailableSources: string[];
+}
+
+/**
+ * `resolvePlanningContext` still accepts the v1 external-session type, while placement may
+ * return either external-plan schema. Planning-mode authority only needs to know that a
+ * real session is placed on the date; all envelope fields below are common to v1/v2. A
+ * v2 definition is not translated into fake executable v1 content -- the placeholder
+ * summary exists only to satisfy the legacy type at this authority boundary, and the
+ * returned context's externalSession is deliberately not consumed by this brief.
+ */
+function planningAuthoritySession(session: AnyExternalPlanSession): LegacyExternalPlanSession {
+    if ('prescription' in session) return session;
+    return {
+        id: session.id,
+        title: session.title,
+        priority: session.priority,
+        placement: session.placement,
+        gating: session.gating,
+        objectives: session.objectives,
+        prescription: { summary: session.title },
+        scaling: session.scaling,
+        isEvent: session.isEvent,
+    };
 }
 
 /** Assembles the context brief from the user-scoped stores. Read-only: it persists
@@ -206,6 +236,7 @@ export class ContextBriefService {
         }
 
         const upcomingExternalSessions: UpcomingExternalPlanSession[] = [];
+        let currentExternalSession: AnyExternalPlanSession | null = null;
         if (fixedActivitiesReadable) {
             // Resolve the active plan independently for each future date so plan revision
             // effective-from boundaries and overlapping re-imports are respected. Use the
@@ -227,6 +258,9 @@ export class ContextBriefService {
                 if (state.status !== 'AVAILABLE') {
                     unreadablePlanDays += 1;
                     continue;
+                }
+                if (date === targetDate) {
+                    currentExternalSession = placedSessionForDate(state.data, date)?.session ?? null;
                 }
                 for (const placed of state.data.placed.filter(item =>
                     item.date === date && (item.status === 'planned' || item.status === 'moved'))) {
@@ -258,6 +292,18 @@ export class ContextBriefService {
             unavailableSources.push('external plan schedule (fixed-activity occupancy unavailable)');
         }
 
+        // ADR-0017: planningMode.ts is the sole authority for the effective mode. The
+        // persisted profile is athlete intent; effective mode also depends on whether an
+        // eligible event/session actually governs this date.
+        const events = goals.map(goalToUserEvent).filter((event): event is NonNullable<typeof event> => event !== null);
+        const periodization = evaluatePeriodizationPhase(events, targetDate);
+        const planningContext = resolvePlanningContext(
+            intentProfile,
+            periodization,
+            targetDate,
+            currentExternalSession ? planningAuthoritySession(currentExternalSession) : null,
+        );
+
         const input: ContextBriefInput = {
             asOfDate: targetDate,
             windowDays,
@@ -280,7 +326,9 @@ export class ContextBriefService {
             recommendations,
             trainingSettings,
             preferences,
-            intentProfile,
+            planningMode: planningContext.mode,
+            externalFallback: planningContext.externalFallback,
+            eventStrategy: planningContext.eventStrategy,
             goals,
             upcomingFixedActivities,
             upcomingPlanBlocks,
