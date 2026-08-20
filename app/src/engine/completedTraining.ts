@@ -11,7 +11,7 @@ import type {
 } from './models';
 import type { CompletedExposure } from './trainingHistory';
 import type { StimulusConfidence } from './stimulus';
-import { ENRICHED_TEMPLATES } from './templates';
+import { ENRICHED_TEMPLATES, ENRICHED_TEMPLATES_BY_ID } from './templates';
 import type { DeliveredDose } from './models';
 import {
     derivePowerZoneStimulusCandidate,
@@ -223,7 +223,7 @@ export function scaleCostByDeliveredDose(
 }
 
 function templateForRecommendation(recommendation: DailyRecommendation): SessionTemplate | undefined {
-    return ENRICHED_TEMPLATES.find(template => template.id === recommendation.templateId);
+    return ENRICHED_TEMPLATES_BY_ID.get(recommendation.templateId);
 }
 
 function adherenceCandidate(recommendation: DailyRecommendation): { modality: CompletedModality; durationMin: number | null; plannedDurationMin: number | null; template?: SessionTemplate } | null {

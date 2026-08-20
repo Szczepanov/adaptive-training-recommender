@@ -1,5 +1,5 @@
 import { useOverloadHistory } from '../hooks/useOverloadHistory';
-import { EXERCISES } from '../workouts/exercises';
+import { EXERCISES_BY_ID } from '../workouts/exercises';
 import { exerciseIdentityKey, type ExerciseIdentity } from '../workouts/overloadHistory';
 import './StrengthOverloadHistory.css';
 
@@ -8,7 +8,7 @@ interface StrengthOverloadHistoryProps {
 }
 
 function exerciseLabel(identity: ExerciseIdentity): string {
-    if (identity.exerciseId) return EXERCISES.find(exercise => exercise.id === identity.exerciseId)?.name ?? identity.exerciseId;
+    if (identity.exerciseId) return EXERCISES_BY_ID.get(identity.exerciseId)?.name ?? identity.exerciseId;
     return identity.freeTextName ?? 'Unnamed exercise';
 }
 

@@ -16,3 +16,4 @@ export const EXERCISES: ExerciseDefinition[] = [
   }),
   ...EXPANDED_EXERCISES,
 ];
+export const EXERCISES_BY_ID = new Map(EXERCISES.map(e => [e.id, e]));

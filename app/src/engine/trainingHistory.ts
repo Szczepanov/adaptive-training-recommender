@@ -1,6 +1,6 @@
 import type { DailyRecommendation, DeliveredDose, SessionTemplate, TrainingRecord, WorkoutCostProfile, WorkoutStimulusProfile } from './models';
 import type { TrainingHistorySnapshot } from './trainingHistorySnapshot';
-import { ENRICHED_TEMPLATES } from './templates';
+import { ENRICHED_TEMPLATES, ENRICHED_TEMPLATES_BY_ID } from './templates';
 import { workoutForTemplate } from '../workouts/prescription';
 
 /** A completed, adherence-backed exposure reconstructed for the rolling engine. */
@@ -33,7 +33,7 @@ const ZERO_COST: WorkoutCostProfile = { systemic: 0, cardiovascular: 0, lowerBod
 export function exposureFromRecommendation(date: string, rec: DailyRecommendation | null): CompletedExposure | null {
     if (!rec || rec.adherence.followed === null || rec.adherence.skipped) return null;
     const template = rec.adherence.followed
-        ? ENRICHED_TEMPLATES.find(t => t.id === rec.templateId)
+        ? ENRICHED_TEMPLATES_BY_ID.get(rec.templateId)
         : ENRICHED_TEMPLATES.find(t => t.modality === rec.adherence.actualModality);
     if (!template) return null;
     const trainingRecordLike: TrainingRecord = {

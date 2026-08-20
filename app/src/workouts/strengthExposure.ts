@@ -2,7 +2,7 @@ import type { CompletedExposure } from '../engine/trainingHistory';
 import type { EvidenceTier, LoggedExercise, LoggedSet, StrengthSession, TrainingRecord, WorkoutStimulusProfile } from '../engine/models';
 import type { StimulusConfidence } from '../engine/stimulus';
 import { DEFAULT_COST_BY_MODALITY, DEFAULT_STIMULUS_BY_MODALITY, ZERO_STIMULUS, stimulusConfidenceForTier } from '../engine/completedTraining';
-import { EXERCISES } from './exercises';
+import { EXERCISES_BY_ID } from './exercises';
 import type { ExerciseDefinition } from './models';
 import { isNearFailureGauge } from './oneRepMax';
 
@@ -81,7 +81,7 @@ function signalForExercise(exercise: LoggedExercise): ExerciseSignal | null {
     }
     // `exerciseId` is a soft reference, so a malformed/manual document can point at a
     // catalog entry from another modality. That is not identified strength evidence.
-    const definition = EXERCISES.find(candidate => candidate.id === exercise.exerciseId && candidate.modality === 'strength');
+    const definition = EXERCISES_BY_ID.get(exercise.exerciseId)?.modality === 'strength' ? EXERCISES_BY_ID.get(exercise.exerciseId) : undefined;
     const split = lowerUpperSplit(definition);
     return { identified: definition !== undefined, intensity, weight, ...split };
 }

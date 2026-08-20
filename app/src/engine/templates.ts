@@ -655,3 +655,4 @@ export const ENRICHED_TEMPLATES: SessionTemplate[] = TEMPLATES.map(t => {
 });
 
 export const ENRICHED_TEMPLATES_BY_ID: Map<string, SessionTemplate> = new Map(ENRICHED_TEMPLATES.map(t => [t.id, t]));
+export const TEMPLATES_BY_ID = new Map(TEMPLATES.map(t => [t.id, t]));

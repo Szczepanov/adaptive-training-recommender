@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { EXERCISES } from './exercises';
+import { EXERCISES, EXERCISES_BY_ID } from './exercises';
 import type { ExerciseDefinition } from './models';
 import { validateWorkoutLibrary } from './validation';
 
@@ -29,7 +29,7 @@ describe('exercise facet validation (M3.5)', () => {
   });
 
   it('rejects incompatible timed-sprint and field-domain declarations', () => {
-    const sprint = EXERCISES.find(exercise => exercise.id === 'sprint_15m')!;
+    const sprint = EXERCISES_BY_ID.get('sprint_15m')!;
     const invalid: ExerciseDefinition = {
       ...sprint,
       facets: {

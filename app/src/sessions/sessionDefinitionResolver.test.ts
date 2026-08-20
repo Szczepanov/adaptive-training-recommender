@@ -21,7 +21,7 @@ vi.mock('../services/externalPlanService', async importOriginal => {
     return { ...actual, externalPlanService: services.external };
 });
 vi.mock('../services/executionPrescriptionService', () => ({ executionPrescriptionService: services.prescription }));
-vi.mock('../workouts/catalog', () => ({ WORKOUTS: [FAKE_WORKOUT] }));
+vi.mock('../workouts/catalog', () => ({ WORKOUTS: [FAKE_WORKOUT], WORKOUTS_BY_ID: new Map([[FAKE_WORKOUT.id, FAKE_WORKOUT]]) }));
 
 import { computeContentHash } from '../engine/externalPlanHash';
 import { hashSessionDefinition } from './sessionDefinitionHash';

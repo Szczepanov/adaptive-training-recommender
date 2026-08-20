@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { TEMPLATES } from '../engine/templates.ts';
+import { TEMPLATES, TEMPLATES_BY_ID } from '../engine/templates.ts';
 import type { PlannedDose, Recommendation, SessionTemplate, TrainingSettings } from '../engine/models.ts';
 import { WORKOUTS } from './catalog.ts';
 import { resolveWorkoutPrescription, variantFor, workoutForTemplate } from './prescription.ts';
 
 function recommendation(templateId: string, overrides: Partial<Recommendation> = {}): Recommendation {
-  const template = TEMPLATES.find((item) => item.id === templateId);
+  const template = TEMPLATES_BY_ID.get(templateId);
   if (!template) throw new Error(`Missing template ${templateId}`);
   return { template, rationale: 'test', mode: 'train', ...overrides };
 }
