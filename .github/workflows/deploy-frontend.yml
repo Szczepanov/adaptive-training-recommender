@@ -32,6 +32,13 @@ permissions:
   contents: read
   id-token: write # required for keyless Workload Identity Federation auth
 
+# A second manual run started before the first finishes could both pass the Firestore drift
+# check, then race to deploy -- the later one silently wins and clobbers the earlier release.
+# Queue instead of running concurrently; never cancel a deploy that's already underway.
+concurrency:
+  group: deploy-frontend-${{ github.repository }}
+  cancel-in-progress: false
+
 env:
   GCP_PROJECT: ${{ secrets.GCP_PROJECT_ID }}
   CLOUDSDK_CORE_PROJECT: ${{ secrets.GCP_PROJECT_ID }} # process-scoped; never mutates a persisted gcloud config
@@ -45,6 +52,14 @@ jobs:
         working-directory: app
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false # this job never needs to push; don't leave the token in git config
+
+      - name: Require at least one deployment target
+        if: ${{ !inputs.deploy_hosting && !inputs.deploy_rules }}
+        run: |
+          echo "Both deploy_hosting and deploy_rules are false -- nothing to do. Enable at least one." >&2
+          exit 1
 
       - name: Authenticate to GCP (Workload Identity Federation, no key)
         uses: google-github-actions/auth@v2
@@ -76,6 +91,20 @@ jobs:
       - name: Install Node dependencies
         run: npm ci
 
+      # Firebase project ID and GCP project ID are the same string for this project (see
+      # docs/ops/cloud-run-deployment.md), but they're two independently-set secrets --
+      # nothing stops them drifting apart. If they ever did, this would build correctly and
+      # deploy successfully, just to the wrong Firebase project, silently. Fail before build.
+      - name: Verify VITE_FIREBASE_PROJECT_ID matches GCP_PROJECT_ID
+        if: ${{ inputs.deploy_hosting }}
+        env:
+          VITE_FIREBASE_PROJECT_ID: ${{ secrets.VITE_FIREBASE_PROJECT_ID }}
+        run: |
+          if [ "${VITE_FIREBASE_PROJECT_ID}" != "${GCP_PROJECT}" ]; then
+            echo "VITE_FIREBASE_PROJECT_ID (${VITE_FIREBASE_PROJECT_ID}) != GCP_PROJECT_ID (${GCP_PROJECT}) -- refusing to deploy to a possibly-wrong Firebase project." >&2
+            exit 1
+          fi
+
       # `npm run build` runs the full `npm run check` first (typecheck, lint, unit tests,
       # workout-catalog validation) -- never deploy a build that hasn't passed those.
       - name: Build frontend
@@ -90,9 +119,12 @@ jobs:
           VITE_FIREBASE_MEASUREMENT_ID: ${{ secrets.VITE_FIREBASE_MEASUREMENT_ID }}
         run: npm run build
 
+      # `npm exec --no --` (rather than bare `npx`) refuses to fall back to fetching an
+      # unreviewed package version from the registry if firebase-tools somehow isn't already
+      # installed -- it only ever runs the exact lockfile-pinned local binary.
       - name: Deploy to Firebase Hosting
         if: ${{ inputs.deploy_hosting }}
-        run: npx firebase deploy --only hosting --project "${GCP_PROJECT}" --non-interactive
+        run: npm exec --no -- firebase deploy --only hosting --project "${GCP_PROJECT}" --non-interactive
 
       # Fails closed on drift, same as the documented local procedure: if the deployed rules
       # don't match app/firestore.rules, stop here rather than overwrite blindly. Investigate

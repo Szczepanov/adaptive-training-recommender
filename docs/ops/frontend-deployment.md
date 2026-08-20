@@ -91,5 +91,6 @@ npm run firestore:rules:rollback -- --backup <downloaded-file>.json --confirm
 ```
 
 Hosting releases don't need this: Firebase Hosting keeps prior releases browsable in the
-console, and `firebase hosting:rollback` (via the Firebase console or CLI) repoints traffic to
-any of them directly -- no separate backup file to manage.
+console, and rolling back (Hosting -> your site -> release history -> **Rollback** on any
+prior release) repoints traffic to it directly -- no separate backup file to manage. There is
+no `firebase hosting:rollback` CLI command; the console is the only supported way to do this.

@@ -70,6 +70,8 @@ if ! gcloud iam workload-identity-pools describe "${POOL_ID}" --location=global 
     --display-name="GitHub Actions pool"
 fi
 
+EXPECTED_CONDITION="assertion.repository == '${GITHUB_REPO}' && assertion.ref == 'refs/heads/main'"
+
 echo "==> Creating OIDC Provider restricted to ${GITHUB_REPO}@main (skipping if it already exists)"
 if ! gcloud iam workload-identity-pools providers describe "${PROVIDER_ID}" \
     --location=global --workload-identity-pool="${POOL_ID}" >/dev/null 2>&1; then
@@ -78,8 +80,27 @@ if ! gcloud iam workload-identity-pools providers describe "${PROVIDER_ID}" \
     --workload-identity-pool="${POOL_ID}" \
     --display-name="GitHub Actions provider" \
     --attribute-mapping="google.subject=assertion.sub,attribute.repository=assertion.repository,attribute.ref=assertion.ref" \
-    --attribute-condition="assertion.repository == '${GITHUB_REPO}' && assertion.ref == 'refs/heads/main'" \
+    --attribute-condition="${EXPECTED_CONDITION}" \
     --issuer-uri="https://token.actions.githubusercontent.com"
+else
+  # The "skip if it already exists" path above never re-applies --attribute-condition, so a
+  # provider left over from before this restriction existed (or edited by hand) would
+  # silently keep trusting every branch/fork -- and every downstream workloadIdentityUser
+  # binding (github-deployer's below, github-frontend-deployer's further down) trusts
+  # whatever this provider accepts. Fail loudly rather than quietly granting broader trust
+  # than the rest of this script documents.
+  ACTUAL_CONDITION="$(gcloud iam workload-identity-pools providers describe "${PROVIDER_ID}" \
+    --location=global --workload-identity-pool="${POOL_ID}" \
+    --format='value(attributeCondition)')"
+  if [ "${ACTUAL_CONDITION}" != "${EXPECTED_CONDITION}" ]; then
+    echo "ERROR: existing OIDC provider '${PROVIDER_ID}' has attributeCondition:" >&2
+    echo "  ${ACTUAL_CONDITION}" >&2
+    echo "expected:" >&2
+    echo "  ${EXPECTED_CONDITION}" >&2
+    echo "Fix it (gcloud iam workload-identity-pools providers update-oidc ...) or delete and" >&2
+    echo "let this script recreate it before granting any identity access to this pool." >&2
+    exit 1
+  fi
 fi
 
 echo "==> Creating runtime service accounts (skipping if they already exist)"
