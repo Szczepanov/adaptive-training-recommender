@@ -3,6 +3,8 @@ import type {
     DailyRecommendation,
     DailyRecoverySnapshot,
     DailySubjectiveCheckin,
+    ExternalPrescription,
+    ExternalPrescriptionStep,
     FixedActivity,
     NormalizedGarminActivity,
     PlanningMode,
@@ -32,6 +34,7 @@ export interface UpcomingExternalPlanSession {
     status: 'planned' | 'moved';
     moved: boolean;
     isEvent: boolean;
+    prescription: ExternalPrescription;
 }
 
 export interface ContextBriefPlanningHandoffInput {
@@ -239,6 +242,31 @@ function renderGoalSpecifics(goals: readonly UserGoal[]): string {
     return ['### Goal specifics relevant to planning', '', ...lines].join('\n');
 }
 
+function renderPrescriptionStep(step: ExternalPrescriptionStep): string {
+    const dose: string[] = [];
+    if (step.sets !== undefined) dose.push(`${step.sets} set${step.sets === 1 ? '' : 's'}`);
+    if (step.repeat !== undefined) dose.push(`${step.repeat} rep${step.repeat === 1 ? '' : 's'}`);
+    if (step.durationMin !== undefined) dose.push(`${step.durationMin} min`);
+    if (step.durationSec !== undefined) dose.push(`${step.durationSec} s`);
+    if (step.target) dose.push(step.target);
+    if (step.recoverySec !== undefined) dose.push(`${step.recoverySec}s recovery`);
+    if (step.setRecoverySec !== undefined) dose.push(`${step.setRecoverySec}s set recovery`);
+    if (step.notes) dose.push(compactText(step.notes));
+    return dose.length > 0 ? `${step.name}: ${dose.join(' · ')}` : step.name;
+}
+
+function renderImportedPrescriptions(sessions: readonly UpcomingExternalPlanSession[]): string[] {
+    if (sessions.length === 0) return [];
+    const lines: string[] = ['', 'Imported-session prescription detail:'];
+    for (const session of sessions) {
+        lines.push(`- **${session.date} — ${session.title}:** ${compactText(session.prescription.summary)}`);
+        for (const step of session.prescription.steps ?? []) {
+            lines.push(`  - ${renderPrescriptionStep(step)}`);
+        }
+    }
+    return lines;
+}
+
 function renderUpcoming(input: ContextBriefPlanningHandoffInput): string {
     const endDate = addDaysToLocalDateString(input.asOfDate, UPCOMING_CONTEXT_DAYS - 1);
     const fixed = input.upcomingFixedActivities
@@ -272,16 +300,16 @@ function renderUpcoming(input: ContextBriefPlanningHandoffInput): string {
                     : `full block ${item.startDate}→${item.endDate}`,
             };
         });
-    const external = input.upcomingExternalSessions
-        .filter(item => item.date >= input.asOfDate && item.date <= endDate)
-        .map(item => ({
-            date: item.date,
-            source: `Imported plan: ${item.planTitle}`,
-            title: item.title,
-            dose: `${item.durationMin}${item.durationMax !== item.durationMin ? `–${item.durationMax}` : ''} min · ${item.intensity}`,
-            authority: `${item.priority} · ${item.flexibility}${item.moved ? ' · moved' : ''}${item.isEvent ? ' · EVENT' : ''}`,
-            notes: `revision ${item.revision}`,
-        }));
+    const visibleExternalSessions = input.upcomingExternalSessions
+        .filter(item => item.date >= input.asOfDate && item.date <= endDate);
+    const external = visibleExternalSessions.map(item => ({
+        date: item.date,
+        source: `Imported plan: ${item.planTitle}`,
+        title: item.title,
+        dose: `${item.durationMin}${item.durationMax !== item.durationMin ? `–${item.durationMax}` : ''} min · ${item.intensity}`,
+        authority: `${item.priority} · ${item.flexibility}${item.moved ? ' · moved' : ''}${item.isEvent ? ' · EVENT' : ''}`,
+        notes: `revision ${item.revision}`,
+    }));
     const rows = [...fixed, ...travel, ...external].sort((a, b) => a.date.localeCompare(b.date) || a.source.localeCompare(b.source));
 
     const lines: string[] = [
@@ -305,6 +333,7 @@ function renderUpcoming(input: ContextBriefPlanningHandoffInput): string {
     for (const row of rows) {
         lines.push(`| ${row.date} | ${row.source} | ${row.title} | ${row.dose} | ${row.authority} | ${row.notes || '—'} |`);
     }
+    lines.push(...renderImportedPrescriptions(visibleExternalSessions));
     return lines.join('\n');
 }
 
