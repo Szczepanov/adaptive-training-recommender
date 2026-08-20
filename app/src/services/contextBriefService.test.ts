@@ -11,6 +11,7 @@ const services = vi.hoisted(() => ({
     getProfileState: vi.fn(),
     getActiveGoalsState: vi.fn(),
     getFixedActivitiesInRangeState: vi.fn(),
+    getPlanBlocksInRangeState: vi.fn(),
     getActivePlanState: vi.fn(),
 }));
 
@@ -26,6 +27,7 @@ vi.mock('./preferencesService', () => ({ preferencesService: { getPreferencesSta
 vi.mock('./trainingIntentProfileService', () => ({ trainingIntentProfileService: { getProfileState: services.getProfileState } }));
 vi.mock('./goalService', () => ({ goalService: { getActiveGoalsState: services.getActiveGoalsState } }));
 vi.mock('./fixedActivityService', () => ({ fixedActivityService: { getActivitiesInRangeState: services.getFixedActivitiesInRangeState } }));
+vi.mock('./planBlockService', () => ({ planBlockService: { getBlocksInRangeState: services.getPlanBlocksInRangeState } }));
 vi.mock('./activeExternalPlanService', () => ({ activeExternalPlanService: { getActivePlanState: services.getActivePlanState } }));
 
 import { ContextBriefService } from './contextBriefService';
@@ -45,6 +47,7 @@ describe('ContextBriefService', () => {
         services.getProfileState.mockResolvedValue({ status: 'MISSING' });
         services.getActiveGoalsState.mockResolvedValue({ status: 'MISSING' });
         services.getFixedActivitiesInRangeState.mockResolvedValue({ status: 'AVAILABLE', data: [], revision: null });
+        services.getPlanBlocksInRangeState.mockResolvedValue({ status: 'AVAILABLE', data: [], revision: null });
         services.getActivePlanState.mockResolvedValue({ status: 'MISSING' });
     });
 
@@ -69,6 +72,29 @@ describe('ContextBriefService', () => {
         expect(services.getActivePlanState).toHaveBeenCalledTimes(7);
         expect(services.getActivePlanState).toHaveBeenNthCalledWith(1, 'u1', '2026-08-15', []);
         expect(services.getActivePlanState).toHaveBeenNthCalledWith(7, 'u1', '2026-08-21', []);
+    });
+
+    it('reads authored plan blocks across the visible handoff and exports travel scaling', async () => {
+        services.getPlanBlocksInRangeState.mockResolvedValue({
+            status: 'AVAILABLE',
+            revision: 'travel:r1',
+            data: [{
+                id: 'travel',
+                userId: 'u1',
+                phase: 'travel',
+                startDate: '2026-08-18',
+                endDate: '2026-08-20',
+                volumeScale: 0.6,
+                intensityScale: 0.8,
+                createdAt: '2026-08-01T00:00:00Z',
+                updatedAt: '2026-08-01T00:00:00Z',
+            }],
+        });
+
+        const result = await new ContextBriefService().build('u1', AS_OF, 14);
+
+        expect(services.getPlanBlocksInRangeState).toHaveBeenCalledWith('u1', '2026-08-15', '2026-08-21');
+        expect(result.text).toContain('2026-08-18→2026-08-20 | Plan block | Travel | volume ×0.6 · intensity ×0.8 | authored overlay');
     });
 
     it('uses padded fixed activities for placement but only exports commitments inside the visible horizon', async () => {
@@ -143,6 +169,14 @@ describe('ContextBriefService', () => {
         expect(result.text).toContain('active goals');
     });
 
+    it('reports unreadable travel overlays instead of treating them as no travel', async () => {
+        services.getPlanBlocksInRangeState.mockResolvedValue({ status: 'UNAVAILABLE', operation: 'read plan blocks', retryable: true });
+        const result = await new ContextBriefService().build('u1', AS_OF, 14);
+
+        expect(result.unavailableSources).toContain('plan blocks / travel overlays');
+        expect(result.text).toContain('plan blocks / travel overlays');
+    });
+
     it('fails closed on external placement when fixed-activity occupancy cannot be read', async () => {
         services.getFixedActivitiesInRangeState.mockResolvedValue({ status: 'UNAVAILABLE', operation: 'read fixed activities', retryable: true });
         const result = await new ContextBriefService().build('u1', AS_OF, 14);
@@ -191,11 +225,13 @@ describe('ContextBriefService', () => {
         services.getProfileState.mockRejectedValue(new Error('offline'));
         services.getActiveGoalsState.mockRejectedValue(new Error('offline'));
         services.getFixedActivitiesInRangeState.mockRejectedValue(new Error('offline'));
+        services.getPlanBlocksInRangeState.mockRejectedValue(new Error('offline'));
 
         const result = await new ContextBriefService().build('u1', AS_OF, 14);
         expect(result.text).toContain('# Training context brief');
         expect(result.unavailableSources).toContain('recovery snapshots');
         expect(result.unavailableSources).toContain('training settings');
+        expect(result.unavailableSources).toContain('plan blocks / travel overlays');
         expect(result.text).toContain('Do not assume any equipment or absence of injury');
         expect(result.text).toContain('DATA INCOMPLETE');
     });
