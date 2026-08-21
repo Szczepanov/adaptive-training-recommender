@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - experiment/typescript7-eslint10
+  pull_request:
+    branches:
+      - main
 
 permissions:
   contents: read
