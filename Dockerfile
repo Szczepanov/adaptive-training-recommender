@@ -7,8 +7,8 @@ WORKDIR /app
 # If pyproject.toml stops supporting the Docker runtime, fail the image build instead.
 ENV UV_PYTHON_DOWNLOADS=never
 
-# Pin the same modern uv release used by CI/lock generation so Python 3.14 resolution
-# and lock semantics are consistent across development and the production image.
+# Pin the same modern uv release used by CI so Python 3.14 resolution and lock
+# semantics are consistent across CI and the production image.
 RUN pip install --no-cache-dir uv==0.12.2
 
 # Copy project definition and lock file. README.md is required here even though it is
@@ -16,6 +16,10 @@ RUN pip install --no-cache-dir uv==0.12.2
 # that metadata while building the project, so `uv sync` fails with
 # "OSError: Readme file does not exist: README.md" without it.
 COPY pyproject.toml uv.lock README.md /app/
+
+# Fail closed if the committed lock no longer represents pyproject.toml for this
+# interpreter. `--frozen` alone intentionally skips lock freshness checks.
+RUN uv lock --check
 
 # Resolve third-party dependencies first, without building the project itself, so this
 # layer stays cached when only src/ changes.
