@@ -41,9 +41,6 @@ service cloud.firestore {
         && (adherence.notes == null || adherence.notes is string);
     }
 
-    // Adherence is the only routine update that does not change decision evidence. Keep
-    // it on a bounded fast path: revalidating a nested v3 audit and prescription can hit
-    // Firestore's 1,000-expression limit before the immutability checks are evaluated.
     function isValidAdherenceOnlyUpdate(userId, date) {
       return isOwner(userId)
         && resource.data.userId == userId
@@ -62,9 +59,6 @@ service cloud.firestore {
         && dose.intensity is number && dose.intensity >= 0 && dose.intensity <= 1.2;
     }
 
-    // Phase 9.7/D-SUBJAUDIT: compact, normalized subjective-drift provenance. Optional --
-    // production callers still supply no `subjectiveDrift` at all while the live default
-    // stays 'off' (see rules.ts/provenance.ts); this only validates the shape when present.
     function hasValidSubjectiveDriftAudit(drift) {
       return drift is map
         && drift.keys().hasOnly(['estimatorId', 'estimatorPolicyVersion', 'historyThroughDateExclusive', 'recentRecordedDays', 'longRecordedDays', 'contribution', 'perMetricContributions', 'decisionRelevant'])
@@ -163,8 +157,6 @@ service cloud.firestore {
       return request.resource.data.schemaVersion >= resource.data.schemaVersion;
     }
 
-    // Takes the already-computed decisionChanged flag rather than calling
-    // decisionFieldsUnchanged() itself -- see canUpdateRecommendation()'s comment for why.
     function auditWriteOnce(decisionChanged) {
       return !('recommendationAudit' in resource.data)
         || decisionChanged
@@ -211,13 +203,6 @@ service cloud.firestore {
         && (!('recommendationAudit' in resource.data) || (('recommendationAudit' in prior) && prior.recommendationAudit.policyVersion == resource.data.recommendationAudit.policyVersion && prior.recommendationAudit.evaluatedAt == resource.data.recommendationAudit.evaluatedAt));
     }
 
-    // decisionFieldsUnchanged() itself does ~10 field comparisons; the update rule below
-    // used to call it 3 times over (once directly in each side of the changed/unchanged
-    // branch, once more indirectly inside auditWriteOnce()) purely because the rules
-    // language has no memoization. That redundancy was consuming enough of Firestore's
-    // ~1000 expression-evaluation budget that a decision-changing update carrying a
-    // populated additionalSessions binding could no longer be validated at all -- calling
-    // it once via `let` and threading the result through recovers that headroom.
     function canUpdateRecommendation(userId, date) {
       let decisionChanged = !decisionFieldsUnchanged();
       return hasValidRecommendation(userId, date)
@@ -289,7 +274,6 @@ service cloud.firestore {
       allow delete: if isOwner(userId);
     }
 
-    // --- Decision journal (Phase 9.0): immutable morning evidence plus an evening actual outcome.
     function hasValidDecisionJournalEntry(userId, date) {
       return hasOwnedUserId(userId)
         && isDateDocument(date)
@@ -450,10 +434,6 @@ service cloud.firestore {
       let data = request.resource.data;
       return data.keys().hasOnly(['schema', 'planId', 'revision', 'title', 'startDate', 'weekCount', 'notes', 'sessions'])
         && data.keys().hasAll(['schema', 'planId', 'revision', 'title', 'startDate', 'weekCount', 'sessions'])
-        // M3.6: v2 carries the same envelope, just a normalized SessionDefinition per
-        // session instead of v1's flat prescription -- neither is deep-validated here (see
-        // the strength-session-logging comment below for why), so accepting either schema
-        // literal changes nothing else about this check.
         && data.schema in ['adaptive-training-recommender/external-plan@1', 'adaptive-training-recommender/external-plan@2']
         && data.revision is int && data.revision >= 1
         && isValidActivityDate(data.startDate)
@@ -582,17 +562,6 @@ service cloud.firestore {
       allow write: if false;
     }
 
-    // --- Strength session logging (ADR-0021, S1.3): the raw per-set log (D-SETLOG). Unlike
-    // every collection above, this document holds variable-length nested arrays
-    // (exercises[].sets[]) whose per-element fields (weightKg, reps, gauge, ...) this rules
-    // language cannot validate -- there is no per-element iteration/predicate construct over
-    // a `list` here, only `is list` and `.size()`, which is why every other array-of-maps
-    // field in this file (external_plans' `sessions`, plan_blocks' `assignments`) is bounded
-    // the same way rather than deep-validated. Structural bounds are enforced here; per-set
-    // correctness is enforced defensively on read by
-    // persistence/parsers/strengthSession.ts's parseStrengthSession, which drops a malformed
-    // set or exercise rather than trusting it -- the read side is the actual gate for
-    // per-element data quality, not these rules.
     function isStrengthSessionDocument(sessionId) {
       return request.resource.data.sessionId == sessionId;
     }
@@ -609,8 +578,6 @@ service cloud.firestore {
         && data.updatedAt is string && data.updatedAt.size() > 0
         && (!('completedAt' in data) || (data.completedAt is string && data.completedAt.size() > 0))
         && data.state in ['in_progress', 'completed', 'abandoned']
-        // Completion time belongs only to a completed session. An abandoned session keeps
-        // its sets but was never completed; an in-progress session has not closed yet.
         && ((data.state == 'completed') == ('completedAt' in data))
         && (!('sourceRecommendationDate' in data) || isValidActivityDate(data.sourceRecommendationDate))
         && data.exercises is list && data.exercises.size() <= 30
@@ -623,20 +590,11 @@ service cloud.firestore {
       allow read: if isOwner(userId);
       allow create: if hasValidStrengthSession(userId, sessionId)
         && request.resource.data.state == 'in_progress';
-      // date and startedAt are fixed at creation (ADR-0021: date is the Warsaw-local date
-      // of session START, never recomputed) -- an update may append sets, change state, and
-      // advance updatedAt/completedAt, but may not rewrite when the session started or which
-      // calendar day it belongs to.
       allow update: if hasValidStrengthSession(userId, sessionId)
         && keepsOwnership(userId)
-        // `completed` and `abandoned` are terminal. This is an integrity property, not a
-        // UI convention: a closed record may already have updated 1RM history or supplied
-        // a replayable exposure, so changing its sets/state would rewrite history.
         && resource.data.state == 'in_progress'
         && request.resource.data.date == resource.data.date
         && request.resource.data.startedAt == resource.data.startedAt;
-      // Unlike decision_journal (an audited record), a mis-started session is the athlete's
-      // own workout log and must be removable -- matches goals' allow delete precedent.
       allow delete: if isOwner(userId);
     }
 
@@ -713,7 +671,6 @@ service cloud.firestore {
         && data.keys().hasAll(['userId', 'occurrenceId', 'date', 'authority', 'definitionRef', 'state', 'createdAt', 'updatedAt'])
         && data.occurrenceId == occurrenceId
         && isValidActivityDate(data.date)
-        // M3.3: supports unplanned_log, schedule, replace_recommendation, and additional_session
         && data.authority in ['unplanned_log', 'schedule', 'replace_recommendation', 'additional_session']
         && data.state in ['scheduled', 'active', 'superseded', 'completed', 'abandoned', 'missed']
         && data.definitionRef is map
@@ -738,9 +695,6 @@ service cloud.firestore {
       allow delete: if isOwner(userId);
     }
 
-    // M3.2: optional snapshot of the non-`blocks` fields `definitionHash` was computed
-    // over, so a `catalog` source can be replayed with historical fidelity after its live
-    // catalog entry is later edited. Absent on prescriptions written before this existed.
     function hasValidDisplayMetadata(meta) {
       return meta is map
         && meta.keys().hasOnly(['title', 'summary', 'intent', 'dominantModality', 'duration'])
@@ -822,14 +776,6 @@ service cloud.firestore {
         && (!('occurrenceId' in binding) || (binding.occurrenceId is string && binding.occurrenceId.size() > 0));
     }
 
-    // Lighter than hasValidSessionSource: checks the recognized source kind plus presence
-    // of that kind's required fields, but skips hasOnly() (no rejection of stray extra
-    // fields) and per-field type/size checks (e.g. catalogVersion being a string) -- see
-    // hasValidAdditionalSessions for why. The client (engine/validation.ts) still applies
-    // the full per-kind check before any write reaches here; this is defense in depth
-    // against a client that skips it, not the only gate. This still closes the specific
-    // gap of a binding that names a valid `kind` but omits that kind's required fields
-    // entirely (e.g. `{ kind: 'catalog' }` with no workoutId/catalogVersion).
     function hasValidAdditionalSessionSourceShape(source) {
       return source is map && (
         (source.kind == 'catalog' && source.keys().hasAll(['workoutId', 'catalogVersion']))
@@ -848,15 +794,6 @@ service cloud.firestore {
         && (!('occurrenceId' in binding) || (binding.occurrenceId is string && binding.occurrenceId.size() > 0));
     }
 
-    // Bounded to 4 (not the schema's historical 16): the rules language has no
-    // iteration, so per-element validation is unrolled by index below. A prior attempt
-    // at this same check unrolled to 16 elements calling the full hasValidSessionReferenceBinding
-    // per element and exceeded the emulator's ~1000 expression-evaluation budget per write;
-    // 4 elements at that same per-kind rigor still didn't fit even after removing other
-    // redundant evaluation (see canUpdateRecommendation's comment), hence the lighter
-    // per-element check above. 4 is a real bound, not a compromise -- adjudicateAuthoredSession's
-    // systemic-cost ceiling never admits more than a handful of same-day sessions in
-    // practice (see authoredSessionGates.ts).
     function hasValidAdditionalSessions(list) {
       return list is list && list.size() <= 4
         && (list.size() < 1 || hasValidAdditionalSessionBinding(list[0]))
@@ -932,9 +869,6 @@ service cloud.firestore {
       }
     }
 
-    // M5.1: SessionResponse -- linkage plus non-tissue session facts only (D-MRESP).
-    // DailySubjectiveCheckin.tissueResponses remains the sole tissue authority; this
-    // record never carries a tissue value.
     function hasValidSessionResponse(userId, responseId) {
       let data = request.resource.data;
       return hasOwnedUserId(userId)
@@ -949,17 +883,12 @@ service cloud.firestore {
         && isValidActivityDate(data.sourceSession.date)
         && data.window in ['immediate', 'later_day', 'next_morning']
         && isValidActivityDate(data.date)
-        // `date` equals sourceSession.date for `immediate`, strictly later otherwise
-        // (models.ts's own documented invariant) -- ISO YYYY-MM-DD strings compare
-        // lexicographically the same as chronologically.
         && (data.window == 'immediate' ? data.date == data.sourceSession.date : data.date > data.sourceSession.date)
         && data.checkinRef is map
         && data.checkinRef.keys().hasOnly(['date'])
         && isValidActivityDate(data.checkinRef.date)
         && (!('occurrenceId' in data) || (
           data.occurrenceId is string && data.occurrenceId.size() > 0
-          // Cannot reference another user's occurrence: it must exist under this same
-          // user's own path -- a cross-user id structurally cannot resolve here.
           && exists(/databases/$(database)/documents/users/$(userId)/session_occurrences/$(data.occurrenceId))
         ))
         && (!('sessionRpe' in data) || (data.sessionRpe is number && data.sessionRpe >= 0 && data.sessionRpe <= 10))
@@ -975,10 +904,6 @@ service cloud.firestore {
       allow create: if hasValidSessionResponse(userId, responseId);
       allow update: if hasValidSessionResponse(userId, responseId)
         && keepsOwnership(userId)
-        // Edits preserve provenance: identity/occurrence/window/createdAt never change
-        // after creation -- only the non-tissue facts and updatedAt may be revised.
-        // occurrenceId's presence and value are both pinned (not just its value when
-        // present), so a response created without one can't have one added later either.
         && request.resource.data.sourceSession == resource.data.sourceSession
         && ('occurrenceId' in request.resource.data) == ('occurrenceId' in resource.data)
         && (!('occurrenceId' in resource.data) || request.resource.data.occurrenceId == resource.data.occurrenceId)
@@ -988,10 +913,6 @@ service cloud.firestore {
       allow delete: if isOwner(userId);
     }
 
-    // The browser may only ever (re-)queue a fresh 'pending' request -- 'processing',
-    // 'completed', 'failed', and the claimId/claimedAt fields are produced solely by
-    // poll_manual_sync_requests's Admin SDK writes, which bypass these rules entirely.
-    // A client cannot self-report a sync outcome it never ran.
     function hasValidGarminSyncRequest(userId) {
       let data = request.resource.data;
       return hasOwnedUserId(userId)
@@ -1003,12 +924,6 @@ service cloud.firestore {
         && (!('error' in data) || data.error == null);
     }
 
-    // A manual "Sync Now" request (D-GARMINSYNC): the web app writes a single fixed-id
-    // doc to ask the garmin_sync poller (see poll_manual_sync_requests) to run an
-    // immediate forced sync rather than waiting for the next scheduled tick. Single
-    // outstanding request per user, mirroring garmin_workout_queue's per-item status
-    // convention -- the poller (Admin SDK, bypasses these rules) is what actually
-    // claims the request ('processing') and transitions it to 'completed'/'failed'.
     match /users/{userId}/garmin_sync_requests/{requestId} {
       allow read: if isOwner(userId);
       allow create, update: if hasValidGarminSyncRequest(userId) && requestId == 'latest';
@@ -1030,8 +945,6 @@ service cloud.firestore {
       }
     }
 
-    // --- Performance outcome validation (M7 / OV2): raw evidence only. These rules do
-    // not create progress labels, block verdicts, or recommendation-selection authority.
     function hasKnownOutcomeMetric(metricId) {
       return metricId in [
         'cycling_tt_20m_mean_power_w',
@@ -1246,6 +1159,80 @@ service cloud.firestore {
           );
         allow update, delete: if false;
       }
+    }
+
+    function hasValidHealthAnomalyThresholdPolicy(policy) {
+      return policy is map
+        && policy.keys().hasOnly(['policyVersion', 'moderateDeviation', 'strongDeviation', 'minimumCoreSignalsForMultiSignal', 'persistenceDaysForEscalation', 'minimumHistoryCount', 'minimumRecentDayCoverage', 'maxBaselineAgeDays', 'estimatorBySignal'])
+        && policy.keys().hasAll(['policyVersion', 'moderateDeviation', 'strongDeviation', 'minimumCoreSignalsForMultiSignal', 'persistenceDaysForEscalation', 'minimumHistoryCount', 'minimumRecentDayCoverage', 'maxBaselineAgeDays', 'estimatorBySignal'])
+        && policy.policyVersion is string && policy.policyVersion.size() > 0 && policy.policyVersion.size() <= 128
+        && policy.moderateDeviation is number && policy.moderateDeviation > 0 && policy.moderateDeviation <= 20
+        && policy.strongDeviation is number && policy.strongDeviation > policy.moderateDeviation && policy.strongDeviation <= 20
+        && policy.minimumCoreSignalsForMultiSignal is int && policy.minimumCoreSignalsForMultiSignal >= 2 && policy.minimumCoreSignalsForMultiSignal <= 3
+        && policy.persistenceDaysForEscalation is int && policy.persistenceDaysForEscalation >= 1 && policy.persistenceDaysForEscalation <= 30
+        && policy.minimumHistoryCount is int && policy.minimumHistoryCount >= 1 && policy.minimumHistoryCount <= 28
+        && policy.minimumRecentDayCoverage is number && policy.minimumRecentDayCoverage >= 0 && policy.minimumRecentDayCoverage <= 1
+        && policy.maxBaselineAgeDays is int && policy.maxBaselineAgeDays >= 0 && policy.maxBaselineAgeDays <= 30
+        && policy.estimatorBySignal is map
+        && policy.estimatorBySignal.keys().hasOnly(['rhr', 'respiration', 'hrv'])
+        && policy.estimatorBySignal.keys().hasAll(['rhr', 'respiration', 'hrv'])
+        && policy.estimatorBySignal.rhr in ['mean-stdev-28d', 'median-mad-28d', 'log-mean-stdev-28d']
+        && policy.estimatorBySignal.respiration in ['mean-stdev-28d', 'median-mad-28d', 'log-mean-stdev-28d']
+        && policy.estimatorBySignal.hrv in ['mean-stdev-28d', 'median-mad-28d', 'log-mean-stdev-28d'];
+    }
+
+    function hasValidHealthAnomalyRevision(userId, date, revisionId) {
+      let data = request.resource.data;
+      let source = data.source;
+      let assessment = data.assessment;
+      return isOwner(userId)
+        && data.keys().hasOnly(['userId', 'date', 'revisionId', 'idempotencyKey', 'computedAt', 'policyVersion', 'thresholdPolicy', 'mode', 'source', 'assessment', 'schemaVersion'])
+        && data.keys().hasAll(['userId', 'date', 'revisionId', 'idempotencyKey', 'computedAt', 'policyVersion', 'thresholdPolicy', 'mode', 'source', 'assessment', 'schemaVersion'])
+        && data.userId == userId
+        && data.date == date
+        && isValidActivityDate(data.date)
+        && data.revisionId == revisionId
+        && data.revisionId is string && data.revisionId.matches('^ha-[0-9a-f]{16}$')
+        && data.idempotencyKey is string && data.idempotencyKey.size() > 0 && data.idempotencyKey.size() <= 160
+        && data.computedAt is string && data.computedAt.size() > 0
+        && data.policyVersion is string && data.policyVersion.size() > 0 && data.policyVersion.size() <= 128
+        && data.mode in ['shadow-v1', 'visible-v1', 'tighten-v1']
+        && data.schemaVersion == 1
+        && hasValidHealthAnomalyThresholdPolicy(data.thresholdPolicy)
+        && source is map
+        && source.keys().hasOnly(['timezone', 'recoverySnapshotRevision', 'checkinRevision', 'historyWindowStart', 'historyWindowEndExclusive', 'historySnapshotRevisions', 'travelContextRevision', 'persistenceLookbackStart'])
+        && source.keys().hasAll(['timezone', 'recoverySnapshotRevision', 'checkinRevision', 'historyWindowStart', 'historyWindowEndExclusive', 'historySnapshotRevisions', 'travelContextRevision', 'persistenceLookbackStart'])
+        && source.timezone == 'Europe/Warsaw'
+        && (source.recoverySnapshotRevision == null || source.recoverySnapshotRevision is string)
+        && (source.checkinRevision == null || source.checkinRevision is string)
+        && isValidActivityDate(source.historyWindowStart)
+        && source.historyWindowEndExclusive == date
+        && source.historySnapshotRevisions is list && source.historySnapshotRevisions.size() <= 28
+        && (source.travelContextRevision == null || source.travelContextRevision is string)
+        && isValidActivityDate(source.persistenceLookbackStart)
+        && assessment is map
+        && assessment.keys().hasOnly(['state', 'evidenceLevel', 'coreSignals', 'supportingSignals', 'explanations', 'unexplainedEvidence', 'persistenceDays', 'episodeId', 'episodeDay', 'dataQuality', 'rationale', 'policyVersion', 'thresholdPolicyVersion', 'mode'])
+        && assessment.keys().hasAll(['state', 'evidenceLevel', 'coreSignals', 'supportingSignals', 'explanations', 'unexplainedEvidence', 'persistenceDays', 'episodeId', 'episodeDay', 'dataQuality', 'rationale', 'policyVersion', 'thresholdPolicyVersion', 'mode'])
+        && assessment.state in ['normal', 'explained_recovery_strain', 'watch_unexplained', 'possible_illness_or_systemic_stress', 'symptoms_reported']
+        && assessment.evidenceLevel in ['none', 'low', 'moderate', 'high']
+        && assessment.coreSignals is list && assessment.coreSignals.size() == 3
+        && assessment.supportingSignals is list && assessment.supportingSignals.size() <= 32
+        && assessment.explanations is list && assessment.explanations.size() <= 32
+        && assessment.unexplainedEvidence is list && assessment.unexplainedEvidence.size() <= 3
+        && assessment.persistenceDays is int && assessment.persistenceDays >= 0 && assessment.persistenceDays <= 365
+        && (assessment.episodeId == null || (assessment.episodeId is string && assessment.episodeId.size() <= 160))
+        && (assessment.episodeDay == null || (assessment.episodeDay is int && assessment.episodeDay >= 1 && assessment.episodeDay <= 365))
+        && assessment.dataQuality is list && assessment.dataQuality.size() <= 3
+        && assessment.rationale is map
+        && assessment.policyVersion == data.policyVersion
+        && assessment.thresholdPolicyVersion == data.thresholdPolicy.policyVersion
+        && assessment.mode == data.mode;
+    }
+
+    match /users/{userId}/health_anomaly_assessments/{date}/revisions/{revisionId} {
+      allow read: if isOwner(userId);
+      allow create: if hasValidHealthAnomalyRevision(userId, date, revisionId);
+      allow update, delete: if false;
     }
 
     function hasValidCompetitionOutcome(userId, outcomeId) {
