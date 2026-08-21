@@ -6,6 +6,7 @@ function recommendation(
     date: string,
     policyVersion?: string,
     externalPlan?: { planId: string; revision: number; sessionId: string; contentHash: string },
+    revision = 1,
 ): DailyRecommendation {
     return {
         userId: 'u1',
@@ -17,7 +18,7 @@ function recommendation(
         mode: 'train',
         rationale: 'test',
         schemaVersion: 3,
-        revision: 1,
+        revision,
         createdAt: `${date}T05:00:00.000Z`,
         updatedAt: `${date}T05:00:00.000Z`,
         adherence: {
@@ -67,6 +68,21 @@ describe('derivePolicySegments', () => {
         )).toEqual([
             { startDate: '2026-08-01', endDate: '2026-08-04', policyVersion: 'unknown', planningMode: 'unknown' },
             { startDate: '2026-08-05', endDate: '2026-08-10', policyVersion: 'policy-a', planningMode: 'unknown' },
+        ]);
+    });
+
+    it('selects the highest same-day revision regardless of caller order', () => {
+        const lowerRevision = recommendation('2026-08-05', 'policy-a', undefined, 1);
+        const higherRevision = recommendation('2026-08-05', 'policy-b', undefined, 2);
+        const period = { startDate: '2026-08-01', endDate: '2026-08-10' };
+
+        const forward = derivePolicySegments([lowerRevision, higherRevision], period);
+        const reversed = derivePolicySegments([higherRevision, lowerRevision], period);
+
+        expect(reversed).toEqual(forward);
+        expect(forward).toEqual([
+            { startDate: '2026-08-01', endDate: '2026-08-04', policyVersion: 'unknown', planningMode: 'unknown' },
+            { startDate: '2026-08-05', endDate: '2026-08-10', policyVersion: 'policy-b', planningMode: 'unknown' },
         ]);
     });
 
