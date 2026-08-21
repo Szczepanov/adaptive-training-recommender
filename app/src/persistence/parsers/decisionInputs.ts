@@ -73,12 +73,12 @@ export function parseSubjectiveCheckin(raw: unknown, documentPath: string, userI
     if (!['painOrInjury', 'unusuallyLimitedTime', 'alreadyTrainedToday'].every(field => typeof raw[field] === 'boolean')) {
         return issue(documentPath, 'invalid-safety-flag');
     }
-    if (raw.illnessSymptoms !== undefined && typeof raw.illnessSymptoms !== 'boolean') {
-        return issue(documentPath, 'invalid-safety-flag', 'illnessSymptoms');
-    }
-    // Legacy documents must still carry their compatibility flag. The only accepted
-    // context-only exception is a rich symptoms block whose `present` value is authoritative.
-    if (!richSymptomsSupplied && typeof raw.illnessSymptoms !== 'boolean') {
+    // Legacy documents must still carry their compatibility flag as a real boolean. The
+    // only accepted context-only exception is an omitted flag alongside a rich symptoms
+    // block, whose `present` value is authoritative (HA1 precedence).
+    const illnessSymptomsValid = typeof raw.illnessSymptoms === 'boolean'
+        || (raw.illnessSymptoms === undefined && richSymptomsSupplied);
+    if (!illnessSymptomsValid) {
         return issue(documentPath, 'invalid-safety-flag', 'illnessSymptoms');
     }
     if (!hasNullableNumbers(raw, ['readiness', 'sleepQuality', 'fatigue', 'soreness', 'mentalStress', 'motivation'])
