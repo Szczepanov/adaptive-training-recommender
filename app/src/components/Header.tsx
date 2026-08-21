@@ -87,6 +87,12 @@ export const Header: React.FC<HeaderProps> = ({
             Sessions
           </button>
           <button
+            className={`nav-link ${screen === 'testing' ? 'active' : ''}`}
+            onClick={() => handleNavigate('testing')}
+          >
+            Testing
+          </button>
+          <button
             className={`nav-link ${screen === 'goals' ? 'active' : ''}`}
             onClick={() => handleNavigate('goals')}
           >
