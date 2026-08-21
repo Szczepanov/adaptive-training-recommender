@@ -804,6 +804,22 @@ only after completion.
 - `useSessionRunner.ts` completes the 1RM derivation loop on session finish via `preferencesService.applyOneRepMaxDerivations`.
 - Non-Strength and general sessions route through `SessionRunner`. The v1 Strength runner and global resume banner are maintained alongside `SessionRunner` during the transition period.
 
+**Residual cutover debt (2026-08-21).** Parity being reached does not mean the dual-runner
+state is closed. `app/src/App.tsx` still maintains two live execution lifecycles: the
+`strength` route uses `StrengthSessionRunner` + `strengthSessionService` +
+`activeStrengthSession`, while structured/testing routes use the generic `SessionRunner` +
+`sessionExecutionService` + `activeStructuredSession`. `app/src/components/StrengthSessionRunner.tsx`
+remains present. This is genuine residual implementation debt, not stale prose — see
+[2026-08-21 post-HA-D plan reconciliation, R4](../analysis/2026-08-21-post-ha-d-plan-reconciliation.md#r4--the-legacy-strength-runner-is-genuine-residual-implementation-debt).
+The retirement is scoped as its own cutover PR, preserving the permanent Strength-v1 history
+read compatibility model while routing new Strength execution through the generic runner.
+Before removing `StrengthSessionRunner`, explicitly cover: a catalog Strength recommendation
+starting through the generic runner; in-progress resume after reload; RIR/RPE/velocity-loss/
+technical gauges remaining available; last comparable set context remaining visible;
+completion still applying derived 1RM writeback; Strength-v1 historical records remaining
+readable through the compatibility read model; and no second active-session banner/lifecycle
+remaining.
+
 ### M3.5 `[x]` Bounded exercise/drill facet vocabulary
 
 **Outcome (2026-08-18).** `ExerciseDefinition.facets` provides a bounded optional vocabulary for
