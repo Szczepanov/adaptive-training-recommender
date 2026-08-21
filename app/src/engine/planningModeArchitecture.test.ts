@@ -17,13 +17,17 @@ const SRC_DIR = dirname(ENGINE_DIR);
  * Paths relative to `src/`, not basenames — the scan now spans directories where a
  * basename could collide. Each entry owns the persisted field itself rather than
  * consuming the effective mode:
- *   - the authority, and the validator that guards the stored value;
+ *   - the authority, and the validators that guard the stored value;
  *   - the settings editor, which must read the athlete's *stated* intent in order to let
  *     them change it. Reading the field to edit it is not deriving a mode from it.
  */
 const DIRECT_PROFILE_ACCESS_ALLOWLIST = new Set([
     'engine/planningMode.ts',
     'engine/validation.ts',
+    // HA1 keeps the pre-existing validators byte-for-byte in validationCore.ts while
+    // validation.ts adds the health-context compatibility wrapper. Both remain schema
+    // validation boundaries; neither derives the effective runtime planning mode.
+    'engine/validationCore.ts',
     'components/preferences/TrainingPlanSection.tsx',
     'components/preferences/usePreferences.ts',
 ]);
@@ -139,9 +143,10 @@ describe('planning-mode architecture authority', () => {
                 }
 
                 // No engine module may even read the persisted profile's mode to make its own
-                // decision. validation.ts is the only non-authority exception because it checks
-                // the persisted schema rather than deriving runtime behavior. This also catches
-                // aliasing such as `const mode = profile.planningMode` before a later branch.
+                // decision. Validation modules are the only non-authority exceptions because
+                // they check the persisted schema rather than deriving runtime behavior. This
+                // also catches aliasing such as `const mode = profile.planningMode` before a
+                // later branch.
                 if (!DIRECT_PROFILE_ACCESS_ALLOWLIST.has(fileName) && isPlanningModeAccess(node)) {
                     violations.push(`${fileName}:${lineOf(source, node)} reads TrainingIntentProfile.planningMode outside the authority`);
                 }
