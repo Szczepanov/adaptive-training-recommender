@@ -1,8 +1,8 @@
 # Performance outcome validation & goal-progress loop
 
 * **Capability prefix:** `OV`
-* **Status:** `Approved`
-* **Approved:** 2026-08-21 by the project owner. Implementation will proceed in separate PRs.
+* **Status:** `In progress`
+* **Approved:** 2026-08-21 by the project owner. Implementation proceeds in separate PRs: PR #154 delivered the OV0/OV1 contract foundation; PR #155 carries OV2 persistence/manual-entry plus this documentation reconciliation.
 * **Blocked by:** none for evidence-only implementation. Code that changes recommendation behaviour remains outside this plan's current authority and is still gated by the active Phase 9.0 evidence boundary plus the separate ADR/ship decision described below.
 * **Unlocks:** protocol-locked repeated testing, honest individual progress interpretation, block-level outcome reports, and later evidence for whether stable recommendation-policy versions are associated with better goal outcomes.
 * **Source analysis:** [`2026-08-21-performance-outcome-validation.md`](../analysis/2026-08-21-performance-outcome-validation.md)
@@ -144,16 +144,16 @@ OV1–OV6 may be implemented while Phase 9.0 runs because they are evidence-only
 
 | Item | Title | Status | Blocked by |
 |---|---|:---:|---|
-| OV0.1 | Record M7 trigger and scope cutline | `[ ]` | none — plan approved 2026-08-21 |
-| OV0.2 | Freeze v1 terminology and evidence planes | `[ ]` | OV0.1 |
-| OV1.1 | Minimal metric registry | `[ ]` | OV0.2 |
-| OV1.2 | Immutable measurement protocols | `[ ]` | OV1.1 |
-| OV1.3 | Comparable-series and reliability provenance | `[ ]` | OV1.2 |
-| OV1.4 | Architecture boundary tests | `[ ]` | OV1.1 |
-| OV2.1 | Metric observation persistence | `[ ]` | OV1.3 |
-| OV2.2 | Assessment attempt lifecycle | `[ ]` | OV2.1 |
-| OV2.3 | Manual observation adapter first | `[ ]` | OV2.2 |
-| OV2.4 | Firestore rules/emulator coverage | `[ ]` | OV2.1–OV2.3 |
+| OV0.1 | Record M7 trigger and scope cutline | `[x]` | none — trigger satisfied 2026-08-21 |
+| OV0.2 | Freeze v1 terminology and evidence planes | `[x]` | OV0.1 |
+| OV1.1 | Minimal metric registry | `[x]` | OV0.2 |
+| OV1.2 | Immutable measurement protocols | `[x]` | OV1.1 |
+| OV1.3 | Comparable-series and reliability provenance | `[x]` | OV1.2 |
+| OV1.4 | Architecture boundary tests | `[x]` | OV1.1 |
+| OV2.1 | Metric observation persistence | `[x]` | OV1.3 |
+| OV2.2 | Assessment attempt lifecycle | `[x]` | OV2.1 |
+| OV2.3 | Manual observation adapter first | `[x]` | OV2.2 |
+| OV2.4 | Firestore rules/emulator coverage | `[x]` | OV2.1–OV2.3 |
 | OV3.1 | Testing intent in existing session flow | `[ ]` | OV2.2, existing session runner |
 | OV3.2 | Protocol-lock/familiarization/validity UX | `[ ]` | OV3.1 |
 | OV3.3 | Test completion and raw observation write | `[ ]` | OV3.2 |
@@ -175,11 +175,13 @@ OV1–OV6 may be implemented while Phase 9.0 runs because they are evidence-only
 | OV8.1 | Multi-block policy-segment report | `[ ]` | multiple comparable prospective blocks |
 | OV8.2 | Decide whether any outcome signal deserves planning authority | `[ ]` | OV8.1 + separate ADR if yes |
 
+**Implementation status (2026-08-21).** PR #154 merged the contract foundation (OV0/OV1 code); PR #155 completes the persistence/manual-entry slice (OV2), including immutable protocol storage needed to close OV1.2 end to end. The next code slice is PR C / OV3.1–OV3.4. No progress labels, block verdicts or recommendation-policy inputs have shipped.
+
 ---
 
 # OV0 — contract and scope
 
-## OV0.1 `[ ]` Record M7 trigger and scope cutline
+## OV0.1 `[x]` Record M7 trigger and scope cutline
 
 **Why.** M7 was deliberately usage-triggered. The triggering condition is now real: the athlete wants repeated, standardized performance tests specifically to determine whether training is achieving block goals.
 
@@ -196,7 +198,7 @@ Record the v1 product cutline:
 
 **Done when.** The parent plan and plan index no longer imply M7 is waiting on athlete demand.
 
-## OV0.2 `[ ]` Freeze terminology and evidence planes
+## OV0.2 `[x]` Freeze terminology and evidence planes
 
 Add a short architecture note or code-level vocabulary that preserves three distinct concepts:
 
@@ -218,7 +220,7 @@ The exact TypeScript location may differ after implementation review; the semant
 
 This is the concrete activation of M7.1.
 
-## OV1.1 `[ ]` Minimal metric registry
+## OV1.1 `[x]` Minimal metric registry
 
 Create `app/src/observations/` only for metrics that will actually be used.
 
@@ -259,7 +261,7 @@ A derived `cycling_ftp95_estimate_w` may exist later but must be algorithm-versi
 
 **Done when.** Unit mismatch fails; unsupported metric IDs fail; `context_only` cannot be promoted to a primary/secondary outcome binding; no unused large catalogue ships.
 
-## OV1.2 `[ ]` Immutable measurement protocols
+## OV1.2 `[x]` Immutable measurement protocols
 
 Implement the M7 `MeasurementProtocol` contract.
 
@@ -331,7 +333,7 @@ Static application-owned defaults may be bundled in code and materialized by ref
 
 **Done when.** Material protocol changes create a new revision; old observations continue resolving their exact revision; the series-defining dimension set and canonicalization version are explicit and replayable.
 
-## OV1.3 `[ ]` Comparable series and reliability provenance
+## OV1.3 `[x]` Comparable series and reliability provenance
 
 Add pure comparability logic.
 
@@ -370,7 +372,7 @@ Rules:
 
 **Done when.** Same protocol/device produces the same key; changed series-defining source/setup produces a different key; equivalent canonical input ordering does not; reliability source and statistic are always visible.
 
-## OV1.4 `[ ]` Architecture boundary tests
+## OV1.4 `[x]` Architecture boundary tests
 
 Extend the existing architecture guard pattern.
 
@@ -397,7 +399,7 @@ Observation types may be imported by evidence/reporting code. Production selecti
 
 Concrete activation of M7.2.
 
-## OV2.1 `[ ]` Metric observation persistence
+## OV2.1 `[x]` Metric observation persistence
 
 Persist raw protocol observations append-only. Corrections are new immutable revisions of one stable logical observation; they do not overwrite the original value.
 
@@ -472,7 +474,7 @@ A correction is therefore distinguishable from a second independent observation.
 
 **Done when.** Raw revisions survive recomputation; invalid/practice revisions remain inspectable; a correction chain is deterministic; readers cannot accidentally treat a superseded revision as current.
 
-## OV2.2 `[ ]` Assessment attempt lifecycle
+## OV2.2 `[x]` Assessment attempt lifecycle
 
 A protocol test session is more than one scalar. Persist an attempt header so warm-up, validity and multiple protocol metrics share identity.
 
@@ -537,7 +539,7 @@ Suggested path:
 users/{uid}/competition_outcomes/{competitionOutcomeId}
 ```
 
-## OV2.3 `[ ]` Manual observation adapter first
+## OV2.3 `[x]` Manual observation adapter first
 
 Manual entry is the v1 write path.
 
@@ -552,9 +554,11 @@ The adapter validates metric/unit/protocol/context and computes the deterministi
 
 Do not add a generic “import every personal record from Garmin” feature.
 
-**Done when.** A 20-minute test and 4-minute test can be entered from a phone with exact source/device/protocol/validity provenance.
+**PR-boundary clarification (2026-08-21).** OV2.3 is the platform-neutral client adapter/write contract, not a separate manual-entry screen. PR B explicitly carries no UI; the athlete-visible 390 px test completion/value-entry and correction flow remains OV3.3–OV3.4. This avoids treating the same phone UX as completed twice in two different PR slices.
 
-## OV2.4 `[ ]` Firestore rules and emulator tests
+**Done when (adapter slice).** A browser/mobile caller can construct a 20-minute or 4-minute observation with exact source/device/protocol/validity provenance and a deterministic comparison-series key; the athlete-facing phone flow is accepted under OV3.4.
+
+## OV2.4 `[x]` Firestore rules and emulator tests
 
 Rules must enforce:
 
@@ -1400,7 +1404,7 @@ Fail on any runtime path from production selector modules to:
 
 Do not merge one giant code PR.
 
-### PR A — contracts only
+### PR A — contracts only — **merged 2026-08-21 (#154)**
 
 * OV0.1–OV1.4;
 * models/registry/protocol/comparability;
@@ -1409,7 +1413,7 @@ Do not merge one giant code PR.
 * no Firestore writes;
 * no UI.
 
-### PR B — persistence/manual entry
+### PR B — persistence/manual entry — **implemented in #155**
 
 * OV2.1–OV2.4;
 * immutable observation revisions + head semantics;
