@@ -32,15 +32,36 @@ function mapTrainingRecord(raw: RawActivitySummary | null | undefined): Training
 }
 
 /**
+ * Respiration scoring is deliberately default-off until historical replay/sensitivity
+ * establishes a weight/noise-floor policy. The non-default member exists so comparison
+ * tooling can exercise the real engine path without creating a second implementation.
+ */
+export type RespirationStrainPolicy = 'off' | 'median-mad-v1';
+
+/**
  * Maps the Firestore canonical model (DailyRecoverySnapshot) to the internal engine
  * input model (EngineObjectiveInput) expected by the rules engine.
  * This decouples the rules engine from the Firestore schema.
  */
-export function mapSnapshotToEngineInput(snapshot: DailyRecoverySnapshot): EngineObjectiveInput {
+export function mapSnapshotToEngineInput(
+    snapshot: DailyRecoverySnapshot,
+    respirationStrainPolicy: RespirationStrainPolicy = 'off',
+): EngineObjectiveInput {
     // Determine the sleep_min: convert from seconds
     const sleepDurationMin = snapshot.raw.sleepDurationSec
         ? Math.round(snapshot.raw.sleepDurationSec / 60)
         : null;
+
+    // Respiration deltas existed before the v3 median/MAD cutover, but those legacy deltas
+    // were computed against mean baselines. They must never enter the v3 robust-scoring
+    // path. A v3+ snapshot with no 28d MAD is also intentionally inert: substituting the
+    // scoring floor for an unavailable spread estimate would fabricate confidence rather
+    // than represent a measured personal baseline.
+    const hasRespirationMedianMadBaseline =
+        respirationStrainPolicy === 'median-mad-v1'
+        && (snapshot.derived.baselineComputationVersion ?? 0) >= 3
+        && snapshot.derived.respiration28dMad !== null
+        && snapshot.derived.respiration28dMad !== undefined;
 
     return {
         total_steps: snapshot.raw.totalSteps,
@@ -53,6 +74,15 @@ export function mapSnapshotToEngineInput(snapshot: DailyRecoverySnapshot): Engin
         hrv_last_night: snapshot.raw.hrvOvernightAvg,
         hrv_delta: snapshot.derived.deltas.hrvVs7d,
         respiration: snapshot.raw.respirationAvg,
+        respiration_delta: hasRespirationMedianMadBaseline
+            ? snapshot.derived.deltas.respirationVs7d
+            : null,
+        respiration_delta_28d: hasRespirationMedianMadBaseline
+            ? snapshot.derived.deltas.respirationVs28d
+            : null,
+        respiration_mad_28d: hasRespirationMedianMadBaseline
+            ? snapshot.derived.respiration28dMad ?? null
+            : null,
         body_battery_wake: snapshot.raw.bodyBatteryWake,
         last_3_days_hard_sessions_count: snapshot.raw.last3DaysHardSessionsCount,
         yesterday_training: mapTrainingRecord(snapshot.raw.yesterdayTraining),

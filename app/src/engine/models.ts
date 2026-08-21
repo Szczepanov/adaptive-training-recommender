@@ -41,6 +41,19 @@ export interface EngineObjectiveInput {
     hrv_last_night: number | null;
     hrv_delta: number | null;
     respiration: number | null;
+    /** Current respiration rate vs its own trailing 7d/28d baseline (current - median),
+     *  the same acute/chronic pairing as hrv_delta/hrv_delta_28d above -- see
+     *  respiration_mad_28d for the matching noise-floor denominator. Optional/undefined on
+     *  documents whose baseline predates respiration28dMad (baselineComputationVersion < 3)
+     *  rather than required, following the steps_* fields' precedent for a later addition. */
+    respiration_delta?: number | null;
+    respiration_delta_28d?: number | null;
+    /** This person's own trailing 28-day median absolute deviation (scaled to be
+     *  stdev-comparable), not population stdev -- respiration's baseline is median-based
+     *  (see DerivedMetrics.respiration28dMad's docstring on the Python side) specifically
+     *  because a prior illness episode inside the window is exactly the kind of deviation
+     *  this metric exists to detect, and a mean/stdev pair gets contaminated by it. */
+    respiration_mad_28d?: number | null;
     body_battery_wake: number | null;
     last_3_days_hard_sessions_count: number;
     yesterday_training: TrainingRecord | null;
@@ -895,9 +908,48 @@ export interface DailyRecoverySnapshot {
         hrv28dStdev?: number | null;
         restingHr28dStdev?: number | null;
         sleepScore28dStdev?: number | null;
+        /** Median absolute deviation (scaled by 1.4826), not population stdev -- see
+         *  EngineObjectiveInput.respiration_mad_28d. Absent (undefined) on documents
+         *  written before baselineComputationVersion 3. */
+        respiration28dMad?: number | null;
         steps7dAvg?: number | null;
         steps28dAvg?: number | null;
         steps28dStdev?: number | null;
+        /** Observation-only median/MAD baselines for sleep score, RHR, HRV, and steps,
+         *  computed *alongside* the mean/stdev fields above rather than replacing them --
+         *  see docs/adr/0006's v4 amendment. Nothing in rules.ts/fatigue.ts reads these
+         *  yet; they exist for a future comparison against the live mean/stdev baselines
+         *  before either one is cut over (matching ADR-0014's precedent for that decision).
+         *  Absent (undefined) on documents written before baselineComputationVersion 4. */
+        sleepScore7dMedian?: number | null;
+        sleepScore28dMedian?: number | null;
+        sleepScore28dMad?: number | null;
+        restingHr7dMedian?: number | null;
+        restingHr28dMedian?: number | null;
+        restingHr28dMad?: number | null;
+        hrv7dMedian?: number | null;
+        hrv28dMedian?: number | null;
+        hrv28dMad?: number | null;
+        steps7dMedian?: number | null;
+        steps28dMedian?: number | null;
+        steps28dMad?: number | null;
+        /** Observation-only median/MAD baselines for body battery wake and the "metric
+         *  enrichment" fields (stress avg/max, training readiness score) -- see
+         *  docs/adr/0006's v5 amendment. Unlike the fields above, these metrics have no
+         *  mean/stdev counterpart at all yet. Nothing in rules.ts/fatigue.ts reads these.
+         *  Absent (undefined) on documents written before baselineComputationVersion 5. */
+        bodyBatteryWake7dMedian?: number | null;
+        bodyBatteryWake28dMedian?: number | null;
+        bodyBatteryWake28dMad?: number | null;
+        stressAvg7dMedian?: number | null;
+        stressAvg28dMedian?: number | null;
+        stressAvg28dMad?: number | null;
+        stressMax7dMedian?: number | null;
+        stressMax28dMedian?: number | null;
+        stressMax28dMad?: number | null;
+        trainingReadinessScore7dMedian?: number | null;
+        trainingReadinessScore28dMedian?: number | null;
+        trainingReadinessScore28dMad?: number | null;
         deltas: {
             sleepScoreVs7d: number | null;
             sleepScoreVs28d: number | null;
@@ -909,6 +961,25 @@ export interface DailyRecoverySnapshot {
             respirationVs28d: number | null;
             stepsVs7d?: number | null;
             stepsVs28d?: number | null;
+            /** Observation-only median-baseline deltas -- see the sibling comment above. */
+            sleepScoreVs7dMedian?: number | null;
+            sleepScoreVs28dMedian?: number | null;
+            restingHrVs7dMedian?: number | null;
+            restingHrVs28dMedian?: number | null;
+            hrvVs7dMedian?: number | null;
+            hrvVs28dMedian?: number | null;
+            stepsVs7dMedian?: number | null;
+            stepsVs28dMedian?: number | null;
+            /** Observation-only median-baseline deltas for body battery wake / stress /
+             *  training readiness -- see the sibling comment above. */
+            bodyBatteryWakeVs7dMedian?: number | null;
+            bodyBatteryWakeVs28dMedian?: number | null;
+            stressAvgVs7dMedian?: number | null;
+            stressAvgVs28dMedian?: number | null;
+            stressMaxVs7dMedian?: number | null;
+            stressMaxVs28dMedian?: number | null;
+            trainingReadinessScoreVs7dMedian?: number | null;
+            trainingReadinessScoreVs28dMedian?: number | null;
         };
     };
     dataQuality: {
