@@ -14,6 +14,7 @@ import { MobileNav } from './components/MobileNav';
 import { getLocalDateString } from './utils/localDate';
 import { strengthSessionService } from './services/strengthSessionService';
 import { sessionExecutionService } from './services/sessionExecutionService';
+import { runConfiguredHealthAnomalyShadow } from './services/healthAnomalyRuntime';
 import { resolveSessionDefinition } from './sessions/sessionDefinitionResolver';
 
 const DailyCheckin = lazy(() => import('./components/DailyCheckin').then(m => ({ default: m.DailyCheckin })));
@@ -21,6 +22,7 @@ const Goals = lazy(() => import('./components/Goals').then(m => ({ default: m.Go
 const TrainingSettings = lazy(() => import('./components/TrainingSettings').then(m => ({ default: m.TrainingSettings })));
 const Preferences = lazy(() => import('./components/Preferences').then(m => ({ default: m.Preferences })));
 const DataView = lazy(() => import('./components/DataView').then(m => ({ default: m.DataView })));
+const HealthAnomalyShadowPanel = lazy(() => import('./components/HealthAnomalyShadowPanel').then(m => ({ default: m.HealthAnomalyShadowPanel })));
 const PlanView = lazy(() => import('./components/PlanView').then(m => ({ default: m.PlanView })));
 const StrengthOverloadHistory = lazy(() => import('./components/StrengthOverloadHistory').then(m => ({ default: m.StrengthOverloadHistory })));
 const StrengthSessionRunner = lazy(() => import('./components/StrengthSessionRunner').then(m => ({ default: m.StrengthSessionRunner })));
@@ -46,6 +48,13 @@ function App() {
     try {
       const input = await decisionComposer.composeDailyDecisionInput(userId);
       setDecisionInput(input);
+      // HA-D evidence collection is deliberately fire-and-forget relative to readiness.
+      // The runtime selector returns before any HA reads/writes unless the environment is
+      // explicitly configured to `shadow-v1`; its result never feeds Home or recommendation
+      // selection.
+      void runConfiguredHealthAnomalyShadow(userId, input.date).catch(error => {
+        console.error('Error collecting health anomaly shadow evidence:', error);
+      });
     } catch (error) {
       console.error('Error loading decision input:', error);
     }
@@ -155,11 +164,16 @@ function App() {
           )}
 
           {screen === 'data' && (
-            <DataView
-              decisionInput={decisionInput}
-              userId={userId!}
-              onBack={() => handleNavigate('home')}
-            />
+            <>
+              <DataView
+                decisionInput={decisionInput}
+                userId={userId!}
+                onBack={() => handleNavigate('home')}
+              />
+              {decisionInput && (
+                <HealthAnomalyShadowPanel userId={userId!} decisionInput={decisionInput} />
+              )}
+            </>
           )}
 
           {screen === 'brief' && (
