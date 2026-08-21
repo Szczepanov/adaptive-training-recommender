@@ -85,6 +85,23 @@ describe('GarminSyncRequestService.requestSync', () => {
         await service.requestSync('user-1');
         expect(mockTransactionSet).not.toHaveBeenCalled();
     });
+
+    it('does not overwrite a processing request claimed recently, even if requestedAt is old', async () => {
+        // garmin-manual-sync-poll only ticks every 3 minutes, so a request can sit
+        // 'pending' for a while before a worker claims it -- staleness must be judged
+        // from claimedAt (when the worker actually started), not the older
+        // requestedAt, or a retry could stomp a claim that just started running.
+        const oldRequestedAt = new Date(Date.now() - STALE_AFTER_MS - 1000).toISOString();
+        const freshClaimedAt = new Date().toISOString();
+        mockTransactionGet.mockResolvedValue(
+            requestData({ status: 'processing', requestedAt: oldRequestedAt, claimedAt: freshClaimedAt, claimId: 'abc' })
+        );
+        const service = new GarminSyncRequestService();
+
+        await service.requestSync('user-1');
+
+        expect(mockTransactionSet).not.toHaveBeenCalled();
+    });
 });
 
 describe('GarminSyncRequestService.getRequest', () => {

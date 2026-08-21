@@ -62,4 +62,28 @@ describe('isSyncRequestStale', () => {
         expect(isSyncRequestStale(request, requestedAtMs + 1000, 500)).toBe(true);
         expect(isSyncRequestStale(request, requestedAtMs + 1000, 5000)).toBe(false);
     });
+
+    it('measures a processing request from claimedAt, not requestedAt', () => {
+        // garmin-manual-sync-poll only ticks every 3 minutes, so a request can sit
+        // 'pending' for a couple of those minutes before a worker claims it.
+        // Measuring staleness from requestedAt once claimed would eat into the same
+        // budget twice; claimedAt is when the worker actually started.
+        const claimedAtMs = requestedAtMs + 2 * 60 * 1000;
+        const request = baseRequest({
+            status: 'processing',
+            claimedAt: new Date(claimedAtMs).toISOString(),
+        });
+
+        // Just past STALE_AFTER_MS since the request was first queued, but well
+        // under STALE_AFTER_MS since the worker actually claimed it -- must not be
+        // considered stale yet.
+        expect(isSyncRequestStale(request, requestedAtMs + STALE_AFTER_MS + 1000)).toBe(false);
+        // Past STALE_AFTER_MS since claimedAt -- now genuinely stale.
+        expect(isSyncRequestStale(request, claimedAtMs + STALE_AFTER_MS + 1)).toBe(true);
+    });
+
+    it('falls back to requestedAt for a processing request with no claimedAt yet', () => {
+        const request = baseRequest({ status: 'processing', claimedAt: undefined });
+        expect(isSyncRequestStale(request, requestedAtMs + STALE_AFTER_MS + 1)).toBe(true);
+    });
 });
