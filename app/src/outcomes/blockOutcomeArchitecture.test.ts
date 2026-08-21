@@ -83,6 +83,15 @@ function runtimeImportGraph(): Map<string, string[]> {
                     if (target) edges.push(target);
                 }
             }
+            if (ts.isCallExpression(node)
+                && node.expression.kind === ts.SyntaxKind.ImportKeyword
+                && node.arguments.length === 1) {
+                const [specifier] = node.arguments;
+                if (specifier && ts.isStringLiteral(specifier)) {
+                    const target = resolveSpecifier(absolutePath, specifier.text);
+                    if (target) edges.push(target);
+                }
+            }
             ts.forEachChild(node, visit);
         };
         visit(source);
