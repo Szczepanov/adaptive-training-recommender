@@ -1,3 +1,7 @@
+from pathlib import Path
+from types import SimpleNamespace
+
+import bootstrap_garmin_tokens
 import pyotp
 import pytest
 from bootstrap_garmin_tokens import _mfa_prompt
@@ -48,3 +52,46 @@ def test_mfa_prompt_falls_back_to_input_when_neither_is_set(
     prompt = _mfa_prompt()
 
     assert prompt() == "654321"
+
+
+class _StubGarminClientWrapper:
+    """Login succeeds and writes a token file, without touching the real Garmin API."""
+
+    def __init__(self, **_kwargs) -> None:
+        pass
+
+    def login_with_tokens_or_credentials(self, token_path: Path) -> None:
+        token_path = Path(token_path)
+        token_path.parent.mkdir(parents=True, exist_ok=True)
+        token_path.write_text("{}")
+
+
+class _StubGcsTokenStoreUploadFails:
+    """Mirrors a GcsTokenStore.persist() that ran into e.g. a 403 from a missing IAM
+    binding -- returns False rather than raising, same as the real implementation."""
+
+    def __init__(self, bucket_name: str, object_name: str) -> None:
+        self.bucket_name = bucket_name
+        self.object_name = object_name
+
+    def persist(self, source: Path) -> bool:
+        return False
+
+
+def test_bootstrap_raises_when_gcs_upload_fails(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A failed upload must fail the script loudly (see token_store.py's persist()) instead
+    of printing 'Token bootstrap completed successfully!' with no token actually in GCS."""
+    settings = SimpleNamespace(
+        garmin_token_path=str(tmp_path / "tokens.json"),
+        garmin_email="user@example.com",
+        garmin_password="secret",
+        garmin_token_bucket=None,
+    )
+    monkeypatch.setattr(bootstrap_garmin_tokens, "load_settings", lambda: settings)
+    monkeypatch.setattr(bootstrap_garmin_tokens, "GarminClientWrapper", _StubGarminClientWrapper)
+    monkeypatch.setattr(bootstrap_garmin_tokens, "GcsTokenStore", _StubGcsTokenStoreUploadFails)
+
+    with pytest.raises(RuntimeError, match="Upload to gs://my-bucket"):
+        bootstrap_garmin_tokens.bootstrap(bucket_name="my-bucket")

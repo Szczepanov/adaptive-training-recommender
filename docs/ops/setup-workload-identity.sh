@@ -167,6 +167,15 @@ gcloud iam service-accounts add-iam-policy-binding "${DEPLOYER_SA_EMAIL}" \
   --role="roles/iam.workloadIdentityUser" \
   --member="principalSet://iam.googleapis.com/projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/${POOL_ID}/attribute.repository/${GITHUB_REPO}"
 
+# garmin-token-bootstrap.yml authenticates as github-deployer too (it's the only WIF
+# identity granted to this repo) and uploads the bootstrapped token straight to this
+# bucket -- without this it gets a 403 on upload that GcsTokenStore.persist() used to
+# swallow silently. Bucket-scoped, matching how garmin-sync-job's own access to this
+# bucket (above) is scoped rather than a project-wide storage role.
+echo "==> Allowing github-deployer to upload the bootstrapped token to the token bucket"
+gcloud storage buckets add-iam-policy-binding "gs://${TOKEN_BUCKET}" \
+  --member="serviceAccount:${DEPLOYER_SA_EMAIL}" --role="roles/storage.objectAdmin" >/dev/null
+
 echo "==> Creating github-frontend-deployer service account (skipping if it already exists)"
 if ! gcloud iam service-accounts describe "${FRONTEND_DEPLOYER_SA_EMAIL}" >/dev/null 2>&1; then
   gcloud iam service-accounts create "${FRONTEND_DEPLOYER_SA_NAME}" \
