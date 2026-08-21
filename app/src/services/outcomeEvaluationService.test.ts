@@ -93,7 +93,9 @@ describe('OutcomeEvaluationService', () => {
     });
 
     it('activates from the exact persisted revision+binding snapshot in one transaction', async () => {
-        firestore.transaction.get.mockResolvedValueOnce(snapshot({ ...revision, bindings: [binding] }));
+        firestore.transaction.get
+            .mockResolvedValueOnce(snapshot({ id: 'block-1', currentRevision: 1, createdAt: revision.createdAt, updatedAt: revision.createdAt }))
+            .mockResolvedValueOnce(snapshot({ ...revision, bindings: [binding] }));
         const service = new OutcomeEvaluationService({} as never);
         const activated = await service.activateRevision('u1', 'block-1', 1, '2026-08-22T06:00:00.000Z');
 
@@ -111,15 +113,26 @@ describe('OutcomeEvaluationService', () => {
     });
 
     it('refuses to activate an already active revision', async () => {
-        firestore.transaction.get.mockResolvedValueOnce(snapshot({
-            ...revision,
-            status: 'active',
-            activatedAt: '2026-08-22T06:00:00.000Z',
-            contentHash: 'a'.repeat(64),
-            bindings: [binding],
-        }));
+        firestore.transaction.get
+            .mockResolvedValueOnce(snapshot({ id: 'block-1', currentRevision: 1, createdAt: revision.createdAt, updatedAt: revision.createdAt }))
+            .mockResolvedValueOnce(snapshot({
+                ...revision,
+                status: 'active',
+                activatedAt: '2026-08-22T06:00:00.000Z',
+                contentHash: 'a'.repeat(64),
+                bindings: [binding],
+            }));
         const service = new OutcomeEvaluationService({} as never);
         await expect(service.activateRevision('u1', 'block-1', 1)).rejects.toThrow(/Cannot activate.*active/);
+        expect(firestore.transaction.set).not.toHaveBeenCalled();
+    });
+
+    it('refuses to activate a draft revision the head has already moved past', async () => {
+        firestore.transaction.get
+            .mockResolvedValueOnce(snapshot({ id: 'block-1', currentRevision: 2, createdAt: revision.createdAt, updatedAt: '2026-08-22T08:00:00.000Z' }))
+            .mockResolvedValueOnce(snapshot({ ...revision, bindings: [binding] }));
+        const service = new OutcomeEvaluationService({} as never);
+        await expect(service.activateRevision('u1', 'block-1', 1)).rejects.toThrow(/stale.*revision 1/);
         expect(firestore.transaction.set).not.toHaveBeenCalled();
     });
 

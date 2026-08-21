@@ -9,6 +9,7 @@ import type {
     PracticalThreshold,
 } from '../outcomes/evaluationSpec';
 import { assertValidOutcomeMetricBinding } from '../outcomes/evaluationSpec';
+import { getLocalDateString } from '../utils/localDate';
 
 export const PROGRESS_POLICY_VERSION = 'ov-progress-v1' as const;
 
@@ -56,7 +57,7 @@ function isCurrentValidObservation(observation: CurrentObservation): boolean {
 }
 
 function dateFromTimestamp(timestamp: string): string {
-    return timestamp.slice(0, 10);
+    return getLocalDateString(new Date(timestamp));
 }
 
 function withinWindow(timestamp: string, window?: { startDate: string; endDate: string }): boolean {
@@ -134,7 +135,7 @@ function favorableChange(
 
 function errorResolved(
     favorableDelta: number,
-    percentChange: number | undefined,
+    favorablePercent: number | undefined,
     reliability: ReliabilityEstimate,
 ): { resolved: boolean; reason?: string } {
     const magnitude = Math.abs(favorableDelta);
@@ -144,15 +145,15 @@ function errorResolved(
             return { resolved: magnitude > reliability.value };
         case 'cv_pct':
         case 'typical_error_pct':
-            if (percentChange === undefined) return { resolved: false, reason: 'percentage_error_unusable_with_zero_baseline' };
-            return { resolved: Math.abs(percentChange) > reliability.value };
+            if (favorablePercent === undefined) return { resolved: false, reason: 'percentage_error_unusable_with_zero_baseline' };
+            return { resolved: Math.abs(favorablePercent) > reliability.value };
     }
 }
 
 function practicalSatisfied(
     threshold: PracticalThreshold,
     favorableDelta: number,
-    percentChange: number | undefined,
+    favorablePercent: number | undefined,
     latest: number,
     direction: OutcomeDirection,
 ): { satisfied: boolean; reason?: string } {
@@ -160,9 +161,9 @@ function practicalSatisfied(
         case 'absolute':
             return { satisfied: Math.abs(favorableDelta) >= threshold.value };
         case 'percent':
-            return percentChange === undefined
+            return favorablePercent === undefined
                 ? { satisfied: false, reason: 'percentage_threshold_unusable_with_zero_baseline' }
-                : { satisfied: Math.abs(percentChange) >= threshold.value };
+                : { satisfied: Math.abs(favorablePercent) >= threshold.value };
         case 'target':
             if (direction.kind === 'higher_is_better') return { satisfied: latest >= threshold.value };
             if (direction.kind === 'lower_is_better') return { satisfied: latest <= threshold.value };
@@ -240,6 +241,9 @@ export function deriveProgress(
         latest.revision.value,
         binding.expectedDirection,
     );
+    const favorablePercent = baseline.revision.value === 0
+        ? undefined
+        : 100 * favorableDelta / Math.abs(baseline.revision.value);
     const reliability = selectReliability(baseline.revision.comparisonSeriesKey, reliabilityEstimates);
 
     const comparableBase: ProgressResult = {
@@ -264,7 +268,7 @@ export function deriveProgress(
         return comparableBase;
     }
 
-    const measurement = errorResolved(favorableDelta, percentChange, reliability);
+    const measurement = errorResolved(favorableDelta, favorablePercent, reliability);
     if (measurement.reason) reasons.push(measurement.reason);
     if (!measurement.resolved) {
         reasons.push('change_within_available_measurement_error');
@@ -281,7 +285,7 @@ export function deriveProgress(
         };
     }
 
-    const practical = practicalSatisfied(threshold, favorableDelta, percentChange, latest.revision.value, binding.expectedDirection);
+    const practical = practicalSatisfied(threshold, favorableDelta, favorablePercent, latest.revision.value, binding.expectedDirection);
     if (practical.reason) reasons.push(practical.reason);
     if (!practical.satisfied) {
         reasons.push('measurement_resolved_but_practical_threshold_not_met');

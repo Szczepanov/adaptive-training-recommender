@@ -125,10 +125,19 @@ export class OutcomeEvaluationService {
         revision: number,
         activatedAt = new Date().toISOString(),
     ): Promise<OutcomeEvaluationSnapshot> {
+        const headRef = this.headRef(userId, evaluationId);
         const revisionRef = this.revisionRef(userId, evaluationId, revision);
         return runTransaction(this.db, async transaction => {
-            const persistedSnapshot = await transaction.get(revisionRef);
+            const [headSnapshot, persistedSnapshot] = await Promise.all([
+                transaction.get(headRef),
+                transaction.get(revisionRef),
+            ]);
             if (!persistedSnapshot.exists()) throw new Error(`Outcome evaluation ${evaluationId}@${revision} does not exist`);
+            if (!headSnapshot.exists()) throw new Error(`Outcome evaluation ${evaluationId} has no head`);
+            const head = headSnapshot.data() as OutcomeEvaluationHead;
+            if (head.currentRevision !== revision) {
+                throw new Error(`Cannot activate stale outcome evaluation revision ${revision}; head is at ${head.currentRevision}`);
+            }
             const current = fromPersisted(
                 persistedSnapshot.data() as PersistedOutcomeEvaluationRevision,
                 evaluationId,

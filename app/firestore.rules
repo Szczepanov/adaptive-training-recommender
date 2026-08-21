@@ -1270,6 +1270,14 @@ service cloud.firestore {
       return next.id == evaluationId && next.revision == revision && next.status == 'draft';
     }
 
+    // Activation must target the current head revision -- otherwise an earlier draft left
+    // behind by a later createDraftRevision could be activated after the fact, producing two
+    // revisions of the same evaluation both in 'active' status.
+    function isHeadOutcomeEvaluationRevision(userId, evaluationId, revision) {
+      let headPath = /databases/$(database)/documents/users/$(userId)/outcome_evaluations/$(evaluationId);
+      return exists(headPath) && get(headPath).data.currentRevision == revision;
+    }
+
     function hasValidOutcomeEvaluationHead(userId, evaluationId) {
       let data = request.resource.data;
       return isOwner(userId)
@@ -1347,7 +1355,8 @@ service cloud.firestore {
           && (
             (resource.data.status == 'draft'
               && request.resource.data.status == 'active'
-              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'activatedAt', 'contentHash']))
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'activatedAt', 'contentHash'])
+              && isHeadOutcomeEvaluationRevision(userId, evaluationId, resource.data.revision))
             || (resource.data.status == 'active'
               && request.resource.data.status == 'completed'
               && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']))

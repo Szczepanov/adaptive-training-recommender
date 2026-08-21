@@ -132,6 +132,17 @@ emulatorDescribe('Outcome evaluation Firestore rules (OV5.1)', () => {
         }));
     });
 
+    it('denies activating a draft revision the head has already moved past', async () => {
+        const db = await writeInitialDraft();
+        const batch = writeBatch(db);
+        batch.set(doc(db, revisionPath(2)), draftRevision(2));
+        batch.update(doc(db, headPath), { currentRevision: 2, updatedAt: '2026-08-22T08:00:00.000Z' });
+        await assertSucceeds(batch.commit());
+
+        await assertFails(setDoc(doc(db, revisionPath(1)), activeRevision(1)));
+        await assertSucceeds(setDoc(doc(db, revisionPath(2)), activeRevision(2)));
+    });
+
     it('requires activation hash/timestamp and rejects malformed activation provenance', async () => {
         const db = await writeInitialDraft();
         await assertFails(setDoc(doc(db, revisionPath(1)), { ...draftRevision(1), status: 'active', contentHash: '' }));
