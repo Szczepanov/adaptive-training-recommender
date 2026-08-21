@@ -1,6 +1,6 @@
 import type { CompetitionOutcome } from '../observations/models';
 import type { ProgressResult } from '../observations/progress';
-import type { OutcomeEvaluationSnapshot } from './evaluationSpec';
+import type { OutcomeEvaluationSnapshot, OutcomeMetricBinding } from './evaluationSpec';
 import type { BlockProcessEvidence } from './blockProcessEvidence';
 import type { PolicySegment } from './policySegments';
 
@@ -37,6 +37,11 @@ export interface BlockOutcomeReport {
 
 export interface BlockOutcomeInput {
     evaluation: OutcomeEvaluationSnapshot;
+    /**
+     * Results are supplied in frozen binding order by BlockOutcomeReportService. When more
+     * than one binding references the same metric, same-metric results are consumed in this
+     * order so distinct windows/baselines are not collapsed into one metric-level value.
+     */
     metricProgress: readonly ProgressResult[];
     ecologicalOutcomes: readonly CompetitionOutcome[];
     process: BlockProcessEvidence;
@@ -63,6 +68,26 @@ function sortedEcologicalOutcomes(outcomes: readonly CompetitionOutcome[]): Comp
 }
 
 /**
+ * Match once across every frozen binding rather than indexing by metric id. OutcomeEvaluation
+ * permits multiple bindings for the same metric (for example different target windows), so a
+ * Map<metricId, result> would silently collapse valid frozen criteria. Results with the same
+ * metric are consumed in caller order; the report service guarantees that order by deriving
+ * one result per evaluation binding in sequence.
+ */
+function matchProgressToBindings(
+    bindings: readonly OutcomeMetricBinding[],
+    progress: readonly ProgressResult[],
+): (ProgressResult | undefined)[] {
+    const remaining = [...progress];
+    return bindings.map(binding => {
+        const index = remaining.findIndex(result => result.metricId === binding.metricId);
+        if (index < 0) return undefined;
+        const [matched] = remaining.splice(index, 1);
+        return matched;
+    });
+}
+
+/**
  * OV5.3: versioned categorical evidence policy. It never produces a weighted score and it
  * never numerically offsets response cost against performance gain.
  */
@@ -72,12 +97,12 @@ export function deriveBlockOutcome(input: BlockOutcomeInput): BlockOutcomeReport
         throw new Error('Block outcome requires a frozen non-draft evaluation revision');
     }
 
+    const matchedProgress = matchProgressToBindings(evaluation.bindings, input.metricProgress);
+    const primaryResults = matchedProgress.filter((_, index) => evaluation.bindings[index]?.role === 'primary');
+    const secondaryResults = matchedProgress
+        .filter((_, index) => evaluation.bindings[index]?.role === 'secondary')
+        .filter((result): result is ProgressResult => result !== undefined);
     const metricProgress = sortedProgress(input.metricProgress);
-    const progressByMetric = new Map(metricProgress.map(item => [item.metricId, item]));
-    const primaryBindings = evaluation.bindings.filter(binding => binding.role === 'primary');
-    const secondaryBindings = evaluation.bindings.filter(binding => binding.role === 'secondary');
-    const primaryResults = primaryBindings.map(binding => progressByMetric.get(binding.metricId));
-    const secondaryResults = secondaryBindings.map(binding => progressByMetric.get(binding.metricId)).filter(Boolean) as ProgressResult[];
 
     const keyRoleCoveragePct = pct(process.completedKeyRoles, process.plannedKeyRoles);
     const processAdequate = keyRoleCoveragePct >= BLOCK_ADEQUACY_V1.minKeyRoleCoveragePct
