@@ -21,6 +21,14 @@ export interface HealthAnomalyFollowupCandidate {
     episodeDay: number;
 }
 
+/**
+ * Turn an assessment revision into a follow-up candidate, if the revision is actually eligible.
+ *
+ * Only a revision with a live episode qualifies. By default the first day of a new episode is
+ * excluded (`allowFirstEpisodeDay = false`) so today's own screen never prompts immediately;
+ * {@link findRecentHealthAnomalyFollowupCandidate} passes `true` for prior-day lookback, where a
+ * one-day episode is only ever seen in retrospect.
+ */
 export function followupCandidateFromRevision(
     revision: HealthAnomalyAssessmentRevision | null | undefined,
     allowFirstEpisodeDay = false,
@@ -63,13 +71,20 @@ export async function findRecentHealthAnomalyFollowupCandidate(
     return null;
 }
 
+/** Firestore-backed reader/writer for `users/{userId}/health_anomaly_outcomes/{episodeId}`. */
 export class HealthAnomalyOutcomeRepository {
+    /** Load and validate the existing outcome for an episode, or `null` if none was saved yet. */
     async get(userId: string, episodeId: string): Promise<HealthAnomalyEpisodeOutcome | null> {
         const snapshot = await getDoc(doc(getDb(), 'users', userId, 'health_anomaly_outcomes', episodeId));
         if (!snapshot.exists()) return null;
         return parseHealthAnomalyEpisodeOutcome(snapshot.data(), userId, episodeId);
     }
 
+    /**
+     * Transactionally create or update the outcome for `input.candidate.episodeId`, preserving
+     * the original `sourceAssessment` and `createdAt` on an update regardless of which later
+     * revision opened the edit form.
+     */
     async save(input: {
         userId: string;
         candidate: HealthAnomalyFollowupCandidate;

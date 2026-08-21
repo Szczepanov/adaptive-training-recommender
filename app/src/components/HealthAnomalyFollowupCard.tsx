@@ -39,6 +39,12 @@ interface HealthAnomalyFollowupFormProps {
     }) => Promise<void>;
 }
 
+/**
+ * Presentational HA6.1–HA6.3 follow-up form: best-explanation choice, optional symptom onset
+ * date, and optional respiratory test result/date. Pure props-in/callback-out so it can render
+ * without Firestore for the component test; {@link HealthAnomalyFollowupCard} wires it to the
+ * repository.
+ */
 export function HealthAnomalyFollowupForm({ candidate, existing, onSave }: HealthAnomalyFollowupFormProps) {
     const [explanation, setExplanation] = useState<HealthAnomalyOutcomeExplanation>(existing?.explanation ?? 'nothing_obvious');
     const [symptomOnsetDate, setSymptomOnsetDate] = useState(existing?.symptomOnset?.date ?? '');
