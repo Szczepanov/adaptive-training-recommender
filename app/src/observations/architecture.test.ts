@@ -30,7 +30,15 @@ function productionFiles(directory = SRC_DIR): string[] {
 function resolveSpecifier(fromAbsolute: string, specifier: string): string | null {
     if (!specifier.startsWith('.')) return null;
     const base = resolve(dirname(fromAbsolute), specifier);
-    for (const candidate of [`${base}.ts`, `${base}.tsx`, join(base, 'index.ts'), join(base, 'index.tsx')]) {
+    // Some production files (e.g. engine/planSchedule.ts) import with an explicit `.ts`/`.tsx`
+    // suffix already baked into the specifier -- `resolve` preserves that suffix on `base`, so
+    // appending another extension or probing for an `index.ts` inside it would never match.
+    // Missing these edges would silently exempt those files' dependencies from the boundary
+    // checks below, so resolve the literal path first before falling back to extension probing.
+    const candidates = /\.tsx?$/.test(base)
+        ? [base]
+        : [`${base}.ts`, `${base}.tsx`, join(base, 'index.ts'), join(base, 'index.tsx')];
+    for (const candidate of candidates) {
         if (existsSync(candidate)) return relative(SRC_DIR, candidate).replaceAll('\\', '/');
     }
     return null;
@@ -62,6 +70,22 @@ function runtimeImportGraph(): Map<string, string[]> {
                             || clause.namedBindings.elements.some(element => !element.isTypeOnly)
                         ))
                     ));
+                if (hasValueBinding) {
+                    const target = resolveSpecifier(absolutePath, node.moduleSpecifier.text);
+                    if (target) edges.push(target);
+                }
+            }
+            // Re-export barrels (`export { x } from './y'`, `export * from './y'`) are a real
+            // runtime module dependency too -- missing this edge would let a boundary violation
+            // routed through a barrel file (e.g. engine/planningMode.ts) go undetected.
+            if (ts.isExportDeclaration(node) && node.moduleSpecifier && ts.isStringLiteral(node.moduleSpecifier)) {
+                const exportClause = node.exportClause;
+                const hasValueBinding = !node.isTypeOnly && (
+                    exportClause === undefined
+                    || (ts.isNamespaceExport(exportClause)
+                        ? true
+                        : exportClause.elements.some(element => !element.isTypeOnly))
+                );
                 if (hasValueBinding) {
                     const target = resolveSpecifier(absolutePath, node.moduleSpecifier.text);
                     if (target) edges.push(target);
