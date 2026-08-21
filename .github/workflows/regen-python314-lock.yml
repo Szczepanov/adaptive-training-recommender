@@ -1,0 +1,39 @@
+name: Regenerate Python 3.14 lock
+
+on:
+  push:
+    branches: [ "fix/python-314-support" ]
+
+permissions:
+  contents: write
+
+jobs:
+  lock:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          version: "0.6.5"
+
+      - name: Set up Python 3.14
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+
+      - name: Regenerate lock for supported Python range
+        run: uv lock --python 3.14
+
+      - name: Commit regenerated lock
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add uv.lock
+          if git diff --cached --quiet; then
+            echo "uv.lock already current"
+            exit 0
+          fi
+          git commit -m "chore: regenerate uv lock for Python 3.14"
+          git push origin HEAD:fix/python-314-support
