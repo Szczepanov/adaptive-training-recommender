@@ -18,6 +18,10 @@ interface PolicyContext {
     authoredPlanRef?: string;
 }
 
+function compareCodeUnits(left: string, right: string): number {
+    return left < right ? -1 : left > right ? 1 : 0;
+}
+
 function contextFor(recommendation: DailyRecommendation): PolicyContext {
     const externalPlan = recommendation.recommendationAudit?.externalPlan;
     return {
@@ -40,6 +44,44 @@ function asSegment(startDate: string, endDate: string, context: PolicyContext): 
     return { startDate, endDate, ...context };
 }
 
+function recommendationRevision(recommendation: DailyRecommendation): number {
+    return recommendation.revision ?? 1;
+}
+
+function canonicalTieBreakKey(recommendation: DailyRecommendation): string {
+    const context = contextFor(recommendation);
+    return [
+        recommendation.updatedAt,
+        recommendation.createdAt,
+        context.policyVersion,
+        context.planningMode,
+        context.authoredPlanRef ?? '',
+    ].join('\u0000');
+}
+
+/**
+ * Select one stable recommendation per date. The highest persisted recommendation revision is
+ * authoritative; the remaining fields only provide deterministic ordering for malformed or
+ * duplicated equal-revision inputs so caller order can never change segmentation.
+ */
+function canonicalRecommendations(
+    recommendations: readonly DailyRecommendation[],
+    period: { startDate: string; endDate: string },
+): DailyRecommendation[] {
+    const byDate = new Map<string, DailyRecommendation>();
+    for (const recommendation of recommendations) {
+        if (recommendation.date < period.startDate || recommendation.date > period.endDate) continue;
+        const current = byDate.get(recommendation.date);
+        if (!current
+            || recommendationRevision(recommendation) > recommendationRevision(current)
+            || (recommendationRevision(recommendation) === recommendationRevision(current)
+                && compareCodeUnits(canonicalTieBreakKey(recommendation), canonicalTieBreakKey(current)) > 0)) {
+            byDate.set(recommendation.date, recommendation);
+        }
+    }
+    return [...byDate.values()].sort((a, b) => compareCodeUnits(a.date, b.date));
+}
+
 /**
  * OV5.4: segment persisted decision context without attributing metric progress to a policy.
  * Missing historical context is represented explicitly as `unknown`; it is never back-filled
@@ -51,9 +93,7 @@ export function derivePolicySegments(
 ): PolicySegment[] {
     if (period.startDate > period.endDate) throw new Error('Policy segment period startDate cannot exceed endDate');
 
-    const inPeriod = [...recommendations]
-        .filter(item => item.date >= period.startDate && item.date <= period.endDate)
-        .sort((a, b) => a.date.localeCompare(b.date));
+    const inPeriod = canonicalRecommendations(recommendations, period);
 
     const unknown: PolicyContext = {
         policyVersion: UNKNOWN_POLICY_VERSION,
