@@ -53,18 +53,22 @@ function pct(numerator: number, denominator: number): number {
     return 100 * numerator / denominator;
 }
 
+function compareCodeUnits(left: string, right: string): number {
+    return left < right ? -1 : left > right ? 1 : 0;
+}
+
 function uniqueSorted(values: readonly (string | undefined)[]): string[] {
-    return [...new Set(values.filter((value): value is string => value !== undefined))].sort();
+    return [...new Set(values.filter((value): value is string => value !== undefined))].sort(compareCodeUnits);
 }
 
 function sortedProgress(progress: readonly ProgressResult[]): ProgressResult[] {
-    return [...progress].sort((a, b) => a.metricId.localeCompare(b.metricId)
-        || (a.baselineObservationId ?? '').localeCompare(b.baselineObservationId ?? '')
-        || (a.latestObservationId ?? '').localeCompare(b.latestObservationId ?? ''));
+    return [...progress].sort((a, b) => compareCodeUnits(a.metricId, b.metricId)
+        || compareCodeUnits(a.baselineObservationId ?? '', b.baselineObservationId ?? '')
+        || compareCodeUnits(a.latestObservationId ?? '', b.latestObservationId ?? ''));
 }
 
 function sortedEcologicalOutcomes(outcomes: readonly CompetitionOutcome[]): CompetitionOutcome[] {
-    return [...outcomes].sort((a, b) => a.occurredAt.localeCompare(b.occurredAt) || a.id.localeCompare(b.id));
+    return [...outcomes].sort((a, b) => compareCodeUnits(a.occurredAt, b.occurredAt) || compareCodeUnits(a.id, b.id));
 }
 
 /**
@@ -117,9 +121,8 @@ export function deriveBlockOutcome(input: BlockOutcomeInput): BlockOutcomeReport
 
     const missingPrimary = primaryResults.some(result => result === undefined);
     const unusablePrimary = primaryResults.some(result =>
-        result === undefined
-        || result.status === 'non_comparable'
-        || result.status === 'insufficient_evidence'
+        result?.status === 'non_comparable'
+        || result?.status === 'insufficient_evidence'
     );
 
     let verdict: BlockVerdict;
@@ -176,7 +179,7 @@ export function deriveBlockOutcome(input: BlockOutcomeInput): BlockOutcomeReport
         process,
         verdict,
         reasons,
-        policySegments: [...input.policySegments].sort((a, b) => a.startDate.localeCompare(b.startDate)),
+        policySegments: [...input.policySegments].sort((a, b) => compareCodeUnits(a.startDate, b.startDate)),
         blockVerdictPolicyVersion: BLOCK_VERDICT_POLICY_VERSION,
         sourceIds: {
             observationIds: uniqueSorted(metricProgress.flatMap(item => [item.baselineObservationId, item.latestObservationId])),
