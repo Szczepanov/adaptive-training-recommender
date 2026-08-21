@@ -1,0 +1,150 @@
+name: Temporary OV evaluation rules patch
+
+on:
+  push:
+    branches:
+      - chatgpt/performance-outcome-validation-progress
+
+permissions:
+  contents: write
+
+jobs:
+  patch-rules:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: chatgpt/performance-outcome-validation-progress
+          fetch-depth: 0
+      - name: Insert OV5.1 Firestore rules
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path('app/firestore.rules')
+          text = path.read_text()
+          marker = '    // --- OV5.1: immutable outcome-evaluation criteria and lifecycle.\n'
+          if marker in text:
+              raise SystemExit(0)
+
+          anchor = '    function hasValidCompetitionOutcome(userId, outcomeId) {'
+          if anchor not in text:
+              raise SystemExit('Outcome rules insertion anchor not found')
+
+          block = r'''    // --- OV5.1: immutable outcome-evaluation criteria and lifecycle.
+    // Metric bindings are embedded in the revision document so activation freezes the
+    // exact bounded criteria atomically with the revision hash.
+    function outcomeEvaluationHeadAfterRevision(userId, evaluationId, revision) {
+      let headPath = /databases/$(database)/documents/users/$(userId)/outcome_evaluations/$(evaluationId);
+      let head = getAfter(headPath).data;
+      return head.id == evaluationId && head.currentRevision == revision;
+    }
+
+    function outcomeEvaluationRevisionAfterHead(userId, evaluationId, revision) {
+      let revisionPath = /databases/$(database)/documents/users/$(userId)/outcome_evaluations/$(evaluationId)/revisions/$(string(revision));
+      let next = getAfter(revisionPath).data;
+      return next.id == evaluationId && next.revision == revision && next.status == 'draft';
+    }
+
+    function hasValidOutcomeEvaluationHead(userId, evaluationId) {
+      let data = request.resource.data;
+      return isOwner(userId)
+        && data.keys().hasOnly(['id', 'currentRevision', 'createdAt', 'updatedAt'])
+        && data.keys().hasAll(['id', 'currentRevision', 'createdAt', 'updatedAt'])
+        && data.id == evaluationId
+        && data.id is string && data.id.size() > 0 && data.id.size() <= 160
+        && data.currentRevision is int && data.currentRevision >= 1
+        && data.createdAt is string && data.createdAt.size() > 0
+        && data.updatedAt is string && data.updatedAt.size() > 0;
+    }
+
+    function hasValidOutcomeEvaluationSourceRef(sourceRef) {
+      return sourceRef is map
+        && sourceRef.keys().hasOnly(['kind', 'id'])
+        && sourceRef.keys().hasAll(['kind', 'id'])
+        && sourceRef.kind in ['event', 'authored_plan', 'manual_block']
+        && sourceRef.id is string && sourceRef.id.size() > 0 && sourceRef.id.size() <= 256;
+    }
+
+    function hasValidOutcomeEvaluationRevision(userId, evaluationId, revisionId) {
+      let data = request.resource.data;
+      return isOwner(userId)
+        && data.keys().hasOnly(['id', 'revision', 'title', 'startDate', 'endDate', 'sourceRef', 'status', 'activatedAt', 'contentHash', 'createdAt', 'bindings'])
+        && data.keys().hasAll(['id', 'revision', 'title', 'startDate', 'endDate', 'status', 'contentHash', 'createdAt', 'bindings'])
+        && data.id == evaluationId
+        && data.id is string && data.id.size() > 0 && data.id.size() <= 160
+        && data.revision is int && data.revision >= 1 && string(data.revision) == revisionId
+        && data.title is string && data.title.size() > 0 && data.title.size() <= 200
+        && isValidActivityDate(data.startDate)
+        && isValidActivityDate(data.endDate)
+        && data.startDate <= data.endDate
+        && (!('sourceRef' in data) || hasValidOutcomeEvaluationSourceRef(data.sourceRef))
+        && data.status in ['draft', 'active', 'completed', 'archived']
+        && data.bindings is list && data.bindings.size() >= 1 && data.bindings.size() <= 16
+        && data.createdAt is string && data.createdAt.size() > 0
+        && (
+          (data.status == 'draft'
+            && !('activatedAt' in data)
+            && data.contentHash == '')
+          || (data.status != 'draft'
+            && data.activatedAt is string && data.activatedAt.size() > 0
+            && data.contentHash is string
+            && data.contentHash.matches('^[0-9a-f]{64}$'))
+        );
+    }
+
+    match /users/{userId}/outcome_evaluations/{evaluationId} {
+      allow read: if isOwner(userId);
+      allow create: if hasValidOutcomeEvaluationHead(userId, evaluationId)
+        && request.resource.data.currentRevision == 1
+        && outcomeEvaluationRevisionAfterHead(userId, evaluationId, 1);
+      allow update: if hasValidOutcomeEvaluationHead(userId, evaluationId)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['currentRevision', 'updatedAt'])
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.currentRevision == resource.data.currentRevision + 1
+        && outcomeEvaluationRevisionAfterHead(userId, evaluationId, request.resource.data.currentRevision);
+      allow delete: if false;
+
+      match /revisions/{revisionId} {
+        allow read: if isOwner(userId);
+        allow create: if hasValidOutcomeEvaluationRevision(userId, evaluationId, revisionId)
+          && request.resource.data.status == 'draft'
+          && outcomeEvaluationHeadAfterRevision(userId, evaluationId, request.resource.data.revision)
+          && (
+            (request.resource.data.revision == 1
+              && !exists(/databases/$(database)/documents/users/$(userId)/outcome_evaluations/$(evaluationId)))
+            || (request.resource.data.revision > 1
+              && get(/databases/$(database)/documents/users/$(userId)/outcome_evaluations/$(evaluationId)).data.currentRevision == request.resource.data.revision - 1)
+          );
+        allow update: if hasValidOutcomeEvaluationRevision(userId, evaluationId, revisionId)
+          && request.resource.data.id == resource.data.id
+          && request.resource.data.revision == resource.data.revision
+          && request.resource.data.createdAt == resource.data.createdAt
+          && (
+            (resource.data.status == 'draft'
+              && request.resource.data.status == 'active'
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'activatedAt', 'contentHash']))
+            || (resource.data.status == 'active'
+              && request.resource.data.status == 'completed'
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']))
+            || (resource.data.status == 'completed'
+              && request.resource.data.status == 'archived'
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']))
+          );
+        allow delete: if false;
+      }
+    }
+
+'''
+          path.write_text(text.replace(anchor, block + anchor, 1))
+      - name: Commit rules patch
+        run: |
+          if git diff --quiet -- app/firestore.rules; then
+            exit 0
+          fi
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add app/firestore.rules
+          git commit -m "feat(ov5): enforce frozen evaluation Firestore lifecycle"
+          git push origin HEAD:chatgpt/performance-outcome-validation-progress
