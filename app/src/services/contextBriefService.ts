@@ -1,4 +1,8 @@
-import type { DailyRecoverySnapshot, DailySubjectiveCheckin } from '../engine/models';
+import type {
+    DailyRecoverySnapshot,
+    DailySubjectiveCheckin,
+    ExternalPlanSession as LegacyExternalPlanSession,
+} from '../engine/models';
 import {
     briefWindowStart,
     buildContextBrief,
@@ -7,11 +11,23 @@ import {
     type ContextBriefInput,
 } from '../engine/contextBrief';
 import { injectActivityTelemetryIntoContextBrief } from '../engine/contextBriefActivityTelemetry';
+import {
+    enhanceContextBriefForPlanning,
+    UPCOMING_CONTEXT_DAYS,
+    type UpcomingExternalPlanSession,
+} from '../engine/contextBriefPlanningHandoff';
+import { externalSessionDisplayPrescription } from '../engine/externalSessionProfiles';
+import { resolvePlanningContext } from '../engine/planningMode';
+import { evaluatePeriodizationPhase, goalToUserEvent } from '../engine/periodization';
 import { parseSubjectiveCheckin } from '../persistence/parsers/decisionInputs';
+import { isV2Session, type AnyExternalPlanSession } from '../sessions/externalPlanV2';
 import { addDaysToLocalDateString, getLocalDateString } from '../utils/localDate';
+import { activeExternalPlanService, placedSessionForDate } from './activeExternalPlanService';
 import { activityService } from './activityService';
 import { checkinService } from './checkinService';
+import { fixedActivityService } from './fixedActivityService';
 import { goalService } from './goalService';
+import { planBlockService } from './planBlockService';
 import { preferencesService } from './preferencesService';
 import { recommendationService } from './recommendationService';
 import { recoverySnapshotService } from './recoverySnapshotService';
@@ -29,6 +45,29 @@ export interface ContextBriefResult {
     unavailableSources: string[];
 }
 
+/**
+ * `resolvePlanningContext` still accepts the v1 external-session type, while placement may
+ * return either external-plan schema. Planning-mode authority only needs the presence and
+ * shared envelope of a session placed on this date. `externalSessionDisplayPrescription`
+ * is the repository's canonical v1/v2 display adapter, so the compatibility facade keeps
+ * truthful authored display content rather than inventing a prescription. The returned
+ * context's externalSession is deliberately not consumed by this brief.
+ */
+function planningAuthoritySession(session: AnyExternalPlanSession): LegacyExternalPlanSession {
+    if (!isV2Session(session)) return session;
+    return {
+        id: session.id,
+        title: session.title,
+        priority: session.priority,
+        placement: session.placement,
+        gating: session.gating,
+        ...(session.objectives ? { objectives: [...session.objectives] } : {}),
+        prescription: externalSessionDisplayPrescription(session),
+        ...(session.scaling ? { scaling: session.scaling } : {}),
+        ...(session.isEvent !== undefined ? { isEvent: session.isEvent } : {}),
+    };
+}
+
 /** Assembles the context brief from the user-scoped stores. Read-only: it persists
  * nothing and mutates nothing, so it is safe to call at any point in the day. */
 export class ContextBriefService {
@@ -42,6 +81,18 @@ export class ContextBriefService {
         // Activity and recommendation range queries are end-exclusive; the brief window
         // is inclusive of targetDate, so the fetch reaches one day further.
         const throughExclusive = addDaysToLocalDateString(targetDate, 1);
+        const upcomingEndDate = addDaysToLocalDateString(targetDate, UPCOMING_CONTEXT_DAYS - 1);
+        const upcomingDates = Array.from(
+            { length: UPCOMING_CONTEXT_DAYS },
+            (_, offset) => addDaysToLocalDateString(targetDate, offset),
+        );
+        // External-plan placement spreads flexible sessions within their whole plan week.
+        // A fixed activity just before or after the 7-day handoff horizon can therefore
+        // change which date a session resolves onto inside the horizon. Six calendar days
+        // of padding on both sides fully covers every Monday-Sunday plan week intersecting
+        // the handoff, without requiring timezone-sensitive weekday arithmetic here.
+        const placementOccupancyStart = addDaysToLocalDateString(targetDate, -6);
+        const placementOccupancyEnd = addDaysToLocalDateString(upcomingEndDate, 6);
         const unavailableSources: string[] = [];
 
         const snapshotDates = Array.from(
@@ -49,25 +100,41 @@ export class ContextBriefService {
             (_, offset) => addDaysToLocalDateString(startDate, offset),
         );
 
-        const [snapshotResults, checkinResult, activityResult, recommendationResult, settingsResult, preferencesResult, intentResult, goalsResult] =
-            await Promise.allSettled([
-                // getRecoverySnapshotByDate collapses UNAVAILABLE and MISSING to null, so a
-                // read outage would be indistinguishable from "no data that day" and the
-                // brief would silently under-report the window. Read the state instead.
-                Promise.all(snapshotDates.map(date => recoverySnapshotService.getRecoverySnapshotState(userId, date))),
-                // Activity, recommendation, and check-in range queries are end-exclusive;
-                // the brief window is inclusive of targetDate, so the fetch reaches throughExclusive.
-                checkinService.getCheckinsInRange(userId, baselineStart, throughExclusive),
-                activityService.getActivitiesInRange(userId, startDate, throughExclusive),
-                recommendationService.getRecommendationsInRange(userId, startDate, throughExclusive),
-                // peek, not get: the brief is read-only and must not create a settings
-                // profile as a side effect of being looked at (DataView presents it as
-                // "generating it changes nothing").
-                trainingSettingsService.peekTrainingSettingsState(userId),
-                preferencesService.getPreferencesState(userId),
-                trainingIntentProfileService.getProfileState(userId),
-                goalService.getActiveGoalsState(userId),
-            ] as const);
+        const [
+            snapshotResults,
+            checkinResult,
+            activityResult,
+            recommendationResult,
+            settingsResult,
+            preferencesResult,
+            intentResult,
+            goalsResult,
+            fixedActivityResult,
+            planBlockResult,
+        ] = await Promise.allSettled([
+            // getRecoverySnapshotByDate collapses UNAVAILABLE and MISSING to null, so a
+            // read outage would be indistinguishable from "no data that day" and the
+            // brief would silently under-report the window. Read the state instead.
+            Promise.all(snapshotDates.map(date => recoverySnapshotService.getRecoverySnapshotState(userId, date))),
+            // Activity, recommendation, and check-in range queries are end-exclusive;
+            // the brief window is inclusive of targetDate, so the fetch reaches throughExclusive.
+            checkinService.getCheckinsInRange(userId, baselineStart, throughExclusive),
+            activityService.getActivitiesInRange(userId, startDate, throughExclusive),
+            recommendationService.getRecommendationsInRange(userId, startDate, throughExclusive),
+            // peek, not get: the brief is read-only and must not create a settings
+            // profile as a side effect of being looked at (DataView presents it as
+            // "generating it changes nothing").
+            trainingSettingsService.peekTrainingSettingsState(userId),
+            preferencesService.getPreferencesState(userId),
+            trainingIntentProfileService.getProfileState(userId),
+            goalService.getActiveGoalsState(userId),
+            // Fixed activities are fetched slightly wider than the visible handoff so
+            // imported-plan placement has the full occupancy of every intersecting week.
+            fixedActivityService.getActivitiesInRangeState(userId, placementOccupancyStart, placementOccupancyEnd),
+            // Plan blocks are range-overlays (currently explicit travel) and the service
+            // returns any block intersecting this visible horizon, including one that began earlier.
+            planBlockService.getBlocksInRangeState(userId, targetDate, upcomingEndDate),
+        ] as const);
 
         const snapshots: DailyRecoverySnapshot[] = [];
         if (snapshotResults.status === 'fulfilled') {
@@ -147,6 +214,111 @@ export class ContextBriefService {
         const goals = goalsResult.status === 'fulfilled' && goalsResult.value.status === 'AVAILABLE'
             ? goalsResult.value.data
             : [];
+        if (goalsResult.status !== 'fulfilled' || !['AVAILABLE', 'MISSING'].includes(goalsResult.value.status)) {
+            unavailableSources.push('active goals');
+        }
+
+        const fixedActivitiesReadable = fixedActivityResult.status === 'fulfilled'
+            && ['AVAILABLE', 'MISSING'].includes(fixedActivityResult.value.status);
+        const placementFixedActivities = fixedActivityResult.status === 'fulfilled' && fixedActivityResult.value.status === 'AVAILABLE'
+            ? fixedActivityResult.value.data.filter(activity => !activity.isCompleted)
+            : [];
+        const upcomingFixedActivities = placementFixedActivities.filter(activity =>
+            activity.date >= targetDate && activity.date <= upcomingEndDate);
+        if (!fixedActivitiesReadable) {
+            unavailableSources.push('future fixed activities');
+        }
+
+        const upcomingPlanBlocks = planBlockResult.status === 'fulfilled' && planBlockResult.value.status === 'AVAILABLE'
+            ? planBlockResult.value.data
+            : [];
+        if (planBlockResult.status !== 'fulfilled' || !['AVAILABLE', 'MISSING'].includes(planBlockResult.value.status)) {
+            unavailableSources.push('plan blocks / travel overlays');
+        }
+
+        const upcomingExternalSessions: UpcomingExternalPlanSession[] = [];
+        let currentExternalSession: AnyExternalPlanSession | null = null;
+        // Whether "no session placed today" can be asserted as a confirmed fact. Starts
+        // false whenever occupancy itself is unreadable (the else branch below), and is
+        // also cleared if today's own plan-state read specifically fails, so a resolved
+        // `externalFallback: true` downstream is never presented as certain when the day
+        // that mattered most could not actually be read.
+        let externalScheduleTodayConfirmed = fixedActivitiesReadable;
+        if (fixedActivitiesReadable) {
+            // Resolve the active plan independently for each future date so plan revision
+            // effective-from boundaries and overlapping re-imports are respected. Use the
+            // padded occupancy set above, not only visible future commitments, because an
+            // earlier/later fixed day in the same plan week can move a flexible session.
+            const activePlanResults = await Promise.allSettled(
+                upcomingDates.map(date => activeExternalPlanService.getActivePlanState(userId, date, placementFixedActivities)),
+            );
+            let unreadablePlanDays = 0;
+            for (let index = 0; index < activePlanResults.length; index++) {
+                const date = upcomingDates[index];
+                const settled = activePlanResults[index];
+                if (settled.status === 'rejected') {
+                    unreadablePlanDays += 1;
+                    if (date === targetDate) externalScheduleTodayConfirmed = false;
+                    continue;
+                }
+                const state = settled.value;
+                if (state.status === 'MISSING') continue;
+                if (state.status !== 'AVAILABLE') {
+                    unreadablePlanDays += 1;
+                    if (date === targetDate) externalScheduleTodayConfirmed = false;
+                    continue;
+                }
+                if (date === targetDate) {
+                    currentExternalSession = placedSessionForDate(state.data, date)?.session ?? null;
+                }
+                for (const placed of state.data.placed.filter(item =>
+                    item.date === date && (item.status === 'planned' || item.status === 'moved'))) {
+                    upcomingExternalSessions.push({
+                        date,
+                        planId: state.data.header.planId,
+                        planTitle: state.data.header.title,
+                        revision: state.data.header.revision,
+                        sessionId: placed.session.id,
+                        title: placed.session.title,
+                        priority: placed.session.priority,
+                        modality: placed.session.gating.modality,
+                        intensity: placed.session.gating.intensity,
+                        durationMin: placed.session.gating.durationMin,
+                        durationMax: placed.session.gating.durationMax,
+                        flexibility: placed.session.placement.flexibility,
+                        status: placed.status === 'moved' ? 'moved' : 'planned',
+                        moved: placed.moved,
+                        isEvent: placed.session.isEvent === true,
+                        prescription: externalSessionDisplayPrescription(placed.session),
+                    });
+                }
+            }
+            if (unreadablePlanDays > 0) {
+                unavailableSources.push(`external plan schedule (${unreadablePlanDays} day(s) unreadable)`);
+            }
+        } else {
+            // Placement depends on fixed-activity occupancy; showing a schedule resolved
+            // against an unknown occupancy set would be confidently wrong.
+            unavailableSources.push('external plan schedule (fixed-activity occupancy unavailable)');
+        }
+
+        // ADR-0017: planningMode.ts is the sole authority for the effective mode. The
+        // persisted profile is athlete intent; effective mode also depends on whether an
+        // eligible event/session actually governs this date.
+        const events = goals.map(goalToUserEvent).filter((event): event is NonNullable<typeof event> => event !== null);
+        const periodization = evaluatePeriodizationPhase(events, targetDate);
+        const planningContext = resolvePlanningContext(
+            intentProfile,
+            periodization,
+            targetDate,
+            currentExternalSession ? planningAuthoritySession(currentExternalSession) : null,
+        );
+        // resolvePlanningContext treats a null externalSession as "confirmed nothing is
+        // placed today" and reports externalFallback accordingly. That is only true when
+        // today's own plan-state read actually succeeded; when it didn't,
+        // externalScheduleTodayConfirmed is false and the fallback claim is unconfirmed,
+        // not negative.
+        const externalFallbackUncertain = planningContext.externalFallback && !externalScheduleTodayConfirmed;
 
         const input: ContextBriefInput = {
             asOfDate: targetDate,
@@ -161,7 +333,25 @@ export class ContextBriefService {
             intentProfile,
             goals,
         };
-        const text = injectActivityTelemetryIntoContextBrief(buildContextBrief(input), activities);
+        const retrospectiveText = injectActivityTelemetryIntoContextBrief(buildContextBrief(input), activities);
+        const text = enhanceContextBriefForPlanning(retrospectiveText, {
+            asOfDate: targetDate,
+            snapshots,
+            checkins,
+            activities,
+            recommendations,
+            trainingSettings,
+            preferences,
+            effectivePlanningMode: planningContext.mode,
+            externalFallback: planningContext.externalFallback,
+            externalFallbackUncertain,
+            eventStrategy: planningContext.eventStrategy,
+            goals,
+            upcomingFixedActivities,
+            upcomingPlanBlocks,
+            upcomingExternalSessions,
+            unavailableSources,
+        });
 
         return {
             text,
