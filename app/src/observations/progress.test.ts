@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { MetricObservationHead, MetricObservationRevision, ReliabilityEstimate } from './models';
-import type { OutcomeMetricBinding } from '../outcomes/evaluationSpec';
+import type { OutcomeMetricBinding, PracticalThreshold } from '../outcomes/evaluationSpec';
 import { deriveProgress, type CurrentObservation } from './progress';
 
 const binding: OutcomeMetricBinding = {
@@ -135,7 +135,7 @@ describe('OV4 progress derivation', () => {
     it('handles zero baseline without invalid percentage arithmetic', () => {
         const zeroBinding: OutcomeMetricBinding = {
             ...binding,
-            practicalThreshold: { kind: 'absolute', value: 5, unit: 'W' },
+            practicalThreshold: { kind: 'absolute', value: 5, unit: 'W' } satisfies PracticalThreshold,
         };
         const result = deriveProgress(zeroBinding, [
             current('base:cycling_tt_20m_mean_power_w', 0, '2026-09-01T06:00:00Z'),

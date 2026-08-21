@@ -85,10 +85,11 @@ function candidateObservations(binding: OutcomeMetricBinding, observations: read
 }
 
 function selectBaseline(binding: OutcomeMetricBinding, candidates: readonly CurrentObservation[]): CurrentObservation | null {
-    if (binding.baseline.kind === 'declared_observation') {
-        return candidates.find(candidate => candidate.revision.observationKey === binding.baseline.observationId) ?? null;
+    const baseline = binding.baseline;
+    if (baseline.kind === 'declared_observation') {
+        return candidates.find(candidate => candidate.revision.observationKey === baseline.observationId) ?? null;
     }
-    return candidates.find(candidate => withinWindow(candidate.revision.observedAt, binding.baseline.window)) ?? null;
+    return candidates.find(candidate => withinWindow(candidate.revision.observedAt, baseline.window)) ?? null;
 }
 
 function selectLatest(binding: OutcomeMetricBinding, candidates: readonly CurrentObservation[], baseline: CurrentObservation): CurrentObservation | null {
