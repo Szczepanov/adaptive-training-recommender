@@ -95,6 +95,21 @@ describe('block outcome exports', () => {
         expect(lines[1]).toContain('block-adequacy-v1');
     });
 
+    it('uses locale-independent code-unit ordering for metric rows and canonical object keys', () => {
+        const value = report({ 'ä': 1, z: 2 });
+        value.metricProgress = [
+            { ...value.metricProgress[0]!, metricId: 'ä' },
+            { ...value.metricProgress[1]!, metricId: 'z' },
+        ];
+
+        const lines = blockOutcomeReportToCsv(value).split('\n');
+        expect(lines[1]).toContain(',z,');
+        expect(lines[2]).toContain(',ä,');
+
+        const json = blockOutcomeReportToJson(value);
+        expect(json.indexOf('"z":2')).toBeLessThan(json.indexOf('"ä":1'));
+    });
+
     it('produces byte-stable JSON when equivalent nested maps have different insertion order', () => {
         const first = blockOutcomeReportToJson(report({ zeta: 1, alpha: 'x' }));
         const second = blockOutcomeReportToJson(report({ alpha: 'x', zeta: 1 }));
