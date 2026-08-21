@@ -83,6 +83,57 @@ export interface CoreSignalDataQuality {
     suspectedQuantizationOrTies: boolean;
 }
 
+/** Candidate estimators are observation-only in HA2; HA3 chooses how to interpret them. */
+export type HealthAnomalyEstimator =
+    | 'mean-stdev-28d'
+    | 'median-mad-28d'
+    | 'log-mean-stdev-28d';
+
+export type HealthSignalFeatureUnavailableReason =
+    | 'missing_current'
+    | 'missing_baseline'
+    | 'missing_scale'
+    | 'insufficient_history'
+    | 'incompatible_baseline_version'
+    | 'near_zero_scale'
+    | 'invalid_domain';
+
+/**
+ * A threshold-free comparison feature. `standardizedDeviation` is only computed when the
+ * measured scale is safely non-zero; HA2 never fabricates a denominator or anomaly state.
+ */
+export interface HealthSignalFeatureCandidate {
+    estimator: HealthAnomalyEstimator;
+    status: 'available' | 'unavailable';
+    unavailableReason: HealthSignalFeatureUnavailableReason | null;
+    currentValue: number | null;
+    baselineValue: number | null;
+    scaleValue: number | null;
+    deltaValue: number | null;
+    standardizedDeviation: number | null;
+    baselineVersion: number | null;
+}
+
+export interface HealthCoreSignalFeatures {
+    signal: HealthCoreSignal;
+    adverseDirection: 'high' | 'low';
+    candidates: HealthSignalFeatureCandidate[];
+    dataQuality: CoreSignalDataQuality;
+    /** Null means the canonical snapshot does not preserve enough source-level provenance. */
+    measurementProvenance: string | null;
+}
+
+/**
+ * HA2 output consumed later by the HA0.2 composer/HA3 evaluator. This is deliberately
+ * separate from `CoreSignalEvidence`: feature plumbing does not decide whether physiology is
+ * normal or anomalous.
+ */
+export interface HealthAnomalyFeatureSet {
+    date: string;
+    baselineVersion: number | null;
+    coreSignals: HealthCoreSignalFeatures[];
+}
+
 export interface SupportingSignalEvidence {
     code: string;
     status: 'unavailable' | 'normal' | 'adverse' | 'supportive';
@@ -140,6 +191,9 @@ export interface HealthAnomalyInput {
     timezone: 'Europe/Warsaw';
     recoverySnapshot: DailyRecoverySnapshot | null;
     subjectiveCheckin: DailySubjectiveCheckin | null;
+    /** HA2 threshold-free feature plumbing. Optional until the HA0.2 composer lands. */
+    features?: HealthAnomalyFeatureSet | null;
+    /** HA0/HA3 assessment-facing evidence contract retained until HA3 owns categorisation. */
     coreSignals: CoreSignalEvidence[];
     supportingSignals: SupportingSignalEvidence[];
     dataQuality: CoreSignalDataQuality[];
