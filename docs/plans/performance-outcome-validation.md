@@ -1,8 +1,9 @@
 # Performance outcome validation & goal-progress loop
 
 * **Capability prefix:** `OV`
-* **Status:** `Draft`
-* **Blocked by:** design review of this plan. The underlying M7 usage trigger is now satisfied by an explicit decision to begin repeated standardized performance testing. Code that changes recommendation behaviour remains blocked by the active Phase 9.0 evidence boundary.
+* **Status:** `Approved`
+* **Approved:** 2026-08-21 by the project owner. Implementation will proceed in separate PRs.
+* **Blocked by:** none for evidence-only implementation. Code that changes recommendation behaviour remains outside this plan's current authority and is still gated by the active Phase 9.0 evidence boundary plus the separate ADR/ship decision described below.
 * **Unlocks:** protocol-locked repeated testing, honest individual progress interpretation, block-level outcome reports, and later evidence for whether stable recommendation-policy versions are associated with better goal outcomes.
 * **Source analysis:** [`2026-08-21-performance-outcome-validation.md`](../analysis/2026-08-21-performance-outcome-validation.md)
 * **Existing architecture reused:** ADR-0023 D-MOBS/D-MPOLICY and M7 in [`multidomain-session-authoring-execution-and-evidence.md`](./multidomain-session-authoring-execution-and-evidence.md)
@@ -143,7 +144,7 @@ OV1–OV6 may be implemented while Phase 9.0 runs because they are evidence-only
 
 | Item | Title | Status | Blocked by |
 |---|---|:---:|---|
-| OV0.1 | Record M7 trigger and scope cutline | `[ ]` | plan accepted |
+| OV0.1 | Record M7 trigger and scope cutline | `[ ]` | none — plan approved 2026-08-21 |
 | OV0.2 | Freeze v1 terminology and evidence planes | `[ ]` | OV0.1 |
 | OV1.1 | Minimal metric registry | `[ ]` | OV0.2 |
 | OV1.2 | Immutable measurement protocols | `[ ]` | OV1.1 |
