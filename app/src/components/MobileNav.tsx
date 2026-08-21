@@ -95,7 +95,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({ screen, handleNavigate, lo
 
         <button
           ref={mobileMoreBtnRef}
-          className={`nav-item ${['goals', 'constraints', 'preferences', 'data', 'brief', 'sessions', 'testing', 'strength'].includes(screen) ? 'active' : ''}`}
+          className={`nav-item ${['goals', 'constraints', 'preferences', 'data', 'brief', 'sessions', 'testing'].includes(screen) ? 'active' : ''}`}
           onClick={() => setMobileMoreOpen((isOpen) => !isOpen)}
           aria-expanded={mobileMoreOpen}
           aria-haspopup="dialog"
