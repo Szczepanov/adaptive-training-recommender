@@ -30,6 +30,9 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
+      - name: Verify dependency lock is current
+        run: uv lock --check
+
       - name: Install dependencies
         run: uv sync --frozen
 
