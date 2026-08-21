@@ -266,6 +266,20 @@ class GarminSyncService:
             # so it must accompany the other current metrics when deriving its
             # trailing baseline and deltas.
             "totalSteps": context.canonical.steps_count,
+            # v5 (docs/adr/0006 amendment): body battery wake / stress / training readiness
+            # need to be present here too, or compute_derived_metrics's *Vs7dMedian deltas
+            # for them would always resolve to None regardless of window data.
+            "bodyBatteryWake": context.canonical.body_battery_wake,
+            "stress": (
+                {"avg": context.canonical.stress.avg, "max": context.canonical.stress.max}
+                if context.canonical.stress
+                else None
+            ),
+            "trainingReadiness": (
+                {"score": context.canonical.training_readiness.score}
+                if context.canonical.training_readiness
+                else None
+            ),
         }
         derived = compute_derived_metrics(dummy_current, window_7d, window_28d)
 

@@ -116,6 +116,45 @@ describe('objective strain scoring', () => {
     });
 });
 
+// --- Respiration-rate baseline strain (docs/adr/0006 amendment) -----------
+
+describe('respiration strain scoring', () => {
+    it('a small respiration bump within normal night-to-night noise does not trigger modify', () => {
+        // +0.5 br/min against a 1.5 br/min MAD is well under 1 "SD"-equivalent.
+        const objective = quietObjective({ respiration_delta: 0.5, respiration_delta_28d: 0.5, respiration_mad_28d: 1.5 });
+        const rec = evaluateTraining({ subjective: greenSubjective(), objective }, baseContext(), '2026-08-01');
+        expect(rec.mode).toBe('train');
+    });
+
+    it('respiration below its own baseline (calmer than usual) contributes no strain', () => {
+        // Lower respiration is the "good" direction (sign = -1) -- must never add strain.
+        const objective = quietObjective({ respiration_delta: -2, respiration_delta_28d: -2, respiration_mad_28d: 1.0 });
+        const rec = evaluateTraining({ subjective: greenSubjective(), objective }, baseContext(), '2026-08-01');
+        expect(rec.mode).toBe('train');
+        expect(rec.telemetry!.metricStrain.totalMetricStrain).toBe(0);
+    });
+
+    it('a sustained, worsening respiration elevation alone crosses into modify', () => {
+        // Illness-like pattern: this week's respiration is already elevated vs the 7d
+        // baseline (acute), and that elevation is still climbing relative to the more
+        // contamination-resistant 28d median baseline (chronic) -- see the ADR amendment.
+        const objective = quietObjective({ respiration_delta: 4, respiration_delta_28d: 8, respiration_mad_28d: 1.0 });
+        const rec = evaluateTraining({ subjective: greenSubjective(), objective }, baseContext(), '2026-08-01');
+        expect(rec.mode).toBe('modify');
+    });
+
+    it('a document written before baselineComputationVersion 3 (no respiration fields) contributes zero respiration strain', () => {
+        // respiration_delta/respiration_delta_28d/respiration_mad_28d absent entirely,
+        // exactly as adapters.ts leaves them for pre-v3 documents -- must be inert, not
+        // fabricate a signal from missing data.
+        const objective = quietObjective();
+        delete (objective as { respiration_delta?: number | null }).respiration_delta;
+        const rec = evaluateTraining({ subjective: greenSubjective(), objective }, baseContext(), '2026-08-01');
+        expect(rec.mode).toBe('train');
+        expect(rec.telemetry!.metricStrain.totalMetricStrain).toBe(0);
+    });
+});
+
 // --- Systemic-cost gating on 'modify' days ---------------------------------
 
 describe('modify-mode systemic cost gating', () => {
