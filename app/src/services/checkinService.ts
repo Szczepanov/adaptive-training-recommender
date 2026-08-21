@@ -160,12 +160,12 @@ export class CheckinService {
                 orderBy('date', 'desc'),
                 limit(days)
             );
+
             const querySnapshot = await getDocs(q);
-            if (querySnapshot.empty) return [];
-            return querySnapshot.docs.map(checkinDoc => checkinDoc.data() as DailySubjectiveCheckin);
+            return querySnapshot.docs.map(doc => doc.data() as DailySubjectiveCheckin);
         } catch (error) {
             console.error('Error fetching recent check-ins:', error);
-            return [];
+            throw error;
         }
     }
 
