@@ -3,6 +3,10 @@ FROM python:3.14-slim AS builder
 
 WORKDIR /app
 
+# Never let uv silently download a different Python interpreter than the base image.
+# If pyproject.toml stops supporting the Docker runtime, fail the image build instead.
+ENV UV_PYTHON_DOWNLOADS=never
+
 # Install uv for fast dependency restoration
 RUN pip install --no-cache-dir uv==0.6.5
 
@@ -38,6 +42,11 @@ RUN useradd -m -u 1000 appuser && \
 COPY --from=builder --chown=appuser:appuser /app/.venv /app/.venv
 COPY --chown=appuser:appuser src /app/src
 COPY --chown=appuser:appuser pyproject.toml /app/
+
+# Catch interpreter/ABI mismatches during docker build, before a broken image can be
+# pushed to Artifact Registry or deployed to Cloud Run.
+RUN /app/.venv/bin/python --version && \
+    /app/.venv/bin/python -c "import firebase_admin, garminconnect; import google.cloud.firestore; import google.cloud.storage"
 
 USER appuser
 
