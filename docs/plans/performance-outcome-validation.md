@@ -224,7 +224,11 @@ Create `app/src/observations/` only for metrics that will actually be used.
 Suggested v1:
 
 ```ts
-export type MetricDirection = 'higher_is_better' | 'lower_is_better' | 'target_range' | 'context_only';
+export type MetricDirection =
+  | 'higher_is_better'
+  | 'lower_is_better'
+  | 'target_range'
+  | 'context_only';
 
 export interface MetricDefinition {
   id: string;
@@ -237,20 +241,22 @@ export interface MetricDefinition {
 }
 ```
 
+`MetricDirection` describes the general metric catalogue only. Goal evaluation uses the narrower `OutcomeDirection` defined in OV5.1; `context_only` cannot be bound as a primary/secondary outcome, and a target range is incomplete until explicit bounds are supplied at the evaluation binding.
+
 Initial cycling registry — keep deliberately small:
 
 * `cycling_tt_20m_mean_power_w` — higher is better;
 * `cycling_tt_4m_mean_power_w` — higher is better;
-* `cycling_submax_mean_hr_bpm` — context-only unless protocol interpretation defines otherwise;
+* `cycling_submax_mean_hr_bpm` — context-only unless a later validated protocol defines an outcome interpretation;
 * `cycling_submax_rpe` — context-only;
 * optional `cycling_sprint_5s_peak_power_w` only when the next block actually tracks sprint maintenance;
-* competition result metrics only when the event record needs them.
+* competition result fields live on the ecological outcome record rather than being forced into the protocol-observation registry.
 
 A derived `cycling_ftp95_estimate_w` may exist later but must be algorithm-versioned and must never replace the raw 20-minute observation.
 
 **Files.** `observations/models.ts`, `observations/registry.ts`, tests.
 
-**Done when.** Unit mismatch fails; unsupported metric IDs fail; no unused large catalogue ships.
+**Done when.** Unit mismatch fails; unsupported metric IDs fail; `context_only` cannot be promoted to a primary/secondary outcome binding; no unused large catalogue ships.
 
 ## OV1.2 `[ ]` Immutable measurement protocols
 
@@ -267,7 +273,12 @@ export interface MeasurementProtocol {
   metricIds: readonly string[];
   instructions: readonly ProtocolInstruction[];
   warmupRef?: string;
-  requiredContext: readonly ComparisonDimension[];
+  comparisonContext: {
+    required: readonly ComparisonDimension[];
+    seriesDefining: readonly ComparisonDimension[];
+    contextOnly: readonly ComparisonDimension[];
+    canonicalizationVersion: string;
+  };
   familiarization: {
     required: boolean;
     minimumExposures: number;
@@ -292,7 +303,22 @@ Examples of comparison dimensions:
 * surface for running/field metrics;
 * timing method for sprint metrics.
 
-Weather may be stored as context without always entering the strict series key. A protocol decides which dimensions are series-defining.
+The protocol explicitly partitions required context into `seriesDefining` and `contextOnly`. A dimension cannot appear in both lists. Every `seriesDefining` dimension must also be required for a valid benchmark attempt. Weather may be stored as contextual-only unless a specific protocol revision declares it series-defining.
+
+### Comparison-key canonicalization
+
+`ComparisonSeries.key` construction is versioned policy, not ad hoc string concatenation.
+
+V1 contract:
+
+1. validate the observation against the exact protocol revision;
+2. take only the protocol's `seriesDefining` dimensions;
+3. normalize each value using the registered `ComparisonDimension` type (for example trimmed/case-normalized identifiers, canonical units and stable booleans/numbers);
+4. sort dimensions by stable dimension ID;
+5. serialize `{ metricId, protocolId, protocolRevision, canonicalizationVersion, dimensions }` using canonical JSON with stable key order;
+6. hash that canonical payload with the repository-selected deterministic hash function.
+
+Equivalent repeats must canonicalize identically regardless of input object key order. A material device/setup change declared series-defining must produce a different key. Changing the canonicalization algorithm requires a new `canonicalizationVersion`; old observations keep their original version/key and are not silently re-keyed.
 
 **Persistence.** User-scoped immutable protocol revisions, e.g.:
 
@@ -302,7 +328,7 @@ users/{uid}/measurement_protocols/{protocolId}/revisions/{revision}
 
 Static application-owned defaults may be bundled in code and materialized by reference; athlete-edited protocols become immutable user revisions.
 
-**Done when.** Material protocol changes create a new revision; old observations continue resolving their exact revision.
+**Done when.** Material protocol changes create a new revision; old observations continue resolving their exact revision; the series-defining dimension set and canonicalization version are explicit and replayable.
 
 ## OV1.3 `[ ]` Comparable series and reliability provenance
 
@@ -313,7 +339,8 @@ export interface ComparisonSeries {
   metricId: string;
   protocolId: string;
   protocolRevision: number;
-  key: string; // deterministic hash/canonical key of series-defining context
+  canonicalizationVersion: string;
+  key: string;
 }
 
 export type ReliabilitySource =
@@ -340,7 +367,7 @@ Rules:
 
 **Files.** `observations/comparability.ts`, `observations/reliability.ts`, tests.
 
-**Done when.** Same protocol/device produces the same key; changed source/setup produces a different key when declared series-defining; reliability source is always visible.
+**Done when.** Same protocol/device produces the same key; changed series-defining source/setup produces a different key; equivalent canonical input ordering does not; reliability source and statistic are always visible.
 
 ## OV1.4 `[ ]` Architecture boundary tests
 
@@ -365,21 +392,42 @@ Observation types may be imported by evidence/reporting code. Production selecti
 
 ---
 
-# OV2 — raw observations and assessment attempts
+# OV2 — raw observations, corrections, test attempts and ecological outcomes
 
 Concrete activation of M7.2.
 
 ## OV2.1 `[ ]` Metric observation persistence
 
-Persist raw observations append-only / correction-by-revision rather than overwriting history.
+Persist raw protocol observations append-only. Corrections are new immutable revisions of one stable logical observation; they do not overwrite the original value.
 
-Suggested record:
+A logical observation is identified deterministically by the assessment attempt and metric:
+
+```text
+observationKey = `${assessmentAttemptId}:${metricId}`
+```
+
+Suggested records:
 
 ```ts
-export type ObservationValidity = 'valid' | 'invalid' | 'practice' | 'questionable';
+export type ObservationValidity =
+  | 'valid'
+  | 'invalid'
+  | 'practice'
+  | 'questionable';
 
-export interface MetricObservation {
-  id: string;
+export interface MetricObservationHead {
+  observationKey: string;
+  assessmentAttemptId: string;
+  metricId: string;
+  headRevision: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface MetricObservationRevision {
+  observationKey: string;
+  revision: number;
+  supersedesRevision?: number;
   metricId: string;
   value: number;
   unit: string;
@@ -396,29 +444,36 @@ export interface MetricObservation {
     revision: number;
   };
   comparisonSeriesKey: string;
+  comparisonCanonicalizationVersion: string;
   assessmentAttemptId: string;
   validity: ObservationValidity;
   invalidReason?: string;
   context: Record<string, string | number | boolean | null>;
   derivedFromObservationIds?: readonly string[];
   algorithmVersion?: string;
+  correctionReason?: string;
   createdAt: string;
 }
 ```
 
 Do not permit a derived observation without source IDs + algorithm version.
 
-Suggested path:
+Suggested paths:
 
 ```text
-users/{uid}/metric_observations/{observationId}
+users/{uid}/metric_observations/{observationKey}
+users/{uid}/metric_observations/{observationKey}/revisions/{revision}
 ```
 
-**Done when.** Raw attempts survive recomputation; invalid/practice observations remain inspectable but cannot become default benchmarks.
+Revision documents are immutable. The head document is the only mutable selector and may advance only transactionally from `N` to `N+1` while the corresponding immutable revision is created. Revision 1 has no `supersedesRevision`; revision `N+1` must declare `supersedesRevision: N`. Readers use `headRevision` for the current value and may resolve an older revision only for historical replay/audit.
+
+A correction is therefore distinguishable from a second independent observation. The stable `observationKey` never changes, while revision identity does.
+
+**Done when.** Raw revisions survive recomputation; invalid/practice revisions remain inspectable; a correction chain is deterministic; readers cannot accidentally treat a superseded revision as current.
 
 ## OV2.2 `[ ]` Assessment attempt lifecycle
 
-A test session is more than one scalar. Persist an attempt header so warm-up, validity and multiple metrics share identity.
+A protocol test session is more than one scalar. Persist an attempt header so warm-up, validity and multiple protocol metrics share identity.
 
 ```ts
 export interface AssessmentAttempt {
@@ -428,11 +483,13 @@ export interface AssessmentAttempt {
   startedAt?: string;
   completedAt?: string;
   state: 'scheduled' | 'in_progress' | 'completed' | 'abandoned';
-  purpose: 'familiarization' | 'baseline' | 'checkpoint' | 'post_block' | 'competition';
+  purpose: 'familiarization' | 'baseline' | 'checkpoint' | 'post_block';
   sourceSessionRef?: string;
   notes?: string;
 }
 ```
+
+Competition is intentionally **not** an `AssessmentAttempt` purpose. Competition evidence has different comparability semantics and uses the separate `CompetitionOutcome` record below.
 
 Suggested path:
 
@@ -442,7 +499,42 @@ users/{uid}/assessment_attempts/{attemptId}
 
 Keep observations as separate documents so variable metric/attempt counts do not recreate nested-array validation problems.
 
-**Done when.** One completed attempt can own multiple raw metrics and invalid attempts remain queryable without contaminating progress.
+**Done when.** One completed test attempt can own multiple raw protocol metrics and invalid attempts remain queryable without contaminating progress.
+
+### First-class ecological competition outcome
+
+A goal event is valuable evidence without pretending to be a protocol-locked benchmark.
+
+```ts
+export interface CompetitionOutcome {
+  id: string;
+  eventRef?: string;
+  sport: 'cycling' | 'running' | 'field' | 'other';
+  occurredAt: string;
+  source: 'manual' | 'garmin_activity' | 'imported_result';
+  sourceRef?: string;
+  result: {
+    completed: boolean;
+    placing?: number;
+    fieldSize?: number;
+    elapsedSeconds?: number;
+    distanceM?: number;
+    courseId?: string;
+    summary?: string;
+  };
+  metrics: Readonly<Record<string, number | string | boolean | null>>;
+  context: Readonly<Record<string, string | number | boolean | null>>;
+  createdAt: string;
+}
+```
+
+`CompetitionOutcome` has no `protocolRef`, `comparisonSeriesKey` or `assessmentAttemptId`. Race-derived duration powers may be stored inside its metrics/context or as clearly labelled competition-derived evidence, but they do not enter protocol TT comparison series unless a separately captured protocol observation genuinely satisfies that protocol.
+
+Suggested path:
+
+```text
+users/{uid}/competition_outcomes/{competitionOutcomeId}
+```
 
 ## OV2.3 `[ ]` Manual observation adapter first
 
@@ -469,14 +561,18 @@ Rules must enforce:
 * known top-level keys only;
 * valid enum values;
 * unit consistency where rules can safely check it;
-* protocol revision identity present;
+* protocol revision identity present for protocol observations;
 * owner cannot spoof another user path;
-* terminal/correction semantics are explicit;
-* client cannot silently mutate an immutable protocol revision after observations reference it.
+* revision documents are immutable;
+* revision 1 has no predecessor;
+* correction revision `N+1` points to `N` and is created together with a head advance from `N` to `N+1`;
+* a stale writer cannot advance the head from the wrong prior revision;
+* client cannot silently mutate an immutable protocol revision after observations reference it;
+* competition outcomes cannot populate protocol-only fields or protocol comparison series.
 
 Use subcollections/documents rather than unbounded nested arrays where per-element validation would be weak.
 
-**Done when.** Emulator tests cover cross-user denial, immutable revision denial, malformed observation denial and valid manual writes.
+**Done when.** Emulator tests cover cross-user denial, immutable protocol/revision denial, malformed observation denial, stale correction denial, valid initial/manual writes, valid correction chains and ecological-outcome isolation.
 
 ---
 
@@ -496,7 +592,7 @@ MeasurementProtocol
   -> SessionOccurrence(intent = testing)
   -> SessionExecution
   -> AssessmentAttempt
-  -> MetricObservation[]
+  -> MetricObservationRevision[]
 ```
 
 A testing occurrence has no automatic recommendation-selection authority merely because it exists. If scheduled as externally-authored planned work, existing adjudication/safety contracts still apply.
@@ -540,7 +636,20 @@ For cycling v1 this can be simple numeric entry:
 
 Do not calculate arbitrary time-window maximal powers from incomplete summary telemetry in this item.
 
-**Done when.** Completion is idempotent; double taps do not duplicate observations; abandoning the test does not create a valid benchmark.
+### Idempotency contract
+
+Initial completion uses the deterministic logical identity:
+
+```text
+observationKey = `${assessmentAttemptId}:${metricId}`
+initialRevision = 1
+```
+
+The writer transaction creates the head document and immutable revision `1` only if the logical observation does not already exist. An offline retry or double tap with the same attempt/metric therefore resolves to the same path. If revision 1 already exists with the same canonical payload, treat the retry as success. If the payload conflicts, do **not** overwrite it; enter the explicit correction workflow.
+
+Corrections keep the same `observationKey` and create revision `headRevision + 1` transactionally, so a correction cannot duplicate or replace the original revision.
+
+**Done when.** Completion is idempotent across double taps/offline retry; stale concurrent writes fail safely; corrections create distinct revisions; abandoning the test does not create a valid benchmark.
 
 ## OV3.4 `[ ]` Mobile/browser acceptance
 
@@ -553,7 +662,8 @@ Required states at 390 px and desktop:
 * completion/value entry;
 * invalid reason;
 * offline pending write + reload/reconnect;
-* completed summary.
+* completed summary;
+* explicit correction flow for an already-written metric.
 
 **Done when.** No horizontal overflow, all controls ≥44 px, and offline/retry does not duplicate an observation.
 
@@ -589,19 +699,21 @@ export interface ProgressResult {
   practicalThreshold?: PracticalThreshold;
   status: ProgressStatus;
   reasons: readonly string[];
-  policyVersion: string;
+  progressPolicyVersion: string;
 }
 ```
 
+`progressPolicyVersion` versions the **progress derivation algorithm**. It is not recommender-policy attribution. Pure metric progress has no mandatory training `policyVersion`; training-policy context belongs to the block report's `policySegments`.
+
 Baseline selection:
 
-1. valid observations only;
-2. same comparison series;
-3. prefer purpose=`baseline` for initial comparison;
+1. resolve the baseline policy from the frozen `OutcomeMetricBinding` revision;
+2. valid current observation revisions only;
+3. same comparison series;
 4. never silently replace a declared baseline with the historical personal best;
-5. allow explicit baseline revision for a new block, preserving the old result.
+5. allow a new block/evaluation revision to declare a new baseline while preserving old reports and observation revisions.
 
-**Done when.** An invalid faster attempt cannot become the baseline/latest benchmark; device/protocol changes return `non_comparable`.
+**Done when.** An invalid faster attempt cannot become the baseline/latest benchmark; device/protocol changes return `non_comparable`; a comparison spanning multiple training-policy segments still has one truthful metric result without pretending it belongs to one policy.
 
 ## OV4.2 `[ ]` Reliability/error interpretation
 
@@ -654,11 +766,14 @@ This item is **not required for the first usable release**; literature reference
 
 Do not create a second training-plan authority. This record says **how a block will be evaluated**, not what sessions will be selected.
 
+Evaluation criteria must be frozen before the outcome is interpreted. Use an immutable revision model rather than an editable active document.
+
 Suggested header:
 
 ```ts
-export interface OutcomeEvaluationSpec {
+export interface OutcomeEvaluationSpecRevision {
   id: string;
+  revision: number;
   title: string;
   startDate: string;
   endDate: string;
@@ -667,35 +782,92 @@ export interface OutcomeEvaluationSpec {
     id: string;
   };
   status: 'draft' | 'active' | 'completed' | 'archived';
+  activatedAt?: string;
+  contentHash: string;
   createdAt: string;
 }
 ```
 
-Metric bindings live in a subcollection:
+Suggested paths:
 
 ```text
 users/{uid}/outcome_evaluations/{id}
-users/{uid}/outcome_evaluations/{id}/metrics/{bindingId}
+users/{uid}/outcome_evaluations/{id}/revisions/{revision}
+users/{uid}/outcome_evaluations/{id}/revisions/{revision}/metrics/{bindingId}
 ```
 
-Binding:
+The parent document may point to the current revision. Draft revisions may be edited or replaced before activation. Activation freezes the revision and all metric bindings. After activation, metric, role, direction, threshold, baseline rule, target window and ecological target criteria are immutable. A legitimate change creates a new evaluation revision; it never rewrites the criteria used by an existing report. Once any target/post-block result has been observed, retroactively creating a more favourable evaluation revision for the same result must be surfaced as a limitation rather than treated as predeclared evidence.
+
+### Outcome direction
+
+General `MetricDirection` is too permissive for a goal binding. Use a dedicated direction contract:
 
 ```ts
-export interface OutcomeMetricBinding {
+export type OutcomeDirection =
+  | { kind: 'higher_is_better' }
+  | { kind: 'lower_is_better' }
+  | {
+      kind: 'target_range';
+      lowerBound: number;
+      upperBound: number;
+      unit: string;
+    };
+```
+
+At the binding boundary:
+
+* `primary` and `secondary` bindings require `OutcomeDirection`;
+* a registry metric whose direction is `context_only` cannot be bound as primary/secondary;
+* `target_range.lowerBound` and `upperBound` must be finite, use the metric unit, and satisfy `lowerBound < upperBound`;
+* `context` bindings carry no progress direction and do not produce `meaningful_improvement`/`decline` labels.
+
+### Baseline selection
+
+Make baseline selection discriminated so no required parameter is optional:
+
+```ts
+export type BaselineSelection =
+  | {
+      kind: 'declared_observation';
+      observationId: string;
+    }
+  | {
+      kind: 'first_valid_in_window';
+      window: { startDate: string; endDate: string };
+      selection: 'earliest_valid';
+    };
+```
+
+Shared binding fields:
+
+```ts
+interface OutcomeMetricBindingBase {
   id: string;
   metricId: string;
   protocolRef?: { id: string; revision: number };
-  role: 'primary' | 'secondary' | 'context';
-  expectedDirection: MetricDirection;
-  practicalThreshold?: PracticalThreshold;
-  baselinePolicy: 'declared_observation' | 'first_valid_in_window';
-  baselineObservationId?: string;
+  baseline: BaselineSelection;
   targetObservationWindow?: { startDate: string; endDate: string };
   rationale: string;
 }
+
+export type OutcomeMetricBinding =
+  | (OutcomeMetricBindingBase & {
+      role: 'primary' | 'secondary';
+      expectedDirection: OutcomeDirection;
+      practicalThreshold?: PracticalThreshold;
+    })
+  | (OutcomeMetricBindingBase & {
+      role: 'context';
+      expectedDirection?: never;
+      practicalThreshold?: never;
+    });
 ```
 
-**Done when.** A block declares its evaluation before the post-block result is interpreted, and the record has no selection/ranking authority.
+For `declared_observation`, `observationId` is mandatory and must resolve to a valid current revision compatible with the binding. For `first_valid_in_window`, both window bounds are mandatory; v1 deterministically selects the earliest valid comparable current observation in that window, with ties broken by observation key. The target window remains separate from the baseline window.
+
+Competition/ecological targets are declared separately from protocol metric bindings so a race never has to masquerade as a test observation.
+
+**Done when.** A block declares and activates one immutable evaluation revision before post-block interpretation; baseline selection is mechanically complete; context-only metrics cannot become primary/secondary outcomes; every report stores the exact evaluation revision/hash it used.
 
 ## OV5.2 `[ ]` Process/response evidence read model
 
@@ -714,7 +886,9 @@ Produce a bounded `BlockProcessEvidence`:
 interface BlockProcessEvidence {
   plannedKeyRoles: number;
   completedKeyRoles: number;
+  plannedSessionCount: number;
   completedSessionCount: number;
+  adherencePct: number;
   scaledCount: number;
   deferredCount: number;
   skippedCount: number;
@@ -729,56 +903,84 @@ interface BlockProcessEvidence {
 }
 ```
 
+`adherencePct` is a derived read-model field from the repository's canonical planned/performed source; it is not a second write authority.
+
 Exact fields should follow existing canonical sources; do not invent duplicate adherence truth.
 
-**Done when.** Every count reconciles to existing session/recommendation records and no new write path is needed.
+**Done when.** Every count/percentage reconciles to existing session/recommendation records and no new write path is needed.
 
 ## OV5.3 `[ ]` Block outcome derivation
 
 Pure module, e.g. `outcomes/blockOutcome.ts`.
 
 ```ts
-export type BlockVerdict = 'on_track' | 'mixed' | 'off_track' | 'insufficient_evidence';
+export type BlockVerdict =
+  | 'on_track'
+  | 'mixed'
+  | 'off_track'
+  | 'insufficient_evidence';
 
 export interface BlockOutcomeReport {
-  evaluationSpecId: string;
+  evaluationRef: {
+    id: string;
+    revision: number;
+    contentHash: string;
+  };
   period: { startDate: string; endDate: string };
-  metrics: readonly ProgressResult[];
+  metricProgress: readonly ProgressResult[];
+  ecologicalOutcomes: readonly CompetitionOutcome[];
   process: BlockProcessEvidence;
   verdict: BlockVerdict;
   reasons: readonly string[];
   policySegments: readonly PolicySegment[];
-  reportPolicyVersion: string;
+  blockVerdictPolicyVersion: string;
 }
 ```
 
-V1 verdict rules should be categorical and inspectable, not weighted arithmetic.
+The report persists the exact frozen evaluation revision/hash, so later edits/new revisions cannot rewrite history. `metricProgress` contains protocol-comparable progress only. `ecologicalOutcomes` contains race/event evidence and never enters the protocol comparison series.
 
-Suggested logic:
+### Versioned adequacy policy
 
-### `insufficient_evidence`
+Block-verdict completeness must be deterministic. V1 uses a named policy, for example `block-adequacy-v1`, with explicit **operational evidence-coverage thresholds**, not physiological claims:
 
-Use when:
+```ts
+export const BLOCK_ADEQUACY_V1 = {
+  minKeyRoleCoveragePct: 70,
+  minAdherencePct: 70,
+  minResponseCoveragePctForOnTrack: 70,
+} as const;
+```
 
-* no valid primary outcome exists;
-* baseline/post measurements are non-comparable;
-* or process adherence is so incomplete that evaluating the intended block would be misleading.
+Derivations:
 
-### `on_track`
+```text
+keyRoleCoveragePct =
+  plannedKeyRoles === 0
+    ? 100
+    : 100 * completedKeyRoles / plannedKeyRoles
 
-Require at least one primary metric with evidence consistent with meaningful progress or goal success and no primary metric with meaningful decline, with adequate process/response evidence.
+processAdequate =
+  keyRoleCoveragePct >= 70
+  AND adherencePct >= 70
 
-### `mixed`
+responseAdequateForOnTrack =
+  responseCoveragePct >= 70
+```
 
-Use for conflicting primary/secondary outcomes, good performance with high response cost, or meaningful improvement in one target with decline in another material target.
+These values are an inspectable initial product completeness policy. They are not claims that 70% is physiologically sufficient. Changing them requires a new `blockVerdictPolicyVersion`, and old reports remain replayable under their original version.
 
-### `off_track`
+### Deterministic v1 verdict order
 
-Use when primary outcomes show meaningful decline / goal failure with enough data to rule out simple missingness, especially when intended training was adequately delivered.
+Evaluate in this order:
 
-Do not make response cost numerically cancel performance gain. Put both in reasons.
+1. **`insufficient_evidence`** if there is no valid declared primary outcome evidence, required protocol baseline/post measurements are non-comparable, or `processAdequate` is false. Performance/ecological facts still appear in the report; only the block-level verdict is withheld.
+2. **`off_track`** if adequate evidence exists and a declared primary outcome shows meaningful decline or an explicitly declared primary ecological goal is missed, with no conflicting primary success that requires `mixed`.
+3. **`mixed`** for conflicting primary outcomes; meaningful primary improvement with a meaningful secondary/material decline; good outcome with repeated adverse response evidence; or otherwise positive outcome/process evidence with `responseAdequateForOnTrack === false`.
+4. **`on_track`** only when at least one declared primary metric shows meaningful progress or a declared primary ecological goal is met, no primary outcome shows meaningful decline/failure, `processAdequate` is true, and `responseAdequateForOnTrack` is true.
 
-**Done when.** Every verdict is reproducible from its input IDs and reason codes.
+Response cost never numerically cancels performance gain. Put both in machine-readable reasons.
+
+**Done when.** Every verdict is reproducible from its input IDs, frozen evaluation revision, policy versions, explicit adequacy predicates and reason codes.
 
 ## OV5.4 `[ ]` Policy-version/planning-context segmentation
 
@@ -794,7 +996,7 @@ interface PolicySegment {
 }
 ```
 
-If policy changes mid-block, show two segments. Do not pool them into a claim about one policy.
+If policy changes mid-block, show two segments. Do not pool them into a claim about one policy. If a metric comparison spans multiple policy segments, the `ProgressResult` remains policy-neutral and the report shows all segments. If historical policy context is missing, use an explicit unknown segment rather than inventing attribution.
 
 This enables future longitudinal questions such as:
 
@@ -816,19 +1018,22 @@ Add:
 * `outcomes/blockOutcomeReport.ts` — deterministic row model;
 * CSV export for metric-level progress;
 * JSON export preserving nested provenance;
-* exact report policy version;
-* source observation/session/recommendation IDs.
+* exact evaluation revision/content hash;
+* exact progress-policy and block-verdict-policy versions;
+* source observation/session/recommendation/ecological-outcome IDs;
+* policy segments, including explicit unknown/multiple segments rather than one synthetic policy attribution.
 
 Suggested human-readable sections:
 
 1. Goal and evaluation window
 2. Primary outcomes
 3. Secondary/context outcomes
-4. Training-process delivery
-5. Recovery/response cost
-6. Policy/planning segments
-7. Verdict and reasons
-8. Evidence limitations
+4. Ecological competition outcomes
+5. Training-process delivery
+6. Recovery/response cost
+7. Policy/planning segments
+8. Verdict and reasons
+9. Evidence limitations
 
 No charts required for v1.
 
@@ -841,6 +1046,7 @@ Initial UI:
 * list active/completed outcome evaluations;
 * show latest block verdict;
 * metric rows with baseline/latest/change/comparability;
+* ecological event result section;
 * “why?” disclosure with protocol/reliability/reason details;
 * export button.
 
@@ -862,15 +1068,15 @@ This makes the implementation real rather than architectural.
 
 The current macrocycle’s primary target is an approximately 50-minute road race. Do not insert an unrelated maximal test battery into the decisive specific week/taper.
 
-Create an outcome evaluation spec linked to the event with:
+Create a frozen outcome evaluation revision linked to the event and capture a `CompetitionOutcome` with:
 
 * event completion/result as the primary ecological endpoint;
 * race power summary if available;
-* race-derived duration powers labelled `competition`, **not** inserted into protocol TT series unless protocol comparability is genuinely satisfied;
+* race-derived duration powers labelled competition-derived, **not** inserted into protocol TT series unless protocol comparability is genuinely satisfied;
 * tactical/execution note;
 * source Garmin activity reference when available.
 
-If race date/course changes, preserve the actual context.
+If race date/course changes, preserve the actual context and evaluation revision history.
 
 **Done when.** The event can be included in the block report without pretending it is a standardized laboratory/TT benchmark.
 
@@ -935,7 +1141,7 @@ At the next block boundary:
 3. mark validity before seeing the progress verdict if feasible;
 4. compute raw change;
 5. show reliability context;
-6. apply practical threshold only if declared in the binding;
+6. apply practical threshold only if declared in the frozen binding;
 7. produce the first `ProgressResult`.
 
 If a competition already supplies the goal’s primary endpoint, do not add redundant exhaustive tests merely to fill a database.
@@ -1015,22 +1221,28 @@ Keep v1 deliberately simple and inspectable.
 
 ### Comparison prerequisites
 
-Two observations may be progress-compared only when:
+Two protocol observations may be progress-compared only when:
 
 * same metric;
-* both valid benchmark attempts;
+* both current valid benchmark revisions;
 * same comparison-series key;
+* same canonicalization version;
 * units match;
 * protocol revision matches or a specifically documented compatibility migration exists.
+
+Competition outcomes do not pass through this comparator.
 
 ### Change
 
 ```ts
 absoluteChange = latest.value - baseline.value;
-percentChange = 100 * absoluteChange / Math.abs(baseline.value);
+percentChange =
+  baseline.value === 0
+    ? undefined
+    : 100 * absoluteChange / Math.abs(baseline.value);
 ```
 
-Direction is then applied from the metric/binding.
+A zero baseline therefore never yields `Infinity`/`NaN`; use absolute or target-range interpretation instead. Direction is then applied from the frozen outcome binding.
 
 ### Reliability context
 
@@ -1055,7 +1267,8 @@ Implement as versioned pure policy. Start conservative:
 * missing baseline/latest → `insufficient_evidence`;
 * change clearly exceeds both available measurement-error context and declared practical threshold in the favourable direction → `meaningful_improvement`;
 * favourable but not both → `possible_improvement` or `unclear_within_noise` depending on the reason;
-* symmetric decline logic in the adverse direction.
+* symmetric decline logic in the adverse direction;
+* `context` bindings do not receive improvement/decline labels.
 
 Every label carries machine-readable reasons so later policy revisions can be replayed.
 
@@ -1069,35 +1282,63 @@ Every label carries machine-readable reasons so later policy revisions can be re
 
 * metric lookup;
 * exact unit;
-* unsupported metric rejection.
+* unsupported metric rejection;
+* `context_only` cannot become a primary/secondary outcome binding.
 
 `observations/comparability.test.ts`
 
 * same protocol/device → same series;
 * changed series-defining device → new series;
 * changed warm-up revision if declared material → new series;
-* non-material note change → same series;
-* canonical serialization key order does not change hash.
+* non-material/context-only note change → same series;
+* canonical serialization key order does not change hash;
+* changed canonicalization version does not silently compare with old keys.
+
+`observations/observationRevision.test.ts`
+
+* initial attempt+metric produces deterministic logical key/revision 1;
+* exact retry is idempotent;
+* conflicting retry requires correction;
+* correction increments head exactly once;
+* stale correction cannot advance the head;
+* old revisions remain immutable/auditable.
 
 `observations/progress.test.ts`
 
 * higher-is-better and lower-is-better;
+* valid target-range bounds and out-of-range rejection;
+* zero baseline yields no percentage value;
 * invalid attempt excluded;
 * practice attempt excluded from benchmark selection;
+* superseded revision excluded from current benchmark selection;
 * non-comparable source → `non_comparable`;
 * missing reliability → transparent insufficient/possible result;
 * literature vs personal reliability provenance;
 * practical threshold separate from measurement threshold;
-* raw 20-minute power preserved independently of derived FTP estimate.
+* raw 20-minute power preserved independently of derived FTP estimate;
+* pure progress has no recommender-policy attribution.
+
+`outcomes/evaluationSpec.test.ts`
+
+* declared baseline requires observation ID;
+* first-valid baseline requires a window and deterministic earliest selection;
+* context binding rejects outcome direction/threshold;
+* target range requires finite ordered bounds and matching unit;
+* activation freezes revision and metric bindings;
+* later criteria change creates a new revision;
+* report resolves exact evaluation revision/hash.
 
 `outcomes/blockOutcome.test.ts`
 
-* primary improvement + good process → `on_track`;
+* primary improvement + `processAdequate` + response coverage ≥ policy threshold → `on_track`;
+* low process coverage → `insufficient_evidence`;
+* positive outcome with low response coverage → `mixed`;
 * conflicting primary/secondary outcomes → `mixed`;
 * good outcome + repeated reactive response → `mixed`;
-* primary decline + adequate adherence → `off_track`;
+* primary decline + adequate evidence → `off_track`;
 * missing/non-comparable primary test → `insufficient_evidence`;
-* policy change creates two segments;
+* competition outcome appears separately from metric progress;
+* policy change creates two segments while `ProgressResult` remains policy-neutral;
 * no universal weighted score is produced.
 
 ### Firestore emulator
@@ -1106,8 +1347,12 @@ Every label carries machine-readable reasons so later policy revisions can be re
 * protocol revision immutable after creation;
 * malformed observation denied;
 * source/attempt ownership enforced;
-* valid manual observation accepted;
-* correction semantics preserve original history.
+* deterministic initial observation accepted once;
+* exact retry does not duplicate revision 1;
+* correction chain/head advance enforced;
+* stale correction denied;
+* frozen evaluation revision/bindings immutable after activation;
+* competition outcomes accepted without protocol fields and cannot contaminate protocol paths.
 
 ### Architecture tests
 
@@ -1126,6 +1371,8 @@ Fail on any runtime path from production selector modules to:
 * familiarization;
 * invalid attempt;
 * metric entry;
+* correction flow;
+* ecological outcome section;
 * report row and details;
 * offline completion/reconnect.
 
@@ -1135,11 +1382,16 @@ Fail on any runtime path from production selector modules to:
 2. **20-minute repeat — device changed:** result preserved, progress non-comparable/new series.
 3. **Practice faster than baseline:** practice result does not become benchmark.
 4. **Invalid faster result:** visible but excluded.
-5. **Competition result:** appears as ecological outcome without contaminating protocol series.
-6. **Good performance / poor response:** block is mixed, not numerically “net positive.”
-7. **Good process / no post-test:** insufficient evidence, not on-track by adherence alone.
-8. **Policy change mid-block:** report shows separate policy segments.
-9. **Phase 9.0 active:** creating/reporting observations leaves recommendation outputs bit-identical.
+5. **Correction:** original revision remains; corrected revision becomes head exactly once.
+6. **Offline retry:** attempt+metric idempotency prevents duplicate initial observations.
+7. **Competition result:** appears as ecological outcome without protocol fields or TT-series contamination.
+8. **Frozen criteria:** primary metric/direction/threshold/baseline cannot be rewritten after activation.
+9. **Good performance / poor response:** block is mixed, not numerically “net positive.”
+10. **Good process / no post-test:** insufficient evidence, not on-track by adherence alone.
+11. **Low process coverage:** versioned adequacy policy yields insufficient evidence reproducibly.
+12. **Policy change mid-block:** report shows separate policy segments; metric progress has no single policy attribution.
+13. **Zero baseline:** absolute/target logic works without `Infinity`/`NaN`.
+14. **Phase 9.0 active:** creating/reporting observations leaves recommendation outputs bit-identical.
 
 ---
 
@@ -1151,6 +1403,7 @@ Do not merge one giant code PR.
 
 * OV0.1–OV1.4;
 * models/registry/protocol/comparability;
+* explicit series canonicalization contract;
 * architecture tests;
 * no Firestore writes;
 * no UI.
@@ -1158,6 +1411,8 @@ Do not merge one giant code PR.
 ### PR B — persistence/manual entry
 
 * OV2.1–OV2.4;
+* immutable observation revisions + head semantics;
+* competition outcome persistence;
 * rules + emulator;
 * manual adapter;
 * no progress labels yet.
@@ -1166,6 +1421,8 @@ Do not merge one giant code PR.
 
 * OV3.1–OV3.4;
 * existing runner integration;
+* deterministic attempt+metric idempotency;
+* correction flow;
 * mobile acceptance.
 
 ### PR D — progress derivation
@@ -1173,12 +1430,17 @@ Do not merge one giant code PR.
 * OV4.1–OV4.3;
 * pure tests;
 * research-reference reliability metadata;
+* zero-baseline handling;
+* no recommender-policy attribution;
 * no block verdict.
 
 ### PR E — outcome spec and block report
 
 * OV5.1–OV6.1;
+* frozen evaluation revisions and complete baseline policy;
 * process/response join;
+* deterministic adequacy policy;
+* ecological outcomes;
 * deterministic export;
 * policy segmentation.
 
@@ -1242,14 +1504,26 @@ Every real test protocol should record before first benchmark use:
 * burden/recovery expectation;
 * literature reliability reference if used;
 * whether a practical threshold is declared;
-* baseline selection rule.
+* baseline selection rule;
+* series-defining versus context-only dimensions;
+* comparison-key canonicalization version.
 
-When a material condition changes, choose explicitly:
+Every block evaluation should record before activation:
+
+* exact evaluation revision/content hash;
+* primary/secondary/context roles;
+* outcome direction or explicit target range;
+* complete baseline-selection policy;
+* target observation window;
+* practical threshold if any;
+* ecological event target if any.
+
+When a material protocol condition changes, choose explicitly:
 
 1. new protocol revision / comparison series;
 2. keep old series because the dimension is declared non-material, with rationale.
 
-Never decide after seeing which choice produces the more flattering progress result.
+Never decide after seeing which choice produces the more flattering progress result. Likewise, never rewrite an activated evaluation to make a completed outcome look better; create a new revision and preserve the limitation.
 
 ---
 
@@ -1259,15 +1533,20 @@ Never decide after seeing which choice produces the more flattering progress res
 |---|---|---|
 | Testing becomes training noise | schedule maximal tests at block boundaries; competition can replace testing; burden field | skip/defer the test, keep prior evidence |
 | First-test learning looks like fitness | familiarization purpose/state; reliability context | mark first attempt practice/familiarization |
-| Different devices create fake gains | comparison-series key includes material source/setup | start new series; never delete old result |
+| Different devices create fake gains | explicit series-defining dimensions + canonicalization version | start new series; never delete old result |
+| Canonicalization changes split/merge history silently | version key construction and persist the version | keep old keys; migration must be explicit |
 | Literature CV treated as personal truth | explicit `literature_reference` provenance | show raw change only until personal evidence exists |
 | FTP estimate becomes false authority | raw P20 canonical; derived estimate versioned | remove derived display without touching raw observation |
+| Correction overwrites history | immutable revisions + transactional head pointer | retain old revision; reject stale head advance |
+| Offline retry duplicates a benchmark | deterministic attempt+metric identity + create-if-absent | treat exact retry as success; conflict enters correction flow |
+| Race data contaminates TT series | first-class `CompetitionOutcome`, no protocol fields | keep ecological evidence in separate collection/report section |
+| Evaluation criteria are changed after seeing results | immutable activated evaluation revision + report snapshot/hash | create new revision and mark retrospective limitation |
 | Outcome report becomes a universal score | categorical verdict + separate dimensions; no weighted roll-up | disable verdict and keep raw sections |
 | Good result causes unsafe automation | architecture import guard + D-MPOLICY | evidence remains report-only |
 | M7 explodes into huge taxonomy | initial cycling registry only; M6 remains trigger-gated | reject unsupported tests until justified |
 | Phase 9.0 evidence gets contaminated | evidence-only modules; no selector import; policy drift checks | end/version segment before any behaviour change |
-| Race tactics/weather invalidate comparison | competition intent separate from protocol benchmark | treat as ecological outcome/context |
-| Policy-version report is read causally | explicit single-athlete causal limitation in UI/export | report association only |
+| Race tactics/weather invalidate comparison | ecological outcome separate from protocol benchmark | treat as ecological outcome/context |
+| Policy-version report is read causally | policy-neutral progress + explicit segment context + single-athlete limitation | report association only |
 | Testing UI built before need | report-first cutline | stop at CSV/JSON/manual workflow |
 
 ---
@@ -1289,27 +1568,35 @@ Stopping is successful when the evidence question is answered without more produ
 
 ### Measurement integrity
 
-* [ ] Raw metric values are immutable/revisioned and never overwritten by derived estimates.
-* [ ] Every benchmark observation has metric, unit, source/device, protocol revision, series key, attempt and validity.
+* [ ] Raw metric revisions are immutable and never overwritten by corrections or derived estimates.
+* [ ] Every logical protocol observation has a stable attempt+metric identity, deterministic current revision and auditable supersession chain.
+* [ ] Every benchmark revision has metric, unit, source/device, protocol revision, series key, canonicalization version, attempt and validity.
 * [ ] Invalid/practice results stay visible but do not become default benchmarks.
 * [ ] Material protocol/device changes do not silently extend a comparison series.
+* [ ] Series-defining versus context-only dimensions are explicit and replayable.
 * [ ] Literature reliability is visibly different from personal repeatability.
 * [ ] No universal worthwhile-change percentage exists.
+* [ ] Zero baselines never produce invalid percentage arithmetic.
 
 ### Product semantics
 
 * [ ] Decision, process/response and outcome evidence remain separate planes.
-* [ ] A competition result is distinct from a protocol-locked test.
+* [ ] A competition result is a first-class ecological outcome, distinct from a protocol-locked test.
+* [ ] `context_only` metrics cannot be bound as primary/secondary outcomes.
+* [ ] Target-range outcomes require explicit finite ordered bounds.
+* [ ] Baseline selection is mechanically complete for every binding.
+* [ ] Evaluation criteria are frozen before result interpretation and reports persist the exact evaluation revision/hash.
 * [ ] Raw 20-minute power is canonical; any FTP estimate is derived/versioned.
 * [ ] A block can be `mixed` without arithmetic cancellation of good performance and poor response.
-* [ ] Missing/non-comparable outcome evidence yields `insufficient_evidence`.
+* [ ] Missing/non-comparable outcome or inadequate process evidence yields `insufficient_evidence` under a versioned deterministic policy.
 * [ ] No universal performance score is introduced.
 
 ### Architecture safety
 
 * [ ] Production selection/ranking modules cannot import progress/block-outcome modules.
 * [ ] OV work leaves Phase 9.0 production recommendation semantics unchanged.
-* [ ] User isolation and immutable protocol revisions are emulator-tested.
+* [ ] User isolation, immutable protocol/evaluation revisions and observation correction chains are emulator-tested.
+* [ ] Pure metric progress carries derivation-policy versioning but no false single training-policy attribution.
 * [ ] A future outcome-to-planning automation requires a separate ADR and ship decision.
 
 ### Real-world evidence
@@ -1334,6 +1621,6 @@ Not:
 
 Success is:
 
-> A block begins with explicit outcome criteria, training is delivered and audited, the athlete completes a comparable post-block assessment or goal event, the system distinguishes real-looking change from measurement uncertainty, and the resulting report is useful enough to inform the next block without silently turning itself into recommendation authority.
+> A block begins with explicit, frozen outcome criteria; training is delivered and audited; the athlete completes a comparable post-block assessment or goal event; the system distinguishes real-looking change from measurement uncertainty without corrupting protocol series or rewriting history; and the resulting report is useful enough to inform the next block without silently turning itself into recommendation authority.
 
 That is the missing feedback loop this plan is intended to close.
