@@ -19,6 +19,12 @@ export default defineConfig([
       ecmaVersion: 2020,
       globals: globals.browser,
     },
+    rules: {
+      // eslint-plugin-react-hooks 7.1 enables this in its recommended preset.
+      // Existing effects intentionally load/reset component state, so keep the dependency
+      // upgrade separate from a broad application lifecycle refactor.
+      'react-hooks/set-state-in-effect': 'off',
+    },
   },
   {
     // POLICY_VERSION drift protection treats any rules.ts edit as decision-affecting.
