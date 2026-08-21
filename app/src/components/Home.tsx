@@ -42,6 +42,7 @@ import { DecisionJournalCard } from './DecisionJournalCard';
 import { MinimumSafetyCheckin } from './MinimumSafetyCheckin';
 import { WeekAheadStrip } from './WeekAheadStrip';
 import { LaterDayFollowupCard, type LaterDayFollowupTarget } from './session/LaterDayFollowupCard';
+import { GarminSyncNowButton } from './GarminSyncNowButton';
 import {
   canGenerateNormalRecommendation,
   createProvisionalSafetyRecommendation,
@@ -1179,13 +1180,16 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
             <div className="dashboard-card">
               <div className="card-header">
                 <h3>Today's Recovery</h3>
-                {decisionInput?.recoverySnapshot ? (
-                  <span className="status-badge status-normal">
-                    Sleep {decisionInput.recoverySnapshot.raw.sleepScore ?? '--'} · HRV {decisionInput.recoverySnapshot.raw.hrvOvernightAvg ?? '--'}ms
-                  </span>
-                ) : (
-                  <span className="status-badge warning">No Data</span>
-                )}
+                <div className="card-header-actions">
+                  {decisionInput?.recoverySnapshot ? (
+                    <span className="status-badge status-normal">
+                      Sleep {decisionInput.recoverySnapshot.raw.sleepScore ?? '--'} · HRV {decisionInput.recoverySnapshot.raw.hrvOvernightAvg ?? '--'}ms
+                    </span>
+                  ) : (
+                    <span className="status-badge warning">No Data</span>
+                  )}
+                  <GarminSyncNowButton userId={userId} onSynced={loadDashboardData} />
+                </div>
               </div>
 
               {decisionInput?.recoverySnapshot ? (

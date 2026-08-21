@@ -9,6 +9,7 @@ from garmin_sync.cli import (
     run_audit_cmd,
     run_backfill,
     run_daily_sync,
+    run_poll_manual_sync_cmd,
     run_rebuild_cmd,
 )
 
@@ -201,6 +202,34 @@ def test_run_rebuild_cmd_exception(mock_settings: Any, mock_service: Any) -> Non
     assert exit_code == 1
 
 
+def test_run_poll_manual_sync_cmd_success(mock_settings: Any, mock_service: Any) -> None:
+    mock_service_instance = mock_service.return_value
+    mock_service_instance.poll_manual_sync_requests.return_value = True
+
+    exit_code = run_poll_manual_sync_cmd([])
+
+    assert exit_code == 0
+    mock_service_instance.poll_manual_sync_requests.assert_called_once_with()
+
+
+def test_run_poll_manual_sync_cmd_failure(mock_settings: Any, mock_service: Any) -> None:
+    mock_service_instance = mock_service.return_value
+    mock_service_instance.poll_manual_sync_requests.return_value = False
+
+    exit_code = run_poll_manual_sync_cmd([])
+
+    assert exit_code == 1
+
+
+def test_run_poll_manual_sync_cmd_exception(mock_settings: Any, mock_service: Any) -> None:
+    mock_service_instance = mock_service.return_value
+    mock_service_instance.poll_manual_sync_requests.side_effect = Exception("Test Error")
+
+    exit_code = run_poll_manual_sync_cmd([])
+
+    assert exit_code == 1
+
+
 @patch("garmin_sync.cli.run_daily_sync")
 def test_main_sync(mock_run_daily_sync: Any) -> None:
     mock_run_daily_sync.return_value = 0
@@ -249,6 +278,17 @@ def test_main_rebuild(mock_run_rebuild_cmd: Any) -> None:
     mock_run_rebuild_cmd.assert_called_once_with(
         ["--start-date", "2023-10-01", "--end-date", "2023-10-31"]
     )
+
+
+@patch("garmin_sync.cli.run_poll_manual_sync_cmd")
+def test_main_poll_manual_sync(mock_run_poll_manual_sync_cmd: Any) -> None:
+    mock_run_poll_manual_sync_cmd.return_value = 0
+
+    with patch.object(sys, "argv", ["garmin_sync", "poll-manual-sync"]):
+        exit_code = main()
+
+    assert exit_code == 0
+    mock_run_poll_manual_sync_cmd.assert_called_once_with([])
 
 
 def test_main_missing_command() -> None:

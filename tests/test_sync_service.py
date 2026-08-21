@@ -404,6 +404,116 @@ def test_push_pending_workouts_fails_without_firestore_db():
     assert result is False
 
 
+class _FakeSyncRequestDoc:
+    """Minimal stand-in for a Firestore DocumentSnapshot."""
+
+    def __init__(self, exists: bool, data: dict | None = None):
+        self.exists = exists
+        self._data = data or {}
+
+    def to_dict(self) -> dict:
+        return self._data
+
+
+def _sync_request_ref(mock_repo: MagicMock):
+    """The mocked garmin_sync_requests/latest DocumentReference -- same mock object
+    for both the .get() and the later .set() call, matching what a real chained
+    Firestore reference does."""
+    return mock_repo.db.collection.return_value.document.return_value.collection.return_value.document.return_value
+
+
+def test_poll_manual_sync_requests_runs_forced_sync_and_marks_completed():
+    settings = Settings(app_user_id="test_uid_789")
+    mock_repo = MagicMock()
+    request_ref = _sync_request_ref(mock_repo)
+    request_ref.get.return_value = _FakeSyncRequestDoc(True, {"status": "pending"})
+
+    service = GarminSyncService(settings=settings, repository=mock_repo)
+    service.sync_daily = MagicMock(return_value=True)
+
+    result = service.poll_manual_sync_requests()
+
+    assert result is True
+    service.sync_daily.assert_called_once_with(force=True)
+    set_call = request_ref.set.call_args
+    assert set_call.args[0]["status"] == "completed"
+    assert set_call.args[0]["error"] is None
+    assert set_call.kwargs == {"merge": True}
+
+
+def test_poll_manual_sync_requests_marks_failed_when_sync_fails():
+    settings = Settings(app_user_id="test_uid_789")
+    mock_repo = MagicMock()
+    request_ref = _sync_request_ref(mock_repo)
+    request_ref.get.return_value = _FakeSyncRequestDoc(True, {"status": "pending"})
+
+    service = GarminSyncService(settings=settings, repository=mock_repo)
+    service.sync_daily = MagicMock(return_value=False)
+
+    result = service.poll_manual_sync_requests()
+
+    assert result is False
+    set_call = request_ref.set.call_args
+    assert set_call.args[0]["status"] == "failed"
+
+
+def test_poll_manual_sync_requests_marks_failed_on_exception():
+    settings = Settings(app_user_id="test_uid_789")
+    mock_repo = MagicMock()
+    request_ref = _sync_request_ref(mock_repo)
+    request_ref.get.return_value = _FakeSyncRequestDoc(True, {"status": "pending"})
+
+    service = GarminSyncService(settings=settings, repository=mock_repo)
+    service.sync_daily = MagicMock(side_effect=Exception("boom"))
+
+    result = service.poll_manual_sync_requests()
+
+    assert result is False
+    set_call = request_ref.set.call_args
+    assert set_call.args[0]["status"] == "failed"
+    assert "boom" in set_call.args[0]["error"]
+
+
+def test_poll_manual_sync_requests_noop_when_no_request_doc():
+    settings = Settings(app_user_id="test_uid_789")
+    mock_repo = MagicMock()
+    request_ref = _sync_request_ref(mock_repo)
+    request_ref.get.return_value = _FakeSyncRequestDoc(False)
+
+    service = GarminSyncService(settings=settings, repository=mock_repo)
+    service.sync_daily = MagicMock()
+
+    result = service.poll_manual_sync_requests()
+
+    assert result is True
+    service.sync_daily.assert_not_called()
+    request_ref.set.assert_not_called()
+
+
+def test_poll_manual_sync_requests_noop_when_not_pending():
+    settings = Settings(app_user_id="test_uid_789")
+    mock_repo = MagicMock()
+    request_ref = _sync_request_ref(mock_repo)
+    request_ref.get.return_value = _FakeSyncRequestDoc(True, {"status": "completed"})
+
+    service = GarminSyncService(settings=settings, repository=mock_repo)
+    service.sync_daily = MagicMock()
+
+    result = service.poll_manual_sync_requests()
+
+    assert result is True
+    service.sync_daily.assert_not_called()
+
+
+def test_poll_manual_sync_requests_fails_without_firestore_db():
+    settings = Settings(app_user_id="test_uid_789")
+    service = GarminSyncService(settings=settings, repository=MagicMock(db=None))
+
+    result = service.poll_manual_sync_requests()
+
+    assert result is False
+
+
 class DateAwareFakeProvider:
     """Like FakeTestProvider, but returns a per-date restingHr so a test can tell which
     date's fetch produced which stored value -- needed to prove the lookback resync's

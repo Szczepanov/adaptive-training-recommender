@@ -960,3 +960,56 @@ class GarminSyncService:
             return True
         logger.error(f"Workout upload returned no workoutId; leaving queue pending: {res}")
         return False
+
+    def poll_manual_sync_requests(self) -> bool:
+        """Poll for a manual "Sync Now" request queued by the web app
+        (users/{uid}/garmin_sync_requests/latest) and, if one is pending, run an
+        immediate force-refreshed sync_daily(), then mark the request resolved.
+
+        Meant to run frequently (e.g. every few minutes via Cloud Scheduler) so
+        clicking "Sync Now" in the web app -- e.g. because the athlete woke up before
+        the morning poll window -- reaches Garmin without waiting for the next
+        scheduled tick. Mirrors push_pending_workouts: most polls find no request and
+        cost a single cheap Firestore read, not a Garmin call.
+        """
+        if not self.repository.db:
+            logger.warning("Firestore DB not initialized; cannot poll for manual sync requests.")
+            return False
+
+        request_ref = (
+            self.repository.db.collection("users")
+            .document(self.settings.app_user_id)
+            .collection("garmin_sync_requests")
+            .document("latest")
+        )
+        request_doc = request_ref.get()
+        if not request_doc.exists:
+            return True
+
+        data = request_doc.to_dict() or {}
+        if data.get("status") != "pending":
+            return True
+
+        logger.info("Manual sync request found; running an immediate forced sync...")
+        try:
+            ok = self.sync_daily(force=True)
+            request_ref.set(
+                {
+                    "status": "completed" if ok else "failed",
+                    "completedAt": datetime.now(timezone.utc).isoformat(),
+                    "error": None if ok else "Sync completed with errors; check logs.",
+                },
+                merge=True,
+            )
+            return ok
+        except Exception as e:
+            logger.error(f"Manual sync request failed: {e}")
+            request_ref.set(
+                {
+                    "status": "failed",
+                    "completedAt": datetime.now(timezone.utc).isoformat(),
+                    "error": str(e)[:2000],
+                },
+                merge=True,
+            )
+            return False

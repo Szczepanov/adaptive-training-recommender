@@ -947,6 +947,29 @@ service cloud.firestore {
       allow delete: if isOwner(userId);
     }
 
+    function hasValidGarminSyncRequest(userId) {
+      let data = request.resource.data;
+      return hasOwnedUserId(userId)
+        && data.keys().hasOnly(['userId', 'status', 'requestedAt', 'completedAt', 'error'])
+        && data.keys().hasAll(['userId', 'status', 'requestedAt'])
+        && data.status in ['pending', 'completed', 'failed']
+        && data.requestedAt is string
+        && (!('completedAt' in data) || data.completedAt == null || data.completedAt is string)
+        && (!('error' in data) || data.error == null || (data.error is string && data.error.size() <= 2000));
+    }
+
+    // A manual "Sync Now" request (D-GARMINSYNC): the web app writes a single fixed-id
+    // doc to ask the garmin_sync poller (see poll_manual_sync_requests) to run an
+    // immediate forced sync rather than waiting for the next scheduled tick. Single
+    // outstanding request per user, mirroring garmin_workout_queue's per-item status
+    // convention -- the poller (Admin SDK, bypasses these rules) is what actually
+    // transitions status to 'completed'/'failed'.
+    match /users/{userId}/garmin_sync_requests/{requestId} {
+      allow read: if isOwner(userId);
+      allow create, update: if hasValidGarminSyncRequest(userId) && requestId == 'latest';
+      allow delete: if isOwner(userId);
+    }
+
     match /users/{userId}/daily_recommendations/{date} {
       allow read: if isOwner(userId);
       allow create: if hasValidRecommendation(userId, date);

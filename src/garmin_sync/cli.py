@@ -169,6 +169,23 @@ def run_push_pending_workouts_cmd(args: list[str] | None = None) -> int:
         return 1
 
 
+def run_poll_manual_sync_cmd(args: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        description="Poll for a manual 'Sync Now' request from the web app and run an "
+        "immediate forced sync if one is pending."
+    )
+    parser.parse_args(args)
+
+    try:
+        settings = load_settings()
+        service = GarminSyncService(settings)
+        success = service.poll_manual_sync_requests()
+        return 0 if success else 1
+    except Exception as e:
+        logger.error(f"Poll manual sync execution error: {type(e).__name__}: {e}")
+        return 1
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Garmin Sync Pipeline CLI")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -236,6 +253,13 @@ def main() -> int:
         help="Leave (don't push) queue items older than this many days pending (default 14)",
     )
 
+    # Poll-manual-sync subcommand
+    subparsers.add_parser(
+        "poll-manual-sync",
+        help="Poll for a manual 'Sync Now' request from the web app and run an immediate "
+        "forced sync if one is pending",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -250,6 +274,8 @@ def main() -> int:
         return run_push_workout_cmd(sys.argv[2:])
     elif args.command == "push-pending-workouts":
         return run_push_pending_workouts_cmd(sys.argv[2:])
+    elif args.command == "poll-manual-sync":
+        return run_poll_manual_sync_cmd(sys.argv[2:])
     return 1
 
 
