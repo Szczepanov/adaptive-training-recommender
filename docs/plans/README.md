@@ -59,8 +59,9 @@ Phases 0–8 are **implemented**; Phase 9.0 and Phase 9 remain **In progress**.
 Among capability plans, Garmin per-activity telemetry (G) and Mobile UX/UI (UX) are
 **implemented**; Strength session logging (S) is **In progress (default-off)** with all
 numbered code delivered; Multidomain sessions (M) is **In progress** with M0–M5.3
-complete; Performance outcome validation (OV) is **In progress**, with OV0–OV2 complete
-through PR #154 and PR #155.
+complete; Performance outcome validation (OV) is **In progress** with the engineering
+stack through OV6.1 merged; Health anomaly alerting (HA) is **In progress** with HA0–HA4
+on `main` and HA5 shadow observability/replay still unmerged.
 
 For Multidomain delivery, the 2026-08-19 evidence-first cutline chain from
 [`2026-08-19-product-scope-cutline-review.md`](../analysis/2026-08-19-product-scope-cutline-review.md),
@@ -72,10 +73,20 @@ OV**. Former M7.1–M7.4 are no longer actionable M items; the M plan keeps only
 mapping. M8 may consume independently justified M6/OV evidence but cannot create scope for it.
 M9 remains behind its own named triggers.
 
-OV is therefore the sole status board for repeated testing/progress. By item dependency,
-`OV3.1`, `OV5.1` and `OV5.2` are currently startable; the next **planned** implementation slice
-is still PR C / OV3.1–OV3.4. `OV4.1` is correctly blocked on OV5.1 because its baseline and
-direction logic consume the frozen outcome binding defined there.
+OV is therefore the sole status board for repeated testing/progress. Its evidence/reporting
+engineering path through `OV6.1` is merged via #154, #155, #163, #164 and #169. The next
+value-bearing work is operational OV7 on the real event/block timeline. `OV4.4` remains gated
+on real close-spaced repeat trials, and `OV6.2` remains usage-triggered until repeated report
+use proves a product/UI question. None of the merged OV evidence modules has recommendation
+selection authority.
+
+HA is the canonical plan for physiological-anomaly/possible-illness evidence. HA-A/#162
+landed the fail-closed policy contract plus optional check-in context; #166/#165 and follow-up
+fixes put the anomaly-grade feature mapping, pure evaluator, explanations, persistence,
+episode continuity and composition boundary on `main`. HA5 exists on
+`feat/health-anomaly-ha-d` but is not accepted until reconciled with current `main`, reviewed,
+and green in CI. User-visible wording remains gated by HA7 evidence, and tighten-only training
+integration remains a separate later release decision.
 
 The Phase 0–5 task boards are historical implementation records; the
 [follow-up analysis](../analysis/2026-08-09-phase-0-5-completion-review.md) records
@@ -105,10 +116,11 @@ all-`Ready` table became unusable.
 | S | [Strength session logging](./strength-session-logging.md) | **In progress (default-off)** | none; all numbered work is built | real logged-history evidence before enabling manual Strength load — [M1.7](./multidomain-session-authoring-execution-and-evidence.md) is the item that starts producing it | closes the strength return path — per-set logging, self-calibrating 1RM, and measured strength load — not an original review finding |
 | M | [Multidomain session authoring, execution & evidence](./multidomain-session-authoring-execution-and-evidence.md) | **In progress** | M8.1 | M6 still requires an explicit real-use trigger; repeated-testing implementation has transferred to OV and is not an M blocker/task; M8.2 needs real history and only independently justified M6/OV evidence if required; M9 needs its own named triggers | source-neutral authored sessions, safe mixed-dose execution and occurrence-linked response; specialized field work remains usage-triggered, while repeated testing/progress is owned by OV |
 | UX | [Mobile UX/UI redesign](./mobile_ux_implementation_plan.md) | **Implemented** | none | none | mobile-first daily decision flow, single-page rapid check-in, state-first Home layout, unblocked recommendation, 44px+ touch targets, and mobile layout tokens |
-| OV | [Performance outcome validation & goal-progress loop](./performance-outcome-validation.md) | **In progress** | OV3.1, OV5.1, OV5.2 | OV4.1 waits on OV5.1; later items follow their own evidence/usage gates | sole implementation/status owner of the repeated-testing/progress capability formerly sketched as M7; OV0–OV2 are complete (#154/#155), next planned slice is OV3 |
+| OV | [Performance outcome validation & goal-progress loop](./performance-outcome-validation.md) | **In progress** | OV7 operational evidence; OV4.4/OV6.2 only when their triggers are met | OV7 follows the event/block timeline; OV4.4 needs close-spaced repeats; OV6.2 needs repeated report use; OV8 needs multiple prospective blocks | sole implementation/status owner of repeated testing/progress; engineering through OV6.1 is merged (#154/#155/#163/#164/#169), with production selection authority still explicitly excluded |
+| HA | [Health anomaly and possible-illness alerting](./health-anomaly-and-illness-risk-alerting.md) | **In progress** | HA5 reconciliation/PR; HA6 after HA5 is on `main` | HA5 branch is not yet accepted on current `main`; HA7 needs real replay/prospective evidence; HA8/HA9 remain release-gated | explainable physiological-anomaly evidence with structured confounders; HA0–HA4 are on `main`, visible illness wording and training changes remain gated |
 
-Rows G, S, M, UX, and OV are **not phases**. They are capability/surface plans whose work items are
-prefixed `G*`, `S*`, `M*`, `UX*`, `OV*` precisely so they cannot be mistaken for the `Phase 0`–`9`
+Rows G, S, M, UX, OV, and HA are **not phases**. They are capability/surface plans whose work items are
+prefixed `G*`, `S*`, `M*`, `UX*`, `OV*`, `HA*` precisely so they cannot be mistaken for the `Phase 0`–`9`
 sequence; the `#` column carries that prefix rather than a phase number. For capability plans, an item
 with satisfied dependencies but an unmet usage trigger is **not** listed as startable. A transferred
 historical item (former M7) is likewise not listed under its old plan; only the canonical owner tracks it.
@@ -161,7 +173,7 @@ this table exists so none of them has to be rediscovered by reading six document
 | **D-ZONECRED** | A complete cycling power-zone distribution may produce a default-off direct-share stimulus candidate inside `measuredEffort`; production remains TE-derived | [ADR-0022](../adr/0022-zone-derived-completed-training-credit.md) | Granularity is measured without pretending it establishes exact intent or calibrated dose-response |
 | **D-MODE** | `evergreen` and `event_directed` are first-class modes; event strategy is a separate capability | [ADR-0017](../adr/0017-training-intent-profile-and-planning-modes.md) | Cycling can use a structured plan while other existing event categories retain demand-derived direction |
 | **D-DOSE** | Evidence-derived adaptation dose precedes capacity and role packing | [ADR-0017](../adr/0017-training-intent-profile-and-planning-modes.md) | Exercise evidence speaks in dose dimensions; a session is a container, not the physiological requirement |
-| **D-CAP** | Real sessions, minutes, and windows constrain dose packing; they do not define the dose | [ADR-0017](../adr/0017-training-intent-and-planning-modes.md) | Three 25-minute sessions and three 90-minute sessions are not equivalent capacity |
+| **D-CAP** | Real sessions, minutes, and windows constrain dose packing; they do not define the dose | [ADR-0017](../adr/0017-training-intent-profile-and-planning-modes.md) | Three 25-minute sessions and three 90-minute sessions are not equivalent capacity |
 | **D-COVSET** | The coverage catalog becomes a named generic-plan registry, not an event-shaped module constant | [ADR-0017](../adr/0017-training-intent-profile-and-planning-modes.md) | Evergreen needs to be a peer plan descriptor, not a fabricated event phase |
 | **D-OWNERSHIP** | Each preference field has one persisted authority | [ADR-0017](../adr/0017-training-intent-profile-and-planning-modes.md) | Two live preference models create contradictory valid states with no safe merge rule |
 | **D-ORG** | Persist only executable Auto/Adaptive Hybrid policy | [ADR-0017](../adr/0017-training-intent-profile-and-planning-modes.md) | A valid stored choice must not make normal recommendation generation fail |
