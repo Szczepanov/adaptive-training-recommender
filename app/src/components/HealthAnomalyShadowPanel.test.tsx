@@ -3,7 +3,8 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import type { DailyDecisionInput } from '../engine/models';
 import type { HealthAnomalyAssessmentRevision } from '../engine/healthAnomalyModels';
 import { SHADOW_V1_HEALTH_ANOMALY_THRESHOLDS } from '../engine/healthAnomaly';
-import { HealthAnomalyShadowTrace, selectHealthAnomalyShadowRevision } from './HealthAnomalyShadowPanel';
+import { HealthAnomalyShadowTrace } from './HealthAnomalyShadowPanel';
+import { selectHealthAnomalyShadowRevision } from './healthAnomalyShadowView';
 
 const revision: HealthAnomalyAssessmentRevision = {
     userId: 'u1',
