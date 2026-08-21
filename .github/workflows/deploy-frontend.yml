@@ -23,10 +23,15 @@ on:
         required: true
         default: true
       deploy_rules:
-        description: "Deploy app/firestore.rules (drift-checked first; refuses to overwrite on mismatch)"
+        description: "Deploy app/firestore.rules"
         type: boolean
         required: true
         default: true
+      confirm_rules_drift:
+        description: "I reviewed Firestore rules drift and intend to replace production with the repo version"
+        type: boolean
+        required: true
+        default: false
 
 permissions:
   contents: read
@@ -128,12 +133,20 @@ jobs:
         if: ${{ inputs.deploy_hosting }}
         run: npm exec --no -- firebase deploy --only hosting --project "${GCP_PROJECT}" --non-interactive
 
-      # Fails closed on drift, same as the documented local procedure: if the deployed rules
-      # don't match app/firestore.rules, stop here rather than overwrite blindly. Investigate
-      # (docs/ops/firestore-rules-deployment.md#drift-and-remediation) and rerun once resolved.
-      - name: Check Firestore rules drift (safety gate)
-        if: ${{ inputs.deploy_rules }}
+      # Default path remains fail-closed: unexpected drift stops the run before any rules
+      # deployment. This is the safe choice for ordinary frontend/rules deploys.
+      - name: Check Firestore rules drift (fail closed)
+        if: ${{ inputs.deploy_rules && !inputs.confirm_rules_drift }}
         run: npm run firestore:rules:drift
+
+      # An intentional repository rules change necessarily means local != deployed before
+      # deployment. The operator must explicitly acknowledge that mismatch in workflow_dispatch.
+      # --allow-drift only changes this pre-deploy gate; the deployment script still saves the
+      # active ruleset for rollback, runs the emulator suite, deploys only Firestore rules, and
+      # verifies the deployed source hash matches app/firestore.rules afterwards.
+      - name: Acknowledge reviewed Firestore rules drift
+        if: ${{ inputs.deploy_rules && inputs.confirm_rules_drift }}
+        run: npm run firestore:rules:drift -- --allow-drift
 
       - name: Deploy Firestore security rules
         if: ${{ inputs.deploy_rules }}
