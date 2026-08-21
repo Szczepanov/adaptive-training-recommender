@@ -4,12 +4,9 @@ on:
   push:
     branches:
       - experiment/typescript7-eslint10
-  pull_request:
-    branches:
-      - main
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   generate-and-verify:
@@ -45,9 +42,10 @@ jobs:
           for path, pairs in replacements.items():
               text = path.read_text()
               for old, new in pairs:
-                  if text.count(old) != 1:
-                      raise SystemExit(f'Expected exactly one match in {path}: {old!r}')
-                  text = text.replace(old, new)
+                  if old in text:
+                      text = text.replace(old, new)
+                  elif new not in text:
+                      raise SystemExit(f'Could not find expected old or new form in {path}: {old!r}')
               path.write_text(text)
           PY
 
@@ -74,12 +72,14 @@ jobs:
         working-directory: app
         run: npm run build
 
-      - name: Upload generated files
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: ts7-eslint10-generated
-          path: |
-            app/package-lock.json
-            app/src/engine/rules.ts
-            app/src/engine/stimulus.ts
+      - name: Commit generated dependency graph and lint cleanups
+        run: |
+          git add app/package-lock.json app/src/engine/rules.ts app/src/engine/stimulus.ts
+          if git diff --cached --quiet; then
+            echo "No generated changes to commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "chore(app): materialize TS7 ESLint10 experiment"
+          git push origin HEAD:experiment/typescript7-eslint10
