@@ -49,6 +49,18 @@ jobs:
               path.write_text(text)
           PY
 
+      - name: Commit generated dependency graph and lint cleanups
+        run: |
+          git add app/package-lock.json app/src/engine/rules.ts app/src/engine/stimulus.ts
+          if git diff --cached --quiet; then
+            echo "No generated changes to commit."
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit -m "chore(app): materialize TS7 ESLint10 experiment"
+            git push origin HEAD:experiment/typescript7-eslint10
+          fi
+
       - name: Verify TypeScript 7 compiler
         working-directory: app
         run: |
@@ -71,15 +83,3 @@ jobs:
       - name: Build frontend
         working-directory: app
         run: npm run build
-
-      - name: Commit generated dependency graph and lint cleanups
-        run: |
-          git add app/package-lock.json app/src/engine/rules.ts app/src/engine/stimulus.ts
-          if git diff --cached --quiet; then
-            echo "No generated changes to commit."
-            exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -m "chore(app): materialize TS7 ESLint10 experiment"
-          git push origin HEAD:experiment/typescript7-eslint10
