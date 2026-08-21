@@ -988,5 +988,253 @@ service cloud.firestore {
         allow update, delete: if false;
       }
     }
+
+    // --- Performance outcome validation (M7 / OV2): raw evidence only. These rules do
+    // not create progress labels, block verdicts, or recommendation-selection authority.
+    function hasKnownOutcomeMetric(metricId) {
+      return metricId in [
+        'cycling_tt_20m_mean_power_w',
+        'cycling_tt_4m_mean_power_w',
+        'cycling_submax_mean_hr_bpm',
+        'cycling_submax_rpe'
+      ];
+    }
+
+    function hasValidOutcomeMetricUnit(metricId, unit) {
+      return (metricId in ['cycling_tt_20m_mean_power_w', 'cycling_tt_4m_mean_power_w'] && unit == 'W')
+        || (metricId == 'cycling_submax_mean_hr_bpm' && unit == 'bpm')
+        || (metricId == 'cycling_submax_rpe' && unit == 'rpe');
+    }
+
+    function hasValidProtocolRef(userId, protocolRef) {
+      let protocolPath = /databases/$(database)/documents/users/$(userId)/measurement_protocols/$(protocolRef.id)/revisions/$(string(protocolRef.revision));
+      return protocolRef is map
+        && protocolRef.keys().hasOnly(['id', 'revision'])
+        && protocolRef.keys().hasAll(['id', 'revision'])
+        && protocolRef.id is string && protocolRef.id.size() > 0 && protocolRef.id.size() <= 128
+        && protocolRef.revision is int && protocolRef.revision >= 1
+        && exists(protocolPath);
+    }
+
+    function hasValidMeasurementProtocol(userId, protocolId, revisionId) {
+      let data = request.resource.data;
+      let comparison = data.comparisonContext;
+      let familiarization = data.familiarization;
+      let dimensions = ['power_source_id', 'bike_setup_id', 'test_environment', 'course_or_trainer_id', 'duration_seconds', 'start_mode', 'warmup_revision', 'feedback_rule', 'weather_note'];
+      return isOwner(userId)
+        && data.keys().hasOnly(['id', 'revision', 'title', 'intent', 'metricIds', 'instructions', 'warmupRef', 'comparisonContext', 'familiarization', 'burden', 'expectedRecoveryHours', 'invalidationRules', 'createdAt'])
+        && data.keys().hasAll(['id', 'revision', 'title', 'intent', 'metricIds', 'instructions', 'comparisonContext', 'familiarization', 'burden', 'invalidationRules', 'createdAt'])
+        && data.id == protocolId
+        && data.id is string && data.id.size() > 0 && data.id.size() <= 128
+        && data.revision is int && data.revision >= 1 && string(data.revision) == revisionId
+        && data.title is string && data.title.size() > 0 && data.title.size() <= 200
+        && data.intent == 'testing'
+        && data.metricIds is list && data.metricIds.size() >= 1 && data.metricIds.size() <= 8
+        && data.metricIds.hasOnly(['cycling_tt_20m_mean_power_w', 'cycling_tt_4m_mean_power_w', 'cycling_submax_mean_hr_bpm', 'cycling_submax_rpe'])
+        && data.instructions is list && data.instructions.size() <= 64
+        && (!('warmupRef' in data) || (data.warmupRef is string && data.warmupRef.size() > 0 && data.warmupRef.size() <= 128))
+        && comparison is map
+        && comparison.keys().hasOnly(['required', 'seriesDefining', 'contextOnly', 'canonicalizationVersion'])
+        && comparison.keys().hasAll(['required', 'seriesDefining', 'contextOnly', 'canonicalizationVersion'])
+        && comparison.required is list && comparison.required.size() <= 16 && comparison.required.hasOnly(dimensions)
+        && comparison.seriesDefining is list && comparison.seriesDefining.size() <= 16 && comparison.seriesDefining.hasOnly(comparison.required)
+        && comparison.contextOnly is list && comparison.contextOnly.size() <= 16 && comparison.contextOnly.hasOnly(comparison.required)
+        && comparison.canonicalizationVersion is string && comparison.canonicalizationVersion.size() > 0 && comparison.canonicalizationVersion.size() <= 64
+        && familiarization is map
+        && familiarization.keys().hasOnly(['required', 'minimumExposures'])
+        && familiarization.keys().hasAll(['required', 'minimumExposures'])
+        && familiarization.required is bool
+        && familiarization.minimumExposures is int && familiarization.minimumExposures >= 0 && familiarization.minimumExposures <= 20
+        && (!familiarization.required || familiarization.minimumExposures >= 1)
+        && data.burden in ['low', 'moderate', 'high']
+        && (!('expectedRecoveryHours' in data) || (data.expectedRecoveryHours is number && data.expectedRecoveryHours >= 0 && data.expectedRecoveryHours <= 336))
+        && data.invalidationRules is list && data.invalidationRules.size() <= 32
+        && data.createdAt is string && data.createdAt.size() > 0;
+    }
+
+    match /users/{userId}/measurement_protocols/{protocolId}/revisions/{revisionId} {
+      allow read: if isOwner(userId);
+      allow create: if hasValidMeasurementProtocol(userId, protocolId, revisionId);
+      allow update, delete: if false;
+    }
+
+    function hasValidAssessmentAttempt(userId, attemptId) {
+      let data = request.resource.data;
+      return isOwner(userId)
+        && data.keys().hasOnly(['id', 'protocolRef', 'scheduledDate', 'startedAt', 'completedAt', 'state', 'purpose', 'sourceSessionRef', 'notes'])
+        && data.keys().hasAll(['id', 'protocolRef', 'state', 'purpose'])
+        && data.id == attemptId
+        && data.id is string && data.id.size() > 0 && data.id.size() <= 160
+        && hasValidProtocolRef(userId, data.protocolRef)
+        && data.state in ['scheduled', 'in_progress', 'completed', 'abandoned']
+        && data.purpose in ['familiarization', 'baseline', 'checkpoint', 'post_block']
+        && (!('scheduledDate' in data) || isValidActivityDate(data.scheduledDate))
+        && (!('startedAt' in data) || (data.startedAt is string && data.startedAt.size() > 0))
+        && (!('completedAt' in data) || (data.completedAt is string && data.completedAt.size() > 0))
+        && (!('sourceSessionRef' in data) || (data.sourceSessionRef is string && data.sourceSessionRef.size() > 0 && data.sourceSessionRef.size() <= 256))
+        && (!('notes' in data) || (data.notes is string && data.notes.size() <= 4000))
+        && (data.state != 'scheduled' || (!('startedAt' in data) && !('completedAt' in data)))
+        && (data.state != 'in_progress' || (('startedAt' in data) && !('completedAt' in data)))
+        && (data.state != 'completed' || (('startedAt' in data) && ('completedAt' in data)))
+        && (data.state != 'abandoned' || !('completedAt' in data));
+    }
+
+    function hasValidAssessmentAttemptTransition() {
+      return request.resource.data.id == resource.data.id
+        && request.resource.data.protocolRef == resource.data.protocolRef
+        && request.resource.data.purpose == resource.data.purpose
+        && (('scheduledDate' in request.resource.data) == ('scheduledDate' in resource.data))
+        && (!('scheduledDate' in resource.data) || request.resource.data.scheduledDate == resource.data.scheduledDate)
+        && (
+          request.resource.data.state == resource.data.state
+          || (resource.data.state == 'scheduled' && request.resource.data.state in ['in_progress', 'abandoned'])
+          || (resource.data.state == 'in_progress' && request.resource.data.state in ['completed', 'abandoned'])
+        );
+    }
+
+    match /users/{userId}/assessment_attempts/{attemptId} {
+      allow read: if isOwner(userId);
+      allow create: if hasValidAssessmentAttempt(userId, attemptId);
+      allow update: if hasValidAssessmentAttempt(userId, attemptId)
+        && hasValidAssessmentAttemptTransition();
+      allow delete: if false;
+    }
+
+    function observationHeadAfterRevision(userId, observationKey, revision) {
+      let headPath = /databases/$(database)/documents/users/$(userId)/metric_observations/$(observationKey);
+      let head = getAfter(headPath).data;
+      return head.observationKey == observationKey && head.headRevision == revision;
+    }
+
+    function revisionAfterHead(userId, observationKey, revision) {
+      let revisionPath = /databases/$(database)/documents/users/$(userId)/metric_observations/$(observationKey)/revisions/$(string(revision));
+      let next = getAfter(revisionPath).data;
+      return next.observationKey == observationKey && next.revision == revision;
+    }
+
+    function hasValidObservationHead(userId, observationKey) {
+      let data = request.resource.data;
+      return isOwner(userId)
+        && data.keys().hasOnly(['observationKey', 'assessmentAttemptId', 'metricId', 'headRevision', 'createdAt', 'updatedAt'])
+        && data.keys().hasAll(['observationKey', 'assessmentAttemptId', 'metricId', 'headRevision', 'createdAt', 'updatedAt'])
+        && data.observationKey == observationKey
+        && data.assessmentAttemptId is string && data.assessmentAttemptId.size() > 0 && data.assessmentAttemptId.size() <= 160
+        && hasKnownOutcomeMetric(data.metricId)
+        && data.headRevision is int && data.headRevision >= 1
+        && data.createdAt is string && data.createdAt.size() > 0
+        && data.updatedAt is string && data.updatedAt.size() > 0;
+    }
+
+    function hasValidObservationDevice(device) {
+      return device is map
+        && device.keys().hasOnly(['provider', 'model', 'deviceId'])
+        && device.keys().hasAll(['provider'])
+        && device.provider is string && device.provider.size() > 0 && device.provider.size() <= 128
+        && (!('model' in device) || (device.model is string && device.model.size() > 0 && device.model.size() <= 128))
+        && (!('deviceId' in device) || (device.deviceId is string && device.deviceId.size() > 0 && device.deviceId.size() <= 256));
+    }
+
+    function hasValidObservationProtocolBinding(userId, data) {
+      let protocolPath = /databases/$(database)/documents/users/$(userId)/measurement_protocols/$(data.protocolRef.id)/revisions/$(string(data.protocolRef.revision));
+      let attemptPath = /databases/$(database)/documents/users/$(userId)/assessment_attempts/$(data.assessmentAttemptId);
+      return hasValidProtocolRef(userId, data.protocolRef)
+        && exists(attemptPath)
+        && get(attemptPath).data.protocolRef == data.protocolRef
+        && get(protocolPath).data.metricIds.hasAny([data.metricId])
+        && get(protocolPath).data.comparisonContext.canonicalizationVersion == data.comparisonCanonicalizationVersion;
+    }
+
+    function hasValidMetricObservationRevision(userId, observationKey, revisionId) {
+      let data = request.resource.data;
+      return isOwner(userId)
+        && data.keys().hasOnly(['observationKey', 'revision', 'supersedesRevision', 'metricId', 'value', 'unit', 'observedAt', 'source', 'sourceRef', 'device', 'protocolRef', 'comparisonSeriesKey', 'comparisonCanonicalizationVersion', 'assessmentAttemptId', 'validity', 'invalidReason', 'context', 'derivedFromObservationIds', 'algorithmVersion', 'correctionReason', 'createdAt'])
+        && data.keys().hasAll(['observationKey', 'revision', 'metricId', 'value', 'unit', 'observedAt', 'source', 'protocolRef', 'comparisonSeriesKey', 'comparisonCanonicalizationVersion', 'assessmentAttemptId', 'validity', 'context', 'createdAt'])
+        && data.observationKey == observationKey
+        && data.assessmentAttemptId is string && data.assessmentAttemptId.size() > 0 && data.assessmentAttemptId.size() <= 160
+        && data.observationKey == data.assessmentAttemptId + ':' + data.metricId
+        && data.revision is int && data.revision >= 1 && string(data.revision) == revisionId
+        && ((data.revision == 1 && !('supersedesRevision' in data) && !('correctionReason' in data))
+          || (data.revision > 1
+            && data.supersedesRevision is int && data.supersedesRevision == data.revision - 1
+            && data.correctionReason is string && data.correctionReason.size() > 0 && data.correctionReason.size() <= 2000))
+        && hasKnownOutcomeMetric(data.metricId)
+        && data.value is number
+        && hasValidOutcomeMetricUnit(data.metricId, data.unit)
+        && data.observedAt is string && data.observedAt.size() > 0
+        && data.source in ['manual', 'garmin_activity', 'garmin_lap', 'derived']
+        && (!('sourceRef' in data) || (data.sourceRef is string && data.sourceRef.size() > 0 && data.sourceRef.size() <= 512))
+        && (!('device' in data) || hasValidObservationDevice(data.device))
+        && data.comparisonSeriesKey is string && data.comparisonSeriesKey.size() > 0 && data.comparisonSeriesKey.size() <= 128
+        && data.comparisonCanonicalizationVersion is string && data.comparisonCanonicalizationVersion.size() > 0 && data.comparisonCanonicalizationVersion.size() <= 64
+        && data.validity in ['valid', 'invalid', 'practice', 'questionable']
+        && (data.validity != 'invalid' || ('invalidReason' in data))
+        && (!('invalidReason' in data) || (data.invalidReason is string && data.invalidReason.size() > 0 && data.invalidReason.size() <= 2000))
+        && data.context is map && data.context.size() <= 64
+        && ((data.source == 'derived'
+          && ('derivedFromObservationIds' in data) && data.derivedFromObservationIds is list && data.derivedFromObservationIds.size() >= 1 && data.derivedFromObservationIds.size() <= 32
+          && ('algorithmVersion' in data) && data.algorithmVersion is string && data.algorithmVersion.size() > 0 && data.algorithmVersion.size() <= 128)
+          || (data.source != 'derived' && !('derivedFromObservationIds' in data) && !('algorithmVersion' in data)))
+        && data.createdAt is string && data.createdAt.size() > 0
+        && hasValidObservationProtocolBinding(userId, data);
+    }
+
+    match /users/{userId}/metric_observations/{observationKey} {
+      allow read: if isOwner(userId);
+      allow create: if hasValidObservationHead(userId, observationKey)
+        && request.resource.data.headRevision == 1
+        && revisionAfterHead(userId, observationKey, 1);
+      allow update: if hasValidObservationHead(userId, observationKey)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['headRevision', 'updatedAt'])
+        && request.resource.data.headRevision == resource.data.headRevision + 1
+        && revisionAfterHead(userId, observationKey, request.resource.data.headRevision);
+      allow delete: if false;
+
+      match /revisions/{revisionId} {
+        allow read: if isOwner(userId);
+        allow create: if hasValidMetricObservationRevision(userId, observationKey, revisionId)
+          && observationHeadAfterRevision(userId, observationKey, request.resource.data.revision)
+          && (
+            (request.resource.data.revision == 1 && !exists(/databases/$(database)/documents/users/$(userId)/metric_observations/$(observationKey)))
+            || (request.resource.data.revision > 1
+              && get(/databases/$(database)/documents/users/$(userId)/metric_observations/$(observationKey)).data.headRevision == request.resource.data.supersedesRevision)
+          );
+        allow update, delete: if false;
+      }
+    }
+
+    function hasValidCompetitionOutcome(userId, outcomeId) {
+      let data = request.resource.data;
+      let result = data.result;
+      return isOwner(userId)
+        && data.keys().hasOnly(['id', 'eventRef', 'sport', 'occurredAt', 'source', 'sourceRef', 'result', 'metrics', 'context', 'createdAt'])
+        && data.keys().hasAll(['id', 'sport', 'occurredAt', 'source', 'result', 'metrics', 'context', 'createdAt'])
+        && data.id == outcomeId
+        && data.id is string && data.id.size() > 0 && data.id.size() <= 160
+        && (!('eventRef' in data) || (data.eventRef is string && data.eventRef.size() > 0 && data.eventRef.size() <= 256))
+        && data.sport in ['cycling', 'running', 'field', 'other']
+        && data.occurredAt is string && data.occurredAt.size() > 0
+        && data.source in ['manual', 'garmin_activity', 'imported_result']
+        && (!('sourceRef' in data) || (data.sourceRef is string && data.sourceRef.size() > 0 && data.sourceRef.size() <= 512))
+        && result is map
+        && result.keys().hasOnly(['completed', 'placing', 'fieldSize', 'elapsedSeconds', 'distanceM', 'courseId', 'summary'])
+        && result.keys().hasAll(['completed'])
+        && result.completed is bool
+        && (!('placing' in result) || (result.placing is int && result.placing >= 1))
+        && (!('fieldSize' in result) || (result.fieldSize is int && result.fieldSize >= 1))
+        && (!('placing' in result) || !('fieldSize' in result) || result.placing <= result.fieldSize)
+        && (!('elapsedSeconds' in result) || (result.elapsedSeconds is number && result.elapsedSeconds >= 0))
+        && (!('distanceM' in result) || (result.distanceM is number && result.distanceM >= 0))
+        && (!('courseId' in result) || (result.courseId is string && result.courseId.size() > 0 && result.courseId.size() <= 256))
+        && (!('summary' in result) || (result.summary is string && result.summary.size() <= 4000))
+        && data.metrics is map && data.metrics.size() <= 64
+        && data.context is map && data.context.size() <= 64
+        && data.createdAt is string && data.createdAt.size() > 0;
+    }
+
+    match /users/{userId}/competition_outcomes/{outcomeId} {
+      allow read: if isOwner(userId);
+      allow create: if hasValidCompetitionOutcome(userId, outcomeId);
+      allow update, delete: if false;
+    }
   }
 }
