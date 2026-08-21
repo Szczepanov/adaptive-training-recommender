@@ -20,7 +20,6 @@ export interface ManualObservationInput {
     context: ComparisonContext;
     validity: ObservationValidity;
     invalidReason?: string;
-    validityNote?: string;
     sourceRef?: string;
     device?: MetricObservationDevice;
 }
@@ -67,7 +66,6 @@ export async function adaptManualObservation(
         assessmentAttemptId: input.assessmentAttemptId,
         validity: input.validity,
         ...(input.invalidReason === undefined ? {} : { invalidReason: input.invalidReason }),
-        ...(input.validityNote === undefined ? {} : { validityNote: input.validityNote }),
         context: { ...input.context },
         ...(identity.correctionReason === undefined ? {} : { correctionReason: identity.correctionReason }),
         createdAt: identity.createdAt ?? new Date().toISOString(),
