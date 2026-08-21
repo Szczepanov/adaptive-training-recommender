@@ -1,0 +1,41 @@
+import { doc, getDoc, setDoc, type Firestore } from 'firebase/firestore';
+import { getDb } from '../firebase';
+import type { MeasurementProtocol } from '../observations/models';
+import { assertValidMeasurementProtocol } from '../observations/protocols';
+
+/** User-scoped immutable protocol revisions. Material edits must be a new revision. */
+export class MeasurementProtocolService {
+    private readonly db: Firestore;
+
+    constructor(db: Firestore = getDb()) {
+        this.db = db;
+    }
+
+    private revisionRef(userId: string, protocolId: string, revision: number) {
+        return doc(this.db, 'users', userId, 'measurement_protocols', protocolId, 'revisions', String(revision));
+    }
+
+    async createRevision(userId: string, protocol: MeasurementProtocol): Promise<MeasurementProtocol> {
+        assertValidMeasurementProtocol(protocol);
+        const ref = this.revisionRef(userId, protocol.id, protocol.revision);
+        const existing = await getDoc(ref);
+        if (existing.exists()) {
+            throw new Error(`Measurement protocol ${protocol.id}@${protocol.revision} already exists and is immutable`);
+        }
+        await setDoc(ref, protocol);
+        return protocol;
+    }
+
+    async getRevision(userId: string, protocolId: string, revision: number): Promise<MeasurementProtocol | null> {
+        const snapshot = await getDoc(this.revisionRef(userId, protocolId, revision));
+        if (!snapshot.exists()) return null;
+        const protocol = snapshot.data() as MeasurementProtocol;
+        assertValidMeasurementProtocol(protocol);
+        if (protocol.id !== protocolId || protocol.revision !== revision) {
+            throw new Error(`Measurement protocol path identity mismatch for ${protocolId}@${revision}`);
+        }
+        return protocol;
+    }
+}
+
+export const measurementProtocolService = new MeasurementProtocolService();
