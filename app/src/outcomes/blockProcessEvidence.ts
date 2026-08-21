@@ -8,6 +8,11 @@ export interface KeyRoleEvidence {
     completedOccurrenceIds: readonly string[];
 }
 
+export interface CompletedSessionEvidence {
+    /** Exact IDs from the canonical completed session/execution history for this block. */
+    sessionIds: readonly string[];
+}
+
 export interface BlockProcessEvidence {
     plannedKeyRoles: number;
     completedKeyRoles: number;
@@ -38,6 +43,7 @@ export interface BlockProcessEvidenceInput {
     recommendations: readonly RecommendationEvidence[];
     sessionOutcomes: readonly SessionOutcome[];
     keyRoles: KeyRoleEvidence;
+    completedSessions: CompletedSessionEvidence;
 }
 
 function uniqueSorted(values: readonly string[]): string[] {
@@ -64,19 +70,21 @@ function recommendationRef(recommendation: RecommendationEvidence): string {
 }
 
 /**
- * OV5.2 read model over existing recommendation/adherence, coverage and M5.3 response facts.
- * Nothing here writes data or invents a second adherence/response authority.
+ * OV5.2 read model over existing recommendation/adherence, completed-session history,
+ * weekly-role coverage and M5.3 response facts. Nothing here writes data or invents a
+ * second adherence/response authority.
  */
 export function deriveBlockProcessEvidence(input: BlockProcessEvidenceInput): BlockProcessEvidence {
     const plannedKeyRoleIds = uniqueSorted(input.keyRoles.plannedOccurrenceIds);
     const plannedKeyRoleSet = new Set(plannedKeyRoleIds);
     const completedKeyRoleIds = uniqueSorted(input.keyRoles.completedOccurrenceIds)
         .filter(id => plannedKeyRoleSet.has(id));
+    const completedSessionIds = uniqueSorted(input.completedSessions.sessionIds);
 
     const recommendations = [...input.recommendations]
         .sort((a, b) => a.date.localeCompare(b.date) || recommendationRef(a).localeCompare(recommendationRef(b)));
     const plannedSessions = recommendations.filter(isPlannedTrainingSession);
-    const completedSessions = plannedSessions.filter(completedRecommendation);
+    const adheredPlannedSessions = plannedSessions.filter(completedRecommendation);
 
     const responseCounts: BlockProcessEvidence['responseCounts'] = {
         passed: 0,
@@ -91,8 +99,10 @@ export function deriveBlockProcessEvidence(input: BlockProcessEvidenceInput): Bl
         plannedKeyRoles: plannedKeyRoleIds.length,
         completedKeyRoles: completedKeyRoleIds.length,
         plannedSessionCount: plannedSessions.length,
-        completedSessionCount: completedSessions.length,
-        adherencePct: percentage(completedSessions.length, plannedSessions.length),
+        completedSessionCount: completedSessionIds.length,
+        // Adherence remains a derived read-model field over the canonical recommendation
+        // adherence record; completed-session history is intentionally a separate count.
+        adherencePct: percentage(adheredPlannedSessions.length, plannedSessions.length),
         scaledCount: recommendations.filter(item => item.engineVerdict === 'scale').length,
         deferredCount: recommendations.filter(item => item.engineVerdict === 'defer').length,
         skippedCount: recommendations.filter(item => item.engineVerdict === 'skip').length,
@@ -109,7 +119,10 @@ export function deriveBlockProcessEvidence(input: BlockProcessEvidenceInput): Bl
             : percentage(responseKnown, input.sessionOutcomes.length),
         sourceIds: {
             recommendationIds: uniqueSorted(recommendations.map(recommendationRef)),
-            sessionIds: uniqueSorted(input.sessionOutcomes.map(item => item.sourceSession.id)),
+            sessionIds: uniqueSorted([
+                ...completedSessionIds,
+                ...input.sessionOutcomes.map(item => item.sourceSession.id),
+            ]),
         },
     };
 }
