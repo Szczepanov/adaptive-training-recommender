@@ -83,7 +83,9 @@ export function HealthContextSection({ value, symptomsPresent, onChange }: Healt
     };
 
     const toggleContextFlag = (key: typeof CONTEXT_TOGGLES[number]['key']) => {
-        update({ [key]: context[key] === true ? undefined : true });
+        // Null is the explicit "answered/cleared" representation accepted by the persistence
+        // contract; unlike `undefined`, it is safe to send through Firestore merge writes.
+        update({ [key]: context[key] === true ? null : true });
     };
 
     const toggleSymptomType = (type: HealthSymptomType) => {
