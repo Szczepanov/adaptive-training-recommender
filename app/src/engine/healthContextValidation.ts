@@ -67,7 +67,7 @@ function isOneOf<const TValues extends readonly string[]>(
     value: unknown,
     values: TValues,
 ): value is TValues[number] {
-    return typeof value === 'string' && values.includes(value);
+    return typeof value === 'string' && (values as readonly string[]).includes(value);
 }
 
 function validateSymptoms(
