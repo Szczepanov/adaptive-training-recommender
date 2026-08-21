@@ -37,6 +37,12 @@ All scripts defined in `package.json` are organized below by feature domain:
 | `npm run lint:fix` | ESLint auto-fix | Automatically resolves fixable ESLint warnings and formatting issues. |
 | `npm run validate:workouts` | Workout catalog validation | Runs `scripts/validate-workouts.ts` via `node --experimental-strip-types` to ensure prescription contracts, parameter ranges, and intensity levels in `src/engine/workouts/` are valid. |
 
+> **Experimental: dual TypeScript compiler setup.** `devDependencies` currently installs two different major versions of TypeScript under `npm:` aliases:
+> - `typescript` resolves to `@typescript/typescript6` (TypeScript 6.x), which `typescript-eslint` uses for its compiler API — `typescript-eslint@8.67.0` doesn't yet support the TypeScript 7 API.
+> - `@typescript/native` resolves to the real `typescript@7.0.2` package and provides the `tsc` binary that `npm run typecheck` (`tsc -b`) and `npm run build` actually run against.
+>
+> Because of this split, tools that key off the dependency name `typescript` — `npm audit`, Dependabot, `require('typescript').version` in editor/tooling integrations — report on the 6.x wrapper, **not** the 7.0.2 compiler that builds the app. This is a deliberate transitional trick (see PR #144) evaluated alongside the conservative fallback in #133, not a permanent arrangement.
+
 ### 2. Development & Production Build
 
 | Command | Action | Description |
