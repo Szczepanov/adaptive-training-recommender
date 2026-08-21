@@ -8,7 +8,17 @@ import { assertComparisonDimensionValue, assertValidMeasurementProtocol, getComp
 import type { SessionDefinition } from '../sessions/models';
 import { validateSessionDefinition } from '../sessions/validation';
 
-export function buildTestingSessionDefinition(protocol: MeasurementProtocol): SessionDefinition {
+export type TestingSessionDefinition = SessionDefinition & { intent: 'testing' };
+
+/** Fail closed before a generic persisted/catalog definition enters the testing-only path. */
+export function asTestingSessionDefinition(definition: SessionDefinition): TestingSessionDefinition {
+    if (definition.intent !== 'testing') {
+        throw new Error(`Testing workflow requires intent=testing, received ${definition.intent}`);
+    }
+    return definition as TestingSessionDefinition;
+}
+
+export function buildTestingSessionDefinition(protocol: MeasurementProtocol): TestingSessionDefinition {
     assertValidMeasurementProtocol(protocol);
 
     const instructionSteps = protocol.instructions.length > 0
@@ -25,7 +35,7 @@ export function buildTestingSessionDefinition(protocol: MeasurementProtocol): Se
             dose: { kind: 'checkoff' as const, rounds: 1 },
         }];
 
-    const definition: SessionDefinition = {
+    const definition: TestingSessionDefinition = {
         schemaVersion: 1,
         id: `testing-${protocol.id}-r${protocol.revision}`,
         revision: 1,
