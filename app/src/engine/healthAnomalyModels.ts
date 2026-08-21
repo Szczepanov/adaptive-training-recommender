@@ -124,9 +124,8 @@ export interface HealthCoreSignalFeatures {
 }
 
 /**
- * HA2 output consumed later by the HA0.2 composer/HA3 evaluator. This is deliberately
- * separate from `CoreSignalEvidence`: feature plumbing does not decide whether physiology is
- * normal or anomalous.
+ * HA2 output consumed by the HA3 evaluator. Feature plumbing remains threshold-free and does
+ * not decide whether physiology is normal or anomalous.
  */
 export interface HealthAnomalyFeatureSet {
     date: string;
@@ -167,6 +166,24 @@ export type PhysiologicalAnomalyState =
     | 'possible_illness_or_systemic_stress'
     | 'symptoms_reported';
 
+export interface HealthAnomalyThresholdPolicy {
+    policyVersion: string;
+    moderateDeviation: number;
+    strongDeviation: number;
+    minimumCoreSignalsForMultiSignal: number;
+    persistenceDaysForEscalation: number;
+    minimumHistoryCount: number;
+    minimumRecentDayCoverage: number;
+    maxBaselineAgeDays: number;
+    estimatorBySignal: Record<HealthCoreSignal, HealthAnomalyEstimator>;
+}
+
+export interface HealthAnomalyStructuredContext {
+    /** Null means the plan-block read was unavailable/invalid rather than "no travel". */
+    authoredTravelActive: boolean | null;
+    authoredTravelRevision: string | null;
+}
+
 export interface HealthAnomalyRationaleFact {
     code: string;
     value?: number | string | boolean | null;
@@ -183,6 +200,7 @@ export interface HealthAnomalyPersistenceInput {
     previousState: PhysiologicalAnomalyState | null;
     previousEpisodeId: string | null;
     previousEpisodeDay: number | null;
+    previousAssessmentDate?: string | null;
     unexplainedPersistenceDays: number;
 }
 
@@ -191,13 +209,13 @@ export interface HealthAnomalyInput {
     timezone: 'Europe/Warsaw';
     recoverySnapshot: DailyRecoverySnapshot | null;
     subjectiveCheckin: DailySubjectiveCheckin | null;
-    /** HA2 threshold-free feature plumbing. Optional until the HA0.2 composer lands. */
     features?: HealthAnomalyFeatureSet | null;
-    /** HA0/HA3 assessment-facing evidence contract retained until HA3 owns categorisation. */
+    /** Compatibility/testing seam for callers that have not yet adopted HA2 feature mapping. */
     coreSignals: CoreSignalEvidence[];
     supportingSignals: SupportingSignalEvidence[];
     dataQuality: CoreSignalDataQuality[];
     last3DaysHardSessionsCount: number;
+    structuredContext?: HealthAnomalyStructuredContext | null;
     persistence: HealthAnomalyPersistenceInput;
 }
 
@@ -214,5 +232,31 @@ export interface PhysiologicalAnomalyAssessment {
     dataQuality: CoreSignalDataQuality[];
     rationale: HealthAnomalyRationaleTokens;
     policyVersion: string;
+    thresholdPolicyVersion: string;
     mode: Exclude<HealthAnomalyPolicy, 'off'>;
+}
+
+export interface HealthAnomalySourceIdentity {
+    timezone: 'Europe/Warsaw';
+    recoverySnapshotRevision: string | null;
+    checkinRevision: string | null;
+    historyWindowStart: string;
+    historyWindowEndExclusive: string;
+    historySnapshotRevisions: Array<{ date: string; revision: string }>;
+    travelContextRevision: string | null;
+    persistenceLookbackStart: string;
+}
+
+export interface HealthAnomalyAssessmentRevision {
+    userId: string;
+    date: string;
+    revisionId: string;
+    idempotencyKey: string;
+    computedAt: string;
+    policyVersion: string;
+    thresholdPolicy: HealthAnomalyThresholdPolicy;
+    mode: Exclude<HealthAnomalyPolicy, 'off'>;
+    source: HealthAnomalySourceIdentity;
+    assessment: PhysiologicalAnomalyAssessment;
+    schemaVersion: 1;
 }
