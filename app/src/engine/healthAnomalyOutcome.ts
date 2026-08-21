@@ -67,6 +67,15 @@ function isRealLocalDate(value: unknown): value is string {
         && date.getUTCDate() === day;
 }
 
+/**
+ * Validate and narrow a raw Firestore document (or candidate write payload) into a
+ * {@link HealthAnomalyEpisodeOutcome}.
+ *
+ * Mirrors the Firestore security rule's field-level checks so a malformed document is rejected
+ * client-side with the same shape it would be rejected server-side. When provided,
+ * `expectedUserId`/`expectedEpisodeId` additionally guard against a document read under the
+ * wrong owner or episode path.
+ */
 export function parseHealthAnomalyEpisodeOutcome(
     value: unknown,
     expectedUserId?: string,
@@ -119,6 +128,13 @@ export function parseHealthAnomalyEpisodeOutcome(
     return outcome;
 }
 
+/**
+ * Build a new-or-updated {@link HealthAnomalyEpisodeOutcome}, enforcing that episode/source
+ * identity and `createdAt` never change once `existing` is supplied. Only the conclusion
+ * (explanation, symptom onset, respiratory test, note) is allowed to evolve on an update; a
+ * caller attempting to move an outcome onto a different episode or assessment revision gets a
+ * thrown error rather than a silently reassigned record.
+ */
 export function buildHealthAnomalyEpisodeOutcome(input: {
     userId: string;
     episodeId: string;

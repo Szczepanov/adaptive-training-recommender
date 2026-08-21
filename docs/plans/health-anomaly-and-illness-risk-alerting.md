@@ -2,8 +2,8 @@
 
 * **Capability:** HA
 * **Status:** In progress
-* **Implementation status:** HA0/HA1 are merged via #162 (with validation follow-up #168); HA2–HA4 are on `main` after #166/#165 and follow-up fixes. HA5 shadow observability/replay exists on the unmerged `feat/health-anomaly-ha-d` branch but is not accepted until reconciled with current `main`, reviewed, and green in CI.
-* **Blocked by:** none for the already-merged HA0–HA4 shadow foundation. HA5 must land on current `main` before the prospective HA6 loop should become the operational focus. HA7 evidence gates any user-visible `possible illness or systemic stress` wording; HA9 training gating requires a separate release decision after visible-mode evidence.
+* **Implementation status:** HA0/HA1 are merged via #162 (with validation follow-up #168); HA2–HA4 are on `main` after #166/#165 and follow-up fixes. HA5 shadow observability/replay merged via #171, with the frontend-build secret-forwarding fix in #173; the full shadow foundation is on `main`. HA6.1–HA6.3 prospective outcome labels are implemented in PR #174 (`feat/health-anomaly-ha-e`), evidence-only and gated behind the same shadow surface.
+* **Blocked by:** none for the merged HA0–HA5 shadow foundation or for HA6.1–HA6.3. HA6.4 (personal expected-response modelling) remains blocked on accumulating enough labelled real episodes to evaluate without fitting sparse noise. HA7 evidence gates any user-visible `possible illness or systemic stress` wording; HA9 training gating requires a separate release decision after visible-mode evidence.
 * **Unlocks:** explainable pre-symptomatic physiological anomaly alerts; prospective athlete-specific calibration; later tighten-only health gating
 * **Decision:** [ADR-0025](../adr/0025-physiological-anomaly-and-possible-illness-signals.md)
 * **Research:** [2026-08-21 physiological anomaly and illness-risk review](../analysis/2026-08-21-physiological-anomaly-and-illness-risk-research.md)
@@ -751,7 +751,7 @@ Important: future symptoms are labels in the report, never live input to the day
 
 ## HA6 — prospective label loop and calibration
 
-**Status:** blocked operationally until HA5 lands on `main`; implementation can follow immediately, while release evidence necessarily accumulates over real use
+**Status:** HA6.1–HA6.3 implemented in PR #174 (`feat/health-anomaly-ha-e`), evidence-only, no Home surface. HA6.4 remains observation-only future work pending enough labelled real episodes; release evidence for HA7/HA9 necessarily accumulates over real use.
 
 ### HA6.1 Low-friction outcome capture
 
@@ -1079,19 +1079,19 @@ Keep implementation reviewable and protect production behavior.
 * policy `shadow-v1` explicit only;
 * append-only assessment revisions.
 
-### PR HA-D — shadow observability + replay — **in progress; not on `main`**
-
-Current branch: `feat/health-anomaly-ha-d`. Before merge, reconcile it with current `main`, resolve conflicts/drift, review the resulting diff, and use green repository CI as acceptance.
+### PR HA-D — shadow observability + replay — **merged (#171, CI fix #173)**
 
 * HA5;
 * DataView panel;
 * evidence script/report.
 
-### PR HA-E — prospective follow-up labels — **pending HA5 on `main`**
+### PR HA-E — prospective follow-up labels — **PR #174, `feat/health-anomaly-ha-e`**
 
-* HA6;
-* outcome capture;
-* no illness probability.
+* HA6.1–HA6.3 (outcome capture, symptom onset, optional respiratory test);
+* owner-scoped `health_anomaly_outcomes` Firestore rules with reference integrity to the immutable assessment revision;
+* follow-up form mounted only under the Detailed Data shadow surface;
+* no illness probability, no Home alert, no recommendation/training input;
+* HA6.4 deliberately deferred.
 
 ### PR HA-F — visible anomaly UX — **blocked by HA7**
 
@@ -1121,7 +1121,7 @@ For **shadow capability complete**:
 * real history can be replayed;
 * production recommendation behavior remains unchanged.
 
-The first five bullets are already satisfied on `main`; DataView/replay/runtime observability are the HA-D acceptance boundary. Do not call the shadow capability complete until HA-D is reconciled and merged.
+All eight bullets are satisfied on `main` now that HA-D is merged (#171, #173).
 
 For **visible capability complete**:
 
@@ -1143,15 +1143,12 @@ For **training integration complete**:
 
 ## Current continuation checklist
 
-The next agent should continue from the shipped HA0–HA4 foundation rather than recreating it:
+The next agent should continue from the shipped HA0–HA5 foundation and HA6.1–HA6.3 (PR #174) rather than recreating them:
 
 1. Read ADR-0025, ADR-0024, ADR-0010, this plan, and `docs/architecture/health-anomaly-shadow.md`.
-2. Reconcile `feat/health-anomaly-ha-d` with current `main`; do not merge the stale branch by force.
-3. Review the HA-D diff specifically for DataView shadow observability, runtime policy resolution, replay semantics, and evidence-script future-label isolation.
-4. Run the normal frontend, Firestore, simulation/policy-boundary, and repository CI gates; default `off` must preserve recommendation behavior.
-5. Merge HA-D only after the resulting branch is green and the evidence-only boundary remains intact.
-6. Explicitly enable `shadow-v1` only for the intended evidence-collection user/environment.
-7. Start HA6 prospective outcome labels after shadow assessments are actually being produced; keep labels outside immutable assessment revisions.
-8. Accumulate enough real episodes/healthy periods to report alert burden, confounder overlap, false alerts, and lead time honestly.
-9. Write the dated HA7 evidence review before any `visible-v1` cutover.
-10. Treat `tighten-v1` as a separate later release decision; health anomaly may only tighten, never relax, training decisions.
+2. Reconcile `feat/health-anomaly-ha-e` with current `main` and merge PR #174 once green; the HA6.1–HA6.3 outcome-capture surface stays evidence-only under Detailed Data.
+3. Explicitly enable `shadow-v1` only for the intended evidence-collection user/environment; HA6 follow-up prompts only appear once `shadow-v1` assessments are being produced for that user.
+4. Accumulate enough real episodes/healthy periods to report alert burden, confounder overlap, false alerts, and lead time honestly; HA6 outcome labels are the source for the context-explained and symptom-follow-up fractions HA7 needs.
+5. Start HA6.4 personal expected-response modelling only once enough labelled episodes exist per athlete to evaluate without fitting sparse noise.
+6. Write the dated HA7 evidence review before any `visible-v1` cutover.
+7. Treat `tighten-v1` as a separate later release decision; health anomaly may only tighten, never relax, training decisions.
