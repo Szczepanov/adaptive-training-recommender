@@ -1,6 +1,7 @@
 import React, { useRef, useEffect } from 'react';
 import type { Screen } from '../types/navigation';
 import { getAuthInstance } from '../firebase';
+import { buildInfo } from '../buildInfo';
 import { GarminSyncBadge } from './GarminSyncBadge';
 
 interface HeaderProps {
@@ -48,6 +49,8 @@ export const Header: React.FC<HeaderProps> = ({
     const { signOut } = await import('firebase/auth');
     await signOut(getAuthInstance());
   };
+
+  const buildTitle = `Git commit ${buildInfo.gitSha}${buildInfo.dirty ? ' (local working tree has uncommitted changes)' : ''}`;
 
   return (
     <header className="global-navbar">
@@ -143,6 +146,15 @@ export const Header: React.FC<HeaderProps> = ({
                 >
                   <span className="item-icon">⚙️</span> Coach Preferences
                 </button>
+                <div className="dropdown-divider" />
+                <div
+                  className="dropdown-item"
+                  title={buildTitle}
+                  aria-label={`Build ${buildInfo.label}`}
+                  style={{ cursor: 'default', opacity: 0.72 }}
+                >
+                  <span className="item-icon">ℹ️</span> Build {buildInfo.label}
+                </div>
                 <div className="dropdown-divider" />
                 <button className="dropdown-item logout" onClick={handleLogout} role="menuitem">
                   <span className="item-icon">🚪</span> Sign Out

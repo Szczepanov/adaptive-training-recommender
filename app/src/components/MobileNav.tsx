@@ -1,6 +1,7 @@
 import React, { useRef, useEffect } from 'react';
 import type { Screen } from '../types/navigation';
 import { getAuthInstance } from '../firebase';
+import { buildInfo } from '../buildInfo';
 
 interface MobileNavProps {
   screen: Screen;
@@ -62,6 +63,8 @@ export const MobileNav: React.FC<MobileNavProps> = ({ screen, handleNavigate, lo
     const { signOut } = await import('firebase/auth');
     await signOut(getAuthInstance());
   };
+
+  const buildTitle = `Git commit ${buildInfo.gitSha}${buildInfo.dirty ? ' (local working tree has uncommitted changes)' : ''}`;
 
   return (
     <>
@@ -181,6 +184,23 @@ export const MobileNav: React.FC<MobileNavProps> = ({ screen, handleNavigate, lo
                   <span className="item-sub">Compile recent metrics & prompt for your AI</span>
                 </div>
               </button>
+
+              <div className="drawer-divider" />
+
+              <div
+                className="drawer-item"
+                title={buildTitle}
+                aria-label={`Build ${buildInfo.label}`}
+                style={{ cursor: 'default', opacity: 0.72 }}
+              >
+                <span className="item-icon">ℹ️</span>
+                <div className="item-text">
+                  <span className="item-title">Build {buildInfo.label}</span>
+                  <span className="item-sub">
+                    {buildInfo.dirty ? 'Local working tree has uncommitted changes' : 'Exact Git commit for this app build'}
+                  </span>
+                </div>
+              </div>
 
               <div className="drawer-divider" />
 

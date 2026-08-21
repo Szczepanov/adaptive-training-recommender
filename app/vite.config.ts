@@ -1,8 +1,26 @@
+import { execFileSync } from 'node:child_process';
 import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 
+function readGit(args: string[]): string | undefined {
+  try {
+    return execFileSync('git', args, { encoding: 'utf8' }).trim();
+  } catch {
+    return undefined;
+  }
+}
+
+const gitSha = process.env.VITE_GIT_SHA?.trim() || readGit(['rev-parse', 'HEAD']) || 'unknown';
+const gitDirty = process.env.VITE_GIT_DIRTY !== undefined
+  ? process.env.VITE_GIT_DIRTY === 'true'
+  : Boolean(readGit(['status', '--porcelain']));
+
 export default defineConfig({
+  define: {
+    'import.meta.env.VITE_GIT_SHA': JSON.stringify(gitSha),
+    'import.meta.env.VITE_GIT_DIRTY': JSON.stringify(String(gitDirty)),
+  },
   plugins: [
     react(),
     VitePWA({
