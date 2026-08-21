@@ -28,9 +28,12 @@ function contextFor(recommendation: DailyRecommendation): PolicyContext {
 }
 
 function sameContext(left: PolicyContext, right: PolicyContext): boolean {
-    return left.policyVersion === right.policyVersion
-        && left.planningMode === right.planningMode
-        && left.authoredPlanRef === right.authoredPlanRef;
+    // ADR-0017 reserves direct `.planningMode` reads for the effective-mode authority.
+    // These are report-evidence fields, not TrainingIntentProfile, so destructure them
+    // explicitly rather than creating a misleading direct-access pattern in production.
+    const { policyVersion: leftPolicy, planningMode: leftMode, authoredPlanRef: leftPlan } = left;
+    const { policyVersion: rightPolicy, planningMode: rightMode, authoredPlanRef: rightPlan } = right;
+    return leftPolicy === rightPolicy && leftMode === rightMode && leftPlan === rightPlan;
 }
 
 function asSegment(startDate: string, endDate: string, context: PolicyContext): PolicySegment {
