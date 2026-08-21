@@ -24,6 +24,12 @@ updates:
         update-types:
           - "minor"
           - "patch"
+    # TypeScript 7.0 has no programmatic compiler API. typescript-eslint currently
+    # requires the TypeScript 6 API, so defer 7.0.x until the lint toolchain supports it.
+    ignore:
+      - dependency-name: "typescript"
+        versions:
+          - "7.0.x"
     labels:
       - "dependencies"
       - "frontend"
