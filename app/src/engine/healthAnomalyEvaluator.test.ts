@@ -204,6 +204,35 @@ describe('evaluatePhysiologicalAnomaly HA3', () => {
         expect(result.episodeDay).toBe(2);
     });
 
+    it('resets persistence across a non-adjacent gap instead of carrying the prior count forward', () => {
+        const result = evaluate(featureSet(3, 3, -2), {
+            persistence: {
+                previousState: 'watch_unexplained',
+                previousEpisodeId: 'health-anomaly:2026-08-17',
+                previousEpisodeDay: 3,
+                previousAssessmentDate: '2026-08-18',
+                unexplainedPersistenceDays: 3,
+            },
+        });
+        expect(result.persistenceDays).toBe(1);
+        expect(result.episodeDay).toBe(1);
+        expect(result.state).toBe('watch_unexplained');
+    });
+
+    it('resets persistence when no previous assessment date is known, even if a prior count is supplied', () => {
+        const result = evaluate(featureSet(3, 3, -2), {
+            persistence: {
+                previousState: 'watch_unexplained',
+                previousEpisodeId: 'health-anomaly:2026-08-20',
+                previousEpisodeDay: 1,
+                previousAssessmentDate: null,
+                unexplainedPersistenceDays: 5,
+            },
+        });
+        expect(result.persistenceDays).toBe(1);
+        expect(result.state).toBe('watch_unexplained');
+    });
+
     it('gives explicit symptoms semantic priority even when wearables are normal', () => {
         const result = evaluate(featureSet(), {
             subjectiveCheckin: checkin({ illnessSymptoms: true }),
@@ -228,6 +257,16 @@ describe('evaluatePhysiologicalAnomaly HA3', () => {
         expect(result.coreSignals.find(item => item.signal === 'rhr')?.status).toBe('unavailable');
         expect(result.coreSignals.find(item => item.signal === 'respiration')?.status).toBe('unavailable');
         expect(result.state).toBe('watch_unexplained');
+    });
+
+    it('does not reject the selected candidate for a near-zero scale on an unselected estimator', () => {
+        const features = featureSet(3, 0, -2);
+        // Simulates buildDataQuality's aggregate flag when a *different* candidate estimator
+        // (e.g. the unselected median-mad-28d) has a near-zero scale, while the selected
+        // mean-stdev-28d candidate (z = 3, scale implicitly fine) is perfectly usable.
+        features.coreSignals[0] = feature('rhr', 3, { zeroOrNearZeroScale: true });
+        const result = evaluate(features);
+        expect(result.coreSignals.find(item => item.signal === 'rhr')?.status).toBe('strong_anomaly');
     });
 
     it('lets alcohol strongly explain RHR/HRV without automatically erasing respiration residual', () => {

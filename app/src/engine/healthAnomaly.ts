@@ -139,7 +139,6 @@ function categorizeSignal(
         || !Number.isFinite(candidate.standardizedDeviation)
         || !quality
         || quality.currentValueMissing
-        || quality.zeroOrNearZeroScale
         || quality.historyCount < thresholds.minimumHistoryCount
         || quality.recentDayCoverage < thresholds.minimumRecentDayCoverage
         || quality.baselineAgeDays === null
@@ -442,8 +441,13 @@ export function evaluatePhysiologicalAnomaly(
     );
     const symptomsReported = input.subjectiveCheckin?.healthContext?.symptoms?.present === true
         || input.subjectiveCheckin?.illnessSymptoms === true;
+    const priorDaysAreContiguous = isAdjacentDate(input.persistence.previousAssessmentDate, input.date);
+    const priorUnexplainedDays = priorDaysAreContiguous
+        && Number.isFinite(input.persistence.unexplainedPersistenceDays)
+        ? Math.max(0, Math.floor(input.persistence.unexplainedPersistenceDays))
+        : 0;
     const persistenceDays = unexplained.length > 0
-        ? Math.max(0, Math.floor(input.persistence.unexplainedPersistenceDays)) + 1
+        ? priorUnexplainedDays + 1
         : 0;
 
     let state: PhysiologicalAnomalyAssessment['state'];

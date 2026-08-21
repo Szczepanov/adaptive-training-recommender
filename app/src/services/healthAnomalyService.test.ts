@@ -3,6 +3,7 @@ import type { DataState } from '../engine/dataState';
 import type { DailyRecoverySnapshot, DailySubjectiveCheckin } from '../engine/models';
 import type { HealthAnomalyAssessmentRevision } from '../engine/healthAnomalyModels';
 import { HealthAnomalyService } from './healthAnomalyService';
+import { addDaysToLocalDateString } from '../utils/localDate';
 
 function day(date: string, rhr = 50, hrv = 60, respiration = 14): DailyRecoverySnapshot {
     return {
@@ -56,13 +57,17 @@ describe('HealthAnomalyService composition', () => {
 
         expect(await service.assessAndPersist('u1', '2026-08-21', 'off')).toBeNull();
         expect(recovery.getRecoverySnapshotState).not.toHaveBeenCalled();
+        expect(recovery.getRecoverySnapshotsInRangeState).not.toHaveBeenCalled();
+        expect(checkins.getCheckinState).not.toHaveBeenCalled();
+        expect(blocks.getBlocksInRangeState).not.toHaveBeenCalled();
+        expect(store.getLatestForDate).not.toHaveBeenCalled();
         expect(store.persistImmutable).not.toHaveBeenCalled();
     });
 
     it('persists a deterministic shadow revision from canonical sources', async () => {
         const current = day('2026-08-21');
         const history = Array.from({ length: 20 }, (_, index) => {
-            const date = new Date(Date.UTC(2026, 7, 1 + index)).toISOString().slice(0, 10);
+            const date = addDaysToLocalDateString('2026-08-01', index);
             return day(date, 49 + (index % 4), 56 + (index % 8), 13.8 + (index % 5) * 0.1);
         });
         const recovery = {

@@ -155,6 +155,22 @@ export function parseHealthAnomalyAssessmentRevision(
     return revision;
 }
 
+/**
+ * The stored document at this path was necessarily written keyed by this same revisionId, so
+ * its idempotencyKey (derived from the identical digest) can never actually disagree -- that
+ * comparison alone cannot detect a real digest collision between different inputs. Compare the
+ * exact identity-defining content instead.
+ */
+function identityContent(revision: HealthAnomalyAssessmentRevision): string {
+    return stableSerialize({
+        date: revision.date,
+        mode: revision.mode,
+        policyVersion: revision.policyVersion,
+        thresholdPolicy: revision.thresholdPolicy,
+        source: revision.source,
+    });
+}
+
 /** Immutable, create-only nested revisions; no mutable health-anomaly head is required. */
 export class HealthAnomalyAssessmentRepository {
     async persistImmutable(revision: HealthAnomalyAssessmentRevision): Promise<HealthAnomalyAssessmentRevision> {
@@ -169,7 +185,7 @@ export class HealthAnomalyAssessmentRepository {
             const existing = await transaction.get(ref);
             if (existing.exists()) {
                 const parsed = parseHealthAnomalyAssessmentRevision(existing.data(), validated.userId, validated.date);
-                if (parsed.idempotencyKey !== validated.idempotencyKey) {
+                if (identityContent(parsed) !== identityContent(validated)) {
                     throw new Error('Health anomaly revision-id collision');
                 }
                 return parsed;
