@@ -146,6 +146,40 @@ describe('deriveBlockOutcome', () => {
         expect(report.reasons).toContain('primary_improvement_with_secondary_decline');
     });
 
+    it('keeps two frozen bindings for the same metric distinct instead of collapsing by metric id', () => {
+        const duplicateMetricEvaluation = evaluation();
+        duplicateMetricEvaluation.bindings = [
+            duplicateMetricEvaluation.bindings[0]!,
+            {
+                id: 'secondary-20m-late-window',
+                metricId: 'cycling_tt_20m_mean_power_w',
+                role: 'secondary',
+                baseline: { kind: 'declared_observation', observationId: 'baseline-20m-late' },
+                targetObservationWindow: { startDate: '2026-08-15', endDate: '2026-08-21' },
+                expectedDirection: { kind: 'higher_is_better' },
+                rationale: 'Same metric, different frozen window',
+            },
+        ];
+
+        const report = deriveBlockOutcome({
+            evaluation: duplicateMetricEvaluation,
+            metricProgress: [
+                progress('cycling_tt_20m_mean_power_w', 'meaningful_improvement'),
+                progress('cycling_tt_20m_mean_power_w', 'meaningful_decline'),
+            ],
+            process: process(),
+            ecologicalOutcomes: [],
+            policySegments: [{
+                startDate: '2026-08-01', endDate: '2026-08-21',
+                policyVersion: 'policy-v1', planningMode: 'unknown',
+            }],
+        });
+
+        expect(report.verdict).toBe('mixed');
+        expect(report.reasons).toContain('primary_improvement_with_secondary_decline');
+        expect(report.metricProgress).toHaveLength(2);
+    });
+
     it('keeps response cost separate and reports repeated reactive responses as mixed', () => {
         const report = derive(
             [progress('cycling_tt_20m_mean_power_w', 'meaningful_improvement')],
