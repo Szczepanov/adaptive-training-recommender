@@ -171,8 +171,21 @@ export class SessionExecutionService {
                 candidates.push(parsed.data);
             }
         }
-        // A future authority milestone defines multiple concurrent session semantics.
-        // Until then, resume the latest start rather than guessing between records.
+        return candidates.sort((a, b) => b.startedAt.localeCompare(a.startedAt))[0] ?? null;
+    }
+
+    /** OV3 recovery seam: an AssessmentAttempt stores the occurrence identity before the
+     * runner creates its execution, allowing a completed test to return to metric capture after
+     * a browser reload without keeping execution state only in React memory. */
+    async findExecutionByOccurrenceId(userId: string, occurrenceId: string): Promise<SessionExecution | null> {
+        const snap = await getDocs(collection(this.db, 'users', userId, 'session_executions'));
+        const candidates: SessionExecution[] = [];
+        for (const docSnap of snap.docs) {
+            const parsed = parseSessionExecutionDocument(docSnap.data(), docSnap.ref.path);
+            if (parsed.status === 'AVAILABLE' && parsed.data.occurrenceId === occurrenceId) {
+                candidates.push(parsed.data);
+            }
+        }
         return candidates.sort((a, b) => b.startedAt.localeCompare(a.startedAt))[0] ?? null;
     }
 

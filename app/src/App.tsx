@@ -5,7 +5,7 @@ import { Home } from './components/Home';
 import type { PreparedSessionLaunch } from './components/session/SessionDestinationSheet';
 import { decisionComposer } from './engine/composer';
 import type { DailyDecisionInput, StrengthSession } from './engine/models';
-import type { SessionExecution } from './sessions/models';
+import type { SessionExecution, SessionIntent } from './sessions/models';
 import type { Screen } from './types/navigation';
 import { useAuth } from './contexts/AuthContext';
 import { LoginScreen } from './components/LoginScreen';
@@ -27,6 +27,7 @@ const StrengthSessionRunner = lazy(() => import('./components/StrengthSessionRun
 const SessionRunner = lazy(() => import('./components/session/SessionRunner').then(m => ({ default: m.SessionRunner })));
 const ManualSessionBuilder = lazy(() => import('./components/session/ManualSessionBuilder').then(m => ({ default: m.ManualSessionBuilder })));
 const SessionJsonImport = lazy(() => import('./components/session/SessionJsonImport').then(m => ({ default: m.SessionJsonImport })));
+const TestingWorkflow = lazy(() => import('./components/testing/TestingWorkflow').then(m => ({ default: m.TestingWorkflow })));
 
 function App() {
   const { userId, authPhase } = useAuth();
@@ -36,6 +37,7 @@ function App() {
   const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
   const [activeStrengthSession, setActiveStrengthSession] = useState<StrengthSession | null>(null);
   const [activeStructuredSession, setActiveStructuredSession] = useState<SessionExecution | null>(null);
+  const [activeStructuredIntent, setActiveStructuredIntent] = useState<SessionIntent | null>(null);
   const [sessionAuthoringMode, setSessionAuthoringMode] = useState<'import' | 'manual' | null>(null);
   const [sessionLaunch, setSessionLaunch] = useState<PreparedSessionLaunch | null>(null);
 
@@ -49,7 +51,6 @@ function App() {
     }
   }, [userId]);
 
-  // Load decision input when authenticated
   useEffect(() => {
     if (userId && authPhase === 'AUTHENTICATED') {
       // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -63,10 +64,21 @@ function App() {
     Promise.allSettled([
       strengthSessionService.findActiveSession(userId),
       sessionExecutionService.findInProgressExecution(userId),
-    ]).then(([strengthResult, structuredResult]) => {
+    ]).then(async ([strengthResult, structuredResult]) => {
       if (cancelled) return;
       setActiveStrengthSession(strengthResult.status === 'fulfilled' ? strengthResult.value : null);
-      setActiveStructuredSession(structuredResult.status === 'fulfilled' ? structuredResult.value : null);
+      const structured = structuredResult.status === 'fulfilled' ? structuredResult.value : null;
+      setActiveStructuredSession(structured);
+      setActiveStructuredIntent(null);
+      if (structured?.prescriptionHash) {
+        try {
+          const definition = await resolveSessionDefinition(userId, structured.sessionSource, structured.prescriptionHash);
+          if (!cancelled && definition.status === 'AVAILABLE') setActiveStructuredIntent(definition.data.intent);
+        } catch {
+          // Resume remains available as a generic structured session if the exact definition
+          // cannot currently be resolved; the runner itself retains the fail-closed handling.
+        }
+      }
     });
     return () => { cancelled = true; };
   }, [userId, authPhase]);
@@ -82,13 +94,11 @@ function App() {
   };
 
   const isWorkoutRunnerActive =
-    (screen === 'sessions' && activeStructuredSession?.state === 'in_progress') ||
+    ((screen === 'sessions' || screen === 'testing') && activeStructuredSession?.state === 'in_progress') ||
     (screen === 'strength' && activeStrengthSession?.state === 'in_progress');
 
-  // Main app with navigation
   return (
     <div className="app-container">
-      {/* Global Top Navbar - Hidden during active workout execution for focused workout mode */}
       {!isWorkoutRunnerActive && (
         <Header
           screen={screen}
@@ -107,14 +117,16 @@ function App() {
           <button type="button" onClick={() => handleNavigate('strength')}>Resume session</button>
         </div>
       )}
-      {activeStructuredSession?.state === 'in_progress' && screen !== 'sessions' && (
-        <div className="active-session-banner" role="status">
-          <span>Structured session in progress</span>
-          <button type="button" onClick={() => handleNavigate('sessions')}>Resume session</button>
-        </div>
-      )}
+      {activeStructuredSession?.state === 'in_progress'
+        && screen !== 'sessions'
+        && screen !== 'testing'
+        && (
+          <div className="active-session-banner" role="status">
+            <span>{activeStructuredIntent === 'testing' ? 'Protocol test in progress' : 'Structured session in progress'}</span>
+            <button type="button" onClick={() => handleNavigate(activeStructuredIntent === 'testing' ? 'testing' : 'sessions')}>Resume session</button>
+          </div>
+        )}
 
-      {/* Main Page Content */}
       <main className="app-content">
         <Suspense fallback={<div className="loading-state">Loading...</div>}>
           {screen === 'home' && (
@@ -136,9 +148,6 @@ function App() {
                   return;
                 }
                 const launch = { definition: definitionState.data, binding };
-                // Every launched recommendation, including catalog strength, runs through
-                // the source-neutral execution path so occurrence/source/prescription
-                // identity survives into the execution and replay records.
                 setSessionLaunch(launch);
                 handleNavigate('sessions');
               }}
@@ -221,10 +230,24 @@ function App() {
                 onInitialSessionHandled={() => setSessionLaunch(null)}
                 onImportSession={() => setSessionAuthoringMode('import')}
                 onBuildSession={() => setSessionAuthoringMode('manual')}
-                onSessionStateChange={session => setActiveStructuredSession(session?.state === 'in_progress' ? session : null)}
+                onSessionStateChange={session => {
+                  setActiveStructuredSession(session?.state === 'in_progress' ? session : null);
+                  if (session?.state !== 'in_progress') setActiveStructuredIntent(null);
+                }}
                 onClose={() => handleNavigate('home')}
               />
             )
+          )}
+
+          {screen === 'testing' && (
+            <TestingWorkflow
+              userId={userId!}
+              onSessionStateChange={session => {
+                setActiveStructuredSession(session?.state === 'in_progress' ? session : null);
+                setActiveStructuredIntent(session?.state === 'in_progress' ? 'testing' : null);
+              }}
+              onClose={() => handleNavigate('home')}
+            />
           )}
 
           {screen === 'plan' && (
@@ -232,8 +255,6 @@ function App() {
               userId={userId!}
               onNavigate={setScreen}
               onPlanChanged={() => {
-                // The imported/modified plan changes what today's decision is made from, so the
-                // composed input has to be refetched rather than left stale behind the nav.
                 loadDecisionInput();
               }}
             />
@@ -241,7 +262,6 @@ function App() {
         </Suspense>
       </main>
 
-      {/* Mobile Bottom Navigation - Hidden during check-in task mode or active workout execution to prevent accidental mis-taps */}
       {!(
         screen === 'checkin' ||
         isWorkoutRunnerActive

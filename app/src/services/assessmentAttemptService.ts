@@ -1,4 +1,12 @@
-import { doc, getDoc, runTransaction, setDoc, type Firestore } from 'firebase/firestore';
+import {
+    collection,
+    doc,
+    getDoc,
+    getDocs,
+    runTransaction,
+    setDoc,
+    type Firestore,
+} from 'firebase/firestore';
 import { getDb } from '../firebase';
 import type { AssessmentAttempt } from '../observations/models';
 import { assertValidAssessmentAttempt } from '../observations/validation';
@@ -32,6 +40,28 @@ export class AssessmentAttemptService {
         return attempt;
     }
 
+    /**
+     * Resume seam for OV3. There is intentionally at most one active structured execution in
+     * the current product, so the newest scheduled/in-progress assessment is the only candidate
+     * a testing screen may recover after background/reload.
+     */
+    async findOpenAttempt(userId: string): Promise<AssessmentAttempt | null> {
+        const snapshots = await getDocs(collection(this.db, 'users', userId, 'assessment_attempts'));
+        const candidates: AssessmentAttempt[] = [];
+        for (const snapshot of snapshots.docs) {
+            const attempt = snapshot.data() as AssessmentAttempt;
+            try {
+                assertValidAssessmentAttempt(attempt);
+            } catch {
+                continue;
+            }
+            if (attempt.id !== snapshot.id) continue;
+            if (attempt.state === 'scheduled' || attempt.state === 'in_progress') candidates.push(attempt);
+        }
+        const rank = (attempt: AssessmentAttempt): string => attempt.startedAt ?? `${attempt.scheduledDate ?? ''}T00:00:00`;
+        return candidates.sort((a, b) => rank(b).localeCompare(rank(a)))[0] ?? null;
+    }
+
     async startAttempt(userId: string, attemptId: string, startedAt: string): Promise<void> {
         await this.transitionAttempt(userId, attemptId, current => {
             if (current.state !== 'scheduled') throw new Error(`Cannot start assessment from ${current.state}`);
@@ -39,19 +69,24 @@ export class AssessmentAttemptService {
         });
     }
 
-    async completeAttempt(userId: string, attemptId: string, completedAt: string): Promise<void> {
+    async completeAttempt(userId: string, attemptId: string, completedAt: string, notes?: string): Promise<void> {
         await this.transitionAttempt(userId, attemptId, current => {
             if (current.state !== 'in_progress') throw new Error(`Cannot complete assessment from ${current.state}`);
-            return { ...current, state: 'completed', completedAt };
+            return {
+                ...current,
+                state: 'completed',
+                completedAt,
+                ...(notes !== undefined ? { notes } : {}),
+            };
         });
     }
 
-    async abandonAttempt(userId: string, attemptId: string): Promise<void> {
+    async abandonAttempt(userId: string, attemptId: string, notes?: string): Promise<void> {
         await this.transitionAttempt(userId, attemptId, current => {
             if (current.state !== 'scheduled' && current.state !== 'in_progress') {
                 throw new Error(`Cannot abandon assessment from ${current.state}`);
             }
-            return { ...current, state: 'abandoned' };
+            return { ...current, state: 'abandoned', ...(notes !== undefined ? { notes } : {}) };
         });
     }
 

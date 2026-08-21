@@ -10,6 +10,7 @@ import {
     assertValidMetricObservationHead,
     assertValidMetricObservationRevision,
 } from '../observations/validation';
+import { sameCanonicalObservationRevision } from '../observations/observationCanonical';
 
 export class MetricObservationService {
     private readonly db: Firestore;
@@ -34,14 +35,36 @@ export class MetricObservationService {
 
         const headRef = this.headRef(userId, revision.observationKey);
         const revisionRef = this.revisionRef(userId, revision.observationKey, 1);
+        let result = revision;
         await runTransaction(this.db, async transaction => {
-            const headSnapshot = await transaction.get(headRef);
-            if (headSnapshot.exists()) {
-                throw new Error(`Observation ${revision.observationKey} already exists; use the correction workflow`);
-            }
-            const revisionSnapshot = await transaction.get(revisionRef);
-            if (revisionSnapshot.exists()) {
-                throw new Error(`Observation revision path ${revision.observationKey}@1 already exists without a head`);
+            const [headSnapshot, revisionSnapshot] = await Promise.all([
+                transaction.get(headRef),
+                transaction.get(revisionRef),
+            ]);
+
+            if (headSnapshot.exists() || revisionSnapshot.exists()) {
+                if (!headSnapshot.exists() || !revisionSnapshot.exists()) {
+                    throw new Error(`Observation ${revision.observationKey} has an incomplete head/revision chain`);
+                }
+                const head = headSnapshot.data() as MetricObservationHead;
+                const existing = revisionSnapshot.data() as MetricObservationRevision;
+                assertValidMetricObservationHead(head);
+                assertValidMetricObservationRevision(existing);
+                if (head.observationKey !== revision.observationKey
+                    || head.metricId !== revision.metricId
+                    || head.assessmentAttemptId !== revision.assessmentAttemptId
+                    || existing.observationKey !== revision.observationKey
+                    || existing.metricId !== revision.metricId
+                    || existing.assessmentAttemptId !== revision.assessmentAttemptId) {
+                    throw new Error(`Observation ${revision.observationKey} has conflicting logical identity`);
+                }
+                if (!sameCanonicalObservationRevision(existing, revision)) {
+                    throw new Error(`Observation ${revision.observationKey} already exists with different content; use the correction workflow`);
+                }
+                // Exact semantic retry: the first write already succeeded. Return the stored
+                // immutable bytes (including their original createdAt) and do not touch the head.
+                result = existing;
+                return;
             }
 
             const head: MetricObservationHead = {
@@ -55,8 +78,9 @@ export class MetricObservationService {
             assertValidMetricObservationHead(head);
             transaction.set(revisionRef, revision);
             transaction.set(headRef, head);
+            result = revision;
         });
-        return revision;
+        return result;
     }
 
     async appendCorrection(userId: string, revision: MetricObservationRevision): Promise<MetricObservationRevision> {
