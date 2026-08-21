@@ -123,6 +123,20 @@ describe('OutcomeEvaluationService', () => {
         expect(firestore.transaction.set).not.toHaveBeenCalled();
     });
 
+    it('requires active -> completed -> archived rather than allowing a direct archive', async () => {
+        firestore.transaction.get.mockResolvedValueOnce(snapshot({
+            ...revision,
+            status: 'active',
+            activatedAt: '2026-08-22T06:00:00.000Z',
+            contentHash: 'a'.repeat(64),
+            bindings: [binding],
+        }));
+        const service = new OutcomeEvaluationService({} as never);
+
+        await expect(service.transitionStatus('u1', 'block-1', 1, 'archived')).rejects.toThrow(/Cannot transition.*active.*archived/);
+        expect(firestore.transaction.set).not.toHaveBeenCalled();
+    });
+
     it('reads and validates the binding set from the same revision document', async () => {
         firestore.getDoc.mockResolvedValueOnce(snapshot({ ...revision, bindings: [binding] }));
         const service = new OutcomeEvaluationService({} as never);
