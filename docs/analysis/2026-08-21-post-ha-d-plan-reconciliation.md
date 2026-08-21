@@ -1,7 +1,7 @@
 # Post-HA-D plan reconciliation
 
-**Date:** 2026-08-21  
-**Scope:** `docs/plans/` status against current `main` after HA-D merge  
+**Date:** 2026-08-21
+**Scope:** `docs/plans/` status against current `main` after HA-D merge
 **Purpose:** point-in-time audit of what is actually actionable after PR #171; this document does not create new recommendation authority.
 
 ## Executive status
