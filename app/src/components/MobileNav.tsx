@@ -95,7 +95,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({ screen, handleNavigate, lo
 
         <button
           ref={mobileMoreBtnRef}
-          className={`nav-item ${['goals', 'constraints', 'preferences', 'data', 'brief', 'sessions', 'strength'].includes(screen) ? 'active' : ''}`}
+          className={`nav-item ${['goals', 'constraints', 'preferences', 'data', 'brief', 'sessions', 'testing', 'strength'].includes(screen) ? 'active' : ''}`}
           onClick={() => setMobileMoreOpen((isOpen) => !isOpen)}
           aria-expanded={mobileMoreOpen}
           aria-haspopup="dialog"
@@ -168,6 +168,17 @@ export const MobileNav: React.FC<MobileNavProps> = ({ screen, handleNavigate, lo
                 <div className="item-text">
                   <span className="item-title">Structured Sessions</span>
                   <span className="item-sub">Run a multidomain fixture and record native measures</span>
+                </div>
+              </button>
+
+              <button
+                className={`drawer-item ${screen === 'testing' ? 'active' : ''}`}
+                onClick={() => handleNavigate('testing')}
+              >
+                <span className="item-icon">🧪</span>
+                <div className="item-text">
+                  <span className="item-title">Protocol Testing</span>
+                  <span className="item-sub">Run a locked assessment and record comparable raw outcomes</span>
                 </div>
               </button>
 
