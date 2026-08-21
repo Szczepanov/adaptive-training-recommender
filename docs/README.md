@@ -64,7 +64,7 @@ Architectural choices, system invariants, and technical trade-offs are documente
 * [**ADR-0011: Weekly Architecture — Session Anchors & Ranking Modifiers**](./adr/0011-weekly-architecture-anchors.md) — The anchor pre-pass and optimizer Patches 4–6, including why this composition should not be extended.
 * [**ADR-0012: Plan Intent and Sequence Planning are the Training Authorities**](./adr/0012-plan-intent-authority.md) — `PlanDefinition` and sequence planning collapse the two selection paths into one training authority (Phase 2).
 * [**ADR-0013: Structured Injury Constraints Are the Canonical Safety Input**](./adr/0013-structured-injury-constraints.md) — *Retroactive record.* Structured `InjuryConstraint[]` (D-INJ), not consolidation onto guardrails, as the canonical safety input (Phase 1).
-* [**ADR-0014: Objective Credit V2 & Honest Delivered Load**](./adr/0014-objective-credit-v2-and-honest-load.md) — Fractional credit, canonical stimulus axes, delivered cost, and the deferred fatigue-fusion decision.
+* [**ADR-0014: Objective Credit V2 & Honest Delivered Load**](./adr/0014-objective-credit-v2.md) — Fractional credit, canonical stimulus axes, delivered cost, and the deferred fatigue-fusion decision.
 * [**ADR-0015: Sequence Planning — Bounded Beam Search Prototype, Adoption Deferred**](./adr/0015-sequence-planning-and-session-role-model.md) — Phase 5.1's beam-search prototype, its comparison data against the production greedy planner, and why adoption is deferred rather than shipped or rejected.
 * [**ADR-0016: Adaptation Credit & Weekly Coverage**](./adr/0016-adaptation-credit-and-weekly-coverage.md) — Separates physiological adaptation credit from exact authored weekly programming-role coverage.
 * [**ADR-0017: Training Intent Profile & First-Class Planning Modes**](./adr/0017-training-intent-profile-and-planning-modes.md) — Accepted evidence-to-dose-to-capacity Evergreen contract that preserves structured and demand-derived event paths (Phase 7B).
@@ -115,7 +115,7 @@ How agreed changes get made. Mutable, status-tracked, and expected to go stale �
 * [**Strength session logging**](./plans/strength-session-logging.md) — *In progress (default-off).* The raw logger, 1RM derivation and manual-training measurement path are built; live Strength load remains evidence-gated.
 * [**Multidomain session authoring, execution & evidence**](./plans/multidomain-session-authoring-execution-and-evidence.md) — *In progress.* Sequenced plan for source-neutral session persistence, executable runner, manual/external authoring, mixed-dose execution, occurrence-linked response, speed/field/power observations, protocol-aware testing and evidence-gated engine candidates. ADR-0023 accepted; M0–M2, M3.1–M3.6, and M4.1–M4.2 delivered.
 * [**Mobile UX/UI redesign**](./plans/mobile_ux_implementation_plan.md) — *Implemented.* Mobile-first redesign of the daily check-in, state-first Home dashboard, unblocked recommendations, and runner execution focus.
-* [**Performance outcome validation & goal-progress loop**](./plans/performance-outcome-validation.md) — *Draft.* Activates M7 with protocol-locked repeated testing, honest individual progress interpretation and a block-level outcome report, kept evidence-only through the Phase 9.0 boundary.
+* [**Performance outcome validation & goal-progress loop**](./plans/performance-outcome-validation.md) — *Approved.* Activates M7 with protocol-locked repeated testing, honest individual progress interpretation and a block-level outcome report, kept evidence-only through the Phase 9.0 boundary.
 
 ---
 
