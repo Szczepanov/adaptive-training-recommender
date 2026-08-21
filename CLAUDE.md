@@ -34,6 +34,7 @@ Quick guide for building, testing, and working on `adaptive-training-recommender
 - Daily Sync CLI: `uv run python -m garmin_sync sync [--date YYYY-MM-DD] [--force]`
 - Backfill CLI: `uv run python -m garmin_sync backfill [--days N] [--force]`
 - Login Bootstrap: `uv run python scripts/bootstrap_garmin_tokens.py`
+- Respiration Baseline Evidence (synthetic sweep, ADR-0024): `uv run python scripts/respiration_baseline_evidence.py`
 
 ### Frontend Application (`app/`)
 - Install: `cd app && npm ci`

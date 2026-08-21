@@ -219,3 +219,7 @@ hrv_range_sample.json
 *cache*
 
 node_modules/
+
+# Synthetic evidence reports (scripts/respiration_baseline_evidence.py) -- regenerate
+# on demand, matching app/.gitignore's precedent for the TS-side simulation reports.
+artifacts/respiration-baseline-evidence/

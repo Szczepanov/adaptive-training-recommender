@@ -25,6 +25,25 @@ function describeSourceState(status: 'MISSING' | 'INVALID' | 'UNAVAILABLE'): str
   return 'The data source is temporarily unavailable. Retry the dashboard refresh.';
 }
 
+function formatCandidateNumber(value: number | null | undefined): string {
+  return typeof value === 'number' && Number.isFinite(value) ? String(value) : 'N/A';
+}
+
+function formatCandidateDelta(value: number | null | undefined): string {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return 'N/A';
+  return value > 0 ? `+${value}` : String(value);
+}
+
+function formatCandidateBaseline(
+  median7d: number | null | undefined,
+  median28d: number | null | undefined,
+  mad28d: number | null | undefined,
+  delta7d: number | null | undefined,
+  delta28d: number | null | undefined,
+): string {
+  return `7d med ${formatCandidateNumber(median7d)} · 28d med ${formatCandidateNumber(median28d)} · MAD ${formatCandidateNumber(mad28d)} · Δ7 ${formatCandidateDelta(delta7d)} · Δ28 ${formatCandidateDelta(delta28d)}`;
+}
+
 export function DataView({ decisionInput, userId, initialTab = 'recovery' }: DataViewProps) {
   const [activeTab, setActiveTab] = useState<DataViewTab>(initialTab);
   const [brief, setBrief] = useState<ContextBriefResult | null>(null);
@@ -117,6 +136,9 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery' }: Dat
     );
   }
 
+  const recoverySnapshot = decisionInput.recoverySnapshot;
+  const baselineVersion = recoverySnapshot?.derived.baselineComputationVersion ?? 0;
+
   const renderRecoveryData = () => (
     <div className="data-section">
       <h3>Recovery Snapshot</h3>
@@ -129,96 +151,203 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery' }: Dat
           <h4>Raw Metrics</h4>
           <div className="data-item">
             <span className="data-label">Date:</span>
-            <span className="data-value">{decisionInput.recoverySnapshot?.date || 'N/A'}</span>
+            <span className="data-value">{recoverySnapshot?.date || 'N/A'}</span>
           </div>
           <div className="data-item">
             <span className="data-label">Sleep Score:</span>
-            <span className="data-value">{decisionInput.recoverySnapshot?.raw.sleepScore ?? 'N/A'}</span>
+            <span className="data-value">{recoverySnapshot?.raw.sleepScore ?? 'N/A'}</span>
           </div>
           <div className="data-item">
             <span className="data-label">Sleep Duration:</span>
             <span className="data-value">
-              {decisionInput.recoverySnapshot?.raw.sleepDurationSec
-                ? `${Math.round(decisionInput.recoverySnapshot.raw.sleepDurationSec / 60)} min`
+              {recoverySnapshot?.raw.sleepDurationSec
+                ? `${Math.round(recoverySnapshot.raw.sleepDurationSec / 60)} min`
                 : 'N/A'
               }
             </span>
           </div>
           <div className="data-item">
             <span className="data-label">Resting HR:</span>
-            <span className="data-value">{decisionInput.recoverySnapshot?.raw.restingHr ?? 'N/A'}</span>
+            <span className="data-value">{recoverySnapshot?.raw.restingHr ?? 'N/A'}</span>
           </div>
           <div className="data-item">
             <span className="data-label">HRV Overnight Avg:</span>
-            <span className="data-value">{decisionInput.recoverySnapshot?.raw.hrvOvernightAvg ?? 'N/A'}</span>
+            <span className="data-value">{recoverySnapshot?.raw.hrvOvernightAvg ?? 'N/A'}</span>
           </div>
           <div className="data-item">
             <span className="data-label">HRV Status:</span>
-            <span className="data-value">{decisionInput.recoverySnapshot?.raw.hrvStatus ?? 'N/A'}</span>
+            <span className="data-value">{recoverySnapshot?.raw.hrvStatus ?? 'N/A'}</span>
           </div>
           <div className="data-item">
             <span className="data-label">Respiration Avg:</span>
-            <span className="data-value">{decisionInput.recoverySnapshot?.raw.respirationAvg ?? 'N/A'}</span>
+            <span className="data-value">{recoverySnapshot?.raw.respirationAvg ?? 'N/A'}</span>
           </div>
           <div className="data-item">
             <span className="data-label">Body Battery Wake:</span>
-            <span className="data-value">{decisionInput.recoverySnapshot?.raw.bodyBatteryWake ?? 'N/A'}</span>
+            <span className="data-value">{recoverySnapshot?.raw.bodyBatteryWake ?? 'N/A'}</span>
+          </div>
+          <div className="data-item">
+            <span className="data-label">Stress Avg / Max:</span>
+            <span className="data-value">{recoverySnapshot?.raw.stress?.avg ?? 'N/A'} / {recoverySnapshot?.raw.stress?.max ?? 'N/A'}</span>
+          </div>
+          <div className="data-item">
+            <span className="data-label">Training Readiness:</span>
+            <span className="data-value">
+              {recoverySnapshot?.raw.trainingReadiness?.score ?? 'N/A'}
+              {recoverySnapshot?.raw.trainingReadiness?.level ? ` (${recoverySnapshot.raw.trainingReadiness.level})` : ''}
+            </span>
           </div>
           <div className="data-item">
             <span className="data-label">Total Steps:</span>
-            <span className="data-value">{decisionInput.recoverySnapshot?.raw.totalSteps ?? 'N/A'}</span>
+            <span className="data-value">{recoverySnapshot?.raw.totalSteps ?? 'N/A'}</span>
           </div>
         </div>
 
         <div className="data-group">
           <h4>Derived Metrics</h4>
           <div className="data-item">
+            <span className="data-label">Baseline Computation Version:</span>
+            <span className="data-value">{baselineVersion || 'N/A'}</span>
+          </div>
+          <div className="data-item">
             <span className="data-label">Sleep Score 7d Avg:</span>
-            <span className="data-value">{decisionInput.recoverySnapshot?.derived.sleepScore7dAvg ?? 'N/A'}</span>
+            <span className="data-value">{recoverySnapshot?.derived.sleepScore7dAvg ?? 'N/A'}</span>
           </div>
           <div className="data-item">
             <span className="data-label">Sleep Score 28d Avg:</span>
-            <span className="data-value">{decisionInput.recoverySnapshot?.derived.sleepScore28dAvg ?? 'N/A'}</span>
+            <span className="data-value">{recoverySnapshot?.derived.sleepScore28dAvg ?? 'N/A'}</span>
           </div>
           <div className="data-item">
             <span className="data-label">Resting HR 7d Avg:</span>
-            <span className="data-value">{decisionInput.recoverySnapshot?.derived.restingHr7dAvg ?? 'N/A'}</span>
+            <span className="data-value">{recoverySnapshot?.derived.restingHr7dAvg ?? 'N/A'}</span>
           </div>
           <div className="data-item">
             <span className="data-label">Resting HR 28d Avg:</span>
-            <span className="data-value">{decisionInput.recoverySnapshot?.derived.restingHr28dAvg ?? 'N/A'}</span>
+            <span className="data-value">{recoverySnapshot?.derived.restingHr28dAvg ?? 'N/A'}</span>
           </div>
           <div className="data-item">
             <span className="data-label">HRV 7d Avg:</span>
-            <span className="data-value">{decisionInput.recoverySnapshot?.derived.hrv7dAvg ?? 'N/A'}</span>
+            <span className="data-value">{recoverySnapshot?.derived.hrv7dAvg ?? 'N/A'}</span>
           </div>
           <div className="data-item">
             <span className="data-label">HRV 28d Avg:</span>
-            <span className="data-value">{decisionInput.recoverySnapshot?.derived.hrv28dAvg ?? 'N/A'}</span>
+            <span className="data-value">{recoverySnapshot?.derived.hrv28dAvg ?? 'N/A'}</span>
           </div>
           <div className="data-item">
             <span className="data-label">HRV 28d Stdev:</span>
-            <span className="data-value">{decisionInput.recoverySnapshot?.derived.hrv28dStdev ?? 'N/A'}</span>
+            <span className="data-value">{recoverySnapshot?.derived.hrv28dStdev ?? 'N/A'}</span>
           </div>
           <div className="data-item">
             <span className="data-label">Resting HR 28d Stdev:</span>
-            <span className="data-value">{decisionInput.recoverySnapshot?.derived.restingHr28dStdev ?? 'N/A'}</span>
+            <span className="data-value">{recoverySnapshot?.derived.restingHr28dStdev ?? 'N/A'}</span>
           </div>
           <div className="data-item">
             <span className="data-label">Sleep Score 28d Stdev:</span>
-            <span className="data-value">{decisionInput.recoverySnapshot?.derived.sleepScore28dStdev ?? 'N/A'}</span>
+            <span className="data-value">{recoverySnapshot?.derived.sleepScore28dStdev ?? 'N/A'}</span>
           </div>
           <div className="data-item">
             <span className="data-label">Steps 7d Avg:</span>
-            <span className="data-value">{decisionInput.recoverySnapshot?.derived.steps7dAvg ?? 'N/A'}</span>
+            <span className="data-value">{recoverySnapshot?.derived.steps7dAvg ?? 'N/A'}</span>
           </div>
           <div className="data-item">
             <span className="data-label">Steps 28d Avg:</span>
-            <span className="data-value">{decisionInput.recoverySnapshot?.derived.steps28dAvg ?? 'N/A'}</span>
+            <span className="data-value">{recoverySnapshot?.derived.steps28dAvg ?? 'N/A'}</span>
           </div>
           <div className="data-item">
             <span className="data-label">Steps 28d Stdev:</span>
-            <span className="data-value">{decisionInput.recoverySnapshot?.derived.steps28dStdev ?? 'N/A'}</span>
+            <span className="data-value">{recoverySnapshot?.derived.steps28dStdev ?? 'N/A'}</span>
+          </div>
+          <div className="data-item">
+            <span className="data-label">{baselineVersion >= 3 ? 'Respiration 7d Median:' : 'Respiration 7d Avg (legacy pre-v3):'}</span>
+            <span className="data-value">{recoverySnapshot?.derived.respiration7dAvg ?? 'N/A'}</span>
+          </div>
+          <div className="data-item">
+            <span className="data-label">{baselineVersion >= 3 ? 'Respiration 28d Median:' : 'Respiration 28d Avg (legacy pre-v3):'}</span>
+            <span className="data-value">{recoverySnapshot?.derived.respiration28dAvg ?? 'N/A'}</span>
+          </div>
+          <div className="data-item">
+            <span className="data-label">Respiration 28d MAD:</span>
+            <span className="data-value">{baselineVersion >= 3 ? recoverySnapshot?.derived.respiration28dMad ?? 'N/A' : 'N/A (requires v3)'}</span>
+          </div>
+          <div className="data-item">
+            <span className="data-label">Respiration Scoring:</span>
+            <span className="data-value">Off by default; comparison/replay only</span>
+          </div>
+        </div>
+
+        <div className="data-group">
+          <h4>Observation-only Candidate Baselines</h4>
+          <div className="data-item">
+            <span className="data-label">Interpretation:</span>
+            <span className="data-value">Inspection/export only; these are not additional engine strain inputs.</span>
+          </div>
+          <div className="data-item">
+            <span className="data-label">Sleep Score:</span>
+            <span className="data-value">
+              {baselineVersion >= 4
+                ? formatCandidateBaseline(recoverySnapshot?.derived.sleepScore7dMedian, recoverySnapshot?.derived.sleepScore28dMedian, recoverySnapshot?.derived.sleepScore28dMad, recoverySnapshot?.derived.deltas.sleepScoreVs7dMedian, recoverySnapshot?.derived.deltas.sleepScoreVs28dMedian)
+                : 'N/A (requires baseline v4)'}
+            </span>
+          </div>
+          <div className="data-item">
+            <span className="data-label">Resting HR:</span>
+            <span className="data-value">
+              {baselineVersion >= 4
+                ? formatCandidateBaseline(recoverySnapshot?.derived.restingHr7dMedian, recoverySnapshot?.derived.restingHr28dMedian, recoverySnapshot?.derived.restingHr28dMad, recoverySnapshot?.derived.deltas.restingHrVs7dMedian, recoverySnapshot?.derived.deltas.restingHrVs28dMedian)
+                : 'N/A (requires baseline v4)'}
+            </span>
+          </div>
+          <div className="data-item">
+            <span className="data-label">HRV:</span>
+            <span className="data-value">
+              {baselineVersion >= 4
+                ? formatCandidateBaseline(recoverySnapshot?.derived.hrv7dMedian, recoverySnapshot?.derived.hrv28dMedian, recoverySnapshot?.derived.hrv28dMad, recoverySnapshot?.derived.deltas.hrvVs7dMedian, recoverySnapshot?.derived.deltas.hrvVs28dMedian)
+                : 'N/A (requires baseline v4)'}
+            </span>
+          </div>
+          <div className="data-item">
+            <span className="data-label">Steps:</span>
+            <span className="data-value">
+              {baselineVersion >= 4
+                ? formatCandidateBaseline(recoverySnapshot?.derived.steps7dMedian, recoverySnapshot?.derived.steps28dMedian, recoverySnapshot?.derived.steps28dMad, recoverySnapshot?.derived.deltas.stepsVs7dMedian, recoverySnapshot?.derived.deltas.stepsVs28dMedian)
+                : 'N/A (requires baseline v4)'}
+            </span>
+          </div>
+          <div className="data-item">
+            <span className="data-label">Body Battery Wake:</span>
+            <span className="data-value">
+              {baselineVersion >= 5
+                ? formatCandidateBaseline(recoverySnapshot?.derived.bodyBatteryWake7dMedian, recoverySnapshot?.derived.bodyBatteryWake28dMedian, recoverySnapshot?.derived.bodyBatteryWake28dMad, recoverySnapshot?.derived.deltas.bodyBatteryWakeVs7dMedian, recoverySnapshot?.derived.deltas.bodyBatteryWakeVs28dMedian)
+                : 'N/A (requires baseline v5)'}
+            </span>
+          </div>
+          <div className="data-item">
+            <span className="data-label">Stress Avg:</span>
+            <span className="data-value">
+              {baselineVersion >= 5
+                ? formatCandidateBaseline(recoverySnapshot?.derived.stressAvg7dMedian, recoverySnapshot?.derived.stressAvg28dMedian, recoverySnapshot?.derived.stressAvg28dMad, recoverySnapshot?.derived.deltas.stressAvgVs7dMedian, recoverySnapshot?.derived.deltas.stressAvgVs28dMedian)
+                : 'N/A (requires baseline v5)'}
+            </span>
+          </div>
+          <div className="data-item">
+            <span className="data-label">Stress Max:</span>
+            <span className="data-value">
+              {baselineVersion >= 5
+                ? formatCandidateBaseline(recoverySnapshot?.derived.stressMax7dMedian, recoverySnapshot?.derived.stressMax28dMedian, recoverySnapshot?.derived.stressMax28dMad, recoverySnapshot?.derived.deltas.stressMaxVs7dMedian, recoverySnapshot?.derived.deltas.stressMaxVs28dMedian)
+                : 'N/A (requires baseline v5)'}
+            </span>
+          </div>
+          <div className="data-item">
+            <span className="data-label">Training Readiness Score:</span>
+            <span className="data-value">
+              {baselineVersion >= 5
+                ? formatCandidateBaseline(recoverySnapshot?.derived.trainingReadinessScore7dMedian, recoverySnapshot?.derived.trainingReadinessScore28dMedian, recoverySnapshot?.derived.trainingReadinessScore28dMad, recoverySnapshot?.derived.deltas.trainingReadinessScoreVs7dMedian, recoverySnapshot?.derived.deltas.trainingReadinessScoreVs28dMedian)
+                : 'N/A (requires baseline v5)'}
+            </span>
+          </div>
+          <div className="data-item">
+            <span className="data-label">Composite-signal caution:</span>
+            <span className="data-value">Body Battery, stress and Training Readiness overlap with HRV/sleep/recovery physiology; do not treat them as independent additive evidence.</span>
           </div>
         </div>
 
@@ -227,8 +356,8 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery' }: Dat
           <div className="data-item">
             <span className="data-label">Sleep Score vs 7d:</span>
             <span className="data-value">
-              {decisionInput.recoverySnapshot?.derived.deltas.sleepScoreVs7d !== null && decisionInput.recoverySnapshot?.derived.deltas.sleepScoreVs7d !== undefined
-                ? `${decisionInput.recoverySnapshot!.derived.deltas.sleepScoreVs7d > 0 ? '+' : ''}${decisionInput.recoverySnapshot!.derived.deltas.sleepScoreVs7d}`
+              {recoverySnapshot?.derived.deltas.sleepScoreVs7d !== null && recoverySnapshot?.derived.deltas.sleepScoreVs7d !== undefined
+                ? `${recoverySnapshot.derived.deltas.sleepScoreVs7d > 0 ? '+' : ''}${recoverySnapshot.derived.deltas.sleepScoreVs7d}`
                 : 'N/A'
               }
             </span>
@@ -236,8 +365,8 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery' }: Dat
           <div className="data-item">
             <span className="data-label">Sleep Score vs 28d:</span>
             <span className="data-value">
-              {decisionInput.recoverySnapshot?.derived.deltas.sleepScoreVs28d !== null && decisionInput.recoverySnapshot?.derived.deltas.sleepScoreVs28d !== undefined
-                ? `${decisionInput.recoverySnapshot!.derived.deltas.sleepScoreVs28d > 0 ? '+' : ''}${decisionInput.recoverySnapshot!.derived.deltas.sleepScoreVs28d}`
+              {recoverySnapshot?.derived.deltas.sleepScoreVs28d !== null && recoverySnapshot?.derived.deltas.sleepScoreVs28d !== undefined
+                ? `${recoverySnapshot.derived.deltas.sleepScoreVs28d > 0 ? '+' : ''}${recoverySnapshot.derived.deltas.sleepScoreVs28d}`
                 : 'N/A'
               }
             </span>
@@ -245,8 +374,8 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery' }: Dat
           <div className="data-item">
             <span className="data-label">Resting HR vs 7d:</span>
             <span className="data-value">
-              {decisionInput.recoverySnapshot?.derived.deltas.restingHrVs7d !== null && decisionInput.recoverySnapshot?.derived.deltas.restingHrVs7d !== undefined
-                ? `${decisionInput.recoverySnapshot!.derived.deltas.restingHrVs7d > 0 ? '+' : ''}${decisionInput.recoverySnapshot!.derived.deltas.restingHrVs7d}`
+              {recoverySnapshot?.derived.deltas.restingHrVs7d !== null && recoverySnapshot?.derived.deltas.restingHrVs7d !== undefined
+                ? `${recoverySnapshot.derived.deltas.restingHrVs7d > 0 ? '+' : ''}${recoverySnapshot.derived.deltas.restingHrVs7d}`
                 : 'N/A'
               }
             </span>
@@ -254,8 +383,8 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery' }: Dat
           <div className="data-item">
             <span className="data-label">Resting HR vs 28d:</span>
             <span className="data-value">
-              {decisionInput.recoverySnapshot?.derived.deltas.restingHrVs28d !== null && decisionInput.recoverySnapshot?.derived.deltas.restingHrVs28d !== undefined
-                ? `${decisionInput.recoverySnapshot!.derived.deltas.restingHrVs28d > 0 ? '+' : ''}${decisionInput.recoverySnapshot!.derived.deltas.restingHrVs28d}`
+              {recoverySnapshot?.derived.deltas.restingHrVs28d !== null && recoverySnapshot?.derived.deltas.restingHrVs28d !== undefined
+                ? `${recoverySnapshot.derived.deltas.restingHrVs28d > 0 ? '+' : ''}${recoverySnapshot.derived.deltas.restingHrVs28d}`
                 : 'N/A'
               }
             </span>
@@ -263,8 +392,8 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery' }: Dat
           <div className="data-item">
             <span className="data-label">HRV vs 7d:</span>
             <span className="data-value">
-              {decisionInput.recoverySnapshot?.derived.deltas.hrvVs7d !== null && decisionInput.recoverySnapshot?.derived.deltas.hrvVs7d !== undefined
-                ? `${decisionInput.recoverySnapshot!.derived.deltas.hrvVs7d > 0 ? '+' : ''}${decisionInput.recoverySnapshot!.derived.deltas.hrvVs7d}`
+              {recoverySnapshot?.derived.deltas.hrvVs7d !== null && recoverySnapshot?.derived.deltas.hrvVs7d !== undefined
+                ? `${recoverySnapshot.derived.deltas.hrvVs7d > 0 ? '+' : ''}${recoverySnapshot.derived.deltas.hrvVs7d}`
                 : 'N/A'
               }
             </span>
@@ -272,8 +401,8 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery' }: Dat
           <div className="data-item">
             <span className="data-label">HRV vs 28d:</span>
             <span className="data-value">
-              {decisionInput.recoverySnapshot?.derived.deltas.hrvVs28d !== null && decisionInput.recoverySnapshot?.derived.deltas.hrvVs28d !== undefined
-                ? `${decisionInput.recoverySnapshot!.derived.deltas.hrvVs28d > 0 ? '+' : ''}${decisionInput.recoverySnapshot!.derived.deltas.hrvVs28d}`
+              {recoverySnapshot?.derived.deltas.hrvVs28d !== null && recoverySnapshot?.derived.deltas.hrvVs28d !== undefined
+                ? `${recoverySnapshot.derived.deltas.hrvVs28d > 0 ? '+' : ''}${recoverySnapshot.derived.deltas.hrvVs28d}`
                 : 'N/A'
               }
             </span>
@@ -281,8 +410,8 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery' }: Dat
           <div className="data-item">
             <span className="data-label">Steps vs 7d:</span>
             <span className="data-value">
-              {decisionInput.recoverySnapshot?.derived.deltas.stepsVs7d !== null && decisionInput.recoverySnapshot?.derived.deltas.stepsVs7d !== undefined
-                ? `${decisionInput.recoverySnapshot!.derived.deltas.stepsVs7d > 0 ? '+' : ''}${decisionInput.recoverySnapshot!.derived.deltas.stepsVs7d}`
+              {recoverySnapshot?.derived.deltas.stepsVs7d !== null && recoverySnapshot?.derived.deltas.stepsVs7d !== undefined
+                ? `${recoverySnapshot.derived.deltas.stepsVs7d > 0 ? '+' : ''}${recoverySnapshot.derived.deltas.stepsVs7d}`
                 : 'N/A'
               }
             </span>
@@ -290,8 +419,8 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery' }: Dat
           <div className="data-item">
             <span className="data-label">Steps vs 28d:</span>
             <span className="data-value">
-              {decisionInput.recoverySnapshot?.derived.deltas.stepsVs28d !== null && decisionInput.recoverySnapshot?.derived.deltas.stepsVs28d !== undefined
-                ? `${decisionInput.recoverySnapshot!.derived.deltas.stepsVs28d > 0 ? '+' : ''}${decisionInput.recoverySnapshot!.derived.deltas.stepsVs28d}`
+              {recoverySnapshot?.derived.deltas.stepsVs28d !== null && recoverySnapshot?.derived.deltas.stepsVs28d !== undefined
+                ? `${recoverySnapshot.derived.deltas.stepsVs28d > 0 ? '+' : ''}${recoverySnapshot.derived.deltas.stepsVs28d}`
                 : 'N/A'
               }
             </span>
@@ -302,23 +431,23 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery' }: Dat
           <h4>Data Quality</h4>
           <div className="data-item">
             <span className="data-label">Sleep Score Available:</span>
-            <span className="data-value">{decisionInput.recoverySnapshot?.dataQuality.sleepScoreAvailable ? 'Yes' : 'No'}</span>
+            <span className="data-value">{recoverySnapshot?.dataQuality.sleepScoreAvailable ? 'Yes' : 'No'}</span>
           </div>
           <div className="data-item">
             <span className="data-label">Resting HR Available:</span>
-            <span className="data-value">{decisionInput.recoverySnapshot?.dataQuality.restingHrAvailable ? 'Yes' : 'No'}</span>
+            <span className="data-value">{recoverySnapshot?.dataQuality.restingHrAvailable ? 'Yes' : 'No'}</span>
           </div>
           <div className="data-item">
             <span className="data-label">HRV Available:</span>
-            <span className="data-value">{decisionInput.recoverySnapshot?.dataQuality.hrvAvailable ? 'Yes' : 'No'}</span>
+            <span className="data-value">{recoverySnapshot?.dataQuality.hrvAvailable ? 'Yes' : 'No'}</span>
           </div>
           <div className="data-item">
             <span className="data-label">Baseline 7d Ready:</span>
-            <span className="data-value">{decisionInput.recoverySnapshot?.dataQuality.baseline7dReady ? 'Yes' : 'No'}</span>
+            <span className="data-value">{recoverySnapshot?.dataQuality.baseline7dReady ? 'Yes' : 'No'}</span>
           </div>
           <div className="data-item">
             <span className="data-label">Baseline 28d Ready:</span>
-            <span className="data-value">{decisionInput.recoverySnapshot?.dataQuality.baseline28dReady ? 'Yes' : 'No'}</span>
+            <span className="data-value">{recoverySnapshot?.dataQuality.baseline28dReady ? 'Yes' : 'No'}</span>
           </div>
         </div>
       </div>
