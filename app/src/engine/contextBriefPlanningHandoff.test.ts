@@ -196,8 +196,9 @@ function handoffInput(overrides: Partial<ContextBriefPlanningHandoffInput> = {})
         recommendations: [recommendation()],
         trainingSettings: null,
         preferences: null,
-        planningMode: 'externally_planned',
+        effectivePlanningMode: 'externally_planned',
         externalFallback: false,
+        externalFallbackUncertain: false,
         eventStrategy: null,
         goals: [],
         upcomingFixedActivities: [fixedActivity()],
@@ -265,7 +266,7 @@ describe('enhanceContextBriefForPlanning', () => {
 
     it('explains an authority-resolved external fallback instead of pretending the persisted mode is effective', () => {
         const text = enhanceContextBriefForPlanning(BASE, handoffInput({
-            planningMode: 'evergreen',
+            effectivePlanningMode: 'evergreen',
             externalFallback: true,
         }));
 
@@ -311,6 +312,38 @@ describe('enhanceContextBriefForPlanning', () => {
         expect(text).toContain('Threshold: 3 sets · 10 min · RPE 7–8 · 240s recovery');
     });
 
+    it('includes minute-denominated recovery doses instead of dropping them from the copied handoff', () => {
+        const text = enhanceContextBriefForPlanning(BASE, handoffInput({
+            upcomingExternalSessions: [{
+                date: '2026-08-21',
+                planId: 'p1',
+                planTitle: 'Race prep',
+                revision: 2,
+                sessionId: 's2',
+                title: 'Tempo block',
+                priority: 'key',
+                modality: 'cycling',
+                intensity: 'moderate',
+                durationMin: 45,
+                durationMax: 45,
+                flexibility: 'preferred',
+                status: 'planned',
+                moved: false,
+                isEvent: false,
+                prescription: {
+                    summary: '2 x 20 min tempo',
+                    steps: [
+                        { name: 'Tempo', sets: 2, durationMin: 20, target: '85% FTP', recoveryMin: 5 },
+                        { name: 'VO2 rep', durationSec: 30, recoverySec: 15, repeat: 10, sets: 3, setRecoveryMin: 4 },
+                    ],
+                },
+            }],
+        }));
+
+        expect(text).toContain('Tempo: 2 sets · 20 min · 85% FTP · 5 min recovery');
+        expect(text).toContain('VO2 rep: 3 sets · 10 reps · 30 s · 15s recovery · 4 min set recovery');
+    });
+
     it('exports travel scaling overlays as constraints rather than workouts', () => {
         const text = enhanceContextBriefForPlanning(BASE, handoffInput({ upcomingPlanBlocks: [travelBlock()] }));
 
@@ -347,7 +380,7 @@ describe('enhanceContextBriefForPlanning', () => {
 
     it('warns instead of inventing a replacement when external fallback has no visible imported session', () => {
         const text = enhanceContextBriefForPlanning(BASE, handoffInput({
-            planningMode: 'evergreen',
+            effectivePlanningMode: 'evergreen',
             externalFallback: true,
             upcomingFixedActivities: [],
             upcomingPlanBlocks: [],
@@ -356,6 +389,22 @@ describe('enhanceContextBriefForPlanning', () => {
 
         expect(text).toContain('External-plan fallback is active today and no imported session is visible in this 7-day horizon');
         expect(text).toContain('Do not silently invent a replacement block');
+    });
+
+    it('marks external fallback as unconfirmed instead of a confirmed absence when today\'s plan read failed', () => {
+        const text = enhanceContextBriefForPlanning(BASE, handoffInput({
+            effectivePlanningMode: 'evergreen',
+            externalFallback: true,
+            externalFallbackUncertain: true,
+            upcomingFixedActivities: [],
+            upcomingPlanBlocks: [],
+            upcomingExternalSessions: [],
+        }));
+
+        expect(text).toContain('external-plan fallback today: UNCONFIRMED');
+        expect(text).toContain('could not be read, so this may reflect an unreadable session rather than a confirmed absence');
+        expect(text).not.toContain('external-plan fallback today: no imported session is placed on this date');
+        expect(text).toContain('this is unconfirmed — treat it as unreadable, not as a confirmed absence');
     });
 
     it('warns when current-day subjective data is stale', () => {

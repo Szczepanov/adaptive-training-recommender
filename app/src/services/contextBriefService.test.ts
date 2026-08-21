@@ -191,6 +191,32 @@ describe('ContextBriefService', () => {
         expect(result.text).toContain('fixed-activity occupancy unavailable');
     });
 
+    it('marks external fallback as unconfirmed, not a confirmed absence, when only today\'s plan-state read fails', async () => {
+        services.getProfileState.mockResolvedValue({
+            status: 'AVAILABLE',
+            data: {
+                userId: 'u1',
+                planningMode: 'externally_planned',
+                priorities: [],
+                weeklyCommitment: { minSessions: 3, targetSessions: 5, maxSessions: 6 },
+                organizationPreference: 'auto',
+                schemaVersion: 1,
+                createdAt: '2026-01-01T00:00:00Z',
+                updatedAt: '2026-01-01T00:00:00Z',
+            },
+        });
+        services.getActivePlanState.mockImplementation(async (_userId: string, date: string) => {
+            if (date === AS_OF) return { status: 'UNAVAILABLE', operation: 'read plan', retryable: true };
+            return { status: 'MISSING' };
+        });
+        const result = await new ContextBriefService().build('u1', AS_OF, 14);
+
+        expect(result.unavailableSources).toContain('external plan schedule (1 day(s) unreadable)');
+        expect(result.text).toContain('external-plan fallback today: UNCONFIRMED');
+        expect(result.text).toContain('could not be read, so this may reflect an unreadable session rather than a confirmed absence');
+        expect(result.text).not.toContain('external-plan fallback today: no imported session is placed on this date');
+    });
+
     it('renders an imported future session and its authored prescription into the copied handoff', async () => {
         services.getActivePlanState.mockImplementation(async (_userId: string, date: string) => {
             if (date !== '2026-08-17') return { status: 'MISSING' };

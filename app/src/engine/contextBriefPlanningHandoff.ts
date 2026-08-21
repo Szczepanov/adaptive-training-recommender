@@ -45,8 +45,16 @@ export interface ContextBriefPlanningHandoffInput {
     recommendations: readonly DailyRecommendation[];
     trainingSettings: TrainingSettings | null;
     preferences: UserPreferences | null;
-    planningMode: PlanningMode;
+    /** Already-resolved by planningMode.ts (ADR-0017); this module renders it, it does not
+     * derive it. Named distinctly from `TrainingIntentProfile.planningMode` so the
+     * whole-app architecture guard (planningModeArchitecture.test.ts) can't mistake this
+     * consumption for a re-derivation of the persisted field. */
+    effectivePlanningMode: PlanningMode;
     externalFallback: boolean;
+    /** True when `externalFallback` could not actually be confirmed today because today's
+     * own external-plan read failed (occupancy or plan-state), so a null resolved session
+     * reflects an unreadable day rather than a confirmed absence. */
+    externalFallbackUncertain: boolean;
     eventStrategy: 'structured_plan' | 'demand_derived' | null;
     goals: readonly UserGoal[];
     upcomingFixedActivities: readonly FixedActivity[];
@@ -84,10 +92,12 @@ function renderDataHandoff(input: ContextBriefPlanningHandoffInput): string {
         .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0] ?? null;
 
     const modeDetail = input.externalFallback
-        ? `${input.planningMode} (external-plan fallback today: no imported session is placed on this date)`
+        ? (input.externalFallbackUncertain
+            ? `${input.effectivePlanningMode} (external-plan fallback today: UNCONFIRMED — today's external plan schedule could not be read, so this may reflect an unreadable session rather than a confirmed absence)`
+            : `${input.effectivePlanningMode} (external-plan fallback today: no imported session is placed on this date)`)
         : input.eventStrategy
-            ? `${input.planningMode} (${input.eventStrategy.replace('_', ' ')})`
-            : input.planningMode;
+            ? `${input.effectivePlanningMode} (${input.eventStrategy.replace('_', ' ')})`
+            : input.effectivePlanningMode;
 
     const lines: string[] = [
         '## 0. Planning handoff & data currency',
@@ -249,7 +259,9 @@ function renderPrescriptionStep(step: ExternalPrescriptionStep): string {
     if (step.durationMin !== undefined) dose.push(`${step.durationMin} min`);
     if (step.durationSec !== undefined) dose.push(`${step.durationSec} s`);
     if (step.target) dose.push(step.target);
+    if (step.recoveryMin !== undefined) dose.push(`${step.recoveryMin} min recovery`);
     if (step.recoverySec !== undefined) dose.push(`${step.recoverySec}s recovery`);
+    if (step.setRecoveryMin !== undefined) dose.push(`${step.setRecoveryMin} min set recovery`);
     if (step.setRecoverySec !== undefined) dose.push(`${step.setRecoverySec}s set recovery`);
     if (step.notes) dose.push(compactText(step.notes));
     return dose.length > 0 ? `${step.name}: ${dose.join(' · ')}` : step.name;
@@ -318,10 +330,13 @@ function renderUpcoming(input: ContextBriefPlanningHandoffInput): string {
         'Preserve these when proposing days unless the user explicitly asks to move, replace or re-plan them. Authored travel blocks scale the surrounding plan rather than representing an extra workout.',
     ];
 
+    const fallbackUncertainNote = input.externalFallbackUncertain
+        ? ' Today\'s external plan schedule could not be read, so this is unconfirmed — treat it as unreadable, not as a confirmed absence.'
+        : '';
     if (input.externalFallback && external.length === 0) {
-        lines.push('', '> External-plan fallback is active today and no imported session is visible in this 7-day horizon. Do not silently invent a replacement block; the imported block may have ended, start later, or be unavailable.');
+        lines.push('', `> External-plan fallback is active today and no imported session is visible in this 7-day horizon. Do not silently invent a replacement block; the imported block may have ended, start later, or be unavailable.${fallbackUncertainNote}`);
     } else if (input.externalFallback && external.length > 0) {
-        lines.push('', '> External-plan fallback is active today because no imported session is placed today; imported sessions later in this horizon remain authoritative on their placed dates, subject to readiness/safety gating.');
+        lines.push('', `> External-plan fallback is active today because no imported session is placed today; imported sessions later in this horizon remain authoritative on their placed dates, subject to readiness/safety gating.${fallbackUncertainNote}`);
     }
 
     if (rows.length === 0) {
