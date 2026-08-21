@@ -1039,6 +1039,8 @@ service cloud.firestore {
         && comparison.required is list && comparison.required.size() <= 16 && comparison.required.hasOnly(dimensions)
         && comparison.seriesDefining is list && comparison.seriesDefining.size() <= 16 && comparison.seriesDefining.hasOnly(comparison.required)
         && comparison.contextOnly is list && comparison.contextOnly.size() <= 16 && comparison.contextOnly.hasOnly(comparison.required)
+        && !comparison.seriesDefining.hasAny(comparison.contextOnly)
+        && comparison.required.size() <= comparison.seriesDefining.size() + comparison.contextOnly.size()
         && comparison.canonicalizationVersion is string && comparison.canonicalizationVersion.size() > 0 && comparison.canonicalizationVersion.size() <= 64
         && familiarization is map
         && familiarization.keys().hasOnly(['required', 'minimumExposures'])
@@ -1085,6 +1087,8 @@ service cloud.firestore {
         && request.resource.data.purpose == resource.data.purpose
         && (('scheduledDate' in request.resource.data) == ('scheduledDate' in resource.data))
         && (!('scheduledDate' in resource.data) || request.resource.data.scheduledDate == resource.data.scheduledDate)
+        && (!('startedAt' in resource.data) || request.resource.data.startedAt == resource.data.startedAt)
+        && (!('completedAt' in resource.data) || request.resource.data.completedAt == resource.data.completedAt)
         && (
           request.resource.data.state == resource.data.state
           || (resource.data.state == 'scheduled' && request.resource.data.state in ['in_progress', 'abandoned'])
@@ -1120,6 +1124,7 @@ service cloud.firestore {
         && data.observationKey == observationKey
         && data.assessmentAttemptId is string && data.assessmentAttemptId.size() > 0 && data.assessmentAttemptId.size() <= 160
         && hasKnownOutcomeMetric(data.metricId)
+        && data.observationKey == data.assessmentAttemptId + ':' + data.metricId
         && data.headRevision is int && data.headRevision >= 1
         && data.createdAt is string && data.createdAt.size() > 0
         && data.updatedAt is string && data.updatedAt.size() > 0;
