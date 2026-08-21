@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import type { DailyDecisionInput } from '../engine/models';
 import type { HealthAnomalyAssessmentRevision } from '../engine/healthAnomalyModels';
 import { SHADOW_V1_HEALTH_ANOMALY_THRESHOLDS } from '../engine/healthAnomaly';
-import { HealthAnomalyShadowTrace } from './HealthAnomalyShadowPanel';
+import { HealthAnomalyShadowTrace, selectHealthAnomalyShadowRevision } from './HealthAnomalyShadowPanel';
 
 const revision: HealthAnomalyAssessmentRevision = {
     userId: 'u1',
@@ -81,5 +81,27 @@ describe('HealthAnomalyShadowTrace', () => {
         expect(html).toContain('hard_training');
         expect(html).toContain('rhr:strong_anomaly:high');
         expect(html).toContain('does not alter today');
+    });
+
+    it('selects the newest matching user/date revision across live and persisted sources', () => {
+        const newer = {
+            ...revision,
+            revisionId: 'ha-fedcba0987654321',
+            computedAt: '2026-08-21T06:35:00Z',
+        };
+        const wrongUser = {
+            ...newer,
+            userId: 'u2',
+            computedAt: '2026-08-21T06:40:00Z',
+        };
+        const wrongDate = {
+            ...newer,
+            date: '2026-08-20',
+            computedAt: '2026-08-21T06:45:00Z',
+        };
+
+        expect(selectHealthAnomalyShadowRevision('u1', '2026-08-21', revision, newer, wrongUser, wrongDate))
+            .toBe(newer);
+        expect(selectHealthAnomalyShadowRevision('u1', '2026-08-22', revision, newer)).toBeNull();
     });
 });
