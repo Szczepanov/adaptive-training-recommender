@@ -96,3 +96,90 @@ export interface ReliabilityEstimate {
     contextNote?: string;
     estimatedAt?: string;
 }
+
+export type ObservationValidity =
+    | 'valid'
+    | 'invalid'
+    | 'practice'
+    | 'questionable';
+
+export interface MetricObservationHead {
+    observationKey: string;
+    assessmentAttemptId: string;
+    metricId: string;
+    headRevision: number;
+    createdAt: string;
+    updatedAt: string;
+}
+
+export interface MetricObservationDevice {
+    provider: string;
+    model?: string;
+    deviceId?: string;
+}
+
+export type ObservationContextValue = string | number | boolean | null;
+export type ObservationContext = Readonly<Record<string, ObservationContextValue>>;
+
+export interface MetricObservationRevision {
+    observationKey: string;
+    revision: number;
+    supersedesRevision?: number;
+    metricId: string;
+    value: number;
+    unit: string;
+    observedAt: string;
+    source: 'manual' | 'garmin_activity' | 'garmin_lap' | 'derived';
+    sourceRef?: string;
+    device?: MetricObservationDevice;
+    protocolRef: {
+        id: string;
+        revision: number;
+    };
+    comparisonSeriesKey: string;
+    comparisonCanonicalizationVersion: string;
+    assessmentAttemptId: string;
+    validity: ObservationValidity;
+    invalidReason?: string;
+    context: ObservationContext;
+    derivedFromObservationIds?: readonly string[];
+    algorithmVersion?: string;
+    correctionReason?: string;
+    createdAt: string;
+}
+
+export type AssessmentAttemptState = 'scheduled' | 'in_progress' | 'completed' | 'abandoned';
+export type AssessmentAttemptPurpose = 'familiarization' | 'baseline' | 'checkpoint' | 'post_block';
+
+export interface AssessmentAttempt {
+    id: string;
+    protocolRef: { id: string; revision: number };
+    scheduledDate?: string;
+    startedAt?: string;
+    completedAt?: string;
+    state: AssessmentAttemptState;
+    purpose: AssessmentAttemptPurpose;
+    sourceSessionRef?: string;
+    notes?: string;
+}
+
+export interface CompetitionOutcome {
+    id: string;
+    eventRef?: string;
+    sport: 'cycling' | 'running' | 'field' | 'other';
+    occurredAt: string;
+    source: 'manual' | 'garmin_activity' | 'imported_result';
+    sourceRef?: string;
+    result: {
+        completed: boolean;
+        placing?: number;
+        fieldSize?: number;
+        elapsedSeconds?: number;
+        distanceM?: number;
+        courseId?: string;
+        summary?: string;
+    };
+    metrics: Readonly<Record<string, ObservationContextValue>>;
+    context: ObservationContext;
+    createdAt: string;
+}
