@@ -25,6 +25,15 @@ function baseCheckin() {
     };
 }
 
+function contextOnlyCheckin() {
+    return {
+        userId: ownerId,
+        date,
+        createdAt: '2026-08-21T06:00:00.000Z',
+        updatedAt: '2026-08-21T06:00:00.000Z',
+    };
+}
+
 emulatorDescribe('Daily subjective check-in health-context rules (HA1)', () => {
     beforeAll(async () => {
         testEnvironment = await initializeTestEnvironment({
@@ -50,10 +59,8 @@ emulatorDescribe('Daily subjective check-in health-context rules (HA1)', () => {
 
     it('allows context-only rich symptoms without requiring the legacy field on the raw write', async () => {
         const db = testEnvironment.authenticatedContext(ownerId).firestore();
-        const payload = baseCheckin();
-        const { illnessSymptoms: _legacy, ...withoutLegacy } = payload;
         await assertSucceeds(setDoc(doc(db, checkinPath), {
-            ...withoutLegacy,
+            ...contextOnlyCheckin(),
             healthContext: { symptoms: { present: true, onset: 'today', severity: 'mild', types: ['sore_throat'] } },
         }));
     });
