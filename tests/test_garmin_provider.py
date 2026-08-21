@@ -192,7 +192,9 @@ def test_extract_sleep_metrics_handles_nested_and_fallback_shapes():
 # --- Respiration precision (finer than dailySleepDTO.averageRespirationValue) ----
 
 
-def _respiration_array(count: int, start_ms: int = 0, step_ms: int = 120_000) -> list:
+def _respiration_array(
+    count: int, start_ms: int = 0, step_ms: int = 120_000
+) -> list[list[int | float]]:
     """`count` alternating 12.0/13.0 readings 2 minutes apart -- mean is exactly 12.5."""
     return [[start_ms + i * step_ms, 12.0 if i % 2 == 0 else 13.0] for i in range(count)]
 
@@ -227,6 +229,11 @@ def test_average_sleep_respiration_from_intervals_degrades_on_missing_or_malform
 
     assert average_sleep_respiration_from_intervals(None, 0, 5_000_000) is None
     assert average_sleep_respiration_from_intervals({}, 0, 5_000_000) is None
+    # A truthy non-dict payload (e.g. an archived record or enrichment fetch result
+    # with an unexpected shape) must degrade to None, never raise AttributeError from
+    # a bare `.get(...)` call.
+    assert average_sleep_respiration_from_intervals([1, 2, 3], 0, 5_000_000) is None
+    assert average_sleep_respiration_from_intervals("not a dict", 0, 5_000_000) is None
     assert (
         average_sleep_respiration_from_intervals({"respirationValuesArray": "bad"}, 0, 5_000_000)
         is None
@@ -243,6 +250,21 @@ def test_average_sleep_respiration_from_intervals_degrades_on_missing_or_malform
         )
         is None
     )
+
+
+def test_average_sleep_respiration_from_intervals_requires_full_night_coverage():
+    """40 valid samples clear the sample-count floor but are clustered in the first
+    hour of an 8-hour sleep window -- they must not be mistaken for a full-night
+    average (e.g. after a sync gap or the device coming back online late)."""
+    from garmin_sync.garmin_provider import average_sleep_respiration_from_intervals
+
+    samples = _respiration_array(40)  # ts 0 .. 4,680,000 (~78 minutes)
+    result = average_sleep_respiration_from_intervals(
+        {"respirationValuesArray": samples},
+        sleep_start_gmt_ms=0,
+        sleep_end_gmt_ms=8 * 60 * 60 * 1000,  # 8-hour window
+    )
+    assert result is None
 
 
 def test_canonicalize_from_raw_prefers_precise_respiration_average_when_available():

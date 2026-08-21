@@ -89,8 +89,16 @@ def _sleep_window_gmt_ms(
     )
 
 
+# A cluster of readings from only part of the night (e.g. a sync gap, or the device
+# coming back online well after sleep onset) can clear the sample-count floor below
+# without describing the whole night -- so both this count and a minimum span of the
+# sleep window (MIN_COVERAGE_RATIO) are required before trusting the interval average.
+_MIN_RESPIRATION_SAMPLES = 30
+_MIN_RESPIRATION_COVERAGE_RATIO = 0.5
+
+
 def average_sleep_respiration_from_intervals(
-    respiration_data: dict[str, Any] | None,
+    respiration_data: Any,
     sleep_start_gmt_ms: int | float | None,
     sleep_end_gmt_ms: int | float | None,
 ) -> float | None:
@@ -103,16 +111,28 @@ def average_sleep_respiration_from_intervals(
     at materially finer granularity, without changing what the metric means (see
     ADR-0024's discussion of respiration's undocumented measurement resolution).
 
+    `respiration_data` is untrusted (an enrichment fetch result or an archived
+    payload, either of which can carry an arbitrary shape), so it's typed `Any` and
+    checked rather than assumed to be a dict.
+
     Returns None (never raises) on any missing/malformed input -- including too few
-    in-window samples to trust -- so callers fall back to the sleep DTO's own average.
-    Same defensive-extraction policy as the rest of this module."""
-    if not respiration_data or sleep_start_gmt_ms is None or sleep_end_gmt_ms is None:
+    in-window samples, or samples too clustered to represent the whole sleep window --
+    so callers fall back to the sleep DTO's own average. Same defensive-extraction
+    policy as the rest of this module."""
+    if (
+        not isinstance(respiration_data, dict)
+        or sleep_start_gmt_ms is None
+        or sleep_end_gmt_ms is None
+    ):
+        return None
+    sleep_duration_ms = sleep_end_gmt_ms - sleep_start_gmt_ms
+    if sleep_duration_ms <= 0:
         return None
     samples = respiration_data.get("respirationValuesArray")
     if not isinstance(samples, list):
         return None
 
-    values: list[float] = []
+    readings: list[tuple[int | float, float]] = []
     for entry in samples:
         if not isinstance(entry, (list, tuple)) or len(entry) != 2:
             continue
@@ -123,13 +143,17 @@ def average_sleep_respiration_from_intervals(
         if value <= 0:
             continue
         if sleep_start_gmt_ms <= ts <= sleep_end_gmt_ms:
-            values.append(float(value))
+            readings.append((ts, float(value)))
 
-    # ~1 reading every 2 minutes -- require a real night's worth of coverage so a
-    # handful of samples near sleep onset/wake can't dominate the average.
-    if len(values) < 30:
+    if len(readings) < _MIN_RESPIRATION_SAMPLES:
         return None
 
+    timestamps = [ts for ts, _ in readings]
+    span_ms = max(timestamps) - min(timestamps)
+    if span_ms < _MIN_RESPIRATION_COVERAGE_RATIO * sleep_duration_ms:
+        return None
+
+    values = [value for _, value in readings]
     return round(sum(values) / len(values), 1)
 
 
