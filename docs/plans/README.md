@@ -59,15 +59,18 @@ Phases 0–8 are **implemented**; Phase 9.0 and Phase 9 remain **In progress**.
 Among capability plans, Garmin per-activity telemetry (G) and Mobile UX/UI (UX) are
 **implemented**; Strength session logging (S) is **In progress (default-off)** with all
 numbered code delivered; Multidomain sessions (M) is **In progress** with M0–M5.3
-complete.
+complete; Performance outcome validation (OV) is **Approved**, with OV0.1 startable and
+implementation intentionally continuing in separate PRs.
 
 For Multidomain delivery, the 2026-08-19 evidence-first cutline chain from
 [`2026-08-19-product-scope-cutline-review.md`](../analysis/2026-08-19-product-scope-cutline-review.md),
 `M3.7 → bounded M3.8 → M4.3 → M5.1 → M5.2`, is complete, and M5.3 (the report-first
-outcome/override evidence summary that chain unlocked) landed 2026-08-20. M6/M7 are
-usage-triggered capability families, not the automatic continuation after M5; M8 may
-consume them only if athlete use justified them independently; M9 remains behind its own
-named triggers.
+outcome/override evidence summary that chain unlocked) landed 2026-08-20. M6 remains a
+usage-triggered capability family. M7's repeated-testing usage trigger was satisfied on
+2026-08-21; its implementation is delegated to the Approved OV plan, whose first governance
+item OV0.1 is now startable rather than becoming automatic continuation after M5. M8 may
+consume M6/M7 only when each capability is independently justified and available; M9 remains
+behind its own named triggers.
 
 The Phase 0–5 task boards are historical implementation records; the
 [follow-up analysis](../analysis/2026-08-09-phase-0-5-completion-review.md) records
@@ -95,12 +98,13 @@ all-`Ready` table became unusable.
 | 9 | [Subjective baselines in readiness mode](./phase-9-subjective-baselines.md) | **In progress** | only 9.8 remains (9.1–9.7 done — 9.8 needs Phase 9.0's prospective evidence) | — | self-normalises subjective scores as a tighten-only drift term, measured behind a default-off selector before any ship decision — not an original review finding |
 | G | [Garmin per-activity telemetry](./garmin-activity-telemetry-ingestion.md) | **Implemented** | none | none | ingests per-activity power/HR time-in-zone, normalized power and lap averages; the measured zone-credit candidate remains off after an evidence-backed no-ship decision |
 | S | [Strength session logging](./strength-session-logging.md) | **In progress (default-off)** | none; all numbered work is built | real logged-history evidence before enabling manual Strength load — [M1.7](./multidomain-session-authoring-execution-and-evidence.md) is the item that starts producing it | closes the strength return path — per-set logging, self-calibrating 1RM, and measured strength load — not an original review finding |
-| M | [Multidomain session authoring, execution & evidence](./multidomain-session-authoring-execution-and-evidence.md) | **In progress** | none | M6/M7 require explicit real-use triggers; M8 is evidence-gated and cannot pull untriggered M6/M7 into scope; M9 needs its own named triggers | source-neutral authored sessions, safe mixed-dose execution and occurrence-linked response first; specialized field/testing capability only when athlete use proves the generic runner/evidence model insufficient |
+| M | [Multidomain session authoring, execution & evidence](./multidomain-session-authoring-execution-and-evidence.md) | **In progress** | none | M6 still requires an explicit real-use trigger; M7's trigger is satisfied and implementation is delegated to Approved OV; M8 is evidence-gated; M9 needs its own named triggers | source-neutral authored sessions, safe mixed-dose execution and occurrence-linked response first; specialized field/testing capability only when athlete use proves the generic runner/evidence model insufficient |
 | UX | [Mobile UX/UI redesign](./mobile_ux_implementation_plan.md) | **Implemented** | none | none | mobile-first daily decision flow, single-page rapid check-in, state-first Home layout, unblocked recommendation, 44px+ touch targets, and mobile layout tokens |
+| OV | [Performance outcome validation & goal-progress loop](./performance-outcome-validation.md) | **Approved** | OV0.1 | none | activates M7 — the repeated-testing usage trigger fired 2026-08-21 — with a bounded evidence-only outcome/progress/block-report capability; implementation continues in separate PRs |
 
-Rows G, S, M, and UX are **not phases**. They are capability/surface plans whose work items are prefixed
-`G*`, `S*`, `M*`, `UX*` precisely so they cannot be mistaken for the `Phase 0`–`9` sequence;
-the `#` column carries that prefix rather than a phase number. For capability plans, an item
+Rows G, S, M, UX, and OV are **not phases**. They are capability/surface plans whose work items are
+prefixed `G*`, `S*`, `M*`, `UX*`, `OV*` precisely so they cannot be mistaken for the `Phase 0`–`9`
+sequence; the `#` column carries that prefix rather than a phase number. For capability plans, an item
 with satisfied dependencies but an unmet usage trigger is **not** listed as startable.
 
 Phases 0–8 are implemented. Phase 6 delivered explicit scenario evidence, calibration
