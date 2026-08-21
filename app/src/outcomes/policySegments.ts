@@ -49,13 +49,15 @@ function recommendationRevision(recommendation: DailyRecommendation): number {
 }
 
 function canonicalTieBreakKey(recommendation: DailyRecommendation): string {
-    const context = contextFor(recommendation);
+    // Same ADR-0017 guard as sameContext: this is persisted report evidence, not an
+    // effective-mode derivation. Destructure to avoid a direct `.planningMode` read.
+    const { policyVersion, planningMode, authoredPlanRef } = contextFor(recommendation);
     return [
         recommendation.updatedAt,
         recommendation.createdAt,
-        context.policyVersion,
-        context.planningMode,
-        context.authoredPlanRef ?? '',
+        policyVersion,
+        planningMode,
+        authoredPlanRef ?? '',
     ].join('\u0000');
 }
 
