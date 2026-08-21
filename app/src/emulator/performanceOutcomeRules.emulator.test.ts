@@ -30,7 +30,7 @@ function validProtocol() {
         comparisonContext: {
             required: ['power_source_id', 'duration_seconds', 'warmup_revision'],
             seriesDefining: ['power_source_id', 'duration_seconds', 'warmup_revision'],
-            contextOnly: [],
+            contextOnly: [] as string[],
             canonicalizationVersion: 'comparison-series-v1',
         },
         familiarization: { required: true, minimumExposures: 1 },
@@ -117,7 +117,13 @@ async function writeInitialObservation() {
 emulatorDescribe('Performance outcome Firestore rules (OV2.4)', () => {
     beforeAll(async () => {
         testEnvironment = await initializeTestEnvironment({
-            projectId: 'demo-adaptive-training',
+            // Isolated from firestoreRules.emulator.test.ts's project: vitest runs emulator
+            // test files in parallel by default, and both suites call clearFirestore() in
+            // their own afterEach. Sharing one emulator project let one file's
+            // clearFirestore() wipe documents mid-transaction in the other, producing
+            // intermittent "evaluation error" / PERMISSION_DENIED failures in CI even
+            // though the rules themselves were correct.
+            projectId: 'demo-adaptive-training-ov2',
             firestore: { rules: readFileSync('firestore.rules', 'utf8') },
         });
     });
@@ -147,6 +153,27 @@ emulatorDescribe('Performance outcome Firestore rules (OV2.4)', () => {
         ));
     });
 
+    it('rejects a protocol comparisonContext that double-classifies or drops a required dimension', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        const overlapping = validProtocol();
+        overlapping.comparisonContext = {
+            ...overlapping.comparisonContext,
+            required: ['power_source_id', 'duration_seconds', 'warmup_revision'],
+            seriesDefining: ['power_source_id', 'duration_seconds'],
+            contextOnly: ['duration_seconds', 'warmup_revision'],
+        };
+        await assertFails(setDoc(doc(ownerDb, protocolRevisionPath), overlapping));
+
+        const uncovered = validProtocol();
+        uncovered.comparisonContext = {
+            ...uncovered.comparisonContext,
+            required: ['power_source_id', 'duration_seconds', 'warmup_revision'],
+            seriesDefining: ['power_source_id'],
+            contextOnly: ['duration_seconds'],
+        };
+        await assertFails(setDoc(doc(ownerDb, protocolRevisionPath), uncovered));
+    });
+
     it('allows a valid manual observation only when revision 1 and the head are created atomically', async () => {
         const ownerDb = await seedProtocolAndAttempt();
         await assertFails(setDoc(doc(ownerDb, revision1Path), validRevision(1)));
@@ -156,6 +183,14 @@ emulatorDescribe('Performance outcome Firestore rules (OV2.4)', () => {
         batch.set(doc(ownerDb, revision1Path), validRevision(1));
         batch.set(doc(ownerDb, observationPath), validHead(1));
         await assertSucceeds(batch.commit());
+    });
+
+    it('rejects an observation head whose observationKey does not match its own assessmentAttemptId/metricId', async () => {
+        const ownerDb = await seedProtocolAndAttempt();
+        const batch = writeBatch(ownerDb);
+        batch.set(doc(ownerDb, revision1Path), validRevision(1));
+        batch.set(doc(ownerDb, observationPath), { ...validHead(1), assessmentAttemptId: 'attempt-9' });
+        await assertFails(batch.commit());
     });
 
     it('rejects malformed observation units and unknown fields', async () => {
@@ -208,6 +243,29 @@ emulatorDescribe('Performance outcome Firestore rules (OV2.4)', () => {
             state: 'in_progress', startedAt: '2026-08-21T06:00:00.000Z',
         }));
         await assertFails(updateDoc(doc(ownerDb, attemptPath), { purpose: 'post_block' }));
+    });
+
+    it('rejects rewriting startedAt/completedAt provenance timestamps on an assessment attempt', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertSucceeds(setDoc(doc(ownerDb, protocolRevisionPath), validProtocol()));
+        await assertSucceeds(setDoc(doc(ownerDb, attemptPath), {
+            id: attemptId,
+            protocolRef: { id: protocolId, revision: 1 },
+            state: 'in_progress',
+            purpose: 'baseline',
+            startedAt: '2026-08-21T06:00:00.000Z',
+        }));
+        // Rewriting startedAt while state stays in_progress must fail, even though the shape
+        // is otherwise valid.
+        await assertFails(updateDoc(doc(ownerDb, attemptPath), { startedAt: '1999-01-01T00:00:00.000Z' }));
+        // A legitimate transition may add completedAt, but not also back-date startedAt.
+        await assertFails(updateDoc(doc(ownerDb, attemptPath), {
+            state: 'completed', startedAt: '1999-01-01T00:00:00.000Z', completedAt: '2026-08-21T06:25:00.000Z',
+        }));
+        await assertSucceeds(updateDoc(doc(ownerDb, attemptPath), {
+            state: 'completed', completedAt: '2026-08-21T06:25:00.000Z',
+        }));
+        await assertFails(updateDoc(doc(ownerDb, attemptPath), { completedAt: '1999-01-01T00:00:00.000Z' }));
     });
 
     it('stores ecological competition evidence without protocol-only benchmark fields', async () => {

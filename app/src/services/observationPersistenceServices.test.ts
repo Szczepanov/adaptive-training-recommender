@@ -191,16 +191,17 @@ describe('OV2 persistence services', () => {
         expect(firestore.doc.mock.calls.at(-1)?.slice(-2)).toEqual(['revisions', '2']);
     });
 
-    it('enforces assessment state transitions before issuing Firestore updates', async () => {
-        firestore.getDoc.mockResolvedValueOnce(snapshot(attempt));
+    it('enforces assessment state transitions before issuing Firestore writes', async () => {
+        firestore.transaction.get.mockResolvedValueOnce(snapshot(attempt));
         const service = new AssessmentAttemptService({} as never);
         await service.startAttempt('u1', 'attempt-1', '2026-08-22T06:00:00.000Z');
-        expect(firestore.updateDoc).toHaveBeenCalledWith(expect.anything(), {
+        expect(firestore.transaction.set).toHaveBeenCalledWith(expect.anything(), {
+            ...attempt,
             state: 'in_progress',
             startedAt: '2026-08-22T06:00:00.000Z',
         });
 
-        firestore.getDoc.mockResolvedValueOnce(snapshot({ ...attempt, state: 'completed', startedAt: '2026-08-22T06:00:00Z', completedAt: '2026-08-22T07:00:00Z' }));
+        firestore.transaction.get.mockResolvedValueOnce(snapshot({ ...attempt, state: 'completed', startedAt: '2026-08-22T06:00:00Z', completedAt: '2026-08-22T07:00:00Z' }));
         await expect(service.startAttempt('u1', 'attempt-1', '2026-08-22T08:00:00Z')).rejects.toThrow(/Cannot start assessment from completed/);
     });
 
