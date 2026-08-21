@@ -185,7 +185,7 @@ export function deriveObjectiveCreditFromProfile(
         }
     }
 
-    let rawStimulusContribution = 0;
+    let rawStimulusContribution: number;
     switch (objective.key) {
         case 'zone2_aerobic':
             rawStimulusContribution = stimulus.aerobicEndurance;
