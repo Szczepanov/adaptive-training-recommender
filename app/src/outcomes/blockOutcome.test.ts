@@ -204,6 +204,13 @@ describe('deriveBlockOutcome', () => {
         },
     );
 
+    it('reports missing primary progress without also calling it unusable evidence', () => {
+        const report = derive([]);
+        expect(report.verdict).toBe('insufficient_evidence');
+        expect(report.reasons).toContain('declared_primary_progress_missing');
+        expect(report.reasons).not.toContain('declared_primary_progress_non_comparable_or_insufficient');
+    });
+
     it('keeps ecological outcomes separate from protocol metric progress and preserves exact source IDs', () => {
         const race = competitionOutcome();
         const report = derive([progress('cycling_tt_20m_mean_power_w', 'meaningful_improvement')], process(), [race]);
