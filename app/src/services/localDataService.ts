@@ -31,17 +31,32 @@ export class LocalDataService {
             return this.cacheData;
         }
 
+        // This fixture is a dev-only convenience for local testing without Firestore --
+        // no build ever ships a raw_cache.json static asset. In production (and in dev
+        // when nobody has dropped the fixture in app/public), the request either 404s or
+        // -- on a host that rewrites unmatched paths for SPA routing -- resolves to
+        // index.html with a 200. Either way there is no cache to read, and that is the
+        // expected, common case (e.g. every morning before Garmin sync has produced
+        // today's snapshot), not an error worth alarming the console over.
+        if (!import.meta.env.DEV) {
+            this.cacheData = {};
+            return this.cacheData;
+        }
+
         try {
-            // In development, we can import the JSON file directly
             const response = await fetch('/raw_cache.json');
-            if (!response.ok) {
-                throw new Error('Failed to load cache file');
+            const contentType = response.headers.get('content-type') ?? '';
+            if (!response.ok || !contentType.includes('application/json')) {
+                this.cacheData = {};
+                return this.cacheData;
             }
-            this.cacheData = await response.json();
-            return this.cacheData || {};
+            const parsed: Record<string, RawCacheSnapshot> = (await response.json()) ?? {};
+            this.cacheData = parsed;
+            return parsed;
         } catch (error) {
             console.error('Error loading local cache:', error);
-            return {};
+            this.cacheData = {};
+            return this.cacheData;
         }
     }
 
