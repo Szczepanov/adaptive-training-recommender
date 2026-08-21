@@ -62,20 +62,33 @@ frontend from a local machine before.
 ## Deploy
 
 Run the **Deploy Frontend & Firestore Rules** workflow (Actions tab -> select it -> Run
-workflow). Two independent inputs, both default on:
+workflow). It has three inputs:
 
 * `deploy_hosting` -- runs `npm run build` (which runs the full `npm run check`: typecheck,
   lint, unit tests, workout-catalog validation -- never deploys a build that hasn't passed
   those) then `firebase deploy --only hosting`.
-* `deploy_rules` -- mirrors the local procedure in
-  [`firestore-rules-deployment.md`](./firestore-rules-deployment.md): a drift check first
-  (fails closed if the deployed rules don't match `app/firestore.rules` -- investigate rather
-  than override, same as the local flow), then the emulator test suite, then the deploy, then
-  a post-deploy hash re-check.
+* `deploy_rules` -- runs the Firestore rules safety/deployment flow.
+* `confirm_rules_drift` -- defaults to `false`. Leave it off for ordinary runs. If the
+  deployed production rules differ from `app/firestore.rules`, the run stops before changing
+  production. Turn it on only after reviewing the mismatch and intentionally choosing the
+  repository version as the next production ruleset.
 
-Turn either off to deploy just one side -- e.g. `deploy_rules: false` for a frontend-only
-change, or `deploy_hosting: false` to ship a reviewed rules change without also cutting a new
-Hosting release.
+For an intentional rules change, `confirm_rules_drift: true` acknowledges only the expected
+pre-deployment mismatch. It does **not** bypass the rest of the safety flow: the existing
+rules deployment script still saves the active ruleset for rollback, runs the mandatory
+Firestore emulator tests, deploys only `firestore:rules`, reads production back, and fails if
+the deployed source hash does not exactly match `app/firestore.rules`.
+
+This gives a phone-only recovery path for legitimate drift without weakening the default:
+
+1. Run with `deploy_rules: true` and `confirm_rules_drift: false` first.
+2. If the drift gate fails, review the production-vs-repository difference in Firebase/GitHub.
+3. If the repository version is the intended reviewed version, rerun with
+   `confirm_rules_drift: true`.
+
+Turn either deployment target off to deploy just one side -- e.g. `deploy_rules: false` for a
+frontend-only change, or `deploy_hosting: false` to ship a reviewed rules change without also
+cutting a new Hosting release.
 
 ## Rollback stays local
 
