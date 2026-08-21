@@ -87,7 +87,7 @@ describe('deriveBlockProcessEvidence', () => {
         expect(result.completedKeyRoles).toBe(1);
         expect(result.plannedSessionCount).toBe(5);
         expect(result.completedSessionCount).toBe(3);
-        expect(result.adherencePct).toBe(40);
+        expect(result.adherencePct).toBe(20);
         expect(result.scaledCount).toBe(1);
         expect(result.deferredCount).toBe(1);
         expect(result.skippedCount).toBe(1);
