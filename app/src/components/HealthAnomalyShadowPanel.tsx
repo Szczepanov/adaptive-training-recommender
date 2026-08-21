@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { DailyDecisionInput } from '../engine/models';
 import type { HealthAnomalyAssessmentRevision } from '../engine/healthAnomalyModels';
 import { healthAnomalyAssessmentRepository } from '../services/healthAnomalyPersistence';
+import { configuredHealthAnomalyShadowPolicy } from '../services/healthAnomalyRuntime';
 
 interface HealthAnomalyShadowPanelProps {
   userId: string;
@@ -117,12 +118,15 @@ export function HealthAnomalyShadowTrace({ revision, decisionInput }: HealthAnom
 }
 
 export function HealthAnomalyShadowPanel({ userId, decisionInput }: HealthAnomalyShadowPanelProps) {
+  const shadowEnabled = configuredHealthAnomalyShadowPolicy() === 'shadow-v1';
   const [revision, setRevision] = useState<HealthAnomalyAssessmentRevision | null>(null);
-  const [loadState, setLoadState] = useState<'loading' | 'ready' | 'missing' | 'error'>('loading');
+  const [loadState, setLoadState] = useState<'idle' | 'loading' | 'ready' | 'missing' | 'error'>('idle');
   const date = decisionInput.date;
 
   useEffect(() => {
+    if (!shadowEnabled) return;
     let cancelled = false;
+    setLoadState('loading');
     healthAnomalyAssessmentRepository.getLatestForDate(userId, date)
       .then(value => {
         if (cancelled) return;
@@ -133,9 +137,10 @@ export function HealthAnomalyShadowPanel({ userId, decisionInput }: HealthAnomal
         if (!cancelled) setLoadState('error');
       });
     return () => { cancelled = true; };
-  }, [userId, date]);
+  }, [shadowEnabled, userId, date]);
 
-  if (loadState === 'loading') {
+  if (!shadowEnabled) return null;
+  if (loadState === 'idle' || loadState === 'loading') {
     return <div className="data-view-container"><div className="data-section"><h3>Health anomaly (shadow)</h3><p>Loading shadow assessment…</p></div></div>;
   }
   if (loadState === 'error') {
@@ -146,7 +151,7 @@ export function HealthAnomalyShadowPanel({ userId, decisionInput }: HealthAnomal
       <div className="data-view-container">
         <div className="data-section">
           <h3>Health anomaly (shadow)</h3>
-          <p>No shadow assessment is persisted for {date}. Collection requires explicit <code>VITE_HEALTH_ANOMALY_POLICY=shadow-v1</code>.</p>
+          <p>No shadow assessment is persisted for {date} yet.</p>
         </div>
       </div>
     );
