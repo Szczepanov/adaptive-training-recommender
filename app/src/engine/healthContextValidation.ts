@@ -63,7 +63,10 @@ function hasOnlyKnownKeys(raw: Record<string, unknown>, allowed: Set<string>): s
     return Object.keys(raw).filter(key => !allowed.has(key));
 }
 
-function isOneOf(value: unknown, values: readonly string[]): value is string {
+function isOneOf<const TValues extends readonly string[]>(
+    value: unknown,
+    values: TValues,
+): value is TValues[number] {
     return typeof value === 'string' && values.includes(value);
 }
 
