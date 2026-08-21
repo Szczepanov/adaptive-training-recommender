@@ -32,17 +32,37 @@ export class AssessmentAttemptService {
         return attempt;
     }
 
-    async startAttempt(userId: string, attemptId: string, startedAt: string): Promise<void> {
+    async startAttempt(
+        userId: string,
+        attemptId: string,
+        startedAt: string,
+        sourceSessionRef?: string,
+    ): Promise<void> {
         await this.transitionAttempt(userId, attemptId, current => {
             if (current.state !== 'scheduled') throw new Error(`Cannot start assessment from ${current.state}`);
-            return { ...current, state: 'in_progress', startedAt };
+            return {
+                ...current,
+                state: 'in_progress',
+                startedAt,
+                ...(sourceSessionRef === undefined ? {} : { sourceSessionRef }),
+            };
         });
     }
 
-    async completeAttempt(userId: string, attemptId: string, completedAt: string): Promise<void> {
+    async completeAttempt(
+        userId: string,
+        attemptId: string,
+        completedAt: string,
+        notes?: string,
+    ): Promise<void> {
         await this.transitionAttempt(userId, attemptId, current => {
             if (current.state !== 'in_progress') throw new Error(`Cannot complete assessment from ${current.state}`);
-            return { ...current, state: 'completed', completedAt };
+            return {
+                ...current,
+                state: 'completed',
+                completedAt,
+                ...(notes === undefined ? {} : { notes }),
+            };
         });
     }
 
