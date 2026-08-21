@@ -21,7 +21,7 @@ describe('performance testing catalog', () => {
     it('keeps raw 20-minute power raw rather than naming or deriving FTP', () => {
         const definition = getPerformanceTestDefinition('cycling-20m-tt-r1');
         expect(definition.protocol.metricIds).toEqual(['cycling_tt_20m_mean_power_w']);
-        expect(definition.sessionDefinition.summary.toLowerCase()).toContain('does not estimate ftp');
+        expect(definition.sessionDefinition.summary?.toLowerCase()).toContain('does not estimate ftp');
     });
 
     it('fails closed for unknown catalog ids', () => {
