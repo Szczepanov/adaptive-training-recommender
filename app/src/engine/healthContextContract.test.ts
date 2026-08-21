@@ -38,6 +38,15 @@ function storedPayload(overrides: Record<string, unknown> = {}): Record<string, 
 }
 
 describe('HA1 validateCheckin migration contract', () => {
+    it('rejects non-object root inputs without throwing', () => {
+        for (const value of [null, undefined, 'checkin', 42, []]) {
+            expect(() => validateCheckin(value)).not.toThrow();
+            const result = validateCheckin(value);
+            expect(result.isValid).toBe(false);
+            expect(result.errors.some(error => error.field === 'checkin')).toBe(true);
+        }
+    });
+
     it('keeps a legacy-only check-in unchanged', () => {
         const result = validateCheckin(writePayload({ illnessSymptoms: true }));
         expect(result.isValid).toBe(true);
