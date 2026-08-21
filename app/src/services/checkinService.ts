@@ -7,6 +7,33 @@ import { getLocalDateString } from '../utils/localDate';
 import { isPermissionDeniedError } from '../utils/errors';
 import { parseSubjectiveCheckin } from '../persistence/parsers/decisionInputs';
 
+function healthContextMergeValue(context: DailySubjectiveCheckin['healthContext']): unknown {
+    if (!context || Object.keys(context).length === 0) return deleteField();
+
+    const valueOrDelete = (value: unknown) => value === undefined ? deleteField() : value;
+    const symptoms = context.symptoms;
+
+    return {
+        alcoholDrinksLast24h: valueOrDelete(context.alcoholDrinksLast24h),
+        travelDisruption: valueOrDelete(context.travelDisruption),
+        timezoneShiftHours: valueOrDelete(context.timezoneShiftHours),
+        unusualHeatOrSauna: valueOrDelete(context.unusualHeatOrSauna),
+        dehydrationOrFluidLoss: valueOrDelete(context.dehydrationOrFluidLoss),
+        recentVaccination: valueOrDelete(context.recentVaccination),
+        medicationChange: valueOrDelete(context.medicationChange),
+        closeSickContact: valueOrDelete(context.closeSickContact),
+        otherDisruption: valueOrDelete(context.otherDisruption),
+        symptoms: symptoms
+            ? {
+                present: symptoms.present,
+                onset: valueOrDelete(symptoms.onset),
+                severity: valueOrDelete(symptoms.severity),
+                types: valueOrDelete(symptoms.types),
+            }
+            : deleteField(),
+    };
+}
+
 export class CheckinService {
     private readonly collectionPath = 'daily_subjective_checkins';
 
@@ -92,21 +119,12 @@ export class CheckinService {
                 payload.tissueResponses = deleteField();
             }
 
-            // Firestore's merge write keeps nested fields that are omitted from a map. An
-            // explicit `symptoms.present=false` must therefore carry delete sentinels for the
-            // richer symptom details, otherwise yesterday's onset/severity/types could survive
-            // the clear and create a persisted state that the HA1 parser/rules correctly reject.
-            if (validatedCheckin.healthContext?.symptoms?.present === false) {
-                payload.healthContext = {
-                    ...validatedCheckin.healthContext,
-                    symptoms: {
-                        present: false,
-                        onset: deleteField(),
-                        severity: deleteField(),
-                        types: deleteField(),
-                    },
-                };
-            }
+            // `setDoc(..., { merge: true })` recursively preserves omitted nested fields.
+            // Treat this daily context as replace-on-answer: an omitted whole block deletes
+            // the stored map, while an omitted field inside a supplied block deletes that
+            // stale stored field. This keeps later reads from resurrecting yesterday's
+            // alcohol/travel/contact/symptom details after the athlete clears them.
+            payload.healthContext = healthContextMergeValue(validatedCheckin.healthContext);
 
             const docRef = doc(getDb(), 'users', userId, this.collectionPath, validatedCheckin.date);
             await setDoc(docRef, payload, { merge: true });
@@ -142,12 +160,12 @@ export class CheckinService {
                 orderBy('date', 'desc'),
                 limit(days)
             );
-
             const querySnapshot = await getDocs(q);
-            return querySnapshot.docs.map(doc => doc.data() as DailySubjectiveCheckin);
+            if (querySnapshot.empty) return [];
+            return querySnapshot.docs.map(checkinDoc => checkinDoc.data() as DailySubjectiveCheckin);
         } catch (error) {
             console.error('Error fetching recent check-ins:', error);
-            throw error;
+            return [];
         }
     }
 
