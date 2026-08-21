@@ -2,6 +2,8 @@
   "dailySleepDTO": {
     "sleepTimeSeconds": 27000,
     "averageRespirationValue": 14.5,
+    "sleepStartTimestampGMT": 1785848400000,
+    "sleepEndTimestampGMT": 1785875400000,
     "sleepScores": {
       "overall": {
         "value": 82

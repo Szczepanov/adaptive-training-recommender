@@ -88,6 +88,18 @@ Compatibility rules:
   evidence that Garmin's exported nightly respiration has a documented 1 br/min measurement
   resolution; the floor must be calibrated from actual exported data/replay before live use.
 
+**Update (2026-08-21): ingestion now sources a more precise nightly average.**
+`dailySleepDTO.averageRespirationValue` -- the field `respirationAvg` was previously sourced
+from exclusively -- is a single Garmin-computed summary that empirically often lands on a
+whole breath/minute. `garmin_provider.average_sleep_respiration_from_intervals` now averages
+the dedicated respiration endpoint's raw `respirationValuesArray` (~2-minute-interval
+readings) restricted to the night's sleep window instead, falling back to the DTO field when
+interval data or sleep timestamps are unavailable (older archived dates, provider errors,
+etc.). This raises the resolution of the raw `respirationAvg` input itself; it does not
+resolve the open question above about what floor is appropriate for `respiration28dMad` --
+that still needs replay evidence against the new, more granular data before any scoring-floor
+change.
+
 Relevant evidence:
 
 * Wearable respiration validation / respiratory infection signal:
