@@ -21,7 +21,9 @@ function canonicalize(value: unknown): unknown {
  * it changes the meaning of corrections.
  */
 export function canonicalObservationRevisionJson(revision: MetricObservationRevision): string {
-    const { createdAt: _createdAt, ...semantic } = revision;
+    const semantic = Object.fromEntries(
+        Object.entries(revision).filter(([key]) => key !== 'createdAt'),
+    );
     return JSON.stringify(canonicalize(semantic));
 }
 
