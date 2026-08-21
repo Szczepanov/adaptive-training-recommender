@@ -1011,6 +1011,17 @@ emulatorDescribe('Firestore security rules', () => {
         await assertFails(setDoc(doc(ownerDb, garminSyncRequestPath), {
             ...validGarminSyncRequest(), status: 'unknown',
         }));
+        // The browser may only ever queue 'pending' -- 'processing'/'completed'/'failed'
+        // and a non-null error are Admin-SDK-only outcomes the poller reports.
+        await assertFails(setDoc(doc(ownerDb, garminSyncRequestPath), {
+            ...validGarminSyncRequest(), status: 'processing',
+        }));
+        await assertFails(setDoc(doc(ownerDb, garminSyncRequestPath), {
+            ...validGarminSyncRequest(), status: 'completed',
+        }));
+        await assertFails(setDoc(doc(ownerDb, garminSyncRequestPath), {
+            ...validGarminSyncRequest(), error: 'not a real failure',
+        }));
         await assertFails(setDoc(doc(ownerDb, garminSyncRequestPath), {
             ...validGarminSyncRequest(), unexpectedField: true,
         }));

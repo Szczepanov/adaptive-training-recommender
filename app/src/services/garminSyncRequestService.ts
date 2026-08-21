@@ -3,8 +3,13 @@ import { getDb } from '../firebase';
 
 export interface GarminSyncRequest {
     userId: string;
-    status: 'pending' | 'completed' | 'failed';
+    /** 'processing'/'completed'/'failed' and claimId/claimedAt are Admin-SDK-only
+     * transitions written by poll_manual_sync_requests's atomic claim -- the browser
+     * (and Firestore rules) may only ever write 'pending'. */
+    status: 'pending' | 'processing' | 'completed' | 'failed';
     requestedAt: string;
+    claimId?: string;
+    claimedAt?: string | null;
     completedAt?: string | null;
     error?: string | null;
 }
@@ -13,9 +18,10 @@ export interface GarminSyncRequest {
  * Manual "Sync Now" trigger for the Garmin recovery poll (D-GARMINSYNC): writes a
  * single fixed-id doc the garmin_sync Cloud Run Job's poll_manual_sync_requests polls
  * frequently (every few minutes, all day -- see docs/ops/cloud-run-deployment.md),
- * running an immediate forced sync when it sees `status: 'pending'`. Mirrors
- * garminWorkoutQueueService's queue-and-poll shape, just with a single fixed doc
- * instead of one per date -- only one manual sync can usefully be in flight at a time.
+ * atomically claiming it and running an immediate forced sync when it sees
+ * `status: 'pending'`. Mirrors garminWorkoutQueueService's queue-and-poll shape, just
+ * with a single fixed doc instead of one per date -- only one manual sync can usefully
+ * be in flight at a time.
  */
 export class GarminSyncRequestService {
     private requestRef(userId: string) {

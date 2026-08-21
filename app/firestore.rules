@@ -947,15 +947,19 @@ service cloud.firestore {
       allow delete: if isOwner(userId);
     }
 
+    // The browser may only ever (re-)queue a fresh 'pending' request -- 'processing',
+    // 'completed', 'failed', and the claimId/claimedAt fields are produced solely by
+    // poll_manual_sync_requests's Admin SDK writes, which bypass these rules entirely.
+    // A client cannot self-report a sync outcome it never ran.
     function hasValidGarminSyncRequest(userId) {
       let data = request.resource.data;
       return hasOwnedUserId(userId)
         && data.keys().hasOnly(['userId', 'status', 'requestedAt', 'completedAt', 'error'])
         && data.keys().hasAll(['userId', 'status', 'requestedAt'])
-        && data.status in ['pending', 'completed', 'failed']
+        && data.status == 'pending'
         && data.requestedAt is string
-        && (!('completedAt' in data) || data.completedAt == null || data.completedAt is string)
-        && (!('error' in data) || data.error == null || (data.error is string && data.error.size() <= 2000));
+        && (!('completedAt' in data) || data.completedAt == null)
+        && (!('error' in data) || data.error == null);
     }
 
     // A manual "Sync Now" request (D-GARMINSYNC): the web app writes a single fixed-id
@@ -963,7 +967,7 @@ service cloud.firestore {
     // immediate forced sync rather than waiting for the next scheduled tick. Single
     // outstanding request per user, mirroring garmin_workout_queue's per-item status
     // convention -- the poller (Admin SDK, bypasses these rules) is what actually
-    // transitions status to 'completed'/'failed'.
+    // claims the request ('processing') and transitions it to 'completed'/'failed'.
     match /users/{userId}/garmin_sync_requests/{requestId} {
       allow read: if isOwner(userId);
       allow create, update: if hasValidGarminSyncRequest(userId) && requestId == 'latest';

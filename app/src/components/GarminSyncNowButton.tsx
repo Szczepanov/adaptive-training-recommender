@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { garminSyncRequestService, type GarminSyncRequest } from '../services/garminSyncRequestService';
+import { isSyncRequestStale, isSyncRequestInFlight } from './garminSyncStaleness';
 import './GarminSyncNowButton.css';
 
 export interface GarminSyncNowButtonProps {
@@ -19,6 +20,7 @@ export function GarminSyncNowButton({ userId, onSynced }: GarminSyncNowButtonPro
     const [request, setRequest] = useState<GarminSyncRequest | null>(null);
     const [triggering, setTriggering] = useState(false);
     const [localError, setLocalError] = useState<string | null>(null);
+    const [now, setNow] = useState(() => Date.now());
     const awaitingOwnRequest = useRef(false);
 
     useEffect(() => {
@@ -27,7 +29,7 @@ export function GarminSyncNowButton({ userId, onSynced }: GarminSyncNowButtonPro
             userId,
             (next) => {
                 setRequest(next);
-                if (awaitingOwnRequest.current && next && next.status !== 'pending') {
+                if (awaitingOwnRequest.current && next && !isSyncRequestInFlight(next)) {
                     awaitingOwnRequest.current = false;
                     onSynced?.();
                 }
@@ -37,6 +39,20 @@ export function GarminSyncNowButton({ userId, onSynced }: GarminSyncNowButtonPro
         return unsubscribe;
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [userId]);
+
+    const isInFlight = isSyncRequestInFlight(request);
+
+    // Firestore won't push a new snapshot if the poller execution that claimed this
+    // request died mid-run -- the doc just sits at 'processing' forever. Re-checking
+    // staleness on a timer (rather than only on snapshot updates) is what lets the
+    // button notice and re-enable itself.
+    useEffect(() => {
+        if (!isInFlight) return;
+        const interval = setInterval(() => setNow(Date.now()), 15_000);
+        return () => clearInterval(interval);
+    }, [isInFlight]);
+
+    const isStale = isSyncRequestStale(request, now);
 
     const handleClick = useCallback(async () => {
         setTriggering(true);
@@ -53,13 +69,17 @@ export function GarminSyncNowButton({ userId, onSynced }: GarminSyncNowButtonPro
         }
     }, [userId]);
 
-    const isPending = triggering || request?.status === 'pending';
-    const label = isPending
+    const isBusy = (triggering || isInFlight) && !isStale;
+    const label = isStale
+        ? '⚠️ Sync delayed — retry'
+        : isBusy
         ? 'Syncing…'
         : request?.status === 'failed'
         ? '⚠️ Retry sync'
         : '🔄 Sync now';
-    const title = isPending
+    const title = isStale
+        ? 'The last sync request is taking longer than expected — click to request it again'
+        : isBusy
         ? 'Requesting the latest Garmin data — usually resolves within a few minutes'
         : 'Force an immediate Garmin sync instead of waiting for the next scheduled poll';
 
@@ -69,7 +89,7 @@ export function GarminSyncNowButton({ userId, onSynced }: GarminSyncNowButtonPro
                 type="button"
                 className="garmin-sync-now-btn"
                 onClick={(e) => { e.stopPropagation(); handleClick(); }}
-                disabled={isPending}
+                disabled={isBusy}
                 title={title}
             >
                 {label}
