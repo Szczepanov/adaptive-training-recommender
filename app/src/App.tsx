@@ -5,7 +5,7 @@ import { Home } from './components/Home';
 import type { PreparedSessionLaunch } from './components/session/SessionDestinationSheet';
 import { decisionComposer } from './engine/composer';
 import type { HealthAnomalyAssessmentRevision } from './engine/healthAnomalyModels';
-import type { DailyDecisionInput, StrengthSession } from './engine/models';
+import type { DailyDecisionInput } from './engine/models';
 import type { SessionExecution, SessionIntent } from './sessions/models';
 import type { Screen } from './types/navigation';
 import { useAuth } from './contexts/AuthContext';
@@ -26,7 +26,6 @@ const DataView = lazy(() => import('./components/DataView').then(m => ({ default
 const HealthAnomalyShadowPanel = lazy(() => import('./components/HealthAnomalyShadowPanel').then(m => ({ default: m.HealthAnomalyShadowPanel })));
 const PlanView = lazy(() => import('./components/PlanView').then(m => ({ default: m.PlanView })));
 const StrengthOverloadHistory = lazy(() => import('./components/StrengthOverloadHistory').then(m => ({ default: m.StrengthOverloadHistory })));
-const StrengthSessionRunner = lazy(() => import('./components/StrengthSessionRunner').then(m => ({ default: m.StrengthSessionRunner })));
 const SessionRunner = lazy(() => import('./components/session/SessionRunner').then(m => ({ default: m.SessionRunner })));
 const ManualSessionBuilder = lazy(() => import('./components/session/ManualSessionBuilder').then(m => ({ default: m.ManualSessionBuilder })));
 const SessionJsonImport = lazy(() => import('./components/session/SessionJsonImport').then(m => ({ default: m.SessionJsonImport })));
@@ -39,7 +38,10 @@ function App() {
   const [healthAnomalyShadowRevision, setHealthAnomalyShadowRevision] = useState<HealthAnomalyAssessmentRevision | null>(null);
   const [desktopSettingsOpen, setDesktopSettingsOpen] = useState(false);
   const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
-  const [activeStrengthSession, setActiveStrengthSession] = useState<StrengthSession | null>(null);
+  // M3.4/M2.7 cutover: legacy Strength v1 remains a permanent read format, but it no longer
+  // owns a second live runner. An already-open pre-cutover document is surfaced only so the
+  // athlete can close it without losing its partial sets; all new execution uses SessionRunner.
+  const [legacyStrengthSessionId, setLegacyStrengthSessionId] = useState<string | null>(null);
   const [activeStructuredSession, setActiveStructuredSession] = useState<SessionExecution | null>(null);
   const [activeStructuredIntent, setActiveStructuredIntent] = useState<SessionIntent | null>(null);
   const [sessionAuthoringMode, setSessionAuthoringMode] = useState<'import' | 'manual' | null>(null);
@@ -73,14 +75,22 @@ function App() {
   }, [userId, authPhase, loadDecisionInput]);
 
   useEffect(() => {
+    // Clear synchronously on every identity change so a resolved session from a previous
+    // account can never be shown, or acted on, under a newly signed-in userId.
+    setLegacyStrengthSessionId(null);
+    setActiveStructuredSession(null);
+    setActiveStructuredIntent(null);
     if (!userId || authPhase !== 'AUTHENTICATED') return;
     let cancelled = false;
     Promise.allSettled([
+      // Read-only cutover check. We retain the legacy service so an in-progress v1 document
+      // can be closed explicitly, but no production path starts or resumes it in the old UI.
       strengthSessionService.findActiveSession(userId),
       sessionExecutionService.findInProgressExecution(userId),
     ]).then(async ([strengthResult, structuredResult]) => {
       if (cancelled) return;
-      setActiveStrengthSession(strengthResult.status === 'fulfilled' ? strengthResult.value : null);
+      const legacyStrength = strengthResult.status === 'fulfilled' ? strengthResult.value : null;
+      setLegacyStrengthSessionId(legacyStrength?.sessionId ?? null);
       const structured = structuredResult.status === 'fulfilled' ? structuredResult.value : null;
       setActiveStructuredSession(structured);
       setActiveStructuredIntent(null);
@@ -108,8 +118,7 @@ function App() {
   };
 
   const isWorkoutRunnerActive =
-    ((screen === 'sessions' || screen === 'testing') && activeStructuredSession?.state === 'in_progress') ||
-    (screen === 'strength' && activeStrengthSession?.state === 'in_progress');
+    (screen === 'sessions' || screen === 'testing') && activeStructuredSession?.state === 'in_progress';
 
   return (
     <div className="app-container">
@@ -125,10 +134,20 @@ function App() {
         />
       )}
 
-      {activeStrengthSession?.state === 'in_progress' && screen !== 'strength' && (
+      {legacyStrengthSessionId && !isWorkoutRunnerActive && (
         <div className="active-session-banner" role="status">
-          <span>Strength session in progress</span>
-          <button type="button" onClick={() => handleNavigate('strength')}>Resume session</button>
+          <span>Legacy Strength session is still open. Its logged sets are preserved.</span>
+          <button
+            type="button"
+            onClick={() => {
+              const sessionId = legacyStrengthSessionId;
+              void strengthSessionService.transitionState(userId!, sessionId, 'abandoned')
+                .then(() => setLegacyStrengthSessionId(current => current === sessionId ? null : current))
+                .catch(error => console.error('Failed to close legacy Strength session:', error));
+            }}
+          >
+            Close legacy session
+          </button>
         </div>
       )}
       {activeStructuredSession?.state === 'in_progress'
@@ -214,19 +233,6 @@ function App() {
             <Preferences userId={userId!} onNavigate={handleNavigate} />
           )}
 
-          {screen === 'strength' && (
-            <div className="strength-screen">
-              <StrengthSessionRunner
-                userId={userId!}
-                onSessionStateChange={session => setActiveStrengthSession(session?.state === 'in_progress' ? session : null)}
-              />
-              <details className="strength-history-disclosure">
-                <summary>View strength history</summary>
-                <StrengthOverloadHistory userId={userId!} />
-              </details>
-            </div>
-          )}
-
           {screen === 'sessions' && (
             sessionAuthoringMode === 'import' ? (
               <SessionJsonImport
@@ -247,18 +253,24 @@ function App() {
                 }}
               />
             ) : (
-              <SessionRunner
-                userId={userId!}
-                initialSession={sessionLaunch ?? undefined}
-                onInitialSessionHandled={() => setSessionLaunch(null)}
-                onImportSession={() => setSessionAuthoringMode('import')}
-                onBuildSession={() => setSessionAuthoringMode('manual')}
-                onSessionStateChange={session => {
-                  setActiveStructuredSession(session?.state === 'in_progress' ? session : null);
-                  if (session?.state !== 'in_progress') setActiveStructuredIntent(null);
-                }}
-                onClose={() => handleNavigate('home')}
-              />
+              <>
+                <SessionRunner
+                  userId={userId!}
+                  initialSession={sessionLaunch ?? undefined}
+                  onInitialSessionHandled={() => setSessionLaunch(null)}
+                  onImportSession={() => setSessionAuthoringMode('import')}
+                  onBuildSession={() => setSessionAuthoringMode('manual')}
+                  onSessionStateChange={session => {
+                    setActiveStructuredSession(session?.state === 'in_progress' ? session : null);
+                    if (session?.state !== 'in_progress') setActiveStructuredIntent(null);
+                  }}
+                  onClose={() => handleNavigate('home')}
+                />
+                <details className="strength-history-disclosure">
+                  <summary>View strength history</summary>
+                  <StrengthOverloadHistory userId={userId!} />
+                </details>
+              </>
             )
           )}
 
