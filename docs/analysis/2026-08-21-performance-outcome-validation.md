@@ -1,7 +1,7 @@
 # Performance outcome validation — closing the recommendation → adaptation loop
 
-**Date:** 2026-08-21  
-**Status:** point-in-time analysis  
+**Date:** 2026-08-21
+**Status:** point-in-time analysis
 **Scope:** determine how this repository should establish whether training recommendations are helping the athlete achieve training goals, and how that evidence should interact with the existing shadow-mode, session-response and M7 testing architecture.
 
 ---
