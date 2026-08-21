@@ -505,6 +505,42 @@ def test_poll_manual_sync_requests_marks_failed_on_exception(monkeypatch):
     assert "boom" in doc.data["error"]
 
 
+def test_poll_manual_sync_requests_does_not_mislabel_a_successful_sync_when_finish_write_fails(
+    monkeypatch,
+):
+    """A failure recording the outcome must never get relabeled as a sync failure --
+    otherwise a sync that actually succeeded gets reported as failed."""
+    monkeypatch.setattr("garmin_sync.service.firestore.transactional", lambda fn: fn)
+    settings = Settings(app_user_id="test_uid_789")
+    doc = _FakeSyncRequestDoc({"status": "pending"})
+    service = GarminSyncService(settings=settings, repository=MagicMock(db=_FakeSyncRequestDb(doc)))
+    service.sync_daily = MagicMock(return_value=True)
+    service._finish_manual_sync_request = MagicMock(side_effect=RuntimeError("firestore hiccup"))
+
+    result = service.poll_manual_sync_requests()
+
+    assert result is True
+    service._finish_manual_sync_request.assert_called_once()
+    assert service._finish_manual_sync_request.call_args.args[2] == "completed"
+
+
+def test_poll_manual_sync_requests_reports_false_when_finish_write_fails_after_sync_failure(
+    monkeypatch,
+):
+    monkeypatch.setattr("garmin_sync.service.firestore.transactional", lambda fn: fn)
+    settings = Settings(app_user_id="test_uid_789")
+    doc = _FakeSyncRequestDoc({"status": "pending"})
+    service = GarminSyncService(settings=settings, repository=MagicMock(db=_FakeSyncRequestDb(doc)))
+    service.sync_daily = MagicMock(return_value=False)
+    service._finish_manual_sync_request = MagicMock(side_effect=RuntimeError("firestore hiccup"))
+
+    result = service.poll_manual_sync_requests()
+
+    assert result is False
+    service._finish_manual_sync_request.assert_called_once()
+    assert service._finish_manual_sync_request.call_args.args[2] == "failed"
+
+
 def test_poll_manual_sync_requests_noop_when_no_request_doc(monkeypatch):
     monkeypatch.setattr("garmin_sync.service.firestore.transactional", lambda fn: fn)
     settings = Settings(app_user_id="test_uid_789")

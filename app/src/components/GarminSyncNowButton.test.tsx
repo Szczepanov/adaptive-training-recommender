@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { GarminSyncNowButton } from './GarminSyncNowButton';
-import { isSyncRequestStale, STALE_AFTER_MS } from './garminSyncStaleness';
+import { isSyncRequestStale, STALE_AFTER_MS } from '../utils/garminSyncStaleness';
 import type { GarminSyncRequest } from '../services/garminSyncRequestService';
 
 // This repo has no interactive component-test harness (no @testing-library/react) --

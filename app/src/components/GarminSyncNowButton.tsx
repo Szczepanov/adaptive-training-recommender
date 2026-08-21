@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { garminSyncRequestService, type GarminSyncRequest } from '../services/garminSyncRequestService';
-import { isSyncRequestStale, isSyncRequestInFlight } from './garminSyncStaleness';
+import { isSyncRequestStale, isSyncRequestInFlight } from '../utils/garminSyncStaleness';
 import './GarminSyncNowButton.css';
 
 export interface GarminSyncNowButtonProps {

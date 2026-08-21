@@ -1026,17 +1026,29 @@ class GarminSyncService:
         logger.info("Claimed manual sync request; running an immediate forced sync...")
         try:
             ok = self.sync_daily(force=True)
+        except Exception as e:
+            logger.error(f"Manual sync request failed: {e}")
+            self._finish_manual_sync_request(request_ref, claim_id, "failed", error=str(e)[:2000])
+            return False
+
+        # A failure recording the outcome is a separate failure domain from the sync
+        # itself -- it must never get relabeled as 'failed' here (that would report a
+        # sync that actually succeeded as failed). Leaving the request at 'processing'
+        # is the honest outcome: it goes stale and offers a retry rather than lying
+        # about what happened.
+        try:
             self._finish_manual_sync_request(
                 request_ref,
                 claim_id,
                 "completed" if ok else "failed",
                 error=None if ok else "Sync completed with errors; check logs.",
             )
-            return ok
         except Exception as e:
-            logger.error(f"Manual sync request failed: {e}")
-            self._finish_manual_sync_request(request_ref, claim_id, "failed", error=str(e)[:2000])
-            return False
+            logger.error(
+                f"Manual sync request outcome recording failed "
+                f"(sync itself {'succeeded' if ok else 'failed'}): {e}"
+            )
+        return ok
 
     def _finish_manual_sync_request(
         self, request_ref: Any, claim_id: str, status: str, error: str | None
