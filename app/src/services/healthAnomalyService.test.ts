@@ -129,7 +129,7 @@ describe('HealthAnomalyService composition', () => {
         const checkins = { getCheckinState: vi.fn().mockResolvedValue({ status: 'MISSING' }) };
         const blocks = { getBlocksInRangeState: vi.fn().mockResolvedValue({ status: 'UNAVAILABLE', operation: 'travel', retryable: true }) };
         const store = {
-            getLatestForDate: vi.fn().mockRejectedValue(new Error('history unavailable')),
+            getLatestForDate: vi.fn().mockResolvedValue(null),
             persistImmutable: vi.fn().mockImplementation(async (value: HealthAnomalyAssessmentRevision) => value),
         };
         const service = new HealthAnomalyService(recovery as never, checkins as never, blocks as never, store as never);
@@ -138,5 +138,24 @@ describe('HealthAnomalyService composition', () => {
         expect(result).not.toBeNull();
         expect(result?.assessment.coreSignals.every(signal => signal.status === 'unavailable')).toBe(true);
         expect(result?.revision.source.travelContextRevision).toBeNull();
+        expect(store.persistImmutable).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not persist when previous assessment history cannot be read', async () => {
+        const recovery = {
+            getRecoverySnapshotState: vi.fn().mockResolvedValue(available(day('2026-08-21'))),
+            getRecoverySnapshotsInRangeState: vi.fn().mockResolvedValue({ status: 'MISSING' }),
+        };
+        const checkins = { getCheckinState: vi.fn().mockResolvedValue({ status: 'MISSING' }) };
+        const blocks = { getBlocksInRangeState: vi.fn().mockResolvedValue({ status: 'MISSING' }) };
+        const store = {
+            getLatestForDate: vi.fn().mockRejectedValue(new Error('previous assessment unavailable')),
+            persistImmutable: vi.fn(),
+        };
+        const service = new HealthAnomalyService(recovery as never, checkins as never, blocks as never, store as never);
+
+        await expect(service.assessAndPersist('u1', '2026-08-21', 'shadow-v1'))
+            .rejects.toThrow('previous assessment unavailable');
+        expect(store.persistImmutable).not.toHaveBeenCalled();
     });
 });
