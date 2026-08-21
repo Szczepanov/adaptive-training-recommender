@@ -1,8 +1,6 @@
 import {
-    collection,
     doc,
     getDoc,
-    getDocs,
     runTransaction,
     type Firestore,
 } from 'firebase/firestore';
@@ -15,7 +13,6 @@ import type {
 import {
     assertValidOutcomeEvaluationRevision,
     assertValidOutcomeEvaluationSnapshot,
-    assertValidOutcomeMetricBinding,
 } from '../outcomes/evaluationSpec';
 import { hashEvaluationContent, sortOutcomeBindings } from '../outcomes/evaluationHash';
 
@@ -26,10 +23,33 @@ export interface OutcomeEvaluationHead {
     updatedAt: string;
 }
 
+interface PersistedOutcomeEvaluationRevision extends OutcomeEvaluationSpecRevision {
+    bindings: readonly OutcomeMetricBinding[];
+}
+
 function assertValidHead(head: OutcomeEvaluationHead, expectedId?: string): void {
     if (!head.id || (expectedId !== undefined && head.id !== expectedId)) throw new Error('Outcome evaluation head id mismatch');
     if (!Number.isInteger(head.currentRevision) || head.currentRevision < 1) throw new Error('Outcome evaluation currentRevision must be positive');
     if (!Number.isFinite(Date.parse(head.createdAt)) || !Number.isFinite(Date.parse(head.updatedAt))) throw new Error('Outcome evaluation head timestamps are invalid');
+}
+
+function toPersisted(snapshot: OutcomeEvaluationSnapshot): PersistedOutcomeEvaluationRevision {
+    return { ...snapshot.revision, bindings: sortOutcomeBindings(snapshot.bindings) };
+}
+
+function fromPersisted(
+    persisted: PersistedOutcomeEvaluationRevision,
+    expectedId: string,
+    expectedRevision: number,
+): OutcomeEvaluationSnapshot {
+    const { bindings, ...revision } = persisted;
+    assertValidOutcomeEvaluationRevision(revision);
+    if (revision.id !== expectedId || revision.revision !== expectedRevision) {
+        throw new Error(`Outcome evaluation path mismatch for ${expectedId}@${expectedRevision}`);
+    }
+    const result: OutcomeEvaluationSnapshot = { revision, bindings: sortOutcomeBindings(bindings ?? []) };
+    assertValidOutcomeEvaluationSnapshot(result);
+    return result;
 }
 
 export class OutcomeEvaluationService {
@@ -47,18 +67,11 @@ export class OutcomeEvaluationService {
         return doc(this.db, 'users', userId, 'outcome_evaluations', evaluationId, 'revisions', String(revision));
     }
 
-    private bindingRef(userId: string, evaluationId: string, revision: number, bindingId: string) {
-        return doc(this.db, 'users', userId, 'outcome_evaluations', evaluationId, 'revisions', String(revision), 'metrics', bindingId);
-    }
-
-    private bindingsCollection(userId: string, evaluationId: string, revision: number) {
-        return collection(this.db, 'users', userId, 'outcome_evaluations', evaluationId, 'revisions', String(revision), 'metrics');
-    }
-
     /**
      * Draft criteria are immutable once persisted. Editing is represented by creating the next
-     * draft revision. This deliberately chooses the plan's "replaced" option over in-place
-     * mutation so activation can hash bytes that no concurrent client is allowed to rewrite.
+     * draft revision. Bindings are stored in the same revision document so activation freezes
+     * the exact criteria atomically; there is no separately mutable binding subcollection that
+     * can race the content hash.
      */
     async createDraftRevision(
         userId: string,
@@ -87,10 +100,7 @@ export class OutcomeEvaluationService {
                 throw new Error('First outcome evaluation revision must be 1');
             }
 
-            for (const binding of snapshot.bindings) {
-                transaction.set(this.bindingRef(userId, revision.id, revision.revision, binding.id), binding);
-            }
-            transaction.set(revisionRef, revision);
+            transaction.set(revisionRef, toPersisted(snapshot));
             const head: OutcomeEvaluationHead = existingHead
                 ? { ...existingHead, currentRevision: revision.revision, updatedAt: revision.createdAt }
                 : { id: revision.id, currentRevision: revision.revision, createdAt: revision.createdAt, updatedAt: revision.createdAt };
@@ -102,48 +112,46 @@ export class OutcomeEvaluationService {
     async getRevision(userId: string, evaluationId: string, revision: number): Promise<OutcomeEvaluationSnapshot | null> {
         const revisionSnapshot = await getDoc(this.revisionRef(userId, evaluationId, revision));
         if (!revisionSnapshot.exists()) return null;
-        const value = revisionSnapshot.data() as OutcomeEvaluationSpecRevision;
-        assertValidOutcomeEvaluationRevision(value);
-        if (value.id !== evaluationId || value.revision !== revision) throw new Error(`Outcome evaluation path mismatch for ${evaluationId}@${revision}`);
-
-        const bindingSnapshots = await getDocs(this.bindingsCollection(userId, evaluationId, revision));
-        const bindings = bindingSnapshots.docs.map(snapshot => {
-            const binding = snapshot.data() as OutcomeMetricBinding;
-            assertValidOutcomeMetricBinding(binding);
-            if (binding.id !== snapshot.id) throw new Error(`Outcome binding path mismatch for ${snapshot.id}`);
-            return binding;
-        });
-        const result: OutcomeEvaluationSnapshot = { revision: value, bindings: sortOutcomeBindings(bindings) };
-        assertValidOutcomeEvaluationSnapshot(result);
-        return result;
+        return fromPersisted(
+            revisionSnapshot.data() as PersistedOutcomeEvaluationRevision,
+            evaluationId,
+            revision,
+        );
     }
 
-    async activateRevision(userId: string, evaluationId: string, revision: number, activatedAt = new Date().toISOString()): Promise<OutcomeEvaluationSnapshot> {
-        const current = await this.getRevision(userId, evaluationId, revision);
-        if (!current) throw new Error(`Outcome evaluation ${evaluationId}@${revision} does not exist`);
-        if (current.revision.status !== 'draft') throw new Error(`Cannot activate outcome evaluation from ${current.revision.status}`);
-
-        const contentHash = await hashEvaluationContent(current);
-        const activated: OutcomeEvaluationSpecRevision = {
-            ...current.revision,
-            status: 'active',
-            activatedAt,
-            contentHash,
-        };
-        assertValidOutcomeEvaluationSnapshot({ revision: activated, bindings: current.bindings });
-
+    async activateRevision(
+        userId: string,
+        evaluationId: string,
+        revision: number,
+        activatedAt = new Date().toISOString(),
+    ): Promise<OutcomeEvaluationSnapshot> {
         const revisionRef = this.revisionRef(userId, evaluationId, revision);
-        await runTransaction(this.db, async transaction => {
+        return runTransaction(this.db, async transaction => {
             const persistedSnapshot = await transaction.get(revisionRef);
-            if (!persistedSnapshot.exists()) throw new Error(`Outcome evaluation ${evaluationId}@${revision} disappeared during activation`);
-            const persisted = persistedSnapshot.data() as OutcomeEvaluationSpecRevision;
-            assertValidOutcomeEvaluationRevision(persisted);
-            if (persisted.status !== 'draft' || persisted.contentHash !== '') {
-                throw new Error(`Outcome evaluation ${evaluationId}@${revision} is no longer an activatable draft`);
+            if (!persistedSnapshot.exists()) throw new Error(`Outcome evaluation ${evaluationId}@${revision} does not exist`);
+            const current = fromPersisted(
+                persistedSnapshot.data() as PersistedOutcomeEvaluationRevision,
+                evaluationId,
+                revision,
+            );
+            if (current.revision.status !== 'draft') {
+                throw new Error(`Cannot activate outcome evaluation from ${current.revision.status}`);
             }
-            transaction.set(revisionRef, activated);
+
+            const contentHash = await hashEvaluationContent(current);
+            const activated: OutcomeEvaluationSnapshot = {
+                revision: {
+                    ...current.revision,
+                    status: 'active',
+                    activatedAt,
+                    contentHash,
+                },
+                bindings: current.bindings,
+            };
+            assertValidOutcomeEvaluationSnapshot(activated);
+            transaction.set(revisionRef, toPersisted(activated));
+            return activated;
         });
-        return { revision: activated, bindings: current.bindings };
     }
 
     async transitionStatus(
@@ -156,12 +164,20 @@ export class OutcomeEvaluationService {
         await runTransaction(this.db, async transaction => {
             const snapshot = await transaction.get(revisionRef);
             if (!snapshot.exists()) throw new Error(`Outcome evaluation ${evaluationId}@${revision} does not exist`);
-            const current = snapshot.data() as OutcomeEvaluationSpecRevision;
-            assertValidOutcomeEvaluationRevision(current);
-            if (current.status !== 'active' && !(status === 'archived' && current.status === 'completed')) {
-                throw new Error(`Cannot transition outcome evaluation from ${current.status} to ${status}`);
+            const current = fromPersisted(
+                snapshot.data() as PersistedOutcomeEvaluationRevision,
+                evaluationId,
+                revision,
+            );
+            if (current.revision.status !== 'active' && !(status === 'archived' && current.revision.status === 'completed')) {
+                throw new Error(`Cannot transition outcome evaluation from ${current.revision.status} to ${status}`);
             }
-            transaction.set(revisionRef, { ...current, status });
+            const next: OutcomeEvaluationSnapshot = {
+                ...current,
+                revision: { ...current.revision, status },
+            };
+            assertValidOutcomeEvaluationSnapshot(next);
+            transaction.set(revisionRef, toPersisted(next));
         });
     }
 }
