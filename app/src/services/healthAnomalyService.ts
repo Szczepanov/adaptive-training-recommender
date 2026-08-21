@@ -18,6 +18,7 @@ import { checkinService, type CheckinService } from './checkinService';
 import {
     buildHealthAnomalyAssessmentRevision,
     healthAnomalyAssessmentRepository,
+    stableHealthAnomalyHash,
     type HealthAnomalyAssessmentRepository,
 } from './healthAnomalyPersistence';
 import { planBlockService, type PlanBlockService } from './planBlockService';
@@ -39,12 +40,17 @@ function availableData<T>(state: DataState<T>): T | null {
     return state.status === 'AVAILABLE' ? state.data : null;
 }
 
-function snapshotRevision(snapshot: DailyRecoverySnapshot): string {
-    return `${snapshot.date}:${snapshot.source.garminSyncedAt}:${snapshot.derived.baselineComputationVersion}`;
+/**
+ * Keep the parser/store revision when available for debugging, but bind the immutable HA
+ * identity to the exact canonical content as well. A corrected/rebuilt document therefore
+ * cannot collide merely because its updatedAt/garminSyncedAt timestamp happened to stay the same.
+ */
+function snapshotRevision(snapshot: DailyRecoverySnapshot, externalRevision: string | null = null): string {
+    return `snapshot:${externalRevision ?? 'none'}:${stableHealthAnomalyHash(snapshot)}`;
 }
 
-function checkinRevision(checkin: DailySubjectiveCheckin): string {
-    return `${checkin.date}:${checkin.updatedAt || checkin.submittedAt}`;
+function checkinRevision(checkin: DailySubjectiveCheckin, externalRevision: string | null = null): string {
+    return `checkin:${externalRevision ?? 'none'}:${stableHealthAnomalyHash(checkin)}`;
 }
 
 function activeTravelBlock(blocks: readonly PlanBlockWithId[], date: string): boolean {
@@ -86,7 +92,6 @@ export class HealthAnomalyService {
         const snapshot = availableData(snapshotState);
         const checkin = availableData(checkinState);
         const history = availableData(historyState) ?? [];
-        const travelBlocks = availableData(travelState);
         const features = snapshot ? mapRecoverySnapshotToHealthAnomalyFeatures(snapshot, history) : null;
         const authoredTravelActive = travelState.status === 'AVAILABLE'
             ? activeTravelBlock(travelState.data, date)
@@ -123,14 +128,17 @@ export class HealthAnomalyService {
         const source: HealthAnomalySourceIdentity = {
             timezone: 'Europe/Warsaw',
             recoverySnapshotRevision: snapshotState.status === 'AVAILABLE'
-                ? snapshotState.revision ?? snapshotRevision(snapshotState.data)
+                ? snapshotRevision(snapshotState.data, snapshotState.revision ?? null)
                 : null,
             checkinRevision: checkinState.status === 'AVAILABLE'
-                ? checkinState.revision ?? checkinRevision(checkinState.data)
+                ? checkinRevision(checkinState.data, checkinState.revision ?? null)
                 : null,
             historyWindowStart: historyStart,
             historyWindowEndExclusive: date,
-            historySnapshotRevisions: history.map(item => ({ date: item.date, revision: snapshotRevision(item) })),
+            historySnapshotRevisions: history.map(item => ({
+                date: item.date,
+                revision: snapshotRevision(item),
+            })),
             travelContextRevision: travelState.status === 'AVAILABLE' ? travelState.revision ?? null : null,
             persistenceLookbackStart: previousDate,
         };
