@@ -53,7 +53,40 @@ describe('CheckinService HA1 health-context persistence', () => {
         expect(result.illnessSymptoms).toBe(true);
         const payload = firestore.setDoc.mock.calls[0][1] as Record<string, unknown>;
         expect(payload.illnessSymptoms).toBe(true);
-        expect(payload.healthContext).toEqual({ symptoms: { present: true } });
+        const context = payload.healthContext as Record<string, unknown>;
+        expect(context.closeSickContact).toBe(DELETE_FIELD_SENTINEL);
+        expect(context.symptoms).toEqual({
+            present: true,
+            onset: DELETE_FIELD_SENTINEL,
+            severity: DELETE_FIELD_SENTINEL,
+            types: DELETE_FIELD_SENTINEL,
+        });
+    });
+
+    it('deletes the whole stored context when this write omits it', async () => {
+        await new CheckinService().upsertCheckin('u1', baseCheckin);
+
+        const payload = firestore.setDoc.mock.calls[0][1] as Record<string, unknown>;
+        expect(payload.healthContext).toBe(DELETE_FIELD_SENTINEL);
+        expect(firestore.setDoc.mock.calls[0][2]).toEqual({ merge: true });
+    });
+
+    it('deletes omitted context keys instead of retaining stale merge values', async () => {
+        await new CheckinService().upsertCheckin('u1', {
+            ...baseCheckin,
+            healthContext: {
+                closeSickContact: false,
+                recentVaccination: null,
+            },
+        });
+
+        const payload = firestore.setDoc.mock.calls[0][1] as {
+            healthContext: Record<string, unknown>;
+        };
+        expect(payload.healthContext.closeSickContact).toBe(false);
+        expect(payload.healthContext.recentVaccination).toBeNull();
+        expect(payload.healthContext.alcoholDrinksLast24h).toBe(DELETE_FIELD_SENTINEL);
+        expect(payload.healthContext.symptoms).toBe(DELETE_FIELD_SENTINEL);
     });
 
     it('explicitly clears stale nested symptom details when present becomes false', async () => {
