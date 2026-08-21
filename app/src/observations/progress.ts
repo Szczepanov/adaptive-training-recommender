@@ -97,7 +97,7 @@ function selectLatest(binding: OutcomeMetricBinding, candidates: readonly Curren
         && candidate.revision.comparisonCanonicalizationVersion === baseline.revision.comparisonCanonicalizationVersion
         && candidate.revision.unit === baseline.revision.unit
         && withinWindow(candidate.revision.observedAt, binding.targetObservationWindow)
-        && observationOrder(candidate, baseline) >= 0,
+        && observationOrder(candidate, baseline) > 0,
     );
     return sameSeries.at(-1) ?? null;
 }
@@ -204,7 +204,7 @@ export function deriveProgress(
 
     const allTargetCandidates = candidates.filter(candidate =>
         withinWindow(candidate.revision.observedAt, binding.targetObservationWindow)
-        && observationOrder(candidate, baseline) >= 0,
+        && observationOrder(candidate, baseline) > 0,
     );
     if (allTargetCandidates.length > 0 && !allTargetCandidates.some(candidate =>
         candidate.revision.comparisonSeriesKey === baseline.revision.comparisonSeriesKey
@@ -221,7 +221,7 @@ export function deriveProgress(
     }
 
     const latest = selectLatest(binding, candidates, baseline);
-    if (!latest || latest.revision.observationKey === baseline.revision.observationKey) {
+    if (!latest) {
         reasons.push('post_baseline_observation_not_found');
         return {
             ...base,
