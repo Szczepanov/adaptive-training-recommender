@@ -1,11 +1,11 @@
 import type { ComparisonContext, MeasurementProtocol } from './models';
 import { COMPARISON_CANONICALIZATION_V1 } from './comparability';
-import type { SessionDefinition } from '../sessions/models';
+import type { TestingSessionDefinition } from './testingWorkflow';
 
 export interface PerformanceTestDefinition {
     id: string;
     protocol: MeasurementProtocol;
-    sessionDefinition: SessionDefinition;
+    sessionDefinition: TestingSessionDefinition;
     defaultContext: ComparisonContext;
     expectedSource: string;
 }
@@ -61,7 +61,7 @@ const twentyMinuteProtocol: MeasurementProtocol = {
     createdAt: CREATED_AT,
 };
 
-const twentyMinuteSession: SessionDefinition = {
+const twentyMinuteSession: TestingSessionDefinition = {
     schemaVersion: 1,
     id: 'ov-cycling-20m-tt',
     revision: 1,
@@ -180,7 +180,7 @@ const fourMinuteProtocol: MeasurementProtocol = {
     createdAt: CREATED_AT,
 };
 
-const fourMinuteSession: SessionDefinition = {
+const fourMinuteSession: TestingSessionDefinition = {
     schemaVersion: 1,
     id: 'ov-cycling-4m-tt',
     revision: 1,
