@@ -383,8 +383,8 @@ export function evaluateTraining(
     });
 
     let selectedTemplate = availableTemplates.find(t => t.category === 'Rest') || TEMPLATES[1];
-    let rationale: string;
-    let modalityNote: string | null;
+    let rationale = '';
+    let modalityNote: string | null = null;
 
     if (mode === 'recover') {
         const recoverOptions = availableTemplates.filter(t => t.category === 'Rest' || t.category === 'Mobility/Recovery');
