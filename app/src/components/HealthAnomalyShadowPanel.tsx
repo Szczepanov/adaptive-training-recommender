@@ -3,6 +3,7 @@ import type { DailyDecisionInput } from '../engine/models';
 import type { HealthAnomalyAssessmentRevision } from '../engine/healthAnomalyModels';
 import { healthAnomalyAssessmentRepository } from '../services/healthAnomalyPersistence';
 import { configuredHealthAnomalyShadowPolicy } from '../services/healthAnomalyRuntime';
+import { HealthAnomalyFollowupCard } from './HealthAnomalyFollowupCard';
 import { selectHealthAnomalyLoadState, selectHealthAnomalyShadowRevision } from './healthAnomalyShadowView';
 import type { HealthAnomalyLoadResult } from './healthAnomalyShadowView';
 
@@ -149,7 +150,12 @@ export function HealthAnomalyShadowPanel({ userId, decisionInput, liveRevision }
   const loadState = selectHealthAnomalyLoadState(userId, date, loadResult);
   const revisionForDate = selectHealthAnomalyShadowRevision(userId, date, liveRevision, persistedRevision);
   if (revisionForDate) {
-    return <div className="data-view-container"><HealthAnomalyShadowTrace revision={revisionForDate} decisionInput={decisionInput} /></div>;
+    return (
+      <div className="data-view-container">
+        <HealthAnomalyShadowTrace revision={revisionForDate} decisionInput={decisionInput} />
+        <HealthAnomalyFollowupCard userId={userId} date={date} currentRevision={revisionForDate} />
+      </div>
+    );
   }
   if (loadState === 'loading' || loadState === 'ready') {
     return <div className="data-view-container"><div className="data-section"><h3>Health anomaly (shadow)</h3><p>Loading shadow assessment…</p></div></div>;

@@ -122,6 +122,12 @@ jobs:
           VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID }}
           VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
           VITE_FIREBASE_MEASUREMENT_ID: ${{ secrets.VITE_FIREBASE_MEASUREMENT_ID }}
+          # HA-D developer evidence collection (see app/.env.example). Forwarding the repo
+          # secret here is required -- Vite only inlines VITE_* vars present in the build-time
+          # environment, and a missing value fails closed to 'off' by design
+          # (resolveConfiguredHealthAnomalyShadowPolicy), so without this line the secret being
+          # set has no effect on the deployed build.
+          VITE_HEALTH_ANOMALY_POLICY: ${{ secrets.VITE_HEALTH_ANOMALY_POLICY }}
           VITE_GIT_SHA: ${{ github.sha }}
           VITE_GIT_DIRTY: "false"
         run: npm run build
