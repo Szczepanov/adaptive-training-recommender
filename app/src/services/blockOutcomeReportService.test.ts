@@ -86,6 +86,12 @@ describe('BlockOutcomeReportService', () => {
             evaluation: evaluation(),
             observations: [],
             recommendations: [recommendation('2026-07-31'), recommendation('2026-08-02'), recommendation('2026-08-11')],
+            completedSessions: [
+                { id: 'completed-before', date: '2026-07-31' },
+                { id: 'inside', date: '2026-08-02' },
+                { id: 'unplanned-inside', date: '2026-08-05' },
+                { id: 'completed-after', date: '2026-08-11' },
+            ],
             sessionOutcomes: [sessionOutcome('before', '2026-07-31'), sessionOutcome('inside', '2026-08-02')],
             keyRoles: { plannedOccurrenceIds: ['role-1'], completedOccurrenceIds: ['role-1'] },
             ecologicalOutcomes: [
@@ -95,8 +101,8 @@ describe('BlockOutcomeReportService', () => {
         });
 
         expect(report.process.plannedSessionCount).toBe(1);
-        expect(report.process.completedSessionCount).toBe(1);
-        expect(report.process.sourceIds.sessionIds).toEqual(['inside']);
+        expect(report.process.completedSessionCount).toBe(2);
+        expect(report.process.sourceIds.sessionIds).toEqual(['inside', 'unplanned-inside']);
         expect(report.process.sourceIds.recommendationIds).toEqual(['2026-08-02@r1']);
         expect(report.ecologicalOutcomes.map(item => item.id)).toEqual(['inside-race']);
         expect(report.sourceIds.ecologicalOutcomeIds).toEqual(['inside-race']);
@@ -114,6 +120,7 @@ describe('BlockOutcomeReportService', () => {
             evaluation: draft,
             observations: [],
             recommendations: [],
+            completedSessions: [],
             sessionOutcomes: [],
             keyRoles: { plannedOccurrenceIds: [], completedOccurrenceIds: [] },
             ecologicalOutcomes: [],
