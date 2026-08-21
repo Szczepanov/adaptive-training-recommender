@@ -140,7 +140,10 @@ export interface MetricObservationRevision {
     comparisonCanonicalizationVersion: string;
     assessmentAttemptId: string;
     validity: ObservationValidity;
+    /** Required human explanation for invalid data; distinct from a non-invalid quality note. */
     invalidReason?: string;
+    /** Optional note for questionable/practice/valid observations without abusing invalidReason. */
+    validityNote?: string;
     context: ObservationContext;
     derivedFromObservationIds?: readonly string[];
     algorithmVersion?: string;
