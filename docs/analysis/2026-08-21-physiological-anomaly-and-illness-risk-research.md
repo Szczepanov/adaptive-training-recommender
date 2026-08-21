@@ -48,7 +48,7 @@ That default-off decision remains correct for the **training strain score**. Thi
 
 ### Known training stress
 
-`EngineObjectiveInput.last_3_days_hard_sessions_count`, `yesterday_training`, `today_training`, per-activity telemetry and completed-session cost already let the system distinguish an athlete who unexpectedly deteriorated from an athlete who completed a hard session that plausibly explains next-morning autonomic suppression.
+`EngineObjectiveInput.last_3_days_hard_sessions_count`, `yesterday_training`, `today_training`, per-activity telemetry and completed-session cost already provide context for a separate evaluator to distinguish unexpected deterioration from the expected response to a hard session. The current engine does not itself make that comparison: `evaluateReadinessAndSafetyEnvelope` applies recent hard-session context as a strain penalty, but it does not compare the observed response with an activity-matched expected response or produce a causal explanation — that attribution is the capability this document and ADR-0025 propose.
 
 This is important because intense exercise is a documented source of false-positive infection alerts.
 
@@ -173,15 +173,35 @@ Examples:
 
 ## Evidence hierarchy for the app
 
-The evaluator should distinguish **independent physiological channels** from **context/composites**.
+The evaluator should distinguish **distinct candidate physiological channels** from
+**context/composites**.
 
 ### Core anomaly channels
 
-These are the strongest first-pass independent channels available in the repository:
+These are the strongest first-pass distinct candidate channels available in the repository.
+"Distinct" is a claim about the physiological concept each channel targets, not a proven
+statistical independence claim: some wearable methods estimate respiration rate from
+heartbeat-interval variability via respiratory sinus arrhythmia, so RHR/HRV and
+device-estimated respiration can be correlated rather than independent, depending on how the
+device derives respiration. Do not label them "independent channels" until that is checked for
+the device data actually used.
 
 1. **RHR** — adverse direction: higher than personal baseline.
 2. **Respiration rate** — adverse direction: higher than personal baseline.
 3. **HRV** — adverse pattern usually lower than personal baseline, but ADR-0024 correctly warns that unusually high HRV can also be abnormal; use a two-sided personal-normality model internally and treat the common low-HRV direction as the illness/recovery feature.
+
+Before using channel agreement as evidence for `possible_illness_or_systemic_stress`, the
+evaluator requires:
+
+* **device-specific signal validation** — confirm how the connected device derives respiration
+  rate (direct sensor vs. HRV-derived) so the evaluator knows whether RHR/HRV and respiration
+  can share a common source signal;
+* **within-person correlation checks** — measure this athlete's own historical RHR/HRV/
+  respiration correlation during replay rather than assuming population-level independence;
+* **a cap or adjustment for correlated evidence** — when two channels are found to be
+  correlated for a given device/athlete, their joint agreement contributes less than two fully
+  independent channels' worth of evidence toward `minimumCoreSignalsForMultiSignal`
+  (ADR-0025 §2).
 
 The system should require adequate baseline coverage and data quality before scoring any channel.
 
@@ -319,6 +339,22 @@ A shadow/replay report should measure at least:
 * how often a proposed alert would have suppressed a hard session;
 * whether the alert adds information beyond the existing readiness recommendation;
 * per-policy confusion matrices once enough labelled episodes exist.
+
+Outcome labels must match what the validation claim actually needs. A missing reported symptom
+does not establish that a day was healthy — the JMIR Formative Research prospective study cited
+above only tested users after a positive alert, treated un-acted alerts as negative by default,
+and still reported a PPV of only 4-10% in that population. Reusing "no reported symptom = healthy
+day" the same way would inherit that bias. The report must therefore:
+
+* use **separate outcome labels** rather than one healthy/sick axis: lab-confirmed infection,
+  other respiratory illness, self-reported symptoms without confirmation, explicit confounder
+  (hard training/alcohol/travel/sleep/stress/heat/dehydration), and unknown/no follow-up;
+* give **alert and non-alert periods the same observation and testing opportunity** — do not
+  compare a heavily-followed-up alert period against a passively-observed non-alert period;
+* **freeze baselines and policy inputs at assessment time** during replay, so a later baseline
+  recompute cannot retroactively change what an earlier date's assessment would have shown;
+* **not authorize `possible_illness_or_systemic_stress`** from symptom-follow-up metrics alone —
+  require it alongside the data-quality and multi-signal-persistence evidence from ADR-0025 §2.
 
 Synthetic scenarios are useful for threshold behavior but cannot authorize user-facing `possible illness` wording on their own.
 
