@@ -94,7 +94,7 @@
   margin: 0;
 }
 
-.card-header-actions {
+.today-status-header-actions {
   display: flex;
   align-items: center;
   gap: 0.5rem;
@@ -1086,8 +1086,10 @@
 /* Today Status Hero & Direct Biomarkers */
 .today-status-header {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   align-items: center;
+  gap: 0.5rem;
   margin-bottom: 1rem;
 }
 

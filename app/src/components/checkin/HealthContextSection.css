@@ -1,0 +1,148 @@
+.health-context {
+  margin-top: 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-control, 10px);
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.health-context__summary {
+  min-height: var(--touch-target-min, 44px);
+  padding: 0.75rem 0.9rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  cursor: pointer;
+  list-style: none;
+}
+
+.health-context__summary::-webkit-details-marker {
+  display: none;
+}
+
+.health-context__summary > span:first-child {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.health-context__summary strong {
+  color: #f8fafc;
+  font-size: 0.92rem;
+}
+
+.health-context__summary small,
+.health-context__label,
+.health-context__other,
+.health-context__timezone {
+  color: var(--text-secondary, #94a3b8);
+  font-size: 0.8rem;
+}
+
+.health-context__badge {
+  flex: 0 0 auto;
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  border-radius: 999px;
+  padding: 0.2rem 0.5rem;
+  color: #7dd3fc;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.health-context__body {
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  padding: 0.9rem;
+  display: grid;
+  gap: 0.9rem;
+}
+
+.health-context__row {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.health-context__label {
+  font-weight: 700;
+}
+
+.health-context__chips,
+.health-context__toggle-grid,
+.health-context__symptom-types {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.health-context__chip,
+.health-context__toggle {
+  min-height: var(--touch-target-min, 44px);
+  border: 1px solid #334155;
+  border-radius: var(--radius-control, 8px);
+  background: #1e293b;
+  color: #cbd5e1;
+  padding: 0.45rem 0.7rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.health-context__chip.is-selected,
+.health-context__toggle.is-selected {
+  border-color: #38bdf8;
+  background: rgba(56, 189, 248, 0.14);
+  color: #e0f2fe;
+}
+
+.health-context__toggle-grid,
+.health-context__symptom-types {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.health-context__toggle {
+  text-align: left;
+}
+
+.health-context__timezone,
+.health-context__other {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.health-context__timezone input,
+.health-context__other input {
+  width: 100%;
+  min-height: var(--touch-target-min, 44px);
+  box-sizing: border-box;
+  border-radius: var(--radius-control, 8px);
+  border: 1px solid #334155;
+  background: #0f172a;
+  color: #f8fafc;
+  padding: 0.55rem 0.65rem;
+}
+
+.health-context__symptoms {
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding-top: 0.9rem;
+  display: grid;
+  gap: 0.9rem;
+}
+
+.health-context__symptoms h3 {
+  margin: 0;
+  font-size: 0.9rem;
+  color: #f8fafc;
+}
+
+.health-context__symptoms h3 span {
+  color: var(--text-secondary, #94a3b8);
+  font-size: 0.72rem;
+  font-weight: 500;
+}
+
+@media (min-width: 560px) {
+  .health-context__toggle-grid,
+  .health-context__symptom-types {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}

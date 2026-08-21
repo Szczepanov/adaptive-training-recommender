@@ -238,13 +238,61 @@ service cloud.firestore {
         );
     }
 
+    function hasValidHealthSymptoms(symptoms) {
+      return symptoms is map
+        && symptoms.keys().hasOnly(['present', 'onset', 'severity', 'types'])
+        && symptoms.keys().hasAll(['present'])
+        && symptoms.present is bool
+        && (!('onset' in symptoms)
+          || (symptoms.present && (symptoms.onset == null || symptoms.onset in ['today', 'yesterday', '2_3_days', 'earlier']))
+          || (!symptoms.present && symptoms.onset == null))
+        && (!('severity' in symptoms)
+          || (symptoms.present && (symptoms.severity == null || symptoms.severity in ['mild', 'moderate', 'severe']))
+          || (!symptoms.present && symptoms.severity == null))
+        && (!('types' in symptoms)
+          || (symptoms.present && (symptoms.types == null || (
+            symptoms.types is list
+            && symptoms.types.size() <= 8
+            && symptoms.types.hasOnly(['sore_throat', 'congestion', 'cough', 'fever_or_chills', 'headache_or_body_aches', 'gastrointestinal', 'unusual_fatigue', 'other'])
+          )))
+          || (!symptoms.present && symptoms.types == null));
+    }
+
+    function hasValidHealthContext(context) {
+      return context is map
+        && context.keys().hasOnly(['alcoholDrinksLast24h', 'travelDisruption', 'timezoneShiftHours', 'unusualHeatOrSauna', 'dehydrationOrFluidLoss', 'recentVaccination', 'medicationChange', 'closeSickContact', 'otherDisruption', 'symptoms'])
+        && (!('alcoholDrinksLast24h' in context) || (context.alcoholDrinksLast24h is int && context.alcoholDrinksLast24h >= 0 && context.alcoholDrinksLast24h <= 3))
+        && (!('travelDisruption' in context) || context.travelDisruption in ['none', 'local_or_no_timezone', 'timezone_shift', 'late_arrival_or_disrupted_sleep'])
+        && (!('timezoneShiftHours' in context) || context.timezoneShiftHours == null || (context.timezoneShiftHours is number && context.timezoneShiftHours >= -14 && context.timezoneShiftHours <= 14))
+        && (!('unusualHeatOrSauna' in context) || context.unusualHeatOrSauna == null || context.unusualHeatOrSauna is bool)
+        && (!('dehydrationOrFluidLoss' in context) || context.dehydrationOrFluidLoss == null || context.dehydrationOrFluidLoss is bool)
+        && (!('recentVaccination' in context) || context.recentVaccination == null || context.recentVaccination is bool)
+        && (!('medicationChange' in context) || context.medicationChange == null || context.medicationChange is bool)
+        && (!('closeSickContact' in context) || context.closeSickContact == null || context.closeSickContact is bool)
+        && (!('otherDisruption' in context) || context.otherDisruption == null || (context.otherDisruption is string && context.otherDisruption.size() <= 500))
+        && (!('symptoms' in context) || hasValidHealthSymptoms(context.symptoms));
+    }
+
+    function hasValidSubjectiveHealthFields(data) {
+      // Mirrors the app parser's precedence (parseSubjectiveCheckin): a rich symptoms
+      // block is authoritative and makes the legacy flag optional, but if it's absent
+      // the legacy flag is the only illness signal and must be a real boolean. Without
+      // this, a write could satisfy the rule with neither field present, then get
+      // permanently rejected as invalid on every subsequent read.
+      return (('illnessSymptoms' in data)
+          ? data.illnessSymptoms is bool
+          : (('healthContext' in data) && (data.healthContext is map) && ('symptoms' in data.healthContext)))
+        && (!('healthContext' in data) || hasValidHealthContext(data.healthContext));
+    }
+
     match /daily_recovery_snapshot/{date} { allow read, write: if false; }
     match /daily_subjective_checkin/{document=**} { allow read, write: if false; }
 
     match /users/{userId}/daily_subjective_checkins/{date} {
       allow read: if isOwner(userId);
-      allow create: if hasOwnedUserId(userId) && isDateDocument(date);
-      allow update: if keepsOwnership(userId) && isDateDocument(date) && request.resource.data.createdAt == resource.data.createdAt;
+      allow create: if hasOwnedUserId(userId) && isDateDocument(date) && hasValidSubjectiveHealthFields(request.resource.data);
+      allow update: if keepsOwnership(userId) && isDateDocument(date) && request.resource.data.createdAt == resource.data.createdAt
+        && hasValidSubjectiveHealthFields(request.resource.data);
       allow delete: if isOwner(userId);
     }
 

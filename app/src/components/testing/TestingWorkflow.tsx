@@ -10,6 +10,10 @@ import type {
 import { getMetricDefinition } from '../../observations/registry';
 import { getComparisonDimensionDefinition } from '../../observations/protocols';
 import {
+    PERFORMANCE_TEST_DEFINITIONS,
+    getPerformanceTestDefinition,
+} from '../../observations/performanceTestingCatalog';
+import {
     buildComparisonContextFromStrings,
     buildTestingSessionDefinition,
     createAssessmentAttemptId,
@@ -57,6 +61,7 @@ export const TestingWorkflow: React.FC<TestingWorkflowProps> = ({ userId, onClos
     const [protocolId, setProtocolId] = useState('');
     const [protocolRevision, setProtocolRevision] = useState('1');
     const [protocol, setProtocol] = useState<MeasurementProtocol | null>(null);
+    const [catalogDefinitionId, setCatalogDefinitionId] = useState<string | null>(null);
     const [contextValues, setContextValues] = useState<Record<string, string>>({});
     const [purpose, setPurpose] = useState<AssessmentAttemptPurpose>('baseline');
     const [launch, setLaunch] = useState<PreparedSessionLaunch | null>(null);
@@ -79,11 +84,14 @@ export const TestingWorkflow: React.FC<TestingWorkflowProps> = ({ userId, onClos
     const startInFlight = useRef(false);
     const terminalHandled = useRef<string | null>(null);
 
-    const populateProtocol = useCallback((loaded: MeasurementProtocol) => {
+    const populateProtocol = useCallback((loaded: MeasurementProtocol, defaultContext: ComparisonContext = {}) => {
         setProtocol(loaded);
         setProtocolId(loaded.id);
         setProtocolRevision(String(loaded.revision));
-        setContextValues(Object.fromEntries(loaded.comparisonContext.required.map(dimension => [dimension, ''])));
+        setContextValues(Object.fromEntries(loaded.comparisonContext.required.map(dimension => [
+            dimension,
+            defaultContext[dimension] === undefined ? '' : String(defaultContext[dimension]),
+        ])));
         setMetricValues(Object.fromEntries(loaded.metricIds.map(metricId => [metricId, ''])));
     }, []);
 
@@ -106,6 +114,7 @@ export const TestingWorkflow: React.FC<TestingWorkflowProps> = ({ userId, onClos
                 );
                 if (cancelled || !loadedProtocol) return;
                 populateProtocol(loadedProtocol);
+                setCatalogDefinitionId(null);
                 setAttempt(openAttempt);
                 setPurpose(openAttempt.purpose);
 
@@ -151,6 +160,22 @@ export const TestingWorkflow: React.FC<TestingWorkflowProps> = ({ userId, onClos
         return () => { cancelled = true; };
     }, [onSessionStateChange, populateProtocol, refreshSaved, userId]);
 
+    const loadBundledTest = async (definitionId: string) => {
+        setBusy(true);
+        setError(null);
+        try {
+            const definition = getPerformanceTestDefinition(definitionId);
+            const loaded = await measurementProtocolService.ensureRevision(userId, definition.protocol);
+            setCatalogDefinitionId(definition.id);
+            populateProtocol(loaded, definition.defaultContext);
+            setStage('ready');
+        } catch (reason) {
+            setError(reason instanceof Error ? reason.message : 'Could not load bundled test.');
+        } finally {
+            setBusy(false);
+        }
+    };
+
     const loadProtocol = async () => {
         setBusy(true);
         setError(null);
@@ -159,6 +184,7 @@ export const TestingWorkflow: React.FC<TestingWorkflowProps> = ({ userId, onClos
             if (!Number.isInteger(revision) || revision < 1) throw new Error('Protocol revision must be a positive integer.');
             const loaded = await measurementProtocolService.getRevision(userId, protocolId.trim(), revision);
             if (!loaded) throw new Error(`Protocol ${protocolId.trim()}@${revision} was not found.`);
+            setCatalogDefinitionId(null);
             populateProtocol(loaded);
             setStage('ready');
         } catch (reason) {
@@ -174,7 +200,12 @@ export const TestingWorkflow: React.FC<TestingWorkflowProps> = ({ userId, onClos
         setError(null);
         try {
             buildComparisonContextFromStrings(protocol, contextValues);
-            const definition = buildTestingSessionDefinition(protocol);
+            const bundled = catalogDefinitionId ? getPerformanceTestDefinition(catalogDefinitionId) : null;
+            const definition = bundled
+                && bundled.protocol.id === protocol.id
+                && bundled.protocol.revision === protocol.revision
+                ? bundled.sessionDefinition
+                : buildTestingSessionDefinition(protocol);
             const prepared = await prepareUnplannedSessionLaunch(userId, definition);
             if (!prepared.binding.occurrenceId) throw new Error('Testing launch requires an occurrence identity.');
             const assessment: AssessmentAttempt = {
@@ -372,15 +403,34 @@ export const TestingWorkflow: React.FC<TestingWorkflowProps> = ({ userId, onClos
             {error && <p className="testing-error" role="alert">{error}</p>}
 
             {stage === 'lookup' && (
-                <section className="testing-card">
-                    <h3>Load immutable protocol revision</h3>
-                    <p>Enter the exact user-owned protocol ID and revision. Testing never silently upgrades to a newer revision.</p>
-                    <div className="testing-grid two">
-                        <label>Protocol ID<input value={protocolId} onChange={event => setProtocolId(event.target.value)} /></label>
-                        <label>Revision<input inputMode="numeric" value={protocolRevision} onChange={event => setProtocolRevision(event.target.value)} /></label>
-                    </div>
-                    <button type="button" className="testing-primary" disabled={busy || !protocolId.trim()} onClick={loadProtocol}>{busy ? 'Loading…' : 'Load protocol'}</button>
-                </section>
+                <>
+                    <section className="testing-card">
+                        <h3>Bundled cycling assessments</h3>
+                        <p>Choose a versioned default protocol. Its immutable revision is created on first use and never silently changed later.</p>
+                        <div className="testing-grid two">
+                            {PERFORMANCE_TEST_DEFINITIONS.map(definition => (
+                                <button
+                                    key={definition.id}
+                                    type="button"
+                                    className="testing-secondary"
+                                    disabled={busy}
+                                    onClick={() => loadBundledTest(definition.id)}
+                                >
+                                    {definition.protocol.title} · rev {definition.protocol.revision}
+                                </button>
+                            ))}
+                        </div>
+                    </section>
+                    <section className="testing-card">
+                        <h3>Load another immutable protocol revision</h3>
+                        <p>Advanced path: enter the exact user-owned protocol ID and revision. Testing never silently upgrades to a newer revision.</p>
+                        <div className="testing-grid two">
+                            <label>Protocol ID<input value={protocolId} onChange={event => setProtocolId(event.target.value)} /></label>
+                            <label>Revision<input inputMode="numeric" value={protocolRevision} onChange={event => setProtocolRevision(event.target.value)} /></label>
+                        </div>
+                        <button type="button" className="testing-primary" disabled={busy || !protocolId.trim()} onClick={loadProtocol}>{busy ? 'Loading…' : 'Load protocol'}</button>
+                    </section>
+                </>
             )}
 
             {protocol && stage === 'ready' && (
@@ -406,7 +456,7 @@ export const TestingWorkflow: React.FC<TestingWorkflowProps> = ({ userId, onClos
                         </div>
                         <label>Attempt purpose<select value={purpose} onChange={event => setPurpose(event.target.value as AssessmentAttemptPurpose)}>{PURPOSES.map(item => <option key={item} value={item}>{item}</option>)}</select></label>
                         <div className="testing-actions">
-                            <button type="button" className="testing-secondary" onClick={() => { setProtocol(null); setStage('lookup'); }}>Choose another protocol</button>
+                            <button type="button" className="testing-secondary" onClick={() => { setProtocol(null); setCatalogDefinitionId(null); setStage('lookup'); }}>Choose another protocol</button>
                             <button type="button" className="testing-primary" disabled={busy} onClick={startTest}>{busy ? 'Preparing…' : 'Confirm lock and start'}</button>
                         </div>
                     </section>
