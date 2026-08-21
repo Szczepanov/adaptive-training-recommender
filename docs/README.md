@@ -92,6 +92,7 @@ Point-in-time assessments of the system as built, including gaps between documen
 * [**2026-08-18 Strength session UI/UX review**](./analysis/2026-08-18-strength-session-ui-ux-review.md) — Browser- and code-backed review of the gym-floor logging flow; verdict: durable persistence foundation, but resume, correction, terminal-action safety, mobile layout, prescription context, accessibility, and visual coverage need work before the UX is finished.
 * [**2026-08-18 Authored composite session import and execution**](./analysis/2026-08-18-authored-composite-session-import-and-execution.md) — Design analysis for importing or manually building the supplied strength/Olympic/field sessions and executing them against a source-neutral, revisioned prescription without weakening engine authority or replay.
 * [**2026-08-18 Multidomain training system — consolidated analysis**](./analysis/2026-08-18-multidomain-training-system-consolidated-analysis.md) — Consolidates the Strength UX, composite-session and speed/field/power requirements into one bounded architecture: deterministic session execution first, protocol/response evidence next, and engine policy only after measurement.
+* [**2026-08-21 Performance outcome validation**](./analysis/2026-08-21-performance-outcome-validation.md) — Closes the recommendation → adaptation loop: the M7 repeated-testing usage trigger has fired, and a bounded evidence-only outcome/progress/block-report capability should be built on top of it rather than a parallel measurement system.
 
 ---
 
@@ -114,6 +115,7 @@ How agreed changes get made. Mutable, status-tracked, and expected to go stale �
 * [**Strength session logging**](./plans/strength-session-logging.md) — *In progress (default-off).* The raw logger, 1RM derivation and manual-training measurement path are built; live Strength load remains evidence-gated.
 * [**Multidomain session authoring, execution & evidence**](./plans/multidomain-session-authoring-execution-and-evidence.md) — *In progress.* Sequenced plan for source-neutral session persistence, executable runner, manual/external authoring, mixed-dose execution, occurrence-linked response, speed/field/power observations, protocol-aware testing and evidence-gated engine candidates. ADR-0023 accepted; M0–M2, M3.1–M3.6, and M4.1–M4.2 delivered.
 * [**Mobile UX/UI redesign**](./plans/mobile_ux_implementation_plan.md) — *Implemented.* Mobile-first redesign of the daily check-in, state-first Home dashboard, unblocked recommendations, and runner execution focus.
+* [**Performance outcome validation & goal-progress loop**](./plans/performance-outcome-validation.md) — *Draft.* Activates M7 with protocol-locked repeated testing, honest individual progress interpretation and a block-level outcome report, kept evidence-only through the Phase 9.0 boundary.
 
 ---
 
