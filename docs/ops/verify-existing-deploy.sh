@@ -44,11 +44,17 @@ check "Cloud Run Job garmin-sync in ${REGION}" \
 check "Cloud Run Job garmin-push-pending-workouts in ${REGION}" \
   gcloud run jobs describe garmin-push-pending-workouts --region="${REGION}"
 
+check "Cloud Run Job garmin-manual-sync in ${REGION}" \
+  gcloud run jobs describe garmin-manual-sync --region="${REGION}"
+
 check "Cloud Scheduler job garmin-sync-morning-poll in ${REGION}" \
   gcloud scheduler jobs describe garmin-sync-morning-poll --location="${REGION}"
 
 check "Cloud Scheduler job garmin-push-pending-workouts-poll in ${REGION}" \
   gcloud scheduler jobs describe garmin-push-pending-workouts-poll --location="${REGION}"
+
+check "Cloud Scheduler job garmin-manual-sync-poll in ${REGION}" \
+  gcloud scheduler jobs describe garmin-manual-sync-poll --location="${REGION}"
 
 echo
 echo "Workload Identity Federation (only relevant once you've run setup-workload-identity.sh):"

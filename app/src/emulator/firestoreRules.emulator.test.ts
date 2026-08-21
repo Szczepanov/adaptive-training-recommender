@@ -983,6 +983,65 @@ emulatorDescribe('Firestore security rules', () => {
         await expect(assertSucceeds(deleteDoc(doc(ownerDb, garminQueuePath)))).resolves.toBeUndefined();
     });
 
+    // --- Garmin manual "Sync Now" request ---
+
+    const garminSyncRequestPath = `users/${ownerId}/garmin_sync_requests/latest`;
+
+    function validGarminSyncRequest() {
+        return {
+            userId: ownerId,
+            status: 'pending',
+            requestedAt: '2026-08-21T06:15:00Z',
+            completedAt: null,
+            error: null,
+        };
+    }
+
+    it('allows an owner to create and re-request a manual sync', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await expect(assertSucceeds(setDoc(doc(ownerDb, garminSyncRequestPath), validGarminSyncRequest()))).resolves.toBeUndefined();
+        await expect(assertSucceeds(getDoc(doc(ownerDb, garminSyncRequestPath)))).resolves.toBeDefined();
+
+        const requeued = { ...validGarminSyncRequest(), requestedAt: '2026-08-21T06:20:00Z' };
+        await expect(assertSucceeds(setDoc(doc(ownerDb, garminSyncRequestPath), requeued))).resolves.toBeUndefined();
+    });
+
+    it('rejects a malformed, foreign-owned, or non-latest garmin sync request', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertFails(setDoc(doc(ownerDb, garminSyncRequestPath), {
+            ...validGarminSyncRequest(), status: 'unknown',
+        }));
+        // The browser may only ever queue 'pending' -- 'processing'/'completed'/'failed'
+        // and a non-null error are Admin-SDK-only outcomes the poller reports.
+        await assertFails(setDoc(doc(ownerDb, garminSyncRequestPath), {
+            ...validGarminSyncRequest(), status: 'processing',
+        }));
+        await assertFails(setDoc(doc(ownerDb, garminSyncRequestPath), {
+            ...validGarminSyncRequest(), status: 'completed',
+        }));
+        await assertFails(setDoc(doc(ownerDb, garminSyncRequestPath), {
+            ...validGarminSyncRequest(), error: 'not a real failure',
+        }));
+        await assertFails(setDoc(doc(ownerDb, garminSyncRequestPath), {
+            ...validGarminSyncRequest(), unexpectedField: true,
+        }));
+        await assertFails(setDoc(doc(ownerDb, garminSyncRequestPath), {
+            ...validGarminSyncRequest(), userId: otherUserId,
+        }));
+        await assertFails(setDoc(doc(ownerDb, `users/${ownerId}/garmin_sync_requests/2026-08-21`), validGarminSyncRequest()));
+        const otherDb = testEnvironment.authenticatedContext(otherUserId).firestore();
+        await assertFails(getDoc(doc(otherDb, garminSyncRequestPath)));
+        await assertFails(setDoc(doc(otherDb, garminSyncRequestPath), validGarminSyncRequest()));
+    });
+
+    it('allows an owner to delete a manual sync request', async () => {
+        await testEnvironment.withSecurityRulesDisabled(async context => {
+            await setDoc(doc(context.firestore(), garminSyncRequestPath), validGarminSyncRequest());
+        });
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await expect(assertSucceeds(deleteDoc(doc(ownerDb, garminSyncRequestPath)))).resolves.toBeUndefined();
+    });
+
     // --- Multidomain session definitions, occurrences, executions & entries (M2.2, M2.3 / ADR-0023) ---
 
     const sessionDefHeaderPath = `users/${ownerId}/session_definitions/def-full-body`;

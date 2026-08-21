@@ -1,0 +1,36 @@
+.garmin-sync-now {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.25rem;
+}
+
+.garmin-sync-now-btn {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 0.75rem;
+  font-weight: 500;
+  padding: 0.25rem 0.6rem;
+  transition: background 0.15s, color 0.15s;
+  white-space: nowrap;
+}
+
+.garmin-sync-now-btn:hover:not(:disabled) {
+  background: rgba(56, 189, 248, 0.16);
+  color: #38bdf8;
+}
+
+.garmin-sync-now-btn:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+
+.garmin-sync-now-error {
+  color: #f87171;
+  font-size: 0.7rem;
+  max-width: 14rem;
+  text-align: right;
+}

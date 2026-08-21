@@ -11,7 +11,7 @@ name: Deploy Garmin Sync
 #
 # Safe to re-run: `gcloud run jobs deploy` upserts, and the Scheduler step tries update before
 # create, so running this again after a code change just rebuilds the image and redeploys the
-# two Jobs against what setup-workload-identity.sh already created.
+# three Jobs against what setup-workload-identity.sh already created.
 #
 # This workflow does NOT touch Garmin auth -- see garmin-token-bootstrap.yml for that.
 on:
@@ -88,7 +88,7 @@ jobs:
           GCP_PROJECT_ID: "${GCP_PROJECT}"
           EOF
 
-      - name: Deploy the two Cloud Run Jobs
+      - name: Deploy the three Cloud Run Jobs
         run: |
           gcloud run jobs deploy garmin-sync \
             --image="${IMAGE_TAG}" --region="${REGION}" \
@@ -102,6 +102,12 @@ jobs:
             --env-vars-file=cloud-run-job.env.yaml \
             --args=push-pending-workouts --max-retries=0
 
+          gcloud run jobs deploy garmin-manual-sync \
+            --image="${IMAGE_TAG}" --region="${REGION}" \
+            --service-account="${JOB_SA_EMAIL}" \
+            --env-vars-file=cloud-run-job.env.yaml \
+            --args=poll-manual-sync --max-retries=0
+
       # roles/run.admin (github-deployer's own role, granted by setup-workload-identity.sh)
       # covers setting IAM policy on a Cloud Run Job it deployed -- a Run-product-scoped
       # action, not general project IAM.
@@ -112,6 +118,10 @@ jobs:
             --role="roles/run.invoker" >/dev/null
 
           gcloud run jobs add-iam-policy-binding garmin-push-pending-workouts \
+            --region="${REGION}" --member="serviceAccount:${SCHEDULER_SA_EMAIL}" \
+            --role="roles/run.invoker" >/dev/null
+
+          gcloud run jobs add-iam-policy-binding garmin-manual-sync \
             --region="${REGION}" --member="serviceAccount:${SCHEDULER_SA_EMAIL}" \
             --role="roles/run.invoker" >/dev/null
 
@@ -133,6 +143,15 @@ jobs:
           || gcloud scheduler jobs create http garmin-push-pending-workouts-poll --location="${REGION}" \
             --schedule="*/3 * * * *" --time-zone="Europe/Warsaw" \
             --uri="https://run.googleapis.com/v2/projects/${GCP_PROJECT}/locations/${REGION}/jobs/garmin-push-pending-workouts:run" \
+            --http-method=POST --oauth-service-account-email="${SCHEDULER_SA_EMAIL}"
+
+          gcloud scheduler jobs update http garmin-manual-sync-poll --location="${REGION}" \
+            --schedule="*/3 * * * *" --time-zone="Europe/Warsaw" \
+            --uri="https://run.googleapis.com/v2/projects/${GCP_PROJECT}/locations/${REGION}/jobs/garmin-manual-sync:run" \
+            --http-method=POST --oauth-service-account-email="${SCHEDULER_SA_EMAIL}" \
+          || gcloud scheduler jobs create http garmin-manual-sync-poll --location="${REGION}" \
+            --schedule="*/3 * * * *" --time-zone="Europe/Warsaw" \
+            --uri="https://run.googleapis.com/v2/projects/${GCP_PROJECT}/locations/${REGION}/jobs/garmin-manual-sync:run" \
             --http-method=POST --oauth-service-account-email="${SCHEDULER_SA_EMAIL}"
 
       # Off by default: fails until the Garmin token has been bootstrapped at least once (see

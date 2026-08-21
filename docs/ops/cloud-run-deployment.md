@@ -1,6 +1,6 @@
 # GCP Cloud Run & Cloud Scheduler Deployment Guide
 
-This guide containerizes the Python Garmin ingestion/sync package and schedules two
+This guide containerizes the Python Garmin ingestion/sync package and schedules three
 recurring jobs on Google Cloud Platform (GCP):
 
 * **`garmin-sync`** -- recovery-metrics ingestion (`python -m garmin_sync sync`),
@@ -10,8 +10,12 @@ recurring jobs on Google Cloud Platform (GCP):
 * **`garmin-push-pending-workouts`** -- polls the Firestore workout queue every few
   minutes and pushes anything queued by "Sync to Garmin" in the web app
   (`python -m garmin_sync push-pending-workouts`)
+* **`garmin-manual-sync`** -- polls for a "Sync Now" request queued by the web app's
+  Garmin Sync Now button (e.g. because the athlete is up before the morning poll
+  window) and runs an immediate forced sync if one is pending
+  (`python -m garmin_sync poll-manual-sync`)
 
-Both share one container image and one runtime service account; only their
+All three share one container image and one runtime service account; only their
 `--args` differ. Run the sections below in order.
 
 **No local machine?** See [Deploying from GitHub Actions](#deploying-from-github-actions-no-local-machine)
@@ -129,7 +133,7 @@ It prompts for an MFA code interactively if your Garmin account has 2FA enabled.
 
 ---
 
-## 5. Create the two Cloud Run Jobs
+## 5. Create the three Cloud Run Jobs
 
 Copy `docs/ops/cloud-run-job.env.yaml.example` to `cloud-run-job.env.yaml`
 (gitignored) and fill in `APP_USER_ID` (your Firebase Auth UID),
@@ -153,6 +157,15 @@ gcloud run jobs create garmin-push-pending-workouts \
   --max-retries=0
 ```
 
+```bash
+gcloud run jobs create garmin-manual-sync \
+  --image=${IMAGE_TAG} --region=${REGION} \
+  --service-account=${JOB_SA_EMAIL} \
+  --env-vars-file=cloud-run-job.env.yaml \
+  --args=poll-manual-sync \
+  --max-retries=0
+```
+
 Grant the scheduler identity permission to run each Job:
 
 ```bash
@@ -161,6 +174,10 @@ gcloud run jobs add-iam-policy-binding garmin-sync \
   --role="roles/run.invoker"
 
 gcloud run jobs add-iam-policy-binding garmin-push-pending-workouts \
+  --region=${REGION} --member="serviceAccount:${SCHEDULER_SA_EMAIL}" \
+  --role="roles/run.invoker"
+
+gcloud run jobs add-iam-policy-binding garmin-manual-sync \
   --region=${REGION} --member="serviceAccount:${SCHEDULER_SA_EMAIL}" \
   --role="roles/run.invoker"
 ```
@@ -179,7 +196,7 @@ gcloud logging read \
 
 ---
 
-## 6. Create the two Cloud Scheduler jobs
+## 6. Create the three Cloud Scheduler jobs
 
 `garmin-sync` runs on a **repeating window, not one fixed time** -- wake time
 varies (p95 ~5-7am), and a single fixed cron either fires too early or leaves you
@@ -220,8 +237,28 @@ gcloud scheduler jobs create http garmin-push-pending-workouts-poll \
   --oauth-service-account-email=${SCHEDULER_SA_EMAIL}
 ```
 
-Both fit inside Cloud Scheduler's free tier (3 jobs/project/month); Cloud Run Jobs
-bill per second of actual execution, which for this workload is pennies a month.
+`garmin-manual-sync` polls all day (not just the 5-9am window) at the same cadence as
+the workout-queue poll, so clicking **Sync Now** in the web app -- e.g. because you're
+up before the morning window, or just want the latest numbers mid-afternoon -- reaches
+Garmin within a few minutes instead of waiting for the next `garmin-sync-morning-poll`
+tick. Same cheap-Firestore-read-first shape: most ticks find no pending request and
+never call Garmin.
+
+```bash
+gcloud scheduler jobs create http garmin-manual-sync-poll \
+  --location=${REGION} \
+  --schedule="*/3 * * * *" \
+  --time-zone="Europe/Warsaw" \
+  --uri="https://run.googleapis.com/v2/projects/${GCP_PROJECT}/locations/${REGION}/jobs/garmin-manual-sync:run" \
+  --http-method=POST \
+  --oauth-service-account-email=${SCHEDULER_SA_EMAIL}
+```
+
+Cloud Scheduler's free tier is 3 jobs **per billing account**, not per project --
+these three exactly use it up, so a billing account already running other Scheduler
+jobs elsewhere (a different project, an unrelated app) will incur Scheduler's
+per-job charge on top. Cloud Run Jobs bill per second of actual execution
+regardless, which for this workload is pennies a month.
 
 ---
 
@@ -240,6 +277,13 @@ already-`synced` item is skipped, never re-uploaded. Queue items older than
 `--max-age-days` (default 14, configurable on `push-pending-workouts`) are left
 pending rather than pushed, so an abandoned entry doesn't resurface on Garmin
 weeks later.
+
+4. On the Home screen, click **🔄 Sync now** in the "Today's Recovery" card -- this
+   writes `status: 'pending'` to `users/{uid}/garmin_sync_requests/latest`.
+5. Either wait up to 3 minutes for the next poll, or trigger it immediately:
+   `gcloud scheduler jobs run garmin-manual-sync-poll --location=${REGION}`.
+6. Confirm the request doc flips to `status: 'completed'` and today's recovery
+   snapshot refreshes in the app.
 
 ---
 
@@ -318,7 +362,7 @@ will be dropped on that first run.
 
 Run the **Deploy Garmin Sync** workflow (Actions tab -> select it -> Run workflow). This
 builds the container with plain `docker build`/`docker push` against Artifact Registry (not
-Cloud Build -- see the workflow's own comments for why) and redeploys both Cloud Run Jobs
+Cloud Build -- see the workflow's own comments for why) and redeploys all three Cloud Run Jobs
 against the infra `setup-workload-identity.sh` already created. Leave `run_smoke_test` off (its default) until
 you've confirmed a Garmin token already exists in the bucket
 (`docs/ops/verify-existing-deploy.sh` checks this) -- otherwise the smoke test fails for lack
@@ -350,5 +394,5 @@ actually logs in and pulls data end to end.
 
 ### Re-deploying after a code change
 
-Run **Deploy Garmin Sync** again -- it rebuilds the image and redeploys both Jobs
+Run **Deploy Garmin Sync** again -- it rebuilds the image and redeploys all three Jobs
 (`gcloud run jobs deploy` upserts) without touching anything already configured.

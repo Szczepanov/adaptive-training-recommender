@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from firebase_admin import firestore
 from garminconnect import GarminConnectTooManyRequestsError
 
 from .archive import ArchiveRecord, RawArchiveStore, create_archive_store
@@ -960,3 +961,119 @@ class GarminSyncService:
             return True
         logger.error(f"Workout upload returned no workoutId; leaving queue pending: {res}")
         return False
+
+    def poll_manual_sync_requests(self) -> bool:
+        """Poll for a manual "Sync Now" request queued by the web app
+        (users/{uid}/garmin_sync_requests/latest) and, if one is pending, atomically
+        claim it, run an immediate force-refreshed sync_daily(), then mark the request
+        resolved.
+
+        Meant to run frequently (e.g. every few minutes via Cloud Scheduler) so
+        clicking "Sync Now" in the web app -- e.g. because the athlete woke up before
+        the morning poll window -- reaches Garmin without waiting for the next
+        scheduled tick. Mirrors push_pending_workouts: most polls find no request and
+        cost a single cheap Firestore read, not a Garmin call.
+
+        The claim is a Firestore transaction (pending -> processing, tagged with a
+        fresh claimId), not a plain read-then-write: two overlapping poller
+        executions (e.g. an overrunning previous tick plus the next scheduled one)
+        would otherwise both observe 'pending' and both hit Garmin. Firestore retries
+        a transaction on write contention, so only one execution's claim can commit;
+        the loser re-reads 'processing' and returns immediately without a Garmin call.
+        Finishing the request re-checks that same claimId so a slow/killed run can
+        never stomp a newer request that superseded it in the meantime.
+        """
+        if not self.repository.db:
+            logger.warning("Firestore DB not initialized; cannot poll for manual sync requests.")
+            return False
+
+        db = self.repository.db
+        request_ref = (
+            db.collection("users")
+            .document(self.settings.app_user_id)
+            .collection("garmin_sync_requests")
+            .document("latest")
+        )
+        claim_id = uuid.uuid4().hex
+
+        @firestore.transactional
+        def claim_pending(transaction: Any) -> bool:
+            snapshot = request_ref.get(transaction=transaction)
+            if not snapshot.exists:
+                return False
+            data = snapshot.to_dict() or {}
+            if data.get("status") != "pending":
+                return False
+            transaction.update(
+                request_ref,
+                {
+                    "status": "processing",
+                    "claimId": claim_id,
+                    "claimedAt": datetime.now(timezone.utc).isoformat(),
+                },
+            )
+            return True
+
+        if not claim_pending(db.transaction()):
+            return True
+
+        # Plain force=True, same as any other sync_daily caller -- the D-1..D-N lookback
+        # resync isn't optional background-poll overhead here, it's the same
+        # data-reconciliation contract sync_daily always makes (Garmin keeps revising a
+        # day's data after that day's own sync ran; see sync_daily's docstring). A
+        # manual refresh should leave Garmin-derived state as current as possible,
+        # including that reconciliation, not just today's numbers.
+        logger.info("Claimed manual sync request; running an immediate forced sync...")
+        try:
+            ok = self.sync_daily(force=True)
+        except Exception as e:
+            logger.error(f"Manual sync request failed: {e}")
+            self._finish_manual_sync_request(request_ref, claim_id, "failed", error=str(e)[:2000])
+            return False
+
+        # A failure recording the outcome is a separate failure domain from the sync
+        # itself -- it must never get relabeled as 'failed' here (that would report a
+        # sync that actually succeeded as failed). Leaving the request at 'processing'
+        # is the honest outcome: it goes stale and offers a retry rather than lying
+        # about what happened.
+        try:
+            self._finish_manual_sync_request(
+                request_ref,
+                claim_id,
+                "completed" if ok else "failed",
+                error=None if ok else "Sync completed with errors; check logs.",
+            )
+        except Exception as e:
+            logger.error(
+                f"Manual sync request outcome recording failed "
+                f"(sync itself {'succeeded' if ok else 'failed'}): {e}"
+            )
+        return ok
+
+    def _finish_manual_sync_request(
+        self, request_ref: Any, claim_id: str, status: str, error: str | None
+    ) -> None:
+        """Resolve a claimed manual sync request -- but only if `claim_id` still owns
+        it. If the request was superseded (a fresh "Sync Now" click re-queued it while
+        this run was still in flight), the doc's claimId will have moved on, and this
+        finisher must leave it alone rather than overwriting a newer request with a
+        stale outcome."""
+
+        @firestore.transactional
+        def finish(transaction: Any) -> None:
+            snapshot = request_ref.get(transaction=transaction)
+            if not snapshot.exists:
+                return
+            data = snapshot.to_dict() or {}
+            if data.get("claimId") != claim_id:
+                return
+            transaction.update(
+                request_ref,
+                {
+                    "status": status,
+                    "completedAt": datetime.now(timezone.utc).isoformat(),
+                    "error": error,
+                },
+            )
+
+        finish(self.repository.db.transaction())

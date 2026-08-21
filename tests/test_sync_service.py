@@ -404,6 +404,230 @@ def test_push_pending_workouts_fails_without_firestore_db():
     assert result is False
 
 
+class _FakeSyncRequestSnapshot:
+    """Minimal stand-in for a Firestore DocumentSnapshot."""
+
+    def __init__(self, data: dict | None):
+        self._data = data
+        self.exists = data is not None
+
+    def to_dict(self) -> dict:
+        return dict(self._data) if self._data else {}
+
+
+class _FakeSyncRequestDoc:
+    """Minimal stand-in for a Firestore DocumentReference, mutated in place by
+    _FakeSyncRequestTransaction.update -- so two poller instances sharing the same
+    _FakeSyncRequestDoc observe each other's committed writes, the same way two real
+    Cloud Run executions would observe each other's committed transactions."""
+
+    def __init__(self, data: dict | None):
+        self.data = data
+
+    def get(self, transaction=None) -> _FakeSyncRequestSnapshot:
+        return _FakeSyncRequestSnapshot(self.data)
+
+
+class _FakeSyncRequestCollection:
+    def __init__(self, doc: _FakeSyncRequestDoc):
+        self._doc = doc
+
+    def document(self, doc_id: str):
+        return self._doc if doc_id == "latest" else self
+
+    def collection(self, _name: str):
+        return self
+
+
+class _FakeSyncRequestTransaction:
+    def update(self, doc_ref: _FakeSyncRequestDoc, payload: dict) -> None:
+        doc_ref.data = {**(doc_ref.data or {}), **payload}
+
+
+class _FakeSyncRequestDb:
+    """Minimal stand-in for the Firestore client -- enough of the
+    users/{uid}/garmin_sync_requests/latest chain plus .transaction() for
+    poll_manual_sync_requests's atomic claim/finish transactions."""
+
+    def __init__(self, doc: _FakeSyncRequestDoc):
+        self._doc = doc
+
+    def collection(self, _name: str):
+        return _FakeSyncRequestCollection(self._doc)
+
+    def transaction(self):
+        return _FakeSyncRequestTransaction()
+
+
+def test_poll_manual_sync_requests_claims_and_runs_forced_sync(monkeypatch):
+    # The Firebase decorator normally retries real transactions on write contention;
+    # the fake is enough to exercise the transaction body deterministically (see
+    # test_performance_target_repository.py for the same convention).
+    monkeypatch.setattr("garmin_sync.service.firestore.transactional", lambda fn: fn)
+    settings = Settings(app_user_id="test_uid_789")
+    doc = _FakeSyncRequestDoc({"status": "pending"})
+    service = GarminSyncService(settings=settings, repository=MagicMock(db=_FakeSyncRequestDb(doc)))
+    service.sync_daily = MagicMock(return_value=True)
+
+    result = service.poll_manual_sync_requests()
+
+    assert result is True
+    service.sync_daily.assert_called_once_with(force=True)
+    assert doc.data["status"] == "completed"
+    assert doc.data["error"] is None
+    assert doc.data["claimId"]  # tagged during the claim, still present after finishing
+
+
+def test_poll_manual_sync_requests_marks_failed_when_sync_fails(monkeypatch):
+    monkeypatch.setattr("garmin_sync.service.firestore.transactional", lambda fn: fn)
+    settings = Settings(app_user_id="test_uid_789")
+    doc = _FakeSyncRequestDoc({"status": "pending"})
+    service = GarminSyncService(settings=settings, repository=MagicMock(db=_FakeSyncRequestDb(doc)))
+    service.sync_daily = MagicMock(return_value=False)
+
+    result = service.poll_manual_sync_requests()
+
+    assert result is False
+    assert doc.data["status"] == "failed"
+
+
+def test_poll_manual_sync_requests_marks_failed_on_exception(monkeypatch):
+    monkeypatch.setattr("garmin_sync.service.firestore.transactional", lambda fn: fn)
+    settings = Settings(app_user_id="test_uid_789")
+    doc = _FakeSyncRequestDoc({"status": "pending"})
+    service = GarminSyncService(settings=settings, repository=MagicMock(db=_FakeSyncRequestDb(doc)))
+    service.sync_daily = MagicMock(side_effect=Exception("boom"))
+
+    result = service.poll_manual_sync_requests()
+
+    assert result is False
+    assert doc.data["status"] == "failed"
+    assert "boom" in doc.data["error"]
+
+
+def test_poll_manual_sync_requests_does_not_mislabel_a_successful_sync_when_finish_write_fails(
+    monkeypatch,
+):
+    """A failure recording the outcome must never get relabeled as a sync failure --
+    otherwise a sync that actually succeeded gets reported as failed."""
+    monkeypatch.setattr("garmin_sync.service.firestore.transactional", lambda fn: fn)
+    settings = Settings(app_user_id="test_uid_789")
+    doc = _FakeSyncRequestDoc({"status": "pending"})
+    service = GarminSyncService(settings=settings, repository=MagicMock(db=_FakeSyncRequestDb(doc)))
+    service.sync_daily = MagicMock(return_value=True)
+    service._finish_manual_sync_request = MagicMock(side_effect=RuntimeError("firestore hiccup"))
+
+    result = service.poll_manual_sync_requests()
+
+    assert result is True
+    service._finish_manual_sync_request.assert_called_once()
+    assert service._finish_manual_sync_request.call_args.args[2] == "completed"
+
+
+def test_poll_manual_sync_requests_reports_false_when_finish_write_fails_after_sync_failure(
+    monkeypatch,
+):
+    monkeypatch.setattr("garmin_sync.service.firestore.transactional", lambda fn: fn)
+    settings = Settings(app_user_id="test_uid_789")
+    doc = _FakeSyncRequestDoc({"status": "pending"})
+    service = GarminSyncService(settings=settings, repository=MagicMock(db=_FakeSyncRequestDb(doc)))
+    service.sync_daily = MagicMock(return_value=False)
+    service._finish_manual_sync_request = MagicMock(side_effect=RuntimeError("firestore hiccup"))
+
+    result = service.poll_manual_sync_requests()
+
+    assert result is False
+    service._finish_manual_sync_request.assert_called_once()
+    assert service._finish_manual_sync_request.call_args.args[2] == "failed"
+
+
+def test_poll_manual_sync_requests_noop_when_no_request_doc(monkeypatch):
+    monkeypatch.setattr("garmin_sync.service.firestore.transactional", lambda fn: fn)
+    settings = Settings(app_user_id="test_uid_789")
+    doc = _FakeSyncRequestDoc(None)
+    service = GarminSyncService(settings=settings, repository=MagicMock(db=_FakeSyncRequestDb(doc)))
+    service.sync_daily = MagicMock()
+
+    result = service.poll_manual_sync_requests()
+
+    assert result is True
+    service.sync_daily.assert_not_called()
+    assert doc.data is None
+
+
+def test_poll_manual_sync_requests_noop_when_not_pending(monkeypatch):
+    monkeypatch.setattr("garmin_sync.service.firestore.transactional", lambda fn: fn)
+    settings = Settings(app_user_id="test_uid_789")
+    doc = _FakeSyncRequestDoc({"status": "completed"})
+    service = GarminSyncService(settings=settings, repository=MagicMock(db=_FakeSyncRequestDb(doc)))
+    service.sync_daily = MagicMock()
+
+    result = service.poll_manual_sync_requests()
+
+    assert result is True
+    service.sync_daily.assert_not_called()
+
+
+def test_poll_manual_sync_requests_fails_without_firestore_db():
+    settings = Settings(app_user_id="test_uid_789")
+    service = GarminSyncService(settings=settings, repository=MagicMock(db=None))
+
+    result = service.poll_manual_sync_requests()
+
+    assert result is False
+
+
+def test_poll_manual_sync_requests_second_concurrent_worker_never_reaches_sync_daily(monkeypatch):
+    """P0 regression test: two Cloud Run executions polling the same pending request
+    (e.g. an overrunning previous tick plus the next scheduled one) must not both call
+    sync_daily. worker1's sync_daily mock re-enters via worker2.poll_manual_sync_requests()
+    mid-call -- the same interleaving a second real execution starting while the first is
+    still mid-sync would produce -- sharing the same fake doc so worker2 observes worker1's
+    already-committed 'processing' claim."""
+    monkeypatch.setattr("garmin_sync.service.firestore.transactional", lambda fn: fn)
+    settings = Settings(app_user_id="test_uid_789")
+    doc = _FakeSyncRequestDoc({"status": "pending"})
+    db = _FakeSyncRequestDb(doc)
+
+    worker1 = GarminSyncService(settings=settings, repository=MagicMock(db=db))
+    worker2 = GarminSyncService(settings=settings, repository=MagicMock(db=db))
+    worker2.sync_daily = MagicMock(return_value=True)
+
+    def worker1_sync_daily(*args, **kwargs):
+        assert worker2.poll_manual_sync_requests() is True
+        return True
+
+    worker1.sync_daily = MagicMock(side_effect=worker1_sync_daily)
+
+    result = worker1.poll_manual_sync_requests()
+
+    assert result is True
+    worker1.sync_daily.assert_called_once()
+    worker2.sync_daily.assert_not_called()
+    assert doc.data["status"] == "completed"
+
+
+def test_poll_manual_sync_requests_finish_does_not_stomp_a_superseding_request(monkeypatch):
+    """If the request doc gets reclaimed (a fresh Sync Now click) while this run is
+    still in flight, finishing must not overwrite it -- the claimId check in
+    _finish_manual_sync_request is what prevents that."""
+    monkeypatch.setattr("garmin_sync.service.firestore.transactional", lambda fn: fn)
+    settings = Settings(app_user_id="test_uid_789")
+    doc = _FakeSyncRequestDoc({"status": "pending"})
+    service = GarminSyncService(settings=settings, repository=MagicMock(db=_FakeSyncRequestDb(doc)))
+
+    def fake_sync_daily(*args, **kwargs):
+        doc.data = {"status": "processing", "claimId": "someone-elses-claim"}
+        return True
+
+    service.sync_daily = MagicMock(side_effect=fake_sync_daily)
+
+    result = service.poll_manual_sync_requests()
+
+    assert result is True
+    assert doc.data == {"status": "processing", "claimId": "someone-elses-claim"}
+
+
 class DateAwareFakeProvider:
     """Like FakeTestProvider, but returns a per-date restingHr so a test can tell which
     date's fetch produced which stored value -- needed to prove the lookback resync's

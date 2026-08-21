@@ -94,6 +94,12 @@
   margin: 0;
 }
 
+.card-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
 .status-badge {
   padding: 0.25rem 0.75rem;
   border-radius: 12px;
