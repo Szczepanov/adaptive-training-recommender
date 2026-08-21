@@ -62,7 +62,7 @@ function isPlannedTrainingSession(recommendation: RecommendationEvidence): boole
 function completedRecommendation(recommendation: RecommendationEvidence): boolean {
     const adherence = recommendation.adherence;
     if (adherence.respondedAt === null || adherence.followed === null) return false;
-    return adherence.followed || !adherence.skipped;
+    return adherence.followed === true;
 }
 
 function recommendationRef(recommendation: RecommendationEvidence): string {
