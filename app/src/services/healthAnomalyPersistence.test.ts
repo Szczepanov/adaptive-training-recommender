@@ -50,14 +50,17 @@ const assessment: PhysiologicalAnomalyAssessment = {
     mode: 'shadow-v1',
 };
 
-function revision() {
+function revision(
+    computedAt = '2026-08-21T06:30:00Z',
+    recoverySnapshotRevision = source.recoverySnapshotRevision,
+) {
     return buildHealthAnomalyAssessmentRevision({
         userId: 'u1',
         date: '2026-08-21',
-        computedAt: '2026-08-21T06:30:00Z',
+        computedAt,
         mode: 'shadow-v1',
         thresholdPolicy: SHADOW_V1_HEALTH_ANOMALY_THRESHOLDS,
-        source,
+        source: { ...source, recoverySnapshotRevision },
         assessment,
     });
 }
@@ -114,5 +117,35 @@ describe('health anomaly immutable persistence identity', () => {
 
         await new HealthAnomalyAssessmentRepository().persistImmutable(record);
         expect(transaction.set).toHaveBeenCalledWith({ path: 'revision' }, record);
+    });
+
+    it('returns the newest valid revision for a date and uses revisionId as the deterministic tie-breaker', async () => {
+        const older = revision('2026-08-21T06:00:00Z', '2026-08-21:sync-old:5');
+        const newerA = revision('2026-08-21T07:00:00Z', '2026-08-21:sync-new-a:5');
+        const newerB = revision('2026-08-21T07:00:00Z', '2026-08-21:sync-new-b:5');
+        firestore.collection.mockReturnValue({ path: 'revisions' });
+        firestore.getDocs.mockResolvedValue({
+            empty: false,
+            docs: [older, newerA, newerB].map(record => ({ data: () => record })),
+        });
+
+        const result = await new HealthAnomalyAssessmentRepository().getLatestForDate('u1', '2026-08-21');
+        const expected = [newerA, newerB].sort((left, right) => right.revisionId.localeCompare(left.revisionId))[0];
+        expect(result).toEqual(expected);
+    });
+
+    it('fails closed when any stored revision for the persistence date is malformed', async () => {
+        const valid = revision();
+        firestore.collection.mockReturnValue({ path: 'revisions' });
+        firestore.getDocs.mockResolvedValue({
+            empty: false,
+            docs: [
+                { data: () => valid },
+                { data: () => ({ ...valid, revisionId: 'ha-0000000000000000' }) },
+            ],
+        });
+
+        await expect(new HealthAnomalyAssessmentRepository().getLatestForDate('u1', '2026-08-21'))
+            .rejects.toThrow('identity mismatch');
     });
 });
