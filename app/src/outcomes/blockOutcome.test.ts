@@ -211,6 +211,14 @@ describe('deriveBlockOutcome', () => {
         expect(report.reasons).not.toContain('declared_primary_progress_non_comparable_or_insufficient');
     });
 
+    it('sorts report metric evidence by code units rather than locale collation', () => {
+        const report = derive([
+            progress('ä', 'possible_improvement'),
+            progress('z', 'possible_improvement'),
+        ]);
+        expect(report.metricProgress.map(item => item.metricId)).toEqual(['z', 'ä']);
+    });
+
     it('keeps ecological outcomes separate from protocol metric progress and preserves exact source IDs', () => {
         const race = competitionOutcome();
         const report = derive([progress('cycling_tt_20m_mean_power_w', 'meaningful_improvement')], process(), [race]);
