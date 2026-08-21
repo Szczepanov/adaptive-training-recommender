@@ -91,6 +91,23 @@ export class CheckinService {
             if (!validatedCheckin.painOrInjury) {
                 payload.tissueResponses = deleteField();
             }
+
+            // Firestore's merge write keeps nested fields that are omitted from a map. An
+            // explicit `symptoms.present=false` must therefore carry delete sentinels for the
+            // richer symptom details, otherwise yesterday's onset/severity/types could survive
+            // the clear and create a persisted state that the HA1 parser/rules correctly reject.
+            if (validatedCheckin.healthContext?.symptoms?.present === false) {
+                payload.healthContext = {
+                    ...validatedCheckin.healthContext,
+                    symptoms: {
+                        present: false,
+                        onset: deleteField(),
+                        severity: deleteField(),
+                        types: deleteField(),
+                    },
+                };
+            }
+
             const docRef = doc(getDb(), 'users', userId, this.collectionPath, validatedCheckin.date);
             await setDoc(docRef, payload, { merge: true });
 
