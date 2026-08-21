@@ -2,8 +2,8 @@
 
 * **Capability prefix:** `OV`
 * **Status:** `In progress`
-* **Approved:** 2026-08-21 by the project owner. Implementation proceeds in separate PRs: PR #154 delivered the OV0/OV1 contract foundation; PR #155 carries OV2 persistence/manual-entry plus this documentation reconciliation.
-* **Blocked by:** none for evidence-only implementation. Code that changes recommendation behaviour remains outside this plan's current authority and is still gated by the active Phase 9.0 evidence boundary plus the separate ADR/ship decision described below.
+* **Approved:** 2026-08-21 by the project owner. Engineering implementation through OV6.1 is now merged: #154 (OV0/OV1), #155 (OV2), #163 (OV3), #164 (OV5.1 + OV4.1–OV4.3), and #169 (OV5.2–OV6.1). Remaining work is evidence/usage-gated: OV4.4 personal repeatability, OV6.2 optional UI, and OV7–OV8 prospective block evidence and any later authority decision.
+* **Blocked by:** none for the remaining evidence-only implementation. OV4.4 requires real close-spaced repeat trials; OV6.2 requires repeated report use; OV7–OV8 require the real event/block timeline and accumulated comparable evidence. Code that changes recommendation behaviour remains outside this plan's current authority and is still gated by the active Phase 9.0 evidence boundary plus the separate ADR/ship decision described below.
 * **Unlocks:** protocol-locked repeated testing, honest individual progress interpretation, block-level outcome reports, and later evidence for whether stable recommendation-policy versions are associated with better goal outcomes.
 * **Source analysis:** [`2026-08-21-performance-outcome-validation.md`](../analysis/2026-08-21-performance-outcome-validation.md)
 * **Origin / architecture reused:** ADR-0023 D-MOBS/D-MPOLICY plus the repeated-standardized-testing trigger originally recorded in [`multidomain-session-authoring-execution-and-evidence.md`](./multidomain-session-authoring-execution-and-evidence.md). Implementation ownership and live status are canonical in this OV plan.
@@ -164,19 +164,19 @@ OV1–OV6 may be implemented while Phase 9.0 runs because they are evidence-only
 | OV2.2 | Assessment attempt lifecycle | `[x]` | OV2.1 |
 | OV2.3 | Manual observation adapter first | `[x]` | OV2.2 |
 | OV2.4 | Firestore rules/emulator coverage | `[x]` | OV2.1–OV2.3 |
-| OV3.1 | Testing intent in existing session flow | `[ ]` | OV2.2, existing session runner |
-| OV3.2 | Protocol-lock/familiarization/validity UX | `[ ]` | OV3.1 |
-| OV3.3 | Test completion and raw observation write | `[ ]` | OV3.2 |
-| OV3.4 | Minimal mobile/browser acceptance | `[ ]` | OV3.3 |
-| OV4.1 | Pure progress comparison | `[ ]` | OV2.1, OV5.1 |
-| OV4.2 | Reliability/error interpretation | `[ ]` | OV4.1 |
-| OV4.3 | Optional practical-threshold interpretation | `[ ]` | OV4.2 |
+| OV3.1 | Testing intent in existing session flow | `[x]` | OV2.2, existing session runner |
+| OV3.2 | Protocol-lock/familiarization/validity UX | `[x]` | OV3.1 |
+| OV3.3 | Test completion and raw observation write | `[x]` | OV3.2 |
+| OV3.4 | Minimal mobile/browser acceptance | `[x]` | OV3.3 |
+| OV4.1 | Pure progress comparison | `[x]` | OV2.1, OV5.1 |
+| OV4.2 | Reliability/error interpretation | `[x]` | OV4.1 |
+| OV4.3 | Optional practical-threshold interpretation | `[x]` | OV4.2 |
 | OV4.4 | Personal repeatability estimator | `[ ]` | real close-spaced repeat trials; not required for v1 |
-| OV5.1 | Evidence-only outcome-evaluation spec | `[ ]` | OV1.2 |
-| OV5.2 | Process/response evidence read model | `[ ]` | M5.3 existing report path |
-| OV5.3 | Block outcome derivation | `[ ]` | OV4.3, OV5.1, OV5.2 |
-| OV5.4 | Policy-version/planning-context segmentation | `[ ]` | OV5.3 |
-| OV6.1 | Deterministic report + CSV/JSON export | `[ ]` | OV5.3 |
+| OV5.1 | Evidence-only outcome-evaluation spec | `[x]` | OV1.2 |
+| OV5.2 | Process/response evidence read model | `[x]` | M5.3 existing report path |
+| OV5.3 | Block outcome derivation | `[x]` | OV4.3, OV5.1, OV5.2 |
+| OV5.4 | Policy-version/planning-context segmentation | `[x]` | OV5.3 |
+| OV6.1 | Deterministic report + CSV/JSON export | `[x]` | OV5.3 |
 | OV6.2 | Minimal progress/report UI | `[ ]` | OV6.1 + repeated use question |
 | OV7.1 | Current goal-event ecological outcome capture | `[ ]` | event occurs / data available, OV5.1 |
 | OV7.2 | Post-event cycling baseline protocols | `[ ]` | recovery / next appropriate block boundary, OV3.3 |
@@ -185,7 +185,7 @@ OV1–OV6 may be implemented while Phase 9.0 runs because they are evidence-only
 | OV8.1 | Multi-block policy-segment report | `[ ]` | multiple comparable prospective blocks |
 | OV8.2 | Decide whether any outcome signal deserves planning authority | `[ ]` | OV8.1 + separate ADR if yes |
 
-**Implementation status (2026-08-21).** PR #154 merged the contract foundation (OV0/OV1 code); PR #155 completes the persistence/manual-entry slice (OV2), including immutable protocol storage needed to close OV1.2 end to end. By dependency, `OV3.1`, `OV5.1` and `OV5.2` are currently startable. The **next planned code slice remains PR C / OV3.1–OV3.4**; startability is not the same thing as preferred PR order. `OV4.1` is intentionally blocked on `OV5.1` because its own baseline/direction logic resolves the frozen outcome binding. No progress labels, block verdicts or recommendation-policy inputs have shipped.
+**Implementation status (2026-08-21).** The evidence/reporting engineering stack through `OV6.1` is merged: #154 delivered OV0/OV1, #155 delivered OV2, #163 delivered OV3, #164 delivered the frozen OV5.1 evaluation contract plus OV4.1–OV4.3 progress/reliability logic, and #169 delivered OV5.2–OV6.1 process joins, categorical block verdicts, policy segmentation, and deterministic CSV/JSON reporting. No OV module has recommendation-selection authority. The next value-bearing work is operational evidence: OV7 on the real event/block timeline. OV4.4 remains deliberately trigger-gated on close-spaced repeat trials, and OV6.2 remains usage-triggered until repeated report use proves a UI question.
 
 ---
 
@@ -595,7 +595,7 @@ Use subcollections/documents rather than unbounded nested arrays where per-eleme
 
 This is the canonical OV implementation of the protocol-locked testing workflow. It reuses M session execution infrastructure but is not an M task.
 
-## OV3.1 `[ ]` Reuse existing session flow with `testing` intent
+## OV3.1 `[x]` Reuse existing session flow with `testing` intent
 
 A performance test is an executable session with additional observation semantics, not a second runner architecture.
 
@@ -614,7 +614,7 @@ A testing occurrence has no automatic recommendation-selection authority merely 
 
 **Done when.** A protocol can be scheduled/run through the existing mobile runner without creating `TestRunnerV2` as a parallel execution stack.
 
-## OV3.2 `[ ]` Protocol lock, familiarization and validity UX
+## OV3.2 `[x]` Protocol lock, familiarization and validity UX
 
 Before start, show compact immutable context:
 
@@ -638,7 +638,7 @@ Do not hide invalid attempts; exclude them from default benchmark selection.
 
 **Done when.** An athlete cannot accidentally label a practice effort as the new baseline without an explicit validity/purpose choice.
 
-## OV3.3 `[ ]` Completion → raw observation write
+## OV3.3 `[x]` Completion → raw observation write
 
 The protocol-specific capture step writes the raw metric(s) and links them to the exact assessment/session.
 
@@ -666,7 +666,7 @@ Corrections keep the same `observationKey` and create revision `headRevision + 1
 
 **Done when.** Completion is idempotent across double taps/offline retry; stale concurrent writes fail safely; corrections create distinct revisions; abandoning the test does not create a valid benchmark.
 
-## OV3.4 `[ ]` Mobile/browser acceptance
+## OV3.4 `[x]` Mobile/browser acceptance
 
 Required states at 390 px and desktop:
 
@@ -688,7 +688,7 @@ Required states at 390 px and desktop:
 
 This is the canonical OV implementation of comparable progress/reliability interpretation.
 
-## OV4.1 `[ ]` Pure comparable progress calculation
+## OV4.1 `[x]` Pure comparable progress calculation
 
 New pure module, e.g. `observations/progress.ts`.
 
@@ -732,7 +732,7 @@ Baseline selection:
 
 **Done when.** An invalid faster attempt cannot become the baseline/latest benchmark; device/protocol changes return `non_comparable`; a comparison spanning multiple training-policy segments still has one truthful metric result without pretending it belongs to one policy.
 
-## OV4.2 `[ ]` Reliability/error interpretation
+## OV4.2 `[x]` Reliability/error interpretation
 
 V1 rule: transparent and conservative.
 
@@ -745,7 +745,7 @@ Avoid fake probability language. “Change exceeds the available typical-error c
 
 **Done when.** The report exposes which error statistic/source was used and can reproduce the classification.
 
-## OV4.3 `[ ]` Optional practical-threshold interpretation
+## OV4.3 `[x]` Optional practical-threshold interpretation
 
 ```ts
 export type PracticalThreshold =
@@ -779,7 +779,7 @@ This item is **not required for the first usable release**; literature reference
 
 # OV5 — outcome specification and block evidence
 
-## OV5.1 `[ ]` Evidence-only `OutcomeEvaluationSpec`
+## OV5.1 `[x]` Evidence-only `OutcomeEvaluationSpec`
 
 Do not create a second training-plan authority. This record says **how a block will be evaluated**, not what sessions will be selected.
 
@@ -886,7 +886,7 @@ Competition/ecological targets are declared separately from protocol metric bind
 
 **Done when.** A block declares and activates one immutable evaluation revision before post-block interpretation; baseline selection is mechanically complete; context-only metrics cannot become primary/secondary outcomes; every report stores the exact evaluation revision/hash it used.
 
-## OV5.2 `[ ]` Process/response evidence read model
+## OV5.2 `[x]` Process/response evidence read model
 
 Reuse rather than recreate:
 
@@ -926,7 +926,7 @@ Exact fields should follow existing canonical sources; do not invent duplicate a
 
 **Done when.** Every count/percentage reconciles to existing session/recommendation records and no new write path is needed.
 
-## OV5.3 `[ ]` Block outcome derivation
+## OV5.3 `[x]` Block outcome derivation
 
 Pure module, e.g. `outcomes/blockOutcome.ts`.
 
@@ -999,7 +999,7 @@ Response cost never numerically cancels performance gain. Put both in machine-re
 
 **Done when.** Every verdict is reproducible from its input IDs, frozen evaluation revision, policy versions, explicit adequacy predicates and reason codes.
 
-## OV5.4 `[ ]` Policy-version/planning-context segmentation
+## OV5.4 `[x]` Policy-version/planning-context segmentation
 
 Include stable segments:
 
@@ -1026,7 +1026,7 @@ It does **not** make the comparison causal.
 
 # OV6 — report/export and minimal UX
 
-## OV6.1 `[ ]` Deterministic report + CSV/JSON export
+## OV6.1 `[x]` Deterministic report + CSV/JSON export
 
 Follow M5.3’s report-first precedent.
 
@@ -1425,7 +1425,7 @@ Do not merge one giant code PR. Dependency/startability and preferred PR order a
 * no Firestore writes;
 * no UI.
 
-### PR B — persistence/manual entry — **implemented in #155**
+### PR B — persistence/manual entry — **merged 2026-08-21 (#155)**
 
 * OV2.1–OV2.4;
 * immutable observation revisions + head semantics;
@@ -1434,7 +1434,7 @@ Do not merge one giant code PR. Dependency/startability and preferred PR order a
 * manual adapter;
 * no progress labels yet.
 
-### PR C — testing workflow
+### PR C — testing workflow — **merged 2026-08-21 (#163)**
 
 * OV3.1–OV3.4;
 * existing runner integration;
@@ -1442,7 +1442,7 @@ Do not merge one giant code PR. Dependency/startability and preferred PR order a
 * correction flow;
 * mobile acceptance.
 
-### PR D — frozen evaluation contract + progress derivation
+### PR D — frozen evaluation contract + progress derivation — **merged 2026-08-21 (#164)**
 
 * OV5.1 first, because OV4 resolves its baseline/direction/practical-threshold contract from the frozen binding;
 * OV4.1–OV4.3;
@@ -1452,7 +1452,7 @@ Do not merge one giant code PR. Dependency/startability and preferred PR order a
 * no recommender-policy attribution;
 * no block verdict.
 
-### PR E — process join and block report
+### PR E — process join and block report — **merged 2026-08-21 (#169)**
 
 * OV5.2–OV6.1;
 * process/response join;
@@ -1461,7 +1461,7 @@ Do not merge one giant code PR. Dependency/startability and preferred PR order a
 * deterministic export;
 * policy segmentation.
 
-### PR F — minimal UI
+### PR F — minimal UI — **usage-triggered; not started**
 
 Only after report/export is actually used and a visible product question remains.
 
@@ -1472,7 +1472,7 @@ Only after report/export is actually used and a visible product question remains
 * OV7.3 repeat;
 * OV7.4 block readout.
 
-The first meaningful success criterion is real prospective evidence, not six merged PRs.
+The first meaningful success criterion is real prospective evidence, not merged engineering PRs.
 
 ---
 
@@ -1585,41 +1585,41 @@ Stopping is successful when the evidence question is answered without more produ
 
 The task board above is the canonical per-item status source. This checklist is the
 **whole-capability exit contract**: an unchecked later criterion does not reopen an already
-completed OV0–OV2 task. Items are checked here only when the currently implemented repository
+completed OV0–OV6.1 task. Items are checked here only when the currently implemented repository
 state already satisfies the criterion independently of unfinished later work.
 
 ### Measurement integrity
 
 * [x] Raw metric revisions are immutable and never overwritten by corrections or derived estimates.
 * [x] Every logical protocol observation has a stable attempt+metric identity, deterministic current revision and auditable supersession chain.
-* [ ] Every benchmark revision has metric, unit, source/device, protocol revision, series key, canonicalization version, attempt and validity.
-* [ ] Invalid/practice results stay visible but do not become default benchmarks.
+* [x] Every benchmark revision has metric, unit, source/device, protocol revision, series key, canonicalization version, attempt and validity.
+* [x] Invalid/practice results stay visible but do not become default benchmarks.
 * [x] Material protocol/device changes do not silently extend a comparison series.
 * [x] Series-defining versus context-only dimensions are explicit and replayable.
 * [x] Literature reliability is visibly different from personal repeatability.
 * [x] No universal worthwhile-change percentage exists.
-* [ ] Zero baselines never produce invalid percentage arithmetic.
+* [x] Zero baselines never produce invalid percentage arithmetic.
 
 ### Product semantics
 
 * [x] Decision, process/response and outcome evidence remain separate planes.
 * [x] A competition result is a first-class ecological outcome, distinct from a protocol-locked test.
 * [x] `context_only` metrics cannot be bound as primary/secondary outcomes.
-* [ ] Target-range outcomes require explicit finite ordered bounds.
-* [ ] Baseline selection is mechanically complete for every binding.
-* [ ] Evaluation criteria are frozen before result interpretation and reports persist the exact evaluation revision/hash.
+* [x] Target-range outcomes require explicit finite ordered bounds.
+* [x] Baseline selection is mechanically complete for every binding.
+* [x] Evaluation criteria are frozen before result interpretation and reports persist the exact evaluation revision/hash.
 * [x] Raw 20-minute power is canonical; any future FTP estimate must be derived/versioned rather than replacing it.
-* [ ] A block can be `mixed` without arithmetic cancellation of good performance and poor response.
-* [ ] Missing/non-comparable outcome or inadequate process evidence yields `insufficient_evidence` under a versioned deterministic policy.
+* [x] A block can be `mixed` without arithmetic cancellation of good performance and poor response.
+* [x] Missing/non-comparable outcome or inadequate process evidence yields `insufficient_evidence` under a versioned deterministic policy.
 * [x] No universal performance score is introduced.
 
 ### Architecture safety
 
 * [x] Production selection/ranking modules cannot import OV outcome-evidence modules at runtime without a separate architecture/ship decision.
-* [x] OV0–OV2 leave production recommendation semantics unchanged; no selector/ranking authority consumes the new evidence.
+* [x] OV0–OV6.1 leave production recommendation semantics unchanged; no selector/ranking authority consumes the new evidence.
 * [x] User isolation, immutable protocol revisions and observation correction chains are emulator-tested.
-* [ ] Activated evaluation revisions/bindings are immutable and emulator-tested.
-* [ ] Pure metric progress carries derivation-policy versioning but no false single training-policy attribution.
+* [x] Activated evaluation revisions/bindings are immutable and emulator-tested.
+* [x] Pure metric progress carries derivation-policy versioning but no false single training-policy attribution.
 * [x] A future outcome-to-planning automation requires a separate ADR and ship decision.
 
 ### Real-world evidence
