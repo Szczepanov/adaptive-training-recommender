@@ -96,10 +96,6 @@ export function assertValidMetricObservationRevision(revision: MetricObservation
     if (!VALIDITIES.has(revision.validity)) throw new Error(`Unsupported observation validity: ${revision.validity}`);
     if (revision.validity === 'invalid') assertNonEmptyString(revision.invalidReason, 'invalidReason');
     if (revision.invalidReason !== undefined) assertNonEmptyString(revision.invalidReason, 'invalidReason');
-    if (revision.validityNote !== undefined) {
-        assertNonEmptyString(revision.validityNote, 'validityNote');
-        if (revision.validityNote.length > 2000) throw new Error('validityNote is too long');
-    }
     assertContext(revision.context, 'context');
 
     if (revision.device !== undefined) {
