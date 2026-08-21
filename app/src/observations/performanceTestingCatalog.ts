@@ -5,7 +5,7 @@ import type { TestingSessionDefinition } from './testingWorkflow';
 export interface PerformanceTestDefinition {
     id: string;
     protocol: MeasurementProtocol;
-    sessionDefinition: TestingSessionDefinition;
+    sessionDefinition: TestingSessionDefinition & { summary: string };
     defaultContext: ComparisonContext;
     expectedSource: string;
 }
@@ -61,7 +61,7 @@ const twentyMinuteProtocol: MeasurementProtocol = {
     createdAt: CREATED_AT,
 };
 
-const twentyMinuteSession: TestingSessionDefinition = {
+const twentyMinuteSession: TestingSessionDefinition & { summary: string } = {
     schemaVersion: 1,
     id: 'ov-cycling-20m-tt',
     revision: 1,
@@ -109,7 +109,7 @@ const twentyMinuteSession: TestingSessionDefinition = {
                     exerciseRef: { kind: 'unresolved_free_text', name: 'Cycling 20-minute TT' },
                     dose: { kind: 'duration', seconds: 1200 },
                     notes: 'Record the raw 20-minute mean power shown by the declared source. Do not convert it to FTP.',
-                    stopConditions: twentyMinuteProtocol.invalidationRules,
+                    stopConditions: [...twentyMinuteProtocol.invalidationRules],
                 },
             ],
         },
@@ -180,7 +180,7 @@ const fourMinuteProtocol: MeasurementProtocol = {
     createdAt: CREATED_AT,
 };
 
-const fourMinuteSession: TestingSessionDefinition = {
+const fourMinuteSession: TestingSessionDefinition & { summary: string } = {
     schemaVersion: 1,
     id: 'ov-cycling-4m-tt',
     revision: 1,
@@ -228,7 +228,7 @@ const fourMinuteSession: TestingSessionDefinition = {
                     exerciseRef: { kind: 'unresolved_free_text', name: 'Cycling 4-minute TT' },
                     dose: { kind: 'duration', seconds: 240 },
                     notes: 'Record raw mean power from the declared source.',
-                    stopConditions: fourMinuteProtocol.invalidationRules,
+                    stopConditions: [...fourMinuteProtocol.invalidationRules],
                 },
             ],
         },
