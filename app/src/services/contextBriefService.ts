@@ -20,7 +20,7 @@ import { externalSessionDisplayPrescription } from '../engine/externalSessionPro
 import { resolvePlanningContext } from '../engine/planningMode';
 import { evaluatePeriodizationPhase, goalToUserEvent } from '../engine/periodization';
 import { parseSubjectiveCheckin } from '../persistence/parsers/decisionInputs';
-import type { AnyExternalPlanSession } from '../sessions/externalPlanV2';
+import { isV2Session, type AnyExternalPlanSession } from '../sessions/externalPlanV2';
 import { addDaysToLocalDateString, getLocalDateString } from '../utils/localDate';
 import { activeExternalPlanService, placedSessionForDate } from './activeExternalPlanService';
 import { activityService } from './activityService';
@@ -54,7 +54,7 @@ export interface ContextBriefResult {
  * context's externalSession is deliberately not consumed by this brief.
  */
 function planningAuthoritySession(session: AnyExternalPlanSession): LegacyExternalPlanSession {
-    if ('prescription' in session) return session;
+    if (!isV2Session(session)) return session;
     return {
         id: session.id,
         title: session.title,
@@ -238,6 +238,12 @@ export class ContextBriefService {
 
         const upcomingExternalSessions: UpcomingExternalPlanSession[] = [];
         let currentExternalSession: AnyExternalPlanSession | null = null;
+        // Whether "no session placed today" can be asserted as a confirmed fact. Starts
+        // false whenever occupancy itself is unreadable (the else branch below), and is
+        // also cleared if today's own plan-state read specifically fails, so a resolved
+        // `externalFallback: true` downstream is never presented as certain when the day
+        // that mattered most could not actually be read.
+        let externalScheduleTodayConfirmed = fixedActivitiesReadable;
         if (fixedActivitiesReadable) {
             // Resolve the active plan independently for each future date so plan revision
             // effective-from boundaries and overlapping re-imports are respected. Use the
@@ -252,12 +258,14 @@ export class ContextBriefService {
                 const settled = activePlanResults[index];
                 if (settled.status === 'rejected') {
                     unreadablePlanDays += 1;
+                    if (date === targetDate) externalScheduleTodayConfirmed = false;
                     continue;
                 }
                 const state = settled.value;
                 if (state.status === 'MISSING') continue;
                 if (state.status !== 'AVAILABLE') {
                     unreadablePlanDays += 1;
+                    if (date === targetDate) externalScheduleTodayConfirmed = false;
                     continue;
                 }
                 if (date === targetDate) {
@@ -305,6 +313,12 @@ export class ContextBriefService {
             targetDate,
             currentExternalSession ? planningAuthoritySession(currentExternalSession) : null,
         );
+        // resolvePlanningContext treats a null externalSession as "confirmed nothing is
+        // placed today" and reports externalFallback accordingly. That is only true when
+        // today's own plan-state read actually succeeded; when it didn't,
+        // externalScheduleTodayConfirmed is false and the fallback claim is unconfirmed,
+        // not negative.
+        const externalFallbackUncertain = planningContext.externalFallback && !externalScheduleTodayConfirmed;
 
         const input: ContextBriefInput = {
             asOfDate: targetDate,
@@ -328,8 +342,9 @@ export class ContextBriefService {
             recommendations,
             trainingSettings,
             preferences,
-            planningMode: planningContext.mode,
+            effectivePlanningMode: planningContext.mode,
             externalFallback: planningContext.externalFallback,
+            externalFallbackUncertain,
             eventStrategy: planningContext.eventStrategy,
             goals,
             upcomingFixedActivities,
