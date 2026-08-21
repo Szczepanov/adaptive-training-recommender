@@ -120,13 +120,12 @@ export function HealthAnomalyShadowTrace({ revision, decisionInput }: HealthAnom
 export function HealthAnomalyShadowPanel({ userId, decisionInput }: HealthAnomalyShadowPanelProps) {
   const shadowEnabled = configuredHealthAnomalyShadowPolicy() === 'shadow-v1';
   const [revision, setRevision] = useState<HealthAnomalyAssessmentRevision | null>(null);
-  const [loadState, setLoadState] = useState<'idle' | 'loading' | 'ready' | 'missing' | 'error'>('idle');
+  const [loadState, setLoadState] = useState<'loading' | 'ready' | 'missing' | 'error'>('loading');
   const date = decisionInput.date;
 
   useEffect(() => {
     if (!shadowEnabled) return;
     let cancelled = false;
-    setLoadState('loading');
     healthAnomalyAssessmentRepository.getLatestForDate(userId, date)
       .then(value => {
         if (cancelled) return;
@@ -140,13 +139,14 @@ export function HealthAnomalyShadowPanel({ userId, decisionInput }: HealthAnomal
   }, [shadowEnabled, userId, date]);
 
   if (!shadowEnabled) return null;
-  if (loadState === 'idle' || loadState === 'loading') {
+  const revisionForDate = revision?.date === date ? revision : null;
+  if (loadState === 'loading' || (loadState === 'ready' && !revisionForDate)) {
     return <div className="data-view-container"><div className="data-section"><h3>Health anomaly (shadow)</h3><p>Loading shadow assessment…</p></div></div>;
   }
   if (loadState === 'error') {
     return <div className="data-view-container"><div className="data-section"><h3>Health anomaly (shadow)</h3><p className="data-state-notice">Could not read the shadow assessment.</p></div></div>;
   }
-  if (!revision) {
+  if (!revisionForDate) {
     return (
       <div className="data-view-container">
         <div className="data-section">
@@ -157,5 +157,5 @@ export function HealthAnomalyShadowPanel({ userId, decisionInput }: HealthAnomal
     );
   }
 
-  return <div className="data-view-container"><HealthAnomalyShadowTrace revision={revision} decisionInput={decisionInput} /></div>;
+  return <div className="data-view-container"><HealthAnomalyShadowTrace revision={revisionForDate} decisionInput={decisionInput} /></div>;
 }
