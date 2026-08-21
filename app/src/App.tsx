@@ -4,6 +4,7 @@ import './index.css';
 import { Home } from './components/Home';
 import type { PreparedSessionLaunch } from './components/session/SessionDestinationSheet';
 import { decisionComposer } from './engine/composer';
+import type { HealthAnomalyAssessmentRevision } from './engine/healthAnomalyModels';
 import type { DailyDecisionInput, StrengthSession } from './engine/models';
 import type { SessionExecution, SessionIntent } from './sessions/models';
 import type { Screen } from './types/navigation';
@@ -35,6 +36,7 @@ function App() {
   const { userId, authPhase } = useAuth();
   const [screen, setScreen] = useState<Screen>('home');
   const [decisionInput, setDecisionInput] = useState<DailyDecisionInput | null>(null);
+  const [healthAnomalyShadowRevision, setHealthAnomalyShadowRevision] = useState<HealthAnomalyAssessmentRevision | null>(null);
   const [desktopSettingsOpen, setDesktopSettingsOpen] = useState(false);
   const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
   const [activeStrengthSession, setActiveStrengthSession] = useState<StrengthSession | null>(null);
@@ -49,12 +51,15 @@ function App() {
       const input = await decisionComposer.composeDailyDecisionInput(userId);
       setDecisionInput(input);
       // HA-D evidence collection is deliberately fire-and-forget relative to readiness.
-      // The runtime selector returns before any HA reads/writes unless the environment is
-      // explicitly configured to `shadow-v1`; its result never feeds Home or recommendation
-      // selection.
-      void runConfiguredHealthAnomalyShadow(userId, input.date).catch(error => {
-        console.error('Error collecting health anomaly shadow evidence:', error);
-      });
+      // Only an explicit shadow-v1 runtime value reaches the HA service, and the result is
+      // retained solely so the Detailed Data trace can update after immutable persistence.
+      void runConfiguredHealthAnomalyShadow(userId, input.date)
+        .then(result => {
+          if (result) setHealthAnomalyShadowRevision(result.revision);
+        })
+        .catch(error => {
+          console.error('Error collecting health anomaly shadow evidence:', error);
+        });
     } catch (error) {
       console.error('Error loading decision input:', error);
     }
@@ -171,7 +176,11 @@ function App() {
                 onBack={() => handleNavigate('home')}
               />
               {decisionInput && (
-                <HealthAnomalyShadowPanel userId={userId!} decisionInput={decisionInput} />
+                <HealthAnomalyShadowPanel
+                  userId={userId!}
+                  decisionInput={decisionInput}
+                  liveRevision={healthAnomalyShadowRevision}
+                />
               )}
             </>
           )}
