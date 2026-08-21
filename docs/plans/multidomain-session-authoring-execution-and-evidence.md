@@ -29,13 +29,14 @@ The deliverable is incremental, and **every milestone from M1 onward must end wi
 something the athlete can use on a phone**. That constraint, not the layering of the domain
 model, drives the order below.
 
-**Current delivery cutline (2026-08-19, extended 2026-08-20).** The active product chain,
-`M3.7 → bounded M3.8 hardening → M4.3 → M5.1 → M5.2 → M5.3`, is now complete end to end. M6
-and M7 are not a sequential continuation of that chain. They are usage-triggered capability
-groups: work starts only when real training or repeated testing exposes a concrete
-limitation in the generic runner/evidence model. M8 may consume those capabilities if they
-exist, but it must never be the reason to build them. Nothing on the evidence-producing
-chain remains open; every further `M*` item now waits on its own named usage trigger.
+**Current delivery cutline (2026-08-19, extended 2026-08-21).** The active product chain,
+`M3.7 → bounded M3.8 hardening → M4.3 → M5.1 → M5.2 → M5.3`, is complete end to end. M6
+remains a usage-triggered capability group and is not a sequential continuation of that chain.
+M7's repeated-standardized-testing trigger was satisfied on 2026-08-21 and implementation is
+delegated to the dedicated [Performance outcome validation & goal-progress loop](./performance-outcome-validation.md):
+M7.1 and M7.2 are now delivered through OV0–OV2 / PRs #154 and #155; M7.3 is the next
+implementation slice through OV3, while M7.4 still waits for repeated comparable evidence.
+M8 may consume M6/M7 capabilities if they exist, but it must never be the reason to build them.
 
 ---
 
@@ -265,9 +266,12 @@ M3.8 bounded hardening ├──► M4.3 companion/dedup ─► M5.1 response mo
                            shipped; rest ranges, quality fields, sessionTargets/
                            prohibitedAdditions editing deferred, JSON import covers them)
 
-USAGE-TRIGGERED CAPABILITIES — NOT THE NEXT PHASE
-real training gap ─► M6 speed/field/power specialization
-repeated standardized testing need ─► M7 observations/testing/progress
+USAGE-TRIGGERED CAPABILITIES — NOT A NUMBERED DELIVERY QUEUE
+real training gap ─► M6 speed/field/power specialization (not triggered)
+repeated standardized testing need ─► M7 trigger satisfied 2026-08-21
+                                      ├─ M7.1/M7.2 delivered via OV0–OV2 (#154/#155)
+                                      ├─ M7.3 next via OV3
+                                      └─ M7.4 waits for repeated comparable attempts
 
 EVIDENCE DECISIONS
 M8 candidates may consume M5 and any independently-triggered M6/M7 evidence that exists.
@@ -278,9 +282,11 @@ M9 items start only when their own named trigger fires.
 ```
 
 M1 was independently startable before M0.1. ADR-0023 is now accepted, so remaining work
-follows item-level dependencies **plus the usage triggers stated below**. A satisfied code
-dependency is not sufficient to start M6 or M7. No M8 item may ship merely because its code
-exists, and no M8 item may force an otherwise-untriggered M6/M7 capability into scope.
+follows item-level dependencies **plus the usage triggers stated below**. M6 still requires its
+own real-use trigger. M7's group trigger has fired; its remaining M7.3/M7.4 work follows the
+specific OV dependencies/evidence gates rather than capability numbering. No M8 item may ship
+merely because its code exists, and no M8 item may force an otherwise-untriggered M6/M7
+capability into scope.
 
 ### What each remaining milestone puts in the athlete's hands
 
@@ -292,7 +298,9 @@ exists, and no M8 item may force an otherwise-untriggered M6/M7 capability into 
 | M5.1–M5.2 | Record and revisit immediate/later-day/next-morning response linked to the exact session occurrence. |
 | M5.3 | Export/inspect a versioned passed/caution/reactive/unknown summary plus the planned-vs-performed delta for any completed session; a richer history UI remains optional and usage-triggered. |
 | M6, **if triggered** | Capture field/speed/power details the generic runner demonstrably cannot represent. |
-| M7, **if triggered** | Run repeated protocol-locked tests whose benchmark comparisons are honest. |
+| M7.1–M7.2, **delivered 2026-08-21** | Store protocol-aware raw observations and corrections with deterministic comparable-series provenance. |
+| M7.3 | Run repeated protocol-locked tests through the existing session/testing workflow. |
+| M7.4, **after repeated evidence exists** | Interpret progress only inside honest comparable series with explicit quality/reliability context. |
 | M8 | Nothing new. This milestone produces evidence-backed ship/defer/reject decisions, not features. |
 
 ---
@@ -339,10 +347,10 @@ rewritten as an outcome; an in-progress item retains its remaining acceptance wo
 | M6.2 | Sprint and field performed-entry cards | `[ ]` | M6.1 + a logged sprint/COD workflow proving generic distance/time inputs inadequate |
 | M6.3 | Jump/throw/contact performed-entry cards | `[ ]` | M6.1 + recurring measured jump/throw/contact use |
 | M6.4 | Domain exposure read models | `[ ]` | M6.2/M6.3 as applicable + enough history that an exposure view answers a real question |
-| M7.1 | Metric registry, protocols and comparable series | `[ ]` | **Usage trigger:** repeated standardized testing/benchmarking begins; M6.1 only if that test needs its taxonomy |
-| M7.2 | Metric observation persistence and adapters | `[ ]` | M7.1, M2.3 |
-| M7.3 | Protocol-locked testing mode | `[ ]` | M7.2 + only the domain input cards required by the tests actually being run |
-| M7.4 | Benchmark derivation and quality-aware progress | `[ ]` | M7.3 + enough repeated comparable attempts to make progress display useful |
+| M7.1 | Metric registry, protocols and comparable series | `[x]` | Trigger satisfied 2026-08-21; delivered by OV0–OV1 plus immutable protocol persistence in OV2 / PRs #154–#155 |
+| M7.2 | Metric observation persistence and adapters | `[x]` | Delivered by OV2 / PR #155 |
+| M7.3 | Protocol-locked testing mode | `[ ]` | M7.2 complete; delegated to OV3.1–OV3.4; only domain input cards required by tests actually run |
+| M7.4 | Benchmark derivation and quality-aware progress | `[ ]` | M7.3 + enough repeated comparable attempts; delegated to OV4 |
 | M8.1 | Step-derived eligibility/profile candidate | `[ ]` | M3.4, M3.5; evidence candidate only |
 | M8.2 | Response/exposure comparison harness | `[ ]` | Real history + M5 evidence; consume M6/M7 only if those capabilities were independently triggered and the named candidate needs them |
 | M8.3 | Policy ship/no-ship decision | `[ ]` | The evidence required by the specific candidate; do not build unused M6/M7 solely to satisfy this row |
@@ -1617,50 +1625,42 @@ free-text movements are reported separately, and no production engine module imp
 
 ---
 
-## M7 — observation provenance, testing and progress — **usage-triggered**
+## M7 — observation provenance, testing and progress — **trigger satisfied 2026-08-21**
 
-**Not on the active delivery chain.** M7 is for repeated standardized measurement, not for
-ordinary training logging. It starts only when the athlete is actually running a repeated test
-or benchmark workflow where protocol comparability matters. M6 completion is not a blanket
-precondition; only the domain vocabulary/input capability needed by the chosen test is required.
+**Trigger state (2026-08-21): satisfied.** Repeated standardized cycling performance testing is
+now a real athlete need. Implementation is delegated to the dedicated
+[`performance-outcome-validation.md`](./performance-outcome-validation.md) capability plan. M7.1
+and M7.2 are complete through OV0–OV2 / PRs #154 and #155. M7.3 maps to OV3 and is the next
+code slice; M7.4 maps to OV4 and remains gated on enough repeated comparable observations to
+make progress interpretation useful. M6 remains independently untriggered.
 
 **M7 trigger.** A test (e.g. sprint, jump, throw, optional bar velocity) will be repeated under
 a deliberately standardized protocol and the result will be compared over time. One-off
-training timings or curiosity measurements do not trigger M7.
+training timings or curiosity measurements do not trigger M7. The actual trigger was the
+2026-08-21 request for repeated standardized cycling tests to assess whether training is
+achieving block goals.
 
-### M7.1 `[ ]` Metric registry, protocols and comparable series
+### M7.1 `[x]` Metric registry, protocols and comparable series
 
-**Change after trigger.** Add the smallest static `MetricDefinition` registry and user-scoped
-immutable `MeasurementProtocol` revision set required by the actual repeated tests. Define
-unit, compatible entry kind, required context, summary methods and deterministic
-comparable-series key inputs. Device/source changes and material protocol changes create a new
-series or version.
+**Outcome (2026-08-21).** OV0/OV1 established the bounded cycling-first registry, evidence
+vocabulary, immutable `MeasurementProtocol` contract, deterministic/versioned comparison-series
+canonicalization and reliability provenance, with architecture guards preventing outcome
+evidence from flowing into production selection. PR #155 adds user-scoped immutable protocol
+revision persistence/rules, completing the original M7.1 persistence requirement. Material
+setup/device dimensions split comparison series rather than silently extending them; exact unit
+mismatch and unsupported metrics fail closed. No unused M6 taxonomy was pulled into scope.
 
-Candidate metrics include sprint time/splits, jump height, contact time, RSI derivation, throw
-distance and optional bar velocity. Do not implement the catalogue until a test needs it.
+### M7.2 `[x]` Metric observation persistence and adapters
 
-**Files.** New `observations/models.ts`, `observations/registry.ts`,
-`observations/comparability.ts`, protocol service, rules and parsers — bounded to triggered
-metrics.
-
-**Done when.** The triggered test's same protocol/device/surface yields the same key; a material
-setup change does not; units cannot mismatch registry definitions.
-
-### M7.2 `[ ]` Metric observation persistence and adapters
-
-**Change.** Persist the triggered raw observations with session/attempt, metric, value/unit,
-`observedAt`, source/device/protocol/comparison series, quality/validity and raw reference.
-Derived values carry an algorithm version and source observation IDs; raw values are never
-overwritten (ADR-0021 D-SETLOG, ADR-0005).
-
-Add the manual adapter first. Device adapters remain M9.3-triggered.
-
-**Files.** New `services/metricObservationService.ts`, parser, rules and tests,
-`observations/manualAdapter.ts`.
-
-**Done when.** Raw attempts survive recalculation, cross-user and source spoofing fail, and any
-derived value references its raw observations, protocol and algorithm rather than a bare
-number.
+**Outcome (2026-08-21).** OV2 / PR #155 persists stable attempt+metric logical observation keys
+with immutable revisions and a transactional mutable head; corrections advance `N → N+1`
+without overwriting history. Assessment attempts carry lifecycle/purpose and exact protocol
+identity; the manual adapter validates metric/unit/protocol/context and computes the deterministic
+series key; derived observations require raw source IDs plus algorithm version; ecological
+competition results live in a separate record without protocol-series fields. Firestore rules
+and the dedicated emulator suite enforce user isolation, immutable protocol/revision documents,
+valid units/enums, atomic initial writes/corrections, stale-writer rejection and ecological
+outcome isolation. Device adapters remain M9.3-triggered.
 
 ### M7.3 `[ ]` Protocol-locked testing mode
 
@@ -1675,6 +1675,9 @@ limited to triggered tests.
 **Done when.** The actual repeated test records attempts and validity under a locked protocol;
 changing setup requires a new revision/series; ordinary training still cannot silently become a
 benchmark.
+
+**Implementation delegation.** OV3.1–OV3.4 owns this work and explicitly reuses the existing
+session definition/occurrence/execution runner rather than creating a parallel `TestRunnerV2`.
 
 ### M7.4 `[ ]` Benchmark derivation and quality-aware progress
 
@@ -1691,6 +1694,10 @@ protocol badges. Meaningful-change claims require separately reviewed error meta
 **Done when.** Invalid/practice attempts never become benchmarks; device/protocol mismatch
 prevents a default PR comparison; raw attempts remain accessible; no "athleticism score" is
 shown.
+
+**Implementation delegation.** OV4 owns pure comparable progress/reliability interpretation;
+OV6 owns any later report/UI surface. The evidence trigger remains real even though M7.1/M7.2
+are already implemented.
 
 ---
 
@@ -1870,17 +1877,17 @@ Conditional scenarios, added only when the corresponding trigger fires:
 
 * [ ] Planned and performed data are never the same record.
 * [ ] Tissue values live in exactly one collection — the canonical daily check-in.
-* [ ] Metric observations include unit, source, protocol, validity and comparison identity.
+* [x] Metric observations include unit, source, protocol, validity and comparison identity.
 * [ ] Invalid, practice and non-comparable attempts do not become default benchmarks.
 * [ ] Missing delayed response remains `unknown`.
 * [ ] Unresolved free-text movements are loggable but cannot claim precise engine metadata.
 * [ ] No universal readiness, load or athleticism score and no ACWR injury score is introduced.
 * [ ] No M8 candidate changes production without its own explicit ship decision.
 * [ ] M8 does not create an implementation requirement for otherwise-untriggered M6/M7 work.
-* [ ] The two metric-observation invariants above are unconditional (ADR-0023 D-MOBS). They
+* [x] The two metric-observation invariants above are unconditional (ADR-0023 D-MOBS). They
       bind any code that writes a `MetricObservation`, including the bounded M9.3 device
-      boundary activated without a full M7 trigger. Deferring M6/M7 defers the capability,
-      never the provenance rules that apply once observations exist.
+      boundary activated without a full M7 trigger. Deferring later M7 workflow/progress depth
+      never defers the provenance rules that now apply to stored observations.
 
 ---
 
@@ -1889,7 +1896,7 @@ Conditional scenarios, added only when the corresponding trigger fires:
 | Risk | Mitigation | Rollback |
 |---|---|---|
 | Plan stalls in the middle | Active cutline is M3.7/M3.8 → M4.3 → M5.1 → M5.2; M6/M7 are not queued by numbering | Stop after any useful capability; record the cutline rather than opening the next numbered milestone |
-| Premature M6/M7 expansion | Explicit real-use triggers; generic runner is the default until a named gap exists; M8 cannot pull work forward | Leave M6/M7 `[ ]`; record the missing evidence as a defer rather than building speculative telemetry |
+| Premature M6/M7 expansion | Explicit real-use triggers; generic runner is the default until a named gap exists; M8 cannot pull work forward | Leave M6 `[ ]`; stop M7 at the delivered/justified slice and record missing evidence as a defer rather than building speculative telemetry |
 | Schema scope grows without bound | Fixture-led vocabulary; extension/versioning; speculative set/device types remain trigger-gated | Keep v1 routes/import; reject unsupported fields |
 | Two runners coexist indefinitely | M3.4 has an explicit retirement step and a parity gate; M1 items are labelled carried or disposable | If parity fails, keep v1 for catalog Strength only and cap it — do not re-invest in disposable UI |
 | Firestore nested validation stays weak | Performed entries are individual documents; D-MSNAP keeps nested content out of mutable rules-validated documents; immutable revision parsers validate bytes | Disable new writes; existing v1 data untouched |
@@ -1918,8 +1925,9 @@ a valid place to stop and record the outcome, not a failure:
 * **At M5.3.** Keep report/export only unless repeated use proves a dedicated history UI useful.
 * **Before M6.** If no recurring real session exposes a generic-runner gap, M6 remains unstarted
   indefinitely — this is success, not backlog debt.
-* **Before M7.** If no repeated standardized testing workflow exists, M7 remains unstarted
-  indefinitely.
+* **After M7.2 / before M7.3.** The repeated-testing trigger has fired and the raw evidence
+  foundation is delivered. Pause here if adapter-level capture is sufficient; otherwise OV3 is
+  the next explicit workflow slice. M7.4 still waits for enough repeated comparable observations.
 * **At M8.3.** A clean sweep of reject/defer results completes the evidence milestone; lack of
   M6/M7 evidence is a valid reason to defer a candidate.
 
