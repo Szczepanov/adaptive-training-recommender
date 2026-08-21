@@ -131,6 +131,15 @@ emulatorDescribe('Daily subjective check-in health-context rules (HA1)', () => {
         }
     });
 
+    it('rejects a write with neither the legacy illness flag nor a rich symptoms block', async () => {
+        const db = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertFails(setDoc(doc(db, checkinPath), contextOnlyCheckin()));
+        await assertFails(setDoc(doc(db, checkinPath), {
+            ...contextOnlyCheckin(),
+            healthContext: { travelDisruption: 'none' },
+        }));
+    });
+
     it('rejects malformed supplied context fields while keeping every context field optional', async () => {
         const db = testEnvironment.authenticatedContext(ownerId).firestore();
         await assertSucceeds(setDoc(doc(db, checkinPath), baseCheckin()));

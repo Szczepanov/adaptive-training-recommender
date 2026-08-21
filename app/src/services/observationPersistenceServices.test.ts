@@ -9,8 +9,10 @@ import type {
 import { COMPARISON_CANONICALIZATION_V1 } from '../observations/comparability';
 
 const firestore = vi.hoisted(() => ({
+    collection: vi.fn(),
     doc: vi.fn(),
     getDoc: vi.fn(),
+    getDocs: vi.fn(),
     setDoc: vi.fn(),
     updateDoc: vi.fn(),
     runTransaction: vi.fn(),
@@ -22,8 +24,10 @@ const firestore = vi.hoisted(() => ({
 }));
 
 vi.mock('firebase/firestore', () => ({
+    collection: firestore.collection,
     doc: firestore.doc,
     getDoc: firestore.getDoc,
+    getDocs: firestore.getDocs,
     setDoc: firestore.setDoc,
     updateDoc: firestore.updateDoc,
     runTransaction: firestore.runTransaction,
@@ -108,12 +112,14 @@ const outcome: CompetitionOutcome = {
     createdAt: '2026-08-21T06:00:00.000Z',
 };
 
-describe('OV2 persistence services', () => {
+describe('OV2/OV3 persistence services', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         firestore.doc.mockImplementation((_db: unknown, ...segments: string[]) => ({ path: segments.join('/') }));
+        firestore.collection.mockImplementation((_db: unknown, ...segments: string[]) => ({ path: segments.join('/') }));
         firestore.setDoc.mockResolvedValue(undefined);
         firestore.updateDoc.mockResolvedValue(undefined);
+        firestore.getDocs.mockResolvedValue({ docs: [] });
         firestore.runTransaction.mockImplementation(async (
             _db: unknown,
             callback: (transaction: typeof firestore.transaction) => Promise<unknown>,
@@ -143,11 +149,34 @@ describe('OV2 persistence services', () => {
         expect(written[1][1]).toMatchObject({ headRevision: 1, metricId: 'cycling_tt_20m_mean_power_w' });
     });
 
-    it('does not overwrite an existing logical observation on initial write', async () => {
-        firestore.transaction.get.mockResolvedValueOnce(snapshot(head));
+    it('treats an exact semantic initial retry as success without rewriting immutable bytes', async () => {
+        const stored = revision({ createdAt: '2026-08-21T06:05:00.000Z' });
+        const retried = revision({ createdAt: '2026-08-21T06:06:30.000Z' });
+        firestore.transaction.get
+            .mockResolvedValueOnce(snapshot(head))
+            .mockResolvedValueOnce(snapshot(stored));
         const service = new MetricObservationService({} as never);
-        await expect(service.createInitialRevision('u1', revision())).rejects.toThrow(/already exists/);
+
+        await expect(service.createInitialRevision('u1', retried)).resolves.toEqual(stored);
         expect(firestore.transaction.set).not.toHaveBeenCalled();
+        expect(firestore.transaction.update).not.toHaveBeenCalled();
+    });
+
+    it('rejects a conflicting initial retry and requires the correction workflow', async () => {
+        firestore.transaction.get
+            .mockResolvedValueOnce(snapshot(head))
+            .mockResolvedValueOnce(snapshot(revision()));
+        const service = new MetricObservationService({} as never);
+        await expect(service.createInitialRevision('u1', revision({ value: 302 }))).rejects.toThrow(/different content.*correction workflow/);
+        expect(firestore.transaction.set).not.toHaveBeenCalled();
+    });
+
+    it('fails closed when only one side of the initial head/revision pair exists', async () => {
+        firestore.transaction.get
+            .mockResolvedValueOnce(snapshot(head))
+            .mockResolvedValueOnce(snapshot(null));
+        const service = new MetricObservationService({} as never);
+        await expect(service.createInitialRevision('u1', revision())).rejects.toThrow(/incomplete head\/revision chain/);
     });
 
     it('advances correction head exactly one revision and rejects a stale writer', async () => {
@@ -203,6 +232,23 @@ describe('OV2 persistence services', () => {
 
         firestore.transaction.get.mockResolvedValueOnce(snapshot({ ...attempt, state: 'completed', startedAt: '2026-08-22T06:00:00Z', completedAt: '2026-08-22T07:00:00Z' }));
         await expect(service.startAttempt('u1', 'attempt-1', '2026-08-22T08:00:00Z')).rejects.toThrow(/Cannot start assessment from completed/);
+    });
+
+    it('recovers the newest open assessment attempt and ignores completed records', async () => {
+        const older = { ...attempt, id: 'attempt-old', scheduledDate: '2026-08-20' };
+        const newer = { ...attempt, id: 'attempt-new', scheduledDate: '2026-08-22' };
+        const completed: AssessmentAttempt = {
+            ...attempt,
+            id: 'attempt-complete',
+            state: 'completed',
+            startedAt: '2026-08-23T06:00:00.000Z',
+            completedAt: '2026-08-23T07:00:00.000Z',
+        };
+        firestore.getDocs.mockResolvedValueOnce({
+            docs: [older, completed, newer].map(value => ({ id: value.id, data: () => value })),
+        });
+        const service = new AssessmentAttemptService({} as never);
+        await expect(service.findOpenAttempt('u1')).resolves.toEqual(newer);
     });
 
     it('creates competition outcomes without any protocol-series persistence path', async () => {

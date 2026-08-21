@@ -274,7 +274,14 @@ service cloud.firestore {
     }
 
     function hasValidSubjectiveHealthFields(data) {
-      return (!('illnessSymptoms' in data) || data.illnessSymptoms is bool)
+      // Mirrors the app parser's precedence (parseSubjectiveCheckin): a rich symptoms
+      // block is authoritative and makes the legacy flag optional, but if it's absent
+      // the legacy flag is the only illness signal and must be a real boolean. Without
+      // this, a write could satisfy the rule with neither field present, then get
+      // permanently rejected as invalid on every subsequent read.
+      return (('illnessSymptoms' in data)
+          ? data.illnessSymptoms is bool
+          : (('healthContext' in data) && (data.healthContext is map) && ('symptoms' in data.healthContext)))
         && (!('healthContext' in data) || hasValidHealthContext(data.healthContext));
     }
 
