@@ -3,6 +3,7 @@ import type { DailyDecisionInput } from '../engine/models';
 import type { HealthAnomalyAssessmentRevision } from '../engine/healthAnomalyModels';
 import { healthAnomalyAssessmentRepository } from '../services/healthAnomalyPersistence';
 import { configuredHealthAnomalyShadowPolicy } from '../services/healthAnomalyRuntime';
+import { selectHealthAnomalyShadowRevision } from './healthAnomalyShadowView';
 
 interface HealthAnomalyShadowPanelProps {
   userId: string;
@@ -21,25 +22,6 @@ function formatNumber(value: number | null | undefined, digits = 2): string {
 
 function yesNoUnknown(value: boolean | null | undefined): string {
   return value === true ? 'Yes' : value === false ? 'No' : 'Unknown';
-}
-
-/**
- * App-shell persistence and the panel's independent Firestore read can complete in either
- * order. Select only revisions for the active user/date and prefer the newest immutable
- * revision, so a just-persisted shadow result can replace an earlier "missing" read without
- * ever becoming recommendation input.
- */
-export function selectHealthAnomalyShadowRevision(
-  userId: string,
-  date: string,
-  ...candidates: Array<HealthAnomalyAssessmentRevision | null | undefined>
-): HealthAnomalyAssessmentRevision | null {
-  const matching = candidates.filter((candidate): candidate is HealthAnomalyAssessmentRevision =>
-    candidate?.userId === userId && candidate.date === date,
-  );
-  matching.sort((left, right) => right.computedAt.localeCompare(left.computedAt)
-    || right.revisionId.localeCompare(left.revisionId));
-  return matching[0] ?? null;
 }
 
 export function HealthAnomalyShadowTrace({ revision, decisionInput }: HealthAnomalyShadowTraceProps) {
