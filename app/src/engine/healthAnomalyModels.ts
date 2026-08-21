@@ -33,7 +33,8 @@ export interface HealthSymptomsCheckin {
     present: boolean;
     onset?: 'today' | 'yesterday' | '2_3_days' | 'earlier' | null;
     severity?: 'mild' | 'moderate' | 'severe' | null;
-    types?: HealthSymptomType[];
+    /** Null is accepted as an explicit clear for migration/update symmetry. */
+    types?: HealthSymptomType[] | null;
 }
 
 export type HealthSymptomType =
