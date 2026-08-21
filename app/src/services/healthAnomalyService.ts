@@ -58,9 +58,10 @@ function activeTravelBlock(blocks: readonly PlanBlockWithId[], date: string): bo
 }
 
 /**
- * HA0.2/HA4 composition boundary. Optional history sources degrade to a one-day assessment;
- * only persistence failure itself rejects a requested non-off assessment. Nothing here feeds
- * the readiness/recommendation engine.
+ * HA0.2/HA4 composition boundary. Missing optional recovery/check-in/travel/baseline history
+ * may degrade to a one-day assessment, but a previous-assessment read failure must propagate:
+ * persisting from unknown episode/persistence state would create an unsafe immutable revision.
+ * Nothing here feeds the readiness/recommendation engine.
  */
 export class HealthAnomalyService {
     private readonly recovery: RecoverySource;
@@ -96,7 +97,7 @@ export class HealthAnomalyService {
             this.checkins.getCheckinState(userId, date),
             this.recovery.getRecoverySnapshotsInRangeState(userId, historyStart, date),
             this.planBlocks.getBlocksInRangeState(userId, date, date),
-            this.assessments.getLatestForDate(userId, previousDate).catch(() => null),
+            this.assessments.getLatestForDate(userId, previousDate),
         ]);
 
         const snapshot = availableData(snapshotState);
