@@ -908,11 +908,14 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
                     : 'Ready to train'}
                 </h3>
               </div>
-              {activeRec && (
-                <span className={`status-badge mode-${activeRec.mode}`}>
-                  {MODE_LABELS[activeRec.mode]}
-                </span>
-              )}
+              <div className="today-status-header-actions">
+                {activeRec && (
+                  <span className={`status-badge mode-${activeRec.mode}`}>
+                    {MODE_LABELS[activeRec.mode]}
+                  </span>
+                )}
+                <GarminSyncNowButton userId={userId} onSynced={loadDashboardData} />
+              </div>
             </div>
 
             {/* Direct Biomarker Chips */}
@@ -1180,16 +1183,13 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
             <div className="dashboard-card">
               <div className="card-header">
                 <h3>Today's Recovery</h3>
-                <div className="card-header-actions">
-                  {decisionInput?.recoverySnapshot ? (
-                    <span className="status-badge status-normal">
-                      Sleep {decisionInput.recoverySnapshot.raw.sleepScore ?? '--'} · HRV {decisionInput.recoverySnapshot.raw.hrvOvernightAvg ?? '--'}ms
-                    </span>
-                  ) : (
-                    <span className="status-badge warning">No Data</span>
-                  )}
-                  <GarminSyncNowButton userId={userId} onSynced={loadDashboardData} />
-                </div>
+                {decisionInput?.recoverySnapshot ? (
+                  <span className="status-badge status-normal">
+                    Sleep {decisionInput.recoverySnapshot.raw.sleepScore ?? '--'} · HRV {decisionInput.recoverySnapshot.raw.hrvOvernightAvg ?? '--'}ms
+                  </span>
+                ) : (
+                  <span className="status-badge warning">No Data</span>
+                )}
               </div>
 
               {decisionInput?.recoverySnapshot ? (
