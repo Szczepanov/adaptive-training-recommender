@@ -6,10 +6,12 @@ import { sessionResponseService } from '../services/sessionResponseService';
 import { relevantFollowupRegions } from '../responses/followupSchedule';
 import { EXERCISES } from '../workouts/exercises';
 import type { BodyRegion, DailySubjectiveCheckin, RegionTissueResponse, TissueResponseLevel } from '../engine/models';
+import type { HealthContextCheckin } from '../engine/healthAnomalyModels';
 import { BODY_REGIONS, TISSUE_LEVELS } from '../engine/models';
 import { getLocalDateString, addDaysToLocalDateString } from '../utils/localDate';
 import { getErrorMessage } from '../utils/errors';
 import type { Screen } from '../types/navigation';
+import { HealthContextSection } from './checkin/HealthContextSection';
 import { SubjectiveScaleRow } from './checkin/SubjectiveScaleRow';
 import './DailyCheckin.css';
 
@@ -253,7 +255,29 @@ export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) 
       setCheckin(cleared);
       return;
     }
+    if (field === 'illnessSymptoms') {
+      setCheckin({
+        ...checkin,
+        illnessSymptoms: next,
+        healthContext: {
+          ...(checkin.healthContext ?? {}),
+          symptoms: next
+            ? { ...(checkin.healthContext?.symptoms ?? {}), present: true }
+            : { present: false },
+        },
+      });
+      return;
+    }
     setCheckin({ ...checkin, [field]: next });
+  };
+
+  const handleHealthContextChange = (healthContext: HealthContextCheckin) => {
+    if (!checkin) return;
+    setCheckin({
+      ...checkin,
+      healthContext,
+      ...(healthContext.symptoms ? { illnessSymptoms: healthContext.symptoms.present } : {}),
+    });
   };
 
   const handleAddTissueRegion = (region: BodyRegion) => {
@@ -554,6 +578,12 @@ export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) 
               </div>
             </label>
           </div>
+
+          <HealthContextSection
+            value={checkin.healthContext}
+            symptomsPresent={Boolean(checkin.illnessSymptoms)}
+            onChange={handleHealthContextChange}
+          />
 
           {checkin.painOrInjury && (
             <div className="tissue-response-expanded">

@@ -2,6 +2,7 @@ import type { DataState } from '../../engine/dataState';
 import type { DailyRecoverySnapshot, DailySubjectiveCheckin, DecisionJournalEntry } from '../../engine/models';
 import { SHADOW_VERDICTS } from '../../engine/models';
 import { isValidDate } from '../../engine/validation';
+import { resolveLegacyIllnessSymptoms, validateHealthContext } from '../../engine/healthContextValidation';
 
 type RawDocument = Record<string, unknown>;
 
@@ -61,8 +62,24 @@ export function parseSubjectiveCheckin(raw: unknown, documentPath: string, userI
     if (raw.userId !== userId) return issue(documentPath, 'user-id-mismatch', 'userId');
     if (raw.date !== date || typeof raw.date !== 'string' || !isValidDate(raw.date)) return issue(documentPath, 'invalid-date', 'date');
     if (!isObject(raw.availability) || !isObject(raw.dataQuality)) return issue(documentPath, 'missing-checkin-block');
-    if (!['painOrInjury', 'illnessSymptoms', 'unusuallyLimitedTime', 'alreadyTrainedToday'].every(field => typeof raw[field] === 'boolean')) {
+
+    const healthContextResult = validateHealthContext(raw.healthContext);
+    if (!healthContextResult.isValid) {
+        return issue(documentPath, 'invalid-health-context', healthContextResult.errors[0]?.field ?? 'healthContext');
+    }
+    const healthContext = healthContextResult.data;
+    const richSymptomsSupplied = healthContext?.symptoms !== undefined;
+
+    if (!['painOrInjury', 'unusuallyLimitedTime', 'alreadyTrainedToday'].every(field => typeof raw[field] === 'boolean')) {
         return issue(documentPath, 'invalid-safety-flag');
+    }
+    if (raw.illnessSymptoms !== undefined && typeof raw.illnessSymptoms !== 'boolean') {
+        return issue(documentPath, 'invalid-safety-flag', 'illnessSymptoms');
+    }
+    // Legacy documents must still carry their compatibility flag. The only accepted
+    // context-only exception is a rich symptoms block whose `present` value is authoritative.
+    if (!richSymptomsSupplied && typeof raw.illnessSymptoms !== 'boolean') {
+        return issue(documentPath, 'invalid-safety-flag', 'illnessSymptoms');
     }
     if (!hasNullableNumbers(raw, ['readiness', 'sleepQuality', 'fatigue', 'soreness', 'mentalStress', 'motivation'])
         || !nullableNumber(raw.availability.timeAvailableMin)
@@ -72,9 +89,15 @@ export function parseSubjectiveCheckin(raw: unknown, documentPath: string, userI
         || !Array.isArray(raw.dataQuality.missingFields)) {
         return issue(documentPath, 'invalid-checkin-field');
     }
+
+    const normalized: DailySubjectiveCheckin = {
+        ...(raw as unknown as DailySubjectiveCheckin),
+        illnessSymptoms: resolveLegacyIllnessSymptoms(raw.illnessSymptoms, healthContext),
+        ...(healthContext ? { healthContext } : {}),
+    };
     return {
         status: 'AVAILABLE',
-        data: raw as unknown as DailySubjectiveCheckin,
+        data: normalized,
         revision: typeof raw.updatedAt === 'string' ? raw.updatedAt : null,
     };
 }
