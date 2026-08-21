@@ -1,6 +1,6 @@
 # GCP Cloud Run & Cloud Scheduler Deployment Guide
 
-This guide containerizes the Python Garmin ingestion/sync package and schedules two
+This guide containerizes the Python Garmin ingestion/sync package and schedules three
 recurring jobs on Google Cloud Platform (GCP):
 
 * **`garmin-sync`** -- recovery-metrics ingestion (`python -m garmin_sync sync`),
@@ -196,7 +196,7 @@ gcloud logging read \
 
 ---
 
-## 6. Create the two Cloud Scheduler jobs
+## 6. Create the three Cloud Scheduler jobs
 
 `garmin-sync` runs on a **repeating window, not one fixed time** -- wake time
 varies (p95 ~5-7am), and a single fixed cron either fires too early or leaves you
@@ -254,9 +254,11 @@ gcloud scheduler jobs create http garmin-manual-sync-poll \
   --oauth-service-account-email=${SCHEDULER_SA_EMAIL}
 ```
 
-All three fit exactly inside Cloud Scheduler's free tier (3 jobs/project/month);
-Cloud Run Jobs bill per second of actual execution, which for this workload is
-pennies a month.
+Cloud Scheduler's free tier is 3 jobs **per billing account**, not per project --
+these three exactly use it up, so a billing account already running other Scheduler
+jobs elsewhere (a different project, an unrelated app) will incur Scheduler's
+per-job charge on top. Cloud Run Jobs bill per second of actual execution
+regardless, which for this workload is pennies a month.
 
 ---
 
@@ -360,7 +362,7 @@ will be dropped on that first run.
 
 Run the **Deploy Garmin Sync** workflow (Actions tab -> select it -> Run workflow). This
 builds the container with plain `docker build`/`docker push` against Artifact Registry (not
-Cloud Build -- see the workflow's own comments for why) and redeploys both Cloud Run Jobs
+Cloud Build -- see the workflow's own comments for why) and redeploys all three Cloud Run Jobs
 against the infra `setup-workload-identity.sh` already created. Leave `run_smoke_test` off (its default) until
 you've confirmed a Garmin token already exists in the bucket
 (`docs/ops/verify-existing-deploy.sh` checks this) -- otherwise the smoke test fails for lack
@@ -392,5 +394,5 @@ actually logs in and pulls data end to end.
 
 ### Re-deploying after a code change
 
-Run **Deploy Garmin Sync** again -- it rebuilds the image and redeploys both Jobs
+Run **Deploy Garmin Sync** again -- it rebuilds the image and redeploys all three Jobs
 (`gcloud run jobs deploy` upserts) without touching anything already configured.
