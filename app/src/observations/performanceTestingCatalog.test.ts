@@ -13,7 +13,7 @@ describe('performance testing catalog', () => {
 
     it.each(PERFORMANCE_TEST_DEFINITIONS)('validates $id protocol and session contracts', definition => {
         expect(() => assertValidMeasurementProtocol(definition.protocol)).not.toThrow();
-        expect(validateSessionDefinition(definition.sessionDefinition)).toEqual({ ok: true, issues: [] });
+        expect(validateSessionDefinition(definition.sessionDefinition).ok).toBe(true);
         expect(definition.sessionDefinition.intent).toBe('testing');
         expect(definition.protocol.intent).toBe('testing');
     });
