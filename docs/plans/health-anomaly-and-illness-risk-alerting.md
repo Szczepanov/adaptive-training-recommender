@@ -91,6 +91,22 @@ export type HealthAnomalyPolicy =
 Normal production behavior stays `off` until the shadow implementation lands and the feature
 is intentionally enabled for evidence collection.
 
+#### Fail-closed policy resolution
+
+Runtime resolution of `HealthAnomalyPolicy` must be fail-closed:
+
+* accept only the four exact enum string values (`'off' | 'shadow-v1' | 'visible-v1' |
+  'tighten-v1'`); reject anything else rather than coercing or guessing;
+* a missing configuration value resolves to `'off'`;
+* an invalid/unrecognized string value resolves to `'off'`;
+* a configuration read failure (feature-flag store unavailable, malformed remote config, etc.)
+  resolves to `'off'`;
+* every non-`'off'` mode requires an explicit, valid configured value — there is no implicit
+  upgrade path from missing/invalid configuration into a more visible mode.
+
+HA0.1 unit tests must cover all four valid values plus the missing/invalid/read-failure cases
+above, asserting each degrades to `'off'`.
+
 ---
 
 ## Canonical data contracts
@@ -335,12 +351,49 @@ When the user turns illness symptoms on, optionally reveal:
 
 `illnessSymptoms` remains the compatibility flag consumed by existing code.
 
+#### Migration and validation contract
+
+This single contract applies consistently in `validateCheckin`, `parseSubjectiveCheckin`, and
+`app/firestore.rules` — not just in the UI:
+
+* **Precedence when both fields are present.** `healthContext.symptoms.present` is the
+  authoritative source once supplied; it wins over any independently-written `illnessSymptoms`
+  value on the same write.
+  * `symptoms.present === true` sets `illnessSymptoms = true`.
+  * `symptoms.present === false` sets `illnessSymptoms = false` (explicit clear).
+  * `healthContext.symptoms` omitted entirely leaves the legacy `illnessSymptoms` field
+    untouched — omission is not the same as `present: false`.
+* **Allowed nested combinations.** `onset`, `severity` and `types` are only meaningful, and
+  only accepted, when `symptoms.present === true`. When `present === false` or `symptoms` is
+  absent, `onset`/`severity`/`types` must be absent or `null`; a write that sets them alongside
+  `present: false` (or without `present`) is an invalid nested state and is rejected.
+* **Finite `timezoneShiftHours` bounds.** When supplied, `timezoneShiftHours` must be a finite
+  number in `[-14, 14]` (covering real-world UTC offsets); `null`/omitted means unknown.
+  Values outside that range or non-finite values are rejected.
+* **Firestore rules enforce the same shape**, not only ownership/date: reject documents where
+  `healthContext.symptoms.present` is `false`/absent but onset/severity/types are set, and
+  reject `timezoneShiftHours` outside `[-14, 14]`. Rules validation is best-effort mirroring of
+  `validateCheckin`; the app-side validator remains the primary gate.
+
 Acceptance criteria:
 
-* a legacy check-in behaves exactly as before;
+* a legacy check-in (no `healthContext`) behaves exactly as before;
 * new context round-trips through persistence;
-* clearing `symptoms.present` updates `illnessSymptoms` consistently;
-* no context field is required to submit a check-in.
+* clearing `symptoms.present` (`true -> false`) updates `illnessSymptoms` consistently and
+  clears/rejects any now-invalid nested onset/severity/types;
+* no context field is required to submit a check-in;
+* `validateCheckin`, `parseSubjectiveCheckin` and `app/firestore.rules` agree on the contract
+  above.
+
+Required tests (`validateCheckin`, `parseSubjectiveCheckin`, and `test:rules`):
+
+* legacy-only — only `illnessSymptoms` set, no `healthContext`;
+* context-only — `healthContext.symptoms.present` set, no legacy `illnessSymptoms` on the write;
+* conflicting — both fields present with different values, confirms `healthContext` wins;
+* clear-flow — `present: true` followed by `present: false`, confirms `illnessSymptoms` clears
+  and stale onset/severity/types are rejected or cleared;
+* invalid-range — `timezoneShiftHours` outside `[-14, 14]` or non-finite is rejected;
+* invalid-nested-state — onset/severity/types set while `present` is `false`/absent is rejected.
 
 ---
 
@@ -397,6 +450,16 @@ Per signal record:
 
 The evaluator must be able to say `unavailable`. One missing signal must not be interpreted as
 normal.
+
+**Zero-scale behavior must be deterministic.** When a channel's scale (MAD/stdev) is zero or
+below a documented near-zero epsilon, the default is `status = 'unavailable'` — never a
+standardized deviation computed by dividing by (near-)zero. A specific non-escalating fallback
+(for example, treating an exactly-zero-variance history as `'normal'` when history count is
+otherwise sufficient and the current value equals the baseline exactly) is only permitted when
+it is explicitly documented in the policy and covered by a unit test proving it cannot produce
+`moderate_anomaly`/`strong_anomaly`/infinite evidence from zero variance. Every threshold policy
+must pass a test asserting zero/near-zero scale never yields `moderate_anomaly`, `strong_anomaly`,
+or an infinite/NaN standardized deviation.
 
 Acceptance criteria:
 
@@ -572,6 +635,34 @@ Persist:
 * whether an alert was actually shown;
 * optional outcome label added later as a separate append/update event according to existing
   journal conventions.
+
+#### Immutable, replayable identity
+
+Do not rely on a generic revision primitive's numeric counter or timestamp alone. Define:
+
+* **`revisionId`** — derived from an immutable source-revision identifier or a normalized input
+  fingerprint (a stable hash of the exact source snapshot/check-in identifiers, baseline
+  versions and policy version that produced the assessment), not a wall-clock timestamp.
+  Timestamps alone cannot distinguish "recomputed with the same inputs" from "recomputed after
+  a late sync changed the inputs."
+* **Idempotency key** — deterministic from `(effective local date, source snapshot/check-in
+  revisions, policy version, baseline/threshold policy version, mode)`. Recomputing with an
+  unchanged key must not create a duplicate revision; recomputing with a changed key (a source
+  revision changed) creates a new revision per ADR-0010's append-only principle.
+* **Immutable threshold values** — each policy version resolves to a fixed, immutable set of
+  `HealthAnomalyThresholdPolicy` values at compute time; a later change to the *current* policy
+  version must not retroactively alter what an already-persisted revision recorded as its
+  effective thresholds.
+* **Outcome labels stay outside the immutable revision.** A later follow-up label (HA6) is
+  written as a separate append/update event referencing the assessment/episode, never as a
+  mutation of the assessment revision that produced the original alert (see ADR-0025's privacy
+  section on keeping outcome labels separate from live scoring/replay).
+* **Late and out-of-order updates.** A late Garmin sync, corrected sample, or backfilled
+  baseline that changes a source revision after the original assessment was computed produces a
+  *new* revision under the same `{date}` with a new `revisionId`/idempotency key; it does not
+  overwrite the earlier revision. The episode-identity logic (HA4.2) treats a late-arriving
+  revision using the source data's effective date, not the recompute wall-clock time, and must
+  not use future information to backdate an episode's start.
 
 ### HA4.2 Episode identity
 
@@ -911,7 +1002,9 @@ At minimum:
 6. symptoms true + normal wearables -> `symptoms_reported`;
 7. symptoms true + perfect-looking readiness -> still symptoms state;
 8. missing respiration -> evaluator does not fabricate normal respiration;
-9. zero MAD/scale -> signal unavailable or policy-defined safe fallback, never infinite evidence;
+9. zero/near-zero MAD/scale -> signal `unavailable` by default, or an explicitly documented
+   non-escalating fallback per HA2.4, but never `moderate_anomaly`/`strong_anomaly` or infinite
+   evidence;
 10. alcohol explains RHR/HRV but not automatically all respiration evidence;
 11. travel + poor sleep can explain more than travel alone;
 12. correlated Garmin composites cannot independently escalate state;
