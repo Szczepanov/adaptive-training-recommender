@@ -69,8 +69,8 @@ class TokenStore(Protocol):
         """Restore single token JSON file to destination path. Return True if restored successfully."""
         ...
 
-    def persist(self, source: Path) -> None:
-        """Persist refreshed token JSON file from local path to storage backend."""
+    def persist(self, source: Path) -> bool:
+        """Persist refreshed token JSON file from local path to storage backend. Return True if persisted successfully."""
         ...
 
 
@@ -94,11 +94,11 @@ class LocalTokenStore:
         logger.info(f"Restored tokens from local store file '{self.storage_file}'.")
         return True
 
-    def persist(self, source: Path) -> None:
+    def persist(self, source: Path) -> bool:
         source_path = Path(source).expanduser().resolve()
         if not source_path.exists() or source_path.is_dir():
             logger.warning(f"Source token file '{source_path}' does not exist. Nothing to persist.")
-            return
+            return False
 
         if source_path != self.storage_file:
             self.storage_file.parent.mkdir(parents=True, exist_ok=True)
@@ -106,6 +106,7 @@ class LocalTokenStore:
 
         _set_secure_permissions(self.storage_file)
         logger.info(f"Persisted tokens to local store file '{self.storage_file}'.")
+        return True
 
 
 class GcsTokenStore:
@@ -150,23 +151,23 @@ class GcsTokenStore:
             _set_secure_permissions(dest_path)
             logger.info(f"Restored GCS token file to '{dest_path}'.")
             return True
-        except Exception:
-            logger.warning("Failed to restore token file from GCS.")
+        except Exception as e:
+            logger.warning(f"Failed to restore token file from GCS: {type(e).__name__}: {e}")
             return False
 
-    def persist(self, source: Path) -> None:
+    def persist(self, source: Path) -> bool:
         source_path = Path(source).expanduser().resolve()
         if not source_path.exists() or source_path.is_dir():
             logger.warning(
                 f"Source token file '{source_path}' does not exist. Skipping GCS upload."
             )
-            return
+            return False
 
         try:
             from google.cloud import storage  # type: ignore[attr-defined]
         except ImportError:
             logger.error("google-cloud-storage is required for GcsTokenStore.")
-            return
+            return False
 
         try:
             client = storage.Client()
@@ -177,8 +178,16 @@ class GcsTokenStore:
             logger.info(
                 f"Successfully persisted refreshed token file to gs://{self.bucket_name}/{self.object_name}."
             )
-        except Exception:
-            logger.error("Failed to upload token file to GCS.")
+            return True
+        except Exception as e:
+            # Surface the real cause (e.g. a 403 from a missing IAM binding on the token
+            # bucket) instead of swallowing it -- callers that must know upload succeeded
+            # (see bootstrap_garmin_tokens.py) rely on both this message and the return value.
+            logger.error(
+                f"Failed to upload token file to gs://{self.bucket_name}/{self.object_name}: "
+                f"{type(e).__name__}: {e}"
+            )
+            return False
 
 
 def create_token_store(

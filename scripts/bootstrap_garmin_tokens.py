@@ -56,7 +56,14 @@ def bootstrap(bucket_name: str | None = None, object_name: str = "garmin/garmin_
 
     print(f"Uploading token file to gs://{bucket}/{object_name}...")
     gcs_store = GcsTokenStore(bucket_name=bucket, object_name=object_name)
-    gcs_store.persist(local_file)
+    if not gcs_store.persist(local_file):
+        raise RuntimeError(
+            f"Upload to gs://{bucket}/{object_name} failed -- see the 'Failed to upload "
+            "token file to GCS' error above for the underlying cause (a missing IAM binding "
+            "on the token bucket for the identity running this script is the usual one). "
+            "Login succeeded and tokens were saved locally, but the Cloud Run job still has "
+            "no token to read until this upload succeeds."
+        )
     print("Token bootstrap completed successfully!")
 
 
