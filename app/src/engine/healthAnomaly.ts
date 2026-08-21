@@ -37,8 +37,12 @@ export function readHealthAnomalyPolicy(readConfiguredValue: () => unknown): Hea
  * health warning, or persist an assessment merely because a future-facing flag was configured.
  */
 export function evaluatePhysiologicalAnomaly(
-    _input: HealthAnomalyInput,
-    _policy: HealthAnomalyPolicy = 'off',
+    input: HealthAnomalyInput,
+    policy: HealthAnomalyPolicy = 'off',
 ): PhysiologicalAnomalyAssessment | null {
+    // Reference both boundary arguments explicitly so the scaffolding remains lint-clean while
+    // preserving its intentionally inert behavior until HA3 lands.
+    void input;
+    void policy;
     return null;
 }
