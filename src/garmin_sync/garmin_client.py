@@ -20,6 +20,7 @@ class GarminDataClient(Protocol):
         self, start_date_iso: str, end_date_iso: str
     ) -> list[dict[str, Any]]: ...
     def get_stress_data(self, date_iso: str) -> dict[str, Any]: ...
+    def get_respiration_data(self, date_iso: str) -> dict[str, Any]: ...
     def get_body_battery(self, date_iso: str) -> list[dict[str, Any]]: ...
     def get_training_readiness(self, date_iso: str) -> list[dict[str, Any]]: ...
     def get_training_status(self, date_iso: str) -> dict[str, Any]: ...
@@ -122,6 +123,16 @@ class GarminClientWrapper:
         if not self.api:
             raise RuntimeError("Garmin client is not authenticated. Call login first.")
         return self.api.get_all_day_stress(date_iso) or {}
+
+    def get_respiration_data(self, date_iso: str) -> dict[str, Any]:
+        """The dedicated all-day respiration endpoint. Unlike `dailySleepDTO`'s single
+        (coarser) `averageRespirationValue` summary field, this carries the full
+        `respirationValuesArray` of ~2-minute-interval readings, which
+        garmin_provider.average_sleep_respiration_from_intervals uses to compute a more
+        precise sleep-window average."""
+        if not self.api:
+            raise RuntimeError("Garmin client is not authenticated. Call login first.")
+        return self.api.get_respiration_data(date_iso) or {}
 
     def get_body_battery(self, date_iso: str) -> list[dict[str, Any]]:
         if not self.api:

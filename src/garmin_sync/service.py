@@ -724,6 +724,7 @@ class GarminSyncService:
             training_readiness_today = self.archive_store.load("training_readiness", target_iso)
             training_status_today = self.archive_store.load("training_status", target_iso)
             heart_rate_zones = self.archive_store.load("heart_rate_zones", target_iso)
+            respiration_today = self.archive_store.load("respiration", target_iso)
 
             try:
                 canonical = canonicalize_from_raw(
@@ -739,6 +740,7 @@ class GarminSyncService:
                     training_readiness_today=training_readiness_today,
                     training_status_today=training_status_today,
                     heart_rate_zones=heart_rate_zones,
+                    respiration_today=respiration_today,
                 )
                 zone4_floor = (
                     canonical.heart_rate_zones.zone4_floor if canonical.heart_rate_zones else None

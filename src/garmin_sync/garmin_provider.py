@@ -73,6 +73,66 @@ def extract_sleep_metrics(
     return sleep_score, sleep_sec, avg_resp
 
 
+def _sleep_window_gmt_ms(
+    sleep_obj: dict[str, Any] | None,
+) -> tuple[int | float | None, int | float | None]:
+    """(sleepStartTimestampGMT, sleepEndTimestampGMT) in epoch ms from a raw Garmin
+    sleep response, or (None, None) if absent/malformed."""
+    if not sleep_obj:
+        return None, None
+    daily_sleep = sleep_obj.get("dailySleepDTO", {}) or {}
+    start = daily_sleep.get("sleepStartTimestampGMT")
+    end = daily_sleep.get("sleepEndTimestampGMT")
+    return (
+        start if isinstance(start, (int, float)) else None,
+        end if isinstance(end, (int, float)) else None,
+    )
+
+
+def average_sleep_respiration_from_intervals(
+    respiration_data: dict[str, Any] | None,
+    sleep_start_gmt_ms: int | float | None,
+    sleep_end_gmt_ms: int | float | None,
+) -> float | None:
+    """Average the full-resolution per-~2-minute respiration readings
+    (`respirationValuesArray`, from the dedicated `get_respiration_data` endpoint)
+    restricted to the night's actual sleep window, instead of trusting
+    `dailySleepDTO.averageRespirationValue` -- a single value that in observed exports
+    is often reported at whole-breath granularity. Averaging ~150-300 raw interval
+    readings ourselves describes the exact same "respiration rate during sleep" signal
+    at materially finer granularity, without changing what the metric means (see
+    ADR-0024's discussion of respiration's undocumented measurement resolution).
+
+    Returns None (never raises) on any missing/malformed input -- including too few
+    in-window samples to trust -- so callers fall back to the sleep DTO's own average.
+    Same defensive-extraction policy as the rest of this module."""
+    if not respiration_data or sleep_start_gmt_ms is None or sleep_end_gmt_ms is None:
+        return None
+    samples = respiration_data.get("respirationValuesArray")
+    if not isinstance(samples, list):
+        return None
+
+    values: list[float] = []
+    for entry in samples:
+        if not isinstance(entry, (list, tuple)) or len(entry) != 2:
+            continue
+        ts, value = entry
+        if not isinstance(ts, (int, float)) or not isinstance(value, (int, float)):
+            continue
+        # Garmin uses <= 0 in this array as a "no reading" sentinel, not a real rate.
+        if value <= 0:
+            continue
+        if sleep_start_gmt_ms <= ts <= sleep_end_gmt_ms:
+            values.append(float(value))
+
+    # ~1 reading every 2 minutes -- require a real night's worth of coverage so a
+    # handful of samples near sleep onset/wake can't dominate the average.
+    if len(values) < 30:
+        return None
+
+    return round(sum(values) / len(values), 1)
+
+
 def _canonicalize_stress(stress_today: dict[str, Any] | None) -> CanonicalStress | None:
     if not stress_today:
         return None
@@ -386,6 +446,7 @@ def canonicalize_from_raw(
     training_readiness_today: list[dict[str, Any]] | None = None,
     training_status_today: dict[str, Any] | None = None,
     heart_rate_zones: list[dict[str, Any]] | None = None,
+    respiration_today: dict[str, Any] | None = None,
 ) -> CanonicalDailyMetrics:
     """Pure Garmin-shape parsing + fallback logic, producing a provider-neutral
     CanonicalDailyMetrics. Shared by GarminProviderAdapter.fetch_daily_metrics (live
@@ -414,11 +475,26 @@ def canonicalize_from_raw(
     # Sleep
     sleep_score, sleep_sec, avg_resp = extract_sleep_metrics(sleep_today)
     sleep_date = target_date_iso
+    used_sleep_fallback = False
     if sleep_score is None and sleep_fallback:
         fb_score, fb_sec, fb_resp = extract_sleep_metrics(sleep_fallback)
         if fb_score is not None:
             sleep_score, sleep_sec, avg_resp = fb_score, fb_sec, fb_resp
             sleep_date = yesterday_iso
+            used_sleep_fallback = True
+
+    # Prefer a precise average computed from the dedicated respiration endpoint's raw
+    # per-interval readings over dailySleepDTO's own (coarser) summary value -- see
+    # average_sleep_respiration_from_intervals. Only attempted against sleep_today's own
+    # window: respiration_today is fetched for target_date_iso, so it has no
+    # correspondence to sleep_fallback's (D-1) window.
+    if not used_sleep_fallback:
+        sleep_start_gmt_ms, sleep_end_gmt_ms = _sleep_window_gmt_ms(sleep_today)
+        precise_avg_resp = average_sleep_respiration_from_intervals(
+            respiration_today, sleep_start_gmt_ms, sleep_end_gmt_ms
+        )
+        if precise_avg_resp is not None:
+            avg_resp = precise_avg_resp
 
     # HRV
     hrv_summary = hrv_today.get("hrvSummary", {}) if hrv_today else {}
@@ -570,6 +646,9 @@ class GarminProviderAdapter:
         stress_today = self._fetch_enrichment(
             "stress", lambda: self.client.get_stress_data(target_date_iso)
         )
+        respiration_today = self._fetch_enrichment(
+            "respiration", lambda: self.client.get_respiration_data(target_date_iso)
+        )
         body_battery_today = self._fetch_enrichment(
             "body_battery", lambda: self.client.get_body_battery(target_date_iso)
         )
@@ -601,6 +680,7 @@ class GarminProviderAdapter:
             training_readiness_today=training_readiness_today,
             training_status_today=training_status_today,
             heart_rate_zones=heart_rate_zones,
+            respiration_today=respiration_today,
         )
 
         raw_payloads: dict[str, Any] = {
@@ -613,6 +693,8 @@ class GarminProviderAdapter:
             raw_payloads["sleep_fallback"] = sleep_fallback
         if stress_today is not None:
             raw_payloads["stress"] = stress_today
+        if respiration_today is not None:
+            raw_payloads["respiration"] = respiration_today
         if body_battery_today is not None:
             raw_payloads["body_battery"] = body_battery_today
         if training_readiness_today is not None:
