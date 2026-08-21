@@ -61,12 +61,13 @@ function outcome(id: string, date: string, status: SessionOutcomeStatus): Sessio
 }
 
 describe('deriveBlockProcessEvidence', () => {
-    it('reconciles exact coverage, recommendation verdicts, adherence and M5.3 response facts', () => {
+    it('reconciles exact completed history separately from recommendation adherence and M5.3 responses', () => {
         const result = deriveBlockProcessEvidence({
             keyRoles: {
                 plannedOccurrenceIds: ['role-b', 'role-a', 'role-a'],
                 completedOccurrenceIds: ['role-a', 'not-planned'],
             },
+            completedSessions: { sessionIds: ['session-b', 'session-a', 'unplanned-completed', 'session-a'] },
             recommendations: [
                 recommendation('2026-08-01', 'proceed', answered(true)),
                 recommendation('2026-08-02', 'scale', answered(false)),
@@ -85,7 +86,7 @@ describe('deriveBlockProcessEvidence', () => {
         expect(result.plannedKeyRoles).toBe(2);
         expect(result.completedKeyRoles).toBe(1);
         expect(result.plannedSessionCount).toBe(5);
-        expect(result.completedSessionCount).toBe(2);
+        expect(result.completedSessionCount).toBe(3);
         expect(result.adherencePct).toBe(40);
         expect(result.scaledCount).toBe(1);
         expect(result.deferredCount).toBe(1);
@@ -97,12 +98,13 @@ describe('deriveBlockProcessEvidence', () => {
             '2026-08-01@r2', '2026-08-02@r2', '2026-08-03@r2',
             '2026-08-04@r2', '2026-08-05@r2', '2026-08-06@r2',
         ]);
-        expect(result.sourceIds.sessionIds).toEqual(['session-a', 'session-b', 'session-c']);
+        expect(result.sourceIds.sessionIds).toEqual(['session-a', 'session-b', 'session-c', 'unplanned-completed']);
     });
 
     it('does not invent completed key roles outside the supplied planned occurrence set', () => {
         const result = deriveBlockProcessEvidence({
             keyRoles: { plannedOccurrenceIds: [], completedOccurrenceIds: ['orphan'] },
+            completedSessions: { sessionIds: [] },
             recommendations: [],
             sessionOutcomes: [],
         });
