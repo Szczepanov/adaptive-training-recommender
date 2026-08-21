@@ -11,6 +11,32 @@ import {
     assertValidMetricObservationRevision,
 } from '../observations/validation';
 
+function canonicalize(value: unknown): unknown {
+    if (Array.isArray(value)) return value.map(canonicalize);
+    if (value && typeof value === 'object') {
+        return Object.fromEntries(
+            Object.entries(value as Record<string, unknown>)
+                .sort(([a], [b]) => a.localeCompare(b))
+                .map(([key, entry]) => [key, canonicalize(entry)]),
+        );
+    }
+    return value;
+}
+
+/**
+ * `createdAt` is persistence metadata, not observation identity. An offline/reconnect retry may
+ * rebuild the same canonical observation a few seconds later, so revision-1 idempotency compares
+ * the evidence payload while deliberately ignoring only that timestamp.
+ */
+function sameCanonicalInitialPayload(
+    existing: MetricObservationRevision,
+    incoming: MetricObservationRevision,
+): boolean {
+    const { createdAt: _existingCreatedAt, ...existingPayload } = existing;
+    const { createdAt: _incomingCreatedAt, ...incomingPayload } = incoming;
+    return JSON.stringify(canonicalize(existingPayload)) === JSON.stringify(canonicalize(incomingPayload));
+}
+
 export class MetricObservationService {
     private readonly db: Firestore;
 
@@ -37,7 +63,24 @@ export class MetricObservationService {
         await runTransaction(this.db, async transaction => {
             const headSnapshot = await transaction.get(headRef);
             if (headSnapshot.exists()) {
-                throw new Error(`Observation ${revision.observationKey} already exists; use the correction workflow`);
+                const head = headSnapshot.data() as MetricObservationHead;
+                assertValidMetricObservationHead(head);
+                if (head.observationKey !== revision.observationKey
+                    || head.metricId !== revision.metricId
+                    || head.assessmentAttemptId !== revision.assessmentAttemptId) {
+                    throw new Error('Existing observation head does not match logical observation identity');
+                }
+                if (head.headRevision !== 1) {
+                    throw new Error(`Observation ${revision.observationKey} already has corrections; use the correction workflow`);
+                }
+                const existingRevisionSnapshot = await transaction.get(revisionRef);
+                if (!existingRevisionSnapshot.exists()) {
+                    throw new Error(`Observation ${revision.observationKey} has a head but revision 1 is missing`);
+                }
+                const existingRevision = existingRevisionSnapshot.data() as MetricObservationRevision;
+                assertValidMetricObservationRevision(existingRevision);
+                if (sameCanonicalInitialPayload(existingRevision, revision)) return;
+                throw new Error(`Observation ${revision.observationKey} already exists with different evidence; use the correction workflow`);
             }
             const revisionSnapshot = await transaction.get(revisionRef);
             if (revisionSnapshot.exists()) {
