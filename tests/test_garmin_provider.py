@@ -189,6 +189,160 @@ def test_extract_sleep_metrics_handles_nested_and_fallback_shapes():
     assert extract_sleep_metrics(None) == (None, None, None)
 
 
+# --- Respiration precision (finer than dailySleepDTO.averageRespirationValue) ----
+
+
+def _respiration_array(
+    count: int, start_ms: int = 0, step_ms: int = 120_000
+) -> list[list[int | float]]:
+    """`count` alternating 12.0/13.0 readings 2 minutes apart -- mean is exactly 12.5."""
+    return [[start_ms + i * step_ms, 12.0 if i % 2 == 0 else 13.0] for i in range(count)]
+
+
+def test_average_sleep_respiration_from_intervals_averages_in_window_readings():
+    from garmin_sync.garmin_provider import average_sleep_respiration_from_intervals
+
+    samples = _respiration_array(40)  # ts 0 .. 4,680,000
+    # Out-of-window reading (before sleep even started) and an in-window "no reading"
+    # sentinel (<=0) -- both must be excluded from the average.
+    samples = [[-120_000, 20.0]] + samples + [[100_000, 0]]
+
+    result = average_sleep_respiration_from_intervals(
+        {"respirationValuesArray": samples}, sleep_start_gmt_ms=0, sleep_end_gmt_ms=5_000_000
+    )
+
+    assert result == 12.5
+
+
+def test_average_sleep_respiration_from_intervals_requires_min_sample_coverage():
+    from garmin_sync.garmin_provider import average_sleep_respiration_from_intervals
+
+    samples = _respiration_array(10)  # below the 30-sample minimum
+    result = average_sleep_respiration_from_intervals(
+        {"respirationValuesArray": samples}, sleep_start_gmt_ms=0, sleep_end_gmt_ms=5_000_000
+    )
+    assert result is None
+
+
+def test_average_sleep_respiration_from_intervals_degrades_on_missing_or_malformed_input():
+    from garmin_sync.garmin_provider import average_sleep_respiration_from_intervals
+
+    assert average_sleep_respiration_from_intervals(None, 0, 5_000_000) is None
+    assert average_sleep_respiration_from_intervals({}, 0, 5_000_000) is None
+    # A truthy non-dict payload (e.g. an archived record or enrichment fetch result
+    # with an unexpected shape) must degrade to None, never raise AttributeError from
+    # a bare `.get(...)` call.
+    assert average_sleep_respiration_from_intervals([1, 2, 3], 0, 5_000_000) is None
+    assert average_sleep_respiration_from_intervals("not a dict", 0, 5_000_000) is None
+    assert (
+        average_sleep_respiration_from_intervals({"respirationValuesArray": "bad"}, 0, 5_000_000)
+        is None
+    )
+    assert (
+        average_sleep_respiration_from_intervals(
+            {"respirationValuesArray": _respiration_array(40)}, None, 5_000_000
+        )
+        is None
+    )
+    assert (
+        average_sleep_respiration_from_intervals(
+            {"respirationValuesArray": _respiration_array(40)}, 0, None
+        )
+        is None
+    )
+
+
+def test_average_sleep_respiration_from_intervals_requires_full_night_coverage():
+    """40 valid samples clear the sample-count floor but are clustered in the first
+    hour of an 8-hour sleep window -- they must not be mistaken for a full-night
+    average (e.g. after a sync gap or the device coming back online late)."""
+    from garmin_sync.garmin_provider import average_sleep_respiration_from_intervals
+
+    samples = _respiration_array(40)  # ts 0 .. 4,680,000 (~78 minutes)
+    result = average_sleep_respiration_from_intervals(
+        {"respirationValuesArray": samples},
+        sleep_start_gmt_ms=0,
+        sleep_end_gmt_ms=8 * 60 * 60 * 1000,  # 8-hour window
+    )
+    assert result is None
+
+
+def test_canonicalize_from_raw_prefers_precise_respiration_average_when_available():
+    sleep_today = {
+        "dailySleepDTO": {
+            "sleepScores": {"overall": {"value": 82}},
+            "sleepTimeSeconds": 27000,
+            "averageRespirationValue": 12,  # Garmin's coarser summary value
+            "sleepStartTimestampGMT": 0,
+            "sleepEndTimestampGMT": 5_000_000,
+        }
+    }
+    respiration_today = {"respirationValuesArray": _respiration_array(40)}
+
+    canonical = canonicalize_from_raw(
+        stats_today={},
+        stats_fallback=None,
+        sleep_today=sleep_today,
+        sleep_fallback=None,
+        hrv_today={},
+        target_date_iso="2026-08-06",
+        yesterday_iso="2026-08-05",
+        respiration_today=respiration_today,
+    )
+
+    assert canonical.respiration_rate_brpm == 12.5  # precise, not the coarse 12
+
+
+def test_canonicalize_from_raw_falls_back_to_sleep_dto_respiration_without_interval_data():
+    sleep_today = {
+        "dailySleepDTO": {
+            "sleepScores": {"overall": {"value": 82}},
+            "sleepTimeSeconds": 27000,
+            "averageRespirationValue": 12,
+        }
+    }
+
+    canonical = canonicalize_from_raw(
+        stats_today={},
+        stats_fallback=None,
+        sleep_today=sleep_today,
+        sleep_fallback=None,
+        hrv_today={},
+        target_date_iso="2026-08-06",
+        yesterday_iso="2026-08-05",
+    )
+
+    assert canonical.respiration_rate_brpm == 12
+
+
+def test_canonicalize_from_raw_skips_precise_respiration_on_sleep_fallback_day():
+    """respiration_today is fetched for target_date_iso only -- it has no relationship
+    to sleep_fallback's (D-1) window, so the precise path must not apply to it."""
+    sleep_fallback = {
+        "dailySleepDTO": {
+            "sleepScores": {"overall": {"value": 78}},
+            "sleepTimeSeconds": 28800,
+            "averageRespirationValue": 13,
+            "sleepStartTimestampGMT": 0,
+            "sleepEndTimestampGMT": 5_000_000,
+        }
+    }
+    respiration_today = {"respirationValuesArray": _respiration_array(40)}
+
+    canonical = canonicalize_from_raw(
+        stats_today={},
+        stats_fallback=None,
+        sleep_today={},
+        sleep_fallback=sleep_fallback,
+        hrv_today={},
+        target_date_iso="2026-08-06",
+        yesterday_iso="2026-08-05",
+        respiration_today=respiration_today,
+    )
+
+    assert canonical.respiration_rate_brpm == 13
+
+
 def test_canonicalize_activities_maps_fields_and_intensity():
     raw = [
         {
@@ -397,6 +551,32 @@ def test_canonicalize_from_raw_populates_stress_body_battery_readiness_status():
     assert canonical.training_status.vo2max_running_date == "2026-07-17"  # stale, not today
     assert canonical.training_status.vo2max_cycling == 48.0
     assert canonical.training_status.vo2max_cycling_date == "2026-07-24"
+
+
+def test_canonicalize_from_raw_uses_precise_respiration_fixture_over_sleep_dto_average():
+    """Real-shape respiration.json (dedicated endpoint) round-trips into a finer-grained
+    respiration_rate_brpm than sleep.json's own averageRespirationValue (14.5)."""
+    with open(FIXTURES_DIR / "stats.json") as f:
+        stats = json.load(f)
+    with open(FIXTURES_DIR / "sleep.json") as f:
+        sleep = json.load(f)
+    with open(FIXTURES_DIR / "hrv.json") as f:
+        hrv = json.load(f)
+    with open(FIXTURES_DIR / "respiration.json") as f:
+        respiration = json.load(f)
+
+    canonical = canonicalize_from_raw(
+        stats_today=stats,
+        stats_fallback=None,
+        sleep_today=sleep,
+        sleep_fallback=None,
+        hrv_today=hrv,
+        target_date_iso="2026-08-06",
+        yesterday_iso="2026-08-05",
+        respiration_today=respiration,
+    )
+
+    assert canonical.respiration_rate_brpm == 12.2  # not sleep.json's coarser 14.5
 
 
 def test_canonicalize_from_raw_enrichment_fields_absent_when_not_provided():
