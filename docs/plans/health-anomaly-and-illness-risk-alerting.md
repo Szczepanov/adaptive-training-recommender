@@ -695,7 +695,7 @@ Acceptance criteria:
 
 ## HA5 — shadow mode and developer observability
 
-**Status:** in progress off `main`; implemented on `feat/health-anomaly-ha-d`, but not accepted until reconciled with current `main`, reviewed, and green in CI
+**Status:** complete on `main` (PR #171, 2026-08-21)
 
 ### HA5.1 Enable explicit shadow computation
 
@@ -1146,9 +1146,8 @@ For **training integration complete**:
 The next agent should continue from the shipped HA0–HA5 foundation and HA6.1–HA6.3 (PR #174) rather than recreating them:
 
 1. Read ADR-0025, ADR-0024, ADR-0010, this plan, and `docs/architecture/health-anomaly-shadow.md`.
-2. Reconcile `feat/health-anomaly-ha-e` with current `main` and merge PR #174 once green; the HA6.1–HA6.3 outcome-capture surface stays evidence-only under Detailed Data.
-3. Explicitly enable `shadow-v1` only for the intended evidence-collection user/environment; HA6 follow-up prompts only appear once `shadow-v1` assessments are being produced for that user.
-4. Accumulate enough real episodes/healthy periods to report alert burden, confounder overlap, false alerts, and lead time honestly; HA6 outcome labels are the source for the context-explained and symptom-follow-up fractions HA7 needs.
-5. Start HA6.4 personal expected-response modelling only once enough labelled episodes exist per athlete to evaluate without fitting sparse noise.
-6. Write the dated HA7 evidence review before any `visible-v1` cutover.
-7. Treat `tighten-v1` as a separate later release decision; health anomaly may only tighten, never relax, training decisions.
+2. Explicitly enable `shadow-v1` only for the intended evidence-collection user/environment, if not already enabled; the HA6.1–HA6.3 outcome-capture surface stays evidence-only under Detailed Data, and follow-up prompts only appear once `shadow-v1` assessments are being produced for that user.
+3. Accumulate enough real episodes/healthy periods to report alert burden, confounder overlap, false alerts, and lead time honestly; HA6 outcome labels are the source for the context-explained and symptom-follow-up fractions HA7 needs.
+4. Start HA6.4 personal expected-response modelling only once enough labelled episodes exist per athlete to evaluate without fitting sparse noise.
+5. Write the dated HA7 evidence review before any `visible-v1` cutover.
+6. Treat `tighten-v1` as a separate later release decision; health anomaly may only tighten, never relax, training decisions.
