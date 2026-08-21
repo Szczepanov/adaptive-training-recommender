@@ -342,16 +342,18 @@ The exact statistical mapping should be versioned and initially conservative.
 
 ### 6.1 Reliability provenance
 
-A protocol may carry a `ReliabilityEstimate`:
+A protocol may carry a `ReliabilityEstimate`. The canonical field names are the same ones used by the implementation plan:
 
 ```text
 source: literature_reference | personal_repeatability | manual
-metric: cv_pct | typical_error_abs | typical_error_pct | sem_abs
+statistic: cv_pct | typical_error_pct | typical_error_abs | sem_abs
 value: number
-population/context note
-reference
-estimatedAt
+reference?: string
+contextNote?: string
+estimatedAt?: string
 ```
+
+`contextNote` is where population/protocol context belongs; `statistic` identifies the error statistic itself. These names are part of the cross-document contract and should not be replaced by near-synonyms in serializers or report readers.
 
 Rules:
 
