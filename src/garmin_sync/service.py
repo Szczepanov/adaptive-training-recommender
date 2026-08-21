@@ -965,8 +965,8 @@ class GarminSyncService:
     def poll_manual_sync_requests(self) -> bool:
         """Poll for a manual "Sync Now" request queued by the web app
         (users/{uid}/garmin_sync_requests/latest) and, if one is pending, atomically
-        claim it, run an immediate force-refreshed current-day sync, then mark the
-        request resolved.
+        claim it, run an immediate force-refreshed sync_daily(), then mark the request
+        resolved.
 
         Meant to run frequently (e.g. every few minutes via Cloud Scheduler) so
         clicking "Sync Now" in the web app -- e.g. because the athlete woke up before
@@ -1017,14 +1017,15 @@ class GarminSyncService:
         if not claim_pending(db.transaction()):
             return True
 
-        # resync_lookback_days=0: the button's whole promise is "refresh today's
-        # numbers now" -- the normal D-1..D-N lookback resync is a background-poll
-        # concern (see sync_daily's docstring), and folding it in here would double
-        # the Garmin work per click and could report 'failed' over a lookback-only
-        # failure even when today's snapshot refreshed successfully.
+        # Plain force=True, same as any other sync_daily caller -- the D-1..D-N lookback
+        # resync isn't optional background-poll overhead here, it's the same
+        # data-reconciliation contract sync_daily always makes (Garmin keeps revising a
+        # day's data after that day's own sync ran; see sync_daily's docstring). A
+        # manual refresh should leave Garmin-derived state as current as possible,
+        # including that reconciliation, not just today's numbers.
         logger.info("Claimed manual sync request; running an immediate forced sync...")
         try:
-            ok = self.sync_daily(force=True, resync_lookback_days=0)
+            ok = self.sync_daily(force=True)
             self._finish_manual_sync_request(
                 request_ref,
                 claim_id,

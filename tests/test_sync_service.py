@@ -459,7 +459,7 @@ class _FakeSyncRequestDb:
         return _FakeSyncRequestTransaction()
 
 
-def test_poll_manual_sync_requests_claims_and_runs_forced_current_day_sync(monkeypatch):
+def test_poll_manual_sync_requests_claims_and_runs_forced_sync(monkeypatch):
     # The Firebase decorator normally retries real transactions on write contention;
     # the fake is enough to exercise the transaction body deterministically (see
     # test_performance_target_repository.py for the same convention).
@@ -472,7 +472,7 @@ def test_poll_manual_sync_requests_claims_and_runs_forced_current_day_sync(monke
     result = service.poll_manual_sync_requests()
 
     assert result is True
-    service.sync_daily.assert_called_once_with(force=True, resync_lookback_days=0)
+    service.sync_daily.assert_called_once_with(force=True)
     assert doc.data["status"] == "completed"
     assert doc.data["error"] is None
     assert doc.data["claimId"]  # tagged during the claim, still present after finishing
