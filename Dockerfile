@@ -7,8 +7,9 @@ WORKDIR /app
 # If pyproject.toml stops supporting the Docker runtime, fail the image build instead.
 ENV UV_PYTHON_DOWNLOADS=never
 
-# Install uv for fast dependency restoration
-RUN pip install --no-cache-dir uv==0.6.5
+# Pin the same modern uv release used by CI/lock generation so Python 3.14 resolution
+# and lock semantics are consistent across development and the production image.
+RUN pip install --no-cache-dir uv==0.12.2
 
 # Copy project definition and lock file. README.md is required here even though it is
 # not source: pyproject.toml declares `readme = "README.md"`, and hatchling validates
