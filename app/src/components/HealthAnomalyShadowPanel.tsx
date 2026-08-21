@@ -3,7 +3,8 @@ import type { DailyDecisionInput } from '../engine/models';
 import type { HealthAnomalyAssessmentRevision } from '../engine/healthAnomalyModels';
 import { healthAnomalyAssessmentRepository } from '../services/healthAnomalyPersistence';
 import { configuredHealthAnomalyShadowPolicy } from '../services/healthAnomalyRuntime';
-import { selectHealthAnomalyShadowRevision } from './healthAnomalyShadowView';
+import { selectHealthAnomalyLoadState, selectHealthAnomalyShadowRevision } from './healthAnomalyShadowView';
+import type { HealthAnomalyLoadResult } from './healthAnomalyShadowView';
 
 interface HealthAnomalyShadowPanelProps {
   userId: string;
@@ -122,7 +123,7 @@ export function HealthAnomalyShadowTrace({ revision, decisionInput }: HealthAnom
 export function HealthAnomalyShadowPanel({ userId, decisionInput, liveRevision }: HealthAnomalyShadowPanelProps) {
   const shadowEnabled = configuredHealthAnomalyShadowPolicy() === 'shadow-v1';
   const [persistedRevision, setPersistedRevision] = useState<HealthAnomalyAssessmentRevision | null>(null);
-  const [loadState, setLoadState] = useState<'loading' | 'ready' | 'missing' | 'error'>('loading');
+  const [loadResult, setLoadResult] = useState<HealthAnomalyLoadResult | null>(null);
   const date = decisionInput.date;
 
   useEffect(() => {
@@ -132,15 +133,20 @@ export function HealthAnomalyShadowPanel({ userId, decisionInput, liveRevision }
       .then(value => {
         if (cancelled) return;
         setPersistedRevision(value);
-        setLoadState(value ? 'ready' : 'missing');
+        setLoadResult({ userId, date, status: value ? 'ready' : 'missing' });
       })
       .catch(() => {
-        if (!cancelled) setLoadState('error');
+        if (!cancelled) setLoadResult({ userId, date, status: 'error' });
       });
     return () => { cancelled = true; };
   }, [shadowEnabled, userId, date]);
 
   if (!shadowEnabled) return null;
+  // Resolved against the active userId/date so a request that is still pending for a new
+  // target never renders a prior target's stale error. selectHealthAnomalyShadowRevision
+  // separately filters persistedRevision to the active user/date, so a stale revision
+  // from a superseded target is never rendered either.
+  const loadState = selectHealthAnomalyLoadState(userId, date, loadResult);
   const revisionForDate = selectHealthAnomalyShadowRevision(userId, date, liveRevision, persistedRevision);
   if (revisionForDate) {
     return <div className="data-view-container"><HealthAnomalyShadowTrace revision={revisionForDate} decisionInput={decisionInput} /></div>;

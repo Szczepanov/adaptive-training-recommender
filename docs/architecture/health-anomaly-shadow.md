@@ -76,7 +76,7 @@ alter the recommendation. There is no Home alert in HA-D.
 
 ## Historical replay / evidence report
 
-`app/src/engine/healthAnomalyReplay.ts` reuses the real HA2 feature mapper and HA3 evaluator.
+`healthAnomalyReplay.ts` `runHealthAnomalyReplay` reuses the real HA2 feature mapper and HA3 evaluator.
 For each replay day it supplies only that day's inputs plus prior recovery history. After all
 assessments have been computed it joins future 24/48/72-hour symptom reports as retrospective
 labels, so future information can never influence the live state machine.
@@ -96,8 +96,9 @@ npm run evidence:health-anomaly -- \
 
 The CLI uses Vite SSR to execute the repository's actual TypeScript evaluator rather than a
 parallel implementation. The JSON retains all candidate estimator traces and structured
-context. The Markdown file provides a compact day-by-day table with core evidence, hard-load,
-sleep/stress, state, same-day symptoms and 24/48/72-hour labels.
+context. `healthAnomalyReplay.ts` `renderHealthAnomalyReplayMarkdown` renders the Markdown
+file as a compact day-by-day table with core evidence, hard-load, sleep/stress, state,
+same-day symptoms and 24/48/72-hour labels.
 
 ## Still not enabled
 

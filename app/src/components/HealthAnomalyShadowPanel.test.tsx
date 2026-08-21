@@ -4,7 +4,7 @@ import type { DailyDecisionInput } from '../engine/models';
 import type { HealthAnomalyAssessmentRevision } from '../engine/healthAnomalyModels';
 import { SHADOW_V1_HEALTH_ANOMALY_THRESHOLDS } from '../engine/healthAnomaly';
 import { HealthAnomalyShadowTrace } from './HealthAnomalyShadowPanel';
-import { selectHealthAnomalyShadowRevision } from './healthAnomalyShadowView';
+import { selectHealthAnomalyLoadState, selectHealthAnomalyShadowRevision } from './healthAnomalyShadowView';
 
 const revision: HealthAnomalyAssessmentRevision = {
     userId: 'u1',
@@ -104,5 +104,32 @@ describe('HealthAnomalyShadowTrace', () => {
         expect(selectHealthAnomalyShadowRevision('u1', '2026-08-21', revision, newer, wrongUser, wrongDate))
             .toBe(newer);
         expect(selectHealthAnomalyShadowRevision('u1', '2026-08-22', revision, newer)).toBeNull();
+    });
+});
+
+describe('selectHealthAnomalyLoadState', () => {
+    it('reports loading with no result yet', () => {
+        expect(selectHealthAnomalyLoadState('u1', '2026-08-21', null)).toBe('loading');
+    });
+
+    it('reports the result status once it matches the active user/date', () => {
+        expect(selectHealthAnomalyLoadState('u1', '2026-08-21', { userId: 'u1', date: '2026-08-21', status: 'error' }))
+            .toBe('error');
+        expect(selectHealthAnomalyLoadState('u1', '2026-08-21', { userId: 'u1', date: '2026-08-21', status: 'ready' }))
+            .toBe('ready');
+    });
+
+    it('reports loading -- not the prior target\'s stale error -- once the date changes while the new request is pending', () => {
+        const failedForPriorDate = { userId: 'u1', date: '2026-08-20', status: 'error' } as const;
+
+        // The new date's request hasn't resolved yet: the previous date's error must not leak.
+        expect(selectHealthAnomalyLoadState('u1', '2026-08-21', failedForPriorDate)).toBe('loading');
+
+        // Same guard for a user switch on an otherwise-unchanged date.
+        expect(selectHealthAnomalyLoadState('u2', '2026-08-20', failedForPriorDate)).toBe('loading');
+
+        // Once the new target's own request resolves, its result is reported.
+        const readyForNewDate = { userId: 'u1', date: '2026-08-21', status: 'ready' } as const;
+        expect(selectHealthAnomalyLoadState('u1', '2026-08-21', readyForNewDate)).toBe('ready');
     });
 });

@@ -18,3 +18,25 @@ export function selectHealthAnomalyShadowRevision(
     || right.revisionId.localeCompare(left.revisionId));
   return matching[0] ?? null;
 }
+
+export type HealthAnomalyLoadStatus = 'ready' | 'missing' | 'error';
+
+export interface HealthAnomalyLoadResult {
+  userId: string;
+  date: string;
+  status: HealthAnomalyLoadStatus;
+}
+
+/**
+ * The persisted-assessment read is keyed to a user/date. When either changes while a
+ * request is in flight, a stale result -- including a stale error -- must not be shown
+ * as describing the new target. Resolve to 'loading' until a result matching the active
+ * user/date arrives, rather than reusing whatever the previous target last resolved to.
+ */
+export function selectHealthAnomalyLoadState(
+  userId: string,
+  date: string,
+  result: HealthAnomalyLoadResult | null,
+): 'loading' | HealthAnomalyLoadStatus {
+  return result && result.userId === userId && result.date === date ? result.status : 'loading';
+}
