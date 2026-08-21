@@ -32,6 +32,10 @@ const CSV_COLUMNS: (keyof BlockMetricProgressRow)[] = [
     'reasons',
 ];
 
+function compareCodeUnits(left: string, right: string): number {
+    return left < right ? -1 : left > right ? 1 : 0;
+}
+
 function csvField(value: string | number | boolean): string {
     const text = String(value);
     if (/[",\r\n]/.test(text)) return `"${text.replaceAll('"', '""')}"`;
@@ -40,9 +44,9 @@ function csvField(value: string | number | boolean): string {
 
 export function buildBlockMetricProgressRows(report: BlockOutcomeReport): BlockMetricProgressRow[] {
     return [...report.metricProgress]
-        .sort((a, b) => a.metricId.localeCompare(b.metricId)
-            || (a.baselineObservationId ?? '').localeCompare(b.baselineObservationId ?? '')
-            || (a.latestObservationId ?? '').localeCompare(b.latestObservationId ?? ''))
+        .sort((a, b) => compareCodeUnits(a.metricId, b.metricId)
+            || compareCodeUnits(a.baselineObservationId ?? '', b.baselineObservationId ?? '')
+            || compareCodeUnits(a.latestObservationId ?? '', b.latestObservationId ?? ''))
         .map(progress => ({
             evaluationId: report.evaluationRef.id,
             evaluationRevision: report.evaluationRef.revision,
@@ -56,7 +60,7 @@ export function buildBlockMetricProgressRows(report: BlockOutcomeReport): BlockM
             status: progress.status,
             progressPolicyVersion: progress.progressPolicyVersion,
             blockVerdictPolicyVersion: report.blockVerdictPolicyVersion,
-            reasons: [...progress.reasons].sort().join(';'),
+            reasons: [...progress.reasons].sort(compareCodeUnits).join(';'),
         }));
 }
 
@@ -79,7 +83,7 @@ function canonicalize(value: unknown): CanonicalJson {
 
     const entries = Object.entries(value as Record<string, unknown>)
         .filter(([, item]) => item !== undefined)
-        .sort(([left], [right]) => left.localeCompare(right));
+        .sort(([left], [right]) => compareCodeUnits(left, right));
     return Object.fromEntries(entries.map(([key, item]) => [key, canonicalize(item)]));
 }
 
