@@ -7,6 +7,7 @@ import { configuredHealthAnomalyShadowPolicy } from '../services/healthAnomalyRu
 interface HealthAnomalyShadowPanelProps {
   userId: string;
   decisionInput: DailyDecisionInput;
+  liveRevision?: HealthAnomalyAssessmentRevision | null;
 }
 
 interface HealthAnomalyShadowTraceProps {
@@ -20,6 +21,25 @@ function formatNumber(value: number | null | undefined, digits = 2): string {
 
 function yesNoUnknown(value: boolean | null | undefined): string {
   return value === true ? 'Yes' : value === false ? 'No' : 'Unknown';
+}
+
+/**
+ * App-shell persistence and the panel's independent Firestore read can complete in either
+ * order. Select only revisions for the active user/date and prefer the newest immutable
+ * revision, so a just-persisted shadow result can replace an earlier "missing" read without
+ * ever becoming recommendation input.
+ */
+export function selectHealthAnomalyShadowRevision(
+  userId: string,
+  date: string,
+  ...candidates: Array<HealthAnomalyAssessmentRevision | null | undefined>
+): HealthAnomalyAssessmentRevision | null {
+  const matching = candidates.filter((candidate): candidate is HealthAnomalyAssessmentRevision =>
+    candidate?.userId === userId && candidate.date === date,
+  );
+  matching.sort((left, right) => right.computedAt.localeCompare(left.computedAt)
+    || right.revisionId.localeCompare(left.revisionId));
+  return matching[0] ?? null;
 }
 
 export function HealthAnomalyShadowTrace({ revision, decisionInput }: HealthAnomalyShadowTraceProps) {
@@ -117,9 +137,9 @@ export function HealthAnomalyShadowTrace({ revision, decisionInput }: HealthAnom
   );
 }
 
-export function HealthAnomalyShadowPanel({ userId, decisionInput }: HealthAnomalyShadowPanelProps) {
+export function HealthAnomalyShadowPanel({ userId, decisionInput, liveRevision }: HealthAnomalyShadowPanelProps) {
   const shadowEnabled = configuredHealthAnomalyShadowPolicy() === 'shadow-v1';
-  const [revision, setRevision] = useState<HealthAnomalyAssessmentRevision | null>(null);
+  const [persistedRevision, setPersistedRevision] = useState<HealthAnomalyAssessmentRevision | null>(null);
   const [loadState, setLoadState] = useState<'loading' | 'ready' | 'missing' | 'error'>('loading');
   const date = decisionInput.date;
 
@@ -129,7 +149,7 @@ export function HealthAnomalyShadowPanel({ userId, decisionInput }: HealthAnomal
     healthAnomalyAssessmentRepository.getLatestForDate(userId, date)
       .then(value => {
         if (cancelled) return;
-        setRevision(value);
+        setPersistedRevision(value);
         setLoadState(value ? 'ready' : 'missing');
       })
       .catch(() => {
@@ -139,23 +159,22 @@ export function HealthAnomalyShadowPanel({ userId, decisionInput }: HealthAnomal
   }, [shadowEnabled, userId, date]);
 
   if (!shadowEnabled) return null;
-  const revisionForDate = revision?.date === date ? revision : null;
-  if (loadState === 'loading' || (loadState === 'ready' && !revisionForDate)) {
+  const revisionForDate = selectHealthAnomalyShadowRevision(userId, date, liveRevision, persistedRevision);
+  if (revisionForDate) {
+    return <div className="data-view-container"><HealthAnomalyShadowTrace revision={revisionForDate} decisionInput={decisionInput} /></div>;
+  }
+  if (loadState === 'loading' || loadState === 'ready') {
     return <div className="data-view-container"><div className="data-section"><h3>Health anomaly (shadow)</h3><p>Loading shadow assessment…</p></div></div>;
   }
   if (loadState === 'error') {
     return <div className="data-view-container"><div className="data-section"><h3>Health anomaly (shadow)</h3><p className="data-state-notice">Could not read the shadow assessment.</p></div></div>;
   }
-  if (!revisionForDate) {
-    return (
-      <div className="data-view-container">
-        <div className="data-section">
-          <h3>Health anomaly (shadow)</h3>
-          <p>No shadow assessment is persisted for {date} yet.</p>
-        </div>
+  return (
+    <div className="data-view-container">
+      <div className="data-section">
+        <h3>Health anomaly (shadow)</h3>
+        <p>No shadow assessment is persisted for {date} yet.</p>
       </div>
-    );
-  }
-
-  return <div className="data-view-container"><HealthAnomalyShadowTrace revision={revisionForDate} decisionInput={decisionInput} /></div>;
+    </div>
+  );
 }
