@@ -18,12 +18,17 @@ export * from './validationCore';
  * receives the stricter nested validation and symptom precedence required by ADR-0025.
  */
 export function validateCheckin(raw: unknown): ValidationResult<DailySubjectiveCheckin> {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+        return {
+            isValid: false,
+            errors: [{ field: 'checkin', message: 'Check-in must be an object' }],
+        };
+    }
+
     const coreResult = validateCoreCheckin(raw);
     if (!coreResult.isValid || !coreResult.data) return coreResult;
 
-    const rawRecord = (raw && typeof raw === 'object' && !Array.isArray(raw))
-        ? raw as Record<string, unknown>
-        : {};
+    const rawRecord = raw as Record<string, unknown>;
     const healthContextResult = validateHealthContext(rawRecord.healthContext);
     if (!healthContextResult.isValid) {
         return { isValid: false, errors: healthContextResult.errors };
