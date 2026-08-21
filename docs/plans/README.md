@@ -60,17 +60,22 @@ Among capability plans, Garmin per-activity telemetry (G) and Mobile UX/UI (UX) 
 **implemented**; Strength session logging (S) is **In progress (default-off)** with all
 numbered code delivered; Multidomain sessions (M) is **In progress** with M0–M5.3
 complete; Performance outcome validation (OV) is **In progress**, with OV0–OV2 complete
-through PR #154 and PR #155 and OV3.1 the next startable implementation item.
+through PR #154 and PR #155.
 
 For Multidomain delivery, the 2026-08-19 evidence-first cutline chain from
 [`2026-08-19-product-scope-cutline-review.md`](../analysis/2026-08-19-product-scope-cutline-review.md),
 `M3.7 → bounded M3.8 → M4.3 → M5.1 → M5.2`, is complete, and M5.3 (the report-first
 outcome/override evidence summary that chain unlocked) landed 2026-08-20. M6 remains a
-usage-triggered capability family. M7's repeated-testing usage trigger was satisfied on
-2026-08-21; M7.1 and M7.2 are now delivered through OV0–OV2. The next implementation slice
-is OV3/M7.3 (protocol-locked testing workflow); M7.4 still depends on repeated comparable
-evidence rather than becoming automatic continuation. M8 may consume M6/M7 only when each
-capability is independently justified and available; M9 remains behind its own named triggers.
+usage-triggered capability family. The repeated-standardized-testing trigger originally
+recorded under M7 fired on 2026-08-21, and **implementation/status ownership transferred to
+OV**. Former M7.1–M7.4 are no longer actionable M items; the M plan keeps only the historical
+mapping. M8 may consume independently justified M6/OV evidence but cannot create scope for it.
+M9 remains behind its own named triggers.
+
+OV is therefore the sole status board for repeated testing/progress. By item dependency,
+`OV3.1`, `OV5.1` and `OV5.2` are currently startable; the next **planned** implementation slice
+is still PR C / OV3.1–OV3.4. `OV4.1` is correctly blocked on OV5.1 because its baseline and
+direction logic consume the frozen outcome binding defined there.
 
 The Phase 0–5 task boards are historical implementation records; the
 [follow-up analysis](../analysis/2026-08-09-phase-0-5-completion-review.md) records
@@ -98,14 +103,15 @@ all-`Ready` table became unusable.
 | 9 | [Subjective baselines in readiness mode](./phase-9-subjective-baselines.md) | **In progress** | only 9.8 remains (9.1–9.7 done — 9.8 needs Phase 9.0's prospective evidence) | — | self-normalises subjective scores as a tighten-only drift term, measured behind a default-off selector before any ship decision — not an original review finding |
 | G | [Garmin per-activity telemetry](./garmin-activity-telemetry-ingestion.md) | **Implemented** | none | none | ingests per-activity power/HR time-in-zone, normalized power and lap averages; the measured zone-credit candidate remains off after an evidence-backed no-ship decision |
 | S | [Strength session logging](./strength-session-logging.md) | **In progress (default-off)** | none; all numbered work is built | real logged-history evidence before enabling manual Strength load — [M1.7](./multidomain-session-authoring-execution-and-evidence.md) is the item that starts producing it | closes the strength return path — per-set logging, self-calibrating 1RM, and measured strength load — not an original review finding |
-| M | [Multidomain session authoring, execution & evidence](./multidomain-session-authoring-execution-and-evidence.md) | **In progress** | M7.3 via OV3.1 | M6 still requires an explicit real-use trigger; M7.1/M7.2 are delivered through OV; M7.3 is the next code slice; M7.4 still needs repeated comparable attempts; M8 is evidence-gated; M9 needs its own named triggers | source-neutral authored sessions, safe mixed-dose execution and occurrence-linked response first; specialized field/testing capability only when athlete use proves the generic runner/evidence model insufficient |
+| M | [Multidomain session authoring, execution & evidence](./multidomain-session-authoring-execution-and-evidence.md) | **In progress** | M8.1 | M6 still requires an explicit real-use trigger; repeated-testing implementation has transferred to OV and is not an M blocker/task; M8.2 needs real history and only independently justified M6/OV evidence if required; M9 needs its own named triggers | source-neutral authored sessions, safe mixed-dose execution and occurrence-linked response; specialized field work remains usage-triggered, while repeated testing/progress is owned by OV |
 | UX | [Mobile UX/UI redesign](./mobile_ux_implementation_plan.md) | **Implemented** | none | none | mobile-first daily decision flow, single-page rapid check-in, state-first Home layout, unblocked recommendation, 44px+ touch targets, and mobile layout tokens |
-| OV | [Performance outcome validation & goal-progress loop](./performance-outcome-validation.md) | **In progress** | OV3.1 | none for OV3.1 | activates M7 — OV0–OV2 are complete (PRs #154/#155); next is the protocol-locked testing workflow, while progress/report depth remains evidence- and usage-gated |
+| OV | [Performance outcome validation & goal-progress loop](./performance-outcome-validation.md) | **In progress** | OV3.1, OV5.1, OV5.2 | OV4.1 waits on OV5.1; later items follow their own evidence/usage gates | sole implementation/status owner of the repeated-testing/progress capability formerly sketched as M7; OV0–OV2 are complete (#154/#155), next planned slice is OV3 |
 
 Rows G, S, M, UX, and OV are **not phases**. They are capability/surface plans whose work items are
 prefixed `G*`, `S*`, `M*`, `UX*`, `OV*` precisely so they cannot be mistaken for the `Phase 0`–`9`
 sequence; the `#` column carries that prefix rather than a phase number. For capability plans, an item
-with satisfied dependencies but an unmet usage trigger is **not** listed as startable.
+with satisfied dependencies but an unmet usage trigger is **not** listed as startable. A transferred
+historical item (former M7) is likewise not listed under its old plan; only the canonical owner tracks it.
 
 Phases 0–8 are implemented. Phase 6 delivered explicit scenario evidence, calibration
 traces, coverage visibility, a verified repository-owned local Firestore-rules deployment
@@ -153,13 +159,13 @@ this table exists so none of them has to be rediscovered by reading six document
 | **D-STRCOST** | Strength load reaches the engine only after measurement; built default-off, coefficients from evidence | [ADR-0021](../adr/0021-strength-session-logging-and-intensity-gauges.md) | Same discipline as D-FUSE and D-SUBJCAL; a tonnage→fatigue coefficient asserted in an ADR is the uncited-constant practice F11 criticised |
 | **D-DETAIL-GATE** | Detail ingestion is default-off, limited to non-easy power-bearing activities in the target-date daily pass, and never runs in lookback/backfill/rebuild | [ADR-0005 amendment](../adr/0005-raw-archive-store-and-rebuild-pipeline.md#2026-08-17-amendment-bounded-per-activity-detail-ingestion) | Bounds live calls to `3 × N`, avoids overlapping-window refetches, and keeps historical operations offline |
 | **D-ZONECRED** | A complete cycling power-zone distribution may produce a default-off direct-share stimulus candidate inside `measuredEffort`; production remains TE-derived | [ADR-0022](../adr/0022-zone-derived-completed-training-credit.md) | Granularity is measured without pretending it establishes exact intent or calibrated dose-response |
-| **D-MODE** | `evergreen` and `event_directed` are first-class modes; event strategy is a separate capability | [ADR-0017](../adr/0017-training-intent-and-planning-modes.md) | Cycling can use a structured plan while other existing event categories retain demand-derived direction |
-| **D-DOSE** | Evidence-derived adaptation dose precedes capacity and role packing | [ADR-0017](../adr/0017-training-intent-and-planning-modes.md) | Exercise evidence speaks in dose dimensions; a session is a container, not the physiological requirement |
+| **D-MODE** | `evergreen` and `event_directed` are first-class modes; event strategy is a separate capability | [ADR-0017](../adr/0017-training-intent-profile-and-planning-modes.md) | Cycling can use a structured plan while other existing event categories retain demand-derived direction |
+| **D-DOSE** | Evidence-derived adaptation dose precedes capacity and role packing | [ADR-0017](../adr/0017-training-intent-profile-and-planning-modes.md) | Exercise evidence speaks in dose dimensions; a session is a container, not the physiological requirement |
 | **D-CAP** | Real sessions, minutes, and windows constrain dose packing; they do not define the dose | [ADR-0017](../adr/0017-training-intent-and-planning-modes.md) | Three 25-minute sessions and three 90-minute sessions are not equivalent capacity |
-| **D-COVSET** | The coverage catalog becomes a named generic-plan registry, not an event-shaped module constant | [ADR-0017](../adr/0017-training-intent-and-planning-modes.md) | Evergreen needs to be a peer plan descriptor, not a fabricated event phase |
-| **D-OWNERSHIP** | Each preference field has one persisted authority | [ADR-0017](../adr/0017-training-intent-and-planning-modes.md) | Two live preference models create contradictory valid states with no safe merge rule |
-| **D-ORG** | Persist only executable Auto/Adaptive Hybrid policy | [ADR-0017](../adr/0017-training-intent-and-planning-modes.md) | A valid stored choice must not make normal recommendation generation fail |
-| **D-TAPERSCOPE** | Taper requires a real event; a star rating is not one | [ADR-0017](../adr/0017-training-intent-and-planning-modes.md) | `deriveEventPriority(5) → 'A'` currently grants a dated `general_target` goal a 14-day taper |
+| **D-COVSET** | The coverage catalog becomes a named generic-plan registry, not an event-shaped module constant | [ADR-0017](../adr/0017-training-intent-profile-and-planning-modes.md) | Evergreen needs to be a peer plan descriptor, not a fabricated event phase |
+| **D-OWNERSHIP** | Each preference field has one persisted authority | [ADR-0017](../adr/0017-training-intent-profile-and-planning-modes.md) | Two live preference models create contradictory valid states with no safe merge rule |
+| **D-ORG** | Persist only executable Auto/Adaptive Hybrid policy | [ADR-0017](../adr/0017-training-intent-profile-and-planning-modes.md) | A valid stored choice must not make normal recommendation generation fail |
+| **D-TAPERSCOPE** | Taper requires a real event; a star rating is not one | [ADR-0017](../adr/0017-training-intent-profile-and-planning-modes.md) | `deriveEventPriority(5) → 'A'` currently grants a dated `general_target` goal a 14-day taper |
 | **D-RESERVE** | Allocate exact, eligible minimum coverage roles before support work | [ADR-0018](../adr/0018-weekly-allocation-and-role-reservations.md) | Anchor modifiers cannot preserve a future role opportunity in a greedy loop |
 | **D-FEASIBILITY** | Reuse production eligibility and revalidate reservations after every pick | [ADR-0018](../adr/0018-weekly-allocation-and-role-reservations.md) | A second planner would drift from safety, spacing, and fatigue gates |
 | **D-BOUND** | One deterministic search budget; exhaustion is `unresolved_search_budget`, never a miss | [ADR-0018](../adr/0018-weekly-allocation-and-role-reservations.md) | A wall-clock cut-off would make identical input plan differently on different devices |
