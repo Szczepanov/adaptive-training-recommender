@@ -1,0 +1,41 @@
+.ha-followup-form {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.ha-followup-field {
+  display: grid;
+  gap: 6px;
+}
+
+.ha-followup-field label {
+  font-weight: 600;
+}
+
+.ha-followup-field select,
+.ha-followup-field input,
+.ha-followup-field textarea,
+.ha-followup-form button {
+  min-height: 44px;
+  font: inherit;
+}
+
+.ha-followup-field select,
+.ha-followup-field input,
+.ha-followup-field textarea {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.ha-followup-field textarea {
+  min-height: 72px;
+  resize: vertical;
+}
+
+.ha-followup-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}

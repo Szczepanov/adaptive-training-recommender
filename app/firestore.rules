@@ -259,11 +259,6 @@ service cloud.firestore {
     }
 
     function hasValidSubjectiveHealthFields(data) {
-      // Mirrors the app parser's precedence (parseSubjectiveCheckin): a rich symptoms
-      // block is authoritative and makes the legacy flag optional, but if it's absent
-      // the legacy flag is the only illness signal and must be a real boolean. Without
-      // this, a write could satisfy the rule with neither field present, then get
-      // permanently rejected as invalid on every subsequent read.
       return (('illnessSymptoms' in data)
           ? data.illnessSymptoms is bool
           : (('healthContext' in data) && (data.healthContext is map) && ('symptoms' in data.healthContext)))
@@ -1242,9 +1237,59 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    function hasValidHealthAnomalyOutcome(userId, episodeId) {
+      let data = request.resource.data;
+      let sourceAssessment = data.sourceAssessment;
+      let symptomOnset = data.symptomOnset;
+      let respiratoryTest = data.respiratoryTest;
+      let assessmentPath = /databases/$(database)/documents/users/$(userId)/health_anomaly_assessments/$(sourceAssessment.date)/revisions/$(sourceAssessment.revisionId);
+      return hasOwnedUserId(userId)
+        && data.keys().hasOnly(['userId', 'episodeId', 'sourceAssessment', 'explanation', 'symptomOnset', 'respiratoryTest', 'note', 'createdAt', 'updatedAt', 'schemaVersion'])
+        && data.keys().hasAll(['userId', 'episodeId', 'sourceAssessment', 'explanation', 'symptomOnset', 'respiratoryTest', 'note', 'createdAt', 'updatedAt', 'schemaVersion'])
+        && data.episodeId == episodeId
+        && data.episodeId is string && data.episodeId.size() > 0 && data.episodeId.size() <= 160
+        && sourceAssessment is map
+        && sourceAssessment.keys().hasOnly(['date', 'revisionId'])
+        && sourceAssessment.keys().hasAll(['date', 'revisionId'])
+        && isValidActivityDate(sourceAssessment.date)
+        && sourceAssessment.revisionId is string && sourceAssessment.revisionId.matches('^ha-[0-9a-f]{16}$')
+        && exists(assessmentPath)
+        && get(assessmentPath).data.assessment.episodeId == episodeId
+        && data.explanation in ['illness_symptoms', 'hard_training_recovery', 'poor_sleep', 'alcohol', 'travel_jetlag', 'stress', 'heat_dehydration', 'vaccination_medication', 'nothing_obvious', 'other_not_sure']
+        && (symptomOnset == null || (
+          symptomOnset is map
+          && symptomOnset.keys().hasOnly(['date', 'precision'])
+          && symptomOnset.keys().hasAll(['date', 'precision'])
+          && isValidActivityDate(symptomOnset.date)
+          && symptomOnset.precision == 'day'
+        ))
+        && (respiratoryTest == null || (
+          respiratoryTest is map
+          && respiratoryTest.keys().hasOnly(['result', 'testedOn', 'source'])
+          && respiratoryTest.keys().hasAll(['result', 'testedOn', 'source'])
+          && respiratoryTest.result in ['positive', 'negative']
+          && isValidActivityDate(respiratoryTest.testedOn)
+          && respiratoryTest.source == 'user_reported'
+        ))
+        && (data.note == null || (data.note is string && data.note.size() <= 2000))
+        && data.createdAt is string && data.createdAt.size() > 0
+        && data.updatedAt is string && data.updatedAt.size() > 0
+        && data.schemaVersion == 1;
+    }
+
+    match /users/{userId}/health_anomaly_outcomes/{episodeId} {
+      allow read: if isOwner(userId);
+      allow create: if hasValidHealthAnomalyOutcome(userId, episodeId);
+      allow update: if hasValidHealthAnomalyOutcome(userId, episodeId)
+        && keepsOwnership(userId)
+        && request.resource.data.episodeId == resource.data.episodeId
+        && request.resource.data.sourceAssessment == resource.data.sourceAssessment
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.schemaVersion == resource.data.schemaVersion;
+      allow delete: if false;
+    }
+
     // --- OV5.1: immutable outcome-evaluation criteria and lifecycle.
-    // Metric bindings are embedded in the revision document so activation freezes the
-    // exact bounded criteria atomically with the revision hash.
     function outcomeEvaluationHeadAfterRevision(userId, evaluationId, revision) {
       let headPath = /databases/$(database)/documents/users/$(userId)/outcome_evaluations/$(evaluationId);
       let head = getAfter(headPath).data;
@@ -1257,9 +1302,6 @@ service cloud.firestore {
       return next.id == evaluationId && next.revision == revision && next.status == 'draft';
     }
 
-    // Activation must target the current head revision -- otherwise an earlier draft left
-    // behind by a later createDraftRevision could be activated after the fact, producing two
-    // revisions of the same evaluation both in 'active' status.
     function isHeadOutcomeEvaluationRevision(userId, evaluationId, revision) {
       let headPath = /databases/$(database)/documents/users/$(userId)/outcome_evaluations/$(evaluationId);
       return exists(headPath) && get(headPath).data.currentRevision == revision;
