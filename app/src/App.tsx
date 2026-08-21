@@ -4,6 +4,7 @@ import './index.css';
 import { Home } from './components/Home';
 import type { PreparedSessionLaunch } from './components/session/SessionDestinationSheet';
 import { decisionComposer } from './engine/composer';
+import type { HealthAnomalyAssessmentRevision } from './engine/healthAnomalyModels';
 import type { DailyDecisionInput, StrengthSession } from './engine/models';
 import type { SessionExecution, SessionIntent } from './sessions/models';
 import type { Screen } from './types/navigation';
@@ -14,6 +15,7 @@ import { MobileNav } from './components/MobileNav';
 import { getLocalDateString } from './utils/localDate';
 import { strengthSessionService } from './services/strengthSessionService';
 import { sessionExecutionService } from './services/sessionExecutionService';
+import { runConfiguredHealthAnomalyShadow } from './services/healthAnomalyRuntime';
 import { resolveSessionDefinition } from './sessions/sessionDefinitionResolver';
 
 const DailyCheckin = lazy(() => import('./components/DailyCheckin').then(m => ({ default: m.DailyCheckin })));
@@ -21,6 +23,7 @@ const Goals = lazy(() => import('./components/Goals').then(m => ({ default: m.Go
 const TrainingSettings = lazy(() => import('./components/TrainingSettings').then(m => ({ default: m.TrainingSettings })));
 const Preferences = lazy(() => import('./components/Preferences').then(m => ({ default: m.Preferences })));
 const DataView = lazy(() => import('./components/DataView').then(m => ({ default: m.DataView })));
+const HealthAnomalyShadowPanel = lazy(() => import('./components/HealthAnomalyShadowPanel').then(m => ({ default: m.HealthAnomalyShadowPanel })));
 const PlanView = lazy(() => import('./components/PlanView').then(m => ({ default: m.PlanView })));
 const StrengthOverloadHistory = lazy(() => import('./components/StrengthOverloadHistory').then(m => ({ default: m.StrengthOverloadHistory })));
 const StrengthSessionRunner = lazy(() => import('./components/StrengthSessionRunner').then(m => ({ default: m.StrengthSessionRunner })));
@@ -33,6 +36,7 @@ function App() {
   const { userId, authPhase } = useAuth();
   const [screen, setScreen] = useState<Screen>('home');
   const [decisionInput, setDecisionInput] = useState<DailyDecisionInput | null>(null);
+  const [healthAnomalyShadowRevision, setHealthAnomalyShadowRevision] = useState<HealthAnomalyAssessmentRevision | null>(null);
   const [desktopSettingsOpen, setDesktopSettingsOpen] = useState(false);
   const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
   const [activeStrengthSession, setActiveStrengthSession] = useState<StrengthSession | null>(null);
@@ -46,6 +50,16 @@ function App() {
     try {
       const input = await decisionComposer.composeDailyDecisionInput(userId);
       setDecisionInput(input);
+      // HA-D evidence collection is deliberately fire-and-forget relative to readiness.
+      // Only an explicit shadow-v1 runtime value reaches the HA service, and the result is
+      // retained solely so the Detailed Data trace can update after immutable persistence.
+      void runConfiguredHealthAnomalyShadow(userId, input.date)
+        .then(result => {
+          if (result) setHealthAnomalyShadowRevision(result.revision);
+        })
+        .catch(error => {
+          console.error('Error collecting health anomaly shadow evidence:', error);
+        });
     } catch (error) {
       console.error('Error loading decision input:', error);
     }
@@ -155,11 +169,20 @@ function App() {
           )}
 
           {screen === 'data' && (
-            <DataView
-              decisionInput={decisionInput}
-              userId={userId!}
-              onBack={() => handleNavigate('home')}
-            />
+            <>
+              <DataView
+                decisionInput={decisionInput}
+                userId={userId!}
+                onBack={() => handleNavigate('home')}
+              />
+              {decisionInput && (
+                <HealthAnomalyShadowPanel
+                  userId={userId!}
+                  decisionInput={decisionInput}
+                  liveRevision={healthAnomalyShadowRevision}
+                />
+              )}
+            </>
           )}
 
           {screen === 'brief' && (
