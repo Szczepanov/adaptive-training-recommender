@@ -24,11 +24,12 @@
 #     Artifact Registry push, Cloud Scheduler, and impersonating -- only -- garmin-sync-job
 #     to attach it to the Jobs it deploys).
 #   - A separate "github-frontend-deployer" service account for deploy-frontend.yml, scoped
-#     only to Firebase Hosting and Firebase Rules -- kept apart from github-deployer so a
-#     compromised/buggy workflow touching one surface (Cloud Run Jobs vs. the web app +
-#     Firestore rules) can't reach the other's resources. Both trust the same Workload
-#     Identity Pool/Provider above; only which service account a workflow asks to
-#     impersonate differs.
+#     to Firebase Hosting, Firebase Rules, and Service Usage consumer access needed by the
+#     Firebase CLI to verify required APIs are enabled. It cannot enable/disable APIs. Kept
+#     apart from github-deployer so a compromised/buggy workflow touching one surface (Cloud
+#     Run Jobs vs. the web app + Firestore rules) can't reach the other's resources. Both
+#     trust the same Workload Identity Pool/Provider above; only which service account a
+#     workflow asks to impersonate differs.
 #
 # After this script finishes, copy its final output into GitHub repo secrets
 # (Settings -> Secrets and variables -> Actions) exactly as printed.
@@ -83,12 +84,6 @@ if ! gcloud iam workload-identity-pools providers describe "${PROVIDER_ID}" \
     --attribute-condition="${EXPECTED_CONDITION}" \
     --issuer-uri="https://token.actions.githubusercontent.com"
 else
-  # The "skip if it already exists" path above never re-applies --attribute-condition, so a
-  # provider left over from before this restriction existed (or edited by hand) would
-  # silently keep trusting every branch/fork -- and every downstream workloadIdentityUser
-  # binding (github-deployer's below, github-frontend-deployer's further down) trusts
-  # whatever this provider accepts. Fail loudly rather than quietly granting broader trust
-  # than the rest of this script documents.
   ACTUAL_CONDITION="$(gcloud iam workload-identity-pools providers describe "${PROVIDER_ID}" \
     --location=global --workload-identity-pool="${POOL_ID}" \
     --format='value(attributeCondition)')"
@@ -142,22 +137,8 @@ fi
 # or API-enablement authority over the project. Firestore access belongs to garmin-sync-job
 # (above), never to the deploy identity, which never reads/writes Firestore.
 #
-# The image build was originally `gcloud builds submit` (Cloud Build, uploading source to an
-# auto-managed GCS staging bucket). That repeatedly failed against github-deployer's
-# Workload-Identity-Federation-derived credentials with a "forbidden" error, regardless of
-# which storage role was granted on the bucket (storage.objectAdmin, then storage.admin --
-# both tried live, neither fixed it) -- a gsutil/WIF external_account-credential
-# compatibility issue, not an authorization gap. deploy-garmin-sync.yml now builds with plain
-# `docker build`/`docker push` instead, which only needs roles/artifactregistry.writer
-# (already below) and sidesteps Cloud Build entirely -- no staging bucket, no Cloud Build
-# role, no cloudbuild.googleapis.com dependency.
-#
-# roles/serviceusage.serviceUsageConsumer is NOT roles/serviceusage.serviceUsageAdmin (that
-# one grants enabling/disabling APIs and other IAM-adjacent power -- a real
-# privilege-escalation surface, deliberately omitted). Consumer only grants
-# serviceusage.services.use: permission for this identity's billed API calls to be
-# attributed to the project at all. Kept as defensive good practice even though it turned
-# out not to be the fix for the Cloud Build issue above.
+# roles/serviceusage.serviceUsageConsumer is NOT roles/serviceusage.serviceUsageAdmin. It
+# grants serviceusage.services.get/list/use, but cannot enable or disable APIs.
 echo "==> Granting github-deployer deployment-only roles"
 for ROLE in \
   roles/run.admin \
@@ -171,20 +152,11 @@ for ROLE in \
     --condition=None >/dev/null
 done
 
-# Resource-level, not project-wide: github-deployer may act as garmin-sync-job specifically
-# (required to attach it to a Cloud Run Job it deploys) and nothing else.
 echo "==> Allowing github-deployer to act as garmin-sync-job only"
 gcloud iam service-accounts add-iam-policy-binding "${JOB_SA_EMAIL}" \
   --member="serviceAccount:${DEPLOYER_SA_EMAIL}" \
   --role="roles/iam.serviceAccountUser" >/dev/null
 
-# Also resource-level, not project-wide: Cloud Scheduler requires the identity creating (or
-# updating the OAuth target of) an HTTP job to be able to actAs the service account named in
-# --oauth-service-account-email -- confirmed live: `gcloud scheduler jobs create http ...
-# --oauth-service-account-email=garmin-scheduler-invoker@...` failed with
-# `PERMISSION_DENIED: ... lacks IAM permission "iam.serviceAccounts.actAs" for the resource
-# "garmin-scheduler-invoker@..."` before this binding existed. Distinct from the Cloud Build
-# staging-bucket saga above -- this one really was a missing grant, not a WIF quirk.
 echo "==> Allowing github-deployer to act as garmin-scheduler-invoker only"
 gcloud iam service-accounts add-iam-policy-binding "${SCHEDULER_SA_EMAIL}" \
   --member="serviceAccount:${DEPLOYER_SA_EMAIL}" \
@@ -201,14 +173,14 @@ if ! gcloud iam service-accounts describe "${FRONTEND_DEPLOYER_SA_EMAIL}" >/dev/
     --display-name="GitHub Actions frontend/rules deploy identity (WIF, no key)"
 fi
 
-# Deliberately just these two: Firebase Hosting releases and Firebase Security Rules
-# (Firestore rules) are the only two things deploy-frontend.yml touches. No Cloud Run,
-# Artifact Registry, Cloud Scheduler, or Firestore data/index access -- see that workflow's
-# own comments and docs/ops/frontend-deployment.md.
+# Firebase CLI checks Service Usage before deploying Firestore rules, so the frontend deployer
+# needs Service Usage Consumer in addition to its two product-specific admin roles. Consumer
+# permits get/list/use only; it does not permit enabling or disabling APIs.
 echo "==> Granting github-frontend-deployer deployment-only roles"
 for ROLE in \
   roles/firebasehosting.admin \
   roles/firebaserules.admin \
+  roles/serviceusage.serviceUsageConsumer \
 ; do
   gcloud projects add-iam-policy-binding "${GCP_PROJECT}" \
     --member="serviceAccount:${FRONTEND_DEPLOYER_SA_EMAIL}" \
