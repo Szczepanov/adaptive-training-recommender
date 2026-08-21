@@ -78,14 +78,42 @@ describe('HealthAnomalyService composition', () => {
         const service = new HealthAnomalyService(recovery as never, checkins as never, blocks as never, store as never);
 
         const result = await service.assessAndPersist('u1', '2026-08-21', 'shadow-v1', undefined, '2026-08-21T06:30:00Z');
+        expect(result?.revision.source.recoverySnapshotRevision).toMatch(/^snapshot:current-rev:[0-9a-f]{16}$/);
+        expect(result?.revision.source.checkinRevision).toMatch(/^checkin:checkin-rev:[0-9a-f]{16}$/);
         expect(result?.revision.source).toMatchObject({
-            recoverySnapshotRevision: 'current-rev',
-            checkinRevision: 'checkin-rev',
             historyWindowEndExclusive: '2026-08-21',
             travelContextRevision: 'travel-rev',
         });
         expect(result?.revision.revisionId).toMatch(/^ha-[0-9a-f]{16}$/);
         expect(store.persistImmutable).toHaveBeenCalledTimes(1);
+    });
+
+    it('changes immutable identity when canonical content changes despite an unchanged external revision', async () => {
+        const current = day('2026-08-21');
+        const recovery = {
+            getRecoverySnapshotState: vi.fn()
+                .mockResolvedValueOnce(available(current, 'same-rev'))
+                .mockResolvedValueOnce(available({ ...current, raw: { ...current.raw, restingHr: 54 } }, 'same-rev')),
+            getRecoverySnapshotsInRangeState: vi.fn().mockResolvedValue({ status: 'MISSING' }),
+        };
+        const checkins = { getCheckinState: vi.fn().mockResolvedValue(available(checkin(), 'same-checkin-rev')) };
+        const blocks = { getBlocksInRangeState: vi.fn().mockResolvedValue({ status: 'MISSING' }) };
+        const persisted: HealthAnomalyAssessmentRevision[] = [];
+        const store = {
+            getLatestForDate: vi.fn().mockResolvedValue(null),
+            persistImmutable: vi.fn().mockImplementation(async (value: HealthAnomalyAssessmentRevision) => {
+                persisted.push(value);
+                return value;
+            }),
+        };
+        const service = new HealthAnomalyService(recovery as never, checkins as never, blocks as never, store as never);
+
+        await service.assessAndPersist('u1', '2026-08-21', 'shadow-v1', undefined, '2026-08-21T06:30:00Z');
+        await service.assessAndPersist('u1', '2026-08-21', 'shadow-v1', undefined, '2026-08-21T06:31:00Z');
+
+        expect(persisted).toHaveLength(2);
+        expect(persisted[0].source.recoverySnapshotRevision).not.toBe(persisted[1].source.recoverySnapshotRevision);
+        expect(persisted[0].revisionId).not.toBe(persisted[1].revisionId);
     });
 
     it('degrades missing optional history to a one-day assessment rather than failing composition', async () => {
