@@ -75,6 +75,11 @@ function App() {
   }, [userId, authPhase, loadDecisionInput]);
 
   useEffect(() => {
+    // Clear synchronously on every identity change so a resolved session from a previous
+    // account can never be shown, or acted on, under a newly signed-in userId.
+    setLegacyStrengthSessionId(null);
+    setActiveStructuredSession(null);
+    setActiveStructuredIntent(null);
     if (!userId || authPhase !== 'AUTHENTICATED') return;
     let cancelled = false;
     Promise.allSettled([
