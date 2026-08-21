@@ -169,7 +169,9 @@ export class OutcomeEvaluationService {
                 evaluationId,
                 revision,
             );
-            if (current.revision.status !== 'active' && !(status === 'archived' && current.revision.status === 'completed')) {
+            const validTransition = (current.revision.status === 'active' && status === 'completed')
+                || (current.revision.status === 'completed' && status === 'archived');
+            if (!validTransition) {
                 throw new Error(`Cannot transition outcome evaluation from ${current.revision.status} to ${status}`);
             }
             const next: OutcomeEvaluationSnapshot = {
