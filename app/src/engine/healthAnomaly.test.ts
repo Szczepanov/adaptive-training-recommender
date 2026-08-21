@@ -19,6 +19,7 @@ const EMPTY_INPUT: HealthAnomalyInput = {
         previousState: null,
         previousEpisodeId: null,
         previousEpisodeDay: null,
+        previousAssessmentDate: null,
         unexplainedPersistenceDays: 0,
     },
 };
@@ -56,14 +57,20 @@ describe('resolveHealthAnomalyPolicy', () => {
     });
 });
 
-describe('evaluatePhysiologicalAnomaly HA0 scaffolding', () => {
-    it('is inert by default', () => {
+describe('evaluatePhysiologicalAnomaly rollout boundary', () => {
+    it('is inert by default and under explicit off', () => {
         expect(evaluatePhysiologicalAnomaly(EMPTY_INPUT)).toBeNull();
+        expect(evaluatePhysiologicalAnomaly(EMPTY_INPUT, 'off')).toBeNull();
     });
 
-    it('remains inert for every explicit policy until the HA3 evaluator lands', () => {
-        for (const policy of ['off', 'shadow-v1', 'visible-v1', 'tighten-v1'] as const) {
-            expect(evaluatePhysiologicalAnomaly(EMPTY_INPUT, policy)).toBeNull();
-        }
+    it('computes an evidence-only assessment only after an explicit non-off policy is supplied', () => {
+        const shadow = evaluatePhysiologicalAnomaly(EMPTY_INPUT, 'shadow-v1');
+        expect(shadow).not.toBeNull();
+        expect(shadow).toMatchObject({
+            state: 'normal',
+            evidenceLevel: 'none',
+            mode: 'shadow-v1',
+        });
+        expect(shadow?.coreSignals.every(signal => signal.status === 'unavailable')).toBe(true);
     });
 });

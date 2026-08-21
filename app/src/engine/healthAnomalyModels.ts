@@ -83,6 +83,56 @@ export interface CoreSignalDataQuality {
     suspectedQuantizationOrTies: boolean;
 }
 
+/** Candidate estimators are observation-only in HA2; HA3 chooses how to interpret them. */
+export type HealthAnomalyEstimator =
+    | 'mean-stdev-28d'
+    | 'median-mad-28d'
+    | 'log-mean-stdev-28d';
+
+export type HealthSignalFeatureUnavailableReason =
+    | 'missing_current'
+    | 'missing_baseline'
+    | 'missing_scale'
+    | 'insufficient_history'
+    | 'incompatible_baseline_version'
+    | 'near_zero_scale'
+    | 'invalid_domain';
+
+/**
+ * A threshold-free comparison feature. `standardizedDeviation` is only computed when the
+ * measured scale is safely non-zero; HA2 never fabricates a denominator or anomaly state.
+ */
+export interface HealthSignalFeatureCandidate {
+    estimator: HealthAnomalyEstimator;
+    status: 'available' | 'unavailable';
+    unavailableReason: HealthSignalFeatureUnavailableReason | null;
+    currentValue: number | null;
+    baselineValue: number | null;
+    scaleValue: number | null;
+    deltaValue: number | null;
+    standardizedDeviation: number | null;
+    baselineVersion: number | null;
+}
+
+export interface HealthCoreSignalFeatures {
+    signal: HealthCoreSignal;
+    adverseDirection: 'high' | 'low';
+    candidates: HealthSignalFeatureCandidate[];
+    dataQuality: CoreSignalDataQuality;
+    /** Null means the canonical snapshot does not preserve enough source-level provenance. */
+    measurementProvenance: string | null;
+}
+
+/**
+ * HA2 output consumed by the HA3 evaluator. Feature plumbing remains threshold-free and does
+ * not decide whether physiology is normal or anomalous.
+ */
+export interface HealthAnomalyFeatureSet {
+    date: string;
+    baselineVersion: number | null;
+    coreSignals: HealthCoreSignalFeatures[];
+}
+
 export interface SupportingSignalEvidence {
     code: string;
     status: 'unavailable' | 'normal' | 'adverse' | 'supportive';
@@ -116,6 +166,24 @@ export type PhysiologicalAnomalyState =
     | 'possible_illness_or_systemic_stress'
     | 'symptoms_reported';
 
+export interface HealthAnomalyThresholdPolicy {
+    policyVersion: string;
+    moderateDeviation: number;
+    strongDeviation: number;
+    minimumCoreSignalsForMultiSignal: number;
+    persistenceDaysForEscalation: number;
+    minimumHistoryCount: number;
+    minimumRecentDayCoverage: number;
+    maxBaselineAgeDays: number;
+    estimatorBySignal: Record<HealthCoreSignal, HealthAnomalyEstimator>;
+}
+
+export interface HealthAnomalyStructuredContext {
+    /** Null means the plan-block read was unavailable/invalid rather than "no travel". */
+    authoredTravelActive: boolean | null;
+    authoredTravelRevision: string | null;
+}
+
 export interface HealthAnomalyRationaleFact {
     code: string;
     value?: number | string | boolean | null;
@@ -132,6 +200,7 @@ export interface HealthAnomalyPersistenceInput {
     previousState: PhysiologicalAnomalyState | null;
     previousEpisodeId: string | null;
     previousEpisodeDay: number | null;
+    previousAssessmentDate?: string | null;
     unexplainedPersistenceDays: number;
 }
 
@@ -140,10 +209,13 @@ export interface HealthAnomalyInput {
     timezone: 'Europe/Warsaw';
     recoverySnapshot: DailyRecoverySnapshot | null;
     subjectiveCheckin: DailySubjectiveCheckin | null;
+    features?: HealthAnomalyFeatureSet | null;
+    /** Compatibility/testing seam for callers that have not yet adopted HA2 feature mapping. */
     coreSignals: CoreSignalEvidence[];
     supportingSignals: SupportingSignalEvidence[];
     dataQuality: CoreSignalDataQuality[];
     last3DaysHardSessionsCount: number;
+    structuredContext?: HealthAnomalyStructuredContext | null;
     persistence: HealthAnomalyPersistenceInput;
 }
 
@@ -160,5 +232,31 @@ export interface PhysiologicalAnomalyAssessment {
     dataQuality: CoreSignalDataQuality[];
     rationale: HealthAnomalyRationaleTokens;
     policyVersion: string;
+    thresholdPolicyVersion: string;
     mode: Exclude<HealthAnomalyPolicy, 'off'>;
+}
+
+export interface HealthAnomalySourceIdentity {
+    timezone: 'Europe/Warsaw';
+    recoverySnapshotRevision: string | null;
+    checkinRevision: string | null;
+    historyWindowStart: string;
+    historyWindowEndExclusive: string;
+    historySnapshotRevisions: Array<{ date: string; revision: string }>;
+    travelContextRevision: string | null;
+    persistenceLookbackStart: string;
+}
+
+export interface HealthAnomalyAssessmentRevision {
+    userId: string;
+    date: string;
+    revisionId: string;
+    idempotencyKey: string;
+    computedAt: string;
+    policyVersion: string;
+    thresholdPolicy: HealthAnomalyThresholdPolicy;
+    mode: Exclude<HealthAnomalyPolicy, 'off'>;
+    source: HealthAnomalySourceIdentity;
+    assessment: PhysiologicalAnomalyAssessment;
+    schemaVersion: 1;
 }
