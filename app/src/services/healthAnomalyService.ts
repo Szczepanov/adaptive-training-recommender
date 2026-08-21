@@ -63,12 +63,22 @@ function activeTravelBlock(blocks: readonly PlanBlockWithId[], date: string): bo
  * the readiness/recommendation engine.
  */
 export class HealthAnomalyService {
+    private readonly recovery: RecoverySource;
+    private readonly checkins: CheckinSource;
+    private readonly planBlocks: PlanBlockSource;
+    private readonly assessments: AssessmentStore;
+
     constructor(
-        private readonly recovery: RecoverySource = recoverySnapshotService,
-        private readonly checkins: CheckinSource = checkinService,
-        private readonly planBlocks: PlanBlockSource = planBlockService,
-        private readonly assessments: AssessmentStore = healthAnomalyAssessmentRepository,
-    ) {}
+        recovery: RecoverySource = recoverySnapshotService,
+        checkins: CheckinSource = checkinService,
+        planBlocks: PlanBlockSource = planBlockService,
+        assessments: AssessmentStore = healthAnomalyAssessmentRepository,
+    ) {
+        this.recovery = recovery;
+        this.checkins = checkins;
+        this.planBlocks = planBlocks;
+        this.assessments = assessments;
+    }
 
     async assessAndPersist(
         userId: string,
