@@ -8,8 +8,10 @@ name: Deploy Frontend & Firestore Rules
 # secret this workflow reads below.
 #
 # Deliberately a SEPARATE identity from garmin-sync's github-deployer: github-frontend-deployer
-# holds only roles/firebasehosting.admin and roles/firebaserules.admin, nothing about Cloud
-# Run, Artifact Registry, or Cloud Scheduler, and vice versa -- see docs/ops/frontend-deployment.md.
+# holds only roles/firebasehosting.admin and roles/firebaserules.admin at the project level,
+# plus roles/run.viewer scoped to just the garmin-account-link Cloud Run service (Hosting
+# needs that to validate firebase.json's rewrite to it) -- nothing about Artifact Registry or
+# Cloud Scheduler, and vice versa -- see docs/ops/frontend-deployment.md.
 #
 # Firestore indexes are deliberately out of scope here too, same as the local
 # `npm run firestore:rules:deploy` procedure this mirrors (docs/ops/firestore-rules-deployment.md)
