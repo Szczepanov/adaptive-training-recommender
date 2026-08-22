@@ -104,6 +104,12 @@ class GarminConnectionRepository:
         return str(uid) if uid else None
 
     def assert_target_available(self, uid: str, identity_digest: str) -> None:
+        """Fail fast if the target uid can't accept this identity, before uploading a token.
+
+        This is a pre-flight, non-transactional check only (so a doomed login doesn't pay
+        for an upload it can't use); commit_link() re-validates and is the actual guard,
+        since this read can be stale under concurrent relinks.
+        """
         snapshot = self.db.collection("garminConnections").document(uid).get()
         if not snapshot.exists:
             return
@@ -124,14 +130,22 @@ class GarminConnectionRepository:
         identity_digest: str,
         identity_kind: str,
         token_object: str,
-    ) -> None:
+    ) -> str | None:
+        """Commit the identity/connection mapping; return the tokenObject this replaced.
+
+        The previous tokenObject is read from inside this same transaction (not by a
+        separate pre-transaction call) so it's exactly the value this commit overwrites --
+        under concurrent relinks for the same account, Firestore's optimistic-concurrency
+        retry keeps that guarantee, so the caller can safely delete only that object and
+        never leak or race against a sibling transaction's own cleanup.
+        """
         identity_ref = self.db.collection("garminIdentities").document(identity_digest)
         connection_ref = self.db.collection("garminConnections").document(uid)
         transaction = self.db.transaction()
         server_timestamp = google_firestore.SERVER_TIMESTAMP
 
         @google_firestore.transactional
-        def commit(transaction_obj: Any) -> None:
+        def commit(transaction_obj: Any) -> str | None:
             identity_snapshot = identity_ref.get(transaction=transaction_obj)
             if identity_snapshot.exists:
                 identity_data = identity_snapshot.to_dict() or {}
@@ -142,6 +156,7 @@ class GarminConnectionRepository:
                     )
 
             connection_snapshot = connection_ref.get(transaction=transaction_obj)
+            previous_token_object: str | None = None
             if connection_snapshot.exists:
                 connection_data = connection_snapshot.to_dict() or {}
                 existing_digest = connection_data.get("identityDigest")
@@ -153,6 +168,10 @@ class GarminConnectionRepository:
                     raise GarminLinkConflictError(
                         "This app account is already linked to a different Garmin account."
                     )
+                existing_token_object = connection_data.get("tokenObject")
+                previous_token_object = (
+                    str(existing_token_object) if existing_token_object else None
+                )
 
             transaction_obj.set(
                 identity_ref,
@@ -178,23 +197,41 @@ class GarminConnectionRepository:
                 },
                 merge=True,
             )
+            return previous_token_object
 
-        commit(transaction)
+        return commit(transaction)
 
-    def list_active_user_ids(self) -> list[str]:
-        user_ids: list[str] = []
+    def list_active_connections(self) -> list[tuple[str, str | None]]:
+        """Return (uid, tokenObject) for every active Garmin connection.
+
+        tokenObject is whatever _finalize actually committed for that uid, not a
+        reconstructed canonical path, so scheduled sync always restores the token the
+        account-link transaction really wrote.
+        """
+        connections: list[tuple[str, str | None]] = []
+        seen: set[str] = set()
         for snapshot in self.db.collection("garminConnections").stream():
             data = snapshot.to_dict() or {}
             if data.get("status") != "active":
                 continue
             uid = data.get("userId") or snapshot.id
-            if uid and uid not in user_ids:
-                user_ids.append(str(uid))
-        return user_ids
+            if not uid or uid in seen:
+                continue
+            seen.add(uid)
+            token_object = data.get("tokenObject")
+            connections.append((str(uid), str(token_object) if token_object else None))
+        return connections
+
+    def list_active_user_ids(self) -> list[str]:
+        return [uid for uid, _ in self.list_active_connections()]
 
 
 def list_active_garmin_user_ids(db: Any = None) -> list[str]:
     return GarminConnectionRepository(db=db).list_active_user_ids()
+
+
+def list_active_garmin_connections(db: Any = None) -> list[tuple[str, str | None]]:
+    return GarminConnectionRepository(db=db).list_active_connections()
 
 
 def _garmin_identity(api: Garmin) -> tuple[str, str]:
@@ -343,19 +380,33 @@ class GarminAccountLinkService:
                 created_uid = target_uid
                 is_new_user = True
 
+            # Pre-flight only (may be stale under concurrent relinks); commit_link() below
+            # re-validates transactionally and is the actual guard.
             self.repository.assert_target_available(target_uid, identity_digest)
-            token_object = f"garmin/users/{target_uid}/garmin_tokens.json"
+            # Stage every upload under a fresh, unique object name rather than the uid's
+            # canonical path: an active relink must never overwrite the token object that
+            # scheduled sync still reads until this new one is actually committed.
+            token_object = f"garmin/users/{target_uid}/garmin_tokens-{secrets.token_hex(8)}.json"
             if not GcsTokenStore(self.token_bucket, token_object).persist(token_path):
                 raise GarminLinkConfigurationError("Failed to persist Garmin session tokens.")
             uploaded_token_object = token_object
 
-            self.repository.commit_link(
+            # previous_token_object is read from inside the same transaction that commits
+            # token_object, so it's exactly the value this commit overwrote -- safe to
+            # delete even under a concurrent relink for the same account (see
+            # commit_link()'s docstring).
+            previous_token_object = self.repository.commit_link(
                 target_uid,
                 identity_digest,
                 identity_kind,
                 token_object,
             )
             link_committed = True
+            if previous_token_object and previous_token_object != token_object:
+                # The new token is committed; the previous object is superseded and safe
+                # to remove. Scheduled sync restores whatever tokenObject Firestore has,
+                # so it never reads a path we're about to delete.
+                self._delete_token_object(previous_token_object)
             custom_token = firebase_auth.create_custom_token(target_uid)
             custom_token_text = (
                 custom_token.decode("utf-8")
@@ -392,6 +443,7 @@ __all__ = [
     "GarminLinkConfigurationError",
     "GarminLinkConflictError",
     "PendingLoginStore",
+    "list_active_garmin_connections",
     "list_active_garmin_user_ids",
     "GarminConnectAuthenticationError",
     "GarminConnectConnectionError",

@@ -151,12 +151,21 @@ def _scoped_for_user(settings: Settings) -> Settings:
     )
 
 
-def load_settings_for_user(user_id: str, env_file: str | None = None) -> Settings:
-    """Load token-only settings for one app user discovered from garminConnections."""
+def load_settings_for_user(
+    user_id: str, env_file: str | None = None, token_object: str | None = None
+) -> Settings:
+    """Load token-only settings for one app user discovered from garminConnections.
+
+    token_object, when given, is the tokenObject actually committed for this uid by the
+    account-link transaction and overrides the reconstructed canonical path -- a relink
+    may have staged its token under a different object name (see account_link._finalize).
+    """
     load_dotenv(dotenv_path=env_file)
     if not user_id or not user_id.strip():
         raise ValueError("Configuration error: linked Firebase user ID cannot be blank.")
     settings = _scoped_for_user(_load_base_settings(user_id))
+    if token_object:
+        settings = replace(settings, garmin_token_object=token_object)
     settings.validate()
     return settings
 
