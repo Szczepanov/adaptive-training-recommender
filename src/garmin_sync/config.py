@@ -37,7 +37,7 @@ class Settings:
         return self.garmin_archive_bucket or self.garmin_token_bucket
 
     def validate(self) -> None:
-        if not self.app_user_id:
+        if not self.app_user_id or not self.app_user_id.strip():
             raise ValueError(
                 "Configuration error: APP_USER_ID is required. "
                 "Use the Firebase Authentication UID of the application user."
@@ -154,8 +154,9 @@ def _scoped_for_user(settings: Settings) -> Settings:
 def load_settings_for_user(user_id: str, env_file: str | None = None) -> Settings:
     """Load token-only settings for one app user discovered from garminConnections."""
     load_dotenv(dotenv_path=env_file)
-    normalized_uid = user_id.strip()
-    settings = _scoped_for_user(_load_base_settings(normalized_uid))
+    if not user_id or not user_id.strip():
+        raise ValueError("Configuration error: linked Firebase user ID cannot be blank.")
+    settings = _scoped_for_user(_load_base_settings(user_id))
     settings.validate()
     return settings
 
@@ -168,8 +169,8 @@ def load_settings(env_file: str | None = None) -> Settings:
     call load_settings_for_user() for each owner UID.
     """
     load_dotenv(dotenv_path=env_file)
-    user_id = os.getenv("APP_USER_ID", "").strip()
-    if not user_id:
+    user_id = os.getenv("APP_USER_ID", "")
+    if not user_id or not user_id.strip():
         raise ValueError(
             "Configuration error: APP_USER_ID is required for this single-user command. "
             "Scheduled *-all commands discover linked users automatically."
