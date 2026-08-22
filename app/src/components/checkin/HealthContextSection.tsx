@@ -9,6 +9,15 @@ import './HealthContextSection.css';
 interface HealthContextSectionProps {
     value?: HealthContextCheckin;
     symptomsPresent: boolean;
+    /**
+     * Deprecated no-op kept only while this PR is stacked on #179, whose DailyCheckin caller
+     * still supplies the old missingness object. No manual physiology reaches UI or engine state.
+     */
+    manualPhysiologyMissing?: {
+        rhr: boolean;
+        hrv: boolean;
+        respiration: boolean;
+    };
     onChange: (next: HealthContextCheckin) => void;
 }
 
