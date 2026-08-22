@@ -8,6 +8,12 @@ import './HealthContextSection.css';
 interface HealthContextSectionProps {
     value?: HealthContextCheckin;
     symptomsPresent: boolean;
+    /** Manual physiology is only useful when the matching objective daily value is missing. */
+    manualPhysiologyMissing?: {
+        rhr: boolean;
+        hrv: boolean;
+        respiration: boolean;
+    };
     onChange: (next: HealthContextCheckin) => void;
 }
 
@@ -26,10 +32,10 @@ const CONTEXT_QUESTIONS = [
     { key: 'closeSickContact', label: 'Close sick contact' },
 ] as const;
 
-const SUBJECTIVE_CHANGE_QUESTIONS = [
-    { key: 'subjectiveRhrHigher', label: 'RHR higher than usual?' },
-    { key: 'subjectiveHrvLower', label: 'HRV lower than usual?' },
-    { key: 'subjectiveRespirationHigher', label: 'Respiration higher than usual?' },
+const MANUAL_PHYSIOLOGY_QUESTIONS = [
+    { key: 'manualRhrHigher', signal: 'rhr', label: 'RHR higher than usual?' },
+    { key: 'manualHrvLower', signal: 'hrv', label: 'HRV lower than usual?' },
+    { key: 'manualRespirationHigher', signal: 'respiration', label: 'Respiration higher than usual?' },
 ] as const;
 
 const TRI_STATE_OPTIONS = [
@@ -72,13 +78,18 @@ function hasUnusualContext(value: HealthContextCheckin | undefined, symptomsPres
         || value.recentVaccination === true
         || value.medicationChange === true
         || value.closeSickContact === true
-        || value.subjectiveRhrHigher === true
-        || value.subjectiveHrvLower === true
-        || value.subjectiveRespirationHigher === true
+        || value.manualRhrHigher === true
+        || value.manualHrvLower === true
+        || value.manualRespirationHigher === true
         || Boolean(value.otherDisruption?.trim());
 }
 
-export function HealthContextSection({ value, symptomsPresent, onChange }: HealthContextSectionProps) {
+export function HealthContextSection({
+    value,
+    symptomsPresent,
+    manualPhysiologyMissing = { rhr: false, hrv: false, respiration: false },
+    onChange,
+}: HealthContextSectionProps) {
     const context: HealthContextCheckin = {
         alcoholDrinksLast24h: 0,
         travelDisruption: 'none',
@@ -88,6 +99,7 @@ export function HealthContextSection({ value, symptomsPresent, onChange }: Healt
     };
     const update = (patch: Partial<HealthContextCheckin>) => onChange({ ...context, ...patch });
     const symptoms = context.symptoms ?? { present: symptomsPresent };
+    const manualQuestions = MANUAL_PHYSIOLOGY_QUESTIONS.filter(item => manualPhysiologyMissing[item.signal]);
 
     const updateSymptoms = (patch: Partial<NonNullable<HealthContextCheckin['symptoms']>>) => {
         onChange({
@@ -198,34 +210,38 @@ export function HealthContextSection({ value, symptomsPresent, onChange }: Healt
                     </div>
                 ))}
 
-                <div className="health-context__row">
-                    <span className="health-context__label">Wearable changes vs usual</span>
-                    <small>Manual context only; objective Garmin signals remain authoritative.</small>
-                </div>
-
-                {SUBJECTIVE_CHANGE_QUESTIONS.map(item => (
-                    <div className="health-context__row" key={item.key}>
-                        <span className="health-context__label">{item.label}</span>
-                        <div className="health-context__chips" role="group" aria-label={item.label}>
-                            {TRI_STATE_OPTIONS.map(option => {
-                                const selected = option.value === null
-                                    ? context[item.key] == null
-                                    : context[item.key] === option.value;
-                                return (
-                                    <button
-                                        key={String(option.value)}
-                                        type="button"
-                                        className={`health-context__chip ${selected ? 'is-selected' : ''}`}
-                                        aria-pressed={selected}
-                                        onClick={() => update({ [item.key]: option.value })}
-                                    >
-                                        {option.label}
-                                    </button>
-                                );
-                            })}
+                {manualQuestions.length > 0 && (
+                    <>
+                        <div className="health-context__row">
+                            <span className="health-context__label">Manual physiology fallback</span>
+                            <small>Only shown where today&apos;s Garmin value is missing. Use another measurement/source if you know the direction; otherwise leave Unknown.</small>
                         </div>
-                    </div>
-                ))}
+
+                        {manualQuestions.map(item => (
+                            <div className="health-context__row" key={item.key}>
+                                <span className="health-context__label">{item.label}</span>
+                                <div className="health-context__chips" role="group" aria-label={item.label}>
+                                    {TRI_STATE_OPTIONS.map(option => {
+                                        const selected = option.value === null
+                                            ? context[item.key] == null
+                                            : context[item.key] === option.value;
+                                        return (
+                                            <button
+                                                key={String(option.value)}
+                                                type="button"
+                                                className={`health-context__chip ${selected ? 'is-selected' : ''}`}
+                                                aria-pressed={selected}
+                                                onClick={() => update({ [item.key]: option.value })}
+                                            >
+                                                {option.label}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        ))}
+                    </>
+                )}
 
                 <label className="health-context__other">
                     Other disruption (optional)
