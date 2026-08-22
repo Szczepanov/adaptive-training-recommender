@@ -8,9 +8,10 @@ name: Deploy Frontend & Firestore Rules
 # secret this workflow reads below.
 #
 # Deliberately a SEPARATE identity from garmin-sync's github-deployer: github-frontend-deployer
-# holds only Firebase Hosting/Rules plus the dedicated Firestore index role used by the
-# separate deploy-firestore-indexes.yml workflow; it has nothing about Cloud Run, Artifact
-# Registry, or Cloud Scheduler -- see docs/ops/frontend-deployment.md.
+# holds Firebase Hosting/Rules plus the dedicated Firestore index role used by the separate
+# deploy-firestore-indexes.yml workflow, and roles/run.viewer scoped only to the
+# garmin-account-link service so Hosting can validate its rewrite. It has nothing about
+# Artifact Registry or Cloud Scheduler -- see docs/ops/frontend-deployment.md.
 #
 # Firestore indexes remain a separate deployment unit because index construction is
 # asynchronous and needs its own readiness gate. The production E2E workflow calls that unit
