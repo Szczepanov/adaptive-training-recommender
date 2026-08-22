@@ -21,10 +21,17 @@ here) are two different service accounts, both provisioned by the same one-time
 `docs/ops/setup-workload-identity.sh`, both trusting the same Workload Identity Pool/Provider
 (restricted to this repo's `main` branch -- a run from any other branch or a fork can't
 authenticate as either at all). `github-frontend-deployer` only ever holds
-`roles/firebasehosting.admin` and `roles/firebaserules.admin` -- nothing about Cloud Run,
-Artifact Registry, Cloud Scheduler, or general Firestore data/index access. A workflow file
-compromised or added later in this repo therefore can't use it to reach garmin-sync's
+`roles/firebasehosting.admin` and `roles/firebaserules.admin` at the project level -- nothing
+about Artifact Registry, Cloud Scheduler, or general Firestore data/index access. A workflow
+file compromised or added later in this repo therefore can't use it to reach garmin-sync's
 infrastructure, or vice versa: each identity can only touch the one surface it's scoped to.
+
+The one narrow exception: `app/firebase.json` rewrites `/api/garmin/**` to the
+`garmin-account-link` Cloud Run service, and Firebase Hosting needs `run.services.get` on that
+service to validate the rewrite when finalizing a deploy. `setup-workload-identity.sh` grants
+`github-frontend-deployer` `roles/run.viewer` scoped to that single Cloud Run service (a
+resource-level IAM binding, not a project-level one) -- it still can't see or touch any other
+Cloud Run service.
 
 ## One-time setup
 
@@ -37,6 +44,11 @@ export GCP_PROJECT=adaptive-training-recommender   # your Firebase/GCP project i
 export GITHUB_REPO=OWNER/REPO                       # e.g. Szczepanov/adaptive-training-recommender
 bash docs/ops/setup-workload-identity.sh
 ```
+
+The `garmin-account-link` Cloud Run service binding above only applies if that service has
+already been deployed (run **Deploy Garmin Sync** first). If it hasn't, the script prints a
+`NOTE:` and skips that one binding -- rerun the script (idempotent) after deploying Garmin
+Sync so `github-frontend-deployer` gets the read access it needs.
 
 Add the printed `GCP_FRONTEND_DEPLOYER_SA_EMAIL` as a repo secret (alongside
 `GCP_PROJECT_ID` and `GCP_WORKLOAD_IDENTITY_PROVIDER`, already added if you set up
