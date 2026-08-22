@@ -14,9 +14,7 @@ def _handler_with_forwarded_for(value: str) -> GarminAccountLinkHandler:
 
 
 def test_client_key_uses_google_observed_client_hop() -> None:
-    handler = _handler_with_forwarded_for(
-        "198.51.100.99, 203.0.113.10, 35.191.0.1"
-    )
+    handler = _handler_with_forwarded_for("198.51.100.99, 203.0.113.10, 35.191.0.1")
 
     assert handler._client_key() == "203.0.113.10"  # noqa: SLF001
 
