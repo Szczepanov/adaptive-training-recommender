@@ -174,7 +174,7 @@ function categorizeSignal(
         direction = 'low';
     } else if (deviation >= thresholds.strongDeviation) {
         // Retain unusually-high HRV as out-of-range telemetry without treating it as an
-        // adverse illness vote. isAdverseEvidence deliberately excludes two_sided HRV.
+        // adverse illness vote. isAdverseCoreSignalEvidence deliberately excludes two_sided HRV.
         status = 'strong_anomaly';
         direction = 'two_sided';
     } else if (deviation >= thresholds.moderateDeviation) {
@@ -199,7 +199,8 @@ function isAnomaly(evidence: CoreSignalEvidence): boolean {
     return evidence.status === 'moderate_anomaly' || evidence.status === 'strong_anomaly';
 }
 
-function isAdverseEvidence(evidence: CoreSignalEvidence): boolean {
+/** Canonical adverse-core classifier shared by evaluation and persistence composition. */
+export function isAdverseCoreSignalEvidence(evidence: CoreSignalEvidence): boolean {
     if (!isAnomaly(evidence)) return false;
     if (evidence.signal === 'hrv') return evidence.direction === 'low';
     return evidence.direction === 'high';
@@ -350,7 +351,7 @@ function strongestCoverage(
 }
 
 function evidenceLevel(coreSignals: readonly CoreSignalEvidence[]): PhysiologicalAnomalyAssessment['evidenceLevel'] {
-    const adverse = coreSignals.filter(isAdverseEvidence);
+    const adverse = coreSignals.filter(isAdverseCoreSignalEvidence);
     if (adverse.length === 0) return 'none';
     const strongCount = adverse.filter(item => item.status === 'strong_anomaly').length;
     if (adverse.length >= 2 && strongCount >= 1) return 'high';
@@ -434,7 +435,7 @@ export function evaluatePhysiologicalAnomaly(
         .filter((quality): quality is CoreSignalDataQuality => quality !== null);
     const supportingSignals = deriveSupportingSignals(input);
     const explanations = resolveExplanations(input);
-    const adverseAnomalies = coreSignals.filter(isAdverseEvidence);
+    const adverseAnomalies = coreSignals.filter(isAdverseCoreSignalEvidence);
     const unexplained = adverseAnomalies.filter(
         evidence => strongestCoverage(evidence.signal, explanations) !== 'strong',
     );
