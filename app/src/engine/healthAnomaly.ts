@@ -297,10 +297,26 @@ function resolveExplanations(input: HealthAnomalyInput): ContextExplanation[] {
     return explanations;
 }
 
+function manualSupport(
+    value: boolean | null | undefined,
+    objectiveAvailable: boolean,
+): Pick<SupportingSignalEvidence, 'status' | 'value'> {
+    // Manual comparison is a fallback only. If the corresponding objective signal is present,
+    // the manual answer is deliberately suppressed rather than double-counted.
+    if (objectiveAvailable) return { status: 'unavailable', value: null };
+    return {
+        status: value === true ? 'supportive' : value === false ? 'normal' : 'unavailable',
+        value: value ?? null,
+    };
+}
+
 function deriveSupportingSignals(input: HealthAnomalyInput): SupportingSignalEvidence[] {
     const snapshot = input.recoverySnapshot;
     const checkin = input.subjectiveCheckin;
     const health = checkin?.healthContext;
+    const rhrManual = manualSupport(health?.manualRhrHigher, snapshot?.raw.restingHr != null);
+    const hrvManual = manualSupport(health?.manualHrvLower, snapshot?.raw.hrvOvernightAvg != null);
+    const respirationManual = manualSupport(health?.manualRespirationHigher, snapshot?.raw.respirationAvg != null);
     const derived: SupportingSignalEvidence[] = [
         {
             code: 'GARMIN_SLEEP_SCORE',
@@ -327,21 +343,9 @@ function deriveSupportingSignals(input: HealthAnomalyInput): SupportingSignalEvi
             status: health?.closeSickContact === true ? 'supportive' : health?.closeSickContact === false ? 'normal' : 'unavailable',
             value: health?.closeSickContact ?? null,
         },
-        {
-            code: 'SUBJECTIVE_RHR_HIGHER',
-            status: health?.subjectiveRhrHigher === true ? 'supportive' : health?.subjectiveRhrHigher === false ? 'normal' : 'unavailable',
-            value: health?.subjectiveRhrHigher ?? null,
-        },
-        {
-            code: 'SUBJECTIVE_HRV_LOWER',
-            status: health?.subjectiveHrvLower === true ? 'supportive' : health?.subjectiveHrvLower === false ? 'normal' : 'unavailable',
-            value: health?.subjectiveHrvLower ?? null,
-        },
-        {
-            code: 'SUBJECTIVE_RESPIRATION_HIGHER',
-            status: health?.subjectiveRespirationHigher === true ? 'supportive' : health?.subjectiveRespirationHigher === false ? 'normal' : 'unavailable',
-            value: health?.subjectiveRespirationHigher ?? null,
-        },
+        { code: 'MANUAL_RHR_HIGHER', ...rhrManual },
+        { code: 'MANUAL_HRV_LOWER', ...hrvManual },
+        { code: 'MANUAL_RESPIRATION_HIGHER', ...respirationManual },
     ];
     const byCode = new Map<string, SupportingSignalEvidence>();
     for (const signal of derived) byCode.set(signal.code, signal);
