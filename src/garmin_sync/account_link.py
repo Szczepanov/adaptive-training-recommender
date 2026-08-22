@@ -266,6 +266,11 @@ class GarminAccountLinkService:
                 )
                 return {"status": "mfa_required", "challengeId": challenge_id}
 
+            # Garmin(return_on_mfa=True) returns immediately after the low-level login even
+            # when MFA was not required, so its normal tokenstore dump/password cleanup is
+            # skipped. Do those two steps explicitly before linking the account.
+            api.client.dump(str(token_path))
+            api.password = None
             return self._finalize(api, token_path, temp_dir, requested_uid)
         except Exception:
             api.password = None
