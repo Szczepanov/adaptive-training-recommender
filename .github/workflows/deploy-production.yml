@@ -1,0 +1,108 @@
+name: Deploy Production E2E
+
+# One production release = one Git SHA, validated once and promoted in dependency order:
+#   CI -> Garmin backend/jobs/schedulers -> Firestore indexes -> Firestore rules -> Hosting.
+#
+# This intentionally remains workflow_dispatch rather than deploying every main push. Rules
+# drift is a production safety gate that sometimes requires an explicit human acknowledgement;
+# a partially reviewed rules change must never become an unattended release side effect.
+on:
+  workflow_dispatch:
+    inputs:
+      region:
+        description: "GCP region for Garmin Cloud Run/Scheduler resources"
+        type: string
+        required: true
+        default: "europe-central2"
+      confirm_rules_drift:
+        description: "I reviewed Firestore rules drift and intend to replace production with the repo version"
+        type: boolean
+        required: true
+        default: false
+      run_garmin_sync_smoke_test:
+        description: "Also execute the live garmin-sync job once after backend deployment"
+        type: boolean
+        required: true
+        default: false
+
+# Called deployment workflows cannot elevate permissions above their caller. Keep the release
+# capable of WIF while each reusable workflow still narrows its own permissions explicitly.
+permissions:
+  contents: read
+  id-token: write
+
+# Queue whole releases. Component workflows have their own concurrency groups as a second
+# line of defence against someone starting a standalone component deployment at the same time.
+concurrency:
+  group: deploy-production-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    name: Production ref guard
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require main branch
+        run: |
+          if [ "${GITHUB_REF}" != "refs/heads/main" ]; then
+            echo "Production Workload Identity Federation is restricted to refs/heads/main." >&2
+            echo "Re-run this workflow with main selected in the Run workflow branch picker." >&2
+            exit 1
+          fi
+
+  validate:
+    name: Full CI release gate
+    needs: preflight
+    uses: ./.github/workflows/ci.yml
+    secrets: inherit
+
+  deploy-garmin:
+    name: Deploy Garmin backend
+    needs: validate
+    uses: ./.github/workflows/deploy-garmin-sync.yml
+    with:
+      region: ${{ inputs.region }}
+      run_smoke_test: ${{ inputs.run_garmin_sync_smoke_test }}
+    secrets: inherit
+
+  deploy-indexes:
+    name: Deploy Firestore indexes
+    needs: deploy-garmin
+    uses: ./.github/workflows/deploy-firestore-indexes.yml
+    secrets: inherit
+
+  deploy-rules:
+    name: Deploy Firestore rules
+    needs: deploy-indexes
+    uses: ./.github/workflows/deploy-frontend.yml
+    with:
+      deploy_hosting: false
+      deploy_rules: true
+      confirm_rules_drift: ${{ inputs.confirm_rules_drift }}
+    secrets: inherit
+
+  deploy-hosting:
+    name: Deploy frontend last
+    needs: deploy-rules
+    uses: ./.github/workflows/deploy-frontend.yml
+    with:
+      deploy_hosting: true
+      deploy_rules: false
+      confirm_rules_drift: false
+    secrets: inherit
+
+  release-summary:
+    name: Release summary
+    needs: deploy-hosting
+    runs-on: ubuntu-latest
+    steps:
+      - name: Record promoted revision
+        run: |
+          {
+            echo "## Production release complete"
+            echo
+            echo "- Commit: \`${GITHUB_SHA}\`"
+            echo "- Region: \`${{ inputs.region }}\`"
+            echo "- Garmin backend, Firestore indexes/rules, and Firebase Hosting all completed."
+            echo "- Hosting smoke checks verified the site and the Hosting -> Cloud Run API rewrite."
+          } >> "${GITHUB_STEP_SUMMARY}"
