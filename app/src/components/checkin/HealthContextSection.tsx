@@ -19,15 +19,19 @@ const TRAVEL_OPTIONS: Array<{ value: NonNullable<HealthContextCheckin['travelDis
 ];
 
 const CONTEXT_TOGGLES: Array<{
-    key: 'unusualHeatOrSauna' | 'dehydrationOrFluidLoss' | 'recentVaccination' | 'medicationChange' | 'closeSickContact';
+    key: 'unusualHeatOrSauna' | 'dehydrationOrFluidLoss' | 'recentVaccination' | 'medicationChange';
     label: string;
 }> = [
     { key: 'unusualHeatOrSauna', label: 'Heat / sauna' },
     { key: 'dehydrationOrFluidLoss', label: 'Dehydration / fluid loss' },
     { key: 'recentVaccination', label: 'Vaccination' },
     { key: 'medicationChange', label: 'Medication change' },
-    { key: 'closeSickContact', label: 'Close sick contact' },
 ];
+
+const SICK_CONTACT_OPTIONS = [
+    { value: false, label: 'No' },
+    { value: true, label: 'Yes' },
+] as const;
 
 const ONSETS = [
     ['today', 'Today'],
@@ -174,6 +178,23 @@ export function HealthContextSection({ value, symptomsPresent, onChange }: Healt
                             {item.label}
                         </button>
                     ))}
+                </div>
+
+                <div className="health-context__row">
+                    <span className="health-context__label">Close sick contact</span>
+                    <div className="health-context__chips" role="group" aria-label="Close sick contact">
+                        {SICK_CONTACT_OPTIONS.map(option => (
+                            <button
+                                key={String(option.value)}
+                                type="button"
+                                className={`health-context__chip ${context.closeSickContact === option.value ? 'is-selected' : ''}`}
+                                aria-pressed={context.closeSickContact === option.value}
+                                onClick={() => update({ closeSickContact: option.value })}
+                            >
+                                {option.label}
+                            </button>
+                        ))}
+                    </div>
                 </div>
 
                 <label className="health-context__other">
