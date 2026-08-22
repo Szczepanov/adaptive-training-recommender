@@ -49,6 +49,13 @@ export const LoginScreen: React.FC = () => {
       await finishGarminAuth(result.customToken);
     } catch (error: unknown) {
       console.error(error);
+      if (challengeId) {
+        // PendingLoginStore consumes a Garmin challenge on every completion attempt, even
+        // when the code is wrong. Never leave the UI pointing at a challenge the server
+        // can no longer resume.
+        setChallengeId(null);
+        setMfaCode('');
+      }
       setErrorMsg(getErrorMessage(error) || 'Failed to authenticate with Garmin.');
     } finally {
       setLoading(false);
