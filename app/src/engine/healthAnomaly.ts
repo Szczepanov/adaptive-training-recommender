@@ -230,12 +230,14 @@ function resolveExplanations(input: HealthAnomalyInput): ContextExplanation[] {
     const health = checkin?.healthContext;
     const priorHardTraining = hasPriorHardTraining(snapshot);
 
-    // Morning RHR/HRV/respiration precede any activity performed later today. Do not use
-    // todayTraining, or an aggregate whose temporal membership is not explicit, to explain
-    // those measurements after a later Garmin re-sync.
+    // Morning RHR/HRV/respiration precede any activity performed later today. `todayTraining`
+    // is therefore never explanatory. The backend defines last3DaysHardSessionsCount as D-1
+    // through D-3 only, so that aggregate is causally safe for a weaker prior-load context.
     if (priorHardTraining) {
         addExplanation(explanations, 'hard_training', 'strong', ['rhr', 'hrv'], ['YESTERDAY_HARD_SESSION']);
         addExplanation(explanations, 'hard_training', 'weak', ['respiration'], ['YESTERDAY_HARD_SESSION']);
+    } else if (input.last3DaysHardSessionsCount > 0) {
+        addExplanation(explanations, 'hard_training', 'moderate', ['rhr', 'hrv'], ['HARD_SESSION_WITHIN_3D']);
     }
 
     const objectivePoorSleep = (snapshot?.raw.sleepScore ?? 100) < 60
