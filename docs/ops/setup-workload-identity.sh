@@ -26,7 +26,7 @@ export CLOUDSDK_CORE_PROJECT="${GCP_PROJECT}"
 
 echo "==> Enabling required APIs"
 gcloud services enable \
-  iamcredentials.googleapis.com sts.googleapis.com \
+  iam.googleapis.com iamcredentials.googleapis.com sts.googleapis.com \
   run.googleapis.com cloudscheduler.googleapis.com \
   artifactregistry.googleapis.com firestore.googleapis.com storage.googleapis.com \
   firebasehosting.googleapis.com firebaserules.googleapis.com identitytoolkit.googleapis.com
