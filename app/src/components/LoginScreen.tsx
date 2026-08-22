@@ -25,20 +25,23 @@ export const LoginScreen: React.FC = () => {
     setErrorMsg('');
     try {
       if (challengeId) {
-        const result = await garminAuthService.completeMfa(challengeId, mfaCode);
+        const submittedMfaCode = mfaCode;
+        setMfaCode('');
+        const result = await garminAuthService.completeMfa(challengeId, submittedMfaCode);
         if (result.status !== 'authenticated') {
           throw new Error('Garmin MFA did not complete authentication.');
         }
         setChallengeId(null);
-        setMfaCode('');
         await finishGarminAuth(result.customToken);
         return;
       }
 
-      const result = await garminAuthService.startLogin(email, password);
-      // Do not retain the Garmin password in browser state after the first factor has
-      // been submitted. The server likewise discards it before retaining an MFA session.
+      // Copy credentials into the request and clear the password from React state before the
+      // network round-trip completes. This also clears it on authentication/network failures,
+      // rather than retaining a failed Garmin password in the rendered component state.
+      const submittedPassword = password;
       setPassword('');
+      const result = await garminAuthService.startLogin(email, submittedPassword);
       if (result.status === 'mfa_required') {
         setChallengeId(result.challengeId);
         return;
