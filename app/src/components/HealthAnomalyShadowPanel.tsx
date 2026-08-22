@@ -50,7 +50,7 @@ export function HealthAnomalyShadowTrace({ revision, decisionInput }: HealthAnom
           <div className="data-item"><span className="data-label">Revision:</span><span className="data-value">{revision.revisionId}</span></div>
           <div className="data-item"><span className="data-label">Computed:</span><span className="data-value">{revision.computedAt}</span></div>
           <div className="data-item"><span className="data-label">Episode:</span><span className="data-value">{assessment.episodeId ?? 'None'}{assessment.episodeDay ? ` · day ${assessment.episodeDay}` : ''}</span></div>
-          <div className="data-item"><span className="data-label">Unexplained persistence:</span><span className="data-value">{assessment.persistenceDays} day(s)</span></div>
+          <div className="data-item"><span className="data-label">Adverse physiology persistence:</span><span className="data-value">{assessment.persistenceDays} day(s)</span></div>
         </div>
 
         {assessment.coreSignals.map(signal => {

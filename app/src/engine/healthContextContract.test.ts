@@ -94,6 +94,45 @@ describe('HA1 validateCheckin migration contract', () => {
         expect(stale.errors.some(error => error.field === 'healthContext.symptoms.onset')).toBe(true);
     });
 
+    it('defaults ordinary contextual flags to explicit false when the context block exists', () => {
+        const result = validateCheckin(writePayload({
+            healthContext: {
+                unusualHeatOrSauna: null,
+                closeSickContact: true,
+            },
+        }));
+        expect(result.isValid).toBe(true);
+        expect(result.data?.healthContext).toMatchObject({
+            unusualHeatOrSauna: false,
+            dehydrationOrFluidLoss: false,
+            recentVaccination: false,
+            medicationChange: false,
+            closeSickContact: true,
+        });
+    });
+
+    it('accepts legacy manual physiology fields but strips them from canonical check-in data', () => {
+        const result = validateCheckin(writePayload({
+            healthContext: {
+                manualRhrHigher: true,
+                manualHrvLower: false,
+                manualRespirationHigher: null,
+            },
+        }));
+        expect(result.isValid).toBe(true);
+        expect(result.data?.healthContext).not.toHaveProperty('manualRhrHigher');
+        expect(result.data?.healthContext).not.toHaveProperty('manualHrvLower');
+        expect(result.data?.healthContext).not.toHaveProperty('manualRespirationHigher');
+    });
+
+    it('rejects malformed legacy manual physiology fields', () => {
+        const result = validateCheckin(writePayload({
+            healthContext: { manualRhrHigher: 'yes' },
+        }));
+        expect(result.isValid).toBe(false);
+        expect(result.errors.some(error => error.field === 'healthContext.manualRhrHigher')).toBe(true);
+    });
+
     it('rejects non-finite and out-of-range timezone shifts', () => {
         for (const value of [14.1, -14.1, Number.POSITIVE_INFINITY, Number.NaN]) {
             const result = validateCheckin(writePayload({ healthContext: { timezoneShiftHours: value } }));
@@ -140,6 +179,36 @@ describe('HA1 parseSubjectiveCheckin migration contract', () => {
         expect(parsed.status).toBe('AVAILABLE');
         if (parsed.status !== 'AVAILABLE') throw new Error('expected available');
         expect(parsed.data.illnessSymptoms).toBe(false);
+    });
+
+    it('normalizes absent/null contextual flags to No on persisted health-context documents', () => {
+        const parsed = parseSubjectiveCheckin(storedPayload({
+            healthContext: { closeSickContact: null },
+        }), PATH, 'u1', DATE);
+        expect(parsed.status).toBe('AVAILABLE');
+        if (parsed.status !== 'AVAILABLE') throw new Error('expected available');
+        expect(parsed.data.healthContext).toMatchObject({
+            unusualHeatOrSauna: false,
+            dehydrationOrFluidLoss: false,
+            recentVaccination: false,
+            medicationChange: false,
+            closeSickContact: false,
+        });
+    });
+
+    it('strips legacy manual physiology so missing Garmin stays objectively unavailable', () => {
+        const parsed = parseSubjectiveCheckin(storedPayload({
+            healthContext: {
+                manualRhrHigher: false,
+                manualHrvLower: true,
+                manualRespirationHigher: null,
+            },
+        }), PATH, 'u1', DATE);
+        expect(parsed.status).toBe('AVAILABLE');
+        if (parsed.status !== 'AVAILABLE') throw new Error('expected available');
+        expect(parsed.data.healthContext).not.toHaveProperty('manualRhrHigher');
+        expect(parsed.data.healthContext).not.toHaveProperty('manualHrvLower');
+        expect(parsed.data.healthContext).not.toHaveProperty('manualRespirationHigher');
     });
 
     it('rejects stale nested details and invalid timezone ranges on read', () => {

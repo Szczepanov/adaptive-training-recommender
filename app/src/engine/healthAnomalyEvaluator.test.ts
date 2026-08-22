@@ -164,21 +164,48 @@ describe('evaluatePhysiologicalAnomaly HA3', () => {
         expect(evaluate(featureSet()).state).toBe('normal');
     });
 
-    it('treats one high RHR after an immediate hard session as explained, never possible illness', () => {
+    it('treats one high RHR after a prior hard session as explained, never possible illness', () => {
         const hard = snapshot({
             yesterdayTraining: { hardActivityCount: 1, primaryActivity: { activityId: 1, type: 'cycling', durationMin: 60, trainingEffect: 4, intensityTag: 'hard' } },
         });
         const result = evaluate(featureSet(3, 0, 0), { recoverySnapshot: hard, last3DaysHardSessionsCount: 1 });
         expect(result.state).toBe('explained_recovery_strain');
         expect(result.unexplainedEvidence).toEqual([]);
+        expect(result.persistenceDays).toBe(1);
     });
 
-    it('explains RHR-up + HRV-down after hard training when respiration is normal', () => {
+    it('explains RHR-up + HRV-down after prior hard training when respiration is normal', () => {
         const hard = snapshot({
             yesterdayTraining: { hardActivityCount: 1, primaryActivity: { activityId: 1, type: 'cycling', durationMin: 60, trainingEffect: 4, intensityTag: 'hard' } },
         });
         expect(evaluate(featureSet(3, 0, -2), { recoverySnapshot: hard, last3DaysHardSessionsCount: 1 }).state)
             .toBe('explained_recovery_strain');
+    });
+
+    it('does not let same-day hard training retroactively explain morning physiology', () => {
+        const afterWorkoutResync = snapshot({
+            todayTraining: { hardActivityCount: 1, primaryActivity: { activityId: 2, type: 'cycling', durationMin: 75, trainingEffect: 4.2, intensityTag: 'hard' } },
+            // Backend semantics intentionally exclude today from this D-1..D-3 count.
+            last3DaysHardSessionsCount: 0,
+        });
+        const result = evaluate(featureSet(3, 0, 0), {
+            recoverySnapshot: afterWorkoutResync,
+            last3DaysHardSessionsCount: 0,
+        });
+        expect(result.state).toBe('watch_unexplained');
+        expect(result.unexplainedEvidence).toEqual(['rhr:strong_anomaly:high']);
+        expect(result.explanations.some(item => item.kind === 'hard_training')).toBe(false);
+    });
+
+    it('retains the causally safe D-1 to D-3 aggregate as moderate prior-training context', () => {
+        const result = evaluate(featureSet(3, 0, 0), { last3DaysHardSessionsCount: 1 });
+        expect(result.state).toBe('watch_unexplained');
+        expect(result.explanations).toContainEqual(expect.objectContaining({
+            kind: 'hard_training',
+            strength: 'moderate',
+            evidence: ['HARD_SESSION_WITHIN_3D'],
+        }));
+        expect(result.unexplainedEvidence).toEqual(['rhr:strong_anomaly:high']);
     });
 
     it('creates an unexplained watch for a first-day multi-signal adverse pattern', () => {
@@ -202,6 +229,26 @@ describe('evaluatePhysiologicalAnomaly HA3', () => {
         expect(result.persistenceDays).toBe(2);
         expect(result.episodeId).toBe('health-anomaly:2026-08-20');
         expect(result.episodeDay).toBe(2);
+    });
+
+    it('preserves adverse physiology persistence when strong context explains the signal', () => {
+        const hard = snapshot({
+            yesterdayTraining: { hardActivityCount: 1, primaryActivity: { activityId: 1, type: 'cycling', durationMin: 60, trainingEffect: 4, intensityTag: 'hard' } },
+        });
+        const result = evaluate(featureSet(3, 0, 0), {
+            recoverySnapshot: hard,
+            persistence: {
+                previousState: 'explained_recovery_strain',
+                previousEpisodeId: 'health-anomaly:2026-08-20',
+                previousEpisodeDay: 1,
+                previousAssessmentDate: '2026-08-20',
+                unexplainedPersistenceDays: 1,
+            },
+        });
+        expect(result.state).toBe('explained_recovery_strain');
+        expect(result.unexplainedEvidence).toEqual([]);
+        expect(result.persistenceDays).toBe(2);
+        expect(result.rationale.facts).toContainEqual({ code: 'PERSISTENCE', value: 2, unit: 'days' });
     });
 
     it('resets persistence across a non-adjacent gap instead of carrying the prior count forward', () => {
@@ -291,6 +338,14 @@ describe('evaluatePhysiologicalAnomaly HA3', () => {
             recoverySnapshot: snapshot({ sleepScore: 20, bodyBatteryWake: 5, stress: { avg: 90, max: 100 }, trainingReadiness: { score: 5 } }),
         });
         expect(result.supportingSignals.filter(item => item.status === 'adverse').length).toBeGreaterThan(2);
+        expect(result.evidenceLevel).toBe('none');
+        expect(result.state).toBe('normal');
+    });
+
+    it('never emits manual physiology supporting signals, even when Garmin core values are missing', () => {
+        const missingSnapshot = snapshot({ restingHr: null, hrvOvernightAvg: null, respirationAvg: null });
+        const result = evaluate(featureSet(), { recoverySnapshot: missingSnapshot });
+        expect(result.supportingSignals.some(item => item.code.startsWith('MANUAL_'))).toBe(false);
         expect(result.evidenceLevel).toBe('none');
         expect(result.state).toBe('normal');
     });

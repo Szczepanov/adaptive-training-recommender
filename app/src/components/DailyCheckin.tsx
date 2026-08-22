@@ -43,6 +43,13 @@ const TISSUE_LEVEL_LABELS: Record<TissueResponseLevel, string> = {
   severe: 'Severe',
 };
 
+const TISSUE_LEVEL_HELP: Record<TissueResponseLevel, string> = {
+  normal: 'No meaningful change; normal movement and function.',
+  mild: 'Noticeable stiffness/soreness, but normal walking and function.',
+  moderate: 'Persistent or function-changing response that should reduce load.',
+  severe: 'Marked pain/swelling/instability or meaningful loss of function.',
+};
+
 interface ScaleConfig {
   key: keyof Pick<DailySubjectiveCheckin, 'readiness' | 'sleepQuality' | 'fatigue' | 'soreness' | 'mentalStress' | 'motivation'>;
   label: string;
@@ -93,7 +100,7 @@ const SCALES: ScaleConfig[] = [
   },
   {
     key: 'motivation',
-    label: 'Motivation',
+    label: 'Motivation / Desire to Train',
     desc: 'How motivated are you to exercise?',
     lowLabel: '1 Low',
     highLabel: '10 High',
@@ -108,6 +115,7 @@ export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) 
   const [showGarminComparison, setShowGarminComparison] = useState(false);
   const [recoverySnapshot, setRecoverySnapshot] = useState<Awaited<ReturnType<typeof recoverySnapshotService.getRecoverySnapshotByDate>>>(null);
   const [pendingFollowups, setPendingFollowups] = useState<Array<{ region: BodyRegion; sessionRef?: RegionTissueResponse['sourceSessionRef'] }>>([]);
+  const [pendingTissueRegion, setPendingTissueRegion] = useState<BodyRegion | ''>('');
 
   const tissueSelectId = useId();
   const timeInputId = useId();
@@ -181,22 +189,29 @@ export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) 
         if (existing) {
           setCheckin(existing);
         } else {
-          // Initialize with neutral defaults
+          // Do not fabricate neutral subjective observations. Missing scores remain null so
+          // they cannot contaminate the athlete's longitudinal subjective baseline; the
+          // engine already has a neutral fallback for a deliberately partial safety check-in.
           setCheckin({
             userId,
             date: today,
-            readiness: 5,
-            sleepQuality: 5,
-            fatigue: 5,
-            soreness: 5,
-            mentalStress: 5,
-            motivation: 5,
+            readiness: null,
+            sleepQuality: null,
+            fatigue: null,
+            soreness: null,
+            mentalStress: null,
+            motivation: null,
             painOrInjury: false,
             illnessSymptoms: false,
+            healthContext: {
+              symptoms: { present: false },
+              alcoholDrinksLast24h: 0,
+              travelDisruption: 'none',
+            },
             unusuallyLimitedTime: false,
             alreadyTrainedToday: false,
             availability: {
-              timeAvailableMin: 60,
+              timeAvailableMin: null,
               preferredModalityToday: null,
               indoorOnly: false,
             },
@@ -245,16 +260,9 @@ export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) 
     });
   };
 
-  const handleBooleanToggle = (field: 'painOrInjury' | 'illnessSymptoms' | 'unusuallyLimitedTime' | 'alreadyTrainedToday') => {
+  const handleBooleanToggle = (field: 'painOrInjury' | 'illnessSymptoms' | 'alreadyTrainedToday') => {
     if (!checkin) return;
     const next = !checkin[field];
-    if (field === 'painOrInjury' && !next) {
-      // Clear tissueResponses when pain/injury is turned off
-      const cleared: Partial<DailySubjectiveCheckin> = { ...checkin, [field]: next };
-      delete cleared.tissueResponses;
-      setCheckin(cleared);
-      return;
-    }
     if (field === 'illnessSymptoms') {
       setCheckin({
         ...checkin,
@@ -268,6 +276,8 @@ export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) 
       });
       return;
     }
+    // The hard pain/injury flag and graded tissue observations are independent channels.
+    // Turning the hard flag off must not erase a valid mild/moderate tissue observation.
     setCheckin({ ...checkin, [field]: next });
   };
 
@@ -280,12 +290,17 @@ export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) 
     });
   };
 
-  const handleAddTissueRegion = (region: BodyRegion) => {
+  const handleAddTissueRegion = (region: BodyRegion, morningState: TissueResponseLevel) => {
     if (!checkin) return;
     const existing = checkin.tissueResponses ?? {};
     if (existing[region]) return;
-    const entry: RegionTissueResponse = { region, morningState: 'mild' };
-    setCheckin({ ...checkin, tissueResponses: { ...existing, [region]: entry } });
+    const entry: RegionTissueResponse = { region, morningState };
+    setCheckin({
+      ...checkin,
+      tissueResponses: { ...existing, [region]: entry },
+      ...(morningState === 'severe' ? { painOrInjury: true } : {}),
+    });
+    setPendingTissueRegion('');
   };
 
   const handleRemoveTissueRegion = (region: BodyRegion) => {
@@ -308,7 +323,11 @@ export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) 
       if (value === '') delete updated[field];
       else (updated as unknown as Record<string, unknown>)[field] = value;
     }
-    setCheckin({ ...checkin, tissueResponses: { ...checkin.tissueResponses, [region]: updated } });
+    setCheckin({
+      ...checkin,
+      tissueResponses: { ...checkin.tissueResponses, [region]: updated },
+      ...(value === 'severe' ? { painOrInjury: true } : {}),
+    });
   };
 
   const handleAnswerFollowup = async (
@@ -327,7 +346,9 @@ export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) 
     const updatedCheckin: Partial<DailySubjectiveCheckin> = {
       ...checkin,
       tissueResponses: currentResponses,
-      painOrInjury: level !== 'normal' ? true : checkin.painOrInjury,
+      // Mild/moderate already tighten the graded tissue policy. Only a severe response
+      // promotes the separate hard pain/injury flag that caps the plan at Mobility.
+      painOrInjury: level === 'severe' ? true : checkin.painOrInjury,
     };
     setCheckin(updatedCheckin);
     setPendingFollowups(prev => prev.filter(item => !(item.region === region && item.sessionRef?.id === sessionRef?.id && item.sessionRef?.kind === sessionRef?.kind)));
@@ -438,6 +459,12 @@ export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) 
     );
   }
 
+  const answeredSubjectiveCount = SCALES.filter(scale => typeof checkin[scale.key] === 'number').length;
+  const wearableRevealAllowed = Boolean(checkin.initialSubmittedAt && checkin.dataQuality?.isComplete);
+  const tissueResponses = Object.values(checkin.tissueResponses ?? {}).filter(
+    (response): response is RegionTissueResponse => response !== undefined,
+  );
+
   return (
     <div className="checkin-container">
       <div className="checkin-header-bar">
@@ -464,6 +491,7 @@ export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) 
                 key={lvl}
                 type="button"
                 className="btn-followup-pill"
+                title={TISSUE_LEVEL_HELP[lvl]}
                 onClick={() => void handleAnswerFollowup(pendingFollowups[0].region, lvl, pendingFollowups[0].sessionRef)}
               >
                 {TISSUE_LEVEL_LABELS[lvl]}
@@ -485,7 +513,7 @@ export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) 
         <section className="checkin-section" aria-label="Subjective state assessment">
           <div className="section-title-wrap">
             <h2>Subjective Recovery & State</h2>
-            <p>6 standard subjective dimensions scaled 1 to 10</p>
+            <p>Answer before viewing wearable data. {answeredSubjectiveCount}/6 scored; unanswered items remain missing rather than becoming artificial 5/10 values.</p>
           </div>
 
           <div className="checkin-preset-bar">
@@ -499,30 +527,32 @@ export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) 
           </div>
 
           <div className="scales-list">
-            {SCALES.map((scale) => {
-              const val = (checkin[scale.key] as number) ?? 5;
-              return (
-                <SubjectiveScaleRow
-                  key={scale.key}
-                  id={scale.key}
-                  label={scale.label}
-                  desc={scale.desc}
-                  value={val}
-                  lowLabel={scale.lowLabel}
-                  highLabel={scale.highLabel}
-                  isInverted={scale.isInverted}
-                  onChange={(nextVal) => handleScaleChange(scale.key, nextVal)}
-                />
-              );
-            })}
+            {SCALES.map((scale) => (
+              <SubjectiveScaleRow
+                key={scale.key}
+                id={scale.key}
+                label={scale.label}
+                desc={scale.desc}
+                value={(checkin[scale.key] as number | null | undefined) ?? null}
+                lowLabel={scale.lowLabel}
+                highLabel={scale.highLabel}
+                isInverted={scale.isInverted}
+                onChange={(nextVal) => handleScaleChange(scale.key, nextVal)}
+              />
+            ))}
           </div>
+          {answeredSubjectiveCount < SCALES.length && (
+            <p className="checkin-helper-text">
+              You can still save an incomplete check-in to report a safety issue. Only fully scored days enter the longitudinal subjective baseline.
+            </p>
+          )}
         </section>
 
         {/* Section 2: Health & Safety Flags */}
         <section className="checkin-section" aria-label="Health and safety status">
           <div className="section-title-wrap">
             <h2>Health & Safety</h2>
-            <p>Safety constraints that protect your recovery and tissue health</p>
+            <p>Hard safety flags are separate from graded local tissue response.</p>
           </div>
 
           <div className="boolean-options-grid">
@@ -534,8 +564,8 @@ export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) 
               />
               <span className="toggle-checkmark"></span>
               <div className="toggle-info">
-                <strong>Pain or Injury</strong>
-                <span>Active physical issue requiring load restriction</span>
+                <strong>Active Pain or Injury</strong>
+                <span>Hard safety flag for a current issue that should strongly restrict training</span>
               </div>
             </label>
 
@@ -548,20 +578,7 @@ export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) 
               <span className="toggle-checkmark"></span>
               <div className="toggle-info">
                 <strong>Illness Symptoms</strong>
-                <span>Feeling sick, feverish, or unwell</span>
-              </div>
-            </label>
-
-            <label className={`boolean-toggle-card ${checkin.unusuallyLimitedTime ? 'is-active' : ''}`}>
-              <input
-                type="checkbox"
-                checked={checkin.unusuallyLimitedTime || false}
-                onChange={() => handleBooleanToggle('unusuallyLimitedTime')}
-              />
-              <span className="toggle-checkmark"></span>
-              <div className="toggle-info">
-                <strong>Limited Time</strong>
-                <span>Have less time available than normal</span>
+                <span>Feeling sick, feverish, or systemically unwell</span>
               </div>
             </label>
 
@@ -582,115 +599,141 @@ export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) 
           <HealthContextSection
             value={checkin.healthContext}
             symptomsPresent={Boolean(checkin.illnessSymptoms)}
+            manualPhysiologyMissing={{
+              rhr: recoverySnapshot?.raw.restingHr == null,
+              hrv: recoverySnapshot?.raw.hrvOvernightAvg == null,
+              respiration: recoverySnapshot?.raw.respirationAvg == null,
+            }}
             onChange={handleHealthContextChange}
           />
 
-          {checkin.painOrInjury && (
-            <div className="tissue-response-expanded">
-              <div className="tissue-response-intro">
-                <h3>Affected Body Regions</h3>
-                <p>Pinpointing where and when helps calibrate safe session substitutions.</p>
-              </div>
-
-              <div className="form-group add-region-group">
-                <label htmlFor={tissueSelectId}>Add affected body area</label>
-                <select
-                  id={tissueSelectId}
-                  className="select-input"
-                  value=""
-                  onChange={(e) => {
-                    if (e.target.value) handleAddTissueRegion(e.target.value as BodyRegion);
-                  }}
-                >
-                  <option value="">Select an affected region…</option>
-                  {BODY_REGIONS.filter(region => !checkin.tissueResponses?.[region]).map(region => (
-                    <option key={region} value={region}>{REGION_LABELS[region]}</option>
-                  ))}
-                </select>
-              </div>
-
-              {Object.values(checkin.tissueResponses ?? {}).map(response => {
-                if (!response) return null;
-                const region = response.region;
-                return (
-                  <article className="tissue-region-card" key={region}>
-                    <div className="tissue-region-header">
-                      <strong>{REGION_LABELS[region]}</strong>
-                      <button
-                        type="button"
-                        className="tissue-region-remove"
-                        onClick={() => handleRemoveTissueRegion(region)}
-                        aria-label={`Remove ${REGION_LABELS[region]}`}
-                      >
-                        ✕ Remove
-                      </button>
-                    </div>
-
-                    <div className="tissue-region-fields">
-                      <div className="form-group">
-                        <label htmlFor={`${region}-morningState`}>This morning (resting/waking)</label>
-                        <select
-                          id={`${region}-morningState`}
-                          className="select-input"
-                          value={response.morningState}
-                          onChange={(e) => handleTissueFieldChange(region, 'morningState', e.target.value as TissueResponseLevel)}
-                        >
-                          {TISSUE_LEVELS.map(level => (
-                            <option key={level} value={level}>{TISSUE_LEVEL_LABELS[level]}</option>
-                          ))}
-                        </select>
-                      </div>
-
-                      <div className="form-group">
-                        <label htmlFor={`${region}-painDuringTraining`}>Pain during training (if any)</label>
-                        <select
-                          id={`${region}-painDuringTraining`}
-                          className="select-input"
-                          value={response.painDuringTraining ?? ''}
-                          onChange={(e) => handleTissueFieldChange(region, 'painDuringTraining', e.target.value as TissueResponseLevel | '')}
-                        >
-                          <option value="">Did not train / not applicable</option>
-                          {TISSUE_LEVELS.map(level => (
-                            <option key={level} value={level}>{TISSUE_LEVEL_LABELS[level]}</option>
-                          ))}
-                        </select>
-                      </div>
-
-                      <div className="form-group">
-                        <label htmlFor={`${region}-afterTrainingState`}>Right after training</label>
-                        <select
-                          id={`${region}-afterTrainingState`}
-                          className="select-input"
-                          value={response.afterTrainingState ?? ''}
-                          onChange={(e) => handleTissueFieldChange(region, 'afterTrainingState', e.target.value as TissueResponseLevel | '')}
-                        >
-                          <option value="">Did not train / not applicable</option>
-                          {TISSUE_LEVELS.map(level => (
-                            <option key={level} value={level}>{TISSUE_LEVEL_LABELS[level]}</option>
-                          ))}
-                        </select>
-                      </div>
-
-                      <div className="form-group">
-                        <label htmlFor={`${region}-nextMorningReaction`}>Reaction to yesterday&apos;s session</label>
-                        <select
-                          id={`${region}-nextMorningReaction`}
-                          className="select-input"
-                          value={response.nextMorningReaction ?? ''}
-                          onChange={(e) => handleTissueFieldChange(region, 'nextMorningReaction', e.target.value as TissueResponseLevel | '')}
-                        >
-                          <option value="">No session yesterday / not applicable</option>
-                          {TISSUE_LEVELS.map(level => (
-                            <option key={level} value={level}>{TISSUE_LEVEL_LABELS[level]}</option>
-                          ))}
-                        </select>
-                      </div>
-                    </div>
-                  </article>
-                );
-              })}
+          <div className="tissue-response-expanded" aria-label="Local tissue response">
+            <div className="tissue-response-intro">
+              <h3>Local Tissue Response</h3>
+              <p>
+                Report local stiffness, swelling/fullness, unusual tendon or calf soreness, or altered walking/stairs/squat even when you would not call it an injury. Local tissue response can tighten today&apos;s plan independently of Garmin readiness.
+              </p>
             </div>
-          )}
+
+            <div className="form-group add-region-group">
+              <label htmlFor={tissueSelectId}>Add body area to monitor</label>
+              <select
+                id={tissueSelectId}
+                className="select-input"
+                value={pendingTissueRegion}
+                onChange={(e) => setPendingTissueRegion(e.target.value as BodyRegion | '')}
+              >
+                <option value="">Select a region…</option>
+                {BODY_REGIONS.filter(region => !checkin.tissueResponses?.[region]).map(region => (
+                  <option key={region} value={region}>{REGION_LABELS[region]}</option>
+                ))}
+              </select>
+            </div>
+
+            {pendingTissueRegion && (
+              <div className="followup-tissue-prompt" aria-label={`Morning state for ${REGION_LABELS[pendingTissueRegion]}`}>
+                <p>How does your <strong>{REGION_LABELS[pendingTissueRegion]}</strong> feel this morning?</p>
+                <div className="followup-actions">
+                  {TISSUE_LEVELS.map(level => (
+                    <button
+                      key={level}
+                      type="button"
+                      className="btn-followup-pill"
+                      title={TISSUE_LEVEL_HELP[level]}
+                      onClick={() => handleAddTissueRegion(pendingTissueRegion, level)}
+                    >
+                      {TISSUE_LEVEL_LABELS[level]}
+                    </button>
+                  ))}
+                </div>
+                <small>Normal = no meaningful change · Mild = noticeable but normal function · Moderate = changes function/load · Severe = marked pain/swelling/instability or significant function loss</small>
+              </div>
+            )}
+
+            {tissueResponses.length === 0 && !pendingTissueRegion && (
+              <p className="checkin-helper-text">No local tissue issue reported today.</p>
+            )}
+
+            {tissueResponses.map(response => {
+              const region = response.region;
+              return (
+                <article className="tissue-region-card" key={region}>
+                  <div className="tissue-region-header">
+                    <strong>{REGION_LABELS[region]}</strong>
+                    <button
+                      type="button"
+                      className="tissue-region-remove"
+                      onClick={() => handleRemoveTissueRegion(region)}
+                      aria-label={`Remove ${REGION_LABELS[region]}`}
+                    >
+                      ✕ Remove
+                    </button>
+                  </div>
+
+                  <div className="tissue-region-fields">
+                    <div className="form-group">
+                      <label htmlFor={`${region}-morningState`}>This morning (resting/waking)</label>
+                      <select
+                        id={`${region}-morningState`}
+                        className="select-input"
+                        value={response.morningState}
+                        onChange={(e) => handleTissueFieldChange(region, 'morningState', e.target.value as TissueResponseLevel)}
+                      >
+                        {TISSUE_LEVELS.map(level => (
+                          <option key={level} value={level}>{TISSUE_LEVEL_LABELS[level]}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="form-group">
+                      <label htmlFor={`${region}-painDuringTraining`}>Pain during training (if any)</label>
+                      <select
+                        id={`${region}-painDuringTraining`}
+                        className="select-input"
+                        value={response.painDuringTraining ?? ''}
+                        onChange={(e) => handleTissueFieldChange(region, 'painDuringTraining', e.target.value as TissueResponseLevel | '')}
+                      >
+                        <option value="">Did not train / not applicable</option>
+                        {TISSUE_LEVELS.map(level => (
+                          <option key={level} value={level}>{TISSUE_LEVEL_LABELS[level]}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="form-group">
+                      <label htmlFor={`${region}-afterTrainingState`}>Right after training</label>
+                      <select
+                        id={`${region}-afterTrainingState`}
+                        className="select-input"
+                        value={response.afterTrainingState ?? ''}
+                        onChange={(e) => handleTissueFieldChange(region, 'afterTrainingState', e.target.value as TissueResponseLevel | '')}
+                      >
+                        <option value="">Did not train / not applicable</option>
+                        {TISSUE_LEVELS.map(level => (
+                          <option key={level} value={level}>{TISSUE_LEVEL_LABELS[level]}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="form-group">
+                      <label htmlFor={`${region}-nextMorningReaction`}>Reaction to yesterday&apos;s session</label>
+                      <select
+                        id={`${region}-nextMorningReaction`}
+                        className="select-input"
+                        value={response.nextMorningReaction ?? ''}
+                        onChange={(e) => handleTissueFieldChange(region, 'nextMorningReaction', e.target.value as TissueResponseLevel | '')}
+                      >
+                        <option value="">No session yesterday / not applicable</option>
+                        {TISSUE_LEVELS.map(level => (
+                          <option key={level} value={level}>{TISSUE_LEVEL_LABELS[level]}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
         </section>
 
         {/* Section 3: Availability & Notes */}
@@ -708,8 +751,9 @@ export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) 
                 type="number"
                 min="0"
                 max="1440"
-                value={checkin.availability?.timeAvailableMin ?? 60}
-                onChange={(e) => handleAvailabilityChange('timeAvailableMin', Number(e.target.value))}
+                placeholder="e.g. 60"
+                value={checkin.availability?.timeAvailableMin ?? ''}
+                onChange={(e) => handleAvailabilityChange('timeAvailableMin', e.target.value === '' ? null : Number(e.target.value))}
                 className="number-input"
               />
             </div>
@@ -759,38 +803,55 @@ export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) 
           </div>
         </section>
 
-        {/* Section 4: Secondary Garmin Recovery Context Disclosure */}
+        {/* Objective values remain hidden until a complete subjective submission prevents anchoring. */}
         {recoverySnapshot && (
           <section className="checkin-garmin-disclosure">
-            <button
-              type="button"
-              className="garmin-context-toggle"
-              onClick={() => setShowGarminComparison(prev => !prev)}
-              aria-expanded={showGarminComparison}
-            >
-              <span>📊 Garmin Context ({recoverySnapshot.raw.sleepScore ? `Sleep ${recoverySnapshot.raw.sleepScore}` : 'Synced'})</span>
-              <span className="toggle-arrow">{showGarminComparison ? '▲' : '▼'}</span>
-            </button>
-
-            {showGarminComparison && (
-              <div className="garmin-context-content">
-                <div className="garmin-metric-pill">
-                  <span className="pill-label">Sleep Score</span>
-                  <span className="pill-val">{recoverySnapshot.raw.sleepScore ?? '--'}</span>
-                </div>
-                <div className="garmin-metric-pill">
-                  <span className="pill-label">Resting HR</span>
-                  <span className="pill-val">{recoverySnapshot.raw.restingHr ? `${recoverySnapshot.raw.restingHr} bpm` : '--'}</span>
-                </div>
-                <div className="garmin-metric-pill">
-                  <span className="pill-label">HRV Overnight</span>
-                  <span className="pill-val">{recoverySnapshot.raw.hrvOvernightAvg ? `${recoverySnapshot.raw.hrvOvernightAvg} ms` : '--'}</span>
-                </div>
-                <div className="garmin-metric-pill">
-                  <span className="pill-label">Body Battery</span>
-                  <span className="pill-val">{recoverySnapshot.raw.bodyBatteryWake ?? '--'} / 100</span>
-                </div>
+            {!wearableRevealAllowed ? (
+              <div className="garmin-context-content" aria-label="Garmin context hidden">
+                <strong>Garmin context hidden during first subjective check-in</strong>
+                <p>Complete and save the six subjective scores first. This keeps your self-report independent from wearable feedback.</p>
               </div>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  className="garmin-context-toggle"
+                  onClick={() => setShowGarminComparison(prev => !prev)}
+                  aria-expanded={showGarminComparison}
+                >
+                  <span>📊 Garmin Context</span>
+                  <span className="toggle-arrow">{showGarminComparison ? '▲' : '▼'}</span>
+                </button>
+
+                {showGarminComparison && (
+                  <div className="garmin-context-content">
+                    <div className="garmin-metric-pill">
+                      <span className="pill-label">Sleep Score</span>
+                      <span className="pill-val">{recoverySnapshot.raw.sleepScore ?? '--'}</span>
+                      <small>7d {recoverySnapshot.derived.sleepScore7dAvg ?? '--'}</small>
+                    </div>
+                    <div className="garmin-metric-pill">
+                      <span className="pill-label">Resting HR</span>
+                      <span className="pill-val">{recoverySnapshot.raw.restingHr != null ? `${recoverySnapshot.raw.restingHr} bpm` : '--'}</span>
+                      <small>7d {recoverySnapshot.derived.restingHr7dAvg != null ? `${recoverySnapshot.derived.restingHr7dAvg} bpm` : '--'}</small>
+                    </div>
+                    <div className="garmin-metric-pill">
+                      <span className="pill-label">HRV Overnight</span>
+                      <span className="pill-val">{recoverySnapshot.raw.hrvOvernightAvg != null ? `${recoverySnapshot.raw.hrvOvernightAvg} ms` : '--'}</span>
+                      <small>7d {recoverySnapshot.derived.hrv7dAvg != null ? `${recoverySnapshot.derived.hrv7dAvg} ms` : '--'}</small>
+                    </div>
+                    <div className="garmin-metric-pill">
+                      <span className="pill-label">Respiration</span>
+                      <span className="pill-val">{recoverySnapshot.raw.respirationAvg != null ? `${recoverySnapshot.raw.respirationAvg} br/min` : '--'}</span>
+                      <small>7d {recoverySnapshot.derived.respiration7dAvg != null ? `${recoverySnapshot.derived.respiration7dAvg} br/min` : '--'}</small>
+                    </div>
+                    <div className="garmin-metric-pill">
+                      <span className="pill-label">Body Battery</span>
+                      <span className="pill-val">{recoverySnapshot.raw.bodyBatteryWake ?? '--'} / 100</span>
+                    </div>
+                  </div>
+                )}
+              </>
             )}
           </section>
         )}

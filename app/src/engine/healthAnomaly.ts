@@ -174,7 +174,7 @@ function categorizeSignal(
         direction = 'low';
     } else if (deviation >= thresholds.strongDeviation) {
         // Retain unusually-high HRV as out-of-range telemetry without treating it as an
-        // adverse illness vote. isAdverseEvidence deliberately excludes two_sided HRV.
+        // adverse illness vote. isAdverseCoreSignalEvidence deliberately excludes two_sided HRV.
         status = 'strong_anomaly';
         direction = 'two_sided';
     } else if (deviation >= thresholds.moderateDeviation) {
@@ -199,19 +199,18 @@ function isAnomaly(evidence: CoreSignalEvidence): boolean {
     return evidence.status === 'moderate_anomaly' || evidence.status === 'strong_anomaly';
 }
 
-function isAdverseEvidence(evidence: CoreSignalEvidence): boolean {
+/** Canonical adverse-core classifier shared by evaluation and persistence composition. */
+export function isAdverseCoreSignalEvidence(evidence: CoreSignalEvidence): boolean {
     if (!isAnomaly(evidence)) return false;
     if (evidence.signal === 'hrv') return evidence.direction === 'low';
     return evidence.direction === 'high';
 }
 
-function hasHardTraining(snapshot: HealthAnomalyInput['recoverySnapshot']): boolean {
-    const raw = snapshot?.raw;
-    return !!raw && (
-        (raw.yesterdayTraining?.hardActivityCount ?? 0) > 0
-        || raw.yesterdayTraining?.primaryActivity?.intensityTag === 'hard'
-        || (raw.todayTraining?.hardActivityCount ?? 0) > 0
-        || raw.todayTraining?.primaryActivity?.intensityTag === 'hard'
+function hasPriorHardTraining(snapshot: HealthAnomalyInput['recoverySnapshot']): boolean {
+    const yesterday = snapshot?.raw.yesterdayTraining;
+    return !!yesterday && (
+        (yesterday.hardActivityCount ?? 0) > 0
+        || yesterday.primaryActivity?.intensityTag === 'hard'
     );
 }
 
@@ -230,11 +229,14 @@ function resolveExplanations(input: HealthAnomalyInput): ContextExplanation[] {
     const snapshot = input.recoverySnapshot;
     const checkin = input.subjectiveCheckin;
     const health = checkin?.healthContext;
-    const immediateHardTraining = hasHardTraining(snapshot);
+    const priorHardTraining = hasPriorHardTraining(snapshot);
 
-    if (immediateHardTraining) {
-        addExplanation(explanations, 'hard_training', 'strong', ['rhr', 'hrv'], ['RECENT_HARD_SESSION']);
-        addExplanation(explanations, 'hard_training', 'weak', ['respiration'], ['RECENT_HARD_SESSION']);
+    // Morning RHR/HRV/respiration precede any activity performed later today. `todayTraining`
+    // is therefore never explanatory. The backend defines last3DaysHardSessionsCount as D-1
+    // through D-3 only, so that aggregate is causally safe for a weaker prior-load context.
+    if (priorHardTraining) {
+        addExplanation(explanations, 'hard_training', 'strong', ['rhr', 'hrv'], ['YESTERDAY_HARD_SESSION']);
+        addExplanation(explanations, 'hard_training', 'weak', ['respiration'], ['YESTERDAY_HARD_SESSION']);
     } else if (input.last3DaysHardSessionsCount > 0) {
         addExplanation(explanations, 'hard_training', 'moderate', ['rhr', 'hrv'], ['HARD_SESSION_WITHIN_3D']);
     }
@@ -349,7 +351,7 @@ function strongestCoverage(
 }
 
 function evidenceLevel(coreSignals: readonly CoreSignalEvidence[]): PhysiologicalAnomalyAssessment['evidenceLevel'] {
-    const adverse = coreSignals.filter(isAdverseEvidence);
+    const adverse = coreSignals.filter(isAdverseCoreSignalEvidence);
     if (adverse.length === 0) return 'none';
     const strongCount = adverse.filter(item => item.status === 'strong_anomaly').length;
     if (adverse.length >= 2 && strongCount >= 1) return 'high';
@@ -416,8 +418,9 @@ function rationaleFacts(
 
 /**
  * HA3 pure evaluator. Supporting Garmin composites never increase evidence level or satisfy the
- * multi-signal requirement; only adverse core channels can do that. Context explains observed
- * physiology but never deletes it from the trace.
+ * multi-signal requirement; only adverse core channels can do that. Context qualifies the
+ * interpretation of observed physiology but never deletes the abnormal measurement or resets
+ * its consecutive physiological persistence.
  */
 export function evaluatePhysiologicalAnomaly(
     input: HealthAnomalyInput,
@@ -432,7 +435,7 @@ export function evaluatePhysiologicalAnomaly(
         .filter((quality): quality is CoreSignalDataQuality => quality !== null);
     const supportingSignals = deriveSupportingSignals(input);
     const explanations = resolveExplanations(input);
-    const adverseAnomalies = coreSignals.filter(isAdverseEvidence);
+    const adverseAnomalies = coreSignals.filter(isAdverseCoreSignalEvidence);
     const unexplained = adverseAnomalies.filter(
         evidence => strongestCoverage(evidence.signal, explanations) !== 'strong',
     );
@@ -442,12 +445,12 @@ export function evaluatePhysiologicalAnomaly(
     const symptomsReported = input.subjectiveCheckin?.healthContext?.symptoms?.present === true
         || input.subjectiveCheckin?.illnessSymptoms === true;
     const priorDaysAreContiguous = isAdjacentDate(input.persistence.previousAssessmentDate, input.date);
-    const priorUnexplainedDays = priorDaysAreContiguous
+    const priorAdverseDays = priorDaysAreContiguous
         && Number.isFinite(input.persistence.unexplainedPersistenceDays)
         ? Math.max(0, Math.floor(input.persistence.unexplainedPersistenceDays))
         : 0;
-    const persistenceDays = unexplained.length > 0
-        ? priorUnexplainedDays + 1
+    const persistenceDays = adverseAnomalies.length > 0
+        ? priorAdverseDays + 1
         : 0;
 
     let state: PhysiologicalAnomalyAssessment['state'];
