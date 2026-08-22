@@ -474,19 +474,11 @@ class GarminSyncService:
                 logger.error(f"[{lookback_iso}] Lookback resync failed: {e}")
                 return False
 
-        if lookback_days > 0:
-            import concurrent.futures
-
-            # max_workers limited to a reasonable number to avoid too many parallel API calls
-            with concurrent.futures.ThreadPoolExecutor(
-                max_workers=min(lookback_days, 10)
-            ) as executor:
-                futures = [
-                    executor.submit(_process_lookback, i) for i in range(lookback_days, 0, -1)
-                ]
-                for future in concurrent.futures.as_completed(futures):
-                    if not future.result():
-                        ok = False
+        # Keep lookback processing sequential and oldest-first. Each later date rebuilds
+        # rolling baselines from earlier Firestore snapshots, so D-(N-1) must not race D-N.
+        for i in range(lookback_days, 0, -1):
+            if not _process_lookback(i):
+                ok = False
 
         # Target date is built last, after any lookback corrections above are already
         # persisted -- an exception here (unlike a lookback failure) propagates, as it
