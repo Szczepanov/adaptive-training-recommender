@@ -1,9 +1,9 @@
 name: Deploy Garmin Sync
 
-# Runs the GCP Cloud Run + Cloud Scheduler deployment from docs/ops/cloud-run-deployment.md.
-# Scheduled jobs are multi-user: APP_USER_IDS is a comma-separated list of Firebase Auth UIDs.
-# For a backwards-compatible first rollout, APP_USER_ID is used when APP_USER_IDS is absent.
-# Garmin credentials are never injected into these jobs; each UID restores its own persisted token.
+# Deploys both sides of Garmin integration from one image:
+#   1. garmin-account-link: HTTPS service used by the app to establish per-user Garmin tokens.
+#   2. Three token-only Cloud Run Jobs that discover active links in Firestore at runtime.
+# No Garmin usernames/passwords and no static APP_USER_IDS list are GitHub secrets.
 on:
   workflow_dispatch:
     inputs:
@@ -56,18 +56,9 @@ jobs:
           docker build -t "${IMAGE_TAG}" .
           docker push "${IMAGE_TAG}"
 
-      - name: Render Cloud Run Job env vars
-        env:
-          # Add APP_USER_IDS as a repository secret containing comma-separated Firebase UIDs.
-          # The fallback makes the first deployment safe before that secret is created.
-          CONFIGURED_USER_IDS: ${{ secrets.APP_USER_IDS || secrets.APP_USER_ID }}
+      - name: Render runtime env vars
         run: |
-          if [ -z "${CONFIGURED_USER_IDS}" ]; then
-            echo "APP_USER_IDS (or legacy APP_USER_ID) must be configured" >&2
-            exit 1
-          fi
-          cat > cloud-run-job.env.yaml <<EOF
-          APP_USER_IDS: "${CONFIGURED_USER_IDS}"
+          cat > cloud-run-garmin.env.yaml <<EOF
           APP_TIMEZONE: "Europe/Warsaw"
           GARMIN_TOKEN_STORE: "gcs"
           GARMIN_TOKEN_BUCKET: "${TOKEN_BUCKET}"
@@ -76,24 +67,39 @@ jobs:
           GCP_PROJECT_ID: "${GCP_PROJECT}"
           EOF
 
-      - name: Deploy the three Cloud Run Jobs
+      - name: Deploy self-service Garmin account linker
+        run: |
+          # Garmin's interactive MFA continuation requires the same in-memory client/session.
+          # max-instances=1 intentionally preserves that invariant without persisting a password
+          # or SSO session. If the instance restarts, the short-lived challenge simply expires
+          # and the user restarts login.
+          gcloud run deploy garmin-account-link \
+            --image="${IMAGE_TAG}" --region="${REGION}" \
+            --service-account="${JOB_SA_EMAIL}" \
+            --env-vars-file=cloud-run-garmin.env.yaml \
+            --command=python --args=-m,garmin_sync.account_link_api \
+            --port=8080 --timeout=300 --concurrency=10 \
+            --min-instances=0 --max-instances=1 \
+            --allow-unauthenticated
+
+      - name: Deploy token-only Cloud Run Jobs
         run: |
           gcloud run jobs deploy garmin-sync \
             --image="${IMAGE_TAG}" --region="${REGION}" \
             --service-account="${JOB_SA_EMAIL}" \
-            --env-vars-file=cloud-run-job.env.yaml \
+            --env-vars-file=cloud-run-garmin.env.yaml \
             --args=sync-all --max-retries=0
 
           gcloud run jobs deploy garmin-push-pending-workouts \
             --image="${IMAGE_TAG}" --region="${REGION}" \
             --service-account="${JOB_SA_EMAIL}" \
-            --env-vars-file=cloud-run-job.env.yaml \
+            --env-vars-file=cloud-run-garmin.env.yaml \
             --args=push-pending-workouts-all --max-retries=0
 
           gcloud run jobs deploy garmin-manual-sync \
             --image="${IMAGE_TAG}" --region="${REGION}" \
             --service-account="${JOB_SA_EMAIL}" \
-            --env-vars-file=cloud-run-job.env.yaml \
+            --env-vars-file=cloud-run-garmin.env.yaml \
             --args=poll-manual-sync-all --max-retries=0
 
       - name: Grant Cloud Scheduler permission to run the Jobs
