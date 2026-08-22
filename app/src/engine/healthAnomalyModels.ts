@@ -24,10 +24,14 @@ export interface HealthContextCheckin {
     recentVaccination?: boolean | null;
     medicationChange?: boolean | null;
     closeSickContact?: boolean | null;
-    /** Manual comparison with the athlete's usual wearable pattern. Null/omitted means unknown. */
-    subjectiveRhrHigher?: boolean | null;
-    subjectiveHrvLower?: boolean | null;
-    subjectiveRespirationHigher?: boolean | null;
+    /**
+     * Manual physiology fallback used only when the corresponding objective daily signal is
+     * unavailable. These are user-observed comparisons, not subjective sensations and never
+     * replace or override an available Garmin core signal. Null/omitted means unknown.
+     */
+    manualRhrHigher?: boolean | null;
+    manualHrvLower?: boolean | null;
+    manualRespirationHigher?: boolean | null;
     /** Opaque user content. Never use the text itself as evaluator evidence. */
     otherDisruption?: string | null;
     symptoms?: HealthSymptomsCheckin;
