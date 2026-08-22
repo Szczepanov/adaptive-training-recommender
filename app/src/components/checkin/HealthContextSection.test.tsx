@@ -8,7 +8,6 @@ describe('HealthContextSection', () => {
             <HealthContextSection
                 value={undefined}
                 symptomsPresent={false}
-                manualPhysiologyMissing={{ rhr: true, hrv: true, respiration: true }}
                 onChange={() => {}}
             />,
         );
