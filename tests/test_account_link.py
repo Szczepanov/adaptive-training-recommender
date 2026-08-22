@@ -155,6 +155,63 @@ def test_mutable_display_name_is_not_accepted_as_account_identity() -> None:
         )
 
 
+def test_link_commit_failure_removes_uploaded_token(
+    monkeypatch: Any,
+    tmp_path: Path,
+) -> None:
+    class Repository:
+        def uid_for_identity(self, _identity_digest: str) -> None:
+            return None
+
+        def assert_target_available(self, _uid: str, _identity_digest: str) -> None:
+            return None
+
+        def commit_link(
+            self,
+            _uid: str,
+            _identity_digest: str,
+            _identity_kind: str,
+            _token_object: str,
+        ) -> None:
+            raise account_link_module.GarminLinkConflictError("conflicting link")
+
+    class TokenStore:
+        def __init__(self, _bucket: str, _object_name: str) -> None:
+            pass
+
+        def persist(self, _source: Path) -> bool:
+            return True
+
+    class FinalizableGarmin:
+        password = None
+
+        def connectapi(self, _path: str) -> dict[str, str]:
+            return {"garminGUID": "stable-guid"}
+
+    monkeypatch.setattr(account_link_module, "GcsTokenStore", TokenStore)
+    service = GarminAccountLinkService(
+        "bucket",
+        repository=Repository(),  # type: ignore[arg-type]
+    )
+    deleted_objects: list[str] = []
+    monkeypatch.setattr(service, "_delete_token_object", deleted_objects.append)
+
+    token_path = tmp_path / "tokens.json"
+    token_path.write_text("{}", encoding="utf-8")
+    temp_dir = tmp_path / "temporary"
+    temp_dir.mkdir()
+
+    with pytest.raises(account_link_module.GarminLinkConflictError, match="conflicting link"):
+        service._finalize(  # noqa: SLF001 - regression test for rollback boundary
+            FinalizableGarmin(),  # type: ignore[arg-type]
+            token_path,
+            temp_dir,
+            "existing-uid",
+        )
+
+    assert deleted_objects == ["garmin/users/existing-uid/garmin_tokens.json"]
+
+
 def test_custom_token_failure_after_commit_keeps_new_user_for_retry(
     monkeypatch: Any,
     tmp_path: Path,
