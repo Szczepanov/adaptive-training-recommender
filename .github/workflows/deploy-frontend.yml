@@ -57,18 +57,21 @@ on:
         required: true
       GCP_FRONTEND_DEPLOYER_SA_EMAIL:
         required: true
+      # Build-time Firebase values are optional at the reusable-workflow boundary so a
+      # rules-only call does not depend on unrelated Hosting configuration. Hosting calls
+      # still fail safely if their required build values are absent or point at another project.
       VITE_FIREBASE_API_KEY:
-        required: true
+        required: false
       VITE_FIREBASE_AUTH_DOMAIN:
-        required: true
+        required: false
       VITE_FIREBASE_PROJECT_ID:
-        required: true
+        required: false
       VITE_FIREBASE_STORAGE_BUCKET:
-        required: true
+        required: false
       VITE_FIREBASE_MESSAGING_SENDER_ID:
-        required: true
+        required: false
       VITE_FIREBASE_APP_ID:
-        required: true
+        required: false
       VITE_FIREBASE_MEASUREMENT_ID:
         required: false
       VITE_HEALTH_ANOMALY_POLICY:
