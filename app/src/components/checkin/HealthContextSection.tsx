@@ -18,17 +18,22 @@ const TRAVEL_OPTIONS: Array<{ value: NonNullable<HealthContextCheckin['travelDis
     { value: 'late_arrival_or_disrupted_sleep', label: 'Late arrival' },
 ];
 
-const CONTEXT_TOGGLES: Array<{
-    key: 'unusualHeatOrSauna' | 'dehydrationOrFluidLoss' | 'recentVaccination' | 'medicationChange';
-    label: string;
-}> = [
+const CONTEXT_QUESTIONS = [
     { key: 'unusualHeatOrSauna', label: 'Heat / sauna' },
     { key: 'dehydrationOrFluidLoss', label: 'Dehydration / fluid loss' },
     { key: 'recentVaccination', label: 'Vaccination' },
     { key: 'medicationChange', label: 'Medication change' },
-];
+    { key: 'closeSickContact', label: 'Close sick contact' },
+] as const;
 
-const SICK_CONTACT_OPTIONS = [
+const SUBJECTIVE_CHANGE_QUESTIONS = [
+    { key: 'subjectiveRhrHigher', label: 'RHR higher than usual?' },
+    { key: 'subjectiveHrvLower', label: 'HRV lower than usual?' },
+    { key: 'subjectiveRespirationHigher', label: 'Respiration higher than usual?' },
+] as const;
+
+const TRI_STATE_OPTIONS = [
+    { value: null, label: 'Unknown' },
     { value: false, label: 'No' },
     { value: true, label: 'Yes' },
 ] as const;
@@ -67,11 +72,20 @@ function hasUnusualContext(value: HealthContextCheckin | undefined, symptomsPres
         || value.recentVaccination === true
         || value.medicationChange === true
         || value.closeSickContact === true
+        || value.subjectiveRhrHigher === true
+        || value.subjectiveHrvLower === true
+        || value.subjectiveRespirationHigher === true
         || Boolean(value.otherDisruption?.trim());
 }
 
 export function HealthContextSection({ value, symptomsPresent, onChange }: HealthContextSectionProps) {
-    const context = value ?? {};
+    const context: HealthContextCheckin = {
+        alcoholDrinksLast24h: 0,
+        travelDisruption: 'none',
+        symptoms: { present: symptomsPresent },
+        ...value,
+        ...(value?.symptoms ? { symptoms: value.symptoms } : {}),
+    };
     const update = (patch: Partial<HealthContextCheckin>) => onChange({ ...context, ...patch });
     const symptoms = context.symptoms ?? { present: symptomsPresent };
 
@@ -84,12 +98,6 @@ export function HealthContextSection({ value, symptomsPresent, onChange }: Healt
                 ...patch,
             },
         });
-    };
-
-    const toggleContextFlag = (key: typeof CONTEXT_TOGGLES[number]['key']) => {
-        // Null is the explicit "answered/cleared" representation accepted by the persistence
-        // contract; unlike `undefined`, it is safe to send through Firestore merge writes.
-        update({ [key]: context[key] === true ? null : true });
     };
 
     const toggleSymptomType = (type: HealthSymptomType) => {
@@ -166,36 +174,58 @@ export function HealthContextSection({ value, symptomsPresent, onChange }: Healt
                     )}
                 </div>
 
-                <div className="health-context__toggle-grid" aria-label="Other unusual context">
-                    {CONTEXT_TOGGLES.map(item => (
-                        <button
-                            key={item.key}
-                            type="button"
-                            className={`health-context__toggle ${context[item.key] === true ? 'is-selected' : ''}`}
-                            aria-pressed={context[item.key] === true}
-                            onClick={() => toggleContextFlag(item.key)}
-                        >
-                            {item.label}
-                        </button>
-                    ))}
-                </div>
+                {CONTEXT_QUESTIONS.map(item => (
+                    <div className="health-context__row" key={item.key}>
+                        <span className="health-context__label">{item.label}</span>
+                        <div className="health-context__chips" role="group" aria-label={item.label}>
+                            {TRI_STATE_OPTIONS.map(option => {
+                                const selected = option.value === null
+                                    ? context[item.key] == null
+                                    : context[item.key] === option.value;
+                                return (
+                                    <button
+                                        key={String(option.value)}
+                                        type="button"
+                                        className={`health-context__chip ${selected ? 'is-selected' : ''}`}
+                                        aria-pressed={selected}
+                                        onClick={() => update({ [item.key]: option.value })}
+                                    >
+                                        {option.label}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </div>
+                ))}
 
                 <div className="health-context__row">
-                    <span className="health-context__label">Close sick contact</span>
-                    <div className="health-context__chips" role="group" aria-label="Close sick contact">
-                        {SICK_CONTACT_OPTIONS.map(option => (
-                            <button
-                                key={String(option.value)}
-                                type="button"
-                                className={`health-context__chip ${context.closeSickContact === option.value ? 'is-selected' : ''}`}
-                                aria-pressed={context.closeSickContact === option.value}
-                                onClick={() => update({ closeSickContact: option.value })}
-                            >
-                                {option.label}
-                            </button>
-                        ))}
-                    </div>
+                    <span className="health-context__label">Wearable changes vs usual</span>
+                    <small>Manual context only; objective Garmin signals remain authoritative.</small>
                 </div>
+
+                {SUBJECTIVE_CHANGE_QUESTIONS.map(item => (
+                    <div className="health-context__row" key={item.key}>
+                        <span className="health-context__label">{item.label}</span>
+                        <div className="health-context__chips" role="group" aria-label={item.label}>
+                            {TRI_STATE_OPTIONS.map(option => {
+                                const selected = option.value === null
+                                    ? context[item.key] == null
+                                    : context[item.key] === option.value;
+                                return (
+                                    <button
+                                        key={String(option.value)}
+                                        type="button"
+                                        className={`health-context__chip ${selected ? 'is-selected' : ''}`}
+                                        aria-pressed={selected}
+                                        onClick={() => update({ [item.key]: option.value })}
+                                    >
+                                        {option.label}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </div>
+                ))}
 
                 <label className="health-context__other">
                     Other disruption (optional)
