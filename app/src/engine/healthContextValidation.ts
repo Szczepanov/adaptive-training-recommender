@@ -35,6 +35,8 @@ const HEALTH_CONTEXT_KEYS = new Set([
     'recentVaccination',
     'medicationChange',
     'closeSickContact',
+    // Legacy keys remain readable so already-written documents do not become invalid.
+    // New UI code no longer asks or writes these; Garmin core signals are authoritative.
     'manualRhrHigher',
     'manualHrvLower',
     'manualRespirationHigher',
@@ -149,8 +151,9 @@ function validateSymptoms(
 }
 
 /**
- * Shared app-side contract for the optional check-in health context. This is deliberately
- * strict about malformed supplied fields while treating an omitted block as unknown.
+ * Shared app-side contract for the optional check-in health context. Malformed supplied
+ * fields fail closed. Once the block exists, ordinary contextual yes/no questions normalize
+ * missing/null legacy values to explicit false because their product default is No.
  */
 export function validateHealthContext(raw: unknown): HealthContextValidationResult {
     if (raw === undefined) return { isValid: true, data: undefined, errors: [] };
@@ -232,11 +235,13 @@ export function validateHealthContext(raw: unknown): HealthContextValidationResu
         ...(typeof raw.alcoholDrinksLast24h === 'number' ? { alcoholDrinksLast24h: raw.alcoholDrinksLast24h as 0 | 1 | 2 | 3 } : {}),
         ...(isOneOf(raw.travelDisruption, HEALTH_TRAVEL_DISRUPTIONS) ? { travelDisruption: raw.travelDisruption } : {}),
         ...(raw.timezoneShiftHours === null || typeof raw.timezoneShiftHours === 'number' ? { timezoneShiftHours: raw.timezoneShiftHours as number | null } : {}),
-        ...(raw.unusualHeatOrSauna === null || typeof raw.unusualHeatOrSauna === 'boolean' ? { unusualHeatOrSauna: raw.unusualHeatOrSauna } : {}),
-        ...(raw.dehydrationOrFluidLoss === null || typeof raw.dehydrationOrFluidLoss === 'boolean' ? { dehydrationOrFluidLoss: raw.dehydrationOrFluidLoss } : {}),
-        ...(raw.recentVaccination === null || typeof raw.recentVaccination === 'boolean' ? { recentVaccination: raw.recentVaccination } : {}),
-        ...(raw.medicationChange === null || typeof raw.medicationChange === 'boolean' ? { medicationChange: raw.medicationChange } : {}),
-        ...(raw.closeSickContact === null || typeof raw.closeSickContact === 'boolean' ? { closeSickContact: raw.closeSickContact } : {}),
+        unusualHeatOrSauna: raw.unusualHeatOrSauna === true,
+        dehydrationOrFluidLoss: raw.dehydrationOrFluidLoss === true,
+        recentVaccination: raw.recentVaccination === true,
+        medicationChange: raw.medicationChange === true,
+        closeSickContact: raw.closeSickContact === true,
+        // Preserve legacy manual fields on read/write for migration compatibility only.
+        // Decision logic no longer needs new manual physiology input from the check-in UI.
         ...(raw.manualRhrHigher === null || typeof raw.manualRhrHigher === 'boolean' ? { manualRhrHigher: raw.manualRhrHigher } : {}),
         ...(raw.manualHrvLower === null || typeof raw.manualHrvLower === 'boolean' ? { manualHrvLower: raw.manualHrvLower } : {}),
         ...(raw.manualRespirationHigher === null || typeof raw.manualRespirationHigher === 'boolean' ? { manualRespirationHigher: raw.manualRespirationHigher } : {}),
