@@ -157,6 +157,7 @@ export function installVisualServices(fixture: VisualFixture): void {
   // retired Strength-session service. Keep visual scenarios local and repeatable.
   sessionExecutionService.findInProgressExecution = async () => null;
   sessionExecutionService.getEntries = async () => [];
+  sessionExecutionService.getExecutionsInRange = async () => ({ executions: [], invalidRecords: 0 });
   sessionExecutionService.startExecution = async (_userId, executionId, params) => ({
     userId: fixture.input.userId,
     executionId,

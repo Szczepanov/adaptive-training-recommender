@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from garmin_sync.config import load_settings, load_settings_for_user
@@ -128,8 +130,12 @@ def test_single_user_load_settings_preserves_legacy_paths(
 
 def test_single_user_command_still_requires_app_user_id(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
+    empty_env = tmp_path / "empty.env"
+    empty_env.write_text("", encoding="utf-8")
+    monkeypatch.delenv("APP_USER_ID", raising=False)
     monkeypatch.setenv("GARMIN_TOKEN_STORE", "local")
 
     with pytest.raises(ValueError, match="APP_USER_ID"):
-        load_settings()
+        load_settings(env_file=str(empty_env))

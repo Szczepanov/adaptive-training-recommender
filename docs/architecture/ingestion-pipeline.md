@@ -43,6 +43,10 @@ Garmin Connect API
 * [`src/garmin_sync/mapper.py`](../../src/garmin_sync/mapper.py) — Schema Version 3 payload builder attaching field provenance dates (`metricsDates`).
 * [`src/garmin_sync/firestore_repository.py`](../../src/garmin_sync/firestore_repository.py) — User-scoped Firestore CRUD operations (`users/{userId}/daily_recovery_snapshots/{date}`).
 * [`src/garmin_sync/service.py`](../../src/garmin_sync/service.py) — Entry point service orchestrating synchronization workflows.
+* [`src/garmin_sync/account_link.py`](../../src/garmin_sync/account_link.py) — Self-service Garmin account linking and user token management.
+* [`src/garmin_sync/account_link_api.py`](../../src/garmin_sync/account_link_api.py) — HTTP API for family/multi-user account linking flows.
+* [`src/garmin_sync/coordination.py`](../../src/garmin_sync/coordination.py) — Multi-user ingestion coordination and batch runs.
+* [`src/garmin_sync/workout_export.py`](../../src/garmin_sync/workout_export.py) — FIT/TCX payload transformation and Garmin Connect workout export.
 
 ---
 

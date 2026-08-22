@@ -31,9 +31,9 @@ def _chmod_secure(path: Path, mode: int) -> None:
         try:
             flags = os.O_RDONLY
             if hasattr(os, "O_NOFOLLOW"):
-                flags |= os.O_NOFOLLOW
+                flags |= getattr(os, "O_NOFOLLOW", 0)
             if path.is_dir() and hasattr(os, "O_DIRECTORY"):
-                flags |= os.O_DIRECTORY
+                flags |= getattr(os, "O_DIRECTORY", 0)
 
             fd = os.open(path, flags)
             try:

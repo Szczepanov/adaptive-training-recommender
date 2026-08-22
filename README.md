@@ -5,23 +5,24 @@ Production-grade Garmin Connect ingestion pipeline and adaptive training recomme
 ## Overview & Architecture
 
 ```text
-Garmin device
+Garmin device / Wearables
     ↓ Garmin Connect sync
-Garmin Connect API
-    ↓
-Cloud Scheduler (05:00–09:45 Europe/Warsaw, every 15 min)
-    ↓
-Cloud Run Job
-    ├── TokenStore (Downloads/Uploads encrypted garmin_tokens.json from/to GCS)
-    ├── GarminSyncService (Fetches stats, sleep, HRV, activities)
+Garmin Connect API ──┐
+    ↓                │ (Account link & Token exchange)
+Cloud Scheduler      ▼
+    ↓           garmin-account-link API (FastAPI)
+Cloud Run Jobs
+    ├── TokenStore (Encrypted garmin_tokens.json per UID in GCS)
+    ├── GarminSyncService (Multi-user sync, sleep, HRV, RHR, respiration, activities)
     ├── RawArchiveStore (optional: immutable raw JSON archive in GCS, for audit/rebuild)
-    ├── Metrics & Baselines (7-day and 28-day historical averages & deltas)
-    └── FirestoreRepository (Writes to users/{firebaseUid}/daily_recovery_snapshots/{YYYY-MM-DD}
-                              and users/{firebaseUid}/activities/{activityId})
+    ├── WorkoutExportService (Pushes pending structured workouts to Garmin Connect)
+    ├── Metrics & Baselines (7d and 28d historical averages, MAD/stdev deltas)
+    └── FirestoreRepository (Writes to users/{firebaseUid}/daily_recovery_snapshots/{date},
+                              activities/{id}, garmin_workout_queue/{date})
             ↓
-React App (DecisionComposer)
+React App (DecisionComposer, SessionRunner, HealthAnomalyService)
     ↓
-Adaptive Training Recommendation
+Adaptive Training Recommendations & Native Session Execution
 ```
 
 ---
@@ -58,17 +59,22 @@ Adaptive Training Recommendation
 
 1. **User-Scoped Isolation**: All Firestore snapshots are saved strictly under `users/{firebaseUid}/daily_recovery_snapshots/{YYYY-MM-DD}`.
 2. **Explicit Warsaw Timezone**: Uses `Europe/Warsaw` calendar dates to prevent UTC boundary shifts around midnight.
-3. **Stateless Token Persistence**: Integrates `GcsTokenStore` to restore and persist Garmin OAuth token JSON file across ephemeral Cloud Run executions with strict OS file permissions.
+3. **Stateless Token Persistence**: Integrates `GcsTokenStore` to restore and persist Garmin OAuth token JSON files across ephemeral Cloud Run executions with strict OS file permissions.
 4. **D-1 Step Count & Completed Training**: Uses previous completed day (`D - 1`) for step counts and training history lookback window.
 5. **Lookback Resync**: Each daily sync also force-resyncs the preceding `GARMIN_RESYNC_LOOKBACK_DAYS` day(s) (default 1) so late-arriving Garmin data — e.g. a training session logged after that day's own sync already ran — is captured the next time sync runs.
-6. **Schema Version 3 & Provenance**: Tracks exact source dates for sleep, HRV, resting HR, waking body battery, steps, and deterministic primary activity.
+6. **Schema Version 3 & Provenance**: Tracks exact source dates for sleep, HRV, resting HR, waking body battery, steps, respiration rate, and deterministic primary activity.
 7. **Raw Archive & Offline Rebuild** (opt-in via `GARMIN_ARCHIVE_ENABLED`): every raw Garmin payload is archived immutably (gzip-compressed, content-addressed/idempotent) so `garmin_sync rebuild` can recompute Firestore snapshots without calling Garmin again, and `garmin_sync audit` reports completeness. Activities also get a standalone normalized record at `users/{firebaseUid}/activities/{activityId}`, decoupled from any single day's 3-day lookback window.
-8. **Metric Enrichment & Auxiliary Observability**: Waking Body Battery, HRV deltas, RHR deltas, and Sleep scores are actively wired into the recommendation engine's strain scoring (`rules.ts`). Auxiliary metrics (all-day stress level, Garmin native training readiness score, VO2max) are fetched best-effort, archived, and stored on `raw`/`dataQuality` for data auditing and future engine expansions.
+8. **Metric Enrichment & Auxiliary Observability**: Waking Body Battery, HRV deltas, RHR deltas, Sleep scores, and Respiration rate deltas/MAD are actively wired into the recommendation engine's strain scoring (`rules.ts`). Auxiliary metrics (all-day stress level, Garmin native training readiness score, VO2max) are fetched best-effort, archived, and stored on `raw`/`dataQuality` for data auditing and future engine expansions.
 9. **Reconciled Strain Telemetry & Multi-Day Recovery Drift**: Decomposes objective strain into acute metric deviations (`acuteDeviation`), persistent 28d-vs-7d baseline drift (`multiDayDrift`), and contextual penalties (`recentHardSessions`, `bodyBatteryDeficit`, `sleepFloorPenalty`, `conservativeBias`). Reconciled telemetry is attached to returned recommendations, and decision-relevant multi-day baseline trends are automatically annotated in the user-facing rationale.
 10. **Adaptive Multi-Sport Engine & Optimization Pipeline**: Integrates multi-layered schedule availability (`schedule.ts`), structured event periodization (`periodization.ts`), weekly microcycle objectives (`microcycle.ts`), 6D fatigue state decay tracking (`fatigue.ts`), and utility optimization (`optimizer.ts`). Solves for optimal workout placement by balancing required weekly stimulus benefit against dimensional fatigue cost.
 11. **Structured Technical Workout Library**: Couples engine templates to detailed prescriptions and validates sprint mechanics, acceleration/braking, cycling pedalling economy, and manual-only outdoor handling work with explicit quality criteria and safety stop conditions.
 12. **Decision Provenance, Audit Records & Replay**: Adopts explicit read semantics (`DataState`), immutable history revisions, and persisted audits. Incorporates a `POLICY_VERSION` identifier enabling a persisted decision to be replayed against its own audit payload for reproducibility.
 13. **Rolling 7-Day Week-Ahead Planning**: Implements a multi-day forecast with confidence tiers and a rolling microcycle window through never-persisted recomputation, collapsing selection paths to a single training authority.
+14. **Multidomain Session Authoring & Native Execution (ADR-0023)**: Source-neutral session definitions and occurrence authority (`replace_recommendation`, `additional_session`), guided gym runner with multi-scale intensity gauges (RIR, RPE, velocity loss %, technical breakdown), and automatic 1RM derivation writeback.
+15. **Performance Outcome Evidence & Goal-Progress Loop (ADR-0023 D-MOBS)**: Standardized protocol-locked metric testing, noise-bounded series comparisons, and block outcome progress reports.
+16. **Physiological Anomaly & Pre-Symptomatic Illness Alerting (ADR-0025)**: Evaluates unusual multi-night deviations across respiration rate, RHR, and HRV, explicitly accounting for training, sleep, stress, alcohol, and travel confounders in a fail-closed shadow mode.
+17. **Multi-User Family Accounts & Self-Service Linking**: Single-project multi-tenant architecture supporting family members via self-service Garmin login with MFA, server-side identity hashing, and automated multi-user batch sync without hardcoded deployment lists.
+18. **Automated Garmin Workout Push & Calendar Scheduling**: Direct structured workout export queueing from the web app (`garmin_workout_queue`) to Garmin Connect with power zone and interval repeat resolution (`workout_export.py`).
 
 ---
 
@@ -132,6 +138,7 @@ Set the following environment variables (e.g. in `.env` locally or Secret Manage
 | `GARMIN_TOKEN_BUCKET` | For GCS | — | Private GCS bucket name storing Garmin token JSON |
 | `GARMIN_TOKEN_OBJECT` | No | `garmin/garmin_tokens.json` | GCS token object name |
 | `GARMIN_STALENESS_MINUTES` | No | `60` | Skip Garmin API fetch if snapshot updated within N mins |
+| `GARMIN_INCOMPLETE_STALENESS_MINUTES` | No | `5` | Retry window for incomplete daily snapshots |
 | `GARMIN_RESYNC_LOOKBACK_DAYS` | No | `1` | After syncing the target date, also force-resync this many preceding day(s), to pick up Garmin data that finalized/arrived after that day's own sync ran (e.g. a training session logged later that day). Override per-run with `sync --resync-days N` |
 | `GARMIN_ALLOW_CREDENTIAL_LOGIN` | No | `false` | Cloud/automated runs set `false` (token-only); bootstrap sets `true` |
 | `FIREBASE_CREDENTIALS_PATH` | Local only | — | Path to local Firebase service account JSON |
@@ -187,6 +194,15 @@ uv run python scripts/bootstrap_garmin_tokens.py
 # logged after that day's own sync already ran)
 uv run python -m garmin_sync sync
 
+# Run daily sync for all linked active users in Firestore
+uv run python -m garmin_sync sync-all
+
+# Push queued structured workouts to Garmin Connect
+uv run python -m garmin_sync push-pending-workouts
+
+# Poll and process manual Sync Now requests
+uv run python -m garmin_sync poll-manual-sync
+
 # Override the lookback window for one run, e.g. after an extended outage
 uv run python -m garmin_sync sync --resync-days 3
 
@@ -219,6 +235,9 @@ npm run dev
 
 # Run multi-week engine simulation suite (outputs reports to app/artifacts/simulation-reports/latest/)
 npm run simulate:scenarios
+
+# Run health anomaly replay evidence report
+npm run evidence:health-anomaly -- --input path/to/replay.json
 
 # Replay and audit historical recommendation reproducibility
 npm run replay:recommendation -- <path-to-recommendation-audit.json>

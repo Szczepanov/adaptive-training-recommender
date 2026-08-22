@@ -70,7 +70,11 @@ All scripts defined in `package.json` are organized below by feature domain:
 |---|---|---|
 | `npm run simulate:scenarios` | Multi-week simulation | Evaluates adaptive engine scenarios defined in `src/engine/simulation/scenarios.ts` over multi-week spans. Uses Vite SSR loader to analyze periodization, objective fulfillment, fatigue decay, anchor placement, and constraint compliance. |
 | `npm run simulate:fatigue-fusion` | Fatigue-policy comparison | Runs the same real planner under production max and simulation-only additive fatigue fusion; writes regenerable comparison evidence without changing live policy. |
+| `npm run simulate:subjective-drift` | Subjective drift simulation | Runs subjective baseline drift simulation harness across synthetic athlete variance profiles. |
+| `npm run evidence:health-anomaly` | Health anomaly evidence | Runs historical physiological anomaly detector over synthetic or exported biometric series to evaluate sensitivity and false-positive rates. |
+| `npm run measure:garmin-zone-credit` | Telemetry credit comparison | Measures zone-derived vs TE-derived completed activity credit distributions on real activity histories. |
 | `npm run simulate:diff` | Simulation semantic diff | Compares current simulation run against committed `docs/analysis/simulation-baseline.json` baseline and outputs scenario-by-scenario semantic changes in distributions, objectives, and fatigue tiers. |
+| `npm run simulate:update-baseline` | Update simulation baseline | Re-snapshots the simulation baseline into `docs/analysis/simulation-baseline.json` when intentional policy changes land. |
 | `npm run replay:recommendation -- <path>` | Decision replay audit | Replays a historical recommendation audit JSON object (e.g. `npm run replay:recommendation -- artifacts/audit-sample.json`) via `src/engine/replay.ts` to verify reproducibility and inspect engine rationale. |
 
 #### `simulate:scenarios` Artifacts
@@ -84,7 +88,15 @@ npm run replay:recommendation -- ../path/to/recommendation-audit.json
 ```
 Parses the input JSON payload, feeds the historical recovery snapshot and athlete settings into `replayRecommendationAudit()`, outputs decision reproducibility status to stdout, and exits with code 1 if decisions do not match.
 
-### 5. Visual Review Harness & Playwright
+### 5. Deployment Commands
+
+| Command | Action | Description |
+|---|---|---|
+| `npm run deploy` / `npm run deploy:hosting` | Production frontend deploy | Builds production bundle with checks and deploys only Firebase Hosting assets. |
+| `npm run deploy:all` | Full Firebase deploy | Builds production bundle and deploys Hosting, Rules, and Indexes. |
+| `npm run deploy:indexes` | Firestore indexes deploy | Deploys composite index definitions from `firestore.indexes.json`. |
+
+### 6. Visual Review Harness & Playwright
 
 | Command | Action | Description |
 |---|---|---|
@@ -105,7 +117,7 @@ Regenerated into `artifacts/visual-review/latest/`:
 
 ```text
 app/src/
-  components/          # React UI components & view controllers
+  components/          # React UI components, view controllers, and design system
   context/             # React context providers (Auth, Navigation, Settings)
   engine/              # Recommendation engine domain logic
     fatigue.ts         # 6-dimensional fatigue state & exponential decay math
@@ -118,10 +130,16 @@ app/src/
     schedule.ts        # Availability & location context resolution
     templates.ts       # Session template catalog & systemic load caps
     validation.ts      # Input schema validators & sanitizers
+    healthAnomaly.ts   # Physiological anomaly & illness risk evaluator
     simulation/        # Multi-week scenario simulator & analytical metrics
     workouts/          # Structured technical workout catalog & parameter bindings
+  observations/        # Standardized performance testing protocols & observation models
+  outcomes/            # Goal targets, series noise filtering, and block outcome reports
+  persistence/         # Strict Firestore document parsers and validation gates
+  responses/           # User check-in, follow-up, and subjective response schemas
+  sessions/            # Source-neutral session authoring, occurrence gates, and execution
   emulator/            # Firestore security rules emulator test harness
-  services/            # Firebase Firestore readers and settings persistence
+  services/            # Firebase Firestore services and API wrappers
   utils/               # Local date helpers (Europe/Warsaw) & formatters
   visual/              # Visual review harness fixtures & page entries
 scripts/               # Node ESM & TS automation scripts

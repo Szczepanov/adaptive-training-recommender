@@ -187,18 +187,18 @@ Three modes, not four: **`train`**, **`modify`**, **`recover`**.
 > not diagnose non-functional overreaching or overtraining syndrome."
 
 Objective strain is a continuous, **self-normalised** score — not fixed absolute
-thresholds. Each of HRV, RHR and sleep score contributes two z-scored terms:
+thresholds. Each of HRV, RHR, sleep score, and respiration rate contributes two z-scored terms:
 
 * **acute** — today vs this person's own trailing 7-day baseline
 * **chronic** — the 7-day baseline's drift from the 28-day baseline, weighted ×1.5,
   because a multi-day trend predicts overreaching better than one noisy night
 
-Normalisation uses the athlete's own trailing 28-day stdev, floored (HRV 3 ms, RHR
-1.5 bpm, sleep 4 pts) so a flat metric cannot produce an explosive z-score. Each metric's
+Normalisation uses the athlete's own trailing 28-day stdev/MAD, floored (HRV 3 ms, RHR
+1.5 bpm, sleep 4 pts, respiration 1.0 br/min MAD) so a flat metric cannot produce an explosive z-score. Each metric's
 contribution is capped at ±2.0 so one outlier cannot dominate.
 
 ```text
-strain = Σ metric(acute + 1.5 × chronic) × weight     HRV 0.5, RHR 0.3, sleep 0.2
+strain = Σ metric(acute + 1.5 × chronic) × weight     HRV 0.5, RHR 0.3, sleep 0.2, respiration 0.3
        + sleepFloorPenalty          sleep score < 50           → +0.5
        + bodyBatteryDeficit         ramps 50 → 25              → up to +0.3
        + recentHardSessions         ≥2 hard in 3 days          → +1.0
