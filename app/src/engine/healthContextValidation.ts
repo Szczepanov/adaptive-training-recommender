@@ -35,8 +35,9 @@ const HEALTH_CONTEXT_KEYS = new Set([
     'recentVaccination',
     'medicationChange',
     'closeSickContact',
-    // Legacy keys remain readable so already-written documents do not become invalid.
-    // New UI code no longer asks or writes these; Garmin core signals are authoritative.
+    // Legacy keys remain accepted at the boundary so already-written documents do not
+    // become invalid. They are intentionally stripped from validated data: RHR/HRV/
+    // respiration direction is calculated from Garmin history, never from check-in input.
     'manualRhrHigher',
     'manualHrvLower',
     'manualRespirationHigher',
@@ -240,11 +241,8 @@ export function validateHealthContext(raw: unknown): HealthContextValidationResu
         recentVaccination: raw.recentVaccination === true,
         medicationChange: raw.medicationChange === true,
         closeSickContact: raw.closeSickContact === true,
-        // Preserve legacy manual fields on read/write for migration compatibility only.
-        // Decision logic no longer needs new manual physiology input from the check-in UI.
-        ...(raw.manualRhrHigher === null || typeof raw.manualRhrHigher === 'boolean' ? { manualRhrHigher: raw.manualRhrHigher } : {}),
-        ...(raw.manualHrvLower === null || typeof raw.manualHrvLower === 'boolean' ? { manualHrvLower: raw.manualHrvLower } : {}),
-        ...(raw.manualRespirationHigher === null || typeof raw.manualRespirationHigher === 'boolean' ? { manualRespirationHigher: raw.manualRespirationHigher } : {}),
+        // Do not carry legacy manual physiology into canonical validated data. If a Garmin
+        // current value/baseline is missing, the objective channel remains unavailable.
         ...(raw.otherDisruption === null || typeof raw.otherDisruption === 'string' ? { otherDisruption: raw.otherDisruption } : {}),
         ...(symptoms ? { symptoms } : {}),
     };
