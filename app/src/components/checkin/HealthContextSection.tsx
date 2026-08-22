@@ -115,7 +115,7 @@ export function HealthContextSection({ value, symptomsPresent, onChange }: Healt
             <summary className="health-context__summary">
                 <span>
                     <strong>Anything unusual since yesterday?</strong>
-                    <small>Optional context that can explain recovery changes</small>
+                    <small>Symptoms default to No; alcohol to 0; travel to none. Other items remain Unknown until answered.</small>
                 </span>
                 {unusual && <span className="health-context__badge">Context added</span>}
             </summary>
