@@ -6,6 +6,7 @@ from collections.abc import Callable
 from .account_link import list_active_garmin_user_ids
 from .audit import format_report, run_audit
 from .config import load_settings, load_settings_for_user
+from .coordination import GarminExecutionLease
 from .service import GarminSyncService
 
 logging.basicConfig(
@@ -15,13 +16,42 @@ logging.basicConfig(
 logger = logging.getLogger("garmin_sync")
 
 
+def _run_with_user_lease(
+    operation_name: str,
+    service: GarminSyncService,
+    operation: Callable[[GarminSyncService], bool],
+) -> bool:
+    """Run one Garmin operation while holding the shared per-user Firestore lease.
+
+    A busy lease is a successful no-op: another process is already doing Garmin work for
+    this user, and the next scheduled tick will pick up anything still pending. Lease release
+    errors intentionally propagate so Cloud Run records a failure instead of silently leaving
+    the user blocked until expiry.
+    """
+    lease = GarminExecutionLease(
+        service.repository.db,
+        service.settings.app_user_id,
+        operation_name,
+    )
+    if not lease.acquire():
+        logger.info("%s: skipped because another Garmin operation is already running", operation_name)
+        return True
+
+    try:
+        return operation(service)
+    finally:
+        lease.release()
+
+
 def _run_for_all_users(operation_name: str, operation: Callable[[GarminSyncService], bool]) -> int:
     """Run a scheduled operation for every active self-service Garmin link.
 
     Users are discovered from the server-only garminConnections collection and processed
-    sequentially to isolate Garmin sessions and avoid multiplying API pressure. A failure
-    for one user does not prevent later users from running, but the process returns non-zero
-    so Cloud Run/Scheduler records a partial failure.
+    sequentially to isolate Garmin sessions and avoid multiplying API pressure. Each user
+    also gets a durable Firestore lease, so separate Cloud Run executions cannot overlap
+    sync/manual-sync/workout work for that same Garmin account. A failure for one user does
+    not prevent later users from running, but the process returns non-zero so Cloud
+    Run/Scheduler records a partial failure.
     """
     try:
         user_ids = list_active_garmin_user_ids()
@@ -39,7 +69,7 @@ def _run_for_all_users(operation_name: str, operation: Callable[[GarminSyncServi
             logger.info("%s: starting linked user %d/%d", operation_name, index, len(user_ids))
             settings = load_settings_for_user(uid)
             service = GarminSyncService(settings)
-            if not operation(service):
+            if not _run_with_user_lease(operation_name, service, operation):
                 failed_count += 1
                 logger.error("%s: unsuccessful linked user %d", operation_name, index)
             else:
@@ -87,10 +117,14 @@ def run_daily_sync(args: list[str] | None = None) -> int:
     try:
         settings = load_settings()
         service = GarminSyncService(settings)
-        success = service.sync_daily(
-            target_date_str=parsed_args.date,
-            force=parsed_args.force,
-            resync_lookback_days=parsed_args.resync_days,
+        success = _run_with_user_lease(
+            "daily sync",
+            service,
+            lambda current_service: current_service.sync_daily(
+                target_date_str=parsed_args.date,
+                force=parsed_args.force,
+                resync_lookback_days=parsed_args.resync_days,
+            ),
         )
         return 0 if success else 1
     except Exception as e:
@@ -132,12 +166,16 @@ def run_backfill(args: list[str] | None = None) -> int:
     try:
         settings = load_settings()
         service = GarminSyncService(settings)
-        success = service.backfill(
-            days=parsed_args.days,
-            start_date_str=parsed_args.start_date,
-            end_date_str=parsed_args.end_date,
-            force=parsed_args.force,
-            include_details=parsed_args.include_details,
+        success = _run_with_user_lease(
+            "backfill",
+            service,
+            lambda current_service: current_service.backfill(
+                days=parsed_args.days,
+                start_date_str=parsed_args.start_date,
+                end_date_str=parsed_args.end_date,
+                force=parsed_args.force,
+                include_details=parsed_args.include_details,
+            ),
         )
         return 0 if success else 1
     except Exception as e:
@@ -207,7 +245,11 @@ def run_push_workout_cmd(args: list[str] | None = None) -> int:
     try:
         settings = load_settings()
         service = GarminSyncService(settings)
-        success = service.push_workout(date_str=parsed_args.date)
+        success = _run_with_user_lease(
+            "push workout",
+            service,
+            lambda current_service: current_service.push_workout(date_str=parsed_args.date),
+        )
         return 0 if success else 1
     except Exception as e:
         logger.error(f"Push workout execution error: {type(e).__name__}: {e}")
@@ -229,7 +271,13 @@ def run_push_pending_workouts_cmd(args: list[str] | None = None) -> int:
     try:
         settings = load_settings()
         service = GarminSyncService(settings)
-        success = service.push_pending_workouts(max_age_days=parsed_args.max_age_days)
+        success = _run_with_user_lease(
+            "push pending workouts",
+            service,
+            lambda current_service: current_service.push_pending_workouts(
+                max_age_days=parsed_args.max_age_days
+            ),
+        )
         return 0 if success else 1
     except Exception as e:
         logger.error(f"Push pending workouts execution error: {type(e).__name__}: {e}")
@@ -256,7 +304,11 @@ def run_poll_manual_sync_cmd(args: list[str] | None = None) -> int:
     try:
         settings = load_settings()
         service = GarminSyncService(settings)
-        success = service.poll_manual_sync_requests()
+        success = _run_with_user_lease(
+            "poll manual sync",
+            service,
+            lambda current_service: current_service.poll_manual_sync_requests(),
+        )
         return 0 if success else 1
     except Exception as e:
         logger.error(f"Poll manual sync execution error: {type(e).__name__}: {e}")
