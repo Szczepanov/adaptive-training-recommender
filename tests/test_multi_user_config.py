@@ -48,6 +48,27 @@ def test_linked_user_settings_isolate_token_and_archive_state(
     assert alpha.garmin_allow_credential_login is False
 
 
+def test_linked_user_settings_preserve_exact_uid(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GARMIN_TOKEN_STORE", "local")
+
+    settings = load_settings_for_user(" alpha ")
+
+    assert settings.app_user_id == " alpha "
+    assert settings.garmin_token_path == ".garmin_tokens/ alpha /garmin_tokens.json"
+    assert settings.garmin_token_object == "garmin/users/ alpha /garmin_tokens.json"
+    assert settings.garmin_archive_local_dir == ".garmin_archive/ alpha "
+    assert settings.garmin_archive_prefix == "raw/garmin/users/ alpha "
+
+
+def test_linked_user_settings_reject_whitespace_only_uid(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("GARMIN_TOKEN_STORE", "local")
+
+    with pytest.raises(ValueError, match="cannot be blank"):
+        load_settings_for_user("   ")
+
+
 def test_linked_user_settings_ignore_shared_token_path_overrides(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
