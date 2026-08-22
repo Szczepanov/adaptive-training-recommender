@@ -1,35 +1,25 @@
 name: Garmin Token Bootstrap
 
-# One-time (and, if the refresh token ever fully expires, occasional re-run) authentication
-# against Garmin Connect, uploading the resulting OAuth token to the private GCS bucket that
-# the Cloud Run Jobs read from.
+# One-time (and occasional refresh) Garmin authentication for one Firebase user.
 #
-# MFA handling, in priority order:
-#  1. GARMIN_TOTP_SECRET repo secret set (recommended if your Garmin account has 2FA via an
-#     authenticator app): the code is computed live, at the exact moment Garmin's login flow
-#     actually asks for one -- inside bootstrap_garmin_tokens.py's _mfa_prompt(), well after
-#     checkout/auth/dependency install. No manually-entered code can go stale this way. Get
-#     the secret from the "manual entry key" / base32 string your authenticator app was given
-#     when you first enrolled it (not a 6-digit code) -- if you no longer have it, re-enrolling
-#     the authenticator on Garmin's side gives you a fresh one.
-#  2. No secret set, `mfa_code` input given: used as a pre-typed fallback. Generate it, then
-#     trigger this workflow *immediately* -- every step between trigger and the login call
-#     (checkout, auth, uv setup, dependency install) eats into a typical 30-60s TOTP window.
-#  3. Neither: only works if your Garmin account has no 2FA at all.
-#
-# An SMS/email code that Garmin only sends once a login attempt actually starts can't be used
-# with either 1 or 2 here -- GitHub Actions can't pause a run mid-flight to collect a second
-# input. For that case, temporarily disable 2FA on your Garmin account, run this once, then
-# re-enable it -- the resulting OAuth token keeps working regardless of your account's current
-# 2FA setting.
-#
-# Prerequisite: docs/ops/setup-workload-identity.sh has been run once, so the token bucket and
-# GCP auth already exist.
+# Multi-user credentials are isolated with GitHub Environments. Create one environment per
+# Garmin account (for example `garmin-marcin` and `garmin-wife`) and put GARMIN_EMAIL,
+# GARMIN_PASSWORD and optionally GARMIN_TOTP_SECRET in that environment. The resulting OAuth
+# token is uploaded to garmin/users/<firebase-uid>/garmin_tokens.json. Scheduled Cloud Run
+# jobs never receive Garmin passwords.
 on:
   workflow_dispatch:
     inputs:
+      app_user_id:
+        description: "Firebase Authentication UID that owns this Garmin account"
+        required: true
+        type: string
+      garmin_environment:
+        description: "GitHub Environment containing this user's GARMIN_EMAIL/PASSWORD/TOTP secrets"
+        required: true
+        type: string
       mfa_code:
-        description: "Garmin MFA code -- only used as a fallback when GARMIN_TOTP_SECRET isn't set (leave blank if neither applies). Generate it, then trigger this workflow immediately."
+        description: "Fallback Garmin MFA code when this environment has no GARMIN_TOTP_SECRET"
         required: false
         default: ""
 
@@ -41,6 +31,7 @@ jobs:
   bootstrap:
     name: Bootstrap Garmin token
     runs-on: ubuntu-latest
+    environment: ${{ inputs.garmin_environment }}
     steps:
       - uses: actions/checkout@v7
 
@@ -54,7 +45,7 @@ jobs:
         uses: astral-sh/setup-uv@v7
         with:
           version: "latest"
-          enable-cache: true # every second here narrows a pre-typed MFA code's validity window
+          enable-cache: true
 
       - name: Set up Python
         uses: actions/setup-python@v7
@@ -64,14 +55,19 @@ jobs:
       - name: Install dependencies
         run: uv sync --frozen
 
-      - name: Run Garmin login and upload token to GCS
+      - name: Run Garmin login and upload user-scoped token to GCS
         env:
-          APP_USER_ID: ${{ secrets.APP_USER_ID }}
+          APP_USER_ID: ${{ inputs.app_user_id }}
           GARMIN_EMAIL: ${{ secrets.GARMIN_EMAIL }}
           GARMIN_PASSWORD: ${{ secrets.GARMIN_PASSWORD }}
           GARMIN_ALLOW_CREDENTIAL_LOGIN: "true"
           GARMIN_TOTP_SECRET: ${{ secrets.GARMIN_TOTP_SECRET }}
           GARMIN_MFA_CODE: ${{ inputs.mfa_code }}
         run: |
+          if [ -z "${GARMIN_EMAIL}" ] || [ -z "${GARMIN_PASSWORD}" ]; then
+            echo "Selected GitHub Environment must define GARMIN_EMAIL and GARMIN_PASSWORD" >&2
+            exit 1
+          fi
           uv run python scripts/bootstrap_garmin_tokens.py \
-            --bucket "${{ secrets.GCP_PROJECT_ID }}-garmin-tokens"
+            --bucket "${{ secrets.GCP_PROJECT_ID }}-garmin-tokens" \
+            --object "garmin/users/${APP_USER_ID}/garmin_tokens.json"
