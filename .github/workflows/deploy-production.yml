@@ -72,6 +72,7 @@ jobs:
     with:
       region: ${{ inputs.region }}
       run_smoke_test: ${{ inputs.run_garmin_sync_smoke_test }}
+      production_release_lock: true
     secrets:
       GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
       GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
@@ -84,6 +85,8 @@ jobs:
       contents: read
       id-token: write
     uses: ./.github/workflows/deploy-firestore-indexes.yml
+    with:
+      production_release_lock: true
     secrets:
       GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
       GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
@@ -100,6 +103,7 @@ jobs:
       deploy_hosting: false
       deploy_rules: true
       confirm_rules_drift: ${{ inputs.confirm_rules_drift }}
+      production_release_lock: true
     secrets:
       GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
       GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
@@ -116,6 +120,7 @@ jobs:
       deploy_hosting: true
       deploy_rules: false
       confirm_rules_drift: false
+      production_release_lock: true
     secrets:
       GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
       GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
