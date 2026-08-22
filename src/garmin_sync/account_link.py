@@ -304,6 +304,15 @@ class GarminAccountLinkService:
             shutil.rmtree(pending.temp_dir, ignore_errors=True)
             raise
 
+    def _delete_token_object(self, token_object: str) -> None:
+        """Best-effort cleanup for a token upload whose Firestore link never committed."""
+        try:
+            from google.cloud import storage  # type: ignore[attr-defined]
+
+            storage.Client().bucket(self.token_bucket).blob(token_object).delete()
+        except Exception:
+            logger.warning("Failed to remove orphaned Garmin token object after link error.")
+
     def _finalize(
         self,
         api: Garmin,
@@ -313,6 +322,7 @@ class GarminAccountLinkService:
     ) -> dict[str, Any]:
         created_uid: str | None = None
         link_committed = False
+        uploaded_token_object: str | None = None
         try:
             identity_kind, identity_digest = _garmin_identity(api)
             mapped_uid = self.repository.uid_for_identity(identity_digest)
@@ -337,6 +347,7 @@ class GarminAccountLinkService:
             token_object = f"garmin/users/{target_uid}/garmin_tokens.json"
             if not GcsTokenStore(self.token_bucket, token_object).persist(token_path):
                 raise GarminLinkConfigurationError("Failed to persist Garmin session tokens.")
+            uploaded_token_object = token_object
 
             self.repository.commit_link(
                 target_uid,
@@ -357,6 +368,8 @@ class GarminAccountLinkService:
                 "isNewUser": is_new_user,
             }
         except Exception:
+            if uploaded_token_object and not link_committed:
+                self._delete_token_object(uploaded_token_object)
             # Before the mapping commits, a just-created Firebase user is safe to roll back.
             # After commit, keep the user/mapping intact: a transient custom-token signing
             # failure must be retryable, not leave garminConnections pointing at a deleted UID.
