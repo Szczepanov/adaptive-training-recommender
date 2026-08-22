@@ -46,9 +46,16 @@ class LoginRateLimiter:
         now = time.monotonic()
         cutoff = now - RATE_LIMIT_WINDOW_SECONDS
         with self._lock:
+            # Prune every expired bucket before looking up the current key. Apart from
+            # bounding long-lived memory, this avoids keeping one deque forever for each
+            # client address that has ever touched the login endpoint.
+            for candidate_key, candidate_attempts in list(self._attempts.items()):
+                while candidate_attempts and candidate_attempts[0] < cutoff:
+                    candidate_attempts.popleft()
+                if not candidate_attempts:
+                    del self._attempts[candidate_key]
+
             attempts = self._attempts[key]
-            while attempts and attempts[0] < cutoff:
-                attempts.popleft()
             if len(attempts) >= RATE_LIMIT_ATTEMPTS:
                 return False
             attempts.append(now)
@@ -122,7 +129,16 @@ class GarminAccountLinkHandler(BaseHTTPRequestHandler):
     def _client_key(self) -> str:
         forwarded = self.headers.get("X-Forwarded-For", "")
         if forwarded:
-            return forwarded.split(",", 1)[0].strip()
+            forwarded_hops = [hop.strip() for hop in forwarded.split(",") if hop.strip()]
+            if len(forwarded_hops) >= 2:
+                # Google external HTTP(S) load balancing appends a trusted pair:
+                #   ..., <client-ip>, <load-balancer-ip>
+                # Existing left-hand values are caller-controlled, while the final value
+                # identifies the load balancer itself. The penultimate hop is therefore
+                # the client address observed by Google's trusted edge.
+                return forwarded_hops[-2]
+            if forwarded_hops:
+                return forwarded_hops[-1]
         return self.client_address[0]
 
     def do_GET(self) -> None:  # noqa: N802
