@@ -6,6 +6,17 @@ name: Deploy Firestore Indexes
 on:
   workflow_dispatch:
   workflow_call:
+    inputs:
+      production_release_lock:
+        description: >-
+          Internal: set to true only by deploy-production.yml's call. Opts this call out of
+          the shared production-wide concurrency group below, since that caller already holds
+          it for the whole release -- requesting it again here would queue this job behind the
+          very run it's part of and deadlock. workflow_dispatch has no such input, so a
+          standalone run always falls through to the production-wide lock.
+        type: boolean
+        required: false
+        default: false
     secrets:
       GCP_PROJECT_ID:
         required: true
@@ -18,15 +29,19 @@ permissions:
   contents: read
   id-token: write
 
-# A standalone workflow_dispatch run joins the SAME group deploy-production.yml holds for a
-# whole release, so it queues behind an in-flight end-to-end release instead of deploying a
-# different SHA mid-release. A workflow_call invocation (i.e. from deploy-production.yml
-# itself) uses this workflow's own isolated group instead: that caller already holds the
+# A standalone workflow_dispatch run (production_release_lock defaults to false -- that input
+# doesn't exist under workflow_dispatch) joins the SAME group deploy-production.yml holds for
+# a whole release, so it queues behind an in-flight end-to-end release instead of deploying a
+# different SHA mid-release. deploy-production.yml's own call sets production_release_lock:
+# true and gets this workflow's isolated group instead: that caller already holds the
 # production-wide group for the run's whole duration, so requesting it again here would queue
-# this job behind the very run it's part of and deadlock.
+# this job behind the very run it's part of and deadlock. (github.event_name is NOT a usable
+# signal for this: inside a called reusable workflow it still reads as the caller's own
+# triggering event, e.g. workflow_dispatch, not "workflow_call" -- using it here previously
+# produced the exact deadlock this comment warns about.)
 concurrency:
   group: >-
-    ${{ github.event_name == 'workflow_call'
+    ${{ inputs.production_release_lock
       && format('deploy-firestore-indexes-{0}', github.repository)
       || format('deploy-production-{0}', github.repository) }}
   cancel-in-progress: false
