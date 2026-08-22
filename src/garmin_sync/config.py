@@ -1,5 +1,5 @@
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
@@ -68,10 +68,43 @@ class Settings:
                 )
 
 
-def load_settings(env_file: str | None = None) -> Settings:
-    load_dotenv(dotenv_path=env_file)
+def _ordered_unique(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for value in values:
+        value = value.strip()
+        if value and value not in seen:
+            seen.add(value)
+            result.append(value)
+    return result
 
-    user_id = os.getenv("APP_USER_ID", "").strip()
+
+def load_user_ids() -> list[str]:
+    """Return configured Firebase UIDs in stable order.
+
+    APP_USER_IDS is the multi-user production setting. APP_USER_ID remains the
+    backwards-compatible single-user fallback for local/manual commands.
+    """
+    raw_many = os.getenv("APP_USER_IDS", "")
+    if raw_many.strip():
+        user_ids = _ordered_unique(raw_many.split(","))
+    else:
+        single = os.getenv("APP_USER_ID", "").strip()
+        user_ids = [single] if single else []
+
+    if not user_ids:
+        raise ValueError(
+            "Configuration error: set APP_USER_IDS (comma-separated Firebase UIDs) "
+            "or APP_USER_ID for single-user mode."
+        )
+    if "default_user" in user_ids:
+        raise ValueError(
+            "Configuration error: APP_USER_IDS/APP_USER_ID cannot contain 'default_user'."
+        )
+    return user_ids
+
+
+def _load_base_settings(user_id: str) -> Settings:
     tz = os.getenv("APP_TIMEZONE", "Europe/Warsaw").strip()
     email = os.getenv("GARMIN_EMAIL")
     password = os.getenv("GARMIN_PASSWORD")
@@ -107,7 +140,7 @@ def load_settings(env_file: str | None = None) -> Settings:
         "yes",
     )
 
-    settings = Settings(
+    return Settings(
         app_user_id=user_id,
         app_timezone=tz,
         garmin_email=email,
@@ -134,5 +167,58 @@ def load_settings(env_file: str | None = None) -> Settings:
         garmin_archive_prefix=archive_prefix,
         garmin_activity_detail_enabled=activity_detail_enabled,
     )
+
+
+def _scoped_for_user(settings: Settings) -> Settings:
+    """Isolate all Garmin token/archive state for one Firebase UID.
+
+    Keeping the local token cache separate matters as much as the GCS object: if a
+    restore for user B fails, user A's token file must never be available as a
+    fallback in the same Cloud Run container.
+    """
+    uid = settings.app_user_id
+    return replace(
+        settings,
+        garmin_token_path=f".garmin_tokens/{uid}/garmin_tokens.json",
+        garmin_token_object=f"garmin/users/{uid}/garmin_tokens.json",
+        garmin_archive_local_dir=f".garmin_archive/{uid}",
+        garmin_archive_prefix=f"raw/garmin/users/{uid}",
+        # Scheduled jobs authenticate from persisted tokens only. Credentials are
+        # intentionally kept out of a multi-user process and used only by bootstrap.
+        garmin_email=None,
+        garmin_password=None,
+    )
+
+
+def load_user_settings(env_file: str | None = None) -> list[Settings]:
+    """Load isolated settings for every UID configured for scheduled sync."""
+    load_dotenv(dotenv_path=env_file)
+    settings_list = [_scoped_for_user(_load_base_settings(uid)) for uid in load_user_ids()]
+    for settings in settings_list:
+        settings.validate()
+    return settings_list
+
+
+def load_settings(env_file: str | None = None) -> Settings:
+    """Load legacy/single-user settings.
+
+    APP_USER_ID remains authoritative here so manual commands keep their existing
+    token paths. If only APP_USER_IDS is present, a single UID is accepted; multiple
+    UIDs require one of the explicit *-all CLI commands.
+    """
+    load_dotenv(dotenv_path=env_file)
+
+    user_id = os.getenv("APP_USER_ID", "").strip()
+    if not user_id:
+        user_ids = load_user_ids()
+        if len(user_ids) != 1:
+            raise ValueError(
+                "Configuration error: multiple APP_USER_IDS are configured. "
+                "Use sync-all, push-pending-workouts-all, or poll-manual-sync-all."
+            )
+        settings = _scoped_for_user(_load_base_settings(user_ids[0]))
+    else:
+        settings = _load_base_settings(user_id)
+
     settings.validate()
     return settings
