@@ -3,6 +3,7 @@ import type {
     HealthSymptomsCheckin,
     HealthSymptomType,
 } from './healthAnomalyModels';
+import { normalizeHealthContext } from './healthContextDefaults';
 
 export const HEALTH_OTHER_DISRUPTION_MAX_LENGTH = 500;
 
@@ -35,6 +36,12 @@ const HEALTH_CONTEXT_KEYS = new Set([
     'recentVaccination',
     'medicationChange',
     'closeSickContact',
+    // Legacy keys remain accepted at the raw boundary so already-written documents do not
+    // become invalid. They are intentionally absent from HealthContextCheckin and stripped
+    // from validated canonical data: physiology direction comes only from Garmin.
+    'manualRhrHigher',
+    'manualHrvLower',
+    'manualRespirationHigher',
     'otherDisruption',
     'symptoms',
 ]);
@@ -146,8 +153,9 @@ function validateSymptoms(
 }
 
 /**
- * Shared app-side contract for the optional check-in health context. This is deliberately
- * strict about malformed supplied fields while treating an omitted block as unknown.
+ * Shared app-side contract for the optional check-in health context. Malformed supplied
+ * fields fail closed. A completely absent historical block stays absent; once a block
+ * exists, canonical product defaults are materialized by normalizeHealthContext().
  */
 export function validateHealthContext(raw: unknown): HealthContextValidationResult {
     if (raw === undefined) return { isValid: true, data: undefined, errors: [] };
@@ -203,6 +211,9 @@ export function validateHealthContext(raw: unknown): HealthContextValidationResu
         'recentVaccination',
         'medicationChange',
         'closeSickContact',
+        'manualRhrHigher',
+        'manualHrvLower',
+        'manualRespirationHigher',
     ] as const) {
         if (!isNullableBoolean(raw[field])) {
             errors.push({ field: `healthContext.${field}`, message: `${field} must be boolean, null, or omitted`, value: raw[field] });
@@ -222,19 +233,22 @@ export function validateHealthContext(raw: unknown): HealthContextValidationResu
     const symptoms = validateSymptoms(raw.symptoms, errors);
     if (errors.length > 0) return { isValid: false, errors };
 
-    const data: HealthContextCheckin = {
+    const supplied: HealthContextCheckin = {
         ...(typeof raw.alcoholDrinksLast24h === 'number' ? { alcoholDrinksLast24h: raw.alcoholDrinksLast24h as 0 | 1 | 2 | 3 } : {}),
         ...(isOneOf(raw.travelDisruption, HEALTH_TRAVEL_DISRUPTIONS) ? { travelDisruption: raw.travelDisruption } : {}),
         ...(raw.timezoneShiftHours === null || typeof raw.timezoneShiftHours === 'number' ? { timezoneShiftHours: raw.timezoneShiftHours as number | null } : {}),
-        ...(raw.unusualHeatOrSauna === null || typeof raw.unusualHeatOrSauna === 'boolean' ? { unusualHeatOrSauna: raw.unusualHeatOrSauna } : {}),
-        ...(raw.dehydrationOrFluidLoss === null || typeof raw.dehydrationOrFluidLoss === 'boolean' ? { dehydrationOrFluidLoss: raw.dehydrationOrFluidLoss } : {}),
-        ...(raw.recentVaccination === null || typeof raw.recentVaccination === 'boolean' ? { recentVaccination: raw.recentVaccination } : {}),
-        ...(raw.medicationChange === null || typeof raw.medicationChange === 'boolean' ? { medicationChange: raw.medicationChange } : {}),
-        ...(raw.closeSickContact === null || typeof raw.closeSickContact === 'boolean' ? { closeSickContact: raw.closeSickContact } : {}),
+        ...(raw.unusualHeatOrSauna === null || typeof raw.unusualHeatOrSauna === 'boolean' ? { unusualHeatOrSauna: raw.unusualHeatOrSauna as boolean | null } : {}),
+        ...(raw.dehydrationOrFluidLoss === null || typeof raw.dehydrationOrFluidLoss === 'boolean' ? { dehydrationOrFluidLoss: raw.dehydrationOrFluidLoss as boolean | null } : {}),
+        ...(raw.recentVaccination === null || typeof raw.recentVaccination === 'boolean' ? { recentVaccination: raw.recentVaccination as boolean | null } : {}),
+        ...(raw.medicationChange === null || typeof raw.medicationChange === 'boolean' ? { medicationChange: raw.medicationChange as boolean | null } : {}),
+        ...(raw.closeSickContact === null || typeof raw.closeSickContact === 'boolean' ? { closeSickContact: raw.closeSickContact as boolean | null } : {}),
         ...(raw.otherDisruption === null || typeof raw.otherDisruption === 'string' ? { otherDisruption: raw.otherDisruption } : {}),
         ...(symptoms ? { symptoms } : {}),
     };
 
+    // Legacy manual physiology keys were validated above only for migration compatibility;
+    // they are intentionally not represented in supplied/canonical data.
+    const data = normalizeHealthContext(supplied, symptoms?.present ?? false);
     return { isValid: true, data, errors: [] };
 }
 

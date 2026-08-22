@@ -2,12 +2,22 @@ import type {
     HealthContextCheckin,
     HealthSymptomType,
 } from '../../engine/healthAnomalyModels';
+import { normalizeHealthContext } from '../../engine/healthContextDefaults';
 import { HEALTH_OTHER_DISRUPTION_MAX_LENGTH } from '../../engine/healthContextValidation';
 import './HealthContextSection.css';
 
 interface HealthContextSectionProps {
     value?: HealthContextCheckin;
     symptomsPresent: boolean;
+    /**
+     * Deprecated no-op kept only while this PR is stacked on #179, whose DailyCheckin caller
+     * still supplies the old missingness object. No manual physiology reaches UI or engine state.
+     */
+    manualPhysiologyMissing?: {
+        rhr: boolean;
+        hrv: boolean;
+        respiration: boolean;
+    };
     onChange: (next: HealthContextCheckin) => void;
 }
 
@@ -18,16 +28,18 @@ const TRAVEL_OPTIONS: Array<{ value: NonNullable<HealthContextCheckin['travelDis
     { value: 'late_arrival_or_disrupted_sleep', label: 'Late arrival' },
 ];
 
-const CONTEXT_TOGGLES: Array<{
-    key: 'unusualHeatOrSauna' | 'dehydrationOrFluidLoss' | 'recentVaccination' | 'medicationChange' | 'closeSickContact';
-    label: string;
-}> = [
+const CONTEXT_QUESTIONS = [
     { key: 'unusualHeatOrSauna', label: 'Heat / sauna' },
     { key: 'dehydrationOrFluidLoss', label: 'Dehydration / fluid loss' },
     { key: 'recentVaccination', label: 'Vaccination' },
     { key: 'medicationChange', label: 'Medication change' },
     { key: 'closeSickContact', label: 'Close sick contact' },
-];
+] as const;
+
+const YES_NO_OPTIONS = [
+    { value: false, label: 'No' },
+    { value: true, label: 'Yes' },
+] as const;
 
 const ONSETS = [
     ['today', 'Today'],
@@ -66,8 +78,12 @@ function hasUnusualContext(value: HealthContextCheckin | undefined, symptomsPres
         || Boolean(value.otherDisruption?.trim());
 }
 
-export function HealthContextSection({ value, symptomsPresent, onChange }: HealthContextSectionProps) {
-    const context = value ?? {};
+export function HealthContextSection({
+    value,
+    symptomsPresent,
+    onChange,
+}: HealthContextSectionProps) {
+    const context = normalizeHealthContext(value, symptomsPresent);
     const update = (patch: Partial<HealthContextCheckin>) => onChange({ ...context, ...patch });
     const symptoms = context.symptoms ?? { present: symptomsPresent };
 
@@ -80,12 +96,6 @@ export function HealthContextSection({ value, symptomsPresent, onChange }: Healt
                 ...patch,
             },
         });
-    };
-
-    const toggleContextFlag = (key: typeof CONTEXT_TOGGLES[number]['key']) => {
-        // Null is the explicit "answered/cleared" representation accepted by the persistence
-        // contract; unlike `undefined`, it is safe to send through Firestore merge writes.
-        update({ [key]: context[key] === true ? null : true });
     };
 
     const toggleSymptomType = (type: HealthSymptomType) => {
@@ -103,7 +113,7 @@ export function HealthContextSection({ value, symptomsPresent, onChange }: Healt
             <summary className="health-context__summary">
                 <span>
                     <strong>Anything unusual since yesterday?</strong>
-                    <small>Optional context that can explain recovery changes</small>
+                    <small>Symptoms and contextual flags default to No; alcohol to 0; travel to none.</small>
                 </span>
                 {unusual && <span className="health-context__badge">Context added</span>}
             </summary>
@@ -162,19 +172,27 @@ export function HealthContextSection({ value, symptomsPresent, onChange }: Healt
                     )}
                 </div>
 
-                <div className="health-context__toggle-grid" aria-label="Other unusual context">
-                    {CONTEXT_TOGGLES.map(item => (
-                        <button
-                            key={item.key}
-                            type="button"
-                            className={`health-context__toggle ${context[item.key] === true ? 'is-selected' : ''}`}
-                            aria-pressed={context[item.key] === true}
-                            onClick={() => toggleContextFlag(item.key)}
-                        >
-                            {item.label}
-                        </button>
-                    ))}
-                </div>
+                {CONTEXT_QUESTIONS.map(item => (
+                    <div className="health-context__row" key={item.key}>
+                        <span className="health-context__label">{item.label}</span>
+                        <div className="health-context__chips" role="group" aria-label={item.label}>
+                            {YES_NO_OPTIONS.map(option => {
+                                const selected = context[item.key] === option.value;
+                                return (
+                                    <button
+                                        key={String(option.value)}
+                                        type="button"
+                                        className={`health-context__chip ${selected ? 'is-selected' : ''}`}
+                                        aria-pressed={selected}
+                                        onClick={() => update({ [item.key]: option.value })}
+                                    >
+                                        {option.label}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </div>
+                ))}
 
                 <label className="health-context__other">
                     Other disruption (optional)

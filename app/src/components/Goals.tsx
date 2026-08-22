@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { goalService } from '../services/goalService';
 import type { UserGoal, GoalCategory, GoalDomain, GoalStatus, UserEvent } from '../engine/models';
 import { deriveGoalCategory, deriveEventPriority, getDaysToEvent, goalToUserEvent, evaluatePeriodizationPhase } from '../engine/periodization';
@@ -122,29 +122,36 @@ export function Goals({ userId }: GoalsProps) {
     }
   };
 
-  // Derive Periodization State directly from canonical engine output
-  const activeUserEvents = goals
+  // Memoize derived goal arrays and periodization state to avoid repeated O(N) work.
+  const activeUserEvents = useMemo(() => goals
     .filter(g => g.status === 'active')
     .map(goalToUserEvent)
-    .filter((e): e is UserEvent => e !== null);
+    .filter((e): e is UserEvent => e !== null), [goals]);
 
-  const periodizationResult = evaluatePeriodizationPhase(activeUserEvents, getLocalDateString());
+  // Keep date-dependent derivations tied to the current render date. Without `today` in the
+  // dependency list, a component that remains mounted across midnight can keep yesterday's
+  // periodization result until the active-event array changes.
+  const today = getLocalDateString();
+  const periodizationResult = useMemo(
+    () => evaluatePeriodizationPhase(activeUserEvents, today),
+    [activeUserEvents, today],
+  );
   const focusEvent = periodizationResult.focusEvent;
   const daysToFocusEvent = periodizationResult.daysToEvent;
   const currentPhaseName = periodizationResult.phase.phaseName;
 
-  const filteredGoals = goals.filter(goal => {
+  const filteredGoals = useMemo(() => goals.filter(goal => {
     if (filter === 'all') return true;
     if (filter === 'active') return goal.status === 'active';
     if (filter === 'archived') return goal.status === 'archived';
     return true;
-  });
+  }), [goals, filter]);
 
-  const goalsByCategory = filteredGoals.reduce((acc, goal) => {
+  const goalsByCategory = useMemo(() => filteredGoals.reduce((acc, goal) => {
     if (!acc[goal.category]) acc[goal.category] = [];
     acc[goal.category].push(goal);
     return acc;
-  }, {} as Record<GoalCategory, UserGoalWithId[]>);
+  }, {} as Record<GoalCategory, UserGoalWithId[]>), [filteredGoals]);
 
   const renderStars = (priority: number) => {
     return Array.from({ length: 5 }, (_, i) => (
@@ -224,7 +231,7 @@ export function Goals({ userId }: GoalsProps) {
                       {goal.eventCategory && goal.targetDate && (
                         <span className="event-badge">
                           🏁 {EVENT_CATEGORY_LABELS[goal.eventCategory]} · {(() => {
-                            const days = getDaysToEvent(goal.targetDate, getLocalDateString());
+                            const days = getDaysToEvent(goal.targetDate, today);
                             return days >= 0 ? `in ${days}d` : `${Math.abs(days)}d ago`;
                           })()}
                         </span>

@@ -23,6 +23,7 @@ describe('SubjectiveScaleRow', () => {
     expect(html).toContain('10 Exhausted');
     expect(html).toContain('4');
     expect(html).toContain('status-normal');
+    expect(html).toContain('data-answered="true"');
   });
 
   it('renders warning status for elevated inverted scale value', () => {
@@ -59,5 +60,26 @@ describe('SubjectiveScaleRow', () => {
     expect(html).toContain('min="1"');
     expect(html).toContain('max="10"');
     expect(html).toContain('status-normal');
+  });
+
+  it('keeps an unanswered midpoint visually and semantically distinct from a real 5/10', () => {
+    const html = renderToStaticMarkup(
+      <SubjectiveScaleRow
+        id="readiness"
+        label="Overall Readiness"
+        value={null}
+        lowLabel="1 Not ready"
+        highLabel="10 Fully ready"
+        onChange={() => {}}
+      />
+    );
+
+    expect(html).toContain('status-unanswered');
+    expect(html).toContain('data-answered="false"');
+    expect(html).toContain('not set');
+    expect(html).toContain('aria-valuetext="Not answered"');
+    // Range inputs still need a renderable thumb position, but 5 is not reported as an answer.
+    expect(html).toContain('value="5"');
+    expect(html).not.toContain('aria-valuenow="5"');
   });
 });

@@ -4,7 +4,7 @@ export interface SubjectiveScaleRowProps {
   id: string;
   label: string;
   desc?: string;
-  value: number;
+  value: number | null;
   lowLabel: string;
   highLabel: string;
   isInverted?: boolean;
@@ -21,20 +21,34 @@ export const SubjectiveScaleRow: React.FC<SubjectiveScaleRowProps> = ({
   isInverted = false,
   onChange,
 }) => {
-  // Severity-based accents: amber for warning, red for severe, neutral blue for normal/good
-  const isSevere = isInverted ? value >= 8 : value <= 3;
-  const isWarning = isInverted ? value >= 6 && value < 8 : value === 4;
-  const severityClass = isSevere ? 'status-severe' : isWarning ? 'status-warning' : 'status-normal';
+  const sliderValue = value ?? 5;
+  // An unanswered scale is deliberately distinct from a real midpoint score. The engine can
+  // still use its neutral fallback for a partial safety-only check-in, while subjective
+  // baseline history only matures from explicitly scored days.
+  const severityClass = value === null
+    ? 'status-unanswered'
+    : isInverted
+      ? value >= 8 ? 'status-severe' : value >= 6 ? 'status-warning' : 'status-normal'
+      : value <= 3 ? 'status-severe' : value === 4 ? 'status-warning' : 'status-normal';
 
   return (
-    <div className={`subjective-scale-row ${severityClass}`} data-scale={id}>
+    <div className={`subjective-scale-row ${severityClass}`} data-scale={id} data-answered={value !== null}>
       <div className="scale-row-header">
         <label htmlFor={`slider-${id}`} className="scale-row-label">
           {label}
         </label>
         <div className={`scale-row-value-badge ${severityClass}`} aria-live="polite">
-          <span className="scale-value-number">{value}</span>
-          <span className="scale-value-max">/10</span>
+          {value === null ? (
+            <>
+              <span className="scale-value-number">—</span>
+              <span className="scale-value-max">not set</span>
+            </>
+          ) : (
+            <>
+              <span className="scale-value-number">{value}</span>
+              <span className="scale-value-max">/10</span>
+            </>
+          )}
         </div>
       </div>
 
@@ -45,12 +59,18 @@ export const SubjectiveScaleRow: React.FC<SubjectiveScaleRowProps> = ({
           min="1"
           max="10"
           step="1"
-          value={value}
+          value={sliderValue}
+          onPointerDown={() => {
+            // Clicking the untouched midpoint should count as an explicit answer even when
+            // the thumb does not move and the browser therefore emits no change event.
+            if (value === null) onChange(sliderValue);
+          }}
           onChange={(e) => onChange(Number(e.target.value))}
           className={`subjective-slider ${severityClass}`}
           aria-valuemin={1}
           aria-valuemax={10}
-          aria-valuenow={value}
+          aria-valuenow={value ?? undefined}
+          aria-valuetext={value === null ? 'Not answered' : `${value} out of 10`}
           aria-label={label}
           aria-description={desc}
         />

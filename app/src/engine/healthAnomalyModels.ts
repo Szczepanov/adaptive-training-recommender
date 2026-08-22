@@ -201,6 +201,7 @@ export interface HealthAnomalyPersistenceInput {
     previousEpisodeId: string | null;
     previousEpisodeDay: number | null;
     previousAssessmentDate?: string | null;
+    /** Legacy name: this counter now preserves consecutive adverse core physiology even when context is strong. */
     unexplainedPersistenceDays: number;
 }
 
