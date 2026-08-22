@@ -140,10 +140,10 @@ class GarminAccountLinkHandler(BaseHTTPRequestHandler):
                 self._handle_mfa()
                 return
             self._json_response(HTTPStatus.NOT_FOUND, {"error": "not_found"})
-        except ValueError as exc:
-            self._json_response(HTTPStatus.BAD_REQUEST, {"error": str(exc)})
         except GarminLinkConflictError as exc:
             self._json_response(HTTPStatus.CONFLICT, {"error": str(exc)})
+        except ValueError as exc:
+            self._json_response(HTTPStatus.BAD_REQUEST, {"error": str(exc)})
         except GarminConnectTooManyRequestsError:
             self._json_response(
                 HTTPStatus.TOO_MANY_REQUESTS,
