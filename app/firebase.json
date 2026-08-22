@@ -8,6 +8,13 @@
     ],
     "rewrites": [
       {
+        "source": "/api/garmin/**",
+        "run": {
+          "serviceId": "garmin-account-link",
+          "region": "europe-central2"
+        }
+      },
+      {
         "source": "**",
         "destination": "/index.html"
       }
