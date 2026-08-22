@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { HealthContextSection } from './HealthContextSection';
 
 describe('HealthContextSection', () => {
-    it('renders a compact optional prompt without duplicating training, sleep, or stress questions', () => {
+    it('renders the requested default health context without duplicating training, sleep, or stress questions', () => {
         const html = renderToStaticMarkup(
             <HealthContextSection value={undefined} symptomsPresent={false} onChange={() => {}} />,
         );
@@ -13,14 +13,21 @@ describe('HealthContextSection', () => {
         expect(html).toContain('Travel / jet lag');
         expect(html).toContain('Heat / sauna');
         expect(html).toContain('Dehydration / fluid loss');
+        expect(html).toContain('Vaccination');
+        expect(html).toContain('Medication change');
         expect(html).toContain('Close sick contact');
+        expect(html).toContain('RHR higher than usual?');
+        expect(html).toContain('HRV lower than usual?');
+        expect(html).toContain('Respiration higher than usual?');
+        expect(html).toMatch(/<button[^>]*aria-pressed="true"[^>]*>None<\/button>/);
+        expect(html).toMatch(/aria-label="Travel disruption"[\s\S]*?<button[^>]*aria-pressed="true"[^>]*>No<\/button>/);
         expect(html).not.toContain('Hard training');
         expect(html).not.toContain('Poor sleep');
         expect(html).not.toContain('High stress');
         expect(html).not.toContain('health-context__symptoms');
     });
 
-    it('renders close sick contact as explicit yes/no choices while preserving unanswered state', () => {
+    it('renders contextual booleans as explicit unknown/no/yes tri-state choices', () => {
         const unanswered = renderToStaticMarkup(
             <HealthContextSection value={{}} symptomsPresent={false} onChange={() => {}} />,
         );
@@ -31,11 +38,30 @@ describe('HealthContextSection', () => {
             <HealthContextSection value={{ closeSickContact: true }} symptomsPresent={false} onChange={() => {}} />,
         );
 
-        expect(unanswered).toContain('aria-label="Close sick contact"');
-        expect(unanswered).toMatch(/<button[^>]*aria-pressed="false"[^>]*>No<\/button>/);
-        expect(unanswered).toMatch(/<button[^>]*aria-pressed="false"[^>]*>Yes<\/button>/);
-        expect(answeredNo).toMatch(/<button[^>]*aria-pressed="true"[^>]*>No<\/button>/);
-        expect(answeredYes).toMatch(/<button[^>]*aria-pressed="true"[^>]*>Yes<\/button>/);
+        expect(unanswered).toMatch(/aria-label="Close sick contact"[\s\S]*?<button[^>]*aria-pressed="true"[^>]*>Unknown<\/button>/);
+        expect(answeredNo).toMatch(/aria-label="Close sick contact"[\s\S]*?<button[^>]*aria-pressed="true"[^>]*>No<\/button>/);
+        expect(answeredYes).toMatch(/aria-label="Close sick contact"[\s\S]*?<button[^>]*aria-pressed="true"[^>]*>Yes<\/button>/);
+    });
+
+    it('keeps manual RHR, HRV, and respiration changes unknown until explicitly answered', () => {
+        const unanswered = renderToStaticMarkup(
+            <HealthContextSection value={{}} symptomsPresent={false} onChange={() => {}} />,
+        );
+        const changed = renderToStaticMarkup(
+            <HealthContextSection
+                value={{ subjectiveRhrHigher: true, subjectiveHrvLower: true, subjectiveRespirationHigher: false }}
+                symptomsPresent={false}
+                onChange={() => {}}
+            />,
+        );
+
+        expect(unanswered).toMatch(/aria-label="RHR higher than usual\?"[\s\S]*?<button[^>]*aria-pressed="true"[^>]*>Unknown<\/button>/);
+        expect(unanswered).toMatch(/aria-label="HRV lower than usual\?"[\s\S]*?<button[^>]*aria-pressed="true"[^>]*>Unknown<\/button>/);
+        expect(unanswered).toMatch(/aria-label="Respiration higher than usual\?"[\s\S]*?<button[^>]*aria-pressed="true"[^>]*>Unknown<\/button>/);
+        expect(changed).toContain('Context added');
+        expect(changed).toMatch(/aria-label="RHR higher than usual\?"[\s\S]*?<button[^>]*aria-pressed="true"[^>]*>Yes<\/button>/);
+        expect(changed).toMatch(/aria-label="HRV lower than usual\?"[\s\S]*?<button[^>]*aria-pressed="true"[^>]*>Yes<\/button>/);
+        expect(changed).toMatch(/aria-label="Respiration higher than usual\?"[\s\S]*?<button[^>]*aria-pressed="true"[^>]*>No<\/button>/);
     });
 
     it('shows selected context and a time-zone input when a shift is reported', () => {
