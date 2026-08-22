@@ -13,10 +13,29 @@ describe('HealthContextSection', () => {
         expect(html).toContain('Travel / jet lag');
         expect(html).toContain('Heat / sauna');
         expect(html).toContain('Dehydration / fluid loss');
+        expect(html).toContain('Close sick contact');
         expect(html).not.toContain('Hard training');
         expect(html).not.toContain('Poor sleep');
         expect(html).not.toContain('High stress');
         expect(html).not.toContain('health-context__symptoms');
+    });
+
+    it('renders close sick contact as explicit yes/no choices while preserving unanswered state', () => {
+        const unanswered = renderToStaticMarkup(
+            <HealthContextSection value={{}} symptomsPresent={false} onChange={() => {}} />,
+        );
+        const answeredNo = renderToStaticMarkup(
+            <HealthContextSection value={{ closeSickContact: false }} symptomsPresent={false} onChange={() => {}} />,
+        );
+        const answeredYes = renderToStaticMarkup(
+            <HealthContextSection value={{ closeSickContact: true }} symptomsPresent={false} onChange={() => {}} />,
+        );
+
+        expect(unanswered).toContain('aria-label="Close sick contact"');
+        expect(unanswered).toMatch(/<button[^>]*aria-pressed="false"[^>]*>No<\/button>/);
+        expect(unanswered).toMatch(/<button[^>]*aria-pressed="false"[^>]*>Yes<\/button>/);
+        expect(answeredNo).toMatch(/<button[^>]*aria-pressed="true"[^>]*>No<\/button>/);
+        expect(answeredYes).toMatch(/<button[^>]*aria-pressed="true"[^>]*>Yes<\/button>/);
     });
 
     it('shows selected context and a time-zone input when a shift is reported', () => {
