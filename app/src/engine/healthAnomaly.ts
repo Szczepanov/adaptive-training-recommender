@@ -327,6 +327,21 @@ function deriveSupportingSignals(input: HealthAnomalyInput): SupportingSignalEvi
             status: health?.closeSickContact === true ? 'supportive' : health?.closeSickContact === false ? 'normal' : 'unavailable',
             value: health?.closeSickContact ?? null,
         },
+        {
+            code: 'SUBJECTIVE_RHR_HIGHER',
+            status: health?.subjectiveRhrHigher === true ? 'supportive' : health?.subjectiveRhrHigher === false ? 'normal' : 'unavailable',
+            value: health?.subjectiveRhrHigher ?? null,
+        },
+        {
+            code: 'SUBJECTIVE_HRV_LOWER',
+            status: health?.subjectiveHrvLower === true ? 'supportive' : health?.subjectiveHrvLower === false ? 'normal' : 'unavailable',
+            value: health?.subjectiveHrvLower ?? null,
+        },
+        {
+            code: 'SUBJECTIVE_RESPIRATION_HIGHER',
+            status: health?.subjectiveRespirationHigher === true ? 'supportive' : health?.subjectiveRespirationHigher === false ? 'normal' : 'unavailable',
+            value: health?.subjectiveRespirationHigher ?? null,
+        },
     ];
     const byCode = new Map<string, SupportingSignalEvidence>();
     for (const signal of derived) byCode.set(signal.code, signal);
