@@ -8,15 +8,20 @@ interface HealthRunYogaPresetSectionProps {
   onApplied: () => Promise<void>;
 }
 
+type PresetMessage = {
+  text: string;
+  failed: boolean;
+};
+
 export function HealthRunYogaPresetSection({ userId, onApplied }: HealthRunYogaPresetSectionProps) {
   const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
+  const [message, setMessage] = useState<PresetMessage | null>(null);
 
   const applyPreset = async () => {
     setSaving(true);
     setMessage(null);
     try {
-      await Promise.all([
+      const results = await Promise.allSettled([
         preferencesService.upsertPreferences(userId, {
           preferredRecoveryStyle: 'mixed',
           defaultWeekdayTimeMin: 40,
@@ -36,10 +41,35 @@ export function HealthRunYogaPresetSection({ userId, onApplied }: HealthRunYogaP
           schemaVersion: 1,
         }),
       ]);
-      await onApplied();
-      setMessage('Health + Running + Yoga preset applied. Review and save any further edits below.');
+
+      const fulfilledCount = results.filter((result) => result.status === 'fulfilled').length;
+      const rejected = results.find((result) => result.status === 'rejected');
+
+      if (fulfilledCount > 0) {
+        await onApplied();
+      }
+
+      if (rejected) {
+        const detail = getErrorMessage(rejected.reason) || 'One preset save failed.';
+        setMessage({
+          text:
+            fulfilledCount > 0
+              ? `The preset was only partly applied: ${detail} Reapply it to complete setup.`
+              : detail,
+          failed: true,
+        });
+        return;
+      }
+
+      setMessage({
+        text: 'Health + Running + Yoga preset applied. Review and save any further edits below.',
+        failed: false,
+      });
     } catch (error: unknown) {
-      setMessage(getErrorMessage(error) || 'Failed to apply preset.');
+      setMessage({
+        text: getErrorMessage(error) || 'Failed to apply preset.',
+        failed: true,
+      });
     } finally {
       setSaving(false);
     }
@@ -56,7 +86,14 @@ export function HealthRunYogaPresetSection({ userId, onApplied }: HealthRunYogaP
       <button type="button" className="login-btn" onClick={applyPreset} disabled={saving}>
         {saving ? 'Applying...' : 'Apply Health + Running + Yoga'}
       </button>
-      {message && <p className="preference-desc" role="status">{message}</p>}
+      {message && (
+        <p
+          className={message.failed ? 'error-message' : 'preference-desc'}
+          role={message.failed ? 'alert' : 'status'}
+        >
+          {message.text}
+        </p>
+      )}
     </section>
   );
 }
