@@ -205,13 +205,11 @@ function isAdverseEvidence(evidence: CoreSignalEvidence): boolean {
     return evidence.direction === 'high';
 }
 
-function hasHardTraining(snapshot: HealthAnomalyInput['recoverySnapshot']): boolean {
-    const raw = snapshot?.raw;
-    return !!raw && (
-        (raw.yesterdayTraining?.hardActivityCount ?? 0) > 0
-        || raw.yesterdayTraining?.primaryActivity?.intensityTag === 'hard'
-        || (raw.todayTraining?.hardActivityCount ?? 0) > 0
-        || raw.todayTraining?.primaryActivity?.intensityTag === 'hard'
+function hasPriorHardTraining(snapshot: HealthAnomalyInput['recoverySnapshot']): boolean {
+    const yesterday = snapshot?.raw.yesterdayTraining;
+    return !!yesterday && (
+        (yesterday.hardActivityCount ?? 0) > 0
+        || yesterday.primaryActivity?.intensityTag === 'hard'
     );
 }
 
@@ -230,13 +228,14 @@ function resolveExplanations(input: HealthAnomalyInput): ContextExplanation[] {
     const snapshot = input.recoverySnapshot;
     const checkin = input.subjectiveCheckin;
     const health = checkin?.healthContext;
-    const immediateHardTraining = hasHardTraining(snapshot);
+    const priorHardTraining = hasPriorHardTraining(snapshot);
 
-    if (immediateHardTraining) {
-        addExplanation(explanations, 'hard_training', 'strong', ['rhr', 'hrv'], ['RECENT_HARD_SESSION']);
-        addExplanation(explanations, 'hard_training', 'weak', ['respiration'], ['RECENT_HARD_SESSION']);
-    } else if (input.last3DaysHardSessionsCount > 0) {
-        addExplanation(explanations, 'hard_training', 'moderate', ['rhr', 'hrv'], ['HARD_SESSION_WITHIN_3D']);
+    // Morning RHR/HRV/respiration precede any activity performed later today. Do not use
+    // todayTraining, or an aggregate whose temporal membership is not explicit, to explain
+    // those measurements after a later Garmin re-sync.
+    if (priorHardTraining) {
+        addExplanation(explanations, 'hard_training', 'strong', ['rhr', 'hrv'], ['YESTERDAY_HARD_SESSION']);
+        addExplanation(explanations, 'hard_training', 'weak', ['respiration'], ['YESTERDAY_HARD_SESSION']);
     }
 
     const objectivePoorSleep = (snapshot?.raw.sleepScore ?? 100) < 60
@@ -297,26 +296,10 @@ function resolveExplanations(input: HealthAnomalyInput): ContextExplanation[] {
     return explanations;
 }
 
-function manualSupport(
-    value: boolean | null | undefined,
-    objectiveAvailable: boolean,
-): Pick<SupportingSignalEvidence, 'status' | 'value'> {
-    // Manual comparison is a fallback only. If the corresponding objective signal is present,
-    // the manual answer is deliberately suppressed rather than double-counted.
-    if (objectiveAvailable) return { status: 'unavailable', value: null };
-    return {
-        status: value === true ? 'supportive' : value === false ? 'normal' : 'unavailable',
-        value: value ?? null,
-    };
-}
-
 function deriveSupportingSignals(input: HealthAnomalyInput): SupportingSignalEvidence[] {
     const snapshot = input.recoverySnapshot;
     const checkin = input.subjectiveCheckin;
     const health = checkin?.healthContext;
-    const rhrManual = manualSupport(health?.manualRhrHigher, snapshot?.raw.restingHr != null);
-    const hrvManual = manualSupport(health?.manualHrvLower, snapshot?.raw.hrvOvernightAvg != null);
-    const respirationManual = manualSupport(health?.manualRespirationHigher, snapshot?.raw.respirationAvg != null);
     const derived: SupportingSignalEvidence[] = [
         {
             code: 'GARMIN_SLEEP_SCORE',
@@ -343,9 +326,6 @@ function deriveSupportingSignals(input: HealthAnomalyInput): SupportingSignalEvi
             status: health?.closeSickContact === true ? 'supportive' : health?.closeSickContact === false ? 'normal' : 'unavailable',
             value: health?.closeSickContact ?? null,
         },
-        { code: 'MANUAL_RHR_HIGHER', ...rhrManual },
-        { code: 'MANUAL_HRV_LOWER', ...hrvManual },
-        { code: 'MANUAL_RESPIRATION_HIGHER', ...respirationManual },
     ];
     const byCode = new Map<string, SupportingSignalEvidence>();
     for (const signal of derived) byCode.set(signal.code, signal);
@@ -435,8 +415,9 @@ function rationaleFacts(
 
 /**
  * HA3 pure evaluator. Supporting Garmin composites never increase evidence level or satisfy the
- * multi-signal requirement; only adverse core channels can do that. Context explains observed
- * physiology but never deletes it from the trace.
+ * multi-signal requirement; only adverse core channels can do that. Context qualifies the
+ * interpretation of observed physiology but never deletes the abnormal measurement or resets
+ * its consecutive physiological persistence.
  */
 export function evaluatePhysiologicalAnomaly(
     input: HealthAnomalyInput,
@@ -461,12 +442,12 @@ export function evaluatePhysiologicalAnomaly(
     const symptomsReported = input.subjectiveCheckin?.healthContext?.symptoms?.present === true
         || input.subjectiveCheckin?.illnessSymptoms === true;
     const priorDaysAreContiguous = isAdjacentDate(input.persistence.previousAssessmentDate, input.date);
-    const priorUnexplainedDays = priorDaysAreContiguous
+    const priorAdverseDays = priorDaysAreContiguous
         && Number.isFinite(input.persistence.unexplainedPersistenceDays)
         ? Math.max(0, Math.floor(input.persistence.unexplainedPersistenceDays))
         : 0;
-    const persistenceDays = unexplained.length > 0
-        ? priorUnexplainedDays + 1
+    const persistenceDays = adverseAnomalies.length > 0
+        ? priorAdverseDays + 1
         : 0;
 
     let state: PhysiologicalAnomalyAssessment['state'];
