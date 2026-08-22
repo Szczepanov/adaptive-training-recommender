@@ -225,8 +225,8 @@ def test_relink_commit_failure_preserves_active_token(
         def uid_for_identity(self, _identity_digest: str) -> None:
             return None
 
-        def assert_target_available(self, _uid: str, _identity_digest: str) -> str:
-            return "garmin/users/existing-uid/garmin_tokens-original.json"
+        def assert_target_available(self, _uid: str, _identity_digest: str) -> None:
+            return None
 
         def commit_link(
             self,
@@ -234,7 +234,10 @@ def test_relink_commit_failure_preserves_active_token(
             _identity_digest: str,
             _identity_kind: str,
             _token_object: str,
-        ) -> None:
+        ) -> str | None:
+            # A concurrent commit could have already replaced this uid's active token by
+            # the time this one is attempted; commit_link() itself still fails the link,
+            # so its (unused, since it raises) previous-token value never matters here.
             raise account_link_module.GarminLinkConflictError("conflicting link")
 
     class TokenStore:
@@ -282,14 +285,15 @@ def test_successful_relink_deletes_superseded_token(
     tmp_path: Path,
 ) -> None:
     """A successful relink commits the new staged token and only then removes the
-    now-superseded previous one."""
+    now-superseded previous one, using the value commit_link() itself just overwrote
+    (read atomically inside its transaction) rather than a pre-transaction snapshot."""
 
     class Repository:
         def uid_for_identity(self, _identity_digest: str) -> None:
             return None
 
-        def assert_target_available(self, _uid: str, _identity_digest: str) -> str:
-            return "garmin/users/existing-uid/garmin_tokens-original.json"
+        def assert_target_available(self, _uid: str, _identity_digest: str) -> None:
+            return None
 
         def commit_link(
             self,
@@ -297,8 +301,8 @@ def test_successful_relink_deletes_superseded_token(
             _identity_digest: str,
             _identity_kind: str,
             _token_object: str,
-        ) -> None:
-            return None
+        ) -> str | None:
+            return "garmin/users/existing-uid/garmin_tokens-original.json"
 
     class TokenStore:
         def __init__(self, _bucket: str, _object_name: str) -> None:
@@ -419,3 +423,78 @@ def test_custom_token_failure_after_commit_keeps_new_user_for_retry(
 
     assert repository.committed is True
     assert deleted_uids == []
+
+
+class _Snapshot:
+    def __init__(self, data: dict[str, Any] | None) -> None:
+        self._data = data
+        self.exists = data is not None
+
+    def to_dict(self) -> dict[str, Any] | None:
+        return dict(self._data) if self._data is not None else None
+
+
+class _Document:
+    def __init__(self, data: dict[str, Any] | None = None) -> None:
+        self.data = data
+
+    def get(self, transaction: Any = None) -> _Snapshot:
+        return _Snapshot(self.data)
+
+
+class _Collection:
+    def __init__(self) -> None:
+        self._documents: dict[str, _Document] = {}
+
+    def document(self, doc_id: str) -> _Document:
+        return self._documents.setdefault(doc_id, _Document())
+
+
+class _Transaction:
+    def set(self, doc_ref: _Document, payload: dict[str, Any], merge: bool = True) -> None:
+        assert merge is True
+        doc_ref.data = {**(doc_ref.data or {}), **payload}
+
+
+class _Db:
+    def __init__(self) -> None:
+        self._collections: dict[str, _Collection] = {}
+
+    def collection(self, name: str) -> _Collection:
+        return self._collections.setdefault(name, _Collection())
+
+    def transaction(self) -> _Transaction:
+        return _Transaction()
+
+
+def test_commit_link_returns_exactly_the_tokenObject_it_overwrote(monkeypatch: Any) -> None:
+    """Regression for a relink cleanup race: previous_token_object must come from inside
+    commit_link()'s own transaction, not a separate pre-transaction read, or a second
+    concurrent relink can delete a token a sibling commit just wrote instead of the one
+    it actually superseded -- leaking the sibling's staged object forever.
+
+    The fake transaction here runs the decorated body directly (no real retry machinery),
+    but that's enough: it proves each commit's returned "previous" value is read from
+    Firestore state at that exact commit, so sequential commits for the same uid chain
+    correctly regardless of how many callers are really racing.
+    """
+    monkeypatch.setattr(account_link_module.google_firestore, "transactional", lambda fn: fn)
+    db = _Db()
+    repository = account_link_module.GarminConnectionRepository(db=db)
+
+    first_previous = repository.commit_link(
+        "uid-1", "digest-1", "garmin_guid", "garmin/users/uid-1/garmin_tokens-aaa.json"
+    )
+    second_previous = repository.commit_link(
+        "uid-1", "digest-1", "garmin_guid", "garmin/users/uid-1/garmin_tokens-bbb.json"
+    )
+    third_previous = repository.commit_link(
+        "uid-1", "digest-1", "garmin_guid", "garmin/users/uid-1/garmin_tokens-ccc.json"
+    )
+
+    assert first_previous is None  # nothing committed yet for this uid
+    assert second_previous == "garmin/users/uid-1/garmin_tokens-aaa.json"
+    assert third_previous == "garmin/users/uid-1/garmin_tokens-bbb.json"
+    connection = db.collection("garminConnections").document("uid-1").data
+    assert connection is not None
+    assert connection["tokenObject"] == "garmin/users/uid-1/garmin_tokens-ccc.json"
