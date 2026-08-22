@@ -32,9 +32,7 @@ class FakeGarmin:
     def login(self, _token_path: str) -> tuple[str | None, None]:
         return ("needs_mfa", None) if self.needs_mfa else (None, None)
 
-    def resume_login(
-        self, _client_state: dict[str, Any], code: str
-    ) -> tuple[None, None]:
+    def resume_login(self, _client_state: dict[str, Any], code: str) -> tuple[None, None]:
         self.resumed_codes.append(code)
         return None, None
 
