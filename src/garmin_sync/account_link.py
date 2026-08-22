@@ -124,7 +124,7 @@ class GarminConnectionRepository:
         identity_ref = self.db.collection("garminIdentities").document(identity_digest)
         connection_ref = self.db.collection("garminConnections").document(uid)
         transaction = self.db.transaction()
-        now_iso = google_firestore.SERVER_TIMESTAMP
+        server_timestamp = google_firestore.SERVER_TIMESTAMP
 
         @google_firestore.transactional
         def commit(transaction_obj: Any) -> None:
@@ -155,8 +155,8 @@ class GarminConnectionRepository:
                 {
                     "userId": uid,
                     "identityKind": identity_kind,
-                    "linkedAt": now_iso,
-                    "updatedAt": now_iso,
+                    "linkedAt": server_timestamp,
+                    "updatedAt": server_timestamp,
                 },
                 merge=True,
             )
@@ -169,8 +169,8 @@ class GarminConnectionRepository:
                     "identityKind": identity_kind,
                     "tokenObject": token_object,
                     "source": "garmin-connect-unofficial",
-                    "linkedAt": now_iso,
-                    "updatedAt": now_iso,
+                    "linkedAt": server_timestamp,
+                    "updatedAt": server_timestamp,
                 },
                 merge=True,
             )
@@ -307,6 +307,7 @@ class GarminAccountLinkService:
         requested_uid: str | None,
     ) -> dict[str, Any]:
         created_uid: str | None = None
+        link_committed = False
         try:
             identity_kind, identity_digest = _garmin_identity(api)
             mapped_uid = self.repository.uid_for_identity(identity_digest)
@@ -338,6 +339,7 @@ class GarminAccountLinkService:
                 identity_kind,
                 token_object,
             )
+            link_committed = True
             custom_token = firebase_auth.create_custom_token(target_uid)
             custom_token_text = (
                 custom_token.decode("utf-8")
@@ -350,7 +352,10 @@ class GarminAccountLinkService:
                 "isNewUser": is_new_user,
             }
         except Exception:
-            if created_uid:
+            # Before the mapping commits, a just-created Firebase user is safe to roll back.
+            # After commit, keep the user/mapping intact: a transient custom-token signing
+            # failure must be retryable, not leave garminConnections pointing at a deleted UID.
+            if created_uid and not link_committed:
                 try:
                     firebase_auth.delete_user(created_uid)
                 except Exception:
