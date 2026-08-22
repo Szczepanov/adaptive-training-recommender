@@ -153,12 +153,16 @@ gcloud iam service-accounts add-iam-policy-binding "${DEPLOYER_SA_EMAIL}" \
 echo "==> Creating github-frontend-deployer"
 if ! gcloud iam service-accounts describe "${FRONTEND_DEPLOYER_SA_EMAIL}" >/dev/null 2>&1; then
   gcloud iam service-accounts create "${FRONTEND_DEPLOYER_SA_NAME}" \
-    --display-name="GitHub Actions frontend/rules deploy identity (WIF, no key)"
+    --display-name="GitHub Actions frontend/rules/index deploy identity (WIF, no key)"
 fi
 
+# datastore.indexAdmin is the predefined least-privilege role for creating, updating,
+# listing and deleting Firestore indexes. The index workflow itself deliberately omits
+# --force, so it never opts into destructive removal of remote-only indexes automatically.
 for ROLE in \
   roles/firebasehosting.admin \
   roles/firebaserules.admin \
+  roles/datastore.indexAdmin \
   roles/serviceusage.serviceUsageConsumer \
 ; do
   gcloud projects add-iam-policy-binding "${GCP_PROJECT}" \
@@ -185,7 +189,7 @@ Setup complete. Add these GitHub repository secrets:
 Garmin usernames, passwords, MFA secrets and APP_USER_IDS are intentionally NOT
 GitHub secrets anymore. Users establish their own Garmin link from the web app.
 
-For "Deploy Frontend & Firestore Rules" also configure the Firebase web app values:
+For Firebase Hosting/Rules also configure the Firebase web app values:
 
   VITE_FIREBASE_API_KEY
   VITE_FIREBASE_AUTH_DOMAIN
@@ -194,7 +198,9 @@ For "Deploy Frontend & Firestore Rules" also configure the Firebase web app valu
   VITE_FIREBASE_MESSAGING_SENDER_ID
   VITE_FIREBASE_APP_ID
   VITE_FIREBASE_MEASUREMENT_ID (optional)
+  VITE_HEALTH_ANOMALY_POLICY (optional; defaults fail-closed to off)
 
-Then run "Deploy Garmin Sync" followed by "Deploy Frontend & Firestore Rules".
+Recommended production path: run "Deploy Production E2E" from main. The standalone
+Garmin, Firestore-index and Frontend/Rules workflows remain available for targeted recovery.
 ==============================================================================
 EOF
