@@ -40,6 +40,15 @@ function availableData<T>(state: DataState<T>): T | null {
     return state.status === 'AVAILABLE' ? state.data : null;
 }
 
+function hasAdverseCorePhysiology(assessment: PhysiologicalAnomalyAssessment): boolean {
+    return assessment.coreSignals.some(evidence => {
+        const anomalous = evidence.status === 'moderate_anomaly' || evidence.status === 'strong_anomaly';
+        if (!anomalous) return false;
+        if (evidence.signal === 'hrv') return evidence.direction === 'low';
+        return evidence.direction === 'high';
+    });
+}
+
 /**
  * Keep the parser/store revision when available for debugging, but bind the immutable HA
  * identity to the exact canonical content as well. A corrected/rebuilt document therefore
@@ -127,7 +136,10 @@ export class HealthAnomalyService {
                 previousEpisodeId: previousAssessment?.assessment.episodeId ?? null,
                 previousEpisodeDay: previousAssessment?.assessment.episodeDay ?? null,
                 previousAssessmentDate: previousAssessment?.date ?? null,
-                unexplainedPersistenceDays: previousAssessment && previousAssessment.assessment.unexplainedEvidence.length > 0
+                // Preserve consecutive abnormal physiology even when the prior day had a
+                // strong competing explanation. Context may qualify interpretation, but it
+                // must not reset the physiological trace.
+                unexplainedPersistenceDays: previousAssessment && hasAdverseCorePhysiology(previousAssessment.assessment)
                     ? previousAssessment.assessment.persistenceDays
                     : 0,
             },
