@@ -1,109 +1,92 @@
-# Frontend & Firestore Rules Deployment (GitHub Actions)
+# Frontend, Firestore Rules & Indexes Deployment (GitHub Actions)
 
-Deploys the web app (`app/`) to Firebase Hosting and/or `app/firestore.rules` to Cloud
-Firestore, entirely from the GitHub web UI -- no local machine or `gcloud`/`firebase` CLI
-needed. This is the **`Deploy Frontend & Firestore Rules`** workflow
-(`.github/workflows/deploy-frontend.yml`), triggered as `workflow_dispatch` (works fine from a
-phone/tablet browser).
+For ordinary production promotion use **Deploy Production E2E** and follow
+[`production-deployment.md`](./production-deployment.md). It validates and promotes one `main`
+Git SHA in dependency order: Garmin backend -> Firestore indexes -> Firestore rules ->
+Firebase Hosting.
 
-It authenticates the same way `deploy-garmin-sync.yml` does -- **Workload Identity
-Federation**: no service-account JSON key is ever stored as a secret, only a provider resource
-name and a service-account email GitHub proves it's allowed to impersonate for that one run.
+The component workflows documented here remain available for targeted recovery or deliberately
+scoped deployments:
 
-Firestore **indexes** are out of scope here, same as the local `npm run firestore:rules:deploy`
-procedure this mirrors -- use `make deploy-indexes` locally for those (rare enough not to need
-its own CI path yet).
+- **Deploy Frontend & Firestore Rules** (`.github/workflows/deploy-frontend.yml`)
+- **Deploy Firestore Indexes** (`.github/workflows/deploy-firestore-indexes.yml`)
 
-## Design: a separate identity from garmin-sync's
+Both authenticate with **Workload Identity Federation**. No service-account JSON key is stored
+in GitHub.
 
-`github-deployer` (used by `deploy-garmin-sync.yml`) and `github-frontend-deployer` (used
-here) are two different service accounts, both provisioned by the same one-time
-`docs/ops/setup-workload-identity.sh`, both trusting the same Workload Identity Pool/Provider
-(restricted to this repo's `main` branch -- a run from any other branch or a fork can't
-authenticate as either at all). `github-frontend-deployer` only ever holds
-`roles/firebasehosting.admin` and `roles/firebaserules.admin` -- nothing about Cloud Run,
-Artifact Registry, Cloud Scheduler, or general Firestore data/index access. A workflow file
-compromised or added later in this repo therefore can't use it to reach garmin-sync's
-infrastructure, or vice versa: each identity can only touch the one surface it's scoped to.
+## Deployment identities
 
-## One-time setup
+`github-deployer` is reserved for Garmin Cloud Run, Artifact Registry and Cloud Scheduler.
+`github-frontend-deployer` is separate and is limited to the Firebase/Firestore deployment
+surface used here:
 
-If you've already run `docs/ops/setup-workload-identity.sh` for `deploy-garmin-sync.yml`,
-rerun it (idempotent -- it only fills in what's missing, including the new
-`github-frontend-deployer` identity this workflow needs):
+- `roles/firebasehosting.admin`
+- `roles/firebaserules.admin`
+- `roles/datastore.indexAdmin`
+- `roles/serviceusage.serviceUsageConsumer`
+
+Both identities trust the same WIF provider, whose condition is restricted to this repository's
+`main` branch. A feature branch or fork cannot authenticate as either deployment identity.
+
+After the E2E/index pipeline is merged, rerun the idempotent setup script once so the existing
+frontend deployer receives its Firestore index role:
 
 ```bash
-export GCP_PROJECT=adaptive-training-recommender   # your Firebase/GCP project id
-export GITHUB_REPO=OWNER/REPO                       # e.g. Szczepanov/adaptive-training-recommender
+export GCP_PROJECT=adaptive-training-recommender
+export GITHUB_REPO=Szczepanov/adaptive-training-recommender
 bash docs/ops/setup-workload-identity.sh
 ```
 
-Add the printed `GCP_FRONTEND_DEPLOYER_SA_EMAIL` as a repo secret (alongside
-`GCP_PROJECT_ID` and `GCP_WORKLOAD_IDENTITY_PROVIDER`, already added if you set up
-`deploy-garmin-sync.yml` -- both workflows share those two).
+The script prints the required repository secrets. Hosting builds also need the production
+Firebase web config (`VITE_FIREBASE_*`). Those values are client configuration embedded in the
+bundle, not a service-account credential. `VITE_HEALTH_ANOMALY_POLICY` is optional and fails
+closed to `off` when absent.
 
-You also need your **production Firebase web app config** as repo secrets -- this is the
-public client-side config embedded in the built bundle (not a credential), found in the
-Firebase console under Project settings -> General -> Your apps:
+## Frontend and Firestore rules
 
-| Secret | Value |
-|---|---|
-| `VITE_FIREBASE_API_KEY` | from the Firebase console |
-| `VITE_FIREBASE_AUTH_DOMAIN` | from the Firebase console |
-| `VITE_FIREBASE_PROJECT_ID` | from the Firebase console |
-| `VITE_FIREBASE_STORAGE_BUCKET` | from the Firebase console |
-| `VITE_FIREBASE_MESSAGING_SENDER_ID` | from the Firebase console |
-| `VITE_FIREBASE_APP_ID` | from the Firebase console |
-| `VITE_FIREBASE_MEASUREMENT_ID` | optional, only if you use Analytics |
+Run **Deploy Frontend & Firestore Rules** when you intentionally need only Hosting, only rules,
+or both. Its inputs are:
 
-These are the same values your local `.env` (gitignored) already has, if you've deployed the
-frontend from a local machine before.
+- `deploy_hosting` — runs the production frontend build and deploys Firebase Hosting.
+- `deploy_rules` — runs the Firestore rules safety/deployment flow.
+- `confirm_rules_drift` — defaults to `false`; set it only after reviewing an intentional
+  production-vs-repository rules mismatch.
 
-## Deploy
+The rules path remains fail-closed by default. With no acknowledgement, unexpected production
+drift stops the run before changing rules. With `confirm_rules_drift: true`, only that expected
+pre-deployment mismatch is acknowledged; the deployment script still saves rollback metadata,
+runs the mandatory Firestore emulator suite, deploys only rules, and verifies the deployed
+source hash against `app/firestore.rules`.
 
-Run the **Deploy Frontend & Firestore Rules** workflow (Actions tab -> select it -> Run
-workflow). It has three inputs:
+Hosting deploys are followed by two smoke checks: the Firebase Hosting root must be reachable,
+and the `/api/garmin/**` Hosting rewrite must reach the Cloud Run account-link backend. The
+rewrite probe uses a credential-free unsupported GET path and expects the backend's JSON 404,
+so it does not submit Garmin credentials or consume a login-rate-limit attempt.
 
-* `deploy_hosting` -- runs `npm run build` (which runs the full `npm run check`: typecheck,
-  lint, unit tests, workout-catalog validation -- never deploys a build that hasn't passed
-  those) then `firebase deploy --only hosting`.
-* `deploy_rules` -- runs the Firestore rules safety/deployment flow.
-* `confirm_rules_drift` -- defaults to `false`. Leave it off for ordinary runs. If the
-  deployed production rules differ from `app/firestore.rules`, the run stops before changing
-  production. Turn it on only after reviewing the mismatch and intentionally choosing the
-  repository version as the next production ruleset.
+For a normal release, do not run Hosting before new backend/index/rules dependencies are ready;
+use **Deploy Production E2E**, which always cuts Hosting last.
 
-For an intentional rules change, `confirm_rules_drift: true` acknowledges only the expected
-pre-deployment mismatch. It does **not** bypass the rest of the safety flow: the existing
-rules deployment script still saves the active ruleset for rollback, runs the mandatory
-Firestore emulator tests, deploys only `firestore:rules`, reads production back, and fails if
-the deployed source hash does not exactly match `app/firestore.rules`.
+## Firestore indexes
 
-This gives a phone-only recovery path for legitimate drift without weakening the default:
+Run **Deploy Firestore Indexes** for an index-only production change. It deploys
+`app/firestore.indexes.json` and then waits for composite-index construction to finish.
 
-1. Run with `deploy_rules: true` and `confirm_rules_drift: false` first.
-2. If the drift gate fails, review the production-vs-repository difference in Firebase/GitHub.
-3. If the repository version is the intended reviewed version, rerun with
-   `confirm_rules_drift: true`.
+The Firebase CLI can return while index construction is still asynchronous, so the workflow
+polls Firestore until no composite index is `CREATING`. `NEEDS_REPAIR` fails immediately and a
+20-minute readiness timeout also fails the run.
 
-Turn either deployment target off to deploy just one side -- e.g. `deploy_rules: false` for a
-frontend-only change, or `deploy_hosting: false` to ship a reviewed rules change without also
-cutting a new Hosting release.
+The workflow deliberately omits `--force`. It may add/update repository-owned indexes but does
+not silently opt into deleting a production index that is present remotely but absent from the
+repository. Treat index deletion as a separate reviewed operator action.
 
-## Rollback stays local
+## Rollback
 
-`deploy_rules` uploads its rollback backup JSON as a workflow run artifact (the runner itself
-is thrown away after the job, and the local procedure's `app/artifacts/firestore-rules-rollbacks/`
-is gitignored) -- download it from the run's **Artifacts** section if you ever need it. Rolling
-back is still a deliberate local operation, unchanged from
-[`firestore-rules-deployment.md`](./firestore-rules-deployment.md#rollback): download the
-backup, then from `app/` with `gcloud auth application-default login` done once,
+Rules deployment uploads its rollback backup JSON to the workflow run's **Artifacts** section.
+For a rules rollback, download it and follow
+[`firestore-rules-deployment.md`](./firestore-rules-deployment.md#rollback).
 
-```bash
-npm run firestore:rules:rollback -- --backup <downloaded-file>.json --confirm
-```
+Firebase Hosting keeps release history; roll traffic back from the Firebase console to a prior
+Hosting release when needed.
 
-Hosting releases don't need this: Firebase Hosting keeps prior releases browsable in the
-console, and rolling back (Hosting -> your site -> release history -> **Rollback** on any
-prior release) repoints traffic to it directly -- no separate backup file to manage. There is
-no `firebase hosting:rollback` CLI command; the console is the only supported way to do this.
+Indexes are not automatically deleted by the pipeline. Review query impact before correcting
+or removing an index.
