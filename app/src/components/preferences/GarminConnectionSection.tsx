@@ -48,6 +48,12 @@ export function GarminConnectionSection() {
       }
       await finish(result.customToken);
     } catch (err: unknown) {
+      if (challengeId) {
+        // MFA challenges are single-use on the server. A failed verification must return
+        // to the credential step instead of offering a retry against a consumed challenge.
+        setChallengeId(null);
+        setMfaCode('');
+      }
       setError(getErrorMessage(err) || 'Failed to connect Garmin.');
     } finally {
       setLoading(false);
