@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
+import garmin_sync.account_link as account_link_module
 from garmin_sync.account_link import GarminAccountLinkService, PendingLoginStore
 
 
@@ -25,7 +27,9 @@ class FakeGarmin:
     def login(self, _token_path: str) -> tuple[str | None, None]:
         return ("needs_mfa", None) if self.needs_mfa else (None, None)
 
-    def resume_login(self, _client_state: dict[str, Any], code: str) -> tuple[None, None]:
+    def resume_login(
+        self, _client_state: dict[str, Any], code: str
+    ) -> tuple[None, None]:
         self.resumed_codes.append(code)
         return None, None
 
@@ -50,7 +54,12 @@ def test_clean_login_dumps_tokens_and_clears_password_before_finalize(
         garmin_factory=factory,  # type: ignore[arg-type]
     )
 
-    def finalize(api: Any, token_path: Path, temp_dir: Path, requested_uid: str | None) -> dict[str, Any]:
+    def finalize(
+        api: Any,
+        token_path: Path,
+        temp_dir: Path,
+        requested_uid: str | None,
+    ) -> dict[str, Any]:
         assert api.password is None
         assert api.client.dumped_paths == [str(token_path)]
         assert token_path.exists()
@@ -59,13 +68,19 @@ def test_clean_login_dumps_tokens_and_clears_password_before_finalize(
         return {"status": "authenticated", "customToken": "token", "isNewUser": False}
 
     monkeypatch.setattr(service, "_finalize", finalize)
-    result = service.start_login("person@example.com", "secret", requested_uid="existing-uid")
+    result = service.start_login(
+        "person@example.com",
+        "secret",
+        requested_uid="existing-uid",
+    )
 
     assert result["status"] == "authenticated"
     assert created[0].password is None
 
 
-def test_mfa_challenge_keeps_session_but_not_plaintext_password(monkeypatch: Any) -> None:
+def test_mfa_challenge_keeps_session_but_not_plaintext_password(
+    monkeypatch: Any,
+) -> None:
     created: list[FakeGarmin] = []
 
     def factory(**kwargs: Any) -> FakeGarmin:
@@ -81,7 +96,12 @@ def test_mfa_challenge_keeps_session_but_not_plaintext_password(monkeypatch: Any
         garmin_factory=factory,  # type: ignore[arg-type]
     )
 
-    def finalize(api: Any, token_path: Path, _temp_dir: Path, requested_uid: str | None) -> dict[str, Any]:
+    def finalize(
+        api: Any,
+        token_path: Path,
+        _temp_dir: Path,
+        requested_uid: str | None,
+    ) -> dict[str, Any]:
         assert api.password is None
         assert api.client.dumped_paths == [str(token_path)]
         assert requested_uid is None
@@ -103,11 +123,15 @@ def test_mfa_challenge_keeps_session_but_not_plaintext_password(monkeypatch: Any
 def test_expired_mfa_challenge_is_rejected() -> None:
     now = [100.0]
     store = PendingLoginStore(ttl_seconds=5, clock=lambda: now[0])
+
+    def factory(**kwargs: Any) -> FakeGarmin:
+        return FakeGarmin(needs_mfa=True, **kwargs)
+
     service = GarminAccountLinkService(
         "bucket",
         repository=DummyRepository(),  # type: ignore[arg-type]
         pending_store=store,
-        garmin_factory=lambda **kwargs: FakeGarmin(needs_mfa=True, **kwargs),  # type: ignore[arg-type]
+        garmin_factory=factory,  # type: ignore[arg-type]
     )
 
     first = service.start_login("person@example.com", "secret")
@@ -119,3 +143,86 @@ def test_expired_mfa_challenge_is_rejected() -> None:
         assert "expired" in str(exc).lower()
     else:
         raise AssertionError("expired MFA challenge should fail")
+
+
+def test_custom_token_failure_after_commit_keeps_new_user_for_retry(
+    monkeypatch: Any,
+    tmp_path: Path,
+) -> None:
+    class Repository:
+        committed = False
+
+        def uid_for_identity(self, _identity_digest: str) -> None:
+            return None
+
+        def assert_target_available(self, _uid: str, _identity_digest: str) -> None:
+            return None
+
+        def commit_link(
+            self,
+            _uid: str,
+            _identity_digest: str,
+            _identity_kind: str,
+            _token_object: str,
+        ) -> None:
+            self.committed = True
+
+    class TokenStore:
+        def __init__(self, _bucket: str, _object_name: str) -> None:
+            pass
+
+        def persist(self, _source: Path) -> bool:
+            return True
+
+    class FinalizableGarmin:
+        password = None
+
+        def connectapi(self, _path: str) -> dict[str, str]:
+            return {"garminGUID": "stable-guid"}
+
+    repository = Repository()
+    deleted_uids: list[str] = []
+    monkeypatch.setattr(account_link_module, "GcsTokenStore", TokenStore)
+    monkeypatch.setattr(
+        account_link_module.firebase_auth,
+        "create_user",
+        lambda: SimpleNamespace(uid="new-uid"),
+    )
+    monkeypatch.setattr(
+        account_link_module.firebase_auth,
+        "delete_user",
+        deleted_uids.append,
+    )
+
+    def fail_custom_token(_uid: str) -> bytes:
+        raise RuntimeError("temporary signer failure")
+
+    monkeypatch.setattr(
+        account_link_module.firebase_auth,
+        "create_custom_token",
+        fail_custom_token,
+    )
+
+    service = GarminAccountLinkService(
+        "bucket",
+        repository=repository,  # type: ignore[arg-type]
+    )
+    token_path = tmp_path / "tokens.json"
+    token_path.write_text("{}", encoding="utf-8")
+    temp_dir = tmp_path / "temporary"
+    temp_dir.mkdir()
+
+    try:
+        service._finalize(  # noqa: SLF001 - regression test for transactional boundary
+            FinalizableGarmin(),  # type: ignore[arg-type]
+            token_path,
+            temp_dir,
+            None,
+        )
+    except RuntimeError as exc:
+        assert "temporary signer failure" in str(exc)
+    else:
+        raise AssertionError("custom-token signing failure should propagate")
+
+    assert repository.committed is True
+    assert deleted_uids == []
