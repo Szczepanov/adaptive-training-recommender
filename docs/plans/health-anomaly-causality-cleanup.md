@@ -1,46 +1,42 @@
 # Health anomaly causality and canonicalization cleanup
 
+## Status
+
+Implementation complete on PR #181; full CI validation is the remaining gate. The PR is stacked on #179 (`fix/close-sick-contact-tristate`) so its normal base does not match the repository's `pull_request -> main` CI filter. For integration validation, #181 may be pointed at `main` temporarily and then restored to the stacked base.
+
 ## Context
 
-This plan is a follow-up to PR #179. It is intentionally stacked on `fix/close-sick-contact-tristate` so the follow-up architecture work is isolated from the morning check-in redesign.
+This is a follow-up to PR #179. It is intentionally stacked on `fix/close-sick-contact-tristate` so the follow-up architecture work is isolated from the morning check-in redesign.
 
-## Goals
+## Implemented goals
 
-1. Make Garmin-derived RHR/HRV/respiration the only canonical physiology source.
-2. Prevent same-day training from retroactively explaining overnight/morning physiology.
-3. Centralize health-context defaults so UI, persistence, validation, and evaluator semantics cannot drift.
-4. Keep physiological anomalies visible even when a strong contextual explanation exists; context changes interpretation, not whether the abnormal measurement occurred.
-5. Preserve backward compatibility for old persisted documents without letting legacy fields enter canonical decision input.
+1. Garmin-derived RHR/HRV/respiration are the only canonical physiology source.
+2. Same-day training cannot retroactively explain overnight/morning physiology.
+3. Health-context defaults have one shared constructor/normalizer used by UI and validation/persistence semantics.
+4. Strong context changes interpretation without deleting the observed abnormal core signal or resetting its consecutive physiological persistence.
+5. Old persisted manual-physiology keys remain readable at the raw migration boundary but are stripped before canonical decision input.
+6. Legacy top-level `illnessSymptoms` truth is migrated into nested symptoms when an old context block did not yet contain nested symptom state.
 
-## Non-goals in this PR
+## Implemented details
 
-The following ideas remain shadow/follow-up work because they change detection policy or require ingestion/schema evidence beyond this cleanup:
+### Canonical physiology authority
 
-- episode closing hysteresis
-- persistent single-core-signal escalation
-- new core signals such as skin temperature
-- device/source-specific respiration provenance migration
-- health-context attestation analytics
+- Removed manual RHR/HRV/respiration fields from `HealthContextCheckin`.
+- Removed `manualSupport()` and all `MANUAL_*` evaluator supporting signals.
+- Legacy manual keys are accepted only by raw health-context validation so existing Firestore documents do not become invalid; they are not emitted into canonical health-context data.
+- Missing Garmin current values/baselines remain unavailable rather than falling back to athlete guesses.
+- The stacked #179 caller still passes an old `manualPhysiologyMissing` prop into `HealthContextSection`; #181 keeps this as an explicitly deprecated no-op shim only to avoid a risky whole-file replacement of the large `DailyCheckin.tsx`. It has no UI, persistence, or evaluator behavior and should be deleted after the stack is flattened/when that caller can be edited safely.
 
-## Implementation sequence
+### Temporal causality
 
-### 1. Remove manual physiology from canonical paths
+- `todayTraining` is never used to explain morning RHR/HRV/respiration.
+- Explicit hard training yesterday remains a strong RHR/HRV explanation and weak respiration explanation.
+- `last3DaysHardSessionsCount` remains a moderate RHR/HRV context because the backend defines it as D-1 through D-3 only; today's activities are explicitly excluded during snapshot construction.
+- Regression coverage proves a same-day hard activity added by a later Garmin sync cannot erase an abnormal morning RHR signal.
 
-- Remove manual RHR/HRV/respiration fields from `HealthContextCheckin`.
-- Remove manual physiology props/UI compatibility plumbing.
-- Remove `manualSupport()` and `MANUAL_*` supporting signals from the evaluator.
-- Continue accepting legacy manual keys at the raw validation boundary only so old Firestore documents remain readable; strip them from validated canonical output.
-- Add regression tests proving legacy keys are ignored and missing Garmin physiology remains unavailable.
+### Canonical health-context defaults
 
-### 2. Fix temporal causality
-
-- Treat only prior-day/relevant pre-measurement training as an explanation of morning RHR/HRV/respiration.
-- Explicitly exclude `todayTraining` from the morning physiological explanation path.
-- Add a regression test where an abnormal morning signal remains unexplained after a hard same-day activity appears in a later Garmin sync.
-
-### 3. Canonicalize health-context defaults
-
-Create one shared default constructor/normalizer with:
+`createDefaultHealthContext()` / `normalizeHealthContext()` define:
 
 - symptoms: `false`
 - alcohol: `0`
@@ -51,14 +47,17 @@ Create one shared default constructor/normalizer with:
 - medication change: `false`
 - close sick contact: `false`
 
-Use it for new check-ins, UI normalization, and validation of supplied health-context blocks. Historical documents with no health-context block remain historically absent rather than being silently rewritten.
+The UI consumes the shared normalizer. Any supplied health-context block is normalized before canonical persistence, so new/supplied records store explicit product defaults. A completely absent historical health-context block remains absent instead of being rewritten as an asserted historical negative.
 
-### 4. Preserve anomaly evidence under contextual explanations
+When a legacy document has `illnessSymptoms: true` but its old context map never contained nested `symptoms`, validation migrates that true value into canonical `healthContext.symptoms.present`. Once nested symptoms are explicitly present in raw data, they remain authoritative.
 
-- Keep adverse core signals in the unexplained/persistence trace instead of deleting them solely because a contextual explanation is `strong`.
-- Record strong context as competing/explanatory evidence.
-- Preserve `explained_recovery_strain` as an interpretation state when all adverse signals have strong contextual coverage, while retaining the underlying physiological evidence for traceability and persistence analysis.
-- Add tests showing vaccination/training/poor sleep cannot erase a measured anomaly from the trace.
+### Context versus physiology
+
+- Core abnormal measurements remain present in `coreSignals` regardless of explanatory context.
+- `unexplainedEvidence` continues to mean the current residual lacking strong contextual coverage.
+- `persistenceDays` now tracks consecutive adverse core physiology, including days interpreted as `explained_recovery_strain`.
+- Service composition seeds persistence from prior adverse core evidence rather than from `unexplainedEvidence.length`, so a strongly explained prior day cannot reset the physiological trace.
+- The developer trace label is now `Adverse physiology persistence` to match this contract.
 
 ## Safety invariants
 
@@ -66,25 +65,30 @@ Use it for new check-ins, UI normalization, and validation of supplied health-co
 - Context never fabricates a physiological anomaly.
 - Context never deletes an observed abnormal core signal.
 - Same-day post-measurement training cannot explain morning physiology.
-- Historical missing context is not rewritten as an asserted historical negative.
+- The D-1..D-3 hard-session aggregate remains usable because ingestion explicitly excludes today.
+- Historical absence of a whole health-context block is not rewritten as an asserted historical negative.
 - Supporting Garmin composites do not count as independent core votes.
 - Local tissue restrictions remain independent of health-anomaly interpretation.
 
-## Test plan
+## Regression coverage added/updated
 
-- health-context validation/parser migration tests
-- UI default-constructor tests
-- evaluator manual-signal removal tests
-- same-day causality regression
-- contextual-explanation trace/persistence regressions
-- full frontend CI, Firestore rules, simulations, Python suites, dependency audits, Docker build
+- canonical health-context default constructor and null normalization
+- legacy illness-to-nested-symptom migration
+- legacy manual-physiology acceptance + canonical stripping
+- no `MANUAL_*` evaluator signals when Garmin physiology is missing
+- same-day training causal-leak regression
+- safe D-1..D-3 aggregate context regression
+- adverse physiology persistence under strong contextual explanation
+- service-level persistence across a prior `explained_recovery_strain` assessment
+- health-context persistence of explicit product defaults
 
-## Follow-up experiments
+## Follow-up experiments / separate changes
 
-After this cleanup is stable, evaluate in shadow mode:
+These are intentionally not mixed into this cleanup because they change detection policy or require additional ingestion/schema evidence:
 
 1. two-normal-day hysteresis before closing an established episode
 2. `one strong core signal + >=3 days persistence` as an alternate escalation route
 3. exact respiration/device provenance and baseline segmentation on device/source changes
 4. optional health-context attestation timestamp for calibration analytics
 5. skin-temperature deviation as an additional candidate signal if Garmin provenance is reliable
+6. remove the stacked caller's deprecated no-op `manualPhysiologyMissing` prop once `DailyCheckin.tsx` can be edited safely after #179 is flattened
