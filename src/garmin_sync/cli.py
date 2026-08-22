@@ -34,7 +34,9 @@ def _run_with_user_lease(
         operation_name,
     )
     if not lease.acquire():
-        logger.info("%s: skipped because another Garmin operation is already running", operation_name)
+        logger.info(
+            "%s: skipped because another Garmin operation is already running", operation_name
+        )
         return True
 
     try:
