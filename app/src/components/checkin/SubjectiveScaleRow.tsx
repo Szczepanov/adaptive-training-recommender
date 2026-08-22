@@ -60,10 +60,15 @@ export const SubjectiveScaleRow: React.FC<SubjectiveScaleRowProps> = ({
           max="10"
           step="1"
           value={sliderValue}
-          onPointerDown={() => {
-            // Clicking the untouched midpoint should count as an explicit answer even when
-            // the thumb does not move and the browser therefore emits no change event.
-            if (value === null) onChange(sliderValue);
+          onPointerUp={(event) => {
+            // Keep the neutral thumb position purely visual until the athlete completes an
+            // interaction. Pointer-down can precede a drag, so recording 5 there briefly
+            // fabricates a midpoint observation before the intended value is chosen. Only a
+            // primary-button release should count as the athlete's answer; an auxiliary or
+            // secondary-button release must not fabricate a value either.
+            if (value === null && event.isPrimary && event.button === 0) {
+              onChange(Number(event.currentTarget.value));
+            }
           }}
           onChange={(e) => onChange(Number(e.target.value))}
           className={`subjective-slider ${severityClass}`}
