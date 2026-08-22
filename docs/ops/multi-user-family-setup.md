@@ -31,7 +31,7 @@ The self-service implementation follows these rules:
 - As soon as Garmin accepts the first factor, the service clears the plaintext password from the retained Garmin object. Only the live SSO/MFA session remains in memory.
 - An instance restart invalidates an MFA challenge; the user restarts login. The service never persists a password or pending SSO session just to make MFA survive a restart.
 - Login starts are rate limited in memory. Garmin's own rate limiting still applies.
-- A stable Garmin identity is derived from `garminGUID`, then `profileId`, with `displayName` only as a compatibility fallback. The raw identifier is not stored in the mapping document; its typed value is SHA-256 hashed.
+- A stable Garmin identity is derived from `garminGUID`, then `profileId`. Mutable `displayName` is intentionally **not** accepted as an identity fallback. The raw identifier is not stored in the mapping document; its typed value is SHA-256 hashed.
 - `garminIdentities/{digest}` enforces one Garmin identity -> one Firebase UID.
 - `garminConnections/{uid}` enforces one active Garmin identity -> one app user.
 - Those two top-level collections are intentionally server-only: browser Firestore rules contain no allow rule for them. Firebase Admin/Cloud Run owns them.
@@ -121,7 +121,11 @@ A failed restore for one UID can therefore never expose another user's local tok
 
 ## Deployment / one-time IAM update
 
-Run `docs/ops/setup-workload-identity.sh` once again after merging this change. It now grants `garmin-sync-job@...` permission to sign Firebase custom tokens **on itself only**, which Firebase Admin needs when using Cloud Run Application Default Credentials.
+Run `docs/ops/setup-workload-identity.sh` once again after merging this change. The script now:
+
+- enables the IAM and Identity Toolkit APIs needed by this flow;
+- gives `garmin-sync-job@...` a project custom role containing only `firebaseauth.users.create`, `firebaseauth.users.delete`, and `firebaseauth.users.get`, so new Garmin identities can receive internal Firebase users without granting full Firebase Auth Admin;
+- grants `roles/iam.serviceAccountTokenCreator` to `garmin-sync-job@...` **on itself only**, which lets Firebase Admin sign custom tokens under Cloud Run Application Default Credentials.
 
 Then deploy in this order:
 
