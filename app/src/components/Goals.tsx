@@ -122,14 +122,20 @@ export function Goals({ userId }: GoalsProps) {
     }
   };
 
-  // ⚡ Bolt Performance Optimization:
-  // Memoize derived goal arrays and periodization state to prevent O(N) recalculations on every render.
+  // Memoize derived goal arrays and periodization state to avoid repeated O(N) work.
   const activeUserEvents = useMemo(() => goals
     .filter(g => g.status === 'active')
     .map(goalToUserEvent)
     .filter((e): e is UserEvent => e !== null), [goals]);
 
-  const periodizationResult = useMemo(() => evaluatePeriodizationPhase(activeUserEvents, getLocalDateString()), [activeUserEvents]);
+  // Keep date-dependent derivations tied to the current render date. Without `today` in the
+  // dependency list, a component that remains mounted across midnight can keep yesterday's
+  // periodization result until the active-event array changes.
+  const today = getLocalDateString();
+  const periodizationResult = useMemo(
+    () => evaluatePeriodizationPhase(activeUserEvents, today),
+    [activeUserEvents, today],
+  );
   const focusEvent = periodizationResult.focusEvent;
   const daysToFocusEvent = periodizationResult.daysToEvent;
   const currentPhaseName = periodizationResult.phase.phaseName;
@@ -225,7 +231,7 @@ export function Goals({ userId }: GoalsProps) {
                       {goal.eventCategory && goal.targetDate && (
                         <span className="event-badge">
                           🏁 {EVENT_CATEGORY_LABELS[goal.eventCategory]} · {(() => {
-                            const days = getDaysToEvent(goal.targetDate, getLocalDateString());
+                            const days = getDaysToEvent(goal.targetDate, today);
                             return days >= 0 ? `in ${days}d` : `${Math.abs(days)}d ago`;
                           })()}
                         </span>
