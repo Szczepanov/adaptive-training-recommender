@@ -8,12 +8,13 @@ name: Deploy Frontend & Firestore Rules
 # secret this workflow reads below.
 #
 # Deliberately a SEPARATE identity from garmin-sync's github-deployer: github-frontend-deployer
-# holds only roles/firebasehosting.admin and roles/firebaserules.admin, nothing about Cloud
-# Run, Artifact Registry, or Cloud Scheduler, and vice versa -- see docs/ops/frontend-deployment.md.
+# holds only Firebase Hosting/Rules plus the dedicated Firestore index role used by the
+# separate deploy-firestore-indexes.yml workflow; it has nothing about Cloud Run, Artifact
+# Registry, or Cloud Scheduler -- see docs/ops/frontend-deployment.md.
 #
-# Firestore indexes are deliberately out of scope here too, same as the local
-# `npm run firestore:rules:deploy` procedure this mirrors (docs/ops/firestore-rules-deployment.md)
-# -- use `make deploy-indexes` locally for those.
+# Firestore indexes remain a separate deployment unit because index construction is
+# asynchronous and needs its own readiness gate. The production E2E workflow calls that unit
+# before this workflow's rules/hosting stages.
 on:
   workflow_dispatch:
     inputs:
@@ -32,6 +33,46 @@ on:
         type: boolean
         required: true
         default: false
+  workflow_call:
+    inputs:
+      deploy_hosting:
+        description: "Build and deploy the web app to Firebase Hosting"
+        type: boolean
+        required: false
+        default: true
+      deploy_rules:
+        description: "Deploy app/firestore.rules"
+        type: boolean
+        required: false
+        default: true
+      confirm_rules_drift:
+        description: "Reviewed Firestore rules drift may be replaced with the repository version"
+        type: boolean
+        required: false
+        default: false
+    secrets:
+      GCP_PROJECT_ID:
+        required: true
+      GCP_WORKLOAD_IDENTITY_PROVIDER:
+        required: true
+      GCP_FRONTEND_DEPLOYER_SA_EMAIL:
+        required: true
+      VITE_FIREBASE_API_KEY:
+        required: true
+      VITE_FIREBASE_AUTH_DOMAIN:
+        required: true
+      VITE_FIREBASE_PROJECT_ID:
+        required: true
+      VITE_FIREBASE_STORAGE_BUCKET:
+        required: true
+      VITE_FIREBASE_MESSAGING_SENDER_ID:
+        required: true
+      VITE_FIREBASE_APP_ID:
+        required: true
+      VITE_FIREBASE_MEASUREMENT_ID:
+        required: false
+      VITE_HEALTH_ANOMALY_POLICY:
+        required: false
 
 permissions:
   contents: read
@@ -138,6 +179,28 @@ jobs:
       - name: Deploy to Firebase Hosting
         if: ${{ inputs.deploy_hosting }}
         run: npm exec --no -- firebase deploy --only hosting --project "${GCP_PROJECT}" --non-interactive
+
+      - name: Smoke test Firebase Hosting
+        if: ${{ inputs.deploy_hosting }}
+        run: |
+          curl --fail --silent --show-error --retry 5 --retry-delay 3 --retry-all-errors \
+            "https://${GCP_PROJECT}.web.app/" >/dev/null
+
+      # GET /api/garmin/login is intentionally unsupported by the account-link service. A
+      # backend-shaped 404 therefore proves the Hosting rewrite reached Cloud Run without
+      # submitting credentials or consuming a login-rate-limit attempt.
+      - name: Smoke test Hosting to Garmin API rewrite
+        if: ${{ inputs.deploy_hosting }}
+        run: |
+          BODY_FILE="$(mktemp)"
+          STATUS="$(curl --silent --show-error --retry 5 --retry-delay 3 --retry-all-errors \
+            --output "${BODY_FILE}" --write-out '%{http_code}' \
+            "https://${GCP_PROJECT}.web.app/api/garmin/login")"
+          if [ "${STATUS}" != "404" ] || ! grep -q '"error":"not_found"' "${BODY_FILE}"; then
+            echo "Expected Cloud Run JSON 404 through Firebase Hosting rewrite; got HTTP ${STATUS}." >&2
+            cat "${BODY_FILE}" >&2
+            exit 1
+          fi
 
       # Default path remains fail-closed: unexpected drift stops the run before any rules
       # deployment. This is the safe choice for ordinary frontend/rules deploys.
