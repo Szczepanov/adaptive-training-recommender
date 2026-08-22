@@ -3,7 +3,7 @@ name: Garmin Token Bootstrap
 # One-time (and occasional refresh) Garmin authentication for one Firebase user.
 #
 # Multi-user credentials are isolated with GitHub Environments. Create one environment per
-# Garmin account (for example `garmin-marcin` and `garmin-wife`) and put GARMIN_EMAIL,
+# Garmin account (for example `garmin-primary` and `garmin-wife`) and put GARMIN_EMAIL,
 # GARMIN_PASSWORD and optionally GARMIN_TOTP_SECRET in that environment. The resulting OAuth
 # token is uploaded to garmin/users/<firebase-uid>/garmin_tokens.json. Scheduled Cloud Run
 # jobs never receive Garmin passwords.
@@ -15,9 +15,9 @@ on:
         required: true
         type: string
       garmin_environment:
-        description: "GitHub Environment containing this user's GARMIN_EMAIL/PASSWORD/TOTP secrets"
+        description: "GitHub Environment containing this user's Garmin credentials"
         required: true
-        type: string
+        type: environment
       mfa_code:
         description: "Fallback Garmin MFA code when this environment has no GARMIN_TOTP_SECRET"
         required: false
