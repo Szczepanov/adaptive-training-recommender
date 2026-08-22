@@ -170,6 +170,22 @@ for ROLE in \
     --condition=None >/dev/null
 done
 
+# app/firebase.json rewrites /api/garmin/** to the garmin-account-link Cloud Run service.
+# Finalizing a Hosting version that references it calls run.services.get on that service, so
+# github-frontend-deployer needs read access there -- but only there. Bind roles/run.viewer on
+# the single Cloud Run service (not the project) so this identity still can't see or touch any
+# other Cloud Run service, preserving the isolation from github-deployer described above.
+if gcloud run services describe garmin-account-link --region="${REGION}" >/dev/null 2>&1; then
+  gcloud run services add-iam-policy-binding garmin-account-link \
+    --region="${REGION}" \
+    --member="serviceAccount:${FRONTEND_DEPLOYER_SA_EMAIL}" \
+    --role="roles/run.viewer" >/dev/null
+else
+  echo "NOTE: garmin-account-link Cloud Run service not found in ${REGION} yet -- run" >&2
+  echo "      'Deploy Garmin Sync' first, then rerun this script to grant" >&2
+  echo "      github-frontend-deployer read access to it (required for Hosting deploys)." >&2
+fi
+
 gcloud iam service-accounts add-iam-policy-binding "${FRONTEND_DEPLOYER_SA_EMAIL}" \
   --role="roles/iam.workloadIdentityUser" \
   --member="principalSet://iam.googleapis.com/projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/${POOL_ID}/attribute.repository/${GITHUB_REPO}"
