@@ -15,9 +15,7 @@ logging.basicConfig(
 logger = logging.getLogger("garmin_sync")
 
 
-def _run_for_all_users(
-    operation_name: str, operation: Callable[[GarminSyncService], bool]
-) -> int:
+def _run_for_all_users(operation_name: str, operation: Callable[[GarminSyncService], bool]) -> int:
     """Run a scheduled operation for every active self-service Garmin link.
 
     Users are discovered from the server-only garminConnections collection and processed
