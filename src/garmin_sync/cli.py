@@ -282,7 +282,9 @@ def main() -> int:
 
     backfill_parser = subparsers.add_parser("backfill", help="Run historical backfill")
     backfill_parser.add_argument("--days", type=int, default=56, help="Number of days to backfill")
-    backfill_parser.add_argument("--start-date", type=str, default=None, help="Start date YYYY-MM-DD")
+    backfill_parser.add_argument(
+        "--start-date", type=str, default=None, help="Start date YYYY-MM-DD"
+    )
     backfill_parser.add_argument("--end-date", type=str, default=None, help="End date YYYY-MM-DD")
     backfill_parser.add_argument("--force", action="store_true", help="Force re-fetch")
     backfill_parser.add_argument("--include-details", action="store_true")
