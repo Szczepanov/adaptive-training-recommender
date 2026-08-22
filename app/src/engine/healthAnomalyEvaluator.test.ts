@@ -164,21 +164,36 @@ describe('evaluatePhysiologicalAnomaly HA3', () => {
         expect(evaluate(featureSet()).state).toBe('normal');
     });
 
-    it('treats one high RHR after an immediate hard session as explained, never possible illness', () => {
+    it('treats one high RHR after a prior hard session as explained, never possible illness', () => {
         const hard = snapshot({
             yesterdayTraining: { hardActivityCount: 1, primaryActivity: { activityId: 1, type: 'cycling', durationMin: 60, trainingEffect: 4, intensityTag: 'hard' } },
         });
         const result = evaluate(featureSet(3, 0, 0), { recoverySnapshot: hard, last3DaysHardSessionsCount: 1 });
         expect(result.state).toBe('explained_recovery_strain');
         expect(result.unexplainedEvidence).toEqual([]);
+        expect(result.persistenceDays).toBe(1);
     });
 
-    it('explains RHR-up + HRV-down after hard training when respiration is normal', () => {
+    it('explains RHR-up + HRV-down after prior hard training when respiration is normal', () => {
         const hard = snapshot({
             yesterdayTraining: { hardActivityCount: 1, primaryActivity: { activityId: 1, type: 'cycling', durationMin: 60, trainingEffect: 4, intensityTag: 'hard' } },
         });
         expect(evaluate(featureSet(3, 0, -2), { recoverySnapshot: hard, last3DaysHardSessionsCount: 1 }).state)
             .toBe('explained_recovery_strain');
+    });
+
+    it('does not let same-day hard training retroactively explain morning physiology', () => {
+        const afterWorkoutResync = snapshot({
+            todayTraining: { hardActivityCount: 1, primaryActivity: { activityId: 2, type: 'cycling', durationMin: 75, trainingEffect: 4.2, intensityTag: 'hard' } },
+            last3DaysHardSessionsCount: 1,
+        });
+        const result = evaluate(featureSet(3, 0, 0), {
+            recoverySnapshot: afterWorkoutResync,
+            last3DaysHardSessionsCount: 1,
+        });
+        expect(result.state).toBe('watch_unexplained');
+        expect(result.unexplainedEvidence).toEqual(['rhr:strong_anomaly:high']);
+        expect(result.explanations.some(item => item.kind === 'hard_training')).toBe(false);
     });
 
     it('creates an unexplained watch for a first-day multi-signal adverse pattern', () => {
@@ -202,6 +217,26 @@ describe('evaluatePhysiologicalAnomaly HA3', () => {
         expect(result.persistenceDays).toBe(2);
         expect(result.episodeId).toBe('health-anomaly:2026-08-20');
         expect(result.episodeDay).toBe(2);
+    });
+
+    it('preserves adverse physiology persistence when strong context explains the signal', () => {
+        const hard = snapshot({
+            yesterdayTraining: { hardActivityCount: 1, primaryActivity: { activityId: 1, type: 'cycling', durationMin: 60, trainingEffect: 4, intensityTag: 'hard' } },
+        });
+        const result = evaluate(featureSet(3, 0, 0), {
+            recoverySnapshot: hard,
+            persistence: {
+                previousState: 'explained_recovery_strain',
+                previousEpisodeId: 'health-anomaly:2026-08-20',
+                previousEpisodeDay: 1,
+                previousAssessmentDate: '2026-08-20',
+                unexplainedPersistenceDays: 1,
+            },
+        });
+        expect(result.state).toBe('explained_recovery_strain');
+        expect(result.unexplainedEvidence).toEqual([]);
+        expect(result.persistenceDays).toBe(2);
+        expect(result.rationale.facts).toContainEqual({ code: 'PERSISTENCE', value: 2, unit: 'days' });
     });
 
     it('resets persistence across a non-adjacent gap instead of carrying the prior count forward', () => {
@@ -295,38 +330,10 @@ describe('evaluatePhysiologicalAnomaly HA3', () => {
         expect(result.state).toBe('normal');
     });
 
-    it('uses manual physiology as supporting evidence only when the matching Garmin values are missing', () => {
+    it('never emits manual physiology supporting signals, even when Garmin core values are missing', () => {
         const missingSnapshot = snapshot({ restingHr: null, hrvOvernightAvg: null, respirationAvg: null });
-        const result = evaluate(featureSet(), {
-            recoverySnapshot: missingSnapshot,
-            subjectiveCheckin: checkin({
-                healthContext: {
-                    manualRhrHigher: true,
-                    manualHrvLower: true,
-                    manualRespirationHigher: true,
-                },
-            }),
-        });
-        expect(result.supportingSignals).toContainEqual(expect.objectContaining({ code: 'MANUAL_RHR_HIGHER', status: 'supportive', value: true }));
-        expect(result.supportingSignals).toContainEqual(expect.objectContaining({ code: 'MANUAL_HRV_LOWER', status: 'supportive', value: true }));
-        expect(result.supportingSignals).toContainEqual(expect.objectContaining({ code: 'MANUAL_RESPIRATION_HIGHER', status: 'supportive', value: true }));
-        expect(result.evidenceLevel).toBe('none');
-        expect(result.state).toBe('normal');
-    });
-
-    it('suppresses manual physiology when the matching Garmin values are available', () => {
-        const result = evaluate(featureSet(), {
-            subjectiveCheckin: checkin({
-                healthContext: {
-                    manualRhrHigher: true,
-                    manualHrvLower: true,
-                    manualRespirationHigher: true,
-                },
-            }),
-        });
-        expect(result.supportingSignals).toContainEqual(expect.objectContaining({ code: 'MANUAL_RHR_HIGHER', status: 'unavailable', value: null }));
-        expect(result.supportingSignals).toContainEqual(expect.objectContaining({ code: 'MANUAL_HRV_LOWER', status: 'unavailable', value: null }));
-        expect(result.supportingSignals).toContainEqual(expect.objectContaining({ code: 'MANUAL_RESPIRATION_HIGHER', status: 'unavailable', value: null }));
+        const result = evaluate(featureSet(), { recoverySnapshot: missingSnapshot });
+        expect(result.supportingSignals.some(item => item.code.startsWith('MANUAL_'))).toBe(false);
         expect(result.evidenceLevel).toBe('none');
         expect(result.state).toBe('normal');
     });
