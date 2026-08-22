@@ -62,7 +62,7 @@ numbered code delivered; Multidomain sessions (M) is **In progress** with M0–M
 complete; Performance outcome validation (OV) is **In progress** with the engineering
 stack through OV6.1 merged; Health anomaly alerting (HA) is **In progress** with HA0–HA5
 on `main` (HA5 shadow observability/replay merged via #171) and HA6.1–HA6.3 prospective
-outcome labels the next unblocked slice.
+outcome labels implemented via PR #174 (evidence-only, gated behind the shadow surface).
 
 For Multidomain delivery, the 2026-08-19 evidence-first cutline chain from
 [`2026-08-19-product-scope-cutline-review.md`](../analysis/2026-08-19-product-scope-cutline-review.md),
@@ -85,8 +85,8 @@ HA is the canonical plan for physiological-anomaly/possible-illness evidence. HA
 landed the fail-closed policy contract plus optional check-in context; #166/#165 and follow-up
 fixes put the anomaly-grade feature mapping, pure evaluator, explanations, persistence,
 episode continuity and composition boundary on `main`. HA-D/#171 landed HA5 shadow
-observability/replay on `main` on 2026-08-21. HA6.1–HA6.3 prospective outcome labels are now
-the next unblocked implementation slice; HA6.4's personal expected-response model additionally
+observability/replay on `main` on 2026-08-21. HA6.1–HA6.3 prospective outcome labels are
+implemented in PR #174 (evidence-only, behind the shadow surface); HA6.4's personal expected-response model additionally
 needs enough labelled personal history to evaluate without fitting sparse noise. User-visible
 wording remains gated by HA7 evidence, and tighten-only training integration remains a separate
 later release decision.
@@ -120,7 +120,7 @@ all-`Ready` table became unusable.
 | M | [Multidomain session authoring, execution & evidence](./multidomain-session-authoring-execution-and-evidence.md) | **In progress** | M8.1 | M6 still requires an explicit real-use trigger; repeated-testing implementation has transferred to OV and is not an M blocker/task; M8.2 needs real history and only independently justified M6/OV evidence if required; M9 needs its own named triggers | source-neutral authored sessions, safe mixed-dose execution and occurrence-linked response; specialized field work remains usage-triggered, while repeated testing/progress is owned by OV |
 | UX | [Mobile UX/UI redesign](./mobile_ux_implementation_plan.md) | **Implemented** | none | none | mobile-first daily decision flow, single-page rapid check-in, state-first Home layout, unblocked recommendation, 44px+ touch targets, and mobile layout tokens |
 | OV | [Performance outcome validation & goal-progress loop](./performance-outcome-validation.md) | **In progress** | OV7 operational evidence; OV4.4/OV6.2 only when their triggers are met | OV7 follows the event/block timeline; OV4.4 needs close-spaced repeats; OV6.2 needs repeated report use; OV8 needs multiple prospective blocks | sole implementation/status owner of repeated testing/progress; engineering through OV6.1 is merged (#154/#155/#163/#164/#169), with production selection authority still explicitly excluded |
-| HA | [Health anomaly and possible-illness alerting](./health-anomaly-and-illness-risk-alerting.md) | **In progress** | HA6.1–HA6.3 prospective outcome labels | HA6.4 needs enough labelled personal history; HA7 needs real replay/prospective evidence; HA8/HA9 remain release-gated | explainable physiological-anomaly evidence with structured confounders; HA0–HA5 are on `main` (HA5 via #171), visible illness wording and training changes remain gated |
+| HA | [Health anomaly and possible-illness alerting](./health-anomaly-and-illness-risk-alerting.md) | **In progress** | HA7 evidence & prospective accumulation | HA6.4 needs enough labelled personal history; HA7 needs real replay/prospective evidence; HA8/HA9 remain release-gated | explainable physiological-anomaly evidence with structured confounders; HA0–HA5 on `main` (HA5 via #171), HA6.1–HA6.3 prospective labels implemented in PR #174 |
 
 Rows G, S, M, UX, OV, and HA are **not phases**. They are capability/surface plans whose work items are
 prefixed `G*`, `S*`, `M*`, `UX*`, `OV*`, `HA*` precisely so they cannot be mistaken for the `Phase 0`–`9`

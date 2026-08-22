@@ -518,8 +518,8 @@ evidence. Writing code is not what closes this task.
 - [x] `npm run simulate:diff` reports no changed pre-existing baseline scenario (9.5 fixtures appear as `[NEW SCENARIO]`).
 - [x] `check-policy-drift.mjs` passes — **no `POLICY_VERSION` bump while the live default is `'off'`**.
 - [x] A history-leak regression proves date `D` never contributes to the baseline used for decision `D` (`subjectiveBaseline.test.ts` — `excludes a check-in dated exactly asOfDate (D-SUBJHIST)`, plus a future-date exclusion case).
-- [ ] The property test proving drift can only tighten passes.
-- [ ] Every 9.5 fixture has the intended variance/absolute-mode properties.
+- [x] The property test proving drift can only tighten passes (`rules.test.ts`).
+- [x] Every 9.5 fixture has the intended variance/absolute-mode properties (`subjectiveProfiles.test.ts`).
 - [x] The slow-drifter fixture is detectable by at least one measured drift candidate without noisy-stationary becoming pathologically restrictive; failure is valid evidence against the candidate.
 - [x] 9.6 reports estimator/parameter sensitivity rather than presenting one arbitrary setting as physiological truth.
 - [x] Habitual-low and chronically-sore show no relaxation under every measured candidate.

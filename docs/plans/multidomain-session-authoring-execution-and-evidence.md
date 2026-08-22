@@ -341,7 +341,7 @@ rewritten as an outcome; an in-progress item retains its remaining acceptance wo
 | M3.1 | Canonical serialization, hashing and source adapters | `[x]` | — |
 | M3.2 | Recommendation source/occurrence persistence and replay | `[x]` | Production replay wiring and catalog display-metadata fidelity closed |
 | M3.3 | Save/schedule/replace/add/start intent flow | `[x]` | Full hard-gate and additional-session authority implemented and integrated |
-| M3.4 | Catalog-to-definition adapter and generic runner strength parity | `[x]` | Runner parity reached (RIR/gauges, context, 1RM writeback, shared read); dual-runner retained for safe transition |
+| M3.4 | Catalog-to-definition adapter and generic runner strength parity | `[x]` | Runner parity and unified cutover delivered; legacy Strength runner deleted and read compatibility preserved |
 | M3.5 | Bounded exercise/drill facet vocabulary | `[x]` | — |
 | M3.6 | External plan/session schema v2 adapter | `[x]` | Schema, validation, resolver/display wiring, export support shipped; M3.7's fine-grained diff remains |
 | M3.7 | Full semantic import preview and diff | `[x]` | — |
@@ -802,23 +802,13 @@ only after completion.
 - `RepetitionInputCard.tsx` supports the complete `IntensityGauge` taxonomy: Borg RPE, Reps in Reserve (RIR), Velocity Loss %, and Technical failure gauges (form breakdown / notes).
 - `SessionRunner.tsx` displays prior-set contextual performance (`Last: {weightKg} kg × {reps}`) for the active exercise via `useOverloadHistory` / `strengthHistoryReadService`.
 - `useSessionRunner.ts` completes the 1RM derivation loop on session finish via `preferencesService.applyOneRepMaxDerivations`.
-- Non-Strength and general sessions route through `SessionRunner`. The v1 Strength runner and global resume banner are maintained alongside `SessionRunner` during the transition period.
+- Non-Strength and general sessions route through `SessionRunner`.
 
-**Residual cutover debt (2026-08-21).** Parity being reached does not mean the dual-runner
-state is closed. `app/src/App.tsx` still maintains two live execution lifecycles: the
-`strength` route uses `StrengthSessionRunner` + `strengthSessionService` +
-`activeStrengthSession`, while structured/testing routes use the generic `SessionRunner` +
-`sessionExecutionService` + `activeStructuredSession`. `app/src/components/StrengthSessionRunner.tsx`
-remains present. This is genuine residual implementation debt, not stale prose — see
-[2026-08-21 post-HA-D plan reconciliation, R4](../analysis/2026-08-21-post-ha-d-plan-reconciliation.md#r4--the-legacy-strength-runner-is-genuine-residual-implementation-debt).
-The retirement is scoped as its own cutover PR, preserving the permanent Strength-v1 history
-read compatibility model while routing new Strength execution through the generic runner.
-Before removing `StrengthSessionRunner`, explicitly cover: a catalog Strength recommendation
-starting through the generic runner; in-progress resume after reload; RIR/RPE/velocity-loss/
-technical gauges remaining available; last comparable set context remaining visible;
-completion still applying derived 1RM writeback; Strength-v1 historical records remaining
-readable through the compatibility read model; and no second active-session banner/lifecycle
-remaining.
+**Cutover delivered (2026-08-21).** The legacy runner cutover has landed on `main`:
+- `StrengthSessionRunner.tsx` has been deleted; all catalog, manual and structured session execution routes through `SessionRunner`.
+- `App.tsx` navigation and state contain no separate `strength` execution route or second active-session banner.
+- Full read compatibility for historical Strength-v1 sessions is preserved via `legacyStrengthAdapter.ts`.
+- Reversible read conversion, gauge retention, 1RM writeback, and unified execution lifecycle are verified by `app/src/sessions/legacyStrengthCutover.test.ts`.
 
 ### M3.5 `[x]` Bounded exercise/drill facet vocabulary
 

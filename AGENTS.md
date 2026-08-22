@@ -87,6 +87,10 @@ src/garmin_sync/
   archive.py           # Immutable raw payload archive (ADR-0005)
   audit.py             # Sync completeness reporting
   service.py           # Daily sync, backfill, rebuild orchestrator
+  account_link.py      # Multi-user Garmin account linking and token storage
+  account_link_api.py  # Local/remote HTTP API for account linking workflows
+  coordination.py      # Multi-user ingestion coordination and batch runs
+  workout_export.py    # FIT/TCX workout export integration
   cli.py               # Argument parsing and entry points
 
 app/src/engine/
@@ -110,10 +114,8 @@ app/src/engine/
   provenance.ts        # Builds the persisted RecommendationAudit
   replay.ts            # Verifies a persisted decision against its own audit
   policy.ts            # POLICY_VERSION -- bump when a decision-affecting change lands
-  stimulus.ts          # V2 fractional objective credit; the live credit authority (ADR-0014).
-                       #   Consumed by microcycle.ts, planner.ts, completedTraining.ts
-  planningMode.ts      # THE single authority for effective planning mode (ADR-0017).
-                       #   No other module may derive mode
+  stimulus.ts          # V2 fractional objective credit; the live credit authority (ADR-0014)
+  planningMode.ts      # THE single authority for effective planning mode (ADR-0017)
   planSchedule.ts      # PlanDefinition / PlanBlock / plan objective definitions
   planningOverlays.ts  # Authored travel overlays applied to planned dose (ADR-0012)
   planningCandidate.ts # Planner <-> workout-library boundary; per-workout spacing data
@@ -126,30 +128,25 @@ app/src/engine/
   injuryPolicy.ts      # Structured injury constraints & tissue-response tightening
   taperPolicy.ts       # Event taper window resolution
   safetyCheckin.ts     # Minimum-safety check-in gate & provisional recommendation
-  externalSession.ts   # Adjudicates ONE imported session on ONE day (ADR-0019). Pure;
-                       #   selects and ranks nothing, and no selection module may import it
-  externalSessionProfiles.ts # Imported session -> cost/stimulus/GateableSession/`ext:` shim
-  externalPlacement.ts # Imported plan -> dates; missed-session proposals (never writes
-                       #   without confirmation)
-  externalCritique.ts  # Advisory weekly review of a placed plan week. Cannot change a
-                       #   verdict, and cannot import externalSession.ts (D-CRITIQUE)
-  externalPlanHash.ts  # Canonical SHA-256 of a stored revision; the replay anchor (D-IMMUT)
+  composer.ts          # Decision composer combining readiness, context brief, and intent
+  contextBrief.ts      # Multi-day recovery context brief and trend indicators
+  healthAnomaly.ts     # Pure physiological anomaly & possible-illness evaluator (ADR-0025)
+  healthAnomalyFeatures.ts # Anomaly-grade baseline feature mappings (RHR/HRV/respiration)
+  healthAnomalyOutcome.ts  # Prospective outcome follow-up label resolver
+  healthAnomalyReplay.ts   # Historical replay runner for health anomaly telemetry
+  externalSession.ts   # Adjudicates ONE imported session on ONE day (ADR-0019). Pure
+  externalSessionProfiles.ts # Imported session -> cost/stimulus/GateableSession shim
+  externalPlacement.ts # Imported plan -> dates; missed-session proposals
+  externalCritique.ts  # Advisory weekly review of a placed plan week (D-CRITIQUE)
+  externalPlanHash.ts  # Canonical SHA-256 of a stored revision; replay anchor (D-IMMUT)
   authoredSessionGates.ts # Adjudicates authored occurrences against readiness/gates (ADR-0023)
+  sessionChoiceResolution.ts # Deterministic resolution of athlete branch points & choices
   sequenceSearch.ts    # Phase 5.1 beam-search prototype -- measured, NOT in any live path
   shadowAgreement.ts   # Phase 9.0: pure engine-vs-athlete verdict classifier (evidence only)
-  shadowLog.ts         # Phase 9.0: pure day-row joiner + CSV renderer for the export (evidence only)
-  subjectiveBaseline.ts # Phase 9.1: pure recent-vs-long subjective baseline. Composer (9.4)
-                       #   supplies it on DailyReadiness; rules.ts's subjectiveDriftStrain
-                       #   (9.3) reads it behind a `subjectiveDriftPolicy` selector that
-                       #   defaults to 'off' at every production call site (9.6) -- only the
-                       #   simulation comparison harness passes 'drift'
-  subjectiveDriftAudit.ts # Phase 9.7: compact SubjectiveDriftAudit shape + replay validation.
-                       #   provenance.ts attaches it to RecommendationAudit only when explicit
-                       #   evidence is supplied (never by production callers today)
-  simulation/          # Scenario harness: runAllScenarios, decision-quality metrics;
-                       #   runFatigueFusionComparison / runSubjectiveDriftComparison /
-                       #   runSubjectiveDriftSensitivityComparison run the real planner twice
-                       #   under a simulation-only policy override to measure a candidate
+  shadowLog.ts         # Phase 9.0: pure day-row joiner + CSV renderer for export
+  subjectiveBaseline.ts # Phase 9.1: pure recent-vs-long subjective baseline
+  subjectiveDriftAudit.ts # Phase 9.7: compact SubjectiveDriftAudit shape + replay validation
+  simulation/          # Scenario harness: runAllScenarios, decision-quality metrics, drift comparisons
 
 app/src/sessions/
   models.ts            # Source-neutral session definitions, prescriptions, occurrences, executions
@@ -160,6 +157,14 @@ app/src/sessions/
   performedComparison.ts # Planned vs completed steps, volume, omissions, hold duration
   legacyStrengthAdapter.ts # Two-way bridge between legacy strength_sessions and session_executions
   catalogSessionAdapter.ts # Adapts catalog templates to source-neutral SessionDefinition
+
+app/src/observations/
+  models.ts            # Canonical metric observation definitions, series, and attempts
+  validation.ts        # Strict observation schema validators and comparability gates
+
+app/src/outcomes/
+  models.ts            # Progress interpretation, goal targets, block outcome reports
+  assessmentSeriesService.ts # Series comparison and true-change interpretation against noise thresholds
 ```
 
 This map is a routing aid, not a complete file listing. Where it disagrees with the
