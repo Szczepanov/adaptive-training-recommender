@@ -26,6 +26,13 @@ def mock_service() -> Generator[Any, None, None]:
         yield mock
 
 
+@pytest.fixture(autouse=True)
+def mock_execution_lease() -> Generator[Any, None, None]:
+    with patch("garmin_sync.cli.GarminExecutionLease") as mock:
+        mock.return_value.acquire.return_value = True
+        yield mock
+
+
 @pytest.fixture
 def mock_run_audit() -> Generator[Any, None, None]:
     with patch("garmin_sync.cli.run_audit") as mock:
@@ -53,6 +60,32 @@ def test_run_daily_sync_success(mock_settings: Any, mock_service: Any) -> None:
         force=True,
         resync_lookback_days=2,
     )
+
+
+def test_run_daily_sync_releases_execution_lease(
+    mock_settings: Any,
+    mock_service: Any,
+    mock_execution_lease: Any,
+) -> None:
+    mock_service.return_value.sync_daily.return_value = True
+
+    assert run_daily_sync([]) == 0
+
+    mock_execution_lease.return_value.acquire.assert_called_once_with()
+    mock_execution_lease.return_value.release.assert_called_once_with()
+
+
+def test_run_daily_sync_busy_lease_is_safe_noop(
+    mock_settings: Any,
+    mock_service: Any,
+    mock_execution_lease: Any,
+) -> None:
+    mock_execution_lease.return_value.acquire.return_value = False
+
+    assert run_daily_sync([]) == 0
+
+    mock_service.return_value.sync_daily.assert_not_called()
+    mock_execution_lease.return_value.release.assert_not_called()
 
 
 def test_run_daily_sync_failure(mock_settings: Any, mock_service: Any) -> None:

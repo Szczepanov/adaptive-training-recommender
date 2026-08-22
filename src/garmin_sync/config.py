@@ -1,5 +1,5 @@
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
@@ -37,7 +37,7 @@ class Settings:
         return self.garmin_archive_bucket or self.garmin_token_bucket
 
     def validate(self) -> None:
-        if not self.app_user_id:
+        if not self.app_user_id or not self.app_user_id.strip():
             raise ValueError(
                 "Configuration error: APP_USER_ID is required. "
                 "Use the Firebase Authentication UID of the application user."
@@ -54,24 +54,22 @@ class Settings:
                 f"Configuration error: Invalid APP_TIMEZONE '{self.app_timezone}': {e}"
             ) from e
 
-        if self.garmin_token_store.lower() == "gcs":
-            if not self.garmin_token_bucket:
-                raise ValueError(
-                    "Configuration error: GARMIN_TOKEN_BUCKET is required when GARMIN_TOKEN_STORE is 'gcs'."
-                )
+        if self.garmin_token_store.lower() == "gcs" and not self.garmin_token_bucket:
+            raise ValueError(
+                "Configuration error: GARMIN_TOKEN_BUCKET is required when "
+                "GARMIN_TOKEN_STORE is 'gcs'."
+            )
 
         if self.garmin_archive_enabled and self.garmin_archive_store.lower() == "gcs":
             if not self.resolved_archive_bucket():
                 raise ValueError(
-                    "Configuration error: GARMIN_ARCHIVE_BUCKET (or GARMIN_TOKEN_BUCKET as a fallback) "
-                    "is required when GARMIN_ARCHIVE_ENABLED is true and GARMIN_ARCHIVE_STORE is 'gcs'."
+                    "Configuration error: GARMIN_ARCHIVE_BUCKET (or GARMIN_TOKEN_BUCKET as a "
+                    "fallback) is required when GARMIN_ARCHIVE_ENABLED is true and "
+                    "GARMIN_ARCHIVE_STORE is 'gcs'."
                 )
 
 
-def load_settings(env_file: str | None = None) -> Settings:
-    load_dotenv(dotenv_path=env_file)
-
-    user_id = os.getenv("APP_USER_ID", "").strip()
+def _load_base_settings(user_id: str) -> Settings:
     tz = os.getenv("APP_TIMEZONE", "Europe/Warsaw").strip()
     email = os.getenv("GARMIN_EMAIL")
     password = os.getenv("GARMIN_PASSWORD")
@@ -107,7 +105,7 @@ def load_settings(env_file: str | None = None) -> Settings:
         "yes",
     )
 
-    settings = Settings(
+    return Settings(
         app_user_id=user_id,
         app_timezone=tz,
         garmin_email=email,
@@ -134,5 +132,58 @@ def load_settings(env_file: str | None = None) -> Settings:
         garmin_archive_prefix=archive_prefix,
         garmin_activity_detail_enabled=activity_detail_enabled,
     )
+
+
+def _scoped_for_user(settings: Settings) -> Settings:
+    """Isolate all Garmin token/archive state for one linked Firebase UID."""
+    uid = settings.app_user_id
+    return replace(
+        settings,
+        garmin_token_path=f".garmin_tokens/{uid}/garmin_tokens.json",
+        garmin_token_object=f"garmin/users/{uid}/garmin_tokens.json",
+        garmin_archive_local_dir=f".garmin_archive/{uid}",
+        garmin_archive_prefix=f"raw/garmin/users/{uid}",
+        # Scheduled jobs authenticate only from the token written by the self-service
+        # account-link flow. Plaintext Garmin credentials never enter scheduled jobs.
+        garmin_email=None,
+        garmin_password=None,
+        garmin_allow_credential_login=False,
+    )
+
+
+def load_settings_for_user(
+    user_id: str, env_file: str | None = None, token_object: str | None = None
+) -> Settings:
+    """Load token-only settings for one app user discovered from garminConnections.
+
+    token_object, when given, is the tokenObject actually committed for this uid by the
+    account-link transaction and overrides the reconstructed canonical path -- a relink
+    may have staged its token under a different object name (see account_link._finalize).
+    """
+    load_dotenv(dotenv_path=env_file)
+    if not user_id or not user_id.strip():
+        raise ValueError("Configuration error: linked Firebase user ID cannot be blank.")
+    settings = _scoped_for_user(_load_base_settings(user_id))
+    if token_object:
+        settings = replace(settings, garmin_token_object=token_object)
+    settings.validate()
+    return settings
+
+
+def load_settings(env_file: str | None = None) -> Settings:
+    """Load legacy/manual single-user settings from APP_USER_ID.
+
+    This remains useful for local backfill/audit/recovery operations. Production scheduled
+    jobs do not read a static user list; they discover active Garmin links in Firestore and
+    call load_settings_for_user() for each owner UID.
+    """
+    load_dotenv(dotenv_path=env_file)
+    user_id = os.getenv("APP_USER_ID", "")
+    if not user_id or not user_id.strip():
+        raise ValueError(
+            "Configuration error: APP_USER_ID is required for this single-user command. "
+            "Scheduled *-all commands discover linked users automatically."
+        )
+    settings = _load_base_settings(user_id)
     settings.validate()
     return settings

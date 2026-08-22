@@ -10,6 +10,17 @@ def test_firestore_repository_rejects_default_user():
         FirestoreRecoveryRepository(user_id="default_user")
 
 
+def test_firestore_repository_rejects_whitespace_only_user():
+    with pytest.raises(ValueError, match="requires a valid non-default user_id"):
+        FirestoreRecoveryRepository(user_id="   ")
+
+
+def test_firestore_repository_preserves_exact_user_id():
+    repo = FirestoreRecoveryRepository(user_id=" uid-with-spaces ", db=MagicMock())
+
+    assert repo.user_id == " uid-with-spaces "
+
+
 def test_firestore_repository_upsert_path_and_user_validation():
     mock_db = MagicMock()
     doc_ref = MagicMock()

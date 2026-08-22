@@ -1,4 +1,3 @@
-
 import { usePreferences } from './usePreferences';
 import { PreferencesHeader } from './PreferencesHeader';
 import { PreferencesFooter } from './PreferencesFooter';
@@ -6,6 +5,8 @@ import { TrainingPlanSection } from './TrainingPlanSection';
 import { ModalitySections } from './ModalitySections';
 import { StyleSections } from './StyleSections';
 import { PerformanceSections } from './PerformanceSections';
+import { GarminConnectionSection } from './GarminConnectionSection';
+import { HealthRunYogaPresetSection } from './HealthRunYogaPresetSection';
 import type { Screen } from '../../types/navigation';
 import '../Preferences.css';
 
@@ -74,6 +75,13 @@ export function Preferences({ userId }: PreferencesProps) {
       )}
 
       <div className="preferences-content">
+        <GarminConnectionSection />
+
+        <HealthRunYogaPresetSection
+          userId={userId}
+          onApplied={loadPreferences}
+        />
+
         <TrainingPlanSection
           trainingIntentProfile={trainingIntentProfile}
           updateTrainingIntentProfile={updateTrainingIntentProfile}

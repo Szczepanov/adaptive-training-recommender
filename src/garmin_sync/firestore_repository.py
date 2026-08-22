@@ -53,11 +53,14 @@ class FirestoreRecoveryRepository:
         db: Any = None,
         credentials_path: str | None = None,
     ):
-        if not user_id or user_id.strip() == "default_user":
+        if not user_id or not user_id.strip() or user_id.strip() == "default_user":
             raise ValueError(
                 "FirestoreRecoveryRepository requires a valid non-default user_id (Firebase UID)."
             )
-        self.user_id = user_id.strip()
+        # Firebase Auth UIDs are identifiers, not free-form display text. Preserve the
+        # exact value supplied by Auth instead of normalizing it: stripping would make
+        # distinct legal UIDs share Firestore/token/archive scopes.
+        self.user_id = user_id
         self.collection_name = collection_name
         self._db = db
         self.credentials_path = credentials_path
@@ -220,7 +223,7 @@ class FirestoreRecoveryRepository:
         """Merge Garmin's current targets into the user's preference profile.
 
         Active targets are intentionally field-level owned: importing a new Garmin
-        value never replaces a target the coach/user marked ``manual``.  Existing
+        value never replaces a target the coach/user marked ``manual``. Existing
         target values without provenance predate this feature and are conservatively
         treated as manual on their first import.
         """
@@ -281,7 +284,7 @@ class FirestoreRecoveryRepository:
                     profile[key] = value
                     sources[key] = "garmin"
                 else:
-                    # Old documents have active values but no ownership metadata.  The
+                    # Old documents have active values but no ownership metadata. The
                     # safe migration is manual; an explicit UI action can adopt Garmin.
                     sources[key] = "manual"
 
@@ -294,7 +297,7 @@ class FirestoreRecoveryRepository:
                 "updatedAt": now_iso,
             }
             # A scheduled Garmin sync can run before the client has opened the app and
-            # created preferences.  Do not leave that first-run document partial: the
+            # created preferences. Do not leave that first-run document partial: the
             # frontend treats an existing preferences record as complete.
             if not snapshot.exists:
                 payload.update(
