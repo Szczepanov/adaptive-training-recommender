@@ -16,7 +16,7 @@ function evidence(
         scaleValue: 1,
         standardizedDeviation: status === 'normal' ? 0 : 2,
         estimator: 'mean-stdev-28d',
-        baselineVersion: 'test',
+        baselineVersion: 5,
     };
 }
 
