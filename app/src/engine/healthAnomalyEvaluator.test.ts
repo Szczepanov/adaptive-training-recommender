@@ -185,15 +185,27 @@ describe('evaluatePhysiologicalAnomaly HA3', () => {
     it('does not let same-day hard training retroactively explain morning physiology', () => {
         const afterWorkoutResync = snapshot({
             todayTraining: { hardActivityCount: 1, primaryActivity: { activityId: 2, type: 'cycling', durationMin: 75, trainingEffect: 4.2, intensityTag: 'hard' } },
-            last3DaysHardSessionsCount: 1,
+            // Backend semantics intentionally exclude today from this D-1..D-3 count.
+            last3DaysHardSessionsCount: 0,
         });
         const result = evaluate(featureSet(3, 0, 0), {
             recoverySnapshot: afterWorkoutResync,
-            last3DaysHardSessionsCount: 1,
+            last3DaysHardSessionsCount: 0,
         });
         expect(result.state).toBe('watch_unexplained');
         expect(result.unexplainedEvidence).toEqual(['rhr:strong_anomaly:high']);
         expect(result.explanations.some(item => item.kind === 'hard_training')).toBe(false);
+    });
+
+    it('retains the causally safe D-1 to D-3 aggregate as moderate prior-training context', () => {
+        const result = evaluate(featureSet(3, 0, 0), { last3DaysHardSessionsCount: 1 });
+        expect(result.state).toBe('watch_unexplained');
+        expect(result.explanations).toContainEqual(expect.objectContaining({
+            kind: 'hard_training',
+            strength: 'moderate',
+            evidence: ['HARD_SESSION_WITHIN_3D'],
+        }));
+        expect(result.unexplainedEvidence).toEqual(['rhr:strong_anomaly:high']);
     });
 
     it('creates an unexplained watch for a first-day multi-signal adverse pattern', () => {
