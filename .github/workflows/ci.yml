@@ -6,6 +6,13 @@ on:
   pull_request:
     branches: [ main ]
   workflow_call:
+    secrets:
+      # Optional: push/pull_request triggers already see the repo's full secret set directly,
+      # so this only matters for a workflow_call caller (deploy-production.yml), which must
+      # pass it explicitly instead of `secrets: inherit`. Frontend-build's own env fixes every
+      # other Firebase value to a build/test-only placeholder, so only the API key is real.
+      VITE_FIREBASE_API_KEY:
+        required: false
 
 permissions:
   contents: read

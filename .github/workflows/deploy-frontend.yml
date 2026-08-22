@@ -85,8 +85,19 @@ permissions:
 # A second manual run started before the first finishes could both pass the Firestore drift
 # check, then race to deploy -- the later one silently wins and clobbers the earlier release.
 # Queue instead of running concurrently; never cancel a deploy that's already underway.
+#
+# A standalone workflow_dispatch run joins the SAME group deploy-production.yml holds for a
+# whole release, so it queues behind an in-flight end-to-end release instead of deploying a
+# different SHA mid-release. A workflow_call invocation (i.e. from deploy-production.yml
+# itself, for both the rules and hosting stages) uses this workflow's own isolated group
+# instead: that caller already holds the production-wide group for the run's whole duration,
+# so requesting it again here would queue this job behind the very run it's part of and
+# deadlock.
 concurrency:
-  group: deploy-frontend-${{ github.repository }}
+  group: >-
+    ${{ github.event_name == 'workflow_call'
+      && format('deploy-frontend-{0}', github.repository)
+      || format('deploy-production-{0}', github.repository) }}
   cancel-in-progress: false
 
 env:
@@ -140,6 +151,34 @@ jobs:
 
       - name: Install Node dependencies
         run: npm ci
+
+      # The project-ID check below only catches a Firebase project mismatch. It says nothing
+      # about the other values app/src/firebase.ts reads -- a missing API key, auth domain, or
+      # app ID still produces a successful static build whose Firebase client silently fails at
+      # runtime, and neither the Hosting nor the rewrite smoke check below would catch that
+      # (they only exercise static assets and the Cloud Run rewrite, not Firebase client init).
+      - name: Validate Firebase build configuration is complete
+        if: ${{ inputs.deploy_hosting }}
+        env:
+          VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
+          VITE_FIREBASE_AUTH_DOMAIN: ${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}
+          VITE_FIREBASE_STORAGE_BUCKET: ${{ secrets.VITE_FIREBASE_STORAGE_BUCKET }}
+          VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID }}
+          VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
+          VITE_FIREBASE_MEASUREMENT_ID: ${{ secrets.VITE_FIREBASE_MEASUREMENT_ID }}
+        run: |
+          missing=""
+          for var in VITE_FIREBASE_API_KEY VITE_FIREBASE_AUTH_DOMAIN VITE_FIREBASE_STORAGE_BUCKET \
+                     VITE_FIREBASE_MESSAGING_SENDER_ID VITE_FIREBASE_APP_ID VITE_FIREBASE_MEASUREMENT_ID; do
+            if [ -z "${!var}" ]; then
+              missing="${missing} ${var}"
+            fi
+          done
+          if [ -n "${missing}" ]; then
+            echo "Missing required Firebase build configuration:${missing}" >&2
+            echo "app/src/firebase.ts needs all of these set to produce a working runtime Firebase config -- refusing to build." >&2
+            exit 1
+          fi
 
       # Firebase project ID and GCP project ID are the same string for this project (see
       # docs/ops/cloud-run-deployment.md), but they're two independently-set secrets --

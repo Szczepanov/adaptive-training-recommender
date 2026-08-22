@@ -25,14 +25,19 @@ on:
         required: true
         default: false
 
-# Called deployment workflows cannot elevate permissions above their caller. Keep the release
-# capable of WIF while each reusable workflow still narrows its own permissions explicitly.
+# Called deployment workflows cannot elevate permissions above their caller. id-token: write is
+# only granted per-job below, to the four deployment callers that actually need WIF -- not at
+# workflow scope, which would also hand it to preflight and release-summary.
 permissions:
   contents: read
-  id-token: write
 
 # Queue whole releases. Component workflows have their own concurrency groups as a second
-# line of defence against someone starting a standalone component deployment at the same time.
+# line of defence against someone starting a standalone component deployment at the same time --
+# but a standalone dispatch of a component workflow also joins this same production-wide group
+# (see each component workflow's own concurrency block), so it queues behind an in-flight
+# end-to-end release instead of racing it onto a different SHA. Never copy this group into a
+# reusable workflow's own workflow_call path: this caller run already holds it for the whole
+# release, so a called job requesting the same group would queue behind itself and deadlock.
 concurrency:
   group: deploy-production-${{ github.repository }}
   cancel-in-progress: false
@@ -54,42 +59,75 @@ jobs:
     name: Full CI release gate
     needs: preflight
     uses: ./.github/workflows/ci.yml
-    secrets: inherit
+    secrets:
+      VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
 
   deploy-garmin:
     name: Deploy Garmin backend
     needs: validate
+    permissions:
+      contents: read
+      id-token: write
     uses: ./.github/workflows/deploy-garmin-sync.yml
     with:
       region: ${{ inputs.region }}
       run_smoke_test: ${{ inputs.run_garmin_sync_smoke_test }}
-    secrets: inherit
+    secrets:
+      GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+      GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+      GCP_DEPLOYER_SA_EMAIL: ${{ secrets.GCP_DEPLOYER_SA_EMAIL }}
 
   deploy-indexes:
     name: Deploy Firestore indexes
     needs: deploy-garmin
+    permissions:
+      contents: read
+      id-token: write
     uses: ./.github/workflows/deploy-firestore-indexes.yml
-    secrets: inherit
+    secrets:
+      GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+      GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+      GCP_FRONTEND_DEPLOYER_SA_EMAIL: ${{ secrets.GCP_FRONTEND_DEPLOYER_SA_EMAIL }}
 
   deploy-rules:
     name: Deploy Firestore rules
     needs: deploy-indexes
+    permissions:
+      contents: read
+      id-token: write
     uses: ./.github/workflows/deploy-frontend.yml
     with:
       deploy_hosting: false
       deploy_rules: true
       confirm_rules_drift: ${{ inputs.confirm_rules_drift }}
-    secrets: inherit
+    secrets:
+      GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+      GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+      GCP_FRONTEND_DEPLOYER_SA_EMAIL: ${{ secrets.GCP_FRONTEND_DEPLOYER_SA_EMAIL }}
 
   deploy-hosting:
     name: Deploy frontend last
     needs: deploy-rules
+    permissions:
+      contents: read
+      id-token: write
     uses: ./.github/workflows/deploy-frontend.yml
     with:
       deploy_hosting: true
       deploy_rules: false
       confirm_rules_drift: false
-    secrets: inherit
+    secrets:
+      GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+      GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+      GCP_FRONTEND_DEPLOYER_SA_EMAIL: ${{ secrets.GCP_FRONTEND_DEPLOYER_SA_EMAIL }}
+      VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
+      VITE_FIREBASE_AUTH_DOMAIN: ${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}
+      VITE_FIREBASE_PROJECT_ID: ${{ secrets.VITE_FIREBASE_PROJECT_ID }}
+      VITE_FIREBASE_STORAGE_BUCKET: ${{ secrets.VITE_FIREBASE_STORAGE_BUCKET }}
+      VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID }}
+      VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
+      VITE_FIREBASE_MEASUREMENT_ID: ${{ secrets.VITE_FIREBASE_MEASUREMENT_ID }}
+      VITE_HEALTH_ANOMALY_POLICY: ${{ secrets.VITE_HEALTH_ANOMALY_POLICY }}
 
   release-summary:
     name: Release summary
@@ -97,12 +135,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Record promoted revision
+        env:
+          # inputs.region is dispatcher-controlled. Pass it through env and print the
+          # variable rather than interpolating the expression into the run script directly --
+          # a `${{ }}` expansion inside `run:` is substituted into the shell source verbatim
+          # before the shell ever runs it, so a region value like `$(...)` would execute as a
+          # command in this job, which inherits id-token: write.
+          RELEASE_REGION: ${{ inputs.region }}
         run: |
           {
             echo "## Production release complete"
             echo
             echo "- Commit: \`${GITHUB_SHA}\`"
-            echo "- Region: \`${{ inputs.region }}\`"
+            printf '%s\n' "- Region: \`${RELEASE_REGION}\`"
             echo "- Garmin backend, Firestore indexes/rules, and Firebase Hosting all completed."
             echo "- Hosting smoke checks verified the site and the Hosting -> Cloud Run API rewrite."
           } >> "${GITHUB_STEP_SUMMARY}"

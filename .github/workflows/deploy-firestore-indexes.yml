@@ -18,8 +18,17 @@ permissions:
   contents: read
   id-token: write
 
+# A standalone workflow_dispatch run joins the SAME group deploy-production.yml holds for a
+# whole release, so it queues behind an in-flight end-to-end release instead of deploying a
+# different SHA mid-release. A workflow_call invocation (i.e. from deploy-production.yml
+# itself) uses this workflow's own isolated group instead: that caller already holds the
+# production-wide group for the run's whole duration, so requesting it again here would queue
+# this job behind the very run it's part of and deadlock.
 concurrency:
-  group: deploy-firestore-indexes-${{ github.repository }}
+  group: >-
+    ${{ github.event_name == 'workflow_call'
+      && format('deploy-firestore-indexes-{0}', github.repository)
+      || format('deploy-production-{0}', github.repository) }}
   cancel-in-progress: false
 
 env:
