@@ -45,7 +45,7 @@ describe('CheckinService HA1 health-context persistence', () => {
         firestore.deleteField.mockReturnValue(DELETE_FIELD_SENTINEL);
     });
 
-    it('persists a context-only symptom report with the derived legacy compatibility flag', async () => {
+    it('persists a context-only symptom report with explicit No contextual defaults', async () => {
         const input = { ...baseCheckin, healthContext: { symptoms: { present: true as const } } };
         delete input.illnessSymptoms;
         const result = await new CheckinService().upsertCheckin('u1', input);
@@ -54,7 +54,11 @@ describe('CheckinService HA1 health-context persistence', () => {
         const payload = firestore.setDoc.mock.calls[0][1] as Record<string, unknown>;
         expect(payload.illnessSymptoms).toBe(true);
         const context = payload.healthContext as Record<string, unknown>;
-        expect(context.closeSickContact).toBe(DELETE_FIELD_SENTINEL);
+        expect(context.unusualHeatOrSauna).toBe(false);
+        expect(context.dehydrationOrFluidLoss).toBe(false);
+        expect(context.recentVaccination).toBe(false);
+        expect(context.medicationChange).toBe(false);
+        expect(context.closeSickContact).toBe(false);
         expect(context.symptoms).toEqual({
             present: true,
             onset: DELETE_FIELD_SENTINEL,
@@ -71,7 +75,7 @@ describe('CheckinService HA1 health-context persistence', () => {
         expect(firestore.setDoc.mock.calls[0][2]).toEqual({ merge: true });
     });
 
-    it('deletes omitted context keys instead of retaining stale merge values', async () => {
+    it('normalizes supplied context to explicit No flags while deleting unrelated omitted keys', async () => {
         await new CheckinService().upsertCheckin('u1', {
             ...baseCheckin,
             healthContext: {
@@ -83,8 +87,11 @@ describe('CheckinService HA1 health-context persistence', () => {
         const payload = firestore.setDoc.mock.calls[0][1] as {
             healthContext: Record<string, unknown>;
         };
+        expect(payload.healthContext.unusualHeatOrSauna).toBe(false);
+        expect(payload.healthContext.dehydrationOrFluidLoss).toBe(false);
+        expect(payload.healthContext.recentVaccination).toBe(false);
+        expect(payload.healthContext.medicationChange).toBe(false);
         expect(payload.healthContext.closeSickContact).toBe(false);
-        expect(payload.healthContext.recentVaccination).toBeNull();
         expect(payload.healthContext.alcoholDrinksLast24h).toBe(DELETE_FIELD_SENTINEL);
         expect(payload.healthContext.symptoms).toBe(DELETE_FIELD_SENTINEL);
     });
