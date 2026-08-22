@@ -25,17 +25,29 @@ surface used here:
 - `roles/datastore.indexAdmin`
 - `roles/serviceusage.serviceUsageConsumer`
 
+There is one narrow Cloud Run exception inherited from the existing Hosting deployment path:
+`app/firebase.json` rewrites `/api/garmin/**` to `garmin-account-link`, and Firebase Hosting
+needs `run.services.get` on that service while finalizing the Hosting release.
+`setup-workload-identity.sh` therefore grants `github-frontend-deployer` `roles/run.viewer`
+**only on that single Cloud Run service**, not at project level. It still cannot deploy or
+modify Cloud Run and cannot inspect unrelated services.
+
 Both identities trust the same WIF provider, whose condition is restricted to this repository's
 `main` branch. A feature branch or fork cannot authenticate as either deployment identity.
 
 After the E2E/index pipeline is merged, rerun the idempotent setup script once so the existing
-frontend deployer receives its Firestore index role:
+frontend deployer receives its Firestore index role and the scoped Cloud Run viewer binding:
 
 ```bash
 export GCP_PROJECT=adaptive-training-recommender
 export GITHUB_REPO=Szczepanov/adaptive-training-recommender
 bash docs/ops/setup-workload-identity.sh
 ```
+
+The `garmin-account-link` binding is applied only when that service already exists. If it has
+not been deployed yet, the script prints a `NOTE:`; run **Deploy Garmin Sync** first and rerun
+the setup script afterward. In the normal E2E setup this is a one-time bootstrap concern, not
+a per-release step.
 
 The script prints the required repository secrets. Hosting builds also need the production
 Firebase web config (`VITE_FIREBASE_*`). Those values are client configuration embedded in the
