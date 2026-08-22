@@ -295,6 +295,23 @@ describe('evaluatePhysiologicalAnomaly HA3', () => {
         expect(result.state).toBe('normal');
     });
 
+    it('keeps manual RHR, HRV, and respiration changes as supporting evidence only', () => {
+        const result = evaluate(featureSet(), {
+            subjectiveCheckin: checkin({
+                healthContext: {
+                    subjectiveRhrHigher: true,
+                    subjectiveHrvLower: true,
+                    subjectiveRespirationHigher: true,
+                },
+            }),
+        });
+        expect(result.supportingSignals).toContainEqual(expect.objectContaining({ code: 'SUBJECTIVE_RHR_HIGHER', status: 'supportive', value: true }));
+        expect(result.supportingSignals).toContainEqual(expect.objectContaining({ code: 'SUBJECTIVE_HRV_LOWER', status: 'supportive', value: true }));
+        expect(result.supportingSignals).toContainEqual(expect.objectContaining({ code: 'SUBJECTIVE_RESPIRATION_HIGHER', status: 'supportive', value: true }));
+        expect(result.evidenceLevel).toBe('none');
+        expect(result.state).toBe('normal');
+    });
+
     it('retains unusually high HRV as two-sided out-of-range telemetry without treating it as adverse', () => {
         const result = evaluate(featureSet(0, 0, 3));
         expect(result.coreSignals.find(item => item.signal === 'hrv')).toMatchObject({
