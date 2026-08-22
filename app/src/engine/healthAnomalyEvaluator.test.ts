@@ -295,19 +295,38 @@ describe('evaluatePhysiologicalAnomaly HA3', () => {
         expect(result.state).toBe('normal');
     });
 
-    it('keeps manual RHR, HRV, and respiration changes as supporting evidence only', () => {
+    it('uses manual physiology as supporting evidence only when the matching Garmin values are missing', () => {
+        const missingSnapshot = snapshot({ restingHr: null, hrvOvernightAvg: null, respirationAvg: null });
         const result = evaluate(featureSet(), {
+            recoverySnapshot: missingSnapshot,
             subjectiveCheckin: checkin({
                 healthContext: {
-                    subjectiveRhrHigher: true,
-                    subjectiveHrvLower: true,
-                    subjectiveRespirationHigher: true,
+                    manualRhrHigher: true,
+                    manualHrvLower: true,
+                    manualRespirationHigher: true,
                 },
             }),
         });
-        expect(result.supportingSignals).toContainEqual(expect.objectContaining({ code: 'SUBJECTIVE_RHR_HIGHER', status: 'supportive', value: true }));
-        expect(result.supportingSignals).toContainEqual(expect.objectContaining({ code: 'SUBJECTIVE_HRV_LOWER', status: 'supportive', value: true }));
-        expect(result.supportingSignals).toContainEqual(expect.objectContaining({ code: 'SUBJECTIVE_RESPIRATION_HIGHER', status: 'supportive', value: true }));
+        expect(result.supportingSignals).toContainEqual(expect.objectContaining({ code: 'MANUAL_RHR_HIGHER', status: 'supportive', value: true }));
+        expect(result.supportingSignals).toContainEqual(expect.objectContaining({ code: 'MANUAL_HRV_LOWER', status: 'supportive', value: true }));
+        expect(result.supportingSignals).toContainEqual(expect.objectContaining({ code: 'MANUAL_RESPIRATION_HIGHER', status: 'supportive', value: true }));
+        expect(result.evidenceLevel).toBe('none');
+        expect(result.state).toBe('normal');
+    });
+
+    it('suppresses manual physiology when the matching Garmin values are available', () => {
+        const result = evaluate(featureSet(), {
+            subjectiveCheckin: checkin({
+                healthContext: {
+                    manualRhrHigher: true,
+                    manualHrvLower: true,
+                    manualRespirationHigher: true,
+                },
+            }),
+        });
+        expect(result.supportingSignals).toContainEqual(expect.objectContaining({ code: 'MANUAL_RHR_HIGHER', status: 'unavailable', value: null }));
+        expect(result.supportingSignals).toContainEqual(expect.objectContaining({ code: 'MANUAL_HRV_LOWER', status: 'unavailable', value: null }));
+        expect(result.supportingSignals).toContainEqual(expect.objectContaining({ code: 'MANUAL_RESPIRATION_HIGHER', status: 'unavailable', value: null }));
         expect(result.evidenceLevel).toBe('none');
         expect(result.state).toBe('normal');
     });
