@@ -83,6 +83,14 @@
   color: #cbd5e1;
 }
 
+.followup-tissue-prompt small {
+  display: block;
+  margin-top: 0.65rem;
+  color: var(--text-secondary, #94a3b8);
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+
 .followup-actions {
   display: flex;
   flex-wrap: wrap;
@@ -147,6 +155,13 @@
   color: var(--text-secondary, #94a3b8);
 }
 
+.checkin-helper-text {
+  margin: 0.8rem 0 0;
+  color: var(--text-secondary, #94a3b8);
+  font-size: 0.76rem;
+  line-height: 1.4;
+}
+
 /* Preset Quick-Fill Bar */
 .checkin-preset-bar {
   margin-bottom: 1rem;
@@ -191,6 +206,11 @@
   transition: border-color 0.2s;
 }
 
+.subjective-scale-row.status-unanswered {
+  border-style: dashed;
+  border-color: rgba(148, 163, 184, 0.28);
+}
+
 .subjective-scale-row:focus-within {
   border-color: rgba(56, 189, 248, 0.4);
 }
@@ -218,6 +238,11 @@
   border: 1px solid rgba(56, 189, 248, 0.25);
 }
 
+.scale-row-value-badge.status-unanswered {
+  background: rgba(148, 163, 184, 0.08);
+  border-color: rgba(148, 163, 184, 0.22);
+}
+
 .scale-row-value-badge.status-warning {
   background: rgba(245, 158, 11, 0.15);
   border-color: rgba(245, 158, 11, 0.35);
@@ -232,6 +257,10 @@
   font-size: 1rem;
   font-weight: 800;
   color: #38bdf8;
+}
+
+.scale-row-value-badge.status-unanswered .scale-value-number {
+  color: #94a3b8;
 }
 
 .scale-row-value-badge.status-warning .scale-value-number {
@@ -292,6 +321,11 @@
   transition: transform 0.15s ease;
 }
 
+.subjective-slider.status-unanswered::-webkit-slider-thumb {
+  background: #64748b;
+  box-shadow: none;
+}
+
 .subjective-slider.status-warning::-webkit-slider-thumb {
   background: #fbbf24;
   box-shadow: 0 2px 8px rgba(251, 191, 36, 0.5);
@@ -316,6 +350,11 @@
   border: none;
   box-shadow: 0 2px 8px rgba(56, 189, 248, 0.5);
   transition: transform 0.15s ease;
+}
+
+.subjective-slider.status-unanswered::-moz-range-thumb {
+  background: #64748b;
+  box-shadow: none;
 }
 
 .subjective-slider.status-warning::-moz-range-thumb {
@@ -595,6 +634,25 @@
   padding: 0 1rem 1rem 1rem;
 }
 
+.garmin-context-content[aria-label="Garmin context hidden"] {
+  display: block;
+  padding-top: 0.9rem;
+  color: var(--text-secondary, #94a3b8);
+}
+
+.garmin-context-content[aria-label="Garmin context hidden"] strong {
+  display: block;
+  margin-bottom: 0.3rem;
+  color: #cbd5e1;
+  font-size: 0.85rem;
+}
+
+.garmin-context-content[aria-label="Garmin context hidden"] p {
+  margin: 0;
+  font-size: 0.76rem;
+  line-height: 1.4;
+}
+
 .garmin-metric-pill {
   background: rgba(0, 0, 0, 0.25);
   border-radius: 8px;
@@ -602,6 +660,11 @@
   display: flex;
   flex-direction: column;
   gap: 0.1rem;
+}
+
+.garmin-metric-pill small {
+  color: var(--text-secondary, #94a3b8);
+  font-size: 0.68rem;
 }
 
 .pill-label {
