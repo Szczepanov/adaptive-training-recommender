@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from garmin_sync.config import load_settings, load_user_ids, load_user_settings
+from garmin_sync.config import load_settings, load_settings_for_user
 
 
 @pytest.fixture(autouse=True)
@@ -17,45 +17,21 @@ def clean_user_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "GARMIN_ARCHIVE_PREFIX",
         "GARMIN_EMAIL",
         "GARMIN_PASSWORD",
+        "GARMIN_ALLOW_CREDENTIAL_LOGIN",
     ):
         monkeypatch.delenv(key, raising=False)
 
 
-def test_load_user_ids_prefers_ordered_deduplicated_multi_user_setting(
+def test_linked_user_settings_isolate_token_and_archive_state(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("APP_USER_ID", "legacy")
-    monkeypatch.setenv("APP_USER_IDS", " alpha, beta,alpha ,, gamma ")
-
-    assert load_user_ids() == ["alpha", "beta", "gamma"]
-
-
-def test_load_user_ids_falls_back_to_legacy_single_user(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv("APP_USER_ID", "legacy-user")
-
-    assert load_user_ids() == ["legacy-user"]
-
-
-def test_load_user_ids_requires_a_real_uid(monkeypatch: pytest.MonkeyPatch) -> None:
-    with pytest.raises(ValueError, match="APP_USER_IDS"):
-        load_user_ids()
-
-    monkeypatch.setenv("APP_USER_IDS", "default_user")
-    with pytest.raises(ValueError, match="default_user"):
-        load_user_ids()
-
-
-def test_multi_user_settings_isolate_token_and_archive_state(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv("APP_USER_IDS", "alpha,beta")
     monkeypatch.setenv("GARMIN_TOKEN_STORE", "local")
     monkeypatch.setenv("GARMIN_EMAIL", "must-not-enter-scheduled-job@example.com")
     monkeypatch.setenv("GARMIN_PASSWORD", "must-not-enter-scheduled-job")
+    monkeypatch.setenv("GARMIN_ALLOW_CREDENTIAL_LOGIN", "true")
 
-    alpha, beta = load_user_settings()
+    alpha = load_settings_for_user("alpha")
+    beta = load_settings_for_user("beta")
 
     assert alpha.app_user_id == "alpha"
     assert beta.app_user_id == "beta"
@@ -69,6 +45,27 @@ def test_multi_user_settings_isolate_token_and_archive_state(
     assert beta.garmin_archive_prefix == "raw/garmin/users/beta"
     assert alpha.garmin_email is None
     assert alpha.garmin_password is None
+    assert alpha.garmin_allow_credential_login is False
+
+
+def test_linked_user_settings_ignore_shared_token_path_overrides(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("GARMIN_TOKEN_STORE", "local")
+    monkeypatch.setenv("GARMIN_TOKEN_PATH", "/tmp/shared-token.json")
+    monkeypatch.setenv("GARMIN_TOKEN_OBJECT", "shared/object.json")
+
+    settings = load_settings_for_user("linked-user")
+
+    assert settings.garmin_token_path == ".garmin_tokens/linked-user/garmin_tokens.json"
+    assert settings.garmin_token_object == "garmin/users/linked-user/garmin_tokens.json"
+
+
+def test_linked_user_settings_reject_default_uid(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GARMIN_TOKEN_STORE", "local")
+
+    with pytest.raises(ValueError, match="default_user"):
+        load_settings_for_user("default_user")
 
 
 def test_single_user_load_settings_preserves_legacy_paths(
@@ -86,11 +83,10 @@ def test_single_user_load_settings_preserves_legacy_paths(
     assert settings.garmin_token_object == "legacy/object.json"
 
 
-def test_single_user_command_rejects_ambiguous_multi_user_configuration(
+def test_single_user_command_still_requires_app_user_id(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("APP_USER_IDS", "alpha,beta")
     monkeypatch.setenv("GARMIN_TOKEN_STORE", "local")
 
-    with pytest.raises(ValueError, match="sync-all"):
+    with pytest.raises(ValueError, match="APP_USER_ID"):
         load_settings()
