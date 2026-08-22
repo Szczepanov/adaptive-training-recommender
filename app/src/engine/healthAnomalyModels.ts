@@ -24,6 +24,10 @@ export interface HealthContextCheckin {
     recentVaccination?: boolean | null;
     medicationChange?: boolean | null;
     closeSickContact?: boolean | null;
+    /** Manual comparison with the athlete's usual wearable pattern. Null/omitted means unknown. */
+    subjectiveRhrHigher?: boolean | null;
+    subjectiveHrvLower?: boolean | null;
+    subjectiveRespirationHigher?: boolean | null;
     /** Opaque user content. Never use the text itself as evaluator evidence. */
     otherDisruption?: string | null;
     symptoms?: HealthSymptomsCheckin;
