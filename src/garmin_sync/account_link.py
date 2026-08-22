@@ -109,7 +109,11 @@ class GarminConnectionRepository:
             return
         data = snapshot.to_dict() or {}
         existing_digest = data.get("identityDigest")
-        if data.get("status") == "active" and existing_digest and existing_digest != identity_digest:
+        if (
+            data.get("status") == "active"
+            and existing_digest
+            and existing_digest != identity_digest
+        ):
             raise GarminLinkConflictError(
                 "This app account is already linked to a different Garmin account."
             )
@@ -198,10 +202,12 @@ def _garmin_identity(api: Garmin) -> tuple[str, str]:
     if not isinstance(profile, dict):
         raise GarminConnectConnectionError("Garmin returned an invalid social profile.")
 
+    # Only use identifiers expected to be stable for the lifetime of the Garmin account.
+    # displayName is intentionally not a fallback: users can change it, so using it as an
+    # identity key could create duplicate app accounts after a rename.
     candidates = (
         ("garmin_guid", profile.get("garminGUID")),
         ("profile_id", profile.get("profileId")),
-        ("display_name", profile.get("displayName")),
     )
     for kind, raw_value in candidates:
         value = str(raw_value).strip() if raw_value is not None else ""
@@ -245,14 +251,13 @@ class GarminAccountLinkService:
             password=password,
             return_on_mfa=True,
             retry_attempts=1,
-            verify_login=True,
         )
         try:
             mfa_status, client_state = api.login(str(token_path))
             if mfa_status == "needs_mfa":
-                # The low-level Garmin client retains the live SSO session needed by
-                # resume_login(); the plaintext password is no longer needed after Garmin
-                # accepted the first factor, so remove it before storing the challenge.
+                # Current garminconnect keeps the live MFA state inside this Garmin/Client
+                # instance and normally returns client_state=None. Keep the optional return
+                # value for forward/backward compatibility; resume_login accepts {} today.
                 api.password = None
                 challenge_id = self.pending_store.put(
                     PendingGarminLogin(
@@ -359,7 +364,9 @@ class GarminAccountLinkService:
                 try:
                     firebase_auth.delete_user(created_uid)
                 except Exception:
-                    logger.warning("Failed to roll back newly-created Firebase user after link error.")
+                    logger.warning(
+                        "Failed to roll back newly-created Firebase user after link error."
+                    )
             raise
         finally:
             api.password = None
