@@ -3,8 +3,9 @@ import logging
 import sys
 from collections.abc import Callable
 
+from .account_link import list_active_garmin_user_ids
 from .audit import format_report, run_audit
-from .config import load_settings, load_user_settings
+from .config import load_settings, load_settings_for_user
 from .service import GarminSyncService
 
 logging.basicConfig(
@@ -17,43 +18,49 @@ logger = logging.getLogger("garmin_sync")
 def _run_for_all_users(
     operation_name: str, operation: Callable[[GarminSyncService], bool]
 ) -> int:
-    """Run a scheduled operation for every configured Firebase UID.
+    """Run a scheduled operation for every active self-service Garmin link.
 
-    Users are processed sequentially to keep Garmin sessions isolated and to avoid
-    multiplying API pressure. A failure for one user does not prevent later users
-    from syncing, but the process returns non-zero so Cloud Run/Scheduler still
-    records the run as failed.
+    Users are discovered from the server-only garminConnections collection and processed
+    sequentially to isolate Garmin sessions and avoid multiplying API pressure. A failure
+    for one user does not prevent later users from running, but the process returns non-zero
+    so Cloud Run/Scheduler records a partial failure.
     """
     try:
-        settings_list = load_user_settings()
+        user_ids = list_active_garmin_user_ids()
     except Exception as e:
-        logger.error("%s configuration error: %s", operation_name, type(e).__name__)
+        logger.error("%s linked-user discovery error: %s", operation_name, type(e).__name__)
         return 1
 
-    failed_users: list[str] = []
-    for settings in settings_list:
-        uid = settings.app_user_id
+    if not user_ids:
+        logger.info("%s: no active Garmin links; nothing to do", operation_name)
+        return 0
+
+    failed_count = 0
+    for index, uid in enumerate(user_ids, start=1):
         try:
-            logger.info("%s: starting user=%s", operation_name, uid)
+            logger.info("%s: starting linked user %d/%d", operation_name, index, len(user_ids))
+            settings = load_settings_for_user(uid)
             service = GarminSyncService(settings)
             if not operation(service):
-                failed_users.append(uid)
-                logger.error("%s: unsuccessful user=%s", operation_name, uid)
+                failed_count += 1
+                logger.error("%s: unsuccessful linked user %d", operation_name, index)
             else:
-                logger.info("%s: complete user=%s", operation_name, uid)
+                logger.info("%s: complete linked user %d", operation_name, index)
         except Exception as e:
-            failed_users.append(uid)
+            failed_count += 1
             logger.error(
-                "%s: error user=%s type=%s", operation_name, uid, type(e).__name__
+                "%s: error linked user %d type=%s",
+                operation_name,
+                index,
+                type(e).__name__,
             )
 
-    if failed_users:
+    if failed_count:
         logger.error(
-            "%s failed for %d/%d configured users: %s",
+            "%s failed for %d/%d linked users",
             operation_name,
-            len(failed_users),
-            len(settings_list),
-            ",".join(failed_users),
+            failed_count,
+            len(user_ids),
         )
         return 1
     return 0
@@ -94,7 +101,7 @@ def run_daily_sync(args: list[str] | None = None) -> int:
 
 
 def run_daily_sync_all(args: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Run daily Garmin ingestion for all users.")
+    parser = argparse.ArgumentParser(description="Run daily Garmin ingestion for linked users.")
     parser.add_argument("--date", type=str, default=None, help="Target date YYYY-MM-DD")
     parser.add_argument("--force", action="store_true", help="Force refresh")
     parser.add_argument("--resync-days", type=int, default=None)
@@ -232,7 +239,7 @@ def run_push_pending_workouts_cmd(args: list[str] | None = None) -> int:
 
 
 def run_push_pending_workouts_all_cmd(args: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Push pending workouts for all users.")
+    parser = argparse.ArgumentParser(description="Push pending workouts for linked users.")
     parser.add_argument("--max-age-days", type=int, default=14)
     parsed_args = parser.parse_args(args)
     return _run_for_all_users(
@@ -259,7 +266,7 @@ def run_poll_manual_sync_cmd(args: list[str] | None = None) -> int:
 
 
 def run_poll_manual_sync_all_cmd(args: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Poll manual sync requests for all users.")
+    parser = argparse.ArgumentParser(description="Poll manual sync requests for linked users.")
     parser.parse_args(args)
     return _run_for_all_users(
         "poll manual sync", lambda service: service.poll_manual_sync_requests()
@@ -275,7 +282,9 @@ def main() -> int:
     sync_parser.add_argument("--force", action="store_true", help="Force refresh")
     sync_parser.add_argument("--resync-days", type=int, default=None)
 
-    sync_all_parser = subparsers.add_parser("sync-all", help="Run daily sync for APP_USER_IDS")
+    sync_all_parser = subparsers.add_parser(
+        "sync-all", help="Run daily sync for every active Garmin link"
+    )
     sync_all_parser.add_argument("--date", type=str, default=None, help="Target date YYYY-MM-DD")
     sync_all_parser.add_argument("--force", action="store_true", help="Force refresh")
     sync_all_parser.add_argument("--resync-days", type=int, default=None)
@@ -306,12 +315,14 @@ def main() -> int:
     push_pending_parser.add_argument("--max-age-days", type=int, default=14)
 
     push_pending_all_parser = subparsers.add_parser(
-        "push-pending-workouts-all", help="Push pending workouts for APP_USER_IDS"
+        "push-pending-workouts-all", help="Push pending workouts for every active Garmin link"
     )
     push_pending_all_parser.add_argument("--max-age-days", type=int, default=14)
 
     subparsers.add_parser("poll-manual-sync", help="Poll manual sync for APP_USER_ID")
-    subparsers.add_parser("poll-manual-sync-all", help="Poll manual sync for APP_USER_IDS")
+    subparsers.add_parser(
+        "poll-manual-sync-all", help="Poll manual sync for every active Garmin link"
+    )
 
     args = parser.parse_args()
 
