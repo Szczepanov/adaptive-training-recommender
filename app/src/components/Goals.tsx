@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { goalService } from '../services/goalService';
 import type { UserGoal, GoalCategory, GoalDomain, GoalStatus, UserEvent } from '../engine/models';
 import { deriveGoalCategory, deriveEventPriority, getDaysToEvent, goalToUserEvent, evaluatePeriodizationPhase } from '../engine/periodization';
@@ -122,29 +122,30 @@ export function Goals({ userId }: GoalsProps) {
     }
   };
 
-  // Derive Periodization State directly from canonical engine output
-  const activeUserEvents = goals
+  // ⚡ Bolt Performance Optimization:
+  // Memoize derived goal arrays and periodization state to prevent O(N) recalculations on every render.
+  const activeUserEvents = useMemo(() => goals
     .filter(g => g.status === 'active')
     .map(goalToUserEvent)
-    .filter((e): e is UserEvent => e !== null);
+    .filter((e): e is UserEvent => e !== null), [goals]);
 
-  const periodizationResult = evaluatePeriodizationPhase(activeUserEvents, getLocalDateString());
+  const periodizationResult = useMemo(() => evaluatePeriodizationPhase(activeUserEvents, getLocalDateString()), [activeUserEvents]);
   const focusEvent = periodizationResult.focusEvent;
   const daysToFocusEvent = periodizationResult.daysToEvent;
   const currentPhaseName = periodizationResult.phase.phaseName;
 
-  const filteredGoals = goals.filter(goal => {
+  const filteredGoals = useMemo(() => goals.filter(goal => {
     if (filter === 'all') return true;
     if (filter === 'active') return goal.status === 'active';
     if (filter === 'archived') return goal.status === 'archived';
     return true;
-  });
+  }), [goals, filter]);
 
-  const goalsByCategory = filteredGoals.reduce((acc, goal) => {
+  const goalsByCategory = useMemo(() => filteredGoals.reduce((acc, goal) => {
     if (!acc[goal.category]) acc[goal.category] = [];
     acc[goal.category].push(goal);
     return acc;
-  }, {} as Record<GoalCategory, UserGoalWithId[]>);
+  }, {} as Record<GoalCategory, UserGoalWithId[]>), [filteredGoals]);
 
   const renderStars = (priority: number) => {
     return Array.from({ length: 5 }, (_, i) => (
