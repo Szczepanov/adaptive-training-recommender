@@ -8,14 +8,14 @@ name: Deploy Frontend & Firestore Rules
 # secret this workflow reads below.
 #
 # Deliberately a SEPARATE identity from garmin-sync's github-deployer: github-frontend-deployer
-# holds only roles/firebasehosting.admin and roles/firebaserules.admin at the project level,
-# plus roles/run.viewer scoped to just the garmin-account-link Cloud Run service (Hosting
-# needs that to validate firebase.json's rewrite to it) -- nothing about Artifact Registry or
-# Cloud Scheduler, and vice versa -- see docs/ops/frontend-deployment.md.
+# holds Firebase Hosting/Rules plus the dedicated Firestore index role used by the separate
+# deploy-firestore-indexes.yml workflow, and roles/run.viewer scoped only to the
+# garmin-account-link service so Hosting can validate its rewrite. It has nothing about
+# Artifact Registry or Cloud Scheduler -- see docs/ops/frontend-deployment.md.
 #
-# Firestore indexes are deliberately out of scope here too, same as the local
-# `npm run firestore:rules:deploy` procedure this mirrors (docs/ops/firestore-rules-deployment.md)
-# -- use `make deploy-indexes` locally for those.
+# Firestore indexes remain a separate deployment unit because index construction is
+# asynchronous and needs its own readiness gate. The production E2E workflow calls that unit
+# before this workflow's rules/hosting stages.
 on:
   workflow_dispatch:
     inputs:
@@ -34,6 +34,49 @@ on:
         type: boolean
         required: true
         default: false
+  workflow_call:
+    inputs:
+      deploy_hosting:
+        description: "Build and deploy the web app to Firebase Hosting"
+        type: boolean
+        required: false
+        default: true
+      deploy_rules:
+        description: "Deploy app/firestore.rules"
+        type: boolean
+        required: false
+        default: true
+      confirm_rules_drift:
+        description: "Reviewed Firestore rules drift may be replaced with the repository version"
+        type: boolean
+        required: false
+        default: false
+    secrets:
+      GCP_PROJECT_ID:
+        required: true
+      GCP_WORKLOAD_IDENTITY_PROVIDER:
+        required: true
+      GCP_FRONTEND_DEPLOYER_SA_EMAIL:
+        required: true
+      # Build-time Firebase values are optional at the reusable-workflow boundary so a
+      # rules-only call does not depend on unrelated Hosting configuration. Hosting calls
+      # still fail safely if their required build values are absent or point at another project.
+      VITE_FIREBASE_API_KEY:
+        required: false
+      VITE_FIREBASE_AUTH_DOMAIN:
+        required: false
+      VITE_FIREBASE_PROJECT_ID:
+        required: false
+      VITE_FIREBASE_STORAGE_BUCKET:
+        required: false
+      VITE_FIREBASE_MESSAGING_SENDER_ID:
+        required: false
+      VITE_FIREBASE_APP_ID:
+        required: false
+      VITE_FIREBASE_MEASUREMENT_ID:
+        required: false
+      VITE_HEALTH_ANOMALY_POLICY:
+        required: false
 
 permissions:
   contents: read
@@ -42,8 +85,19 @@ permissions:
 # A second manual run started before the first finishes could both pass the Firestore drift
 # check, then race to deploy -- the later one silently wins and clobbers the earlier release.
 # Queue instead of running concurrently; never cancel a deploy that's already underway.
+#
+# A standalone workflow_dispatch run joins the SAME group deploy-production.yml holds for a
+# whole release, so it queues behind an in-flight end-to-end release instead of deploying a
+# different SHA mid-release. A workflow_call invocation (i.e. from deploy-production.yml
+# itself, for both the rules and hosting stages) uses this workflow's own isolated group
+# instead: that caller already holds the production-wide group for the run's whole duration,
+# so requesting it again here would queue this job behind the very run it's part of and
+# deadlock.
 concurrency:
-  group: deploy-frontend-${{ github.repository }}
+  group: >-
+    ${{ github.event_name == 'workflow_call'
+      && format('deploy-frontend-{0}', github.repository)
+      || format('deploy-production-{0}', github.repository) }}
   cancel-in-progress: false
 
 env:
@@ -98,6 +152,34 @@ jobs:
       - name: Install Node dependencies
         run: npm ci
 
+      # The project-ID check below only catches a Firebase project mismatch. It says nothing
+      # about the other values app/src/firebase.ts reads -- a missing API key, auth domain, or
+      # app ID still produces a successful static build whose Firebase client silently fails at
+      # runtime, and neither the Hosting nor the rewrite smoke check below would catch that
+      # (they only exercise static assets and the Cloud Run rewrite, not Firebase client init).
+      - name: Validate Firebase build configuration is complete
+        if: ${{ inputs.deploy_hosting }}
+        env:
+          VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
+          VITE_FIREBASE_AUTH_DOMAIN: ${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}
+          VITE_FIREBASE_STORAGE_BUCKET: ${{ secrets.VITE_FIREBASE_STORAGE_BUCKET }}
+          VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID }}
+          VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
+          VITE_FIREBASE_MEASUREMENT_ID: ${{ secrets.VITE_FIREBASE_MEASUREMENT_ID }}
+        run: |
+          missing=""
+          for var in VITE_FIREBASE_API_KEY VITE_FIREBASE_AUTH_DOMAIN VITE_FIREBASE_STORAGE_BUCKET \
+                     VITE_FIREBASE_MESSAGING_SENDER_ID VITE_FIREBASE_APP_ID VITE_FIREBASE_MEASUREMENT_ID; do
+            if [ -z "${!var}" ]; then
+              missing="${missing} ${var}"
+            fi
+          done
+          if [ -n "${missing}" ]; then
+            echo "Missing required Firebase build configuration:${missing}" >&2
+            echo "app/src/firebase.ts needs all of these set to produce a working runtime Firebase config -- refusing to build." >&2
+            exit 1
+          fi
+
       # Firebase project ID and GCP project ID are the same string for this project (see
       # docs/ops/cloud-run-deployment.md), but they're two independently-set secrets --
       # nothing stops them drifting apart. If they ever did, this would build correctly and
@@ -140,6 +222,28 @@ jobs:
       - name: Deploy to Firebase Hosting
         if: ${{ inputs.deploy_hosting }}
         run: npm exec --no -- firebase deploy --only hosting --project "${GCP_PROJECT}" --non-interactive
+
+      - name: Smoke test Firebase Hosting
+        if: ${{ inputs.deploy_hosting }}
+        run: |
+          curl --fail --silent --show-error --retry 5 --retry-delay 3 --retry-all-errors \
+            "https://${GCP_PROJECT}.web.app/" >/dev/null
+
+      # GET /api/garmin/login is intentionally unsupported by the account-link service. A
+      # backend-shaped 404 therefore proves the Hosting rewrite reached Cloud Run without
+      # submitting credentials or consuming a login-rate-limit attempt.
+      - name: Smoke test Hosting to Garmin API rewrite
+        if: ${{ inputs.deploy_hosting }}
+        run: |
+          BODY_FILE="$(mktemp)"
+          STATUS="$(curl --silent --show-error --retry 5 --retry-delay 3 --retry-all-errors \
+            --output "${BODY_FILE}" --write-out '%{http_code}' \
+            "https://${GCP_PROJECT}.web.app/api/garmin/login")"
+          if [ "${STATUS}" != "404" ] || ! grep -q '"error":"not_found"' "${BODY_FILE}"; then
+            echo "Expected Cloud Run JSON 404 through Firebase Hosting rewrite; got HTTP ${STATUS}." >&2
+            cat "${BODY_FILE}" >&2
+            exit 1
+          fi
 
       # Default path remains fail-closed: unexpected drift stops the run before any rules
       # deployment. This is the safe choice for ordinary frontend/rules deploys.

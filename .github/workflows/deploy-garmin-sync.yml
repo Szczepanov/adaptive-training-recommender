@@ -16,10 +16,45 @@ on:
         type: boolean
         required: true
         default: false
+  workflow_call:
+    inputs:
+      region:
+        description: "GCP region"
+        type: string
+        required: false
+        default: "europe-central2"
+      run_smoke_test:
+        description: "Execute the garmin-sync Job once and wait, after deploying"
+        type: boolean
+        required: false
+        default: false
+    secrets:
+      GCP_PROJECT_ID:
+        required: true
+      GCP_WORKLOAD_IDENTITY_PROVIDER:
+        required: true
+      GCP_DEPLOYER_SA_EMAIL:
+        required: true
 
 permissions:
   contents: read
   id-token: write
+
+# Serialise both standalone deploys and calls from the end-to-end production release. A
+# second image/scheduler rollout must never overtake an in-flight rollout of another SHA.
+#
+# A standalone workflow_dispatch run joins the SAME group deploy-production.yml holds for a
+# whole release, so it queues behind an in-flight end-to-end release instead of deploying a
+# different SHA mid-release. A workflow_call invocation (i.e. from deploy-production.yml
+# itself) uses this workflow's own isolated group instead: that caller already holds the
+# production-wide group for the run's whole duration, so requesting it again here would queue
+# this job behind the very run it's part of and deadlock.
+concurrency:
+  group: >-
+    ${{ github.event_name == 'workflow_call'
+      && format('deploy-garmin-sync-{0}', github.repository)
+      || format('deploy-production-{0}', github.repository) }}
+  cancel-in-progress: false
 
 env:
   GCP_PROJECT: ${{ secrets.GCP_PROJECT_ID }}
@@ -144,6 +179,19 @@ jobs:
             --schedule="*/3 * * * *" --time-zone="Europe/Warsaw" \
             --uri="https://run.googleapis.com/v2/projects/${GCP_PROJECT}/locations/${REGION}/jobs/garmin-manual-sync:run" \
             --http-method=POST --oauth-service-account-email="${SCHEDULER_SA_EMAIL}"
+
+      # This is credential-free and safe on every deploy. It catches a container that pushed
+      # successfully but cannot actually start under the Cloud Run runtime configuration.
+      - name: Smoke test account-link service health
+        run: |
+          SERVICE_URL="$(gcloud run services describe garmin-account-link \
+            --region="${REGION}" --format='value(status.url)')"
+          if [ -z "${SERVICE_URL}" ]; then
+            echo "Cloud Run did not return a URL for garmin-account-link." >&2
+            exit 1
+          fi
+          curl --fail --silent --show-error --retry 5 --retry-delay 3 --retry-all-errors \
+            "${SERVICE_URL}/health"
 
       - name: Smoke test garmin-sync
         if: inputs.run_smoke_test

@@ -1,0 +1,103 @@
+name: Deploy Firestore Indexes
+
+# Firestore index construction is asynchronous. Keep indexes as a separate deployment unit
+# from rules/Hosting so the production E2E release can wait until every composite index is
+# READY before exposing a frontend that may depend on it.
+on:
+  workflow_dispatch:
+  workflow_call:
+    secrets:
+      GCP_PROJECT_ID:
+        required: true
+      GCP_WORKLOAD_IDENTITY_PROVIDER:
+        required: true
+      GCP_FRONTEND_DEPLOYER_SA_EMAIL:
+        required: true
+
+permissions:
+  contents: read
+  id-token: write
+
+# A standalone workflow_dispatch run joins the SAME group deploy-production.yml holds for a
+# whole release, so it queues behind an in-flight end-to-end release instead of deploying a
+# different SHA mid-release. A workflow_call invocation (i.e. from deploy-production.yml
+# itself) uses this workflow's own isolated group instead: that caller already holds the
+# production-wide group for the run's whole duration, so requesting it again here would queue
+# this job behind the very run it's part of and deadlock.
+concurrency:
+  group: >-
+    ${{ github.event_name == 'workflow_call'
+      && format('deploy-firestore-indexes-{0}', github.repository)
+      || format('deploy-production-{0}', github.repository) }}
+  cancel-in-progress: false
+
+env:
+  GCP_PROJECT: ${{ secrets.GCP_PROJECT_ID }}
+  CLOUDSDK_CORE_PROJECT: ${{ secrets.GCP_PROJECT_ID }}
+
+jobs:
+  deploy:
+    name: Deploy and wait for indexes
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Authenticate to GCP (Workload Identity Federation, no key)
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_FRONTEND_DEPLOYER_SA_EMAIL }}
+
+      - uses: google-github-actions/setup-gcloud@v3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: app/package-lock.json
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      # Deliberately do not pass --force. The pipeline may add/update repository-owned indexes,
+      # but it must not silently delete a production index that exists outside the file. Such a
+      # cleanup remains an explicit operator action after reviewing the difference.
+      - name: Deploy Firestore indexes
+        run: |
+          npm exec --no -- firebase deploy --only firestore:indexes \
+            --project "${GCP_PROJECT}" --non-interactive
+
+      # firebase deploy returns after index creation has been requested, not necessarily after
+      # the indexes are usable. Block the client rollout until all composite indexes settle.
+      - name: Wait for composite indexes to become ready
+        run: |
+          DEADLINE=$((SECONDS + 1200))
+          while true; do
+            STATES="$(gcloud firestore indexes composite list \
+              --database='(default)' --format='value(state)')"
+
+            if grep -qx 'NEEDS_REPAIR' <<<"${STATES}"; then
+              echo "At least one Firestore composite index is in NEEDS_REPAIR." >&2
+              gcloud firestore indexes composite list --database='(default)'
+              exit 1
+            fi
+
+            if ! grep -qx 'CREATING' <<<"${STATES}"; then
+              echo "All Firestore composite indexes are READY."
+              break
+            fi
+
+            if (( SECONDS >= DEADLINE )); then
+              echo "Timed out waiting for Firestore composite indexes to become READY." >&2
+              gcloud firestore indexes composite list --database='(default)'
+              exit 1
+            fi
+
+            sleep 10
+          done

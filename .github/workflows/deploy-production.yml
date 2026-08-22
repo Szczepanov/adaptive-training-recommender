@@ -1,0 +1,153 @@
+name: Deploy Production E2E
+
+# One production release = one Git SHA, validated once and promoted in dependency order:
+#   CI -> Garmin backend/jobs/schedulers -> Firestore indexes -> Firestore rules -> Hosting.
+#
+# This intentionally remains workflow_dispatch rather than deploying every main push. Rules
+# drift is a production safety gate that sometimes requires an explicit human acknowledgement;
+# a partially reviewed rules change must never become an unattended release side effect.
+on:
+  workflow_dispatch:
+    inputs:
+      region:
+        description: "GCP region for Garmin Cloud Run/Scheduler resources"
+        type: string
+        required: true
+        default: "europe-central2"
+      confirm_rules_drift:
+        description: "I reviewed Firestore rules drift and intend to replace production with the repo version"
+        type: boolean
+        required: true
+        default: false
+      run_garmin_sync_smoke_test:
+        description: "Also execute the live garmin-sync job once after backend deployment"
+        type: boolean
+        required: true
+        default: false
+
+# Called deployment workflows cannot elevate permissions above their caller. id-token: write is
+# only granted per-job below, to the four deployment callers that actually need WIF -- not at
+# workflow scope, which would also hand it to preflight and release-summary.
+permissions:
+  contents: read
+
+# Queue whole releases. Component workflows have their own concurrency groups as a second
+# line of defence against someone starting a standalone component deployment at the same time --
+# but a standalone dispatch of a component workflow also joins this same production-wide group
+# (see each component workflow's own concurrency block), so it queues behind an in-flight
+# end-to-end release instead of racing it onto a different SHA. Never copy this group into a
+# reusable workflow's own workflow_call path: this caller run already holds it for the whole
+# release, so a called job requesting the same group would queue behind itself and deadlock.
+concurrency:
+  group: deploy-production-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    name: Production ref guard
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require main branch
+        run: |
+          if [ "${GITHUB_REF}" != "refs/heads/main" ]; then
+            echo "Production Workload Identity Federation is restricted to refs/heads/main." >&2
+            echo "Re-run this workflow with main selected in the Run workflow branch picker." >&2
+            exit 1
+          fi
+
+  validate:
+    name: Full CI release gate
+    needs: preflight
+    uses: ./.github/workflows/ci.yml
+    secrets:
+      VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
+
+  deploy-garmin:
+    name: Deploy Garmin backend
+    needs: validate
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/deploy-garmin-sync.yml
+    with:
+      region: ${{ inputs.region }}
+      run_smoke_test: ${{ inputs.run_garmin_sync_smoke_test }}
+    secrets:
+      GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+      GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+      GCP_DEPLOYER_SA_EMAIL: ${{ secrets.GCP_DEPLOYER_SA_EMAIL }}
+
+  deploy-indexes:
+    name: Deploy Firestore indexes
+    needs: deploy-garmin
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/deploy-firestore-indexes.yml
+    secrets:
+      GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+      GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+      GCP_FRONTEND_DEPLOYER_SA_EMAIL: ${{ secrets.GCP_FRONTEND_DEPLOYER_SA_EMAIL }}
+
+  deploy-rules:
+    name: Deploy Firestore rules
+    needs: deploy-indexes
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/deploy-frontend.yml
+    with:
+      deploy_hosting: false
+      deploy_rules: true
+      confirm_rules_drift: ${{ inputs.confirm_rules_drift }}
+    secrets:
+      GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+      GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+      GCP_FRONTEND_DEPLOYER_SA_EMAIL: ${{ secrets.GCP_FRONTEND_DEPLOYER_SA_EMAIL }}
+
+  deploy-hosting:
+    name: Deploy frontend last
+    needs: deploy-rules
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/deploy-frontend.yml
+    with:
+      deploy_hosting: true
+      deploy_rules: false
+      confirm_rules_drift: false
+    secrets:
+      GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+      GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+      GCP_FRONTEND_DEPLOYER_SA_EMAIL: ${{ secrets.GCP_FRONTEND_DEPLOYER_SA_EMAIL }}
+      VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
+      VITE_FIREBASE_AUTH_DOMAIN: ${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}
+      VITE_FIREBASE_PROJECT_ID: ${{ secrets.VITE_FIREBASE_PROJECT_ID }}
+      VITE_FIREBASE_STORAGE_BUCKET: ${{ secrets.VITE_FIREBASE_STORAGE_BUCKET }}
+      VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID }}
+      VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
+      VITE_FIREBASE_MEASUREMENT_ID: ${{ secrets.VITE_FIREBASE_MEASUREMENT_ID }}
+      VITE_HEALTH_ANOMALY_POLICY: ${{ secrets.VITE_HEALTH_ANOMALY_POLICY }}
+
+  release-summary:
+    name: Release summary
+    needs: deploy-hosting
+    runs-on: ubuntu-latest
+    steps:
+      - name: Record promoted revision
+        env:
+          # inputs.region is dispatcher-controlled. Pass it through env and print the
+          # variable rather than interpolating the expression into the run script directly --
+          # a `${{ }}` expansion inside `run:` is substituted into the shell source verbatim
+          # before the shell ever runs it, so a region value like `$(...)` would execute as a
+          # command in this job, which inherits id-token: write.
+          RELEASE_REGION: ${{ inputs.region }}
+        run: |
+          {
+            echo "## Production release complete"
+            echo
+            echo "- Commit: \`${GITHUB_SHA}\`"
+            printf '%s\n' "- Region: \`${RELEASE_REGION}\`"
+            echo "- Garmin backend, Firestore indexes/rules, and Firebase Hosting all completed."
+            echo "- Hosting smoke checks verified the site and the Hosting -> Cloud Run API rewrite."
+          } >> "${GITHUB_STEP_SUMMARY}"
