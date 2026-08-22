@@ -54,54 +54,19 @@ class Settings:
                 f"Configuration error: Invalid APP_TIMEZONE '{self.app_timezone}': {e}"
             ) from e
 
-        if self.garmin_token_store.lower() == "gcs":
-            if not self.garmin_token_bucket:
-                raise ValueError(
-                    "Configuration error: GARMIN_TOKEN_BUCKET is required when GARMIN_TOKEN_STORE is 'gcs'."
-                )
+        if self.garmin_token_store.lower() == "gcs" and not self.garmin_token_bucket:
+            raise ValueError(
+                "Configuration error: GARMIN_TOKEN_BUCKET is required when "
+                "GARMIN_TOKEN_STORE is 'gcs'."
+            )
 
         if self.garmin_archive_enabled and self.garmin_archive_store.lower() == "gcs":
             if not self.resolved_archive_bucket():
                 raise ValueError(
-                    "Configuration error: GARMIN_ARCHIVE_BUCKET (or GARMIN_TOKEN_BUCKET as a fallback) "
-                    "is required when GARMIN_ARCHIVE_ENABLED is true and GARMIN_ARCHIVE_STORE is 'gcs'."
+                    "Configuration error: GARMIN_ARCHIVE_BUCKET (or GARMIN_TOKEN_BUCKET as a "
+                    "fallback) is required when GARMIN_ARCHIVE_ENABLED is true and "
+                    "GARMIN_ARCHIVE_STORE is 'gcs'."
                 )
-
-
-def _ordered_unique(values: list[str]) -> list[str]:
-    seen: set[str] = set()
-    result: list[str] = []
-    for value in values:
-        value = value.strip()
-        if value and value not in seen:
-            seen.add(value)
-            result.append(value)
-    return result
-
-
-def load_user_ids() -> list[str]:
-    """Return configured Firebase UIDs in stable order.
-
-    APP_USER_IDS is the multi-user production setting. APP_USER_ID remains the
-    backwards-compatible single-user fallback for local/manual commands.
-    """
-    raw_many = os.getenv("APP_USER_IDS", "")
-    if raw_many.strip():
-        user_ids = _ordered_unique(raw_many.split(","))
-    else:
-        single = os.getenv("APP_USER_ID", "").strip()
-        user_ids = [single] if single else []
-
-    if not user_ids:
-        raise ValueError(
-            "Configuration error: set APP_USER_IDS (comma-separated Firebase UIDs) "
-            "or APP_USER_ID for single-user mode."
-        )
-    if "default_user" in user_ids:
-        raise ValueError(
-            "Configuration error: APP_USER_IDS/APP_USER_ID cannot contain 'default_user'."
-        )
-    return user_ids
 
 
 def _load_base_settings(user_id: str) -> Settings:
@@ -170,12 +135,7 @@ def _load_base_settings(user_id: str) -> Settings:
 
 
 def _scoped_for_user(settings: Settings) -> Settings:
-    """Isolate all Garmin token/archive state for one Firebase UID.
-
-    Keeping the local token cache separate matters as much as the GCS object: if a
-    restore for user B fails, user A's token file must never be available as a
-    fallback in the same Cloud Run container.
-    """
+    """Isolate all Garmin token/archive state for one linked Firebase UID."""
     uid = settings.app_user_id
     return replace(
         settings,
@@ -183,42 +143,37 @@ def _scoped_for_user(settings: Settings) -> Settings:
         garmin_token_object=f"garmin/users/{uid}/garmin_tokens.json",
         garmin_archive_local_dir=f".garmin_archive/{uid}",
         garmin_archive_prefix=f"raw/garmin/users/{uid}",
-        # Scheduled jobs authenticate from persisted tokens only. Credentials are
-        # intentionally kept out of a multi-user process and used only by bootstrap.
+        # Scheduled jobs authenticate only from the token written by the self-service
+        # account-link flow. Plaintext Garmin credentials never enter scheduled jobs.
         garmin_email=None,
         garmin_password=None,
+        garmin_allow_credential_login=False,
     )
 
 
-def load_user_settings(env_file: str | None = None) -> list[Settings]:
-    """Load isolated settings for every UID configured for scheduled sync."""
+def load_settings_for_user(user_id: str, env_file: str | None = None) -> Settings:
+    """Load token-only settings for one app user discovered from garminConnections."""
     load_dotenv(dotenv_path=env_file)
-    settings_list = [_scoped_for_user(_load_base_settings(uid)) for uid in load_user_ids()]
-    for settings in settings_list:
-        settings.validate()
-    return settings_list
+    normalized_uid = user_id.strip()
+    settings = _scoped_for_user(_load_base_settings(normalized_uid))
+    settings.validate()
+    return settings
 
 
 def load_settings(env_file: str | None = None) -> Settings:
-    """Load legacy/single-user settings.
+    """Load legacy/manual single-user settings from APP_USER_ID.
 
-    APP_USER_ID remains authoritative here so manual commands keep their existing
-    token paths. If only APP_USER_IDS is present, a single UID is accepted; multiple
-    UIDs require one of the explicit *-all CLI commands.
+    This remains useful for local backfill/audit/recovery operations. Production scheduled
+    jobs do not read a static user list; they discover active Garmin links in Firestore and
+    call load_settings_for_user() for each owner UID.
     """
     load_dotenv(dotenv_path=env_file)
-
     user_id = os.getenv("APP_USER_ID", "").strip()
     if not user_id:
-        user_ids = load_user_ids()
-        if len(user_ids) != 1:
-            raise ValueError(
-                "Configuration error: multiple APP_USER_IDS are configured. "
-                "Use sync-all, push-pending-workouts-all, or poll-manual-sync-all."
-            )
-        settings = _scoped_for_user(_load_base_settings(user_ids[0]))
-    else:
-        settings = _load_base_settings(user_id)
-
+        raise ValueError(
+            "Configuration error: APP_USER_ID is required for this single-user command. "
+            "Scheduled *-all commands discover linked users automatically."
+        )
+    settings = _load_base_settings(user_id)
     settings.validate()
     return settings
