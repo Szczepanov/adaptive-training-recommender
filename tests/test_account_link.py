@@ -209,7 +209,137 @@ def test_link_commit_failure_removes_uploaded_token(
             "existing-uid",
         )
 
-    assert deleted_objects == ["garmin/users/existing-uid/garmin_tokens.json"]
+    assert len(deleted_objects) == 1
+    assert deleted_objects[0].startswith("garmin/users/existing-uid/garmin_tokens-")
+    assert deleted_objects[0].endswith(".json")
+
+
+def test_relink_commit_failure_preserves_active_token(
+    monkeypatch: Any,
+    tmp_path: Path,
+) -> None:
+    """A failed relink must clean up only its own staged upload, never the active token
+    that scheduled sync still reads -- the two now live at different object names."""
+
+    class Repository:
+        def uid_for_identity(self, _identity_digest: str) -> None:
+            return None
+
+        def assert_target_available(self, _uid: str, _identity_digest: str) -> str:
+            return "garmin/users/existing-uid/garmin_tokens-original.json"
+
+        def commit_link(
+            self,
+            _uid: str,
+            _identity_digest: str,
+            _identity_kind: str,
+            _token_object: str,
+        ) -> None:
+            raise account_link_module.GarminLinkConflictError("conflicting link")
+
+    class TokenStore:
+        def __init__(self, _bucket: str, _object_name: str) -> None:
+            pass
+
+        def persist(self, _source: Path) -> bool:
+            return True
+
+    class FinalizableGarmin:
+        password = None
+
+        def connectapi(self, _path: str) -> dict[str, str]:
+            return {"garminGUID": "stable-guid"}
+
+    monkeypatch.setattr(account_link_module, "GcsTokenStore", TokenStore)
+    service = GarminAccountLinkService(
+        "bucket",
+        repository=Repository(),  # type: ignore[arg-type]
+    )
+    deleted_objects: list[str] = []
+    monkeypatch.setattr(service, "_delete_token_object", deleted_objects.append)
+
+    token_path = tmp_path / "tokens.json"
+    token_path.write_text("{}", encoding="utf-8")
+    temp_dir = tmp_path / "temporary"
+    temp_dir.mkdir()
+
+    with pytest.raises(account_link_module.GarminLinkConflictError, match="conflicting link"):
+        service._finalize(  # noqa: SLF001 - regression test for rollback boundary
+            FinalizableGarmin(),  # type: ignore[arg-type]
+            token_path,
+            temp_dir,
+            "existing-uid",
+        )
+
+    assert "garmin/users/existing-uid/garmin_tokens-original.json" not in deleted_objects
+    assert len(deleted_objects) == 1
+    assert deleted_objects[0].startswith("garmin/users/existing-uid/garmin_tokens-")
+    assert deleted_objects[0] != "garmin/users/existing-uid/garmin_tokens-original.json"
+
+
+def test_successful_relink_deletes_superseded_token(
+    monkeypatch: Any,
+    tmp_path: Path,
+) -> None:
+    """A successful relink commits the new staged token and only then removes the
+    now-superseded previous one."""
+
+    class Repository:
+        def uid_for_identity(self, _identity_digest: str) -> None:
+            return None
+
+        def assert_target_available(self, _uid: str, _identity_digest: str) -> str:
+            return "garmin/users/existing-uid/garmin_tokens-original.json"
+
+        def commit_link(
+            self,
+            _uid: str,
+            _identity_digest: str,
+            _identity_kind: str,
+            _token_object: str,
+        ) -> None:
+            return None
+
+    class TokenStore:
+        def __init__(self, _bucket: str, _object_name: str) -> None:
+            pass
+
+        def persist(self, _source: Path) -> bool:
+            return True
+
+    class FinalizableGarmin:
+        password = None
+
+        def connectapi(self, _path: str) -> dict[str, str]:
+            return {"garminGUID": "stable-guid"}
+
+    monkeypatch.setattr(account_link_module, "GcsTokenStore", TokenStore)
+    monkeypatch.setattr(
+        account_link_module.firebase_auth,
+        "create_custom_token",
+        lambda _uid: b"token",
+    )
+    service = GarminAccountLinkService(
+        "bucket",
+        repository=Repository(),  # type: ignore[arg-type]
+    )
+    deleted_objects: list[str] = []
+    monkeypatch.setattr(service, "_delete_token_object", deleted_objects.append)
+
+    token_path = tmp_path / "tokens.json"
+    token_path.write_text("{}", encoding="utf-8")
+    temp_dir = tmp_path / "temporary"
+    temp_dir.mkdir()
+
+    result = service._finalize(  # noqa: SLF001 - regression test for rollback boundary
+        FinalizableGarmin(),  # type: ignore[arg-type]
+        token_path,
+        temp_dir,
+        "existing-uid",
+    )
+
+    assert result["status"] == "authenticated"
+    assert deleted_objects == ["garmin/users/existing-uid/garmin_tokens-original.json"]
 
 
 def test_custom_token_failure_after_commit_keeps_new_user_for_retry(

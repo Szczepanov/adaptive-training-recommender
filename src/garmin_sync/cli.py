@@ -3,7 +3,7 @@ import logging
 import sys
 from collections.abc import Callable
 
-from .account_link import list_active_garmin_user_ids
+from .account_link import list_active_garmin_connections
 from .audit import format_report, run_audit
 from .config import load_settings, load_settings_for_user
 from .coordination import GarminExecutionLease
@@ -56,20 +56,20 @@ def _run_for_all_users(operation_name: str, operation: Callable[[GarminSyncServi
     Run/Scheduler records a partial failure.
     """
     try:
-        user_ids = list_active_garmin_user_ids()
+        connections = list_active_garmin_connections()
     except Exception as e:
         logger.error("%s linked-user discovery error: %s", operation_name, type(e).__name__)
         return 1
 
-    if not user_ids:
+    if not connections:
         logger.info("%s: no active Garmin links; nothing to do", operation_name)
         return 0
 
     failed_count = 0
-    for index, uid in enumerate(user_ids, start=1):
+    for index, (uid, token_object) in enumerate(connections, start=1):
         try:
-            logger.info("%s: starting linked user %d/%d", operation_name, index, len(user_ids))
-            settings = load_settings_for_user(uid)
+            logger.info("%s: starting linked user %d/%d", operation_name, index, len(connections))
+            settings = load_settings_for_user(uid, token_object=token_object)
             service = GarminSyncService(settings)
             if not _run_with_user_lease(operation_name, service, operation):
                 failed_count += 1
@@ -90,7 +90,7 @@ def _run_for_all_users(operation_name: str, operation: Callable[[GarminSyncServi
             "%s failed for %d/%d linked users",
             operation_name,
             failed_count,
-            len(user_ids),
+            len(connections),
         )
         return 1
     return 0

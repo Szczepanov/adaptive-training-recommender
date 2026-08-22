@@ -2,16 +2,12 @@ import { useState } from 'react';
 import { preferencesService } from '../../services/preferencesService';
 import { trainingIntentProfileService } from '../../services/trainingIntentProfileService';
 import { getErrorMessage } from '../../utils/errors';
+import { derivePresetOutcome, type PresetMessage } from '../../utils/healthRunYogaPreset';
 
 interface HealthRunYogaPresetSectionProps {
   userId: string;
   onApplied: () => Promise<void>;
 }
-
-type PresetMessage = {
-  text: string;
-  failed: boolean;
-};
 
 export function HealthRunYogaPresetSection({ userId, onApplied }: HealthRunYogaPresetSectionProps) {
   const [saving, setSaving] = useState(false);
@@ -43,28 +39,19 @@ export function HealthRunYogaPresetSection({ userId, onApplied }: HealthRunYogaP
       ]);
 
       const fulfilledCount = results.filter((result) => result.status === 'fulfilled').length;
-      const rejected = results.find((result) => result.status === 'rejected');
 
+      // A refresh failure must not be reported as a preset-write failure: catch it
+      // separately so derivePresetOutcome still sees the real write outcome below.
+      let refreshFailed = false;
       if (fulfilledCount > 0) {
-        await onApplied();
+        try {
+          await onApplied();
+        } catch {
+          refreshFailed = true;
+        }
       }
 
-      if (rejected) {
-        const detail = getErrorMessage(rejected.reason) || 'One preset save failed.';
-        setMessage({
-          text:
-            fulfilledCount > 0
-              ? `The preset was only partly applied: ${detail} Reapply it to complete setup.`
-              : detail,
-          failed: true,
-        });
-        return;
-      }
-
-      setMessage({
-        text: 'Health + Running + Yoga preset applied. Review and save any further edits below.',
-        failed: false,
-      });
+      setMessage(derivePresetOutcome(results, refreshFailed));
     } catch (error: unknown) {
       setMessage({
         text: getErrorMessage(error) || 'Failed to apply preset.',

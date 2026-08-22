@@ -82,6 +82,28 @@ def test_linked_user_settings_ignore_shared_token_path_overrides(
     assert settings.garmin_token_object == "garmin/users/linked-user/garmin_tokens.json"
 
 
+def test_linked_user_settings_use_committed_token_object_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("GARMIN_TOKEN_STORE", "local")
+
+    settings = load_settings_for_user(
+        "linked-user", token_object="garmin/users/linked-user/garmin_tokens-abc123.json"
+    )
+
+    assert settings.garmin_token_object == "garmin/users/linked-user/garmin_tokens-abc123.json"
+
+
+def test_linked_user_settings_fall_back_to_canonical_object_without_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("GARMIN_TOKEN_STORE", "local")
+
+    settings = load_settings_for_user("linked-user", token_object=None)
+
+    assert settings.garmin_token_object == "garmin/users/linked-user/garmin_tokens.json"
+
+
 def test_linked_user_settings_reject_default_uid(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("GARMIN_TOKEN_STORE", "local")
 
