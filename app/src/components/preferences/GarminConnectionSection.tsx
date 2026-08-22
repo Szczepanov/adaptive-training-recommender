@@ -29,14 +29,19 @@ export function GarminConnectionSection() {
     setSuccess(false);
     try {
       if (challengeId) {
-        const result = await garminAuthService.completeMfa(challengeId, mfaCode);
+        const submittedMfaCode = mfaCode;
+        setMfaCode('');
+        const result = await garminAuthService.completeMfa(challengeId, submittedMfaCode);
         if (result.status !== 'authenticated') throw new Error('Garmin MFA did not complete.');
         await finish(result.customToken);
         return;
       }
 
-      const result = await garminAuthService.startLogin(email, password, true);
+      // Do not retain Garmin credentials in rendered component state while the request is in
+      // flight or after an authentication/network failure. The server follows the same rule.
+      const submittedPassword = password;
       setPassword('');
+      const result = await garminAuthService.startLogin(email, submittedPassword, true);
       if (result.status === 'mfa_required') {
         setChallengeId(result.challengeId);
         return;
