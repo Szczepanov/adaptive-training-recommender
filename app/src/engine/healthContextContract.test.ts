@@ -94,28 +94,28 @@ describe('HA1 validateCheckin migration contract', () => {
         expect(stale.errors.some(error => error.field === 'healthContext.symptoms.onset')).toBe(true);
     });
 
-    it('accepts tri-state subjective physiology changes and preserves explicit false', () => {
+    it('accepts tri-state manual physiology fallback and preserves explicit false', () => {
         const result = validateCheckin(writePayload({
             healthContext: {
-                subjectiveRhrHigher: true,
-                subjectiveHrvLower: false,
-                subjectiveRespirationHigher: null,
+                manualRhrHigher: true,
+                manualHrvLower: false,
+                manualRespirationHigher: null,
             },
         }));
         expect(result.isValid).toBe(true);
         expect(result.data?.healthContext).toMatchObject({
-            subjectiveRhrHigher: true,
-            subjectiveHrvLower: false,
-            subjectiveRespirationHigher: null,
+            manualRhrHigher: true,
+            manualHrvLower: false,
+            manualRespirationHigher: null,
         });
     });
 
-    it('rejects malformed subjective physiology changes', () => {
+    it('rejects malformed manual physiology fallback', () => {
         const result = validateCheckin(writePayload({
-            healthContext: { subjectiveRhrHigher: 'yes' },
+            healthContext: { manualRhrHigher: 'yes' },
         }));
         expect(result.isValid).toBe(false);
-        expect(result.errors.some(error => error.field === 'healthContext.subjectiveRhrHigher')).toBe(true);
+        expect(result.errors.some(error => error.field === 'healthContext.manualRhrHigher')).toBe(true);
     });
 
     it('rejects non-finite and out-of-range timezone shifts', () => {
@@ -166,20 +166,20 @@ describe('HA1 parseSubjectiveCheckin migration contract', () => {
         expect(parsed.data.illnessSymptoms).toBe(false);
     });
 
-    it('parses subjective physiology changes without converting unknown to normal', () => {
+    it('parses manual physiology fallback without converting unknown to normal', () => {
         const parsed = parseSubjectiveCheckin(storedPayload({
             healthContext: {
-                subjectiveRhrHigher: false,
-                subjectiveHrvLower: true,
-                subjectiveRespirationHigher: null,
+                manualRhrHigher: false,
+                manualHrvLower: true,
+                manualRespirationHigher: null,
             },
         }), PATH, 'u1', DATE);
         expect(parsed.status).toBe('AVAILABLE');
         if (parsed.status !== 'AVAILABLE') throw new Error('expected available');
         expect(parsed.data.healthContext).toMatchObject({
-            subjectiveRhrHigher: false,
-            subjectiveHrvLower: true,
-            subjectiveRespirationHigher: null,
+            manualRhrHigher: false,
+            manualHrvLower: true,
+            manualRespirationHigher: null,
         });
     });
 
