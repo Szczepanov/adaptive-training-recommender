@@ -24,14 +24,6 @@ export interface HealthContextCheckin {
     recentVaccination?: boolean | null;
     medicationChange?: boolean | null;
     closeSickContact?: boolean | null;
-    /**
-     * Manual physiology fallback used only when the corresponding objective daily signal is
-     * unavailable. These are user-observed comparisons, not subjective sensations and never
-     * replace or override an available Garmin core signal. Null/omitted means unknown.
-     */
-    manualRhrHigher?: boolean | null;
-    manualHrvLower?: boolean | null;
-    manualRespirationHigher?: boolean | null;
     /** Opaque user content. Never use the text itself as evaluator evidence. */
     otherDisruption?: string | null;
     symptoms?: HealthSymptomsCheckin;
@@ -209,6 +201,7 @@ export interface HealthAnomalyPersistenceInput {
     previousEpisodeId: string | null;
     previousEpisodeDay: number | null;
     previousAssessmentDate?: string | null;
+    /** Legacy name: this counter now preserves consecutive adverse core physiology even when context is strong. */
     unexplainedPersistenceDays: number;
 }
 
