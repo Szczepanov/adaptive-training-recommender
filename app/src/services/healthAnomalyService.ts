@@ -1,6 +1,7 @@
 import type { DataState } from '../engine/dataState';
 import {
     evaluatePhysiologicalAnomaly,
+    isAdverseCoreSignalEvidence,
     SHADOW_V1_HEALTH_ANOMALY_THRESHOLDS,
 } from '../engine/healthAnomaly';
 import { HEALTH_ANOMALY_BASELINE_WINDOW_DAYS, mapRecoverySnapshotToHealthAnomalyFeatures } from '../engine/healthAnomalyFeatures';
@@ -38,15 +39,6 @@ export interface HealthAnomalyServiceResult {
 
 function availableData<T>(state: DataState<T>): T | null {
     return state.status === 'AVAILABLE' ? state.data : null;
-}
-
-function hasAdverseCorePhysiology(assessment: PhysiologicalAnomalyAssessment): boolean {
-    return assessment.coreSignals.some(evidence => {
-        const anomalous = evidence.status === 'moderate_anomaly' || evidence.status === 'strong_anomaly';
-        if (!anomalous) return false;
-        if (evidence.signal === 'hrv') return evidence.direction === 'low';
-        return evidence.direction === 'high';
-    });
 }
 
 /**
@@ -139,7 +131,8 @@ export class HealthAnomalyService {
                 // Preserve consecutive abnormal physiology even when the prior day had a
                 // strong competing explanation. Context may qualify interpretation, but it
                 // must not reset the physiological trace.
-                unexplainedPersistenceDays: previousAssessment && hasAdverseCorePhysiology(previousAssessment.assessment)
+                unexplainedPersistenceDays: previousAssessment
+                    && previousAssessment.assessment.coreSignals.some(isAdverseCoreSignalEvidence)
                     ? previousAssessment.assessment.persistenceDays
                     : 0,
             },
