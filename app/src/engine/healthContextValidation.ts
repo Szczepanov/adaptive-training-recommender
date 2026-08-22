@@ -35,9 +35,9 @@ const HEALTH_CONTEXT_KEYS = new Set([
     'recentVaccination',
     'medicationChange',
     'closeSickContact',
-    'subjectiveRhrHigher',
-    'subjectiveHrvLower',
-    'subjectiveRespirationHigher',
+    'manualRhrHigher',
+    'manualHrvLower',
+    'manualRespirationHigher',
     'otherDisruption',
     'symptoms',
 ]);
@@ -206,9 +206,9 @@ export function validateHealthContext(raw: unknown): HealthContextValidationResu
         'recentVaccination',
         'medicationChange',
         'closeSickContact',
-        'subjectiveRhrHigher',
-        'subjectiveHrvLower',
-        'subjectiveRespirationHigher',
+        'manualRhrHigher',
+        'manualHrvLower',
+        'manualRespirationHigher',
     ] as const) {
         if (!isNullableBoolean(raw[field])) {
             errors.push({ field: `healthContext.${field}`, message: `${field} must be boolean, null, or omitted`, value: raw[field] });
@@ -237,9 +237,9 @@ export function validateHealthContext(raw: unknown): HealthContextValidationResu
         ...(raw.recentVaccination === null || typeof raw.recentVaccination === 'boolean' ? { recentVaccination: raw.recentVaccination } : {}),
         ...(raw.medicationChange === null || typeof raw.medicationChange === 'boolean' ? { medicationChange: raw.medicationChange } : {}),
         ...(raw.closeSickContact === null || typeof raw.closeSickContact === 'boolean' ? { closeSickContact: raw.closeSickContact } : {}),
-        ...(raw.subjectiveRhrHigher === null || typeof raw.subjectiveRhrHigher === 'boolean' ? { subjectiveRhrHigher: raw.subjectiveRhrHigher } : {}),
-        ...(raw.subjectiveHrvLower === null || typeof raw.subjectiveHrvLower === 'boolean' ? { subjectiveHrvLower: raw.subjectiveHrvLower } : {}),
-        ...(raw.subjectiveRespirationHigher === null || typeof raw.subjectiveRespirationHigher === 'boolean' ? { subjectiveRespirationHigher: raw.subjectiveRespirationHigher } : {}),
+        ...(raw.manualRhrHigher === null || typeof raw.manualRhrHigher === 'boolean' ? { manualRhrHigher: raw.manualRhrHigher } : {}),
+        ...(raw.manualHrvLower === null || typeof raw.manualHrvLower === 'boolean' ? { manualHrvLower: raw.manualHrvLower } : {}),
+        ...(raw.manualRespirationHigher === null || typeof raw.manualRespirationHigher === 'boolean' ? { manualRespirationHigher: raw.manualRespirationHigher } : {}),
         ...(raw.otherDisruption === null || typeof raw.otherDisruption === 'string' ? { otherDisruption: raw.otherDisruption } : {}),
         ...(symptoms ? { symptoms } : {}),
     };
