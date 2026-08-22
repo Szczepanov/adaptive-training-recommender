@@ -115,7 +115,16 @@ jobs:
         run: npm run validate:workouts
 
       - name: Check engine policy version drift
-        run: node scripts/check-policy-drift.mjs ${{ github.event.pull_request.base.sha || github.event.before }}
+        shell: bash
+        run: |
+          BASE_SHA="${{ github.event.pull_request.base.sha || github.event.before }}"
+          # workflow_call inherits the caller event. A production workflow_dispatch has
+          # neither pull_request.base.sha nor push.before, so compare the release commit to
+          # its first parent instead of silently skipping the policy-version gate.
+          if [ -z "${BASE_SHA}" ] || [ "${BASE_SHA}" = "0000000000000000000000000000000000000000" ]; then
+            BASE_SHA="$(git rev-parse HEAD^)"
+          fi
+          node scripts/check-policy-drift.mjs "${BASE_SHA}"
 
       - name: Run frontend test suite
         run: npm test
