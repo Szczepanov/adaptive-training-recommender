@@ -127,7 +127,7 @@ jobs:
       run:
         working-directory: app
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false # this job never needs to push; don't leave the token in git config
 
@@ -138,7 +138,7 @@ jobs:
           exit 1
 
       - name: Authenticate to GCP (Workload Identity Federation, no key)
-        uses: google-github-actions/auth@v2
+        uses: google-github-actions/auth@v3
         with:
           workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ secrets.GCP_FRONTEND_DEPLOYER_SA_EMAIL }}
@@ -147,10 +147,10 @@ jobs:
       # scripts/check-firestore-rules-drift.mjs calls to read the deployed ruleset via the
       # Firebase Rules REST API -- it picks up the WIF credentials the auth step just wrote to
       # GOOGLE_APPLICATION_CREDENTIALS as Application Default Credentials automatically.
-      - uses: google-github-actions/setup-gcloud@v2
+      - uses: google-github-actions/setup-gcloud@v3
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: "22"
           cache: "npm"
@@ -159,7 +159,7 @@ jobs:
       # Only firestore:rules:deploy needs this (it runs the emulator suite before deploying),
       # but it's cheap enough to always install rather than condition on deploy_rules.
       - name: Set up Java for Firestore Emulator
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "21"
@@ -287,7 +287,7 @@ jobs:
       # deliberate operation, same as before this workflow existed).
       - name: Upload Firestore rules rollback backup
         if: always() && inputs.deploy_rules
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: firestore-rules-rollback-backup
           path: app/artifacts/firestore-rules-rollbacks/
