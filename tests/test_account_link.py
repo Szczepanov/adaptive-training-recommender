@@ -4,6 +4,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
+import pytest
+
 import garmin_sync.account_link as account_link_module
 from garmin_sync.account_link import GarminAccountLinkService, PendingLoginStore
 
@@ -19,6 +21,9 @@ class FakeGarminClient:
 
 class FakeGarmin:
     def __init__(self, *, needs_mfa: bool, **kwargs: Any) -> None:
+        assert kwargs["return_on_mfa"] is True
+        assert kwargs["retry_attempts"] == 1
+        assert "verify_login" not in kwargs
         self.password = kwargs.get("password")
         self.needs_mfa = needs_mfa
         self.client = FakeGarminClient()
@@ -137,12 +142,19 @@ def test_expired_mfa_challenge_is_rejected() -> None:
     first = service.start_login("person@example.com", "secret")
     now[0] = 106.0
 
-    try:
+    with pytest.raises(Exception, match="expired"):
         service.complete_mfa(str(first["challengeId"]), "123456")
-    except Exception as exc:
-        assert "expired" in str(exc).lower()
-    else:
-        raise AssertionError("expired MFA challenge should fail")
+
+
+def test_mutable_display_name_is_not_accepted_as_account_identity() -> None:
+    class DisplayNameOnlyGarmin:
+        def connectapi(self, _path: str) -> dict[str, str]:
+            return {"displayName": "renameable-handle"}
+
+    with pytest.raises(Exception, match="no stable account identity"):
+        account_link_module._garmin_identity(  # noqa: SLF001 - identity contract regression
+            DisplayNameOnlyGarmin()  # type: ignore[arg-type]
+        )
 
 
 def test_custom_token_failure_after_commit_keeps_new_user_for_retry(
@@ -212,17 +224,13 @@ def test_custom_token_failure_after_commit_keeps_new_user_for_retry(
     temp_dir = tmp_path / "temporary"
     temp_dir.mkdir()
 
-    try:
+    with pytest.raises(RuntimeError, match="temporary signer failure"):
         service._finalize(  # noqa: SLF001 - regression test for transactional boundary
             FinalizableGarmin(),  # type: ignore[arg-type]
             token_path,
             temp_dir,
             None,
         )
-    except RuntimeError as exc:
-        assert "temporary signer failure" in str(exc)
-    else:
-        raise AssertionError("custom-token signing failure should propagate")
 
     assert repository.committed is True
     assert deleted_uids == []
