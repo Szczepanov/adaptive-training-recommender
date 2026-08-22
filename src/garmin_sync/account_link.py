@@ -1,0 +1,369 @@
+import hashlib
+import logging
+import secrets
+import shutil
+import tempfile
+import threading
+import time
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Callable
+
+from firebase_admin import auth as firebase_auth
+from garminconnect import (
+    Garmin,
+    GarminConnectAuthenticationError,
+    GarminConnectConnectionError,
+    GarminConnectTooManyRequestsError,
+)
+from google.cloud import firestore as google_firestore
+
+from .firestore_repository import init_firestore_client
+from .token_store import GcsTokenStore
+
+logger = logging.getLogger(__name__)
+
+
+class GarminLinkConflictError(ValueError):
+    """Raised when an authenticated app user tries to claim another user's Garmin account."""
+
+
+class GarminLinkConfigurationError(RuntimeError):
+    """Raised when account linking is not safely configured."""
+
+
+@dataclass
+class PendingGarminLogin:
+    api: Garmin
+    token_path: Path
+    temp_dir: Path
+    requested_uid: str | None
+    client_state: Any
+    created_monotonic: float
+
+
+class PendingLoginStore:
+    """Short-lived in-memory MFA state.
+
+    Garmin's interactive MFA continuation requires the same live client/session object.
+    We deliberately keep that object only in memory and deploy the linker as one Cloud Run
+    instance. A restart invalidates the challenge and makes the user restart login; it never
+    causes us to persist a Garmin password or SSO session to Firestore/GCS.
+    """
+
+    def __init__(self, ttl_seconds: int = 300, clock: Callable[[], float] = time.monotonic):
+        self.ttl_seconds = ttl_seconds
+        self.clock = clock
+        self._items: dict[str, PendingGarminLogin] = {}
+        self._lock = threading.Lock()
+
+    def _expired(self, pending: PendingGarminLogin) -> bool:
+        return self.clock() - pending.created_monotonic > self.ttl_seconds
+
+    @staticmethod
+    def _cleanup(pending: PendingGarminLogin) -> None:
+        pending.api.password = None
+        shutil.rmtree(pending.temp_dir, ignore_errors=True)
+
+    def _purge_expired_locked(self) -> None:
+        expired = [key for key, value in self._items.items() if self._expired(value)]
+        for key in expired:
+            pending = self._items.pop(key)
+            self._cleanup(pending)
+
+    def put(self, pending: PendingGarminLogin) -> str:
+        challenge_id = secrets.token_urlsafe(32)
+        with self._lock:
+            self._purge_expired_locked()
+            self._items[challenge_id] = pending
+        return challenge_id
+
+    def pop(self, challenge_id: str) -> PendingGarminLogin:
+        with self._lock:
+            self._purge_expired_locked()
+            pending = self._items.pop(challenge_id, None)
+        if pending is None:
+            raise GarminConnectAuthenticationError(
+                "MFA challenge is invalid or expired. Start Garmin login again."
+            )
+        return pending
+
+
+class GarminConnectionRepository:
+    """Server-only Garmin identity mapping and linked-user discovery."""
+
+    def __init__(self, db: Any = None):
+        self.db = db or init_firestore_client()
+
+    def uid_for_identity(self, identity_digest: str) -> str | None:
+        snapshot = self.db.collection("garminIdentities").document(identity_digest).get()
+        if not snapshot.exists:
+            return None
+        data = snapshot.to_dict() or {}
+        uid = data.get("userId")
+        return str(uid) if uid else None
+
+    def assert_target_available(self, uid: str, identity_digest: str) -> None:
+        snapshot = self.db.collection("garminConnections").document(uid).get()
+        if not snapshot.exists:
+            return
+        data = snapshot.to_dict() or {}
+        existing_digest = data.get("identityDigest")
+        if data.get("status") == "active" and existing_digest and existing_digest != identity_digest:
+            raise GarminLinkConflictError(
+                "This app account is already linked to a different Garmin account."
+            )
+
+    def commit_link(
+        self,
+        uid: str,
+        identity_digest: str,
+        identity_kind: str,
+        token_object: str,
+    ) -> None:
+        identity_ref = self.db.collection("garminIdentities").document(identity_digest)
+        connection_ref = self.db.collection("garminConnections").document(uid)
+        transaction = self.db.transaction()
+        now_iso = google_firestore.SERVER_TIMESTAMP
+
+        @google_firestore.transactional
+        def commit(transaction_obj: Any) -> None:
+            identity_snapshot = identity_ref.get(transaction=transaction_obj)
+            if identity_snapshot.exists:
+                identity_data = identity_snapshot.to_dict() or {}
+                owner_uid = identity_data.get("userId")
+                if owner_uid and owner_uid != uid:
+                    raise GarminLinkConflictError(
+                        "This Garmin account is already linked to another app account."
+                    )
+
+            connection_snapshot = connection_ref.get(transaction=transaction_obj)
+            if connection_snapshot.exists:
+                connection_data = connection_snapshot.to_dict() or {}
+                existing_digest = connection_data.get("identityDigest")
+                if (
+                    connection_data.get("status") == "active"
+                    and existing_digest
+                    and existing_digest != identity_digest
+                ):
+                    raise GarminLinkConflictError(
+                        "This app account is already linked to a different Garmin account."
+                    )
+
+            transaction_obj.set(
+                identity_ref,
+                {
+                    "userId": uid,
+                    "identityKind": identity_kind,
+                    "linkedAt": now_iso,
+                    "updatedAt": now_iso,
+                },
+                merge=True,
+            )
+            transaction_obj.set(
+                connection_ref,
+                {
+                    "userId": uid,
+                    "status": "active",
+                    "identityDigest": identity_digest,
+                    "identityKind": identity_kind,
+                    "tokenObject": token_object,
+                    "source": "garmin-connect-unofficial",
+                    "linkedAt": now_iso,
+                    "updatedAt": now_iso,
+                },
+                merge=True,
+            )
+
+        commit(transaction)
+
+    def list_active_user_ids(self) -> list[str]:
+        user_ids: list[str] = []
+        for snapshot in self.db.collection("garminConnections").stream():
+            data = snapshot.to_dict() or {}
+            if data.get("status") != "active":
+                continue
+            uid = data.get("userId") or snapshot.id
+            if uid and uid not in user_ids:
+                user_ids.append(str(uid))
+        return user_ids
+
+
+def list_active_garmin_user_ids(db: Any = None) -> list[str]:
+    return GarminConnectionRepository(db=db).list_active_user_ids()
+
+
+def _garmin_identity(api: Garmin) -> tuple[str, str]:
+    profile = api.connectapi("/userprofile-service/socialProfile") or {}
+    if not isinstance(profile, dict):
+        raise GarminConnectConnectionError("Garmin returned an invalid social profile.")
+
+    candidates = (
+        ("garmin_guid", profile.get("garminGUID")),
+        ("profile_id", profile.get("profileId")),
+        ("display_name", profile.get("displayName")),
+    )
+    for kind, raw_value in candidates:
+        value = str(raw_value).strip() if raw_value is not None else ""
+        if value:
+            digest = hashlib.sha256(f"{kind}:{value}".encode("utf-8")).hexdigest()
+            return kind, digest
+    raise GarminConnectAuthenticationError(
+        "Garmin login succeeded but no stable account identity was available."
+    )
+
+
+class GarminAccountLinkService:
+    def __init__(
+        self,
+        token_bucket: str,
+        repository: GarminConnectionRepository | None = None,
+        pending_store: PendingLoginStore | None = None,
+        garmin_factory: Callable[..., Garmin] = Garmin,
+    ):
+        if not token_bucket.strip():
+            raise GarminLinkConfigurationError("GARMIN_TOKEN_BUCKET is required.")
+        self.token_bucket = token_bucket.strip()
+        self.repository = repository or GarminConnectionRepository()
+        self.pending_store = pending_store or PendingLoginStore()
+        self.garmin_factory = garmin_factory
+
+    @staticmethod
+    def _temporary_token_path() -> tuple[Path, Path]:
+        temp_dir = Path(tempfile.mkdtemp(prefix="garmin-link-"))
+        return temp_dir, temp_dir / "garmin_tokens.json"
+
+    def start_login(
+        self, email: str, password: str, requested_uid: str | None = None
+    ) -> dict[str, Any]:
+        if not email.strip() or not password:
+            raise GarminConnectAuthenticationError("Garmin email and password are required.")
+
+        temp_dir, token_path = self._temporary_token_path()
+        api = self.garmin_factory(
+            email=email.strip(),
+            password=password,
+            return_on_mfa=True,
+            retry_attempts=1,
+            verify_login=True,
+        )
+        try:
+            mfa_status, client_state = api.login(str(token_path))
+            if mfa_status == "needs_mfa":
+                # The low-level Garmin client retains the live SSO session needed by
+                # resume_login(); the plaintext password is no longer needed after Garmin
+                # accepted the first factor, so remove it before storing the challenge.
+                api.password = None
+                challenge_id = self.pending_store.put(
+                    PendingGarminLogin(
+                        api=api,
+                        token_path=token_path,
+                        temp_dir=temp_dir,
+                        requested_uid=requested_uid,
+                        client_state=client_state,
+                        created_monotonic=self.pending_store.clock(),
+                    )
+                )
+                return {"status": "mfa_required", "challengeId": challenge_id}
+
+            return self._finalize(api, token_path, temp_dir, requested_uid)
+        except Exception:
+            api.password = None
+            shutil.rmtree(temp_dir, ignore_errors=True)
+            raise
+
+    def complete_mfa(self, challenge_id: str, code: str) -> dict[str, Any]:
+        if not challenge_id or not code.strip():
+            raise GarminConnectAuthenticationError("MFA challenge and code are required.")
+
+        pending = self.pending_store.pop(challenge_id)
+        try:
+            pending.api.resume_login(pending.client_state or {}, code.strip())
+            pending.api.password = None
+            # return_on_mfa exits before Garmin.login()'s normal tokenstore dump path.
+            # After successful resume, explicitly persist the authenticated token snapshot.
+            pending.api.client.dump(str(pending.token_path))
+            return self._finalize(
+                pending.api,
+                pending.token_path,
+                pending.temp_dir,
+                pending.requested_uid,
+            )
+        except Exception:
+            pending.api.password = None
+            shutil.rmtree(pending.temp_dir, ignore_errors=True)
+            raise
+
+    def _finalize(
+        self,
+        api: Garmin,
+        token_path: Path,
+        temp_dir: Path,
+        requested_uid: str | None,
+    ) -> dict[str, Any]:
+        created_uid: str | None = None
+        try:
+            identity_kind, identity_digest = _garmin_identity(api)
+            mapped_uid = self.repository.uid_for_identity(identity_digest)
+
+            if mapped_uid:
+                if requested_uid and requested_uid != mapped_uid:
+                    raise GarminLinkConflictError(
+                        "This Garmin account is already linked to another app account."
+                    )
+                target_uid = mapped_uid
+                is_new_user = False
+            elif requested_uid:
+                target_uid = requested_uid
+                is_new_user = False
+            else:
+                user_record = firebase_auth.create_user()
+                target_uid = user_record.uid
+                created_uid = target_uid
+                is_new_user = True
+
+            self.repository.assert_target_available(target_uid, identity_digest)
+            token_object = f"garmin/users/{target_uid}/garmin_tokens.json"
+            if not GcsTokenStore(self.token_bucket, token_object).persist(token_path):
+                raise GarminLinkConfigurationError("Failed to persist Garmin session tokens.")
+
+            self.repository.commit_link(
+                target_uid,
+                identity_digest,
+                identity_kind,
+                token_object,
+            )
+            custom_token = firebase_auth.create_custom_token(target_uid)
+            custom_token_text = (
+                custom_token.decode("utf-8")
+                if isinstance(custom_token, bytes)
+                else str(custom_token)
+            )
+            return {
+                "status": "authenticated",
+                "customToken": custom_token_text,
+                "isNewUser": is_new_user,
+            }
+        except Exception:
+            if created_uid:
+                try:
+                    firebase_auth.delete_user(created_uid)
+                except Exception:
+                    logger.warning("Failed to roll back newly-created Firebase user after link error.")
+            raise
+        finally:
+            api.password = None
+            shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+__all__ = [
+    "GarminAccountLinkService",
+    "GarminConnectionRepository",
+    "GarminLinkConfigurationError",
+    "GarminLinkConflictError",
+    "PendingLoginStore",
+    "list_active_garmin_user_ids",
+    "GarminConnectAuthenticationError",
+    "GarminConnectConnectionError",
+    "GarminConnectTooManyRequestsError",
+]
