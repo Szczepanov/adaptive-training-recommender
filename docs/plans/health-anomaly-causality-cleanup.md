@@ -2,7 +2,7 @@
 
 ## Status
 
-Implementation complete on PR #181; full CI validation is the remaining gate. The PR is stacked on #179 (`fix/close-sick-contact-tristate`) so its normal base does not match the repository's `pull_request -> main` CI filter. For integration validation, #181 may be pointed at `main` temporarily and then restored to the stacked base.
+Implementation complete on PR #181. Full integration CI passed in pipeline #1035 against `main + #179 + #181`; the PR was then restored to its stacked #179 base (`fix/close-sick-contact-tristate`) so the follow-up remains isolated from the morning check-in redesign.
 
 ## Context
 
