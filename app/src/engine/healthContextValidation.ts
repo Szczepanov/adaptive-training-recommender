@@ -3,6 +3,7 @@ import type {
     HealthSymptomsCheckin,
     HealthSymptomType,
 } from './healthAnomalyModels';
+import { normalizeHealthContext } from './healthContextDefaults';
 
 export const HEALTH_OTHER_DISRUPTION_MAX_LENGTH = 500;
 
@@ -35,9 +36,9 @@ const HEALTH_CONTEXT_KEYS = new Set([
     'recentVaccination',
     'medicationChange',
     'closeSickContact',
-    // Legacy keys remain accepted at the boundary so already-written documents do not
-    // become invalid. They are intentionally stripped from validated data: RHR/HRV/
-    // respiration direction is calculated from Garmin history, never from check-in input.
+    // Legacy keys remain accepted at the raw boundary so already-written documents do not
+    // become invalid. They are intentionally absent from HealthContextCheckin and stripped
+    // from validated canonical data: physiology direction comes only from Garmin.
     'manualRhrHigher',
     'manualHrvLower',
     'manualRespirationHigher',
@@ -153,8 +154,8 @@ function validateSymptoms(
 
 /**
  * Shared app-side contract for the optional check-in health context. Malformed supplied
- * fields fail closed. Once the block exists, ordinary contextual yes/no questions normalize
- * missing/null legacy values to explicit false because their product default is No.
+ * fields fail closed. A completely absent historical block stays absent; once a block
+ * exists, canonical product defaults are materialized by normalizeHealthContext().
  */
 export function validateHealthContext(raw: unknown): HealthContextValidationResult {
     if (raw === undefined) return { isValid: true, data: undefined, errors: [] };
@@ -232,21 +233,22 @@ export function validateHealthContext(raw: unknown): HealthContextValidationResu
     const symptoms = validateSymptoms(raw.symptoms, errors);
     if (errors.length > 0) return { isValid: false, errors };
 
-    const data: HealthContextCheckin = {
+    const supplied: HealthContextCheckin = {
         ...(typeof raw.alcoholDrinksLast24h === 'number' ? { alcoholDrinksLast24h: raw.alcoholDrinksLast24h as 0 | 1 | 2 | 3 } : {}),
         ...(isOneOf(raw.travelDisruption, HEALTH_TRAVEL_DISRUPTIONS) ? { travelDisruption: raw.travelDisruption } : {}),
         ...(raw.timezoneShiftHours === null || typeof raw.timezoneShiftHours === 'number' ? { timezoneShiftHours: raw.timezoneShiftHours as number | null } : {}),
-        unusualHeatOrSauna: raw.unusualHeatOrSauna === true,
-        dehydrationOrFluidLoss: raw.dehydrationOrFluidLoss === true,
-        recentVaccination: raw.recentVaccination === true,
-        medicationChange: raw.medicationChange === true,
-        closeSickContact: raw.closeSickContact === true,
-        // Do not carry legacy manual physiology into canonical validated data. If a Garmin
-        // current value/baseline is missing, the objective channel remains unavailable.
+        ...(raw.unusualHeatOrSauna === null || typeof raw.unusualHeatOrSauna === 'boolean' ? { unusualHeatOrSauna: raw.unusualHeatOrSauna as boolean | null } : {}),
+        ...(raw.dehydrationOrFluidLoss === null || typeof raw.dehydrationOrFluidLoss === 'boolean' ? { dehydrationOrFluidLoss: raw.dehydrationOrFluidLoss as boolean | null } : {}),
+        ...(raw.recentVaccination === null || typeof raw.recentVaccination === 'boolean' ? { recentVaccination: raw.recentVaccination as boolean | null } : {}),
+        ...(raw.medicationChange === null || typeof raw.medicationChange === 'boolean' ? { medicationChange: raw.medicationChange as boolean | null } : {}),
+        ...(raw.closeSickContact === null || typeof raw.closeSickContact === 'boolean' ? { closeSickContact: raw.closeSickContact as boolean | null } : {}),
         ...(raw.otherDisruption === null || typeof raw.otherDisruption === 'string' ? { otherDisruption: raw.otherDisruption } : {}),
         ...(symptoms ? { symptoms } : {}),
     };
 
+    // Legacy manual physiology keys were validated above only for migration compatibility;
+    // they are intentionally not represented in supplied/canonical data.
+    const data = normalizeHealthContext(supplied, symptoms?.present ?? false);
     return { isValid: true, data, errors: [] };
 }
 

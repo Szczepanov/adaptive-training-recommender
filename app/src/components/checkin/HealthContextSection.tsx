@@ -2,6 +2,7 @@ import type {
     HealthContextCheckin,
     HealthSymptomType,
 } from '../../engine/healthAnomalyModels';
+import { normalizeHealthContext } from '../../engine/healthContextDefaults';
 import { HEALTH_OTHER_DISRUPTION_MAX_LENGTH } from '../../engine/healthContextValidation';
 import './HealthContextSection.css';
 
@@ -9,8 +10,8 @@ interface HealthContextSectionProps {
     value?: HealthContextCheckin;
     symptomsPresent: boolean;
     /**
-     * Kept temporarily for caller compatibility. Physiology direction is no longer asked
-     * manually; Garmin-derived core signals are the only authority.
+     * Deprecated no-op kept only while this PR is stacked on #179, whose DailyCheckin caller
+     * still supplies the old missingness object. No manual physiology reaches UI or engine state.
      */
     manualPhysiologyMissing?: {
         rhr: boolean;
@@ -82,18 +83,7 @@ export function HealthContextSection({
     symptomsPresent,
     onChange,
 }: HealthContextSectionProps) {
-    const context: HealthContextCheckin = {
-        alcoholDrinksLast24h: 0,
-        travelDisruption: 'none',
-        symptoms: { present: symptomsPresent },
-        ...value,
-        unusualHeatOrSauna: value?.unusualHeatOrSauna ?? false,
-        dehydrationOrFluidLoss: value?.dehydrationOrFluidLoss ?? false,
-        recentVaccination: value?.recentVaccination ?? false,
-        medicationChange: value?.medicationChange ?? false,
-        closeSickContact: value?.closeSickContact ?? false,
-        ...(value?.symptoms ? { symptoms: value.symptoms } : {}),
-    };
+    const context = normalizeHealthContext(value, symptomsPresent);
     const update = (patch: Partial<HealthContextCheckin>) => onChange({ ...context, ...patch });
     const symptoms = context.symptoms ?? { present: symptomsPresent };
 

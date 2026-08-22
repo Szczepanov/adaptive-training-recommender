@@ -1,6 +1,7 @@
 import type { DataState } from '../engine/dataState';
 import {
     evaluatePhysiologicalAnomaly,
+    isAdverseCoreSignalEvidence,
     SHADOW_V1_HEALTH_ANOMALY_THRESHOLDS,
 } from '../engine/healthAnomaly';
 import { HEALTH_ANOMALY_BASELINE_WINDOW_DAYS, mapRecoverySnapshotToHealthAnomalyFeatures } from '../engine/healthAnomalyFeatures';
@@ -127,7 +128,11 @@ export class HealthAnomalyService {
                 previousEpisodeId: previousAssessment?.assessment.episodeId ?? null,
                 previousEpisodeDay: previousAssessment?.assessment.episodeDay ?? null,
                 previousAssessmentDate: previousAssessment?.date ?? null,
-                unexplainedPersistenceDays: previousAssessment && previousAssessment.assessment.unexplainedEvidence.length > 0
+                // Preserve consecutive abnormal physiology even when the prior day had a
+                // strong competing explanation. Context may qualify interpretation, but it
+                // must not reset the physiological trace.
+                unexplainedPersistenceDays: previousAssessment
+                    && previousAssessment.assessment.coreSignals.some(isAdverseCoreSignalEvidence)
                     ? previousAssessment.assessment.persistenceDays
                     : 0,
             },
