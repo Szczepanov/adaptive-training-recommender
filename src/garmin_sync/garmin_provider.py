@@ -45,6 +45,13 @@ _POWER_ACTIVITY_TYPES = {
 }
 
 
+def _optional_non_negative_int(value: Any) -> int | None:
+    """Accept Garmin count/duration fields only when they are real non-negative ints."""
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        return None
+    return value
+
+
 def extract_sleep_metrics(
     sleep_obj: dict[str, Any] | None,
 ) -> tuple[
@@ -60,12 +67,15 @@ def extract_sleep_metrics(
     """Extract (sleep_score, sleep_sec, avg_resp, deep_sec, rem_sec, light_sec, awake_sec, restless_count)
     from a raw Garmin sleep response.
     Handles both known Garmin response shapes (nested dailySleepDTO.sleepScores.overall
-    and top-level overallSleepScore)."""
+    and top-level overallSleepScore), and tolerates stage/restlessness fields appearing
+    either in dailySleepDTO or at the response root."""
     if not sleep_obj:
         return None, None, None, None, None, None, None, None
 
-    daily_sleep = sleep_obj.get("dailySleepDTO", {})
-    scores = daily_sleep.get("sleepScores", {}) or sleep_obj.get("overallSleepScore", {})
+    raw_daily_sleep = sleep_obj.get("dailySleepDTO")
+    daily_sleep = raw_daily_sleep if isinstance(raw_daily_sleep, dict) else {}
+    raw_scores = daily_sleep.get("sleepScores") or sleep_obj.get("overallSleepScore")
+    scores = raw_scores if isinstance(raw_scores, dict) else {}
 
     sleep_score = (
         scores.get("overall", {}).get("value")
@@ -80,21 +90,25 @@ def extract_sleep_metrics(
         "averageRespirationValue"
     )
 
-    deep_sec = daily_sleep.get("deepSleepSeconds")
-    rem_sec = daily_sleep.get("remSleepSeconds")
-    light_sec = daily_sleep.get("lightSleepSeconds")
-    awake_sec = daily_sleep.get("awakeSleepSeconds")
-    restless_count = daily_sleep.get("restlessMomentsCount")
+    def sleep_int(field: str) -> int | None:
+        nested = _optional_non_negative_int(daily_sleep.get(field))
+        return nested if nested is not None else _optional_non_negative_int(sleep_obj.get(field))
+
+    deep_sec = sleep_int("deepSleepSeconds")
+    rem_sec = sleep_int("remSleepSeconds")
+    light_sec = sleep_int("lightSleepSeconds")
+    awake_sec = sleep_int("awakeSleepSeconds")
+    restless_count = sleep_int("restlessMomentsCount")
 
     return (
         sleep_score,
         sleep_sec,
         avg_resp,
-        deep_sec if isinstance(deep_sec, int) else None,
-        rem_sec if isinstance(rem_sec, int) else None,
-        light_sec if isinstance(light_sec, int) else None,
-        awake_sec if isinstance(awake_sec, int) else None,
-        restless_count if isinstance(restless_count, int) else None,
+        deep_sec,
+        rem_sec,
+        light_sec,
+        awake_sec,
+        restless_count,
     )
 
 
