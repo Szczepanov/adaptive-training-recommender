@@ -220,6 +220,11 @@ def _build_raw_metrics(
     return RawMetrics(
         sleepScore=canonical.sleep_score,
         sleepDurationSec=canonical.sleep_duration_seconds,
+        deepSleepSec=canonical.deep_sleep_seconds,
+        remSleepSec=canonical.rem_sleep_seconds,
+        lightSleepSec=canonical.light_sleep_seconds,
+        awakeSleepSec=canonical.awake_sleep_seconds,
+        restlessMomentsCount=canonical.restless_moments_count,
         restingHr=canonical.resting_heart_rate_bpm,
         hrvOvernightAvg=canonical.hrv_overnight_avg_ms,
         hrvStatus=canonical.hrv_status,

@@ -182,11 +182,19 @@ def test_canonicalize_from_raw_fallback_consistency():
 
 def test_extract_sleep_metrics_handles_nested_and_fallback_shapes():
     nested = {
-        "dailySleepDTO": {"sleepScores": {"overall": {"value": 90}}, "sleepTimeSeconds": 25000}
+        "dailySleepDTO": {
+            "sleepScores": {"overall": {"value": 90}},
+            "sleepTimeSeconds": 25000,
+            "deepSleepSeconds": 5400,
+            "remSleepSeconds": 6000,
+            "lightSleepSeconds": 12000,
+            "awakeSleepSeconds": 1600,
+            "restlessMomentsCount": 15,
+        }
     }
-    assert extract_sleep_metrics(nested) == (90, 25000, None)
-    assert extract_sleep_metrics({}) == (None, None, None)
-    assert extract_sleep_metrics(None) == (None, None, None)
+    assert extract_sleep_metrics(nested) == (90, 25000, None, 5400, 6000, 12000, 1600, 15)
+    assert extract_sleep_metrics({}) == (None, None, None, None, None, None, None, None)
+    assert extract_sleep_metrics(None) == (None, None, None, None, None, None, None, None)
 
 
 # --- Respiration precision (finer than dailySleepDTO.averageRespirationValue) ----

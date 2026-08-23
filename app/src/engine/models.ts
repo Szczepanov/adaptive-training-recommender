@@ -857,6 +857,11 @@ export interface DailyRecoverySnapshot {
     raw: {
         sleepScore: number | null;
         sleepDurationSec: number | null;
+        deepSleepSec?: number | null;
+        remSleepSec?: number | null;
+        lightSleepSec?: number | null;
+        awakeSleepSec?: number | null;
+        restlessMomentsCount?: number | null;
         restingHr: number | null;
         hrvOvernightAvg: number | null;
         hrvStatus: string | null;
