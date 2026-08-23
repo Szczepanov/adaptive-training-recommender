@@ -35,6 +35,23 @@ def test_rebuild_reproduces_snapshot_from_archive_without_garmin_calls(
     _seed_full_day(archive_store, "2026-08-06")
     # yesterday's stats/sleep archived too, exercising fallback lookups
     _seed_full_day(archive_store, "2026-08-05")
+    archive_store.archive(
+        ArchiveRecord(
+            "body_composition",
+            "2026-08-06",
+            {
+                "dateWeightList": [
+                    {
+                        "weight": 73500.0,
+                        "bodyFat": 14.0,
+                        "calendarDate": "2026-08-06",
+                    }
+                ]
+            },
+            "run-seed",
+            "0.3.8",
+        )
+    )
 
     settings = Settings(app_user_id="test_uid_789")
     mock_repo = MagicMock()
@@ -58,6 +75,9 @@ def test_rebuild_reproduces_snapshot_from_archive_without_garmin_calls(
     saved_payload = mock_repo.upsert_snapshot.call_args[0][1]
     assert saved_payload["raw"]["sleepScore"] == 80
     assert saved_payload["raw"]["restingHr"] == 50
+    assert saved_payload["raw"]["weightKg"] == 73.5
+    assert saved_payload["raw"]["bodyFatPct"] == 14.0
+    assert saved_payload["source"]["metricDates"]["weight"] == "2026-08-06"
 
 
 def test_rebuild_skips_date_missing_archived_payload(tmp_path: Path) -> None:
