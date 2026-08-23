@@ -57,7 +57,18 @@ export function ActivityTelemetry({ state }: ActivityTelemetryProps) {
             <header>
               <div>
                 <h4>{activity.type.replaceAll('_', ' ')}</h4>
-                <p>{activity.date} · {activity.durationMin ?? '—'} min · {activity.intensityTag}</p>
+                <p>
+                  {activity.date} · {activity.durationMin ?? '—'} min · {activity.intensityTag}
+                  {activity.primaryBenefit ? ` · ${activity.primaryBenefit}` : ''}
+                </p>
+                {(activity.trainingEffectAerobic != null || activity.epoc != null || activity.recoveryTimeHours != null) && (
+                  <p className="activity-te-metrics" style={{ fontSize: '0.8rem', color: 'var(--text-muted, #71717a)', marginTop: '0.2rem' }}>
+                    {activity.trainingEffectAerobic != null && `Aerobic TE ${activity.trainingEffectAerobic.toFixed(1)}`}
+                    {activity.trainingEffectAnaerobic != null && ` · Anaerobic TE ${activity.trainingEffectAnaerobic.toFixed(1)}`}
+                    {activity.epoc != null && ` · EPOC ${Math.round(activity.epoc)}`}
+                    {activity.recoveryTimeHours != null && ` · Rec ${activity.recoveryTimeHours}h`}
+                  </p>
+                )}
               </div>
               {activity.normalizedPower !== undefined && (
                 <div className="activity-power-summary" aria-label="Power summary">

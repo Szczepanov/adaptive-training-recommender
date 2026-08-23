@@ -639,6 +639,14 @@ def canonicalize_from_raw(
     if weight_kg is not None and weight_date is None:
         weight_date = target_date_iso
 
+    # Daily Recovery Time
+    raw_daily_rec = stats_today.get("recoveryTime") or stats_today.get("recoveryTimeHours")
+    daily_rec_hours: int | None = None
+    if raw_daily_rec is not None:
+        rec_num = _non_negative_number(raw_daily_rec)
+        if rec_num is not None:
+            daily_rec_hours = round(rec_num / 60) if rec_num > 100 else round(rec_num)
+
     return CanonicalDailyMetrics(
         date=target_date_iso,
         resting_heart_rate_bpm=rhr,
@@ -662,6 +670,7 @@ def canonicalize_from_raw(
         training_readiness=_canonicalize_training_readiness(training_readiness_today),
         training_status=_canonicalize_training_status(training_status_today),
         heart_rate_zones=_canonicalize_heart_rate_zones(heart_rate_zones),
+        recovery_time_hours=daily_rec_hours,
     )
 
 
@@ -698,6 +707,23 @@ def _canonicalize_activity(
 
     raw_activity_id = act.get("activityId")
 
+    # Primary benefit & message keys
+    primary_benefit = act.get("primaryBenefit") or act.get("primaryBenefitMessage")
+    primary_benefit_str = str(primary_benefit).strip() if isinstance(primary_benefit, str) else None
+
+    te_label = act.get("aerobicTrainingEffectMessageKey") or act.get("trainingEffectMessageKey")
+    te_label_str = str(te_label).strip() if isinstance(te_label, str) else None
+
+    raw_epoc = act.get("epoc")
+    epoc_val = _non_negative_number(raw_epoc)
+
+    raw_act_rec = act.get("recoveryTime") or act.get("recoveryTimeHours")
+    act_rec_hours: int | None = None
+    if raw_act_rec is not None:
+        rec_num = _non_negative_number(raw_act_rec)
+        if rec_num is not None:
+            act_rec_hours = round(rec_num / 60) if rec_num > 100 else round(rec_num)
+
     return CanonicalActivity(
         activity_id=str(raw_activity_id) if raw_activity_id is not None else None,
         date=act.get("startTimeLocal", "")[:10] or "",
@@ -709,6 +735,10 @@ def _canonicalize_activity(
         average_hr=avg_hr,
         training_load=act.get("activityTrainingLoad"),
         intensity_tag=intensity_tag,
+        primary_benefit=primary_benefit_str,
+        epoc=epoc_val,
+        recovery_time_hours=act_rec_hours,
+        training_effect_label=te_label_str,
     )
 
 

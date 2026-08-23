@@ -453,3 +453,45 @@ def test_build_snapshot_maps_weight_and_body_fat():
     assert snapshot.raw.weightKg == 71.2
     assert snapshot.raw.bodyFatPct == 13.8
     assert snapshot.source.metricDates.weight == "2026-08-23"
+
+
+def test_build_snapshot_maps_recovery_time_hours():
+    canonical = CanonicalDailyMetrics(
+        date="2026-08-23",
+        recovery_time_hours=22,
+    )
+
+    snapshot = build_snapshot_from_canonical(
+        user_id="test_uid",
+        target_date_iso="2026-08-23",
+        canonical=canonical,
+        canonical_activities=[],
+        derived_metrics=DerivedMetrics(),
+    )
+
+    assert snapshot.raw.recoveryTimeHours == 22
+
+
+def test_normalize_activity_maps_te_and_recovery():
+    act = CanonicalActivity(
+        activity_id="act-789",
+        date="2026-08-23",
+        type="running",
+        duration_min=50,
+        duration_seconds=3000,
+        training_effect_aerobic=4.0,
+        training_effect_anaerobic=1.5,
+        average_hr=160.0,
+        training_load=140.0,
+        intensity_tag="hard",
+        primary_benefit="VO2MAX",
+        epoc=150.2,
+        recovery_time_hours=36,
+        training_effect_label="HIGHLY_IMPACTING_VO2MAX",
+    )
+
+    payload = normalize_activity(act, sync_run_id="run-te")
+    assert payload["primaryBenefit"] == "VO2MAX"
+    assert payload["epoc"] == 150.2
+    assert payload["recoveryTimeHours"] == 36
+    assert payload["trainingEffectLabel"] == "HIGHLY_IMPACTING_VO2MAX"

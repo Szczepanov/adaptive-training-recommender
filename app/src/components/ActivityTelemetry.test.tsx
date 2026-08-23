@@ -38,4 +38,22 @@ describe('ActivityTelemetry', () => {
     }} />);
     expect(html).toContain('No zone or lap telemetry is available');
   });
+
+  it('renders primary benefit, training effect, EPOC, and recovery hours', () => {
+    const html = renderToStaticMarkup(<ActivityTelemetry state={{
+      status: 'AVAILABLE', revision: null, data: [{
+        ...base,
+        primaryBenefit: 'TEMPO',
+        trainingEffectAerobic: 3.8,
+        trainingEffectAnaerobic: 1.1,
+        epoc: 135,
+        recoveryTimeHours: 24,
+      }],
+    }} />);
+    expect(html).toContain('TEMPO');
+    expect(html).toContain('Aerobic TE 3.8');
+    expect(html).toContain('Anaerobic TE 1.1');
+    expect(html).toContain('EPOC 135');
+    expect(html).toContain('Rec 24h');
+  });
 });

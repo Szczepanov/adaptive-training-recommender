@@ -46,6 +46,22 @@ def normalize_activity(
         "averageHr": activity.average_hr,
         "activityTrainingLoad": activity.training_load,
         "intensityTag": activity.intensity_tag,
+        **(
+            {"primaryBenefit": activity.primary_benefit}
+            if activity.primary_benefit is not None
+            else {}
+        ),
+        **({"epoc": activity.epoc} if activity.epoc is not None else {}),
+        **(
+            {"recoveryTimeHours": activity.recovery_time_hours}
+            if activity.recovery_time_hours is not None
+            else {}
+        ),
+        **(
+            {"trainingEffectLabel": activity.training_effect_label}
+            if activity.training_effect_label is not None
+            else {}
+        ),
         "syncRunId": sync_run_id,
         "syncedAt": datetime.now(timezone.utc).isoformat(),
     }
@@ -244,6 +260,7 @@ def _build_raw_metrics(
         heartRateZones=heart_rate_zones_summary,
         weightKg=canonical.weight_kg,
         bodyFatPct=canonical.body_fat_pct,
+        recoveryTimeHours=canonical.recovery_time_hours,
     )
 
 
