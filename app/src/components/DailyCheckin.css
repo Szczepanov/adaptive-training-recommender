@@ -61,6 +61,71 @@
   border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
+/* Checkin Completed Banner */
+.checkin-completed-banner {
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  border-radius: var(--radius-card, 14px);
+  padding: 0.9rem 1.1rem;
+  margin-bottom: 1.25rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.checkin-completed-content {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.checkin-completed-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: rgba(16, 185, 129, 0.2);
+  color: #34d399;
+  font-weight: 700;
+  font-size: 0.9rem;
+  flex-shrink: 0;
+}
+
+.checkin-completed-text strong {
+  display: block;
+  font-size: 0.9rem;
+  color: #6ee7b7;
+  margin-bottom: 0.15rem;
+}
+
+.checkin-completed-text p {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--text-secondary, #94a3b8);
+}
+
+.btn-view-plan-direct {
+  background: rgba(16, 185, 129, 0.18);
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  color: #a7f3d0;
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 0.45rem 0.9rem;
+  border-radius: var(--radius-control, 10px);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.btn-view-plan-direct:hover {
+  background: rgba(16, 185, 129, 0.3);
+  border-color: rgba(16, 185, 129, 0.6);
+}
+
 /* Followup Tissue Prompt */
 .followup-tissue-prompt {
   background: rgba(59, 130, 246, 0.12);
