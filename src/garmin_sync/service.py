@@ -774,7 +774,7 @@ class GarminSyncService:
             )
 
             # Metric enrichment (stress/body battery/training readiness/training status,
-            # respiration, body composition) is best-effort here, unlike the four
+            # respiration, body composition, SpO2) is best-effort here, unlike the four
             # required payloads above. Older archives can legitimately lack any of it
             # without making an otherwise complete day non-rebuildable.
             stress_today = self.archive_store.load("stress", target_iso)
@@ -784,6 +784,7 @@ class GarminSyncService:
             heart_rate_zones = self.archive_store.load("heart_rate_zones", target_iso)
             respiration_today = self.archive_store.load("respiration", target_iso)
             body_composition_today = self.archive_store.load("body_composition", target_iso)
+            spo2_today = self.archive_store.load("spo2", target_iso)
 
             try:
                 canonical = canonicalize_from_raw(
@@ -801,6 +802,7 @@ class GarminSyncService:
                     heart_rate_zones=heart_rate_zones,
                     respiration_today=respiration_today,
                     body_composition_today=body_composition_today,
+                    spo2_today=spo2_today,
                 )
                 zone4_floor = (
                     canonical.heart_rate_zones.zone4_floor if canonical.heart_rate_zones else None

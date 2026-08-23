@@ -21,6 +21,8 @@ class AuditReport:
     sleep_available: int
     hrv_available: int
     rhr_available: int
+    spo2_available: int
+    skin_temp_available: int
     activities_discovered: int
     archiving_enabled: bool
     raw_payloads_archived: int
@@ -50,6 +52,8 @@ def run_audit(
     sleep_available = 0
     hrv_available = 0
     rhr_available = 0
+    spo2_available = 0
+    skin_temp_available = 0
     archived_per_endpoint: dict[str, set[str]] = {}
 
     for endpoint in REQUIRED_ARCHIVE_ENDPOINTS:
@@ -70,6 +74,10 @@ def run_audit(
             hrv_available += 1
         if dq.get("restingHrAvailable"):
             rhr_available += 1
+        if dq.get("spo2Available"):
+            spo2_available += 1
+        if dq.get("skinTempAvailable"):
+            skin_temp_available += 1
 
     rebuildable_dates = sum(
         1
@@ -92,6 +100,8 @@ def run_audit(
         sleep_available=sleep_available,
         hrv_available=hrv_available,
         rhr_available=rhr_available,
+        spo2_available=spo2_available,
+        skin_temp_available=skin_temp_available,
         activities_discovered=activities_discovered,
         archiving_enabled=settings.garmin_archive_enabled,
         raw_payloads_archived=raw_payloads_archived,
@@ -109,6 +119,8 @@ def format_report(report: AuditReport) -> str:
         f"Sleep available:             {report.sleep_available}",
         f"HRV available:                {report.hrv_available}",
         f"RHR available:                {report.rhr_available}",
+        f"SpO2 available:               {report.spo2_available}",
+        f"Skin temp available:          {report.skin_temp_available}",
         f"Activities discovered:       {report.activities_discovered}",
     ]
     if report.archiving_enabled:

@@ -852,6 +852,8 @@ export interface DailyRecoverySnapshot {
             trainingReadiness?: string | null;
             trainingStatus?: string | null;
             weight?: string | null;
+            spo2?: string | null;
+            skinTempDeviation?: string | null;
         };
     };
     raw: {
@@ -898,6 +900,12 @@ export interface DailyRecoverySnapshot {
         } | null;
         weightKg?: number | null;
         bodyFatPct?: number | null;
+        spo2?: {
+            avgPct?: number | null;
+            minPct?: number | null;
+            sleepAvgPct?: number | null;
+        } | null;
+        skinTempDeviationCelsius?: number | null;
         recoveryTimeHours?: number | null;
     };
     derived: {
@@ -1001,6 +1009,8 @@ export interface DailyRecoverySnapshot {
         bodyBatteryDetailAvailable?: boolean;
         trainingReadinessAvailable?: boolean;
         trainingStatusAvailable?: boolean;
+        spo2Available?: boolean;
+        skinTempAvailable?: boolean;
     };
     createdAt?: string;
     updatedAt?: string;

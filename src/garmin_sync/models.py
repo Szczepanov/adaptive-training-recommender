@@ -41,6 +41,8 @@ class MetricDates:
     trainingReadiness: str | None = None
     trainingStatus: str | None = None
     weight: str | None = None
+    spo2: str | None = None
+    skinTempDeviation: str | None = None
 
     def to_dict(self) -> dict[str, str | None]:
         return asdict(self)
@@ -141,6 +143,16 @@ class HeartRateZonesSummary:
 
 
 @dataclass
+class Spo2Summary:
+    avgPct: float | None = None
+    minPct: float | None = None
+    sleepAvgPct: float | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
 class RawMetrics:
     sleepScore: int | float | None = None
     sleepDurationSec: int | None = None
@@ -175,6 +187,8 @@ class RawMetrics:
     heartRateZones: HeartRateZonesSummary | None = None
     weightKg: float | None = None
     bodyFatPct: float | None = None
+    spo2: Spo2Summary | None = None
+    skinTempDeviationCelsius: float | None = None
     recoveryTimeHours: int | None = None
 
     def to_dict(self) -> dict[str, Any]:
@@ -191,6 +205,8 @@ class RawMetrics:
             d["trainingStatus"] = self.trainingStatus.to_dict()
         if self.heartRateZones:
             d["heartRateZones"] = self.heartRateZones.to_dict()
+        if self.spo2:
+            d["spo2"] = self.spo2.to_dict()
         return d
 
 
@@ -308,6 +324,8 @@ class DataQuality:
     trainingReadinessAvailable: bool = False
     trainingStatusAvailable: bool = False
     heartRateZonesAvailable: bool = False
+    spo2Available: bool = False
+    skinTempAvailable: bool = False
 
     def to_dict(self) -> dict[str, bool]:
         return asdict(self)

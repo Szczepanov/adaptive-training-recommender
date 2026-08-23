@@ -877,6 +877,40 @@ export function DailyCheckin({ userId, onNavigate, onBack, onCheckinSaved }: Dai
                       <span className="pill-label">Body Battery</span>
                       <span className="pill-val">{recoverySnapshot.raw.bodyBatteryWake ?? '--'} / 100</span>
                     </div>
+                    {(recoverySnapshot.raw.spo2?.avgPct != null || recoverySnapshot.raw.spo2?.minPct != null || recoverySnapshot.raw.spo2?.sleepAvgPct != null) && (
+                      <div className="garmin-metric-pill">
+                        <span className="pill-label">SpO2 Pulse Ox</span>
+                        {recoverySnapshot.raw.spo2.avgPct != null || recoverySnapshot.raw.spo2.minPct != null ? (
+                          <>
+                            <span className="pill-val">
+                              {recoverySnapshot.raw.spo2.avgPct != null
+                                ? `${recoverySnapshot.raw.spo2.avgPct}%`
+                                : `min ${recoverySnapshot.raw.spo2.minPct}%`}
+                            </span>
+                            {recoverySnapshot.raw.spo2.avgPct != null && recoverySnapshot.raw.spo2.minPct != null && (
+                              <small>min {recoverySnapshot.raw.spo2.minPct}%</small>
+                            )}
+                          </>
+                        ) : (
+                          // Daily Pulse Ox summary is unavailable; the sleep-scoped average is a
+                          // distinct source (see extract_spo2) and is labeled as such rather than
+                          // silently presented as the daily figure.
+                          <>
+                            <span className="pill-val">{recoverySnapshot.raw.spo2.sleepAvgPct}%</span>
+                            <small>sleep avg</small>
+                          </>
+                        )}
+                      </div>
+                    )}
+                    {recoverySnapshot.raw.skinTempDeviationCelsius != null && (
+                      <div className="garmin-metric-pill">
+                        <span className="pill-label">Skin Temp Dev</span>
+                        <span className="pill-val">
+                          {recoverySnapshot.raw.skinTempDeviationCelsius > 0 ? '+' : ''}
+                          {recoverySnapshot.raw.skinTempDeviationCelsius}°C
+                        </span>
+                      </div>
+                    )}
                     {recoverySnapshot.raw.recoveryTimeHours != null && (
                       <div className="garmin-metric-pill">
                         <span className="pill-label">Recovery Advice</span>

@@ -88,6 +88,32 @@ def test_get_stats_unauthenticated():
         wrapper.get_stats("2023-10-10")
 
 
+def test_get_spo2_data_uses_supported_garmin_method():
+    wrapper = GarminClientWrapper(allow_credential_login=False)
+    wrapper.api = MagicMock()
+    wrapper.api.get_spo2_data.return_value = {
+        "calendarDate": "2026-08-23",
+        "averageSpO2": 96.5,
+        "lowestSpO2": 92.0,
+    }
+
+    result = wrapper.get_spo2_data("2026-08-23")
+
+    assert result["averageSpO2"] == 96.5
+    wrapper.api.get_spo2_data.assert_called_once_with("2026-08-23")
+
+
+def test_get_spo2_data_does_not_hide_dependency_contract_failure():
+    class ApiWithoutSpo2:
+        pass
+
+    wrapper = GarminClientWrapper(allow_credential_login=False)
+    wrapper.api = ApiWithoutSpo2()  # type: ignore[assignment]
+
+    with pytest.raises(AttributeError):
+        wrapper.get_spo2_data("2026-08-23")
+
+
 @pytest.mark.parametrize(
     "method_name",
     ["get_activity_power_zones", "get_activity_hr_zones", "get_activity_splits"],
