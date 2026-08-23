@@ -1,4 +1,4 @@
-import { initializeApp, type FirebaseApp } from 'firebase/app';
+import { getApps, initializeApp, type FirebaseApp } from 'firebase/app';
 import {
   initializeFirestore,
   getFirestore,
@@ -6,7 +6,12 @@ import {
   persistentMultipleTabManager,
   type Firestore,
 } from 'firebase/firestore';
-import { getAuth, type Auth } from 'firebase/auth';
+import {
+  getAuth,
+  inMemoryPersistence,
+  setPersistence,
+  type Auth,
+} from 'firebase/auth';
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -54,4 +59,24 @@ export function getDb(): Firestore {
 let _auth: Auth | undefined;
 export function getAuthInstance(): Auth {
   return (_auth ??= getAuth(getApp()));
+}
+
+const LEGACY_MIGRATION_APP_NAME = 'legacy-account-migration';
+let _legacyMigrationAuth: Promise<Auth> | undefined;
+
+/**
+ * A second Firebase Auth instance used only to prove ownership of a legacy app account.
+ * It uses in-memory persistence and therefore never replaces or persists over the current
+ * Garmin-linked account's primary auth session.
+ */
+export function getLegacyMigrationAuth(): Promise<Auth> {
+  if (!_legacyMigrationAuth) {
+    const existingApp = getApps().find((app) => app.name === LEGACY_MIGRATION_APP_NAME);
+    const migrationApp = existingApp ?? initializeApp(firebaseConfig, LEGACY_MIGRATION_APP_NAME);
+    const migrationAuth = getAuth(migrationApp);
+    _legacyMigrationAuth = setPersistence(migrationAuth, inMemoryPersistence).then(
+      () => migrationAuth,
+    );
+  }
+  return _legacyMigrationAuth;
 }
