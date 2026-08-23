@@ -12,6 +12,7 @@ from garmin_sync.garmin_provider import (
     extract_exercise_sets,
     qualifies_for_strength_exercise_sets,
 )
+from garmin_sync.mapper import normalize_activity
 from garmin_sync.provider import (
     ProviderActivitiesResult,
     ProviderActivityDetailResult,
@@ -108,6 +109,18 @@ def _activity(activity_type: str, activity_id: str | None = "42") -> CanonicalAc
         training_load=40.0,
         intensity_tag="easy",
     )
+
+
+def test_empty_garmin_set_list_is_preserved_to_clear_stale_firestore_sets():
+    sets = extract_exercise_sets({"exerciseSets": []})
+    assert sets == []
+
+    payload = normalize_activity(
+        _activity("strength_training"),
+        "run-1",
+        CanonicalActivityDetail(activity_id="42", exercise_sets=sets),
+    )
+    assert payload["exerciseSets"] == []
 
 
 def test_strength_set_gate_is_independent_of_intensity_and_power_detail_gate():
