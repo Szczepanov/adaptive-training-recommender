@@ -1,5 +1,9 @@
 import type { DailyDecisionInput, DailySubjectiveCheckin } from './models';
 
+type SubjectiveCheckinCompletionView = {
+  dataQuality?: Pick<DailySubjectiveCheckin['dataQuality'], 'isComplete'>;
+};
+
 /**
  * Canonical UI completion predicate for a persisted or in-memory subjective check-in.
  *
@@ -8,9 +12,9 @@ import type { DailyDecisionInput, DailySubjectiveCheckin } from './models';
  * are complete. The validated data-quality flag is the authority used by the decision layer.
  */
 export function isCompletedSubjectiveCheckin(
-  checkin: Pick<DailySubjectiveCheckin, 'dataQuality'> | null | undefined,
+  checkin: SubjectiveCheckinCompletionView | null | undefined,
 ): boolean {
-  return checkin?.dataQuality.isComplete === true;
+  return checkin?.dataQuality?.isComplete === true;
 }
 
 /**
