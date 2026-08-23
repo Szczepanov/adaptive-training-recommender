@@ -281,7 +281,7 @@ class FirestoreRecoveryRepository:
                     continue
                 source = sources.get(key)
                 existing_value = profile.get(key)
-                if source == "manual":
+                if source in {"manual", "coach"}:
                     continue
                 if source == "garmin" or existing_value is None:
                     profile[key] = value
