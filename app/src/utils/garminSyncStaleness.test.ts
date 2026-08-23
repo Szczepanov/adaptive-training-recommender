@@ -6,6 +6,7 @@ import {
     SNAPSHOT_STALE_AFTER_MS,
     INCOMPLETE_SNAPSHOT_STALE_AFTER_MS,
     STALE_AFTER_MS,
+    BACKFILL_PROCESSING_STALE_AFTER_MS,
 } from './garminSyncStaleness';
 import type { DailyRecoverySnapshot } from '../engine/models';
 
@@ -97,10 +98,11 @@ describe('garminSyncStaleness', () => {
             expect(isSyncRequestStale(req, baseMs + STALE_AFTER_MS + 1000)).toBe(true);
         });
 
-        it('measures from claimedAt if processing', () => {
+        it('measures ordinary processing requests from claimedAt using the normal window', () => {
             const req = {
                 userId: 'u1',
                 status: 'processing' as const,
+                requestType: 'sync' as const,
                 requestedAt: '2026-08-23T07:50:00.000Z',
                 claimedAt: '2026-08-23T08:00:00.000Z',
             };
@@ -108,6 +110,33 @@ describe('garminSyncStaleness', () => {
             expect(isSyncRequestStale(req, baseMs + 2 * 60 * 1000)).toBe(false);
             // 6 minutes after claimedAt -> stale
             expect(isSyncRequestStale(req, baseMs + 6 * 60 * 1000)).toBe(true);
+        });
+
+        it('keeps a claimed backfill live for the backend execution-lease window', () => {
+            const req = {
+                userId: 'u1',
+                status: 'processing' as const,
+                requestType: 'initial_backfill' as const,
+                requestedAt: '2026-08-23T07:45:00.000Z',
+                claimedAt: '2026-08-23T08:00:00.000Z',
+                days: 56,
+            };
+
+            expect(isSyncRequestStale(req, baseMs + 10 * 60 * 1000)).toBe(false);
+            expect(isSyncRequestStale(req, baseMs + BACKFILL_PROCESSING_STALE_AFTER_MS + 1000)).toBe(true);
+        });
+
+        it('still lets callers explicitly override the request-aware stale window', () => {
+            const req = {
+                userId: 'u1',
+                status: 'processing' as const,
+                requestType: 'backfill' as const,
+                requestedAt: '2026-08-23T07:45:00.000Z',
+                claimedAt: '2026-08-23T08:00:00.000Z',
+                days: 56,
+            };
+
+            expect(isSyncRequestStale(req, baseMs + 6 * 60 * 1000, STALE_AFTER_MS)).toBe(true);
         });
     });
 
