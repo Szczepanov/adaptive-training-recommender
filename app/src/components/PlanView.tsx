@@ -36,6 +36,8 @@ import type { Screen } from '../types/navigation';
 import { ExternalPlanWeek } from './ExternalPlanWeek';
 import { ExternalPlanImport } from './ExternalPlanImport';
 import { WeekAheadStrip } from './WeekAheadStrip';
+import { GarminSyncNowButton } from './GarminSyncNowButton';
+import type { ErrorRepairAction } from './errorRepairAction';
 import './PlanView.css';
 
 interface PlanViewProps {
@@ -65,7 +67,7 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
   const [loading, setLoading] = useState<boolean>(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [forecastUnavailable, setForecastUnavailable] = useState<string | null>(null);
-  const [forecastRepairTargets, setForecastRepairTargets] = useState<{ screen: Screen; label: string }[]>([]);
+  const [forecastRepairTargets, setForecastRepairTargets] = useState<ErrorRepairAction[]>([]);
   const [writeError, setWriteError] = useState<string | null>(null);
   const [showImport, setShowImport] = useState<boolean>(false);
 
@@ -113,10 +115,10 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
           // Point the user at whichever screen owns the invalid document(s) so the error
           // is actionable rather than a dead end -- re-saving there re-runs validation
           // and clears the INVALID state.
-          const repairTargets: { screen: Screen; label: string }[] = [];
-          if (input.sourceStates?.activeGoals.status === 'INVALID') repairTargets.push({ screen: 'goals', label: 'Review goals' });
-          if (input.sourceStates?.preferences.status === 'INVALID') repairTargets.push({ screen: 'preferences', label: 'Review preferences' });
-          if (input.sourceStates?.trainingSettings.status === 'INVALID') repairTargets.push({ screen: 'constraints', label: 'Review training settings' });
+          const repairTargets: ErrorRepairAction[] = [];
+          if (input.sourceStates?.activeGoals.status === 'INVALID') repairTargets.push({ kind: 'navigate', screen: 'goals', label: 'Review goals' });
+          if (input.sourceStates?.preferences.status === 'INVALID') repairTargets.push({ kind: 'navigate', screen: 'preferences', label: 'Review preferences' });
+          if (input.sourceStates?.trainingSettings.status === 'INVALID') repairTargets.push({ kind: 'navigate', screen: 'constraints', label: 'Review training settings' });
           setForecastRepairTargets(repairTargets);
         }
         setForecastUnavailable(
@@ -129,6 +131,11 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
 
       const recoveryState = input.sourceStates?.recoverySnapshot;
       if (recoveryState && recoveryState.status !== 'AVAILABLE' && recoveryState.status !== 'MISSING') {
+        if (recoveryState.status === 'INVALID') {
+          // A malformed stored snapshot is fixed by re-ingesting, not by re-reading it --
+          // offer a forced resync instead of a dead-end Retry.
+          setForecastRepairTargets([{ kind: 'resync' }]);
+        }
         setForecastUnavailable(
           recoveryState.status === 'UNAVAILABLE'
             ? 'Recovery data is temporarily unavailable. Please retry before generating a plan.'
@@ -428,21 +435,27 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
         <div className="plan-unavailable-card">
           <h3>7-Day Forecast Temporarily Unavailable</h3>
           <p className="plan-unavailable-message">{forecastUnavailable}</p>
-          {forecastRepairTargets.length > 0 && onNavigate && (
+          {forecastRepairTargets.length > 0 && (
             <p className="plan-unavailable-message">
-              Re-saving the flagged data below re-validates it and clears this error.
+              {forecastRepairTargets.some(target => target.kind === 'resync')
+                ? 'Forcing a fresh Garmin sync below re-writes the flagged data and clears this error.'
+                : 'Re-saving the flagged data below re-validates it and clears this error.'}
             </p>
           )}
           <div className="plan-unavailable-actions">
-            {onNavigate && forecastRepairTargets.map(target => (
-              <button
-                key={target.screen}
-                type="button"
-                className="plan-retry-btn"
-                onClick={() => onNavigate(target.screen)}
-              >
-                {target.label} →
-              </button>
+            {forecastRepairTargets.map(target => target.kind === 'navigate' ? (
+              onNavigate && (
+                <button
+                  key={target.screen}
+                  type="button"
+                  className="plan-retry-btn"
+                  onClick={() => onNavigate(target.screen)}
+                >
+                  {target.label} →
+                </button>
+              )
+            ) : (
+              <GarminSyncNowButton key="resync" userId={userId} onSynced={loadPlanData} />
             ))}
             <button type="button" className="plan-retry-btn" onClick={loadPlanData}>
               🔄 Retry

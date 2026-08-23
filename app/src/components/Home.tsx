@@ -43,6 +43,7 @@ import { MinimumSafetyCheckin } from './MinimumSafetyCheckin';
 import { WeekAheadStrip } from './WeekAheadStrip';
 import { LaterDayFollowupCard, type LaterDayFollowupTarget } from './session/LaterDayFollowupCard';
 import { GarminSyncNowButton } from './GarminSyncNowButton';
+import type { ErrorRepairAction } from './errorRepairAction';
 import { useAutoGarminSync } from '../hooks/useAutoGarminSync';
 import {
   canGenerateNormalRecommendation,
@@ -182,7 +183,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
   const [nextDayPlan, setNextDayPlan] = useState<NextDayPotentialPlan | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [errorRepairTargets, setErrorRepairTargets] = useState<{ screen: Screen; label: string }[]>([]);
+  const [errorRepairTargets, setErrorRepairTargets] = useState<ErrorRepairAction[]>([]);
   const [showWorkoutDetails, setShowWorkoutDetails] = useState(false);
   const [pendingAdherence, setPendingAdherence] = useState<{ date: string; recommendation: DailyRecommendation } | null>(null);
   const [, setTodaysJournalEntry] = useState<DecisionJournalEntry | null>(null);
@@ -355,6 +356,11 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
         setRecommendation(null);
         setNextDayPlan(null);
         clearExternalPlanState();
+        if (recoveryState.status === 'INVALID') {
+          // A malformed stored snapshot is fixed by re-ingesting, not by re-reading it --
+          // offer a forced resync instead of a dead-end Retry.
+          setErrorRepairTargets([{ kind: 'resync' }]);
+        }
         setError(recoveryState.status === 'UNAVAILABLE'
           ? 'Recovery data is temporarily unavailable. Please retry before generating a plan.'
           : 'Recovery data needs repair before generating a plan.');
@@ -371,10 +377,10 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
           // Point the user at whichever screen owns the invalid document(s) so the error
           // is actionable rather than a dead end -- re-saving there re-runs validation
           // and clears the INVALID state.
-          const repairTargets: { screen: Screen; label: string }[] = [];
-          if (input.sourceStates?.activeGoals.status === 'INVALID') repairTargets.push({ screen: 'goals', label: 'Review goals' });
-          if (input.sourceStates?.preferences.status === 'INVALID') repairTargets.push({ screen: 'preferences', label: 'Review preferences' });
-          if (input.sourceStates?.trainingSettings.status === 'INVALID') repairTargets.push({ screen: 'constraints', label: 'Review training settings' });
+          const repairTargets: ErrorRepairAction[] = [];
+          if (input.sourceStates?.activeGoals.status === 'INVALID') repairTargets.push({ kind: 'navigate', screen: 'goals', label: 'Review goals' });
+          if (input.sourceStates?.preferences.status === 'INVALID') repairTargets.push({ kind: 'navigate', screen: 'preferences', label: 'Review preferences' });
+          if (input.sourceStates?.trainingSettings.status === 'INVALID') repairTargets.push({ kind: 'navigate', screen: 'constraints', label: 'Review training settings' });
           setErrorRepairTargets(repairTargets);
         }
         setError(decisionSourceFailure.status === 'UNAVAILABLE'
@@ -852,14 +858,18 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
           <p>{error}</p>
           {errorRepairTargets.length > 0 && (
             <p className="error-state-hint">
-              Re-saving the flagged data below re-validates it and clears this error.
+              {errorRepairTargets.some(target => target.kind === 'resync')
+                ? 'Forcing a fresh Garmin sync below re-writes the flagged data and clears this error.'
+                : 'Re-saving the flagged data below re-validates it and clears this error.'}
             </p>
           )}
           <div className="error-state-actions">
-            {errorRepairTargets.map(target => (
+            {errorRepairTargets.map(target => target.kind === 'navigate' ? (
               <button key={target.screen} type="button" onClick={() => onNavigate(target.screen)}>
                 {target.label} →
               </button>
+            ) : (
+              <GarminSyncNowButton key="resync" userId={userId} onSynced={loadDashboardData} />
             ))}
             <button onClick={loadDashboardData}>Retry</button>
           </div>
