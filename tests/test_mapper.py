@@ -434,6 +434,33 @@ def test_build_snapshot_metric_enrichment_fields_absent_when_no_canonical_data()
     assert snapshot.source.metricDates.stress is None
 
 
+def test_build_snapshot_maps_sleep_stages():
+    canonical = CanonicalDailyMetrics(
+        date="2026-08-23",
+        sleep_score=85,
+        sleep_duration_seconds=28800,
+        deep_sleep_seconds=5400,
+        rem_sleep_seconds=6400,
+        light_sleep_seconds=15000,
+        awake_sleep_seconds=2000,
+        restless_moments_count=12,
+    )
+
+    snapshot = build_snapshot_from_canonical(
+        user_id="test_uid",
+        target_date_iso="2026-08-23",
+        canonical=canonical,
+        canonical_activities=[],
+        derived_metrics=DerivedMetrics(),
+    )
+
+    assert snapshot.raw.deepSleepSec == 5400
+    assert snapshot.raw.remSleepSec == 6400
+    assert snapshot.raw.lightSleepSec == 15000
+    assert snapshot.raw.awakeSleepSec == 2000
+    assert snapshot.raw.restlessMomentsCount == 12
+
+
 def test_build_snapshot_maps_weight_and_body_fat():
     canonical = CanonicalDailyMetrics(
         date="2026-08-23",
@@ -495,3 +522,48 @@ def test_normalize_activity_maps_te_and_recovery():
     assert payload["epoc"] == 150.2
     assert payload["recoveryTimeHours"] == 36
     assert payload["trainingEffectLabel"] == "HIGHLY_IMPACTING_VO2MAX"
+
+
+def test_normalize_activity_maps_exercise_sets():
+    from garmin_sync.canonical import CanonicalActivityDetail, CanonicalExerciseSet
+
+    act = CanonicalActivity(
+        activity_id="act-strength-1",
+        date="2026-08-23",
+        type="strength_training",
+        duration_min=45,
+        duration_seconds=2700,
+        training_effect_aerobic=1.5,
+        training_effect_anaerobic=2.5,
+        average_hr=125.0,
+        training_load=80.0,
+        intensity_tag="moderate",
+    )
+    detail = CanonicalActivityDetail(
+        activity_id="act-strength-1",
+        exercise_sets=[
+            CanonicalExerciseSet(
+                set_order=0,
+                set_type="active",
+                repetition_count=12,
+                weight_kg=50.0,
+                exercise_category="SQUAT",
+                exercise_name="BARBELL_BACK_SQUAT",
+                duration_seconds=40.0,
+                rest_duration_seconds=90.0,
+            )
+        ],
+    )
+
+    payload = normalize_activity(act, sync_run_id="run-str", detail=detail)
+    assert "exerciseSets" in payload
+    assert len(payload["exerciseSets"]) == 1
+    es = payload["exerciseSets"][0]
+    assert es["setOrder"] == 0
+    assert es["setType"] == "active"
+    assert es["repetitionCount"] == 12
+    assert es["weightKg"] == 50.0
+    assert es["exerciseCategory"] == "SQUAT"
+    assert es["exerciseName"] == "BARBELL_BACK_SQUAT"
+    assert es["durationSeconds"] == 40.0
+    assert es["restDurationSeconds"] == 90.0

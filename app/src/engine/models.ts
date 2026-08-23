@@ -857,6 +857,11 @@ export interface DailyRecoverySnapshot {
     raw: {
         sleepScore: number | null;
         sleepDurationSec: number | null;
+        deepSleepSec?: number | null;
+        remSleepSec?: number | null;
+        lightSleepSec?: number | null;
+        awakeSleepSec?: number | null;
+        restlessMomentsCount?: number | null;
         restingHr: number | null;
         hrvOvernightAvg: number | null;
         hrvStatus: string | null;
@@ -1424,6 +1429,17 @@ export interface ActivityLapSummary {
     averageHrBpm?: number;
 }
 
+export interface ActivityExerciseSet {
+    setOrder: number;
+    setType?: string;
+    repetitionCount?: number;
+    weightKg?: number;
+    exerciseCategory?: string;
+    exerciseName?: string;
+    durationSeconds?: number;
+    restDurationSeconds?: number;
+}
+
 export interface NormalizedGarminActivity {
     activityId: string;
     date: string;
@@ -1444,6 +1460,7 @@ export interface NormalizedGarminActivity {
     intensityFactor?: number;
     variabilityIndex?: number;
     laps?: ActivityLapSummary[];
+    exerciseSets?: ActivityExerciseSet[];
     syncRunId?: string;
     syncedAt?: string;
 }

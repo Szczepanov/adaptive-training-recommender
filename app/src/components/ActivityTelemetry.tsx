@@ -55,6 +55,7 @@ export function ActivityTelemetry({ state }: ActivityTelemetryProps) {
         const hasDetail = (activity.powerInZones?.length ?? 0) > 0
           || (activity.hrInZones?.length ?? 0) > 0
           || (activity.laps?.length ?? 0) > 0
+          || (activity.exerciseSets?.length ?? 0) > 0
           || activity.normalizedPower !== undefined;
         const trainingEffectDescriptor = activity.primaryBenefit ?? activity.trainingEffectLabel;
         const trainingResponseMetrics = [
@@ -114,6 +115,38 @@ export function ActivityTelemetry({ state }: ActivityTelemetryProps) {
                           <td>{formatDuration(lap.durationSeconds)}</td>
                           <td>{lap.averagePowerWatts !== undefined ? `${Math.round(lap.averagePowerWatts)} W` : '—'}</td>
                           <td>{lap.averageHrBpm !== undefined ? `${Math.round(lap.averageHrBpm)} bpm` : '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            )}
+            {activity.exerciseSets !== undefined && activity.exerciseSets.length > 0 && (
+              <section className="activity-exercise-sets" aria-label="Exercise sets">
+                <h5>Strength sets &amp; reps</h5>
+                <div className="activity-lap-table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Set</th>
+                        <th>Exercise</th>
+                        <th>Reps</th>
+                        <th>Weight</th>
+                        <th>Work / Rest</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {activity.exerciseSets.map((set, idx) => (
+                        <tr key={idx}>
+                          <td>{set.setOrder + 1}{set.setType && set.setType !== 'active' ? ` (${set.setType})` : ''}</td>
+                          <td>{(set.exerciseName || set.exerciseCategory || 'Exercise').replaceAll('_', ' ')}</td>
+                          <td>{set.repetitionCount != null ? set.repetitionCount : '—'}</td>
+                          <td>{set.weightKg != null ? `${set.weightKg} kg` : '—'}</td>
+                          <td>
+                            {set.durationSeconds != null ? `${Math.round(set.durationSeconds)}s` : '—'}
+                            {set.restDurationSeconds != null ? ` / ${Math.round(set.restDurationSeconds)}s rest` : ''}
+                          </td>
                         </tr>
                       ))}
                     </tbody>
