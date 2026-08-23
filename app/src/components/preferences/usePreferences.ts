@@ -120,33 +120,42 @@ export function usePreferences(userId: string) {
     setPreferences(current => {
       if (!current) return current;
       const profile = current.performanceProfile ?? {};
-      const numericValue = value.trim() === '' ? null : Number(value);
-      const now = new Date().toISOString();
+      const trimmedValue = value.trim();
+      const numericValue = trimmedValue === '' ? null : Number(trimmedValue);
+      if (numericValue !== null && !Number.isFinite(numericValue)) return current;
 
+      const now = new Date().toISOString();
+      const fieldMeasuredAt = numericValue === null ? null : now;
       const cycling = { ...profile.cycling };
       const running = { ...profile.running };
       const targetSources = { ...profile.targetSources };
 
       if (key === 'ftpWatts') {
         cycling.ftpWatts = numericValue;
-        cycling.measuredAt = now;
-        targetSources.ftpWatts = 'manual';
+        cycling.measuredAt = fieldMeasuredAt;
+        if (numericValue === null) delete targetSources.ftpWatts;
+        else targetSources.ftpWatts = 'manual';
       } else if (key === 'cyclingLthr') {
         cycling.lthrBpm = numericValue;
-        cycling.measuredAt = now;
-        targetSources.cyclingLthr = 'manual';
+        cycling.measuredAt = fieldMeasuredAt;
+        if (numericValue === null) delete targetSources.cyclingLthr;
+        else targetSources.cyclingLthr = 'manual';
       } else if (key === 'thresholdPaceSecPerKm') {
         running.thresholdPaceSecPerKm = numericValue;
-        running.measuredAt = now;
-        targetSources.thresholdPaceSecPerKm = 'manual';
+        running.measuredAt = fieldMeasuredAt;
+        if (numericValue === null) delete targetSources.thresholdPaceSecPerKm;
+        else targetSources.thresholdPaceSecPerKm = 'manual';
       } else if (key === 'lthrBpm') {
         running.lthrBpm = numericValue;
-        running.measuredAt = now;
-        targetSources.lthrBpm = 'manual';
+        running.measuredAt = fieldMeasuredAt;
+        if (numericValue === null) delete targetSources.lthrBpm;
+        else targetSources.lthrBpm = 'manual';
       } else if (key === 'weightKg') {
-        targetSources.weightKg = 'manual';
+        if (numericValue === null) delete targetSources.weightKg;
+        else targetSources.weightKg = 'manual';
       } else if (key === 'bodyFatPct') {
-        targetSources.bodyFatPct = 'manual';
+        if (numericValue === null) delete targetSources.bodyFatPct;
+        else targetSources.bodyFatPct = 'manual';
       }
 
       setHasChanges(true);
@@ -160,7 +169,7 @@ export function usePreferences(userId: string) {
           lthrBpm: key === 'lthrBpm' ? numericValue : profile.lthrBpm,
           weightKg: key === 'weightKg' ? numericValue : profile.weightKg,
           bodyFatPct: key === 'bodyFatPct' ? numericValue : profile.bodyFatPct,
-          weightMeasuredAt: key === 'weightKg' || key === 'bodyFatPct' ? now : profile.weightMeasuredAt,
+          weightMeasuredAt: key === 'weightKg' ? fieldMeasuredAt : profile.weightMeasuredAt,
           targetSources,
           cycling,
           running,
