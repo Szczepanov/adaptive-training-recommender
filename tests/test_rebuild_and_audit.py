@@ -104,6 +104,10 @@ def test_rebuild_reproduces_snapshot_from_archive_without_garmin_calls(
     }
     assert saved_payload["raw"]["skinTempDeviationCelsius"] == 0.2
     assert saved_payload["source"]["metricDates"]["weight"] == "2026-08-06"
+    assert saved_payload["source"]["metricDates"]["spo2"] == "2026-08-06"
+    assert saved_payload["source"]["metricDates"]["skinTempDeviation"] == "2026-08-06"
+    assert saved_payload["dataQuality"]["spo2Available"] is True
+    assert saved_payload["dataQuality"]["skinTempAvailable"] is True
 
 
 def test_rebuild_skips_date_missing_archived_payload(tmp_path: Path) -> None:
@@ -219,6 +223,8 @@ def test_audit_reports_missing_snapshots_and_availability() -> None:
                 "sleepScoreAvailable": True,
                 "hrvAvailable": date_iso != "2026-08-05",
                 "restingHrAvailable": True,
+                "spo2Available": date_iso != "2026-08-05",
+                "skinTempAvailable": date_iso in {"2026-08-02", "2026-08-06"},
             }
         }
 
@@ -235,4 +241,6 @@ def test_audit_reports_missing_snapshots_and_availability() -> None:
     assert report.sleep_available == 4
     assert report.hrv_available == 3
     assert report.rhr_available == 4
+    assert report.spo2_available == 3
+    assert report.skin_temp_available == 2
     assert report.activities_discovered == 12
