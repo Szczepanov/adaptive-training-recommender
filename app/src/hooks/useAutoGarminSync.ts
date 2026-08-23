@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import type { DailyDecisionInput } from '../engine/models';
-import { garminSyncRequestService, type GarminSyncRequest } from '../services/garminSyncRequestService';
+import { garminSyncRequestService } from '../services/garminSyncRequestService';
+import { getAwaitedSyncOutcome } from '../utils/garminSyncRequestState';
 import { isRecoverySnapshotStale } from '../utils/garminSyncStaleness';
 
 export interface UseAutoGarminSyncOptions {
@@ -10,40 +11,9 @@ export interface UseAutoGarminSyncOptions {
     enabled?: boolean;
 }
 
-type AwaitedSyncOutcome = 'completed' | 'failed' | null;
-
 interface ActiveTriggerContext {
     userId: string;
     targetDate: string;
-}
-
-/**
- * Classify a subscription/read snapshot only when it belongs to the exact request
- * this hook is awaiting. This lets both the realtime listener and the post-request
- * reconciliation read share the same correlation rules.
- */
-export function getAwaitedSyncOutcome(
-    request: GarminSyncRequest | null,
-    awaitingRequestedAt: string | null
-): AwaitedSyncOutcome {
-    if (!awaitingRequestedAt || !request || request.requestedAt !== awaitingRequestedAt) {
-        return null;
-    }
-    if (request.status === 'completed' || request.status === 'failed') {
-        return request.status;
-    }
-    return null;
-}
-
-/**
- * Pure predicate kept for focused regression tests and callers that only care about
- * successful completion.
- */
-export function isAwaitedSyncComplete(
-    request: GarminSyncRequest | null,
-    awaitingRequestedAt: string | null
-): boolean {
-    return getAwaitedSyncOutcome(request, awaitingRequestedAt) === 'completed';
 }
 
 /**
