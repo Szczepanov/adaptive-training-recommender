@@ -16,6 +16,7 @@ from .canonical import (
     CanonicalHeartRateZones,
     CanonicalLapSummary,
     CanonicalPerformanceTargets,
+    CanonicalRacePredictions,
     CanonicalStress,
     CanonicalTrainingReadiness,
     CanonicalTrainingStatus,
@@ -420,6 +421,70 @@ def _first_mapping(payload: Any) -> dict[str, Any]:
     return {}
 
 
+def extract_race_predictions(payload: Any) -> CanonicalRacePredictions | None:
+    """Extract Garmin 5K/10K/half/full predictions, rejecting malformed numbers."""
+    if not isinstance(payload, dict) or not payload:
+        return None
+
+    five_k: int | None = None
+    ten_k: int | None = None
+    half: int | None = None
+    full: int | None = None
+
+    items = payload.get("timePredictions") or payload.get("racePredictionDtoList")
+    if isinstance(items, list):
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            distance = _first_positive_number(item.get("distance"))
+            predicted_time = next(
+                (
+                    value
+                    for key in ("time", "predictedTime", "timeSeconds")
+                    if (value := _first_positive_number(item.get(key))) is not None
+                ),
+                None,
+            )
+            if distance is None or predicted_time is None:
+                continue
+            seconds = round(predicted_time)
+            if 4800 <= distance <= 5200:
+                five_k = seconds
+            elif 9800 <= distance <= 10200:
+                ten_k = seconds
+            elif 20500 <= distance <= 21500:
+                half = seconds
+            elif 41500 <= distance <= 43000:
+                full = seconds
+    else:
+        # The current Garmin Connect latest endpoint exposes keys such as time5K,
+        # time10K, timeHalfMarathon and timeMarathon. Keep tolerant aliases for the
+        # previously observed keyed variants without coercing strings/bools/non-finite
+        # values into plausible-looking predictions.
+        for key, raw_value in payload.items():
+            value = _first_positive_number(raw_value)
+            if value is None:
+                continue
+            key_lower = str(key).lower()
+            if "5k" in key_lower or key_lower == "5000":
+                five_k = round(value)
+            elif "10k" in key_lower or key_lower == "10000":
+                ten_k = round(value)
+            elif "half" in key_lower or "21k" in key_lower:
+                half = round(value)
+            elif "marathon" in key_lower or "42k" in key_lower:
+                full = round(value)
+
+    if not any(value is not None for value in (five_k, ten_k, half, full)):
+        return None
+    return CanonicalRacePredictions(
+        five_km_sec=five_k,
+        ten_km_sec=ten_k,
+        half_marathon_sec=half,
+        marathon_sec=full,
+    )
+
+
 def _body_composition_measured_at(entry: dict[str, Any]) -> str | None:
     calendar_date = entry.get("calendarDate")
     if isinstance(calendar_date, str) and len(calendar_date) >= 10:
@@ -521,6 +586,7 @@ def canonicalize_performance_targets(
     lactate_threshold: dict[str, Any] | None,
     heart_rate_zones: list[dict[str, Any]] | None,
     body_composition: dict[str, Any] | list[dict[str, Any]] | None = None,
+    race_predictions: dict[str, Any] | None = None,
 ) -> CanonicalPerformanceTargets:
     """Normalize Garmin's current FTP/running-lactate-threshold endpoints.
 
@@ -590,6 +656,7 @@ def canonicalize_performance_targets(
         running_lthr_bpm=round(lthr) if lthr is not None else None,
         weight_kg=weight_kg,
         body_fat_pct=body_fat_pct,
+        race_predictions=extract_race_predictions(race_predictions),
         ftp_measured_at=ftp_data.get("calendarDate")
         if isinstance(ftp_data.get("calendarDate"), str)
         else None,
@@ -793,6 +860,7 @@ class GarminProviderAdapter:
         activities=True,
         activity_details=True,
         body_composition=True,
+        race_predictions=True,
     )
 
     def __init__(self, client: GarminClientWrapper):
@@ -933,6 +1001,9 @@ class GarminProviderAdapter:
         lactate_threshold = self._fetch_enrichment(
             "lactate_threshold", self.client.get_lactate_threshold
         )
+        race_predictions = self._fetch_enrichment(
+            "race_predictions", self.client.get_race_predictions
+        )
         today = local_today()
         body_comp = self._fetch_enrichment(
             "body_composition",
@@ -947,12 +1018,17 @@ class GarminProviderAdapter:
             self._heart_rate_zones_cache = zones
         return ProviderPerformanceTargetsResult(
             canonical=canonicalize_performance_targets(
-                cycling_ftp, lactate_threshold, zones, body_composition=body_comp
+                cycling_ftp,
+                lactate_threshold,
+                zones,
+                body_composition=body_comp,
+                race_predictions=race_predictions,
             ),
             raw_payloads={
                 "cycling_ftp": cycling_ftp,
                 "lactate_threshold": lactate_threshold,
                 "body_composition": body_comp,
+                "race_predictions": race_predictions,
             },
         )
 

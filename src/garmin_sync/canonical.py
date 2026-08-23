@@ -55,6 +55,14 @@ class CanonicalHeartRateZones:
 
 
 @dataclass
+class CanonicalRacePredictions:
+    five_km_sec: int | None = None
+    ten_km_sec: int | None = None
+    half_marathon_sec: int | None = None
+    marathon_sec: int | None = None
+
+
+@dataclass
 class CanonicalPerformanceTargets:
     """Current sport-specific performance targets reported by a wearable.
 
@@ -68,6 +76,7 @@ class CanonicalPerformanceTargets:
     running_lthr_bpm: int | None = None
     weight_kg: float | None = None
     body_fat_pct: float | None = None
+    race_predictions: CanonicalRacePredictions | None = None
     ftp_measured_at: str | None = None
     threshold_measured_at: str | None = None
     lthr_measured_at: str | None = None
