@@ -19,6 +19,7 @@ from .canonical import (
     CanonicalLapSummary,
     CanonicalPerformanceTargets,
     CanonicalRacePredictions,
+    CanonicalRunningDynamics,
     CanonicalStress,
     CanonicalTrainingReadiness,
     CanonicalTrainingStatus,
@@ -50,6 +51,27 @@ _POWER_ACTIVITY_TYPES = {
     "virtual_ride",
 }
 _STRENGTH_ACTIVITY_TYPES = {"strength_training", "fitness_equipment"}
+
+
+def _activity_type_key(act: dict[str, Any]) -> str:
+    """Extract Garmin's activity type without trusting the nested response shape."""
+    raw_activity_type = act.get("activityType")
+    if not isinstance(raw_activity_type, dict):
+        return "unknown"
+    raw_type_key = raw_activity_type.get("typeKey")
+    if not isinstance(raw_type_key, str) or not raw_type_key.strip():
+        return "unknown"
+    return raw_type_key.strip()
+
+
+def _is_running_activity_type(activity_type: str) -> bool:
+    """Return whether a Garmin type key represents a running activity family."""
+    normalized = activity_type.strip().lower()
+    return (
+        normalized in {"run", "running"}
+        or normalized.endswith("_run")
+        or normalized.endswith("_running")
+    )
 
 
 def _optional_non_negative_int(value: Any) -> int | None:
@@ -1121,6 +1143,75 @@ def canonicalize_activities(
     return [_canonicalize_activity(act, zone4_floor=zone4_floor) for act in raw_activities]
 
 
+def extract_running_dynamics(act: dict[str, Any]) -> CanonicalRunningDynamics | None:
+    """Extract running-only dynamics metrics from a Garmin activity summary."""
+    if not isinstance(act, dict) or not _is_running_activity_type(_activity_type_key(act)):
+        return None
+
+    raw_gct = act.get("avgGroundContactTime") or act.get("groundContactTime")
+    gct = _first_positive_number(raw_gct)
+
+    raw_gct_bal = (
+        act.get("avgGroundContactBalance")
+        or act.get("groundContactBalanceLeft")
+        or act.get("groundContactBalance")
+    )
+    gct_bal_left: float | None = None
+    if raw_gct_bal is not None:
+        bal_val = _non_negative_number(raw_gct_bal)
+        if bal_val is not None and 35.0 <= bal_val <= 65.0:
+            gct_bal_left = round(bal_val, 1)
+
+    # Garmin reports vertical oscillation in millimeters under both keys -- always
+    # convert, never guess from magnitude (a real value can legitimately fall on
+    # either side of any threshold, e.g. 84mm and 8.4mm are both plausible readings).
+    raw_vert_osc = act.get("avgVerticalOscillation") or act.get("verticalOscillation")
+    vert_osc: float | None = None
+    if raw_vert_osc is not None:
+        vo_val = _first_positive_number(raw_vert_osc)
+        if vo_val is not None:
+            vert_osc = round(vo_val / 10.0, 1)
+
+    raw_vert_ratio = act.get("avgVerticalRatio") or act.get("verticalRatio")
+    vert_ratio: float | None = None
+    if raw_vert_ratio is not None:
+        vr_val = _non_negative_number(raw_vert_ratio)
+        if vr_val is not None and 1.0 <= vr_val <= 25.0:
+            vert_ratio = round(vr_val, 1)
+
+    # Garmin reports stride length in centimeters under both keys -- same
+    # always-convert reasoning as vertical oscillation above.
+    raw_stride = act.get("avgStrideLength") or act.get("strideLength")
+    stride_m: float | None = None
+    if raw_stride is not None:
+        st_val = _first_positive_number(raw_stride)
+        if st_val is not None:
+            stride_m = round(st_val / 100.0, 2)
+
+    raw_avg_power = act.get("avgPower") or act.get("averagePower") or act.get("avgRunningPower")
+    avg_power_value = _first_positive_number(raw_avg_power)
+    avg_power = round(avg_power_value) if avg_power_value is not None else None
+
+    raw_max_power = act.get("maxPower") or act.get("maxRunningPower")
+    max_power_value = _first_positive_number(raw_max_power)
+    max_power = round(max_power_value) if max_power_value is not None else None
+
+    if any(
+        v is not None
+        for v in (gct, gct_bal_left, vert_osc, vert_ratio, stride_m, avg_power, max_power)
+    ):
+        return CanonicalRunningDynamics(
+            ground_contact_time_ms=round(gct, 1) if gct is not None else None,
+            ground_contact_balance_left_pct=gct_bal_left,
+            vertical_oscillation_cm=vert_osc,
+            vertical_ratio_pct=vert_ratio,
+            stride_length_m=stride_m,
+            avg_running_power_watts=avg_power,
+            max_running_power_watts=max_power,
+        )
+    return None
+
+
 def _canonicalize_activity(
     act: dict[str, Any], zone4_floor: int | None = None
 ) -> CanonicalActivity:
@@ -1144,6 +1235,7 @@ def _canonicalize_activity(
     duration_sec = act.get("duration", 0)
 
     raw_activity_id = act.get("activityId")
+    activity_type = _activity_type_key(act)
 
     # Primary benefit & training-effect descriptors.  Current activity-list payloads
     # expose trainingEffectLabel directly; older/alternate shapes use message-key names.
@@ -1170,7 +1262,7 @@ def _canonicalize_activity(
     return CanonicalActivity(
         activity_id=str(raw_activity_id) if raw_activity_id is not None else None,
         date=act.get("startTimeLocal", "")[:10] or "",
-        type=act.get("activityType", {}).get("typeKey", "unknown"),
+        type=activity_type,
         duration_min=round(duration_sec / 60) if duration_sec else None,
         duration_seconds=int(duration_sec or 0),
         training_effect_aerobic=te_aero,
@@ -1178,6 +1270,7 @@ def _canonicalize_activity(
         average_hr=avg_hr,
         training_load=act.get("activityTrainingLoad"),
         intensity_tag=intensity_tag,
+        running_dynamics=extract_running_dynamics(act),
         primary_benefit=primary_benefit_str,
         epoc=epoc_val,
         recovery_time_hours=act_rec_hours,
@@ -1389,10 +1482,7 @@ class GarminProviderAdapter:
 
     def fetch_activity_detail(self, activity_id: str) -> ProviderActivityDetailResult:
         summary = self._activity_summary_cache.get(activity_id, {})
-        activity_type = (
-            summary.get("activityType", {}).get("typeKey", "") if isinstance(summary, dict) else ""
-        )
-        type_str = str(activity_type).lower()
+        type_str = _activity_type_key(summary).lower()
 
         # Strength detail is a different one-endpoint data product from cycling power
         # telemetry. Fetching the three power-detail endpoints first wastes requests and

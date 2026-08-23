@@ -48,9 +48,36 @@
   color: var(--primary-color);
 }
 
+.activity-dynamics,
 .activity-zone-section,
 .activity-laps {
   margin-top: 1rem;
+}
+
+.activity-dynamics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 0.5rem;
+  margin-top: 0.65rem;
+}
+
+.activity-dynamics-metric {
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--background-color);
+}
+
+.activity-dynamics-label {
+  display: block;
+  margin-bottom: 0.15rem;
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+}
+
+.activity-dynamics-metric strong {
+  color: var(--text-color);
+  font-size: 0.95rem;
 }
 
 .activity-zone-list {
