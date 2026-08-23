@@ -840,6 +840,14 @@ def test_canonicalize_performance_targets_with_body_composition():
     assert targets.ftp_measured_at == "2026-08-20"
 
 
+def test_gear_tracking_capability_is_opt_in_per_provider():
+    from garmin_sync.garmin_provider import GarminProviderAdapter
+    from garmin_sync.provider import ProviderCapabilities
+
+    assert ProviderCapabilities().gear_tracking is False
+    assert GarminProviderAdapter.capabilities.gear_tracking is True
+
+
 def test_extract_gear_items():
     from garmin_sync.garmin_provider import extract_gear_items
 

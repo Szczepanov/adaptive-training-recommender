@@ -789,6 +789,7 @@ class GarminProviderAdapter:
         activities=True,
         activity_details=True,
         body_composition=True,
+        gear_tracking=True,
     )
 
     def __init__(self, client: GarminClientWrapper):

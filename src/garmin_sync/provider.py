@@ -23,7 +23,7 @@ class ProviderCapabilities:
     activity_details: bool = False
     body_composition: bool = False
     training_readiness: bool = False
-    gear_tracking: bool = True
+    gear_tracking: bool = False
     workout_publishing: bool = False  # no adapter in this codebase exposes mutations
 
 
