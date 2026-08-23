@@ -204,6 +204,11 @@ class GarminClientWrapper:
             raise RuntimeError("Garmin client is not authenticated. Call login first.")
         return self.api.get_activity_splits(activity_id) or {}
 
+    def get_activity_exercise_sets(self, activity_id: str | int) -> dict[str, Any]:
+        if not self.api:
+            raise RuntimeError("Garmin client is not authenticated. Call login first.")
+        return self.api.get_activity_exercise_sets(activity_id) or {}
+
     def get_activities_window(self, start_date_iso: str, end_date_iso: str) -> list[dict[str, Any]]:
         """Paginate get_activities (newest first) to retrieve activities in [start_date_iso, end_date_iso]."""
         if not self.api:

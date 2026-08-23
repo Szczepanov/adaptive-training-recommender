@@ -150,6 +150,18 @@ class CanonicalLapSummary:
 
 
 @dataclass
+class CanonicalExerciseSet:
+    set_order: int
+    set_type: str = "active"  # "active", "rest", "warmup"
+    repetition_count: int | None = None
+    weight_kg: float | None = None
+    exercise_category: str | None = None
+    exercise_name: str | None = None
+    duration_seconds: float | None = None
+    rest_duration_seconds: float | None = None
+
+
+@dataclass
 class CanonicalActivityDetail:
     activity_id: str
     power_zones: list[CanonicalZoneBucket] | None = None
@@ -158,3 +170,4 @@ class CanonicalActivityDetail:
     intensity_factor: float | None = None
     variability_index: float | None = None
     laps: list[CanonicalLapSummary] | None = None
+    exercise_sets: list[CanonicalExerciseSet] | None = None

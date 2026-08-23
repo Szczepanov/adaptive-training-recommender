@@ -846,3 +846,44 @@ def test_canonicalize_performance_targets_with_body_composition():
     assert targets.body_fat_pct == 12.5
     assert targets.weight_measured_at == "2026-08-23"
     assert targets.ftp_measured_at == "2026-08-20"
+
+
+def test_extract_exercise_sets():
+    from garmin_sync.garmin_provider import extract_exercise_sets
+
+    raw = {
+        "exerciseSets": [
+            {
+                "setOrder": 0,
+                "setType": "ACTIVE",
+                "repetitionCount": 10,
+                "weight": 60000.0,  # 60,000 g -> 60.0 kg
+                "exerciseCategory": "BENCH_PRESS",
+                "exerciseName": "BARBELL_BENCH_PRESS",
+                "duration": 35.0,
+                "restDuration": 90.0,
+            },
+            {
+                "setOrder": 1,
+                "setType": "ACTIVE",
+                "repetitionCount": 8,
+                "weight": 70.0,  # 70 kg
+                "exerciseCategory": "BENCH_PRESS",
+                "exerciseName": "BARBELL_BENCH_PRESS",
+                "duration": 30.0,
+                "restDuration": 120.0,
+            },
+        ]
+    }
+    sets = extract_exercise_sets(raw)
+    assert sets is not None
+    assert len(sets) == 2
+    assert sets[0].set_order == 0
+    assert sets[0].set_type == "active"
+    assert sets[0].repetition_count == 10
+    assert sets[0].weight_kg == 60.0
+    assert sets[0].exercise_category == "BENCH_PRESS"
+    assert sets[0].exercise_name == "BARBELL_BENCH_PRESS"
+    assert sets[0].duration_seconds == 35.0
+    assert sets[0].rest_duration_seconds == 90.0
+    assert sets[1].weight_kg == 70.0
