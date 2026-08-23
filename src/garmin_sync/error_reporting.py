@@ -110,11 +110,16 @@ def classify_exception(error: BaseException) -> tuple[str, bool]:
         return "authentication", False
     if any(marker in name for marker in ("configuration", "defaultcredential", "credentialserror")):
         return "configuration", False
-    if any(marker in name for marker in ("connection", "timeout", "deadline", "unavailable", "transport")):
+    if any(
+        marker in name
+        for marker in ("connection", "timeout", "deadline", "unavailable", "transport")
+    ):
         return "upstream_unavailable", True
     if any(marker in name for marker in ("conflict", "alreadyexists")):
         return "conflict", False
-    if isinstance(error, ValueError) or any(marker in name for marker in ("validation", "jsondecode")):
+    if isinstance(error, ValueError) or any(
+        marker in name for marker in ("validation", "jsondecode")
+    ):
         return "validation", False
     if "notfound" in name:
         return "not_found", False
