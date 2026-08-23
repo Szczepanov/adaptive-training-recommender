@@ -84,12 +84,22 @@ def test_garmin_target_import_preserves_manual_targets_and_prior_partial_imports
 
 
 def test_first_garmin_import_creates_a_complete_preferences_document(monkeypatch):
+    from garmin_sync.canonical import CanonicalRacePredictions
+
     monkeypatch.setattr("garmin_sync.firestore_repository.firestore.transactional", lambda fn: fn)
     db = _Db(None)
     repository = FirestoreRecoveryRepository(user_id="u1", db=db)
 
-    repository.upsert_garmin_performance_targets(CanonicalPerformanceTargets(cycling_ftp_watts=250))
+    repository.upsert_garmin_performance_targets(
+        CanonicalPerformanceTargets(
+            cycling_ftp_watts=250,
+            race_predictions=CanonicalRacePredictions(five_km_sec=1200, ten_km_sec=2500),
+        )
+    )
 
     assert db.profile.data["preferredModalities"] == ["Running", "Cycling", "Strength"]
     assert db.profile.data["performanceProfile"]["ftpWatts"] == 250
     assert db.profile.data["performanceProfile"]["targetSources"]["ftpWatts"] == "garmin"
+    assert db.profile.data["performanceProfile"]["racePredictions"]["fiveKmSec"] == 1200
+    assert db.profile.data["performanceProfile"]["racePredictions"]["tenKmSec"] == 2500
+    assert db.profile.data["performanceProfile"]["garmin"]["racePredictions"]["fiveKmSec"] == 1200

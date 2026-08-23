@@ -131,6 +131,45 @@ export function PerformanceSections({
           ))}
         </div>
       </div>
+
+      {preferences.performanceProfile?.racePredictions && (
+        <div className="preference-section">
+          <h2>Race Predictions & Aerobic Benchmarks</h2>
+          <p className="preference-desc">
+            Estimated race performance calculated from your VO2max, acute aerobic volume, and historical threshold trends.
+          </p>
+          <div className="units-grid">
+            {[
+              { label: '5K', sec: preferences.performanceProfile.racePredictions.fiveKmSec, distKm: 5.0 },
+              { label: '10K', sec: preferences.performanceProfile.racePredictions.tenKmSec, distKm: 10.0 },
+              { label: 'Half Marathon', sec: preferences.performanceProfile.racePredictions.halfMarathonSec, distKm: 21.0975 },
+              { label: 'Marathon', sec: preferences.performanceProfile.racePredictions.marathonSec, distKm: 42.195 },
+            ].map(({ label, sec, distKm }) => {
+              const isMiles = preferences.preferredUnits.distance === 'miles';
+              if (!sec) return null;
+              const h = Math.floor(sec / 3600);
+              const m = Math.floor((sec % 3600) / 60);
+              const s = sec % 60;
+              const timeStr = h > 0
+                ? `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`
+                : `${m}:${s.toString().padStart(2, '0')}`;
+              const dist = isMiles ? distKm * 0.621371 : distKm;
+              const paceSec = Math.round(sec / dist);
+              const paceStr = `${Math.floor(paceSec / 60)}:${(paceSec % 60).toString().padStart(2, '0')}/${isMiles ? 'mi' : 'km'}`;
+
+              return (
+                <div className="unit-group" key={label} style={{ background: 'var(--card-bg, #1a1a24)', padding: '0.75rem 1rem', borderRadius: '8px', border: '1px solid var(--border-subtle, #2e2e3e)' }}>
+                  <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary, #9a9ab0)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>{label}</span>
+                  <div style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--accent, #6366f1)', marginTop: '0.2rem' }}>
+                    {timeStr}
+                  </div>
+                  <small style={{ color: 'var(--text-muted, #71717a)', fontSize: '0.8rem' }}>Pace: {paceStr}</small>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </>
   );
 }

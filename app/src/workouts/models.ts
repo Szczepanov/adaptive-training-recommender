@@ -443,12 +443,21 @@ export interface DeviceCapabilities {
  *  never overwrite `manual` or `coach` -- the reason `targetSources` exists at all. */
 export type TargetSource = 'garmin' | 'manual' | 'coach' | 'derived';
 
+export interface RacePredictions {
+  fiveKmSec?: number | null;
+  tenKmSec?: number | null;
+  halfMarathonSec?: number | null;
+  marathonSec?: number | null;
+  fetchedAt?: string | null;
+}
+
 export interface AthletePerformanceProfile {
   // Legacy top-level fields for backwards compatibility with v2 readers
   ftpWatts?: number | null;
   thresholdPaceSecPerKm?: number | null;
   lthrBpm?: number | null;
   estimated1RmKg?: Record<string, number>;
+  racePredictions?: RacePredictions | null;
   /** Field-level ownership prevents a Garmin refresh from replacing a coach target. */
   targetSources?: Partial<Record<'ftpWatts' | 'thresholdPaceSecPerKm' | 'lthrBpm' | 'cyclingLthr' | 'runningLthr', TargetSource>>;
   /** Per-exercise 1RM provenance, parallel to `estimated1RmKg`/`strength.estimated1RmKg`
@@ -464,6 +473,7 @@ export interface AthletePerformanceProfile {
     lthrBpm?: number | null;
     cyclingLthrBpm?: number | null;
     runningLthrBpm?: number | null;
+    racePredictions?: RacePredictions | null;
     fetchedAt: string;
     ftpMeasuredAt?: string | null;
     thresholdMeasuredAt?: string | null;

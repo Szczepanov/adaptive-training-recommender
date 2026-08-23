@@ -15,6 +15,7 @@ from .canonical import (
     CanonicalHeartRateZones,
     CanonicalLapSummary,
     CanonicalPerformanceTargets,
+    CanonicalRacePredictions,
     CanonicalStress,
     CanonicalTrainingReadiness,
     CanonicalTrainingStatus,
@@ -378,10 +379,68 @@ def _first_mapping(payload: Any) -> dict[str, Any]:
     return {}
 
 
+def extract_race_predictions(payload: Any) -> CanonicalRacePredictions | None:
+    """Extract race predictions from Garmin's racePredictions endpoint."""
+    if not payload:
+        return None
+
+    five_k: int | None = None
+    ten_k: int | None = None
+    half: int | None = None
+    full: int | None = None
+
+    if isinstance(payload, dict):
+        items = payload.get("timePredictions") or payload.get("racePredictionDtoList")
+        if isinstance(items, list):
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                dist = item.get("distance")
+                time_val = item.get("time") or item.get("predictedTime") or item.get("timeSeconds")
+                if (
+                    not isinstance(dist, (int, float))
+                    or not isinstance(time_val, (int, float))
+                    or time_val <= 0
+                ):
+                    continue
+                sec = round(time_val)
+                if 4800 <= dist <= 5200:
+                    five_k = sec
+                elif 9800 <= dist <= 10200:
+                    ten_k = sec
+                elif 20500 <= dist <= 21500:
+                    half = sec
+                elif 41500 <= dist <= 43000:
+                    full = sec
+        else:
+            for k, v in payload.items():
+                if not isinstance(v, (int, float)) or v <= 0:
+                    continue
+                k_lower = str(k).lower()
+                if "5k" in k_lower or k_lower == "5000":
+                    five_k = round(v)
+                elif "10k" in k_lower or k_lower == "10000":
+                    ten_k = round(v)
+                elif "half" in k_lower or "21k" in k_lower:
+                    half = round(v)
+                elif "marathon" in k_lower or "42k" in k_lower:
+                    full = round(v)
+
+    if any(v is not None for v in (five_k, ten_k, half, full)):
+        return CanonicalRacePredictions(
+            five_km_sec=five_k,
+            ten_km_sec=ten_k,
+            half_marathon_sec=half,
+            marathon_sec=full,
+        )
+    return None
+
+
 def canonicalize_performance_targets(
     cycling_ftp: dict[str, Any] | list[dict[str, Any]] | None,
     lactate_threshold: dict[str, Any] | None,
     heart_rate_zones: list[dict[str, Any]] | None,
+    race_predictions: dict[str, Any] | None = None,
 ) -> CanonicalPerformanceTargets:
     """Normalize Garmin's current FTP/running-lactate-threshold endpoints.
 
@@ -454,6 +513,7 @@ def canonicalize_performance_targets(
         lthr_measured_at=threshold_data.get("calendarDate")
         if isinstance(threshold_data.get("calendarDate"), str)
         else None,
+        race_predictions=extract_race_predictions(race_predictions),
     )
 
 
@@ -740,14 +800,21 @@ class GarminProviderAdapter:
         lactate_threshold = self._fetch_enrichment(
             "lactate_threshold", self.client.get_lactate_threshold
         )
+        race_preds = self._fetch_enrichment("race_predictions", self.client.get_race_predictions)
         zones = self._heart_rate_zones_cache
         if zones is None:
             fetched = self._fetch_enrichment("heart_rate_zones", self.client.get_heart_rate_zones)
             zones = fetched if isinstance(fetched, list) else None
             self._heart_rate_zones_cache = zones
         return ProviderPerformanceTargetsResult(
-            canonical=canonicalize_performance_targets(cycling_ftp, lactate_threshold, zones),
-            raw_payloads={"cycling_ftp": cycling_ftp, "lactate_threshold": lactate_threshold},
+            canonical=canonicalize_performance_targets(
+                cycling_ftp, lactate_threshold, zones, race_predictions=race_preds
+            ),
+            raw_payloads={
+                "cycling_ftp": cycling_ftp,
+                "lactate_threshold": lactate_threshold,
+                "race_predictions": race_preds,
+            },
         )
 
     def fetch_activities(

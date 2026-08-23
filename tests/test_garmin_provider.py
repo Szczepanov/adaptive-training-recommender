@@ -787,3 +787,35 @@ def test_fetch_performance_targets_uses_cached_hr_zones_and_archivable_raw_paylo
     assert result.canonical.running_lthr_bpm == 165
     assert result.raw_payloads["cycling_ftp"] == {"functionalThresholdPower": 250}
     mock_client.get_heart_rate_zones.assert_called_once()
+
+
+def test_extract_race_predictions_handles_list_and_dict():
+    from garmin_sync.garmin_provider import extract_race_predictions
+
+    payload = {
+        "timePredictions": [
+            {"distance": 5000.0, "time": 1200.0},
+            {"distance": 10000.0, "time": 2550.0},
+            {"distance": 21097.5, "time": 5700.0},
+            {"distance": 42195.0, "time": 12100.0},
+        ]
+    }
+    preds = extract_race_predictions(payload)
+    assert preds is not None
+    assert preds.five_km_sec == 1200
+    assert preds.ten_km_sec == 2550
+    assert preds.half_marathon_sec == 5700
+    assert preds.marathon_sec == 12100
+
+    dict_payload = {
+        "5k": 1180,
+        "10k": 2500,
+        "half_marathon": 5600,
+        "marathon": 11900,
+    }
+    preds2 = extract_race_predictions(dict_payload)
+    assert preds2 is not None
+    assert preds2.five_km_sec == 1180
+    assert preds2.ten_km_sec == 2500
+    assert preds2.half_marathon_sec == 5600
+    assert preds2.marathon_sec == 11900

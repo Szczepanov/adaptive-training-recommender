@@ -108,3 +108,15 @@ def test_activity_detail_methods_tolerate_empty_response():
     assert wrapper.get_activity_power_zones("123") == []
     assert wrapper.get_activity_hr_zones("123") == []
     assert wrapper.get_activity_splits("123") == {}
+
+
+def test_get_race_predictions():
+    wrapper = GarminClientWrapper(allow_credential_login=False)
+    with pytest.raises(RuntimeError, match="Garmin client is not authenticated"):
+        wrapper.get_race_predictions()
+
+    wrapper.api = MagicMock()
+    wrapper.api.get_race_predictions.return_value = {
+        "timePredictions": [{"distance": 5000, "time": 1200}]
+    }
+    assert wrapper.get_race_predictions() == {"timePredictions": [{"distance": 5000, "time": 1200}]}
