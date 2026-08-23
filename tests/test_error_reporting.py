@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import logging
 
+import pytest
+
 from garmin_sync.error_reporting import (
     build_error_report,
     classify_exception,
@@ -31,8 +33,8 @@ def test_sanitize_text_redacts_credentials_identity_paths_and_email() -> None:
     secret = "super-secret-password"
     token = "A" * 64
     raw = (
-        f"email=athlete@example.com password={secret} Authorization: Bearer {token} "
-        "path=garmin/users/firebase-user-123/tokens token=" + token
+        f"contact=athlete@example.com email=athlete@example.com password={secret} "
+        f"Authorization: Bearer {token} path=garmin/users/firebase-user-123/tokens token={token}"
     )
 
     sanitized = sanitize_text(raw)
@@ -84,11 +86,13 @@ def test_error_report_has_stable_code_and_safe_stack() -> None:
     assert all("do-not-log-me" not in frame for frame in report.stack)
 
 
-def test_log_exception_emits_structured_sanitized_diagnostics(caplog: object) -> None:
+def test_log_exception_emits_structured_sanitized_diagnostics(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     logger = logging.getLogger("test.error-reporting")
     secret = "A" * 64
 
-    with caplog.at_level(logging.ERROR, logger=logger.name):  # type: ignore[attr-defined]
+    with caplog.at_level(logging.ERROR, logger=logger.name):
         try:
             _raise_nested(secret)
         except GarminConnectConnectionError as error:
@@ -99,7 +103,7 @@ def test_log_exception_emits_structured_sanitized_diagnostics(caplog: object) ->
                 context={"user_id": "user-123", "user_index": 2},
             )
 
-    text = caplog.text  # type: ignore[attr-defined]
+    text = caplog.text
     assert report.code == "linked_user_sync.upstream_unavailable"
     assert "operation_failure" in text
     assert report.code in text
