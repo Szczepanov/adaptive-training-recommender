@@ -41,6 +41,8 @@ class MetricDates:
     trainingReadiness: str | None = None
     trainingStatus: str | None = None
     weight: str | None = None
+    spo2: str | None = None
+    skinTempDeviation: str | None = None
 
     def to_dict(self) -> dict[str, str | None]:
         return asdict(self)
@@ -323,6 +325,7 @@ class DataQuality:
     trainingStatusAvailable: bool = False
     heartRateZonesAvailable: bool = False
     spo2Available: bool = False
+    skinTempAvailable: bool = False
 
     def to_dict(self) -> dict[str, bool]:
         return asdict(self)
