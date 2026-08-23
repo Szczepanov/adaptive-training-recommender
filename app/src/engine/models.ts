@@ -851,6 +851,7 @@ export interface DailyRecoverySnapshot {
             bodyBattery?: string | null;
             trainingReadiness?: string | null;
             trainingStatus?: string | null;
+            weight?: string | null;
         };
     };
     raw: {
@@ -890,6 +891,8 @@ export interface DailyRecoverySnapshot {
             vo2MaxCycling?: number | null;
             vo2MaxCyclingDate?: string | null;
         } | null;
+        weightKg?: number | null;
+        bodyFatPct?: number | null;
     };
     derived: {
         baselineComputationVersion: number;

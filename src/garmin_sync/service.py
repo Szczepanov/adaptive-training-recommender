@@ -736,16 +736,17 @@ class GarminSyncService:
                 self.archive_store.load("sleep", yesterday_iso) if not raw_sleep else None
             )
 
-            # Metric enrichment (stress/body battery/training readiness/training status)
-            # is best-effort here, unlike the four required payloads above -- it wasn't
-            # part of the archive contract before item 4, so older archived dates simply
-            # won't have it, and that must not block rebuildability.
+            # Metric enrichment (stress/body battery/training readiness/training status,
+            # respiration, body composition) is best-effort here, unlike the four
+            # required payloads above. Older archives can legitimately lack any of it
+            # without making an otherwise complete day non-rebuildable.
             stress_today = self.archive_store.load("stress", target_iso)
             body_battery_today = self.archive_store.load("body_battery", target_iso)
             training_readiness_today = self.archive_store.load("training_readiness", target_iso)
             training_status_today = self.archive_store.load("training_status", target_iso)
             heart_rate_zones = self.archive_store.load("heart_rate_zones", target_iso)
             respiration_today = self.archive_store.load("respiration", target_iso)
+            body_composition_today = self.archive_store.load("body_composition", target_iso)
 
             try:
                 canonical = canonicalize_from_raw(
@@ -762,6 +763,7 @@ class GarminSyncService:
                     training_status_today=training_status_today,
                     heart_rate_zones=heart_rate_zones,
                     respiration_today=respiration_today,
+                    body_composition_today=body_composition_today,
                 )
                 zone4_floor = (
                     canonical.heart_rate_zones.zone4_floor if canonical.heart_rate_zones else None

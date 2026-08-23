@@ -239,11 +239,14 @@ class FirestoreRecoveryRepository:
             "ftpWatts": targets.cycling_ftp_watts,
             "thresholdPaceSecPerKm": targets.running_threshold_pace_sec_per_km,
             "lthrBpm": targets.running_lthr_bpm,
+            "weightKg": targets.weight_kg,
+            "bodyFatPct": targets.body_fat_pct,
         }
         measured_at = {
             "ftpMeasuredAt": targets.ftp_measured_at,
             "thresholdMeasuredAt": targets.threshold_measured_at,
             "lthrMeasuredAt": targets.lthr_measured_at,
+            "weightMeasuredAt": targets.weight_measured_at,
         }
 
         @firestore.transactional
@@ -278,7 +281,7 @@ class FirestoreRecoveryRepository:
                     continue
                 source = sources.get(key)
                 existing_value = profile.get(key)
-                if source == "manual":
+                if source in {"manual", "coach"}:
                     continue
                 if source == "garmin" or existing_value is None:
                     profile[key] = value
@@ -309,6 +312,7 @@ class FirestoreRecoveryRepository:
                         "preferredModalities": ["Running", "Cycling", "Strength"],
                         "deprioritizedModalities": [],
                         "avoidedModalities": [],
+                        "unavailableModalities": [],
                         "explanationVerbosity": "detailed",
                         "conservativeBias": False,
                         "preferredUnits": {

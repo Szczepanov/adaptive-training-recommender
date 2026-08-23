@@ -114,30 +114,48 @@ export function usePreferences(userId: string) {
   }, []);
 
   const updatePerformanceProfile = useCallback((
-    key: 'ftpWatts' | 'thresholdPaceSecPerKm' | 'lthrBpm' | 'cyclingLthr',
+    key: 'ftpWatts' | 'thresholdPaceSecPerKm' | 'lthrBpm' | 'cyclingLthr' | 'weightKg' | 'bodyFatPct',
     value: string
   ) => {
     setPreferences(current => {
       if (!current) return current;
       const profile = current.performanceProfile ?? {};
-      const numericValue = value.trim() === '' ? null : Number(value);
-      const now = new Date().toISOString();
+      const trimmedValue = value.trim();
+      const numericValue = trimmedValue === '' ? null : Number(trimmedValue);
+      if (numericValue !== null && !Number.isFinite(numericValue)) return current;
 
+      const now = new Date().toISOString();
+      const fieldMeasuredAt = numericValue === null ? null : now;
       const cycling = { ...profile.cycling };
       const running = { ...profile.running };
+      const targetSources = { ...profile.targetSources };
 
       if (key === 'ftpWatts') {
         cycling.ftpWatts = numericValue;
-        cycling.measuredAt = now;
+        cycling.measuredAt = fieldMeasuredAt;
+        if (numericValue === null) delete targetSources.ftpWatts;
+        else targetSources.ftpWatts = 'manual';
       } else if (key === 'cyclingLthr') {
         cycling.lthrBpm = numericValue;
-        cycling.measuredAt = now;
+        cycling.measuredAt = fieldMeasuredAt;
+        if (numericValue === null) delete targetSources.cyclingLthr;
+        else targetSources.cyclingLthr = 'manual';
       } else if (key === 'thresholdPaceSecPerKm') {
         running.thresholdPaceSecPerKm = numericValue;
-        running.measuredAt = now;
+        running.measuredAt = fieldMeasuredAt;
+        if (numericValue === null) delete targetSources.thresholdPaceSecPerKm;
+        else targetSources.thresholdPaceSecPerKm = 'manual';
       } else if (key === 'lthrBpm') {
         running.lthrBpm = numericValue;
-        running.measuredAt = now;
+        running.measuredAt = fieldMeasuredAt;
+        if (numericValue === null) delete targetSources.lthrBpm;
+        else targetSources.lthrBpm = 'manual';
+      } else if (key === 'weightKg') {
+        if (numericValue === null) delete targetSources.weightKg;
+        else targetSources.weightKg = 'manual';
+      } else if (key === 'bodyFatPct') {
+        if (numericValue === null) delete targetSources.bodyFatPct;
+        else targetSources.bodyFatPct = 'manual';
       }
 
       setHasChanges(true);
@@ -145,10 +163,14 @@ export function usePreferences(userId: string) {
         ...current,
         performanceProfile: {
           ...profile,
-          // Legacy top-level sync
+          // Legacy & top-level sync
           ftpWatts: key === 'ftpWatts' ? numericValue : profile.ftpWatts,
           thresholdPaceSecPerKm: key === 'thresholdPaceSecPerKm' ? numericValue : profile.thresholdPaceSecPerKm,
           lthrBpm: key === 'lthrBpm' ? numericValue : profile.lthrBpm,
+          weightKg: key === 'weightKg' ? numericValue : profile.weightKg,
+          bodyFatPct: key === 'bodyFatPct' ? numericValue : profile.bodyFatPct,
+          weightMeasuredAt: key === 'weightKg' ? fieldMeasuredAt : profile.weightMeasuredAt,
+          targetSources,
           cycling,
           running,
           measuredAt: now
