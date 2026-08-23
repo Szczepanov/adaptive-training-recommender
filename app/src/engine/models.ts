@@ -852,6 +852,8 @@ export interface DailyRecoverySnapshot {
             trainingReadiness?: string | null;
             trainingStatus?: string | null;
             weight?: string | null;
+            spo2?: string | null;
+            skinTempDeviation?: string | null;
         };
     };
     raw: {
@@ -1008,6 +1010,7 @@ export interface DailyRecoverySnapshot {
         trainingReadinessAvailable?: boolean;
         trainingStatusAvailable?: boolean;
         spo2Available?: boolean;
+        skinTempAvailable?: boolean;
     };
     createdAt?: string;
     updatedAt?: string;
