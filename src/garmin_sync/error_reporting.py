@@ -90,7 +90,8 @@ def _sanitize_context_value(key: str, value: Any) -> Any:
     if isinstance(value, Mapping):
         return sanitize_context(value)
     if isinstance(value, (list, tuple, set)):
-        return [sanitize_text(item) for item in value]
+        return [_sanitize_context_value("", item) for item in value]
+    return sanitize_text(value)
     return sanitize_text(value)
 
 
