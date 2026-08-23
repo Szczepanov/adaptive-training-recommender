@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { GarminSyncNowButton } from './GarminSyncNowButton';
+import { isAwaitedSyncTerminal } from '../utils/garminSyncRequestState';
 import { isSyncRequestStale, STALE_AFTER_MS } from '../utils/garminSyncStaleness';
 import type { GarminSyncRequest } from '../services/garminSyncRequestService';
 
@@ -8,15 +9,13 @@ import type { GarminSyncRequest } from '../services/garminSyncRequestService';
 // markup-level smoke test, matching the existing convention for sibling components
 // (ManualSessionBuilder.test.tsx, SessionJsonImport.test.tsx). subscribeToRequest is a
 // useEffect, which react-dom/server never runs, so this only exercises the button's
-// default (no outstanding request) render; garminSyncRequestService.test.ts and
-// test_sync_service.py cover the request/poll behavior itself. The stale-request
-// detection is the one piece of state-transition logic worth its own interactive test
-// (per review), so it's factored into the pure isSyncRequestStale() below instead of
-// buried in the component, and tested directly here without rendering anything.
+// default (no outstanding request) render. State-transition rules are kept in pure
+// helpers and tested directly below.
 vi.mock('../services/garminSyncRequestService', () => ({
     garminSyncRequestService: {
         subscribeToRequest: vi.fn(() => vi.fn()),
-        requestSync: vi.fn(async () => {}),
+        requestSync: vi.fn(async () => '2026-08-21T06:00:00.000Z'),
+        getRequest: vi.fn(async () => null),
     },
 }));
 
@@ -26,6 +25,36 @@ describe('GarminSyncNowButton', () => {
 
         expect(html).toContain('Sync now');
         expect(html).not.toContain('disabled');
+    });
+});
+
+describe('isAwaitedSyncTerminal', () => {
+    const requestedAt = '2026-08-21T06:00:00.000Z';
+    const base = (overrides: Partial<GarminSyncRequest> = {}): GarminSyncRequest => ({
+        userId: 'u1',
+        status: 'pending',
+        requestedAt,
+        ...overrides,
+    });
+
+    it('ignores terminal snapshots for an older shared-document request', () => {
+        expect(
+            isAwaitedSyncTerminal(
+                base({ status: 'completed', requestedAt: '2026-08-21T05:00:00.000Z' }),
+                requestedAt
+            )
+        ).toBe(false);
+    });
+
+    it('waits while the matching request is pending or processing', () => {
+        expect(isAwaitedSyncTerminal(base({ status: 'pending' }), requestedAt)).toBe(false);
+        expect(isAwaitedSyncTerminal(base({ status: 'processing' }), requestedAt)).toBe(false);
+    });
+
+    it('resolves only a terminal snapshot for the exact request', () => {
+        expect(isAwaitedSyncTerminal(base({ status: 'completed' }), requestedAt)).toBe(true);
+        expect(isAwaitedSyncTerminal(base({ status: 'failed' }), requestedAt)).toBe(true);
+        expect(isAwaitedSyncTerminal(base({ status: 'completed' }), null)).toBe(false);
     });
 });
 
@@ -52,7 +81,7 @@ describe('isSyncRequestStale', () => {
         expect(isSyncRequestStale(baseRequest({ status: 'processing' }), requestedAtMs + STALE_AFTER_MS - 1)).toBe(false);
     });
 
-    it('goes stale once pending or processing exceeds the threshold', () => {
+    it('goes stale once pending or ordinary processing exceeds the threshold', () => {
         expect(isSyncRequestStale(baseRequest({ status: 'pending' }), requestedAtMs + STALE_AFTER_MS + 1)).toBe(true);
         expect(isSyncRequestStale(baseRequest({ status: 'processing' }), requestedAtMs + STALE_AFTER_MS + 1)).toBe(true);
     });

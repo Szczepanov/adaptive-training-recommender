@@ -4,15 +4,18 @@ import type {
     ExternalPlanSession as LegacyExternalPlanSession,
 } from '../engine/models';
 import {
+    briefWindowDaysFor,
     briefWindowStart,
     buildContextBrief,
     defaultBriefWindowDays,
     SUBJECTIVE_BASELINE_DAYS,
+    type BriefWindowPreset,
     type ContextBriefInput,
 } from '../engine/contextBrief';
 import { injectActivityTelemetryIntoContextBrief } from '../engine/contextBriefActivityTelemetry';
 import {
     enhanceContextBriefForPlanning,
+    RECOVERY_TIMELINE_DAYS,
     UPCOMING_CONTEXT_DAYS,
     type UpcomingExternalPlanSession,
 } from '../engine/contextBriefPlanningHandoff';
@@ -40,6 +43,10 @@ export interface ContextBriefResult {
     startDate: string;
     asOfDate: string;
     windowDays: number;
+    /** The named window this result was built for, so the UI can reflect the active
+     * choice without re-deriving it from windowDays (which `build`'s caller could in
+     * principle pass as an arbitrary number outside either preset). */
+    preset: BriefWindowPreset;
     /** Sources that could not be read. The brief still renders; it says what is missing
      * rather than presenting a partial window as complete. */
     unavailableSources: string[];
@@ -71,13 +78,27 @@ function planningAuthoritySession(session: AnyExternalPlanSession): LegacyExtern
 /** Assembles the context brief from the user-scoped stores. Read-only: it persists
  * nothing and mutates nothing, so it is safe to call at any point in the day. */
 export class ContextBriefService {
-    async build(userId: string, asOfDate?: string, windowDays: number = defaultBriefWindowDays()): Promise<ContextBriefResult> {
+    async build(
+        userId: string,
+        asOfDate?: string,
+        windowDays: number = defaultBriefWindowDays(),
+        preset: BriefWindowPreset = windowDays <= briefWindowDaysFor('daily') ? 'daily' : 'full',
+    ): Promise<ContextBriefResult> {
         const targetDate = asOfDate ?? getLocalDateString();
         const startDate = briefWindowStart(targetDate, windowDays);
         // Strictly longer than the window, so there is always prior history to compare
         // against even when the caller asks for a long window.
         const baselineDays = Math.max(SUBJECTIVE_BASELINE_DAYS, windowDays * 2);
         const baselineStart = briefWindowStart(targetDate, baselineDays);
+        // Snapshots and activities are fetched over at least RECOVERY_TIMELINE_DAYS, not
+        // merely windowDays: enhanceContextBriefForPlanning's fixed 7-day recovery
+        // timeline reads from these same arrays regardless of the requested retrospective
+        // window, and a short `daily` window must not starve it of real data it would
+        // otherwise render as unrecorded. buildContextBrief still slices everything down
+        // to `startDate`/windowDays itself via its own `inWindow`, so widening the fetch
+        // here does not widen what the retrospective sections show.
+        const contextDays = Math.max(windowDays, RECOVERY_TIMELINE_DAYS);
+        const contextStart = briefWindowStart(targetDate, contextDays);
         // Activity and recommendation range queries are end-exclusive; the brief window
         // is inclusive of targetDate, so the fetch reaches one day further.
         const throughExclusive = addDaysToLocalDateString(targetDate, 1);
@@ -96,8 +117,8 @@ export class ContextBriefService {
         const unavailableSources: string[] = [];
 
         const snapshotDates = Array.from(
-            { length: windowDays },
-            (_, offset) => addDaysToLocalDateString(startDate, offset),
+            { length: contextDays },
+            (_, offset) => addDaysToLocalDateString(contextStart, offset),
         );
 
         const [
@@ -119,7 +140,10 @@ export class ContextBriefService {
             // Activity, recommendation, and check-in range queries are end-exclusive;
             // the brief window is inclusive of targetDate, so the fetch reaches throughExclusive.
             checkinService.getCheckinsInRange(userId, baselineStart, throughExclusive),
-            activityService.getActivitiesInRange(userId, startDate, throughExclusive),
+            // Widened to contextStart (see contextDays above) so the recovery timeline
+            // always has real activity flags; recommendations stay at windowDays since
+            // only the render-window adherence section and the current-day row use them.
+            activityService.getActivitiesInRange(userId, contextStart, throughExclusive),
             recommendationService.getRecommendationsInRange(userId, startDate, throughExclusive),
             // peek, not get: the brief is read-only and must not create a settings
             // profile as a side effect of being looked at (DataView presents it as
@@ -333,7 +357,12 @@ export class ContextBriefService {
             intentProfile,
             goals,
         };
-        const retrospectiveText = injectActivityTelemetryIntoContextBrief(buildContextBrief(input), activities);
+        // `activities` was fetched over contextDays (>= windowDays) to feed the fixed
+        // 7-day recovery timeline below; the detailed telemetry appendix must not inherit
+        // that wider range or a `daily` export would silently regain the per-lap detail
+        // W1 exists to drop. Slice explicitly back down to the render window.
+        const windowActivities = activities.filter(activity => activity.date >= startDate && activity.date <= targetDate);
+        const retrospectiveText = injectActivityTelemetryIntoContextBrief(buildContextBrief(input), windowActivities);
         const text = enhanceContextBriefForPlanning(retrospectiveText, {
             asOfDate: targetDate,
             snapshots,
@@ -358,6 +387,7 @@ export class ContextBriefService {
             startDate,
             asOfDate: targetDate,
             windowDays,
+            preset,
             unavailableSources,
         };
     }

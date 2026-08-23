@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { buildContextBrief, briefWindowStart, type ContextBriefInput } from './contextBrief';
+import {
+    briefWindowDaysFor,
+    briefWindowStart,
+    buildContextBrief,
+    DAILY_BRIEF_WINDOW_DAYS,
+    defaultBriefWindowDays,
+    type ContextBriefInput,
+} from './contextBrief';
 import { addDaysToLocalDateString } from '../utils/localDate';
 import type {
     DailyRecommendation,
@@ -193,6 +200,31 @@ describe('buildContextBrief', () => {
         expect(text).not.toContain('2026-08-02 → 2026-08-08');
     });
 
+    it('labels a two-day bucket span rather than presenting it as a full week', () => {
+        const text = buildContextBrief(input({ windowDays: 2, activities: [activity('2026-08-15')] }));
+        expect(text).toContain('- 2026-08-14 → 2026-08-15 (2 days): 1 sessions');
+    });
+
+    describe('window presets', () => {
+        it('names a 2-day daily preset and a 14-day full preset', () => {
+            expect(DAILY_BRIEF_WINDOW_DAYS).toBe(2);
+            expect(briefWindowDaysFor('daily')).toBe(2);
+            expect(briefWindowDaysFor('full')).toBe(defaultBriefWindowDays());
+        });
+    });
+
+    describe('short-window scope note', () => {
+        it('states that retrospective detail is scoped to a short window, so an empty section does not read as untrained', () => {
+            const text = buildContextBrief(input({ windowDays: 2, activities: [] }));
+            expect(text).toContain('Retrospective detail (completed training, per-check-in flags) is scoped to the last 2 day(s)');
+            expect(text).toContain('No recorded sessions in this window.');
+        });
+
+        it('omits the scope note for the full two-week window', () => {
+            expect(buildContextBrief(input())).not.toContain('is scoped to the last');
+        });
+    });
+
     describe('subjective baseline', () => {
         // `days` consecutive check-ins ending on `endDate`, so coverage is exactly `days`.
         function run(endDate: string, days: number, overrides: (offset: number) => Partial<DailySubjectiveCheckin> = () => ({})) {
@@ -296,6 +328,19 @@ describe('buildContextBrief', () => {
         it('states which direction is favourable so deltas cannot be misread', () => {
             expect(buildContextBrief(input({ checkins: run(AS_OF, 14) })))
                 .toContain('Higher is better for readiness, sleep quality and motivation; higher is worse for fatigue, soreness and mental stress.');
+        });
+
+        it('frames a short window as a point reading, not a trend, so one bad night is not read as a sustained shift', () => {
+            const text = buildContextBrief(input({ windowDays: 2, checkins: run(AS_OF, 28) }));
+            expect(text).toContain("Most recent check-in (2026-08-15) vs this athlete's own trailing 28-day baseline");
+            expect(text).toContain('This is a single reading, not a trend');
+            expect(text).not.toContain('read the direction, not the magnitude');
+        });
+
+        it('keeps the trend framing for the full two-week window', () => {
+            const text = buildContextBrief(input({ checkins: run(AS_OF, 28) }));
+            expect(text).toContain("Window average vs this athlete's own trailing 28-day baseline");
+            expect(text).not.toContain('single reading, not a trend');
         });
     });
 

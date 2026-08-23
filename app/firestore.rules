@@ -918,10 +918,12 @@ service cloud.firestore {
     function hasValidGarminSyncRequest(userId) {
       let data = request.resource.data;
       return hasOwnedUserId(userId)
-        && data.keys().hasOnly(['userId', 'status', 'requestedAt', 'completedAt', 'error'])
+        && data.keys().hasOnly(['userId', 'status', 'requestedAt', 'completedAt', 'error', 'requestType', 'days'])
         && data.keys().hasAll(['userId', 'status', 'requestedAt'])
         && data.status == 'pending'
         && data.requestedAt is string
+        && (!('requestType' in data) || data.requestType in ['sync', 'initial_backfill', 'backfill'])
+        && (!('days' in data) || (data.days is int && data.days >= 1 && data.days <= 365))
         && (!('completedAt' in data) || data.completedAt == null)
         && (!('error' in data) || data.error == null);
     }

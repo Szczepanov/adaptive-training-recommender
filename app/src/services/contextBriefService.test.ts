@@ -67,6 +67,93 @@ describe('ContextBriefService', () => {
         expect(services.getCheckinsInRange).toHaveBeenCalledWith('u1', '2026-06-21', '2026-08-16');
     });
 
+    describe('short (daily) window', () => {
+        it('widens the snapshot fetch to cover the fixed 7-day recovery timeline instead of only the 2-day window', async () => {
+            await new ContextBriefService().build('u1', AS_OF, 2);
+            expect(services.getRecoverySnapshotState).toHaveBeenCalledTimes(7);
+            expect(services.getRecoverySnapshotState).toHaveBeenNthCalledWith(1, 'u1', '2026-08-09');
+            expect(services.getRecoverySnapshotState).toHaveBeenNthCalledWith(7, 'u1', AS_OF);
+        });
+
+        it('widens the activity fetch the same way, but keeps recommendations scoped to the render window', async () => {
+            await new ContextBriefService().build('u1', AS_OF, 2);
+            expect(services.getActivitiesInRange).toHaveBeenCalledWith('u1', '2026-08-09', '2026-08-16');
+            expect(services.getRecommendationsInRange).toHaveBeenCalledWith('u1', '2026-08-14', '2026-08-16');
+        });
+
+        it('does not widen the fetch for the full 14-day window, since it already exceeds the timeline horizon', async () => {
+            await new ContextBriefService().build('u1', AS_OF, 14);
+            expect(services.getRecoverySnapshotState).toHaveBeenCalledTimes(14);
+            expect(services.getActivitiesInRange).toHaveBeenCalledWith('u1', '2026-08-02', '2026-08-16');
+        });
+
+        it('keeps an activity outside the render window in the fixed recovery timeline, but excludes its detail telemetry from the retrospective appendix', async () => {
+            // The recovery timeline only renders once *some* snapshot or check-in exists
+            // in range (contextBriefPlanningHandoff.ts); a bare wearable reading on AS_OF
+            // is enough to turn the section on so the activity-only row can be observed.
+            services.getRecoverySnapshotState.mockImplementation(async (_userId: string, date: string) => {
+                if (date !== AS_OF) return { status: 'MISSING' };
+                return {
+                    status: 'AVAILABLE',
+                    data: {
+                        userId: 'u1', date: AS_OF,
+                        source: { garminSyncedAt: `${AS_OF}T06:00:00Z`, sourceSchemaVersion: 3 },
+                        raw: {
+                            sleepScore: 70, sleepDurationSec: 25000, restingHr: 50, hrvOvernightAvg: 60,
+                            hrvStatus: null, respirationAvg: null, bodyBatteryWake: null, bodyBatteryChange: null,
+                            totalSteps: null, last3DaysHardSessionsCount: 0, yesterdayTraining: null,
+                        },
+                        derived: {
+                            baselineComputationVersion: 2,
+                            sleepScore7dAvg: 70, sleepScore28dAvg: 70,
+                            restingHr7dAvg: 50, restingHr28dAvg: 50,
+                            hrv7dAvg: 60, hrv28dAvg: 60,
+                            deltas: {
+                                sleepScoreVs7d: 0, sleepScoreVs28d: 0,
+                                restingHrVs7d: 0, restingHrVs28d: 0,
+                                hrvVs7d: 0, hrvVs28d: 0,
+                            },
+                        },
+                        dataQuality: {
+                            sleepScoreAvailable: true, restingHrAvailable: true, hrvAvailable: true,
+                            baseline7dReady: true, baseline28dReady: true,
+                        },
+                    },
+                };
+            });
+            services.getActivitiesInRange.mockResolvedValue({
+                status: 'AVAILABLE',
+                data: [{
+                    activityId: 'a1',
+                    // 5 days before AS_OF: inside the widened 7-day fetch/timeline, outside the 2-day render window.
+                    date: '2026-08-10',
+                    type: 'cycling',
+                    durationMin: 60,
+                    trainingEffectAerobic: 3,
+                    trainingEffectAnaerobic: 0.4,
+                    averageHr: 140,
+                    activityTrainingLoad: 100,
+                    intensityTag: 'moderate',
+                    laps: [{ lapIndex: 1, durationSeconds: 600, averagePowerWatts: 200, averageHrBpm: 140 }],
+                }],
+                revision: null,
+            });
+
+            const result = await new ContextBriefService().build('u1', AS_OF, 2);
+
+            expect(result.text).toContain('2026-08-10 |'); // recovery timeline row
+            expect(result.text).toContain('No recorded sessions in this window.'); // completed-training §3, render window only
+            expect(result.text).not.toContain('Detailed activity telemetry');
+        });
+
+        it('reports the preset inferred from windowDays when the caller does not pass one explicitly', async () => {
+            const daily = await new ContextBriefService().build('u1', AS_OF, 2);
+            const full = await new ContextBriefService().build('u1', AS_OF, 14);
+            expect(daily.preset).toBe('daily');
+            expect(full.preset).toBe('full');
+        });
+    });
+
     it('reads padded fixed-activity occupancy and resolves active imported sessions across the next seven days', async () => {
         await new ContextBriefService().build('u1', AS_OF, 14);
 

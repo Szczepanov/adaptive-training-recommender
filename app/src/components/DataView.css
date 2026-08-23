@@ -204,6 +204,37 @@
   max-width: 60ch;
 }
 
+.brief-preset-toggle {
+  display: inline-flex;
+  gap: 4px;
+  padding: 3px;
+  border-radius: 8px;
+  background-color: var(--hover-background, rgba(255, 255, 255, 0.06));
+  margin-bottom: 1rem;
+}
+
+.brief-preset-toggle button {
+  background: none;
+  border: none;
+  padding: 0.4rem 0.75rem;
+  border-radius: 6px;
+  font-size: 0.875rem;
+  color: var(--text-secondary, #666);
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.brief-preset-toggle button:hover {
+  color: var(--text-color);
+}
+
+.brief-preset-toggle button.active {
+  background-color: var(--card-background, #fff);
+  color: var(--primary-color);
+  font-weight: 500;
+}
+
 .brief-actions {
   display: flex;
   align-items: center;
@@ -218,7 +249,8 @@
   cursor: pointer;
 }
 
-.brief-range {
+.brief-range,
+.brief-size {
   font-size: 0.875rem;
   color: var(--text-secondary, #666);
 }

@@ -1,9 +1,10 @@
-import { useState, useEffect, useCallback, lazy, Suspense } from 'react';
+import { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react';
 import './App.css';
 import './index.css';
 import { Home } from './components/Home';
 import type { PreparedSessionLaunch } from './components/session/SessionDestinationSheet';
 import { decisionComposer } from './engine/composer';
+import { hasCompletedSubjectiveCheckinForDecision } from './engine/checkinCompletion';
 import type { HealthAnomalyAssessmentRevision } from './engine/healthAnomalyModels';
 import type { DailyDecisionInput } from './engine/models';
 import type { SessionExecution, SessionIntent } from './sessions/models';
@@ -38,6 +39,12 @@ function App() {
   const [healthAnomalyShadowRevision, setHealthAnomalyShadowRevision] = useState<HealthAnomalyAssessmentRevision | null>(null);
   const [desktopSettingsOpen, setDesktopSettingsOpen] = useState(false);
   const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
+  const [initialRouteUserId, setInitialRouteUserId] = useState<string | null>(null);
+  const initialRouteUserIdRef = useRef<string | null>(null);
+  const lastRoutedDate = useRef<string | null>(null);
+  const decisionInputRequestRevision = useRef(0);
+  const activeUserIdRef = useRef<string | null>(userId);
+  const currentScreenRef = useRef<Screen>(screen);
   // M3.4/M2.7 cutover: legacy Strength v1 remains a permanent read format, but it no longer
   // owns a second live runner. An already-open pre-cutover document is surfaced only so the
   // athlete can close it without losing its partial sets; all new execution uses SessionRunner.
@@ -49,32 +56,89 @@ function App() {
 
   const loadDecisionInput = useCallback(async () => {
     if (!userId) return;
+    const requestUserId = userId;
+    const requestRevision = ++decisionInputRequestRevision.current;
+
     try {
-      const input = await decisionComposer.composeDailyDecisionInput(userId);
+      const input = await decisionComposer.composeDailyDecisionInput(requestUserId);
+      if (
+        activeUserIdRef.current !== requestUserId
+        || decisionInputRequestRevision.current !== requestRevision
+      ) {
+        return;
+      }
+
       setDecisionInput(input);
+
+      // The initial route is resolved before the dashboard is allowed to mount, avoiding a
+      // flash (and unnecessary recommendation work) on Home before a pending check-in wins.
+      // On a later calendar day we only auto-route while the athlete is already on Home or
+      // Check-in, so a refresh can never eject an in-progress session or another workflow.
+      const needsInitialRoute = initialRouteUserIdRef.current !== requestUserId;
+      const needsDailyRoute = lastRoutedDate.current !== input.date;
+      const isSafeAutoRouteScreen = currentScreenRef.current === 'home' || currentScreenRef.current === 'checkin';
+      if (needsInitialRoute || (needsDailyRoute && isSafeAutoRouteScreen)) {
+        const nextScreen: Screen = hasCompletedSubjectiveCheckinForDecision(input) ? 'home' : 'checkin';
+        currentScreenRef.current = nextScreen;
+        setScreen(nextScreen);
+        initialRouteUserIdRef.current = requestUserId;
+        lastRoutedDate.current = input.date;
+        setInitialRouteUserId(requestUserId);
+      }
+
       // HA-D evidence collection is deliberately fire-and-forget relative to readiness.
       // Only an explicit shadow-v1 runtime value reaches the HA service, and the result is
       // retained solely so the Detailed Data trace can update after immutable persistence.
-      void runConfiguredHealthAnomalyShadow(userId, input.date)
+      void runConfiguredHealthAnomalyShadow(requestUserId, input.date)
         .then(result => {
-          if (result) setHealthAnomalyShadowRevision(result.revision);
+          if (
+            result
+            && activeUserIdRef.current === requestUserId
+            && decisionInputRequestRevision.current === requestRevision
+          ) {
+            setHealthAnomalyShadowRevision(result.revision);
+          }
         })
         .catch(error => {
           console.error('Error collecting health anomaly shadow evidence:', error);
         });
     } catch (error) {
+      if (
+        activeUserIdRef.current !== requestUserId
+        || decisionInputRequestRevision.current !== requestRevision
+      ) {
+        return;
+      }
       console.error('Error loading decision input:', error);
+      // If the initial composition is unavailable we cannot prove today's check-in is
+      // complete, so fail toward Check-in. That screen reads the daily document directly
+      // and still exposes a Dashboard escape hatch if its own data source is unavailable.
+      if (initialRouteUserIdRef.current !== requestUserId) {
+        initialRouteUserIdRef.current = requestUserId;
+        lastRoutedDate.current = getLocalDateString();
+        currentScreenRef.current = 'checkin';
+        setScreen('checkin');
+        setInitialRouteUserId(requestUserId);
+      }
     }
   }, [userId]);
 
   useEffect(() => {
-    if (userId && authPhase === 'AUTHENTICATED') {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      loadDecisionInput();
-    }
-  }, [userId, authPhase, loadDecisionInput]);
+    // Keep the async identity guard in effect-space rather than mutating a ref during render.
+    // This effect is declared before the load effect below, so a newly authenticated identity
+    // is installed before its first decision composition starts.
+    activeUserIdRef.current = userId;
 
-  useEffect(() => {
+    // Invalidate any outstanding decision composition before resetting identity-scoped UI.
+    // This prevents a slow response from the previous account (or an older same-account
+    // refresh) from replacing current decision data or driving navigation after the switch.
+    decisionInputRequestRevision.current += 1;
+    initialRouteUserIdRef.current = null;
+    lastRoutedDate.current = null;
+    setInitialRouteUserId(null);
+    setDecisionInput(null);
+    setHealthAnomalyShadowRevision(null);
+
     // Clear synchronously on every identity change so a resolved session from a previous
     // account can never be shown, or acted on, under a newly signed-in userId.
     setLegacyStrengthSessionId(null);
@@ -107,18 +171,71 @@ function App() {
     return () => { cancelled = true; };
   }, [userId, authPhase]);
 
+  useEffect(() => {
+    if (userId && authPhase === 'AUTHENTICATED') {
+      void loadDecisionInput();
+    }
+  }, [userId, authPhase, loadDecisionInput]);
+
+  useEffect(() => {
+    if (!userId || authPhase !== 'AUTHENTICATED' || initialRouteUserId !== userId) return;
+
+    const refreshIfCalendarDayChanged = () => {
+      const isSafeAutoRouteScreen = currentScreenRef.current === 'home' || currentScreenRef.current === 'checkin';
+      if (isSafeAutoRouteScreen && lastRoutedDate.current !== getLocalDateString()) {
+        void loadDecisionInput();
+      }
+    };
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') refreshIfCalendarDayChanged();
+    };
+
+    const intervalId = window.setInterval(refreshIfCalendarDayChanged, 60_000);
+    window.addEventListener('focus', refreshIfCalendarDayChanged);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener('focus', refreshIfCalendarDayChanged);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
+  }, [userId, authPhase, initialRouteUserId, loadDecisionInput]);
+
   if (authPhase !== 'AUTHENTICATED') {
     return <LoginScreen />;
   }
 
+  // Do not mount Home until today's completion state has chosen the first authenticated
+  // screen. Besides removing the visible Home→Check-in flash, this avoids generating or
+  // displaying a recommendation from incomplete subjective input before the check-in UI.
+  if (!userId || initialRouteUserId !== userId) {
+    return (
+      <div className="app-container">
+        <main className="app-content">
+          <div className="loading-state" role="status">Loading today&apos;s check-in status...</div>
+        </main>
+      </div>
+    );
+  }
+
   const handleNavigate = (newScreen: Screen) => {
+    currentScreenRef.current = newScreen;
     setScreen(newScreen);
     setDesktopSettingsOpen(false);
     setMobileMoreOpen(false);
+
+    // If the app spent midnight/background time inside a non-routable workflow, re-evaluate
+    // the daily default as soon as the athlete next returns to Home or Check-in.
+    if (
+      (newScreen === 'home' || newScreen === 'checkin')
+      && lastRoutedDate.current !== getLocalDateString()
+    ) {
+      void loadDecisionInput();
+    }
   };
 
   const isWorkoutRunnerActive =
     (screen === 'sessions' || screen === 'testing') && activeStructuredSession?.state === 'in_progress';
+  const dailyViewDate = decisionInput?.date ?? getLocalDateString();
 
   return (
     <div className="app-container">
@@ -164,10 +281,11 @@ function App() {
         <Suspense fallback={<div className="loading-state">Loading...</div>}>
           {screen === 'home' && (
             <Home
+              key={dailyViewDate}
               userId={userId!}
               onNavigate={handleNavigate}
               onViewData={() => {
-                loadDecisionInput();
+                void loadDecisionInput();
                 handleNavigate('data');
               }}
               onStartSession={async binding => {
@@ -215,9 +333,11 @@ function App() {
 
           {screen === 'checkin' && (
             <DailyCheckin
+              key={dailyViewDate}
               userId={userId!}
               onNavigate={handleNavigate}
               onBack={() => handleNavigate('home')}
+              onCheckinSaved={loadDecisionInput}
             />
           )}
 
@@ -288,9 +408,9 @@ function App() {
           {screen === 'plan' && (
             <PlanView
               userId={userId!}
-              onNavigate={setScreen}
+              onNavigate={handleNavigate}
               onPlanChanged={() => {
-                loadDecisionInput();
+                void loadDecisionInput();
               }}
             />
           )}
