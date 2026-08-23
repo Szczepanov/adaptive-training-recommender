@@ -15,6 +15,55 @@ describe('validatePreferences unavailable modalities', () => {
     });
 });
 
+describe('validatePreferences performanceProfile.targetSources', () => {
+    const valid = {
+        userId: 'u1', preferredRecoveryStyle: 'mixed', defaultWeekdayTimeMin: 45, defaultWeekendTimeMin: 60,
+        preferredTimeOfDay: 'flexible', preferredModalities: [], avoidedModalities: [],
+        explanationVerbosity: 'detailed', conservativeBias: false,
+        preferredUnits: { distance: 'km', weight: 'kg', temperature: 'celsius' },
+    };
+
+    it('accepts every key AthletePerformanceProfile.targetSources declares, not only the three FTP/pace/LTHR fields', () => {
+        // firestore_repository.py's upsert_garmin_performance_targets writes weightKg and
+        // bodyFatPct target sources on every Garmin body-composition sync -- a preferences
+        // document with those keys must not become permanently INVALID.
+        const result = validatePreferences({
+            ...valid,
+            performanceProfile: {
+                targetSources: { ftpWatts: 'garmin', weightKg: 'garmin', bodyFatPct: 'manual', cyclingLthr: 'garmin', runningLthr: 'manual' },
+            },
+        });
+        expect(result.isValid).toBe(true);
+    });
+
+    it("accepts a 'coach' source, which firestore_repository.py treats as protected alongside 'manual'", () => {
+        const result = validatePreferences({
+            ...valid,
+            performanceProfile: { targetSources: { ftpWatts: 'coach' } },
+        });
+        expect(result.isValid).toBe(true);
+    });
+
+    it('accepts a derived source, matching the shared TargetSource union', () => {
+        const result = validatePreferences({
+            ...valid,
+            performanceProfile: { targetSources: { lthrBpm: 'derived' } },
+        });
+        expect(result.isValid).toBe(true);
+    });
+
+    it('still rejects an unrecognized key or value', () => {
+        expect(validatePreferences({
+            ...valid,
+            performanceProfile: { targetSources: { notARealTarget: 'garmin' } },
+        }).isValid).toBe(false);
+        expect(validatePreferences({
+            ...valid,
+            performanceProfile: { targetSources: { ftpWatts: 'estimated' } },
+        }).isValid).toBe(false);
+    });
+});
+
 describe('isValidDate', () => {
     it('rejects impossible calendar dates rather than normalizing them', () => {
         expect(isValidDate('2026-02-30')).toBe(false);

@@ -862,8 +862,15 @@ export function validatePreferences(raw: any): ValidationResult<UserPreferences>
             if (raw.performanceProfile.targetSources !== undefined &&
                 (typeof raw.performanceProfile.targetSources !== 'object' || raw.performanceProfile.targetSources === null ||
                  !Object.entries(raw.performanceProfile.targetSources).every(([key, value]) =>
-                    ['ftpWatts', 'thresholdPaceSecPerKm', 'lthrBpm'].includes(key) && (value === 'garmin' || value === 'manual')))) {
-                errors.push({ field: 'performanceProfile.targetSources', message: 'Target sources must be manual or garmin for a supported target' });
+                    // Keys and values must match AthletePerformanceProfile.targetSources / TargetSource
+                    // (workouts/models.ts) exactly -- this previously allowed only
+                    // ftpWatts/thresholdPaceSecPerKm/lthrBpm with garmin/manual, which rejected
+                    // every real document as soon as the Garmin weight/body-composition sync
+                    // (firestore_repository.py upsert_garmin_performance_targets) started writing
+                    // weightKg/bodyFatPct keys, or a coach-assigned target's 'coach' source.
+                    ['ftpWatts', 'thresholdPaceSecPerKm', 'lthrBpm', 'cyclingLthr', 'runningLthr', 'weightKg', 'bodyFatPct'].includes(key)
+                    && ['garmin', 'manual', 'coach', 'derived'].includes(value as string)))) {
+                errors.push({ field: 'performanceProfile.targetSources', message: 'Target sources must be garmin, manual, coach or derived for a supported target' });
             }
             if (raw.performanceProfile.garmin !== undefined) {
                 const garmin = raw.performanceProfile.garmin;
