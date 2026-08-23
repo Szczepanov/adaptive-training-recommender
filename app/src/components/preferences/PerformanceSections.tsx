@@ -1,4 +1,3 @@
-
 import type { UserPreferences } from '../../engine/models';
 
 interface PerformanceSectionsProps {

@@ -312,6 +312,7 @@ class FirestoreRecoveryRepository:
                         "preferredModalities": ["Running", "Cycling", "Strength"],
                         "deprioritizedModalities": [],
                         "avoidedModalities": [],
+                        "unavailableModalities": [],
                         "explanationVerbosity": "detailed",
                         "conservativeBias": False,
                         "preferredUnits": {
