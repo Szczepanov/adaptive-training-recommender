@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { garminSyncRequestService } from '../services/garminSyncRequestService';
-import { getAwaitedSyncOutcome, useAutoGarminSync, isAwaitedSyncComplete } from './useAutoGarminSync';
+import { getAwaitedSyncOutcome, isAwaitedSyncComplete } from '../utils/garminSyncRequestState';
+import { useAutoGarminSync } from './useAutoGarminSync';
 import type { GarminSyncRequest } from '../services/garminSyncRequestService';
 
 vi.mock('../services/garminSyncRequestService', () => ({
