@@ -182,6 +182,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
   const [nextDayPlan, setNextDayPlan] = useState<NextDayPotentialPlan | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [errorRepairTargets, setErrorRepairTargets] = useState<{ screen: Screen; label: string }[]>([]);
   const [showWorkoutDetails, setShowWorkoutDetails] = useState(false);
   const [pendingAdherence, setPendingAdherence] = useState<{ date: string; recommendation: DailyRecommendation } | null>(null);
   const [, setTodaysJournalEntry] = useState<DecisionJournalEntry | null>(null);
@@ -343,6 +344,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
     try {
       setLoading(true);
       setError(null);
+      setErrorRepairTargets([]);
       setHistorySnapshot(null);
       const input = await decisionComposer.composeDailyDecisionInput(userId);
       if (!isCurrent()) return;
@@ -365,6 +367,16 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
         setRecommendation(null);
         setNextDayPlan(null);
         clearExternalPlanState();
+        if (decisionSourceFailure.status === 'INVALID') {
+          // Point the user at whichever screen owns the invalid document(s) so the error
+          // is actionable rather than a dead end -- re-saving there re-runs validation
+          // and clears the INVALID state.
+          const repairTargets: { screen: Screen; label: string }[] = [];
+          if (input.sourceStates?.activeGoals.status === 'INVALID') repairTargets.push({ screen: 'goals', label: 'Review goals' });
+          if (input.sourceStates?.preferences.status === 'INVALID') repairTargets.push({ screen: 'preferences', label: 'Review preferences' });
+          if (input.sourceStates?.trainingSettings.status === 'INVALID') repairTargets.push({ screen: 'constraints', label: 'Review training settings' });
+          setErrorRepairTargets(repairTargets);
+        }
         setError(decisionSourceFailure.status === 'UNAVAILABLE'
           ? 'Decision inputs are temporarily unavailable. Please retry before generating a plan.'
           : 'Decision inputs need repair before generating a plan.');
@@ -838,7 +850,19 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
       <div className="home-container">
         <div className="error-state">
           <p>{error}</p>
-          <button onClick={loadDashboardData}>Retry</button>
+          {errorRepairTargets.length > 0 && (
+            <p className="error-state-hint">
+              Re-saving the flagged data below re-validates it and clears this error.
+            </p>
+          )}
+          <div className="error-state-actions">
+            {errorRepairTargets.map(target => (
+              <button key={target.screen} type="button" onClick={() => onNavigate(target.screen)}>
+                {target.label} →
+              </button>
+            ))}
+            <button onClick={loadDashboardData}>Retry</button>
+          </div>
         </div>
       </div>
     );
