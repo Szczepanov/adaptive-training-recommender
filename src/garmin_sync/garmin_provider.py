@@ -323,6 +323,12 @@ def _non_negative_number(value: Any) -> float | None:
     return numeric if math.isfinite(numeric) and numeric >= 0 else None
 
 
+def _spo2_percentage(value: Any) -> float | None:
+    """Return a physiologically valid Garmin SpO2 percentage without coercion."""
+    numeric = _non_negative_number(value)
+    return numeric if numeric is not None and 0 < numeric <= 100 else None
+
+
 def _recovery_time_hours_from_minutes(
     value: Any,
     *,
@@ -915,7 +921,13 @@ def canonicalize_performance_targets(
 
 
 def extract_spo2(spo2_payload: Any, sleep_payload: Any = None) -> CanonicalSpo2 | None:
-    """Extract SpO2 metrics (daily average/minimum plus sleep average) from Garmin."""
+    """Extract source-faithful SpO2 metrics from Garmin.
+
+    ``avg_pct`` and ``min_pct`` describe the date-scoped Pulse Ox summary endpoint.
+    ``sleep_avg_pct`` describes the selected sleep record. These fields intentionally
+    do not backfill one another: doing so would make a sleep-only value look like a
+    daily average (or vice versa) and would obscure the source-date semantics.
+    """
     avg_val = None
     min_val = None
     sleep_avg = None
@@ -923,8 +935,12 @@ def extract_spo2(spo2_payload: Any, sleep_payload: Any = None) -> CanonicalSpo2 
     if isinstance(spo2_payload, dict):
         user_spo2 = spo2_payload.get("userDailySpo2") or spo2_payload
         if isinstance(user_spo2, dict):
-            avg_val = _non_negative_number(user_spo2.get("averageSpO2"))
-            min_val = _non_negative_number(user_spo2.get("lowestSpO2"))
+            avg_val = _spo2_percentage(user_spo2.get("averageSpO2"))
+            if avg_val is None:
+                avg_val = _spo2_percentage(user_spo2.get("averageSpo2"))
+            min_val = _spo2_percentage(user_spo2.get("lowestSpO2"))
+            if min_val is None:
+                min_val = _spo2_percentage(user_spo2.get("lowestSpo2"))
 
     if isinstance(sleep_payload, dict):
         dto = (
@@ -932,14 +948,7 @@ def extract_spo2(spo2_payload: Any, sleep_payload: Any = None) -> CanonicalSpo2 
             if isinstance(sleep_payload.get("dailySleepDTO"), dict)
             else sleep_payload
         )
-        sleep_avg = _non_negative_number(dto.get("averageSpO2Value"))
-        sleep_min = _non_negative_number(dto.get("lowestSpO2Value"))
-        if avg_val is None:
-            avg_val = sleep_avg
-        if min_val is None:
-            min_val = sleep_min
-        if sleep_avg is None:
-            sleep_avg = avg_val
+        sleep_avg = _spo2_percentage(dto.get("averageSpO2Value"))
 
     if avg_val is not None or min_val is not None or sleep_avg is not None:
         return CanonicalSpo2(
@@ -1251,14 +1260,25 @@ class GarminProviderAdapter:
             self._sleep_cache[date_iso] = self.client.get_sleep_data(date_iso)
         return self._sleep_cache[date_iso]
 
-    def _fetch_enrichment(self, name: str, fetch_fn: Callable[[], Any]) -> Any:
-        """Best-effort fetch for metric-enrichment endpoints (stress/body battery/
-        training readiness/training status): log and continue on failure rather than
-        aborting the whole sync. Unlike stats/sleep/hrv/activities, these are
-        supplementary and not yet consumed by anything downstream."""
+    def _fetch_enrichment(
+        self,
+        name: str,
+        fetch_fn: Callable[[], Any],
+        *,
+        fatal_exceptions: tuple[type[Exception], ...] = (),
+    ) -> Any:
+        """Best-effort fetch for supplementary metric-enrichment endpoints.
+
+        Normal Garmin/API failures are logged and omitted because these fields are not
+        required for the recovery snapshot. ``fatal_exceptions`` is reserved for local
+        dependency-contract/programming failures that must not be mislabeled as missing
+        health data (for example, an installed garminconnect lacking a required method).
+        """
         try:
             return fetch_fn()
         except Exception as e:
+            if fatal_exceptions and isinstance(e, fatal_exceptions):
+                raise
             logger.warning(
                 f"Enrichment fetch '{name}' failed for this sync, continuing without it: {e}"
             )
@@ -1304,7 +1324,9 @@ class GarminProviderAdapter:
         )
 
         spo2_today = self._fetch_enrichment(
-            "spo2", lambda: self.client.get_spo2_data(target_date_iso)
+            "spo2",
+            lambda: self.client.get_spo2_data(target_date_iso),
+            fatal_exceptions=(AttributeError,),
         )
 
         canonical = canonicalize_from_raw(
