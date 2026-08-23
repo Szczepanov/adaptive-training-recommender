@@ -332,7 +332,7 @@ describe('buildContextBrief', () => {
 
         it('frames a short window as a point reading, not a trend, so one bad night is not read as a sustained shift', () => {
             const text = buildContextBrief(input({ windowDays: 2, checkins: run(AS_OF, 28) }));
-            expect(text).toContain("Today vs this athlete's own trailing 28-day baseline");
+            expect(text).toContain("Most recent check-in (2026-08-15) vs this athlete's own trailing 28-day baseline");
             expect(text).toContain('This is a single reading, not a trend');
             expect(text).not.toContain('read the direction, not the magnitude');
         });
