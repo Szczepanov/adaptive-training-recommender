@@ -238,3 +238,21 @@ class GarminClientWrapper:
         if not self.api:
             raise RuntimeError("Garmin client is not authenticated. Call login first.")
         return self.api.schedule_workout(workout_id, date_iso) or {}
+
+    def get_gear(self, user_profile_number: str | int | None = None) -> list[dict[str, Any]]:
+        if not self.api:
+            raise RuntimeError("Garmin client is not authenticated. Call login first.")
+        if hasattr(self.api, "get_gear"):
+            try:
+                if user_profile_number is not None:
+                    return self.api.get_gear(user_profile_number) or []
+                if hasattr(self.api, "get_user_profile"):
+                    profile = self.api.get_user_profile() or {}
+                    pk = profile.get("userProfilePk") or profile.get("profileId")
+                    if pk:
+                        return self.api.get_gear(pk) or []
+                return self.api.get_gear() or []
+            except Exception as e:
+                logger.debug("Failed to fetch gear from Garmin: %s", e)
+                return []
+        return []

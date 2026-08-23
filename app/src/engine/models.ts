@@ -1261,9 +1261,28 @@ export interface UserPreferences {
         temperature: 'celsius' | 'fahrenheit';
     };
     performanceProfile?: AthletePerformanceProfile;
+    gearTracker?: {
+        items: GearItemSummary[];
+        syncedAt?: string;
+    };
     schemaVersion: number;
     createdAt: string;
     updatedAt: string;
+}
+
+export interface GearItemSummary {
+    gearPk: string;
+    uuid?: string;
+    customMakeModel?: string;
+    displayName?: string;
+    gearType?: string;
+    brand?: string;
+    model?: string;
+    totalDistanceKm: number;
+    maximumDistanceKm?: number;
+    dateBegin?: string;
+    dateEnd?: string;
+    status: string;
 }
 
 // --- Engine Layer Models (Not stored in Firestore) ---

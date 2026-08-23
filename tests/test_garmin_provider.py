@@ -838,3 +838,42 @@ def test_canonicalize_performance_targets_with_body_composition():
     assert targets.body_fat_pct == 12.5
     assert targets.weight_measured_at == "2026-08-23"
     assert targets.ftp_measured_at == "2026-08-20"
+
+
+def test_extract_gear_items():
+    from garmin_sync.garmin_provider import extract_gear_items
+
+    raw = [
+        {
+            "gearPk": 12345,
+            "uuid": "gear-uuid-1",
+            "customMakeModel": "Nike Vaporfly 3",
+            "displayName": "Race Shoes",
+            "gearTypeName": "Shoes",
+            "gearMakeName": "Nike",
+            "gearModelName": "Vaporfly 3",
+            "totalDistance": 250400.0,  # 250.4 km
+            "maximumMeters": 600000.0,  # 600.0 km
+            "dateBegin": "2025-01-01",
+            "gearStatusName": "ACTIVE",
+        },
+        {
+            "gearPk": 67890,
+            "customMakeModel": "Specialized Tarmac",
+            "gearTypeName": "Bikes",
+            "totalDistance": 1540200.0,  # 1540.2 km
+            "gearStatusName": "ACTIVE",
+        },
+    ]
+
+    items = extract_gear_items(raw)
+    assert len(items) == 2
+    assert items[0].gear_pk == "12345"
+    assert items[0].custom_make_model == "Nike Vaporfly 3"
+    assert items[0].display_name == "Race Shoes"
+    assert items[0].gear_type == "shoes"
+    assert items[0].brand == "Nike"
+    assert items[0].total_distance_km == 250.4
+    assert items[0].maximum_distance_km == 600.0
+    assert items[0].status == "active"
+    assert items[1].total_distance_km == 1540.2

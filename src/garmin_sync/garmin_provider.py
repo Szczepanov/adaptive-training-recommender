@@ -13,6 +13,7 @@ from .canonical import (
     CanonicalActivityDetail,
     CanonicalBodyBattery,
     CanonicalDailyMetrics,
+    CanonicalGearItem,
     CanonicalHeartRateZones,
     CanonicalLapSummary,
     CanonicalPerformanceTargets,
@@ -29,6 +30,7 @@ from .provider import (
     ProviderActivityDetailResult,
     ProviderCapabilities,
     ProviderFetchResult,
+    ProviderGearResult,
     ProviderPerformanceTargetsResult,
 )
 
@@ -564,6 +566,69 @@ def canonicalize_performance_targets(
     )
 
 
+def extract_gear_items(raw_gear: Any) -> list[CanonicalGearItem]:
+    """Extract canonical equipment records from Garmin gear API responses."""
+    if not isinstance(raw_gear, list):
+        if isinstance(raw_gear, dict) and isinstance(raw_gear.get("gearList"), list):
+            raw_gear = raw_gear["gearList"]
+        else:
+            return []
+
+    items: list[CanonicalGearItem] = []
+    for entry in raw_gear:
+        if not isinstance(entry, dict):
+            continue
+        gear_pk = entry.get("gearPk") or entry.get("uuid") or entry.get("gearId")
+        if gear_pk is None:
+            continue
+
+        custom_make_model = entry.get("customMakeModel") or entry.get("displayName")
+        display_name = entry.get("displayName") or custom_make_model
+        gear_type_name = entry.get("gearTypeName") or entry.get("gearType")
+        brand = entry.get("gearMakeName") or entry.get("brand")
+        model = entry.get("gearModelName") or entry.get("model")
+
+        total_dist_raw = _non_negative_number(entry.get("totalDistance"))
+        total_dist_km = round(total_dist_raw / 1000.0, 1) if total_dist_raw is not None else 0.0
+
+        max_dist_raw = _non_negative_number(entry.get("maximumMeters") or entry.get("maxDistance"))
+        max_dist_km = round(max_dist_raw / 1000.0, 1) if max_dist_raw is not None else None
+
+        date_begin = entry.get("dateBegin")
+        if isinstance(date_begin, str) and len(date_begin) >= 10:
+            date_begin = date_begin[:10]
+        else:
+            date_begin = None
+
+        date_end = entry.get("dateEnd")
+        if isinstance(date_end, str) and len(date_end) >= 10:
+            date_end = date_end[:10]
+        else:
+            date_end = None
+
+        raw_status = entry.get("gearStatusName") or entry.get("status")
+        status = str(raw_status).lower() if raw_status is not None else "active"
+
+        items.append(
+            CanonicalGearItem(
+                gear_pk=str(gear_pk),
+                uuid=str(entry.get("uuid")) if entry.get("uuid") else None,
+                custom_make_model=str(custom_make_model) if custom_make_model else None,
+                display_name=str(display_name) if display_name else None,
+                gear_type=str(gear_type_name).lower() if gear_type_name else None,
+                brand=str(brand) if brand else None,
+                model=str(model) if model else None,
+                total_distance_km=total_dist_km,
+                maximum_distance_km=max_dist_km,
+                date_begin=date_begin,
+                date_end=date_end,
+                status=status,
+            )
+        )
+
+    return items
+
+
 def canonicalize_from_raw(
     stats_today: dict[str, Any],
     stats_fallback: dict[str, Any] | None,
@@ -922,4 +987,12 @@ class GarminProviderAdapter:
                 splits=splits,
             ),
             raw_payloads=raw_payloads,
+        )
+
+    def fetch_gear(self) -> ProviderGearResult:
+        raw_gear = self._fetch_enrichment("gear", lambda: self.client.get_gear())
+        raw_list = raw_gear if isinstance(raw_gear, list) else []
+        return ProviderGearResult(
+            canonical=extract_gear_items(raw_list),
+            raw_payloads={"gear": raw_list},
         )

@@ -220,6 +220,77 @@ export function PerformanceSections({
           })}
         </div>
       </div>
+
+      {preferences.gearTracker?.items && preferences.gearTracker.items.length > 0 && (
+        <div className="preference-section">
+          <h2>Shoes & Equipment Mileage</h2>
+          <p className="preference-desc">
+            Garmin gear records monitor cumulative shoe and bike wear to help manage lower-limb impact strain and equipment maintenance.
+          </p>
+          <div className="gear-tracker-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: '0.75rem', marginTop: '0.75rem' }}>
+            {preferences.gearTracker.items.map((gear) => {
+              const isMiles = preferences.preferredUnits.distance === 'miles';
+              const distDisplay = isMiles
+                ? `${(gear.totalDistanceKm * 0.621371).toFixed(1)} mi`
+                : `${gear.totalDistanceKm.toFixed(1)} km`;
+              const maxDistDisplay = gear.maximumDistanceKm != null
+                ? (isMiles ? `${(gear.maximumDistanceKm * 0.621371).toFixed(0)} mi` : `${gear.maximumDistanceKm.toFixed(0)} km`)
+                : null;
+              const pct = gear.maximumDistanceKm && gear.maximumDistanceKm > 0
+                ? Math.min(100, Math.round((gear.totalDistanceKm / gear.maximumDistanceKm) * 100))
+                : null;
+
+              return (
+                <div
+                  key={gear.gearPk}
+                  className="gear-card"
+                  style={{
+                    padding: '0.85rem',
+                    border: '1px solid var(--border-color, #333)',
+                    borderRadius: '8px',
+                    background: 'var(--card-bg, rgba(255,255,255,0.03))'
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
+                    <strong style={{ fontSize: '0.95rem' }}>{gear.displayName || gear.customMakeModel || 'Gear Item'}</strong>
+                    <span
+                      style={{
+                        fontSize: '0.75rem',
+                        padding: '0.15rem 0.4rem',
+                        borderRadius: '4px',
+                        background: gear.status === 'active' ? 'rgba(46, 204, 113, 0.2)' : 'rgba(149, 165, 166, 0.2)',
+                        color: gear.status === 'active' ? '#2ecc71' : '#95a5a6'
+                      }}
+                    >
+                      {gear.status}
+                    </span>
+                  </div>
+                  {gear.gearType && (
+                    <div style={{ fontSize: '0.8rem', color: 'var(--text-muted, #888)', marginBottom: '0.4rem', textTransform: 'capitalize' }}>
+                      {gear.gearType} {gear.brand ? `• ${gear.brand}` : ''}
+                    </div>
+                  )}
+                  <div style={{ fontSize: '0.9rem', fontWeight: 600, marginBottom: '0.3rem' }}>
+                    {distDisplay} {maxDistDisplay ? `/ ${maxDistDisplay}` : ''}
+                  </div>
+                  {pct !== null && (
+                    <div style={{ width: '100%', background: 'rgba(255,255,255,0.1)', borderRadius: '4px', height: '6px', overflow: 'hidden' }}>
+                      <div
+                        style={{
+                          width: `${pct}%`,
+                          height: '100%',
+                          background: pct > 90 ? '#e74c3c' : pct > 75 ? '#f39c12' : '#3498db',
+                          transition: 'width 0.3s ease'
+                        }}
+                      />
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </>
   );
 }

@@ -564,6 +564,11 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    match /users/{userId}/gear/{gearId} {
+      allow read: if isOwner(userId);
+      allow write: if false;
+    }
+
     function isStrengthSessionDocument(sessionId) {
       return request.resource.data.sessionId == sessionId;
     }
