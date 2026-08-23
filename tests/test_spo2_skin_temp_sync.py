@@ -2,12 +2,15 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from garmin_sync.canonical import CanonicalDailyMetrics, CanonicalSpo2
 from garmin_sync.garmin_provider import (
     GarminProviderAdapter,
     canonicalize_from_raw,
     extract_skin_temp_deviation,
     extract_spo2,
 )
+from garmin_sync.mapper import build_snapshot_from_canonical
+from garmin_sync.models import DerivedMetrics
 
 
 def test_extracts_spo2_and_skin_temp_from_real_garmin_shapes():
@@ -97,6 +100,30 @@ def test_sleep_fallback_keeps_overnight_metrics_on_one_logical_date():
     assert canonical.spo2.min_pct is None
     assert canonical.spo2.sleep_avg_pct == 95.0
     assert canonical.skin_temp_deviation_celsius == -0.25
+
+
+def test_snapshot_records_fallback_provenance_and_sleep_only_availability():
+    canonical = CanonicalDailyMetrics(
+        date="2026-08-23",
+        sleep_score=78,
+        sleep_date="2026-08-22",
+        spo2=CanonicalSpo2(sleep_avg_pct=95.0),
+        skin_temp_deviation_celsius=0.0,
+    )
+
+    snapshot = build_snapshot_from_canonical(
+        user_id="uid-1",
+        target_date_iso="2026-08-23",
+        canonical=canonical,
+        canonical_activities=[],
+        derived_metrics=DerivedMetrics(),
+        synced_at_iso="2026-08-23T05:00:00+00:00",
+    )
+
+    assert snapshot.source.metricDates.spo2 == "2026-08-22"
+    assert snapshot.source.metricDates.skinTempDeviation == "2026-08-22"
+    assert snapshot.dataQuality.spo2Available is True
+    assert snapshot.dataQuality.skinTempAvailable is True
 
 
 def _daily_client() -> MagicMock:
