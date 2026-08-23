@@ -877,6 +877,24 @@ export function DailyCheckin({ userId, onNavigate, onBack, onCheckinSaved }: Dai
                       <span className="pill-label">Body Battery</span>
                       <span className="pill-val">{recoverySnapshot.raw.bodyBatteryWake ?? '--'} / 100</span>
                     </div>
+                    {recoverySnapshot.raw.deepSleepSec != null && (
+                      <div className="garmin-metric-pill">
+                        <span className="pill-label">Deep Sleep</span>
+                        <span className="pill-val">{Math.round(recoverySnapshot.raw.deepSleepSec / 60)} min</span>
+                        {recoverySnapshot.raw.sleepDurationSec ? (
+                          <small>{Math.round((recoverySnapshot.raw.deepSleepSec / recoverySnapshot.raw.sleepDurationSec) * 100)}% of total</small>
+                        ) : null}
+                      </div>
+                    )}
+                    {recoverySnapshot.raw.remSleepSec != null && (
+                      <div className="garmin-metric-pill">
+                        <span className="pill-label">REM Sleep</span>
+                        <span className="pill-val">{Math.round(recoverySnapshot.raw.remSleepSec / 60)} min</span>
+                        {recoverySnapshot.raw.sleepDurationSec ? (
+                          <small>{Math.round((recoverySnapshot.raw.remSleepSec / recoverySnapshot.raw.sleepDurationSec) * 100)}% of total</small>
+                        ) : null}
+                      </div>
+                    )}
                   </div>
                 )}
               </>

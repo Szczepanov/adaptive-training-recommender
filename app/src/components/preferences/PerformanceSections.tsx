@@ -1,4 +1,5 @@
 import type { UserPreferences } from '../../engine/models';
+import './PerformanceSections.css';
 
 interface PerformanceSectionsProps {
   preferences: UserPreferences;
@@ -6,6 +7,17 @@ interface PerformanceSectionsProps {
   updatePerformanceProfile: (key: 'ftpWatts' | 'thresholdPaceSecPerKm' | 'lthrBpm' | 'cyclingLthr' | 'weightKg' | 'bodyFatPct', value: string) => void;
   updateEstimated1Rm: (exerciseId: string, value: string) => void;
 }
+
+interface RacePredictions {
+  fiveKmSec?: number | null;
+  tenKmSec?: number | null;
+  halfMarathonSec?: number | null;
+  marathonSec?: number | null;
+}
+
+type PerformanceProfileWithRacePredictions = NonNullable<UserPreferences['performanceProfile']> & {
+  racePredictions?: RacePredictions | null;
+};
 
 export function PerformanceSections({
   preferences,
@@ -21,6 +33,9 @@ export function PerformanceSections({
 
   const ftpWatts = preferences.performanceProfile?.cycling?.ftpWatts ?? preferences.performanceProfile?.ftpWatts ?? null;
   const wKg = ftpWatts && weightKg && weightKg > 0 ? (ftpWatts / weightKg) : null;
+  const racePredictions = (
+    preferences.performanceProfile as PerformanceProfileWithRacePredictions | undefined
+  )?.racePredictions;
 
   const handleWeightChange = (rawInput: string) => {
     if (rawInput.trim() === '') {
@@ -220,6 +235,43 @@ export function PerformanceSections({
           })}
         </div>
       </div>
+
+      {racePredictions && (
+        <div className="preference-section">
+          <h2>Garmin Race Predictions</h2>
+          <p className="preference-desc">
+            Garmin-estimated finish times imported during sync. Treat them as aerobic benchmarks, not guaranteed race outcomes.
+          </p>
+          <div className="units-grid race-predictions-grid">
+            {[
+              { label: '5K', sec: racePredictions.fiveKmSec, distKm: 5.0 },
+              { label: '10K', sec: racePredictions.tenKmSec, distKm: 10.0 },
+              { label: 'Half Marathon', sec: racePredictions.halfMarathonSec, distKm: 21.0975 },
+              { label: 'Marathon', sec: racePredictions.marathonSec, distKm: 42.195 },
+            ].map(({ label, sec, distKm }) => {
+              const isMiles = preferences.preferredUnits.distance === 'miles';
+              if (!sec || sec <= 0) return null;
+              const h = Math.floor(sec / 3600);
+              const m = Math.floor((sec % 3600) / 60);
+              const s = sec % 60;
+              const timeStr = h > 0
+                ? `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`
+                : `${m}:${s.toString().padStart(2, '0')}`;
+              const dist = isMiles ? distKm * 0.621371 : distKm;
+              const paceSec = Math.round(sec / dist);
+              const paceStr = `${Math.floor(paceSec / 60)}:${(paceSec % 60).toString().padStart(2, '0')}/${isMiles ? 'mi' : 'km'}`;
+
+              return (
+                <div className="race-prediction-card" key={label}>
+                  <span className="race-prediction-label">{label}</span>
+                  <strong className="race-prediction-time">{timeStr}</strong>
+                  <small className="race-prediction-pace">Pace {paceStr}</small>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </>
   );
 }
