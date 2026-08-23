@@ -6,6 +6,7 @@ import tempfile
 import threading
 import time
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable
 
@@ -30,6 +31,35 @@ class GarminLinkConflictError(ValueError):
 
 class GarminLinkConfigurationError(RuntimeError):
     """Raised when account linking is not safely configured."""
+
+
+# Mirrors app/src/utils/garminSyncStaleness.ts's STALE_AFTER_MS / IN_FLIGHT_STATUSES /
+# isSyncRequestStale: the account-link initial-backfill queueing below must apply the
+# exact same "don't stomp a genuinely still-running request" policy the frontend's
+# GarminSyncRequestService.requestSync() uses, or the two callers could disagree about
+# when it's safe to overwrite a pending/processing garmin_sync_requests/latest doc.
+_SYNC_REQUEST_STALE_AFTER = timedelta(minutes=5)
+_SYNC_REQUEST_IN_FLIGHT_STATUSES = {"pending", "processing"}
+
+
+def _is_sync_request_in_flight(data: dict[str, Any]) -> bool:
+    return data.get("status") in _SYNC_REQUEST_IN_FLIGHT_STATUSES
+
+
+def _is_sync_request_stale(data: dict[str, Any], now: datetime) -> bool:
+    if not _is_sync_request_in_flight(data):
+        return False
+    reference = data.get("claimedAt") if data.get("status") == "processing" else None
+    reference = reference or data.get("requestedAt")
+    if not reference:
+        return False
+    try:
+        reference_dt = datetime.fromisoformat(reference)
+    except (TypeError, ValueError):
+        return False
+    if reference_dt.tzinfo is None:
+        reference_dt = reference_dt.replace(tzinfo=timezone.utc)
+    return (now - reference_dt) > _SYNC_REQUEST_STALE_AFTER
 
 
 @dataclass
@@ -407,6 +437,61 @@ class GarminAccountLinkService:
                 # to remove. Scheduled sync restores whatever tokenObject Firestore has,
                 # so it never reads a path we're about to delete.
                 self._delete_token_object(previous_token_object)
+
+            # Queue an initial 56-day backfill request in Firestore so the background
+            # poller (garmin-manual-sync Cloud Run Job) immediately backfills historical
+            # recovery and activity data to establish baselines without blocking login.
+            db = getattr(self.repository, "db", None)
+            if db is not None:
+                try:
+                    now = datetime.now(timezone.utc)
+                    sync_req_ref = (
+                        db.collection("users")
+                        .document(target_uid)
+                        .collection("garmin_sync_requests")
+                        .document("latest")
+                    )
+
+                    @google_firestore.transactional
+                    def _queue_initial_backfill(transaction: Any) -> None:
+                        snapshot = sync_req_ref.get(transaction=transaction)
+                        existing = snapshot.to_dict() if snapshot.exists else None
+                        # A plain merge=True set here would overwrite a claimed
+                        # 'processing' request's status back to 'pending' while keeping
+                        # its claimId -- the worker that already owns that claim would
+                        # then mark *this* new request completed without ever running
+                        # it, and a second poller could concurrently claim the
+                        # 'pending' doc too. Only queue when nothing genuinely
+                        # in-flight would be superseded; a stale claim (dead poller)
+                        # is safe to overwrite, same policy as
+                        # GarminSyncRequestService.requestSync().
+                        if (
+                            existing
+                            and _is_sync_request_in_flight(existing)
+                            and not _is_sync_request_stale(existing, now)
+                        ):
+                            return
+                        transaction.set(
+                            sync_req_ref,
+                            {
+                                "userId": target_uid,
+                                "status": "pending",
+                                "requestType": "initial_backfill",
+                                "days": 56,
+                                "requestedAt": now.isoformat(),
+                                "completedAt": None,
+                                "error": None,
+                            },
+                        )
+
+                    _queue_initial_backfill(db.transaction())
+                except Exception as exc:
+                    logger.warning(
+                        "Failed to queue initial backfill request for user %s: %s",
+                        target_uid,
+                        exc,
+                    )
+
             custom_token = firebase_auth.create_custom_token(target_uid)
             custom_token_text = (
                 custom_token.decode("utf-8")

@@ -239,11 +239,14 @@ class FirestoreRecoveryRepository:
             "ftpWatts": targets.cycling_ftp_watts,
             "thresholdPaceSecPerKm": targets.running_threshold_pace_sec_per_km,
             "lthrBpm": targets.running_lthr_bpm,
+            "weightKg": targets.weight_kg,
+            "bodyFatPct": targets.body_fat_pct,
         }
         measured_at = {
             "ftpMeasuredAt": targets.ftp_measured_at,
             "thresholdMeasuredAt": targets.threshold_measured_at,
             "lthrMeasuredAt": targets.lthr_measured_at,
+            "weightMeasuredAt": targets.weight_measured_at,
         }
 
         @firestore.transactional
@@ -272,7 +275,7 @@ class FirestoreRecoveryRepository:
             garmin.update({key: value for key, value in measured_at.items() if value is not None})
             if targets.race_predictions is not None:
                 raw_race_predictions = garmin.get("racePredictions")
-                race_preds_payload: dict[str, Any] = (
+                race_predictions: dict[str, Any] = (
                     dict(raw_race_predictions) if isinstance(raw_race_predictions, dict) else {}
                 )
                 incoming_race_predictions = {
@@ -281,16 +284,16 @@ class FirestoreRecoveryRepository:
                     "halfMarathonSec": targets.race_predictions.half_marathon_sec,
                     "marathonSec": targets.race_predictions.marathon_sec,
                 }
-                race_preds_payload.update(
+                race_predictions.update(
                     {
                         key: value
                         for key, value in incoming_race_predictions.items()
                         if value is not None
                     }
                 )
-                race_preds_payload["fetchedAt"] = now_iso
-                garmin["racePredictions"] = race_preds_payload
-                profile["racePredictions"] = dict(race_preds_payload)
+                race_predictions["fetchedAt"] = now_iso
+                garmin["racePredictions"] = race_predictions
+                profile["racePredictions"] = dict(race_predictions)
             garmin["fetchedAt"] = now_iso
             profile["garmin"] = garmin
 
@@ -299,7 +302,7 @@ class FirestoreRecoveryRepository:
                     continue
                 source = sources.get(key)
                 existing_value = profile.get(key)
-                if source == "manual":
+                if source in {"manual", "coach"}:
                     continue
                 if source == "garmin" or existing_value is None:
                     profile[key] = value
@@ -330,6 +333,7 @@ class FirestoreRecoveryRepository:
                         "preferredModalities": ["Running", "Cycling", "Strength"],
                         "deprioritizedModalities": [],
                         "avoidedModalities": [],
+                        "unavailableModalities": [],
                         "explanationVerbosity": "detailed",
                         "conservativeBias": False,
                         "preferredUnits": {

@@ -4,6 +4,7 @@ import type { DailyDecisionInput, NormalizedGarminActivity } from '../engine/mod
 import { activityService } from '../services/activityService';
 import { recommendationService } from '../services/recommendationService';
 import { contextBriefService, type ContextBriefResult } from '../services/contextBriefService';
+import { briefWindowDaysFor, type BriefWindowPreset } from '../engine/contextBrief';
 import { addDaysToLocalDateString } from '../utils/localDate';
 import { ActivityTelemetry } from './ActivityTelemetry';
 import './DataView.css';
@@ -23,6 +24,29 @@ function describeSourceState(status: 'MISSING' | 'INVALID' | 'UNAVAILABLE'): str
   if (status === 'MISSING') return 'No record exists for this date yet.';
   if (status === 'INVALID') return 'The stored record is malformed and needs repair.';
   return 'The data source is temporarily unavailable. Retry the dashboard refresh.';
+}
+
+const BRIEF_PRESET_STORAGE_KEY = 'adaptive-training:context-brief:preset';
+
+/** Defaults new/incognito athletes to `daily` -- the everyday paste-into-chat loop this
+ * preset exists for -- while a returning athlete's explicit choice of `full` persists
+ * across sessions. Storage can be disabled; failure to read must never block the tab. */
+function loadStoredBriefPreset(): BriefWindowPreset {
+  if (typeof window === 'undefined') return 'daily';
+  try {
+    return window.localStorage.getItem(BRIEF_PRESET_STORAGE_KEY) === 'full' ? 'full' : 'daily';
+  } catch {
+    return 'daily';
+  }
+}
+
+function persistBriefPreset(preset: BriefWindowPreset): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(BRIEF_PRESET_STORAGE_KEY, preset);
+  } catch {
+    // Preference remains usable for the current page instance even if it can't persist.
+  }
 }
 
 function formatCandidateNumber(value: number | null | undefined): string {
@@ -52,6 +76,7 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery' }: Dat
   // the effect body, which react-hooks/set-state-in-effect correctly rejects.
   const [briefError, setBriefError] = useState<{ date: string; message: string } | null>(null);
   const [briefCopied, setBriefCopied] = useState(false);
+  const [briefPreset, setBriefPreset] = useState<BriefWindowPreset>(loadStoredBriefPreset);
   // null doubles as "not loaded yet" -- once getAdherenceStats resolves it's always a
   // real (possibly all-zero) stats object, so this alone distinguishes loading from an
   // answer of "nothing recorded yet" without a separate loading flag.
@@ -87,15 +112,17 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery' }: Dat
   }, [activeTab, userId, briefDate, activityWindow?.userId, activityWindow?.asOfDate]);
 
   useEffect(() => {
-    // Keyed on the date the brief was built for, not merely on its presence: a scenario
-    // switch or a midnight rollover changes `briefDate`, and a presence-only guard would
-    // leave the previous day's brief and range on screen indefinitely.
+    // Keyed on the date the brief was built for and on the active preset, not merely on
+    // presence: a scenario switch or a midnight rollover changes `briefDate`, and toggling
+    // daily/full changes what should be on screen for the *same* date -- a presence-only
+    // guard would leave the previous day's (or previous preset's) brief and range on
+    // screen indefinitely.
     // `briefDate` must be defined for the comparison to settle: passing undefined lets the
     // service default to today, whose asOfDate would never equal undefined and would
     // re-trigger this effect on every render.
-    if (activeTab !== 'brief' || !briefDate || brief?.asOfDate === briefDate) return;
+    if (activeTab !== 'brief' || !briefDate || (brief?.asOfDate === briefDate && brief.preset === briefPreset)) return;
     let cancelled = false;
-    contextBriefService.build(userId, briefDate)
+    contextBriefService.build(userId, briefDate, briefWindowDaysFor(briefPreset), briefPreset)
       .then(result => { if (!cancelled) { setBrief(result); setBriefError(null); } })
       .catch(() => {
         if (cancelled) return;
@@ -107,7 +134,12 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery' }: Dat
         setBriefError({ date: briefDate, message: 'Could not assemble the brief. Retry the dashboard refresh.' });
       });
     return () => { cancelled = true; };
-  }, [activeTab, userId, brief?.asOfDate, briefDate]);
+  }, [activeTab, userId, brief?.asOfDate, brief?.preset, briefDate, briefPreset]);
+
+  const selectBriefPreset = (preset: BriefWindowPreset) => {
+    setBriefPreset(preset);
+    persistBriefPreset(preset);
+  };
 
   const copyBrief = async () => {
     if (!brief) return;
@@ -697,34 +729,58 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery' }: Dat
 
   const visibleBriefError = briefError && briefError.date === briefDate ? briefError.message : null;
 
-  const renderContextBrief = () => (
-    <div className="data-section">
-      <h3>Context brief</h3>
-      <p className="brief-intro">
-        A summary of the last {brief?.windowDays ?? 14} days — constraints, recovery trend, completed
-        training, subjective scores, and adherence — for pasting into an external planner.
-        Read-only: generating it changes nothing.
-      </p>
-      {visibleBriefError && <p className="data-state-notice">{visibleBriefError}</p>}
-      {!brief && !visibleBriefError && <p>Assembling...</p>}
-      {brief && (
-        <>
-          {brief.unavailableSources.length > 0 && (
-            <p className="data-state-notice">
-              Could not read: {brief.unavailableSources.join(', ')}. The brief below is incomplete.
-            </p>
-          )}
-          <div className="brief-actions">
-            <button className="brief-copy" onClick={copyBrief}>
-              {briefCopied ? 'Copied' : 'Copy to clipboard'}
-            </button>
-            <span className="brief-range">{brief.startDate} → {brief.asOfDate}</span>
-          </div>
-          <textarea className="brief-text" readOnly value={brief.text} rows={24} spellCheck={false} />
-        </>
-      )}
-    </div>
-  );
+  const renderContextBrief = () => {
+    const windowDays = brief?.windowDays ?? briefWindowDaysFor(briefPreset);
+    const approxTokens = brief ? Math.ceil(brief.text.length / 4) : null;
+    return (
+      <div className="data-section">
+        <h3>Context brief</h3>
+        <p className="brief-intro">
+          {briefPreset === 'daily'
+            ? 'Today and yesterday only — constraints, current readiness, and recent trend — for the everyday paste-into-chat loop with an external planning agent.'
+            : `A summary of the last ${windowDays} days — constraints, recovery trend, completed training, subjective scores, and adherence — for designing a new block with an external planner.`}
+          {' '}Read-only: generating it changes nothing.
+        </p>
+        <div className="brief-preset-toggle" role="group" aria-label="Context brief window">
+          <button
+            type="button"
+            className={briefPreset === 'daily' ? 'active' : ''}
+            onClick={() => selectBriefPreset('daily')}
+          >
+            Daily (today + D-1)
+          </button>
+          <button
+            type="button"
+            className={briefPreset === 'full' ? 'active' : ''}
+            onClick={() => selectBriefPreset('full')}
+          >
+            Full ({briefWindowDaysFor('full')} days)
+          </button>
+        </div>
+        {visibleBriefError && <p className="data-state-notice">{visibleBriefError}</p>}
+        {!brief && !visibleBriefError && <p>Assembling...</p>}
+        {brief && (
+          <>
+            {brief.unavailableSources.length > 0 && (
+              <p className="data-state-notice">
+                Could not read: {brief.unavailableSources.join(', ')}. The brief below is incomplete.
+              </p>
+            )}
+            <div className="brief-actions">
+              <button className="brief-copy" onClick={copyBrief}>
+                {briefCopied ? 'Copied' : 'Copy to clipboard'}
+              </button>
+              <span className="brief-range">{brief.startDate} → {brief.asOfDate}</span>
+              <span className="brief-size">
+                {brief.text.length.toLocaleString()} chars · ~{approxTokens?.toLocaleString()} tokens
+              </span>
+            </div>
+            <textarea className="brief-text" readOnly value={brief.text} rows={24} spellCheck={false} />
+          </>
+        )}
+      </div>
+    );
+  };
 
   const renderAdherenceData = () => (
     <div className="data-section">

@@ -74,10 +74,13 @@ class CanonicalPerformanceTargets:
     cycling_ftp_watts: int | None = None
     running_threshold_pace_sec_per_km: int | None = None
     running_lthr_bpm: int | None = None
+    weight_kg: float | None = None
+    body_fat_pct: float | None = None
+    race_predictions: CanonicalRacePredictions | None = None
     ftp_measured_at: str | None = None
     threshold_measured_at: str | None = None
     lthr_measured_at: str | None = None
-    race_predictions: CanonicalRacePredictions | None = None
+    weight_measured_at: str | None = None
 
 
 @dataclass
@@ -96,6 +99,9 @@ class CanonicalDailyMetrics:
     body_battery_wake_date: str | None = None
     steps_count: int | None = None
     steps_date: str | None = None
+    weight_kg: float | None = None
+    body_fat_pct: float | None = None
+    weight_date: str | None = None
     # Metric enrichment (item 4) -- archived + recorded, not yet consumed by the
     # recommendation engine. See CLAUDE.md-adjacent review notes: expose to rules only
     # after measuring real-world availability.

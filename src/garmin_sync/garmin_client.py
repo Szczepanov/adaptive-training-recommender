@@ -28,6 +28,10 @@ class GarminDataClient(Protocol):
     def get_cycling_ftp(self) -> dict[str, Any] | list[dict[str, Any]]: ...
     def get_lactate_threshold(self) -> dict[str, Any]: ...
     def get_race_predictions(self) -> dict[str, Any]: ...
+    def get_body_composition(
+        self, start_date_iso: str, end_date_iso: str | None = None
+    ) -> dict[str, Any]: ...
+    def get_daily_weigh_ins(self, date_iso: str) -> dict[str, Any]: ...
     def get_activity_power_zones(self, activity_id: str) -> list[dict[str, Any]]: ...
     def get_activity_hr_zones(self, activity_id: str) -> list[dict[str, Any]]: ...
     def get_activity_splits(self, activity_id: str) -> dict[str, Any]: ...
@@ -172,6 +176,18 @@ class GarminClientWrapper:
         if not self.api:
             raise RuntimeError("Garmin client is not authenticated. Call login first.")
         return self.api.get_race_predictions() or {}
+
+    def get_body_composition(
+        self, start_date_iso: str, end_date_iso: str | None = None
+    ) -> dict[str, Any]:
+        if not self.api:
+            raise RuntimeError("Garmin client is not authenticated. Call login first.")
+        return self.api.get_body_composition(start_date_iso, end_date_iso) or {}
+
+    def get_daily_weigh_ins(self, date_iso: str) -> dict[str, Any]:
+        if not self.api:
+            raise RuntimeError("Garmin client is not authenticated. Call login first.")
+        return self.api.get_daily_weigh_ins(date_iso) or {}
 
     def get_activity_power_zones(self, activity_id: str) -> list[dict[str, Any]]:
         if not self.api:

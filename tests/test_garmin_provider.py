@@ -789,33 +789,52 @@ def test_fetch_performance_targets_uses_cached_hr_zones_and_archivable_raw_paylo
     mock_client.get_heart_rate_zones.assert_called_once()
 
 
-def test_extract_race_predictions_handles_list_and_dict():
-    from garmin_sync.garmin_provider import extract_race_predictions
+def test_extract_body_composition_handles_grams_and_percentages():
+    from garmin_sync.garmin_provider import extract_body_composition
 
+    # Test dateWeightList in grams
     payload = {
-        "timePredictions": [
-            {"distance": 5000.0, "time": 1200.0},
-            {"distance": 10000.0, "time": 2550.0},
-            {"distance": 21097.5, "time": 5700.0},
-            {"distance": 42195.0, "time": 12100.0},
+        "dateWeightList": [
+            {
+                "weight": 74500.0,
+                "bodyFat": 14.8,
+                "calendarDate": "2026-08-23",
+            }
         ]
     }
-    preds = extract_race_predictions(payload)
-    assert preds is not None
-    assert preds.five_km_sec == 1200
-    assert preds.ten_km_sec == 2550
-    assert preds.half_marathon_sec == 5700
-    assert preds.marathon_sec == 12100
+    weight_kg, fat_pct, date_str = extract_body_composition(payload)
+    assert weight_kg == 74.5
+    assert fat_pct == 14.8
+    assert date_str == "2026-08-23"
 
-    dict_payload = {
-        "5k": 1180,
-        "10k": 2500,
-        "half_marathon": 5600,
-        "marathon": 11900,
+    # Test totalAverage in kg
+    payload_kg = {
+        "totalAverage": {
+            "weight": 72.3,
+            "bodyFat": 13.5,
+            "calendarDate": "2026-08-22",
+        }
     }
-    preds2 = extract_race_predictions(dict_payload)
-    assert preds2 is not None
-    assert preds2.five_km_sec == 1180
-    assert preds2.ten_km_sec == 2500
-    assert preds2.half_marathon_sec == 5600
-    assert preds2.marathon_sec == 11900
+    weight_kg2, fat_pct2, date_str2 = extract_body_composition(payload_kg)
+    assert weight_kg2 == 72.3
+    assert fat_pct2 == 13.5
+    assert date_str2 == "2026-08-22"
+
+
+def test_canonicalize_performance_targets_with_body_composition():
+    from garmin_sync.garmin_provider import canonicalize_performance_targets
+
+    targets = canonicalize_performance_targets(
+        {"functionalThresholdPower": 280, "calendarDate": "2026-08-20"},
+        {"speed_and_heart_rate": {"speed": 0.25, "heartRate": 168, "calendarDate": "2026-08-21"}},
+        None,
+        body_composition={
+            "dateWeightList": [{"weight": 70000.0, "bodyFat": 12.5, "calendarDate": "2026-08-23"}]
+        },
+    )
+
+    assert targets.cycling_ftp_watts == 280
+    assert targets.weight_kg == 70.0
+    assert targets.body_fat_pct == 12.5
+    assert targets.weight_measured_at == "2026-08-23"
+    assert targets.ftp_measured_at == "2026-08-20"
