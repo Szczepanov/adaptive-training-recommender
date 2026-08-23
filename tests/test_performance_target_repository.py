@@ -83,13 +83,52 @@ def test_garmin_target_import_preserves_manual_targets_and_prior_partial_imports
     assert profile["targetSources"]["ftpWatts"] == "manual"
 
 
+def test_garmin_target_import_preserves_coach_value_and_provenance(monkeypatch):
+    monkeypatch.setattr("garmin_sync.firestore_repository.firestore.transactional", lambda fn: fn)
+    db = _Db(
+        {
+            "userId": "u1",
+            "performanceProfile": {
+                "weightKg": 72.0,
+                "targetSources": {"weightKg": "coach"},
+            },
+        }
+    )
+    repository = FirestoreRecoveryRepository(user_id="u1", db=db)
+
+    repository.upsert_garmin_performance_targets(
+        CanonicalPerformanceTargets(
+            weight_kg=74.5,
+            weight_measured_at="2026-08-23",
+        )
+    )
+
+    profile = db.profile.data["performanceProfile"]
+    assert profile["weightKg"] == 72.0
+    assert profile["targetSources"]["weightKg"] == "coach"
+    assert profile["garmin"]["weightKg"] == 74.5
+    assert profile["garmin"]["weightMeasuredAt"] == "2026-08-23"
+
+
 def test_first_garmin_import_creates_a_complete_preferences_document(monkeypatch):
     monkeypatch.setattr("garmin_sync.firestore_repository.firestore.transactional", lambda fn: fn)
     db = _Db(None)
     repository = FirestoreRecoveryRepository(user_id="u1", db=db)
 
-    repository.upsert_garmin_performance_targets(CanonicalPerformanceTargets(cycling_ftp_watts=250))
+    repository.upsert_garmin_performance_targets(
+        CanonicalPerformanceTargets(
+            cycling_ftp_watts=250,
+            weight_kg=73.5,
+            body_fat_pct=14.0,
+            weight_measured_at="2026-08-23",
+        )
+    )
 
     assert db.profile.data["preferredModalities"] == ["Running", "Cycling", "Strength"]
     assert db.profile.data["performanceProfile"]["ftpWatts"] == 250
+    assert db.profile.data["performanceProfile"]["weightKg"] == 73.5
+    assert db.profile.data["performanceProfile"]["bodyFatPct"] == 14.0
     assert db.profile.data["performanceProfile"]["targetSources"]["ftpWatts"] == "garmin"
+    assert db.profile.data["performanceProfile"]["targetSources"]["weightKg"] == "garmin"
+    assert db.profile.data["performanceProfile"]["garmin"]["weightKg"] == 73.5
+    assert db.profile.data["performanceProfile"]["garmin"]["weightMeasuredAt"] == "2026-08-23"

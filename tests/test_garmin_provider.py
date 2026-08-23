@@ -787,3 +787,54 @@ def test_fetch_performance_targets_uses_cached_hr_zones_and_archivable_raw_paylo
     assert result.canonical.running_lthr_bpm == 165
     assert result.raw_payloads["cycling_ftp"] == {"functionalThresholdPower": 250}
     mock_client.get_heart_rate_zones.assert_called_once()
+
+
+def test_extract_body_composition_handles_grams_and_percentages():
+    from garmin_sync.garmin_provider import extract_body_composition
+
+    # Test dateWeightList in grams
+    payload = {
+        "dateWeightList": [
+            {
+                "weight": 74500.0,
+                "bodyFat": 14.8,
+                "calendarDate": "2026-08-23",
+            }
+        ]
+    }
+    weight_kg, fat_pct, date_str = extract_body_composition(payload)
+    assert weight_kg == 74.5
+    assert fat_pct == 14.8
+    assert date_str == "2026-08-23"
+
+    # Test totalAverage in kg
+    payload_kg = {
+        "totalAverage": {
+            "weight": 72.3,
+            "bodyFat": 13.5,
+            "calendarDate": "2026-08-22",
+        }
+    }
+    weight_kg2, fat_pct2, date_str2 = extract_body_composition(payload_kg)
+    assert weight_kg2 == 72.3
+    assert fat_pct2 == 13.5
+    assert date_str2 == "2026-08-22"
+
+
+def test_canonicalize_performance_targets_with_body_composition():
+    from garmin_sync.garmin_provider import canonicalize_performance_targets
+
+    targets = canonicalize_performance_targets(
+        {"functionalThresholdPower": 280, "calendarDate": "2026-08-20"},
+        {"speed_and_heart_rate": {"speed": 0.25, "heartRate": 168, "calendarDate": "2026-08-21"}},
+        None,
+        body_composition={
+            "dateWeightList": [{"weight": 70000.0, "bodyFat": 12.5, "calendarDate": "2026-08-23"}]
+        },
+    )
+
+    assert targets.cycling_ftp_watts == 280
+    assert targets.weight_kg == 70.0
+    assert targets.body_fat_pct == 12.5
+    assert targets.weight_measured_at == "2026-08-23"
+    assert targets.ftp_measured_at == "2026-08-20"
