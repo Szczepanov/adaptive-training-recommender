@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { garminSyncRequestService, type GarminSyncRequest } from '../services/garminSyncRequestService';
+import { isAwaitedSyncTerminal } from '../utils/garminSyncRequestState';
 import { isSyncRequestStale, isSyncRequestInFlight } from '../utils/garminSyncStaleness';
 import './GarminSyncNowButton.css';
 
@@ -8,21 +9,6 @@ export interface GarminSyncNowButtonProps {
     /** Called once a request this button made or joined finishes (successfully or not),
      * so the caller can reload whatever data the sync may have just refreshed. */
     onSynced?: () => void;
-}
-
-/** Only a terminal snapshot for the exact request returned by requestSync() resolves
- * this button's awaiting state. A stale terminal snapshot from the shared fixed-id
- * document must not be mistaken for completion of the request being queued now. */
-export function isAwaitedManualSyncTerminal(
-    request: GarminSyncRequest | null,
-    awaitingRequestedAt: string | null
-): boolean {
-    return (
-        !!awaitingRequestedAt &&
-        !!request &&
-        request.requestedAt === awaitingRequestedAt &&
-        !isSyncRequestInFlight(request)
-    );
 }
 
 /**
@@ -53,7 +39,7 @@ export function GarminSyncNowButton({ userId, onSynced }: GarminSyncNowButtonPro
             userId,
             (next) => {
                 setRequest(next);
-                if (isAwaitedManualSyncTerminal(next, awaitingRequestedAtRef.current)) {
+                if (isAwaitedSyncTerminal(next, awaitingRequestedAtRef.current)) {
                     awaitingRequestedAtRef.current = null;
                     onSyncedRef.current?.();
                 }
@@ -92,7 +78,7 @@ export function GarminSyncNowButton({ userId, onSynced }: GarminSyncNowButtonPro
                 const current = await garminSyncRequestService.getRequest(userId);
                 if (
                     awaitingRequestedAtRef.current === requestedAt &&
-                    isAwaitedManualSyncTerminal(current, requestedAt)
+                    isAwaitedSyncTerminal(current, requestedAt)
                 ) {
                     awaitingRequestedAtRef.current = null;
                     onSyncedRef.current?.();
