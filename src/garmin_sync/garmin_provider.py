@@ -298,10 +298,7 @@ def qualifies_for_strength_exercise_sets(activity: CanonicalActivity) -> bool:
     power detail, intensity is irrelevant: an easy strength session still has useful
     reps/set structure and costs just one extra endpoint call.
     """
-    return (
-        activity.activity_id is not None
-        and activity.type.lower() in _STRENGTH_ACTIVITY_TYPES
-    )
+    return activity.activity_id is not None and activity.type.lower() in _STRENGTH_ACTIVITY_TYPES
 
 
 def _parse_records(raw_items: list[Any], build: Callable[[dict[str, Any]], T | None]) -> list[T]:
@@ -377,7 +374,9 @@ def _exercise_candidate_identity(item: dict[str, Any]) -> tuple[str | None, str 
         else None
     )
     explicit_name = item.get("exerciseName")
-    name = explicit_name.strip() if isinstance(explicit_name, str) and explicit_name.strip() else None
+    name = (
+        explicit_name.strip() if isinstance(explicit_name, str) and explicit_name.strip() else None
+    )
     if category is not None or name is not None:
         return category, name
 
@@ -391,14 +390,14 @@ def _exercise_candidate_identity(item: dict[str, Any]) -> tuple[str | None, str 
             continue
         raw_category = raw_candidate.get("category")
         candidate_category = (
-            raw_category.strip()
-            if isinstance(raw_category, str) and raw_category.strip()
-            else None
+            raw_category.strip() if isinstance(raw_category, str) and raw_category.strip() else None
         )
         if candidate_category == "UNKNOWN":
             continue
         raw_name = raw_candidate.get("name")
-        candidate_name = raw_name.strip() if isinstance(raw_name, str) and raw_name.strip() else None
+        candidate_name = (
+            raw_name.strip() if isinstance(raw_name, str) and raw_name.strip() else None
+        )
         if candidate_category is None and candidate_name is None:
             continue
 
@@ -414,7 +413,9 @@ def _exercise_candidate_identity(item: dict[str, Any]) -> tuple[str | None, str 
 
     # Known probabilities sort first. A single unscored candidate is still useful, but
     # an unscored multi-candidate payload is ambiguous and therefore deliberately blank.
-    candidates.sort(key=lambda candidate: candidate[0] if candidate[0] is not None else -1.0, reverse=True)
+    candidates.sort(
+        key=lambda candidate: candidate[0] if candidate[0] is not None else -1.0, reverse=True
+    )
     top = candidates[0]
     if len(candidates) > 1:
         runner_up = candidates[1]
