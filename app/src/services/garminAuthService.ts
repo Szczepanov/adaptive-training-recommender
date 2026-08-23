@@ -4,6 +4,13 @@ export type GarminAuthResult =
   | { status: 'mfa_required'; challengeId: string }
   | { status: 'authenticated'; customToken: string; isNewUser: boolean };
 
+export interface LegacyAccountMigrationResult {
+  status: 'migrated';
+  documentsCopied: number;
+  collectionsCopied: number;
+  syncQueued: boolean;
+}
+
 async function parseResponse(response: Response): Promise<GarminAuthResult> {
   const payload = await response.json().catch(() => ({})) as Record<string, unknown>;
   if (!response.ok) {
@@ -25,6 +32,28 @@ async function parseResponse(response: Response): Promise<GarminAuthResult> {
     };
   }
   throw new Error('Garmin authentication returned an unexpected response.');
+}
+
+async function parseMigrationResponse(response: Response): Promise<LegacyAccountMigrationResult> {
+  const payload = await response.json().catch(() => ({})) as Record<string, unknown>;
+  if (!response.ok) {
+    const message = typeof payload.error === 'string' ? payload.error : 'Account migration failed.';
+    throw new Error(message);
+  }
+  if (
+    payload.status === 'migrated'
+    && typeof payload.documentsCopied === 'number'
+    && typeof payload.collectionsCopied === 'number'
+    && typeof payload.syncQueued === 'boolean'
+  ) {
+    return {
+      status: 'migrated',
+      documentsCopied: payload.documentsCopied,
+      collectionsCopied: payload.collectionsCopied,
+      syncQueued: payload.syncQueued,
+    };
+  }
+  throw new Error('Account migration returned an unexpected response.');
 }
 
 export const garminAuthService = {
@@ -50,5 +79,19 @@ export const garminAuthService = {
       body: JSON.stringify({ challengeId, code }),
     });
     return parseResponse(response);
+  },
+
+  async migrateLegacyUserData(sourceIdToken: string): Promise<LegacyAccountMigrationResult> {
+    const currentUser = getAuthInstance().currentUser;
+    if (!currentUser) throw new Error('Your app session expired. Sign in again first.');
+    const response = await fetch('/api/garmin/migrate-user-data', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${await currentUser.getIdToken()}`,
+      },
+      body: JSON.stringify({ sourceIdToken }),
+    });
+    return parseMigrationResponse(response);
   },
 };
