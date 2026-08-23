@@ -234,6 +234,7 @@ function App() {
 
   const isWorkoutRunnerActive =
     (screen === 'sessions' || screen === 'testing') && activeStructuredSession?.state === 'in_progress';
+  const dailyViewDate = decisionInput?.date ?? getLocalDateString();
 
   return (
     <div className="app-container">
@@ -275,10 +276,11 @@ function App() {
           </div>
         )}
 
-      <main className="app-content" key={decisionInput?.date ?? getLocalDateString()}>
+      <main className="app-content">
         <Suspense fallback={<div className="loading-state">Loading...</div>}>
           {screen === 'home' && (
             <Home
+              key={dailyViewDate}
               userId={userId!}
               onNavigate={handleNavigate}
               onViewData={() => {
@@ -330,6 +332,7 @@ function App() {
 
           {screen === 'checkin' && (
             <DailyCheckin
+              key={dailyViewDate}
               userId={userId!}
               onNavigate={handleNavigate}
               onBack={() => handleNavigate('home')}
