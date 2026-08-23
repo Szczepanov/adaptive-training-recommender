@@ -1,5 +1,7 @@
 from unittest.mock import MagicMock
 
+import pytest
+
 from garmin_sync.garmin_provider import (
     GarminProviderAdapter,
     canonicalize_from_raw,
@@ -33,6 +35,32 @@ def test_extracts_spo2_and_skin_temp_from_real_garmin_shapes():
     assert extract_skin_temp_deviation(sleep_raw) == 0.35
 
 
+def test_spo2_sources_are_not_synthesized_from_each_other():
+    sleep_only = extract_spo2(
+        None,
+        {"dailySleepDTO": {"averageSpO2Value": 95.0, "lowestSpO2Value": 90.0}},
+    )
+    assert sleep_only is not None
+    assert sleep_only.avg_pct is None
+    assert sleep_only.min_pct is None
+    assert sleep_only.sleep_avg_pct == 95.0
+
+    daily_only = extract_spo2({"averageSpO2": 97.0, "lowestSpO2": 93.0}, None)
+    assert daily_only is not None
+    assert daily_only.avg_pct == 97.0
+    assert daily_only.min_pct == 93.0
+    assert daily_only.sleep_avg_pct is None
+
+
+def test_spo2_accepts_observed_key_case_variant_and_rejects_invalid_percentages():
+    variant = extract_spo2({"averageSpo2": 97.0, "lowestSpo2": 92.0}, None)
+    assert variant is not None
+    assert variant.avg_pct == 97.0
+    assert variant.min_pct == 92.0
+
+    assert extract_spo2({"averageSpO2": 101.0, "lowestSpO2": 0.0}, None) is None
+
+
 def test_skin_temp_zero_deviation_is_not_treated_as_missing():
     assert extract_skin_temp_deviation({"avgSkinTempDeviationC": 0.0}) == 0.0
 
@@ -63,13 +91,15 @@ def test_sleep_fallback_keeps_overnight_metrics_on_one_logical_date():
 
     assert canonical.sleep_date == "2026-08-22"
     assert canonical.spo2 is not None
-    assert canonical.spo2.avg_pct == 95.0
-    assert canonical.spo2.min_pct == 90.0
+    # Daily Pulse Ox belongs to D and is deliberately suppressed when D-1 sleep is
+    # selected. Only the sleep-derived SpO2 value follows the fallback night.
+    assert canonical.spo2.avg_pct is None
+    assert canonical.spo2.min_pct is None
     assert canonical.spo2.sleep_avg_pct == 95.0
     assert canonical.skin_temp_deviation_celsius == -0.25
 
 
-def test_daily_fetch_uses_spo2_endpoint_but_skin_temp_from_sleep_payload():
+def _daily_client() -> MagicMock:
     client = MagicMock()
     client.get_stats.return_value = {"restingHeartRate": 50, "totalSteps": 9_000}
     client.get_sleep_data.return_value = {
@@ -81,11 +111,6 @@ def test_daily_fetch_uses_spo2_endpoint_but_skin_temp_from_sleep_payload():
         },
     }
     client.get_hrv_data.return_value = {"hrvSummary": {"lastNightAvg": 62}}
-    client.get_spo2_data.return_value = {
-        "calendarDate": "2026-08-23",
-        "averageSpO2": 96.5,
-        "lowestSpO2": 92.0,
-    }
     client.get_stress_data.return_value = {}
     client.get_respiration_data.return_value = {}
     client.get_body_battery.return_value = []
@@ -93,6 +118,16 @@ def test_daily_fetch_uses_spo2_endpoint_but_skin_temp_from_sleep_payload():
     client.get_training_status.return_value = {}
     client.get_heart_rate_zones.return_value = []
     client.get_daily_weigh_ins.return_value = {}
+    return client
+
+
+def test_daily_fetch_uses_spo2_endpoint_but_skin_temp_from_sleep_payload():
+    client = _daily_client()
+    client.get_spo2_data.return_value = {
+        "calendarDate": "2026-08-23",
+        "averageSpO2": 96.5,
+        "lowestSpO2": 92.0,
+    }
 
     result = GarminProviderAdapter(client).fetch_daily_metrics("2026-08-23", "2026-08-22")
 
@@ -102,3 +137,11 @@ def test_daily_fetch_uses_spo2_endpoint_but_skin_temp_from_sleep_payload():
     assert result.canonical.spo2 is not None
     assert result.canonical.spo2.avg_pct == 96.5
     assert result.canonical.skin_temp_deviation_celsius == 0.4
+
+
+def test_daily_fetch_surfaces_missing_spo2_dependency_contract():
+    client = _daily_client()
+    client.get_spo2_data.side_effect = AttributeError("get_spo2_data is unavailable")
+
+    with pytest.raises(AttributeError, match="get_spo2_data"):
+        GarminProviderAdapter(client).fetch_daily_metrics("2026-08-23", "2026-08-22")
