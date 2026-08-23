@@ -115,6 +115,7 @@ function App() {
       // and still exposes a Dashboard escape hatch if its own data source is unavailable.
       if (initialRouteUserIdRef.current !== requestUserId) {
         initialRouteUserIdRef.current = requestUserId;
+        lastRoutedDate.current = getLocalDateString();
         currentScreenRef.current = 'checkin';
         setScreen('checkin');
         setInitialRouteUserId(requestUserId);
