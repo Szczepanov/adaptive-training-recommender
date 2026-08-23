@@ -175,6 +175,7 @@ class RawMetrics:
     heartRateZones: HeartRateZonesSummary | None = None
     weightKg: float | None = None
     bodyFatPct: float | None = None
+    recoveryTimeHours: int | None = None
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
