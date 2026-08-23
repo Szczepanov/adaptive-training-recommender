@@ -17,7 +17,14 @@ def _seed_full_day(store: LocalRawArchiveStore, date_iso: str, run_id: str = "ru
         ArchiveRecord(
             "sleep",
             date_iso,
-            {"dailySleepDTO": {"sleepScores": {"overall": {"value": 80}}}},
+            {
+                "avgSkinTempDeviationC": 0.2,
+                "dailySleepDTO": {
+                    "sleepScores": {"overall": {"value": 80}},
+                    "averageSpO2Value": 95.0,
+                    "lowestSpO2Value": 90.0,
+                },
+            },
             run_id,
             "0.3.8",
         )
@@ -52,6 +59,19 @@ def test_rebuild_reproduces_snapshot_from_archive_without_garmin_calls(
             "0.3.8",
         )
     )
+    archive_store.archive(
+        ArchiveRecord(
+            "spo2",
+            "2026-08-06",
+            {
+                "calendarDate": "2026-08-06",
+                "averageSpO2": 96.5,
+                "lowestSpO2": 92.0,
+            },
+            "run-seed",
+            "0.3.8",
+        )
+    )
 
     settings = Settings(app_user_id="test_uid_789")
     mock_repo = MagicMock()
@@ -77,6 +97,12 @@ def test_rebuild_reproduces_snapshot_from_archive_without_garmin_calls(
     assert saved_payload["raw"]["restingHr"] == 50
     assert saved_payload["raw"]["weightKg"] == 73.5
     assert saved_payload["raw"]["bodyFatPct"] == 14.0
+    assert saved_payload["raw"]["spo2"] == {
+        "avgPct": 96.5,
+        "minPct": 92.0,
+        "sleepAvgPct": 95.0,
+    }
+    assert saved_payload["raw"]["skinTempDeviationCelsius"] == 0.2
     assert saved_payload["source"]["metricDates"]["weight"] == "2026-08-06"
 
 
