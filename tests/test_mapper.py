@@ -459,3 +459,24 @@ def test_build_snapshot_maps_sleep_stages():
     assert snapshot.raw.lightSleepSec == 15000
     assert snapshot.raw.awakeSleepSec == 2000
     assert snapshot.raw.restlessMomentsCount == 12
+
+
+def test_build_snapshot_maps_weight_and_body_fat():
+    canonical = CanonicalDailyMetrics(
+        date="2026-08-23",
+        weight_kg=71.2,
+        body_fat_pct=13.8,
+        weight_date="2026-08-23",
+    )
+
+    snapshot = build_snapshot_from_canonical(
+        user_id="test_uid",
+        target_date_iso="2026-08-23",
+        canonical=canonical,
+        canonical_activities=[],
+        derived_metrics=DerivedMetrics(),
+    )
+
+    assert snapshot.raw.weightKg == 71.2
+    assert snapshot.raw.bodyFatPct == 13.8
+    assert snapshot.source.metricDates.weight == "2026-08-23"

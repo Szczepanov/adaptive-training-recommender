@@ -40,6 +40,7 @@ class MetricDates:
     bodyBattery: str | None = None
     trainingReadiness: str | None = None
     trainingStatus: str | None = None
+    weight: str | None = None
 
     def to_dict(self) -> dict[str, str | None]:
         return asdict(self)
@@ -172,6 +173,8 @@ class RawMetrics:
     trainingReadiness: TrainingReadinessSummary | None = None
     trainingStatus: TrainingStatusSummary | None = None
     heartRateZones: HeartRateZonesSummary | None = None
+    weightKg: float | None = None
+    bodyFatPct: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)

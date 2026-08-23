@@ -5,6 +5,7 @@ recommendation engine) operates on canonical.py types only."""
 
 import logging
 import math
+from datetime import datetime, timezone
 from typing import Any, Callable, TypeVar
 
 from .canonical import (
@@ -20,6 +21,7 @@ from .canonical import (
     CanonicalTrainingStatus,
     CanonicalZoneBucket,
 )
+from .dates import get_date_string, local_today, n_days_ago
 from .garmin_client import GarminClientWrapper
 from .metrics import classify_activity_intensity
 from .provider import (
@@ -291,7 +293,8 @@ def _first_positive_number(value: Any) -> float | None:
     """Return a finite positive numeric value without accepting booleans or strings."""
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return None
-    return float(value) if value > 0 else None
+    numeric = float(value)
+    return numeric if math.isfinite(numeric) and numeric > 0 else None
 
 
 def _non_negative_number(value: Any) -> float | None:
@@ -417,10 +420,107 @@ def _first_mapping(payload: Any) -> dict[str, Any]:
     return {}
 
 
+def _body_composition_measured_at(entry: dict[str, Any]) -> str | None:
+    calendar_date = entry.get("calendarDate")
+    if isinstance(calendar_date, str) and len(calendar_date) >= 10:
+        return calendar_date[:10]
+
+    for key in ("timestampGMT", "date"):
+        raw_timestamp = _first_positive_number(entry.get(key))
+        if raw_timestamp is None:
+            continue
+        seconds = raw_timestamp / 1000.0 if raw_timestamp > 10_000_000_000 else raw_timestamp
+        try:
+            return datetime.fromtimestamp(seconds, tz=timezone.utc).date().isoformat()
+        except (OverflowError, OSError, ValueError):
+            continue
+    return None
+
+
+def _body_composition_sort_key(entry: dict[str, Any]) -> tuple[str, float]:
+    measured_at = _body_composition_measured_at(entry) or ""
+    timestamp = next(
+        (
+            numeric
+            for key in ("timestampGMT", "date")
+            if (numeric := _first_positive_number(entry.get(key))) is not None
+        ),
+        -1.0,
+    )
+    return measured_at, timestamp
+
+
+def extract_body_composition(
+    body_comp_data: dict[str, Any] | list[dict[str, Any]] | None,
+    *,
+    allow_total_average: bool = True,
+) -> tuple[float | None, float | None, str | None]:
+    """Extract (weight_kg, body_fat_pct, measured_at) from Garmin weight payloads.
+
+    Individual weigh-ins are selected by their observation date/timestamp instead of
+    assuming Garmin's list order. ``totalAverage`` is allowed for a single-day snapshot
+    fallback, but callers that need the athlete's current profile weight should disable
+    it because a multi-day dateRange average is not a latest measurement.
+    """
+    if not body_comp_data:
+        return None, None, None
+
+    entry: dict[str, Any] = {}
+    if isinstance(body_comp_data, list):
+        entries = [candidate for candidate in body_comp_data if isinstance(candidate, dict)]
+        if entries:
+            entry = max(entries, key=_body_composition_sort_key)
+    elif isinstance(body_comp_data, dict):
+        date_list = body_comp_data.get("dateWeightList")
+        if isinstance(date_list, list) and date_list:
+            entries = [candidate for candidate in date_list if isinstance(candidate, dict)]
+            if entries:
+                entry = max(entries, key=_body_composition_sort_key)
+        elif allow_total_average and isinstance(body_comp_data.get("totalAverage"), dict):
+            entry = body_comp_data["totalAverage"]
+        elif any(
+            key in body_comp_data
+            for key in ("weight", "weightKg", "weight_kg", "bodyFat", "bodyFatPercentage")
+        ):
+            entry = body_comp_data
+
+    if not entry:
+        return None, None, None
+
+    raw_weight = next(
+        (
+            numeric
+            for key in ("weight", "weightKg", "weight_kg")
+            if (numeric := _first_positive_number(entry.get(key))) is not None
+        ),
+        None,
+    )
+    weight_kg: float | None = None
+    if raw_weight is not None:
+        if raw_weight > 1000.0:
+            weight_kg = round(raw_weight / 1000.0, 2)
+        elif 20.0 <= raw_weight <= 350.0:
+            weight_kg = round(raw_weight, 2)
+
+    raw_fat = next(
+        (
+            numeric
+            for key in ("bodyFat", "bodyFatPercentage", "bodyFatPercent", "body_fat_pct")
+            if (numeric := _non_negative_number(entry.get(key))) is not None
+        ),
+        None,
+    )
+    body_fat_pct = round(raw_fat, 1) if raw_fat is not None and raw_fat <= 70.0 else None
+    measured_at = _body_composition_measured_at(entry)
+
+    return weight_kg, body_fat_pct, measured_at
+
+
 def canonicalize_performance_targets(
     cycling_ftp: dict[str, Any] | list[dict[str, Any]] | None,
     lactate_threshold: dict[str, Any] | None,
     heart_rate_zones: list[dict[str, Any]] | None,
+    body_composition: dict[str, Any] | list[dict[str, Any]] | None = None,
 ) -> CanonicalPerformanceTargets:
     """Normalize Garmin's current FTP/running-lactate-threshold endpoints.
 
@@ -480,10 +580,16 @@ def canonicalize_performance_targets(
         if fallback:
             lthr = _first_positive_number(fallback.get("lactateThresholdHeartRateUsed"))
 
+    weight_kg, body_fat_pct, weight_measured_at = extract_body_composition(
+        body_composition, allow_total_average=False
+    )
+
     return CanonicalPerformanceTargets(
         cycling_ftp_watts=round(ftp) if ftp is not None else None,
         running_threshold_pace_sec_per_km=pace,
         running_lthr_bpm=round(lthr) if lthr is not None else None,
+        weight_kg=weight_kg,
+        body_fat_pct=body_fat_pct,
         ftp_measured_at=ftp_data.get("calendarDate")
         if isinstance(ftp_data.get("calendarDate"), str)
         else None,
@@ -493,6 +599,7 @@ def canonicalize_performance_targets(
         lthr_measured_at=threshold_data.get("calendarDate")
         if isinstance(threshold_data.get("calendarDate"), str)
         else None,
+        weight_measured_at=weight_measured_at,
     )
 
 
@@ -510,6 +617,7 @@ def canonicalize_from_raw(
     training_status_today: dict[str, Any] | None = None,
     heart_rate_zones: list[dict[str, Any]] | None = None,
     respiration_today: dict[str, Any] | None = None,
+    body_composition_today: dict[str, Any] | list[dict[str, Any]] | None = None,
 ) -> CanonicalDailyMetrics:
     """Pure Garmin-shape parsing + fallback logic, producing a provider-neutral
     CanonicalDailyMetrics. Shared by GarminProviderAdapter.fetch_daily_metrics (live
@@ -590,6 +698,11 @@ def canonicalize_from_raw(
     hrv_status = hrv_summary.get("status")
     hrv_date = target_date_iso if hrv_last is not None else None
 
+    # Weight / Body Composition
+    weight_kg, body_fat_pct, weight_date = extract_body_composition(body_composition_today)
+    if weight_kg is not None and weight_date is None:
+        weight_date = target_date_iso
+
     return CanonicalDailyMetrics(
         date=target_date_iso,
         resting_heart_rate_bpm=rhr,
@@ -610,6 +723,9 @@ def canonicalize_from_raw(
         body_battery_wake_date=bb_wake_date if bb_wake is not None else None,
         steps_count=total_steps,
         steps_date=steps_date,
+        weight_kg=weight_kg,
+        body_fat_pct=body_fat_pct,
+        weight_date=weight_date,
         stress=_canonicalize_stress(stress_today),
         body_battery=_canonicalize_body_battery(body_battery_today),
         training_readiness=_canonicalize_training_readiness(training_readiness_today),
@@ -676,6 +792,7 @@ class GarminProviderAdapter:
         hrv=True,
         activities=True,
         activity_details=True,
+        body_composition=True,
     )
 
     def __init__(self, client: GarminClientWrapper):
@@ -760,6 +877,10 @@ class GarminProviderAdapter:
         if isinstance(heart_rate_zones, list):
             self._heart_rate_zones_cache = heart_rate_zones
 
+        body_comp_today = self._fetch_enrichment(
+            "body_composition", lambda: self.client.get_daily_weigh_ins(target_date_iso)
+        )
+
         canonical = canonicalize_from_raw(
             stats_today=stats_today,
             stats_fallback=stats_fallback,
@@ -774,6 +895,7 @@ class GarminProviderAdapter:
             training_status_today=training_status_today,
             heart_rate_zones=heart_rate_zones,
             respiration_today=respiration_today,
+            body_composition_today=body_comp_today,
         )
 
         raw_payloads: dict[str, Any] = {
@@ -796,6 +918,8 @@ class GarminProviderAdapter:
             raw_payloads["training_status"] = training_status_today
         if heart_rate_zones is not None:
             raw_payloads["heart_rate_zones"] = heart_rate_zones
+        if body_comp_today is not None:
+            raw_payloads["body_composition"] = body_comp_today
 
         return ProviderFetchResult(canonical=canonical, raw_payloads=raw_payloads)
 
@@ -809,14 +933,27 @@ class GarminProviderAdapter:
         lactate_threshold = self._fetch_enrichment(
             "lactate_threshold", self.client.get_lactate_threshold
         )
+        today = local_today()
+        body_comp = self._fetch_enrichment(
+            "body_composition",
+            lambda: self.client.get_body_composition(
+                get_date_string(n_days_ago(today, 30)), get_date_string(today)
+            ),
+        )
         zones = self._heart_rate_zones_cache
         if zones is None:
             fetched = self._fetch_enrichment("heart_rate_zones", self.client.get_heart_rate_zones)
             zones = fetched if isinstance(fetched, list) else None
             self._heart_rate_zones_cache = zones
         return ProviderPerformanceTargetsResult(
-            canonical=canonicalize_performance_targets(cycling_ftp, lactate_threshold, zones),
-            raw_payloads={"cycling_ftp": cycling_ftp, "lactate_threshold": lactate_threshold},
+            canonical=canonicalize_performance_targets(
+                cycling_ftp, lactate_threshold, zones, body_composition=body_comp
+            ),
+            raw_payloads={
+                "cycling_ftp": cycling_ftp,
+                "lactate_threshold": lactate_threshold,
+                "body_composition": body_comp,
+            },
         )
 
     def fetch_activities(

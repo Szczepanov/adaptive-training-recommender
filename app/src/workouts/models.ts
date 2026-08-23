@@ -444,13 +444,16 @@ export interface DeviceCapabilities {
 export type TargetSource = 'garmin' | 'manual' | 'coach' | 'derived';
 
 export interface AthletePerformanceProfile {
-  // Legacy top-level fields for backwards compatibility with v2 readers
+  // Legacy and biometric top-level fields
   ftpWatts?: number | null;
   thresholdPaceSecPerKm?: number | null;
   lthrBpm?: number | null;
   estimated1RmKg?: Record<string, number>;
+  weightKg?: number | null;
+  bodyFatPct?: number | null;
+  weightMeasuredAt?: string | null;
   /** Field-level ownership prevents a Garmin refresh from replacing a coach target. */
-  targetSources?: Partial<Record<'ftpWatts' | 'thresholdPaceSecPerKm' | 'lthrBpm' | 'cyclingLthr' | 'runningLthr', TargetSource>>;
+  targetSources?: Partial<Record<'ftpWatts' | 'thresholdPaceSecPerKm' | 'lthrBpm' | 'cyclingLthr' | 'runningLthr' | 'weightKg' | 'bodyFatPct', TargetSource>>;
   /** Per-exercise 1RM provenance, parallel to `estimated1RmKg`/`strength.estimated1RmKg`
    *  (ADR-0021 D-1RMSRC) -- keyed by the same `exerciseId` as those maps. An exercise
    *  present in `estimated1RmKg` with no entry here has no recorded source, and per
@@ -464,6 +467,9 @@ export interface AthletePerformanceProfile {
     lthrBpm?: number | null;
     cyclingLthrBpm?: number | null;
     runningLthrBpm?: number | null;
+    weightKg?: number | null;
+    bodyFatPct?: number | null;
+    weightMeasuredAt?: string | null;
     fetchedAt: string;
     ftpMeasuredAt?: string | null;
     thresholdMeasuredAt?: string | null;

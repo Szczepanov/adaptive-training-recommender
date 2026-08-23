@@ -155,6 +155,7 @@ def _build_metric_dates(
         bodyBattery=target_date_iso if canonical.body_battery is not None else None,
         trainingReadiness=target_date_iso if canonical.training_readiness is not None else None,
         trainingStatus=target_date_iso if canonical.training_status is not None else None,
+        weight=canonical.weight_date if canonical.weight_kg is not None else None,
     )
 
 
@@ -246,6 +247,8 @@ def _build_raw_metrics(
         trainingReadiness=training_readiness_summary,
         trainingStatus=training_status_summary,
         heartRateZones=heart_rate_zones_summary,
+        weightKg=canonical.weight_kg,
+        bodyFatPct=canonical.body_fat_pct,
     )
 
 
