@@ -838,3 +838,25 @@ def test_canonicalize_performance_targets_with_body_composition():
     assert targets.body_fat_pct == 12.5
     assert targets.weight_measured_at == "2026-08-23"
     assert targets.ftp_measured_at == "2026-08-20"
+
+
+def test_extract_spo2_and_skin_temp():
+    from garmin_sync.garmin_provider import extract_skin_temp_deviation, extract_spo2
+
+    spo2_raw = {"userDailySpo2": {"averageSpO2": 96.5, "lowestSpO2": 92.0}}
+    sleep_raw = {
+        "dailySleepDTO": {
+            "averageSpO2Value": 96.0,
+            "lowestSpO2Value": 91.0,
+            "skinTempDeviationCelsius": 0.35,
+        }
+    }
+
+    spo2 = extract_spo2(spo2_raw, sleep_raw)
+    assert spo2 is not None
+    assert spo2.avg_pct == 96.5
+    assert spo2.min_pct == 92.0
+    assert spo2.sleep_avg_pct == 96.0
+
+    dev = extract_skin_temp_deviation({}, sleep_raw)
+    assert dev == 0.35

@@ -18,6 +18,7 @@ from .models import (
     PrimaryActivity,
     RawMetrics,
     SourceMetadata,
+    Spo2Summary,
     StressSummary,
     TrainingReadinessSummary,
     TrainingStatusSummary,
@@ -217,6 +218,16 @@ def _build_raw_metrics(
         else None
     )
 
+    spo2_summary = (
+        Spo2Summary(
+            avgPct=canonical.spo2.avg_pct,
+            minPct=canonical.spo2.min_pct,
+            sleepAvgPct=canonical.spo2.sleep_avg_pct,
+        )
+        if canonical.spo2 is not None
+        else None
+    )
+
     return RawMetrics(
         sleepScore=canonical.sleep_score,
         sleepDurationSec=canonical.sleep_duration_seconds,
@@ -244,6 +255,8 @@ def _build_raw_metrics(
         heartRateZones=heart_rate_zones_summary,
         weightKg=canonical.weight_kg,
         bodyFatPct=canonical.body_fat_pct,
+        spo2=spo2_summary,
+        skinTempDeviationCelsius=canonical.skin_temp_deviation_celsius,
     )
 
 
@@ -266,6 +279,7 @@ def _build_data_quality(
         and canonical.training_status.status_phrase is not None,
         heartRateZonesAvailable=canonical.heart_rate_zones is not None
         and canonical.heart_rate_zones.max_hr_used is not None,
+        spo2Available=canonical.spo2 is not None and canonical.spo2.avg_pct is not None,
     )
 
 

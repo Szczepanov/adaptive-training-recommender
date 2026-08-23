@@ -877,6 +877,22 @@ export function DailyCheckin({ userId, onNavigate, onBack, onCheckinSaved }: Dai
                       <span className="pill-label">Body Battery</span>
                       <span className="pill-val">{recoverySnapshot.raw.bodyBatteryWake ?? '--'} / 100</span>
                     </div>
+                    {recoverySnapshot.raw.spo2?.avgPct != null && (
+                      <div className="garmin-metric-pill">
+                        <span className="pill-label">SpO2 Pulse Ox</span>
+                        <span className="pill-val">{recoverySnapshot.raw.spo2.avgPct}%</span>
+                        {recoverySnapshot.raw.spo2.minPct != null && <small>min {recoverySnapshot.raw.spo2.minPct}%</small>}
+                      </div>
+                    )}
+                    {recoverySnapshot.raw.skinTempDeviationCelsius != null && (
+                      <div className="garmin-metric-pill">
+                        <span className="pill-label">Skin Temp Dev</span>
+                        <span className="pill-val">
+                          {recoverySnapshot.raw.skinTempDeviationCelsius > 0 ? '+' : ''}
+                          {recoverySnapshot.raw.skinTempDeviationCelsius}°C
+                        </span>
+                      </div>
+                    )}
                   </div>
                 )}
               </>

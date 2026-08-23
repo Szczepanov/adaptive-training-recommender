@@ -233,6 +233,21 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery' }: Dat
             <span className="data-label">Total Steps:</span>
             <span className="data-value">{recoverySnapshot?.raw.totalSteps ?? 'N/A'}</span>
           </div>
+          <div className="data-item">
+            <span className="data-label">SpO2 (Avg / Min):</span>
+            <span className="data-value">
+              {recoverySnapshot?.raw.spo2?.avgPct != null ? `${recoverySnapshot.raw.spo2.avgPct}%` : 'N/A'}
+              {recoverySnapshot?.raw.spo2?.minPct != null ? ` / min ${recoverySnapshot.raw.spo2.minPct}%` : ''}
+            </span>
+          </div>
+          <div className="data-item">
+            <span className="data-label">Skin Temp Deviation:</span>
+            <span className="data-value">
+              {recoverySnapshot?.raw.skinTempDeviationCelsius != null
+                ? `${recoverySnapshot.raw.skinTempDeviationCelsius > 0 ? '+' : ''}${recoverySnapshot.raw.skinTempDeviationCelsius}°C`
+                : 'N/A'}
+            </span>
+          </div>
         </div>
 
         <div className="data-group">

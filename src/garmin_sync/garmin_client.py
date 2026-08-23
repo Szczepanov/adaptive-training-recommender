@@ -138,6 +138,20 @@ class GarminClientWrapper:
             raise RuntimeError("Garmin client is not authenticated. Call login first.")
         return self.api.get_respiration_data(date_iso) or {}
 
+    def get_spo2_data(self, date_iso: str) -> dict[str, Any]:
+        if not self.api:
+            raise RuntimeError("Garmin client is not authenticated. Call login first.")
+        if hasattr(self.api, "get_spo2_data"):
+            return self.api.get_spo2_data(date_iso) or {}
+        return {}
+
+    def get_skin_temp_data(self, date_iso: str) -> dict[str, Any]:
+        if not self.api:
+            raise RuntimeError("Garmin client is not authenticated. Call login first.")
+        if hasattr(self.api, "get_skin_temp_data"):
+            return self.api.get_skin_temp_data(date_iso) or {}
+        return {}
+
     def get_body_battery(self, date_iso: str) -> list[dict[str, Any]]:
         if not self.api:
             raise RuntimeError("Garmin client is not authenticated. Call login first.")

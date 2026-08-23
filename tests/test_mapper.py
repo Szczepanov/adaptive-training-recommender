@@ -453,3 +453,28 @@ def test_build_snapshot_maps_weight_and_body_fat():
     assert snapshot.raw.weightKg == 71.2
     assert snapshot.raw.bodyFatPct == 13.8
     assert snapshot.source.metricDates.weight == "2026-08-23"
+
+
+def test_build_snapshot_maps_spo2_and_skin_temp():
+    from garmin_sync.canonical import CanonicalSpo2
+
+    canonical = CanonicalDailyMetrics(
+        date="2026-08-23",
+        spo2=CanonicalSpo2(avg_pct=97.0, min_pct=93.0, sleep_avg_pct=96.5),
+        skin_temp_deviation_celsius=0.25,
+    )
+
+    snapshot = build_snapshot_from_canonical(
+        user_id="test_uid",
+        target_date_iso="2026-08-23",
+        canonical=canonical,
+        canonical_activities=[],
+        derived_metrics=DerivedMetrics(),
+    )
+
+    assert snapshot.raw.spo2 is not None
+    assert snapshot.raw.spo2.avgPct == 97.0
+    assert snapshot.raw.spo2.minPct == 93.0
+    assert snapshot.raw.spo2.sleepAvgPct == 96.5
+    assert snapshot.raw.skinTempDeviationCelsius == 0.25
+    assert snapshot.dataQuality.spo2Available is True

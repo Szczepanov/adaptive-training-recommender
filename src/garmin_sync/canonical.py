@@ -75,6 +75,13 @@ class CanonicalPerformanceTargets:
 
 
 @dataclass
+class CanonicalSpo2:
+    avg_pct: float | None = None
+    min_pct: float | None = None
+    sleep_avg_pct: float | None = None
+
+
+@dataclass
 class CanonicalDailyMetrics:
     date: str
     resting_heart_rate_bpm: float | None = None
@@ -101,6 +108,8 @@ class CanonicalDailyMetrics:
     training_readiness: CanonicalTrainingReadiness | None = None
     training_status: CanonicalTrainingStatus | None = None
     heart_rate_zones: CanonicalHeartRateZones | None = None
+    spo2: CanonicalSpo2 | None = None
+    skin_temp_deviation_celsius: float | None = None
 
 
 @dataclass

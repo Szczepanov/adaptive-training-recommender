@@ -16,6 +16,7 @@ from .canonical import (
     CanonicalHeartRateZones,
     CanonicalLapSummary,
     CanonicalPerformanceTargets,
+    CanonicalSpo2,
     CanonicalStress,
     CanonicalTrainingReadiness,
     CanonicalTrainingStatus,
@@ -564,12 +565,76 @@ def canonicalize_performance_targets(
     )
 
 
+def extract_spo2(spo2_payload: Any, sleep_payload: Any = None) -> CanonicalSpo2 | None:
+    """Extract SpO2 metrics (average, minimum, sleep average) from Garmin payloads."""
+    avg_val = None
+    min_val = None
+    sleep_avg = None
+
+    if isinstance(spo2_payload, dict):
+        user_spo2 = spo2_payload.get("userDailySpo2") or spo2_payload
+        if isinstance(user_spo2, dict):
+            avg_val = _non_negative_number(user_spo2.get("averageSpO2"))
+            min_val = _non_negative_number(user_spo2.get("lowestSpO2"))
+
+    if isinstance(sleep_payload, dict):
+        dto = (
+            sleep_payload.get("dailySleepDTO", {})
+            if isinstance(sleep_payload.get("dailySleepDTO"), dict)
+            else sleep_payload
+        )
+        sleep_avg = _non_negative_number(dto.get("averageSpO2Value"))
+        sleep_min = _non_negative_number(dto.get("lowestSpO2Value"))
+        if avg_val is None:
+            avg_val = sleep_avg
+        if min_val is None:
+            min_val = sleep_min
+        if sleep_avg is None:
+            sleep_avg = avg_val
+
+    if avg_val is not None or min_val is not None or sleep_avg is not None:
+        return CanonicalSpo2(
+            avg_pct=avg_val,
+            min_pct=min_val,
+            sleep_avg_pct=sleep_avg,
+        )
+    return None
+
+
+def extract_skin_temp_deviation(skin_temp_payload: Any, sleep_payload: Any = None) -> float | None:
+    """Extract nocturnal skin temperature deviation in Celsius."""
+    if isinstance(skin_temp_payload, dict):
+        dev = (
+            skin_temp_payload.get("skinTempDeviationCelsius")
+            or skin_temp_payload.get("deviationCelsius")
+            or skin_temp_payload.get("deviation")
+        )
+        if dev is not None:
+            try:
+                return round(float(dev), 2)
+            except (ValueError, TypeError):
+                pass
+    if isinstance(sleep_payload, dict):
+        dto = (
+            sleep_payload.get("dailySleepDTO", {})
+            if isinstance(sleep_payload.get("dailySleepDTO"), dict)
+            else sleep_payload
+        )
+        dev = dto.get("skinTempDeviationCelsius") or dto.get("avgSkinTempDeviation")
+        if dev is not None:
+            try:
+                return round(float(dev), 2)
+            except (ValueError, TypeError):
+                pass
+    return None
+
+
 def canonicalize_from_raw(
     stats_today: dict[str, Any],
     stats_fallback: dict[str, Any] | None,
-    sleep_today: dict[str, Any],
+    sleep_today: dict[str, Any] | None,
     sleep_fallback: dict[str, Any] | None,
-    hrv_today: dict[str, Any],
+    hrv_today: dict[str, Any] | None,
     target_date_iso: str,
     yesterday_iso: str,
     stress_today: dict[str, Any] | None = None,
@@ -579,6 +644,8 @@ def canonicalize_from_raw(
     heart_rate_zones: list[dict[str, Any]] | None = None,
     respiration_today: dict[str, Any] | None = None,
     body_composition_today: dict[str, Any] | list[dict[str, Any]] | None = None,
+    spo2_today: dict[str, Any] | None = None,
+    skin_temp_today: dict[str, Any] | None = None,
 ) -> CanonicalDailyMetrics:
     """Pure Garmin-shape parsing + fallback logic, producing a provider-neutral
     CanonicalDailyMetrics. Shared by GarminProviderAdapter.fetch_daily_metrics (live
@@ -605,7 +672,7 @@ def canonicalize_from_raw(
         steps_date = target_date_iso
 
     # Sleep
-    sleep_score, sleep_sec, avg_resp = extract_sleep_metrics(sleep_today)
+    sleep_score, sleep_sec, avg_resp = extract_sleep_metrics(sleep_today or {})
     sleep_date = target_date_iso
     used_sleep_fallback = False
     if sleep_score is None and sleep_fallback:
@@ -621,7 +688,7 @@ def canonicalize_from_raw(
     # window: respiration_today is fetched for target_date_iso, so it has no
     # correspondence to sleep_fallback's (D-1) window.
     if not used_sleep_fallback:
-        sleep_start_gmt_ms, sleep_end_gmt_ms = _sleep_window_gmt_ms(sleep_today)
+        sleep_start_gmt_ms, sleep_end_gmt_ms = _sleep_window_gmt_ms(sleep_today or {})
         precise_avg_resp = average_sleep_respiration_from_intervals(
             respiration_today, sleep_start_gmt_ms, sleep_end_gmt_ms
         )
@@ -638,6 +705,10 @@ def canonicalize_from_raw(
     weight_kg, body_fat_pct, weight_date = extract_body_composition(body_composition_today)
     if weight_kg is not None and weight_date is None:
         weight_date = target_date_iso
+
+    # SpO2 and Skin Temp
+    canonical_spo2 = extract_spo2(spo2_today, sleep_today)
+    skin_temp_dev = extract_skin_temp_deviation(skin_temp_today, sleep_today)
 
     return CanonicalDailyMetrics(
         date=target_date_iso,
@@ -662,6 +733,8 @@ def canonicalize_from_raw(
         training_readiness=_canonicalize_training_readiness(training_readiness_today),
         training_status=_canonicalize_training_status(training_status_today),
         heart_rate_zones=_canonicalize_heart_rate_zones(heart_rate_zones),
+        spo2=canonical_spo2,
+        skin_temp_deviation_celsius=skin_temp_dev,
     )
 
 
@@ -812,6 +885,14 @@ class GarminProviderAdapter:
             "body_composition", lambda: self.client.get_daily_weigh_ins(target_date_iso)
         )
 
+        spo2_today = self._fetch_enrichment(
+            "spo2", lambda: self.client.get_spo2_data(target_date_iso)
+        )
+
+        skin_temp_today = self._fetch_enrichment(
+            "skin_temperature", lambda: self.client.get_skin_temp_data(target_date_iso)
+        )
+
         canonical = canonicalize_from_raw(
             stats_today=stats_today,
             stats_fallback=stats_fallback,
@@ -827,6 +908,8 @@ class GarminProviderAdapter:
             heart_rate_zones=heart_rate_zones,
             respiration_today=respiration_today,
             body_composition_today=body_comp_today,
+            spo2_today=spo2_today,
+            skin_temp_today=skin_temp_today,
         )
 
         raw_payloads: dict[str, Any] = {
@@ -851,6 +934,10 @@ class GarminProviderAdapter:
             raw_payloads["heart_rate_zones"] = heart_rate_zones
         if body_comp_today is not None:
             raw_payloads["body_composition"] = body_comp_today
+        if spo2_today is not None:
+            raw_payloads["spo2"] = spo2_today
+        if skin_temp_today is not None:
+            raw_payloads["skin_temperature"] = skin_temp_today
 
         return ProviderFetchResult(canonical=canonical, raw_payloads=raw_payloads)
 
