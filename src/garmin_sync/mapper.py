@@ -91,6 +91,28 @@ def normalize_activity(
             }
             for lap in detail.laps
         ]
+    # None means the endpoint was not fetched / detail enrichment failed, so omitting
+    # the key preserves any previously-synced value under Firestore merge semantics.
+    # [] means the endpoint succeeded and Garmin now reports zero work sets, so writing
+    # the empty array deliberately clears a stale older exerciseSets value.
+    if detail.exercise_sets is not None:
+        payload["exerciseSets"] = [
+            {
+                key: value
+                for key, value in {
+                    "setOrder": es.set_order,
+                    "setType": es.set_type,
+                    "repetitionCount": es.repetition_count,
+                    "weightKg": es.weight_kg,
+                    "exerciseCategory": es.exercise_category,
+                    "exerciseName": es.exercise_name,
+                    "durationSeconds": es.duration_seconds,
+                    "restDurationSeconds": es.rest_duration_seconds,
+                }.items()
+                if value is not None
+            }
+            for es in detail.exercise_sets
+        ]
     return payload
 
 
@@ -231,6 +253,11 @@ def _build_raw_metrics(
     return RawMetrics(
         sleepScore=canonical.sleep_score,
         sleepDurationSec=canonical.sleep_duration_seconds,
+        deepSleepSec=canonical.deep_sleep_seconds,
+        remSleepSec=canonical.rem_sleep_seconds,
+        lightSleepSec=canonical.light_sleep_seconds,
+        awakeSleepSec=canonical.awake_sleep_seconds,
+        restlessMomentsCount=canonical.restless_moments_count,
         restingHr=canonical.resting_heart_rate_bpm,
         hrvOvernightAvg=canonical.hrv_overnight_avg_ms,
         hrvStatus=canonical.hrv_status,

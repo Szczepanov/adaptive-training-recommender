@@ -273,6 +273,27 @@ class FirestoreRecoveryRepository:
             # running lactate threshold is not configured on the account).
             garmin.update({key: value for key, value in incoming.items() if value is not None})
             garmin.update({key: value for key, value in measured_at.items() if value is not None})
+            if targets.race_predictions is not None:
+                raw_race_predictions = garmin.get("racePredictions")
+                race_predictions: dict[str, Any] = (
+                    dict(raw_race_predictions) if isinstance(raw_race_predictions, dict) else {}
+                )
+                incoming_race_predictions = {
+                    "fiveKmSec": targets.race_predictions.five_km_sec,
+                    "tenKmSec": targets.race_predictions.ten_km_sec,
+                    "halfMarathonSec": targets.race_predictions.half_marathon_sec,
+                    "marathonSec": targets.race_predictions.marathon_sec,
+                }
+                race_predictions.update(
+                    {
+                        key: value
+                        for key, value in incoming_race_predictions.items()
+                        if value is not None
+                    }
+                )
+                race_predictions["fetchedAt"] = now_iso
+                garmin["racePredictions"] = race_predictions
+                profile["racePredictions"] = dict(race_predictions)
             garmin["fetchedAt"] = now_iso
             profile["garmin"] = garmin
 

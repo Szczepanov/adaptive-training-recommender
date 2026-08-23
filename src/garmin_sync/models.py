@@ -154,6 +154,11 @@ class Spo2Summary:
 class RawMetrics:
     sleepScore: int | float | None = None
     sleepDurationSec: int | None = None
+    deepSleepSec: int | None = None
+    remSleepSec: int | None = None
+    lightSleepSec: int | None = None
+    awakeSleepSec: int | None = None
+    restlessMomentsCount: int | None = None
     restingHr: int | float | None = None
     hrvOvernightAvg: int | float | None = None
     hrvStatus: str | None = None

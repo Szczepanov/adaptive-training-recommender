@@ -55,6 +55,14 @@ class CanonicalHeartRateZones:
 
 
 @dataclass
+class CanonicalRacePredictions:
+    five_km_sec: int | None = None
+    ten_km_sec: int | None = None
+    half_marathon_sec: int | None = None
+    marathon_sec: int | None = None
+
+
+@dataclass
 class CanonicalPerformanceTargets:
     """Current sport-specific performance targets reported by a wearable.
 
@@ -68,6 +76,7 @@ class CanonicalPerformanceTargets:
     running_lthr_bpm: int | None = None
     weight_kg: float | None = None
     body_fat_pct: float | None = None
+    race_predictions: CanonicalRacePredictions | None = None
     ftp_measured_at: str | None = None
     threshold_measured_at: str | None = None
     lthr_measured_at: str | None = None
@@ -92,6 +101,11 @@ class CanonicalDailyMetrics:
     sleep_score: float | None = None
     sleep_duration_seconds: int | None = None
     sleep_date: str | None = None
+    deep_sleep_seconds: int | None = None
+    rem_sleep_seconds: int | None = None
+    light_sleep_seconds: int | None = None
+    awake_sleep_seconds: int | None = None
+    restless_moments_count: int | None = None
     respiration_rate_brpm: float | None = None
     body_battery_wake: float | None = None
     body_battery_wake_date: str | None = None
@@ -145,6 +159,18 @@ class CanonicalLapSummary:
 
 
 @dataclass
+class CanonicalExerciseSet:
+    set_order: int
+    set_type: str = "active"  # "active", "rest", "warmup"
+    repetition_count: int | None = None
+    weight_kg: float | None = None
+    exercise_category: str | None = None
+    exercise_name: str | None = None
+    duration_seconds: float | None = None
+    rest_duration_seconds: float | None = None
+
+
+@dataclass
 class CanonicalActivityDetail:
     activity_id: str
     power_zones: list[CanonicalZoneBucket] | None = None
@@ -153,3 +179,4 @@ class CanonicalActivityDetail:
     intensity_factor: float | None = None
     variability_index: float | None = None
     laps: list[CanonicalLapSummary] | None = None
+    exercise_sets: list[CanonicalExerciseSet] | None = None
