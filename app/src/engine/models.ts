@@ -1274,9 +1274,28 @@ export interface UserPreferences {
         temperature: 'celsius' | 'fahrenheit';
     };
     performanceProfile?: AthletePerformanceProfile;
+    gearTracker?: {
+        items: GearItemSummary[];
+        syncedAt?: string;
+    };
     schemaVersion: number;
     createdAt: string;
     updatedAt: string;
+}
+
+export interface GearItemSummary {
+    gearPk: string;
+    uuid?: string;
+    customMakeModel?: string;
+    displayName?: string;
+    gearType?: string;
+    brand?: string;
+    model?: string;
+    totalDistanceKm: number;
+    maximumDistanceKm?: number;
+    dateBegin?: string;
+    dateEnd?: string;
+    status: string;
 }
 
 // --- Engine Layer Models (Not stored in Firestore) ---
@@ -1436,6 +1455,16 @@ export interface ActivityLapSummary {
     averageHrBpm?: number;
 }
 
+export interface RunningDynamics {
+    groundContactTimeMs?: number | null;
+    groundContactBalanceLeftPct?: number | null;
+    verticalOscillationCm?: number | null;
+    verticalRatioPct?: number | null;
+    strideLengthM?: number | null;
+    avgRunningPowerWatts?: number | null;
+    maxRunningPowerWatts?: number | null;
+}
+
 export interface ActivityExerciseSet {
     setOrder: number;
     setType?: string;
@@ -1467,6 +1496,7 @@ export interface NormalizedGarminActivity {
     intensityFactor?: number;
     variabilityIndex?: number;
     laps?: ActivityLapSummary[];
+    runningDynamics?: RunningDynamics;
     exerciseSets?: ActivityExerciseSet[];
     syncRunId?: string;
     syncedAt?: string;

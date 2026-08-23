@@ -14,10 +14,12 @@ from .canonical import (
     CanonicalBodyBattery,
     CanonicalDailyMetrics,
     CanonicalExerciseSet,
+    CanonicalGearItem,
     CanonicalHeartRateZones,
     CanonicalLapSummary,
     CanonicalPerformanceTargets,
     CanonicalRacePredictions,
+    CanonicalRunningDynamics,
     CanonicalSpo2,
     CanonicalStress,
     CanonicalTrainingReadiness,
@@ -32,6 +34,7 @@ from .provider import (
     ProviderActivityDetailResult,
     ProviderCapabilities,
     ProviderFetchResult,
+    ProviderGearResult,
     ProviderPerformanceTargetsResult,
 )
 
@@ -49,6 +52,27 @@ _POWER_ACTIVITY_TYPES = {
     "virtual_ride",
 }
 _STRENGTH_ACTIVITY_TYPES = {"strength_training", "fitness_equipment"}
+
+
+def _activity_type_key(act: dict[str, Any]) -> str:
+    """Extract Garmin's activity type without trusting the nested response shape."""
+    raw_activity_type = act.get("activityType")
+    if not isinstance(raw_activity_type, dict):
+        return "unknown"
+    raw_type_key = raw_activity_type.get("typeKey")
+    if not isinstance(raw_type_key, str) or not raw_type_key.strip():
+        return "unknown"
+    return raw_type_key.strip()
+
+
+def _is_running_activity_type(activity_type: str) -> bool:
+    """Return whether a Garmin type key represents a running activity family."""
+    normalized = activity_type.strip().lower()
+    return (
+        normalized in {"run", "running"}
+        or normalized.endswith("_run")
+        or normalized.endswith("_running")
+    )
 
 
 def _optional_non_negative_int(value: Any) -> int | None:
@@ -994,6 +1018,69 @@ def extract_skin_temp_deviation(sleep_payload: Any) -> float | None:
     return None
 
 
+def extract_gear_items(raw_gear: Any) -> list[CanonicalGearItem]:
+    """Extract canonical equipment records from Garmin gear API responses."""
+    if not isinstance(raw_gear, list):
+        if isinstance(raw_gear, dict) and isinstance(raw_gear.get("gearList"), list):
+            raw_gear = raw_gear["gearList"]
+        else:
+            return []
+
+    items: list[CanonicalGearItem] = []
+    for entry in raw_gear:
+        if not isinstance(entry, dict):
+            continue
+        gear_pk = entry.get("gearPk") or entry.get("uuid") or entry.get("gearId")
+        if gear_pk is None:
+            continue
+
+        custom_make_model = entry.get("customMakeModel") or entry.get("displayName")
+        display_name = entry.get("displayName") or custom_make_model
+        gear_type_name = entry.get("gearTypeName") or entry.get("gearType")
+        brand = entry.get("gearMakeName") or entry.get("brand")
+        model = entry.get("gearModelName") or entry.get("model")
+
+        total_dist_raw = _non_negative_number(entry.get("totalDistance"))
+        total_dist_km = round(total_dist_raw / 1000.0, 1) if total_dist_raw is not None else 0.0
+
+        max_dist_raw = _non_negative_number(entry.get("maximumMeters") or entry.get("maxDistance"))
+        max_dist_km = round(max_dist_raw / 1000.0, 1) if max_dist_raw is not None else None
+
+        date_begin = entry.get("dateBegin")
+        if isinstance(date_begin, str) and len(date_begin) >= 10:
+            date_begin = date_begin[:10]
+        else:
+            date_begin = None
+
+        date_end = entry.get("dateEnd")
+        if isinstance(date_end, str) and len(date_end) >= 10:
+            date_end = date_end[:10]
+        else:
+            date_end = None
+
+        raw_status = entry.get("gearStatusName") or entry.get("status")
+        status = str(raw_status).lower() if raw_status is not None else "active"
+
+        items.append(
+            CanonicalGearItem(
+                gear_pk=str(gear_pk),
+                uuid=str(entry.get("uuid")) if entry.get("uuid") else None,
+                custom_make_model=str(custom_make_model) if custom_make_model else None,
+                display_name=str(display_name) if display_name else None,
+                gear_type=str(gear_type_name).lower() if gear_type_name else None,
+                brand=str(brand) if brand else None,
+                model=str(model) if model else None,
+                total_distance_km=total_dist_km,
+                maximum_distance_km=max_dist_km,
+                date_begin=date_begin,
+                date_end=date_end,
+                status=status,
+            )
+        )
+
+    return items
+
+
 def canonicalize_from_raw(
     stats_today: dict[str, Any],
     stats_fallback: dict[str, Any] | None,
@@ -1147,6 +1234,75 @@ def canonicalize_activities(
     return [_canonicalize_activity(act, zone4_floor=zone4_floor) for act in raw_activities]
 
 
+def extract_running_dynamics(act: dict[str, Any]) -> CanonicalRunningDynamics | None:
+    """Extract running-only dynamics metrics from a Garmin activity summary."""
+    if not isinstance(act, dict) or not _is_running_activity_type(_activity_type_key(act)):
+        return None
+
+    raw_gct = act.get("avgGroundContactTime") or act.get("groundContactTime")
+    gct = _first_positive_number(raw_gct)
+
+    raw_gct_bal = (
+        act.get("avgGroundContactBalance")
+        or act.get("groundContactBalanceLeft")
+        or act.get("groundContactBalance")
+    )
+    gct_bal_left: float | None = None
+    if raw_gct_bal is not None:
+        bal_val = _non_negative_number(raw_gct_bal)
+        if bal_val is not None and 35.0 <= bal_val <= 65.0:
+            gct_bal_left = round(bal_val, 1)
+
+    # Garmin reports vertical oscillation in millimeters under both keys -- always
+    # convert, never guess from magnitude (a real value can legitimately fall on
+    # either side of any threshold, e.g. 84mm and 8.4mm are both plausible readings).
+    raw_vert_osc = act.get("avgVerticalOscillation") or act.get("verticalOscillation")
+    vert_osc: float | None = None
+    if raw_vert_osc is not None:
+        vo_val = _first_positive_number(raw_vert_osc)
+        if vo_val is not None:
+            vert_osc = round(vo_val / 10.0, 1)
+
+    raw_vert_ratio = act.get("avgVerticalRatio") or act.get("verticalRatio")
+    vert_ratio: float | None = None
+    if raw_vert_ratio is not None:
+        vr_val = _non_negative_number(raw_vert_ratio)
+        if vr_val is not None and 1.0 <= vr_val <= 25.0:
+            vert_ratio = round(vr_val, 1)
+
+    # Garmin reports stride length in centimeters under both keys -- same
+    # always-convert reasoning as vertical oscillation above.
+    raw_stride = act.get("avgStrideLength") or act.get("strideLength")
+    stride_m: float | None = None
+    if raw_stride is not None:
+        st_val = _first_positive_number(raw_stride)
+        if st_val is not None:
+            stride_m = round(st_val / 100.0, 2)
+
+    raw_avg_power = act.get("avgPower") or act.get("averagePower") or act.get("avgRunningPower")
+    avg_power_value = _first_positive_number(raw_avg_power)
+    avg_power = round(avg_power_value) if avg_power_value is not None else None
+
+    raw_max_power = act.get("maxPower") or act.get("maxRunningPower")
+    max_power_value = _first_positive_number(raw_max_power)
+    max_power = round(max_power_value) if max_power_value is not None else None
+
+    if any(
+        v is not None
+        for v in (gct, gct_bal_left, vert_osc, vert_ratio, stride_m, avg_power, max_power)
+    ):
+        return CanonicalRunningDynamics(
+            ground_contact_time_ms=round(gct, 1) if gct is not None else None,
+            ground_contact_balance_left_pct=gct_bal_left,
+            vertical_oscillation_cm=vert_osc,
+            vertical_ratio_pct=vert_ratio,
+            stride_length_m=stride_m,
+            avg_running_power_watts=avg_power,
+            max_running_power_watts=max_power,
+        )
+    return None
+
+
 def _canonicalize_activity(
     act: dict[str, Any], zone4_floor: int | None = None
 ) -> CanonicalActivity:
@@ -1170,6 +1326,7 @@ def _canonicalize_activity(
     duration_sec = act.get("duration", 0)
 
     raw_activity_id = act.get("activityId")
+    activity_type = _activity_type_key(act)
 
     # Primary benefit & training-effect descriptors.  Current activity-list payloads
     # expose trainingEffectLabel directly; older/alternate shapes use message-key names.
@@ -1196,7 +1353,7 @@ def _canonicalize_activity(
     return CanonicalActivity(
         activity_id=str(raw_activity_id) if raw_activity_id is not None else None,
         date=act.get("startTimeLocal", "")[:10] or "",
-        type=act.get("activityType", {}).get("typeKey", "unknown"),
+        type=activity_type,
         duration_min=round(duration_sec / 60) if duration_sec else None,
         duration_seconds=int(duration_sec or 0),
         training_effect_aerobic=te_aero,
@@ -1204,6 +1361,7 @@ def _canonicalize_activity(
         average_hr=avg_hr,
         training_load=act.get("activityTrainingLoad"),
         intensity_tag=intensity_tag,
+        running_dynamics=extract_running_dynamics(act),
         primary_benefit=primary_benefit_str,
         epoc=epoc_val,
         recovery_time_hours=act_rec_hours,
@@ -1223,6 +1381,7 @@ class GarminProviderAdapter:
         activities=True,
         activity_details=True,
         body_composition=True,
+        gear_tracking=True,
         race_predictions=True,
     )
 
@@ -1434,10 +1593,7 @@ class GarminProviderAdapter:
 
     def fetch_activity_detail(self, activity_id: str) -> ProviderActivityDetailResult:
         summary = self._activity_summary_cache.get(activity_id, {})
-        activity_type = (
-            summary.get("activityType", {}).get("typeKey", "") if isinstance(summary, dict) else ""
-        )
-        type_str = str(activity_type).lower()
+        type_str = _activity_type_key(summary).lower()
 
         # Strength detail is a different one-endpoint data product from cycling power
         # telemetry. Fetching the three power-detail endpoints first wastes requests and
@@ -1472,4 +1628,12 @@ class GarminProviderAdapter:
                 "activity_hr_zones": hr_zones,
                 "activity_splits": splits,
             },
+        )
+
+    def fetch_gear(self) -> ProviderGearResult:
+        raw_gear = self._fetch_enrichment("gear", lambda: self.client.get_gear())
+        raw_list = raw_gear if isinstance(raw_gear, list) else []
+        return ProviderGearResult(
+            canonical=extract_gear_items(raw_list),
+            raw_payloads={"gear": raw_list},
         )

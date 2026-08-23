@@ -113,6 +113,33 @@ missing optional SpO2 fields.
 stored `dataQuality` flags so real-world coverage can be measured before either signal is
 allowed to influence recommendation policy.
 
+### Running dynamics activity contract
+
+`garmin_provider.py` `extract_running_dynamics` treats running dynamics as **running-only**
+activity-summary telemetry. `run`, `running`, and Garmin type keys ending in `_run` or
+`_running` are eligible; generic `avgPower`/`maxPower` values on cycling records must not
+be re-labelled as running power. `mapper.py` keeps the same running-only predicate as a
+write-side defence before emitting `runningDynamics` under
+`users/{userId}/activities/{activityId}`.
+
+Canonical units are explicit and do not depend on value magnitude:
+
+| Persisted field | Canonical unit | Garmin activity-summary source |
+|---|---:|---|
+| `groundContactTimeMs` | ms | ground-contact time in ms |
+| `groundContactBalanceLeftPct` | % left | ground-contact balance |
+| `verticalOscillationCm` | cm | vertical oscillation converted from mm |
+| `verticalRatioPct` | % | vertical ratio |
+| `strideLengthM` | m | stride length converted from cm |
+| `avgRunningPowerWatts` | W | average running power |
+| `maxRunningPowerWatts` | W | maximum running power |
+
+Missing, malformed, or zero-sentinel strictly-positive metrics are omitted rather than
+invented. Ground-contact balance is accepted only from 35–65%, and vertical ratio only
+from 1–25%. The Firestore read parser in `trainingHistory.ts` mirrors the running-only,
+range, and strictly-positive checks so schema-less legacy records cannot reintroduce
+invalid telemetry into the UI.
+
 ---
 
 ## 🚴 Workout Export & Garmin Connect Integration

@@ -28,6 +28,16 @@ from .models import (
 logger = logging.getLogger(__name__)
 
 
+def _is_running_activity_type(activity_type: str) -> bool:
+    """Keep running-only telemetry out of activities that share generic power keys."""
+    normalized = activity_type.strip().lower()
+    return (
+        normalized in {"run", "running"}
+        or normalized.endswith("_run")
+        or normalized.endswith("_running")
+    )
+
+
 def normalize_activity(
     activity: CanonicalActivity,
     sync_run_id: str,
@@ -66,6 +76,24 @@ def normalize_activity(
         "syncRunId": sync_run_id,
         "syncedAt": datetime.now(timezone.utc).isoformat(),
     }
+    if activity.running_dynamics is not None and _is_running_activity_type(activity.type):
+        rd = activity.running_dynamics
+        rd_dict = {
+            key: value
+            for key, value in {
+                "groundContactTimeMs": rd.ground_contact_time_ms,
+                "groundContactBalanceLeftPct": rd.ground_contact_balance_left_pct,
+                "verticalOscillationCm": rd.vertical_oscillation_cm,
+                "verticalRatioPct": rd.vertical_ratio_pct,
+                "strideLengthM": rd.stride_length_m,
+                "avgRunningPowerWatts": rd.avg_running_power_watts,
+                "maxRunningPowerWatts": rd.max_running_power_watts,
+            }.items()
+            if value is not None
+        }
+        if rd_dict:
+            payload["runningDynamics"] = rd_dict
+
     if detail is None:
         return payload
 
