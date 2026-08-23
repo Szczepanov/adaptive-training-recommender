@@ -1,4 +1,4 @@
-import type { DailyRecommendation, NormalizedGarminActivity, ShadowVerdict } from '../../engine/models';
+import type { DailyRecommendation, NormalizedGarminActivity, RunningDynamics, ShadowVerdict } from '../../engine/models';
 import { SHADOW_VERDICTS } from '../../engine/models';
 import type { DataIssue, DataState } from '../../engine/dataState';
 import { validateRecommendation, isValidDate } from '../../engine/validation';
@@ -67,6 +67,52 @@ function parseLaps(value: unknown): NormalizedGarminActivity['laps'] | undefined
         : undefined;
 }
 
+function isRunningActivityType(activityType: string): boolean {
+    const normalized = activityType.trim().toLowerCase();
+    return normalized === 'run'
+        || normalized === 'running'
+        || normalized.endsWith('_run')
+        || normalized.endsWith('_running');
+}
+
+function parseRunningDynamics(value: unknown, activityType: string): RunningDynamics | undefined {
+    // Defensive read-side gate: Garmin's generic avgPower/maxPower keys are also present
+    // on cycling activities. A malformed or legacy record must never surface cycling
+    // power under a biomechanical running-dynamics label.
+    if (!isRunningActivityType(activityType) || !isObject(value)) return undefined;
+
+    const keys = [
+        'groundContactTimeMs',
+        'groundContactBalanceLeftPct',
+        'verticalOscillationCm',
+        'verticalRatioPct',
+        'strideLengthM',
+        'avgRunningPowerWatts',
+        'maxRunningPowerWatts',
+    ] as const;
+    const parsed: RunningDynamics = {};
+
+    for (const key of keys) {
+        const rawValue = value[key];
+        if (rawValue === undefined) continue;
+        if (rawValue === null) {
+            parsed[key] = null;
+            continue;
+        }
+        const numericValue = telemetryNumber(rawValue);
+        if (numericValue === undefined) return undefined;
+        parsed[key] = numericValue;
+    }
+
+    if (
+        typeof parsed.groundContactBalanceLeftPct === 'number'
+        && parsed.groundContactBalanceLeftPct > 100
+    ) return undefined;
+    if (typeof parsed.verticalRatioPct === 'number' && parsed.verticalRatioPct > 100) return undefined;
+
+    return Object.keys(parsed).length > 0 ? parsed : undefined;
+}
+
 function isShadowVerdict(value: unknown): value is ShadowVerdict {
     return typeof value === 'string' && (SHADOW_VERDICTS as readonly string[]).includes(value);
 }
@@ -106,6 +152,7 @@ export function parseNormalizedGarminActivity(
     const intensityFactor = telemetryNumber(raw.intensityFactor);
     const variabilityIndex = telemetryNumber(raw.variabilityIndex);
     const laps = parseLaps(raw.laps);
+    const runningDynamics = parseRunningDynamics(raw.runningDynamics, raw.type);
 
     return {
         status: 'AVAILABLE',
@@ -125,6 +172,7 @@ export function parseNormalizedGarminActivity(
             ...(intensityFactor !== undefined ? { intensityFactor } : {}),
             ...(variabilityIndex !== undefined ? { variabilityIndex } : {}),
             ...(laps !== undefined ? { laps } : {}),
+            ...(runningDynamics !== undefined ? { runningDynamics } : {}),
             ...(typeof raw.syncRunId === 'string' ? { syncRunId: raw.syncRunId } : {}),
             ...(typeof raw.syncedAt === 'string' ? { syncedAt: raw.syncedAt } : {}),
         },
