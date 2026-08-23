@@ -8,6 +8,7 @@ import { EXERCISES } from '../workouts/exercises';
 import type { BodyRegion, DailySubjectiveCheckin, RegionTissueResponse, TissueResponseLevel } from '../engine/models';
 import type { HealthContextCheckin } from '../engine/healthAnomalyModels';
 import { BODY_REGIONS, TISSUE_LEVELS } from '../engine/models';
+import { isCompletedSubjectiveCheckin } from '../engine/checkinCompletion';
 import { getLocalDateString, addDaysToLocalDateString } from '../utils/localDate';
 import { getErrorMessage } from '../utils/errors';
 import type { Screen } from '../types/navigation';
@@ -19,7 +20,7 @@ interface DailyCheckinProps {
   userId: string;
   onNavigate: (screen: Screen) => void;
   onBack?: () => void;
-  onCheckinSaved?: () => void;
+  onCheckinSaved?: () => void | Promise<void>;
 }
 
 const REGION_LABELS: Record<BodyRegion, string> = {
@@ -412,7 +413,7 @@ export function DailyCheckin({ userId, onNavigate, onBack, onCheckinSaved }: Dai
 
       const result = await checkinService.upsertTodayCheckin(userId, checkinToSave);
       setCheckin(result);
-      if (onCheckinSaved) onCheckinSaved();
+      if (onCheckinSaved) await onCheckinSaved();
       onNavigate('home');
     } catch (err: unknown) {
       console.error('Unexpected error saving check-in:', err);
@@ -466,7 +467,7 @@ export function DailyCheckin({ userId, onNavigate, onBack, onCheckinSaved }: Dai
   const tissueResponses = Object.values(checkin.tissueResponses ?? {}).filter(
     (response): response is RegionTissueResponse => response !== undefined,
   );
-  const isAlreadySubmitted = Boolean(checkin.submittedAt || checkin.initialSubmittedAt);
+  const isAlreadySubmitted = isCompletedSubjectiveCheckin(checkin);
 
   return (
     <div className="checkin-container">
