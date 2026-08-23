@@ -19,6 +19,7 @@ interface DailyCheckinProps {
   userId: string;
   onNavigate: (screen: Screen) => void;
   onBack?: () => void;
+  onCheckinSaved?: () => void;
 }
 
 const REGION_LABELS: Record<BodyRegion, string> = {
@@ -107,7 +108,7 @@ const SCALES: ScaleConfig[] = [
   },
 ];
 
-export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) {
+export function DailyCheckin({ userId, onNavigate, onBack, onCheckinSaved }: DailyCheckinProps) {
   const [checkin, setCheckin] = useState<Partial<DailySubjectiveCheckin> | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -411,6 +412,7 @@ export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) 
 
       const result = await checkinService.upsertTodayCheckin(userId, checkinToSave);
       setCheckin(result);
+      if (onCheckinSaved) onCheckinSaved();
       onNavigate('home');
     } catch (err: unknown) {
       console.error('Unexpected error saving check-in:', err);
@@ -464,13 +466,19 @@ export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) 
   const tissueResponses = Object.values(checkin.tissueResponses ?? {}).filter(
     (response): response is RegionTissueResponse => response !== undefined,
   );
+  const isAlreadySubmitted = Boolean(checkin.submittedAt || checkin.initialSubmittedAt);
 
   return (
     <div className="checkin-container">
       <div className="checkin-header-bar">
         {onBack && (
-          <button type="button" className="back-btn" onClick={onBack} aria-label="Back">
-            ← Back
+          <button
+            type="button"
+            className="back-btn"
+            onClick={onBack}
+            aria-label={isAlreadySubmitted ? 'Back to Dashboard' : 'Skip to Dashboard'}
+          >
+            {isAlreadySubmitted ? '← Back to Dashboard' : '← Skip to Dashboard'}
           </button>
         )}
         <div className="checkin-title-group">
@@ -478,6 +486,25 @@ export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) 
           <span className="checkin-date-badge">Today · {checkin.date || getLocalDateString()}</span>
         </div>
       </div>
+
+      {isAlreadySubmitted && (
+        <aside className="checkin-completed-banner" role="status">
+          <div className="checkin-completed-content">
+            <span className="checkin-completed-icon">✓</span>
+            <div className="checkin-completed-text">
+              <strong>Today&apos;s check-in was submitted</strong>
+              <p>You can update your entries below anytime, or go straight to today&apos;s plan.</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            className="btn-view-plan-direct"
+            onClick={onBack ?? (() => onNavigate('home'))}
+          >
+            View Today&apos;s Plan →
+          </button>
+        </aside>
+      )}
 
       {pendingFollowups.length > 0 && (
         <aside className="followup-tissue-prompt" aria-label="Yesterday reaction prompt">
@@ -869,7 +896,11 @@ export function DailyCheckin({ userId, onNavigate, onBack }: DailyCheckinProps) 
             className="btn-primary checkin-submit-btn"
             disabled={saving}
           >
-            {saving ? 'Saving check-in…' : "Save & see today's plan"}
+            {saving
+              ? 'Saving check-in…'
+              : isAlreadySubmitted
+              ? "Update & see today's plan"
+              : "Save & see today's plan"}
           </button>
         </div>
       </form>
