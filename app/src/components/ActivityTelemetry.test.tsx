@@ -72,6 +72,36 @@ describe('ActivityTelemetry', () => {
     expect(html).toContain('No zone, lap, or running-dynamics telemetry is available');
   });
 
+  it('renders primary benefit, training effect, EPOC, and recovery hours', () => {
+    const html = renderToStaticMarkup(<ActivityTelemetry state={{
+      status: 'AVAILABLE', revision: null, data: [{
+        ...base,
+        primaryBenefit: 'TEMPO',
+        trainingEffectAerobic: 3.8,
+        trainingEffectAnaerobic: 1.1,
+        epoc: 135,
+        recoveryTimeHours: 24,
+      }],
+    }} />);
+    expect(html).toContain('TEMPO');
+    expect(html).toContain('Aerobic TE 3.8');
+    expect(html).toContain('Anaerobic TE 1.1');
+    expect(html).toContain('EPOC 135');
+    expect(html).toContain('Rec 24h');
+  });
+
+  it('falls back to Garmin trainingEffectLabel and humanizes it', () => {
+    const html = renderToStaticMarkup(<ActivityTelemetry state={{
+      status: 'AVAILABLE', revision: null, data: [{
+        ...base,
+        primaryBenefit: null,
+        trainingEffectLabel: 'AEROBIC_BASE',
+      }],
+    }} />);
+
+    expect(html).toContain('AEROBIC BASE');
+  });
+
   it('renders strength exercise sets and repetitions table', () => {
     const html = renderToStaticMarkup(<ActivityTelemetry state={{
       status: 'AVAILABLE', revision: null, data: [{

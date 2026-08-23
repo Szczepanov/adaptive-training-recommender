@@ -877,6 +877,43 @@ def test_canonicalize_performance_targets_with_body_composition():
     assert targets.ftp_measured_at == "2026-08-20"
 
 
+def test_canonicalize_activities_extracts_training_effect_and_recovery():
+    raw = [
+        {
+            "activityId": 1005,
+            "startTimeLocal": "2026-08-23T08:00:00",
+            "activityType": {"typeKey": "running"},
+            "duration": 3600,
+            "aerobicTrainingEffect": 3.5,
+            "anaerobicTrainingEffect": 1.2,
+            "averageHR": 155,
+            "primaryBenefit": "TEMPO",
+            "aerobicTrainingEffectMessageKey": "IMPACTING_TEMPO",
+            "epoc": 125.4,
+            "recoveryTime": 1440,  # 1440 min -> 24 hours
+        }
+    ]
+    act = canonicalize_activities(raw)[0]
+    assert act.primary_benefit == "TEMPO"
+    assert act.training_effect_label == "IMPACTING_TEMPO"
+    assert act.epoc == 125.4
+    assert act.recovery_time_hours == 24
+
+
+def test_canonicalize_from_raw_extracts_daily_recovery_time():
+    stats = {"recoveryTime": 18, "restingHeartRate": 52}
+    canonical = canonicalize_from_raw(
+        stats_today=stats,
+        stats_fallback=None,
+        sleep_today=None,
+        sleep_fallback=None,
+        hrv_today=None,
+        target_date_iso="2026-08-23",
+        yesterday_iso="2026-08-22",
+    )
+    assert canonical.recovery_time_hours == 18
+
+
 def test_extract_exercise_sets():
     from garmin_sync.garmin_provider import extract_exercise_sets
 

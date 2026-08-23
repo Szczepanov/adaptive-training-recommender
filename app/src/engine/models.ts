@@ -898,6 +898,7 @@ export interface DailyRecoverySnapshot {
         } | null;
         weightKg?: number | null;
         bodyFatPct?: number | null;
+        recoveryTimeHours?: number | null;
     };
     derived: {
         baselineComputationVersion: number;
@@ -1459,6 +1460,10 @@ export interface NormalizedGarminActivity {
     averageHr: number | null;
     activityTrainingLoad: number | null;
     intensityTag: string;
+    primaryBenefit?: string | null;
+    epoc?: number | null;
+    recoveryTimeHours?: number | null;
+    trainingEffectLabel?: string | null;
     powerInZones?: ActivityZoneBucket[];
     hrInZones?: ActivityZoneBucket[];
     normalizedPower?: number;

@@ -24,6 +24,10 @@ function formatRunningPower(dynamics: RunningDynamics): string | null {
   return parts.length > 0 ? parts.join(' · ') : null;
 }
 
+function formatTrainingEffectDescriptor(value: string): string {
+  return value.replaceAll('_', ' ');
+}
+
 function ZoneBars({ title, unit, zones }: { title: string; unit: string; zones: ActivityZoneBucket[] }) {
   const total = zones.reduce((sum, zone) => sum + zone.secondsInZone, 0);
   return (
@@ -67,12 +71,34 @@ export function ActivityTelemetry({ state }: ActivityTelemetryProps) {
           || (activity.exerciseSets?.length ?? 0) > 0
           || activity.normalizedPower !== undefined
           || runningDynamics !== undefined;
+        const trainingEffectDescriptor = activity.primaryBenefit ?? activity.trainingEffectLabel;
+        const trainingResponseMetrics = [
+          activity.trainingEffectAerobic != null
+            ? `Aerobic TE ${activity.trainingEffectAerobic.toFixed(1)}`
+            : null,
+          activity.trainingEffectAnaerobic != null
+            ? `Anaerobic TE ${activity.trainingEffectAnaerobic.toFixed(1)}`
+            : null,
+          activity.epoc != null ? `EPOC ${Math.round(activity.epoc)}` : null,
+          activity.recoveryTimeHours != null ? `Rec ${activity.recoveryTimeHours}h` : null,
+        ].filter((metric): metric is string => metric !== null);
+
         return (
           <article className="activity-telemetry-card" key={activity.activityId}>
             <header>
               <div>
                 <h4>{activity.type.replaceAll('_', ' ')}</h4>
-                <p>{activity.date} · {activity.durationMin ?? '—'} min · {activity.intensityTag}</p>
+                <p>
+                  {activity.date} · {activity.durationMin ?? '—'} min · {activity.intensityTag}
+                  {trainingEffectDescriptor
+                    ? ` · ${formatTrainingEffectDescriptor(trainingEffectDescriptor)}`
+                    : ''}
+                </p>
+                {trainingResponseMetrics.length > 0 && (
+                  <p className="activity-te-metrics" style={{ fontSize: '0.8rem', color: 'var(--text-muted, #71717a)', marginTop: '0.2rem' }}>
+                    {trainingResponseMetrics.join(' · ')}
+                  </p>
+                )}
               </div>
               {activity.normalizedPower !== undefined && (
                 <div className="activity-power-summary" aria-label="Power summary">
