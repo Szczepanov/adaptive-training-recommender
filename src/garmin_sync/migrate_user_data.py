@@ -83,7 +83,9 @@ class UserDataMigrator:
         try:
             return str(firebase_auth.get_user_by_email(email).uid)
         except Exception as exc:
-            raise MigrationError("The legacy Firebase account could not be resolved by email.") from exc
+            raise MigrationError(
+                "The legacy Firebase account could not be resolved by email."
+            ) from exc
 
     def resolve_target_uid(self, source_uid: str, explicit_target_uid: str | None) -> str:
         if explicit_target_uid:
@@ -194,7 +196,9 @@ class UserDataMigrator:
                 existing_targets += nested_existing
         return documents_seen, existing_targets
 
-    def migrate(self, source_uid: str, target_uid: str, *, apply: bool) -> MigrationPlan | MigrationSummary:
+    def migrate(
+        self, source_uid: str, target_uid: str, *, apply: bool
+    ) -> MigrationPlan | MigrationSummary:
         users = self.db.collection("users")
         source_user = users.document(source_uid)
         target_user = users.document(target_uid)
