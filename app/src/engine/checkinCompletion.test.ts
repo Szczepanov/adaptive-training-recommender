@@ -5,15 +5,15 @@ import {
 } from './checkinCompletion';
 
 describe('check-in completion semantics', () => {
-  it('does not treat a timestamped draft as completed', () => {
+  it('does not treat an incomplete draft as completed', () => {
     expect(isCompletedSubjectiveCheckin({
-      dataQuality: { isComplete: false, missingFields: ['readiness'] },
+      dataQuality: { isComplete: false },
     })).toBe(false);
   });
 
   it('treats validated complete check-ins as completed without relying on submission timestamps', () => {
     expect(isCompletedSubjectiveCheckin({
-      dataQuality: { isComplete: true, missingFields: [] },
+      dataQuality: { isComplete: true },
     })).toBe(true);
   });
 
