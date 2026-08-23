@@ -56,4 +56,16 @@ describe('ActivityTelemetry', () => {
     expect(html).toContain('EPOC 135');
     expect(html).toContain('Rec 24h');
   });
+
+  it('falls back to Garmin trainingEffectLabel and humanizes it', () => {
+    const html = renderToStaticMarkup(<ActivityTelemetry state={{
+      status: 'AVAILABLE', revision: null, data: [{
+        ...base,
+        primaryBenefit: null,
+        trainingEffectLabel: 'AEROBIC_BASE',
+      }],
+    }} />);
+
+    expect(html).toContain('AEROBIC BASE');
+  });
 });
