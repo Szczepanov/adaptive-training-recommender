@@ -24,7 +24,11 @@ function parse(absolutePath: string): ts.SourceFile {
         fileName,
         readFileSync(absolutePath, 'utf8'),
         ts.ScriptTarget.Latest,
-        true,
+        // setParentNodes=false: this file's traversal never reads node.parent, so skip the
+        // extra pass the parser would otherwise spend wiring parent pointers up -- this
+        // parses the whole app source tree synchronously, twice (once per describe block
+        // below), on every run.
+        false,
         fileName.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
     );
 }
