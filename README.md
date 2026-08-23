@@ -260,17 +260,15 @@ docker build -t gcr.io/YOUR_GCP_PROJECT/garmin-sync:latest .
 docker push gcr.io/YOUR_GCP_PROJECT/garmin-sync:latest
 ```
 
-### 2. Cloud Run Job Configuration
+### 2. Cloud Run Configuration
 
-Create a Cloud Run Job executing `python -m garmin_sync sync`:
+Create a Cloud Run Job executing `python -m garmin_sync sync-all` (and refer to `docs/ops/cloud-run-deployment.md` for deploying the multi-user linking API and the other scheduled jobs):
 * Tasks: 1
 * Service Account: Minimum Firestore Write + GCS Token/Archive Object Read/Write permissions
 * Environment variables:
-  * `APP_USER_ID`: `<YOUR_FIREBASE_UID>`
   * `APP_TIMEZONE`: `Europe/Warsaw`
   * `GARMIN_TOKEN_STORE`: `gcs`
   * `GARMIN_TOKEN_BUCKET`: `<YOUR_PRIVATE_TOKEN_BUCKET>`
-  * `GARMIN_TOKEN_OBJECT`: `garmin/garmin_tokens.json`
   * `GARMIN_ALLOW_CREDENTIAL_LOGIN`: `false` (token-only; Cloud Run can't complete interactive MFA)
   * Optional: `GARMIN_ARCHIVE_ENABLED`: `true`, `GARMIN_ARCHIVE_STORE`: `gcs` (reuses `GARMIN_TOKEN_BUCKET` unless `GARMIN_ARCHIVE_BUCKET` is set)
 * Secret Manager injections for `GARMIN_EMAIL` and `GARMIN_PASSWORD` (used only for the local/interactive bootstrap flow, not required by the Cloud Run job itself when token-only).
