@@ -750,6 +750,18 @@
   color: var(--text-secondary);
 }
 
+.error-state-hint {
+  margin-top: 0.5rem;
+  font-size: 0.875rem;
+}
+
+.error-state-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.75rem;
+}
+
 .error-state button {
   margin-top: 1rem;
   padding: 0.5rem 1rem;
