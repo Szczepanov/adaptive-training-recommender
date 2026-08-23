@@ -417,6 +417,7 @@ class GarminSyncService:
         target_date_str: str | None = None,
         force: bool = False,
         resync_lookback_days: int | None = None,
+        auto_backfill_cold_start: bool = False,
     ) -> bool:
         """Run daily sync for target date (default local_today in Europe/Warsaw).
 
@@ -441,6 +442,27 @@ class GarminSyncService:
             else local_today(self.settings.app_timezone)
         )
         target_iso = get_date_string(target_date)
+
+        # Check for cold start (insufficient history for rolling 7d/28d baselines).
+        # If fewer than 14 historical snapshots exist in the trailing 56 days,
+        # automatically run a 56-day historical backfill to populate baseline math
+        # and chronic training load before proceeding.
+        if auto_backfill_cold_start:
+            window_start_iso = get_date_string(n_days_ago(target_date, 56))
+            window_end_iso = get_date_string(n_days_ago(target_date, 1))
+            get_hist = getattr(self.repository, "get_historical_snapshots", None)
+            if callable(get_hist):
+                history = get_hist(window_start_iso, window_end_iso)
+                if len(history) < 14:
+                    logger.info(
+                        f"Cold start detected for user=<UID-redacted>: found only {len(history)} "
+                        f"historical snapshots in last 56d (< 14). Automatically running 56-day backfill..."
+                    )
+                    backfill_ok = self.backfill(days=56, force=force)
+                    if not backfill_ok:
+                        logger.warning("Automated cold-start backfill finished with errors.")
+                    self._sync_current_performance_targets(target_iso)
+                    return backfill_ok
 
         # Staleness check gates the whole operation (target date + lookback resync) --
         # a retriggered run within the staleness window is a no-op, not a chance to
@@ -989,6 +1011,7 @@ class GarminSyncService:
             .document("latest")
         )
         claim_id = uuid.uuid4().hex
+        claimed_payload: list[dict[str, Any]] = []
 
         @firestore.transactional
         def claim_pending(transaction: Any) -> bool:
@@ -998,6 +1021,7 @@ class GarminSyncService:
             data = snapshot.to_dict() or {}
             if data.get("status") != "pending":
                 return False
+            claimed_payload.append(data)
             transaction.update(
                 request_ref,
                 {
@@ -1011,19 +1035,41 @@ class GarminSyncService:
         if not claim_pending(db.transaction()):
             return True
 
-        # Plain force=True, same as any other sync_daily caller -- the D-1..D-N lookback
-        # resync isn't optional background-poll overhead here, it's the same
-        # data-reconciliation contract sync_daily always makes (Garmin keeps revising a
-        # day's data after that day's own sync ran; see sync_daily's docstring). A
-        # manual refresh should leave Garmin-derived state as current as possible,
-        # including that reconciliation, not just today's numbers.
-        logger.info("Claimed manual sync request; running an immediate forced sync...")
-        try:
-            ok = self.sync_daily(force=True)
-        except Exception as e:
-            logger.error(f"Manual sync request failed: {e}")
-            self._finish_manual_sync_request(request_ref, claim_id, "failed", error=str(e)[:2000])
-            return False
+        req_data = claimed_payload[0] if claimed_payload else {}
+        req_type = req_data.get("requestType")
+        days = req_data.get("days") or 56
+
+        if req_type in ("initial_backfill", "backfill"):
+            logger.info(
+                f"Claimed manual sync request (type={req_type}, days={days}); running backfill..."
+            )
+            try:
+                ok = self.backfill(days=int(days), force=False)
+                if ok:
+                    target_iso = get_date_string(local_today(self.settings.app_timezone))
+                    self._sync_current_performance_targets(target_iso)
+            except Exception as e:
+                logger.error(f"Manual backfill request failed: {e}")
+                self._finish_manual_sync_request(
+                    request_ref, claim_id, "failed", error=str(e)[:2000]
+                )
+                return False
+        else:
+            # Plain force=True, same as any other sync_daily caller -- the D-1..D-N lookback
+            # resync isn't optional background-poll overhead here, it's the same
+            # data-reconciliation contract sync_daily always makes (Garmin keeps revising a
+            # day's data after that day's own sync ran; see sync_daily's docstring). A
+            # manual refresh should leave Garmin-derived state as current as possible,
+            # including that reconciliation, not just today's numbers.
+            logger.info("Claimed manual sync request; running an immediate forced sync...")
+            try:
+                ok = self.sync_daily(force=True)
+            except Exception as e:
+                logger.error(f"Manual sync request failed: {e}")
+                self._finish_manual_sync_request(
+                    request_ref, claim_id, "failed", error=str(e)[:2000]
+                )
+                return False
 
         # A failure recording the outcome is a separate failure domain from the sync
         # itself -- it must never get relabeled as 'failed' here (that would report a

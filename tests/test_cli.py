@@ -59,6 +59,7 @@ def test_run_daily_sync_success(mock_settings: Any, mock_service: Any) -> None:
         target_date_str="2023-10-27",
         force=True,
         resync_lookback_days=2,
+        auto_backfill_cold_start=True,
     )
 
 
@@ -99,6 +100,7 @@ def test_run_daily_sync_failure(mock_settings: Any, mock_service: Any) -> None:
         target_date_str=None,
         force=False,
         resync_lookback_days=None,
+        auto_backfill_cold_start=True,
     )
 
 

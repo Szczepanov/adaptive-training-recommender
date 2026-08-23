@@ -607,6 +607,61 @@ def test_poll_manual_sync_requests_second_concurrent_worker_never_reaches_sync_d
     assert doc.data["status"] == "completed"
 
 
+def test_poll_manual_sync_requests_initial_backfill(monkeypatch):
+    monkeypatch.setattr("garmin_sync.service.firestore.transactional", lambda fn: fn)
+    settings = Settings(app_user_id="test_uid_789")
+    doc = _FakeSyncRequestDoc({"status": "pending", "requestType": "initial_backfill", "days": 56})
+    service = GarminSyncService(settings=settings, repository=MagicMock(db=_FakeSyncRequestDb(doc)))
+    service.backfill = MagicMock(return_value=True)
+    service._sync_current_performance_targets = MagicMock()
+
+    result = service.poll_manual_sync_requests()
+
+    assert result is True
+    service.backfill.assert_called_once_with(days=56, force=False)
+    service._sync_current_performance_targets.assert_called_once()
+    assert doc.data["status"] == "completed"
+    assert doc.data["error"] is None
+
+
+def test_sync_daily_cold_start_auto_backfill():
+    settings = Settings(app_user_id="test_uid_789")
+    mock_repo = MagicMock()
+    mock_repo.get_historical_snapshots.return_value = {
+        "2026-08-20": {"date": "2026-08-20"},
+        "2026-08-21": {"date": "2026-08-21"},
+    }  # only 2 days < 14
+    service = GarminSyncService(settings=settings, repository=mock_repo)
+    service.backfill = MagicMock(return_value=True)
+    service._sync_current_performance_targets = MagicMock()
+
+    result = service.sync_daily(target_date_str="2026-08-22", auto_backfill_cold_start=True)
+
+    assert result is True
+    service.backfill.assert_called_once_with(days=56, force=False)
+    service._sync_current_performance_targets.assert_called_once_with("2026-08-22")
+
+
+def test_sync_daily_warm_history_skips_cold_start_backfill():
+    settings = Settings(app_user_id="test_uid_789")
+    mock_repo = MagicMock()
+    # 20 historical days >= 14
+    mock_repo.get_historical_snapshots.return_value = {
+        f"2026-07-{i:02d}": {"date": f"2026-07-{i:02d}"} for i in range(1, 21)
+    }
+    mock_repo.is_fresh.return_value = False
+    service = GarminSyncService(settings=settings, repository=mock_repo)
+    service.backfill = MagicMock()
+    service._fetch_and_store_date = MagicMock(return_value=True)
+    service._sync_current_performance_targets = MagicMock()
+
+    result = service.sync_daily(target_date_str="2026-08-22", auto_backfill_cold_start=True)
+
+    assert result is True
+    service.backfill.assert_not_called()
+    assert service._fetch_and_store_date.call_count >= 1
+
+
 def test_poll_manual_sync_requests_finish_does_not_stomp_a_superseding_request(monkeypatch):
     """If the request doc gets reclaimed (a fresh Sync Now click) while this run is
     still in flight, finishing must not overwrite it -- the claimId check in

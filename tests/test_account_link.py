@@ -437,9 +437,19 @@ class _Snapshot:
 class _Document:
     def __init__(self, data: dict[str, Any] | None = None) -> None:
         self.data = data
+        self._collections: dict[str, _Collection] = {}
 
     def get(self, transaction: Any = None) -> _Snapshot:
         return _Snapshot(self.data)
+
+    def set(self, payload: dict[str, Any], merge: bool = True) -> None:
+        if merge:
+            self.data = {**(self.data or {}), **payload}
+        else:
+            self.data = dict(payload)
+
+    def collection(self, name: str) -> _Collection:
+        return self._collections.setdefault(name, _Collection())
 
 
 class _Collection:
@@ -498,3 +508,58 @@ def test_commit_link_returns_exactly_the_tokenObject_it_overwrote(monkeypatch: A
     connection = db.collection("garminConnections").document("uid-1").data
     assert connection is not None
     assert connection["tokenObject"] == "garmin/users/uid-1/garmin_tokens-ccc.json"
+
+
+def test_finalize_queues_initial_backfill_request(
+    monkeypatch: Any,
+    tmp_path: Path,
+) -> None:
+    class TokenStore:
+        def __init__(self, _bucket: str, _object_name: str) -> None:
+            pass
+
+        def persist(self, _source: Path) -> bool:
+            return True
+
+    class FinalizableGarmin:
+        password = None
+
+        def connectapi(self, _path: str) -> dict[str, str]:
+            return {"garminGUID": "stable-guid"}
+
+    monkeypatch.setattr(account_link_module, "GcsTokenStore", TokenStore)
+    monkeypatch.setattr(
+        account_link_module.firebase_auth,
+        "create_custom_token",
+        lambda _uid: b"token",
+    )
+    monkeypatch.setattr(account_link_module.google_firestore, "transactional", lambda fn: fn)
+
+    db = _Db()
+    repository = account_link_module.GarminConnectionRepository(db=db)
+    service = GarminAccountLinkService("bucket", repository=repository)
+
+    token_path = tmp_path / "tokens.json"
+    token_path.write_text("{}", encoding="utf-8")
+    temp_dir = tmp_path / "temporary"
+    temp_dir.mkdir()
+
+    result = service._finalize(
+        FinalizableGarmin(),  # type: ignore[arg-type]
+        token_path,
+        temp_dir,
+        "new-user-123",
+    )
+
+    assert result["status"] == "authenticated"
+    sync_req = (
+        db.collection("users")
+        .document("new-user-123")
+        .collection("garmin_sync_requests")
+        .document("latest")
+        .data
+    )
+    assert sync_req is not None
+    assert sync_req["status"] == "pending"
+    assert sync_req["requestType"] == "initial_backfill"
+    assert sync_req["days"] == 56

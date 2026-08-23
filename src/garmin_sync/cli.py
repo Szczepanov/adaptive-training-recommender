@@ -126,6 +126,7 @@ def run_daily_sync(args: list[str] | None = None) -> int:
                 target_date_str=parsed_args.date,
                 force=parsed_args.force,
                 resync_lookback_days=parsed_args.resync_days,
+                auto_backfill_cold_start=True,
             ),
         )
         return 0 if success else 1
@@ -146,6 +147,7 @@ def run_daily_sync_all(args: list[str] | None = None) -> int:
             target_date_str=parsed_args.date,
             force=parsed_args.force,
             resync_lookback_days=parsed_args.resync_days,
+            auto_backfill_cold_start=True,
         ),
     )
 

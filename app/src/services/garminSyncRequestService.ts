@@ -8,6 +8,8 @@ export interface GarminSyncRequest {
      * transitions written by poll_manual_sync_requests's atomic claim -- the browser
      * (and Firestore rules) may only ever write 'pending'. */
     status: 'pending' | 'processing' | 'completed' | 'failed';
+    requestType?: 'sync' | 'initial_backfill' | 'backfill';
+    days?: number;
     requestedAt: string;
     claimId?: string;
     claimedAt?: string | null;
@@ -53,6 +55,29 @@ export class GarminSyncRequestService {
             const data: GarminSyncRequest = {
                 userId,
                 status: 'pending',
+                requestType: 'sync',
+                requestedAt: new Date(now).toISOString(),
+                completedAt: null,
+                error: null,
+            };
+            transaction.set(ref, data);
+        });
+    }
+
+    async requestBackfill(userId: string, days = 56): Promise<void> {
+        const ref = this.requestRef(userId);
+        const now = Date.now();
+        await runTransaction(getDb(), async (transaction) => {
+            const snap = await transaction.get(ref);
+            const existing = snap.exists() ? (snap.data() as GarminSyncRequest) : null;
+            if (existing && isSyncRequestInFlight(existing) && !isSyncRequestStale(existing, now)) {
+                return;
+            }
+            const data: GarminSyncRequest = {
+                userId,
+                status: 'pending',
+                requestType: 'backfill',
+                days,
                 requestedAt: new Date(now).toISOString(),
                 completedAt: null,
                 error: null,

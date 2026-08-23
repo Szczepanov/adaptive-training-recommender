@@ -6,6 +6,7 @@ import tempfile
 import threading
 import time
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
@@ -407,6 +408,39 @@ class GarminAccountLinkService:
                 # to remove. Scheduled sync restores whatever tokenObject Firestore has,
                 # so it never reads a path we're about to delete.
                 self._delete_token_object(previous_token_object)
+
+            # Queue an initial 56-day backfill request in Firestore so the background
+            # poller (garmin-manual-sync Cloud Run Job) immediately backfills historical
+            # recovery and activity data to establish baselines without blocking login.
+            db = getattr(self.repository, "db", None)
+            if db is not None:
+                try:
+                    now_iso = datetime.now(timezone.utc).isoformat()
+                    sync_req_ref = (
+                        db.collection("users")
+                        .document(target_uid)
+                        .collection("garmin_sync_requests")
+                        .document("latest")
+                    )
+                    sync_req_ref.set(
+                        {
+                            "userId": target_uid,
+                            "status": "pending",
+                            "requestType": "initial_backfill",
+                            "days": 56,
+                            "requestedAt": now_iso,
+                            "completedAt": None,
+                            "error": None,
+                        },
+                        merge=True,
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "Failed to queue initial backfill request for user %s: %s",
+                        target_uid,
+                        exc,
+                    )
+
             custom_token = firebase_auth.create_custom_token(target_uid)
             custom_token_text = (
                 custom_token.decode("utf-8")
