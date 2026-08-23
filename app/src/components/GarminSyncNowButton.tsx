@@ -5,9 +5,24 @@ import './GarminSyncNowButton.css';
 
 export interface GarminSyncNowButtonProps {
     userId: string;
-    /** Called once a request this button made finishes (successfully or not), so the
-     * caller can reload whatever data the sync may have just refreshed. */
+    /** Called once a request this button made or joined finishes (successfully or not),
+     * so the caller can reload whatever data the sync may have just refreshed. */
     onSynced?: () => void;
+}
+
+/** Only a terminal snapshot for the exact request returned by requestSync() resolves
+ * this button's awaiting state. A stale terminal snapshot from the shared fixed-id
+ * document must not be mistaken for completion of the request being queued now. */
+export function isAwaitedManualSyncTerminal(
+    request: GarminSyncRequest | null,
+    awaitingRequestedAt: string | null
+): boolean {
+    return (
+        !!awaitingRequestedAt &&
+        !!request &&
+        request.requestedAt === awaitingRequestedAt &&
+        !isSyncRequestInFlight(request)
+    );
 }
 
 /**
@@ -21,7 +36,16 @@ export function GarminSyncNowButton({ userId, onSynced }: GarminSyncNowButtonPro
     const [triggering, setTriggering] = useState(false);
     const [localError, setLocalError] = useState<string | null>(null);
     const [now, setNow] = useState(() => Date.now());
-    const awaitingOwnRequest = useRef(false);
+    const awaitingRequestedAtRef = useRef<string | null>(null);
+    const onSyncedRef = useRef(onSynced);
+
+    useEffect(() => {
+        onSyncedRef.current = onSynced;
+    }, [onSynced]);
+
+    useEffect(() => {
+        awaitingRequestedAtRef.current = null;
+    }, [userId]);
 
     useEffect(() => {
         if (!userId) return;
@@ -29,15 +53,14 @@ export function GarminSyncNowButton({ userId, onSynced }: GarminSyncNowButtonPro
             userId,
             (next) => {
                 setRequest(next);
-                if (awaitingOwnRequest.current && next && !isSyncRequestInFlight(next)) {
-                    awaitingOwnRequest.current = false;
-                    onSynced?.();
+                if (isAwaitedManualSyncTerminal(next, awaitingRequestedAtRef.current)) {
+                    awaitingRequestedAtRef.current = null;
+                    onSyncedRef.current?.();
                 }
             },
             (err) => console.error('[GarminSyncNowButton] Subscription error:', err)
         );
         return unsubscribe;
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [userId]);
 
     const isInFlight = isSyncRequestInFlight(request);
@@ -57,13 +80,32 @@ export function GarminSyncNowButton({ userId, onSynced }: GarminSyncNowButtonPro
     const handleClick = useCallback(async () => {
         setTriggering(true);
         setLocalError(null);
-        awaitingOwnRequest.current = true;
         try {
-            await garminSyncRequestService.requestSync(userId);
+            const requestedAt = await garminSyncRequestService.requestSync(userId);
+            awaitingRequestedAtRef.current = requestedAt;
+
+            // A request we join can finish between requestSync() resolving and the
+            // awaiting timestamp being installed above. The realtime listener may have
+            // already emitted that terminal snapshot while nothing was awaited, so do
+            // one reconciliation read after installing the correlation key.
+            try {
+                const current = await garminSyncRequestService.getRequest(userId);
+                if (
+                    awaitingRequestedAtRef.current === requestedAt &&
+                    isAwaitedManualSyncTerminal(current, requestedAt)
+                ) {
+                    awaitingRequestedAtRef.current = null;
+                    onSyncedRef.current?.();
+                }
+            } catch (err) {
+                // The realtime subscription remains the primary completion path; a
+                // transient read failure is not a failed sync request.
+                console.warn('[GarminSyncNowButton] Failed to reconcile sync state:', err);
+            }
         } catch (err) {
             console.error('Failed to request Garmin sync:', err);
             setLocalError('Could not request sync — try again.');
-            awaitingOwnRequest.current = false;
+            awaitingRequestedAtRef.current = null;
         } finally {
             setTriggering(false);
         }
