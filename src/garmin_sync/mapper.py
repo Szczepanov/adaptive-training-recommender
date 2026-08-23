@@ -90,7 +90,11 @@ def normalize_activity(
             }
             for lap in detail.laps
         ]
-    if detail.exercise_sets:
+    # None means the endpoint was not fetched / detail enrichment failed, so omitting
+    # the key preserves any previously-synced value under Firestore merge semantics.
+    # [] means the endpoint succeeded and Garmin now reports zero work sets, so writing
+    # the empty array deliberately clears a stale older exerciseSets value.
+    if detail.exercise_sets is not None:
         payload["exerciseSets"] = [
             {
                 key: value
