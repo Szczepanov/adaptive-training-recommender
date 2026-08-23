@@ -17,12 +17,14 @@ Garmin Connect
   ├── Daily/core: stats, sleep, HRV, activities
   ├── Best-effort daily enrichments:
   │     stress, respiration, Body Battery, Training Readiness,
-  │     Training Status, HR zones, daily weigh-ins
+  │     Training Status, HR zones, daily weigh-ins, SpO2/Pulse Ox,
+  │     skin-temperature deviation
   ├── Current profile enrichments:
   │     cycling FTP, running lactate threshold, body composition,
-  │     race predictions
+  │     race predictions, gear inventory/mileage
   ├── Activity detail:
-  │     strength exercise sets OR power zones + HR zones + splits
+  │     strength exercise sets OR power zones + HR zones + splits;
+  │     running-dynamics summary fields on eligible run activities
   └── Workout mutation: upload + schedule
                     │
                     ▼
@@ -60,11 +62,10 @@ Primary Firestore paths written or coordinated by this subsystem are:
 * `users/{userId}/daily_recovery_snapshots/{YYYY-MM-DD}` — date-bound recovery snapshots.
 * `users/{userId}/activities/{activityId}` — normalized standalone activity records.
 * `users/{userId}/preferences/profile` — current athlete preferences and performance profile.
+* `users/{userId}/gear/{gearPk}` — one document per Garmin-registered gear item (shoes, bikes).
 * `users/{userId}/garmin_sync_requests/latest` — the single shared manual/automatic sync request.
 * `users/{userId}/garmin_runtime/execution_lease` — per-user Garmin-operation lease.
 * `users/{userId}/garmin_workout_queue/{date}` — outbound workout queue.
-
-There is currently **no** `users/{userId}/gear/...` collection in the Garmin ingestion path.
 
 ---
 
@@ -72,21 +73,24 @@ There is currently **no** `users/{userId}/gear/...` collection in the Garmin ing
 
 * [`src/garmin_sync/config.py`](../../src/garmin_sync/config.py) — typed `Settings`, including staleness and activity-detail configuration.
 * [`src/garmin_sync/dates.py`](../../src/garmin_sync/dates.py) — local-date helpers; production date semantics use `Europe/Warsaw` unless configured otherwise.
-* [`src/garmin_sync/garmin_client.py`](../../src/garmin_sync/garmin_client.py) — authenticated `garminconnect.Garmin` wrapper and endpoint calls.
-* [`src/garmin_sync/canonical.py`](../../src/garmin_sync/canonical.py) — provider-neutral models such as `CanonicalDailyMetrics`, `CanonicalActivity`, `CanonicalActivityDetail`, `CanonicalExerciseSet`, `CanonicalRacePredictions`, and `CanonicalPerformanceTargets`.
+* [`src/garmin_sync/garmin_client.py`](../../src/garmin_sync/garmin_client.py) — authenticated `garminconnect.Garmin` wrapper and endpoint calls, including SpO2/gear endpoints.
+* [`src/garmin_sync/canonical.py`](../../src/garmin_sync/canonical.py) — provider-neutral models such as `CanonicalDailyMetrics`, `CanonicalSpo2`, `CanonicalActivity`, `CanonicalActivityDetail`, `CanonicalRunningDynamics`, `CanonicalExerciseSet`, `CanonicalGearItem`, `CanonicalRacePredictions`, and `CanonicalPerformanceTargets`.
 * [`src/garmin_sync/provider.py`](../../src/garmin_sync/provider.py) — `WearableProvider` protocol plus provider result/capability types.
 * [`src/garmin_sync/garmin_provider.py`](../../src/garmin_sync/garmin_provider.py) — Garmin response-shape parsing and conversion into canonical models.
 * [`src/garmin_sync/token_store.py`](../../src/garmin_sync/token_store.py) — token persistence abstraction supporting local and GCS stores.
 * [`src/garmin_sync/archive.py`](../../src/garmin_sync/archive.py) — immutable raw payload archive used by offline rebuild.
 * [`src/garmin_sync/metrics.py`](../../src/garmin_sync/metrics.py) — pure baseline transformations for averages, medians/MADs, deltas, and dispersion fields.
 * [`src/garmin_sync/mapper.py`](../../src/garmin_sync/mapper.py) — provider-neutral mapping into Schema Version 3 recovery snapshots and standalone activity documents.
-* [`src/garmin_sync/firestore_repository.py`](../../src/garmin_sync/firestore_repository.py) — user-scoped Firestore persistence and Garmin performance-profile merge rules.
+* [`src/garmin_sync/firestore_repository.py`](../../src/garmin_sync/firestore_repository.py) — user-scoped Firestore persistence, Garmin performance-profile merge rules, and gear inventory upserts.
+* [`src/garmin_sync/audit.py`](../../src/garmin_sync/audit.py) — `garmin-sync audit` snapshot-completeness reporting, including SpO2/skin-temperature coverage.
 * [`src/garmin_sync/service.py`](../../src/garmin_sync/service.py) — daily sync, lookback resync, backfill, rebuild, activity enrichment, and workout orchestration.
 * [`src/garmin_sync/account_link.py`](../../src/garmin_sync/account_link.py) / [`account_link_api.py`](../../src/garmin_sync/account_link_api.py) — self-service Garmin account linking and token bootstrap.
 * [`src/garmin_sync/coordination.py`](../../src/garmin_sync/coordination.py) — Firestore-backed per-user Garmin execution lease.
 * [`src/garmin_sync/workout_export.py`](../../src/garmin_sync/workout_export.py) — canonical workout-to-Garmin JSON transformation.
 * [`app/src/hooks/useAutoGarminSync.ts`](../../app/src/hooks/useAutoGarminSync.ts) — client-side stale/missing snapshot refresh trigger.
 * [`app/src/services/garminSyncRequestService.ts`](../../app/src/services/garminSyncRequestService.ts) — transactional fixed-document sync request coordination.
+
+See [`docs/garmin-gear-tracking.md`](../garmin-gear-tracking.md) for the gear-inventory feature in detail.
 
 ---
 
@@ -105,18 +109,33 @@ baseline/provenance fields. Current `raw` fields include:
 * completed previous-day (`D-1`) steps;
 * stress, Training Readiness, Training Status, configured HR-zone summary, and Garmin recovery time;
 * weight/body-fat observations when Garmin supplies a valid weigh-in;
+* Garmin Pulse Ox daily average/minimum (`spo2.avgPct`/`minPct`) and sleep-average SpO2 (`spo2.sleepAvgPct`);
+* overnight skin-temperature deviation in °C (`skinTempDeviationCelsius`);
 * `todayTraining`, `yesterdayTraining`, and recent-hard-session summaries derived from normalized activities.
 
-Sleep stages are stored as individual scalar fields, **not** under a `raw.sleepStages` object.
-The recovery UI currently renders those stage durations and restlessness as text values in
-`DataView.tsx`; it does not expose a dedicated interactive sleep-stage chart.
+Sleep stages are stored as individual scalar fields, **not** under a `raw.sleepStages` object —
+there is no separate `CanonicalSleepStages` type. The recovery UI currently renders those stage
+durations and restlessness as text values in `DataView.tsx`; it does not expose a dedicated
+interactive sleep-stage chart.
 
 The dedicated respiration endpoint is a best-effort enrichment. When enough interval samples
 cover the sleep window, `garmin_provider.average_sleep_respiration_from_intervals` computes the
 nightly average from those readings; otherwise ingestion falls back to the sleep DTO's summary.
 See ADR-0024 for why estimator changes remain evidence-gated.
 
-The current ingestion code does **not** fetch or persist SpO2 or skin-temperature deviation.
+**SpO2 and skin-temperature invariants.** The Pulse Ox summary and the sleep response are
+distinct sources and stay distinct in canonical data: `spo2.avgPct`/`minPct` come only from the
+date-scoped Pulse Ox summary, and `spo2.sleepAvgPct` comes only from the selected sleep record.
+Missing daily and sleep values are not synthesized from one another, and SpO2 percentages are
+accepted only as finite values in `(0, 100]`. If the target-date sleep record is unavailable and
+the `D-1` record is selected instead, target-date Pulse Ox is deliberately excluded rather than
+fused into a mixed-date object; `source.metricDates.spo2` and
+`source.metricDates.skinTempDeviation` record whichever logical date was actually used.
+`dataQuality.spo2Available` and `dataQuality.skinTempAvailable` record channel availability
+independently. Both endpoints are best-effort: a Garmin failure logs a warning rather than
+failing the daily sync, and `garmin-sync audit` reports snapshot-level coverage so real-world
+availability can be measured before either signal is allowed to influence recommendation policy
+(ADR-0026 §7).
 
 ### 2. Current performance profile and biometrics
 
@@ -140,14 +159,31 @@ update an active field only when that field is absent or already Garmin-owned.
 Current profile import is best-effort and runs after a successful live daily sync. Historical
 `backfill` and `rebuild` do not rewrite today's performance profile into old dates.
 
-### 3. Activity telemetry
+### 3. Gear inventory
+
+`users/{userId}/gear/{gearPk}` owns one document per Garmin-registered gear item (running shoes,
+bikes, and similar), imported via `Garmin.get_gear(userProfilePk)` and enriched with
+`Garmin.get_gear_stats(uuid)` only when the inventory response omits `totalDistance`.
+`preferences/profile.gearTracker` carries a compact list plus a `syncedAt` timestamp for the
+preferences UI. `CanonicalGearItem` stores `total_distance_km` and an optional
+`maximum_distance_km` — the athlete's own Garmin-configured retirement distance, not a generic
+universal mileage threshold (ADR-0026 §7). `PerformanceSections.tsx` renders each item's mileage
+and, when a maximum is configured, a usage-percentage bar.
+
+Gear sync is best-effort and current-profile-only, like performance-profile import: a failing
+Garmin endpoint does not fail the daily sync, and an empty canonical result is treated as a
+no-op so a transient failure cannot erase a previously synchronized snapshot. See
+[`docs/garmin-gear-tracking.md`](../garmin-gear-tracking.md) for full failure semantics, request-volume
+considerations, and Firestore security rules for this path.
+
+### 4. Activity telemetry
 
 `users/{userId}/activities/{activityId}` stores normalized cross-day activity records. Base
 activity data includes aerobic/anaerobic Training Effect, average HR, activity training load,
 intensity tag, primary-benefit/training-effect descriptors, EPOC when present, and recovery
 hours when present.
 
-Additional activity detail has two deliberately separate paths:
+Additional activity detail has separate paths:
 
 * **Strength / fitness-equipment activities** — target-date live sync fetches Garmin exercise
   sets. REST rows are folded into the preceding work set; work rows can carry set order, type,
@@ -157,27 +193,47 @@ Additional activity detail has two deliberately separate paths:
   target-date live sync can add power zones, HR zones, lap summaries, normalized power,
   intensity factor, and derived variability index. `ActivityTelemetry` renders these read-only
   details.
+* **Running-dynamics summary fields** — `extract_running_dynamics` treats running dynamics as
+  running-only activity-summary telemetry (`run`/`running` types and Garmin type keys ending in
+  `_run`/`_running`); generic cycling `avgPower`/`maxPower` values are never re-labelled as
+  running power. `mapper.py` repeats the same running-only predicate as a write-side defence
+  before emitting `runningDynamics` under the activity document:
+
+  | Persisted field | Canonical unit | Garmin activity-summary source |
+  |---|---:|---|
+  | `groundContactTimeMs` | ms | ground-contact time in ms |
+  | `groundContactBalanceLeftPct` | % left | ground-contact balance |
+  | `verticalOscillationCm` | cm | vertical oscillation converted from mm |
+  | `verticalRatioPct` | % | vertical ratio |
+  | `strideLengthM` | m | stride length converted from cm |
+  | `avgRunningPowerWatts` | W | average running power |
+  | `maxRunningPowerWatts` | W | maximum running power |
+
+  Missing, malformed, or zero-sentinel strictly-positive metrics are omitted rather than
+  invented. Ground-contact balance is accepted only from 35–65%, and vertical ratio only from
+  1–25%; `trainingHistory.ts` mirrors these running-only, range, and strictly-positive checks so
+  legacy schema-less records cannot reintroduce invalid telemetry into the UI. **No
+  gait-asymmetry alert or threshold is implemented** — ground-contact balance is surfaced as a
+  raw read-only value, not as a flagged condition.
 
 A historical `backfill` fetches detail only when explicitly run with `--include-details`.
 `rebuild` reconstructs recovery snapshots from the date-keyed raw archive and leaves existing
-standalone activity telemetry untouched.
+standalone activity telemetry untouched. Running-dynamics fields, like other activity-detail
+data, are not part of the date-keyed raw archive (see §6 below).
 
-The current canonical activity model does **not** contain ground-contact balance, vertical
-oscillation/ratio, stride length, or running-power fields, and no gait-asymmetry threshold is
-implemented by this ingestion path.
+### 5. Deliberately unsupported/deferred telemetry
 
-### 4. Deliberately unsupported/deferred telemetry
+SpO2, skin-temperature deviation, running-dynamics summary fields, and gear mileage are all
+implemented as of this revision (§1–§4). What remains explicitly unimplemented:
 
-The current Garmin ingestion boundary has no implementation for:
-
-* SpO2/Pulse Ox;
-* skin-temperature deviation;
-* running-dynamics/gait-asymmetry metrics;
-* Garmin gear/shoe/bike synchronization or retirement thresholds.
+* a gait-asymmetry alert or threshold derived from ground-contact balance;
+* an interactive sleep-stage chart (stage durations are rendered as text values only);
+* an automatic, generic shoe/bike retirement rule — only the athlete's own Garmin-configured
+  `maximumMeters` is surfaced, never a universal mileage default.
 
 Those capabilities require explicit endpoint-shape evidence, canonical fields, storage
 ownership, tests, and UI/engine semantics before architecture documentation can describe them
-as current behavior. ADR-0026 records this boundary.
+as current behavior. ADR-0026 records this boundary and the process for adding a new signal.
 
 ---
 
@@ -185,19 +241,20 @@ as current behavior. ADR-0026 records this boundary.
 
 1. **Date resolution** — resolve target date `D` using the configured local timezone.
 2. **Core daily fetch** — fetch `D` stats/sleep/HRV plus `D-1` stats; completed steps use `D-1` when available, per ADR-0003.
-3. **Best-effort daily enrichment** — stress, respiration, Body Battery, Training Readiness, Training Status, HR zones, and daily weigh-in failures are warning-only and do not replace the core fetch contract.
+3. **Best-effort daily enrichment** — stress, respiration, Body Battery, Training Readiness, Training Status, HR zones, daily weigh-in, SpO2, and skin-temperature failures are warning-only and do not replace the core fetch contract.
 4. **Activity window** — fetch activities from `D-3` through `D`, normalize them, and persist stable-ID activity records.
-5. **Target-date activity detail** — always attempt strength-set enrichment for eligible strength activities; optionally fetch cycling power/HR zones and splits when `GARMIN_ACTIVITY_DETAIL_ENABLED=true`.
-6. **Raw archive** — archive date-keyed provider payloads used by the snapshot path. Activity-detail payloads are intentionally not archived because ADR-0005's current archive key is logical-date based rather than activity-ID based.
+5. **Target-date activity detail** — always attempt strength-set enrichment for eligible strength activities and running-dynamics extraction for eligible run activities; optionally fetch cycling power/HR zones and splits when `GARMIN_ACTIVITY_DETAIL_ENABLED=true`.
+6. **Raw archive** — archive date-keyed provider payloads used by the snapshot path, including the optional `spo2` endpoint key; skin-temperature deviation is read from the already-archived `sleep` payload rather than a separate archive key. Activity-detail payloads (including running dynamics) are intentionally not archived because ADR-0005's current archive key is logical-date based rather than activity-ID based.
 7. **Baseline seed and calculation** — seed up to 28 days of Firestore prehistory and compute the current derived baseline fields.
 8. **Snapshot upsert** — merge Schema Version 3 output into `users/{userId}/daily_recovery_snapshots/{D}`.
 9. **Late-data lookback** — `sync_daily` revisits configured prior days oldest-first, then builds `D` last so corrected history can feed today's baseline.
-10. **Current-profile import** — after a successful live daily sync, best-effort Garmin performance targets/body composition/race predictions merge into `preferences/profile` under field-ownership rules.
+10. **Current-profile import** — after a successful live daily sync, best-effort Garmin performance targets/body composition/race predictions/gear inventory merge into `preferences/profile` (and `users/{userId}/gear/{gearPk}`) under field-ownership rules.
 11. **Token persistence** — refreshed authentication tokens are persisted after authenticated API work.
 
 Core daily/activities failures still fail their relevant sync path; only explicitly optional
 enrichments are failure-isolated. An exhausted activity-detail 429 abandons remaining detail
-work for that run without preventing base activity/snapshot persistence.
+work for that run without preventing base activity/snapshot persistence. Older archives without
+SpO2 remain rebuildable and simply produce missing optional SpO2 fields.
 
 ---
 
@@ -223,7 +280,7 @@ Body Battery, and completed steps). These predicates are intentionally documente
 they are not currently identical.
 
 The hook reacts to the data/user/date lifecycle. It does **not** install a browser visibility
-change listener.
+change listener to trigger sync requests.
 
 Backend `poll-manual-sync` / `poll-manual-sync-all` commands claim pending work and run Garmin
 operations. `GarminExecutionLease` serializes Garmin work per user at

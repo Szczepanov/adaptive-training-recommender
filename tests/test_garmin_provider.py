@@ -443,6 +443,53 @@ def test_canonicalize_activities_extracts_average_hr_from_average_hr_key():
     assert act.intensity_tag == "easy"
 
 
+def test_canonicalize_activities_extracts_running_dynamics():
+    raw = [
+        {
+            "activityId": 1002,
+            "startTimeLocal": "2026-08-05T07:00:00",
+            "activityType": {"typeKey": "running"},
+            "duration": 2400,
+            "aerobicTrainingEffect": 3.2,
+            "averageHR": 150,
+            "avgGroundContactTime": 240.0,
+            "avgGroundContactBalance": 49.5,
+            "avgVerticalOscillation": 84.0,  # mm -> 8.4 cm
+            "avgVerticalRatio": 7.5,
+            "avgStrideLength": 115.0,  # cm -> 1.15 m
+            "avgPower": 290,
+            "maxPower": 410,
+        }
+    ]
+    act = canonicalize_activities(raw)[0]
+    assert act.running_dynamics is not None
+    assert act.running_dynamics.ground_contact_time_ms == 240.0
+    assert act.running_dynamics.ground_contact_balance_left_pct == 49.5
+    assert act.running_dynamics.vertical_oscillation_cm == 8.4
+    assert act.running_dynamics.vertical_ratio_pct == 7.5
+    assert act.running_dynamics.stride_length_m == 1.15
+    assert act.running_dynamics.avg_running_power_watts == 290
+    assert act.running_dynamics.max_running_power_watts == 410
+
+
+def test_extract_running_dynamics_converts_units_unconditionally():
+    """Vertical oscillation (mm) and stride length (cm) must always be converted --
+    never gated on the raw value's magnitude, which misconverts legitimate small
+    readings (e.g. an efficient runner's low vertical oscillation)."""
+    from garmin_sync.garmin_provider import extract_running_dynamics
+
+    rd = extract_running_dynamics(
+        {
+            "activityType": {"typeKey": "running"},
+            "avgVerticalOscillation": 30.0,  # mm -> 3.0 cm, not left as 30.0 cm
+            "avgStrideLength": 20.0,  # cm -> 0.20 m, not left as 20.0 m
+        }
+    )
+    assert rd is not None
+    assert rd.vertical_oscillation_cm == 3.0
+    assert rd.stride_length_m == 0.20
+
+
 def test_canonicalize_activities_handles_missing_activity_id():
     """A Garmin activity payload without an activityId (e.g. an in-progress/pending
     upload) must canonicalize to activity_id=None rather than a shared placeholder
@@ -846,6 +893,53 @@ def test_canonicalize_performance_targets_with_body_composition():
     assert targets.body_fat_pct == 12.5
     assert targets.weight_measured_at == "2026-08-23"
     assert targets.ftp_measured_at == "2026-08-20"
+
+
+def test_gear_tracking_capability_is_opt_in_per_provider():
+    from garmin_sync.garmin_provider import GarminProviderAdapter
+    from garmin_sync.provider import ProviderCapabilities
+
+    assert ProviderCapabilities().gear_tracking is False
+    assert GarminProviderAdapter.capabilities.gear_tracking is True
+
+
+def test_extract_gear_items():
+    from garmin_sync.garmin_provider import extract_gear_items
+
+    raw = [
+        {
+            "gearPk": 12345,
+            "uuid": "gear-uuid-1",
+            "customMakeModel": "Nike Vaporfly 3",
+            "displayName": "Race Shoes",
+            "gearTypeName": "Shoes",
+            "gearMakeName": "Nike",
+            "gearModelName": "Vaporfly 3",
+            "totalDistance": 250400.0,  # 250.4 km
+            "maximumMeters": 600000.0,  # 600.0 km
+            "dateBegin": "2025-01-01",
+            "gearStatusName": "ACTIVE",
+        },
+        {
+            "gearPk": 67890,
+            "customMakeModel": "Specialized Tarmac",
+            "gearTypeName": "Bikes",
+            "totalDistance": 1540200.0,  # 1540.2 km
+            "gearStatusName": "ACTIVE",
+        },
+    ]
+
+    items = extract_gear_items(raw)
+    assert len(items) == 2
+    assert items[0].gear_pk == "12345"
+    assert items[0].custom_make_model == "Nike Vaporfly 3"
+    assert items[0].display_name == "Race Shoes"
+    assert items[0].gear_type == "shoes"
+    assert items[0].brand == "Nike"
+    assert items[0].total_distance_km == 250.4
+    assert items[0].maximum_distance_km == 600.0
+    assert items[0].status == "active"
+    assert items[1].total_distance_km == 1540.2
 
 
 def test_canonicalize_activities_extracts_training_effect_and_recovery():

@@ -84,6 +84,29 @@ class CanonicalPerformanceTargets:
 
 
 @dataclass
+class CanonicalSpo2:
+    avg_pct: float | None = None
+    min_pct: float | None = None
+    sleep_avg_pct: float | None = None
+
+
+@dataclass
+class CanonicalGearItem:
+    gear_pk: str
+    uuid: str | None = None
+    custom_make_model: str | None = None
+    display_name: str | None = None
+    gear_type: str | None = None
+    brand: str | None = None
+    model: str | None = None
+    total_distance_km: float = 0.0
+    maximum_distance_km: float | None = None
+    date_begin: str | None = None
+    date_end: str | None = None
+    status: str = "active"
+
+
+@dataclass
 class CanonicalDailyMetrics:
     date: str
     resting_heart_rate_bpm: float | None = None
@@ -115,7 +138,20 @@ class CanonicalDailyMetrics:
     training_readiness: CanonicalTrainingReadiness | None = None
     training_status: CanonicalTrainingStatus | None = None
     heart_rate_zones: CanonicalHeartRateZones | None = None
+    spo2: CanonicalSpo2 | None = None
+    skin_temp_deviation_celsius: float | None = None
     recovery_time_hours: int | None = None
+
+
+@dataclass
+class CanonicalRunningDynamics:
+    ground_contact_time_ms: float | None = None
+    ground_contact_balance_left_pct: float | None = None
+    vertical_oscillation_cm: float | None = None
+    vertical_ratio_pct: float | None = None
+    stride_length_m: float | None = None
+    avg_running_power_watts: int | None = None
+    max_running_power_watts: int | None = None
 
 
 @dataclass
@@ -133,6 +169,7 @@ class CanonicalActivity:
     average_hr: float | None
     training_load: float | None
     intensity_tag: str
+    running_dynamics: CanonicalRunningDynamics | None = None
     primary_benefit: str | None = None
     epoc: float | None = None
     recovery_time_hours: int | None = None

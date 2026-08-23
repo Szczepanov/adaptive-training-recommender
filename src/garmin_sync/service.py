@@ -427,6 +427,24 @@ class GarminSyncService:
                 f"[{target_iso}] Garmin performance-target import failed, continuing: {e}"
             )
 
+    def _sync_current_gear(self, target_iso: str) -> None:
+        """Best-effort current gear/shoe tracking import."""
+        try:
+            provider = self._init_provider()
+            fetch_gear = getattr(provider, "fetch_gear", None)
+            persist_gear = getattr(self.repository, "upsert_garmin_gear", None)
+            if not callable(fetch_gear) or not callable(persist_gear):
+                return
+            result = fetch_gear()
+            sync_run_id = _new_sync_run_id(f"gear-{target_iso}")
+            for endpoint, payload in result.raw_payloads.items():
+                if payload is not None:
+                    self._archive_raw(endpoint, target_iso, payload, sync_run_id)
+            persist_gear(result.canonical)
+            self.token_store.persist(self.token_file_path)
+        except Exception as e:
+            logger.warning(f"[{target_iso}] Garmin gear import failed, continuing: {e}")
+
     def sync_daily(
         self,
         target_date_str: str | None = None,
@@ -484,6 +502,7 @@ class GarminSyncService:
                     if not backfill_ok:
                         logger.warning("Automated cold-start backfill finished with errors.")
                     self._sync_current_performance_targets(target_iso)
+                    self._sync_current_gear(target_iso)
                     return backfill_ok
 
         # Staleness check gates the whole operation (target date + lookback resync) --
@@ -535,6 +554,7 @@ class GarminSyncService:
             ok = False
         else:
             self._sync_current_performance_targets(target_iso)
+            self._sync_current_gear(target_iso)
 
         return ok
 
@@ -754,7 +774,7 @@ class GarminSyncService:
             )
 
             # Metric enrichment (stress/body battery/training readiness/training status,
-            # respiration, body composition) is best-effort here, unlike the four
+            # respiration, body composition, SpO2) is best-effort here, unlike the four
             # required payloads above. Older archives can legitimately lack any of it
             # without making an otherwise complete day non-rebuildable.
             stress_today = self.archive_store.load("stress", target_iso)
@@ -764,6 +784,7 @@ class GarminSyncService:
             heart_rate_zones = self.archive_store.load("heart_rate_zones", target_iso)
             respiration_today = self.archive_store.load("respiration", target_iso)
             body_composition_today = self.archive_store.load("body_composition", target_iso)
+            spo2_today = self.archive_store.load("spo2", target_iso)
 
             try:
                 canonical = canonicalize_from_raw(
@@ -781,6 +802,7 @@ class GarminSyncService:
                     heart_rate_zones=heart_rate_zones,
                     respiration_today=respiration_today,
                     body_composition_today=body_composition_today,
+                    spo2_today=spo2_today,
                 )
                 zone4_floor = (
                     canonical.heart_rate_zones.zone4_floor if canonical.heart_rate_zones else None
@@ -1078,6 +1100,7 @@ class GarminSyncService:
                 if ok:
                     target_iso = get_date_string(local_today(self.settings.app_timezone))
                     self._sync_current_performance_targets(target_iso)
+                    self._sync_current_gear(target_iso)
             except Exception as e:
                 logger.error(f"Manual backfill request failed: {e}")
                 self._finish_manual_sync_request(

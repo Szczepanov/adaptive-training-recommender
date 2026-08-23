@@ -77,7 +77,7 @@ Architectural choices, system invariants, and technical trade-offs are documente
 * [**ADR-0023: Multidomain Session Authoring, Execution, and Evidence**](./adr/0023-multidomain-session-authoring-execution-and-evidence.md) — *Accepted.* Source-neutral session definition, occurrence authority, subcollection performed entries, D-MSNAP content-addressed snapshots, D-MCHOICE bounded option sets, and single tissue authority linkage.
 * [**ADR-0024: Metric-Specific Biometric Baseline Estimators**](./adr/0024-biometric-baseline-estimator-policy.md) — *Accepted.* Metric-specific robust location/scale estimators (median/MAD vs mean/stdev) justified by replay evidence.
 * [**ADR-0025: Physiological Anomaly and Possible-Illness Signals**](./adr/0025-physiological-anomaly-and-possible-illness-signals.md) — *Accepted.* Defines a separate health-anomaly capability, independent of training strain, using respiration/RHR/HRV to detect pre-symptomatic patterns.
-* [**ADR-0026: Wearable Telemetry Enrichment Boundaries and Ownership**](./adr/0026-wearable-telemetry-enrichment-boundaries.md) — *Accepted.* Separates date-bound recovery data, current Garmin performance/profile imports, per-activity enrichment, and replay ownership; unsupported SpO2, skin temperature, running dynamics, and gear tracking remain explicitly deferred.
+* [**ADR-0026: Wearable Telemetry Enrichment Boundaries and Ownership**](./adr/0026-wearable-telemetry-enrichment-boundaries.md) — *Accepted.* Separates date-bound recovery data (including SpO2/skin-temperature), current Garmin performance/profile/gear imports, per-activity enrichment (including running dynamics), and replay ownership; a gait-asymmetry alert, an interactive sleep-stage chart, and a generic gear-retirement rule remain explicitly deferred.
 
 ---
 
@@ -142,6 +142,7 @@ In-depth technical design documents covering system subsystems:
 * [**Recommendation Engine**](./architecture/recommendation-engine.md) — The two selection paths, module map, self-normalised strain scoring, `train`/`modify`/`recover` modes, candidate ranking, and the authority ordering.
 * [**Performance Outcome Evidence**](./architecture/performance-outcome-evidence.md) — Current OV0–OV2 evidence architecture: bounded metric/protocol contracts, deterministic comparison series, append-only observation corrections, assessment/competition records, manual adapter and Firestore enforcement, with no selection authority.
 * [**Health Anomaly Shadow Architecture**](./architecture/health-anomaly-shadow.md) — Evaluator boundary, fail-closed runtime selection, episode continuity, immutable assessment revisions, and prospective outcome capture.
+* [**Garmin Gear Mileage Tracking**](./garmin-gear-tracking.md) — Gear inventory import, mileage enrichment, failure semantics, and Firestore layout for `users/{userId}/gear/{gearPk}`.
 * [**Workout Library Architecture**](./workout-library.md) — Multi-layered workout definitions, variants, and September race event plan contract.
 * [**External Plan Import Schema**](./external-plan-schema.md) — *Implemented.* JSON contract for importing an externally-authored plan, plus the placement/revision scheduling model.
 * [**Sustained Multidirectional Field Macrocycle (v5)**](./macrocycle-v5.md) — Target multidirectional speed, strength, and endurance field macrocycle specification.

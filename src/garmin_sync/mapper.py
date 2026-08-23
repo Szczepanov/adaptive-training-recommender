@@ -18,6 +18,7 @@ from .models import (
     PrimaryActivity,
     RawMetrics,
     SourceMetadata,
+    Spo2Summary,
     StressSummary,
     TrainingReadinessSummary,
     TrainingStatusSummary,
@@ -25,6 +26,16 @@ from .models import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _is_running_activity_type(activity_type: str) -> bool:
+    """Keep running-only telemetry out of activities that share generic power keys."""
+    normalized = activity_type.strip().lower()
+    return (
+        normalized in {"run", "running"}
+        or normalized.endswith("_run")
+        or normalized.endswith("_running")
+    )
 
 
 def normalize_activity(
@@ -65,6 +76,24 @@ def normalize_activity(
         "syncRunId": sync_run_id,
         "syncedAt": datetime.now(timezone.utc).isoformat(),
     }
+    if activity.running_dynamics is not None and _is_running_activity_type(activity.type):
+        rd = activity.running_dynamics
+        rd_dict = {
+            key: value
+            for key, value in {
+                "groundContactTimeMs": rd.ground_contact_time_ms,
+                "groundContactBalanceLeftPct": rd.ground_contact_balance_left_pct,
+                "verticalOscillationCm": rd.vertical_oscillation_cm,
+                "verticalRatioPct": rd.vertical_ratio_pct,
+                "strideLengthM": rd.stride_length_m,
+                "avgRunningPowerWatts": rd.avg_running_power_watts,
+                "maxRunningPowerWatts": rd.max_running_power_watts,
+            }.items()
+            if value is not None
+        }
+        if rd_dict:
+            payload["runningDynamics"] = rd_dict
+
     if detail is None:
         return payload
 
@@ -176,6 +205,11 @@ def _build_metric_dates(
     target_date_iso: str,
     activities_through_iso: str | None,
 ) -> MetricDates:
+    # SpO2 and skin-temperature deviation either belong to target-date sleep or, when
+    # canonicalization selected the D-1 sleep fallback, to that fallback night. Daily
+    # Pulse Ox is suppressed in the fallback case, so a single provenance date remains
+    # truthful for the entire optional SpO2 object.
+    selected_sleep_date = canonical.sleep_date or target_date_iso
     return MetricDates(
         sleep=canonical.sleep_date,
         hrv=canonical.hrv_date,
@@ -194,6 +228,10 @@ def _build_metric_dates(
         trainingReadiness=target_date_iso if canonical.training_readiness is not None else None,
         trainingStatus=target_date_iso if canonical.training_status is not None else None,
         weight=canonical.weight_date if canonical.weight_kg is not None else None,
+        spo2=selected_sleep_date if canonical.spo2 is not None else None,
+        skinTempDeviation=(
+            selected_sleep_date if canonical.skin_temp_deviation_celsius is not None else None
+        ),
     )
 
 
@@ -255,6 +293,16 @@ def _build_raw_metrics(
         else None
     )
 
+    spo2_summary = (
+        Spo2Summary(
+            avgPct=canonical.spo2.avg_pct,
+            minPct=canonical.spo2.min_pct,
+            sleepAvgPct=canonical.spo2.sleep_avg_pct,
+        )
+        if canonical.spo2 is not None
+        else None
+    )
+
     return RawMetrics(
         sleepScore=canonical.sleep_score,
         sleepDurationSec=canonical.sleep_duration_seconds,
@@ -287,6 +335,8 @@ def _build_raw_metrics(
         heartRateZones=heart_rate_zones_summary,
         weightKg=canonical.weight_kg,
         bodyFatPct=canonical.body_fat_pct,
+        spo2=spo2_summary,
+        skinTempDeviationCelsius=canonical.skin_temp_deviation_celsius,
         recoveryTimeHours=canonical.recovery_time_hours,
     )
 
@@ -295,6 +345,14 @@ def _build_data_quality(
     canonical: CanonicalDailyMetrics,
     derived_metrics: DerivedMetrics,
 ) -> DataQuality:
+    spo2_available = canonical.spo2 is not None and any(
+        value is not None
+        for value in (
+            canonical.spo2.avg_pct,
+            canonical.spo2.min_pct,
+            canonical.spo2.sleep_avg_pct,
+        )
+    )
     return DataQuality(
         sleepScoreAvailable=canonical.sleep_score is not None,
         restingHrAvailable=canonical.resting_heart_rate_bpm is not None,
@@ -310,6 +368,8 @@ def _build_data_quality(
         and canonical.training_status.status_phrase is not None,
         heartRateZonesAvailable=canonical.heart_rate_zones is not None
         and canonical.heart_rate_zones.max_hr_used is not None,
+        spo2Available=spo2_available,
+        skinTempAvailable=canonical.skin_temp_deviation_celsius is not None,
     )
 
 

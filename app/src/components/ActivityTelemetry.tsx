@@ -1,5 +1,5 @@
 import type { DataState } from '../engine/dataState';
-import type { ActivityZoneBucket, NormalizedGarminActivity } from '../engine/models';
+import type { ActivityZoneBucket, NormalizedGarminActivity, RunningDynamics } from '../engine/models';
 import './ActivityTelemetry.css';
 
 interface ActivityTelemetryProps {
@@ -11,6 +11,17 @@ function formatDuration(seconds: number): string {
   const minutes = Math.floor(totalSeconds / 60);
   const remainder = totalSeconds % 60;
   return remainder > 0 ? `${minutes}:${String(remainder).padStart(2, '0')}` : `${minutes}:00`;
+}
+
+function hasRunningDynamics(dynamics: RunningDynamics | undefined): dynamics is RunningDynamics {
+  return dynamics !== undefined && Object.values(dynamics).some((value) => value != null);
+}
+
+function formatRunningPower(dynamics: RunningDynamics): string | null {
+  const parts: string[] = [];
+  if (dynamics.avgRunningPowerWatts != null) parts.push(`${Math.round(dynamics.avgRunningPowerWatts)} W avg`);
+  if (dynamics.maxRunningPowerWatts != null) parts.push(`${Math.round(dynamics.maxRunningPowerWatts)} W max`);
+  return parts.length > 0 ? parts.join(' · ') : null;
 }
 
 function formatTrainingEffectDescriptor(value: string): string {
@@ -52,11 +63,14 @@ export function ActivityTelemetry({ state }: ActivityTelemetryProps) {
   return (
     <div className="activity-telemetry-list">
       {[...state.data].reverse().map((activity) => {
+        const runningDynamics = hasRunningDynamics(activity.runningDynamics) ? activity.runningDynamics : undefined;
+        const runningPower = runningDynamics ? formatRunningPower(runningDynamics) : null;
         const hasDetail = (activity.powerInZones?.length ?? 0) > 0
           || (activity.hrInZones?.length ?? 0) > 0
           || (activity.laps?.length ?? 0) > 0
           || (activity.exerciseSets?.length ?? 0) > 0
-          || activity.normalizedPower !== undefined;
+          || activity.normalizedPower !== undefined
+          || runningDynamics !== undefined;
         const trainingEffectDescriptor = activity.primaryBenefit ?? activity.trainingEffectLabel;
         const trainingResponseMetrics = [
           activity.trainingEffectAerobic != null
@@ -95,7 +109,50 @@ export function ActivityTelemetry({ state }: ActivityTelemetryProps) {
               )}
             </header>
 
-            {!hasDetail && <p className="activity-telemetry-empty">No zone or lap telemetry is available for this activity.</p>}
+            {!hasDetail && <p className="activity-telemetry-empty">No zone, lap, or running-dynamics telemetry is available for this activity.</p>}
+            {runningDynamics !== undefined && (
+              <section className="activity-dynamics" aria-label="Running Dynamics & Biomechanical Symmetry">
+                <h5>Running Dynamics & Symmetry</h5>
+                <div className="activity-dynamics-grid">
+                  {runningDynamics.groundContactBalanceLeftPct != null && (
+                    <div className="activity-dynamics-metric">
+                      <span className="activity-dynamics-label">GCT Balance (L/R)</span>
+                      <strong>{runningDynamics.groundContactBalanceLeftPct.toFixed(1)}% L / {(100.0 - runningDynamics.groundContactBalanceLeftPct).toFixed(1)}% R</strong>
+                    </div>
+                  )}
+                  {runningDynamics.groundContactTimeMs != null && (
+                    <div className="activity-dynamics-metric">
+                      <span className="activity-dynamics-label">Ground Contact Time</span>
+                      <strong>{Math.round(runningDynamics.groundContactTimeMs)} ms</strong>
+                    </div>
+                  )}
+                  {runningDynamics.verticalOscillationCm != null && (
+                    <div className="activity-dynamics-metric">
+                      <span className="activity-dynamics-label">Vertical Oscillation</span>
+                      <strong>{runningDynamics.verticalOscillationCm.toFixed(1)} cm</strong>
+                    </div>
+                  )}
+                  {runningDynamics.verticalRatioPct != null && (
+                    <div className="activity-dynamics-metric">
+                      <span className="activity-dynamics-label">Vertical Ratio</span>
+                      <strong>{runningDynamics.verticalRatioPct.toFixed(1)}%</strong>
+                    </div>
+                  )}
+                  {runningDynamics.strideLengthM != null && (
+                    <div className="activity-dynamics-metric">
+                      <span className="activity-dynamics-label">Stride Length</span>
+                      <strong>{runningDynamics.strideLengthM.toFixed(2)} m</strong>
+                    </div>
+                  )}
+                  {runningPower !== null && (
+                    <div className="activity-dynamics-metric">
+                      <span className="activity-dynamics-label">Running Power</span>
+                      <strong>{runningPower}</strong>
+                    </div>
+                  )}
+                </div>
+              </section>
+            )}
             {activity.powerInZones !== undefined && activity.powerInZones.length > 0 && (
               <ZoneBars title="Power zones" unit="W" zones={activity.powerInZones} />
             )}
