@@ -40,7 +40,7 @@ function render(distance: 'km' | 'miles'): string {
     <PerformanceSections
       preferences={buildPreferences(distance)}
       updateCapability={() => undefined}
-      updatePerformanceTarget={() => undefined}
+      updatePerformanceProfile={() => undefined}
       updateEstimated1Rm={() => undefined}
     />,
   );
