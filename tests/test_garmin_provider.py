@@ -435,6 +435,35 @@ def test_canonicalize_activities_extracts_average_hr_from_average_hr_key():
     assert act.intensity_tag == "easy"
 
 
+def test_canonicalize_activities_extracts_running_dynamics():
+    raw = [
+        {
+            "activityId": 1002,
+            "startTimeLocal": "2026-08-05T07:00:00",
+            "activityType": {"typeKey": "running"},
+            "duration": 2400,
+            "aerobicTrainingEffect": 3.2,
+            "averageHR": 150,
+            "avgGroundContactTime": 240.0,
+            "avgGroundContactBalance": 49.5,
+            "avgVerticalOscillation": 84.0,  # mm -> 8.4 cm
+            "avgVerticalRatio": 7.5,
+            "avgStrideLength": 115.0,  # cm -> 1.15 m
+            "avgPower": 290,
+            "maxPower": 410,
+        }
+    ]
+    act = canonicalize_activities(raw)[0]
+    assert act.running_dynamics is not None
+    assert act.running_dynamics.ground_contact_time_ms == 240.0
+    assert act.running_dynamics.ground_contact_balance_left_pct == 49.5
+    assert act.running_dynamics.vertical_oscillation_cm == 8.4
+    assert act.running_dynamics.vertical_ratio_pct == 7.5
+    assert act.running_dynamics.stride_length_m == 1.15
+    assert act.running_dynamics.avg_running_power_watts == 290
+    assert act.running_dynamics.max_running_power_watts == 410
+
+
 def test_canonicalize_activities_handles_missing_activity_id():
     """A Garmin activity payload without an activityId (e.g. an in-progress/pending
     upload) must canonicalize to activity_id=None rather than a shared placeholder

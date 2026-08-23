@@ -38,4 +38,28 @@ describe('ActivityTelemetry', () => {
     }} />);
     expect(html).toContain('No zone or lap telemetry is available');
   });
+
+  it('renders running dynamics and biomechanical symmetry', () => {
+    const html = renderToStaticMarkup(<ActivityTelemetry state={{
+      status: 'AVAILABLE', revision: null, data: [{
+        ...base,
+        type: 'running',
+        runningDynamics: {
+          groundContactBalanceLeftPct: 49.6,
+          groundContactTimeMs: 238,
+          verticalOscillationCm: 8.2,
+          verticalRatioPct: 7.1,
+          strideLengthM: 1.18,
+          avgRunningPowerWatts: 285,
+        },
+      }],
+    }} />);
+    expect(html).toContain('Running Dynamics &amp; Symmetry');
+    expect(html).toContain('49.6% L / 50.4% R');
+    expect(html).toContain('238 ms');
+    expect(html).toContain('8.2 cm');
+    expect(html).toContain('7.1%');
+    expect(html).toContain('1.18 m');
+    expect(html).toContain('285 W');
+  });
 });

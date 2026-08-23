@@ -98,6 +98,17 @@ class CanonicalDailyMetrics:
 
 
 @dataclass
+class CanonicalRunningDynamics:
+    ground_contact_time_ms: float | None = None
+    ground_contact_balance_left_pct: float | None = None
+    vertical_oscillation_cm: float | None = None
+    vertical_ratio_pct: float | None = None
+    stride_length_m: float | None = None
+    avg_running_power_watts: int | None = None
+    max_running_power_watts: int | None = None
+
+
+@dataclass
 class CanonicalActivity:
     # None means Garmin didn't supply an activityId for this activity (e.g. an
     # in-progress/pending upload) -- callers must not persist such an activity under a
@@ -112,6 +123,7 @@ class CanonicalActivity:
     average_hr: float | None
     training_load: float | None
     intensity_tag: str
+    running_dynamics: CanonicalRunningDynamics | None = None
 
 
 @dataclass

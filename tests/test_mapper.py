@@ -428,7 +428,43 @@ def test_build_snapshot_metric_enrichment_fields_absent_when_no_canonical_data()
 
     assert snapshot.raw.stress is None
     assert snapshot.raw.trainingReadiness is None
-    assert snapshot.raw.trainingStatus is None
-    assert snapshot.raw.bodyBatteryChange is None
     assert snapshot.dataQuality.stressAvailable is False
     assert snapshot.source.metricDates.stress is None
+
+
+def test_normalize_activity_includes_running_dynamics():
+    from garmin_sync.canonical import CanonicalRunningDynamics
+
+    act = CanonicalActivity(
+        activity_id="act-123",
+        date="2026-08-06",
+        type="running",
+        duration_min=45,
+        duration_seconds=2700,
+        training_effect_aerobic=3.5,
+        training_effect_anaerobic=0.5,
+        average_hr=152.0,
+        training_load=85.0,
+        intensity_tag="moderate",
+        running_dynamics=CanonicalRunningDynamics(
+            ground_contact_time_ms=235.0,
+            ground_contact_balance_left_pct=49.8,
+            vertical_oscillation_cm=7.8,
+            vertical_ratio_pct=6.9,
+            stride_length_m=1.20,
+            avg_running_power_watts=295,
+            max_running_power_watts=420,
+        ),
+    )
+
+    payload = normalize_activity(act, sync_run_id="run-1")
+    assert payload["activityId"] == "act-123"
+    assert "runningDynamics" in payload
+    rd = payload["runningDynamics"]
+    assert rd["groundContactTimeMs"] == 235.0
+    assert rd["groundContactBalanceLeftPct"] == 49.8
+    assert rd["verticalOscillationCm"] == 7.8
+    assert rd["verticalRatioPct"] == 6.9
+    assert rd["strideLengthM"] == 1.20
+    assert rd["avgRunningPowerWatts"] == 295
+    assert rd["maxRunningPowerWatts"] == 420

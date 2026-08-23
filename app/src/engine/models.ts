@@ -1420,6 +1420,16 @@ export interface ActivityLapSummary {
     averageHrBpm?: number;
 }
 
+export interface RunningDynamics {
+    groundContactTimeMs?: number | null;
+    groundContactBalanceLeftPct?: number | null;
+    verticalOscillationCm?: number | null;
+    verticalRatioPct?: number | null;
+    strideLengthM?: number | null;
+    avgRunningPowerWatts?: number | null;
+    maxRunningPowerWatts?: number | null;
+}
+
 export interface NormalizedGarminActivity {
     activityId: string;
     date: string;
@@ -1436,6 +1446,7 @@ export interface NormalizedGarminActivity {
     intensityFactor?: number;
     variabilityIndex?: number;
     laps?: ActivityLapSummary[];
+    runningDynamics?: RunningDynamics;
     syncRunId?: string;
     syncedAt?: string;
 }

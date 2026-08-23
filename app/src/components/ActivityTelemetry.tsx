@@ -68,7 +68,52 @@ export function ActivityTelemetry({ state }: ActivityTelemetryProps) {
               )}
             </header>
 
-            {!hasDetail && <p className="activity-telemetry-empty">No zone or lap telemetry is available for this activity.</p>}
+            {!hasDetail && !activity.runningDynamics && <p className="activity-telemetry-empty">No zone or lap telemetry is available for this activity.</p>}
+            {activity.runningDynamics !== undefined && (
+              <section className="activity-dynamics" aria-label="Running Dynamics & Biomechanical Symmetry">
+                <h5>Running Dynamics & Symmetry</h5>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '0.5rem', marginBottom: '0.75rem' }}>
+                  {activity.runningDynamics.groundContactBalanceLeftPct != null && (
+                    <div style={{ background: 'var(--bg-card, #1c1c28)', padding: '0.5rem 0.75rem', borderRadius: '6px', border: '1px solid var(--border-subtle, #2e2e3e)' }}>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary, #9a9ab0)', display: 'block' }}>GCT Balance (L/R)</span>
+                      <strong style={{ fontSize: '0.95rem', color: Math.abs(activity.runningDynamics.groundContactBalanceLeftPct - 50.0) <= 1.0 ? '#10b981' : '#f59e0b' }}>
+                        {activity.runningDynamics.groundContactBalanceLeftPct.toFixed(1)}% L / {(100.0 - activity.runningDynamics.groundContactBalanceLeftPct).toFixed(1)}% R
+                      </strong>
+                    </div>
+                  )}
+                  {activity.runningDynamics.groundContactTimeMs != null && (
+                    <div style={{ background: 'var(--bg-card, #1c1c28)', padding: '0.5rem 0.75rem', borderRadius: '6px', border: '1px solid var(--border-subtle, #2e2e3e)' }}>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary, #9a9ab0)', display: 'block' }}>Ground Contact Time</span>
+                      <strong style={{ fontSize: '0.95rem' }}>{Math.round(activity.runningDynamics.groundContactTimeMs)} ms</strong>
+                    </div>
+                  )}
+                  {activity.runningDynamics.verticalOscillationCm != null && (
+                    <div style={{ background: 'var(--bg-card, #1c1c28)', padding: '0.5rem 0.75rem', borderRadius: '6px', border: '1px solid var(--border-subtle, #2e2e3e)' }}>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary, #9a9ab0)', display: 'block' }}>Vertical Oscillation</span>
+                      <strong style={{ fontSize: '0.95rem' }}>{activity.runningDynamics.verticalOscillationCm.toFixed(1)} cm</strong>
+                    </div>
+                  )}
+                  {activity.runningDynamics.verticalRatioPct != null && (
+                    <div style={{ background: 'var(--bg-card, #1c1c28)', padding: '0.5rem 0.75rem', borderRadius: '6px', border: '1px solid var(--border-subtle, #2e2e3e)' }}>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary, #9a9ab0)', display: 'block' }}>Vertical Ratio</span>
+                      <strong style={{ fontSize: '0.95rem' }}>{activity.runningDynamics.verticalRatioPct.toFixed(1)}%</strong>
+                    </div>
+                  )}
+                  {activity.runningDynamics.strideLengthM != null && (
+                    <div style={{ background: 'var(--bg-card, #1c1c28)', padding: '0.5rem 0.75rem', borderRadius: '6px', border: '1px solid var(--border-subtle, #2e2e3e)' }}>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary, #9a9ab0)', display: 'block' }}>Stride Length</span>
+                      <strong style={{ fontSize: '0.95rem' }}>{activity.runningDynamics.strideLengthM.toFixed(2)} m</strong>
+                    </div>
+                  )}
+                  {activity.runningDynamics.avgRunningPowerWatts != null && (
+                    <div style={{ background: 'var(--bg-card, #1c1c28)', padding: '0.5rem 0.75rem', borderRadius: '6px', border: '1px solid var(--border-subtle, #2e2e3e)' }}>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary, #9a9ab0)', display: 'block' }}>Running Power</span>
+                      <strong style={{ fontSize: '0.95rem' }}>{activity.runningDynamics.avgRunningPowerWatts} W</strong>
+                    </div>
+                  )}
+                </div>
+              </section>
+            )}
             {activity.powerInZones !== undefined && activity.powerInZones.length > 0 && (
               <ZoneBars title="Power zones" unit="W" zones={activity.powerInZones} />
             )}

@@ -15,6 +15,7 @@ from .canonical import (
     CanonicalHeartRateZones,
     CanonicalLapSummary,
     CanonicalPerformanceTargets,
+    CanonicalRunningDynamics,
     CanonicalStress,
     CanonicalTrainingReadiness,
     CanonicalTrainingStatus,
@@ -558,6 +559,76 @@ def canonicalize_activities(
     return [_canonicalize_activity(act, zone4_floor=zone4_floor) for act in raw_activities]
 
 
+def extract_running_dynamics(act: dict[str, Any]) -> CanonicalRunningDynamics | None:
+    """Extract running dynamics metrics from Garmin activity summary."""
+    if not isinstance(act, dict):
+        return None
+
+    raw_gct = act.get("avgGroundContactTime") or act.get("groundContactTime")
+    gct = _non_negative_number(raw_gct)
+
+    raw_gct_bal = (
+        act.get("avgGroundContactBalance")
+        or act.get("groundContactBalanceLeft")
+        or act.get("groundContactBalance")
+    )
+    gct_bal_left: float | None = None
+    if raw_gct_bal is not None:
+        bal_val = _non_negative_number(raw_gct_bal)
+        if bal_val is not None and 35.0 <= bal_val <= 65.0:
+            gct_bal_left = round(bal_val, 1)
+
+    raw_vert_osc = act.get("avgVerticalOscillation") or act.get("verticalOscillation")
+    vert_osc: float | None = None
+    if raw_vert_osc is not None:
+        vo_val = _non_negative_number(raw_vert_osc)
+        if vo_val is not None:
+            vert_osc = round(vo_val / 10.0, 1) if vo_val > 30 else round(vo_val, 1)
+
+    raw_vert_ratio = act.get("avgVerticalRatio") or act.get("verticalRatio")
+    vert_ratio: float | None = None
+    if raw_vert_ratio is not None:
+        vr_val = _non_negative_number(raw_vert_ratio)
+        if vr_val is not None and 1.0 <= vr_val <= 25.0:
+            vert_ratio = round(vr_val, 1)
+
+    raw_stride = act.get("avgStrideLength") or act.get("strideLength")
+    stride_m: float | None = None
+    if raw_stride is not None:
+        st_val = _non_negative_number(raw_stride)
+        if st_val is not None:
+            stride_m = round(st_val / 100.0, 2) if st_val > 20 else round(st_val, 2)
+
+    raw_avg_power = act.get("avgPower") or act.get("averagePower") or act.get("avgRunningPower")
+    avg_power: int | None = None
+    if raw_avg_power is not None:
+        ap_val = _non_negative_number(raw_avg_power)
+        if ap_val is not None and ap_val > 0:
+            avg_power = round(ap_val)
+
+    raw_max_power = act.get("maxPower") or act.get("maxRunningPower")
+    max_power: int | None = None
+    if raw_max_power is not None:
+        mp_val = _non_negative_number(raw_max_power)
+        if mp_val is not None and mp_val > 0:
+            max_power = round(mp_val)
+
+    if any(
+        v is not None
+        for v in (gct, gct_bal_left, vert_osc, vert_ratio, stride_m, avg_power, max_power)
+    ):
+        return CanonicalRunningDynamics(
+            ground_contact_time_ms=round(gct, 1) if gct is not None else None,
+            ground_contact_balance_left_pct=gct_bal_left,
+            vertical_oscillation_cm=vert_osc,
+            vertical_ratio_pct=vert_ratio,
+            stride_length_m=stride_m,
+            avg_running_power_watts=avg_power,
+            max_running_power_watts=max_power,
+        )
+    return None
+
+
 def _canonicalize_activity(
     act: dict[str, Any], zone4_floor: int | None = None
 ) -> CanonicalActivity:
@@ -593,6 +664,7 @@ def _canonicalize_activity(
         average_hr=avg_hr,
         training_load=act.get("activityTrainingLoad"),
         intensity_tag=intensity_tag,
+        running_dynamics=extract_running_dynamics(act),
     )
 
 
