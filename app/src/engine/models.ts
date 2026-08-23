@@ -1423,6 +1423,17 @@ export interface ActivityLapSummary {
     averageHrBpm?: number;
 }
 
+export interface ActivityExerciseSet {
+    setOrder: number;
+    setType?: string;
+    repetitionCount?: number;
+    weightKg?: number;
+    exerciseCategory?: string;
+    exerciseName?: string;
+    durationSeconds?: number;
+    restDurationSeconds?: number;
+}
+
 export interface NormalizedGarminActivity {
     activityId: string;
     date: string;
@@ -1439,6 +1450,7 @@ export interface NormalizedGarminActivity {
     intensityFactor?: number;
     variabilityIndex?: number;
     laps?: ActivityLapSummary[];
+    exerciseSets?: ActivityExerciseSet[];
     syncRunId?: string;
     syncedAt?: string;
 }

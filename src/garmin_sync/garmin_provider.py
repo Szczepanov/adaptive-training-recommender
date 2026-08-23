@@ -13,6 +13,7 @@ from .canonical import (
     CanonicalActivityDetail,
     CanonicalBodyBattery,
     CanonicalDailyMetrics,
+    CanonicalExerciseSet,
     CanonicalHeartRateZones,
     CanonicalLapSummary,
     CanonicalPerformanceTargets,
@@ -345,12 +346,75 @@ def _canonicalize_laps(payload: Any) -> list[CanonicalLapSummary] | None:
     return _parse_records(raw_laps, _build_lap_summary)
 
 
+def extract_exercise_sets(raw_sets: Any) -> list[CanonicalExerciseSet] | None:
+    """Extract structured exercise sets and repetitions from Garmin strength payloads."""
+    if isinstance(raw_sets, dict):
+        sets_list = raw_sets.get("exerciseSets")
+    elif isinstance(raw_sets, list):
+        sets_list = raw_sets
+    else:
+        return None
+
+    if not isinstance(sets_list, list) or not sets_list:
+        return None
+
+    results: list[CanonicalExerciseSet] = []
+    for idx, item in enumerate(sets_list):
+        if not isinstance(item, dict):
+            continue
+        set_order = item.get("setOrder")
+        if set_order is None or not isinstance(set_order, int):
+            set_order = idx
+
+        raw_set_type = item.get("setType")
+        set_type = str(raw_set_type).lower() if raw_set_type is not None else "active"
+
+        reps = _positive_integer(item.get("repetitionCount") or item.get("reps"))
+
+        raw_weight = _non_negative_number(item.get("weight") or item.get("weightKg"))
+        weight_kg: float | None = None
+        if raw_weight is not None:
+            if raw_weight > 500.0:
+                weight_kg = round(raw_weight / 1000.0, 1)
+            elif 0.0 <= raw_weight <= 500.0:
+                weight_kg = round(raw_weight, 1)
+
+        category = item.get("exerciseCategory")
+        category_str = (
+            str(category).strip() if isinstance(category, str) and category.strip() else None
+        )
+
+        name = item.get("exerciseName")
+        name_str = str(name).strip() if isinstance(name, str) and name.strip() else None
+
+        duration = _non_negative_number(item.get("duration") or item.get("durationSeconds"))
+        rest_duration = _non_negative_number(
+            item.get("restDuration") or item.get("restDurationSeconds")
+        )
+
+        results.append(
+            CanonicalExerciseSet(
+                set_order=set_order,
+                set_type=set_type,
+                repetition_count=reps,
+                weight_kg=weight_kg,
+                exercise_category=category_str,
+                exercise_name=name_str,
+                duration_seconds=duration,
+                rest_duration_seconds=rest_duration,
+            )
+        )
+
+    return results if results else None
+
+
 def canonicalize_activity_detail(
     activity_id: str,
     activity_summary: Any,
     power_zones: Any,
     hr_zones: Any,
     splits: Any,
+    exercise_sets: Any = None,
 ) -> CanonicalActivityDetail:
     """Normalize additive per-activity telemetry without inventing missing values."""
     summary = activity_summary if isinstance(activity_summary, dict) else {}
@@ -370,6 +434,7 @@ def canonicalize_activity_detail(
         intensity_factor=intensity_factor,
         variability_index=variability_index,
         laps=_canonicalize_laps(splits),
+        exercise_sets=extract_exercise_sets(exercise_sets),
     )
 
 
@@ -908,18 +973,35 @@ class GarminProviderAdapter:
         power_zones = self.client.get_activity_power_zones(activity_id)
         hr_zones = self.client.get_activity_hr_zones(activity_id)
         splits = self.client.get_activity_splits(activity_id)
-        raw_payloads = {
+        summary = self._activity_summary_cache.get(activity_id, {})
+        activity_type = (
+            summary.get("activityType", {}).get("typeKey", "") if isinstance(summary, dict) else ""
+        )
+
+        exercise_sets = None
+        type_str = str(activity_type).lower()
+        if "strength" in type_str or "fitness_equipment" in type_str or "training" in type_str:
+            exercise_sets = self._fetch_enrichment(
+                f"exercise_sets_{activity_id}",
+                lambda: self.client.get_activity_exercise_sets(activity_id),
+            )
+
+        raw_payloads: dict[str, Any] = {
             "activity_power_zones": power_zones,
             "activity_hr_zones": hr_zones,
             "activity_splits": splits,
         }
+        if exercise_sets is not None:
+            raw_payloads["activity_exercise_sets"] = exercise_sets
+
         return ProviderActivityDetailResult(
             canonical=canonicalize_activity_detail(
                 activity_id=activity_id,
-                activity_summary=self._activity_summary_cache.get(activity_id),
+                activity_summary=summary,
                 power_zones=power_zones,
                 hr_zones=hr_zones,
                 splits=splits,
+                exercise_sets=exercise_sets,
             ),
             raw_payloads=raw_payloads,
         )
