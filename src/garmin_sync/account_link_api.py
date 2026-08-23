@@ -18,6 +18,10 @@ from .account_link import (
     GarminLinkConfigurationError,
     GarminLinkConflictError,
 )
+from .user_data_migration import (
+    UserDataMigrationConflictError,
+    UserDataMigrationService,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -75,12 +79,9 @@ def _service() -> GarminAccountLinkService:
         return _SERVICE
 
 
-def _verified_uid(authorization: str | None) -> str | None:
-    if not authorization:
-        return None
-    scheme, _, token = authorization.partition(" ")
-    if scheme.lower() != "bearer" or not token.strip():
-        raise GarminConnectAuthenticationError("Invalid app authorization header.")
+def _verified_token_uid(token: str) -> str:
+    if not token.strip():
+        raise GarminConnectAuthenticationError("App session token is missing.")
     try:
         decoded = firebase_auth.verify_id_token(token.strip())
     except Exception as exc:
@@ -89,6 +90,15 @@ def _verified_uid(authorization: str | None) -> str | None:
     if not uid:
         raise GarminConnectAuthenticationError("App session has no user identity.")
     return str(uid)
+
+
+def _verified_uid(authorization: str | None) -> str | None:
+    if not authorization:
+        return None
+    scheme, _, token = authorization.partition(" ")
+    if scheme.lower() != "bearer" or not token.strip():
+        raise GarminConnectAuthenticationError("Invalid app authorization header.")
+    return _verified_token_uid(token)
 
 
 class GarminAccountLinkHandler(BaseHTTPRequestHandler):
@@ -155,8 +165,11 @@ class GarminAccountLinkHandler(BaseHTTPRequestHandler):
             if self.path == "/api/garmin/mfa":
                 self._handle_mfa()
                 return
+            if self.path == "/api/garmin/migrate-user-data":
+                self._handle_migrate_user_data()
+                return
             self._json_response(HTTPStatus.NOT_FOUND, {"error": "not_found"})
-        except GarminLinkConflictError as exc:
+        except (GarminLinkConflictError, UserDataMigrationConflictError) as exc:
             self._json_response(HTTPStatus.CONFLICT, {"error": str(exc)})
         except ValueError as exc:
             self._json_response(HTTPStatus.BAD_REQUEST, {"error": str(exc)})
@@ -210,6 +223,33 @@ class GarminAccountLinkHandler(BaseHTTPRequestHandler):
             raise ValueError("MFA challenge and code must be strings.")
         result = _service().complete_mfa(challenge_id, code)
         self._json_response(HTTPStatus.OK, result)
+
+    def _handle_migrate_user_data(self) -> None:
+        target_uid = _verified_uid(self.headers.get("Authorization"))
+        if not target_uid:
+            raise GarminConnectAuthenticationError(
+                "Sign in with the Garmin-linked app account before importing legacy data."
+            )
+
+        payload = self._read_json()
+        source_id_token = payload.get("sourceIdToken")
+        if not isinstance(source_id_token, str):
+            raise ValueError("sourceIdToken must be a string.")
+        source_uid = _verified_token_uid(source_id_token)
+
+        # Reuse the account-link service's initialized Firestore client so this endpoint has
+        # the same project/ADC configuration as Garmin linking itself.
+        migration = UserDataMigrationService(db=_service().repository.db)
+        summary = migration.migrate(source_uid, target_uid)
+        self._json_response(
+            HTTPStatus.OK,
+            {
+                "status": "migrated",
+                "documentsCopied": summary.documents_copied,
+                "collectionsCopied": summary.collections_copied,
+                "syncQueued": summary.sync_queued,
+            },
+        )
 
 
 def main() -> int:
