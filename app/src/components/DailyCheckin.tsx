@@ -877,11 +877,23 @@ export function DailyCheckin({ userId, onNavigate, onBack, onCheckinSaved }: Dai
                       <span className="pill-label">Body Battery</span>
                       <span className="pill-val">{recoverySnapshot.raw.bodyBatteryWake ?? '--'} / 100</span>
                     </div>
-                    {recoverySnapshot.raw.spo2?.avgPct != null && (
+                    {(recoverySnapshot.raw.spo2?.avgPct != null || recoverySnapshot.raw.spo2?.sleepAvgPct != null) && (
                       <div className="garmin-metric-pill">
                         <span className="pill-label">SpO2 Pulse Ox</span>
-                        <span className="pill-val">{recoverySnapshot.raw.spo2.avgPct}%</span>
-                        {recoverySnapshot.raw.spo2.minPct != null && <small>min {recoverySnapshot.raw.spo2.minPct}%</small>}
+                        {recoverySnapshot.raw.spo2.avgPct != null ? (
+                          <>
+                            <span className="pill-val">{recoverySnapshot.raw.spo2.avgPct}%</span>
+                            {recoverySnapshot.raw.spo2.minPct != null && <small>min {recoverySnapshot.raw.spo2.minPct}%</small>}
+                          </>
+                        ) : (
+                          // Daily Pulse Ox summary is unavailable; the sleep-scoped average is a
+                          // distinct source (see extract_spo2) and is labeled as such rather than
+                          // silently presented as the daily figure.
+                          <>
+                            <span className="pill-val">{recoverySnapshot.raw.spo2.sleepAvgPct}%</span>
+                            <small>sleep avg</small>
+                          </>
+                        )}
                       </div>
                     )}
                     {recoverySnapshot.raw.skinTempDeviationCelsius != null && (

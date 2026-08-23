@@ -265,6 +265,12 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery' }: Dat
             </span>
           </div>
           <div className="data-item">
+            <span className="data-label">SpO2 (Sleep Avg):</span>
+            <span className="data-value">
+              {recoverySnapshot?.raw.spo2?.sleepAvgPct != null ? `${recoverySnapshot.raw.spo2.sleepAvgPct}%` : 'N/A'}
+            </span>
+          </div>
+          <div className="data-item">
             <span className="data-label">Skin Temp Deviation:</span>
             <span className="data-value">
               {recoverySnapshot?.raw.skinTempDeviationCelsius != null
