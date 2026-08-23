@@ -440,7 +440,8 @@ def extract_exercise_sets(raw_sets: Any) -> list[CanonicalExerciseSet] | None:
     duration belongs to the preceding work set, so standalone REST rows are folded into
     ``rest_duration_seconds`` instead of becoming fake numbered exercises. Raw Garmin
     ``weight`` is grams; an explicit ``weightKg`` key is accepted only as a normalized
-    compatibility shape.
+    compatibility shape. A valid empty ``exerciseSets`` list is preserved as ``[]`` so
+    callers can distinguish "Garmin now reports no sets" from "detail was unavailable".
     """
     if isinstance(raw_sets, dict):
         sets_list = raw_sets.get("exerciseSets")
@@ -449,8 +450,10 @@ def extract_exercise_sets(raw_sets: Any) -> list[CanonicalExerciseSet] | None:
     else:
         return None
 
-    if not isinstance(sets_list, list) or not sets_list:
+    if not isinstance(sets_list, list):
         return None
+    if not sets_list:
+        return []
 
     results: list[CanonicalExerciseSet] = []
     for item in sets_list:
