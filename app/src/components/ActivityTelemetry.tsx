@@ -1,5 +1,5 @@
 import type { DataState } from '../engine/dataState';
-import type { ActivityZoneBucket, NormalizedGarminActivity } from '../engine/models';
+import type { ActivityZoneBucket, NormalizedGarminActivity, RunningDynamics } from '../engine/models';
 import './ActivityTelemetry.css';
 
 interface ActivityTelemetryProps {
@@ -11,6 +11,17 @@ function formatDuration(seconds: number): string {
   const minutes = Math.floor(totalSeconds / 60);
   const remainder = totalSeconds % 60;
   return remainder > 0 ? `${minutes}:${String(remainder).padStart(2, '0')}` : `${minutes}:00`;
+}
+
+function hasRunningDynamics(dynamics: RunningDynamics | undefined): dynamics is RunningDynamics {
+  return dynamics !== undefined && Object.values(dynamics).some((value) => value != null);
+}
+
+function formatRunningPower(dynamics: RunningDynamics): string | null {
+  const parts: string[] = [];
+  if (dynamics.avgRunningPowerWatts != null) parts.push(`${Math.round(dynamics.avgRunningPowerWatts)} W avg`);
+  if (dynamics.maxRunningPowerWatts != null) parts.push(`${Math.round(dynamics.maxRunningPowerWatts)} W max`);
+  return parts.length > 0 ? parts.join(' · ') : null;
 }
 
 function ZoneBars({ title, unit, zones }: { title: string; unit: string; zones: ActivityZoneBucket[] }) {
@@ -48,10 +59,13 @@ export function ActivityTelemetry({ state }: ActivityTelemetryProps) {
   return (
     <div className="activity-telemetry-list">
       {[...state.data].reverse().map((activity) => {
+        const runningDynamics = hasRunningDynamics(activity.runningDynamics) ? activity.runningDynamics : undefined;
+        const runningPower = runningDynamics ? formatRunningPower(runningDynamics) : null;
         const hasDetail = (activity.powerInZones?.length ?? 0) > 0
           || (activity.hrInZones?.length ?? 0) > 0
           || (activity.laps?.length ?? 0) > 0
-          || activity.normalizedPower !== undefined;
+          || activity.normalizedPower !== undefined
+          || runningDynamics !== undefined;
         return (
           <article className="activity-telemetry-card" key={activity.activityId}>
             <header>
@@ -68,47 +82,45 @@ export function ActivityTelemetry({ state }: ActivityTelemetryProps) {
               )}
             </header>
 
-            {!hasDetail && !activity.runningDynamics && <p className="activity-telemetry-empty">No zone or lap telemetry is available for this activity.</p>}
-            {activity.runningDynamics !== undefined && (
+            {!hasDetail && <p className="activity-telemetry-empty">No zone, lap, or running-dynamics telemetry is available for this activity.</p>}
+            {runningDynamics !== undefined && (
               <section className="activity-dynamics" aria-label="Running Dynamics & Biomechanical Symmetry">
                 <h5>Running Dynamics & Symmetry</h5>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '0.5rem', marginBottom: '0.75rem' }}>
-                  {activity.runningDynamics.groundContactBalanceLeftPct != null && (
-                    <div style={{ background: 'var(--bg-card, #1c1c28)', padding: '0.5rem 0.75rem', borderRadius: '6px', border: '1px solid var(--border-subtle, #2e2e3e)' }}>
-                      <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary, #9a9ab0)', display: 'block' }}>GCT Balance (L/R)</span>
-                      <strong style={{ fontSize: '0.95rem', color: Math.abs(activity.runningDynamics.groundContactBalanceLeftPct - 50.0) <= 1.0 ? '#10b981' : '#f59e0b' }}>
-                        {activity.runningDynamics.groundContactBalanceLeftPct.toFixed(1)}% L / {(100.0 - activity.runningDynamics.groundContactBalanceLeftPct).toFixed(1)}% R
-                      </strong>
+                <div className="activity-dynamics-grid">
+                  {runningDynamics.groundContactBalanceLeftPct != null && (
+                    <div className="activity-dynamics-metric">
+                      <span className="activity-dynamics-label">GCT Balance (L/R)</span>
+                      <strong>{runningDynamics.groundContactBalanceLeftPct.toFixed(1)}% L / {(100.0 - runningDynamics.groundContactBalanceLeftPct).toFixed(1)}% R</strong>
                     </div>
                   )}
-                  {activity.runningDynamics.groundContactTimeMs != null && (
-                    <div style={{ background: 'var(--bg-card, #1c1c28)', padding: '0.5rem 0.75rem', borderRadius: '6px', border: '1px solid var(--border-subtle, #2e2e3e)' }}>
-                      <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary, #9a9ab0)', display: 'block' }}>Ground Contact Time</span>
-                      <strong style={{ fontSize: '0.95rem' }}>{Math.round(activity.runningDynamics.groundContactTimeMs)} ms</strong>
+                  {runningDynamics.groundContactTimeMs != null && (
+                    <div className="activity-dynamics-metric">
+                      <span className="activity-dynamics-label">Ground Contact Time</span>
+                      <strong>{Math.round(runningDynamics.groundContactTimeMs)} ms</strong>
                     </div>
                   )}
-                  {activity.runningDynamics.verticalOscillationCm != null && (
-                    <div style={{ background: 'var(--bg-card, #1c1c28)', padding: '0.5rem 0.75rem', borderRadius: '6px', border: '1px solid var(--border-subtle, #2e2e3e)' }}>
-                      <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary, #9a9ab0)', display: 'block' }}>Vertical Oscillation</span>
-                      <strong style={{ fontSize: '0.95rem' }}>{activity.runningDynamics.verticalOscillationCm.toFixed(1)} cm</strong>
+                  {runningDynamics.verticalOscillationCm != null && (
+                    <div className="activity-dynamics-metric">
+                      <span className="activity-dynamics-label">Vertical Oscillation</span>
+                      <strong>{runningDynamics.verticalOscillationCm.toFixed(1)} cm</strong>
                     </div>
                   )}
-                  {activity.runningDynamics.verticalRatioPct != null && (
-                    <div style={{ background: 'var(--bg-card, #1c1c28)', padding: '0.5rem 0.75rem', borderRadius: '6px', border: '1px solid var(--border-subtle, #2e2e3e)' }}>
-                      <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary, #9a9ab0)', display: 'block' }}>Vertical Ratio</span>
-                      <strong style={{ fontSize: '0.95rem' }}>{activity.runningDynamics.verticalRatioPct.toFixed(1)}%</strong>
+                  {runningDynamics.verticalRatioPct != null && (
+                    <div className="activity-dynamics-metric">
+                      <span className="activity-dynamics-label">Vertical Ratio</span>
+                      <strong>{runningDynamics.verticalRatioPct.toFixed(1)}%</strong>
                     </div>
                   )}
-                  {activity.runningDynamics.strideLengthM != null && (
-                    <div style={{ background: 'var(--bg-card, #1c1c28)', padding: '0.5rem 0.75rem', borderRadius: '6px', border: '1px solid var(--border-subtle, #2e2e3e)' }}>
-                      <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary, #9a9ab0)', display: 'block' }}>Stride Length</span>
-                      <strong style={{ fontSize: '0.95rem' }}>{activity.runningDynamics.strideLengthM.toFixed(2)} m</strong>
+                  {runningDynamics.strideLengthM != null && (
+                    <div className="activity-dynamics-metric">
+                      <span className="activity-dynamics-label">Stride Length</span>
+                      <strong>{runningDynamics.strideLengthM.toFixed(2)} m</strong>
                     </div>
                   )}
-                  {activity.runningDynamics.avgRunningPowerWatts != null && (
-                    <div style={{ background: 'var(--bg-card, #1c1c28)', padding: '0.5rem 0.75rem', borderRadius: '6px', border: '1px solid var(--border-subtle, #2e2e3e)' }}>
-                      <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary, #9a9ab0)', display: 'block' }}>Running Power</span>
-                      <strong style={{ fontSize: '0.95rem' }}>{activity.runningDynamics.avgRunningPowerWatts} W</strong>
+                  {runningPower !== null && (
+                    <div className="activity-dynamics-metric">
+                      <span className="activity-dynamics-label">Running Power</span>
+                      <strong>{runningPower}</strong>
                     </div>
                   )}
                 </div>
