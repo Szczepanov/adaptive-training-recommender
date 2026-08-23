@@ -5,6 +5,7 @@ recommendation engine) operates on canonical.py types only."""
 
 import logging
 import math
+from datetime import datetime, timezone
 from typing import Any, Callable, TypeVar
 
 from .canonical import (
@@ -253,7 +254,8 @@ def _first_positive_number(value: Any) -> float | None:
     """Return a finite positive numeric value without accepting booleans or strings."""
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return None
-    return float(value) if value > 0 else None
+    numeric = float(value)
+    return numeric if math.isfinite(numeric) and numeric > 0 else None
 
 
 def _non_negative_number(value: Any) -> float | None:
@@ -379,57 +381,98 @@ def _first_mapping(payload: Any) -> dict[str, Any]:
     return {}
 
 
+def _body_composition_measured_at(entry: dict[str, Any]) -> str | None:
+    calendar_date = entry.get("calendarDate")
+    if isinstance(calendar_date, str) and len(calendar_date) >= 10:
+        return calendar_date[:10]
+
+    for key in ("timestampGMT", "date"):
+        raw_timestamp = _first_positive_number(entry.get(key))
+        if raw_timestamp is None:
+            continue
+        seconds = raw_timestamp / 1000.0 if raw_timestamp > 10_000_000_000 else raw_timestamp
+        try:
+            return datetime.fromtimestamp(seconds, tz=timezone.utc).date().isoformat()
+        except (OverflowError, OSError, ValueError):
+            continue
+    return None
+
+
+def _body_composition_sort_key(entry: dict[str, Any]) -> tuple[str, float]:
+    measured_at = _body_composition_measured_at(entry) or ""
+    timestamp = next(
+        (
+            numeric
+            for key in ("timestampGMT", "date")
+            if (numeric := _first_positive_number(entry.get(key))) is not None
+        ),
+        -1.0,
+    )
+    return measured_at, timestamp
+
+
 def extract_body_composition(
     body_comp_data: dict[str, Any] | list[dict[str, Any]] | None,
+    *,
+    allow_total_average: bool = True,
 ) -> tuple[float | None, float | None, str | None]:
-    """Extract (weight_kg, body_fat_pct, measured_at) from Garmin weight/body-composition payloads.
+    """Extract (weight_kg, body_fat_pct, measured_at) from Garmin weight payloads.
 
-    Handles Garmin's weight-service structures (dateWeightList array, totalAverage, dayview)
-    where weight is typically in grams (e.g. 74500 -> 74.5 kg) or occasionally in kg,
-    bodyFat is a percentage (e.g. 14.5), and calendarDate/date records the observation date.
+    Individual weigh-ins are selected by their observation date/timestamp instead of
+    assuming Garmin's list order. ``totalAverage`` is allowed for a single-day snapshot
+    fallback, but callers that need the athlete's current profile weight should disable
+    it because a multi-day dateRange average is not a latest measurement.
     """
     if not body_comp_data:
         return None, None, None
 
     entry: dict[str, Any] = {}
     if isinstance(body_comp_data, list):
-        entry = next((e for e in reversed(body_comp_data) if isinstance(e, dict)), {})
+        entries = [candidate for candidate in body_comp_data if isinstance(candidate, dict)]
+        if entries:
+            entry = max(entries, key=_body_composition_sort_key)
     elif isinstance(body_comp_data, dict):
         date_list = body_comp_data.get("dateWeightList")
         if isinstance(date_list, list) and date_list:
-            entry = next((e for e in reversed(date_list) if isinstance(e, dict)), {})
-        elif isinstance(body_comp_data.get("totalAverage"), dict):
+            entries = [candidate for candidate in date_list if isinstance(candidate, dict)]
+            if entries:
+                entry = max(entries, key=_body_composition_sort_key)
+        elif allow_total_average and isinstance(body_comp_data.get("totalAverage"), dict):
             entry = body_comp_data["totalAverage"]
-        else:
+        elif any(
+            key in body_comp_data
+            for key in ("weight", "weightKg", "weight_kg", "bodyFat", "bodyFatPercentage")
+        ):
             entry = body_comp_data
 
     if not entry:
         return None, None, None
 
-    raw_weight = _first_positive_number(
-        entry.get("weight") or entry.get("weightKg") or entry.get("weight_kg")
+    raw_weight = next(
+        (
+            numeric
+            for key in ("weight", "weightKg", "weight_kg")
+            if (numeric := _first_positive_number(entry.get(key))) is not None
+        ),
+        None,
     )
     weight_kg: float | None = None
     if raw_weight is not None:
         if raw_weight > 1000.0:
             weight_kg = round(raw_weight / 1000.0, 2)
         elif 20.0 <= raw_weight <= 350.0:
-            weight_kg = round(float(raw_weight), 2)
+            weight_kg = round(raw_weight, 2)
 
-    raw_fat = (
-        entry.get("bodyFat")
-        or entry.get("bodyFatPercentage")
-        or entry.get("bodyFatPercent")
-        or entry.get("body_fat_pct")
+    raw_fat = next(
+        (
+            numeric
+            for key in ("bodyFat", "bodyFatPercentage", "bodyFatPercent", "body_fat_pct")
+            if (numeric := _non_negative_number(entry.get(key))) is not None
+        ),
+        None,
     )
-    body_fat_pct: float | None = None
-    if isinstance(raw_fat, (int, float)) and 0.0 <= raw_fat <= 70.0:
-        body_fat_pct = round(float(raw_fat), 1)
-
-    measured_at: str | None = None
-    cal_date = entry.get("calendarDate") or entry.get("date")
-    if isinstance(cal_date, str) and len(cal_date) >= 10:
-        measured_at = cal_date[:10]
+    body_fat_pct = round(raw_fat, 1) if raw_fat is not None and raw_fat <= 70.0 else None
+    measured_at = _body_composition_measured_at(entry)
 
     return weight_kg, body_fat_pct, measured_at
 
@@ -498,7 +541,9 @@ def canonicalize_performance_targets(
         if fallback:
             lthr = _first_positive_number(fallback.get("lactateThresholdHeartRateUsed"))
 
-    weight_kg, body_fat_pct, weight_measured_at = extract_body_composition(body_composition)
+    weight_kg, body_fat_pct, weight_measured_at = extract_body_composition(
+        body_composition, allow_total_average=False
+    )
 
     return CanonicalPerformanceTargets(
         cycling_ftp_watts=round(ftp) if ftp is not None else None,
@@ -678,6 +723,7 @@ class GarminProviderAdapter:
         hrv=True,
         activities=True,
         activity_details=True,
+        body_composition=True,
     )
 
     def __init__(self, client: GarminClientWrapper):
