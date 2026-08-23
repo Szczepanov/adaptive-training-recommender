@@ -394,8 +394,9 @@ const SUBJECTIVE_METRICS: ReadonlyArray<{
     { label: 'Mental stress', read: c => c.mentalStress, higherIsBetter: false },
 ];
 
-/** Compares the window average against the trailing baseline, gated on how many days the
- * baseline actually rests on. Returns [] when the baseline is withheld. */
+/** Compares either the most recent short-window reading or the full window average against
+ * the trailing baseline, gated on how many days the baseline actually rests on. Returns []
+ * when the baseline is withheld. */
 function renderSubjectiveBaseline(
     windowCheckins: readonly DailySubjectiveCheckin[],
     baselineCheckins: readonly DailySubjectiveCheckin[],
@@ -430,16 +431,18 @@ function renderSubjectiveBaseline(
         ];
     }
 
-    // At two or three days the "window average" is one or two mornings, not a trend --
-    // "read the direction, not the magnitude" invites treating a single disrupted night
-    // as a sustained shift. Frame it as a point reading against the athlete's own norm
-    // instead, which is exactly what a same-day check-in wants.
+    // At two or three days the window is too short to establish a trend. Use the latest
+    // actual check-in as the point reading instead of averaging it with yesterday: otherwise
+    // the output can say "single reading" while silently diluting today's signal with D-1.
+    // Label the concrete date rather than "Today" so a missing current-day check-in cannot
+    // make yesterday's score look current.
     const isPointReading = windowDays <= 3;
+    const pointCheckin = isPointReading ? windowCheckins[windowCheckins.length - 1] : null;
     const metricLines: string[] = [];
     const lines = [
         '',
         isPointReading
-            ? `Today vs this athlete's own trailing ${baselineDays}-day baseline `
+            ? `Most recent check-in (${pointCheckin!.date}) vs this athlete's own trailing ${baselineDays}-day baseline `
             + `(${recordedDays} of ${baselineDays} days recorded). This is a single reading, not a trend — `
             + 'one disrupted night can move it on its own:'
             : `Window average vs this athlete's own trailing ${baselineDays}-day baseline `
@@ -447,14 +450,14 @@ function renderSubjectiveBaseline(
             + 'so a sustained change shows up here at roughly half its true size — read the direction, not the magnitude:',
     ];
     for (const metric of SUBJECTIVE_METRICS) {
-        const windowAvg = mean(windowCheckins.map(metric.read));
+        const windowValue = pointCheckin ? metric.read(pointCheckin) : mean(windowCheckins.map(metric.read));
         const baselineAvg = mean(baselineCheckins.map(metric.read));
-        if (windowAvg === null || baselineAvg === null) continue;
-        const delta = windowAvg - baselineAvg;
+        if (windowValue === null || baselineAvg === null) continue;
+        const delta = windowValue - baselineAvg;
         const direction = Math.abs(delta) < 0.05
             ? 'flat'
             : (delta > 0) === metric.higherIsBetter ? 'better than baseline' : 'worse than baseline';
-        metricLines.push(`- ${metric.label}: ${round(windowAvg)} vs ${round(baselineAvg)} (${signed(delta)}, ${direction})`);
+        metricLines.push(`- ${metric.label}: ${round(windowValue)} vs ${round(baselineAvg)} (${signed(delta)}, ${direction})`);
     }
 
     // Every metric can be skipped when the window holds only safety-only partials, which
