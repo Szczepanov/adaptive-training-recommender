@@ -1,4 +1,5 @@
 import type { UserPreferences } from '../../engine/models';
+import './PerformanceSections.css';
 
 interface PerformanceSectionsProps {
   preferences: UserPreferences;
