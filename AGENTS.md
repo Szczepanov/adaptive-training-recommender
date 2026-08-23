@@ -129,7 +129,7 @@ app/src/engine/
   taperPolicy.ts       # Event taper window resolution
   safetyCheckin.ts     # Minimum-safety check-in gate & provisional recommendation
   composer.ts          # Decision composer combining readiness, context brief, and intent
-  contextBrief.ts      # Multi-day recovery context brief and trend indicators
+  contextBrief.ts      # Recovery context brief and trend indicators; daily (2d) / full (14d) window presets
   healthAnomaly.ts     # Pure physiological anomaly & possible-illness evaluator (ADR-0025)
   healthAnomalyFeatures.ts # Anomaly-grade baseline feature mappings (RHR/HRV/respiration)
   healthAnomalyOutcome.ts  # Prospective outcome follow-up label resolver

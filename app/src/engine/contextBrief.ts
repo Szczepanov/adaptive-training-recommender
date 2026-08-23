@@ -430,12 +430,21 @@ function renderSubjectiveBaseline(
         ];
     }
 
+    // At two or three days the "window average" is one or two mornings, not a trend --
+    // "read the direction, not the magnitude" invites treating a single disrupted night
+    // as a sustained shift. Frame it as a point reading against the athlete's own norm
+    // instead, which is exactly what a same-day check-in wants.
+    const isPointReading = windowDays <= 3;
     const metricLines: string[] = [];
     const lines = [
         '',
-        `Window average vs this athlete's own trailing ${baselineDays}-day baseline `
-        + `(${recordedDays} of ${baselineDays} days recorded). The baseline period contains the window, `
-        + 'so a sustained change shows up here at roughly half its true size — read the direction, not the magnitude:',
+        isPointReading
+            ? `Today vs this athlete's own trailing ${baselineDays}-day baseline `
+            + `(${recordedDays} of ${baselineDays} days recorded). This is a single reading, not a trend — `
+            + 'one disrupted night can move it on its own:'
+            : `Window average vs this athlete's own trailing ${baselineDays}-day baseline `
+            + `(${recordedDays} of ${baselineDays} days recorded). The baseline period contains the window, `
+            + 'so a sustained change shows up here at roughly half its true size — read the direction, not the magnitude:',
     ];
     for (const metric of SUBJECTIVE_METRICS) {
         const windowAvg = mean(windowCheckins.map(metric.read));
@@ -619,12 +628,22 @@ export function buildContextBrief(input: ContextBriefInput): string {
     const activities = inWindow(input.activities);
     const recommendations = inWindow(input.recommendations);
 
+    // A short retrospective window can legitimately have zero recorded sessions or
+    // check-ins in range; without this note that reads as "this athlete does not train"
+    // rather than "detail beyond this window was not requested". The recovery timeline
+    // and subjective baseline sections below cover longer history regardless of windowDays.
+    const scopeNote = windowDays < 7
+        ? [`Retrospective detail (completed training, per-check-in flags) is scoped to the last ${windowDays} day(s). `
+            + 'The recovery timeline and subjective baseline further below cover longer history and are not limited to this window.']
+        : [];
+
     const sections: string[][] = [
         [
             '# Training context brief',
             '',
             `Window: ${startDate} → ${asOfDate} (${windowDays} days). All dates are Europe/Warsaw calendar dates.`,
             'Blank values ("—") mean not measured, not zero. This brief contains no raw device payloads.',
+            ...scopeNote,
         ],
         renderConstraints(input.trainingSettings, input.preferences, asOfDate),
         renderObjective(snapshots, windowDays),
@@ -665,4 +684,22 @@ export function defaultBriefWindowDays(): number {
 /** Exported for the service layer so the fetch range and the render range cannot drift. */
 export function briefWindowStart(asOfDate: string, windowDays: number): string {
     return addDaysToLocalDateString(asOfDate, -(windowDays - 1));
+}
+
+/**
+ * `daily` is today + yesterday only — a point reading for the everyday paste-into-chat
+ * loop, so it does not re-send retrospective detail (completed-training rows, per-lap
+ * telemetry) an external planning agent already saw the day before. `full` is the
+ * original two-week lookback, useful when actually designing a new block. Sections that
+ * are already fixed-horizon regardless of window (the 7-day recovery timeline, the
+ * 28-day subjective baseline, the 7-day commitments handoff) are unaffected by this
+ * choice — see contextBriefService.ts's `contextDays`.
+ */
+export type BriefWindowPreset = 'daily' | 'full';
+
+/** Retrospective detail window for the `daily` preset: today and D-1. */
+export const DAILY_BRIEF_WINDOW_DAYS = 2;
+
+export function briefWindowDaysFor(preset: BriefWindowPreset): number {
+    return preset === 'daily' ? DAILY_BRIEF_WINDOW_DAYS : defaultBriefWindowDays();
 }
