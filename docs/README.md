@@ -77,7 +77,7 @@ Architectural choices, system invariants, and technical trade-offs are documente
 * [**ADR-0023: Multidomain Session Authoring, Execution, and Evidence**](./adr/0023-multidomain-session-authoring-execution-and-evidence.md) — *Accepted.* Source-neutral session definition, occurrence authority, subcollection performed entries, D-MSNAP content-addressed snapshots, D-MCHOICE bounded option sets, and single tissue authority linkage.
 * [**ADR-0024: Metric-Specific Biometric Baseline Estimators**](./adr/0024-biometric-baseline-estimator-policy.md) — *Accepted.* Metric-specific robust location/scale estimators (median/MAD vs mean/stdev) justified by replay evidence.
 * [**ADR-0025: Physiological Anomaly and Possible-Illness Signals**](./adr/0025-physiological-anomaly-and-possible-illness-signals.md) — *Accepted.* Defines a separate health-anomaly capability, independent of training strain, using respiration/RHR/HRV to detect pre-symptomatic patterns.
-* [**ADR-0026: Comprehensive Wearable Telemetry, Biometric Baselines, and Equipment Mileage Tracking**](./adr/0026-comprehensive-wearable-telemetry-and-gear-tracking.md) — *Accepted.* End-to-end ingestion and boundary separation for sleep stages, SpO2, skin temp, race predictions, running dynamics, strength sets, biometrics, and shoe/bike gear mileage.
+* [**ADR-0026: Wearable Telemetry Enrichment Boundaries and Ownership**](./adr/0026-comprehensive-wearable-telemetry-and-gear-tracking.md) — *Accepted.* Separates date-bound recovery data, current Garmin performance/profile imports, per-activity enrichment, and replay ownership; unsupported SpO2, skin temperature, running dynamics, and gear tracking remain explicitly deferred.
 
 ---
 
@@ -138,7 +138,7 @@ How agreed changes get made. Mutable, status-tracked, and expected to go stale �
 ### 🏗️ System Architecture
 In-depth technical design documents covering system subsystems:
 
-* [**Ingestion Pipeline Architecture**](./architecture/ingestion-pipeline.md) — Python Garmin API client, token persistence, baseline metrics calculation, and Firestore repository.
+* [**Wearable Ingestion Pipeline & Telemetry Architecture**](./architecture/ingestion-pipeline.md) — Current Garmin provider boundary, recovery/profile/activity ownership, archive/rebuild semantics, auto-sync coordination, and workout publication.
 * [**Recommendation Engine**](./architecture/recommendation-engine.md) — The two selection paths, module map, self-normalised strain scoring, `train`/`modify`/`recover` modes, candidate ranking, and the authority ordering.
 * [**Performance Outcome Evidence**](./architecture/performance-outcome-evidence.md) — Current OV0–OV2 evidence architecture: bounded metric/protocol contracts, deterministic comparison series, append-only observation corrections, assessment/competition records, manual adapter and Firestore enforcement, with no selection authority.
 * [**Health Anomaly Shadow Architecture**](./architecture/health-anomaly-shadow.md) — Evaluator boundary, fail-closed runtime selection, episode continuity, immutable assessment revisions, and prospective outcome capture.
