@@ -20,7 +20,7 @@ class ProviderCapabilities:
     hrv: bool = True
     activities: bool = True
     activity_details: bool = False
-    body_composition: bool = True
+    body_composition: bool = False
     training_readiness: bool = False
     workout_publishing: bool = False  # no adapter in this codebase exposes mutations
 
