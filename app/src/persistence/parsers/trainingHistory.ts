@@ -116,6 +116,21 @@ function parseRunningDynamics(value: unknown, activityType: string): RunningDyna
         && (parsed.verticalRatioPct < 1.0 || parsed.verticalRatioPct > 25.0)
     ) return undefined;
 
+    // These metrics are physically strictly positive when measured. Garmin and legacy
+    // imports can use zero as a missing-value sentinel, so do not render it as genuine
+    // biomechanics/running power telemetry.
+    const strictlyPositiveKeys = [
+        'groundContactTimeMs',
+        'verticalOscillationCm',
+        'strideLengthM',
+        'avgRunningPowerWatts',
+        'maxRunningPowerWatts',
+    ] as const;
+    if (strictlyPositiveKeys.some((key) => {
+        const metric = parsed[key];
+        return typeof metric === 'number' && metric <= 0;
+    })) return undefined;
+
     return Object.keys(parsed).length > 0 ? parsed : undefined;
 }
 

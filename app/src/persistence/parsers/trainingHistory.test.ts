@@ -114,6 +114,28 @@ describe('training-history persistence parsers', () => {
         expect(parsed.data.runningDynamics).toBeUndefined();
     });
 
+    it('drops zero-valued running-dynamics sentinels while preserving the base activity', () => {
+        const strictlyPositiveFields = [
+            'groundContactTimeMs',
+            'verticalOscillationCm',
+            'strideLengthM',
+            'avgRunningPowerWatts',
+            'maxRunningPowerWatts',
+        ] as const;
+
+        for (const field of strictlyPositiveFields) {
+            const parsed = parseNormalizedGarminActivity({
+                ...activity,
+                type: 'running',
+                runningDynamics: { [field]: 0 },
+            }, 'users/u1/activities/a-1', 'a-1');
+
+            expect(parsed).toMatchObject({ status: 'AVAILABLE', data: { activityId: 'a-1' } });
+            if (parsed.status !== 'AVAILABLE') throw new Error('expected available activity');
+            expect(parsed.data.runningDynamics).toBeUndefined();
+        }
+    });
+
     it('drops corrupt optional telemetry while preserving the base activity', () => {
         const parsed = parseNormalizedGarminActivity({
             ...activity,
