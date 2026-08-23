@@ -1076,12 +1076,15 @@ def extract_running_dynamics(act: dict[str, Any]) -> CanonicalRunningDynamics | 
         if bal_val is not None and 35.0 <= bal_val <= 65.0:
             gct_bal_left = round(bal_val, 1)
 
+    # Garmin reports vertical oscillation in millimeters under both keys -- always
+    # convert, never guess from magnitude (a real value can legitimately fall on
+    # either side of any threshold, e.g. 84mm and 8.4mm are both plausible readings).
     raw_vert_osc = act.get("avgVerticalOscillation") or act.get("verticalOscillation")
     vert_osc: float | None = None
     if raw_vert_osc is not None:
         vo_val = _non_negative_number(raw_vert_osc)
         if vo_val is not None:
-            vert_osc = round(vo_val / 10.0, 1) if vo_val > 30 else round(vo_val, 1)
+            vert_osc = round(vo_val / 10.0, 1)
 
     raw_vert_ratio = act.get("avgVerticalRatio") or act.get("verticalRatio")
     vert_ratio: float | None = None
@@ -1090,12 +1093,14 @@ def extract_running_dynamics(act: dict[str, Any]) -> CanonicalRunningDynamics | 
         if vr_val is not None and 1.0 <= vr_val <= 25.0:
             vert_ratio = round(vr_val, 1)
 
+    # Garmin reports stride length in centimeters under both keys -- same
+    # always-convert reasoning as vertical oscillation above.
     raw_stride = act.get("avgStrideLength") or act.get("strideLength")
     stride_m: float | None = None
     if raw_stride is not None:
         st_val = _non_negative_number(raw_stride)
         if st_val is not None:
-            stride_m = round(st_val / 100.0, 2) if st_val > 20 else round(st_val, 2)
+            stride_m = round(st_val / 100.0, 2)
 
     raw_avg_power = act.get("avgPower") or act.get("averagePower") or act.get("avgRunningPower")
     avg_power: int | None = None

@@ -472,6 +472,24 @@ def test_canonicalize_activities_extracts_running_dynamics():
     assert act.running_dynamics.max_running_power_watts == 410
 
 
+def test_extract_running_dynamics_converts_units_unconditionally():
+    """Vertical oscillation (mm) and stride length (cm) must always be converted --
+    never gated on the raw value's magnitude, which misconverts legitimate small
+    readings (e.g. an efficient runner's low vertical oscillation)."""
+    from garmin_sync.garmin_provider import extract_running_dynamics
+
+    rd = extract_running_dynamics(
+        {
+            "activityType": {"typeKey": "running"},
+            "avgVerticalOscillation": 30.0,  # mm -> 3.0 cm, not left as 30.0 cm
+            "avgStrideLength": 20.0,  # cm -> 0.20 m, not left as 20.0 m
+        }
+    )
+    assert rd is not None
+    assert rd.vertical_oscillation_cm == 3.0
+    assert rd.stride_length_m == 0.20
+
+
 def test_canonicalize_activities_handles_missing_activity_id():
     """A Garmin activity payload without an activityId (e.g. an in-progress/pending
     upload) must canonicalize to activity_id=None rather than a shared placeholder

@@ -104,11 +104,17 @@ function parseRunningDynamics(value: unknown, activityType: string): RunningDyna
         parsed[key] = numericValue;
     }
 
+    // Bounds mirror the backend's canonical extraction (garmin_provider.py
+    // extract_running_dynamics): a value outside these ranges is not a plausible
+    // reading and must not be persisted as valid telemetry.
     if (
         typeof parsed.groundContactBalanceLeftPct === 'number'
-        && parsed.groundContactBalanceLeftPct > 100
+        && (parsed.groundContactBalanceLeftPct < 35.0 || parsed.groundContactBalanceLeftPct > 65.0)
     ) return undefined;
-    if (typeof parsed.verticalRatioPct === 'number' && parsed.verticalRatioPct > 100) return undefined;
+    if (
+        typeof parsed.verticalRatioPct === 'number'
+        && (parsed.verticalRatioPct < 1.0 || parsed.verticalRatioPct > 25.0)
+    ) return undefined;
 
     return Object.keys(parsed).length > 0 ? parsed : undefined;
 }

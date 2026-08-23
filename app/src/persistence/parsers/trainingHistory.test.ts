@@ -102,6 +102,18 @@ describe('training-history persistence parsers', () => {
         expect(parsed.data.runningDynamics).toBeUndefined();
     });
 
+    it('drops running dynamics with a below-range balance or vertical ratio', () => {
+        const parsed = parseNormalizedGarminActivity({
+            ...activity,
+            type: 'running',
+            runningDynamics: { groundContactBalanceLeftPct: 10, verticalRatioPct: 0.5 },
+        }, 'users/u1/activities/a-1', 'a-1');
+
+        expect(parsed).toMatchObject({ status: 'AVAILABLE', data: { activityId: 'a-1' } });
+        if (parsed.status !== 'AVAILABLE') throw new Error('expected available activity');
+        expect(parsed.data.runningDynamics).toBeUndefined();
+    });
+
     it('drops corrupt optional telemetry while preserving the base activity', () => {
         const parsed = parseNormalizedGarminActivity({
             ...activity,
