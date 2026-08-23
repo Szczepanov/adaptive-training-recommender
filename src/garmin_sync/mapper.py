@@ -177,6 +177,11 @@ def _build_metric_dates(
     target_date_iso: str,
     activities_through_iso: str | None,
 ) -> MetricDates:
+    # SpO2 and skin-temperature deviation either belong to target-date sleep or, when
+    # canonicalization selected the D-1 sleep fallback, to that fallback night. Daily
+    # Pulse Ox is suppressed in the fallback case, so a single provenance date remains
+    # truthful for the entire optional SpO2 object.
+    selected_sleep_date = canonical.sleep_date or target_date_iso
     return MetricDates(
         sleep=canonical.sleep_date,
         hrv=canonical.hrv_date,
@@ -195,6 +200,10 @@ def _build_metric_dates(
         trainingReadiness=target_date_iso if canonical.training_readiness is not None else None,
         trainingStatus=target_date_iso if canonical.training_status is not None else None,
         weight=canonical.weight_date if canonical.weight_kg is not None else None,
+        spo2=selected_sleep_date if canonical.spo2 is not None else None,
+        skinTempDeviation=(
+            selected_sleep_date if canonical.skin_temp_deviation_celsius is not None else None
+        ),
     )
 
 
@@ -308,6 +317,14 @@ def _build_data_quality(
     canonical: CanonicalDailyMetrics,
     derived_metrics: DerivedMetrics,
 ) -> DataQuality:
+    spo2_available = canonical.spo2 is not None and any(
+        value is not None
+        for value in (
+            canonical.spo2.avg_pct,
+            canonical.spo2.min_pct,
+            canonical.spo2.sleep_avg_pct,
+        )
+    )
     return DataQuality(
         sleepScoreAvailable=canonical.sleep_score is not None,
         restingHrAvailable=canonical.resting_heart_rate_bpm is not None,
@@ -323,7 +340,8 @@ def _build_data_quality(
         and canonical.training_status.status_phrase is not None,
         heartRateZonesAvailable=canonical.heart_rate_zones is not None
         and canonical.heart_rate_zones.max_hr_used is not None,
-        spo2Available=canonical.spo2 is not None and canonical.spo2.avg_pct is not None,
+        spo2Available=spo2_available,
+        skinTempAvailable=canonical.skin_temp_deviation_celsius is not None,
     )
 
 
