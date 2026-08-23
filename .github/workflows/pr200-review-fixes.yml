@@ -1,0 +1,425 @@
+name: PR 200 review hardening
+
+on:
+  push:
+    branches:
+      - feat/garmin-spo2-skin-temp
+
+permissions:
+  contents: write
+
+jobs:
+  apply-review-fixes:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feat/garmin-spo2-skin-temp
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          version: "0.12.2"
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install Python dependencies
+        run: uv sync --frozen
+
+      - name: Apply reviewed fixes and documentation
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from textwrap import dedent
+
+          def replace_once(path: str, old: str, new: str) -> None:
+              file = Path(path)
+              text = file.read_text()
+              if new in text:
+                  return
+              count = text.count(old)
+              if count != 1:
+                  raise RuntimeError(f"{path}: expected one replacement target, found {count}")
+              file.write_text(text.replace(old, new, 1))
+
+          def append_if_missing(path: str, sentinel: str, addition: str) -> None:
+              file = Path(path)
+              text = file.read_text()
+              if sentinel in text:
+                  return
+              file.write_text(text.rstrip() + "\n\n\n" + dedent(addition).strip() + "\n")
+
+          replace_once(
+              "src/garmin_sync/garmin_provider.py",
+              dedent('''
+              def extract_spo2(spo2_payload: Any, sleep_payload: Any = None) -> CanonicalSpo2 | None:
+                  """Extract SpO2 metrics (daily average/minimum plus sleep average) from Garmin."""
+                  avg_val = None
+                  min_val = None
+                  sleep_avg = None
+
+                  if isinstance(spo2_payload, dict):
+                      user_spo2 = spo2_payload.get("userDailySpo2") or spo2_payload
+                      if isinstance(user_spo2, dict):
+                          avg_val = _non_negative_number(user_spo2.get("averageSpO2"))
+                          min_val = _non_negative_number(user_spo2.get("lowestSpO2"))
+
+                  if isinstance(sleep_payload, dict):
+                      dto = (
+                          sleep_payload.get("dailySleepDTO", {})
+                          if isinstance(sleep_payload.get("dailySleepDTO"), dict)
+                          else sleep_payload
+                      )
+                      sleep_avg = _non_negative_number(dto.get("averageSpO2Value"))
+                      sleep_min = _non_negative_number(dto.get("lowestSpO2Value"))
+                      if avg_val is None:
+                          avg_val = sleep_avg
+                      if min_val is None:
+                          min_val = sleep_min
+                      if sleep_avg is None:
+                          sleep_avg = avg_val
+
+                  if avg_val is not None or min_val is not None or sleep_avg is not None:
+                      return CanonicalSpo2(
+                          avg_pct=avg_val,
+                          min_pct=min_val,
+                          sleep_avg_pct=sleep_avg,
+                      )
+                  return None
+              '''),
+              dedent('''
+              def _spo2_percentage(value: Any) -> float | None:
+                  """Return a physiologically valid SpO2 percentage from Garmin telemetry.
+
+                  Pulse Ox is a percentage, so zero/negative values and values above 100 are
+                  missing/invalid telemetry rather than measurements that should reach snapshots.
+                  Keep the same strict numeric-input policy as the rest of this provider boundary.
+                  """
+                  numeric = _non_negative_number(value)
+                  if numeric is None or numeric <= 0 or numeric > 100:
+                      return None
+                  return numeric
+
+
+              def extract_spo2(spo2_payload: Any, sleep_payload: Any = None) -> CanonicalSpo2 | None:
+                  """Extract Garmin SpO2 without conflating daily and sleep-only summaries.
+
+                  ``avg_pct``/``min_pct`` prefer Garmin's date-scoped Pulse Ox summary and fall
+                  back to the selected sleep record only when the daily values are unavailable.
+                  ``sleep_avg_pct`` is populated only from an explicitly sleep-scoped Garmin field;
+                  a generic daily average is never relabelled as a sleep average.
+                  """
+                  avg_val = None
+                  min_val = None
+                  sleep_avg = None
+
+                  if isinstance(spo2_payload, dict):
+                      user_spo2 = spo2_payload.get("userDailySpo2") or spo2_payload
+                      if isinstance(user_spo2, dict):
+                          avg_val = _spo2_percentage(user_spo2.get("averageSpO2"))
+                          min_val = _spo2_percentage(user_spo2.get("lowestSpO2"))
+                          sleep_avg = _spo2_percentage(user_spo2.get("avgSleepSpO2"))
+                          if sleep_avg is None:
+                              sleep_avg = _spo2_percentage(user_spo2.get("averageSleepSpO2"))
+
+                      # Some Garmin payload variants keep the explicit sleep average at the
+                      # response root while nesting the daily summary under userDailySpo2.
+                      if sleep_avg is None and user_spo2 is not spo2_payload:
+                          sleep_avg = _spo2_percentage(spo2_payload.get("avgSleepSpO2"))
+                          if sleep_avg is None:
+                              sleep_avg = _spo2_percentage(spo2_payload.get("averageSleepSpO2"))
+
+                  if isinstance(sleep_payload, dict):
+                      dto = (
+                          sleep_payload.get("dailySleepDTO", {})
+                          if isinstance(sleep_payload.get("dailySleepDTO"), dict)
+                          else sleep_payload
+                      )
+                      sleep_dto_avg = _spo2_percentage(dto.get("averageSpO2Value"))
+                      if sleep_dto_avg is None:
+                          # Defensive alias used by some garminconnect typed shapes.
+                          sleep_dto_avg = _spo2_percentage(dto.get("avgSpO2"))
+                      sleep_min = _spo2_percentage(dto.get("lowestSpO2Value"))
+
+                      if sleep_avg is None:
+                          sleep_avg = sleep_dto_avg
+                      if avg_val is None:
+                          avg_val = sleep_dto_avg
+                      if min_val is None:
+                          min_val = sleep_min
+
+                  if avg_val is not None or min_val is not None or sleep_avg is not None:
+                      return CanonicalSpo2(
+                          avg_pct=avg_val,
+                          min_pct=min_val,
+                          sleep_avg_pct=sleep_avg,
+                      )
+                  return None
+              '''),
+          )
+
+          replace_once(
+              "src/garmin_sync/mapper.py",
+              dedent('''
+                      heartRateZonesAvailable=canonical.heart_rate_zones is not None
+                      and canonical.heart_rate_zones.max_hr_used is not None,
+                      spo2Available=canonical.spo2 is not None and canonical.spo2.avg_pct is not None,
+              '''),
+              dedent('''
+                      heartRateZonesAvailable=canonical.heart_rate_zones is not None
+                      and canonical.heart_rate_zones.max_hr_used is not None,
+                      spo2Available=canonical.spo2 is not None
+                      and any(
+                          value is not None
+                          for value in (
+                              canonical.spo2.avg_pct,
+                              canonical.spo2.min_pct,
+                              canonical.spo2.sleep_avg_pct,
+                          )
+                      ),
+                      skinTempAvailable=canonical.skin_temp_deviation_celsius is not None,
+              '''),
+          )
+
+          replace_once(
+              "src/garmin_sync/models.py",
+              "    spo2Available: bool = False\n\n    def to_dict(self) -> dict[str, bool]:",
+              "    spo2Available: bool = False\n    skinTempAvailable: bool = False\n\n    def to_dict(self) -> dict[str, bool]:",
+          )
+
+          replace_once(
+              "app/src/engine/models.ts",
+              "        spo2Available?: boolean;\n    };",
+              "        spo2Available?: boolean;\n        skinTempAvailable?: boolean;\n    };",
+          )
+
+          replace_once(
+              "app/src/components/DataView.tsx",
+              dedent('''
+              function formatSleepStageMinutes(seconds: number | null | undefined): string {
+                return typeof seconds === 'number' && Number.isFinite(seconds)
+                  ? `${Math.round(seconds / 60)}m`
+                  : 'N/A';
+              }
+              '''),
+              dedent('''
+              function formatSleepStageMinutes(seconds: number | null | undefined): string {
+                return typeof seconds === 'number' && Number.isFinite(seconds)
+                  ? `${Math.round(seconds / 60)}m`
+                  : 'N/A';
+              }
+
+              type Spo2Display = {
+                avgPct?: number | null;
+                minPct?: number | null;
+                sleepAvgPct?: number | null;
+              };
+
+              function formatSpo2Summary(spo2: Spo2Display | null | undefined): string {
+                if (!spo2) return 'N/A';
+                const parts = [
+                  spo2.avgPct != null ? `avg ${spo2.avgPct}%` : null,
+                  spo2.minPct != null ? `min ${spo2.minPct}%` : null,
+                  spo2.sleepAvgPct != null ? `sleep avg ${spo2.sleepAvgPct}%` : null,
+                ].filter((part): part is string => part !== null);
+                return parts.length > 0 ? parts.join(' / ') : 'N/A';
+              }
+              '''),
+          )
+
+          replace_once(
+              "app/src/components/DataView.tsx",
+              dedent('''
+                        <div className="data-item">
+                          <span className="data-label">SpO2 (Avg / Min):</span>
+                          <span className="data-value">
+                            {recoverySnapshot?.raw.spo2?.avgPct != null ? `${recoverySnapshot.raw.spo2.avgPct}%` : 'N/A'}
+                            {recoverySnapshot?.raw.spo2?.minPct != null ? ` / min ${recoverySnapshot.raw.spo2.minPct}%` : ''}
+                          </span>
+                        </div>
+              '''),
+              dedent('''
+                        <div className="data-item">
+                          <span className="data-label">SpO2 (Avg / Min / Sleep):</span>
+                          <span className="data-value">{formatSpo2Summary(recoverySnapshot?.raw.spo2)}</span>
+                        </div>
+              '''),
+          )
+
+          replace_once(
+              "src/garmin_sync/service.py",
+              dedent('''
+                      """Archive the stats/sleep/hrv (+ fallback) payloads a fetch_daily_metrics call
+                      returned, remapping the fallback keys back to their real endpoint name and D-1
+                      logical date. Shared by sync_daily and backfill so they can't drift apart."""
+              '''),
+              dedent('''
+                      """Archive daily core payloads and optional enrichments returned by the provider.
+
+                      Fallback stats/sleep payloads are remapped to their real endpoint and D-1 logical
+                      date. Enrichments such as SpO2 keep the target date. Shared by sync_daily and
+                      backfill so live archival semantics cannot drift between those paths.
+                      """
+              '''),
+          )
+
+          append_if_missing(
+              "tests/test_spo2_skin_temp_sync.py",
+              "def test_spo2_sleep_average_is_explicit_and_not_fabricated_from_daily_average():",
+              '''
+              def test_spo2_sleep_average_is_explicit_and_not_fabricated_from_daily_average():
+                  with_sleep_avg = extract_spo2(
+                      {
+                          "averageSpO2": 97.0,
+                          "lowestSpO2": 93.0,
+                          "avgSleepSpO2": 95.5,
+                      },
+                      {},
+                  )
+                  assert with_sleep_avg is not None
+                  assert with_sleep_avg.avg_pct == 97.0
+                  assert with_sleep_avg.min_pct == 93.0
+                  assert with_sleep_avg.sleep_avg_pct == 95.5
+
+                  daily_only = extract_spo2(
+                      {"averageSpO2": 97.0, "lowestSpO2": 93.0},
+                      {},
+                  )
+                  assert daily_only is not None
+                  assert daily_only.sleep_avg_pct is None
+
+
+              def test_spo2_rejects_out_of_range_or_zero_percentages():
+                  spo2 = extract_spo2(
+                      {
+                          "averageSpO2": 101.0,
+                          "lowestSpO2": 0.0,
+                          "avgSleepSpO2": 95.0,
+                      },
+                      {},
+                  )
+
+                  assert spo2 is not None
+                  assert spo2.avg_pct is None
+                  assert spo2.min_pct is None
+                  assert spo2.sleep_avg_pct == 95.0
+              ''',
+          )
+
+          append_if_missing(
+              "tests/test_mapper.py",
+              "def test_data_quality_tracks_partial_spo2_and_skin_temp_availability():",
+              '''
+              def test_data_quality_tracks_partial_spo2_and_skin_temp_availability():
+                  from garmin_sync.canonical import CanonicalSpo2
+
+                  canonical = CanonicalDailyMetrics(
+                      date="2026-08-23",
+                      spo2=CanonicalSpo2(sleep_avg_pct=95.0),
+                      skin_temp_deviation_celsius=0.0,
+                  )
+
+                  snapshot = build_snapshot_from_canonical(
+                      user_id="test_uid",
+                      target_date_iso="2026-08-23",
+                      canonical=canonical,
+                      canonical_activities=[],
+                      derived_metrics=DerivedMetrics(),
+                  )
+
+                  assert snapshot.dataQuality.spo2Available is True
+                  assert snapshot.dataQuality.skinTempAvailable is True
+              ''',
+          )
+
+          replace_once(
+              "docs/architecture/ingestion-pipeline.md",
+              "* [`src/garmin_sync/garmin_client.py`](../../src/garmin_sync/garmin_client.py) — Low-level Garth client wrapper fetching daily stats, sleep JSON, HRV balance, body battery, and activity histories.",
+              "* [`src/garmin_sync/garmin_client.py`](../../src/garmin_sync/garmin_client.py) — Low-level Garmin client wrapper fetching daily stats, sleep JSON, HRV balance, Pulse Ox / SpO2, body battery, training telemetry, and activity histories.",
+          )
+
+          replace_once(
+              "docs/architecture/ingestion-pipeline.md",
+              dedent('''
+              The detail path is never used by lookback resync, `backfill`, or `rebuild`, and its raw
+              payloads are not stored in the date-keyed archive. Rebuild writes snapshots only, leaving
+              existing standalone activity telemetry untouched.
+
+              ---
+              '''),
+              dedent('''
+              The detail path is never used by lookback resync, `backfill`, or `rebuild`, and its raw
+              payloads are not stored in the date-keyed archive. Rebuild writes snapshots only, leaving
+              existing standalone activity telemetry untouched.
+
+              ### Recovery telemetry enrichments: SpO2 and skin temperature
+
+              SpO2 and overnight skin-temperature deviation are persisted as **observation-only**
+              recovery context. This ingestion does not add either signal to recommendation, fatigue,
+              optimizer, or health-anomaly policy. In particular, favorable Garmin telemetry is not
+              clearance to override subjective/tissue-response safety inputs.
+
+              * `GarminConnectClient.get_spo2_data` fetches the date-scoped Pulse Ox summary. The
+                canonical mapper accepts only finite percentages in `(0, 100]`. `avgPct` and `minPct`
+                prefer the daily Pulse Ox summary; sleep data is a fallback only when those daily fields
+                are unavailable.
+              * `sleepAvgPct` is populated only from an explicitly sleep-scoped Garmin value
+                (`avgSleepSpO2` / compatible alias or the selected sleep record's SpO2 average). A daily
+                average is never relabelled as a sleep average.
+              * Skin-temperature deviation comes from the selected Garmin sleep response
+                (`avgSkinTempDeviationC` plus defensive aliases); there is no separate skin-temperature
+                API call. A legitimate `0.0°C` deviation remains available.
+              * Sleep-date fallback is atomic for overnight context. If the D-1 sleep record is selected,
+                target-day Pulse Ox is not mixed into that D-1 sleep/skin-temperature record.
+              * The raw archive stores the date-scoped `spo2` response as an optional enrichment. Offline
+                rebuild reloads it and reconstructs skin temperature from archived sleep, preserving
+                live-sync/rebuild parity without any Garmin API call.
+              * `dataQuality.spo2Available` is true when any persisted SpO2 summary value is present;
+                `dataQuality.skinTempAvailable` independently tracks skin-temperature availability.
+
+              The Detailed Data recovery view renders daily average, daily/sleep fallback minimum, and
+              explicit sleep-average SpO2 separately so partial Garmin payloads do not produce misleading
+              `N/A / min ...` output.
+
+              ---
+              '''),
+          )
+          PY
+
+      - name: Format and verify Python changes
+        run: |
+          uv run ruff format src/garmin_sync/garmin_provider.py src/garmin_sync/mapper.py src/garmin_sync/models.py src/garmin_sync/service.py tests/test_spo2_skin_temp_sync.py tests/test_mapper.py
+          uv run ruff check src/garmin_sync/garmin_provider.py src/garmin_sync/mapper.py src/garmin_sync/models.py src/garmin_sync/service.py tests/test_spo2_skin_temp_sync.py tests/test_mapper.py
+          uv run mypy src/garmin_sync
+          uv run pytest tests/test_spo2_skin_temp_sync.py tests/test_mapper.py tests/test_rebuild_and_audit.py tests/test_garmin_client.py
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: app/package-lock.json
+
+      - name: Verify frontend changes
+        run: |
+          npm --prefix app ci
+          npm --prefix app run lint
+          npm --prefix app run build
+
+      - name: Commit reviewed fixes
+        run: |
+          if git diff --quiet; then
+            echo "No review changes to commit."
+            exit 0
+          fi
+          git config user.name "ChatGPT review"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/garmin_sync/garmin_provider.py src/garmin_sync/mapper.py src/garmin_sync/models.py src/garmin_sync/service.py app/src/engine/models.ts app/src/components/DataView.tsx tests/test_spo2_skin_temp_sync.py tests/test_mapper.py docs/architecture/ingestion-pipeline.md
+          git commit -m "fix(sync): harden SpO2 semantics and telemetry docs"
+          git push origin HEAD:feat/garmin-spo2-skin-temp
