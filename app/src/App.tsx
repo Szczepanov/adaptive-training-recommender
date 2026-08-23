@@ -275,7 +275,7 @@ function App() {
           </div>
         )}
 
-      <main className="app-content">
+      <main className="app-content" key={decisionInput?.date ?? getLocalDateString()}>
         <Suspense fallback={<div className="loading-state">Loading...</div>}>
           {screen === 'home' && (
             <Home
