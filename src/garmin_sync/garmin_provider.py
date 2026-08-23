@@ -46,6 +46,7 @@ _POWER_ACTIVITY_TYPES = {
     "road_biking",
     "virtual_ride",
 }
+_STRENGTH_ACTIVITY_TYPES = {"strength_training", "fitness_equipment"}
 
 
 def extract_sleep_metrics(
@@ -275,16 +276,31 @@ def _positive_integer(value: Any) -> int | None:
 
 
 def qualifies_for_activity_detail(activity: CanonicalActivity) -> bool:
-    """Accepted D-DETAIL-GATE predicate for the opt-in live detail fetch.
+    """Accepted D-DETAIL-GATE predicate for the opt-in power-detail fetch.
 
-    The daily target-date fetch is the only caller. At three endpoints per qualifying
-    activity, the worst-case incremental request budget is ``3 * N`` for that run;
-    backfill and rebuild remain at zero.
+    At three endpoints per qualifying activity, the worst-case incremental request
+    budget is ``3 * N`` for that run. Strength sets are deliberately handled by the
+    separate one-endpoint predicate below so enabling their auto-sync does not silently
+    turn on the more expensive cycling telemetry path.
     """
     return (
         activity.activity_id is not None
         and activity.type.lower() in _POWER_ACTIVITY_TYPES
         and activity.intensity_tag != "easy"
+    )
+
+
+def qualifies_for_strength_exercise_sets(activity: CanonicalActivity) -> bool:
+    """Return whether Garmin can expose per-set strength data for this activity.
+
+    Live Garmin observations and other consumers of the same endpoint confirm both
+    ``strength_training`` and ``fitness_equipment`` can carry ``exerciseSets``. Unlike
+    power detail, intensity is irrelevant: an easy strength session still has useful
+    reps/set structure and costs just one extra endpoint call.
+    """
+    return (
+        activity.activity_id is not None
+        and activity.type.lower() in _STRENGTH_ACTIVITY_TYPES
     )
 
 
@@ -346,8 +362,85 @@ def _canonicalize_laps(payload: Any) -> list[CanonicalLapSummary] | None:
     return _parse_records(raw_laps, _build_lap_summary)
 
 
+def _exercise_candidate_identity(item: dict[str, Any]) -> tuple[str | None, str | None]:
+    """Extract a conservative Garmin exercise guess from an exercise-set row.
+
+    Garmin's ``exercises`` array is an ML classification, not ground truth. Only a
+    non-UNKNOWN candidate at >=50% confidence is surfaced, and a tie with the runner-up
+    is treated as ambiguous. Payloads that already provide explicit flat
+    ``exerciseCategory`` / ``exerciseName`` fields keep those values unchanged.
+    """
+    explicit_category = item.get("exerciseCategory")
+    category = (
+        explicit_category.strip()
+        if isinstance(explicit_category, str) and explicit_category.strip()
+        else None
+    )
+    explicit_name = item.get("exerciseName")
+    name = explicit_name.strip() if isinstance(explicit_name, str) and explicit_name.strip() else None
+    if category is not None or name is not None:
+        return category, name
+
+    raw_candidates = item.get("exercises")
+    if not isinstance(raw_candidates, list):
+        return None, None
+
+    candidates: list[tuple[float | None, str | None, str | None]] = []
+    for raw_candidate in raw_candidates:
+        if not isinstance(raw_candidate, dict):
+            continue
+        raw_category = raw_candidate.get("category")
+        candidate_category = (
+            raw_category.strip()
+            if isinstance(raw_category, str) and raw_category.strip()
+            else None
+        )
+        if candidate_category == "UNKNOWN":
+            continue
+        raw_name = raw_candidate.get("name")
+        candidate_name = raw_name.strip() if isinstance(raw_name, str) and raw_name.strip() else None
+        if candidate_category is None and candidate_name is None:
+            continue
+
+        confidence = _non_negative_number(raw_candidate.get("probability"))
+        if confidence is not None and confidence <= 1.0:
+            confidence *= 100.0
+        if confidence is not None and confidence < 50.0:
+            continue
+        candidates.append((confidence, candidate_category, candidate_name))
+
+    if not candidates:
+        return None, None
+
+    # Known probabilities sort first. A single unscored candidate is still useful, but
+    # an unscored multi-candidate payload is ambiguous and therefore deliberately blank.
+    candidates.sort(key=lambda candidate: candidate[0] if candidate[0] is not None else -1.0, reverse=True)
+    top = candidates[0]
+    if len(candidates) > 1:
+        runner_up = candidates[1]
+        if top[0] is None or runner_up[0] is None:
+            return None, None
+        if top[0] - runner_up[0] <= 0.01:
+            return None, None
+    return top[1], top[2]
+
+
+def _set_duration(item: dict[str, Any], primary: str, fallback: str) -> float | None:
+    value = item.get(primary)
+    if value is None:
+        value = item.get(fallback)
+    return _non_negative_number(value)
+
+
 def extract_exercise_sets(raw_sets: Any) -> list[CanonicalExerciseSet] | None:
-    """Extract structured exercise sets and repetitions from Garmin strength payloads."""
+    """Extract work sets/reps from Garmin's real interleaved ``exerciseSets`` shape.
+
+    Garmin emits ACTIVE/WARM_UP/etc. rows interleaved with REST rows. The REST row's
+    duration belongs to the preceding work set, so standalone REST rows are folded into
+    ``rest_duration_seconds`` instead of becoming fake numbered exercises. Raw Garmin
+    ``weight`` is grams; an explicit ``weightKg`` key is accepted only as a normalized
+    compatibility shape.
+    """
     if isinstance(raw_sets, dict):
         sets_list = raw_sets.get("exerciseSets")
     elif isinstance(raw_sets, list):
@@ -359,38 +452,54 @@ def extract_exercise_sets(raw_sets: Any) -> list[CanonicalExerciseSet] | None:
         return None
 
     results: list[CanonicalExerciseSet] = []
-    for idx, item in enumerate(sets_list):
+    for item in sets_list:
         if not isinstance(item, dict):
             continue
-        set_order = item.get("setOrder")
-        if set_order is None or not isinstance(set_order, int):
-            set_order = idx
 
         raw_set_type = item.get("setType")
         set_type = str(raw_set_type).lower() if raw_set_type is not None else "active"
+        duration = _set_duration(item, "duration", "durationSeconds")
 
-        reps = _positive_integer(item.get("repetitionCount") or item.get("reps"))
+        if set_type == "rest":
+            rest_duration = duration
+            if rest_duration is None:
+                rest_duration = _set_duration(item, "restDuration", "restDurationSeconds")
+            if results and rest_duration is not None:
+                results[-1].rest_duration_seconds = rest_duration
+            continue
 
-        raw_weight = _non_negative_number(item.get("weight") or item.get("weightKg"))
-        weight_kg: float | None = None
-        if raw_weight is not None:
-            if raw_weight > 500.0:
-                weight_kg = round(raw_weight / 1000.0, 1)
-            elif 0.0 <= raw_weight <= 500.0:
-                weight_kg = round(raw_weight, 1)
-
-        category = item.get("exerciseCategory")
-        category_str = (
-            str(category).strip() if isinstance(category, str) and category.strip() else None
+        raw_set_order = item.get("setOrder")
+        set_order = (
+            raw_set_order
+            if isinstance(raw_set_order, int) and not isinstance(raw_set_order, bool)
+            else len(results)
         )
 
-        name = item.get("exerciseName")
-        name_str = str(name).strip() if isinstance(name, str) and name.strip() else None
+        raw_reps = item.get("repetitionCount")
+        if raw_reps is None:
+            raw_reps = item.get("reps")
+        reps = _positive_integer(raw_reps)
 
-        duration = _non_negative_number(item.get("duration") or item.get("durationSeconds"))
-        rest_duration = _non_negative_number(
-            item.get("restDuration") or item.get("restDurationSeconds")
+        # The live Garmin endpoint's `weight` field is grams. Keep support for the PR's
+        # earlier flat test/normalized shape only when it is unmistakably packed (a
+        # same-row rest duration); real Garmin payloads represent rest as separate rows.
+        raw_weight_kg = _first_positive_number(item.get("weightKg"))
+        raw_weight_grams = _first_positive_number(item.get("weight"))
+        legacy_packed_shape = (
+            item.get("restDuration") is not None or item.get("restDurationSeconds") is not None
         )
+        if raw_weight_kg is not None:
+            weight_kg = round(raw_weight_kg, 2)
+        elif raw_weight_grams is not None:
+            if legacy_packed_shape and raw_weight_grams <= 500.0:
+                weight_kg = round(raw_weight_grams, 2)
+            else:
+                weight_kg = round(raw_weight_grams / 1000.0, 2)
+        else:
+            weight_kg = None
+
+        category, name = _exercise_candidate_identity(item)
+        rest_duration = _set_duration(item, "restDuration", "restDurationSeconds")
 
         results.append(
             CanonicalExerciseSet(
@@ -398,8 +507,8 @@ def extract_exercise_sets(raw_sets: Any) -> list[CanonicalExerciseSet] | None:
                 set_type=set_type,
                 repetition_count=reps,
                 weight_kg=weight_kg,
-                exercise_category=category_str,
-                exercise_name=name_str,
+                exercise_category=category,
+                exercise_name=name,
                 duration_seconds=duration,
                 rest_duration_seconds=rest_duration,
             )
@@ -970,30 +1079,32 @@ class GarminProviderAdapter:
         )
 
     def fetch_activity_detail(self, activity_id: str) -> ProviderActivityDetailResult:
-        power_zones = self.client.get_activity_power_zones(activity_id)
-        hr_zones = self.client.get_activity_hr_zones(activity_id)
-        splits = self.client.get_activity_splits(activity_id)
         summary = self._activity_summary_cache.get(activity_id, {})
         activity_type = (
             summary.get("activityType", {}).get("typeKey", "") if isinstance(summary, dict) else ""
         )
-
-        exercise_sets = None
         type_str = str(activity_type).lower()
-        if "strength" in type_str or "fitness_equipment" in type_str or "training" in type_str:
-            exercise_sets = self._fetch_enrichment(
-                f"exercise_sets_{activity_id}",
-                lambda: self.client.get_activity_exercise_sets(activity_id),
+
+        # Strength detail is a different one-endpoint data product from cycling power
+        # telemetry. Fetching the three power-detail endpoints first wastes requests and
+        # can fail before exercise sets are ever reached. Keep the paths disjoint.
+        if type_str in _STRENGTH_ACTIVITY_TYPES:
+            exercise_sets = self.client.get_activity_exercise_sets(activity_id)
+            return ProviderActivityDetailResult(
+                canonical=canonicalize_activity_detail(
+                    activity_id=activity_id,
+                    activity_summary=summary,
+                    power_zones=None,
+                    hr_zones=None,
+                    splits=None,
+                    exercise_sets=exercise_sets,
+                ),
+                raw_payloads={"activity_exercise_sets": exercise_sets},
             )
 
-        raw_payloads: dict[str, Any] = {
-            "activity_power_zones": power_zones,
-            "activity_hr_zones": hr_zones,
-            "activity_splits": splits,
-        }
-        if exercise_sets is not None:
-            raw_payloads["activity_exercise_sets"] = exercise_sets
-
+        power_zones = self.client.get_activity_power_zones(activity_id)
+        hr_zones = self.client.get_activity_hr_zones(activity_id)
+        splits = self.client.get_activity_splits(activity_id)
         return ProviderActivityDetailResult(
             canonical=canonicalize_activity_detail(
                 activity_id=activity_id,
@@ -1001,7 +1112,10 @@ class GarminProviderAdapter:
                 power_zones=power_zones,
                 hr_zones=hr_zones,
                 splits=splits,
-                exercise_sets=exercise_sets,
             ),
-            raw_payloads=raw_payloads,
+            raw_payloads={
+                "activity_power_zones": power_zones,
+                "activity_hr_zones": hr_zones,
+                "activity_splits": splits,
+            },
         )
