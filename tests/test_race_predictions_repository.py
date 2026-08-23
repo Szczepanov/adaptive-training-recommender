@@ -41,9 +41,7 @@ def test_race_prediction_refresh_preserves_missing_distances(monkeypatch):
 
     repo = FirestoreRecoveryRepository(user_id="uid", db=db)
     repo.upsert_garmin_performance_targets(
-        CanonicalPerformanceTargets(
-            race_predictions=CanonicalRacePredictions(five_km_sec=1185)
-        )
+        CanonicalPerformanceTargets(race_predictions=CanonicalRacePredictions(five_km_sec=1185))
     )
 
     payload = transaction.set.call_args.args[1]
