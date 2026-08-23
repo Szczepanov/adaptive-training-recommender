@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { GarminAuthError, garminAuthService } from './garminAuthService';
+import { garminAuthService } from './garminAuthService';
 
 const mockGetIdToken = vi.fn();
 
@@ -93,7 +93,7 @@ describe('garminAuthService', () => {
     }));
 
     await expect(garminAuthService.startLogin('athlete@example.com', 'secret')).rejects.toEqual(
-      expect.objectContaining<Partial<GarminAuthError>>({
+      expect.objectContaining({
         code: 'garmin_link.invalid_response',
         status: 200,
         retryable: false,
