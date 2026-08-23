@@ -638,8 +638,32 @@ def test_sync_daily_cold_start_auto_backfill():
     result = service.sync_daily(target_date_str="2026-08-22", auto_backfill_cold_start=True)
 
     assert result is True
-    service.backfill.assert_called_once_with(days=56, force=False)
+    # The 56-day backfill window must end at target_date, not today -- days=56 would
+    # resolve against local_today() instead.
+    service.backfill.assert_called_once_with(
+        start_date_str="2026-06-28", end_date_str="2026-08-22", force=False
+    )
     service._sync_current_performance_targets.assert_called_once_with("2026-08-22")
+
+
+def test_sync_daily_cold_start_auto_backfill_bounds_window_to_old_target_date():
+    """Regression test: a target_date more than 56 days in the past must still get
+    its own historical window ending at that date, not one ending at local_today()
+    (which would silently skip creating target_date's own snapshot)."""
+    settings = Settings(app_user_id="test_uid_789")
+    mock_repo = MagicMock()
+    mock_repo.get_historical_snapshots.return_value = {}  # cold start
+    service = GarminSyncService(settings=settings, repository=mock_repo)
+    service.backfill = MagicMock(return_value=True)
+    service._sync_current_performance_targets = MagicMock()
+
+    result = service.sync_daily(target_date_str="2026-01-01", auto_backfill_cold_start=True)
+
+    assert result is True
+    service.backfill.assert_called_once_with(
+        start_date_str="2025-11-07", end_date_str="2026-01-01", force=False
+    )
+    service._sync_current_performance_targets.assert_called_once_with("2026-01-01")
 
 
 def test_sync_daily_warm_history_skips_cold_start_backfill():
@@ -660,6 +684,56 @@ def test_sync_daily_warm_history_skips_cold_start_backfill():
     assert result is True
     service.backfill.assert_not_called()
     assert service._fetch_and_store_date.call_count >= 1
+
+
+def test_poll_manual_sync_requests_retry_uses_latest_attempt_payload(monkeypatch):
+    """P0 regression: Firestore retries claim_pending's transaction body on write
+    contention, re-reading the doc from scratch each attempt. If a retry observes a
+    *different* pending request than the first attempt (e.g. requestType changed
+    because a fresh request superseded the original one between attempts), only the
+    attempt whose transaction.update actually commits may be processed -- not an
+    earlier attempt's stale read."""
+    attempts = [
+        {"status": "pending", "requestType": "backfill", "days": 56},
+        {"status": "pending", "requestType": "sync"},
+    ]
+
+    class RetryingDoc:
+        def __init__(self):
+            self.data = attempts[-1]
+            self._reads = 0
+
+        def get(self, transaction=None):
+            data = attempts[self._reads] if self._reads < len(attempts) else attempts[-1]
+            self._reads += 1
+            return _FakeSyncRequestSnapshot(data)
+
+    def retried_transactional(fn):
+        # Simulate Firestore auto-retrying the whole transaction body on contention:
+        # the first invocation observes attempts[0] and loses the commit race, so the
+        # runtime re-invokes fn from scratch -- only the second (successful) call's
+        # observations may end up used by the caller.
+        def wrapper(transaction):
+            fn(transaction)
+            return fn(transaction)
+
+        return wrapper
+
+    monkeypatch.setattr("garmin_sync.service.firestore.transactional", retried_transactional)
+    settings = Settings(app_user_id="test_uid_789")
+    doc = RetryingDoc()
+    service = GarminSyncService(settings=settings, repository=MagicMock(db=_FakeSyncRequestDb(doc)))
+    service.sync_daily = MagicMock(return_value=True)
+    service.backfill = MagicMock(return_value=True)
+
+    result = service.poll_manual_sync_requests()
+
+    assert result is True
+    # The retry's payload (requestType="sync") must win -- not the first attempt's
+    # stale "backfill" read, which would have routed this into service.backfill()
+    # instead of the plain sync_daily() a bare 'sync' request type requires.
+    service.sync_daily.assert_called_once_with(force=True)
+    service.backfill.assert_not_called()
 
 
 def test_poll_manual_sync_requests_finish_does_not_stomp_a_superseding_request(monkeypatch):

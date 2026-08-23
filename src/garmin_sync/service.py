@@ -458,7 +458,14 @@ class GarminSyncService:
                         f"Cold start detected for user=<UID-redacted>: found only {len(history)} "
                         f"historical snapshots in last 56d (< 14). Automatically running 56-day backfill..."
                     )
-                    backfill_ok = self.backfill(days=56, force=force)
+                    # Bound the backfill window to end at target_date, not today: days=56
+                    # would resolve against local_today() and, for a target_date more than
+                    # 56 days in the past, never actually populate target_date's snapshot.
+                    backfill_ok = self.backfill(
+                        start_date_str=get_date_string(n_days_ago(target_date, 55)),
+                        end_date_str=target_iso,
+                        force=force,
+                    )
                     if not backfill_ok:
                         logger.warning("Automated cold-start backfill finished with errors.")
                     self._sync_current_performance_targets(target_iso)
@@ -1021,7 +1028,11 @@ class GarminSyncService:
             data = snapshot.to_dict() or {}
             if data.get("status") != "pending":
                 return False
-            claimed_payload.append(data)
+            # Firestore retries this callback on write contention (see docstring above);
+            # each retry re-reads the doc from scratch, so only the successful attempt's
+            # payload may survive -- an earlier attempt's data could belong to a request
+            # that a concurrent write already superseded.
+            claimed_payload[:] = [data]
             transaction.update(
                 request_ref,
                 {

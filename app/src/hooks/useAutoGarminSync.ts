@@ -1,13 +1,36 @@
 import { useEffect, useRef } from 'react';
 import type { DailyDecisionInput } from '../engine/models';
-import { garminSyncRequestService } from '../services/garminSyncRequestService';
-import { isRecoverySnapshotStale, isSyncRequestInFlight } from '../utils/garminSyncStaleness';
+import { garminSyncRequestService, type GarminSyncRequest } from '../services/garminSyncRequestService';
+import { isRecoverySnapshotStale } from '../utils/garminSyncStaleness';
 
 export interface UseAutoGarminSyncOptions {
     userId: string | null | undefined;
     decisionInput: DailyDecisionInput | null;
     onSynced?: () => void;
     enabled?: boolean;
+}
+
+/**
+ * Pure predicate behind the completion subscription below, extracted so it's
+ * testable without a render harness (this repo has no interactive component-test
+ * harness -- see GarminSyncNowButton.test.tsx / garminSyncStaleness.ts).
+ *
+ * `awaitingRequestedAt` is the `requestedAt` of the specific request this hook
+ * queued (see requestSync()'s docstring). A snapshot only counts as "our sync
+ * finished" when it's that same request AND it reached 'completed' -- an update
+ * that matches the identifier but is still 'pending'/'processing', or that
+ * terminated as 'failed', must not fire onSynced.
+ */
+export function isAwaitedSyncComplete(
+    request: GarminSyncRequest | null,
+    awaitingRequestedAt: string | null
+): boolean {
+    return (
+        !!awaitingRequestedAt &&
+        !!request &&
+        request.requestedAt === awaitingRequestedAt &&
+        request.status === 'completed'
+    );
 }
 
 /**
@@ -25,7 +48,11 @@ export function useAutoGarminSync({
     enabled = true,
 }: UseAutoGarminSyncOptions): void {
     const hasTriggeredForDateRef = useRef<string | null>(null);
-    const awaitingSyncRef = useRef<boolean>(false);
+    // requestedAt of the specific request *this hook* queued, so the completion
+    // subscription below can tell "our sync finished" apart from "the shared doc
+    // changed for some other reason" (a stale terminal snapshot observed before our
+    // write lands, another tab's request, etc.) -- see requestSync()'s docstring.
+    const awaitingRequestedAtRef = useRef<string | null>(null);
     const onSyncedRef = useRef(onSynced);
 
     useEffect(() => {
@@ -35,7 +62,7 @@ export function useAutoGarminSync({
     // Reset the auto-trigger tracker when the user identity changes
     useEffect(() => {
         hasTriggeredForDateRef.current = null;
-        awaitingSyncRef.current = false;
+        awaitingRequestedAtRef.current = null;
     }, [userId]);
 
     // Subscribe to sync request state changes to notify caller when our sync finishes
@@ -45,8 +72,8 @@ export function useAutoGarminSync({
         const unsubscribe = garminSyncRequestService.subscribeToRequest(
             userId,
             (request) => {
-                if (awaitingSyncRef.current && request && !isSyncRequestInFlight(request)) {
-                    awaitingSyncRef.current = false;
+                if (isAwaitedSyncComplete(request, awaitingRequestedAtRef.current)) {
+                    awaitingRequestedAtRef.current = null;
                     onSyncedRef.current?.();
                 }
             },
@@ -66,11 +93,14 @@ export function useAutoGarminSync({
         const isStale = isRecoverySnapshotStale(decisionInput.recoverySnapshot, targetDate);
         if (isStale) {
             hasTriggeredForDateRef.current = targetDate;
-            awaitingSyncRef.current = true;
-            garminSyncRequestService.requestSync(userId).catch((err) => {
-                console.warn('[useAutoGarminSync] Failed to request auto sync:', err);
-                awaitingSyncRef.current = false;
-            });
+            garminSyncRequestService
+                .requestSync(userId)
+                .then((requestedAt) => {
+                    awaitingRequestedAtRef.current = requestedAt;
+                })
+                .catch((err) => {
+                    console.warn('[useAutoGarminSync] Failed to request auto sync:', err);
+                });
         }
     }, [userId, decisionInput, enabled]);
 }

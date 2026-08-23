@@ -461,9 +461,13 @@ class _Collection:
 
 
 class _Transaction:
-    def set(self, doc_ref: _Document, payload: dict[str, Any], merge: bool = True) -> None:
-        assert merge is True
-        doc_ref.data = {**(doc_ref.data or {}), **payload}
+    def set(self, doc_ref: _Document, payload: dict[str, Any], merge: bool = False) -> None:
+        # Mirrors google.cloud.firestore.Transaction.set's real default (merge=False):
+        # a bare transaction.set() fully replaces the document, it doesn't merge.
+        if merge:
+            doc_ref.data = {**(doc_ref.data or {}), **payload}
+        else:
+            doc_ref.data = dict(payload)
 
 
 class _Db:
@@ -563,3 +567,77 @@ def test_finalize_queues_initial_backfill_request(
     assert sync_req["status"] == "pending"
     assert sync_req["requestType"] == "initial_backfill"
     assert sync_req["days"] == 56
+
+
+def test_finalize_does_not_stomp_a_live_in_flight_sync_request(
+    monkeypatch: Any,
+    tmp_path: Path,
+) -> None:
+    """Regression test: a plain merge=True set() here would flip an already-claimed
+    'processing' request back to 'pending' while keeping its claimId -- the worker
+    that owns that claim would then mark this brand-new initial-backfill request
+    completed without ever running it, and a second poller could concurrently claim
+    the 'pending' doc too. Linking must leave a genuinely still-running request
+    alone."""
+
+    class TokenStore:
+        def __init__(self, _bucket: str, _object_name: str) -> None:
+            pass
+
+        def persist(self, _source: Path) -> bool:
+            return True
+
+    class FinalizableGarmin:
+        password = None
+
+        def connectapi(self, _path: str) -> dict[str, str]:
+            return {"garminGUID": "stable-guid"}
+
+    monkeypatch.setattr(account_link_module, "GcsTokenStore", TokenStore)
+    monkeypatch.setattr(
+        account_link_module.firebase_auth,
+        "create_custom_token",
+        lambda _uid: b"token",
+    )
+    monkeypatch.setattr(account_link_module.google_firestore, "transactional", lambda fn: fn)
+
+    db = _Db()
+    live_request = {
+        "userId": "new-user-123",
+        "status": "processing",
+        "requestType": "sync",
+        "requestedAt": account_link_module.datetime.now(
+            account_link_module.timezone.utc
+        ).isoformat(),
+        "claimId": "worker-currently-running",
+        "claimedAt": account_link_module.datetime.now(account_link_module.timezone.utc).isoformat(),
+    }
+    db.collection("users").document("new-user-123").collection("garmin_sync_requests").document(
+        "latest"
+    ).data = dict(live_request)
+
+    repository = account_link_module.GarminConnectionRepository(db=db)
+    service = GarminAccountLinkService("bucket", repository=repository)
+
+    token_path = tmp_path / "tokens.json"
+    token_path.write_text("{}", encoding="utf-8")
+    temp_dir = tmp_path / "temporary"
+    temp_dir.mkdir()
+
+    result = service._finalize(
+        FinalizableGarmin(),  # type: ignore[arg-type]
+        token_path,
+        temp_dir,
+        "new-user-123",
+    )
+
+    assert result["status"] == "authenticated"
+    sync_req = (
+        db.collection("users")
+        .document("new-user-123")
+        .collection("garmin_sync_requests")
+        .document("latest")
+        .data
+    )
+    # Untouched: still the live worker's claim, not the queued initial_backfill.
+    assert sync_req == live_request

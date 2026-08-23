@@ -42,35 +42,49 @@ export class GarminSyncRequestService {
      * or stale closes that gap: a genuinely still-in-flight request is left alone,
      * and this call resolves as a no-op (the caller's own subscription already
      * reflects that in-flight state).
+     *
+     * Returns the `requestedAt` of whichever request is now live -- the one just
+     * written, or the pre-existing in-flight one this call left alone. Callers that
+     * need to know when *their own* request finishes (as opposed to any update to
+     * the shared doc) must correlate a later subscription snapshot against this
+     * value rather than just watching for the next non-in-flight status: the doc
+     * this resolves to may already be sitting at a terminal status left over from a
+     * previous request, and a subscription observes that same stale snapshot before
+     * it observes this write.
      */
-    async requestSync(userId: string): Promise<void> {
+    async requestSync(userId: string): Promise<string> {
         const ref = this.requestRef(userId);
         const now = Date.now();
+        let requestedAt = new Date(now).toISOString();
         await runTransaction(getDb(), async (transaction) => {
             const snap = await transaction.get(ref);
             const existing = snap.exists() ? (snap.data() as GarminSyncRequest) : null;
             if (existing && isSyncRequestInFlight(existing) && !isSyncRequestStale(existing, now)) {
+                requestedAt = existing.requestedAt;
                 return;
             }
             const data: GarminSyncRequest = {
                 userId,
                 status: 'pending',
                 requestType: 'sync',
-                requestedAt: new Date(now).toISOString(),
+                requestedAt,
                 completedAt: null,
                 error: null,
             };
             transaction.set(ref, data);
         });
+        return requestedAt;
     }
 
-    async requestBackfill(userId: string, days = 56): Promise<void> {
+    async requestBackfill(userId: string, days = 56): Promise<string> {
         const ref = this.requestRef(userId);
         const now = Date.now();
+        let requestedAt = new Date(now).toISOString();
         await runTransaction(getDb(), async (transaction) => {
             const snap = await transaction.get(ref);
             const existing = snap.exists() ? (snap.data() as GarminSyncRequest) : null;
             if (existing && isSyncRequestInFlight(existing) && !isSyncRequestStale(existing, now)) {
+                requestedAt = existing.requestedAt;
                 return;
             }
             const data: GarminSyncRequest = {
@@ -78,12 +92,13 @@ export class GarminSyncRequestService {
                 status: 'pending',
                 requestType: 'backfill',
                 days,
-                requestedAt: new Date(now).toISOString(),
+                requestedAt,
                 completedAt: null,
                 error: null,
             };
             transaction.set(ref, data);
         });
+        return requestedAt;
     }
 
     async getRequest(userId: string): Promise<GarminSyncRequest | null> {
