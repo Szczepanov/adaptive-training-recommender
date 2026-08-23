@@ -505,6 +505,9 @@ def test_build_snapshot_maps_spo2_and_skin_temp():
     assert snapshot.raw.spo2.sleepAvgPct == 96.5
     assert snapshot.raw.skinTempDeviationCelsius == 0.25
     assert snapshot.dataQuality.spo2Available is True
+    assert snapshot.dataQuality.skinTempAvailable is True
+    assert snapshot.source.metricDates.spo2 == "2026-08-23"
+    assert snapshot.source.metricDates.skinTempDeviation == "2026-08-23"
 
 
 def test_build_snapshot_maps_recovery_time_hours():
