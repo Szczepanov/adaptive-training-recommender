@@ -64,7 +64,10 @@ function planningModeLiterals(): Set<string> {
         'models.ts',
         readFileSync(modelsPath, 'utf8'),
         ts.ScriptTarget.Latest,
-        true,
+        // setParentNodes=false: the traversal below is purely top-down (forEachChild) and
+        // never reads node.parent, so skip the extra pass the parser would otherwise spend
+        // wiring parent pointers up.
+        false,
         ts.ScriptKind.TS,
     );
     const modes = new Set<string>();
@@ -113,6 +116,13 @@ function lineOf(source: ts.SourceFile, node: ts.Node): number {
 }
 
 describe('planning-mode architecture authority', () => {
+    // This test synchronously parses the whole app source tree (270+ files) with the
+    // TypeScript compiler on every run -- the single heaviest CPU-bound unit test in the
+    // suite. The default 5s timeout is measured to be comfortable in isolation, but this
+    // is exactly the kind of synchronous parsing work that suffers most from a busy CI
+    // runner (many workers contending for a couple of vCPUs, made worse by coverage
+    // instrumentation on every concurrently-running test). A generous fixed budget keeps
+    // this from flaking under load while still catching a genuine hang or infinite loop.
     it('keeps effective planning-mode derivation inside planningMode.ts, across the whole app', () => {
         const violations: string[] = [];
         const modeLiterals = planningModeLiterals();
@@ -124,8 +134,12 @@ describe('planning-mode architecture authority', () => {
             // disables JSX parsing, so every expression inside a JSX attribute becomes
             // invisible to the traversal below -- which would make the whole reason this
             // scan was widened to components inert.
+            //
+            // setParentNodes=false (see planningModeLiterals above): this traversal never
+            // reads node.parent either, and skipping it measurably matters here -- this
+            // parses the entire app source tree synchronously, once per file, on every run.
             const source = ts.createSourceFile(
-                fileName, sourceText, ts.ScriptTarget.Latest, true,
+                fileName, sourceText, ts.ScriptTarget.Latest, false,
                 fileName.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
             );
 
@@ -174,5 +188,5 @@ describe('planning-mode architecture authority', () => {
             violations,
             'ADR-0017 requires planningMode.ts to be the sole authority that derives effective planning mode. Consume PlanningContext.mode downstream instead of re-deriving it.',
         ).toEqual([]);
-    });
+    }, 30_000);
 });
