@@ -182,11 +182,19 @@ def test_canonicalize_from_raw_fallback_consistency():
 
 def test_extract_sleep_metrics_handles_nested_and_fallback_shapes():
     nested = {
-        "dailySleepDTO": {"sleepScores": {"overall": {"value": 90}}, "sleepTimeSeconds": 25000}
+        "dailySleepDTO": {
+            "sleepScores": {"overall": {"value": 90}},
+            "sleepTimeSeconds": 25000,
+            "deepSleepSeconds": 5400,
+            "remSleepSeconds": 6000,
+            "lightSleepSeconds": 12000,
+            "awakeSleepSeconds": 1600,
+            "restlessMomentsCount": 15,
+        }
     }
-    assert extract_sleep_metrics(nested) == (90, 25000, None)
-    assert extract_sleep_metrics({}) == (None, None, None)
-    assert extract_sleep_metrics(None) == (None, None, None)
+    assert extract_sleep_metrics(nested) == (90, 25000, None, 5400, 6000, 12000, 1600, 15)
+    assert extract_sleep_metrics({}) == (None, None, None, None, None, None, None, None)
+    assert extract_sleep_metrics(None) == (None, None, None, None, None, None, None, None)
 
 
 # --- Respiration precision (finer than dailySleepDTO.averageRespirationValue) ----
@@ -885,3 +893,44 @@ def test_extract_gear_items():
     assert items[0].maximum_distance_km == 600.0
     assert items[0].status == "active"
     assert items[1].total_distance_km == 1540.2
+
+
+def test_extract_exercise_sets():
+    from garmin_sync.garmin_provider import extract_exercise_sets
+
+    raw = {
+        "exerciseSets": [
+            {
+                "setOrder": 0,
+                "setType": "ACTIVE",
+                "repetitionCount": 10,
+                "weight": 60000.0,  # 60,000 g -> 60.0 kg
+                "exerciseCategory": "BENCH_PRESS",
+                "exerciseName": "BARBELL_BENCH_PRESS",
+                "duration": 35.0,
+                "restDuration": 90.0,
+            },
+            {
+                "setOrder": 1,
+                "setType": "ACTIVE",
+                "repetitionCount": 8,
+                "weight": 70.0,  # 70 kg
+                "exerciseCategory": "BENCH_PRESS",
+                "exerciseName": "BARBELL_BENCH_PRESS",
+                "duration": 30.0,
+                "restDuration": 120.0,
+            },
+        ]
+    }
+    sets = extract_exercise_sets(raw)
+    assert sets is not None
+    assert len(sets) == 2
+    assert sets[0].set_order == 0
+    assert sets[0].set_type == "active"
+    assert sets[0].repetition_count == 10
+    assert sets[0].weight_kg == 60.0
+    assert sets[0].exercise_category == "BENCH_PRESS"
+    assert sets[0].exercise_name == "BARBELL_BENCH_PRESS"
+    assert sets[0].duration_seconds == 35.0
+    assert sets[0].rest_duration_seconds == 90.0
+    assert sets[1].weight_kg == 70.0

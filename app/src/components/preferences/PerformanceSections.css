@@ -1,0 +1,32 @@
+.race-predictions-grid {
+  align-items: stretch;
+}
+
+.race-prediction-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0.85rem 1rem;
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+}
+
+.race-prediction-label {
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.race-prediction-time {
+  color: var(--primary-color);
+  font-size: 1.25rem;
+  line-height: 1.2;
+}
+
+.race-prediction-pace {
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+}

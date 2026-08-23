@@ -38,4 +38,30 @@ describe('ActivityTelemetry', () => {
     }} />);
     expect(html).toContain('No zone or lap telemetry is available');
   });
+
+  it('renders strength exercise sets and repetitions table', () => {
+    const html = renderToStaticMarkup(<ActivityTelemetry state={{
+      status: 'AVAILABLE', revision: null, data: [{
+        ...base,
+        type: 'strength_training',
+        exerciseSets: [
+          {
+            setOrder: 0,
+            setType: 'active',
+            repetitionCount: 10,
+            weightKg: 60,
+            exerciseName: 'BARBELL_BENCH_PRESS',
+            durationSeconds: 35,
+            restDurationSeconds: 90,
+          },
+        ],
+      }],
+    }} />);
+    expect(html).toContain('Strength sets &amp; reps');
+    expect(html).toContain('BARBELL BENCH PRESS');
+    expect(html).toContain('10');
+    expect(html).toContain('60 kg');
+    expect(html).toContain('35s');
+    expect(html).toContain('90s rest');
+  });
 });

@@ -21,6 +21,7 @@ from .garmin_provider import (
     canonicalize_activities,
     canonicalize_from_raw,
     qualifies_for_activity_detail,
+    qualifies_for_strength_exercise_sets,
 )
 from .mapper import build_snapshot_from_canonical, normalize_activity
 from .metrics import compute_derived_metrics
@@ -188,8 +189,15 @@ class GarminSyncService:
         provider: WearableProvider,
         canonical_activities: list[CanonicalActivity],
         target_iso: str,
+        include_power_details: bool = False,
     ) -> dict[str, CanonicalActivityDetail]:
-        """Best-effort live enrichment behind D-DETAIL-GATE.
+        """Best-effort target-date activity enrichment.
+
+        Strength exercise sets are always eligible because they are the core data of a
+        strength session and require a single endpoint. The existing cycling power
+        detail path remains behind ``GARMIN_ACTIVITY_DETAIL_ENABLED`` via
+        ``include_power_details`` so this feature does not silently triple detail-call
+        traffic for qualifying rides.
 
         Raw detail payloads are deliberately not archived: ADR-0005's store is keyed by
         logical date, while these payloads require an activity-ID key. A failed detail
@@ -203,12 +211,14 @@ class GarminSyncService:
 
         details: dict[str, CanonicalActivityDetail] = {}
         for activity in canonical_activities:
-            # `canonical_activities` here is the full 3-day lookback window fetch_activities
-            # uses for activity discovery, not just target_iso's activities. D-DETAIL-GATE is
-            # explicitly scoped to "the target-date pass of sync_daily" only -- without this
-            # check a qualifying D-1/D-2 activity would get (re-)fetched and re-upserted on
-            # every subsequent day's sync too, well past the intended 3xN-per-run budget.
-            if activity.date != target_iso or not qualifies_for_activity_detail(activity):
+            # fetch_activities returns a lookback window. Only enrich the date currently
+            # being processed; otherwise the same D-1/D-2 activity would be re-fetched
+            # repeatedly inside one sync pass.
+            if activity.date != target_iso:
+                continue
+            wants_strength_sets = qualifies_for_strength_exercise_sets(activity)
+            wants_power_detail = include_power_details and qualifies_for_activity_detail(activity)
+            if not (wants_strength_sets or wants_power_detail):
                 continue
             assert activity.activity_id is not None
             try:
@@ -347,10 +357,15 @@ class GarminSyncService:
             three_days_ago_iso, target_iso, zone4_floor=zone4_floor
         )
         self._archive_raw("activities", target_iso, activities_result.raw_payload, sync_run_id)
-        details_by_activity_id = (
-            self._fetch_activity_details(provider, activities_result.canonical, target_iso)
-            if include_activity_details
-            else {}
+        # Strength sets are always fetched for target_iso; the boolean only controls
+        # the existing opt-in cycling power-detail branch. This also means the normal
+        # D-1 lookback can pick up an evening strength workout missed by the prior
+        # morning sync without enabling power detail globally.
+        details_by_activity_id = self._fetch_activity_details(
+            provider,
+            activities_result.canonical,
+            target_iso,
+            include_power_details=include_activity_details,
         )
         self._archive_activities(
             activities_result.canonical,
@@ -597,7 +612,9 @@ class GarminSyncService:
             )
             if callable(fetch_detail):
                 qualifying = [
-                    a for a in all_activities_canonical if qualifies_for_activity_detail(a)
+                    a
+                    for a in all_activities_canonical
+                    if qualifies_for_activity_detail(a) or qualifies_for_strength_exercise_sets(a)
                 ]
                 logger.info(
                     f"Fetching activity details for {len(qualifying)} qualifying activities in backfill window..."
