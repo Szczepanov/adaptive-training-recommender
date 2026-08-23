@@ -1,84 +1,119 @@
-# Ingestion Pipeline Architecture
+# Ingestion Pipeline & Wearable Telemetry Architecture
 
-The Python backend (`src/garmin_sync/`) handles automated daily ingestion, historical backfilling, raw data archiving, baseline metric calculation, and Firestore snapshot persistence.
+The Python backend (`src/garmin_sync/`) and frontend coordination services handle automated daily ingestion, historical backfilling, raw data archiving, baseline metric calculation, Firestore persistence, and bi-directional Garmin Connect synchronization.
 
 ---
 
 ## 🏗️ Core Components
 
 ```text
-Garmin Connect API
-       │
-       ▼
-┌──────────────────────────┐
-│  GarminConnectClient     │ (garth wrapper with exponential backoff)
-└────────────┬─────────────┘
+Garmin Connect API (Cloud Endpoints)
+  ├── Health Stats & Sleep (get_user_summary, get_sleep_data)
+  ├── Biometrics & SpO2 (get_body_composition, get_spo2_data, get_skin_temp_data)
+  ├── Performance & Races (get_training_status, get_race_predictions)
+  ├── Activities & Telemetry (get_activities, get_activity_details, get_activity_exercise_sets)
+  └── Equipment / Gear (get_gear)
              │
              ▼
-┌──────────────────────────┐
-│  TokenStore              │ (LocalTokenStore or GcsTokenStore)
-└────────────┬─────────────┘
-             │
-             ▼
-┌──────────────────────────┐
-│  GarminSyncService       │ (Orchestrator: fetch, baseline math, mapping)
-└────────────┬─────────────┘
-             ├──────────────────────────┐
-             ▼                          ▼
-┌──────────────────────────┐  ┌──────────────────────────┐
-│  RawArchiveStore         │  │  FirestoreRepository     │
-│  (GCS / Local gzip)      │  │  (Schema Version 3)      │
-└──────────────────────────┘  └──────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│  GarminConnectClient / GarminClientWrapper                  │ (Authenticated Garth wrapper with backoff)
+└──────────────────────────────┬──────────────────────────────┘
+                               │
+                               ▼
+┌─────────────────────────────────────────────────────────────┐
+│  GarminProviderAdapter (WearableProvider Protocol)          │ (Vendor-neutral extraction & canonicalization)
+└──────────────────────────────┬──────────────────────────────┘
+                               │
+                               ▼
+┌─────────────────────────────────────────────────────────────┐
+│  GarminSyncService (Sync & Backfill Orchestrator)           │
+└──────┬───────────────────────┬──────────────────────────────┘
+       │                       │
+       ▼                       ▼
+┌──────────────────────────┐  ┌───────────────────────────────────────────────────────────┐
+│  RawArchiveStore         │  │  FirestoreRepository (User-Scoped Firestore Documents)    │
+│  (GCS / Local gzip)      │  │                                                           │
+│  Immutable ADR-0005      │  │  ├── users/{uid}/daily_recovery_snapshots/{YYYY-MM-DD}    │
+└──────────────────────────┘  │  ├── users/{uid}/activities/{activityId}                  │
+                              │  ├── users/{uid}/preferences/profile                      │
+                              │  ├── users/{uid}/gear/{gearPk}                            │
+                              │  └── users/{uid}/garmin_workout_queue/{date}              │
+                              └───────────────────────────────────────────────────────────┘
 ```
 
 ---
 
 ## 📁 Source Code Organization
 
-* [`src/garmin_sync/config.py`](../../src/garmin_sync/config.py) — Typed dataclass configuration (`Settings`) validating environment variables (`APP_USER_ID`, `APP_TIMEZONE`, `GARMIN_STALENESS_MINUTES`).
-* [`src/garmin_sync/dates.py`](../../src/garmin_sync/dates.py) — Date provider strictly bound to `Europe/Warsaw` timezone logic.
-* [`src/garmin_sync/garmin_client.py`](../../src/garmin_sync/garmin_client.py) — Low-level Garth client wrapper fetching daily stats, sleep JSON, HRV balance, body battery, and activity histories.
-* [`src/garmin_sync/token_store.py`](../../src/garmin_sync/token_store.py) — Token persistence abstraction supporting local file and Google Cloud Storage (GCS) object stores.
-* [`src/garmin_sync/metrics.py`](../../src/garmin_sync/metrics.py) — Baseline mathematical transformations computing 7-day and 28-day moving averages, deltas, and standard deviations.
-* [`src/garmin_sync/mapper.py`](../../src/garmin_sync/mapper.py) — Schema Version 3 payload builder attaching field provenance dates (`metricsDates`).
-* [`src/garmin_sync/firestore_repository.py`](../../src/garmin_sync/firestore_repository.py) — User-scoped Firestore CRUD operations (`users/{userId}/daily_recovery_snapshots/{date}`).
-* [`src/garmin_sync/service.py`](../../src/garmin_sync/service.py) — Entry point service orchestrating synchronization workflows.
-* [`src/garmin_sync/account_link.py`](../../src/garmin_sync/account_link.py) — Self-service Garmin account linking and user token management.
-* [`src/garmin_sync/account_link_api.py`](../../src/garmin_sync/account_link_api.py) — HTTP API for family/multi-user account linking flows.
-* [`src/garmin_sync/coordination.py`](../../src/garmin_sync/coordination.py) — Multi-user ingestion coordination and batch runs.
-* [`src/garmin_sync/workout_export.py`](../../src/garmin_sync/workout_export.py) — FIT/TCX payload transformation and Garmin Connect workout export.
+* [`src/garmin_sync/config.py`](../../src/garmin_sync/config.py) — Typed configuration dataclass (`Settings`) validating environment variables (`APP_USER_ID`, `APP_TIMEZONE`, `GARMIN_STALENESS_MINUTES`).
+* [`src/garmin_sync/dates.py`](../../src/garmin_sync/dates.py) — Date provider strictly bound to `Europe/Warsaw` timezone logic (`local_today`, `get_date_string`).
+* [`src/garmin_sync/garmin_client.py`](../../src/garmin_sync/garmin_client.py) — Garmin API wrapper fetching daily stats, sleep stages, HRV balance, body battery, body composition, SpO2, skin temp, race predictions, activity details, exercise sets, and gear.
+* [`src/garmin_sync/canonical.py`](../../src/garmin_sync/canonical.py) — Vendor-neutral domain models (`CanonicalDailyMetrics`, `CanonicalSleepStages`, `CanonicalSpo2`, `CanonicalActivity`, `CanonicalExerciseSet`, `CanonicalPerformanceTargets`, `CanonicalGearItem`).
+* [`src/garmin_sync/provider.py`](../../src/garmin_sync/provider.py) — `WearableProvider` protocol declaring capabilities and fetch contracts.
+* [`src/garmin_sync/garmin_provider.py`](../../src/garmin_sync/garmin_provider.py) — Garmin adapter converting raw API payloads into canonical models.
+* [`src/garmin_sync/metrics.py`](../../src/garmin_sync/metrics.py) — Pure baseline mathematical transformations computing 7-day and 28-day moving averages, medians, MADs, deltas, and standard deviations.
+* [`src/garmin_sync/mapper.py`](../../src/garmin_sync/mapper.py) — Schema Version 3 payload builder mapping canonical data into Firestore recovery snapshots and activities.
+* [`src/garmin_sync/firestore_repository.py`](../../src/garmin_sync/firestore_repository.py) — User-scoped Firestore CRUD operations (`users/{userId}/...`).
+* [`src/garmin_sync/service.py`](../../src/garmin_sync/service.py) — Synchronization and historical backfill orchestrator.
+* [`src/garmin_sync/workout_export.py`](../../src/garmin_sync/workout_export.py) — Structured FIT/JSON workout transformation and Garmin Connect upload/scheduling.
 
 ---
 
-## 📊 Data Flow & Metric Provenance
+## 📊 Ingested Telemetry Subsystems
 
-1. **Date Resolution**: Determines target date $D$ in `Europe/Warsaw`.
-2. **Fetch Window**: Retrieves biometric stats for date $D$ and step count from completed previous day ($D - 1$).
-3. **Historical Lookback**: Fetches historical data points ($D-1 \dots D-28$) to compute baseline averages.
-4. **Metric Enrichment**: Computes:
-   * 7-day & 28-day moving average HRV (ms) and 28-day population standard deviation
-   * 7-day & 28-day moving average Resting Heart Rate (bpm) and 28-day population standard deviation
-   * 7-day & 28-day moving average Sleep Score and 28-day population standard deviation
-   * 7-day & 28-day moving average step counts and 28-day population standard deviation
-   * Waking Body Battery & signed deltas (vs 7d and vs 28d)
-   * Completed previous-day ($D - 1$) total steps
-5. **Upsert**: Writes Schema v3 snapshot payload to Firestore under `users/{userId}/daily_recovery_snapshots/{YYYY-MM-DD}`.
-6. **Activity Normalization**: Saves canonical activity records to `users/{userId}/activities/{activityId}` for cross-day auditability.
-7. **Optional Activity Detail**: When `GARMIN_ACTIVITY_DETAIL_ENABLED=true`, the target-date
-   `sync_daily` pass fetches power zones, HR zones, and lap summaries for non-easy,
-   power-bearing activities with IDs. Normalized power, intensity factor, and average power
-   are taken from the already-fetched activity-list payload; variability index is derived
-   only when average power is positive. Detail is merged into the same activity write.
-   Failures are isolated from snapshot ingestion, and an exhausted 429 stops the remaining
-   detail work for that run.
+### 1. Daily Recovery Snapshots (`daily_recovery_snapshots/{YYYY-MM-DD}`)
+* **Core Baselines**: Resting HR (bpm), HRV overnight avg (ms), HRV status, Sleep score, Sleep duration (min), Respiration avg (br/min), Waking Body Battery (0–100), Completed previous-day ($D-1$) step total.
+* **Sleep Stage Architecture** (`raw.sleepStages`):
+  * Deep sleep duration, REM sleep duration, Light sleep duration, Awake duration (seconds).
+  * Restless moments count.
+  * Rendered as an interactive visual breakdown bar in `DataView.tsx`.
+* **Overnight SpO2 & Skin Temperature Deviation** (`raw.spo2`, `raw.skinTempDeviationCelsius`):
+  * Nocturnal blood oxygen saturation (Pulse Ox daily average %, minimum %, sleep average %).
+  * Nocturnal skin temperature baseline deviation ($^\circ\text{C}$).
+  * Rendered in `DataView.tsx` and as comparative context pills in `DailyCheckin.tsx`.
+* **Daily Recovery Time** (`raw.recoveryHours`):
+  * Remaining Garmin Firstbeat recovery hours at morning wake.
 
-The detail path is never used by lookback resync, `backfill`, or `rebuild`, and its raw
-payloads are not stored in the date-keyed archive. Rebuild writes snapshots only, leaving
-existing standalone activity telemetry untouched.
+### 2. Biometric Baselines & Performance Profile (`preferences/profile`)
+* **Body Composition**: Athlete weight ($kg/lbs$), body fat percentage, and weigh-in timestamp (`weightMeasuredAt`). Used for power-to-weight ($W/kg$) and relative strength ratios.
+* **Sport Performance Targets**: Cycling FTP (W), Running Lactate Threshold Heart Rate (bpm), and Running Threshold Pace ($sec/km$).
+* **Race Predictions** (`garmin.racePredictions`):
+  * Predicted finish times and equivalent paces for 5k, 10k, Half-Marathon, and Marathon distances.
+  * Formatted in athlete's preferred units ($min/km$ or $min/mi$) in `Preferences.tsx`.
+* **Field-Level Ownership Guard**: Automated sync updates targets only with `targetSources.{key} = 'garmin'`. Manual coach/athlete inputs (`manual`) are never overwritten.
+
+### 3. Activity Telemetry & Biomechanics (`activities/{activityId}`)
+* **Training Effect & EPOC**:
+  * Aerobic Training Effect ($0.0–5.0$) & Anaerobic Training Effect ($0.0–5.0$).
+  * Primary Training Benefit descriptor (e.g. *VO2 Max*, *Threshold*, *Tempo*, *Base*, *Recovery*).
+  * EPOC ($mL/kg$) and post-session recovery hours.
+* **Running Dynamics & Gait Asymmetry**:
+  * Ground Contact Time Balance (Left % vs Right %). Asymmetry alerts triggered when $|L - R| > 1.5\%$.
+  * Vertical Oscillation ($cm$) and Vertical Ratio ($\%$).
+  * Stride Length ($m$) and Average Running Power ($W$).
+* **Garmin Strength Sets & Reps Auto-Sync** (`exerciseSets`):
+  * Automatic ingestion of individual strength sets via `get_activity_exercise_sets`.
+  * Parsed into structured set records: exercise name, exercise category, set type (*active*, *warmup*, *rest*), repetitions count, weight load ($kg/lbs$), set duration, and rest duration.
+  * Rendered in a formatted exercise table in `ActivityTelemetry.tsx`.
+
+### 4. Shoe & Equipment Mileage Tracking (`gear/{gearPk}`)
+* Ingests athlete shoes, bikes, and hardware components via `get_gear`.
+* Persisted to individual Firestore documents `users/{userId}/gear/{gearPk}` and summarized in `preferences/profile.gearTracker`.
+* Tracks total logged distance against manufacturer maximum thresholds ($km/mi$).
+* Visual wear percentage progress bars and status badges (*active*, *retired*) displayed in `Preferences.tsx`.
 
 ---
 
-## 🚴 Workout Export & Garmin Connect Integration
+## 🔄 Client-Side Auto-Sync & Staleness Orchestration
+
+To maintain fresh data without manual user intervention:
+* [`app/src/hooks/useAutoGarminSync.ts`](../../app/src/hooks/useAutoGarminSync.ts) monitors client-side visibility changes and snapshot timestamps.
+* When a snapshot is stale ($>60$ minutes old) or missing, it automatically creates a sync request in `users/{userId}/garmin_sync_requests/{reqId}`.
+* Cloud functions or backend daemons poll and fulfill sync requests, updating the user's Firestore collections with fresh Garmin data.
+
+---
+
+## 🚴 Workout Export & Garmin Connect Scheduling
 
 The system supports automated workout export and calendar synchronization to Garmin Connect:
 

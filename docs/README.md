@@ -77,6 +77,7 @@ Architectural choices, system invariants, and technical trade-offs are documente
 * [**ADR-0023: Multidomain Session Authoring, Execution, and Evidence**](./adr/0023-multidomain-session-authoring-execution-and-evidence.md) — *Accepted.* Source-neutral session definition, occurrence authority, subcollection performed entries, D-MSNAP content-addressed snapshots, D-MCHOICE bounded option sets, and single tissue authority linkage.
 * [**ADR-0024: Metric-Specific Biometric Baseline Estimators**](./adr/0024-biometric-baseline-estimator-policy.md) — *Accepted.* Metric-specific robust location/scale estimators (median/MAD vs mean/stdev) justified by replay evidence.
 * [**ADR-0025: Physiological Anomaly and Possible-Illness Signals**](./adr/0025-physiological-anomaly-and-possible-illness-signals.md) — *Accepted.* Defines a separate health-anomaly capability, independent of training strain, using respiration/RHR/HRV to detect pre-symptomatic patterns.
+* [**ADR-0026: Comprehensive Wearable Telemetry, Biometric Baselines, and Equipment Mileage Tracking**](./adr/0026-comprehensive-wearable-telemetry-and-gear-tracking.md) — *Accepted.* End-to-end ingestion and boundary separation for sleep stages, SpO2, skin temp, race predictions, running dynamics, strength sets, biometrics, and shoe/bike gear mileage.
 
 ---
 
