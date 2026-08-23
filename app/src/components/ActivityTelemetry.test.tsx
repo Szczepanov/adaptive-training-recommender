@@ -36,7 +36,7 @@ describe('ActivityTelemetry', () => {
     const html = renderToStaticMarkup(<ActivityTelemetry state={{
       status: 'AVAILABLE', revision: null, data: [{ ...base, powerInZones: [], hrInZones: [], laps: [] }],
     }} />);
-    expect(html).toContain('No zone or lap telemetry is available');
+    expect(html).toContain('No zone, lap, or running-dynamics telemetry is available');
   });
 
   it('renders running dynamics and biomechanical symmetry', () => {
@@ -51,6 +51,7 @@ describe('ActivityTelemetry', () => {
           verticalRatioPct: 7.1,
           strideLengthM: 1.18,
           avgRunningPowerWatts: 285,
+          maxRunningPowerWatts: 410,
         },
       }],
     }} />);
@@ -60,6 +61,14 @@ describe('ActivityTelemetry', () => {
     expect(html).toContain('8.2 cm');
     expect(html).toContain('7.1%');
     expect(html).toContain('1.18 m');
-    expect(html).toContain('285 W');
+    expect(html).toContain('285 W avg · 410 W max');
+  });
+
+  it('does not render an empty running-dynamics section', () => {
+    const html = renderToStaticMarkup(<ActivityTelemetry state={{
+      status: 'AVAILABLE', revision: null, data: [{ ...base, type: 'running', runningDynamics: {} }],
+    }} />);
+    expect(html).not.toContain('Running Dynamics &amp; Symmetry');
+    expect(html).toContain('No zone, lap, or running-dynamics telemetry is available');
   });
 });
