@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { GarminSyncNowButton, isAwaitedManualSyncTerminal } from './GarminSyncNowButton';
+import { GarminSyncNowButton } from './GarminSyncNowButton';
+import { isAwaitedSyncTerminal } from '../utils/garminSyncRequestState';
 import { isSyncRequestStale, STALE_AFTER_MS } from '../utils/garminSyncStaleness';
 import type { GarminSyncRequest } from '../services/garminSyncRequestService';
 
@@ -27,7 +28,7 @@ describe('GarminSyncNowButton', () => {
     });
 });
 
-describe('isAwaitedManualSyncTerminal', () => {
+describe('isAwaitedSyncTerminal', () => {
     const requestedAt = '2026-08-21T06:00:00.000Z';
     const base = (overrides: Partial<GarminSyncRequest> = {}): GarminSyncRequest => ({
         userId: 'u1',
@@ -38,7 +39,7 @@ describe('isAwaitedManualSyncTerminal', () => {
 
     it('ignores terminal snapshots for an older shared-document request', () => {
         expect(
-            isAwaitedManualSyncTerminal(
+            isAwaitedSyncTerminal(
                 base({ status: 'completed', requestedAt: '2026-08-21T05:00:00.000Z' }),
                 requestedAt
             )
@@ -46,14 +47,14 @@ describe('isAwaitedManualSyncTerminal', () => {
     });
 
     it('waits while the matching request is pending or processing', () => {
-        expect(isAwaitedManualSyncTerminal(base({ status: 'pending' }), requestedAt)).toBe(false);
-        expect(isAwaitedManualSyncTerminal(base({ status: 'processing' }), requestedAt)).toBe(false);
+        expect(isAwaitedSyncTerminal(base({ status: 'pending' }), requestedAt)).toBe(false);
+        expect(isAwaitedSyncTerminal(base({ status: 'processing' }), requestedAt)).toBe(false);
     });
 
     it('resolves only a terminal snapshot for the exact request', () => {
-        expect(isAwaitedManualSyncTerminal(base({ status: 'completed' }), requestedAt)).toBe(true);
-        expect(isAwaitedManualSyncTerminal(base({ status: 'failed' }), requestedAt)).toBe(true);
-        expect(isAwaitedManualSyncTerminal(base({ status: 'completed' }), null)).toBe(false);
+        expect(isAwaitedSyncTerminal(base({ status: 'completed' }), requestedAt)).toBe(true);
+        expect(isAwaitedSyncTerminal(base({ status: 'failed' }), requestedAt)).toBe(true);
+        expect(isAwaitedSyncTerminal(base({ status: 'completed' }), null)).toBe(false);
     });
 });
 
