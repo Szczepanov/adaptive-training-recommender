@@ -24,9 +24,7 @@ def test_rewrite_uid_rehomes_exact_ids_and_user_paths_only() -> None:
 
     assert rewritten["userId"] == target
     assert rewritten["nested"]["owner"] == target
-    assert rewritten["nested"]["path"] == (
-        f"users/{target}/daily_recovery_snapshots/2026-08-23"
-    )
+    assert rewritten["nested"]["path"] == (f"users/{target}/daily_recovery_snapshots/2026-08-23")
     assert rewritten["nested"]["note"] == f"athlete={source}-suffix"
     assert rewritten["list"] == [target, "unchanged"]
 
