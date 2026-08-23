@@ -566,7 +566,7 @@ def canonicalize_performance_targets(
 
 
 def extract_spo2(spo2_payload: Any, sleep_payload: Any = None) -> CanonicalSpo2 | None:
-    """Extract SpO2 metrics (average, minimum, sleep average) from Garmin payloads."""
+    """Extract SpO2 metrics (daily average/minimum plus sleep average) from Garmin."""
     avg_val = None
     min_val = None
     sleep_avg = None
@@ -601,31 +601,38 @@ def extract_spo2(spo2_payload: Any, sleep_payload: Any = None) -> CanonicalSpo2 
     return None
 
 
-def extract_skin_temp_deviation(skin_temp_payload: Any, sleep_payload: Any = None) -> float | None:
-    """Extract nocturnal skin temperature deviation in Celsius."""
-    if isinstance(skin_temp_payload, dict):
-        dev = (
-            skin_temp_payload.get("skinTempDeviationCelsius")
-            or skin_temp_payload.get("deviationCelsius")
-            or skin_temp_payload.get("deviation")
-        )
-        if dev is not None:
-            try:
-                return round(float(dev), 2)
-            except (ValueError, TypeError):
-                pass
-    if isinstance(sleep_payload, dict):
-        dto = (
-            sleep_payload.get("dailySleepDTO", {})
-            if isinstance(sleep_payload.get("dailySleepDTO"), dict)
-            else sleep_payload
-        )
-        dev = dto.get("skinTempDeviationCelsius") or dto.get("avgSkinTempDeviation")
-        if dev is not None:
-            try:
-                return round(float(dev), 2)
-            except (ValueError, TypeError):
-                pass
+def extract_skin_temp_deviation(sleep_payload: Any) -> float | None:
+    """Extract Garmin's overnight skin-temperature deviation in Celsius.
+
+    The supported garminconnect API exposes this metric on the sleep response (observed
+    as top-level ``avgSkinTempDeviationC``), not through a separate skin-temperature
+    endpoint. Known historical/alternate aliases are accepted defensively, including
+    nested variants, without treating ``0.0`` as missing.
+    """
+    if not isinstance(sleep_payload, dict):
+        return None
+
+    dto = (
+        sleep_payload.get("dailySleepDTO", {})
+        if isinstance(sleep_payload.get("dailySleepDTO"), dict)
+        else {}
+    )
+    candidates = (
+        sleep_payload.get("avgSkinTempDeviationC"),
+        sleep_payload.get("skinTempDeviationCelsius"),
+        dto.get("avgSkinTempDeviationC"),
+        dto.get("skinTempDeviationCelsius"),
+        dto.get("avgSkinTempDeviation"),
+    )
+    for value in candidates:
+        if value is None or isinstance(value, bool):
+            continue
+        try:
+            numeric = float(value)
+        except (ValueError, TypeError):
+            continue
+        if math.isfinite(numeric):
+            return round(numeric, 2)
     return None
 
 
@@ -645,7 +652,6 @@ def canonicalize_from_raw(
     respiration_today: dict[str, Any] | None = None,
     body_composition_today: dict[str, Any] | list[dict[str, Any]] | None = None,
     spo2_today: dict[str, Any] | None = None,
-    skin_temp_today: dict[str, Any] | None = None,
 ) -> CanonicalDailyMetrics:
     """Pure Garmin-shape parsing + fallback logic, producing a provider-neutral
     CanonicalDailyMetrics. Shared by GarminProviderAdapter.fetch_daily_metrics (live
@@ -706,9 +712,12 @@ def canonicalize_from_raw(
     if weight_kg is not None and weight_date is None:
         weight_date = target_date_iso
 
-    # SpO2 and Skin Temp
-    canonical_spo2 = extract_spo2(spo2_today, sleep_today)
-    skin_temp_dev = extract_skin_temp_deviation(skin_temp_today, sleep_today)
+    # Overnight metrics must follow the same selected sleep record. If target-date sleep
+    # is unavailable and D-1 is selected, combining target-date Pulse Ox with D-1 sleep
+    # fields would create a single CanonicalSpo2 containing values from two dates.
+    selected_sleep = sleep_fallback if used_sleep_fallback else sleep_today
+    canonical_spo2 = extract_spo2(None if used_sleep_fallback else spo2_today, selected_sleep)
+    skin_temp_dev = extract_skin_temp_deviation(selected_sleep)
 
     return CanonicalDailyMetrics(
         date=target_date_iso,
@@ -889,10 +898,6 @@ class GarminProviderAdapter:
             "spo2", lambda: self.client.get_spo2_data(target_date_iso)
         )
 
-        skin_temp_today = self._fetch_enrichment(
-            "skin_temperature", lambda: self.client.get_skin_temp_data(target_date_iso)
-        )
-
         canonical = canonicalize_from_raw(
             stats_today=stats_today,
             stats_fallback=stats_fallback,
@@ -909,7 +914,6 @@ class GarminProviderAdapter:
             respiration_today=respiration_today,
             body_composition_today=body_comp_today,
             spo2_today=spo2_today,
-            skin_temp_today=skin_temp_today,
         )
 
         raw_payloads: dict[str, Any] = {
@@ -936,8 +940,6 @@ class GarminProviderAdapter:
             raw_payloads["body_composition"] = body_comp_today
         if spo2_today is not None:
             raw_payloads["spo2"] = spo2_today
-        if skin_temp_today is not None:
-            raw_payloads["skin_temperature"] = skin_temp_today
 
         return ProviderFetchResult(canonical=canonical, raw_payloads=raw_payloads)
 
