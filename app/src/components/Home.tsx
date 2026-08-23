@@ -43,6 +43,7 @@ import { MinimumSafetyCheckin } from './MinimumSafetyCheckin';
 import { WeekAheadStrip } from './WeekAheadStrip';
 import { LaterDayFollowupCard, type LaterDayFollowupTarget } from './session/LaterDayFollowupCard';
 import { GarminSyncNowButton } from './GarminSyncNowButton';
+import { useAutoGarminSync } from '../hooks/useAutoGarminSync';
 import {
   canGenerateNormalRecommendation,
   createProvisionalSafetyRecommendation,
@@ -638,6 +639,12 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
   useEffect(() => {
     loadDashboardData();
   }, [loadDashboardData]);
+
+  useAutoGarminSync({
+    userId,
+    decisionInput,
+    onSynced: loadDashboardData,
+  });
 
   useEffect(() => {
     setTodaysJournalEntry(null);
