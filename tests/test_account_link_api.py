@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from http import HTTPStatus
 from typing import Any
 
 import garmin_sync.account_link_api as account_link_api
@@ -39,3 +40,29 @@ def test_rate_limiter_prunes_expired_client_buckets(monkeypatch: Any) -> None:
 
     assert "old-client" not in limiter._attempts  # noqa: SLF001
     assert "new-client" in limiter._attempts  # noqa: SLF001
+
+
+def test_error_response_adds_stable_metadata_and_sanitizes_message() -> None:
+    handler = object.__new__(GarminAccountLinkHandler)
+    handler.request_id = "req-123"
+    captured: dict[str, Any] = {}
+
+    def capture(status: HTTPStatus, payload: dict[str, Any]) -> None:
+        captured["status"] = status
+        captured["payload"] = payload
+
+    handler._json_response = capture  # type: ignore[method-assign]  # noqa: SLF001
+    handler._error_response(  # noqa: SLF001
+        HTTPStatus.BAD_GATEWAY,
+        message="Provider failed for athlete@example.com password=do-not-leak",
+        error_code="garmin_link.upstream_unavailable",
+        retryable=True,
+    )
+
+    assert captured["status"] == HTTPStatus.BAD_GATEWAY
+    payload = captured["payload"]
+    assert payload["errorCode"] == "garmin_link.upstream_unavailable"
+    assert payload["retryable"] is True
+    assert payload["requestId"] == "req-123"
+    assert "athlete@example.com" not in payload["error"]
+    assert "do-not-leak" not in payload["error"]
