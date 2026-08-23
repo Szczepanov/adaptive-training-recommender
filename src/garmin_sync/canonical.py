@@ -124,6 +124,7 @@ class CanonicalDailyMetrics:
     heart_rate_zones: CanonicalHeartRateZones | None = None
     spo2: CanonicalSpo2 | None = None
     skin_temp_deviation_celsius: float | None = None
+    recovery_time_hours: int | None = None
 
 
 @dataclass
@@ -141,6 +142,10 @@ class CanonicalActivity:
     average_hr: float | None
     training_load: float | None
     intensity_tag: str
+    primary_benefit: str | None = None
+    epoc: float | None = None
+    recovery_time_hours: int | None = None
+    training_effect_label: str | None = None
 
 
 @dataclass

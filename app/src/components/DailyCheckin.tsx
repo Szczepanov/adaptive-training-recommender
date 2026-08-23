@@ -893,6 +893,13 @@ export function DailyCheckin({ userId, onNavigate, onBack, onCheckinSaved }: Dai
                         </span>
                       </div>
                     )}
+                    {recoverySnapshot.raw.recoveryTimeHours != null && (
+                      <div className="garmin-metric-pill">
+                        <span className="pill-label">Recovery Advice</span>
+                        <span className="pill-val">{recoverySnapshot.raw.recoveryTimeHours}h</span>
+                        <small>Garmin estimated</small>
+                      </div>
+                    )}
                     {recoverySnapshot.raw.deepSleepSec != null && (
                       <div className="garmin-metric-pill">
                         <span className="pill-label">Deep Sleep</span>

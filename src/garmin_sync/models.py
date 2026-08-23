@@ -187,6 +187,7 @@ class RawMetrics:
     bodyFatPct: float | None = None
     spo2: Spo2Summary | None = None
     skinTempDeviationCelsius: float | None = None
+    recoveryTimeHours: int | None = None
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
