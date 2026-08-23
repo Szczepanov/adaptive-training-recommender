@@ -45,8 +45,6 @@ function App() {
   const decisionInputRequestRevision = useRef(0);
   const activeUserIdRef = useRef<string | null>(userId);
   const currentScreenRef = useRef<Screen>(screen);
-  activeUserIdRef.current = userId;
-  currentScreenRef.current = screen;
   // M3.4/M2.7 cutover: legacy Strength v1 remains a permanent read format, but it no longer
   // owns a second live runner. An already-open pre-cutover document is surfaced only so the
   // athlete can close it without losing its partial sets; all new execution uses SessionRunner.
@@ -112,19 +110,24 @@ function App() {
         return;
       }
       console.error('Error loading decision input:', error);
-      // Fail open to Home if the first composition itself is unavailable. The app remains
-      // usable, while any later successful refresh can still apply today's route because
-      // lastRoutedDate intentionally remains unresolved.
+      // If the initial composition is unavailable we cannot prove today's check-in is
+      // complete, so fail toward Check-in. That screen reads the daily document directly
+      // and still exposes a Dashboard escape hatch if its own data source is unavailable.
       if (initialRouteUserIdRef.current !== requestUserId) {
         initialRouteUserIdRef.current = requestUserId;
-        currentScreenRef.current = 'home';
-        setScreen('home');
+        currentScreenRef.current = 'checkin';
+        setScreen('checkin');
         setInitialRouteUserId(requestUserId);
       }
     }
   }, [userId]);
 
   useEffect(() => {
+    // Keep the async identity guard in effect-space rather than mutating a ref during render.
+    // This effect is declared before the load effect below, so a newly authenticated identity
+    // is installed before its first decision composition starts.
+    activeUserIdRef.current = userId;
+
     // Invalidate any outstanding decision composition before resetting identity-scoped UI.
     // This prevents a slow response from the previous account (or an older same-account
     // refresh) from replacing current decision data or driving navigation after the switch.
@@ -401,7 +404,7 @@ function App() {
           {screen === 'plan' && (
             <PlanView
               userId={userId!}
-              onNavigate={setScreen}
+              onNavigate={handleNavigate}
               onPlanChanged={() => {
                 void loadDecisionInput();
               }}
