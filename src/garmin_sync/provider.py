@@ -9,6 +9,7 @@ from .canonical import (
     CanonicalActivity,
     CanonicalActivityDetail,
     CanonicalDailyMetrics,
+    CanonicalGearItem,
     CanonicalPerformanceTargets,
 )
 
@@ -23,6 +24,7 @@ class ProviderCapabilities:
     body_composition: bool = False
     race_predictions: bool = False
     training_readiness: bool = False
+    gear_tracking: bool = False
     workout_publishing: bool = False  # no adapter in this codebase exposes mutations
 
 
@@ -56,6 +58,14 @@ class ProviderPerformanceTargetsResult:
     """Current, profile-level targets and their untouched provider payloads."""
 
     canonical: CanonicalPerformanceTargets
+    raw_payloads: dict[str, Any]
+
+
+@dataclass
+class ProviderGearResult:
+    """Athlete equipment and gear mileage records."""
+
+    canonical: list[CanonicalGearItem]
     raw_payloads: dict[str, Any]
 
 

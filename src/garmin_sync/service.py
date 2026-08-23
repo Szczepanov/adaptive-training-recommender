@@ -427,6 +427,24 @@ class GarminSyncService:
                 f"[{target_iso}] Garmin performance-target import failed, continuing: {e}"
             )
 
+    def _sync_current_gear(self, target_iso: str) -> None:
+        """Best-effort current gear/shoe tracking import."""
+        try:
+            provider = self._init_provider()
+            fetch_gear = getattr(provider, "fetch_gear", None)
+            persist_gear = getattr(self.repository, "upsert_garmin_gear", None)
+            if not callable(fetch_gear) or not callable(persist_gear):
+                return
+            result = fetch_gear()
+            sync_run_id = _new_sync_run_id(f"gear-{target_iso}")
+            for endpoint, payload in result.raw_payloads.items():
+                if payload is not None:
+                    self._archive_raw(endpoint, target_iso, payload, sync_run_id)
+            persist_gear(result.canonical)
+            self.token_store.persist(self.token_file_path)
+        except Exception as e:
+            logger.warning(f"[{target_iso}] Garmin gear import failed, continuing: {e}")
+
     def sync_daily(
         self,
         target_date_str: str | None = None,
@@ -484,6 +502,7 @@ class GarminSyncService:
                     if not backfill_ok:
                         logger.warning("Automated cold-start backfill finished with errors.")
                     self._sync_current_performance_targets(target_iso)
+                    self._sync_current_gear(target_iso)
                     return backfill_ok
 
         # Staleness check gates the whole operation (target date + lookback resync) --
@@ -535,6 +554,7 @@ class GarminSyncService:
             ok = False
         else:
             self._sync_current_performance_targets(target_iso)
+            self._sync_current_gear(target_iso)
 
         return ok
 
@@ -1078,6 +1098,7 @@ class GarminSyncService:
                 if ok:
                     target_iso = get_date_string(local_today(self.settings.app_timezone))
                     self._sync_current_performance_targets(target_iso)
+                    self._sync_current_gear(target_iso)
             except Exception as e:
                 logger.error(f"Manual backfill request failed: {e}")
                 self._finish_manual_sync_request(

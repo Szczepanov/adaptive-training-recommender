@@ -84,6 +84,22 @@ class CanonicalPerformanceTargets:
 
 
 @dataclass
+class CanonicalGearItem:
+    gear_pk: str
+    uuid: str | None = None
+    custom_make_model: str | None = None
+    display_name: str | None = None
+    gear_type: str | None = None
+    brand: str | None = None
+    model: str | None = None
+    total_distance_km: float = 0.0
+    maximum_distance_km: float | None = None
+    date_begin: str | None = None
+    date_end: str | None = None
+    status: str = "active"
+
+
+@dataclass
 class CanonicalDailyMetrics:
     date: str
     resting_heart_rate_bpm: float | None = None
