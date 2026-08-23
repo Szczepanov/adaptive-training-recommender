@@ -250,6 +250,10 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery' }: Dat
             </span>
           </div>
           <div className="data-item">
+            <span className="data-label">Garmin Recovery Time:</span>
+            <span className="data-value">{recoverySnapshot?.raw.recoveryTimeHours != null ? `${recoverySnapshot.raw.recoveryTimeHours} hrs` : 'N/A'}</span>
+          </div>
+          <div className="data-item">
             <span className="data-label">Total Steps:</span>
             <span className="data-value">{recoverySnapshot?.raw.totalSteps ?? 'N/A'}</span>
           </div>

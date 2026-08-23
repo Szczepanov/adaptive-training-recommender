@@ -115,6 +115,7 @@ class CanonicalDailyMetrics:
     training_readiness: CanonicalTrainingReadiness | None = None
     training_status: CanonicalTrainingStatus | None = None
     heart_rate_zones: CanonicalHeartRateZones | None = None
+    recovery_time_hours: int | None = None
 
 
 @dataclass
@@ -132,6 +133,10 @@ class CanonicalActivity:
     average_hr: float | None
     training_load: float | None
     intensity_tag: str
+    primary_benefit: str | None = None
+    epoc: float | None = None
+    recovery_time_hours: int | None = None
+    training_effect_label: str | None = None
 
 
 @dataclass

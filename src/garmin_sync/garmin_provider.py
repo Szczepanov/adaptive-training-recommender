@@ -222,15 +222,29 @@ def _canonicalize_body_battery(
     return CanonicalBodyBattery(charged=charged, drained=drained, change=change)
 
 
+def _latest_training_readiness_entry(readings: Any) -> dict[str, Any] | None:
+    """Return Garmin's newest training-readiness reading, defensively.
+
+    The observed endpoint order is newest-first.  Some garminconnect versions/devices
+    have returned a single object instead of a list, so accept both shapes while keeping
+    this Garmin-specific variance inside the provider boundary.
+    """
+    if isinstance(readings, dict):
+        return readings
+    if not isinstance(readings, list):
+        return None
+    return next((entry for entry in readings if isinstance(entry, dict)), None)
+
+
 def _canonicalize_training_readiness(
     readings: list[dict[str, Any]] | None,
 ) -> CanonicalTrainingReadiness | None:
     """get_training_readiness(date) returns multiple intraday readings (the device
-    re-evaluates through the day); readings[0] is the newest per the observed API
-    ordering -- used as the day's representative value."""
-    if not readings:
+    re-evaluates through the day); the newest reading is used as the day's
+    representative value."""
+    latest = _latest_training_readiness_entry(readings)
+    if latest is None:
         return None
-    latest = readings[0]
     return CanonicalTrainingReadiness(
         score=latest.get("score"),
         level=latest.get("level"),
@@ -306,6 +320,57 @@ def _non_negative_number(value: Any) -> float | None:
         return None
     numeric = float(value)
     return numeric if math.isfinite(numeric) and numeric >= 0 else None
+
+
+def _recovery_time_hours_from_minutes(
+    value: Any,
+    *,
+    change_phrase: Any = None,
+) -> int | None:
+    """Convert Garmin ``recoveryTime`` minutes to canonical integer hours.
+
+    Garmin's training-readiness/activity recoveryTime is a minute count.  Never infer
+    units from magnitude: a valid 90-minute recommendation must not become 90 hours.
+    Garmin can also retain the last assigned numeric recovery time after the countdown
+    reaches zero; ``REACHED_ZERO`` is therefore authoritative for the daily reading.
+    """
+    if change_phrase == "REACHED_ZERO":
+        return 0
+    minutes = _non_negative_number(value)
+    return round(minutes / 60) if minutes is not None else None
+
+
+def _daily_recovery_time_hours(
+    training_readiness_today: list[dict[str, Any]] | None,
+    stats_today: dict[str, Any],
+) -> int | None:
+    """Extract current recovery advice, preferring the training-readiness endpoint.
+
+    Live Garmin recoveryTime is supplied by training readiness and is measured in
+    minutes.  ``recoveryTimeHours`` in stats is retained only as an explicit legacy
+    archive/fixture fallback; the historical ambiguous ``stats.recoveryTime`` fallback
+    remains for backward compatibility with snapshots created by this feature branch.
+    """
+    latest = _latest_training_readiness_entry(training_readiness_today)
+    if latest is not None:
+        recovery_hours = _recovery_time_hours_from_minutes(
+            latest.get("recoveryTime"),
+            change_phrase=latest.get("recoveryTimeChangePhrase"),
+        )
+        if recovery_hours is not None:
+            return recovery_hours
+
+    explicit_hours = _non_negative_number(stats_today.get("recoveryTimeHours"))
+    if explicit_hours is not None:
+        return round(explicit_hours)
+
+    # Compatibility with early archived fixtures from this branch.  Real live Garmin
+    # values are sourced above from training readiness, so this magnitude-based branch
+    # must never decide the units of a live recoveryTime value.
+    legacy_recovery = _non_negative_number(stats_today.get("recoveryTime"))
+    if legacy_recovery is not None:
+        return round(legacy_recovery / 60) if legacy_recovery > 100 else round(legacy_recovery)
+    return None
 
 
 def _positive_integer(value: Any) -> int | None:
@@ -948,6 +1013,8 @@ def canonicalize_from_raw(
     if weight_kg is not None and weight_date is None:
         weight_date = target_date_iso
 
+    daily_rec_hours = _daily_recovery_time_hours(training_readiness_today, stats_today)
+
     return CanonicalDailyMetrics(
         date=target_date_iso,
         resting_heart_rate_bpm=rhr,
@@ -976,6 +1043,7 @@ def canonicalize_from_raw(
         training_readiness=_canonicalize_training_readiness(training_readiness_today),
         training_status=_canonicalize_training_status(training_status_today),
         heart_rate_zones=_canonicalize_heart_rate_zones(heart_rate_zones),
+        recovery_time_hours=daily_rec_hours,
     )
 
 
@@ -1012,6 +1080,28 @@ def _canonicalize_activity(
 
     raw_activity_id = act.get("activityId")
 
+    # Primary benefit & training-effect descriptors.  Current activity-list payloads
+    # expose trainingEffectLabel directly; older/alternate shapes use message-key names.
+    primary_benefit = act.get("primaryBenefit") or act.get("primaryBenefitMessage")
+    primary_benefit_str = str(primary_benefit).strip() if isinstance(primary_benefit, str) else None
+
+    te_label = (
+        act.get("trainingEffectLabel")
+        or act.get("aerobicTrainingEffectMessageKey")
+        or act.get("trainingEffectMessageKey")
+    )
+    te_label_str = str(te_label).strip() if isinstance(te_label, str) else None
+
+    raw_epoc = act.get("epoc")
+    epoc_val = _non_negative_number(raw_epoc)
+
+    # Garmin recoveryTime is minutes; recoveryTimeHours is an explicit normalized
+    # compatibility shape.  Key identity, never value magnitude, determines the unit.
+    act_rec_hours = _recovery_time_hours_from_minutes(act.get("recoveryTime"))
+    if act_rec_hours is None:
+        explicit_hours = _non_negative_number(act.get("recoveryTimeHours"))
+        act_rec_hours = round(explicit_hours) if explicit_hours is not None else None
+
     return CanonicalActivity(
         activity_id=str(raw_activity_id) if raw_activity_id is not None else None,
         date=act.get("startTimeLocal", "")[:10] or "",
@@ -1023,6 +1113,10 @@ def _canonicalize_activity(
         average_hr=avg_hr,
         training_load=act.get("activityTrainingLoad"),
         intensity_tag=intensity_tag,
+        primary_benefit=primary_benefit_str,
+        epoc=epoc_val,
+        recovery_time_hours=act_rec_hours,
+        training_effect_label=te_label_str,
     )
 
 
