@@ -114,7 +114,7 @@ export function usePreferences(userId: string) {
   }, []);
 
   const updatePerformanceProfile = useCallback((
-    key: 'ftpWatts' | 'thresholdPaceSecPerKm' | 'lthrBpm' | 'cyclingLthr',
+    key: 'ftpWatts' | 'thresholdPaceSecPerKm' | 'lthrBpm' | 'cyclingLthr' | 'weightKg' | 'bodyFatPct',
     value: string
   ) => {
     setPreferences(current => {
@@ -125,19 +125,28 @@ export function usePreferences(userId: string) {
 
       const cycling = { ...profile.cycling };
       const running = { ...profile.running };
+      const targetSources = { ...profile.targetSources };
 
       if (key === 'ftpWatts') {
         cycling.ftpWatts = numericValue;
         cycling.measuredAt = now;
+        targetSources.ftpWatts = 'manual';
       } else if (key === 'cyclingLthr') {
         cycling.lthrBpm = numericValue;
         cycling.measuredAt = now;
+        targetSources.cyclingLthr = 'manual';
       } else if (key === 'thresholdPaceSecPerKm') {
         running.thresholdPaceSecPerKm = numericValue;
         running.measuredAt = now;
+        targetSources.thresholdPaceSecPerKm = 'manual';
       } else if (key === 'lthrBpm') {
         running.lthrBpm = numericValue;
         running.measuredAt = now;
+        targetSources.lthrBpm = 'manual';
+      } else if (key === 'weightKg') {
+        targetSources.weightKg = 'manual';
+      } else if (key === 'bodyFatPct') {
+        targetSources.bodyFatPct = 'manual';
       }
 
       setHasChanges(true);
@@ -145,10 +154,14 @@ export function usePreferences(userId: string) {
         ...current,
         performanceProfile: {
           ...profile,
-          // Legacy top-level sync
+          // Legacy & top-level sync
           ftpWatts: key === 'ftpWatts' ? numericValue : profile.ftpWatts,
           thresholdPaceSecPerKm: key === 'thresholdPaceSecPerKm' ? numericValue : profile.thresholdPaceSecPerKm,
           lthrBpm: key === 'lthrBpm' ? numericValue : profile.lthrBpm,
+          weightKg: key === 'weightKg' ? numericValue : profile.weightKg,
+          bodyFatPct: key === 'bodyFatPct' ? numericValue : profile.bodyFatPct,
+          weightMeasuredAt: key === 'weightKg' || key === 'bodyFatPct' ? now : profile.weightMeasuredAt,
+          targetSources,
           cycling,
           running,
           measuredAt: now

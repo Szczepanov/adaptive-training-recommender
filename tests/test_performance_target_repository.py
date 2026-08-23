@@ -88,8 +88,20 @@ def test_first_garmin_import_creates_a_complete_preferences_document(monkeypatch
     db = _Db(None)
     repository = FirestoreRecoveryRepository(user_id="u1", db=db)
 
-    repository.upsert_garmin_performance_targets(CanonicalPerformanceTargets(cycling_ftp_watts=250))
+    repository.upsert_garmin_performance_targets(
+        CanonicalPerformanceTargets(
+            cycling_ftp_watts=250,
+            weight_kg=73.5,
+            body_fat_pct=14.0,
+            weight_measured_at="2026-08-23",
+        )
+    )
 
     assert db.profile.data["preferredModalities"] == ["Running", "Cycling", "Strength"]
     assert db.profile.data["performanceProfile"]["ftpWatts"] == 250
+    assert db.profile.data["performanceProfile"]["weightKg"] == 73.5
+    assert db.profile.data["performanceProfile"]["bodyFatPct"] == 14.0
     assert db.profile.data["performanceProfile"]["targetSources"]["ftpWatts"] == "garmin"
+    assert db.profile.data["performanceProfile"]["targetSources"]["weightKg"] == "garmin"
+    assert db.profile.data["performanceProfile"]["garmin"]["weightKg"] == 73.5
+    assert db.profile.data["performanceProfile"]["garmin"]["weightMeasuredAt"] == "2026-08-23"

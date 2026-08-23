@@ -108,3 +108,21 @@ def test_activity_detail_methods_tolerate_empty_response():
     assert wrapper.get_activity_power_zones("123") == []
     assert wrapper.get_activity_hr_zones("123") == []
     assert wrapper.get_activity_splits("123") == {}
+
+
+def test_body_composition_methods():
+    wrapper = GarminClientWrapper(allow_credential_login=False)
+    with pytest.raises(RuntimeError, match="Garmin client is not authenticated"):
+        wrapper.get_body_composition("2026-08-01", "2026-08-23")
+
+    with pytest.raises(RuntimeError, match="Garmin client is not authenticated"):
+        wrapper.get_daily_weigh_ins("2026-08-23")
+
+    wrapper.api = MagicMock()
+    wrapper.api.get_body_composition.return_value = {"dateWeightList": [{"weight": 74500}]}
+    wrapper.api.get_daily_weigh_ins.return_value = {"dateWeightList": [{"weight": 74500}]}
+
+    assert wrapper.get_body_composition("2026-08-01", "2026-08-23") == {
+        "dateWeightList": [{"weight": 74500}]
+    }
+    assert wrapper.get_daily_weigh_ins("2026-08-23") == {"dateWeightList": [{"weight": 74500}]}
