@@ -37,6 +37,7 @@ class GarminDataClient(Protocol):
     def get_activity_splits(self, activity_id: str) -> dict[str, Any]: ...
     def upload_workout(self, workout_json: dict[str, Any]) -> dict[str, Any]: ...
     def schedule_workout(self, workout_id: str, date_iso: str) -> dict[str, Any]: ...
+    def get_gear(self, user_profile_number: str | int | None = None) -> list[dict[str, Any]]: ...
 
 
 class GarminClientWrapper:
@@ -249,3 +250,60 @@ class GarminClientWrapper:
         if not self.api:
             raise RuntimeError("Garmin client is not authenticated. Call login first.")
         return self.api.schedule_workout(workout_id, date_iso) or {}
+
+    def get_gear(self, user_profile_number: str | int | None = None) -> list[dict[str, Any]]:
+        """Return Garmin gear inventory enriched with per-item accumulated distance.
+
+        ``garminconnect.Garmin.get_gear`` requires a user profile number and its inventory
+        payload does not reliably contain usage mileage. Resolve the profile number when
+        the caller omits it, normalize supported inventory response shapes to a list, and
+        use ``get_gear_stats`` only when ``totalDistance`` is absent from an item.
+
+        Failures deliberately propagate to GarminProviderAdapter's best-effort enrichment
+        boundary. Returning ``[]`` for an API failure would make an unavailable endpoint
+        indistinguishable from a successful account with no configured gear.
+        """
+        if not self.api:
+            raise RuntimeError("Garmin client is not authenticated. Call login first.")
+
+        profile_number = user_profile_number
+        if profile_number is None:
+            profile = self.api.get_user_profile() or {}
+            profile_number = profile.get("userProfilePk") or profile.get("profileId")
+            if profile_number is None:
+                user_data = profile.get("userData")
+                if isinstance(user_data, dict):
+                    profile_number = user_data.get("userProfilePk") or user_data.get("profileId")
+            if profile_number is None:
+                raise RuntimeError("Garmin user profile did not include a profile identifier.")
+
+        raw_gear = self.api.get_gear(profile_number) or []
+        if isinstance(raw_gear, list):
+            raw_items = raw_gear
+        elif isinstance(raw_gear, dict) and isinstance(raw_gear.get("gearList"), list):
+            raw_items = raw_gear["gearList"]
+        elif isinstance(raw_gear, dict) and raw_gear.get("gearPk") is not None:
+            raw_items = [raw_gear]
+        else:
+            raise TypeError(
+                "Unexpected Garmin gear response shape; expected a list, gearList envelope, "
+                "or single gear object."
+            )
+
+        get_gear_stats = getattr(self.api, "get_gear_stats", None)
+        enriched_items: list[dict[str, Any]] = []
+        for raw_item in raw_items:
+            if not isinstance(raw_item, dict):
+                continue
+            item = dict(raw_item)
+            gear_uuid = item.get("uuid")
+            if item.get("totalDistance") is None and gear_uuid and callable(get_gear_stats):
+                stats = get_gear_stats(str(gear_uuid)) or {}
+                if isinstance(stats, dict):
+                    if stats.get("totalDistance") is not None:
+                        item["totalDistance"] = stats["totalDistance"]
+                    if stats.get("totalActivities") is not None:
+                        item["totalActivities"] = stats["totalActivities"]
+            enriched_items.append(item)
+
+        return enriched_items

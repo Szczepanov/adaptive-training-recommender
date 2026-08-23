@@ -352,6 +352,79 @@ class FirestoreRecoveryRepository:
             "Updated Garmin performance targets in user-scoped preferences for user=<UID-redacted>."
         )
 
+    def upsert_garmin_gear(self, gear_items: list[Any]) -> None:
+        """Persist gear items to user collection and update preferences profile gearTracker."""
+        if not gear_items:
+            return
+        db = self._get_db()
+        now_iso = datetime.now(timezone.utc).isoformat()
+
+        profile_ref = (
+            db.collection("users")
+            .document(self.user_id)
+            .collection("preferences")
+            .document("profile")
+        )
+
+        gear_dicts = [
+            {
+                key: value
+                for key, value in {
+                    "gearPk": item.gear_pk,
+                    "uuid": item.uuid,
+                    "customMakeModel": item.custom_make_model,
+                    "displayName": item.display_name,
+                    "gearType": item.gear_type,
+                    "brand": item.brand,
+                    "model": item.model,
+                    "totalDistanceKm": item.total_distance_km,
+                    "maximumDistanceKm": item.maximum_distance_km,
+                    "dateBegin": item.date_begin,
+                    "dateEnd": item.date_end,
+                    "status": item.status,
+                }.items()
+                if value is not None
+            }
+            for item in gear_items
+        ]
+
+        batch = db.batch()
+        batch.set(
+            profile_ref,
+            {
+                "userId": self.user_id,
+                "gearTracker": {
+                    "items": gear_dicts,
+                    "syncedAt": now_iso,
+                },
+                "updatedAt": now_iso,
+            },
+            merge=True,
+        )
+
+        for item, g_dict in zip(gear_items, gear_dicts, strict=True):
+            gear_doc_ref = (
+                db.collection("users")
+                .document(self.user_id)
+                .collection("gear")
+                .document(item.gear_pk)
+            )
+            batch.set(
+                gear_doc_ref,
+                {
+                    "userId": self.user_id,
+                    **g_dict,
+                    "updatedAt": now_iso,
+                },
+                merge=True,
+            )
+
+        batch.commit()
+        logger.info(
+            "Updated Garmin gear items (%d) for user=<UID-redacted>.",
+            len(gear_items),
+        )
+
     def count_activities_in_range(self, start_date_iso: str, end_date_iso: str) -> int:
         """Count normalized activity records with date in [start_date_iso, end_date_iso]."""
         db = self._get_db()
