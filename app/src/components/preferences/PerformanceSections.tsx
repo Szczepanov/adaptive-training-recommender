@@ -8,15 +8,6 @@ interface PerformanceSectionsProps {
   updateEstimated1Rm: (exerciseId: string, value: string) => void;
 }
 
-function getWkgCategory(wkg: number): { label: string; tier: string } {
-  if (wkg >= 5.3) return { label: 'Exceptional (Cat 1 / Pro)', tier: 'elite' };
-  if (wkg >= 4.6) return { label: 'Excellent (Cat 2)', tier: 'advanced' };
-  if (wkg >= 3.9) return { label: 'Very Good (Cat 3)', tier: 'proficient' };
-  if (wkg >= 3.2) return { label: 'Moderate (Cat 4)', tier: 'intermediate' };
-  if (wkg >= 2.5) return { label: 'Fair (Cat 5)', tier: 'novice' };
-  return { label: 'Recreational', tier: 'base' };
-}
-
 export function PerformanceSections({
   preferences,
   updateCapability,
@@ -31,20 +22,20 @@ export function PerformanceSections({
 
   const ftpWatts = preferences.performanceProfile?.cycling?.ftpWatts ?? preferences.performanceProfile?.ftpWatts ?? null;
   const wKg = ftpWatts && weightKg && weightKg > 0 ? (ftpWatts / weightKg) : null;
-  const wkgCategory = wKg ? getWkgCategory(wKg) : null;
 
   const handleWeightChange = (rawInput: string) => {
     if (rawInput.trim() === '') {
       updatePerformanceProfile('weightKg', '');
       return;
     }
-    const num = parseFloat(rawInput);
-    if (isNaN(num)) return;
+    const num = Number(rawInput);
+    if (!Number.isFinite(num) || num <= 0) return;
     const finalKg = isLbs ? num / 2.20462 : num;
     updatePerformanceProfile('weightKg', finalKg.toFixed(2));
   };
 
   const weightSource = preferences.performanceProfile?.targetSources?.weightKg;
+  const bodyFatSource = preferences.performanceProfile?.targetSources?.bodyFatPct;
   const weightMeasuredAt = preferences.performanceProfile?.weightMeasuredAt;
 
   return (
@@ -52,19 +43,20 @@ export function PerformanceSections({
       <div className="preference-section">
         <h2>Body Composition & Biometrics</h2>
         <p className="preference-desc">
-          Body mass enables power-to-weight (W/kg) calculation, relative strength metrics, and metabolic calibration. Garmin syncs weight automatically after weigh-in.
+          Body mass enables power-to-weight (W/kg) and relative-strength calculations. Garmin can refresh weight after a weigh-in; body-fat percentage is stored as biometric context.
         </p>
         <div className="units-grid">
           <div className="unit-group">
             <label htmlFor="athlete-weight">Body Weight ({isLbs ? 'lbs' : 'kg'})</label>
             <input
+              key={`athlete-weight-${isLbs ? 'lbs' : 'kg'}-${weightKg ?? 'empty'}`}
               id="athlete-weight"
               type="number"
-              min="20"
-              max="700"
+              min={isLbs ? 44 : 20}
+              max={isLbs ? 772 : 350}
               step="0.1"
-              value={displayWeight}
-              onChange={(e) => handleWeightChange(e.target.value)}
+              defaultValue={displayWeight}
+              onBlur={(e) => handleWeightChange(e.target.value)}
               placeholder={isLbs ? 'e.g. 165' : 'e.g. 75.0'}
             />
             {weightSource && (
@@ -86,27 +78,22 @@ export function PerformanceSections({
               onChange={(e) => updatePerformanceProfile('bodyFatPct', e.target.value)}
               placeholder="e.g. 14.5"
             />
-            <small className="target-source">Optional biometric calibration</small>
+            <small className="target-source">
+              {bodyFatSource ? `Source: ${bodyFatSource}` : 'Optional biometric context'}
+            </small>
           </div>
         </div>
 
         {wKg !== null && (
           <div style={{ marginTop: '0.75rem', padding: '0.75rem 1rem', background: 'var(--card-bg, #1a1a24)', borderRadius: '8px', border: '1px solid var(--border-subtle, #2e2e3e)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
-              <div>
-                <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary, #9a9ab0)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Cycling Power-to-Weight</span>
-                <div style={{ fontSize: '1.4rem', fontWeight: 700, color: 'var(--accent, #6366f1)', marginTop: '0.1rem' }}>
-                  {wKg.toFixed(2)} <span style={{ fontSize: '0.9rem', fontWeight: 500 }}>W/kg</span>
-                </div>
+            <div>
+              <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary, #9a9ab0)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Cycling Power-to-Weight</span>
+              <div style={{ fontSize: '1.4rem', fontWeight: 700, color: 'var(--accent, #6366f1)', marginTop: '0.1rem' }}>
+                {wKg.toFixed(2)} <span style={{ fontSize: '0.9rem', fontWeight: 500 }}>W/kg</span>
               </div>
-              {wkgCategory && (
-                <span style={{ fontSize: '0.85rem', padding: '0.25rem 0.6rem', borderRadius: '4px', background: 'rgba(99, 102, 241, 0.15)', color: 'var(--accent, #818cf8)', fontWeight: 600 }}>
-                  {wkgCategory.label}
-                </span>
-              )}
             </div>
             <small style={{ display: 'block', marginTop: '0.35rem', color: 'var(--text-muted, #71717a)', fontSize: '0.8rem' }}>
-              Derived from {ftpWatts} W FTP & {weightKg?.toFixed(1)} kg body weight.
+              Derived from {ftpWatts} W FTP and {displayWeight} {isLbs ? 'lb' : 'kg'} body weight.
             </small>
           </div>
         )}
