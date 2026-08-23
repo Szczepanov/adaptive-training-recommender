@@ -166,6 +166,20 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery' }: Dat
               }
             </span>
           </div>
+          {recoverySnapshot?.raw.deepSleepSec != null && (
+            <div className="data-item">
+              <span className="data-label">Sleep Stages (Deep / REM / Light / Awake):</span>
+              <span className="data-value">
+                {Math.round((recoverySnapshot.raw.deepSleepSec ?? 0) / 60)}m / {Math.round((recoverySnapshot.raw.remSleepSec ?? 0) / 60)}m / {Math.round((recoverySnapshot.raw.lightSleepSec ?? 0) / 60)}m / {Math.round((recoverySnapshot.raw.awakeSleepSec ?? 0) / 60)}m
+              </span>
+            </div>
+          )}
+          {recoverySnapshot?.raw.restlessMomentsCount != null && (
+            <div className="data-item">
+              <span className="data-label">Restless Moments:</span>
+              <span className="data-value">{recoverySnapshot.raw.restlessMomentsCount}</span>
+            </div>
+          )}
           <div className="data-item">
             <span className="data-label">Resting HR:</span>
             <span className="data-value">{recoverySnapshot?.raw.restingHr ?? 'N/A'}</span>

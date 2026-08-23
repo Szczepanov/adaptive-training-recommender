@@ -432,3 +432,30 @@ def test_build_snapshot_metric_enrichment_fields_absent_when_no_canonical_data()
     assert snapshot.raw.bodyBatteryChange is None
     assert snapshot.dataQuality.stressAvailable is False
     assert snapshot.source.metricDates.stress is None
+
+
+def test_build_snapshot_maps_sleep_stages():
+    canonical = CanonicalDailyMetrics(
+        date="2026-08-23",
+        sleep_score=85,
+        sleep_duration_seconds=28800,
+        deep_sleep_seconds=5400,
+        rem_sleep_seconds=6400,
+        light_sleep_seconds=15000,
+        awake_sleep_seconds=2000,
+        restless_moments_count=12,
+    )
+
+    snapshot = build_snapshot_from_canonical(
+        user_id="test_uid",
+        target_date_iso="2026-08-23",
+        canonical=canonical,
+        canonical_activities=[],
+        derived_metrics=DerivedMetrics(),
+    )
+
+    assert snapshot.raw.deepSleepSec == 5400
+    assert snapshot.raw.remSleepSec == 6400
+    assert snapshot.raw.lightSleepSec == 15000
+    assert snapshot.raw.awakeSleepSec == 2000
+    assert snapshot.raw.restlessMomentsCount == 12

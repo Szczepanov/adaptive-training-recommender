@@ -82,6 +82,11 @@ class CanonicalDailyMetrics:
     sleep_score: float | None = None
     sleep_duration_seconds: int | None = None
     sleep_date: str | None = None
+    deep_sleep_seconds: int | None = None
+    rem_sleep_seconds: int | None = None
+    light_sleep_seconds: int | None = None
+    awake_sleep_seconds: int | None = None
+    restless_moments_count: int | None = None
     respiration_rate_brpm: float | None = None
     body_battery_wake: float | None = None
     body_battery_wake_date: str | None = None
