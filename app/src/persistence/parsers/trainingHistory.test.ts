@@ -48,6 +48,60 @@ describe('training-history persistence parsers', () => {
         });
     });
 
+    it('preserves valid running dynamics from persisted running activities', () => {
+        const parsed = parseNormalizedGarminActivity({
+            ...activity,
+            type: 'trail_running',
+            runningDynamics: {
+                groundContactTimeMs: 238,
+                groundContactBalanceLeftPct: 49.6,
+                verticalOscillationCm: 8.2,
+                verticalRatioPct: 7.1,
+                strideLengthM: 1.18,
+                avgRunningPowerWatts: 285,
+                maxRunningPowerWatts: 410,
+            },
+        }, 'users/u1/activities/a-1', 'a-1');
+
+        expect(parsed).toMatchObject({
+            status: 'AVAILABLE',
+            data: {
+                runningDynamics: {
+                    groundContactTimeMs: 238,
+                    groundContactBalanceLeftPct: 49.6,
+                    verticalOscillationCm: 8.2,
+                    verticalRatioPct: 7.1,
+                    strideLengthM: 1.18,
+                    avgRunningPowerWatts: 285,
+                    maxRunningPowerWatts: 410,
+                },
+            },
+        });
+    });
+
+    it('does not expose running dynamics for non-running activities', () => {
+        const parsed = parseNormalizedGarminActivity({
+            ...activity,
+            runningDynamics: { avgRunningPowerWatts: 285 },
+        }, 'users/u1/activities/a-1', 'a-1');
+
+        expect(parsed).toMatchObject({ status: 'AVAILABLE', data: { activityId: 'a-1' } });
+        if (parsed.status !== 'AVAILABLE') throw new Error('expected available activity');
+        expect(parsed.data.runningDynamics).toBeUndefined();
+    });
+
+    it('drops corrupt running dynamics while preserving the base activity', () => {
+        const parsed = parseNormalizedGarminActivity({
+            ...activity,
+            type: 'running',
+            runningDynamics: { groundContactTimeMs: '238', groundContactBalanceLeftPct: 149.6 },
+        }, 'users/u1/activities/a-1', 'a-1');
+
+        expect(parsed).toMatchObject({ status: 'AVAILABLE', data: { activityId: 'a-1' } });
+        if (parsed.status !== 'AVAILABLE') throw new Error('expected available activity');
+        expect(parsed.data.runningDynamics).toBeUndefined();
+    });
+
     it('drops corrupt optional telemetry while preserving the base activity', () => {
         const parsed = parseNormalizedGarminActivity({
             ...activity,
