@@ -58,6 +58,12 @@ function formatCandidateDelta(value: number | null | undefined): string {
   return value > 0 ? `+${value}` : String(value);
 }
 
+function formatSleepStageMinutes(seconds: number | null | undefined): string {
+  return typeof seconds === 'number' && Number.isFinite(seconds)
+    ? `${Math.round(seconds / 60)}m`
+    : 'N/A';
+}
+
 function formatCandidateBaseline(
   median7d: number | null | undefined,
   median28d: number | null | undefined,
@@ -202,7 +208,7 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery' }: Dat
             <div className="data-item">
               <span className="data-label">Sleep Stages (Deep / REM / Light / Awake):</span>
               <span className="data-value">
-                {Math.round((recoverySnapshot.raw.deepSleepSec ?? 0) / 60)}m / {Math.round((recoverySnapshot.raw.remSleepSec ?? 0) / 60)}m / {Math.round((recoverySnapshot.raw.lightSleepSec ?? 0) / 60)}m / {Math.round((recoverySnapshot.raw.awakeSleepSec ?? 0) / 60)}m
+                {formatSleepStageMinutes(recoverySnapshot.raw.deepSleepSec)} / {formatSleepStageMinutes(recoverySnapshot.raw.remSleepSec)} / {formatSleepStageMinutes(recoverySnapshot.raw.lightSleepSec)} / {formatSleepStageMinutes(recoverySnapshot.raw.awakeSleepSec)}
               </span>
             </div>
           )}
