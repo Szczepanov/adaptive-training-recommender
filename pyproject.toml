@@ -40,6 +40,9 @@ pythonpath = [
     "scripts",
 ]
 
+[tool.coverage.run]
+branch = true
+
 [tool.ruff]
 line-length = 100
 target-version = "py312"
