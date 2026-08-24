@@ -34,9 +34,27 @@ function parseRow(line, index) {
     }
     for (const key of requiredScores) boundedNumber(item.scores[key], 0, 10, `${item.caseId}.${key}`);
     boundedNumber(item.confidence, 0, 1, `${item.caseId}.confidence`);
+    if (item.flags !== undefined && !Array.isArray(item.flags)) throw new Error(`${item.caseId}.flags must be an array when supplied.`);
+    if (item.suggestedChanges !== undefined && !Array.isArray(item.suggestedChanges)) throw new Error(`${item.caseId}.suggestedChanges must be an array when supplied.`);
   }
   boundedNumber(value.familyAssessment?.sensitivity_quality, 0, 10, `${value.familyId}.sensitivity_quality`);
   return value;
+}
+
+function normalizedText(value) {
+  return String(value ?? '').trim().replace(/\s+/g, ' ');
+}
+
+function countStrings(values) {
+  const counts = new Map();
+  for (const value of values) {
+    const normalized = normalizedText(value);
+    if (!normalized) continue;
+    counts.set(normalized, (counts.get(normalized) ?? 0) + 1);
+  }
+  return [...counts.entries()]
+    .map(([value, count]) => ({ value, count }))
+    .sort((left, right) => right.count - left.count || left.value.localeCompare(right.value));
 }
 
 const families = rows.map(parseRow);
@@ -55,20 +73,27 @@ const familySensitivity = families.map((family) => ({
   algorithmAdjustmentHypotheses: family.familyAssessment.algorithmAdjustmentHypotheses ?? [],
 })).sort((left, right) => left.sensitivityQuality - right.sensitivityQuality);
 
-const hypothesisCounts = new Map();
-for (const family of families) {
-  for (const hypothesis of family.familyAssessment.algorithmAdjustmentHypotheses ?? []) {
-    const normalized = String(hypothesis).trim();
-    if (!normalized) continue;
-    hypothesisCounts.set(normalized, (hypothesisCounts.get(normalized) ?? 0) + 1);
-  }
-}
-const repeatedHypotheses = [...hypothesisCounts.entries()]
-  .sort((left, right) => right[1] - left[1])
-  .map(([hypothesis, count]) => ({ hypothesis, count }));
+// Family hypotheses are useful hypotheses, but they are not repeated evidence: each family
+// assessment is emitted once. Keep them for inspection without labelling a 1x family string
+// as repetition. Repetition is measured below from case-level structured flags and concrete
+// suggested changes.
+const familyHypotheses = countStrings(families.flatMap((family) => family.familyAssessment.algorithmAdjustmentHypotheses ?? []))
+  .map(({ value: hypothesis, count }) => ({ hypothesis, count }));
+
+const caseFlagCounts = countStrings(cases.flatMap((item) => item.flags ?? []))
+  .map(({ value: flag, count }) => ({ flag, count }));
+const repeatedCaseFlags = caseFlagCounts.filter((item) => item.count >= 2);
+
+const caseSuggestedChangeCounts = countStrings(cases.flatMap((item) => item.suggestedChanges ?? []))
+  .map(({ value: suggestion, count }) => ({ suggestion, count }));
+const repeatedCaseSuggestedChanges = caseSuggestedChangeCounts.filter((item) => item.count >= 2);
+
+// Preserve the historical field name for downstream readers, but make its semantics honest:
+// it now contains only hypotheses with evidence repeated across 2+ family assessments.
+const repeatedHypotheses = familyHypotheses.filter((item) => item.count >= 2);
 
 const summary = {
-  schema: 'adaptive-training-recommender/ai-plan-judge-summary@1',
+  schema: 'adaptive-training-recommender/ai-plan-judge-summary@2',
   source: inputPath,
   familyCount: families.length,
   caseCount: cases.length,
@@ -77,6 +102,11 @@ const summary = {
   familySensitivity,
   weakestCases,
   strongestCases,
+  repeatedCaseFlags,
+  repeatedCaseSuggestedChanges,
+  caseFlagCounts,
+  caseSuggestedChangeCounts,
+  familyHypotheses,
   repeatedHypotheses,
 };
 
@@ -103,11 +133,23 @@ const lines = [
   '',
   ...familySensitivity.map((item) => `- ${item.familyId}: ${item.sensitivityQuality.toFixed(1)}/10 — ${item.rationale ?? ''}`),
   '',
-  '## Repeated algorithm hypotheses',
+  '## Repeated case-level flags',
+  '',
+  ...(repeatedCaseFlags.length > 0 ? repeatedCaseFlags.map((item) => `- ${item.count}× ${item.flag}`) : ['- none']),
+  '',
+  '## Repeated case-level suggested changes',
+  '',
+  ...(repeatedCaseSuggestedChanges.length > 0 ? repeatedCaseSuggestedChanges.map((item) => `- ${item.count}× ${item.suggestion}`) : ['- none']),
+  '',
+  '## Repeated family-level hypotheses',
   '',
   ...(repeatedHypotheses.length > 0 ? repeatedHypotheses.map((item) => `- ${item.count}× ${item.hypothesis}`) : ['- none']),
   '',
-  'Use repeated low-scoring patterns across multiple related cases as evidence for algorithm changes. Avoid changing a threshold solely because one isolated case scored poorly.',
+  '## All family-level hypotheses',
+  '',
+  ...(familyHypotheses.length > 0 ? familyHypotheses.map((item) => `- ${item.count}× ${item.hypothesis}`) : ['- none']),
+  '',
+  'Treat repeated case-level patterns as stronger evidence than a one-off family hypothesis. Avoid changing a physiological threshold solely because one isolated case or one family assessment scored poorly.',
 ];
 writeFileSync(resolve(outputDir, 'judge-summary.md'), `${lines.join('\n')}\n`);
 console.log(`Analyzed ${summary.caseCount} judged cases. Summary written to ${outputDir}`);
