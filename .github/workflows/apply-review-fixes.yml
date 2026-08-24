@@ -44,3 +44,5 @@ jobs:
           git add -A
           git commit -m "fix: harden plan judge review contracts"
           git push origin HEAD:feature/ai-plan-judge-simulation
+
+# This one-shot workflow deletes itself after the validated fix commit is pushed.
