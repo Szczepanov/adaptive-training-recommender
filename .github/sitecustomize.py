@@ -2,6 +2,7 @@ import atexit
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+SELF = Path(__file__).resolve()
 
 
 def replace_once(path: str, old: str, new: str) -> None:
@@ -33,6 +34,7 @@ def fix_generated_outputs() -> None:
         stimulusProfile?: WorkoutStimulusProfile | null;
 """,
     )
+    SELF.unlink(missing_ok=True)
 
 
 atexit.register(fix_generated_outputs)
