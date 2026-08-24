@@ -372,7 +372,7 @@ export const TEMPLATES: SessionTemplate[] = [
         durationMin: 45,
         durationMax: 60,
         title: "Hybrid Full Body Push/Pull",
-        description: "Compound movements: Squats, deadlift variations, rows, and presses.",
+        description: "Compound movements: Squats, deadlift variations, lunges, and presses.",
         requiredEquipment: ["free_weights"],
         environment: 'either', safetyTags: ['avoid_heavy_lower_body', 'avoid_heavy_spinal_loading'],
         systemicCost: 0.6,
