@@ -24,6 +24,12 @@ That capture was originally made while this branch still carried a null-safe `pl
 
 The existing committed baseline contains an absolute Windows path in its historical `source` field because it predates the portability hardening in this PR. New summaries write repository-relative paths, and baseline promotion rejects absolute paths.
 
+### Historical scored-baseline caveat
+
+The first scored baseline also predates the strict runner introduced during review. It passed the previous analyzer's checks for the known synthetic case/family fallback phrases, and the committed summary contains no obvious fallback markers. However, the old runner could also repair individual missing score dimensions or remap a bad case id without leaving a detectable marker in the summary, while raw `judge-scores.jsonl` is intentionally not committed.
+
+For the strongest merge-quality baseline, re-run `npm run judge:local` at the final PR head with the **same local model**, verify that the printed `familiesSha256` is still `553158426a84e5783d6214923ae614871efbffced993d797379eec42fb2061b3`, review `npm run judge:diff`, and promote the strict result with `npm run judge:update-baseline -- --reviewed`. Until that strict re-capture is done, treat the original scored summary as a useful pre-change measurement but not as proof that no old-runner repair occurred.
+
 ## Pipeline
 
 Run commands from `app/`.
