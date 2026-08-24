@@ -3,6 +3,33 @@ import { timeStep } from './helpers.ts';
 
 export const CYCLING_RACE_WORKOUTS: WorkoutDefinition[] = [
   {
+    id: 'cycling_criterium_surges_01', version: 1, status: 'active',
+    name: 'Compact Criterium Surge Set',
+    description: 'Time-efficient race-specific set of repeated short surges with firm, VO2-adjacent pedalling recoveries and a controlled fast finish for surge-heavy short-format events.',
+    modality: 'cycling', category: 'surge_tolerance', objectives: ['surge_tolerance', 'fatigue_resistant_finish'],
+    duration: { defaultMin: 38, minimumMin: 30, maximumMin: 45 },
+    loadProfile: { cardiovascular: 4, muscular: 4, mechanical: 1, eccentric: 1, coordination: 4, recoveryHours: 48 },
+    eligibility: { minimumReadiness: 7, maximumSoreness: 5, forbiddenPainFlags: ['knee_swelling', 'acute_knee_pain'] },
+    equipment: ['bike'], contraindicationTags: ['acute_knee_pain'], engineTemplateIds: ['end_crit_surges_01'],
+    blocks: [
+      { id: 'warmup', name: 'Warm-up', role: 'warmup', steps: [ timeStep('crit_warmup', 'bike_progressive_warmup', 'Progressive warm-up', 600, { target: { type: 'rpe', min: 1, max: 3 } }) ]},
+      { id: 'main', name: 'Criterium surge set', role: 'main', steps: [
+        timeStep('crit_surges', 'bike_short_surge', 'Short criterium surge', 20, { sets: 10, restAfterSec: 90, target: { type: 'rpe', min: 8, max: 9 }, notes: ['Recover at a firm, VO2-adjacent effort rather than coasting or an easy spin', 'Repeated surges simulate criterium accelerations out of corners'] }),
+        timeStep('crit_finish', 'bike_hard_finish', 'Controlled fast finish', 60, { target: { type: 'rpe', min: 9, max: 10 }, notes: ['Execute after accumulated fatigue', 'Preserve cadence and position'] })
+      ]},
+      { id: 'cooldown', name: 'Cool-down', role: 'cooldown', steps: [ timeStep('crit_cooldown', 'bike_easy_spin', 'Easy spin', 600, { target: { type: 'rpe', min: 1, max: 2 } }) ]}
+    ],
+    variants: [
+      { id: 'full', targetDurationMin: 38, loadMultiplier: 1, rationale: 'Complete the compact criterium surge dose.', stepOverrides: [] },
+      { id: 'reduced', targetDurationMin: 32, loadMultiplier: 0.75, rationale: 'Reduce surge count while preserving the fast finish.', stepOverrides: [{ stepId: 'crit_surges', sets: 7 }] },
+      { id: 'return_to_training', targetDurationMin: 30, loadMultiplier: 0.6, rationale: 'Use controlled accelerations only and omit the maximal finish.', stepOverrides: [{ stepId: 'crit_surges', sets: 6, target: { type: 'rpe', min: 6, max: 8 } }, { stepId: 'crit_finish', omit: true }] }
+    ],
+    regressions: ['cycling_short_surges_10x20_01'], progressions: ['cycling_race_simulation_50_01'], substitutions: [],
+    garmin: { exportable: true, supportedSport: 'cycling' },
+    tags: ['race_specific', 'criterium', 'surge_tolerance', 'adjustable'],
+    sourceNotes: ['Compact criterium-format session: short repeated surges with firm VO2-adjacent recoveries and a controlled fast finish, sized below full race simulation duration for time-limited race-specific work.']
+  },
+  {
     id: 'cycling_race_simulation_50_01', version: 1, status: 'active',
     name: 'Adjustable Variable Race Simulation',
     description: 'Peak-specific simulation with variable power, surges, limited coasting and a hard late finish.',
