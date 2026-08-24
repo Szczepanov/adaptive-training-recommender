@@ -70,6 +70,13 @@ for (const family of expectedFamilies) {
   expectedByFamily.set(family.familyId, new Set(caseIds));
 }
 
+const caseSetContract = [...expectedByFamily.entries()]
+  .map(([familyId, caseIds]) => ({ familyId, caseIds: [...caseIds].sort() }))
+  .sort((a, b) => a.familyId.localeCompare(b.familyId));
+const caseSetSha256 = createHash('sha256')
+  .update(JSON.stringify(caseSetContract))
+  .digest('hex');
+
 const rawRows = parseJsonl(inputPath);
 const seenFamilies = new Set();
 function parseJudgeRow(value, index) {
@@ -179,6 +186,7 @@ const provenance = {
   corpusSchema: corpus.schema,
   corpusSha256: hashFile(corpusPath),
   familiesSha256: hashFile(familiesPath),
+  caseSetSha256,
   promptSha256: hashFile(promptPath),
   responseSchemaSha256: hashFile(schemaPath),
   judgeScoresSha256: hashFile(inputPath),

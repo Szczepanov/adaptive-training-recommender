@@ -2,6 +2,8 @@ import type {
     FatigueState,
     FixedActivity,
     AuthoredPlanBlock,
+    GuardrailKey,
+    InjuryConstraint,
     IntensityClass,
     PlannedDose,
     SessionHistoryEntry,
@@ -19,6 +21,7 @@ import { addDaysToLocalDateString, getDayDiff, getLocalDateString } from '../uti
 import { qualifiesForObjective } from './microcycle';
 import { buildCoverageState, coverageNeedTierForTemplate, type CoverageState } from './coverage';
 import { resolvePlanDefinitionForEvent } from './planSchedule';
+import { resolveInjuryRestrictions } from './injuryPolicy';
 
 const STRENGTH_CATEGORIES: SessionTemplate['category'][] = [
     'Upper-body Strength', 'Lower-body Strength', 'Full-body Strength', 'Power Maintenance',
@@ -76,6 +79,8 @@ export interface OptimizationOptions {
     resolveMinimumDaysAfterHardLowerBody?: (templateId: string) => number | undefined;
     /** Explicit, user-authored date overlays applied to the focus event plan. */
     authoredPlanBlocks?: readonly AuthoredPlanBlock[];
+    /** Resolved safety guardrails, including structured injury-derived guardrails. */
+    guardrails?: GuardrailKey[];
 }
 
 export interface OptimizationContext {
@@ -83,6 +88,7 @@ export interface OptimizationContext {
     fatigueState: FatigueState;
     availability: ResolvedAvailability;
     injuryConstraints: string[];
+    guardrails: GuardrailKey[];
     preferences: UserPreferences;
     coverageState: CoverageState;
     options: OptimizationOptions;
@@ -431,7 +437,26 @@ export function buildOptimizationContext(
     };
 
     const availability = options.resolvedAvailability ?? resolveAvailability(date, null, fixedActivities, context);
-    const injuryConstraints = context.constraints?.restrictedModalities ?? [];
+    const injuries = context.trainingSettings?.injuries
+        ?? (context.constraints as { injuries?: InjuryConstraint[] })?.injuries
+        ?? (context as { injuries?: InjuryConstraint[] })?.injuries
+        ?? [];
+    const activeInjuries = resolveInjuryRestrictions(injuries, date);
+    const injuryConstraints = Array.from(new Set([
+        ...(context.constraints?.restrictedModalities ?? []),
+        ...activeInjuries.restrictedModalities,
+    ]));
+    const directGuardrails = (context as { guardrails?: Partial<Record<GuardrailKey, boolean>> }).guardrails ?? {};
+    const configuredGuardrails = context.trainingSettings?.guardrails ?? {};
+    const enabledGuardrails = (record: Partial<Record<GuardrailKey, boolean>>) => Object.entries(record)
+        .filter(([, enabled]) => enabled)
+        .map(([key]) => key as GuardrailKey);
+    const guardrails = Array.from(new Set<GuardrailKey>([
+        ...(context.constraints.impliedGuardrails ?? []),
+        ...activeInjuries.impliedGuardrails,
+        ...enabledGuardrails(configuredGuardrails),
+        ...enabledGuardrails(directGuardrails),
+    ]));
 
     const rawHistory: (RecentHistoryEntry | SessionHistoryEntry)[] = options.recentHistory ?? (intent.history ?? []).map(e => {
         const completedDate = 'completedDate' in e && typeof e.completedDate === 'string' ? e.completedDate : undefined;
@@ -480,6 +505,7 @@ export function buildOptimizationContext(
         fatigueState: intent.fatigue,
         availability,
         injuryConstraints,
+        guardrails,
         preferences: effectivePreferences,
         coverageState,
         options: {
@@ -490,6 +516,7 @@ export function buildOptimizationContext(
             adjacentToAnchor: options.adjacentToAnchor ?? false,
             coverageState,
             fatigueTier: options.fatigueTier ?? 'train',
+            guardrails,
             ...(intent.plannedDose ? { plannedDose: intent.plannedDose } : {}),
             ...(options.resolvedAvailability ? { resolvedAvailability: options.resolvedAvailability } : {}),
             ...(options.resolveMinimumDaysAfterHardLowerBody ? { resolveMinimumDaysAfterHardLowerBody: options.resolveMinimumDaysAfterHardLowerBody } : {}),
@@ -661,7 +688,7 @@ export function rankCandidates(
             }
         }
 
-        const hasLowerBodyGuardrail = injuryConstraints.some(c => c.toLowerCase().includes('lower'));
+        const hasLowerBodyGuardrail = (options.guardrails ?? []).includes('avoid_heavy_lower_body');
         if (!isStrengthResolved && hasLowerBodyGuardrail && (template.category === 'Upper-body Strength' || (template.title ?? '').toLowerCase().includes('core'))) {
             prefMultiplier *= 1.60;
         }

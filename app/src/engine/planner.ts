@@ -209,6 +209,18 @@ export const PROJECTED_FATIGUE_RECOVER_THRESHOLD = 0.65;
 export const PROJECTED_FATIGUE_MODIFY_THRESHOLD = 0.6;
 export const PROJECTED_MODIFY_MAX_SYSTEMIC_COST = 0.5;
 
+export interface ProjectedFatigueThresholds {
+    recover: number;
+    modify: number;
+    modifyMaxSystemicCost: number;
+}
+
+export function projectedFatigueThresholds(conservativeBias = false): ProjectedFatigueThresholds {
+    return conservativeBias
+        ? { recover: PROJECTED_FATIGUE_RECOVER_THRESHOLD * 0.88, modify: PROJECTED_FATIGUE_MODIFY_THRESHOLD * 0.88, modifyMaxSystemicCost: PROJECTED_MODIFY_MAX_SYSTEMIC_COST * 0.85 }
+        : { recover: PROJECTED_FATIGUE_RECOVER_THRESHOLD, modify: PROJECTED_FATIGUE_MODIFY_THRESHOLD, modifyMaxSystemicCost: PROJECTED_MODIFY_MAX_SYSTEMIC_COST };
+}
+
 export function maxFatigueDimension(fatigue: DimensionalFatigue): number {
     return Math.max(
         fatigue.systemic, fatigue.cardiovascular, fatigue.lowerBody,
@@ -216,9 +228,9 @@ export function maxFatigueDimension(fatigue: DimensionalFatigue): number {
     );
 }
 
-export function fatigueTierFor(peakFatigue: number): 'train' | 'modify' | 'recover' {
-    if (peakFatigue >= PROJECTED_FATIGUE_RECOVER_THRESHOLD) return 'recover';
-    if (peakFatigue >= PROJECTED_FATIGUE_MODIFY_THRESHOLD) return 'modify';
+export function fatigueTierFor(peakFatigue: number, thresholds: ProjectedFatigueThresholds = projectedFatigueThresholds()): 'train' | 'modify' | 'recover' {
+    if (peakFatigue >= thresholds.recover) return 'recover';
+    if (peakFatigue >= thresholds.modify) return 'modify';
     return 'train';
 }
 
@@ -452,22 +464,21 @@ export function evaluateProjectedDate(
         shared.fatigueFusionPolicy ?? 'max',
     );
     const peakFatigue = maxFatigueDimension(rankingFatigue.combinedFatigue);
-    const fatigueTier = fatigueTierFor(peakFatigue);
 
     const eligible = eligibleTemplates(ENRICHED_TEMPLATES, shared.context, availability.maxTimeMinutes, date)
         .filter(t => isTemplatePhaseEligible(t, periodization))
         .filter(t => !availability.environmentOverride || t.environment === 'either' || t.environment === availability.environmentOverride);
 
     const isConservative = shared.preferences?.conservativeBias ?? false;
-    const recoverThreshold = isConservative ? PROJECTED_FATIGUE_RECOVER_THRESHOLD * 0.88 : PROJECTED_FATIGUE_RECOVER_THRESHOLD;
-    const modifyThreshold = isConservative ? PROJECTED_FATIGUE_MODIFY_THRESHOLD * 0.88 : PROJECTED_FATIGUE_MODIFY_THRESHOLD;
+    const fatigueThresholds = projectedFatigueThresholds(isConservative);
+    const fatigueTier = fatigueTierFor(peakFatigue, fatigueThresholds);
 
     const fatigueGated = eligible.filter(t => {
-        if (peakFatigue >= recoverThreshold) {
+        if (peakFatigue >= fatigueThresholds.recover) {
             return t.category === 'Rest' || t.category === 'Mobility/Recovery';
         }
-        if (peakFatigue >= modifyThreshold) {
-            return t.systemicCost <= (isConservative ? PROJECTED_MODIFY_MAX_SYSTEMIC_COST * 0.85 : PROJECTED_MODIFY_MAX_SYSTEMIC_COST);
+        if (peakFatigue >= fatigueThresholds.modify) {
+            return t.systemicCost <= fatigueThresholds.modifyMaxSystemicCost;
         }
         return true;
     });

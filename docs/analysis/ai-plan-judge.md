@@ -155,6 +155,12 @@ Therefore a case that returns the same adverse snapshot on every scenario callba
 
 This matters when interpreting judge rationales. Statements such as “the athlete was severely fatigued for the entire 14-day plan” overstate what the packet establishes. Acute-versus-persistent daily recovery trajectories are valuable future corpus coverage, but adding them changes the evidence contract and should be reviewed/re-baselined explicitly rather than smuggled into an engine-calibration PR.
 
+### Effective prescribed dose in simulation
+
+When production returns an automatic `activeDose` (for example an easier variant on a `modify` day), the simulator materializes that effective prescription before it writes the day trace, accumulated history, or judge packet. Duration, cost and stimulus therefore represent the prescribed reduced dose rather than the catalog template's nominal full dose. Template identity remains stable so workout/coverage identity is not lost.
+
+This is an evidence-integrity rule: a judge must not see `mode: modify` paired with full-dose load, and the following simulated week must not inherit fatigue/objective credit as though the dose reduction never happened.
+
 ## Analyze and compare
 
 Analyze an existing score file:
@@ -182,6 +188,20 @@ npm run judge:diff -- --fail-on-regression
 ```
 
 LLM scores are noisy. Prefer deterministic invariants, repeated family/case patterns, a same-model rerun, and direct plan inspection over one-off decimal deltas.
+
+To compare with the most recent compatible historical run rather than the committed baseline:
+
+```bash
+npm run judge:diff:prev
+```
+
+`judge:diff:prev` fails closed when there is no eligible prior artifact. New diff artifacts persist the previous run's own model/provider, prompt hash, response-schema hash, exact family/case-set fingerprint and counts. Legacy diff artifacts that do not carry that immutable provenance are intentionally treated as non-comparable; the checker never fills missing historical provenance from the current candidate.
+
+### Judge uncertainty before gating
+
+Do not turn a one-off decimal movement into a merge gate. Before using `--fail-on-regression` as a consequential policy gate, characterize same-model repeatability on the frozen baseline (multiple fresh runs with the same prompt/schema/model), then interpret family-level movement relative to that observed run-to-run variation. A change smaller than ordinary judge variation should be reported as inconclusive rather than as a physiological or algorithmic regression.
+
+For high-impact behavior changes, prefer repeated same-model scoring plus the blinded A/B helper and direct plan inspection. This uncertainty procedure is evaluation policy only; it must not be converted into production recovery thresholds.
 
 ## Calibration interpretation guardrails
 

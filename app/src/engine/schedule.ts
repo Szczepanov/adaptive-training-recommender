@@ -184,6 +184,7 @@ export function resolveAvailability(
     const userEnvironment = (userContext as { environment?: TrainingEnvironment } | null | undefined)?.environment
         ?? (userContext?.constraints as { environment?: TrainingEnvironment } | null | undefined)?.environment
         ?? null;
+    const normalizedUserEnvironment = userEnvironment === 'either' ? null : userEnvironment;
 
     return {
         date: dateStr,
@@ -192,6 +193,6 @@ export function resolveAvailability(
         fixedActivities: daysFixed,
         reservedCapacityCost: reservedCapacityCostProfile.systemic,
         reservedCapacityCostProfile,
-        environmentOverride: dayContext.environment ?? userEnvironment,
+        environmentOverride: dayContext.environment ?? normalizedUserEnvironment,
     };
 }

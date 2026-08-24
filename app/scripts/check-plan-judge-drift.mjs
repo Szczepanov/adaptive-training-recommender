@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, readdirSync, mkdirSync, writeFileSync } from 'node:fs';
-import { resolve, dirname } from 'node:path';
+import { resolve } from 'node:path';
 
 const defaultBaselinePath = resolve('../docs/analysis/plan-judge-baseline.json');
 const currentPath = resolve('artifacts/ai-plan-judge/latest/judge-summary.json');
@@ -45,11 +45,15 @@ function normalizeToSummary(data, fallbackLabel) {
       provenance: {
         corpusCommit: data.current.corpusCommit,
         judgeModel: data.current.judgeModel,
-        promptSha256: current.provenance?.promptSha256,
-        responseSchemaSha256: current.provenance?.responseSchemaSha256,
+        judgeProvider: data.current.judgeProvider,
+        promptSha256: data.current.promptSha256,
+        responseSchemaSha256: data.current.responseSchemaSha256,
+        caseSetSha256: data.current.caseSetSha256,
+        corpusSha256: data.current.corpusSha256,
+        familiesSha256: data.current.familiesSha256,
       },
-      familyCount: Object.keys(data.familyDeltas || {}).length || 11,
-      caseCount: 60,
+      familyCount: data.current.familyCount,
+      caseCount: data.current.caseCount,
       meanSensitivityQuality: data.current.meanSensitivityQuality,
       scoreAverages: data.current.scoreAverages,
       familySensitivity: Object.entries(data.familyDeltas || {}).map(([familyId, val]) => ({
@@ -94,7 +98,13 @@ if (againstCustomPath) {
     if (candidate) {
       baselinePath = candidate.path;
       baselineLabel = `Previous Run (${candidate.file})`;
+    } else {
+      console.error('No eligible previous judge diff artifact exists; refusing to relabel the committed baseline as a previous run.');
+      process.exit(1);
     }
+  } else {
+    console.error(`No judge history directory exists at ${historyDir}; cannot compare with --previous.`);
+    process.exit(1);
   }
 }
 
@@ -118,6 +128,16 @@ if (fatal.length === 0) {
   }
   if (baseline.provenance.responseSchemaSha256 !== current.provenance.responseSchemaSha256) {
     fatal.push('Judge response schema hash changed; score deltas are not comparable to the committed baseline.');
+  }
+
+  if (usePrevious) {
+    const baselineCaseSet = baseline.provenance.caseSetSha256;
+    const currentCaseSet = current.provenance.caseSetSha256;
+    if (!baselineCaseSet || !currentCaseSet) {
+      fatal.push('Previous-run comparison is missing case-set provenance; legacy diff artifacts are not comparable.');
+    } else if (baselineCaseSet !== currentCaseSet) {
+      fatal.push('Judge family/case set changed; previous-run score deltas are not comparable.');
+    }
   }
 
   const baselineModel = baseline.provenance.judgeModel ?? 'unknown';
@@ -230,12 +250,26 @@ const diffData = {
   baseline: {
     corpusCommit: baseline.provenance.corpusCommit ?? 'unknown',
     judgeModel: baseline.provenance.judgeModel ?? 'unknown',
+    judgeProvider: baseline.provenance.judgeProvider ?? 'unknown',
+    promptSha256: baseline.provenance.promptSha256,
+    responseSchemaSha256: baseline.provenance.responseSchemaSha256,
+    caseSetSha256: baseline.provenance.caseSetSha256,
+    familyCount: baseline.familyCount,
+    caseCount: baseline.caseCount,
     meanSensitivityQuality: round2(baseMean),
     scoreAverages: baseline.scoreAverages,
   },
   current: {
     corpusCommit: current.provenance.corpusCommit ?? 'unknown',
     judgeModel: current.provenance.judgeModel ?? 'unknown',
+    judgeProvider: current.provenance.judgeProvider ?? 'unknown',
+    promptSha256: current.provenance.promptSha256,
+    responseSchemaSha256: current.provenance.responseSchemaSha256,
+    caseSetSha256: current.provenance.caseSetSha256,
+    corpusSha256: current.provenance.corpusSha256,
+    familiesSha256: current.provenance.familiesSha256,
+    familyCount: current.familyCount,
+    caseCount: current.caseCount,
     meanSensitivityQuality: round2(currMean),
     scoreAverages: current.scoreAverages,
   },
