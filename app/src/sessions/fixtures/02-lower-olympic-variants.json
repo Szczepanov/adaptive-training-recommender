@@ -50,6 +50,7 @@
             "kind": "percent_one_rm",
             "percent": 50
           },
+          "tempo": "1-0-X-1",
           "rest": {
             "min": 60,
             "max": 90
@@ -121,6 +122,7 @@
             "kind": "rpe",
             "target": 7.5
           },
+          "tempo": "1-0-X-1",
           "quality": {
             "kind": "velocity_loss",
             "maxLossPercent": 10

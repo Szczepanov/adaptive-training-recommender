@@ -13,9 +13,12 @@ import { CheckoffInputCard } from './inputs/CheckoffInputCard';
 import { SessionCompletionSheet } from './SessionCompletionSheet';
 import { sessionDefinitionService, type SessionDefinitionHeader } from '../../services/sessionDefinitionService';
 import { prepareUnplannedSessionLaunch } from '../../services/sessionAuthoringService';
-import { getGroupProgress } from '../../sessions/groupProgression';
+import { getGroupProgress, targetEntriesForGroupStep } from '../../sessions/groupProgression';
+import { stepName } from '../../sessions/stepDisplay';
 import { GroupProgress } from './GroupProgress';
 import { ChoiceCard } from './ChoiceCard';
+import { ExerciseSwapModal } from './ExerciseSwapModal';
+import { isSoundEnabled, setSoundEnabled } from '../../utils/audioFeedback';
 import './SessionRunner.css';
 
 // Import positive fixtures for quick unplanned session launch
@@ -62,6 +65,16 @@ function formatEffort(step: SessionStep): string | null {
     if (effort.rpe !== undefined) return `RPE ${formatRange(effort.rpe)}`;
     if (effort.rir !== undefined) return `${formatRange(effort.rir)} RIR`;
     return null;
+}
+
+function formatTempoBreakdown(tempo: string): string {
+    const cleaned = tempo.replace(/-/g, '');
+    if (cleaned.length === 4) {
+        const [ecc, pauseBottom, con, pauseTop] = cleaned.split('');
+        const conText = con.toUpperCase() === 'X' ? 'Explosive' : `${con}s`;
+        return `${tempo} (${ecc}s Lower · ${pauseBottom}s Pause · ${conText} Lift · ${pauseTop}s Top)`;
+    }
+    return tempo;
 }
 
 interface SessionRunnerProps {
@@ -120,6 +133,13 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
         const interval = setInterval(() => setCompanionPromptNow(Date.now()), 15_000);
         return () => clearInterval(interval);
     }, [companionPrompt]);
+    const [soundMuted, setSoundMuted] = useState<boolean>(() => !isSoundEnabled());
+    const [showSwapModal, setShowSwapModal] = useState<boolean>(false);
+    const [showSaveTemplateModal, setShowSaveTemplateModal] = useState<boolean>(false);
+    const [customTemplateTitle, setCustomTemplateTitle] = useState<string>('');
+    const [saveTemplateSuccess, setSaveTemplateSuccess] = useState<string | null>(null);
+    const [saveTemplateError, setSaveTemplateError] = useState<string | null>(null);
+    const [isSavingTemplate, setIsSavingTemplate] = useState<boolean>(false);
     const [pendingGroupAdvance, setPendingGroupAdvance] = useState<{
         blockIndex: number;
         stepIndex: number;
@@ -147,6 +167,66 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
         const latestSession = [...overload.history].reverse().find(entry => entry.sessionId !== runner.execution?.executionId);
         return latestSession?.heaviestSet ?? null;
     }, [overload.history, runner.execution?.executionId]);
+
+    const activeStep = runner.activeStep;
+    const entries = runner.entries;
+
+    // All logged entries for the active step, including recorded choice answers -- this is
+    // the athlete-facing "Performed for this step" list/count below.
+    const activeStepEntries = useMemo(() => {
+        if (!activeStep) return [];
+        return entries.filter(e => e.stepId === activeStep.id);
+    }, [activeStep, entries]);
+
+    // Choice answers carry no weight/reps/duration, so they must never be picked as the
+    // "latest" set a suggestion is derived from.
+    const activeStepWorkEntries = useMemo(
+        () => activeStepEntries.filter(e => e.payload.kind !== 'choice'),
+        [activeStepEntries],
+    );
+
+    const latestActiveEntry = activeStepWorkEntries.length > 0 ? activeStepWorkEntries[activeStepWorkEntries.length - 1] : null;
+
+    const suggestedWeightKg = useMemo(() => {
+        if (!activeStep) return undefined;
+        if (latestActiveEntry?.payload.kind === 'repetition' && latestActiveEntry.payload.weightKg !== undefined) {
+            return latestActiveEntry.payload.weightKg;
+        }
+        if (pastSummary?.weightKg !== null && pastSummary?.weightKg !== undefined) {
+            return pastSummary.weightKg;
+        }
+        return undefined;
+    }, [activeStep, latestActiveEntry, pastSummary]);
+
+    const suggestedReps = useMemo(() => {
+        if (!activeStep) return undefined;
+        if (latestActiveEntry?.payload.kind === 'repetition') {
+            return latestActiveEntry.payload.reps;
+        }
+        if (activeStep.dose?.kind === 'repetition') {
+            return typeof activeStep.dose.reps === 'number' ? activeStep.dose.reps : activeStep.dose.reps.min;
+        }
+        return undefined;
+    }, [activeStep, latestActiveEntry]);
+
+    const suggestedLoadKg = useMemo(() => {
+        if (!activeStep) return undefined;
+        if (latestActiveEntry?.payload.kind === 'duration' && latestActiveEntry.payload.loadKg !== undefined) {
+            return latestActiveEntry.payload.loadKg;
+        }
+        return undefined;
+    }, [activeStep, latestActiveEntry]);
+
+    const suggestedSeconds = useMemo(() => {
+        if (!activeStep) return undefined;
+        if (latestActiveEntry?.payload.kind === 'duration') {
+            return latestActiveEntry.payload.seconds;
+        }
+        if (activeStep.dose?.kind === 'duration') {
+            return typeof activeStep.dose.seconds === 'number' ? activeStep.dose.seconds : (typeof activeStep.dose.seconds === 'object' ? activeStep.dose.seconds.min : 30);
+        }
+        return undefined;
+    }, [activeStep, latestActiveEntry]);
 
     useEffect(() => {
         onSessionStateChange?.(runner.execution);
@@ -401,8 +481,7 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
         );
     }
 
-    const { definition, activeStep, entries } = runner;
-    const activeStepEntries = entries.filter(e => e.stepId === activeStep?.id);
+    const definition = runner.definition!;
     const comparison = comparePlannedVsPerformed(definition, entries);
 
     const answeredChoiceIds = new Set(
@@ -464,9 +543,75 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
         setEditingEntryId(null);
     };
 
+    const handleSaveCustomTemplate = async () => {
+        if (!definition) return;
+        setIsSavingTemplate(true);
+        setSaveTemplateError(null);
+        setSaveTemplateSuccess(null);
+        try {
+            const title = customTemplateTitle.trim() || `${definition.title} (Custom)`;
+            await runner.saveAsNewTemplate(title);
+            setSaveTemplateSuccess(`Saved as template "${title}"!`);
+            setTimeout(() => {
+                setShowSaveTemplateModal(false);
+                setSaveTemplateSuccess(null);
+            }, 1600);
+        } catch (error) {
+            setSaveTemplateError(error instanceof Error ? error.message : 'Could not save custom template.');
+        } finally {
+            setIsSavingTemplate(false);
+        }
+    };
+
+    // Shared by onComplete/onAbandon below: both run a runner transition, close the sheet on
+    // success, offer a companion (or close the runner) exactly the same way, and surface the
+    // same kind of retryable error on failure -- only the action and its error copy differ.
+    const finishSession = async (action: () => Promise<void>, errorMessage: string) => {
+        // Captured before the runner action clears runner.definition, so the companion prompt
+        // (if any) still knows what just finished and what it separately unlocks.
+        const finishedTitle = definition.title;
+        const companions = definition.companionSessions;
+        try {
+            await action();
+            setShowCompletionSheet(false);
+            setShowAbandonConfirmation(false);
+            setCompletionError(null);
+            // A skipped/abandoned primary session still leaves an independently executable
+            // companion (e.g. the recovery spin) worth offering -- it is never gated on the
+            // primary's own completion.
+            if (companions && companions.length > 0) {
+                setCompanionPrompt({ finishedTitle, finishedAt: Date.now(), companions });
+            } else if (onClose) {
+                onClose();
+            }
+        } catch {
+            setCompletionError(errorMessage);
+        }
+    };
+
     const inputProfile = activeStep ? resolveStepInputProfile(activeStep) : 'repetition_mass';
     const activeEffort = activeStep ? formatEffort(activeStep) : null;
     const activeBlock = runner.activeBlock;
+
+    // The step the rest banner should preview as "Next" -- not simply activeStep, which for an
+    // ordinary sequential block doesn't advance until the athlete moves on, so it would still
+    // name the exercise a set was just logged for. Rotating groups (circuit/superset/alternating)
+    // use the same rotation logic GroupProgress renders; other blocks fall through to the plain
+    // next step/next non-empty block, mirroring useSessionRunner's own nextStep().
+    const restNextStep = (() => {
+        if (!definition || !activeBlock) return null;
+        const groupProgress = getGroupProgress(activeBlock, entries, runner.activeStepIndex);
+        if (groupProgress) {
+            return groupProgress.nextStepIndex !== null ? activeBlock.steps[groupProgress.nextStepIndex] : null;
+        }
+        if (runner.activeStepIndex + 1 < activeBlock.steps.length) {
+            return activeBlock.steps[runner.activeStepIndex + 1];
+        }
+        const nextBlock = definition.blocks.find(
+            (candidate, index) => index > runner.activeBlockIndex && candidate.steps.length > 0,
+        );
+        return nextBlock ? nextBlock.steps[0] : null;
+    })();
 
     return (
         <div className="session-runner-container">
@@ -477,6 +622,30 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                     <h2 className="session-title-text">{definition.title}</h2>
                 </div>
                 <div className="session-header-right">
+                    <button
+                        type="button"
+                        className="sound-toggle-btn"
+                        onClick={() => {
+                            const next = !soundMuted;
+                            setSoundMuted(next);
+                            setSoundEnabled(!next);
+                        }}
+                        title={soundMuted ? 'Sound muted (click to unmute)' : 'Sound enabled (click to mute)'}
+                        aria-label={soundMuted ? 'Unmute sound' : 'Mute sound'}
+                    >
+                        {soundMuted ? '🔇' : '🔊'}
+                    </button>
+                    <button
+                        type="button"
+                        className="save-template-header-btn"
+                        onClick={() => {
+                            setCustomTemplateTitle(definition.title);
+                            setShowSaveTemplateModal(true);
+                        }}
+                        title="Save adjusted workout as a new template"
+                    >
+                        💾 Save Template
+                    </button>
                     <span className="session-timer">⏱️ {formatTime(runner.elapsedSeconds)}</span>
                     <span className={`sync-pill ${runner.syncStatus}`}>{runner.syncStatus}</span>
                 </div>
@@ -484,11 +653,23 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
 
             {/* Rest Timer Banner */}
             {runner.isRestRunning && (
-                <div className="rest-timer-banner">
-                    <span>☕ Rest: <strong>{runner.restSecondsRemaining}s</strong></span>
-                    <button type="button" className="skip-rest-btn" onClick={runner.skipRestTimer}>
-                        Skip Rest
-                    </button>
+                <div className="rest-timer-banner" role="status" aria-live="polite">
+                    <div className="rest-timer-info">
+                        <span>☕ Rest: <strong>{runner.restSecondsRemaining}s</strong></span>
+                        {restNextStep && (
+                            <span className="rest-next-preview">
+                                Next: {stepName(restNextStep)}
+                            </span>
+                        )}
+                    </div>
+                    <div className="rest-timer-actions">
+                        <button type="button" className="rest-adjust-btn" onClick={() => runner.addRestSeconds(30)}>
+                            +30s
+                        </button>
+                        <button type="button" className="skip-rest-btn" onClick={runner.skipRestTimer}>
+                            Skip Rest
+                        </button>
+                    </div>
                 </div>
             )}
 
@@ -509,17 +690,21 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                         <span className="block-role-label">{block.title || block.role}</span>
                         <div className="step-pills">
                             {block.steps.map((step, sIdx) => {
-                                const stepCompleted = entries.filter(e => e.stepId === step.id && e.payload.kind !== 'choice').length > 0;
+                                const stepCompletedSets = entries.filter(e => e.stepId === step.id && e.payload.kind !== 'choice').length;
+                                // Shares the same target-set contract GroupProgress uses below, so a
+                                // rotating group's block.rounds (not just the step's own dose.sets)
+                                // is honored consistently between the two displays.
+                                const targetSets = targetEntriesForGroupStep(block, step);
+                                const isStepComplete = stepCompletedSets >= targetSets;
                                 const isCurrent = runner.activeBlockIndex === bIdx && runner.activeStepIndex === sIdx;
-                                const stepName = step.title || (step.exerciseRef?.kind === 'catalog' ? step.exerciseRef.exerciseId : (step.exerciseRef?.kind === 'unresolved_free_text' ? step.exerciseRef.name : step.id));
                                 return (
                                     <button
                                         key={step.id}
                                         type="button"
-                                        className={`step-nav-pill ${isCurrent ? 'active' : ''} ${stepCompleted ? 'completed' : ''}`}
+                                        className={`step-nav-pill ${isCurrent ? 'active' : ''} ${isStepComplete ? 'completed' : ''}`}
                                         onClick={() => runner.selectStep(bIdx, sIdx)}
                                     >
-                                        {stepCompleted ? '✓ ' : ''}{stepName}
+                                        {isStepComplete ? '✓ ' : (stepCompletedSets > 0 ? `(${stepCompletedSets}/${targetSets}) ` : '')}{stepName(step)}
                                     </button>
                                 );
                             })}
@@ -533,9 +718,19 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                 <div className="active-step-panel">
                     <div className="active-step-header">
                         <div className="step-titles">
-                            <span className="step-kind-badge">{activeStep.kind}</span>
+                            <div className="step-kind-row">
+                                <span className="step-kind-badge">{activeStep.kind}</span>
+                                <button
+                                    type="button"
+                                    className="swap-step-btn"
+                                    onClick={() => setShowSwapModal(true)}
+                                    title="Swap or modify this exercise"
+                                >
+                                    🔄 Swap Exercise
+                                </button>
+                            </div>
                             <h3 className="step-name">
-                                {activeStep.title || (activeStep.exerciseRef?.kind === 'catalog' ? activeStep.exerciseRef.exerciseId : (activeStep.exerciseRef?.kind === 'unresolved_free_text' ? activeStep.exerciseRef.name : activeStep.id))}
+                                {stepName(activeStep)}
                             </h3>
                             {pastSummary && (
                                 <span className="previous-context-chip">
@@ -546,17 +741,20 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                         </div>
                         <div className="step-target-summary">
                             {activeStep.dose?.kind === 'repetition' && (
-                                <span>Target: {activeStep.dose.sets} sets × {typeof activeStep.dose.reps === 'number' ? activeStep.dose.reps : `${activeStep.dose.reps.min}-${activeStep.dose.reps.max}`} reps</span>
+                                <span>Target: {activeStep.dose.sets} sets × {typeof activeStep.dose.reps === 'number' ? activeStep.dose.reps : `${activeStep.dose.reps.min}-${activeStep.dose.reps.max}`} reps{activeStep.laterality === 'per_side' ? ' (each side)' : ''}</span>
                             )}
                             {activeStep.dose?.kind === 'duration' && (
-                                <span>Target: {typeof activeStep.dose.seconds === 'number' ? activeStep.dose.seconds : `${activeStep.dose.seconds.min}-${activeStep.dose.seconds.max}`}s</span>
+                                <span>Target: {activeStep.dose.sets ? `${activeStep.dose.sets} sets × ` : ''}{typeof activeStep.dose.seconds === 'number' ? activeStep.dose.seconds : `${activeStep.dose.seconds.min}-${activeStep.dose.seconds.max}`}s{activeStep.laterality === 'per_side' ? ' (each side)' : ''}</span>
                             )}
                             {activeStep.dose?.kind === 'distance' && (
-                                <span>Target: {typeof activeStep.dose.meters === 'number' ? `${activeStep.dose.meters}m` : (typeof activeStep.dose.metres === 'number' ? `${activeStep.dose.metres}m` : 'Distance')}</span>
+                                <span>Target: {activeStep.dose.sets ? `${activeStep.dose.sets} sets × ` : ''}{typeof activeStep.dose.meters === 'number' ? `${activeStep.dose.meters}m` : (typeof activeStep.dose.metres === 'number' ? `${activeStep.dose.metres}m` : 'Distance')}{activeStep.laterality === 'per_side' ? ' (each side)' : ''}</span>
+                            )}
+                            {activeStep.laterality === 'per_side' && (
+                                <span className="laterality-tag">Unilateral (Left &amp; Right)</span>
                             )}
                             {activeEffort && <span>Effort: {activeEffort}</span>}
                             {activeStep.rest !== undefined && <span>Rest: {formatRange(activeStep.rest)} sec</span>}
-                            {activeStep.tempo && <span>Tempo: {activeStep.tempo}</span>}
+                            {activeStep.tempo && <span>Tempo: {formatTempoBreakdown(activeStep.tempo)}</span>}
                         </div>
                     </div>
                     {activeStep.stopConditions && activeStep.stopConditions.length > 0 && (
@@ -589,12 +787,16 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                                 <RepetitionInputCard
                                     key={activeStep.id}
                                     step={activeStep}
+                                    suggestedWeightKg={suggestedWeightKg}
+                                    suggestedReps={suggestedReps}
                                     onSubmit={handleEntrySubmit}
                                 />
                             ) : inputProfile === 'duration_hold' ? (
                                 <DurationInputCard
                                     key={activeStep.id}
                                     step={activeStep}
+                                    suggestedLoadKg={suggestedLoadKg}
+                                    suggestedSeconds={suggestedSeconds}
                                     onSubmit={handleEntrySubmit}
                                 />
                             ) : inputProfile === 'distance_split' ? (
@@ -729,47 +931,68 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                         setShowAbandonConfirmation(false);
                         setCompletionError(null);
                     }}
-                    onComplete={async (payload) => {
-                        // Captured before completeSession() clears runner.definition, so the
-                        // companion prompt (if any) still knows what just finished and what it
-                        // separately unlocks.
-                        const finishedTitle = definition.title;
-                        const companions = definition.companionSessions;
-                        try {
-                            await runner.completeSession(payload);
-                            setShowCompletionSheet(false);
-                            setShowAbandonConfirmation(false);
-                            setCompletionError(null);
-                            if (companions && companions.length > 0) {
-                                setCompanionPrompt({ finishedTitle, finishedAt: Date.now(), companions });
-                            } else if (onClose) {
-                                onClose();
-                            }
-                        } catch {
-                            setCompletionError('Could not save completion feedback. Your session is still open, so you can retry.');
-                        }
-                    }}
-                    onAbandon={async () => {
-                        const finishedTitle = definition.title;
-                        const companions = definition.companionSessions;
-                        try {
-                            await runner.abandonSession();
-                            setShowCompletionSheet(false);
-                            setShowAbandonConfirmation(false);
-                            setCompletionError(null);
-                            // A skipped/abandoned primary session still leaves an independently
-                            // executable companion (e.g. the recovery spin) worth offering --
-                            // it is never gated on the primary's own completion.
-                            if (companions && companions.length > 0) {
-                                setCompanionPrompt({ finishedTitle, finishedAt: Date.now(), companions });
-                            } else if (onClose) {
-                                onClose();
-                            }
-                        } catch {
-                            setCompletionError('Could not abandon the session. It remains open, so you can retry.');
-                        }
-                    }}
+                    onComplete={payload => finishSession(
+                        () => runner.completeSession(payload),
+                        'Could not save completion feedback. Your session is still open, so you can retry.',
+                    )}
+                    onAbandon={() => finishSession(
+                        () => runner.abandonSession(),
+                        'Could not abandon the session. It remains open, so you can retry.',
+                    )}
                 />
+            )}
+
+            {/* Exercise Swap Modal */}
+            {showSwapModal && activeStep && (
+                <ExerciseSwapModal
+                    step={activeStep}
+                    onSwap={(replacement) => {
+                        runner.substituteStepExercise(runner.activeBlockIndex, runner.activeStepIndex, replacement);
+                        setShowSwapModal(false);
+                    }}
+                    onClose={() => setShowSwapModal(false)}
+                />
+            )}
+
+            {/* Save Custom Template Modal */}
+            {showSaveTemplateModal && (
+                <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="save-template-modal-title">
+                    <div className="exercise-swap-modal save-template-modal">
+                        <div className="swap-modal-header">
+                            <h3 id="save-template-modal-title">Save as Custom Template</h3>
+                            <button type="button" className="close-btn" onClick={() => setShowSaveTemplateModal(false)} aria-label="Close">✕</button>
+                        </div>
+                        <p className="swap-subtitle">
+                            Save your adjusted workout (including any swapped exercises) so you can start it again anytime.
+                        </p>
+                        {saveTemplateError && <p className="session-runner-error" role="alert">{saveTemplateError}</p>}
+                        {saveTemplateSuccess && <p className="save-template-success" role="status">✓ {saveTemplateSuccess}</p>}
+                        <label className="swap-input-group">
+                            <span className="swap-label">Template Title</span>
+                            <input
+                                type="text"
+                                className="swap-input-box"
+                                value={customTemplateTitle}
+                                onChange={e => setCustomTemplateTitle(e.target.value)}
+                                placeholder="e.g. Upper-Body Absorption (Single Dumbbell)"
+                                autoFocus
+                            />
+                        </label>
+                        <div className="swap-modal-actions">
+                            <button type="button" className="cancel-swap-btn" onClick={() => setShowSaveTemplateModal(false)}>
+                                Cancel
+                            </button>
+                            <button
+                                type="button"
+                                className="confirm-swap-btn"
+                                disabled={isSavingTemplate || !customTemplateTitle.trim()}
+                                onClick={handleSaveCustomTemplate}
+                            >
+                                {isSavingTemplate ? 'Saving…' : 'Save Template'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
             )}
         </div>
     );
