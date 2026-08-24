@@ -1,6 +1,6 @@
 import logging
 from pathlib import Path
-from typing import Any, Callable, Protocol
+from typing import Any, Callable, Protocol, cast
 
 from garminconnect import (
     Garmin,
@@ -205,12 +205,14 @@ class GarminClientWrapper:
     def get_activity_power_zones(self, activity_id: str) -> list[dict[str, Any]]:
         if not self.api:
             raise RuntimeError("Garmin client is not authenticated. Call login first.")
-        return self.api.get_activity_power_in_timezones(activity_id) or []
+        result = self.api.get_activity_power_in_timezones(activity_id)
+        return result if isinstance(result, list) else []
 
     def get_activity_hr_zones(self, activity_id: str) -> list[dict[str, Any]]:
         if not self.api:
             raise RuntimeError("Garmin client is not authenticated. Call login first.")
-        return self.api.get_activity_hr_in_timezones(activity_id) or []
+        result = self.api.get_activity_hr_in_timezones(activity_id)
+        return result if isinstance(result, list) else []
 
     def get_activity_splits(self, activity_id: str) -> dict[str, Any]:
         if not self.api:
@@ -234,10 +236,11 @@ class GarminClientWrapper:
 
         for _ in range(max_pages):
             batch = self.api.get_activities(start_index, limit)
-            if not batch:
+            if not isinstance(batch, list) or not batch:
                 break
             activities.extend(batch)
-            oldest_date = batch[-1].get("startTimeLocal", "")[:10]
+            oldest = batch[-1]
+            oldest_date = oldest.get("startTimeLocal", "")[:10] if isinstance(oldest, dict) else ""
             if oldest_date and oldest_date < start_date_iso:
                 break
             start_index += limit
@@ -289,7 +292,7 @@ class GarminClientWrapper:
             if profile_number is None:
                 raise RuntimeError("Garmin user profile did not include a profile identifier.")
 
-        raw_gear = self.api.get_gear(profile_number) or []
+        raw_gear = self.api.get_gear(cast(Any, profile_number)) or []
         if isinstance(raw_gear, list):
             raw_items = raw_gear
         elif isinstance(raw_gear, dict) and isinstance(raw_gear.get("gearList"), list):

@@ -97,10 +97,10 @@ class GarminAccountLinkHandler(BaseHTTPRequestHandler):
     server_version = "GarminAccountLink/1"
     request_id: str | None = None
 
-    def log_message(self, format_string: str, *args: Any) -> None:
+    def log_message(self, format: str, *args: Any) -> None:
         # BaseHTTPRequestHandler includes the path but never request bodies. Keep logs
         # intentionally free of Garmin email, password, MFA code, challenge ID and tokens.
-        logger.info("%s - %s", self.address_string(), format_string % args)
+        logger.info("%s - %s", self.address_string(), format % args)
 
     def _json_response(self, status: HTTPStatus, payload: dict[str, Any]) -> None:
         body = json.dumps(payload, separators=(",", ":")).encode("utf-8")

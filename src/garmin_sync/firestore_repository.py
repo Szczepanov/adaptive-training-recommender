@@ -249,7 +249,7 @@ class FirestoreRecoveryRepository:
             "weightMeasuredAt": targets.weight_measured_at,
         }
 
-        @firestore.transactional
+        @firestore.transactional  # pyright: ignore[reportAttributeAccessIssue]
         def merge_targets(transaction: Any) -> None:
             snapshot = doc_ref.get(transaction=transaction)
             existing: dict[str, Any] = cast(

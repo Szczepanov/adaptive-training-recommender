@@ -33,7 +33,6 @@ export function useOverloadHistory(userId: string | null | undefined, windowDays
         // no external system to defer this to when there is nothing to load in the first
         // place.
         if (!userId) {
-            // eslint-disable-next-line react-hooks/set-state-in-effect
             setLoading(false);
             return;
         }

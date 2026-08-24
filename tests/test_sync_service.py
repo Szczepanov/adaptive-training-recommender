@@ -217,6 +217,42 @@ def test_detail_fetch_skips_qualifying_activity_outside_target_date():
     assert provider.detail_calls == ["target-day"]
 
 
+def test_sync_daily_lookback_resync_forwards_activity_detail_flag():
+    """Lookback resync (D-1) must forward garmin_activity_detail_enabled so qualifying
+    activities on the lookback date are also detail-enriched."""
+    provider = DetailFakeProvider()
+    provider.activities = [
+        CanonicalActivity(
+            activity_id="lookback-day",
+            date="2026-08-07",
+            type="cycling",
+            duration_min=60,
+            duration_seconds=3600,
+            training_effect_aerobic=3.2,
+            training_effect_anaerobic=0.4,
+            average_hr=145,
+            training_load=110.0,
+            intensity_tag="moderate",
+        ),
+        CanonicalActivity(
+            activity_id="target-day",
+            date="2026-08-08",
+            type="cycling",
+            duration_min=60,
+            duration_seconds=3600,
+            training_effect_aerobic=3.2,
+            training_effect_anaerobic=0.4,
+            average_hr=145,
+            training_load=110.0,
+            intensity_tag="moderate",
+        ),
+    ]
+    service, repo = _detail_service(provider, enabled=True)
+
+    assert service.sync_daily("2026-08-08", force=True, resync_lookback_days=1)
+    assert provider.detail_calls == ["lookback-day", "target-day"]
+
+
 def test_backfill_issues_no_detail_calls_even_when_enabled():
     provider = DetailFakeProvider()
     service, repo = _detail_service(provider)

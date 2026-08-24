@@ -51,7 +51,7 @@ class GarminExecutionLease:
         now = datetime.now(timezone.utc)
         expires_at = now + timedelta(seconds=self.ttl_seconds)
 
-        @firestore.transactional
+        @firestore.transactional  # pyright: ignore[reportAttributeAccessIssue]
         def claim(transaction: Any) -> bool:
             snapshot = self._ref.get(transaction=transaction)
             if snapshot.exists:
@@ -81,7 +81,7 @@ class GarminExecutionLease:
         if not self._acquired:
             return
 
-        @firestore.transactional
+        @firestore.transactional  # pyright: ignore[reportAttributeAccessIssue]
         def release_owned(transaction: Any) -> None:
             snapshot = self._ref.get(transaction=transaction)
             if not snapshot.exists:
