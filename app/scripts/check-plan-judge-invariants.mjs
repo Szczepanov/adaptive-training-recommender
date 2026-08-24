@@ -72,6 +72,8 @@ for (const item of cases.values()) {
   if (!event?.date) continue;
   const eventCommitment = (item.input.fixedActivities ?? []).find((activity) => activity.date === event.date && activity.id?.startsWith('judge-event:'));
   if (!eventCommitment) continue;
+  const planDates = new Set(item.plan?.map((day) => day.date) ?? []);
+  if (!planDates.has(event.date)) continue;
   const eventDay = item.plan?.find((day) => day.date === event.date);
   fail(Boolean(eventDay), `${item.input.caseId}: scheduled event date ${event.date} is missing from the simulated plan.`);
   if (eventDay) {

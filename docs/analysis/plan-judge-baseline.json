@@ -1,613 +1,1001 @@
 {
-  "schema": "adaptive-training-recommender/ai-plan-judge-summary@2",
+  "schema": "adaptive-training-recommender/ai-plan-judge-summary@3",
   "source": "C:\\Users\\mdszc\\Downloads\\projekty\\adaptive-training-recommender-ai-plan-judge\\app\\artifacts\\ai-plan-judge\\latest\\judge-scores.jsonl",
+  "provenance": {
+    "corpusCommit": "c092ac569b4634e5e06aa573ce23ed6b2e91a599",
+    "corpusSchema": "adaptive-training-recommender/ai-plan-judge-corpus@2",
+    "corpusSha256": "7a73064a87410dab32f3aac50ef2bdb756dcb1ff53ea9ca992deafdadeecc967",
+    "familiesSha256": "d9f5c6b1b25015c00abd772d7133e5ecdc7063b2585903d5e0dec75f22f0bf8d",
+    "promptSha256": "14a704f1f8a27d816f22218e56034c2c3e34e9f0ed6a737e1f649d422fca0255",
+    "responseSchemaSha256": "ab96127b7dee8fb1bc664897fcfe7d0ff563ba7d7cabf4dd433e1d0b7ed2d21a",
+    "judgeScoresSha256": "c87317be2ace86abf7d27ea773d5937ddd43741c81e05ff1bde093cc39c4ba11",
+    "judgeModel": "hf.co/empero-ai/Qwen3.8-9B-Distill-GGUF:Q4_K_M",
+    "analyzedAt": "2026-08-24T11:27:29.412Z"
+  },
   "familyCount": 11,
   "caseCount": 60,
   "scoreAverages": {
-    "safety_recovery_fit": 8.848333333333334,
-    "goal_event_fit": 8.496666666666673,
-    "sequencing": 8.691666666666668,
-    "periodization_taper": 8.465000000000002,
-    "preference_capacity_fit": 8.61833333333334,
-    "robustness": 8.851666666666663,
-    "overall": 8.669999999999996
+    "safety_recovery_fit": 7.883333333333334,
+    "goal_event_fit": 7.666666666666667,
+    "sequencing": 7.708333333333333,
+    "periodization_taper": 7.533333333333333,
+    "preference_capacity_fit": 8.108333333333333,
+    "robustness": 7.7,
+    "overall": 7.736666666666666
   },
-  "meanSensitivityQuality": 8.845454545454546,
+  "meanSensitivityQuality": 7.636363636363637,
   "familySensitivity": [
     {
-      "familyId": "preferences_capacity",
-      "sensitivityQuality": 8,
-      "rationale": "Strong responsiveness to duration caps (45m) and active recovery styles, replacing passive rest with mobility and yoga flows.",
+      "familyId": "event_demand",
+      "sensitivityQuality": 6,
+      "rationale": "Evaluation of family sensitivity across 4 cases.",
       "overreactionCases": [],
       "underreactionCases": [
-        "judge_pref_conservative"
+        "judge_demand_crit_A",
+        "judge_demand_crit_B",
+        "judge_demand_gran_A",
+        "judge_demand_gran_B"
       ],
       "algorithmAdjustmentHypotheses": [
-        "Conservative bias provides adequate strain protection during fatigue accumulation."
+        "Produce distinct plans for criterium vs gran fondo event demands"
       ]
     },
     {
-      "familyId": "event_demand",
-      "sensitivityQuality": 8.4,
-      "rationale": "Appropriately distinguishes between criterium surge demands and gran fondo aerobic durability profiles.",
-      "overreactionCases": [],
+      "familyId": "concurrent_strength_endurance",
+      "sensitivityQuality": 7,
+      "rationale": "The algorithm correctly distinguishes between heavy lower-body (reduces training) and heavy upper-body (maintains training) perturbations, but over-reacts to low-cost power maintenance sessions by adding unnecessary rest days and missing event anchors.",
+      "overreactionCases": [
+        "judge_concurrent_power_maintenance"
+      ],
       "underreactionCases": [],
       "algorithmAdjustmentHypotheses": [
-        "Maintain demand vector mapping in periodization.ts."
+        "Lower the systemic cost threshold for triggering extra rest days; power maintenance sessions (~0.4 systemic cost) should not warrant additional recovery beyond the baseline.",
+        "Increase the minimum event-specific exposure frequency to ensure anchor dates are consistently met across perturbation cases."
+      ]
+    },
+    {
+      "familyId": "injury_constraints",
+      "sensitivityQuality": 7,
+      "rationale": "The engine correctly ignores non-binding constraints (running restriction on a cycling-only plan) but struggles with lower-body restrictions, producing unresolved objectives and misplaced rest days. The expired case correctly reverts to baseline.",
+      "overreactionCases": [
+        "judge_injury_running_restricted"
+      ],
+      "underreactionCases": [
+        "judge_injury_lower_body_restricted"
+      ],
+      "algorithmAdjustmentHypotheses": [
+        "Lower-body restriction guardrails may not be properly enforced during session selection; consider adding explicit lower-body load tracking to the constraint engine. Running restriction is correctly identified as non-binding but could be flagged as a false-positive constraint application."
       ]
     },
     {
       "familyId": "objective_recovery",
-      "sensitivityQuality": 8.8,
-      "rationale": "High sensitivity for acute biometric shifts: HRV -2 SD and RHR +2 SD safely trigger modify tier, and combined adverse metrics enforce Total Rest. Sleep score < 55 and low body battery caps execution tier to Easy.",
-      "overreactionCases": [],
+      "sensitivityQuality": 7.5,
+      "rationale": "The algorithm correctly handles mild isolated perturbations (~1 SD) without overreacting, but underreacts to significant single-axis signals (poor sleep, low battery) and overreacts to combined signals with excessive rest days that disrupt periodization.",
+      "overreactionCases": [
+        "judge_obj_combined_bad"
+      ],
       "underreactionCases": [
         "judge_obj_poor_sleep",
         "judge_obj_low_battery"
       ],
       "algorithmAdjustmentHypotheses": [
-        "Maintain acute biometric strain floor for RHR delta >= +6 bpm and HRV delta <= -15 ms."
+        "Increase sensitivity threshold for poor sleep and low body battery signals to trigger modify-tier responses.",
+        "Reduce the weight of combined adverse signals to avoid excessive rest-day stacking that disrupts periodization.",
+        "Consider a weighted fusion approach where multiple mild signals accumulate before triggering strong responses, rather than reacting to each signal independently."
       ]
     },
     {
       "familyId": "event_proximity",
-      "sensitivityQuality": 8.8,
-      "rationale": "Clear, progressive periodization from 40 days out down to 3 days out, executing a textbook volume reduction with sharpening rides near race day.",
+      "sensitivityQuality": 7.5,
+      "rationale": "The algorithm correctly identifies the 14-day and 7-day plans as well-balanced, but under-reacts to the criterium's surge/sprint demands in the 40d, 20d, and 3d cases by allowing too much rest. The 14d plan best matches the event's repeated surge demand profile.",
       "overreactionCases": [],
-      "underreactionCases": [],
+      "underreactionCases": [
+        "judge_event_40d",
+        "judge_event_20d",
+        "judge_event_3d"
+      ],
       "algorithmAdjustmentHypotheses": [
-        "Maintain event proximity phase transitions in periodization.ts."
+        "Increase weight on event demandProfile.repeatedSurges when generating plans for criterium events, reducing allowable rest days in the 20-40 day window. The 14-day plan's balance of 4 rest days and 6 train days with event-specific exposure is the optimal reference point for this event type."
       ]
     },
     {
       "familyId": "planning_modes_overlays",
-      "sensitivityQuality": 8.8,
-      "rationale": "Clean macro-level differentiation between event-directed periodization, evergreen adaptation dose packing, and travel overlays.",
-      "overreactionCases": [],
-      "underreactionCases": [],
-      "algorithmAdjustmentHypotheses": [
-        "Maintain evergreen dose packing in evergreenPlanning.ts."
-      ]
-    },
-    {
-      "familyId": "subjective_recovery",
-      "sensitivityQuality": 8.9,
-      "rationale": "Excellent subjective sensitivity: fatigue >= 8, soreness >= 8, and stress >= 9 reliably downshift Day 1 to modify tier, and combined subjective distress enforces Total Rest.",
+      "sensitivityQuality": 7.5,
+      "rationale": "The judge correctly distinguishes between event-directed and evergreen modes, and appropriately flags the travel overlay case for excessive rest and unresolved objectives. The conservative preference case shows the bias flag without meaningful plan change, which is acceptable since the underlying plan was already conservative. The travel overlay case is the primary underreaction — it should have flagged the excessive rest days more strongly given the unresolved weekly objectives.",
       "overreactionCases": [],
       "underreactionCases": [
-        "judge_subj_low_readiness"
+        "judge_mode_travel_overlay"
       ],
       "algorithmAdjustmentHypotheses": [
-        "Maintain acute subjective gating floors in rules.ts."
+        "Increase sensitivity threshold for rest-day count in travel_overlay mode (flag >6 rest days as warning)",
+        "Add explicit check for unresolved weekly objectives against event demand profile",
+        "Consider flagging when conservative_bias flag is set but plan structure is unchanged from non-conservative counterpart"
       ]
     },
     {
-      "familyId": "recent_training",
-      "sensitivityQuality": 9,
-      "rationale": "Superb recency awareness: fresh state immediately capitalizes on capacity with Day 1 VO2 intervals, while hard load yesterday delays VO2 intervals to Day 12 and inserts recovery buffers.",
-      "overreactionCases": [],
-      "underreactionCases": [],
+      "familyId": "preferences_capacity",
+      "sensitivityQuality": 8,
+      "rationale": "The algorithm correctly identifies that mild preference perturbations (conservative, mixed, 90min) do not warrant plan changes when the baseline is already well-balanced. The 45min case appropriately flags unresolved objectives. The active recovery case slightly overreacts to a soft preference by reducing event-specificity. Overall sensitivity is good but could benefit from distinguishing soft vs. hard preference constraints more clearly.",
+      "overreactionCases": [
+        "judge_pref_active_recovery"
+      ],
+      "underreactionCases": [
+        "judge_pref_conservative",
+        "judge_pref_mixed_recovery",
+        "judge_pref_90min"
+      ],
       "algorithmAdjustmentHypotheses": [
-        "Maintain 48-72h recovery bridge between high-systemic-cost sessions."
-      ]
-    },
-    {
-      "familyId": "concurrent_strength_endurance",
-      "sensitivityQuality": 9,
-      "rationale": "Precise kinetic chain differentiation: heavy lower-body resistance work yesterday protects cycling legs on Day 1, while upper-body work allows normal endurance progression.",
-      "overreactionCases": [],
-      "underreactionCases": [],
-      "algorithmAdjustmentHypotheses": [
-        "Maintain muscle group and tissue fatigue tracking in fatigue.ts."
-      ]
-    },
-    {
-      "familyId": "injury_constraints",
-      "sensitivityQuality": 9,
-      "rationale": "Surgical injury guardrails cleanly filter contraindicated modalities and movements without unnecessarily canceling the entire training week.",
-      "overreactionCases": [],
-      "underreactionCases": [],
-      "algorithmAdjustmentHypotheses": [
-        "Maintain injury constraint filtering in eligibility.ts."
-      ]
-    },
-    {
-      "familyId": "delivered_dose_variance",
-      "sensitivityQuality": 9.2,
-      "rationale": "Excellent adherence sensitivity: surged 3x17m @ 105% FTP adds recovery days to clear neuromuscular debt, while skipped workout preserves capacity.",
-      "overreactionCases": [],
-      "underreactionCases": [],
-      "algorithmAdjustmentHypotheses": [
-        "Maintain delivered-dose completion reconciliation in completedTraining.ts."
+        "Distinguish between soft preferences (recovery style) and hard constraints (time capacity) in the sensitivity scoring. Soft preferences should only trigger plan changes if they meaningfully alter the plan's event-specificity or safety profile. Hard constraints should always be respected but scored on whether they degrade the plan's event fit."
       ]
     },
     {
       "familyId": "interactions",
-      "sensitivityQuality": 9.4,
-      "rationale": "Flawless multi-signal arbitration: safely prioritizes objective autonomic strain over subjective optimism, protects against consecutive hard days even when biometrics are green, and respects race-week tapers.",
+      "sensitivityQuality": 8,
+      "rationale": "The algorithm correctly respects objective recovery signals when they conflict with subjective reports (good sensitivity), but underreacts to poor objective metrics by still scheduling hard sessions too early (underreaction).",
       "overreactionCases": [],
+      "underreactionCases": [
+        "judge_int_badobj_noload",
+        "judge_int_badobj_hard_yday",
+        "judge_int_race7_badobj"
+      ],
+      "algorithmAdjustmentHypotheses": [
+        "Increase weight of HRV delta and RHR delta in the safety score when they exceed ±10 threshold; reduce hard session intensity by 20% when HRV delta < -10 or RHR delta > +5; add a mandatory rest day when both HRV delta < -10 and RHR delta > +5 simultaneously."
+      ]
+    },
+    {
+      "familyId": "subjective_recovery",
+      "sensitivityQuality": 8.5,
+      "rationale": "The algorithm correctly distinguishes between physiological safety signals (fatigue, soreness, stress) and non-physiological ones (motivation), and appropriately escalates response when multiple adverse signals combine. The only overreaction is to low readiness alone, which aligns with the calibration rule that mild isolated variation can legitimately leave a good plan unchanged.",
+      "overreactionCases": [
+        "judge_subj_low_readiness"
+      ],
       "underreactionCases": [],
       "algorithmAdjustmentHypotheses": [
-        "Maintain hierarchical arbitration order in composer.ts and rules.ts."
+        "Consider adding a threshold on readiness score (e.g., <5) that triggers a modify tier on day 1, since readiness is a composite subjective metric that may warrant attention when sufficiently low."
+      ]
+    },
+    {
+      "familyId": "recent_training",
+      "sensitivityQuality": 8.5,
+      "rationale": "The algorithm correctly identifies hard-yesterday cases as needing recovery (Zone 2) and hard-2d/3d cases similarly. The easy-yesterday case is slightly underreactive by placing VO2 intervals on day 1, though this is a minor issue. The 'none' case is appropriately handled with a warm-up approach.",
+      "overreactionCases": [],
+      "underreactionCases": [
+        "judge_load_easy_yesterday"
+      ],
+      "algorithmAdjustmentHypotheses": [
+        "Consider adding a small penalty for placing VO2 intervals within 48 hours of any cycling session, even easy ones, when the event has high VO2Max demand. The current logic may be too permissive on 'easy yesterday' cases."
+      ]
+    },
+    {
+      "familyId": "delivered_dose_variance",
+      "sensitivityQuality": 8.5,
+      "rationale": "The algorithm correctly identifies exact delivery as optimal, appropriately flags curtailed plans for missed objectives, and recognizes that skipped workouts can still yield viable plans. The surged case may be an overreaction since criteriums inherently demand high surge capacity.",
+      "overreactionCases": [
+        "judge_dose_surged"
+      ],
+      "underreactionCases": [
+        "judge_dose_curtailed"
+      ],
+      "algorithmAdjustmentHypotheses": [
+        "Consider relaxing surge intensity thresholds for criterium events since high repeatedSurge demand (0.9) naturally benefits from elevated intensity. Consider tightening curtailed detection to flag any event-specific exposure that falls below 80% of planned dose."
       ]
     }
   ],
   "weakestCases": [
     {
+      "familyId": "preferences_capacity",
+      "caseId": "judge_pref_45min",
+      "scores": {
+        "safety_recovery_fit": 6,
+        "goal_event_fit": 5,
+        "sequencing": 5,
+        "periodization_taper": 5,
+        "preference_capacity_fit": 6,
+        "robustness": 5,
+        "overall": 5
+      },
+      "confidence": 0.88,
+      "flags": [
+        "unresolved_weekly_objectives",
+        "event_specific_anchor_missed"
+      ],
+      "rationale": "45-minute weekday constraint forces excessive rest days and misses event-specific endurance exposure, undermining criterium preparation.",
+      "suggestedChanges": [
+        "Increase weekday capacity to 60 minutes to fit event-specific endurance sessions without excessive rest."
+      ]
+    },
+    {
+      "familyId": "event_demand",
+      "caseId": "judge_demand_crit_A",
+      "scores": {
+        "safety_recovery_fit": 7,
+        "goal_event_fit": 6,
+        "sequencing": 7,
+        "periodization_taper": 5,
+        "preference_capacity_fit": 8,
+        "robustness": 7,
+        "overall": 6
+      },
+      "confidence": 0.85,
+      "flags": [
+        "same-plan-for-all-event-demands"
+      ],
+      "rationale": "Plan is identical across all four cases despite different event demands, failing to differentiate criterium vs gran fondo requirements.",
+      "suggestedChanges": [
+        "Produce distinct plans for criterium vs gran fondo event demands"
+      ]
+    },
+    {
+      "familyId": "event_demand",
+      "caseId": "judge_demand_crit_B",
+      "scores": {
+        "safety_recovery_fit": 7,
+        "goal_event_fit": 6,
+        "sequencing": 7,
+        "periodization_taper": 5,
+        "preference_capacity_fit": 8,
+        "robustness": 7,
+        "overall": 6
+      },
+      "confidence": 0.85,
+      "flags": [
+        "same-plan-for-all-event-demands"
+      ],
+      "rationale": "Plan is identical across all four cases despite different event demands, failing to differentiate criterium vs gran fondo requirements.",
+      "suggestedChanges": [
+        "Produce distinct plans for criterium vs gran fondo event demands"
+      ]
+    },
+    {
+      "familyId": "event_demand",
+      "caseId": "judge_demand_gran_A",
+      "scores": {
+        "safety_recovery_fit": 7,
+        "goal_event_fit": 6,
+        "sequencing": 7,
+        "periodization_taper": 5,
+        "preference_capacity_fit": 8,
+        "robustness": 7,
+        "overall": 6
+      },
+      "confidence": 0.85,
+      "flags": [
+        "same-plan-for-all-event-demands"
+      ],
+      "rationale": "Plan is identical across all four cases despite different event demands, failing to differentiate criterium vs gran fondo requirements.",
+      "suggestedChanges": [
+        "Produce distinct plans for criterium vs gran fondo event demands"
+      ]
+    },
+    {
+      "familyId": "event_demand",
+      "caseId": "judge_demand_gran_B",
+      "scores": {
+        "safety_recovery_fit": 7,
+        "goal_event_fit": 6,
+        "sequencing": 7,
+        "periodization_taper": 5,
+        "preference_capacity_fit": 8,
+        "robustness": 7,
+        "overall": 6
+      },
+      "confidence": 0.85,
+      "flags": [
+        "same-plan-for-all-event-demands"
+      ],
+      "rationale": "Plan is identical across all four cases despite different event demands, failing to differentiate criterium vs gran fondo requirements.",
+      "suggestedChanges": [
+        "Produce distinct plans for criterium vs gran fondo event demands"
+      ]
+    },
+    {
+      "familyId": "interactions",
+      "caseId": "judge_int_badobj_noload",
+      "scores": {
+        "safety_recovery_fit": 5,
+        "goal_event_fit": 6,
+        "sequencing": 6,
+        "periodization_taper": 6,
+        "preference_capacity_fit": 6,
+        "robustness": 6,
+        "overall": 6
+      },
+      "confidence": 0.75,
+      "flags": [
+        "Aggressive hard session on day 5 despite poor HRV (-17) and elevated RHR (+7)"
+      ],
+      "rationale": "Poor recovery signals (HRV -17, RHR +7, sleep 50) are ignored by placing a hard VO2 session on day 5.",
+      "suggestedChanges": [
+        "Delay the hard VO2 session to day 12-13 and add an extra rest day before it"
+      ]
+    },
+    {
+      "familyId": "interactions",
+      "caseId": "judge_int_badobj_hard_yday",
+      "scores": {
+        "safety_recovery_fit": 5,
+        "goal_event_fit": 6,
+        "sequencing": 6,
+        "periodization_taper": 6,
+        "preference_capacity_fit": 6,
+        "robustness": 6,
+        "overall": 6
+      },
+      "confidence": 0.75,
+      "flags": [
+        "Hard VO2 on day 14 is too aggressive given poor HRV (-17) and elevated RHR (+7)"
+      ],
+      "rationale": "Poor recovery signals are not adequately respected; the hard session on day 14 risks overreaching.",
+      "suggestedChanges": [
+        "Replace day 14 hard VO2 with a moderate Zone 2 ride; add day 13 as rest"
+      ]
+    },
+    {
+      "familyId": "injury_constraints",
+      "caseId": "judge_injury_lower_body_restricted",
+      "scores": {
+        "safety_recovery_fit": 6,
+        "goal_event_fit": 7,
+        "sequencing": 6,
+        "periodization_taper": 6,
+        "preference_capacity_fit": 6,
+        "robustness": 5,
+        "overall": 6
+      },
+      "confidence": 0.78,
+      "flags": [
+        "unresolved_objectives",
+        "rest_on_train_days"
+      ],
+      "rationale": "Engine failed to maintain strength objectives and placed rest/mobility on days marked as train-tier, indicating constraint handling issues.",
+      "suggestedChanges": [
+        "Preserve strength maintenance sessions on non-lower-body days; avoid placing rest/mobility on train-tier days."
+      ]
+    },
+    {
+      "familyId": "concurrent_strength_endurance",
+      "caseId": "judge_concurrent_power_maintenance",
+      "scores": {
+        "safety_recovery_fit": 6,
+        "goal_event_fit": 6,
+        "sequencing": 6,
+        "periodization_taper": 6,
+        "preference_capacity_fit": 7,
+        "robustness": 6,
+        "overall": 6.5
+      },
+      "confidence": 0.75,
+      "flags": [
+        "overreaction-to-low-cost-strength",
+        "unresolved-weekly-objectives",
+        "event-specific-anchor-missed"
+      ],
+      "rationale": "Over-reacts to a low-cost power maintenance session by adding an extra rest day and missing the event-specific anchor date.",
+      "suggestedChanges": [
+        "Reduce rest days to 5 and realign event-specific exposure to the anchor date; power maintenance is low systemic cost and need not trigger extra recovery."
+      ]
+    },
+    {
+      "familyId": "planning_modes_overlays",
+      "caseId": "judge_mode_travel_overlay",
+      "scores": {
+        "safety_recovery_fit": 7.5,
+        "goal_event_fit": 6,
+        "sequencing": 6.5,
+        "periodization_taper": 7,
+        "preference_capacity_fit": 7,
+        "robustness": 6.5,
+        "overall": 6.5
+      },
+      "confidence": 0.75,
+      "flags": [
+        "Excessive rest days (9) undermines event preparation",
+        "Unresolved weekly objectives for race-specific endurance and surge repeatability"
+      ],
+      "rationale": "Travel constraints force bodyweight-only training with too much rest, failing to build event-specific capacity.",
+      "suggestedChanges": [
+        "Reduce rest days to 3-4, distribute bodyweight circuits more evenly",
+        "Add surge-specific intervals on available indoor bike days"
+      ]
+    },
+    {
+      "familyId": "delivered_dose_variance",
+      "caseId": "judge_dose_curtailed",
+      "scores": {
+        "safety_recovery_fit": 7,
+        "goal_event_fit": 6.5,
+        "sequencing": 6.5,
+        "periodization_taper": 7,
+        "preference_capacity_fit": 7,
+        "robustness": 6.5,
+        "overall": 6.8
+      },
+      "confidence": 0.8,
+      "flags": [
+        "unresolved_weekly_objectives",
+        "event_specific_anchor_missed"
+      ],
+      "rationale": "Curtailed dose fails to deliver event-specific exposure and leaves weekly objectives unresolved, reducing overall plan quality.",
+      "suggestedChanges": [
+        "Reschedule the curtailed event-specific exposure to a nominated anchor week to ensure event-specific stimulus is delivered."
+      ]
+    },
+    {
       "familyId": "objective_recovery",
       "caseId": "judge_obj_poor_sleep",
       "scores": {
-        "safety_recovery_fit": 8.2,
-        "goal_event_fit": 8.3,
-        "sequencing": 8.4,
-        "periodization_taper": 8.3,
-        "preference_capacity_fit": 8.4,
-        "robustness": 8.3,
-        "overall": 8.2
+        "safety_recovery_fit": 6,
+        "goal_event_fit": 7,
+        "sequencing": 7,
+        "periodization_taper": 7,
+        "preference_capacity_fit": 7,
+        "robustness": 6,
+        "overall": 7
       },
-      "confidence": 0.95,
-      "flags": [],
-      "rationale": "Acute sleep deficit (score 52) caps execution tier to Easy, safely accommodating glycogen reduction.",
-      "suggestedChanges": []
+      "confidence": 0.75,
+      "flags": [
+        "underreaction_to_sleep_signal"
+      ],
+      "rationale": "Poor sleep (score 52, 315 min duration) is a significant objective signal that warrants at least a modify tier response.",
+      "suggestedChanges": [
+        "Reduce Day 1 to modify tier given poor sleep score and short duration."
+      ]
     },
     {
       "familyId": "objective_recovery",
       "caseId": "judge_obj_low_battery",
       "scores": {
-        "safety_recovery_fit": 8.3,
-        "goal_event_fit": 8.3,
-        "sequencing": 8.4,
-        "periodization_taper": 8.3,
-        "preference_capacity_fit": 8.4,
-        "robustness": 8.3,
-        "overall": 8.3
+        "safety_recovery_fit": 6,
+        "goal_event_fit": 7,
+        "sequencing": 7,
+        "periodization_taper": 7,
+        "preference_capacity_fit": 7,
+        "robustness": 6,
+        "overall": 7
       },
-      "confidence": 0.95,
-      "flags": [],
-      "rationale": "Low waking battery (25) caps execution tier without disruptive session cancellation.",
-      "suggestedChanges": []
+      "confidence": 0.75,
+      "flags": [
+        "underreaction_to_battery_signal"
+      ],
+      "rationale": "Low body battery (25) is a significant objective signal that warrants at least a modify tier response.",
+      "suggestedChanges": [
+        "Reduce Day 1 to modify tier given low body battery."
+      ]
     },
     {
-      "familyId": "preferences_capacity",
-      "caseId": "judge_pref_neutral",
+      "familyId": "objective_recovery",
+      "caseId": "judge_obj_combined_bad",
       "scores": {
-        "safety_recovery_fit": 8.5,
-        "goal_event_fit": 8.3,
-        "sequencing": 8.5,
-        "periodization_taper": 8.2,
-        "preference_capacity_fit": 8.7,
-        "robustness": 8.5,
-        "overall": 8.4
+        "safety_recovery_fit": 7,
+        "goal_event_fit": 6,
+        "sequencing": 6,
+        "periodization_taper": 6,
+        "preference_capacity_fit": 6,
+        "robustness": 7,
+        "overall": 7
       },
-      "confidence": 0.95,
-      "flags": [],
-      "rationale": "Standard preferences preserve balanced aerobic and strength progression.",
-      "suggestedChanges": []
+      "confidence": 0.8,
+      "flags": [
+        "overreaction_to_combined_signals"
+      ],
+      "rationale": "Combined adverse metrics warrant response but the plan overreacts with excessive rest days that disrupt periodization and event-specific exposure.",
+      "suggestedChanges": [
+        "Reduce rest days from 6 to 4-5, redistribute intensity to preserve event-specific exposure within the window."
+      ]
     },
     {
-      "familyId": "preferences_capacity",
-      "caseId": "judge_pref_conservative",
+      "familyId": "subjective_recovery",
+      "caseId": "judge_subj_low_readiness",
       "scores": {
-        "safety_recovery_fit": 8.5,
-        "goal_event_fit": 8.3,
-        "sequencing": 8.5,
-        "periodization_taper": 8.2,
-        "preference_capacity_fit": 8.7,
-        "robustness": 8.5,
-        "overall": 8.4
+        "safety_recovery_fit": 6,
+        "goal_event_fit": 7,
+        "sequencing": 7,
+        "periodization_taper": 7,
+        "preference_capacity_fit": 7,
+        "robustness": 7,
+        "overall": 7
       },
-      "confidence": 0.95,
-      "flags": [],
-      "rationale": "Standard preferences preserve balanced aerobic and strength progression.",
-      "suggestedChanges": []
-    },
+      "confidence": 0.78,
+      "flags": [
+        "overreaction_to_low_readiness"
+      ],
+      "rationale": "Plan unchanged despite low readiness score (4/10) is an overreaction since low readiness alone is not a physiological safety signal.",
+      "suggestedChanges": [
+        "Consider reducing intensity on day 1 from train to modify when readiness drops below 5/10."
+      ]
+    }
+  ],
+  "strongestCases": [
     {
-      "familyId": "preferences_capacity",
-      "caseId": "judge_pref_mixed_recovery",
+      "familyId": "delivered_dose_variance",
+      "caseId": "judge_dose_exact",
       "scores": {
-        "safety_recovery_fit": 8.5,
-        "goal_event_fit": 8.3,
-        "sequencing": 8.5,
-        "periodization_taper": 8.2,
-        "preference_capacity_fit": 8.7,
-        "robustness": 8.5,
-        "overall": 8.4
+        "safety_recovery_fit": 9.5,
+        "goal_event_fit": 9.5,
+        "sequencing": 9.5,
+        "periodization_taper": 9.5,
+        "preference_capacity_fit": 9.5,
+        "robustness": 9.5,
+        "overall": 9.5
       },
       "confidence": 0.95,
       "flags": [],
-      "rationale": "Standard preferences preserve balanced aerobic and strength progression.",
-      "suggestedChanges": []
-    },
-    {
-      "familyId": "preferences_capacity",
-      "caseId": "judge_pref_90min",
-      "scores": {
-        "safety_recovery_fit": 8.5,
-        "goal_event_fit": 8.3,
-        "sequencing": 8.5,
-        "periodization_taper": 8.2,
-        "preference_capacity_fit": 8.7,
-        "robustness": 8.5,
-        "overall": 8.4
-      },
-      "confidence": 0.95,
-      "flags": [],
-      "rationale": "Standard preferences preserve balanced aerobic and strength progression.",
+      "rationale": "Exact dose delivery with appropriate event-specific exposure and balanced periodization for a criterium event.",
       "suggestedChanges": []
     },
     {
       "familyId": "objective_recovery",
       "caseId": "judge_obj_neutral",
       "scores": {
-        "safety_recovery_fit": 8.5,
-        "goal_event_fit": 8.4,
-        "sequencing": 8.6,
-        "periodization_taper": 8.3,
-        "preference_capacity_fit": 8.5,
-        "robustness": 8.6,
-        "overall": 8.5
+        "safety_recovery_fit": 9,
+        "goal_event_fit": 9,
+        "sequencing": 9,
+        "periodization_taper": 9,
+        "preference_capacity_fit": 9,
+        "robustness": 9,
+        "overall": 9
       },
       "confidence": 0.95,
       "flags": [],
-      "rationale": "Standard aerobic progression maintained under normal variation.",
+      "rationale": "Baseline plan shows appropriate periodization with event-specific exposure distributed across the window.",
       "suggestedChanges": []
     },
     {
       "familyId": "objective_recovery",
       "caseId": "judge_obj_hrv_1sd",
       "scores": {
-        "safety_recovery_fit": 8.5,
-        "goal_event_fit": 8.4,
-        "sequencing": 8.6,
-        "periodization_taper": 8.3,
-        "preference_capacity_fit": 8.5,
-        "robustness": 8.6,
-        "overall": 8.5
+        "safety_recovery_fit": 9,
+        "goal_event_fit": 9,
+        "sequencing": 9,
+        "periodization_taper": 9,
+        "preference_capacity_fit": 9,
+        "robustness": 9,
+        "overall": 9
       },
-      "confidence": 0.95,
+      "confidence": 0.92,
       "flags": [],
-      "rationale": "Standard aerobic progression maintained under normal variation.",
+      "rationale": "Mild HRV perturbation (~1 SD) appropriately leaves the plan unchanged per calibration rules.",
       "suggestedChanges": []
     },
     {
       "familyId": "objective_recovery",
       "caseId": "judge_obj_rhr_1sd",
       "scores": {
-        "safety_recovery_fit": 8.5,
-        "goal_event_fit": 8.4,
-        "sequencing": 8.6,
-        "periodization_taper": 8.3,
-        "preference_capacity_fit": 8.5,
-        "robustness": 8.6,
-        "overall": 8.5
+        "safety_recovery_fit": 9,
+        "goal_event_fit": 9,
+        "sequencing": 9,
+        "periodization_taper": 9,
+        "preference_capacity_fit": 9,
+        "robustness": 9,
+        "overall": 9
       },
-      "confidence": 0.95,
+      "confidence": 0.92,
       "flags": [],
-      "rationale": "Standard aerobic progression maintained under normal variation.",
+      "rationale": "Mild RHR perturbation (~1 SD) appropriately leaves the plan unchanged per calibration rules.",
       "suggestedChanges": []
     },
     {
       "familyId": "subjective_recovery",
       "caseId": "judge_subj_neutral",
       "scores": {
-        "safety_recovery_fit": 8.6,
-        "goal_event_fit": 8.5,
-        "sequencing": 8.6,
-        "periodization_taper": 8.4,
-        "preference_capacity_fit": 8.5,
-        "robustness": 8.7,
-        "overall": 8.5
+        "safety_recovery_fit": 9,
+        "goal_event_fit": 9,
+        "sequencing": 9,
+        "periodization_taper": 9,
+        "preference_capacity_fit": 9,
+        "robustness": 9,
+        "overall": 9
       },
-      "confidence": 0.95,
+      "confidence": 0.92,
       "flags": [],
-      "rationale": "Fresh or neutral subjective reporting preserves standard progressive loading.",
+      "rationale": "Plan correctly maintains baseline when subjective recovery is neutral with stable objective metrics.",
       "suggestedChanges": []
     },
     {
       "familyId": "subjective_recovery",
       "caseId": "judge_subj_fresh",
       "scores": {
-        "safety_recovery_fit": 8.6,
-        "goal_event_fit": 8.5,
-        "sequencing": 8.6,
-        "periodization_taper": 8.4,
-        "preference_capacity_fit": 8.5,
-        "robustness": 8.7,
-        "overall": 8.5
+        "safety_recovery_fit": 9,
+        "goal_event_fit": 9,
+        "sequencing": 9,
+        "periodization_taper": 9,
+        "preference_capacity_fit": 9,
+        "robustness": 9,
+        "overall": 9
       },
       "confidence": 0.95,
       "flags": [],
-      "rationale": "Fresh or neutral subjective reporting preserves standard progressive loading.",
-      "suggestedChanges": []
-    },
-    {
-      "familyId": "subjective_recovery",
-      "caseId": "judge_subj_low_readiness",
-      "scores": {
-        "safety_recovery_fit": 8.6,
-        "goal_event_fit": 8.5,
-        "sequencing": 8.6,
-        "periodization_taper": 8.4,
-        "preference_capacity_fit": 8.5,
-        "robustness": 8.7,
-        "overall": 8.5
-      },
-      "confidence": 0.95,
-      "flags": [],
-      "rationale": "Fresh or neutral subjective reporting preserves standard progressive loading.",
+      "rationale": "Plan correctly maintains baseline when athlete reports being very fresh with excellent objective metrics.",
       "suggestedChanges": []
     },
     {
       "familyId": "subjective_recovery",
       "caseId": "judge_subj_low_motivation",
       "scores": {
-        "safety_recovery_fit": 8.6,
-        "goal_event_fit": 8.5,
-        "sequencing": 8.6,
-        "periodization_taper": 8.4,
-        "preference_capacity_fit": 8.5,
-        "robustness": 8.7,
-        "overall": 8.5
-      },
-      "confidence": 0.95,
-      "flags": [],
-      "rationale": "Fresh or neutral subjective reporting preserves standard progressive loading.",
-      "suggestedChanges": []
-    },
-    {
-      "familyId": "preferences_capacity",
-      "caseId": "judge_pref_45min",
-      "scores": {
-        "safety_recovery_fit": 8.6,
-        "goal_event_fit": 8.2,
-        "sequencing": 8.5,
-        "periodization_taper": 8.2,
-        "preference_capacity_fit": 9.2,
-        "robustness": 8.6,
-        "overall": 8.5
-      },
-      "confidence": 0.95,
-      "flags": [],
-      "rationale": "45-minute weekday limit strictly avoids long sessions and reschedules high-density micro-intervals.",
-      "suggestedChanges": []
-    },
-    {
-      "familyId": "event_demand",
-      "caseId": "judge_demand_crit_A",
-      "scores": {
-        "safety_recovery_fit": 8.6,
-        "goal_event_fit": 8.6,
-        "sequencing": 8.6,
-        "periodization_taper": 8.4,
-        "preference_capacity_fit": 8.5,
-        "robustness": 8.7,
-        "overall": 8.5
-      },
-      "confidence": 0.95,
-      "flags": [],
-      "rationale": "Criterium demand focuses on surge repeatability and VO2max intervals.",
-      "suggestedChanges": []
-    }
-  ],
-  "strongestCases": [
-    {
-      "familyId": "event_proximity",
-      "caseId": "judge_event_3d",
-      "scores": {
         "safety_recovery_fit": 9,
         "goal_event_fit": 9,
         "sequencing": 9,
-        "periodization_taper": 9.4,
-        "preference_capacity_fit": 8.8,
+        "periodization_taper": 9,
+        "preference_capacity_fit": 9,
         "robustness": 9,
         "overall": 9
       },
       "confidence": 0.95,
       "flags": [],
-      "rationale": "3 days out executes immediate Taper Sharpening Ride on Day 1 followed by active recovery into the event.",
+      "rationale": "Plan correctly maintains baseline when only motivation is low (2/10) since low motivation alone is not a physiological safety signal.",
       "suggestedChanges": []
     },
     {
       "familyId": "recent_training",
       "caseId": "judge_load_hard_yesterday",
       "scores": {
-        "safety_recovery_fit": 9.2,
-        "goal_event_fit": 8.5,
+        "safety_recovery_fit": 9,
+        "goal_event_fit": 9,
         "sequencing": 9,
-        "periodization_taper": 8.5,
-        "preference_capacity_fit": 8.6,
+        "periodization_taper": 9,
+        "preference_capacity_fit": 9,
         "robustness": 9,
-        "overall": 8.9
+        "overall": 9
       },
       "confidence": 0.95,
       "flags": [],
-      "rationale": "Hard cycling yesterday enforces Zone 2 Spin on Day 1 and spaces the next high-intensity session 4 days out.",
+      "rationale": "Zone 2 Spin on day 1 after hard cycling is the correct recovery approach, with event-specific work properly sequenced later.",
       "suggestedChanges": []
     },
     {
-      "familyId": "event_proximity",
-      "caseId": "judge_event_7d",
+      "familyId": "recent_training",
+      "caseId": "judge_load_hard_2d",
       "scores": {
-        "safety_recovery_fit": 8.8,
-        "goal_event_fit": 8.8,
-        "sequencing": 8.8,
-        "periodization_taper": 9.2,
-        "preference_capacity_fit": 8.6,
-        "robustness": 8.9,
-        "overall": 8.9
+        "safety_recovery_fit": 9,
+        "goal_event_fit": 9,
+        "sequencing": 9,
+        "periodization_taper": 9,
+        "preference_capacity_fit": 9,
+        "robustness": 9,
+        "overall": 9
       },
       "confidence": 0.95,
       "flags": [],
-      "rationale": "Race week 7 days out reduces systemic volume and schedules Taper Sharpening Ride on Day 7.",
+      "rationale": "Zone 2 Spin on day 1 after hard cycling two days ago is appropriate recovery with good event-specific sequencing.",
       "suggestedChanges": []
     },
     {
-      "familyId": "interactions",
-      "caseId": "judge_int_fresh_hard_yday",
+      "familyId": "recent_training",
+      "caseId": "judge_load_hard_3d",
       "scores": {
-        "safety_recovery_fit": 9.2,
-        "goal_event_fit": 8.5,
-        "sequencing": 8.8,
-        "periodization_taper": 8.6,
-        "preference_capacity_fit": 8.6,
-        "robustness": 9.2,
-        "overall": 8.9
+        "safety_recovery_fit": 9,
+        "goal_event_fit": 9,
+        "sequencing": 9,
+        "periodization_taper": 9,
+        "preference_capacity_fit": 9,
+        "robustness": 9,
+        "overall": 9
       },
       "confidence": 0.95,
       "flags": [],
-      "rationale": "Physiological training debt from yesterday is protected on Day 1 despite fresh morning biometrics.",
-      "suggestedChanges": []
-    },
-    {
-      "familyId": "interactions",
-      "caseId": "judge_int_badobj_noload",
-      "scores": {
-        "safety_recovery_fit": 9.2,
-        "goal_event_fit": 8.5,
-        "sequencing": 8.8,
-        "periodization_taper": 8.6,
-        "preference_capacity_fit": 8.6,
-        "robustness": 9.2,
-        "overall": 8.9
-      },
-      "confidence": 0.95,
-      "flags": [],
-      "rationale": "Adverse recovery signal safely triggers Day 1 Total Rest regardless of isolated positive counter-signals.",
-      "suggestedChanges": []
-    },
-    {
-      "familyId": "interactions",
-      "caseId": "judge_int_badobj_hard_yday",
-      "scores": {
-        "safety_recovery_fit": 9.2,
-        "goal_event_fit": 8.5,
-        "sequencing": 8.8,
-        "periodization_taper": 8.6,
-        "preference_capacity_fit": 8.6,
-        "robustness": 9.2,
-        "overall": 8.9
-      },
-      "confidence": 0.95,
-      "flags": [],
-      "rationale": "Adverse recovery signal safely triggers Day 1 Total Rest regardless of isolated positive counter-signals.",
-      "suggestedChanges": []
-    },
-    {
-      "familyId": "interactions",
-      "caseId": "judge_int_badsubj_goodobj",
-      "scores": {
-        "safety_recovery_fit": 9.2,
-        "goal_event_fit": 8.5,
-        "sequencing": 8.8,
-        "periodization_taper": 8.6,
-        "preference_capacity_fit": 8.6,
-        "robustness": 9.2,
-        "overall": 8.9
-      },
-      "confidence": 0.95,
-      "flags": [],
-      "rationale": "Adverse recovery signal safely triggers Day 1 Total Rest regardless of isolated positive counter-signals.",
-      "suggestedChanges": []
-    },
-    {
-      "familyId": "interactions",
-      "caseId": "judge_int_goodsubj_badobj",
-      "scores": {
-        "safety_recovery_fit": 9.2,
-        "goal_event_fit": 8.5,
-        "sequencing": 8.8,
-        "periodization_taper": 8.6,
-        "preference_capacity_fit": 8.6,
-        "robustness": 9.2,
-        "overall": 8.9
-      },
-      "confidence": 0.95,
-      "flags": [],
-      "rationale": "Adverse recovery signal safely triggers Day 1 Total Rest regardless of isolated positive counter-signals.",
-      "suggestedChanges": []
-    },
-    {
-      "familyId": "interactions",
-      "caseId": "judge_int_race7_fresh",
-      "scores": {
-        "safety_recovery_fit": 9.2,
-        "goal_event_fit": 8.5,
-        "sequencing": 8.8,
-        "periodization_taper": 8.6,
-        "preference_capacity_fit": 8.6,
-        "robustness": 9.2,
-        "overall": 8.9
-      },
-      "confidence": 0.95,
-      "flags": [],
-      "rationale": "Race-week context appropriately dampens volume and avoids pre-race overreaching.",
-      "suggestedChanges": []
-    },
-    {
-      "familyId": "interactions",
-      "caseId": "judge_int_race7_hard_yday",
-      "scores": {
-        "safety_recovery_fit": 9.2,
-        "goal_event_fit": 8.5,
-        "sequencing": 8.8,
-        "periodization_taper": 8.6,
-        "preference_capacity_fit": 8.6,
-        "robustness": 9.2,
-        "overall": 8.9
-      },
-      "confidence": 0.95,
-      "flags": [],
-      "rationale": "Race-week context appropriately dampens volume and avoids pre-race overreaching.",
+      "rationale": "Zone 2 Spin on day 1 after hard cycling three days ago is appropriate recovery with good event-specific sequencing.",
       "suggestedChanges": []
     }
   ],
-  "repeatedCaseFlags": [],
-  "repeatedCaseSuggestedChanges": [],
-  "caseFlagCounts": [],
-  "caseSuggestedChangeCounts": [],
+  "repeatedCaseFlags": [
+    {
+      "flag": "same-plan-for-all-event-demands",
+      "count": 4
+    },
+    {
+      "flag": "event-specific-exposure-off-anchor",
+      "count": 3
+    },
+    {
+      "flag": "excessive_rest_days_for_criterium",
+      "count": 3
+    },
+    {
+      "flag": "event_specific_anchor_missed",
+      "count": 2
+    },
+    {
+      "flag": "unresolved_weekly_objectives",
+      "count": 2
+    }
+  ],
+  "repeatedCaseSuggestedChanges": [
+    {
+      "suggestion": "Produce distinct plans for criterium vs gran fondo event demands",
+      "count": 4
+    },
+    {
+      "suggestion": "Consider aligning event-specific exposure to the anchor date for better periodization.",
+      "count": 3
+    }
+  ],
+  "caseFlagCounts": [
+    {
+      "flag": "same-plan-for-all-event-demands",
+      "count": 4
+    },
+    {
+      "flag": "event-specific-exposure-off-anchor",
+      "count": 3
+    },
+    {
+      "flag": "excessive_rest_days_for_criterium",
+      "count": 3
+    },
+    {
+      "flag": "event_specific_anchor_missed",
+      "count": 2
+    },
+    {
+      "flag": "unresolved_weekly_objectives",
+      "count": 2
+    },
+    {
+      "flag": "active_recovery_preference_may_reduce_event_specificity",
+      "count": 1
+    },
+    {
+      "flag": "Aggressive hard session on day 5 despite poor HRV (-17) and elevated RHR (+7)",
+      "count": 1
+    },
+    {
+      "flag": "Conservative bias did not meaningfully alter the plan from event_directed",
+      "count": 1
+    },
+    {
+      "flag": "Event-specific exposure fulfilled in-window",
+      "count": 1
+    },
+    {
+      "flag": "event-specific-anchor-missed",
+      "count": 1
+    },
+    {
+      "flag": "Excessive rest days (9) undermines event preparation",
+      "count": 1
+    },
+    {
+      "flag": "Hard VO2 on day 14 is too aggressive given poor HRV (-17) and elevated RHR (+7)",
+      "count": 1
+    },
+    {
+      "flag": "Hard VO2 on day 7 is aggressive given poor HRV (-17) and elevated RHR (+7)",
+      "count": 1
+    },
+    {
+      "flag": "Only 2 rest days in 14 days may be tight given the hard yesterday",
+      "count": 1
+    },
+    {
+      "flag": "overreaction_case",
+      "count": 1
+    },
+    {
+      "flag": "overreaction_to_combined_signals",
+      "count": 1
+    },
+    {
+      "flag": "overreaction_to_low_readiness",
+      "count": 1
+    },
+    {
+      "flag": "overreaction-to-low-cost-strength",
+      "count": 1
+    },
+    {
+      "flag": "rest_on_train_days",
+      "count": 1
+    },
+    {
+      "flag": "surged_intensity_may_be_too_aggressive_for_criterium",
+      "count": 1
+    },
+    {
+      "flag": "threshold_quality_unresolved",
+      "count": 1
+    },
+    {
+      "flag": "underreaction_to_battery_signal",
+      "count": 1
+    },
+    {
+      "flag": "underreaction_to_sleep_signal",
+      "count": 1
+    },
+    {
+      "flag": "Unresolved weekly objectives for race-specific endurance and surge repeatability",
+      "count": 1
+    },
+    {
+      "flag": "unresolved_objectives",
+      "count": 1
+    },
+    {
+      "flag": "unresolved-weekly-objectives",
+      "count": 1
+    },
+    {
+      "flag": "VO2 intervals on day 1 may be premature after easy Z2 given criterium's high VO2 demand",
+      "count": 1
+    },
+    {
+      "flag": "workout_skipped_but_plan_remains_viable",
+      "count": 1
+    }
+  ],
+  "caseSuggestedChangeCounts": [
+    {
+      "suggestion": "Produce distinct plans for criterium vs gran fondo event demands",
+      "count": 4
+    },
+    {
+      "suggestion": "Consider aligning event-specific exposure to the anchor date for better periodization.",
+      "count": 3
+    },
+    {
+      "suggestion": "Add 1-2 VO2max interval sessions in the 20-30 day window before event",
+      "count": 1
+    },
+    {
+      "suggestion": "Add day 6 as a rest day to increase recovery buffer before the race",
+      "count": 1
+    },
+    {
+      "suggestion": "Add surge-specific intervals on available indoor bike days",
+      "count": 1
+    },
+    {
+      "suggestion": "Consider adding a compensatory event-specific session in a subsequent week to maintain stimulus continuity.",
+      "count": 1
+    },
+    {
+      "suggestion": "Consider moderating surge intensity to 95-100% for better fatigue management in a criterium context.",
+      "count": 1
+    },
+    {
+      "suggestion": "Consider reducing Day 1 intensity further if HRV continues to decline.",
+      "count": 1
+    },
+    {
+      "suggestion": "Consider reducing Day 1 intensity further if RHR continues to rise.",
+      "count": 1
+    },
+    {
+      "suggestion": "Consider reducing intensity on day 1 from train to modify when readiness drops below 5/10.",
+      "count": 1
+    },
+    {
+      "suggestion": "Delay the hard VO2 session to day 12-13 and add an extra rest day before it",
+      "count": 1
+    },
+    {
+      "suggestion": "Delay VO2 intervals to day 12-13, replace day 1 with Zone 2 Spin or light Zone 3.",
+      "count": 1
+    },
+    {
+      "suggestion": "Ensure threshold work is completed before the final rest days",
+      "count": 1
+    },
+    {
+      "suggestion": "Increase weekday capacity to 60 minutes to fit event-specific endurance sessions without excessive rest.",
+      "count": 1
+    },
+    {
+      "suggestion": "No changes needed — plan already avoids running by design; constraint was correctly ignored as non-binding.",
+      "count": 1
+    },
+    {
+      "suggestion": "Preserve strength maintenance sessions on non-lower-body days; avoid placing rest/mobility on train-tier days.",
+      "count": 1
+    },
+    {
+      "suggestion": "Reduce Day 1 to modify tier given low body battery.",
+      "count": 1
+    },
+    {
+      "suggestion": "Reduce Day 1 to modify tier given poor sleep score and short duration.",
+      "count": 1
+    },
+    {
+      "suggestion": "Reduce rest days from 6 to 4-5, redistribute intensity to preserve event-specific exposure within the window.",
+      "count": 1
+    },
+    {
+      "suggestion": "Reduce rest days to 3-4, distribute bodyweight circuits more evenly",
+      "count": 1
+    },
+    {
+      "suggestion": "Reduce rest days to 5 and realign event-specific exposure to the anchor date; power maintenance is low systemic cost and need not trigger extra recovery.",
+      "count": 1
+    },
+    {
+      "suggestion": "Replace day 14 hard VO2 with a moderate Zone 2 ride; add day 13 as rest",
+      "count": 1
+    },
+    {
+      "suggestion": "Replace day 7 hard VO2 with a moderate Zone 2 ride; shift the hard session to day 13",
+      "count": 1
+    },
+    {
+      "suggestion": "Replace one rest day with a short surge interval session",
+      "count": 1
+    },
+    {
+      "suggestion": "Replace one rest day with a threshold or surge interval session",
+      "count": 1
+    },
+    {
+      "suggestion": "Replace some active recovery sessions with Zone 2 endurance to preserve aerobic base for criterium surges.",
+      "count": 1
+    },
+    {
+      "suggestion": "Reschedule the curtailed event-specific exposure to a nominated anchor week to ensure event-specific stimulus is delivered.",
+      "count": 1
+    }
+  ],
   "familyHypotheses": [
     {
-      "hypothesis": "Conservative bias provides adequate strain protection during fatigue accumulation.",
+      "hypothesis": "Add explicit check for unresolved weekly objectives against event demand profile",
       "count": 1
     },
     {
-      "hypothesis": "Maintain 48-72h recovery bridge between high-systemic-cost sessions.",
+      "hypothesis": "Consider a weighted fusion approach where multiple mild signals accumulate before triggering strong responses, rather than reacting to each signal independently.",
       "count": 1
     },
     {
-      "hypothesis": "Maintain acute biometric strain floor for RHR delta >= +6 bpm and HRV delta <= -15 ms.",
+      "hypothesis": "Consider adding a small penalty for placing VO2 intervals within 48 hours of any cycling session, even easy ones, when the event has high VO2Max demand. The current logic may be too permissive on 'easy yesterday' cases.",
       "count": 1
     },
     {
-      "hypothesis": "Maintain acute subjective gating floors in rules.ts.",
+      "hypothesis": "Consider adding a threshold on readiness score (e.g., <5) that triggers a modify tier on day 1, since readiness is a composite subjective metric that may warrant attention when sufficiently low.",
       "count": 1
     },
     {
-      "hypothesis": "Maintain delivered-dose completion reconciliation in completedTraining.ts.",
+      "hypothesis": "Consider flagging when conservative_bias flag is set but plan structure is unchanged from non-conservative counterpart",
       "count": 1
     },
     {
-      "hypothesis": "Maintain demand vector mapping in periodization.ts.",
+      "hypothesis": "Consider relaxing surge intensity thresholds for criterium events since high repeatedSurge demand (0.9) naturally benefits from elevated intensity. Consider tightening curtailed detection to flag any event-specific exposure that falls below 80% of planned dose.",
       "count": 1
     },
     {
-      "hypothesis": "Maintain event proximity phase transitions in periodization.ts.",
+      "hypothesis": "Distinguish between soft preferences (recovery style) and hard constraints (time capacity) in the sensitivity scoring. Soft preferences should only trigger plan changes if they meaningfully alter the plan's event-specificity or safety profile. Hard constraints should always be respected but scored on whether they degrade the plan's event fit.",
       "count": 1
     },
     {
-      "hypothesis": "Maintain evergreen dose packing in evergreenPlanning.ts.",
+      "hypothesis": "Increase sensitivity threshold for poor sleep and low body battery signals to trigger modify-tier responses.",
       "count": 1
     },
     {
-      "hypothesis": "Maintain hierarchical arbitration order in composer.ts and rules.ts.",
+      "hypothesis": "Increase sensitivity threshold for rest-day count in travel_overlay mode (flag >6 rest days as warning)",
       "count": 1
     },
     {
-      "hypothesis": "Maintain injury constraint filtering in eligibility.ts.",
+      "hypothesis": "Increase the minimum event-specific exposure frequency to ensure anchor dates are consistently met across perturbation cases.",
       "count": 1
     },
     {
-      "hypothesis": "Maintain muscle group and tissue fatigue tracking in fatigue.ts.",
+      "hypothesis": "Increase weight of HRV delta and RHR delta in the safety score when they exceed ±10 threshold; reduce hard session intensity by 20% when HRV delta < -10 or RHR delta > +5; add a mandatory rest day when both HRV delta < -10 and RHR delta > +5 simultaneously.",
+      "count": 1
+    },
+    {
+      "hypothesis": "Increase weight on event demandProfile.repeatedSurges when generating plans for criterium events, reducing allowable rest days in the 20-40 day window. The 14-day plan's balance of 4 rest days and 6 train days with event-specific exposure is the optimal reference point for this event type.",
+      "count": 1
+    },
+    {
+      "hypothesis": "Lower the systemic cost threshold for triggering extra rest days; power maintenance sessions (~0.4 systemic cost) should not warrant additional recovery beyond the baseline.",
+      "count": 1
+    },
+    {
+      "hypothesis": "Lower-body restriction guardrails may not be properly enforced during session selection; consider adding explicit lower-body load tracking to the constraint engine. Running restriction is correctly identified as non-binding but could be flagged as a false-positive constraint application.",
+      "count": 1
+    },
+    {
+      "hypothesis": "Produce distinct plans for criterium vs gran fondo event demands",
+      "count": 1
+    },
+    {
+      "hypothesis": "Reduce the weight of combined adverse signals to avoid excessive rest-day stacking that disrupts periodization.",
       "count": 1
     }
   ],

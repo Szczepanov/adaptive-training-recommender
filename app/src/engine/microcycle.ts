@@ -98,13 +98,24 @@ export function generateWeeklyObjectives(
                         targetStimulus = TAPER_SHARPENING_TARGET_STIMULUS;
                         qualification = TAPER_SHARPENING_QUALIFICATION;
                     } else {
-                        title = 'Cycling Race-Specific Endurance';
-                        targetStimulus = { aerobicEndurance: 0.6, repeatedSurges: 0.6 };
-                        qualification = {
-                            minimumStimulus: { aerobicEndurance: 0.6 },
-                            allowedModalities: ['Cycling'],
-                            allowedCategories: ['Race-Specific Endurance'],
-                        };
+                        const demand = focusEvent?.demandProfile;
+                        if (demand && demand.fatigueResistance >= 0.8 && demand.aerobicEndurance >= 0.8 && (demand.repeatedSurges ?? 0) < 0.6) {
+                            title = 'Cycling Aerobic Durability & Tempo';
+                            targetStimulus = { aerobicEndurance: 0.9, fatigueResistance: 0.85, thresholdPower: 0.6 };
+                            qualification = {
+                                minimumStimulus: { aerobicEndurance: 0.6 },
+                                allowedModalities: ['Cycling'],
+                                allowedCategories: ['Race-Specific Endurance'],
+                            };
+                        } else {
+                            title = 'Cycling Race-Specific Endurance';
+                            targetStimulus = { aerobicEndurance: 0.6, repeatedSurges: 0.6 };
+                            qualification = {
+                                minimumStimulus: { aerobicEndurance: 0.6 },
+                                allowedModalities: ['Cycling'],
+                                allowedCategories: ['Race-Specific Endurance'],
+                            };
+                        }
                     }
                     break;
                 case 'vo2_max':
