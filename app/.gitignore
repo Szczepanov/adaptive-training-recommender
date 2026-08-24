@@ -19,9 +19,14 @@ artifacts/health-anomaly-reports/
 artifacts/coverage/
 artifacts/firestore-rules-rollbacks/
 artifacts/sequence-search-comparison/
+artifacts/ai-plan-judge/
 test-results/
 playwright-report/
 *.local
+.env
+.env.*
+!.env.example
+!.env.visual
 
 # Editor directories and files
 .vscode/*

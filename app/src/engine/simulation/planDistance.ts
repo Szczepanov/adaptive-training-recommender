@@ -1,0 +1,165 @@
+import type { ScenarioDecisionTrace, ScenarioResult } from './analyze';
+
+export interface PlanDistanceBreakdown {
+    modeHammingDistance: number;
+    sessionJaccardDistance: number;
+    sessionEditDistance: number;
+    systemicCostL1Distance: number;
+    cardiovascularCostL1Distance: number;
+    restPlacementDistance: number;
+    compositeDistance: number;
+}
+
+/** Calculates normalized Levenshtein edit distance between two sequences of strings. */
+function sequenceEditDistance(seqA: readonly string[], seqB: readonly string[]): number {
+    const m = seqA.length;
+    const n = seqB.length;
+    if (m === 0 && n === 0) return 0;
+    if (m === 0 || n === 0) return 1;
+
+    const dp: number[][] = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+    for (let i = 0; i <= m; i++) dp[i][0] = i;
+    for (let j = 0; j <= n; j++) dp[0][j] = j;
+
+    for (let i = 1; i <= m; i++) {
+        for (let j = 1; j <= n; j++) {
+            const cost = seqA[i - 1] === seqB[j - 1] ? 0 : 1;
+            dp[i][j] = Math.min(
+                dp[i - 1][j] + 1,
+                dp[i][j - 1] + 1,
+                dp[i - 1][j - 1] + cost,
+            );
+        }
+    }
+
+    return Math.min(1, dp[m][n] / Math.max(m, n));
+}
+
+/** Calculates the Jaccard distance (1 - IoU) between two sets of session templates. */
+function jaccardDistance(templatesA: readonly string[], templatesB: readonly string[]): number {
+    const setA = new Set(templatesA);
+    const setB = new Set(templatesB);
+    if (setA.size === 0 && setB.size === 0) return 0;
+
+    let intersectionCount = 0;
+    for (const item of setA) {
+        if (setB.has(item)) intersectionCount++;
+    }
+    const unionCount = new Set([...setA, ...setB]).size;
+    return unionCount === 0 ? 0 : 1 - (intersectionCount / unionCount);
+}
+
+const REST_OR_RECOVERY_CATEGORIES = new Set(['Rest', 'Mobility/Recovery', 'Active Recovery']);
+
+function isRestOrRecovery(trace: ScenarioDecisionTrace): boolean {
+    return trace.mode === 'recover'
+        || REST_OR_RECOVERY_CATEGORIES.has(trace.selected.category)
+        || trace.selected.templateId.toLowerCase().includes('rest')
+        || trace.selected.templateId.toLowerCase().includes('recovery');
+}
+
+function indexByDate(traces: readonly ScenarioDecisionTrace[], label: string): Map<string, ScenarioDecisionTrace> {
+    const indexed = new Map<string, ScenarioDecisionTrace>();
+    for (const trace of traces) {
+        if (indexed.has(trace.date)) throw new Error(`${label} contains duplicate decision traces for ${trace.date}.`);
+        indexed.set(trace.date, trace);
+    }
+    return indexed;
+}
+
+/**
+ * Compares two multi-day simulation traces by calendar date and produces deterministic,
+ * bounded distance metrics. Missing dates are treated as structural plan differences, not
+ * as an index shift that causes every subsequent day to be compared to the wrong day.
+ */
+export function computePlanDistance(
+    tracesA: readonly ScenarioDecisionTrace[],
+    tracesB: readonly ScenarioDecisionTrace[],
+): PlanDistanceBreakdown {
+    const byDateA = indexByDate(tracesA, 'Plan A');
+    const byDateB = indexByDate(tracesB, 'Plan B');
+    const dates = [...new Set([...byDateA.keys(), ...byDateB.keys()])].sort();
+    const daysCount = dates.length;
+
+    if (daysCount === 0) {
+        return {
+            modeHammingDistance: 0,
+            sessionJaccardDistance: 0,
+            sessionEditDistance: 0,
+            systemicCostL1Distance: 0,
+            cardiovascularCostL1Distance: 0,
+            restPlacementDistance: 0,
+            compositeDistance: 0,
+        };
+    }
+
+    let modeDiffCount = 0;
+    let systemicCostDiffSum = 0;
+    let cardioCostDiffSum = 0;
+    let restPlacementDiffCount = 0;
+    const templatesA: string[] = [];
+    const templatesB: string[] = [];
+
+    for (const date of dates) {
+        const a = byDateA.get(date);
+        const b = byDateB.get(date);
+
+        if (!a && b) {
+            modeDiffCount++;
+            if (isRestOrRecovery(b)) restPlacementDiffCount++;
+            systemicCostDiffSum += b.selected.projectedCost.systemic;
+            cardioCostDiffSum += b.selected.projectedCost.cardiovascular;
+            templatesB.push(b.selected.templateId);
+            continue;
+        }
+        if (a && !b) {
+            modeDiffCount++;
+            if (isRestOrRecovery(a)) restPlacementDiffCount++;
+            systemicCostDiffSum += a.selected.projectedCost.systemic;
+            cardioCostDiffSum += a.selected.projectedCost.cardiovascular;
+            templatesA.push(a.selected.templateId);
+            continue;
+        }
+        if (!a || !b) continue;
+
+        templatesA.push(a.selected.templateId);
+        templatesB.push(b.selected.templateId);
+        if (a.mode !== b.mode) modeDiffCount++;
+        if (isRestOrRecovery(a) !== isRestOrRecovery(b)) restPlacementDiffCount++;
+        systemicCostDiffSum += Math.abs(a.selected.projectedCost.systemic - b.selected.projectedCost.systemic);
+        cardioCostDiffSum += Math.abs(a.selected.projectedCost.cardiovascular - b.selected.projectedCost.cardiovascular);
+    }
+
+    const modeHammingDistance = modeDiffCount / daysCount;
+    const sessionJaccardDistance = jaccardDistance(templatesA, templatesB);
+    const sessionEditDistance = sequenceEditDistance(templatesA, templatesB);
+    const systemicCostL1Distance = systemicCostDiffSum / daysCount;
+    const cardiovascularCostL1Distance = cardioCostDiffSum / daysCount;
+    const restPlacementDistance = restPlacementDiffCount / daysCount;
+    const compositeDistance = Math.min(1,
+        0.25 * modeHammingDistance
+        + 0.30 * sessionEditDistance
+        + 0.15 * sessionJaccardDistance
+        + 0.15 * Math.min(1, systemicCostL1Distance * 1.5)
+        + 0.15 * restPlacementDistance,
+    );
+    const round4 = (value: number) => Math.round(value * 10000) / 10000;
+
+    return {
+        modeHammingDistance: round4(modeHammingDistance),
+        sessionJaccardDistance: round4(sessionJaccardDistance),
+        sessionEditDistance: round4(sessionEditDistance),
+        systemicCostL1Distance: round4(systemicCostL1Distance),
+        cardiovascularCostL1Distance: round4(cardiovascularCostL1Distance),
+        restPlacementDistance: round4(restPlacementDistance),
+        compositeDistance: round4(compositeDistance),
+    };
+}
+
+/** Calculates plan distance between two full ScenarioResult outputs. */
+export function computeScenarioResultDistance(
+    resultA: ScenarioResult,
+    resultB: ScenarioResult,
+): PlanDistanceBreakdown {
+    return computePlanDistance(resultA.decisionTraces, resultB.decisionTraces);
+}
