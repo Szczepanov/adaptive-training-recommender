@@ -69,6 +69,18 @@ const model = isLocal ? defaultModel : (process.env.JUDGE_MODEL || defaultModel)
 const thinkingEnabled = !isQuick && process.env.THINKING_MODE !== 'disabled';
 const reasoningEffort = process.env.REASONING_EFFORT || 'low';
 
+// Local model runtime config -- hoisted here (rather than inside callLocal, where they
+// used to live) so the startup banner can print them. A truncated response (e.g. a
+// family's familyAssessment missing algorithmAdjustmentHypotheses) is otherwise a silent
+// failure mode that's hard to distinguish from the model just answering badly -- printing
+// the actual budget up front makes "raise NUM_PREDICT and rerun" a visible first guess.
+const localCustomUrl = process.env.LOCAL_LLM_URL || process.env.OLLAMA_BASE_URL;
+const localIsOllama = !localCustomUrl || localCustomUrl.includes('11434');
+const localEndpoint = localCustomUrl || (localIsOllama ? 'http://localhost:11434/api/chat' : 'http://localhost:1234/v1/chat/completions');
+const localNumCtx = parseInt(process.env.NUM_CTX || process.env.OLLAMA_NUM_CTX || '16384', 10);
+const localNumPredict = parseInt(process.env.NUM_PREDICT || process.env.OLLAMA_NUM_PREDICT || '8192', 10);
+const isFresh = process.argv.includes('--fresh') || process.argv.includes('--force');
+
 if (!existsSync(familiesPath)) {
   log('Generating fresh families.jsonl...');
   execSync('node scripts/simulate-plan-judge.mjs', { stdio: 'inherit' });
@@ -125,6 +137,11 @@ log(`=== Running AI Plan Judge via [${provider.toUpperCase()}] Model: ${model} =
 if (provider === 'deepseek') {
   log(`🧠 Thinking Mode: ${thinkingEnabled ? `ENABLED (effort: ${reasoningEffort})` : 'DISABLED'}`);
 }
+if (provider === 'local') {
+  log(`🔧 Endpoint: ${localEndpoint}`);
+  log(`🔧 num_ctx: ${localNumCtx}  num_predict: ${localNumPredict}  (override with NUM_CTX / NUM_PREDICT)`);
+}
+log(`🔧 Fresh: ${isFresh ? 'YES (cache bypassed)' : 'no (cached family responses reused where present)'}`);
 log(`Evaluating ${lines.length} sensitivity families from ${familiesPath}...\n`);
 
 function compactFamilyForJudge(rawFamily) {
@@ -286,8 +303,6 @@ function extractSensitivity(judged) {
   }
   return 'N/A';
 }
-
-const isFresh = process.argv.includes('--fresh') || process.argv.includes('--force');
 
 const requiredScores = ['safety_recovery_fit', 'goal_event_fit', 'sequencing', 'periodization_taper', 'preference_capacity_fit', 'robustness', 'overall'];
 
@@ -561,9 +576,7 @@ async function callOpenAI(familyJson, onProgress) {
 }
 
 async function callLocal(familyJson, onProgress) {
-  const customUrl = process.env.LOCAL_LLM_URL || process.env.OLLAMA_BASE_URL;
-  const isOllama = !customUrl || customUrl.includes('11434');
-  const endpoint = customUrl || (isOllama ? 'http://localhost:11434/api/chat' : 'http://localhost:1234/v1/chat/completions');
+  const endpoint = localEndpoint;
 
   const timer = setInterval(() => {
     if (onProgress) onProgress();
@@ -572,9 +585,6 @@ async function callLocal(familyJson, onProgress) {
   try {
     const isApiChat = endpoint.includes('/api/chat');
     const userPrompt = `${promptContent}\n\nStrict Output JSON Schema:\n${schemaContent}\n\nInput Sensitivity Family Data:\n\`\`\`json\n${familyJson}\n\`\`\`\n\nIMPORTANT:\n- Root JSON MUST include BOTH "caseScores" array AND "familyAssessment" object.\n- Keep 'rationale' and 'suggestedChanges' to 1 concise sentence each.\n- Output ONLY the valid evaluation JSON matching the schema starting directly with {"schema": "adaptive-training-recommender/ai-plan-judge-response@1".\n- Do not output preamble or conversational text.`;
-
-    const localNumCtx = parseInt(process.env.NUM_CTX || process.env.OLLAMA_NUM_CTX || '16384', 10);
-    const localNumPredict = parseInt(process.env.NUM_PREDICT || process.env.OLLAMA_NUM_PREDICT || '8192', 10);
 
     const body = isApiChat
       ? {

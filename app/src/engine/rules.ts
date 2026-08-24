@@ -661,6 +661,27 @@ export async function evaluateTrainingWithIntent(
         ? 'External plan fallback: no imported session is placed today, so the built-in planner is choosing this session. '
         : '';
     const pick = rankingResult.accepted[0];
+    // A 'modify' mode whose top-ranked candidate is already low-cost enough to survive
+    // the modify ceiling unchanged (a bad subjective checkin on an already-easy day, most
+    // commonly) previously fell through as a same-template, same-duration recommendation
+    // -- 'modify' meant nothing an athlete could see. Auto-applying the template's own
+    // easier dose (the same mechanism `adjustSessionRecommendation('easier', ...)` uses
+    // for an explicit athlete request) keeps 'modify' visibly distinct from 'train'
+    // whenever the template offers a lighter variant, without inventing a second
+    // eligibility/ranking path.
+    const modifyDoseAdjustment = mode === 'modify' && pick?.template.easierDose
+        ? {
+            activeDose: pick.template.easierDose,
+            adjustment: {
+                direction: 'easier' as const,
+                tier: 1 as const,
+                originalTemplateId: pick.template.id,
+                originalTemplateTitle: pick.template.title,
+                adjustedDoseLabel: pick.template.easierDose.label,
+                rationale: `Today's readiness called for a modify-tier day, so this session automatically uses its easier dose (${pick.template.easierDose.label}) rather than the full prescription.`,
+            },
+        }
+        : {};
     if (!pick) {
         const safeRecovery = candidates.find(template => template.category === 'Rest' || template.category === 'Mobility/Recovery')
             ?? ENRICHED_TEMPLATES.find(template => template.category === 'Rest')
@@ -687,8 +708,9 @@ export async function evaluateTrainingWithIntent(
         template: pick.template,
         plannedDose: intent.plannedDose,
         executionDose: resolveExecutionDose(intent.plannedDose, envelopes.plan, null),
-        rationale: `${externalFallbackPrefix}${phaseContext} ${pick.rationale}`,
+        rationale: modifyDoseAdjustment.adjustment ? `${externalFallbackPrefix}${phaseContext} ${pick.rationale} ${modifyDoseAdjustment.adjustment.rationale}` : `${externalFallbackPrefix}${phaseContext} ${pick.rationale}`,
         mode, envelopes, telemetry,
+        ...modifyDoseAdjustment,
         ...(externalEventAdvisory ? {
             externalPrescription: externalEventAdvisory.prescription,
             externalVerdict: externalEventAdvisory.verdict,
