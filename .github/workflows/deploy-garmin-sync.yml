@@ -113,7 +113,7 @@ jobs:
           GARMIN_TOKEN_STORE: "gcs"
           GARMIN_TOKEN_BUCKET: "${TOKEN_BUCKET}"
           GARMIN_ALLOW_CREDENTIAL_LOGIN: "false"
-          GARMIN_ACTIVITY_DETAIL_ENABLED: "false"
+          GARMIN_ACTIVITY_DETAIL_ENABLED: "true"
           GCP_PROJECT_ID: "${GCP_PROJECT}"
           EOF
 

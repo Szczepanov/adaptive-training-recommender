@@ -532,7 +532,11 @@ class GarminSyncService:
                 f"Revisiting D-{i} ({lookback_iso}) to pick up any late-arriving Garmin data..."
             )
             try:
-                return self._fetch_and_store_date(lookback_date, lookback_iso)
+                return self._fetch_and_store_date(
+                    lookback_date,
+                    lookback_iso,
+                    include_activity_details=self.settings.garmin_activity_detail_enabled,
+                )
             except Exception as e:
                 logger.error(f"[{lookback_iso}] Lookback resync failed: {e}")
                 return False
