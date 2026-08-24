@@ -372,7 +372,7 @@ export const TEMPLATES: SessionTemplate[] = [
         durationMin: 45,
         durationMax: 60,
         title: "Hybrid Full Body Push/Pull",
-        description: "Compound movements: Squats, deadlift variations, lunges, and presses.",
+        description: "Compound movements: Squats, deadlift variations, rows, and presses.",
         requiredEquipment: ["free_weights"],
         environment: 'either', safetyTags: ['avoid_heavy_lower_body', 'avoid_heavy_spinal_loading'],
         systemicCost: 0.6,
@@ -546,10 +546,26 @@ export const TEMPLATES: SessionTemplate[] = [
         phaseEligibility: { requiresFocusEvent: true, excludeTaper: true }
     },
     {
+        id: "end_crit_surges_01",
+        category: "Race-Specific Endurance",
+        modality: "Cycling",
+        durationMin: 35,
+        durationMax: 45,
+        title: "Compact Criterium Surge Session",
+        description: "Time-efficient race-specific cycling with repeated short surges, VO2-oriented recoveries and a controlled fast finish for surge-heavy events.",
+        requiredEquipment: [],
+        environment: 'outdoor', safetyTags: [],
+        systemicCost: 0.65,
+        objectiveTransferable: false,
+        stimulusProfile: { aerobicEndurance: 0.45, thresholdPower: 0.65, vo2MaxPower: 0.75, repeatedSurges: 0.95, sprintPower: 0.25, fatigueResistance: 0.45, maxStrength: 0, hypertrophy: 0 },
+        costProfile: { systemic: 0.55, cardiovascular: 0.7, lowerBody: 0.4, upperBody: 0.05, impactTissue: 0.1, neuromuscular: 0.6 },
+        phaseEligibility: { requiresFocusEvent: true, maxDaysToEvent: 42, excludeTaper: true }
+    },
+    {
         id: "end_race_sim_01",
         category: "Race-Specific Endurance",
         modality: "Cycling",
-        durationMin: 40,
+        durationMin: 50,
         durationMax: 95,
         title: "Race Simulation",
         description: "Peak-specific outdoor simulation with variable power, repeated surges, limited coasting and a hard late finish.",
@@ -557,9 +573,9 @@ export const TEMPLATES: SessionTemplate[] = [
         environment: 'outdoor', safetyTags: [],
         systemicCost: 0.95,
         objectiveTransferable: false,
-        stimulusProfile: { aerobicEndurance: 0.6, thresholdPower: 0.7, vo2MaxPower: 0.8, repeatedSurges: 1.0, sprintPower: 0.2, fatigueResistance: 0.6, maxStrength: 0, hypertrophy: 0 },
+        stimulusProfile: { aerobicEndurance: 0.6, thresholdPower: 0.7, vo2MaxPower: 0.8, repeatedSurges: 1.0, sprintPower: 0.2, fatigueResistance: 0.85, maxStrength: 0, hypertrophy: 0 },
         costProfile: { systemic: 0.9, cardiovascular: 0.95, lowerBody: 0.6, upperBody: 0.1, impactTissue: 0.2, neuromuscular: 0.75 },
-        phaseEligibility: { requiresFocusEvent: true, maxDaysToEvent: 42, excludeTaper: true }
+        phaseEligibility: { requiresFocusEvent: true, maxDaysToEvent: 35, excludeTaper: true }
     },
     {
         id: "end_taper_sharpen_01",
