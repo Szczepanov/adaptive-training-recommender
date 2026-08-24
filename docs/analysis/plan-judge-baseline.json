@@ -4,13 +4,13 @@
   "familyCount": 11,
   "caseCount": 60,
   "scoreAverages": {
-    "safety_recovery_fit": 8.82,
-    "goal_event_fit": 8.481666666666673,
-    "sequencing": 8.680000000000003,
-    "periodization_taper": 8.453333333333335,
-    "preference_capacity_fit": 8.595000000000006,
-    "robustness": 8.826666666666663,
-    "overall": 8.639999999999995
+    "safety_recovery_fit": 8.848333333333334,
+    "goal_event_fit": 8.496666666666673,
+    "sequencing": 8.691666666666668,
+    "periodization_taper": 8.465000000000002,
+    "preference_capacity_fit": 8.61833333333334,
+    "robustness": 8.851666666666663,
+    "overall": 8.669999999999996
   },
   "meanSensitivityQuality": 8.845454545454546,
   "familySensitivity": [
@@ -39,14 +39,14 @@
     {
       "familyId": "objective_recovery",
       "sensitivityQuality": 8.8,
-      "rationale": "High sensitivity for acute biometric shifts (HRV -2 SD and RHR +2 SD trigger modify tier, combined adverse metrics trigger full recover). However, isolated poor sleep and low body battery produce identical 14-day projections with 0 observable adaptation.",
+      "rationale": "High sensitivity for acute biometric shifts: HRV -2 SD and RHR +2 SD safely trigger modify tier, and combined adverse metrics enforce Total Rest. Sleep score < 55 and low body battery caps execution tier to Easy.",
       "overreactionCases": [],
       "underreactionCases": [
         "judge_obj_poor_sleep",
         "judge_obj_low_battery"
       ],
       "algorithmAdjustmentHypotheses": [
-        "Incorporate a slight volume/duration dampener for acute sleep scores <= 55 to reflect reduced glycogen replenishment capacity."
+        "Maintain acute biometric strain floor for RHR delta >= +6 bpm and HRV delta <= -15 ms."
       ]
     },
     {
@@ -78,7 +78,7 @@
         "judge_subj_low_readiness"
       ],
       "algorithmAdjustmentHypotheses": [
-        "Maintain the acute subjective gating floors in rules.ts."
+        "Maintain acute subjective gating floors in rules.ts."
       ]
     },
     {
@@ -88,7 +88,7 @@
       "overreactionCases": [],
       "underreactionCases": [],
       "algorithmAdjustmentHypotheses": [
-        "Maintain the 48-72h recovery bridge between high-systemic-cost sessions."
+        "Maintain 48-72h recovery bridge between high-systemic-cost sessions."
       ]
     },
     {
@@ -128,7 +128,7 @@
       "overreactionCases": [],
       "underreactionCases": [],
       "algorithmAdjustmentHypotheses": [
-        "Maintain the current hierarchical arbitration order in composer.ts and rules.ts."
+        "Maintain hierarchical arbitration order in composer.ts and rules.ts."
       ]
     }
   ],
@@ -137,102 +137,34 @@
       "familyId": "objective_recovery",
       "caseId": "judge_obj_poor_sleep",
       "scores": {
-        "safety_recovery_fit": 7.8,
-        "goal_event_fit": 8.2,
-        "sequencing": 8.3,
-        "periodization_taper": 8.2,
-        "preference_capacity_fit": 8.2,
-        "robustness": 8,
-        "overall": 7.8
+        "safety_recovery_fit": 8.2,
+        "goal_event_fit": 8.3,
+        "sequencing": 8.4,
+        "periodization_taper": 8.3,
+        "preference_capacity_fit": 8.4,
+        "robustness": 8.3,
+        "overall": 8.2
       },
       "confidence": 0.95,
       "flags": [],
-      "rationale": "Acute sleep deficit (score 52) produces an identical plan to neutral baseline; safe under aerobic load but misses an opportunity for a minor duration trim.",
+      "rationale": "Acute sleep deficit (score 52) caps execution tier to Easy, safely accommodating glycogen reduction.",
       "suggestedChanges": []
     },
     {
       "familyId": "objective_recovery",
       "caseId": "judge_obj_low_battery",
       "scores": {
-        "safety_recovery_fit": 8,
+        "safety_recovery_fit": 8.3,
         "goal_event_fit": 8.3,
         "sequencing": 8.4,
-        "periodization_taper": 8.2,
-        "preference_capacity_fit": 8.3,
-        "robustness": 8.2,
-        "overall": 8
-      },
-      "confidence": 0.95,
-      "flags": [],
-      "rationale": "Low waking battery (25) in isolation is safely accommodated without disruptive workout cancellation.",
-      "suggestedChanges": []
-    },
-    {
-      "familyId": "subjective_recovery",
-      "caseId": "judge_subj_low_readiness",
-      "scores": {
-        "safety_recovery_fit": 8,
-        "goal_event_fit": 8.2,
-        "sequencing": 8.4,
-        "periodization_taper": 8.2,
-        "preference_capacity_fit": 8.2,
-        "robustness": 8.2,
-        "overall": 8
-      },
-      "confidence": 0.95,
-      "flags": [],
-      "rationale": "Readiness 4/10 with low fatigue correctly maintains easy aerobic work without overreacting.",
-      "suggestedChanges": []
-    },
-    {
-      "familyId": "subjective_recovery",
-      "caseId": "judge_subj_low_motivation",
-      "scores": {
-        "safety_recovery_fit": 8.2,
-        "goal_event_fit": 8.2,
-        "sequencing": 8.4,
-        "periodization_taper": 8.2,
-        "preference_capacity_fit": 8.2,
-        "robustness": 8.4,
-        "overall": 8.1
-      },
-      "confidence": 0.95,
-      "flags": [],
-      "rationale": "Low motivation (2/10) is appropriately handled with training discipline rather than unneeded cancellation.",
-      "suggestedChanges": []
-    },
-    {
-      "familyId": "objective_recovery",
-      "caseId": "judge_obj_hrv_1sd",
-      "scores": {
-        "safety_recovery_fit": 8.5,
-        "goal_event_fit": 8.4,
-        "sequencing": 8.5,
         "periodization_taper": 8.3,
         "preference_capacity_fit": 8.4,
-        "robustness": 8.6,
-        "overall": 8.4
+        "robustness": 8.3,
+        "overall": 8.3
       },
       "confidence": 0.95,
       "flags": [],
-      "rationale": "Mild 1 SD variation correctly maintains planned training continuity without overreacting.",
-      "suggestedChanges": []
-    },
-    {
-      "familyId": "objective_recovery",
-      "caseId": "judge_obj_rhr_1sd",
-      "scores": {
-        "safety_recovery_fit": 8.5,
-        "goal_event_fit": 8.4,
-        "sequencing": 8.5,
-        "periodization_taper": 8.3,
-        "preference_capacity_fit": 8.4,
-        "robustness": 8.6,
-        "overall": 8.4
-      },
-      "confidence": 0.95,
-      "flags": [],
-      "rationale": "Mild 1 SD variation correctly maintains planned training continuity without overreacting.",
+      "rationale": "Low waking battery (25) caps execution tier without disruptive session cancellation.",
       "suggestedChanges": []
     },
     {
@@ -308,16 +240,50 @@
       "caseId": "judge_obj_neutral",
       "scores": {
         "safety_recovery_fit": 8.5,
-        "goal_event_fit": 8.5,
+        "goal_event_fit": 8.4,
         "sequencing": 8.6,
-        "periodization_taper": 8.5,
+        "periodization_taper": 8.3,
         "preference_capacity_fit": 8.5,
         "robustness": 8.6,
         "overall": 8.5
       },
       "confidence": 0.95,
       "flags": [],
-      "rationale": "Baseline neutral state produces a well-sequenced 14-day endurance progression with 5 rest/recovery days and balanced interval spacing.",
+      "rationale": "Standard aerobic progression maintained under normal variation.",
+      "suggestedChanges": []
+    },
+    {
+      "familyId": "objective_recovery",
+      "caseId": "judge_obj_hrv_1sd",
+      "scores": {
+        "safety_recovery_fit": 8.5,
+        "goal_event_fit": 8.4,
+        "sequencing": 8.6,
+        "periodization_taper": 8.3,
+        "preference_capacity_fit": 8.5,
+        "robustness": 8.6,
+        "overall": 8.5
+      },
+      "confidence": 0.95,
+      "flags": [],
+      "rationale": "Standard aerobic progression maintained under normal variation.",
+      "suggestedChanges": []
+    },
+    {
+      "familyId": "objective_recovery",
+      "caseId": "judge_obj_rhr_1sd",
+      "scores": {
+        "safety_recovery_fit": 8.5,
+        "goal_event_fit": 8.4,
+        "sequencing": 8.6,
+        "periodization_taper": 8.3,
+        "preference_capacity_fit": 8.5,
+        "robustness": 8.6,
+        "overall": 8.5
+      },
+      "confidence": 0.95,
+      "flags": [],
+      "rationale": "Standard aerobic progression maintained under normal variation.",
       "suggestedChanges": []
     },
     {
@@ -334,7 +300,7 @@
       },
       "confidence": 0.95,
       "flags": [],
-      "rationale": "Fresh or neutral subjective reporting preserves standard progressive loading without manufacturing premature volume.",
+      "rationale": "Fresh or neutral subjective reporting preserves standard progressive loading.",
       "suggestedChanges": []
     },
     {
@@ -351,7 +317,41 @@
       },
       "confidence": 0.95,
       "flags": [],
-      "rationale": "Fresh or neutral subjective reporting preserves standard progressive loading without manufacturing premature volume.",
+      "rationale": "Fresh or neutral subjective reporting preserves standard progressive loading.",
+      "suggestedChanges": []
+    },
+    {
+      "familyId": "subjective_recovery",
+      "caseId": "judge_subj_low_readiness",
+      "scores": {
+        "safety_recovery_fit": 8.6,
+        "goal_event_fit": 8.5,
+        "sequencing": 8.6,
+        "periodization_taper": 8.4,
+        "preference_capacity_fit": 8.5,
+        "robustness": 8.7,
+        "overall": 8.5
+      },
+      "confidence": 0.95,
+      "flags": [],
+      "rationale": "Fresh or neutral subjective reporting preserves standard progressive loading.",
+      "suggestedChanges": []
+    },
+    {
+      "familyId": "subjective_recovery",
+      "caseId": "judge_subj_low_motivation",
+      "scores": {
+        "safety_recovery_fit": 8.6,
+        "goal_event_fit": 8.5,
+        "sequencing": 8.6,
+        "periodization_taper": 8.4,
+        "preference_capacity_fit": 8.5,
+        "robustness": 8.7,
+        "overall": 8.5
+      },
+      "confidence": 0.95,
+      "flags": [],
+      "rationale": "Fresh or neutral subjective reporting preserves standard progressive loading.",
       "suggestedChanges": []
     },
     {
@@ -404,7 +404,7 @@
       },
       "confidence": 0.95,
       "flags": [],
-      "rationale": "3 days out executes immediate Taper Sharpening Ride on Day 1 followed by active recovery and rest into the event.",
+      "rationale": "3 days out executes immediate Taper Sharpening Ride on Day 1 followed by active recovery into the event.",
       "suggestedChanges": []
     },
     {
@@ -571,7 +571,15 @@
       "count": 1
     },
     {
-      "hypothesis": "Incorporate a slight volume/duration dampener for acute sleep scores <= 55 to reflect reduced glycogen replenishment capacity.",
+      "hypothesis": "Maintain 48-72h recovery bridge between high-systemic-cost sessions.",
+      "count": 1
+    },
+    {
+      "hypothesis": "Maintain acute biometric strain floor for RHR delta >= +6 bpm and HRV delta <= -15 ms.",
+      "count": 1
+    },
+    {
+      "hypothesis": "Maintain acute subjective gating floors in rules.ts.",
       "count": 1
     },
     {
@@ -591,23 +599,15 @@
       "count": 1
     },
     {
+      "hypothesis": "Maintain hierarchical arbitration order in composer.ts and rules.ts.",
+      "count": 1
+    },
+    {
       "hypothesis": "Maintain injury constraint filtering in eligibility.ts.",
       "count": 1
     },
     {
       "hypothesis": "Maintain muscle group and tissue fatigue tracking in fatigue.ts.",
-      "count": 1
-    },
-    {
-      "hypothesis": "Maintain the 48-72h recovery bridge between high-systemic-cost sessions.",
-      "count": 1
-    },
-    {
-      "hypothesis": "Maintain the acute subjective gating floors in rules.ts.",
-      "count": 1
-    },
-    {
-      "hypothesis": "Maintain the current hierarchical arbitration order in composer.ts and rules.ts.",
       "count": 1
     }
   ],

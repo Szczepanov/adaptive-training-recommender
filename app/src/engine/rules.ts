@@ -712,7 +712,12 @@ export function evaluateEnvelopes(readiness: DailyReadiness, context: UserContex
     let maxAllowableTier: 'Rest' | 'Mobility' | 'Easy' | 'Moderate' | 'Hard' = 'Hard';
     if (readiness.subjective.alreadyTrainedToday) maxAllowableTier = 'Rest';
     else if (isPain) maxAllowableTier = 'Mobility';
-    else if (readiness.objective.body_battery_wake !== null && readiness.objective.body_battery_wake < 25) maxAllowableTier = 'Easy';
+    else if (
+        (readiness.objective.body_battery_wake !== null && readiness.objective.body_battery_wake < 30) ||
+        (readiness.objective.sleep_score !== null && readiness.objective.sleep_score < 55)
+    ) {
+        maxAllowableTier = 'Easy';
+    }
     return {
         safety: { clinicalFlagActive, clinicalReason: clinicalFlagActive ? 'Active pain or injury flag reported.' : null, restrictedModalities },
         plan: { maxAllowableTier, taperActive: false, reason: null },
