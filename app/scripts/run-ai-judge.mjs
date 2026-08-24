@@ -84,13 +84,13 @@ function getCliArg(name) {
 
 const cliModel = getCliArg('--model');
 const localModelEnv = process.env.LOCAL_JUDGE_MODEL || process.env.OLLAMA_MODEL;
+const localQuickModelEnv = process.env.LOCAL_JUDGE_QUICK_MODEL || process.env.OLLAMA_QUICK_MODEL;
 const knownCloudModels = new Set(['deepseek-v4-pro', 'deepseek-v4-flash', 'gpt-4o', 'gemini-2.5-flash', 'gemini-1.5-pro']);
-const configuredJudgeModel = process.env.JUDGE_MODEL;
 const defaultLocalModel = isQuick
-  ? 'hf.co/incoai/Muse-Glimmer-30B-DFlash2-GGUF'
-  : 'hf.co/empero-ai/Qwen3.8-9B-Distill-GGUF:Q4_K_M';
+  ? (localQuickModelEnv || localModelEnv || (knownCloudModels.has(configuredJudgeModel) ? undefined : configuredJudgeModel) || 'hf.co/empero-ai/Qwen3.8-9B-Distill-GGUF:Q4_K_M')
+  : (localModelEnv || (knownCloudModels.has(configuredJudgeModel) ? undefined : configuredJudgeModel) || 'hf.co/empero-ai/Qwen3.8-9B-Distill-GGUF:Q4_K_M');
 const defaultModel = isLocal
-  ? (localModelEnv || (knownCloudModels.has(configuredJudgeModel) ? undefined : configuredJudgeModel) || defaultLocalModel)
+  ? defaultLocalModel
   : provider === 'deepseek'
     ? (isQuick ? 'deepseek-v4-flash' : 'deepseek-v4-pro')
     : provider === 'gemini'

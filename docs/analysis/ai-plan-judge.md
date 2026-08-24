@@ -70,10 +70,10 @@ The final two checks matter because generic sequence distance is too weak on its
 Local model:
 
 ```bash
-# Standard local evaluation (Qwen3.8-9B-Distill)
+# Standard local evaluation
 npm run judge:local
 
-# Quick/fast local evaluation (Muse-Glimmer-30B-DFlash2)
+# Quick local evaluation
 npm run judge:local:quick
 ```
 
