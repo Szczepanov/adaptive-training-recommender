@@ -429,6 +429,9 @@ async function callLocal(familyJson, onProgress) {
     const isApiChat = endpoint.includes('/api/chat');
     const userPrompt = `${promptContent}\n\nStrict Output JSON Schema:\n${schemaContent}\n\nInput Sensitivity Family Data:\n\`\`\`json\n${familyJson}\n\`\`\`\n\nIMPORTANT:\n- Keep 'rationale' and 'suggestedChanges' to 1 concise sentence each.\n- Output ONLY the valid evaluation JSON matching the schema starting directly with {"schema": "adaptive-training-recommender/ai-plan-judge-response@1".\n- Do not output preamble or conversational text.`;
 
+    const localNumCtx = parseInt(process.env.NUM_CTX || process.env.OLLAMA_NUM_CTX || '16384', 10);
+    const localNumPredict = parseInt(process.env.NUM_PREDICT || process.env.OLLAMA_NUM_PREDICT || '8192', 10);
+
     const body = isApiChat
       ? {
           model,
@@ -441,8 +444,8 @@ async function callLocal(familyJson, onProgress) {
           format: 'json',
           stream: false,
           options: {
-            num_ctx: 8192,
-            num_predict: 8192,
+            num_ctx: localNumCtx,
+            num_predict: localNumPredict,
             temperature: 0.1,
           },
         }
@@ -454,8 +457,8 @@ async function callLocal(familyJson, onProgress) {
           ],
           temperature: 0.1,
           options: {
-            num_ctx: 8192,
-            num_predict: 8192,
+            num_ctx: localNumCtx,
+            num_predict: localNumPredict,
           },
         };
 
