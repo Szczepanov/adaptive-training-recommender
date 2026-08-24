@@ -39,6 +39,44 @@ function evergreenIntent() {
     schemaVersion: 1, createdAt: '', updatedAt: '',
   };
 }
+function eventFixedActivity(event) {
+  if (!event?.date || event.lifecycle === 'cancelled' || event.lifecycle === 'DNS') return null;
+  const demand = event.demandProfile ?? {};
+  return {
+    id: `judge-event:${event.id}`,
+    userId: 'judge-user',
+    title: `Scheduled event: ${event.title}`,
+    date: event.date,
+    durationMin: 60,
+    fixed: true,
+    environment: 'outdoor',
+    equipment: [],
+    isCompleted: false,
+    expectedCost: {
+      systemic: 0.95,
+      cardiovascular: 0.95,
+      lowerBody: 0.65,
+      upperBody: 0.1,
+      impactTissue: 0.2,
+      neuromuscular: 0.8,
+    },
+    expectedStimulus: {
+      aerobicEndurance: demand.aerobicEndurance ?? 0.6,
+      thresholdPower: demand.thresholdPower ?? 0.6,
+      vo2MaxPower: demand.vo2MaxPower ?? 0.6,
+      repeatedSurges: demand.repeatedSurges ?? 0.6,
+      sprintPower: demand.sprintPower ?? 0.2,
+      fatigueResistance: demand.fatigueResistance ?? 0.7,
+      maxStrength: 0,
+      hypertrophy: 0,
+    },
+    createdAt: '',
+    updatedAt: '',
+  };
+}
+function exposureOn(exposure, date, suffix) {
+  return { ...clone(exposure), occurrenceKey: `judge:${suffix}:${date}`, date };
+}
 function variant(base, id, label, axis, options = {}) {
   const readiness = patchReadiness(base, options.subjective, options.objective);
   const context = clone(base.context);
@@ -55,6 +93,7 @@ function variant(base, id, label, axis, options = {}) {
       ...(options.trainingIntentProfile !== undefined ? { trainingIntentProfile: clone(options.trainingIntentProfile) } : {}),
       ...(options.authoredPlanBlocks !== undefined ? { authoredPlanBlocks: clone(options.authoredPlanBlocks) } : {}),
       ...(options.initialHistory !== undefined ? { initialHistory: clone(options.initialHistory) } : {}),
+      ...(options.fixedActivities !== undefined ? { fixedActivities: clone(options.fixedActivities) } : {}),
       startDate: base.startDate, weeks: options.weeks ?? 2,
       readinessForWeek: () => clone(readiness), readinessForDate: () => clone(readiness),
       tags: ['ai-plan-judge', ...(base.tags ?? [])],
@@ -126,6 +165,9 @@ try {
   const analyzeModule = await server.ssrLoadModule('/src/engine/simulation/analyze.ts');
   const templatesModule = await server.ssrLoadModule('/src/engine/templates.ts');
   const base = requireScenario(scenariosModule.SCENARIOS, 'cycling_criterium_A');
+  const hardLoadSource = requireScenario(scenariosModule.SCENARIOS, 'external_load_green_readiness');
+  const hardExposure = hardLoadSource.initialHistory?.[0];
+  if (!hardExposure) throw new Error('Judge corpus requires a hard recent-training fixture.');
   const templatesById = new Map(templatesModule.ENRICHED_TEMPLATES.map((template) => [template.id, template]));
   const neutral = (id, label, axis, options = {}) => variant(base, id, label, axis, options);
 
@@ -167,14 +209,43 @@ try {
     neutral('judge_mode_conservative_preference', 'Planning mode — high conservative bias', { planningMode: 'conservative_overlay' }, { preferences: userPreferences({ conservativeBias: true }), contextPatch: (c) => { c.preferences.conservativeBias = true; } }),
   ];
 
+  const eventProximity = [40, 20, 14, 7, 3].map((daysOut) => {
+    const event = clone(base.event);
+    event.date = addDays(base.startDate, daysOut);
+    return variant(base, `judge_event_${daysOut}d`, `Event proximity — ${daysOut} days`, { eventDaysOut: daysOut }, {
+      event,
+      fixedActivities: [eventFixedActivity(event)].filter(Boolean),
+    });
+  });
+
+  const goodObjective = { hrv_delta: 8, hrv_delta_28d: 8, hrv_last_night: 58, rhr: 46, rhr_delta: -4, rhr_delta_28d: -4, sleep_score: 92, sleep_duration_min: 480, sleep_score_delta_7d: 8, sleep_score_delta_28d: 8, body_battery_wake: 92 };
+  const badObjective = { hrv_delta: -17, hrv_delta_28d: -17, hrv_last_night: 33, rhr: 57, rhr_delta: 7, rhr_delta_28d: 7, sleep_score: 50, sleep_duration_min: 300, sleep_score_delta_7d: -28, sleep_score_delta_28d: -28, body_battery_wake: 22 };
+  const goodSubjective = { readiness: 9, sleepQuality: 9, fatigue: 1, soreness: 1, stress: 2, motivation: 9 };
+  const badSubjective = { readiness: 3, sleepQuality: 4, fatigue: 8, soreness: 7, stress: 8, motivation: 3 };
+  const race7 = clone(base.event);
+  race7.date = addDays(base.startDate, 7);
+  const race7Fixed = [eventFixedActivity(race7)].filter(Boolean);
+  const interactions = [
+    neutral('judge_int_fresh_hard_yday', 'Interaction — fresh metrics + hard yesterday', { interaction: 'fresh_plus_hard_yesterday' }, { subjective: goodSubjective, objective: goodObjective, initialHistory: [exposureOn(hardExposure, addDays(base.startDate, -1), 'fresh-hard-yesterday')] }),
+    neutral('judge_int_badobj_noload', 'Interaction — poor objective metrics + no seeded load', { interaction: 'bad_objective_no_load' }, { objective: badObjective, initialHistory: [] }),
+    neutral('judge_int_badobj_hard_yday', 'Interaction — poor objective metrics + hard yesterday', { interaction: 'bad_objective_hard_yesterday' }, { objective: badObjective, initialHistory: [exposureOn(hardExposure, addDays(base.startDate, -1), 'badobj-hard-yesterday')] }),
+    neutral('judge_int_badsubj_goodobj', 'Interaction — poor subjective + good objective', { interaction: 'bad_subjective_good_objective' }, { subjective: badSubjective, objective: goodObjective }),
+    neutral('judge_int_goodsubj_badobj', 'Interaction — good subjective + poor objective', { interaction: 'good_subjective_bad_objective' }, { subjective: goodSubjective, objective: badObjective }),
+    variant(base, 'judge_int_race7_fresh', 'Interaction — race in 7 days + fresh', { interaction: 'race7_fresh' }, { event: race7, subjective: goodSubjective, objective: goodObjective, fixedActivities: race7Fixed }),
+    variant(base, 'judge_int_race7_hard_yday', 'Interaction — race in 7 days + hard yesterday', { interaction: 'race7_hard_yesterday' }, { event: race7, initialHistory: [exposureOn(hardExposure, addDays(base.startDate, -1), 'race7-hard-yesterday')], fixedActivities: race7Fixed }),
+    variant(base, 'judge_int_race7_badobj', 'Interaction — race in 7 days + poor objective recovery', { interaction: 'race7_bad_objective' }, { event: race7, objective: badObjective, fixedActivities: race7Fixed }),
+  ];
+
   for (const [familyId, changedAxis, definitions] of [
     ['preferences_capacity', 'recovery preference / conservatism / time capacity', preferences],
     ['injury_constraints', 'structured injury guardrails and modality restrictions', injuries],
     ['planning_modes_overlays', 'macro planning modes and travel constraints/overlays', modes],
+    ['event_proximity', 'days to A-priority criterium with event-day commitment reserved', eventProximity],
+    ['interactions', 'selected multi-signal interactions with scheduled event load reserved', interactions],
   ]) {
     const cases = [];
     for (const definition of definitions) cases.push(packetFromResult(definition, await analyzeModule.runScenario(definition.scenario), templatesById));
-    replacements.set(familyId, { familyId, changedAxis, comparisonInstruction: 'Compare cases within this family. An unchanged plan is acceptable when the changed axis is not decision-relevant; hard safety constraints must always be obeyed.', cases });
+    replacements.set(familyId, { familyId, changedAxis, comparisonInstruction: 'Compare cases within this family. An unchanged plan is acceptable when the changed axis is not decision-relevant; hard safety and scheduled commitments must always be obeyed.', cases });
   }
 
   const patched = rows.map((family) => replacements.get(family.familyId) ?? {
@@ -194,13 +265,13 @@ try {
     corpus.familyCount = patched.length;
     corpus.caseCount = patched.reduce((sum, family) => sum + family.cases.length, 0);
     corpus.families = patched;
-    corpus.harnessCorrections = ['planner-facing preferences', 'active injury guardrail paths', 'valid evergreen intent', 'travel constraints', 'judge-context enrichment'];
+    corpus.harnessCorrections = ['planner-facing preferences', 'active injury guardrail paths', 'valid evergreen intent', 'travel constraints', 'judge-context enrichment', 'scheduled event fixed-activity ownership'];
     writeFileSync(corpusPath, `${JSON.stringify(corpus, null, 2)}\n`);
   }
 
-  const prompt = `# AI plan judge instructions\n\nYou are an independent endurance-training plan evaluator. Engine rationale, fatigue tiers, rejection codes and utility are diagnostics, not ground truth. Evaluate the whole multi-day sequence.\n\nScore each case 0-10 on safety_recovery_fit, goal_event_fit, sequencing, periodization_taper, preference_capacity_fit, robustness and overall, plus family sensitivity_quality.\n\nCalibration rules:\n- Sensitivity does not require every perturbation to change the plan. Mild isolated variation (including ~1 SD HRV/RHR movement) can legitimately leave a good plan unchanged.\n- Low motivation alone is not a physiological safety signal.\n- Easy training yesterday does not make quality work today unsafe; judge actual delivered load and residual fatigue.\n- Judge taper by workload/volume reduction with appropriate intensity/specificity, not rest-day count alone.\n- Preferences are soft unless encoded as constraints; safety restrictions are hard.\n- Criterium/surge events should emphasize repeated surges/VO2/sprint qualities, while long gran-fondo demands emphasize sustained aerobic durability/fatigue resistance.\n- More recovery is not automatically better; more training is not automatically better.\n- Prefer repeated family patterns over one-off threshold tuning.\n\nReturn exactly one JSON object matching judge-response-schema.json. All flags, suggestedChanges and familyAssessment list fields must be JSON arrays of strings.\n`;
+  const prompt = `# AI plan judge instructions\n\nYou are an independent endurance-training plan evaluator. Engine rationale, fatigue tiers, rejection codes and utility are diagnostics, not ground truth. Evaluate the whole multi-day sequence. Scheduled events represented in fixedActivities own their event date and contribute reserved load; do not ask the planner to schedule another workout on top of them.\n\nScore each case 0-10 on safety_recovery_fit, goal_event_fit, sequencing, periodization_taper, preference_capacity_fit, robustness and overall, plus family sensitivity_quality.\n\nCalibration rules:\n- Sensitivity does not require every perturbation to change the plan. Mild isolated variation (including ~1 SD HRV/RHR movement) can legitimately leave a good plan unchanged.\n- Low motivation alone is not a physiological safety signal.\n- Easy training yesterday does not make quality work today unsafe; judge actual delivered load and residual fatigue.\n- Judge taper by workload/volume reduction with appropriate intensity/specificity, not rest-day count alone.\n- Preferences are soft unless encoded as constraints; safety restrictions and time/equipment availability are hard. Never propose violating a hard capacity/equipment restriction as the fix.\n- Criterium/surge events should emphasize repeated surges/VO2/sprint qualities, while long gran-fondo demands emphasize sustained aerobic durability/fatigue resistance.\n- More recovery is not automatically better; more training is not automatically better.\n- Prefer repeated family patterns over one-off threshold tuning.\n\nReturn exactly one JSON object matching judge-response-schema.json. All flags, suggestedChanges and familyAssessment list fields must be JSON arrays of strings.\n`;
   writeFileSync(promptPath, prompt);
-  console.log('Patched AI-judge corpus with corrected fixtures and enriched judge context.');
+  console.log('Patched AI-judge corpus with corrected fixtures, scheduled event ownership, and enriched judge context.');
 } finally {
   await server.close();
 }
