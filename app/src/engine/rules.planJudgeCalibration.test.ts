@@ -310,4 +310,42 @@ describe('plan-judge calibration policy guards', () => {
         expect(result.accepted).toHaveLength(1);
         expect(result.accepted[0].benefitScore).toBeLessThan(0.40);
     });
+
+    it('enforces pre-event taper restriction against exhaustive workouts during race week (D-7 to D-3)', () => {
+        const vo2Template = ENRICHED_TEMPLATES.find(t => (t.title ?? '').toLowerCase().includes('vo2') || t.systemicCost >= 0.75)!;
+        const focusEventA: UserEvent = {
+            id: 'race-a',
+            title: 'Championship Criterium',
+            category: 'cycling_event' as const,
+            date: '2026-08-30',
+            priority: 'A' as const,
+            lifecycle: 'scheduled' as const,
+            demandProfile: { aerobicEndurance: 0.5, thresholdPower: 0.5, vo2MaxPower: 0.9, repeatedSurges: 0.9, sprintPower: 0.7, fatigueResistance: 0.6, neuromuscular: 0.5 },
+        };
+
+        // 5 days out: 2026-08-25 vs race on 2026-08-30 (diff = 5)
+        const reasons5d = evaluateRecoveryConstraints(
+            vo2Template,
+            '2026-08-25',
+            [],
+            { focusEvent: focusEventA },
+        );
+        expect(reasons5d).toContain('PRE_EVENT_TAPER_RESTRICTION');
+    });
+
+    it('boosts upper-body and core strength sessions when lower-body guardrail is active', () => {
+        const upperStrengthTemplate = ENRICHED_TEMPLATES.find(t => t.id === 'str_upper_01' || t.category === 'Upper-body Strength')!;
+        const result = rankCandidates(
+            [upperStrengthTemplate],
+            [{ id: 'obj-str', key: 'strength_maintenance', title: 'Strength Maintenance', targetExposures: 2, completedExposures: 0, targetStimulus: { maxStrength: 0.8 } }],
+            DEFAULT_FATIGUE,
+            DEFAULT_AVAILABILITY,
+            ['avoid_heavy_lower_body'],
+            DEFAULT_PREFERENCES,
+            { date: '2026-08-25' },
+        );
+
+        expect(result.accepted).toHaveLength(1);
+        expect(result.accepted[0].utilityScore).toBeGreaterThan(0.5);
+    });
 });

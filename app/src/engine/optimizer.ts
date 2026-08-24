@@ -312,6 +312,12 @@ export function evaluateRecoveryConstraints(
                 reasons.push('PRE_EVENT_TAPER_RESTRICTION');
             }
         }
+        if (daysToRace >= 3 && daysToRace <= 7) {
+            const isExhaustiveSession = template.systemicCost >= 0.75 || (template.title ?? '').toLowerCase().includes('vo2');
+            if (isExhaustiveSession) {
+                reasons.push('PRE_EVENT_TAPER_RESTRICTION');
+            }
+        }
     }
 
     const minDaysSpacing = options.resolveMinimumDaysAfterHardLowerBody?.(template.id);
@@ -657,7 +663,7 @@ export function rankCandidates(
 
         const hasLowerBodyGuardrail = injuryConstraints.some(c => c.toLowerCase().includes('lower'));
         if (!isStrengthResolved && hasLowerBodyGuardrail && (template.category === 'Upper-body Strength' || (template.title ?? '').toLowerCase().includes('core'))) {
-            prefMultiplier *= 1.40;
+            prefMultiplier *= 1.60;
         }
 
         const lastRecovery = history
@@ -689,7 +695,9 @@ export function rankCandidates(
             if (!entry || entry.category === 'Rest' || entry.category === 'Mobility/Recovery') {
                 break;
             }
-            streak++;
+            if ((entry.systemicCost ?? 0) >= 0.40) {
+                streak++;
+            }
             checkOffset++;
         }
 
