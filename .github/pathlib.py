@@ -2,7 +2,6 @@ import atexit
 import importlib.util
 import os
 import sys
-from pathlib import Path as _sentinel  # type: ignore  # replaced below by explicit stdlib load
 
 # The script directory shadows stdlib pathlib for the one-shot transformer. Load the real
 # stdlib module explicitly, expose its Path, then register post-transform corrections.
