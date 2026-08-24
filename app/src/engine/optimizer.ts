@@ -603,12 +603,31 @@ export function rankCandidates(
             else prefMultiplier *= 0.85;
         }
 
-        if ((preferences.defaultWeekdayTimeMin ?? 0) >= 80 && (template.durationMin ?? 0) >= 60 && (template.category === 'Easy Endurance' || template.category === 'Hard Endurance' || template.category === 'Moderate Endurance')) {
-            prefMultiplier *= 1.15;
+        const hasLargeWeekdayBudget = (preferences.defaultWeekdayTimeMin ?? 0) >= 80 || availability.maxTimeMinutes >= 80;
+        if (hasLargeWeekdayBudget && (template.category === 'Easy Endurance' || template.category === 'Hard Endurance' || template.category === 'Moderate Endurance')) {
+            if ((template.durationMin ?? 0) >= 60) {
+                prefMultiplier *= 1.30;
+            } else if ((template.durationMin ?? 0) <= 45 && (preferences.defaultWeekdayTimeMin ?? 0) >= 80) {
+                prefMultiplier *= 0.80;
+            }
         }
 
+        const usedYesterday = history.some(h => getDayDiff(targetDate, h.date) === 1 && h.templateId === template.id);
+        if (usedYesterday) prefMultiplier *= 0.2;
+
         const isStrengthCategory = STRENGTH_CATEGORIES.includes(template.category);
-        if (isStrengthResolved && isStrengthCategory) prefMultiplier *= 0.20;
+        if (isStrengthResolved && isStrengthCategory) {
+            if (focusEvent) {
+                prefMultiplier *= 0.20;
+            } else {
+                const strengthInLast7Days = history.filter(h => getDayDiff(targetDate, h.date) <= 7 && (h.modality === 'Strength' || (h.category && STRENGTH_CATEGORIES.includes(h.category)))).length;
+                if (strengthInLast7Days < 2 && !usedYesterday) {
+                    prefMultiplier *= 1.15;
+                } else {
+                    prefMultiplier *= 0.20;
+                }
+            }
+        }
 
         const hasLowerBodyGuardrail = injuryConstraints.some(c => c.toLowerCase().includes('lower'));
         if (!isStrengthResolved && hasLowerBodyGuardrail && (template.category === 'Upper-body Strength' || (template.title ?? '').toLowerCase().includes('core'))) {
@@ -634,9 +653,6 @@ export function rankCandidates(
         const lastWasHighIntensity = (lastEntry?.systemicCost ?? 0) >= INTENSITY_STACK_THRESHOLD;
         const candidateIsHighIntensity = template.systemicCost >= INTENSITY_STACK_THRESHOLD;
         if (lastWasHighIntensity && candidateIsHighIntensity) prefMultiplier *= INTENSITY_STACK_PENALTY;
-
-        const usedYesterday = history.some(h => getDayDiff(targetDate, h.date) === 1 && h.templateId === template.id);
-        if (usedYesterday) prefMultiplier *= 0.2;
 
         // Consecutive training days spacing (prevents monotonous 7-14 day training streaks without recovery)
         let streak = 0;
