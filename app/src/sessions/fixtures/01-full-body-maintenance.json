@@ -55,6 +55,7 @@
             }
           },
           "laterality": "per_side",
+          "tempo": "3-1-1-1",
           "rest": {
             "min": 30,
             "max": 45
@@ -150,6 +151,7 @@
             "kind": "rpe",
             "target": 7
           },
+          "tempo": "1-0-X-1",
           "quality": {
             "kind": "technical",
             "stopRule": "crisp_bar_speed"
@@ -262,9 +264,7 @@
             "kind": "rir",
             "target": 3
           },
-          "tempo": {
-            "display": "3-1-X-1"
-          },
+          "tempo": "3-1-X-1",
           "rest": {
             "min": 120,
             "max": 180
@@ -304,9 +304,7 @@
             "kind": "rir",
             "target": 2
           },
-          "tempo": {
-            "display": "2-1-X-0"
-          },
+          "tempo": "2-1-X-0",
           "rest": {
             "min": 90,
             "max": 120

@@ -42,6 +42,7 @@
           "exerciseRef": { "kind": "catalog", "exerciseId": "band_pull_apart" },
           "dose": { "kind": "repetition", "sets": 2, "reps": 15 },
           "effort": { "kind": "rpe", "target": { "min": 2, "max": 3 } },
+          "tempo": "2-0-1-1",
           "rest": { "min": 20, "max": 30 },
           "notes": "Keep this easy; ribs down and no shrugging."
         },
@@ -51,6 +52,7 @@
           "exerciseRef": { "kind": "catalog", "exerciseId": "scapular_push_up" },
           "dose": { "kind": "repetition", "sets": 2, "reps": 8 },
           "effort": { "kind": "rpe", "target": { "min": 2, "max": 3 } },
+          "tempo": "2-1-1-1",
           "rest": { "min": 20, "max": 30 },
           "notes": "Move through the shoulder blades only; keep elbows straight and ribs quiet."
         },
@@ -61,6 +63,7 @@
           "dose": { "kind": "repetition", "sets": 2, "reps": 10 },
           "laterality": "per_side",
           "effort": { "kind": "rpe", "target": { "min": 2, "max": 3 } },
+          "tempo": "2-0-1-1",
           "rest": { "min": 20, "max": 30 },
           "notes": "Easy external rotation with the elbow comfortably at the side."
         },
@@ -79,6 +82,7 @@
           "exerciseRef": { "kind": "catalog", "exerciseId": "push_up" },
           "dose": { "kind": "repetition", "sets": 2, "reps": { "min": 6, "max": 8 } },
           "effort": { "kind": "rpe", "target": { "min": 2, "max": 3 } },
+          "tempo": "2-0-1-0",
           "rest": { "min": 20, "max": 30 },
           "notes": "Use an incline if needed. This is preparation, not a working set."
         }
@@ -96,7 +100,7 @@
           "exerciseRef": { "kind": "catalog", "exerciseId": "bench_press" },
           "dose": { "kind": "repetition", "sets": 4, "reps": 5 },
           "effort": { "kind": "rpe", "target": 6 },
-          "tempo": "2-0-X-0",
+          "tempo": "3-1-X-0",
           "rest": { "min": 120, "max": 120 },
           "notes": "Use a load for roughly 9–10 clean repetitions. Feet stay planted but do not drive aggressively; shoulder blades back and down; smooth press with at least 4 RIR.",
           "stopConditions": ["No grinding", "Stop if shoulder mechanics deteriorate"]
@@ -107,6 +111,7 @@
           "exerciseRef": { "kind": "catalog", "exerciseId": "chest_supported_dumbbell_row" },
           "dose": { "kind": "repetition", "sets": 4, "reps": 8 },
           "effort": { "kind": "rpe", "target": 6 },
+          "tempo": "3-0-1-1",
           "rest": { "min": 75, "max": 90 },
           "notes": "Perform between bench sets or immediately after. Chest stays on bench; pull elbows toward hips; pause for one second; no torso rotation."
         }
@@ -125,6 +130,7 @@
           "dose": { "kind": "repetition", "sets": 3, "reps": { "min": 4, "max": 6 } },
           "load": { "kind": "descriptive", "display": "Use assistance if needed to keep every repetition clean." },
           "effort": { "kind": "rpe", "target": 6 },
+          "tempo": "2-1-X-1",
           "rest": { "min": 90, "max": 90 },
           "notes": "Start from active shoulders, ribs down and no kicking. Stop before speed slows substantially.",
           "stopConditions": ["End the set when speed slows", "No kipping"]
@@ -135,6 +141,7 @@
           "exerciseRef": { "kind": "catalog", "exerciseId": "seated_dumbbell_overhead_press" },
           "dose": { "kind": "repetition", "sets": 3, "reps": { "min": 6, "max": 8 } },
           "effort": { "kind": "rpe", "target": 6 },
+          "tempo": "3-0-1-0",
           "rest": { "min": 90, "max": 90 },
           "notes": "Use back support. Keep feet relaxed, glutes on the bench and ribs down; press slightly back, not forward.",
           "stopConditions": ["No grinding", "Stop for shoulder discomfort"]
@@ -153,6 +160,7 @@
           "exerciseRef": { "kind": "catalog", "exerciseId": "push_up" },
           "dose": { "kind": "repetition", "sets": 2, "reps": { "min": 8, "max": 12 } },
           "effort": { "kind": "rpe", "target": { "min": 5, "max": 6 } },
+          "tempo": "2-0-1-0",
           "rest": { "min": 60, "max": 60 },
           "optional": true,
           "notes": "Use a push-up or dumbbell incline press; stop well before failure. Skip if legs feel noticeably fatigued."
@@ -163,6 +171,7 @@
           "exerciseRef": { "kind": "catalog", "exerciseId": "rear_delt_raise" },
           "dose": { "kind": "repetition", "sets": 2, "reps": { "min": 12, "max": 15 } },
           "effort": { "kind": "rpe", "target": 5 },
+          "tempo": "2-0-1-1",
           "rest": { "min": 45, "max": 60 },
           "optional": true,
           "notes": "Use a rear-delt raise or band face pull. Keep the weight light, avoid shrugging and let the shoulder blades move naturally."
@@ -193,6 +202,7 @@
           "dose": { "kind": "repetition", "sets": 3, "reps": 6 },
           "laterality": "per_side",
           "effort": { "kind": "rpe", "target": 4 },
+          "tempo": "3-1-1-1",
           "rest": { "min": 30, "max": 45 },
           "notes": "Lower back stays gently pressed down; exhale fully and stop the limb before the back arches."
         },

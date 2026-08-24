@@ -173,6 +173,12 @@ function makeFamilies(scenarios, deliveredDoseModule, resolveDemandProfile) {
     costProfile,
     stimulusProfile: { aerobicEndurance: 0, thresholdPower: 0, vo2MaxPower: 0, repeatedSurges: 0, sprintPower: 0, fatigueResistance: 0, maxStrength: 0.8, hypertrophy: 0.7 },
     stimulusConfidence: 'exact',
+    // trailingHistoryFromCompletedExposures (planner.ts) reads trainingRecordLike.duration_min
+    // unconditionally -- every other synthetic exposure in this file (via
+    // deliveredDoseScenarios.makeThreshold3x17Exposure) and analyze.ts's own
+    // toCompletedExposure() already carry one; this fixture didn't, and crashed the
+    // concurrent_strength_endurance family's history-seeded cases.
+    trainingRecordLike: { type: `Strength ${category}`, duration_min: 45, training_effect: 0, intensity_tag: '' },
   });
 
   const concurrentStrength = [

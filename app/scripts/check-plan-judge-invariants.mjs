@@ -1,27 +1,72 @@
+import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const path = resolve(process.argv[2] ?? 'artifacts/ai-plan-judge/latest/families.jsonl');
 if (!existsSync(path)) throw new Error(`Missing judge corpus: ${path}`);
 
-const families = readFileSync(path, 'utf8').split(/\r?\n/).map((line) => line.trim()).filter(Boolean).map(JSON.parse);
+const raw = readFileSync(path, 'utf8');
+const families = raw.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).map((line, index) => {
+  try {
+    return JSON.parse(line);
+  } catch (error) {
+    throw new Error(`${path}:${index + 1} invalid JSON: ${error instanceof Error ? error.message : String(error)}`);
+  }
+});
+const EXPECTED_FAMILY_CASE_COUNTS = new Map([
+  ['objective_recovery', 8],
+  ['subjective_recovery', 8],
+  ['recent_training', 5],
+  ['event_proximity', 5],
+  ['preferences_capacity', 6],
+  ['event_demand', 4],
+  ['interactions', 8],
+  ['delivered_dose_variance', 4],
+  ['concurrent_strength_endurance', 4],
+  ['injury_constraints', 4],
+  ['planning_modes_overlays', 4],
+]);
+const EXPECTED_CASE_COUNT = [...EXPECTED_FAMILY_CASE_COUNTS.values()].reduce((sum, count) => sum + count, 0);
+
 const cases = new Map();
+const familyIds = new Set();
+const failures = [];
+const fail = (ok, message) => { if (!ok) failures.push(message); };
+
 for (const family of families) {
-  for (const item of family.cases ?? []) {
+  if (!family || typeof family !== 'object' || typeof family.familyId !== 'string' || !family.familyId.trim()) {
+    failures.push('Corpus contains a family without a non-empty familyId.');
+    continue;
+  }
+  fail(!familyIds.has(family.familyId), `Duplicate judge family id: ${family.familyId}`);
+  familyIds.add(family.familyId);
+  fail(EXPECTED_FAMILY_CASE_COUNTS.has(family.familyId), `Unexpected judge family id: ${family.familyId}`);
+  fail(Array.isArray(family.cases), `Family ${family.familyId} is missing cases.`);
+  if (!Array.isArray(family.cases)) continue;
+  const expectedCount = EXPECTED_FAMILY_CASE_COUNTS.get(family.familyId);
+  if (expectedCount !== undefined) fail(family.cases.length === expectedCount, `Family ${family.familyId} has ${family.cases.length} cases; expected ${expectedCount}.`);
+  for (const item of family.cases) {
     const id = item.input?.caseId;
-    if (!id) throw new Error(`Family ${family.familyId} contains a case without input.caseId`);
-    if (cases.has(id)) throw new Error(`Duplicate judge case id: ${id}`);
+    if (!id) {
+      failures.push(`Family ${family.familyId} contains a case without input.caseId`);
+      continue;
+    }
+    fail(!cases.has(id), `Duplicate judge case id: ${id}`);
     cases.set(id, item);
   }
 }
 
-const failures = [];
+for (const familyId of EXPECTED_FAMILY_CASE_COUNTS.keys()) {
+  fail(familyIds.has(familyId), `Missing required judge family: ${familyId}`);
+}
+fail(families.length === EXPECTED_FAMILY_CASE_COUNTS.size, `Judge corpus has ${families.length} families; expected ${EXPECTED_FAMILY_CASE_COUNTS.size}.`);
+fail(cases.size === EXPECTED_CASE_COUNT, `Judge corpus has ${cases.size} unique cases; expected ${EXPECTED_CASE_COUNT}.`);
+
 const required = (id) => {
   const value = cases.get(id);
   if (!value) throw new Error(`Missing required judge case: ${id}`);
   return value;
 };
-const fail = (ok, message) => { if (!ok) failures.push(message); };
 const weekday = (date) => {
   const day = new Date(`${date}T00:00:00Z`).getUTCDay();
   return day >= 1 && day <= 5;
@@ -95,5 +140,7 @@ if (failures.length > 0) {
   for (const failure of failures) console.error(`- ${failure}`);
   process.exit(1);
 }
+const familiesSha256 = createHash('sha256').update(raw).digest('hex');
 console.log(`Plan-judge invariants passed for ${cases.size} cases across ${families.length} families.`);
+console.log(`Families SHA-256: ${familiesSha256}`);
 console.log(`Event-demand sequence distance: A=${demandDistanceA.toFixed(3)}, B=${demandDistanceB.toFixed(3)}.`);
