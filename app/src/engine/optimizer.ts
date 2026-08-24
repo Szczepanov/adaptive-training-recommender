@@ -569,8 +569,29 @@ export function rankCandidates(
                     : (template.modality === 'Strength' && (obj.key === 'strength_maintenance' || obj.key === 'strength_development'))
             );
             const eventPriorityApplies = !categoryLower.includes('strength') || satisfiesUnresolvedObjective || fulfilsNominatedAnchor;
-            if (matchesEvent && eventPriorityApplies) benefit *= focusEvent.priority === 'A' ? 1.40 : 1.25;
-            else if (!matchesEvent && !isPreferred(template) && !satisfiesUnresolvedObjective && unresolvedObjectives.length > 0) benefit *= 0.20;
+            if (matchesEvent && eventPriorityApplies) {
+                benefit *= focusEvent.priority === 'A' ? 1.40 : 1.25;
+
+                // Priority B: cap race-specific endurance sessions to 1 per week, directing the 2nd quality day to general tempo/threshold
+                if (focusEvent.priority === 'B' && template.category === 'Race-Specific Endurance') {
+                    const recentRaceSpecific = history.filter(h =>
+                        getDayDiff(targetDate, h.date) <= 6 &&
+                        h.category === 'Race-Specific Endurance'
+                    ).length;
+                    if (recentRaceSpecific >= 1) {
+                        benefit *= 0.35;
+                    }
+                }
+
+                // Long horizon (>21 days): prioritize foundational threshold/tempo over peak race sharpening
+                const raceDate = focusEvent.timing?.planningDate ?? focusEvent.date;
+                const daysToRace = getDayDiff(raceDate, targetDate);
+                if (daysToRace > 21 && template.category === 'Race-Specific Endurance') {
+                    benefit *= 0.50;
+                }
+            } else if (!matchesEvent && !isPreferred(template) && !satisfiesUnresolvedObjective && unresolvedObjectives.length > 0) {
+                benefit *= 0.20;
+            }
         }
 
         if (needsMultisportModalityCoverage(template, focusEvent, history, targetDate)) {
@@ -612,6 +633,11 @@ export function rankCandidates(
             }
         }
 
+        const isGranFondo = focusEvent?.demandProfile && (focusEvent.demandProfile.aerobicEndurance ?? 0) >= 0.85;
+        if (isGranFondo && (template.category === 'Easy Endurance' || template.category === 'Moderate Endurance')) {
+            prefMultiplier *= 1.20;
+        }
+
         const usedYesterday = history.some(h => getDayDiff(targetDate, h.date) === 1 && h.templateId === template.id);
         if (usedYesterday) prefMultiplier *= 0.2;
 
@@ -637,13 +663,13 @@ export function rankCandidates(
         const lastRecovery = history
             .filter(h => getDayDiff(targetDate, h.date) >= 1 && (h.category === 'Rest' || h.category === 'Mobility/Recovery'))
             .sort((a, b) => getDayDiff(targetDate, a.date) - getDayDiff(targetDate, b.date))[0];
-        const lastRecoveryWasRest = lastRecovery?.category === 'Rest';
+        const lastRecoveryWasRest = !lastRecovery || lastRecovery.category === 'Rest';
 
         if (recoveryStyle === 'mixed' && (template.category === 'Rest' || template.category === 'Mobility/Recovery')) {
             if (lastRecoveryWasRest && template.category === 'Mobility/Recovery') {
-                prefMultiplier *= 1.25;
+                prefMultiplier *= 1.40;
             } else if (!lastRecoveryWasRest && template.category === 'Rest') {
-                prefMultiplier *= 1.25;
+                prefMultiplier *= 1.40;
             }
         }
 

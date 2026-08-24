@@ -1,8 +1,43 @@
 import { describe, expect, it } from 'vitest';
 import { evaluateEnvelopes, evaluateReadinessAndSafetyEnvelope, evaluateTrainingWithIntent } from './rules';
-import { evaluateRecoveryConstraints } from './optimizer';
+import { evaluateRecoveryConstraints, rankCandidates } from './optimizer';
 import { ENRICHED_TEMPLATES } from './templates';
-import type { DailyReadiness, EngineObjectiveInput, SubjectiveInput, UserContext, UserEvent } from './models';
+import type { DailyReadiness, EngineObjectiveInput, FatigueState, SubjectiveInput, UserContext, UserEvent, UserPreferences } from './models';
+import type { ResolvedAvailability } from './schedule';
+
+const DEFAULT_FATIGUE: FatigueState = {
+    lastUpdatedDate: '2026-03-01',
+    externalLoadFatigue: { systemic: 0, cardiovascular: 0, lowerBody: 0, upperBody: 0, impactTissue: 0, neuromuscular: 0 },
+    internalResponseStrain: { systemic: 0, cardiovascular: 0, lowerBody: 0, upperBody: 0, impactTissue: 0, neuromuscular: 0 },
+    combinedFatigue: { systemic: 0, cardiovascular: 0, lowerBody: 0, upperBody: 0, impactTissue: 0, neuromuscular: 0 },
+};
+
+const DEFAULT_AVAILABILITY: ResolvedAvailability = {
+    date: '2026-03-01',
+    maxTimeMinutes: 120,
+    availableEquipment: ['free_weights', 'indoor_bike', 'treadmill', 'cable_machine'],
+    fixedActivities: [],
+    reservedCapacityCost: 0,
+    reservedCapacityCostProfile: { systemic: 0, cardiovascular: 0, lowerBody: 0, upperBody: 0, impactTissue: 0, neuromuscular: 0 },
+    environmentOverride: null,
+};
+
+const DEFAULT_PREFERENCES: UserPreferences = {
+    userId: 'user_default',
+    avoidedModalities: [],
+    deprioritizedModalities: [],
+    preferredModalities: [],
+    conservativeBias: false,
+    preferredRecoveryStyle: 'mixed',
+    defaultWeekdayTimeMin: 60,
+    defaultWeekendTimeMin: 90,
+    preferredTimeOfDay: 'flexible',
+    explanationVerbosity: 'detailed',
+    preferredUnits: { distance: 'km', weight: 'kg', temperature: 'celsius' },
+    schemaVersion: 1,
+    createdAt: '',
+    updatedAt: '',
+};
 
 function context(): UserContext {
     return {
@@ -240,5 +275,39 @@ describe('plan-judge calibration policy guards', () => {
             {},
         );
         expect(reasonsNextDay).toContain('POST_HEAVY_STRENGTH_BUFFER');
+    });
+
+    it('modulates Priority B event race-specific session benefits when 1 is already in recent history', () => {
+        const critSurgeTemplate = ENRICHED_TEMPLATES.find(t => t.id === 'end_crit_surges_01')!;
+        const focusEventB: UserEvent = {
+            id: 'race-b',
+            title: 'Local Crit',
+            category: 'cycling_event' as const,
+            date: '2026-08-30',
+            priority: 'B' as const,
+            lifecycle: 'scheduled' as const,
+            demandProfile: { aerobicEndurance: 0.5, thresholdPower: 0.5, vo2MaxPower: 0.8, repeatedSurges: 0.9, sprintPower: 0.7, fatigueResistance: 0.6, neuromuscular: 0.5 },
+        };
+
+        const historyWithRecentCrit = [{
+            date: '2026-08-22',
+            templateId: 'end_crit_surges_01',
+            category: 'Race-Specific Endurance' as const,
+            modality: 'Cycling' as const,
+            systemicCost: 0.7,
+        }];
+
+        const result = rankCandidates(
+            [critSurgeTemplate],
+            [],
+            DEFAULT_FATIGUE,
+            DEFAULT_AVAILABILITY,
+            [],
+            DEFAULT_PREFERENCES,
+            { date: '2026-08-25', focusEvent: focusEventB, recentHistory: historyWithRecentCrit },
+        );
+
+        expect(result.accepted).toHaveLength(1);
+        expect(result.accepted[0].benefitScore).toBeLessThan(0.40);
     });
 });
