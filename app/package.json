@@ -28,6 +28,7 @@
     "judge:local:quick": "npm run simulate:plan-judge && node scripts/run-ai-judge.mjs --local --quick --fresh",
     "judge:local:quick:resume": "npm run simulate:plan-judge && node scripts/run-ai-judge.mjs --local --quick --resume",
     "judge:diff": "node scripts/check-plan-judge-drift.mjs",
+    "judge:diff:prev": "node scripts/check-plan-judge-drift.mjs --previous",
     "judge:update-baseline": "node scripts/update-plan-judge-baseline.mjs",
     "simulate:fatigue-fusion": "node scripts/simulate-fatigue-fusion.mjs",
     "simulate:subjective-drift": "node scripts/simulate-subjective-drift.mjs",

@@ -1,10 +1,13 @@
-import { existsSync, readFileSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, mkdirSync, writeFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 
-const baselinePath = resolve('../docs/analysis/plan-judge-baseline.json');
+const defaultBaselinePath = resolve('../docs/analysis/plan-judge-baseline.json');
 const currentPath = resolve('artifacts/ai-plan-judge/latest/judge-summary.json');
 const allowModelChange = process.argv.includes('--allow-model-change');
 const failOnRegression = process.argv.includes('--fail-on-regression');
+const usePrevious = process.argv.includes('--previous') || process.argv.includes('--prev');
+const againstIndex = process.argv.indexOf('--against');
+const againstCustomPath = againstIndex !== -1 && process.argv[againstIndex + 1] ? process.argv[againstIndex + 1] : null;
 const EXPECTED_SCHEMA = 'adaptive-training-recommender/ai-plan-judge-summary@3';
 
 function readJson(path, label) {
@@ -32,8 +35,71 @@ function numeric(value, field, fatal) {
   return value;
 }
 
-const baseline = readJson(baselinePath, 'plan judge baseline');
 const current = readJson(currentPath, 'current plan judge summary');
+
+function normalizeToSummary(data, fallbackLabel) {
+  if (data && data.schema === EXPECTED_SCHEMA) return data;
+  if (data && data.current && data.current.scoreAverages) {
+    return {
+      schema: EXPECTED_SCHEMA,
+      provenance: {
+        corpusCommit: data.current.corpusCommit,
+        judgeModel: data.current.judgeModel,
+        promptSha256: current.provenance?.promptSha256,
+        responseSchemaSha256: current.provenance?.responseSchemaSha256,
+      },
+      familyCount: Object.keys(data.familyDeltas || {}).length || 11,
+      caseCount: 60,
+      meanSensitivityQuality: data.current.meanSensitivityQuality,
+      scoreAverages: data.current.scoreAverages,
+      familySensitivity: Object.entries(data.familyDeltas || {}).map(([familyId, val]) => ({
+        familyId,
+        sensitivityQuality: val.current,
+      })),
+    };
+  }
+  return data;
+}
+
+let baselinePath = defaultBaselinePath;
+let baselineLabel = 'Baseline';
+
+if (againstCustomPath) {
+  baselinePath = resolve(againstCustomPath);
+  baselineLabel = `Custom (${againstCustomPath})`;
+} else if (usePrevious) {
+  const historyDir = resolve('artifacts/ai-plan-judge/history');
+  if (existsSync(historyDir)) {
+    const files = readdirSync(historyDir)
+      .filter((f) => f.startsWith('diff-') && f.endsWith('.json'))
+      .map((f) => {
+        const fullPath = resolve(historyDir, f);
+        const parsed = readJson(fullPath, f);
+        const dateStr = parsed?.comparedAt || '';
+        return { file: f, path: fullPath, commit: parsed?.current?.corpusCommit, date: dateStr };
+      })
+      .sort((a, b) => b.date.localeCompare(a.date));
+
+    // Find the latest file that has a different corpus commit, or the 2nd newest file
+    let candidate = null;
+    for (const entry of files) {
+      if (entry.commit && entry.commit !== current.provenance?.corpusCommit) {
+        candidate = entry;
+        break;
+      }
+    }
+    if (!candidate && files.length >= 2) {
+      candidate = files[1];
+    }
+    if (candidate) {
+      baselinePath = candidate.path;
+      baselineLabel = `Previous Run (${candidate.file})`;
+    }
+  }
+}
+
+const rawBaseline = readJson(baselinePath, baselineLabel);
+const baseline = normalizeToSummary(rawBaseline, baselineLabel);
 const fatal = [];
 const warnings = [];
 
@@ -86,18 +152,18 @@ if (fatal.length > 0) {
   process.exit(1);
 }
 
-console.log('=== AI Plan Judge Baseline Diff Check ===\n');
-console.log(`Baseline corpus commit: ${baseline.provenance.corpusCommit ?? 'unknown'}`);
+console.log(`=== AI Plan Judge Diff Check (${usePrevious ? 'Current vs Previous Run' : againstCustomPath ? `Current vs ${againstCustomPath}` : 'Current vs Baseline'}) ===\n`);
+console.log(`${usePrevious ? 'Previous' : 'Baseline'} corpus commit: ${baseline.provenance.corpusCommit ?? 'unknown'}`);
 console.log(`Current corpus commit:  ${current.provenance.corpusCommit ?? 'unknown'}`);
 console.log(`Judge model:            ${current.provenance.judgeModel ?? 'unknown'}`);
 if ((baseline.provenance.judgeProvider ?? 'unknown') !== (current.provenance.judgeProvider ?? 'unknown')) {
   warnings.push(`Judge provider metadata differs: ${baseline.provenance.judgeProvider ?? 'unknown'} -> ${current.provenance.judgeProvider ?? 'unknown'}.`);
 }
-console.log(`Baseline families/cases: ${baseline.familyCount}/${baseline.caseCount}`);
+console.log(`${usePrevious ? 'Previous' : 'Baseline'} families/cases: ${baseline.familyCount}/${baseline.caseCount}`);
 console.log(`Current families/cases:  ${current.familyCount}/${current.caseCount}`);
 const baseMean = numeric(baseline.meanSensitivityQuality, 'baseline.meanSensitivityQuality', fatal);
 const currMean = numeric(current.meanSensitivityQuality, 'current.meanSensitivityQuality', fatal);
-console.log(`Baseline mean sensitivity: ${baseMean.toFixed(2)}/10`);
+console.log(`${usePrevious ? 'Previous' : 'Baseline'} mean sensitivity: ${baseMean.toFixed(2)}/10`);
 console.log(`Current mean sensitivity:  ${currMean.toFixed(2)}/10\n`);
 
 let regressionCount = 0;
