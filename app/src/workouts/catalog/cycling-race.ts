@@ -3,13 +3,13 @@ import { timeStep } from './helpers.ts';
 
 export const CYCLING_RACE_WORKOUTS: WorkoutDefinition[] = [
   {
-    id: 'cycling_race_simulation_50_01', version: 1, status: 'active',
+    id: 'cycling_race_simulation_50_01', version: 2, status: 'active',
     name: 'Adjustable Variable Race Simulation',
     description: 'Peak-specific simulation with variable power, surges, limited coasting and a hard late finish.',
     modality: 'cycling', category: 'race_simulation', objectives: ['surge_tolerance', 'high_aerobic_power', 'fatigue_resistant_finish'],
     duration: { defaultMin: 75, minimumMin: 50, maximumMin: 95 },
     loadProfile: { cardiovascular: 5, muscular: 4, mechanical: 1, eccentric: 1, coordination: 4, recoveryHours: 72 },
-    eligibility: { minimumReadiness: 8, maximumSoreness: 4, minimumDaysAfterHardLowerBody: 2, forbiddenPainFlags: ['knee_swelling', 'acute_knee_pain', 'worsening_achilles_pain'] },
+    eligibility: { minimumReadiness: 8, maximumSoreness: 4, minimumDaysAfterHardLowerBody: 3, forbiddenPainFlags: ['knee_swelling', 'acute_knee_pain', 'worsening_achilles_pain'] },
     equipment: ['bike'], contraindicationTags: ['acute_knee_pain'], engineTemplateIds: ['end_race_sim_01'],
     blocks: [
       { id: 'warmup', name: 'Race warm-up', role: 'warmup', steps: [ timeStep('race_warmup', 'bike_progressive_warmup', 'Progressive warm-up', 900, { target: { type: 'rpe', min: 1, max: 4 } }) ]},
@@ -33,6 +33,6 @@ export const CYCLING_RACE_WORKOUTS: WorkoutDefinition[] = [
     regressions: ['cycling_event_specific_endurance_01', 'cycling_over_under_3x12_01', 'cycling_short_surges_10x20_01'], progressions: ['cycling_taper_sharpening_01'], substitutions: [],
     garmin: { exportable: true, supportedSport: 'cycling' },
     tags: ['peak_specific', 'outdoor_preferred', 'hard_finish', 'adjustable'],
-    sourceNotes: ['Macrocycle simulation target is 45–60 minutes with variable power, repeated surges, limited coasting, harder one-to-three-minute work and a hard final kilometre.']
+    sourceNotes: ['Macrocycle simulation target is 45–60 minutes with variable power, repeated surges, limited coasting, harder one-to-three-minute work and a hard final kilometre. Keep at least three calendar days after hard lower-body work before this peak-specific simulation.']
   }
 ];
