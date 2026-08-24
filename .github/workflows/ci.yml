@@ -149,6 +149,9 @@ jobs:
           npm run simulate:scenarios
           git diff --exit-code -- ../docs/analysis/simulation-baseline.json
 
+      - name: Generate AI plan judge corpus
+        run: npm run simulate:plan-judge
+
       - name: Report simulation semantic diff
         run: npm run simulate:diff
         continue-on-error: true
