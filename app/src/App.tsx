@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react';
 import './App.css';
 import './index.css';
-import { Home } from './components/Home';
 import type { PreparedSessionLaunch } from './components/session/SessionDestinationSheet';
 import { decisionComposer } from './engine/composer';
 import { hasCompletedSubjectiveCheckinForDecision } from './engine/checkinCompletion';
@@ -19,6 +18,7 @@ import { sessionExecutionService } from './services/sessionExecutionService';
 import { runConfiguredHealthAnomalyShadow } from './services/healthAnomalyRuntime';
 import { resolveSessionDefinition } from './sessions/sessionDefinitionResolver';
 
+const Home = lazy(() => import('./components/Home').then(m => ({ default: m.Home })));
 const DailyCheckin = lazy(() => import('./components/DailyCheckin').then(m => ({ default: m.DailyCheckin })));
 const Goals = lazy(() => import('./components/Goals').then(m => ({ default: m.Goals })));
 const TrainingSettings = lazy(() => import('./components/TrainingSettings').then(m => ({ default: m.TrainingSettings })));
