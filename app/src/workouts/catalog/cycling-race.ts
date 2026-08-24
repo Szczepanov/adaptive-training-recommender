@@ -36,4 +36,3 @@ export const CYCLING_RACE_WORKOUTS: WorkoutDefinition[] = [
     sourceNotes: ['Macrocycle simulation target is 45–60 minutes with variable power, repeated surges, limited coasting, harder one-to-three-minute work and a hard final kilometre. Keep at least three calendar days after hard lower-body work before this peak-specific simulation.']
   }
 ];
-
