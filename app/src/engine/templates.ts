@@ -541,7 +541,7 @@ export const TEMPLATES: SessionTemplate[] = [
         environment: 'outdoor', safetyTags: [],
         systemicCost: 0.65,
         objectiveTransferable: false,
-        stimulusProfile: { aerobicEndurance: 0.8, thresholdPower: 0.4, vo2MaxPower: 0.4, repeatedSurges: 0.6, sprintPower: 0.1, fatigueResistance: 0.7, maxStrength: 0, hypertrophy: 0 },
+        stimulusProfile: { aerobicEndurance: 0.9, thresholdPower: 0.4, vo2MaxPower: 0.3, repeatedSurges: 0.4, sprintPower: 0.1, fatigueResistance: 0.9, maxStrength: 0, hypertrophy: 0 },
         costProfile: { systemic: 0.55, cardiovascular: 0.6, lowerBody: 0.35, upperBody: 0.1, impactTissue: 0.15, neuromuscular: 0.3 },
         phaseEligibility: { requiresFocusEvent: true, excludeTaper: true }
     },
@@ -549,7 +549,7 @@ export const TEMPLATES: SessionTemplate[] = [
         id: "end_race_sim_01",
         category: "Race-Specific Endurance",
         modality: "Cycling",
-        durationMin: 50,
+        durationMin: 40,
         durationMax: 95,
         title: "Race Simulation",
         description: "Peak-specific outdoor simulation with variable power, repeated surges, limited coasting and a hard late finish.",
@@ -557,9 +557,9 @@ export const TEMPLATES: SessionTemplate[] = [
         environment: 'outdoor', safetyTags: [],
         systemicCost: 0.95,
         objectiveTransferable: false,
-        stimulusProfile: { aerobicEndurance: 0.6, thresholdPower: 0.7, vo2MaxPower: 0.8, repeatedSurges: 1.0, sprintPower: 0.2, fatigueResistance: 0.85, maxStrength: 0, hypertrophy: 0 },
+        stimulusProfile: { aerobicEndurance: 0.6, thresholdPower: 0.7, vo2MaxPower: 0.8, repeatedSurges: 1.0, sprintPower: 0.2, fatigueResistance: 0.6, maxStrength: 0, hypertrophy: 0 },
         costProfile: { systemic: 0.9, cardiovascular: 0.95, lowerBody: 0.6, upperBody: 0.1, impactTissue: 0.2, neuromuscular: 0.75 },
-        phaseEligibility: { requiresFocusEvent: true, maxDaysToEvent: 35, excludeTaper: true }
+        phaseEligibility: { requiresFocusEvent: true, maxDaysToEvent: 42, excludeTaper: true }
     },
     {
         id: "end_taper_sharpen_01",
