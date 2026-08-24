@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { getAuthInstance } from '../firebase';
 import { signInWithCustomToken, signInWithEmailAndPassword } from 'firebase/auth';
-import { getErrorMessage } from '../utils/errors';
+import { getDetailedErrorMessage, getErrorDetails, getErrorMessage } from '../utils/errors';
 import { useAuth } from '../contexts/AuthContext';
 import { garminAuthService } from '../services/garminAuthService';
 
@@ -48,7 +48,7 @@ export const LoginScreen: React.FC = () => {
       }
       await finishGarminAuth(result.customToken);
     } catch (error: unknown) {
-      console.error(error);
+      console.error('Garmin authentication failed:', getErrorDetails(error));
       if (challengeId) {
         // PendingLoginStore consumes a Garmin challenge on every completion attempt, even
         // when the code is wrong. Never leave the UI pointing at a challenge the server
@@ -56,7 +56,7 @@ export const LoginScreen: React.FC = () => {
         setChallengeId(null);
         setMfaCode('');
       }
-      setErrorMsg(getErrorMessage(error) || 'Failed to authenticate with Garmin.');
+      setErrorMsg(getDetailedErrorMessage(error) || 'Failed to authenticate with Garmin.');
     } finally {
       setLoading(false);
     }
@@ -69,7 +69,7 @@ export const LoginScreen: React.FC = () => {
     try {
       await signInWithEmailAndPassword(getAuthInstance(), email, password);
     } catch (error: unknown) {
-      console.error(error);
+      console.error('Existing app login failed:', getErrorDetails(error));
       setErrorMsg(getErrorMessage(error) || 'Failed to log in.');
     } finally {
       setLoading(false);

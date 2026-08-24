@@ -7,6 +7,7 @@ from .account_link import list_active_garmin_connections
 from .audit import format_report, run_audit
 from .config import load_settings, load_settings_for_user
 from .coordination import GarminExecutionLease
+from .error_reporting import log_exception
 from .service import GarminSyncService
 
 logging.basicConfig(
@@ -57,8 +58,13 @@ def _run_for_all_users(operation_name: str, operation: Callable[[GarminSyncServi
     """
     try:
         connections = list_active_garmin_connections()
-    except Exception as e:
-        logger.error("%s linked-user discovery error: %s", operation_name, type(e).__name__)
+    except Exception as error:
+        log_exception(
+            logger,
+            operation_name,
+            error,
+            context={"stage": "linked_user_discovery"},
+        )
         return 1
 
     if not connections:
@@ -76,13 +82,17 @@ def _run_for_all_users(operation_name: str, operation: Callable[[GarminSyncServi
                 logger.error("%s: unsuccessful linked user %d", operation_name, index)
             else:
                 logger.info("%s: complete linked user %d", operation_name, index)
-        except Exception as e:
+        except Exception as error:
             failed_count += 1
-            logger.error(
-                "%s: error linked user %d type=%s",
+            log_exception(
+                logger,
                 operation_name,
-                index,
-                type(e).__name__,
+                error,
+                context={
+                    "stage": "linked_user_execution",
+                    "user_index": index,
+                    "linked_user_count": len(connections),
+                },
             )
 
     if failed_count:
@@ -130,8 +140,17 @@ def run_daily_sync(args: list[str] | None = None) -> int:
             ),
         )
         return 0 if success else 1
-    except Exception as e:
-        logger.error(f"Daily sync execution error: {type(e).__name__}")
+    except Exception as error:
+        log_exception(
+            logger,
+            "daily sync",
+            error,
+            context={
+                "date": parsed_args.date,
+                "force": parsed_args.force,
+                "resync_days": parsed_args.resync_days,
+            },
+        )
         return 1
 
 
@@ -182,8 +201,19 @@ def run_backfill(args: list[str] | None = None) -> int:
             ),
         )
         return 0 if success else 1
-    except Exception as e:
-        logger.error(f"Backfill execution error: {type(e).__name__}")
+    except Exception as error:
+        log_exception(
+            logger,
+            "backfill",
+            error,
+            context={
+                "days": parsed_args.days,
+                "start_date": parsed_args.start_date,
+                "end_date": parsed_args.end_date,
+                "force": parsed_args.force,
+                "include_details": parsed_args.include_details,
+            },
+        )
         return 1
 
 
@@ -211,8 +241,13 @@ def run_audit_cmd(args: list[str] | None = None) -> int:
         )
         print(format_report(report))
         return 0
-    except Exception as e:
-        logger.error(f"Audit execution error: {type(e).__name__}")
+    except Exception as error:
+        log_exception(
+            logger,
+            "audit",
+            error,
+            context={"days": parsed_args.days, "end_date": parsed_args.end_date},
+        )
         return 1
 
 
@@ -229,8 +264,13 @@ def run_rebuild_cmd(args: list[str] | None = None) -> int:
         service = GarminSyncService(settings)
         success = service.rebuild(parsed_args.start_date, parsed_args.end_date)
         return 0 if success else 1
-    except Exception as e:
-        logger.error(f"Rebuild execution error: {type(e).__name__}")
+    except Exception as error:
+        log_exception(
+            logger,
+            "rebuild",
+            error,
+            context={"start_date": parsed_args.start_date, "end_date": parsed_args.end_date},
+        )
         return 1
 
 
@@ -255,8 +295,13 @@ def run_push_workout_cmd(args: list[str] | None = None) -> int:
             lambda current_service: current_service.push_workout(date_str=parsed_args.date),
         )
         return 0 if success else 1
-    except Exception as e:
-        logger.error(f"Push workout execution error: {type(e).__name__}: {e}")
+    except Exception as error:
+        log_exception(
+            logger,
+            "push workout",
+            error,
+            context={"date": parsed_args.date},
+        )
         return 1
 
 
@@ -283,8 +328,13 @@ def run_push_pending_workouts_cmd(args: list[str] | None = None) -> int:
             ),
         )
         return 0 if success else 1
-    except Exception as e:
-        logger.error(f"Push pending workouts execution error: {type(e).__name__}: {e}")
+    except Exception as error:
+        log_exception(
+            logger,
+            "push pending workouts",
+            error,
+            context={"max_age_days": parsed_args.max_age_days},
+        )
         return 1
 
 
@@ -314,8 +364,8 @@ def run_poll_manual_sync_cmd(args: list[str] | None = None) -> int:
             lambda current_service: current_service.poll_manual_sync_requests(),
         )
         return 0 if success else 1
-    except Exception as e:
-        logger.error(f"Poll manual sync execution error: {type(e).__name__}: {e}")
+    except Exception as error:
+        log_exception(logger, "poll manual sync", error)
         return 1
 
 

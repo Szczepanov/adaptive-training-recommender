@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import secrets
 import threading
 import time
 from collections import defaultdict, deque
@@ -18,6 +19,7 @@ from .account_link import (
     GarminLinkConfigurationError,
     GarminLinkConflictError,
 )
+from .error_reporting import log_exception, sanitize_text
 
 logging.basicConfig(
     level=logging.INFO,
@@ -93,6 +95,7 @@ def _verified_uid(authorization: str | None) -> str | None:
 
 class GarminAccountLinkHandler(BaseHTTPRequestHandler):
     server_version = "GarminAccountLink/1"
+    request_id: str | None = None
 
     def log_message(self, format_string: str, *args: Any) -> None:
         # BaseHTTPRequestHandler includes the path but never request bodies. Keep logs
@@ -105,9 +108,28 @@ class GarminAccountLinkHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
+        if self.request_id:
+            self.send_header("X-Request-ID", self.request_id)
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
+    def _error_response(
+        self,
+        status: HTTPStatus,
+        *,
+        message: str,
+        error_code: str,
+        retryable: bool,
+    ) -> None:
+        payload: dict[str, Any] = {
+            "error": sanitize_text(message),
+            "errorCode": error_code,
+            "retryable": retryable,
+        }
+        if self.request_id:
+            payload["requestId"] = self.request_id
+        self._json_response(status, payload)
 
     def _read_json(self) -> dict[str, Any]:
         raw_length = self.headers.get("Content-Length", "0")
@@ -142,12 +164,19 @@ class GarminAccountLinkHandler(BaseHTTPRequestHandler):
         return self.client_address[0]
 
     def do_GET(self) -> None:  # noqa: N802
+        self.request_id = secrets.token_hex(8)
         if self.path == "/health":
             self._json_response(HTTPStatus.OK, {"status": "ok"})
             return
-        self._json_response(HTTPStatus.NOT_FOUND, {"error": "not_found"})
+        self._error_response(
+            HTTPStatus.NOT_FOUND,
+            message="Not found.",
+            error_code="garmin_link.not_found",
+            retryable=False,
+        )
 
     def do_POST(self) -> None:  # noqa: N802
+        self.request_id = secrets.token_hex(8)
         try:
             if self.path == "/api/garmin/login":
                 self._handle_login()
@@ -155,42 +184,94 @@ class GarminAccountLinkHandler(BaseHTTPRequestHandler):
             if self.path == "/api/garmin/mfa":
                 self._handle_mfa()
                 return
-            self._json_response(HTTPStatus.NOT_FOUND, {"error": "not_found"})
+            self._error_response(
+                HTTPStatus.NOT_FOUND,
+                message="Not found.",
+                error_code="garmin_link.not_found",
+                retryable=False,
+            )
         except GarminLinkConflictError as exc:
-            self._json_response(HTTPStatus.CONFLICT, {"error": str(exc)})
+            self._error_response(
+                HTTPStatus.CONFLICT,
+                message=str(exc),
+                error_code="garmin_link.conflict",
+                retryable=False,
+            )
         except ValueError as exc:
-            self._json_response(HTTPStatus.BAD_REQUEST, {"error": str(exc)})
-        except GarminConnectTooManyRequestsError:
-            self._json_response(
+            self._error_response(
+                HTTPStatus.BAD_REQUEST,
+                message=str(exc),
+                error_code="garmin_link.validation",
+                retryable=False,
+            )
+        except GarminConnectTooManyRequestsError as exc:
+            report = log_exception(
+                logger,
+                "garmin link",
+                exc,
+                context={"path": self.path, "request_id": self.request_id},
+                level=logging.WARNING,
+            )
+            self._error_response(
                 HTTPStatus.TOO_MANY_REQUESTS,
-                {"error": "Garmin is rate limiting login attempts. Try again later."},
+                message="Garmin is rate limiting login attempts. Try again later.",
+                error_code=report.code,
+                retryable=report.retryable,
             )
         except GarminConnectAuthenticationError as exc:
-            self._json_response(HTTPStatus.UNAUTHORIZED, {"error": str(exc)})
-        except GarminLinkConfigurationError:
-            logger.exception("Garmin account-link service configuration/storage failure")
-            self._json_response(
+            self._error_response(
+                HTTPStatus.UNAUTHORIZED,
+                message=str(exc),
+                error_code="garmin_link.authentication",
+                retryable=False,
+            )
+        except GarminLinkConfigurationError as exc:
+            report = log_exception(
+                logger,
+                "garmin link",
+                exc,
+                context={"path": self.path, "request_id": self.request_id},
+            )
+            self._error_response(
                 HTTPStatus.SERVICE_UNAVAILABLE,
-                {"error": "Garmin linking is temporarily unavailable."},
+                message="Garmin linking is temporarily unavailable.",
+                error_code=report.code,
+                retryable=report.retryable,
             )
-        except GarminConnectConnectionError:
-            logger.exception("Garmin connection failed during account linking")
-            self._json_response(
+        except GarminConnectConnectionError as exc:
+            report = log_exception(
+                logger,
+                "garmin link",
+                exc,
+                context={"path": self.path, "request_id": self.request_id},
+            )
+            self._error_response(
                 HTTPStatus.BAD_GATEWAY,
-                {"error": "Garmin could not be reached. Try again shortly."},
+                message="Garmin could not be reached. Try again shortly.",
+                error_code=report.code,
+                retryable=report.retryable,
             )
-        except Exception:
-            logger.exception("Unexpected Garmin account-link failure")
-            self._json_response(
+        except Exception as exc:
+            report = log_exception(
+                logger,
+                "garmin link",
+                exc,
+                context={"path": self.path, "request_id": self.request_id},
+            )
+            self._error_response(
                 HTTPStatus.INTERNAL_SERVER_ERROR,
-                {"error": "Garmin linking failed unexpectedly."},
+                message="Garmin linking failed unexpectedly.",
+                error_code=report.code,
+                retryable=report.retryable,
             )
 
     def _handle_login(self) -> None:
         if not RATE_LIMITER.allow(self._client_key()):
-            self._json_response(
+            self._error_response(
                 HTTPStatus.TOO_MANY_REQUESTS,
-                {"error": "Too many login attempts. Try again later."},
+                message="Too many login attempts. Try again later.",
+                error_code="garmin_link.rate_limited",
+                retryable=True,
             )
             return
         payload = self._read_json()
