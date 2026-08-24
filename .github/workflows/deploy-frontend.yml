@@ -246,7 +246,11 @@ jobs:
 
       # GET /api/garmin/login is intentionally unsupported by the account-link service. A
       # backend-shaped 404 therefore proves the Hosting rewrite reached Cloud Run without
-      # submitting credentials or consuming a login-rate-limit attempt.
+      # submitting credentials or consuming a login-rate-limit attempt. The body must carry
+      # the structured error envelope account_link_api.py actually emits (errorCode/
+      # retryable/requestId, see _error_response) -- matching only the literal legacy
+      # {"error":"not_found"} shape broke this check the moment the handler was rewritten
+      # to the richer envelope, even though the deploy itself was fine.
       - name: Smoke test Hosting to Garmin API rewrite
         if: ${{ inputs.deploy_hosting }}
         run: |
@@ -254,7 +258,7 @@ jobs:
           STATUS="$(curl --silent --show-error --retry 5 --retry-delay 3 --retry-all-errors \
             --output "${BODY_FILE}" --write-out '%{http_code}' \
             "https://${GCP_PROJECT}.web.app/api/garmin/login")"
-          if [ "${STATUS}" != "404" ] || ! grep -q '"error":"not_found"' "${BODY_FILE}"; then
+          if [ "${STATUS}" != "404" ] || ! grep -q '"errorCode":"garmin_link.not_found"' "${BODY_FILE}"; then
             echo "Expected Cloud Run JSON 404 through Firebase Hosting rewrite; got HTTP ${STATUS}." >&2
             cat "${BODY_FILE}" >&2
             exit 1
