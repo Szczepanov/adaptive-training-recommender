@@ -41,6 +41,11 @@ export const RepetitionInputCard: React.FC<RepetitionInputCardProps> = ({
     const weightRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
+        setReps(String(defaultReps));
+        setWeight(suggestedWeightKg !== undefined ? String(suggestedWeightKg) : '');
+    }, [step.id, defaultReps, suggestedWeightKg]);
+
+    useEffect(() => {
         if (weightRef.current) {
             weightRef.current.focus();
             weightRef.current.select();
@@ -103,6 +108,11 @@ export const RepetitionInputCard: React.FC<RepetitionInputCardProps> = ({
 
     return (
         <form className="repetition-input-card" onSubmit={handleSubmit}>
+            {step.laterality === 'per_side' && (
+                <div className="unilateral-cue-banner">
+                    <span>💡 <strong>Unilateral Movement</strong>: Perform prescribed reps on Left, then repeat on Right.</span>
+                </div>
+            )}
             <div className="input-row">
                 <label className="input-group">
                     <span className="input-label">Weight (kg)</span>
@@ -119,7 +129,7 @@ export const RepetitionInputCard: React.FC<RepetitionInputCardProps> = ({
                     />
                 </label>
                 <label className="input-group">
-                    <span className="input-label">Reps</span>
+                    <span className="input-label">Reps{step.laterality === 'per_side' ? ' (per side)' : ''}</span>
                     <input
                         type="number"
                         step="1"

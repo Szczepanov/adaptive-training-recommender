@@ -16,11 +16,24 @@ import { preferencesService } from '../services/preferencesService';
 import { trainingSettingsService } from '../services/trainingSettingsService';
 import { adaptNormalizedExecutionToStrengthSession } from '../sessions/legacyStrengthAdapter';
 import { getLocalDateString } from '../utils/localDate';
-import type { SessionCompletionPayload } from '../components/session/SessionCompletionSheet';
+import { sessionDefinitionService } from '../services/sessionDefinitionService';
+import { hashSessionDefinition } from '../sessions/sessionDefinitionHash';
+import { playRestCompleteSound } from '../utils/audioFeedback';
 import { resolveSessionDefinition } from '../sessions/sessionDefinitionResolver';
 import { resolveEffectiveSession } from '../sessions/choiceResolution';
 import { resolveEffectiveInjuryConstraints, resolveInjuryRestrictions } from '../engine/injuryPolicy';
 import { ineligibleAlternativeOptionIds } from '../engine/sessionChoiceEligibility';
+import type { BodyRegion, RegionTissueResponse } from '../engine/models';
+import type { SessionCompletionPayload } from '../components/session/SessionCompletionSheet';
+
+/** Two `ExerciseRef`s identify the same performed exercise. Used to scope a step's
+ * per-exercise `setIndex` so a mid-session swap (`substituteStepExercise`) starts the
+ * replacement exercise's own set count at 1 instead of continuing the original's. */
+function sameExerciseRef(a: SessionStep['exerciseRef'], b: SessionStep['exerciseRef']): boolean {
+    if (!a || !b) return a === b;
+    if (a.kind !== b.kind) return false;
+    return a.kind === 'catalog' && b.kind === 'catalog' ? a.exerciseId === b.exerciseId : a.kind === 'unresolved_free_text' && b.kind === 'unresolved_free_text' && a.name === b.name;
+}
 
 export interface UseSessionRunnerResult {
     /** The effective, choice-resolved view (ADR-0023 D-MCHOICE) -- see `resolveEffectiveSession`.
@@ -58,6 +71,17 @@ export interface UseSessionRunnerResult {
     undo: () => Promise<void>;
     startRestTimer: (seconds: number) => void;
     skipRestTimer: () => void;
+    addRestSeconds: (seconds: number) => void;
+    substituteStepExercise: (blockIndex: number, stepIndex: number, replacement: {
+        exerciseRef: SessionStep['exerciseRef'];
+        title?: string;
+        dose?: SessionStep['dose'];
+        /** `undefined` leaves the step's current tempo/notes untouched; `null` explicitly clears it. */
+        tempo?: string | null;
+        rest?: SessionStep['rest'];
+        notes?: string | null;
+    }) => void;
+    saveAsNewTemplate: (title: string, summary?: string) => Promise<string>;
     completeSession: (payload?: SessionCompletionPayload) => Promise<void>;
     abandonSession: (notes?: string) => Promise<void>;
 }
@@ -132,6 +156,7 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
             interval = setInterval(() => {
                 setRestSecondsRemaining(prev => {
                     if (prev <= 1) {
+                        playRestCompleteSound();
                         setIsRestRunning(false);
                         return 0;
                     }
@@ -290,7 +315,9 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
             payload: payload.kind === 'repetition'
                 ? {
                     ...payload,
-                    setIndex: entries.filter(entry => entry.stepId === activeStep.id && entry.payload.kind === 'repetition').length + 1,
+                    // Scoped to the step's *current* exercise, not just its stepId -- a mid-session
+                    // swap (substituteStepExercise) must not inherit the replaced exercise's set count.
+                    setIndex: entries.filter(entry => entry.stepId === activeStep.id && entry.payload.kind === 'repetition' && sameExerciseRef(entry.exerciseRef, activeStep.exerciseRef)).length + 1,
                 }
                 : payload,
         };
@@ -305,13 +332,13 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
             setSyncStatus('unavailable');
         }
 
-        // Trigger rest timer if prescribed on step
-        if (activeStep.rest) {
-            const restSec = typeof activeStep.rest === 'number' ? activeStep.rest : activeStep.rest.min;
-            if (restSec > 0) {
-                setRestSecondsRemaining(restSec);
-                setIsRestRunning(true);
-            }
+        // Trigger rest timer immediately after logging a set (prescribed step rest or 60s default)
+        const restSec = activeStep.rest
+            ? (typeof activeStep.rest === 'number' ? activeStep.rest : activeStep.rest.min)
+            : 60;
+        if (restSec > 0) {
+            setRestSecondsRemaining(restSec);
+            setIsRestRunning(true);
         }
     }, [execution, activeStep, entries, userId]);
 
@@ -384,7 +411,7 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
     }, [execution, lastRemovedEntry, userId]);
 
     const startRestTimer = useCallback((seconds: number) => {
-        setRestSecondsRemaining(seconds);
+        setRestSecondsRemaining(Math.max(1, seconds));
         setIsRestRunning(true);
     }, []);
 
@@ -393,14 +420,73 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
         setIsRestRunning(false);
     }, []);
 
+    const addRestSeconds = useCallback((seconds: number) => {
+        setRestSecondsRemaining(prev => Math.max(0, prev + seconds));
+    }, []);
+
+    const substituteStepExercise = useCallback((
+        blockIndex: number,
+        stepIndex: number,
+        replacement: {
+            exerciseRef: SessionStep['exerciseRef'];
+            title?: string;
+            dose?: SessionStep['dose'];
+            /** `undefined` leaves the step's current tempo/notes untouched; `null` explicitly clears it. */
+            tempo?: string | null;
+            rest?: SessionStep['rest'];
+            notes?: string | null;
+        },
+    ) => {
+        setRawDefinition(prev => {
+            if (!prev) return prev;
+            const nextBlocks = prev.blocks.map((block, bIdx) => {
+                if (bIdx !== blockIndex) return block;
+                const nextSteps = block.steps.map((step, sIdx) => {
+                    if (sIdx !== stepIndex) return step;
+                    const resolvedTitle = replacement.title
+                        ?? (replacement.exerciseRef?.kind === 'catalog' ? replacement.exerciseRef.exerciseId : (replacement.exerciseRef?.kind === 'unresolved_free_text' ? replacement.exerciseRef.name : step.id));
+                    const nextStep: SessionStep = {
+                        ...step,
+                        exerciseRef: replacement.exerciseRef,
+                        title: resolvedTitle,
+                        ...(replacement.dose ? { dose: replacement.dose } : {}),
+                        ...(replacement.rest !== undefined ? { rest: replacement.rest } : {}),
+                    };
+                    if (replacement.tempo === null) delete nextStep.tempo;
+                    else if (replacement.tempo !== undefined) nextStep.tempo = replacement.tempo;
+                    if (replacement.notes === null) delete nextStep.notes;
+                    else if (replacement.notes !== undefined) nextStep.notes = replacement.notes;
+                    return nextStep;
+                });
+                return { ...block, steps: nextSteps };
+            });
+            return { ...prev, blocks: nextBlocks };
+        });
+    }, []);
+
+    const saveAsNewTemplate = useCallback(async (title: string, summary?: string): Promise<string> => {
+        if (!definition) throw new Error('No active session definition to save.');
+        const templateId = `custom-session-${Date.now()}`;
+        const newDef: SessionDefinition = {
+            ...definition,
+            id: templateId,
+            revision: 1,
+            title: title.trim().length > 0 ? title.trim() : definition.title,
+            ...(summary !== undefined ? { summary } : {}),
+        };
+        const contentHash = await hashSessionDefinition(newDef);
+        await sessionDefinitionService.saveDefinitionRevision(userId, newDef, contentHash);
+        return templateId;
+    }, [definition, userId]);
+
     const completeSession = useCallback(async (payload?: SessionCompletionPayload) => {
         if (!execution || execution.state !== 'in_progress') return;
         // Tissue values stay in the canonical daily check-in.  The execution is only an
         // attribution link, and a conflicting existing link is never overwritten.
         if (payload?.tissueFeedback?.length) {
             const existingCheckin = await checkinService.getCheckin(userId, execution.date);
-            const existingResponses = existingCheckin?.tissueResponses ?? {};
-            const tissueResponses = { ...existingResponses };
+            const existingResponses = (existingCheckin?.tissueResponses ?? {}) as Partial<Record<BodyRegion, RegionTissueResponse>>;
+            const tissueResponses: Partial<Record<BodyRegion, RegionTissueResponse>> = { ...existingResponses };
             for (const item of payload.tissueFeedback) {
                 const existingSource = existingResponses[item.region]?.sourceSessionRef;
                 if (existingSource && (
@@ -503,6 +589,9 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
         undo,
         startRestTimer,
         skipRestTimer,
+        addRestSeconds,
+        substituteStepExercise,
+        saveAsNewTemplate,
         completeSession,
         abandonSession,
     };
