@@ -164,6 +164,16 @@ try {
 }
 if (!corpus || typeof corpus !== 'object' || typeof corpus.schema !== 'string') throw new Error(`Malformed corpus metadata in ${corpusPath}.`);
 
+const manifestPath = resolve(outputDir, 'judge-run-manifest.json');
+let manifest = null;
+if (existsSync(manifestPath)) {
+  try {
+    manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+  } catch {
+    // Best-effort manifest reading only.
+  }
+}
+
 const provenance = {
   corpusCommit: corpus.commit ?? 'unknown',
   corpusSchema: corpus.schema,
@@ -172,8 +182,8 @@ const provenance = {
   promptSha256: hashFile(promptPath),
   responseSchemaSha256: hashFile(schemaPath),
   judgeScoresSha256: hashFile(inputPath),
-  judgeModel: process.env.JUDGE_MODEL ?? process.env.LOCAL_JUDGE_MODEL ?? process.env.OLLAMA_MODEL ?? 'unknown',
-  judgeProvider: process.env.JUDGE_PROVIDER ?? 'unknown',
+  judgeModel: process.env.JUDGE_MODEL ?? manifest?.judgeModel ?? process.env.LOCAL_JUDGE_MODEL ?? process.env.OLLAMA_MODEL ?? 'unknown',
+  judgeProvider: process.env.JUDGE_PROVIDER ?? manifest?.judgeProvider ?? 'unknown',
   analyzedAt: new Date().toISOString(),
 };
 

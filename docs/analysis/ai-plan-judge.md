@@ -70,7 +70,11 @@ The final two checks matter because generic sequence distance is too weak on its
 Local model:
 
 ```bash
+# Standard local evaluation (Qwen3.8-9B-Distill)
 npm run judge:local
+
+# Quick/fast local evaluation (Muse-Glimmer-30B-DFlash2)
+npm run judge:local:quick
 ```
 
 Cloud provider selected from environment credentials:
@@ -85,7 +89,36 @@ Fast/cheap provider mode where supported:
 npm run judge:quick
 ```
 
-The npm wrappers regenerate the deterministic corpus and use `--fresh`. For an interrupted run, invoking `node scripts/run-ai-judge.mjs` without `--fresh` can reuse already validated family responses **only when** the run manifest still matches the exact families, prompt, response schema, model, and provider.
+Resume an interrupted run (reusing validated family results if the run manifest matches):
+
+```bash
+npm run judge:local:resume
+npm run judge:local:quick:resume
+# or for cloud:
+npm run judge:resume
+npm run judge:quick:resume
+```
+
+The fresh npm wrappers (`npm run judge:local`, `npm run judge:local:quick`, `npm run judge:run`, `npm run judge:quick`) regenerate the deterministic corpus and pass `--fresh`. The resume commands (`npm run judge:local:resume`, `npm run judge:local:quick:resume`, `npm run judge:resume`, `npm run judge:quick:resume`) or directly running `node scripts/run-ai-judge.mjs` with `--resume` (or without `--fresh`) can reuse already validated family responses **only when** the run manifest still matches the exact families, prompt, response schema, model, and provider.
+
+### Model selection via CLI
+
+Override the judge model directly on the command line without modifying environment variables using `--model <name>` (or `--model=<name>`):
+
+```bash
+# Evaluate with a custom local Ollama model
+node scripts/run-ai-judge.mjs --local --fresh --model qwen2.5-coder:14b
+
+# Evaluate with a specific cloud model
+node scripts/run-ai-judge.mjs --fresh --model gpt-4o-mini
+```
+
+### Network & inference timeout
+
+Per-request inference timeouts are enforced via `AbortSignal.timeout` to prevent hung local models or stalled network requests from blocking the harness:
+- Local default: `600s` (10 minutes per family evaluation)
+- Cloud default: `180s` (3 minutes per family evaluation)
+- Configurable via `JUDGE_TIMEOUT_MS` (or `LOCAL_TIMEOUT_MS` / `REQUEST_TIMEOUT_MS`) environment variables.
 
 ## Evidence-integrity rule
 
