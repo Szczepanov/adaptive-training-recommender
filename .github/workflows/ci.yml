@@ -31,10 +31,8 @@ jobs:
           ref: feature/ai-plan-judge-simulation
           fetch-depth: 0
 
-      - name: Apply review patch
-        run: |
-          git apply --check .github/review-fixes.patch
-          git apply .github/review-fixes.patch
+      - name: Apply review transformations
+        run: python .github/apply-review-fixes.py
 
       - name: Set up Node.js
         uses: actions/setup-node@v7
@@ -56,7 +54,7 @@ jobs:
       - name: Commit validated fixes and remove one-shot staging
         run: |
           git show 5ff43422ee60c49fc3baf89fefb62738d47fd0c8:.github/workflows/ci.yml > .github/workflows/ci.yml
-          rm .github/review-fixes.patch .github/workflows/apply-review-fixes.yml
+          rm .github/review-fixes.patch .github/apply-review-fixes.py .github/workflows/apply-review-fixes.yml
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
