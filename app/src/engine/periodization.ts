@@ -309,6 +309,7 @@ export function evaluatePeriodizationPhase(
 
     const { event: focusEvent, daysToEvent } = sortedEvents[0];
     const partialEffort = focusEvent.lifecycle === 'DNF';
+    const demandVector = focusEvent.demandProfile ?? resolveDemandProfile(focusEvent.category, (focusEvent as { eventPreset?: string; sportSpecificDemand?: string }).eventPreset ?? (focusEvent as { eventPreset?: string; sportSpecificDemand?: string }).sportSpecificDemand);
     let phase: PhaseWeights;
 
     // 3. Evaluate Phase Transitions & Continuous Demand Weightings
@@ -331,7 +332,7 @@ export function evaluatePeriodizationPhase(
             const taperProgress = 1 - (daysToEvent / taper.durationDays);
             phase = {
                 phaseName: 'Peak/Taper',
-                targetDemandVector: focusEvent.demandProfile,
+                targetDemandVector: demandVector,
                 volumeScale: 1.0 - (0.4 * taperProgress),
                 intensityScale: 1.0,
                 taperActive: true,
@@ -339,7 +340,7 @@ export function evaluatePeriodizationPhase(
         } else if (daysToEvent <= 35) {
             phase = {
                 phaseName: 'Specificity',
-                targetDemandVector: focusEvent.demandProfile,
+                targetDemandVector: demandVector,
                 volumeScale: 1.0,
                 intensityScale: 1.1,
                 taperActive: false,
@@ -347,7 +348,7 @@ export function evaluatePeriodizationPhase(
         } else if (daysToEvent <= 84) {
             phase = {
                 phaseName: 'Build',
-                targetDemandVector: blendDemand(DEFAULT_BASE_DEMAND, focusEvent.demandProfile, 0.6),
+                targetDemandVector: blendDemand(DEFAULT_BASE_DEMAND, demandVector, 0.6),
                 volumeScale: 1.1,
                 intensityScale: 0.9,
                 taperActive: false,
@@ -355,7 +356,7 @@ export function evaluatePeriodizationPhase(
         } else {
             phase = {
                 phaseName: 'Base',
-                targetDemandVector: blendDemand(DEFAULT_BASE_DEMAND, focusEvent.demandProfile, 0.3),
+                targetDemandVector: blendDemand(DEFAULT_BASE_DEMAND, demandVector, 0.3),
                 volumeScale: 1.0,
                 intensityScale: 0.8,
                 taperActive: false,

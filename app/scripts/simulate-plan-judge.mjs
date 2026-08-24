@@ -75,7 +75,7 @@ function exposureOn(exposure, date, occurrenceSuffix) {
   };
 }
 
-function makeFamilies(scenarios, deliveredDoseModule) {
+function makeFamilies(scenarios, deliveredDoseModule, resolveDemandProfile) {
   const base = requireScenario(scenarios, 'cycling_criterium_A');
   const granFondo = requireScenario(scenarios, 'cycling_gran_fondo_A');
   const hardLoadSource = requireScenario(scenarios, 'external_load_green_readiness');
@@ -122,18 +122,23 @@ function makeFamilies(scenarios, deliveredDoseModule) {
 
   const capacityPreferences = [
     neutral('judge_pref_neutral', 'Preferences/capacity — neutral'),
-    neutral('judge_pref_conservative', 'Preferences/capacity — conservative bias', { preference: 'conservative_bias' }, { contextPatch: (context) => { context.preferences.conservativeBias = true; } }),
+    neutral('judge_pref_conservative', 'Preferences/capacity — conservative bias', { preference: 'conservative_bias' }, { contextPatch: (context) => { context.preferences.conservativeBias = true; if (context.trainingSettings) context.trainingSettings.defaults.conservativeBias = true; } }),
     neutral('judge_pref_active_recovery', 'Preferences/capacity — active recovery style', { preference: 'active_recovery' }, { contextPatch: (context) => { context.preferences.preferredRecoveryStyle = 'active'; } }),
     neutral('judge_pref_mixed_recovery', 'Preferences/capacity — mixed recovery style', { preference: 'mixed_recovery' }, { contextPatch: (context) => { context.preferences.preferredRecoveryStyle = 'mixed'; } }),
     neutral('judge_pref_45min', 'Preferences/capacity — 45 minute weekdays', { capacity: '45_min_weekday' }, { contextPatch: (context) => { context.constraints.maxTimeMinutes = 45; if (context.trainingSettings) context.trainingSettings.defaults.weekdayMaxMinutes = 45; } }),
     neutral('judge_pref_90min', 'Preferences/capacity — 90 minute weekdays', { capacity: '90_min_weekday' }, { contextPatch: (context) => { context.constraints.maxTimeMinutes = 90; if (context.trainingSettings) context.trainingSettings.defaults.weekdayMaxMinutes = 90; } }),
   ];
 
+  const critEventA = { ...clone(base.event), priority: 'A', eventPreset: 'criterium', demandProfile: resolveDemandProfile('cycling_event', 'criterium') };
+  const critEventB = { ...clone(base.event), priority: 'B', eventPreset: 'criterium', demandProfile: resolveDemandProfile('cycling_event', 'criterium') };
+  const granEventA = { ...clone(granFondo.event), priority: 'A', eventPreset: 'gran_fondo', demandProfile: resolveDemandProfile('cycling_event', 'gran_fondo') };
+  const granEventB = { ...clone(granFondo.event), priority: 'B', eventPreset: 'gran_fondo', demandProfile: resolveDemandProfile('cycling_event', 'gran_fondo') };
+
   const eventDemand = [
-    neutral('judge_demand_crit_A', 'Event demand — criterium A', { eventDemand: 'criterium', priority: 'A' }),
-    neutral('judge_demand_crit_B', 'Event demand — criterium B', { eventDemand: 'criterium', priority: 'B' }, { eventPriority: 'B' }),
-    scenarioVariant(base, 'judge_demand_gran_A', 'Event demand — gran fondo A', { eventDemand: 'gran_fondo', priority: 'A' }, { event: granFondo.event }),
-    scenarioVariant(base, 'judge_demand_gran_B', 'Event demand — gran fondo B', { eventDemand: 'gran_fondo', priority: 'B' }, { event: { ...clone(granFondo.event), priority: 'B' } }),
+    scenarioVariant(base, 'judge_demand_crit_A', 'Event demand — criterium A', { eventDemand: 'criterium', priority: 'A' }, { event: critEventA }),
+    scenarioVariant(base, 'judge_demand_crit_B', 'Event demand — criterium B', { eventDemand: 'criterium', priority: 'B' }, { event: critEventB }),
+    scenarioVariant(base, 'judge_demand_gran_A', 'Event demand — gran fondo A', { eventDemand: 'gran_fondo', priority: 'A' }, { event: granEventA }),
+    scenarioVariant(base, 'judge_demand_gran_B', 'Event demand — gran fondo B', { eventDemand: 'gran_fondo', priority: 'B' }, { event: granEventB }),
   ];
 
   const goodObjective = { hrv_delta: 8, hrv_delta_28d: 8, hrv_last_night: 58, rhr: 46, rhr_delta: -4, rhr_delta_28d: -4, sleep_score: 92, sleep_duration_min: 480, sleep_score_delta_7d: 8, sleep_score_delta_28d: 8, body_battery_wake: 92 };
@@ -179,16 +184,33 @@ function makeFamilies(scenarios, deliveredDoseModule) {
 
   const injuryConstraints = [
     neutral('judge_injury_none', 'Injury — healthy baseline', { injuryConstraint: 'none' }),
-    neutral('judge_injury_running_restricted', 'Injury — restricted running modality', { injuryConstraint: 'restricted_running' }, { contextPatch: (c) => { c.constraints.restrictedModalities = ['Running']; } }),
-    neutral('judge_injury_lower_body_restricted', 'Injury — avoid heavy lower body', { injuryConstraint: 'avoid_heavy_lower_body' }, { contextPatch: (c) => { c.constraints.injuryTags = ['avoid_heavy_lower_body']; } }),
-    neutral('judge_injury_expired', 'Injury — review date passed', { injuryConstraint: 'expired_review' }, { contextPatch: (c) => { c.constraints.injuryReviewDate = addDays(base.startDate, -2); } }),
+    neutral('judge_injury_running_restricted', 'Injury — restricted running modality', { injuryConstraint: 'restricted_running' }, {
+      contextPatch: (c) => {
+        c.constraints.restrictedModalities = ['Running'];
+        if (c.guardrails) c.guardrails.avoid_high_impact = true;
+        if (c.trainingSettings?.defaults?.guardrails) c.trainingSettings.defaults.guardrails.avoid_high_impact = true;
+        c.constraints.injuries = [{ id: 'inj-run', region: 'knee', severity: 'exclude', reviewBy: addDays(base.startDate, 14) }];
+      },
+    }),
+    neutral('judge_injury_lower_body_restricted', 'Injury — avoid heavy lower body', { injuryConstraint: 'avoid_heavy_lower_body' }, {
+      contextPatch: (c) => {
+        if (c.guardrails) c.guardrails.avoid_heavy_lower_body = true;
+        if (c.trainingSettings?.defaults?.guardrails) c.trainingSettings.defaults.guardrails.avoid_heavy_lower_body = true;
+        c.constraints.injuries = [{ id: 'inj-lower', region: 'hamstring', severity: 'exclude', reviewBy: addDays(base.startDate, 14) }];
+      },
+    }),
+    neutral('judge_injury_expired', 'Injury — review date passed', { injuryConstraint: 'expired_review' }, {
+      contextPatch: (c) => {
+        c.constraints.injuries = [{ id: 'inj-exp', region: 'hamstring', severity: 'exclude', reviewBy: addDays(base.startDate, -2) }];
+      },
+    }),
   ];
 
   const planningModesOverlays = [
     neutral('judge_mode_event_directed', 'Planning mode — event directed A-race', { planningMode: 'event_directed' }),
     scenarioVariant(base, 'judge_mode_evergreen', 'Planning mode — evergreen fitness maintenance', { planningMode: 'evergreen' }, { event: null, events: [], trainingIntentProfile: { userId: 'judge-user', mode: 'evergreen', horizonWeeks: 4, weeklyTargetSessions: 3, primaryFocus: 'general_fitness', adaptationTargets: ['aerobic_endurance', 'strength'] } }),
-    neutral('judge_mode_travel_overlay', 'Planning mode — 3-day travel overlay', { planningMode: 'travel_overlay' }, { authoredPlanBlocks: [{ id: 'travel-block-1', phase: 'travel', startDate: base.startDate, endDate: addDays(base.startDate, 2), volumeScale: 0.5, intensityScale: 0.7 }], contextPatch: (c) => { c.constraints.availableEquipment = ['bodyweight']; } }),
-    neutral('judge_mode_conservative_preference', 'Planning mode — high conservative bias', { planningMode: 'conservative_overlay' }, { contextPatch: (c) => { c.preferences.conservativeBias = true; } }),
+    neutral('judge_mode_travel_overlay', 'Planning mode — 3-day travel overlay', { planningMode: 'travel_overlay' }, { authoredPlanBlocks: [{ id: 'travel-block-1', phase: 'travel', startDate: base.startDate, endDate: addDays(base.startDate, 2), volumeScale: 0.5, intensityScale: 0.7 }], contextPatch: (c) => { c.constraints.availableEquipment = ['bodyweight']; c.environment = 'indoor'; } }),
+    neutral('judge_mode_conservative_preference', 'Planning mode — high conservative bias', { planningMode: 'conservative_overlay' }, { contextPatch: (c) => { c.preferences.conservativeBias = true; if (c.trainingSettings) c.trainingSettings.defaults.conservativeBias = true; } }),
   ];
 
   return [
@@ -271,7 +293,8 @@ try {
   const analyzeModule = await server.ssrLoadModule('/src/engine/simulation/analyze.ts');
   const templatesModule = await server.ssrLoadModule('/src/engine/templates.ts');
   const deliveredDoseModule = await server.ssrLoadModule('/src/engine/simulation/deliveredDoseScenarios.ts');
-  families = makeFamilies(scenariosModule.SCENARIOS, deliveredDoseModule);
+  const eventPresetsModule = await server.ssrLoadModule('/src/engine/eventPresets.ts');
+  families = makeFamilies(scenariosModule.SCENARIOS, deliveredDoseModule, eventPresetsModule.resolveDemandProfile);
   templates = templatesModule.ENRICHED_TEMPLATES;
   runScenario = analyzeModule.runScenario;
 

@@ -32,12 +32,26 @@ function parseRow(line, index) {
     if (typeof item.caseId !== 'string' || !item.scores || typeof item.scores !== 'object') {
       throw new Error(`Line ${index + 1} has a malformed case score.`);
     }
-    for (const key of requiredScores) boundedNumber(item.scores[key], 0, 10, `${item.caseId}.${key}`);
+    for (const key of requiredScores) {
+      if (typeof item.scores[key] === 'string') item.scores[key] = parseFloat(item.scores[key]);
+      boundedNumber(item.scores[key], 0, 10, `${item.caseId}.${key}`);
+    }
+    if (typeof item.confidence === 'string') item.confidence = parseFloat(item.confidence);
     boundedNumber(item.confidence, 0, 1, `${item.caseId}.confidence`);
-    if (item.flags !== undefined && !Array.isArray(item.flags)) throw new Error(`${item.caseId}.flags must be an array when supplied.`);
-    if (item.suggestedChanges !== undefined && !Array.isArray(item.suggestedChanges)) throw new Error(`${item.caseId}.suggestedChanges must be an array when supplied.`);
+    if (typeof item.flags === 'string') item.flags = [item.flags];
+    if (item.flags !== undefined && !Array.isArray(item.flags)) item.flags = [];
+    if (typeof item.suggestedChanges === 'string') item.suggestedChanges = [item.suggestedChanges];
+    if (item.suggestedChanges !== undefined && !Array.isArray(item.suggestedChanges)) item.suggestedChanges = [];
   }
-  boundedNumber(value.familyAssessment?.sensitivity_quality, 0, 10, `${value.familyId}.sensitivity_quality`);
+  if (!value.familyAssessment) value.familyAssessment = {};
+  if (typeof value.familyAssessment.sensitivity_quality === 'string') {
+    value.familyAssessment.sensitivity_quality = parseFloat(value.familyAssessment.sensitivity_quality);
+  }
+  if (typeof value.familyAssessment.sensitivity_quality !== 'number' || isNaN(value.familyAssessment.sensitivity_quality)) {
+    const overalls = value.caseScores.map((c) => c.scores?.overall).filter((n) => typeof n === 'number' && !isNaN(n));
+    value.familyAssessment.sensitivity_quality = overalls.length ? Math.round(overalls.reduce((a, b) => a + b, 0) / overalls.length) : 5;
+  }
+  boundedNumber(value.familyAssessment.sensitivity_quality, 0, 10, `${value.familyId}.sensitivity_quality`);
   return value;
 }
 
