@@ -153,6 +153,9 @@ jobs:
         run: npm run simulate:diff
         continue-on-error: true
 
+      - name: Run AI plan judge deterministic corpus gate
+        run: npm run simulate:plan-judge
+
       - name: Build frontend bundle
         run: npm run build:bundle
 
