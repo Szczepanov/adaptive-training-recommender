@@ -11,7 +11,7 @@ function makeMockTrace(
     mode: 'train' | 'modify' | 'recover',
     templateId: string,
     systemicCost: number,
-    category: SessionTemplate['category'] = 'Hard Endurance'
+    category: SessionTemplate['category'] = 'Hard Endurance',
 ): ScenarioDecisionTrace {
     return {
         weekIndex: 0,
@@ -64,9 +64,9 @@ describe('computePlanDistance', () => {
             makeMockTrace('2026-08-02', 'train', 'end_threshold_01', 0.7),
         ];
         const distance = computePlanDistance(tracesA, tracesB);
-        expect(distance.modeHammingDistance).toBe(0.5); // 1 out of 2 days differ
-        expect(distance.sessionEditDistance).toBe(0.5); // 1 out of 2 positions differ
-        expect(distance.systemicCostL1Distance).toBe(0.25); // |0.8 - 0.3| / 2 = 0.25
+        expect(distance.modeHammingDistance).toBe(0.5);
+        expect(distance.sessionEditDistance).toBe(0.5);
+        expect(distance.systemicCostL1Distance).toBe(0.25);
         expect(distance.compositeDistance).toBeGreaterThan(0);
         expect(distance.compositeDistance).toBeLessThan(1);
     });
@@ -81,7 +81,33 @@ describe('computePlanDistance', () => {
             makeMockTrace('2026-08-02', 'recover', 'rec_total_rest', 0.0, 'Rest'),
         ];
         const distance = computePlanDistance(tracesA, tracesB);
-        expect(distance.restPlacementDistance).toBe(1.0); // rest days swapped
+        expect(distance.restPlacementDistance).toBe(1.0);
         expect(distance.compositeDistance).toBeGreaterThan(0.3);
+    });
+
+    it('aligns traces by calendar date when one candidate omits a day', () => {
+        const tracesA = [
+            makeMockTrace('2026-08-01', 'train', 'end_vo2_01', 0.8),
+            makeMockTrace('2026-08-03', 'train', 'end_threshold_01', 0.7),
+        ];
+        const tracesB = [
+            makeMockTrace('2026-08-01', 'train', 'end_vo2_01', 0.8),
+            makeMockTrace('2026-08-02', 'train', 'end_z2_01', 0.3),
+            makeMockTrace('2026-08-03', 'train', 'end_threshold_01', 0.7),
+        ];
+
+        const distance = computePlanDistance(tracesA, tracesB);
+        expect(distance.modeHammingDistance).toBe(0.3333);
+        expect(distance.sessionEditDistance).toBe(0.3333);
+        expect(distance.systemicCostL1Distance).toBe(0.1);
+        expect(distance.restPlacementDistance).toBe(0);
+    });
+
+    it('rejects duplicate decision dates instead of silently overwriting one trace', () => {
+        const duplicateDate = [
+            makeMockTrace('2026-08-01', 'train', 'end_vo2_01', 0.8),
+            makeMockTrace('2026-08-01', 'train', 'end_threshold_01', 0.7),
+        ];
+        expect(() => computePlanDistance(duplicateDate, [])).toThrow('duplicate decision traces for 2026-08-01');
     });
 });
