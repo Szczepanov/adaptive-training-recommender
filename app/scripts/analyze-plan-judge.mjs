@@ -15,6 +15,12 @@ for (const path of [inputPath, familiesPath, promptPath, schemaPath]) {
 
 const requiredScores = ['safety_recovery_fit', 'goal_event_fit', 'sequencing', 'periodization_taper', 'preference_capacity_fit', 'robustness', 'overall'];
 const listFields = ['overreactionCases', 'underreactionCases', 'goodSensitivityCases', 'algorithmAdjustmentHypotheses'];
+const SYNTHETIC_CASE_RATIONALE = 'Baseline evaluation applied for missing case response.';
+const SYNTHETIC_FAMILY_RATIONALE_PREFIX = 'Evaluation of family sensitivity across ';
+const SYNTHETIC_HYPOTHESES = new Set([
+  'Ensure plan responds proportionally to changed sensitivity axis.',
+  'Maintain balanced sensitivity response across input variations.',
+]);
 const hashFile = (path) => createHash('sha256').update(readFileSync(path)).digest('hex');
 const boundedNumber = (value, min, max, field) => {
   if (typeof value !== 'number' || !Number.isFinite(value) || value < min || value > max) {
@@ -64,6 +70,9 @@ function parseJudgeRow(value, index) {
     stringArray(item.flags, `${item.caseId}.flags`);
     stringArray(item.suggestedChanges, `${item.caseId}.suggestedChanges`);
     if (typeof item.rationale !== 'string') throw new Error(`${item.caseId}.rationale must be a string.`);
+    if (item.rationale.trim() === SYNTHETIC_CASE_RATIONALE) {
+      throw new Error(`${value.familyId}: ${item.caseId} contains synthesized fallback judge evidence; rerun this family instead of scoring fabricated data.`);
+    }
   }
   if (seenCases.size !== expectedCaseIds.size) {
     const missing = [...expectedCaseIds].filter((id) => !seenCases.has(id));
@@ -75,6 +84,12 @@ function parseJudgeRow(value, index) {
   boundedNumber(assessment.sensitivity_quality, 0, 10, `${value.familyId}.sensitivity_quality`);
   if (typeof assessment.rationale !== 'string') throw new Error(`${value.familyId}.familyAssessment.rationale must be a string.`);
   for (const field of listFields) stringArray(assessment[field], `${value.familyId}.familyAssessment.${field}`);
+  if (assessment.rationale.trim().startsWith(SYNTHETIC_FAMILY_RATIONALE_PREFIX)) {
+    throw new Error(`${value.familyId}: synthesized familyAssessment is not valid judge evidence; rerun the family.`);
+  }
+  if (assessment.algorithmAdjustmentHypotheses.some((hypothesis) => SYNTHETIC_HYPOTHESES.has(hypothesis.trim()))) {
+    throw new Error(`${value.familyId}: synthesized family hypothesis is not valid judge evidence; rerun the family.`);
+  }
   for (const field of ['overreactionCases', 'underreactionCases', 'goodSensitivityCases']) {
     for (const id of assessment[field]) if (!expectedCaseIds.has(id)) throw new Error(`${value.familyId}.${field} references unknown case ${id}.`);
   }
