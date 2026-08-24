@@ -1,4 +1,5 @@
 import type { EquipmentKey, SessionTemplate, TrainingSettings, TrainingEnvironment, UserContext } from './models';
+import { resolveInjuryRestrictions } from './injuryPolicy';
 
 export type EligibilityReason = 'time_limit' | 'equipment' | 'environment' | 'safety_guardrail' | 'restricted_modality' | 'restricted_category';
 
@@ -94,10 +95,24 @@ export function evaluateTemplateEligibility<T extends GateableSession>(
     if (settings && settings.defaults.environment !== 'either' && template.environment !== 'either' && template.environment !== settings.defaults.environment) {
         reasons.push('environment');
     }
-    const restrictedModalities = context.constraints.restrictedModalities ?? [];
+
+    const injuries = context.trainingSettings?.injuries
+        ?? (context.constraints as { injuries?: import('./models').InjuryConstraint[] })?.injuries
+        ?? (context as { injuries?: import('./models').InjuryConstraint[] })?.injuries
+        ?? [];
+    const activeInjuries = resolveInjuryRestrictions(injuries, date);
+    const restrictedModalities = [
+        ...(context.constraints.restrictedModalities ?? []),
+        ...activeInjuries.restrictedModalities,
+    ];
     if (restrictedModalities.includes(template.modality)) reasons.push('restricted_modality');
-    const implied = context.constraints.impliedGuardrails ?? [];
-    const guardrailTriggered = template.safetyTags.some(tag => (settings?.guardrails[tag] ?? false) || implied.includes(tag));
+
+    const implied = [
+        ...(context.constraints.impliedGuardrails ?? []),
+        ...activeInjuries.impliedGuardrails,
+    ];
+    const directGuardrails = (context as { guardrails?: Record<string, boolean> }).guardrails;
+    const guardrailTriggered = template.safetyTags.some(tag => (settings?.guardrails[tag] ?? false) || (directGuardrails?.[tag] ?? false) || implied.includes(tag));
     if (guardrailTriggered) reasons.push('safety_guardrail');
 
     // Category-level injury restriction (e.g. an excluded elbow/shoulder blocks the whole
@@ -105,7 +120,10 @@ export function evaluateTemplateEligibility<T extends GateableSession>(
     // some templates in a restricted category carry no matching safetyTag at all). Checked
     // here, not just in rules.ts's today/tomorrow path, so planner.ts's 7-day forecast
     // (which also goes through eligibleTemplates()) enforces it too.
-    const restrictedCategories = context.constraints.restrictedCategories ?? [];
+    const restrictedCategories = [
+        ...(context.constraints.restrictedCategories ?? []),
+        ...activeInjuries.restrictedCategories,
+    ];
     if (restrictedCategories.includes(template.category)) reasons.push('restricted_category');
 
     return { template, eligible: reasons.length === 0, reasons };

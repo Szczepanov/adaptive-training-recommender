@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { evaluateEnvelopes, evaluateReadinessAndSafetyEnvelope, evaluateTrainingWithIntent } from './rules';
-import type { DailyReadiness, EngineObjectiveInput, SubjectiveInput, UserContext } from './models';
+import { evaluateRecoveryConstraints } from './optimizer';
+import { ENRICHED_TEMPLATES } from './templates';
+import type { DailyReadiness, EngineObjectiveInput, SubjectiveInput, UserContext, UserEvent } from './models';
 
 function context(): UserContext {
     return {
@@ -154,5 +156,89 @@ describe('plan-judge calibration policy guards', () => {
             tier: 1,
             originalTemplateId: 'mob_01',
         });
+    });
+
+    it('enforces pre-event strength restriction within 3 days of an A/B priority cycling event', () => {
+        const strengthTemplate = ENRICHED_TEMPLATES.find(t => t.modality === 'Strength' && t.category === 'Full-body Strength')!;
+        const focusEvent: UserEvent = {
+            id: 'race-1',
+            title: 'Criterium',
+            category: 'cycling_event' as const,
+            date: '2026-08-27',
+            priority: 'A' as const,
+            lifecycle: 'scheduled' as const,
+            demandProfile: { aerobicEndurance: 0.5, thresholdPower: 0.5, vo2MaxPower: 0.8, repeatedSurges: 0.9, sprintPower: 0.7, fatigueResistance: 0.6, neuromuscular: 0.5 },
+        };
+
+        // 2 days before event: 2026-08-25 vs race 2026-08-27 (diff = 2)
+        const reasonsTwoDaysOut = evaluateRecoveryConstraints(
+            strengthTemplate,
+            '2026-08-25',
+            [],
+            { focusEvent },
+        );
+        expect(reasonsTwoDaysOut).toContain('PRE_EVENT_STRENGTH_RESTRICTION');
+
+        // 5 days before event: 2026-08-22 vs race 2026-08-27 (diff = 5)
+        const reasonsFiveDaysOut = evaluateRecoveryConstraints(
+            strengthTemplate,
+            '2026-08-22',
+            [],
+            { focusEvent },
+        );
+        expect(reasonsFiveDaysOut).not.toContain('PRE_EVENT_STRENGTH_RESTRICTION');
+    });
+
+    it('enforces pre-event taper restriction on the eve of an A/B priority race (D-1)', () => {
+        const hardIntervalTemplate = ENRICHED_TEMPLATES.find(t => t.category === 'Hard Endurance')!;
+        const focusEvent: UserEvent = {
+            id: 'race-1',
+            title: 'Criterium',
+            category: 'cycling_event' as const,
+            date: '2026-08-27',
+            priority: 'A' as const,
+            lifecycle: 'scheduled' as const,
+            demandProfile: { aerobicEndurance: 0.5, thresholdPower: 0.5, vo2MaxPower: 0.8, repeatedSurges: 0.9, sprintPower: 0.7, fatigueResistance: 0.6, neuromuscular: 0.5 },
+        };
+
+        // 1 day before race: 2026-08-26 vs race 2026-08-27 (diff = 1)
+        const reasonsEveOfRace = evaluateRecoveryConstraints(
+            hardIntervalTemplate,
+            '2026-08-26',
+            [],
+            { focusEvent },
+        );
+        expect(reasonsEveOfRace).toContain('PRE_EVENT_TAPER_RESTRICTION');
+
+        // Light mobility / recovery should remain allowed
+        const lightMobility = ENRICHED_TEMPLATES.find(t => t.category === 'Mobility/Recovery')!;
+        const reasonsMobility = evaluateRecoveryConstraints(
+            lightMobility,
+            '2026-08-26',
+            [],
+            { focusEvent },
+        );
+        expect(reasonsMobility).not.toContain('PRE_EVENT_TAPER_RESTRICTION');
+    });
+
+    it('enforces zero-strength buffer on Day +1 following heavy lower-body strength', () => {
+        const strengthTemplate = ENRICHED_TEMPLATES.find(t => t.modality === 'Strength')!;
+        const history = [{
+            date: '2026-08-24',
+            templateId: 'str_full_01',
+            category: 'Full-body Strength' as const,
+            modality: 'Strength' as const,
+            systemicCost: 0.7,
+            lowerBodyCost: 0.85,
+        }];
+
+        // Day +1: 2026-08-25 vs heavy strength on 2026-08-24 (diff = 1)
+        const reasonsNextDay = evaluateRecoveryConstraints(
+            strengthTemplate,
+            '2026-08-25',
+            history,
+            {},
+        );
+        expect(reasonsNextDay).toContain('POST_HEAVY_STRENGTH_BUFFER');
     });
 });

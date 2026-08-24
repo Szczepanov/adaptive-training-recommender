@@ -624,7 +624,7 @@ export async function runSubjectiveDriftComparison(
         let changedSelections = 0;
         current.decisionTraces.forEach(trace => {
             const compared = candidateTraces.get(trace.date);
-            if (compared && trace.selected.templateId !== compared.selected.templateId) changedSelections += 1;
+            if (compared && (trace.selected.templateId !== compared.selected.templateId || trace.mode !== compared.mode)) changedSelections += 1;
         });
 
         // Mode-transition evidence, computed directly from the scenario definition (the same

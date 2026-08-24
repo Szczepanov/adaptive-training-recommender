@@ -83,6 +83,7 @@ function getCliArg(name) {
 }
 
 const cliModel = getCliArg('--model');
+const configuredJudgeModel = process.env.JUDGE_MODEL || process.env.AI_JUDGE_MODEL;
 const localModelEnv = process.env.LOCAL_JUDGE_MODEL || process.env.OLLAMA_MODEL;
 const localQuickModelEnv = process.env.LOCAL_JUDGE_QUICK_MODEL || process.env.OLLAMA_QUICK_MODEL;
 const knownCloudModels = new Set(['deepseek-v4-pro', 'deepseek-v4-flash', 'gpt-4o', 'gemini-2.5-flash', 'gemini-1.5-pro']);

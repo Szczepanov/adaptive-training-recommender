@@ -296,6 +296,39 @@ export function evaluateRecoveryConstraints(
         if (priorHeavyStrength) reasons.push('ANCHOR_PROTECTION_VIOLATION');
     }
 
+    const focusEvent = options.focusEvent;
+    if (focusEvent && (focusEvent.category === 'cycling_event' || focusEvent.category === 'running_race') && (focusEvent.priority === 'A' || focusEvent.priority === 'B')) {
+        const raceDate = focusEvent.timing?.planningDate ?? focusEvent.date;
+        const daysToRace = getDayDiff(raceDate, targetDate);
+        if (daysToRace >= 1 && daysToRace <= 3) {
+            const isStrengthModality = template.modality === 'Strength' || STRENGTH_CATEGORIES.includes(template.category);
+            if (isStrengthModality) {
+                reasons.push('PRE_EVENT_STRENGTH_RESTRICTION');
+            }
+        }
+        if (daysToRace >= 1 && daysToRace <= 2) {
+            const isHardSession = template.systemicCost > 0.45 || template.category === 'Hard Endurance' || (daysToRace === 1 && template.category === 'Race-Specific Endurance');
+            if (isHardSession) {
+                reasons.push('PRE_EVENT_TAPER_RESTRICTION');
+            }
+        }
+    }
+
+    const minDaysSpacing = options.resolveMinimumDaysAfterHardLowerBody?.(template.id);
+    if (minDaysSpacing === undefined || minDaysSpacing > 1) {
+        const priorHeavyLowerBody = history.find(h => {
+            const diff = getDayDiff(targetDate, h.date);
+            return diff === 1 && (
+                (h.category && HEAVY_LOWER_BODY_STRENGTH_CATEGORIES.includes(h.category)) ||
+                (h.modality === 'Strength' && (h.lowerBodyCost ?? 0) >= 0.6) ||
+                (h.modality === 'Strength' && (h.systemicCost ?? 0) >= 0.65)
+            );
+        });
+        if (priorHeavyLowerBody && (template.modality === 'Strength' || STRENGTH_CATEGORIES.includes(template.category))) {
+            reasons.push('POST_HEAVY_STRENGTH_BUFFER');
+        }
+    }
+
     return reasons;
 }
 
@@ -478,6 +511,7 @@ export function rankCandidates(
     const isStrengthResolved = !unresolvedObjectives.some(o => o.key === 'strength_maintenance' || o.key === 'strength_development');
     const coverageState = options.coverageState;
     const recoveryStyle = preferences.preferredRecoveryStyle ?? 'mixed';
+
     const recoveryPreferenceTierFor = (template: SessionTemplate): 0 | 1 => {
         if ((options.fatigueTier ?? 'train') !== 'recover') return 0;
         if (template.category !== 'Rest' && template.category !== 'Mobility/Recovery') return 0;
@@ -546,7 +580,9 @@ export function rankCandidates(
 
         let costPenalty = calculateFatigueCostPenalty(template.costProfile, fatigueState);
         if (extraMargin && template.systemicCost > 0.5) costPenalty += 0.3;
-        if (preferences.conservativeBias && template.systemicCost >= 0.7) costPenalty += 0.2;
+        if (preferences.conservativeBias) {
+            if (template.systemicCost >= 0.6) costPenalty += 0.35;
+        }
 
         if (excludedReasons.length > 0) {
             const item: RankedCandidate = {
@@ -561,10 +597,36 @@ export function rankCandidates(
         let prefMultiplier = 1.0;
         if (isDisliked(template)) prefMultiplier = 0.2;
         else if (isPreferred(template)) prefMultiplier = 1.3;
-        if (preferences.conservativeBias && template.systemicCost <= 0.5 && template.category !== 'Rest') prefMultiplier *= 1.1;
+        if (preferences.conservativeBias) {
+            if (template.category === 'Rest' || template.category === 'Mobility/Recovery') prefMultiplier *= 1.25;
+            else if (template.systemicCost <= 0.4) prefMultiplier *= 1.15;
+            else prefMultiplier *= 0.85;
+        }
+
+        if ((preferences.defaultWeekdayTimeMin ?? 0) >= 80 && (template.durationMin ?? 0) >= 60 && (template.category === 'Easy Endurance' || template.category === 'Hard Endurance' || template.category === 'Moderate Endurance')) {
+            prefMultiplier *= 1.15;
+        }
 
         const isStrengthCategory = STRENGTH_CATEGORIES.includes(template.category);
         if (isStrengthResolved && isStrengthCategory) prefMultiplier *= 0.20;
+
+        const hasLowerBodyGuardrail = injuryConstraints.some(c => c.toLowerCase().includes('lower'));
+        if (!isStrengthResolved && hasLowerBodyGuardrail && (template.category === 'Upper-body Strength' || (template.title ?? '').toLowerCase().includes('core'))) {
+            prefMultiplier *= 1.40;
+        }
+
+        const lastRecovery = history
+            .filter(h => getDayDiff(targetDate, h.date) >= 1 && (h.category === 'Rest' || h.category === 'Mobility/Recovery'))
+            .sort((a, b) => getDayDiff(targetDate, a.date) - getDayDiff(targetDate, b.date))[0];
+        const lastRecoveryWasRest = lastRecovery?.category === 'Rest';
+
+        if (recoveryStyle === 'mixed' && (template.category === 'Rest' || template.category === 'Mobility/Recovery')) {
+            if (lastRecoveryWasRest && template.category === 'Mobility/Recovery') {
+                prefMultiplier *= 1.25;
+            } else if (!lastRecoveryWasRest && template.category === 'Rest') {
+                prefMultiplier *= 1.25;
+            }
+        }
 
         const lastEntry = history
             .filter(h => getDayDiff(targetDate, h.date) >= 1)
@@ -576,8 +638,31 @@ export function rankCandidates(
         const usedYesterday = history.some(h => getDayDiff(targetDate, h.date) === 1 && h.templateId === template.id);
         if (usedYesterday) prefMultiplier *= 0.2;
 
+        // Consecutive training days spacing (prevents monotonous 7-14 day training streaks without recovery)
+        let streak = 0;
+        let checkOffset = 1;
+        while (checkOffset <= 14) {
+            const checkDate = addDaysToLocalDateString(targetDate, -checkOffset);
+            const entry = history.find(h => h.date === checkDate);
+            if (!entry || entry.category === 'Rest' || entry.category === 'Mobility/Recovery') {
+                break;
+            }
+            streak++;
+            checkOffset++;
+        }
+
         const isAerobicDefault = template.category === 'Easy Endurance' || (template.title ?? '').toLowerCase().includes('zone 2');
-        if (unresolvedObjectives.length === 0 && isAerobicDefault) prefMultiplier *= 1.25;
+        if (unresolvedObjectives.length === 0) {
+            if (streak >= 3) {
+                if (template.category === 'Rest' || template.category === 'Mobility/Recovery') {
+                    prefMultiplier *= 2.0;
+                } else if (isAerobicDefault) {
+                    prefMultiplier *= (streak >= 4 ? 0.1 : 0.3);
+                }
+            } else if (isAerobicDefault) {
+                prefMultiplier *= 1.25;
+            }
+        }
 
         if (fulfilsNominatedAnchor) prefMultiplier *= ANCHOR_ROLE_BOOST;
         if (options.adjacentToAnchor && HEAVY_LOWER_BODY_STRENGTH_CATEGORIES.includes(template.category) && template.systemicCost >= INTENSITY_STACK_THRESHOLD) {

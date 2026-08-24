@@ -27,7 +27,7 @@ for (const path of [inputPath, familiesPath, promptPath, schemaPath, corpusPath]
   if (!existsSync(path)) throw new Error(`Missing AI plan judge artifact: ${path}`);
 }
 
-const hashFile = (path) => createHash('sha256').update(readFileSync(path)).digest('hex');
+const hashFile = (path) => createHash('sha256').update(readFileSync(path, 'utf8').replace(/\r\n/g, '\n')).digest('hex');
 const boundedNumber = (value, min, max, field) => {
   if (typeof value !== 'number' || !Number.isFinite(value) || value < min || value > max) {
     throw new Error(`${field} must be a finite number in [${min}, ${max}], got ${JSON.stringify(value)}`);

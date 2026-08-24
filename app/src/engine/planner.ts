@@ -458,12 +458,16 @@ export function evaluateProjectedDate(
         .filter(t => isTemplatePhaseEligible(t, periodization))
         .filter(t => !availability.environmentOverride || t.environment === 'either' || t.environment === availability.environmentOverride);
 
+    const isConservative = shared.preferences?.conservativeBias ?? false;
+    const recoverThreshold = isConservative ? PROJECTED_FATIGUE_RECOVER_THRESHOLD * 0.88 : PROJECTED_FATIGUE_RECOVER_THRESHOLD;
+    const modifyThreshold = isConservative ? PROJECTED_FATIGUE_MODIFY_THRESHOLD * 0.88 : PROJECTED_FATIGUE_MODIFY_THRESHOLD;
+
     const fatigueGated = eligible.filter(t => {
-        if (peakFatigue >= PROJECTED_FATIGUE_RECOVER_THRESHOLD) {
+        if (peakFatigue >= recoverThreshold) {
             return t.category === 'Rest' || t.category === 'Mobility/Recovery';
         }
-        if (peakFatigue >= PROJECTED_FATIGUE_MODIFY_THRESHOLD) {
-            return t.systemicCost <= PROJECTED_MODIFY_MAX_SYSTEMIC_COST;
+        if (peakFatigue >= modifyThreshold) {
+            return t.systemicCost <= (isConservative ? PROJECTED_MODIFY_MAX_SYSTEMIC_COST * 0.85 : PROJECTED_MODIFY_MAX_SYSTEMIC_COST);
         }
         return true;
     });

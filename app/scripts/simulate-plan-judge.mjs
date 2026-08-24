@@ -40,8 +40,8 @@ function patchReadiness(base, subjectivePatch = {}, objectivePatch = {}) {
 function scenarioVariant(base, id, label, axis, options = {}) {
   const readiness = patchReadiness(base, options.subjective, options.objective);
   const context = clone(base.context);
-  const event = clone(options.event ?? base.event ?? null);
-  const events = options.events ? clone(options.events) : undefined;
+  const event = options.event !== undefined ? clone(options.event) : clone(base.event ?? null);
+  const events = options.events !== undefined ? clone(options.events) : (base.events ? clone(base.events) : undefined);
 
   if (options.contextPatch) options.contextPatch(context);
   if (options.eventDaysOut !== undefined && event) event.date = addDays(base.startDate, options.eventDaysOut);
@@ -55,12 +55,14 @@ function scenarioVariant(base, id, label, axis, options = {}) {
       description: `AI-judge sensitivity case. Changed axis: ${JSON.stringify(axis)}.`,
       context,
       event,
-      ...(events ? { events } : {}),
+      ...(events !== undefined ? { events } : {}),
       startDate: base.startDate,
       weeks: options.weeks ?? 2,
       readinessForWeek: () => clone(readiness),
       readinessForDate: () => clone(readiness),
       ...(options.initialHistory !== undefined ? { initialHistory: clone(options.initialHistory) } : {}),
+      ...(options.authoredPlanBlocks !== undefined ? { authoredPlanBlocks: clone(options.authoredPlanBlocks) } : {}),
+      ...(options.trainingIntentProfile !== undefined ? { trainingIntentProfile: clone(options.trainingIntentProfile) } : {}),
       tags: ['ai-plan-judge', ...(base.tags ?? []), ...(options.tags ?? [])],
     },
     axis,
@@ -193,15 +195,15 @@ function makeFamilies(scenarios, deliveredDoseModule, resolveDemandProfile) {
     neutral('judge_injury_running_restricted', 'Injury — restricted running modality', { injuryConstraint: 'restricted_running' }, {
       contextPatch: (c) => {
         c.constraints.restrictedModalities = ['Running'];
-        if (c.guardrails) c.guardrails.avoid_high_impact = true;
-        if (c.trainingSettings?.defaults?.guardrails) c.trainingSettings.defaults.guardrails.avoid_high_impact = true;
+        c.guardrails = { ...(c.guardrails ?? {}), avoid_high_impact: true };
+        c.trainingSettings = { ...(c.trainingSettings ?? {}), defaults: { ...(c.trainingSettings?.defaults ?? {}), guardrails: { ...(c.trainingSettings?.defaults?.guardrails ?? {}), avoid_high_impact: true } } };
         c.constraints.injuries = [{ id: 'inj-run', region: 'knee', severity: 'exclude', reviewBy: addDays(base.startDate, 14) }];
       },
     }),
     neutral('judge_injury_lower_body_restricted', 'Injury — avoid heavy lower body', { injuryConstraint: 'avoid_heavy_lower_body' }, {
       contextPatch: (c) => {
-        if (c.guardrails) c.guardrails.avoid_heavy_lower_body = true;
-        if (c.trainingSettings?.defaults?.guardrails) c.trainingSettings.defaults.guardrails.avoid_heavy_lower_body = true;
+        c.guardrails = { ...(c.guardrails ?? {}), avoid_heavy_lower_body: true };
+        c.trainingSettings = { ...(c.trainingSettings ?? {}), defaults: { ...(c.trainingSettings?.defaults ?? {}), guardrails: { ...(c.trainingSettings?.defaults?.guardrails ?? {}), avoid_heavy_lower_body: true } } };
         c.constraints.injuries = [{ id: 'inj-lower', region: 'hamstring', severity: 'exclude', reviewBy: addDays(base.startDate, 14) }];
       },
     }),
@@ -214,8 +216,8 @@ function makeFamilies(scenarios, deliveredDoseModule, resolveDemandProfile) {
 
   const planningModesOverlays = [
     neutral('judge_mode_event_directed', 'Planning mode — event directed A-race', { planningMode: 'event_directed' }),
-    scenarioVariant(base, 'judge_mode_evergreen', 'Planning mode — evergreen fitness maintenance', { planningMode: 'evergreen' }, { event: null, events: [], trainingIntentProfile: { userId: 'judge-user', mode: 'evergreen', horizonWeeks: 4, weeklyTargetSessions: 3, primaryFocus: 'general_fitness', adaptationTargets: ['aerobic_endurance', 'strength'] } }),
-    neutral('judge_mode_travel_overlay', 'Planning mode — 3-day travel overlay', { planningMode: 'travel_overlay' }, { authoredPlanBlocks: [{ id: 'travel-block-1', phase: 'travel', startDate: base.startDate, endDate: addDays(base.startDate, 2), volumeScale: 0.5, intensityScale: 0.7 }], contextPatch: (c) => { c.constraints.availableEquipment = ['bodyweight']; c.environment = 'indoor'; } }),
+    scenarioVariant(base, 'judge_mode_evergreen', 'Planning mode — evergreen fitness maintenance', { planningMode: 'evergreen' }, { event: null, events: [], trainingIntentProfile: { userId: 'judge-user', planningMode: 'evergreen', mode: 'evergreen', horizonWeeks: 4, weeklyTargetSessions: 3, primaryFocus: 'general_fitness', adaptationTargets: ['aerobic_endurance', 'strength'] } }),
+    neutral('judge_mode_travel_overlay', 'Planning mode — 3-day travel overlay', { planningMode: 'travel_overlay' }, { authoredPlanBlocks: [{ id: 'travel-block-1', phase: 'travel', startDate: base.startDate, endDate: addDays(base.startDate, 2), volumeScale: 0.5, intensityScale: 0.7 }], contextPatch: (c) => { c.constraints.hasFreeWeights = false; c.constraints.hasIndoorBike = false; c.constraints.hasTreadmill = false; c.constraints.hasCableMachine = false; c.constraints.maxTimeMinutes = 30; if (c.trainingSettings?.defaults) { c.trainingSettings.defaults.weekdayMaxMinutes = 30; c.trainingSettings.defaults.weekendMaxMinutes = 30; } c.environment = 'indoor'; } }),
     neutral('judge_mode_conservative_preference', 'Planning mode — high conservative bias', { planningMode: 'conservative_overlay' }, { contextPatch: (c) => { c.preferences.conservativeBias = true; if (c.trainingSettings) c.trainingSettings.defaults.conservativeBias = true; } }),
   ];
 
@@ -269,6 +271,9 @@ function planFromResult(result, templatesById) {
         modality: trace.selected.modality,
         durationMin: template?.durationMin ?? null,
         durationMax: template?.durationMax ?? null,
+        environment: template?.environment ?? 'either',
+        requiredEquipment: template?.requiredEquipment ?? [],
+        safetyTags: template?.safetyTags ?? [],
         systemicCost: trace.selected.projectedCost.systemic,
         costProfile: trace.selected.projectedCost,
         stimulusProfile: template?.stimulusProfile ?? null,

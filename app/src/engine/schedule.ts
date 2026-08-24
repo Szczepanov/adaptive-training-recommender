@@ -181,6 +181,10 @@ export function resolveAvailability(
     const uncompletedFuture = daysFixed.filter(a => !a.isCompleted);
     const reservedCapacityCostProfile = calculateReservedCapacityProfile(uncompletedFuture);
 
+    const userEnvironment = (userContext as { environment?: TrainingEnvironment } | null | undefined)?.environment
+        ?? (userContext?.constraints as { environment?: TrainingEnvironment } | null | undefined)?.environment
+        ?? null;
+
     return {
         date: dateStr,
         maxTimeMinutes: remainingTimeMin,
@@ -188,6 +192,6 @@ export function resolveAvailability(
         fixedActivities: daysFixed,
         reservedCapacityCost: reservedCapacityCostProfile.systemic,
         reservedCapacityCostProfile,
-        environmentOverride: dayContext.environment,
+        environmentOverride: dayContext.environment ?? userEnvironment,
     };
 }

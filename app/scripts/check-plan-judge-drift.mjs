@@ -1,5 +1,5 @@
-import { existsSync, readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { existsSync, readFileSync, mkdirSync, writeFileSync } from 'node:fs';
+import { resolve, dirname } from 'node:path';
 
 const baselinePath = resolve('../docs/analysis/plan-judge-baseline.json');
 const currentPath = resolve('artifacts/ai-plan-judge/latest/judge-summary.json');
@@ -95,31 +95,39 @@ if ((baseline.provenance.judgeProvider ?? 'unknown') !== (current.provenance.jud
 }
 console.log(`Baseline families/cases: ${baseline.familyCount}/${baseline.caseCount}`);
 console.log(`Current families/cases:  ${current.familyCount}/${current.caseCount}`);
-console.log(`Baseline mean sensitivity: ${numeric(baseline.meanSensitivityQuality, 'baseline.meanSensitivityQuality', fatal).toFixed(2)}/10`);
-console.log(`Current mean sensitivity:  ${numeric(current.meanSensitivityQuality, 'current.meanSensitivityQuality', fatal).toFixed(2)}/10\n`);
+const baseMean = numeric(baseline.meanSensitivityQuality, 'baseline.meanSensitivityQuality', fatal);
+const currMean = numeric(current.meanSensitivityQuality, 'current.meanSensitivityQuality', fatal);
+console.log(`Baseline mean sensitivity: ${baseMean.toFixed(2)}/10`);
+console.log(`Current mean sensitivity:  ${currMean.toFixed(2)}/10\n`);
 
 let regressionCount = 0;
 let improvementCount = 0;
 let notableCount = 0;
 
+const dimensionDeltas = {};
 console.log('--- Dimension Score Comparison ---');
 for (const key of Object.keys(baseline.scoreAverages)) {
   const baseValue = numeric(baseline.scoreAverages[key], `baseline.scoreAverages.${key}`, fatal);
   const currentValue = numeric(current.scoreAverages[key], `current.scoreAverages.${key}`, fatal);
   const delta = currentValue - baseValue;
   let flag = '';
+  let status = 'unchanged';
   if (delta < -0.1) {
     flag = ' [REGRESSION]';
+    status = 'regression';
     regressionCount += 1;
     notableCount += 1;
   } else if (delta > 0.1) {
     flag = ' [IMPROVEMENT]';
+    status = 'improvement';
     improvementCount += 1;
     notableCount += 1;
   }
+  dimensionDeltas[key] = { baseline: round2(baseValue), current: round2(currentValue), delta: round2(delta), status };
   console.log(`  ${key.padEnd(24)}: ${round2(baseValue).toFixed(2)} -> ${round2(currentValue).toFixed(2)} (delta: ${delta >= 0 ? '+' : ''}${round2(delta).toFixed(2)})${flag}`);
 }
 
+const familyDeltas = {};
 console.log('\n--- Family Sensitivity Comparison ---');
 const baselineFamilyMap = new Map(baseline.familySensitivity.map((item) => [item.familyId, item]));
 for (const currentFamily of [...current.familySensitivity].sort((a, b) => a.familyId.localeCompare(b.familyId))) {
@@ -128,15 +136,19 @@ for (const currentFamily of [...current.familySensitivity].sort((a, b) => a.fami
   const currentValue = numeric(currentFamily.sensitivityQuality, `current.${currentFamily.familyId}.sensitivityQuality`, fatal);
   const delta = currentValue - baseValue;
   let flag = '';
+  let status = 'unchanged';
   if (delta < -0.2) {
     flag = ' [REGRESSION]';
+    status = 'regression';
     regressionCount += 1;
     notableCount += 1;
   } else if (delta > 0.2) {
     flag = ' [IMPROVEMENT]';
+    status = 'improvement';
     improvementCount += 1;
     notableCount += 1;
   }
+  familyDeltas[currentFamily.familyId] = { baseline: round2(baseValue), current: round2(currentValue), delta: round2(delta), status };
   console.log(`  ${currentFamily.familyId.padEnd(30)}: ${baseValue.toFixed(1)}/10 -> ${currentValue.toFixed(1)}/10 (delta: ${delta >= 0 ? '+' : ''}${round2(delta).toFixed(2)})${flag}`);
 }
 
@@ -146,6 +158,47 @@ if (warnings.length) {
 }
 
 console.log(`\nDiff check complete. ${notableCount} notable differences: ${improvementCount} improvements, ${regressionCount} regressions.`);
+
+const diffData = {
+  comparedAt: new Date().toISOString(),
+  baseline: {
+    corpusCommit: baseline.provenance.corpusCommit ?? 'unknown',
+    judgeModel: baseline.provenance.judgeModel ?? 'unknown',
+    meanSensitivityQuality: round2(baseMean),
+    scoreAverages: baseline.scoreAverages,
+  },
+  current: {
+    corpusCommit: current.provenance.corpusCommit ?? 'unknown',
+    judgeModel: current.provenance.judgeModel ?? 'unknown',
+    meanSensitivityQuality: round2(currMean),
+    scoreAverages: current.scoreAverages,
+  },
+  summary: {
+    meanSensitivityDelta: round2(currMean - baseMean),
+    notableDifferences: notableCount,
+    improvements: improvementCount,
+    regressions: regressionCount,
+  },
+  dimensionDeltas,
+  familyDeltas,
+  warnings,
+};
+
+try {
+  const latestDir = resolve('artifacts/ai-plan-judge/latest');
+  const historyDir = resolve('artifacts/ai-plan-judge/history');
+  mkdirSync(latestDir, { recursive: true });
+  mkdirSync(historyDir, { recursive: true });
+
+  const diffJson = JSON.stringify(diffData, null, 2);
+  writeFileSync(resolve(latestDir, 'judge-diff.json'), diffJson, 'utf8');
+
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  writeFileSync(resolve(historyDir, `diff-${timestamp}.json`), diffJson, 'utf8');
+} catch (error) {
+  console.warn(`Could not persist diff artifacts: ${error instanceof Error ? error.message : String(error)}`);
+}
+
 if (failOnRegression && regressionCount > 0) {
   console.error('Failing because --fail-on-regression was supplied.');
   process.exit(2);
