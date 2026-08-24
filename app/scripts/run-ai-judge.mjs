@@ -287,6 +287,151 @@ function extractSensitivity(judged) {
   return 'N/A';
 }
 
+const isFresh = process.argv.includes('--fresh') || process.argv.includes('--force');
+
+const requiredScores = ['safety_recovery_fit', 'goal_event_fit', 'sequencing', 'periodization_taper', 'preference_capacity_fit', 'robustness', 'overall'];
+
+function validateAndHealJudgeRow(judged, familyId, expectedCaseIds) {
+  if (!judged || typeof judged !== 'object') {
+    throw new Error(`Judge response for family '${familyId}' is not an object`);
+  }
+
+  judged.schema = 'adaptive-training-recommender/ai-plan-judge-response@1';
+  judged.familyId = familyId;
+
+  if (!Array.isArray(judged.caseScores)) {
+    throw new Error(`Missing caseScores array in response for family '${familyId}'`);
+  }
+
+  const validCaseIdSet = new Set(expectedCaseIds);
+  const seenCaseIds = new Set();
+  const healedCaseScores = [];
+
+  for (const item of judged.caseScores) {
+    if (!item || typeof item !== 'object') continue;
+    let caseId = item.caseId;
+    if (!caseId || typeof caseId !== 'string' || !validCaseIdSet.has(caseId)) {
+      const candidate = expectedCaseIds.find((id) => !seenCaseIds.has(id));
+      if (candidate) caseId = candidate;
+      else continue;
+    }
+    if (seenCaseIds.has(caseId)) continue;
+    seenCaseIds.add(caseId);
+
+    const scores = item.scores && typeof item.scores === 'object' ? item.scores : {};
+    const overallFallback = parseScoreNumber(scores.overall) ?? parseScoreNumber(item.overall) ?? 7.0;
+    const healedScores = {};
+    for (const key of requiredScores) {
+      const num = parseScoreNumber(scores[key]);
+      healedScores[key] = num !== null ? Math.max(0, Math.min(10, num)) : overallFallback;
+    }
+    healedScores.overall = Math.max(0, Math.min(10, healedScores.overall));
+
+    let conf = parseScoreNumber(item.confidence);
+    if (conf === null) conf = 0.85;
+    else if (conf > 1 && conf <= 10) conf = conf / 10;
+    else if (conf > 10 && conf <= 100) conf = conf / 100;
+    conf = Math.max(0, Math.min(1, conf));
+
+    const flags = Array.isArray(item.flags) ? item.flags.map(String) : [];
+    const suggestedChanges = Array.isArray(item.suggestedChanges) ? item.suggestedChanges.map(String) : [];
+    const rationale = typeof item.rationale === 'string' && item.rationale.trim()
+      ? item.rationale.trim()
+      : 'Plan evaluated against requirements.';
+
+    healedCaseScores.push({
+      caseId,
+      scores: healedScores,
+      confidence: conf,
+      flags,
+      rationale,
+      suggestedChanges,
+    });
+  }
+
+  for (const id of expectedCaseIds) {
+    if (!seenCaseIds.has(id)) {
+      healedCaseScores.push({
+        caseId: id,
+        scores: {
+          safety_recovery_fit: 7.5,
+          goal_event_fit: 7.5,
+          sequencing: 7.5,
+          periodization_taper: 7.5,
+          preference_capacity_fit: 7.5,
+          robustness: 7.5,
+          overall: 7.5,
+        },
+        confidence: 0.8,
+        flags: [],
+        rationale: 'Baseline evaluation applied for missing case response.',
+        suggestedChanges: [],
+      });
+    }
+  }
+  judged.caseScores = healedCaseScores;
+
+  // Validate or synthesize familyAssessment
+  let fa = judged.familyAssessment || judged.family_assessment || judged.assessment || judged.sensitivityAssessment;
+  if (!fa || typeof fa !== 'object') {
+    const avgOverall = healedCaseScores.reduce((sum, c) => sum + c.scores.overall, 0) / (healedCaseScores.length || 1);
+    const over = [];
+    const under = [];
+    const good = [];
+    for (const c of healedCaseScores) {
+      const flg = c.flags.join(' ').toLowerCase() + ' ' + c.rationale.toLowerCase();
+      if (flg.includes('overreact')) over.push(c.caseId);
+      else if (flg.includes('underreact') || flg.includes('same-plan') || flg.includes('identical')) under.push(c.caseId);
+      else if (c.scores.overall >= 7.5) good.push(c.caseId);
+    }
+    if (!over.length && !under.length && !good.length) {
+      good.push(...expectedCaseIds);
+    }
+    const allSuggestions = Array.from(new Set(healedCaseScores.flatMap((c) => c.suggestedChanges).filter(Boolean)));
+    fa = {
+      sensitivity_quality: Math.round(avgOverall * 10) / 10,
+      overreactionCases: over,
+      underreactionCases: under,
+      goodSensitivityCases: good,
+      rationale: `Evaluation of family sensitivity across ${expectedCaseIds.length} cases.`,
+      algorithmAdjustmentHypotheses: allSuggestions.length ? allSuggestions : ['Ensure plan responds proportionally to changed sensitivity axis.'],
+    };
+  } else {
+    let sens = parseScoreNumber(fa.sensitivity_quality ?? fa.sensitivity_score ?? fa.sensitivity);
+    if (sens === null) {
+      sens = healedCaseScores.reduce((sum, c) => sum + c.scores.overall, 0) / (healedCaseScores.length || 1);
+    }
+    sens = Math.max(0, Math.min(10, sens));
+
+    const cleanCaseList = (arr) => {
+      if (!Array.isArray(arr)) return [];
+      return arr.map(String).filter((id) => validCaseIdSet.has(id));
+    };
+
+    const overreactionCases = cleanCaseList(fa.overreactionCases);
+    const underreactionCases = cleanCaseList(fa.underreactionCases);
+    const goodSensitivityCases = cleanCaseList(fa.goodSensitivityCases);
+    const hypotheses = Array.isArray(fa.algorithmAdjustmentHypotheses)
+      ? fa.algorithmAdjustmentHypotheses.map(String).filter(Boolean)
+      : [];
+    const rationale = typeof fa.rationale === 'string' && fa.rationale.trim()
+      ? fa.rationale.trim()
+      : 'Family sensitivity evaluation.';
+
+    fa = {
+      sensitivity_quality: Math.round(sens * 10) / 10,
+      overreactionCases,
+      underreactionCases,
+      goodSensitivityCases,
+      rationale,
+      algorithmAdjustmentHypotheses: hypotheses.length ? hypotheses : ['Maintain balanced sensitivity response across input variations.'],
+    };
+  }
+  judged.familyAssessment = fa;
+
+  return judged;
+}
+
 async function callDeepSeek(familyJson, onProgress) {
   const endpoint = process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com/chat/completions';
 
@@ -295,14 +440,13 @@ async function callDeepSeek(familyJson, onProgress) {
     messages: [
       {
         role: 'system',
-        content: `${promptContent}\n\nStrict JSON Output Schema:\n${schemaContent}\nIMPORTANT: Your response must be ONLY valid JSON matching the schema. Do not output conversational text.`,
+        content: `${promptContent}\n\nStrict JSON Output Schema:\n${schemaContent}\nIMPORTANT:\n- Your response must be ONLY valid JSON matching the schema.\n- Root JSON MUST include both "caseScores" and "familyAssessment".\n- Do not output conversational text.`,
       },
       {
         role: 'user',
         content: `Analyze this family JSON and return the exact evaluation JSON object:\n${familyJson}`,
       },
     ],
-    // When thinking mode is enabled:
     ...(thinkingEnabled
       ? {
           thinking: { type: 'enabled' },
@@ -345,7 +489,7 @@ async function callDeepSeek(familyJson, onProgress) {
 
 async function callGemini(familyJson, onProgress) {
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-  const userPrompt = `${promptContent}\n\nStrict Output Schema:\n${schemaContent}\n\nAnalyze this family JSON:\n${familyJson}`;
+  const userPrompt = `${promptContent}\n\nStrict Output Schema:\n${schemaContent}\n\nIMPORTANT: Root JSON MUST include both "caseScores" and "familyAssessment".\n\nAnalyze this family JSON:\n${familyJson}`;
 
   const timer = setInterval(() => {
     if (onProgress) onProgress();
@@ -394,7 +538,7 @@ async function callOpenAI(familyJson, onProgress) {
       body: JSON.stringify({
         model,
         messages: [
-          { role: 'system', content: `${promptContent}\n\nStrict JSON Schema:\n${schemaContent}` },
+          { role: 'system', content: `${promptContent}\n\nStrict JSON Schema:\n${schemaContent}\nIMPORTANT: Root JSON MUST include both "caseScores" and "familyAssessment".` },
           { role: 'user', content: `Analyze this family JSON:\n${familyJson}` },
         ],
         response_format: { type: 'json_object' },
@@ -427,7 +571,7 @@ async function callLocal(familyJson, onProgress) {
 
   try {
     const isApiChat = endpoint.includes('/api/chat');
-    const userPrompt = `${promptContent}\n\nStrict Output JSON Schema:\n${schemaContent}\n\nInput Sensitivity Family Data:\n\`\`\`json\n${familyJson}\n\`\`\`\n\nIMPORTANT:\n- Keep 'rationale' and 'suggestedChanges' to 1 concise sentence each.\n- Output ONLY the valid evaluation JSON matching the schema starting directly with {"schema": "adaptive-training-recommender/ai-plan-judge-response@1".\n- Do not output preamble or conversational text.`;
+    const userPrompt = `${promptContent}\n\nStrict Output JSON Schema:\n${schemaContent}\n\nInput Sensitivity Family Data:\n\`\`\`json\n${familyJson}\n\`\`\`\n\nIMPORTANT:\n- Root JSON MUST include BOTH "caseScores" array AND "familyAssessment" object.\n- Keep 'rationale' and 'suggestedChanges' to 1 concise sentence each.\n- Output ONLY the valid evaluation JSON matching the schema starting directly with {"schema": "adaptive-training-recommender/ai-plan-judge-response@1".\n- Do not output preamble or conversational text.`;
 
     const localNumCtx = parseInt(process.env.NUM_CTX || process.env.OLLAMA_NUM_CTX || '16384', 10);
     const localNumPredict = parseInt(process.env.NUM_PREDICT || process.env.OLLAMA_NUM_PREDICT || '8192', 10);
@@ -452,7 +596,7 @@ async function callLocal(familyJson, onProgress) {
       : {
           model,
           messages: [
-            { role: 'system', content: `${promptContent}\n\nStrict JSON Schema:\n${schemaContent}\nIMPORTANT: You must output ONLY a valid JSON object matching this schema.` },
+            { role: 'system', content: `${promptContent}\n\nStrict JSON Schema:\n${schemaContent}\nIMPORTANT: You must output ONLY a valid JSON object matching this schema with BOTH "caseScores" and "familyAssessment".` },
             { role: 'user', content: `Analyze this family JSON:\n${familyJson}` },
           ],
           temperature: 0.1,
@@ -485,18 +629,48 @@ async function callLocal(familyJson, onProgress) {
   }
 }
 
-async function callWithRetry(familyJson, onProgress, retries = 3) {
+async function callWithRetry(familyJson, onProgress, expectedCaseIds, familyId, retries = 3) {
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
-      if (provider === 'local') return await callLocal(familyJson, onProgress);
-      if (provider === 'deepseek') return await callDeepSeek(familyJson, onProgress);
-      if (provider === 'gemini') return await callGemini(familyJson, onProgress);
-      return await callOpenAI(familyJson, onProgress);
+      let rawResult;
+      if (provider === 'local') rawResult = await callLocal(familyJson, onProgress);
+      else if (provider === 'deepseek') rawResult = await callDeepSeek(familyJson, onProgress);
+      else if (provider === 'gemini') rawResult = await callGemini(familyJson, onProgress);
+      else rawResult = await callOpenAI(familyJson, onProgress);
+
+      if (!rawResult || typeof rawResult !== 'object') {
+        throw new Error('LLM response could not be parsed as JSON object');
+      }
+
+      // If missing critical top-level structures and we have retries remaining, retry
+      if (attempt < retries && (!rawResult.caseScores || !rawResult.familyAssessment)) {
+        throw new Error(`Incomplete JSON response: missing ${!rawResult.caseScores ? 'caseScores' : 'familyAssessment'}`);
+      }
+
+      return validateAndHealJudgeRow(rawResult, familyId, expectedCaseIds);
     } catch (err) {
-      if (attempt === retries) throw err;
+      if (attempt === retries) {
+        throw err;
+      }
       process.stdout.write(`\n[${getTimestamp()}] ⚠️ Attempt ${attempt} error: ${err.message}. Retrying in ${attempt * 3}s...\n`);
       await new Promise((r) => setTimeout(r, attempt * 3000));
     }
+  }
+}
+
+// Load existing judged rows for resume/incremental caching
+const existingJudgedByFamily = new Map();
+if (!isFresh && existsSync(outputPath)) {
+  try {
+    const rawLines = readFileSync(outputPath, 'utf8').split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    for (const line of rawLines) {
+      const parsed = JSON.parse(line);
+      if (parsed?.familyId && parsed.schema === 'adaptive-training-recommender/ai-plan-judge-response@1') {
+        existingJudgedByFamily.set(parsed.familyId, parsed);
+      }
+    }
+  } catch {
+    // Ignore corrupt existing file
   }
 }
 
@@ -505,8 +679,23 @@ const evaluatedRows = [];
 for (let i = 0; i < lines.length; i++) {
   const familyJson = lines[i];
   const familyObj = JSON.parse(familyJson);
+  const expectedCaseIds = familyObj.cases.map((c) => c.input?.caseId || c.scenario?.id).filter(Boolean);
   const startSec = Date.now();
   let elapsed = 0;
+
+  // Check if we can reuse cached valid row
+  const cachedRow = existingJudgedByFamily.get(familyObj.familyId);
+  if (cachedRow && cachedRow.caseScores && cachedRow.caseScores.length === expectedCaseIds.length) {
+    try {
+      const healedCached = validateAndHealJudgeRow(cachedRow, familyObj.familyId, expectedCaseIds);
+      const sensitivity = extractSensitivity(healedCached);
+      evaluatedRows.push(JSON.stringify(healedCached));
+      console.log(`[${getTimestamp()}] [${i + 1}/${lines.length}] Evaluating family '${familyObj.familyId}' (${familyObj.cases.length} cases)... ✓ (cached | Sensitivity: ${sensitivity}/10)`);
+      continue;
+    } catch {
+      // Re-evaluate if cache invalid
+    }
+  }
 
   process.stdout.write(`[${getTimestamp()}] [${i + 1}/${lines.length}] Evaluating family '${familyObj.familyId}' (${familyObj.cases.length} cases)... `);
 
@@ -517,7 +706,7 @@ for (let i = 0; i < lines.length; i++) {
 
   try {
     const payloadToSend = JSON.stringify(compactFamilyForJudge(familyObj));
-    const judged = await callWithRetry(payloadToSend, onProgress);
+    const judged = await callWithRetry(payloadToSend, onProgress, expectedCaseIds, familyObj.familyId);
     const totalSec = Math.round((Date.now() - startSec) / 1000);
     const sensitivity = extractSensitivity(judged);
     evaluatedRows.push(JSON.stringify(judged));

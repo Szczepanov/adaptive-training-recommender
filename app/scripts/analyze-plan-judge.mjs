@@ -146,11 +146,16 @@ const summary = {
   repeatedHypotheses: familyHypotheses.filter((item) => item.count >= 2),
 };
 
+const summaryMdPath = resolve(outputDir, 'judge-summary.md');
+const summaryJsonPath = resolve(outputDir, 'judge-summary.json');
+const provenanceJsonPath = resolve(outputDir, 'judge-run-provenance.json');
+
 if (!existsSync(outputDir)) mkdirSync(outputDir, { recursive: true });
-writeFileSync(resolve(outputDir, 'judge-summary.json'), `${JSON.stringify(summary, null, 2)}\n`);
-writeFileSync(resolve(outputDir, 'judge-run-provenance.json'), `${JSON.stringify(provenance, null, 2)}\n`);
+writeFileSync(summaryJsonPath, `${JSON.stringify(summary, null, 2)}\n`);
+writeFileSync(provenanceJsonPath, `${JSON.stringify(provenance, null, 2)}\n`);
 const lines = [
   '# AI plan judge summary', '',
+  `- Generated at: ${provenance.analyzedAt}`,
   `- Families scored: ${summary.familyCount}`,
   `- Cases scored: ${summary.caseCount}`,
   `- Mean family sensitivity quality: ${summary.meanSensitivityQuality.toFixed(2)}/10`,
@@ -170,5 +175,11 @@ const lines = [
   ...(summary.repeatedHypotheses.length ? summary.repeatedHypotheses.map((item) => `- ${item.count}× ${item.hypothesis}`) : ['- none']), '',
   'Treat repeated case-level patterns as stronger evidence than one-off family hypotheses. Mild perturbations are not required to change a plan unless they are decision-relevant.',
 ];
-writeFileSync(resolve(outputDir, 'judge-summary.md'), `${lines.join('\n')}\n`);
-console.log(`Validated and analyzed ${summary.caseCount} judged cases across ${summary.familyCount} families.`);
+writeFileSync(summaryMdPath, `${lines.join('\n')}\n`);
+
+const timestamp = new Date().toLocaleTimeString('en-GB', { hour12: false });
+console.log(`[${timestamp}] Validated and analyzed ${summary.caseCount} judged cases across ${summary.familyCount} families.`);
+console.log(`[${timestamp}] Output files generated at ${provenance.analyzedAt}:`);
+console.log(`[${timestamp}]   📄 Summary report:     ${summaryMdPath}`);
+console.log(`[${timestamp}]   📊 Summary JSON:       ${summaryJsonPath}`);
+console.log(`[${timestamp}]   🔒 Provenance record:  ${provenanceJsonPath}`);
