@@ -34,7 +34,7 @@ import { checkinService } from '../services/checkinService';
 import { sessionExecutionService } from '../services/sessionExecutionService';
 import { sessionResponseService } from '../services/sessionResponseService';
 import { relevantFollowupRegions } from '../responses/followupSchedule';
-import { EXERCISES } from '../workouts/exercises';
+import { EXERCISES_BY_ID } from '../workouts/exercises';
 import { ExternalVerdictBanner } from './ExternalVerdictBanner';
 import { WorkoutExportMenu } from './WorkoutExportMenu';
 import { AdherencePrompt, type AdherenceAnswer } from './AdherencePrompt';
@@ -269,7 +269,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
             if (entry.exerciseRef?.kind === 'catalog') exerciseIds.push(entry.exerciseRef.exerciseId);
           }
           const facets = exerciseIds
-            .map(id => EXERCISES.find(item => item.id === id)?.facets)
+            .map(id => EXERCISES_BY_ID.get(id)?.facets)
             .filter((facet): facet is NonNullable<typeof facet> => !!facet);
           if (relevantFollowupRegions(facets).length === 0) continue;
 

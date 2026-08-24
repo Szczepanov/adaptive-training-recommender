@@ -4,7 +4,7 @@ import { recoverySnapshotService } from '../services/recoverySnapshotService';
 import { sessionExecutionService } from '../services/sessionExecutionService';
 import { sessionResponseService } from '../services/sessionResponseService';
 import { relevantFollowupRegions } from '../responses/followupSchedule';
-import { EXERCISES } from '../workouts/exercises';
+import { EXERCISES_BY_ID } from '../workouts/exercises';
 import type { BodyRegion, DailySubjectiveCheckin, RegionTissueResponse, TissueResponseLevel } from '../engine/models';
 import type { HealthContextCheckin } from '../engine/healthAnomalyModels';
 import { BODY_REGIONS, TISSUE_LEVELS } from '../engine/models';
@@ -170,7 +170,7 @@ export function DailyCheckin({ userId, onNavigate, onBack, onCheckinSaved }: Dai
               if (entry.exerciseRef?.kind === 'catalog') exerciseIds.push(entry.exerciseRef.exerciseId);
             }
             const facets = exerciseIds
-              .map(id => EXERCISES.find(item => item.id === id)?.facets)
+              .map(id => EXERCISES_BY_ID.get(id)?.facets)
               .filter((facet): facet is NonNullable<typeof facet> => !!facet);
             const sessionRef: RegionTissueResponse['sourceSessionRef'] = { kind: 'execution', id: execution.executionId, date: execution.date };
             const sessionKey = `execution:${execution.executionId}`;

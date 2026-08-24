@@ -18,7 +18,7 @@
 import type { SessionDefinition, SessionStep } from '../sessions/models';
 import type { SessionTemplate } from './models';
 import type { WorkoutModality } from '../workouts/models';
-import { EXERCISES } from '../workouts/exercises';
+import { EXERCISES_BY_ID } from '../workouts/exercises';
 
 /**
  * `resolveInjuryRestrictions` (engine/injuryPolicy.ts) works in the engine-level,
@@ -67,7 +67,7 @@ export function ineligibleAlternativeOptionIds(
                     const alternative = step?.alternatives?.find(candidate => candidate.id === action.alternativeId);
                     const exerciseRef = alternative?.exerciseRef;
                     if (!exerciseRef || exerciseRef.kind !== 'catalog') return false;
-                    const exercise = EXERCISES.find(candidate => candidate.id === exerciseRef.exerciseId);
+                    const exercise = EXERCISES_BY_ID.get(exerciseRef.exerciseId);
                     if (!exercise) return false;
                     const templateModality = WORKOUT_TO_TEMPLATE_MODALITY[exercise.modality];
                     return templateModality !== null && restricted.has(templateModality);

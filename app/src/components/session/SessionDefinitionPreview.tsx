@@ -1,6 +1,6 @@
 import React from 'react';
 import type { RangeOrNumber, SessionChoiceAction, SessionDefinition, SessionStep } from '../../sessions/models';
-import { EXERCISES } from '../../workouts/exercises';
+import { EXERCISES_BY_ID } from '../../workouts/exercises';
 import './SessionDefinitionPreview.css';
 
 interface SessionDefinitionPreviewProps {
@@ -17,7 +17,7 @@ function stepName(step: SessionStep): string {
     if (step.title) return step.title;
     if (step.exerciseRef?.kind === 'catalog') {
         const id = step.exerciseRef.exerciseId;
-        const found = EXERCISES.find(e => e.id === id);
+        const found = EXERCISES_BY_ID.get(id);
         return found ? found.name : id;
     }
     if (step.exerciseRef?.kind === 'unresolved_free_text') return step.exerciseRef.name;
@@ -82,7 +82,7 @@ export const SessionDefinitionPreview: React.FC<SessionDefinitionPreviewProps> =
                                 const isUnresolved = step.exerciseRef?.kind === 'unresolved_free_text';
                                 const ref = step.exerciseRef;
                                 const catalogItem = ref?.kind === 'catalog'
-                                    ? EXERCISES.find(e => e.id === ref.exerciseId)
+                                    ? EXERCISES_BY_ID.get(ref.exerciseId)
                                     : undefined;
                                 return <li key={step.id ?? sIdx} className="preview-step-item">
                                     <div className="step-main">

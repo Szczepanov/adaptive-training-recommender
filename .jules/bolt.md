@@ -13,3 +13,7 @@
 ## 2024-05-18 - Concurrent Fetching for Garmin API during Backfill
 **Learning:** Sequential API calls within loops (like `fetch_detail(activity.activity_id)` over many activities) create substantial bottlenecks, especially in historical data backfills. Using `concurrent.futures.ThreadPoolExecutor` along with `as_completed` allows concurrent processing while avoiding shared state issues by collecting results in the main thread loop.
 **Action:** When implementing any data backfill logic hitting external APIs in the Python backend, default to `concurrent.futures.ThreadPoolExecutor` if the rate limits allow it. Always make sure to properly cancel futures when a `GarminConnectTooManyRequestsError` or equivalent is encountered to avoid further requests when limits are already hit.
+
+## 2026-08-24 - Optimize Exercise Catalog Lookups
+**Learning:** React components and engine functions were scanning the canonical `EXERCISES` catalog with `.find()` in repeated lookup paths even though `exercises.ts` already exports `EXERCISES_BY_ID` for constant-time identity resolution.
+**Action:** Reuse the canonical `EXERCISES_BY_ID` map for repeated exercise-ID lookups; do not introduce a second exercise map or duplicate catalog index.
