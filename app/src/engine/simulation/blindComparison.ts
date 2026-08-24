@@ -3,7 +3,6 @@ import { SCENARIOS } from './scenarios';
 import { runScenario } from './analyze';
 import { computeScenarioResultDistance, type PlanDistanceBreakdown } from './planDistance';
 import type { SubjectiveDriftPolicy } from '../rules';
-
 import { generateWeekAheadPlanWithIntent } from '../planner';
 
 export interface BlindCandidateComparison {
@@ -38,16 +37,24 @@ export interface BlindAbReport {
     };
 }
 
+export interface BlindAbOptions {
+    /** Controls which policy is assigned to Alpha/Beta. Callers should keep this decision
+     * outside the human-visible report when they want a genuinely blinded review. */
+    swapCandidates?: boolean;
+}
+
 /**
- * Runs a blind A/B comparative simulation across the scenario corpus between two policies.
+ * Runs an A/B comparative simulation across the scenario corpus between two policies.
+ * The returned object contains an unblinding key for machine callers; presentation layers
+ * should persist that key separately from the blinded report shown to reviewers.
  */
 export async function runBlindAbComparison(
     policyAlpha: SubjectiveDriftPolicy = 'off',
     policyBeta: SubjectiveDriftPolicy = 'drift',
-    scenarios: readonly AthleteScenario[] = SCENARIOS
+    scenarios: readonly AthleteScenario[] = SCENARIOS,
+    options: BlindAbOptions = {},
 ): Promise<BlindAbReport> {
-    // Randomize blinded assignments if desired or deterministically label them
-    const isSwapped = false;
+    const isSwapped = options.swapCandidates ?? false;
     const actualAlpha = isSwapped ? policyBeta : policyAlpha;
     const actualBeta = isSwapped ? policyAlpha : policyBeta;
 
@@ -88,14 +95,15 @@ export async function runBlindAbComparison(
     }
 
     const total = scenarios.length;
+    const divisor = total || 1;
     return {
         schema: 'adaptive-training-recommender/blind-ab-report@1',
         timestamp: new Date().toISOString(),
         totalScenarios: total,
         differentiatingScenariosCount: diffCount,
-        meanCompositeDistance: Math.round((totalCompositeDist / total) * 10000) / 10000,
-        meanModeHammingDistance: Math.round((totalModeDist / total) * 10000) / 10000,
-        meanSessionEditDistance: Math.round((totalEditDist / total) * 10000) / 10000,
+        meanCompositeDistance: Math.round((totalCompositeDist / divisor) * 10000) / 10000,
+        meanModeHammingDistance: Math.round((totalModeDist / divisor) * 10000) / 10000,
+        meanSessionEditDistance: Math.round((totalEditDist / divisor) * 10000) / 10000,
         scenarioComparisons: comparisons,
         unblindingKey: {
             candidateAlpha: `Subjective Drift: ${actualAlpha}`,

@@ -621,12 +621,7 @@ export function trailingHistoryFromCompletedExposures(
         category: e.category,
         systemicCost: e.costProfile?.systemic ?? 0,
         lowerBodyCost: e.costProfile?.lowerBody ?? 0,
-        // A completed exposure recorded via delivered-dose evidence (deliveredDose) rather
-        // than a training-record-shaped one (trainingRecordLike) previously crashed here --
-        // latent since CompletedExposure has allowed either shape for a while, just never
-        // exercised until the AI-judge harness's delivered-dose fixtures did. No existing
-        // trainingRecordLike-shaped input's duration changes.
-        durationMin: e.trainingRecordLike?.duration_min ?? e.deliveredDose?.completedDurationMin,
+        durationMin: e.trainingRecordLike.duration_min,
     }));
 }
 
