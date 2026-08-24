@@ -290,7 +290,7 @@ function computeMetrics(
     const missedAnchors = anchorWeeks.filter(w => w.eventSpecificAnchorDate && !w.eventSpecificAnchorFulfilled).length;
     if (missedAnchors > 0) qualityWarnings.push(`Event-specific anchor missed in ${missedAnchors} nominated week(s).`);
     const anchorPlacementDrift = anchorWeeks.filter(w => w.eventSpecificAnchorDate && !w.eventSpecificAnchorHit && w.eventSpecificAnchorFulfilled).length;
-    if (anchorPlacementDrift > 0) qualityWarnings.push(`Event-specific exposure occurred off the nominated anchor date in ${anchorPlacementDrift} week(s) (adaptively fulfilled in-window).`);
+    if (anchorPlacementDrift > 0) qualityWarnings.push(`Event-specific exposure occurred off the nominated anchor date in ${anchorPlacementDrift} week(s).`);
     if (trainTierRestOrRecoveryCount > 0) qualityWarnings.push(`Rest or mobility selected on ${trainTierRestOrRecoveryCount} projected train-tier day(s).`);
     if (!isEvergreen && maxConsecutiveSameTemplateStreakAcrossWeeks >= 4) qualityWarnings.push(`Same-template streak reached ${maxConsecutiveSameTemplateStreakAcrossWeeks} days.`);
     if (primaryEvent?.category === 'triathlon') qualityWarnings.push('Triathlon capability is partial: the engine has no Swimming modality or swim objective/catalog support.');

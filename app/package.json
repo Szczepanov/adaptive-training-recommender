@@ -15,7 +15,7 @@
     "validate:workouts": "node --experimental-strip-types scripts/validate-workouts.ts",
     "simulate:scenarios": "node scripts/simulate-scenarios.mjs",
     "simulate:calibrate": "node scripts/simulate-calibrate.mjs",
-    "simulate:plan-judge": "node scripts/simulate-plan-judge.mjs && node scripts/fix-plan-judge-corpus.mjs && node scripts/check-plan-judge-invariants.mjs",
+    "simulate:plan-judge": "node scripts/simulate-plan-judge.mjs && node scripts/fix-plan-judge-corpus.mjs && node scripts/normalize-plan-judge-diagnostics.mjs && node scripts/check-plan-judge-invariants.mjs",
     "simulate:blind-ab": "node scripts/simulate-blind-ab.mjs",
     "analyze:plan-judge": "node scripts/analyze-plan-judge.mjs",
     "judge:invariants": "node scripts/check-plan-judge-invariants.mjs",

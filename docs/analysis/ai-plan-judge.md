@@ -9,7 +9,7 @@ The committed baseline is evidence for comparison. It is not a production decisi
 
 ## Scope and baseline boundary
 
-PR #216 establishes the tooling baseline on top of `main`. The judge scripts and simulation helpers are additive; the PR intentionally does **not** change planner decision behavior or `POLICY_VERSION`.
+PR #216 establishes the tooling baseline on top of `main`. The judge scripts and simulation helpers are additive; the PR intentionally does **not** change planner decision behavior, `POLICY_VERSION`, or the shared scenario registry. A judge-facing diagnostics wording compatibility step lives in the harness rather than modifying `src/engine/simulation/analyze.ts`.
 
 The first baseline capture was produced from harness commit `5e7115b24a0e3b1bba93bcc624a0d3d27ff9036f` with:
 
@@ -34,11 +34,12 @@ Run commands from `app/`.
 npm run simulate:plan-judge
 ```
 
-This performs three steps:
+This performs four steps:
 
 1. `simulate-plan-judge.mjs` runs the real simulator and writes the initial family packets.
 2. `fix-plan-judge-corpus.mjs` applies harness-only compatibility corrections for planner-facing preferences, injury guardrails, valid evergreen intent, travel constraints, judge context, and scheduled event ownership. This post-pass exists to keep the extracted tooling compatible with the current `main` data contracts; it should eventually be folded into one corpus builder rather than grow indefinitely.
-3. `check-plan-judge-invariants.mjs` verifies the fixed 11-family/60-case corpus shape and deterministic safety/capacity invariants.
+3. `normalize-plan-judge-diagnostics.mjs` reproduces the judge-facing anchor-placement warning wording used by the original baseline without modifying shared engine diagnostics. Keeping that compatibility normalization in the harness preserves the baseline packet contract while leaving `main` engine code untouched.
+4. `check-plan-judge-invariants.mjs` verifies the fixed 11-family/60-case corpus shape and deterministic safety/capacity invariants.
 
 CI runs this deterministic command only. No provider credentials are required.
 
