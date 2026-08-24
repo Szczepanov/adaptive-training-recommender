@@ -1,114 +1,136 @@
+import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-const inputPath = resolve(process.argv[2] ?? 'artifacts/ai-plan-judge/latest/judge-scores.jsonl');
-if (!existsSync(inputPath)) {
-  console.error(`Missing judge score file: ${inputPath}`);
-  console.error('Feed families.jsonl + judge-prompt.md to the AI judge, save its JSONL response as judge-scores.jsonl, then rerun.');
-  process.exit(1);
+const outputDir = resolve('artifacts/ai-plan-judge/latest');
+const inputPath = resolve(process.argv[2] ?? `${outputDir}/judge-scores.jsonl`);
+const familiesPath = resolve(`${outputDir}/families.jsonl`);
+const promptPath = resolve(`${outputDir}/judge-prompt.md`);
+const schemaPath = resolve(`${outputDir}/judge-response-schema.json`);
+const corpusPath = resolve(`${outputDir}/corpus.json`);
+
+for (const path of [inputPath, familiesPath, promptPath, schemaPath]) {
+  if (!existsSync(path)) throw new Error(`Missing AI plan judge artifact: ${path}`);
 }
 
-const rows = readFileSync(inputPath, 'utf8').split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
 const requiredScores = ['safety_recovery_fit', 'goal_event_fit', 'sequencing', 'periodization_taper', 'preference_capacity_fit', 'robustness', 'overall'];
-
-function boundedNumber(value, min, max, field) {
+const listFields = ['overreactionCases', 'underreactionCases', 'goodSensitivityCases', 'algorithmAdjustmentHypotheses'];
+const hashFile = (path) => createHash('sha256').update(readFileSync(path)).digest('hex');
+const boundedNumber = (value, min, max, field) => {
   if (typeof value !== 'number' || !Number.isFinite(value) || value < min || value > max) {
     throw new Error(`${field} must be a finite number in [${min}, ${max}], got ${JSON.stringify(value)}`);
   }
   return value;
+};
+const stringArray = (value, field) => {
+  if (!Array.isArray(value) || value.some((item) => typeof item !== 'string')) throw new Error(`${field} must be an array of strings.`);
+  return value;
+};
+const parseJsonl = (path) => readFileSync(path, 'utf8').split(/\r?\n/).map((line) => line.trim()).filter(Boolean).map((line, index) => {
+  try { return JSON.parse(line); } catch (error) { throw new Error(`${path}:${index + 1} invalid JSON: ${error.message}`); }
+});
+
+const expectedFamilies = parseJsonl(familiesPath);
+const expectedByFamily = new Map();
+for (const family of expectedFamilies) {
+  if (typeof family.familyId !== 'string' || !Array.isArray(family.cases)) throw new Error(`Malformed family packet in ${familiesPath}`);
+  if (expectedByFamily.has(family.familyId)) throw new Error(`Duplicate familyId in corpus: ${family.familyId}`);
+  const caseIds = family.cases.map((item) => item.input?.caseId);
+  if (caseIds.some((id) => typeof id !== 'string')) throw new Error(`Family ${family.familyId} contains missing case ids.`);
+  if (new Set(caseIds).size !== caseIds.length) throw new Error(`Family ${family.familyId} contains duplicate case ids.`);
+  expectedByFamily.set(family.familyId, new Set(caseIds));
 }
 
-function parseRow(line, index) {
-  let value;
-  try {
-    value = JSON.parse(line);
-  } catch (error) {
-    throw new Error(`Line ${index + 1} is not valid JSON: ${error.message}`);
-  }
-  if (!value || typeof value !== 'object' || typeof value.familyId !== 'string' || !Array.isArray(value.caseScores)) {
-    throw new Error(`Line ${index + 1} must contain familyId and caseScores.`);
-  }
+const rawRows = parseJsonl(inputPath);
+const seenFamilies = new Set();
+function parseJudgeRow(value, index) {
+  if (!value || typeof value !== 'object') throw new Error(`Line ${index + 1}: judge response must be an object.`);
+  if (value.schema !== 'adaptive-training-recommender/ai-plan-judge-response@1') throw new Error(`Line ${index + 1}: unexpected schema ${JSON.stringify(value.schema)}.`);
+  if (typeof value.familyId !== 'string' || !expectedByFamily.has(value.familyId)) throw new Error(`Line ${index + 1}: unknown familyId ${JSON.stringify(value.familyId)}.`);
+  if (seenFamilies.has(value.familyId)) throw new Error(`Duplicate judge response for family ${value.familyId}.`);
+  seenFamilies.add(value.familyId);
+  if (!Array.isArray(value.caseScores)) throw new Error(`${value.familyId}.caseScores must be an array.`);
+
+  const expectedCaseIds = expectedByFamily.get(value.familyId);
+  const seenCases = new Set();
   for (const item of value.caseScores) {
-    if (typeof item.caseId !== 'string' || !item.scores || typeof item.scores !== 'object') {
-      throw new Error(`Line ${index + 1} has a malformed case score.`);
-    }
-    for (const key of requiredScores) {
-      if (typeof item.scores[key] === 'string') item.scores[key] = parseFloat(item.scores[key]);
-      boundedNumber(item.scores[key], 0, 10, `${item.caseId}.${key}`);
-    }
-    if (typeof item.confidence === 'string') item.confidence = parseFloat(item.confidence);
+    if (!item || typeof item !== 'object' || typeof item.caseId !== 'string') throw new Error(`${value.familyId}: malformed case score.`);
+    if (!expectedCaseIds.has(item.caseId)) throw new Error(`${value.familyId}: unexpected case ${item.caseId}.`);
+    if (seenCases.has(item.caseId)) throw new Error(`${value.familyId}: duplicate case ${item.caseId}.`);
+    seenCases.add(item.caseId);
+    if (!item.scores || typeof item.scores !== 'object') throw new Error(`${item.caseId}.scores is required.`);
+    for (const key of requiredScores) boundedNumber(item.scores[key], 0, 10, `${item.caseId}.${key}`);
     boundedNumber(item.confidence, 0, 1, `${item.caseId}.confidence`);
-    if (typeof item.flags === 'string') item.flags = [item.flags];
-    if (item.flags !== undefined && !Array.isArray(item.flags)) item.flags = [];
-    if (typeof item.suggestedChanges === 'string') item.suggestedChanges = [item.suggestedChanges];
-    if (item.suggestedChanges !== undefined && !Array.isArray(item.suggestedChanges)) item.suggestedChanges = [];
+    stringArray(item.flags, `${item.caseId}.flags`);
+    stringArray(item.suggestedChanges, `${item.caseId}.suggestedChanges`);
+    if (typeof item.rationale !== 'string') throw new Error(`${item.caseId}.rationale must be a string.`);
   }
-  if (!value.familyAssessment) value.familyAssessment = {};
-  if (typeof value.familyAssessment.sensitivity_quality === 'string') {
-    value.familyAssessment.sensitivity_quality = parseFloat(value.familyAssessment.sensitivity_quality);
+  if (seenCases.size !== expectedCaseIds.size) {
+    const missing = [...expectedCaseIds].filter((id) => !seenCases.has(id));
+    throw new Error(`${value.familyId}: missing case scores: ${missing.join(', ')}`);
   }
-  if (typeof value.familyAssessment.sensitivity_quality !== 'number' || isNaN(value.familyAssessment.sensitivity_quality)) {
-    const overalls = value.caseScores.map((c) => c.scores?.overall).filter((n) => typeof n === 'number' && !isNaN(n));
-    value.familyAssessment.sensitivity_quality = overalls.length ? Math.round(overalls.reduce((a, b) => a + b, 0) / overalls.length) : 5;
+
+  const assessment = value.familyAssessment;
+  if (!assessment || typeof assessment !== 'object') throw new Error(`${value.familyId}.familyAssessment is required.`);
+  boundedNumber(assessment.sensitivity_quality, 0, 10, `${value.familyId}.sensitivity_quality`);
+  if (typeof assessment.rationale !== 'string') throw new Error(`${value.familyId}.familyAssessment.rationale must be a string.`);
+  for (const field of listFields) stringArray(assessment[field], `${value.familyId}.familyAssessment.${field}`);
+  for (const field of ['overreactionCases', 'underreactionCases', 'goodSensitivityCases']) {
+    for (const id of assessment[field]) if (!expectedCaseIds.has(id)) throw new Error(`${value.familyId}.${field} references unknown case ${id}.`);
   }
-  boundedNumber(value.familyAssessment.sensitivity_quality, 0, 10, `${value.familyId}.sensitivity_quality`);
   return value;
 }
 
-function normalizedText(value) {
-  return String(value ?? '').trim().replace(/\s+/g, ' ');
+const families = rawRows.map(parseJudgeRow);
+if (families.length !== expectedByFamily.size) {
+  const missing = [...expectedByFamily.keys()].filter((id) => !seenFamilies.has(id));
+  throw new Error(`Judge output covers ${families.length}/${expectedByFamily.size} families. Missing: ${missing.join(', ')}`);
 }
 
-function countStrings(values) {
+const cases = families.flatMap((family) => family.caseScores.map((item) => ({ familyId: family.familyId, ...item })));
+const average = (values) => values.length === 0 ? 0 : values.reduce((sum, value) => sum + value, 0) / values.length;
+const normalizedText = (value) => String(value ?? '').trim().replace(/\s+/g, ' ');
+const countStrings = (values) => {
   const counts = new Map();
   for (const value of values) {
     const normalized = normalizedText(value);
-    if (!normalized) continue;
-    counts.set(normalized, (counts.get(normalized) ?? 0) + 1);
+    if (normalized) counts.set(normalized, (counts.get(normalized) ?? 0) + 1);
   }
-  return [...counts.entries()]
-    .map(([value, count]) => ({ value, count }))
-    .sort((left, right) => right.count - left.count || left.value.localeCompare(right.value));
-}
-
-const families = rows.map(parseRow);
-const cases = families.flatMap((family) => family.caseScores.map((item) => ({ familyId: family.familyId, ...item })));
-const average = (values) => values.length === 0 ? 0 : values.reduce((sum, value) => sum + value, 0) / values.length;
+  return [...counts.entries()].map(([value, count]) => ({ value, count })).sort((a, b) => b.count - a.count || a.value.localeCompare(b.value));
+};
 
 const scoreAverages = Object.fromEntries(requiredScores.map((key) => [key, average(cases.map((item) => item.scores[key]))]));
-const weakestCases = [...cases].sort((left, right) => left.scores.overall - right.scores.overall).slice(0, 15);
-const strongestCases = [...cases].sort((left, right) => right.scores.overall - left.scores.overall).slice(0, 10);
+const weakestCases = [...cases].sort((a, b) => a.scores.overall - b.scores.overall).slice(0, 15);
+const strongestCases = [...cases].sort((a, b) => b.scores.overall - a.scores.overall).slice(0, 10);
 const familySensitivity = families.map((family) => ({
   familyId: family.familyId,
   sensitivityQuality: family.familyAssessment.sensitivity_quality,
   rationale: family.familyAssessment.rationale,
-  overreactionCases: family.familyAssessment.overreactionCases ?? [],
-  underreactionCases: family.familyAssessment.underreactionCases ?? [],
-  algorithmAdjustmentHypotheses: family.familyAssessment.algorithmAdjustmentHypotheses ?? [],
-})).sort((left, right) => left.sensitivityQuality - right.sensitivityQuality);
+  overreactionCases: family.familyAssessment.overreactionCases,
+  underreactionCases: family.familyAssessment.underreactionCases,
+  algorithmAdjustmentHypotheses: family.familyAssessment.algorithmAdjustmentHypotheses,
+})).sort((a, b) => a.sensitivityQuality - b.sensitivityQuality);
+const familyHypotheses = countStrings(families.flatMap((family) => family.familyAssessment.algorithmAdjustmentHypotheses)).map(({ value: hypothesis, count }) => ({ hypothesis, count }));
+const caseFlagCounts = countStrings(cases.flatMap((item) => item.flags)).map(({ value: flag, count }) => ({ flag, count }));
+const caseSuggestedChangeCounts = countStrings(cases.flatMap((item) => item.suggestedChanges)).map(({ value: suggestion, count }) => ({ suggestion, count }));
 
-// Family hypotheses are useful hypotheses, but they are not repeated evidence: each family
-// assessment is emitted once. Keep them for inspection without labelling a 1x family string
-// as repetition. Repetition is measured below from case-level structured flags and concrete
-// suggested changes.
-const familyHypotheses = countStrings(families.flatMap((family) => family.familyAssessment.algorithmAdjustmentHypotheses ?? []))
-  .map(({ value: hypothesis, count }) => ({ hypothesis, count }));
-
-const caseFlagCounts = countStrings(cases.flatMap((item) => item.flags ?? []))
-  .map(({ value: flag, count }) => ({ flag, count }));
-const repeatedCaseFlags = caseFlagCounts.filter((item) => item.count >= 2);
-
-const caseSuggestedChangeCounts = countStrings(cases.flatMap((item) => item.suggestedChanges ?? []))
-  .map(({ value: suggestion, count }) => ({ suggestion, count }));
-const repeatedCaseSuggestedChanges = caseSuggestedChangeCounts.filter((item) => item.count >= 2);
-
-// Preserve the historical field name for downstream readers, but make its semantics honest:
-// it now contains only hypotheses with evidence repeated across 2+ family assessments.
-const repeatedHypotheses = familyHypotheses.filter((item) => item.count >= 2);
+const corpus = existsSync(corpusPath) ? JSON.parse(readFileSync(corpusPath, 'utf8')) : null;
+const provenance = {
+  corpusCommit: corpus?.commit ?? 'unknown',
+  corpusSchema: corpus?.schema ?? 'unknown',
+  corpusSha256: existsSync(corpusPath) ? hashFile(corpusPath) : null,
+  familiesSha256: hashFile(familiesPath),
+  promptSha256: hashFile(promptPath),
+  responseSchemaSha256: hashFile(schemaPath),
+  judgeScoresSha256: hashFile(inputPath),
+  judgeModel: process.env.JUDGE_MODEL ?? process.env.LOCAL_JUDGE_MODEL ?? process.env.OLLAMA_MODEL ?? 'unknown',
+  analyzedAt: new Date().toISOString(),
+};
 
 const summary = {
-  schema: 'adaptive-training-recommender/ai-plan-judge-summary@2',
+  schema: 'adaptive-training-recommender/ai-plan-judge-summary@3',
   source: inputPath,
+  provenance,
   familyCount: families.length,
   caseCount: cases.length,
   scoreAverages,
@@ -116,54 +138,37 @@ const summary = {
   familySensitivity,
   weakestCases,
   strongestCases,
-  repeatedCaseFlags,
-  repeatedCaseSuggestedChanges,
+  repeatedCaseFlags: caseFlagCounts.filter((item) => item.count >= 2),
+  repeatedCaseSuggestedChanges: caseSuggestedChangeCounts.filter((item) => item.count >= 2),
   caseFlagCounts,
   caseSuggestedChangeCounts,
   familyHypotheses,
-  repeatedHypotheses,
+  repeatedHypotheses: familyHypotheses.filter((item) => item.count >= 2),
 };
 
-const outputDir = resolve('artifacts/ai-plan-judge/latest');
 if (!existsSync(outputDir)) mkdirSync(outputDir, { recursive: true });
 writeFileSync(resolve(outputDir, 'judge-summary.json'), `${JSON.stringify(summary, null, 2)}\n`);
-
+writeFileSync(resolve(outputDir, 'judge-run-provenance.json'), `${JSON.stringify(provenance, null, 2)}\n`);
 const lines = [
-  '# AI plan judge summary',
-  '',
+  '# AI plan judge summary', '',
   `- Families scored: ${summary.familyCount}`,
   `- Cases scored: ${summary.caseCount}`,
   `- Mean family sensitivity quality: ${summary.meanSensitivityQuality.toFixed(2)}/10`,
-  '',
-  '## Mean absolute plan scores',
-  '',
-  ...requiredScores.map((key) => `- ${key}: ${scoreAverages[key].toFixed(2)}/10`),
-  '',
-  '## Weakest cases',
-  '',
-  ...weakestCases.map((item) => `- ${item.caseId} (${item.familyId}): ${item.scores.overall.toFixed(1)}/10 — ${item.rationale ?? ''}`),
-  '',
-  '## Family sensitivity',
-  '',
-  ...familySensitivity.map((item) => `- ${item.familyId}: ${item.sensitivityQuality.toFixed(1)}/10 — ${item.rationale ?? ''}`),
-  '',
-  '## Repeated case-level flags',
-  '',
-  ...(repeatedCaseFlags.length > 0 ? repeatedCaseFlags.map((item) => `- ${item.count}× ${item.flag}`) : ['- none']),
-  '',
-  '## Repeated case-level suggested changes',
-  '',
-  ...(repeatedCaseSuggestedChanges.length > 0 ? repeatedCaseSuggestedChanges.map((item) => `- ${item.count}× ${item.suggestion}`) : ['- none']),
-  '',
-  '## Repeated family-level hypotheses',
-  '',
-  ...(repeatedHypotheses.length > 0 ? repeatedHypotheses.map((item) => `- ${item.count}× ${item.hypothesis}`) : ['- none']),
-  '',
-  '## All family-level hypotheses',
-  '',
-  ...(familyHypotheses.length > 0 ? familyHypotheses.map((item) => `- ${item.count}× ${item.hypothesis}`) : ['- none']),
-  '',
-  'Treat repeated case-level patterns as stronger evidence than a one-off family hypothesis. Avoid changing a physiological threshold solely because one isolated case or one family assessment scored poorly.',
+  `- Corpus commit: ${provenance.corpusCommit}`,
+  `- Judge scores SHA-256: ${provenance.judgeScoresSha256}`, '',
+  '## Mean absolute plan scores', '',
+  ...requiredScores.map((key) => `- ${key}: ${scoreAverages[key].toFixed(2)}/10`), '',
+  '## Weakest cases', '',
+  ...weakestCases.map((item) => `- ${item.caseId} (${item.familyId}): ${item.scores.overall.toFixed(1)}/10 — ${item.rationale}`), '',
+  '## Family sensitivity', '',
+  ...familySensitivity.map((item) => `- ${item.familyId}: ${item.sensitivityQuality.toFixed(1)}/10 — ${item.rationale}`), '',
+  '## Repeated case-level flags', '',
+  ...(summary.repeatedCaseFlags.length ? summary.repeatedCaseFlags.map((item) => `- ${item.count}× ${item.flag}`) : ['- none']), '',
+  '## Repeated case-level suggested changes', '',
+  ...(summary.repeatedCaseSuggestedChanges.length ? summary.repeatedCaseSuggestedChanges.map((item) => `- ${item.count}× ${item.suggestion}`) : ['- none']), '',
+  '## Repeated family-level hypotheses', '',
+  ...(summary.repeatedHypotheses.length ? summary.repeatedHypotheses.map((item) => `- ${item.count}× ${item.hypothesis}`) : ['- none']), '',
+  'Treat repeated case-level patterns as stronger evidence than one-off family hypotheses. Mild perturbations are not required to change a plan unless they are decision-relevant.',
 ];
 writeFileSync(resolve(outputDir, 'judge-summary.md'), `${lines.join('\n')}\n`);
-console.log(`Analyzed ${summary.caseCount} judged cases. Summary written to ${outputDir}`);
+console.log(`Validated and analyzed ${summary.caseCount} judged cases across ${summary.familyCount} families.`);
