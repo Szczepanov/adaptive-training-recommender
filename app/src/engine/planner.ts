@@ -621,7 +621,7 @@ export function trailingHistoryFromCompletedExposures(
         category: e.category,
         systemicCost: e.costProfile?.systemic ?? 0,
         lowerBodyCost: e.costProfile?.lowerBody ?? 0,
-        durationMin: e.trainingRecordLike.duration_min,
+        durationMin: e.trainingRecordLike?.duration_min ?? e.deliveredDose?.completedDurationMin,
     }));
 }
 

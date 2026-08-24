@@ -293,6 +293,13 @@ export function evaluateReadinessAndSafetyEnvelope(
     }
     const conservativeBias = context.preferences.conservativeBias ? CONSERVATIVE_BIAS_STRAIN_OFFSET : 0;
     const extremeFatigue = subjective.fatigue > 8 || subjective.soreness > 8 || subjective.painFlag;
+    const severeSubjectiveDistress = (subjective.fatigue >= 8 && subjective.readiness <= 4) ||
+        (subjective.readiness <= 3 && subjective.stress >= 8) ||
+        (subjective.fatigue >= 8 && subjective.stress >= 8);
+    const acuteBiometricStrainFloor = (rhrStrain.acuteDeviation >= 0.6 && objective.rhr_delta !== null && objective.rhr_delta >= 6) ||
+        (hrvStrain.acuteDeviation >= 1.0 && objective.hrv_delta !== null && objective.hrv_delta <= -15);
+    const acuteSubjectiveModify = subjective.fatigue >= 8 || subjective.readiness <= 3 || subjective.stress >= 9 || (subjective.readiness <= 4 && subjective.fatigue >= 6);
+
     const recentHardSessionsCount = objective.last_3_days_hard_sessions_count || 0;
     const recentHardSessionsPenalty = recentHardSessionsCount >= 2 ? RECENT_HARD_SESSIONS_STRAIN : 0;
     const objectiveStrain = totalMetricStrain + sleepFloorPenalty + bodyBatteryDeficit + conservativeBias + recentHardSessionsPenalty;
@@ -307,14 +314,14 @@ export function evaluateReadinessAndSafetyEnvelope(
     const strainForThresholds = objectiveStrain + subjectiveDrift;
 
     const lowBodyBatteryRecovery = objective.body_battery_wake !== null && objective.body_battery_wake <= BODY_BATTERY_RECOVER_THRESHOLD;
-    const fatigueTriggeredRecover = overallFatigueScore > 7 || extremeFatigue || lowBodyBatteryRecovery || strainForThresholds >= STRAIN_RECOVER_THRESHOLD;
+    const fatigueTriggeredRecover = overallFatigueScore > 7 || extremeFatigue || severeSubjectiveDistress || lowBodyBatteryRecovery || strainForThresholds >= STRAIN_RECOVER_THRESHOLD;
     let mode: 'train' | 'modify' | 'recover' = fatigueTriggeredRecover
         ? 'recover'
-        : (overallFatigueScore > 5 || subjective.soreness > 6 || strainForThresholds >= STRAIN_MODIFY_THRESHOLD) ? 'modify' : 'train';
+        : (overallFatigueScore > 5 || subjective.soreness > 6 || acuteSubjectiveModify || acuteBiometricStrainFloor || strainForThresholds >= STRAIN_MODIFY_THRESHOLD) ? 'modify' : 'train';
 
     const strainWithoutDrift = objectiveStrain - totalMultiDayDrift;
-    const counterfactualRecover = overallFatigueScore > 7 || extremeFatigue || strainWithoutDrift >= STRAIN_RECOVER_THRESHOLD;
-    const counterfactualModify = counterfactualRecover || overallFatigueScore > 5 || subjective.soreness > 6 || strainWithoutDrift >= STRAIN_MODIFY_THRESHOLD;
+    const counterfactualRecover = overallFatigueScore > 7 || extremeFatigue || severeSubjectiveDistress || strainWithoutDrift >= STRAIN_RECOVER_THRESHOLD;
+    const counterfactualModify = counterfactualRecover || overallFatigueScore > 5 || subjective.soreness > 6 || acuteSubjectiveModify || acuteBiometricStrainFloor || strainWithoutDrift >= STRAIN_MODIFY_THRESHOLD;
     const counterfactualModeWithoutDrift = counterfactualRecover ? 'recover' : (counterfactualModify ? 'modify' : 'train');
     const multiDayDriftIsDecisionRelevant = (mode !== 'train') && (mode !== counterfactualModeWithoutDrift);
 
@@ -323,8 +330,8 @@ export function evaluateReadinessAndSafetyEnvelope(
     // objective multi-day-drift axis) through the same threshold logic, so a caller can tell
     // whether subjective drift specifically changed the mode. Inert under 'off' (subjectiveDrift
     // is always 0 there, so modeWithoutSubjectiveDrift always equals mode).
-    const recoverWithoutSubjectiveDrift = overallFatigueScore > 7 || extremeFatigue || lowBodyBatteryRecovery || objectiveStrain >= STRAIN_RECOVER_THRESHOLD;
-    const modifyWithoutSubjectiveDrift = recoverWithoutSubjectiveDrift || overallFatigueScore > 5 || subjective.soreness > 6 || objectiveStrain >= STRAIN_MODIFY_THRESHOLD;
+    const recoverWithoutSubjectiveDrift = overallFatigueScore > 7 || extremeFatigue || severeSubjectiveDistress || lowBodyBatteryRecovery || objectiveStrain >= STRAIN_RECOVER_THRESHOLD;
+    const modifyWithoutSubjectiveDrift = recoverWithoutSubjectiveDrift || overallFatigueScore > 5 || subjective.soreness > 6 || acuteSubjectiveModify || acuteBiometricStrainFloor || objectiveStrain >= STRAIN_MODIFY_THRESHOLD;
     const modeWithoutSubjectiveDrift = recoverWithoutSubjectiveDrift ? 'recover' : (modifyWithoutSubjectiveDrift ? 'modify' : 'train');
     const subjectiveDriftIsDecisionRelevant = (mode !== 'train') && (mode !== modeWithoutSubjectiveDrift);
 

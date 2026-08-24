@@ -161,17 +161,30 @@ export function objectivesFromDemand(
     });
 
     if (category === 'cycling_event' && !isPostEventRecovery) {
-        if (!taperActive && (demand.fatigueResistance >= 0.7 || demand.repeatedSurges >= 0.6)) {
-            objectives.push({
-                id: 'obj_cycling_race_specific', key: 'race_specific_endurance', title: 'Cycling Race-Specific Endurance',
-                targetExposures: 1, completedExposures: 0,
-                targetStimulus: { aerobicEndurance: 0.6, repeatedSurges: 0.6 },
-                qualification: {
-                    minimumStimulus: { aerobicEndurance: 0.6 },
-                    allowedModalities: ['Cycling'],
-                    allowedCategories: ['Race-Specific Endurance'],
-                },
-            });
+        if (!taperActive) {
+            if (demand.fatigueResistance >= 0.8 && demand.aerobicEndurance >= 0.8 && (demand.repeatedSurges ?? 0) < 0.6) {
+                // High-durability / Gran Fondo profile: emphasize sustained aerobic durability and fatigue resistance
+                objectives.push({
+                    id: 'obj_cycling_gran_fondo_durability', key: 'race_specific_endurance', title: 'Cycling Aerobic Durability & Tempo',
+                    targetExposures: 1, completedExposures: 0,
+                    targetStimulus: { aerobicEndurance: 0.9, fatigueResistance: 0.85, thresholdPower: 0.6 },
+                    qualification: {
+                        minimumStimulus: { aerobicEndurance: 0.6 },
+                        allowedModalities: ['Cycling'],
+                    },
+                });
+            } else if (demand.fatigueResistance >= 0.7 || (demand.repeatedSurges ?? 0) >= 0.6) {
+                objectives.push({
+                    id: 'obj_cycling_race_specific', key: 'race_specific_endurance', title: 'Cycling Race-Specific Endurance',
+                    targetExposures: 1, completedExposures: 0,
+                    targetStimulus: { aerobicEndurance: 0.6, repeatedSurges: 0.6 },
+                    qualification: {
+                        minimumStimulus: { aerobicEndurance: 0.6 },
+                        allowedModalities: ['Cycling'],
+                        allowedCategories: ['Race-Specific Endurance'],
+                    },
+                });
+            }
         } else if (taperActive) {
             objectives.push({
                 id: 'obj_taper_sharpening', key: 'race_specific_endurance', title: TAPER_SHARPENING_TITLE,

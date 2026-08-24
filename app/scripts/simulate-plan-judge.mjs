@@ -75,7 +75,7 @@ function exposureOn(exposure, date, occurrenceSuffix) {
   };
 }
 
-function makeFamilies(scenarios) {
+function makeFamilies(scenarios, deliveredDoseModule) {
   const base = requireScenario(scenarios, 'cycling_criterium_A');
   const granFondo = requireScenario(scenarios, 'cycling_gran_fondo_A');
   const hardLoadSource = requireScenario(scenarios, 'external_load_green_readiness');
@@ -152,6 +152,45 @@ function makeFamilies(scenarios) {
     neutral('judge_int_race7_badobj', 'Interaction — race in 7 days + poor objective recovery', { interaction: 'race7_bad_objective' }, { eventDaysOut: 7, objective: badObjective }),
   ];
 
+  const deliveredDoseVariance = [
+    neutral('judge_dose_exact', 'Delivered dose — exact 3x17m @ 95%', { deliveredDose: 'exact_3x17' }, { initialHistory: [deliveredDoseModule.makeThreshold3x17Exposure(addDays(base.startDate, -1), 'exact')] }),
+    neutral('judge_dose_surged', 'Delivered dose — surged 3x17m @ 105%', { deliveredDose: 'surged_3x17' }, { initialHistory: [deliveredDoseModule.makeThreshold3x17Exposure(addDays(base.startDate, -1), 'surged')] }),
+    neutral('judge_dose_curtailed', 'Delivered dose — curtailed 2 of 3 reps', { deliveredDose: 'curtailed_3x17' }, { initialHistory: [deliveredDoseModule.makeThreshold3x17Exposure(addDays(base.startDate, -1), 'curtailed')] }),
+    neutral('judge_dose_skipped', 'Delivered dose — skipped workout', { deliveredDose: 'skipped_rest' }, { initialHistory: [] }),
+  ];
+
+  const makeStrengthExposure = (date, templateId, category, costProfile) => ({
+    occurrenceKey: `strength:${templateId}:${date}`,
+    date,
+    templateId,
+    category,
+    modality: 'Strength',
+    costProfile,
+    stimulusProfile: { aerobicEndurance: 0, thresholdPower: 0, vo2MaxPower: 0, repeatedSurges: 0, sprintPower: 0, fatigueResistance: 0, maxStrength: 0.8, hypertrophy: 0.7 },
+    stimulusConfidence: 'exact',
+  });
+
+  const concurrentStrength = [
+    neutral('judge_concurrent_none', 'Concurrent — endurance build baseline', { concurrentStrength: 'none' }, { initialHistory: [] }),
+    neutral('judge_concurrent_heavy_lower', 'Concurrent — heavy lower-body yesterday', { concurrentStrength: 'heavy_lower_yesterday' }, { initialHistory: [makeStrengthExposure(addDays(base.startDate, -1), 'str_heavy_lower', 'Lower-body Strength', { systemic: 0.7, cardiovascular: 0.3, lowerBody: 0.85, upperBody: 0.1, impactTissue: 0.3, neuromuscular: 0.75 })] }),
+    neutral('judge_concurrent_heavy_upper', 'Concurrent — heavy upper-body yesterday', { concurrentStrength: 'heavy_upper_yesterday' }, { initialHistory: [makeStrengthExposure(addDays(base.startDate, -1), 'str_heavy_upper', 'Upper-body Strength', { systemic: 0.5, cardiovascular: 0.2, lowerBody: 0.05, upperBody: 0.85, impactTissue: 0.1, neuromuscular: 0.6 })] }),
+    neutral('judge_concurrent_power_maintenance', 'Concurrent — power maintenance strength yesterday', { concurrentStrength: 'power_maintenance_yesterday' }, { initialHistory: [makeStrengthExposure(addDays(base.startDate, -1), 'str_power_maintenance', 'Power Maintenance', { systemic: 0.4, cardiovascular: 0.2, lowerBody: 0.35, upperBody: 0.2, impactTissue: 0.1, neuromuscular: 0.4 })] }),
+  ];
+
+  const injuryConstraints = [
+    neutral('judge_injury_none', 'Injury — healthy baseline', { injuryConstraint: 'none' }),
+    neutral('judge_injury_running_restricted', 'Injury — restricted running modality', { injuryConstraint: 'restricted_running' }, { contextPatch: (c) => { c.constraints.restrictedModalities = ['Running']; } }),
+    neutral('judge_injury_lower_body_restricted', 'Injury — avoid heavy lower body', { injuryConstraint: 'avoid_heavy_lower_body' }, { contextPatch: (c) => { c.constraints.injuryTags = ['avoid_heavy_lower_body']; } }),
+    neutral('judge_injury_expired', 'Injury — review date passed', { injuryConstraint: 'expired_review' }, { contextPatch: (c) => { c.constraints.injuryReviewDate = addDays(base.startDate, -2); } }),
+  ];
+
+  const planningModesOverlays = [
+    neutral('judge_mode_event_directed', 'Planning mode — event directed A-race', { planningMode: 'event_directed' }),
+    scenarioVariant(base, 'judge_mode_evergreen', 'Planning mode — evergreen fitness maintenance', { planningMode: 'evergreen' }, { event: null, events: [], trainingIntentProfile: { userId: 'judge-user', mode: 'evergreen', horizonWeeks: 4, weeklyTargetSessions: 3, primaryFocus: 'general_fitness', adaptationTargets: ['aerobic_endurance', 'strength'] } }),
+    neutral('judge_mode_travel_overlay', 'Planning mode — 3-day travel overlay', { planningMode: 'travel_overlay' }, { authoredPlanBlocks: [{ id: 'travel-block-1', phase: 'travel', startDate: base.startDate, endDate: addDays(base.startDate, 2), volumeScale: 0.5, intensityScale: 0.7 }], contextPatch: (c) => { c.constraints.availableEquipment = ['bodyweight']; } }),
+    neutral('judge_mode_conservative_preference', 'Planning mode — high conservative bias', { planningMode: 'conservative_overlay' }, { contextPatch: (c) => { c.preferences.conservativeBias = true; } }),
+  ];
+
   return [
     { familyId: 'objective_recovery', changedAxis: 'objective recovery metrics', cases: objectiveRecovery },
     { familyId: 'subjective_recovery', changedAxis: 'subjective recovery metrics', cases: subjectiveRecovery },
@@ -160,6 +199,10 @@ function makeFamilies(scenarios) {
     { familyId: 'preferences_capacity', changedAxis: 'recovery preference / conservatism / time capacity', cases: capacityPreferences },
     { familyId: 'event_demand', changedAxis: 'event demand and priority', cases: eventDemand },
     { familyId: 'interactions', changedAxis: 'selected multi-signal interactions', cases: interactions },
+    { familyId: 'delivered_dose_variance', changedAxis: 'delivered-dose adherence and variance (3x17m threshold)', cases: deliveredDoseVariance },
+    { familyId: 'concurrent_strength_endurance', changedAxis: 'concurrent strength-endurance interference', cases: concurrentStrength },
+    { familyId: 'injury_constraints', changedAxis: 'structured injury guardrails and modality restrictions', cases: injuryConstraints },
+    { familyId: 'planning_modes_overlays', changedAxis: 'macro planning modes and travel overlays', cases: planningModesOverlays },
   ];
 }
 
@@ -179,6 +222,8 @@ function serializableScenario(caseDefinition) {
     context: scenario.context,
     initialHistory: scenario.initialHistory ?? [],
     fixedActivities: scenario.fixedActivities ?? [],
+    authoredPlanBlocks: scenario.authoredPlanBlocks ?? null,
+    trainingIntentProfile: scenario.trainingIntentProfile ?? null,
   };
 }
 
@@ -196,7 +241,7 @@ function planFromResult(result, templatesById) {
         modality: trace.selected.modality,
         durationMin: template?.durationMin ?? null,
         durationMax: template?.durationMax ?? null,
-        systemicCost: template?.systemicCost ?? null,
+        systemicCost: trace.selected.projectedCost.systemic,
         costProfile: trace.selected.projectedCost,
         stimulusProfile: template?.stimulusProfile ?? null,
       },
@@ -225,7 +270,8 @@ try {
   const scenariosModule = await server.ssrLoadModule('/src/engine/simulation/scenarios.ts');
   const analyzeModule = await server.ssrLoadModule('/src/engine/simulation/analyze.ts');
   const templatesModule = await server.ssrLoadModule('/src/engine/templates.ts');
-  families = makeFamilies(scenariosModule.SCENARIOS);
+  const deliveredDoseModule = await server.ssrLoadModule('/src/engine/simulation/deliveredDoseScenarios.ts');
+  families = makeFamilies(scenariosModule.SCENARIOS, deliveredDoseModule);
   templates = templatesModule.ENRICHED_TEMPLATES;
   runScenario = analyzeModule.runScenario;
 
