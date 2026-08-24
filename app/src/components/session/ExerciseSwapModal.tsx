@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import type { SessionStep } from '../../sessions/models';
-import { EXERCISES } from '../../workouts/exercises-base';
+import { EXERCISES } from '../../workouts/exercises';
+import { stepName } from '../../sessions/stepDisplay';
 import './ExerciseSwapModal.css';
 
 interface ExerciseSwapModalProps {
@@ -9,9 +10,10 @@ interface ExerciseSwapModalProps {
         exerciseRef: SessionStep['exerciseRef'];
         title?: string;
         dose?: SessionStep['dose'];
-        tempo?: string;
+        /** `undefined` leaves the step's current tempo/notes untouched; `null` explicitly clears it. */
+        tempo?: string | null;
         rest?: SessionStep['rest'];
-        notes?: string;
+        notes?: string | null;
     }) => void;
     onClose: () => void;
 }
@@ -21,7 +23,7 @@ export const ExerciseSwapModal: React.FC<ExerciseSwapModalProps> = ({
     onSwap,
     onClose,
 }) => {
-    const currentName = step.title || (step.exerciseRef?.kind === 'catalog' ? step.exerciseRef.exerciseId : (step.exerciseRef?.kind === 'unresolved_free_text' ? step.exerciseRef.name : step.id));
+    const currentName = stepName(step);
     const [searchQuery, setSearchQuery] = useState<string>('');
     const [selectedExerciseId, setSelectedExerciseId] = useState<string | null>(null);
     const [isCustom, setIsCustom] = useState<boolean>(false);
@@ -47,8 +49,10 @@ export const ExerciseSwapModal: React.FC<ExerciseSwapModalProps> = ({
             onSwap({
                 exerciseRef: { kind: 'unresolved_free_text', name: customName.trim() },
                 title: customName.trim(),
-                tempo: customTempo.trim() || undefined,
-                notes: customNotes.trim() || undefined,
+                // This modal always shows tempo/notes as editable text -- an empty field is an
+                // explicit instruction to clear the step's existing value, not "leave it as is".
+                tempo: customTempo.trim() || null,
+                notes: customNotes.trim() || null,
             });
             onClose();
             return;
@@ -61,8 +65,8 @@ export const ExerciseSwapModal: React.FC<ExerciseSwapModalProps> = ({
         onSwap({
             exerciseRef: { kind: 'catalog', exerciseId: exercise.id },
             title: exercise.name,
-            tempo: customTempo.trim() || undefined,
-            notes: customNotes.trim() || exercise.instruction || undefined,
+            tempo: customTempo.trim() || null,
+            notes: customNotes.trim() || exercise.instruction || null,
         });
         onClose();
     };
@@ -109,10 +113,12 @@ export const ExerciseSwapModal: React.FC<ExerciseSwapModalProps> = ({
                             {filteredExercises.map(ex => {
                                 const isSelected = selectedExerciseId === ex.id;
                                 return (
-                                    <div
+                                    <button
                                         key={ex.id}
+                                        type="button"
                                         className={`exercise-option-item ${isSelected ? 'selected' : ''}`}
                                         onClick={() => setSelectedExerciseId(ex.id)}
+                                        aria-pressed={isSelected}
                                     >
                                         <div className="exercise-option-main">
                                             <span className="exercise-option-name">{ex.name}</span>
@@ -121,7 +127,7 @@ export const ExerciseSwapModal: React.FC<ExerciseSwapModalProps> = ({
                                             </span>
                                         </div>
                                         {isSelected && <span className="selected-check">✓</span>}
-                                    </div>
+                                    </button>
                                 );
                             })}
                             {filteredExercises.length === 0 && (

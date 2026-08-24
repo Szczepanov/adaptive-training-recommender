@@ -1,13 +1,7 @@
 import React from 'react';
-import type { SessionBlock, SessionEntry, SessionStep } from '../../sessions/models';
+import type { SessionBlock, SessionEntry } from '../../sessions/models';
 import { getGroupProgress, targetEntriesForGroupStep } from '../../sessions/groupProgression';
-
-function stepName(step: SessionStep): string {
-    if (step.title) return step.title;
-    if (step.exerciseRef?.kind === 'catalog') return step.exerciseRef.exerciseId;
-    if (step.exerciseRef?.kind === 'unresolved_free_text') return step.exerciseRef.name;
-    return step.id;
-}
+import { stepName } from '../../sessions/stepDisplay';
 
 interface GroupProgressProps {
     block: SessionBlock;

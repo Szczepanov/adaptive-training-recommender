@@ -26,6 +26,15 @@ import { ineligibleAlternativeOptionIds } from '../engine/sessionChoiceEligibili
 import type { BodyRegion, RegionTissueResponse } from '../engine/models';
 import type { SessionCompletionPayload } from '../components/session/SessionCompletionSheet';
 
+/** Two `ExerciseRef`s identify the same performed exercise. Used to scope a step's
+ * per-exercise `setIndex` so a mid-session swap (`substituteStepExercise`) starts the
+ * replacement exercise's own set count at 1 instead of continuing the original's. */
+function sameExerciseRef(a: SessionStep['exerciseRef'], b: SessionStep['exerciseRef']): boolean {
+    if (!a || !b) return a === b;
+    if (a.kind !== b.kind) return false;
+    return a.kind === 'catalog' && b.kind === 'catalog' ? a.exerciseId === b.exerciseId : a.kind === 'unresolved_free_text' && b.kind === 'unresolved_free_text' && a.name === b.name;
+}
+
 export interface UseSessionRunnerResult {
     /** The effective, choice-resolved view (ADR-0023 D-MCHOICE) -- see `resolveEffectiveSession`.
      * The persisted/replayed bytes are never mutated; this is a derived read. */
@@ -67,9 +76,10 @@ export interface UseSessionRunnerResult {
         exerciseRef: SessionStep['exerciseRef'];
         title?: string;
         dose?: SessionStep['dose'];
-        tempo?: string;
+        /** `undefined` leaves the step's current tempo/notes untouched; `null` explicitly clears it. */
+        tempo?: string | null;
         rest?: SessionStep['rest'];
-        notes?: string;
+        notes?: string | null;
     }) => void;
     saveAsNewTemplate: (title: string, summary?: string) => Promise<string>;
     completeSession: (payload?: SessionCompletionPayload) => Promise<void>;
@@ -305,7 +315,9 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
             payload: payload.kind === 'repetition'
                 ? {
                     ...payload,
-                    setIndex: entries.filter(entry => entry.stepId === activeStep.id && entry.payload.kind === 'repetition').length + 1,
+                    // Scoped to the step's *current* exercise, not just its stepId -- a mid-session
+                    // swap (substituteStepExercise) must not inherit the replaced exercise's set count.
+                    setIndex: entries.filter(entry => entry.stepId === activeStep.id && entry.payload.kind === 'repetition' && sameExerciseRef(entry.exerciseRef, activeStep.exerciseRef)).length + 1,
                 }
                 : payload,
         };
@@ -419,9 +431,10 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
             exerciseRef: SessionStep['exerciseRef'];
             title?: string;
             dose?: SessionStep['dose'];
-            tempo?: string;
+            /** `undefined` leaves the step's current tempo/notes untouched; `null` explicitly clears it. */
+            tempo?: string | null;
             rest?: SessionStep['rest'];
-            notes?: string;
+            notes?: string | null;
         },
     ) => {
         setRawDefinition(prev => {
@@ -431,16 +444,19 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
                 const nextSteps = block.steps.map((step, sIdx) => {
                     if (sIdx !== stepIndex) return step;
                     const resolvedTitle = replacement.title
-                        ?? (replacement.exerciseRef?.kind === 'catalog' ? replacement.exerciseRef.exerciseId : (replacement.exerciseRef?.kind === 'unresolved_free_text' ? replacement.exerciseRef.name : step.title));
-                    return {
+                        ?? (replacement.exerciseRef?.kind === 'catalog' ? replacement.exerciseRef.exerciseId : (replacement.exerciseRef?.kind === 'unresolved_free_text' ? replacement.exerciseRef.name : step.id));
+                    const nextStep: SessionStep = {
                         ...step,
                         exerciseRef: replacement.exerciseRef,
                         title: resolvedTitle,
                         ...(replacement.dose ? { dose: replacement.dose } : {}),
-                        ...(replacement.tempo !== undefined ? { tempo: replacement.tempo } : {}),
                         ...(replacement.rest !== undefined ? { rest: replacement.rest } : {}),
-                        ...(replacement.notes !== undefined ? { notes: replacement.notes } : {}),
                     };
+                    if (replacement.tempo === null) delete nextStep.tempo;
+                    else if (replacement.tempo !== undefined) nextStep.tempo = replacement.tempo;
+                    if (replacement.notes === null) delete nextStep.notes;
+                    else if (replacement.notes !== undefined) nextStep.notes = replacement.notes;
+                    return nextStep;
                 });
                 return { ...block, steps: nextSteps };
             });

@@ -13,7 +13,8 @@ import { CheckoffInputCard } from './inputs/CheckoffInputCard';
 import { SessionCompletionSheet } from './SessionCompletionSheet';
 import { sessionDefinitionService, type SessionDefinitionHeader } from '../../services/sessionDefinitionService';
 import { prepareUnplannedSessionLaunch } from '../../services/sessionAuthoringService';
-import { getGroupProgress } from '../../sessions/groupProgression';
+import { getGroupProgress, targetEntriesForGroupStep } from '../../sessions/groupProgression';
+import { stepName } from '../../sessions/stepDisplay';
 import { GroupProgress } from './GroupProgress';
 import { ChoiceCard } from './ChoiceCard';
 import { ExerciseSwapModal } from './ExerciseSwapModal';
@@ -170,12 +171,21 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
     const activeStep = runner.activeStep;
     const entries = runner.entries;
 
+    // All logged entries for the active step, including recorded choice answers -- this is
+    // the athlete-facing "Performed for this step" list/count below.
     const activeStepEntries = useMemo(() => {
         if (!activeStep) return [];
-        return entries.filter(e => e.stepId === activeStep.id && e.payload.kind !== 'choice');
+        return entries.filter(e => e.stepId === activeStep.id);
     }, [activeStep, entries]);
 
-    const latestActiveEntry = activeStepEntries.length > 0 ? activeStepEntries[activeStepEntries.length - 1] : null;
+    // Choice answers carry no weight/reps/duration, so they must never be picked as the
+    // "latest" set a suggestion is derived from.
+    const activeStepWorkEntries = useMemo(
+        () => activeStepEntries.filter(e => e.payload.kind !== 'choice'),
+        [activeStepEntries],
+    );
+
+    const latestActiveEntry = activeStepWorkEntries.length > 0 ? activeStepWorkEntries[activeStepWorkEntries.length - 1] : null;
 
     const suggestedWeightKg = useMemo(() => {
         if (!activeStep) return undefined;
@@ -553,9 +563,55 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
         }
     };
 
+    // Shared by onComplete/onAbandon below: both run a runner transition, close the sheet on
+    // success, offer a companion (or close the runner) exactly the same way, and surface the
+    // same kind of retryable error on failure -- only the action and its error copy differ.
+    const finishSession = async (action: () => Promise<void>, errorMessage: string) => {
+        // Captured before the runner action clears runner.definition, so the companion prompt
+        // (if any) still knows what just finished and what it separately unlocks.
+        const finishedTitle = definition.title;
+        const companions = definition.companionSessions;
+        try {
+            await action();
+            setShowCompletionSheet(false);
+            setShowAbandonConfirmation(false);
+            setCompletionError(null);
+            // A skipped/abandoned primary session still leaves an independently executable
+            // companion (e.g. the recovery spin) worth offering -- it is never gated on the
+            // primary's own completion.
+            if (companions && companions.length > 0) {
+                setCompanionPrompt({ finishedTitle, finishedAt: Date.now(), companions });
+            } else if (onClose) {
+                onClose();
+            }
+        } catch {
+            setCompletionError(errorMessage);
+        }
+    };
+
     const inputProfile = activeStep ? resolveStepInputProfile(activeStep) : 'repetition_mass';
     const activeEffort = activeStep ? formatEffort(activeStep) : null;
     const activeBlock = runner.activeBlock;
+
+    // The step the rest banner should preview as "Next" -- not simply activeStep, which for an
+    // ordinary sequential block doesn't advance until the athlete moves on, so it would still
+    // name the exercise a set was just logged for. Rotating groups (circuit/superset/alternating)
+    // use the same rotation logic GroupProgress renders; other blocks fall through to the plain
+    // next step/next non-empty block, mirroring useSessionRunner's own nextStep().
+    const restNextStep = (() => {
+        if (!definition || !activeBlock) return null;
+        const groupProgress = getGroupProgress(activeBlock, entries, runner.activeStepIndex);
+        if (groupProgress) {
+            return groupProgress.nextStepIndex !== null ? activeBlock.steps[groupProgress.nextStepIndex] : null;
+        }
+        if (runner.activeStepIndex + 1 < activeBlock.steps.length) {
+            return activeBlock.steps[runner.activeStepIndex + 1];
+        }
+        const nextBlock = definition.blocks.find(
+            (candidate, index) => index > runner.activeBlockIndex && candidate.steps.length > 0,
+        );
+        return nextBlock ? nextBlock.steps[0] : null;
+    })();
 
     return (
         <div className="session-runner-container">
@@ -600,9 +656,9 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                 <div className="rest-timer-banner" role="status" aria-live="polite">
                     <div className="rest-timer-info">
                         <span>☕ Rest: <strong>{runner.restSecondsRemaining}s</strong></span>
-                        {activeStep && (
+                        {restNextStep && (
                             <span className="rest-next-preview">
-                                Next: {activeStep.title || (activeStep.exerciseRef?.kind === 'catalog' ? activeStep.exerciseRef.exerciseId : (activeStep.exerciseRef?.kind === 'unresolved_free_text' ? activeStep.exerciseRef.name : activeStep.id))}
+                                Next: {stepName(restNextStep)}
                             </span>
                         )}
                     </div>
@@ -635,17 +691,12 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                         <div className="step-pills">
                             {block.steps.map((step, sIdx) => {
                                 const stepCompletedSets = entries.filter(e => e.stepId === step.id && e.payload.kind !== 'choice').length;
-                                let targetSets = 1;
-                                if (step.dose?.kind === 'repetition') {
-                                    targetSets = step.dose.sets;
-                                } else if (step.dose?.kind === 'duration' && step.dose.sets) {
-                                    targetSets = step.dose.sets;
-                                } else if (step.dose?.kind === 'distance' && step.dose.sets) {
-                                    targetSets = step.dose.sets;
-                                }
+                                // Shares the same target-set contract GroupProgress uses below, so a
+                                // rotating group's block.rounds (not just the step's own dose.sets)
+                                // is honored consistently between the two displays.
+                                const targetSets = targetEntriesForGroupStep(block, step);
                                 const isStepComplete = stepCompletedSets >= targetSets;
                                 const isCurrent = runner.activeBlockIndex === bIdx && runner.activeStepIndex === sIdx;
-                                const stepName = step.title || (step.exerciseRef?.kind === 'catalog' ? step.exerciseRef.exerciseId : (step.exerciseRef?.kind === 'unresolved_free_text' ? step.exerciseRef.name : step.id));
                                 return (
                                     <button
                                         key={step.id}
@@ -653,7 +704,7 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                                         className={`step-nav-pill ${isCurrent ? 'active' : ''} ${isStepComplete ? 'completed' : ''}`}
                                         onClick={() => runner.selectStep(bIdx, sIdx)}
                                     >
-                                        {isStepComplete ? '✓ ' : (stepCompletedSets > 0 ? `(${stepCompletedSets}/${targetSets}) ` : '')}{stepName}
+                                        {isStepComplete ? '✓ ' : (stepCompletedSets > 0 ? `(${stepCompletedSets}/${targetSets}) ` : '')}{stepName(step)}
                                     </button>
                                 );
                             })}
@@ -679,7 +730,7 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                                 </button>
                             </div>
                             <h3 className="step-name">
-                                {activeStep.title || (activeStep.exerciseRef?.kind === 'catalog' ? activeStep.exerciseRef.exerciseId : (activeStep.exerciseRef?.kind === 'unresolved_free_text' ? activeStep.exerciseRef.name : activeStep.id))}
+                                {stepName(activeStep)}
                             </h3>
                             {pastSummary && (
                                 <span className="previous-context-chip">
@@ -734,7 +785,7 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                         <div className="input-card-container">
                             {inputProfile === 'repetition_mass' || inputProfile === 'repetition_bodyweight' ? (
                                 <RepetitionInputCard
-                                    key={`${activeStep.id}-${activeStepEntries.length}`}
+                                    key={activeStep.id}
                                     step={activeStep}
                                     suggestedWeightKg={suggestedWeightKg}
                                     suggestedReps={suggestedReps}
@@ -742,7 +793,7 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                                 />
                             ) : inputProfile === 'duration_hold' ? (
                                 <DurationInputCard
-                                    key={`${activeStep.id}-${activeStepEntries.length}`}
+                                    key={activeStep.id}
                                     step={activeStep}
                                     suggestedLoadKg={suggestedLoadKg}
                                     suggestedSeconds={suggestedSeconds}
@@ -750,13 +801,13 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                                 />
                             ) : inputProfile === 'distance_split' ? (
                                 <DistanceInputCard
-                                    key={`${activeStep.id}-${activeStepEntries.length}`}
+                                    key={activeStep.id}
                                     step={activeStep}
                                     onSubmit={handleEntrySubmit}
                                 />
                             ) : (
                                 <CheckoffInputCard
-                                    key={`${activeStep.id}-${activeStepEntries.length}`}
+                                    key={activeStep.id}
                                     step={activeStep}
                                     onSubmit={handleEntrySubmit}
                                 />
@@ -880,46 +931,14 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                         setShowAbandonConfirmation(false);
                         setCompletionError(null);
                     }}
-                    onComplete={async (payload) => {
-                        // Captured before completeSession() clears runner.definition, so the
-                        // companion prompt (if any) still knows what just finished and what it
-                        // separately unlocks.
-                        const finishedTitle = definition.title;
-                        const companions = definition.companionSessions;
-                        try {
-                            await runner.completeSession(payload);
-                            setShowCompletionSheet(false);
-                            setShowAbandonConfirmation(false);
-                            setCompletionError(null);
-                            if (companions && companions.length > 0) {
-                                setCompanionPrompt({ finishedTitle, finishedAt: Date.now(), companions });
-                            } else if (onClose) {
-                                onClose();
-                            }
-                        } catch {
-                            setCompletionError('Could not save completion feedback. Your session is still open, so you can retry.');
-                        }
-                    }}
-                    onAbandon={async () => {
-                        const finishedTitle = definition.title;
-                        const companions = definition.companionSessions;
-                        try {
-                            await runner.abandonSession();
-                            setShowCompletionSheet(false);
-                            setShowAbandonConfirmation(false);
-                            setCompletionError(null);
-                            // A skipped/abandoned primary session still leaves an independently
-                            // executable companion (e.g. the recovery spin) worth offering --
-                            // it is never gated on the primary's own completion.
-                            if (companions && companions.length > 0) {
-                                setCompanionPrompt({ finishedTitle, finishedAt: Date.now(), companions });
-                            } else if (onClose) {
-                                onClose();
-                            }
-                        } catch {
-                            setCompletionError('Could not abandon the session. It remains open, so you can retry.');
-                        }
-                    }}
+                    onComplete={payload => finishSession(
+                        () => runner.completeSession(payload),
+                        'Could not save completion feedback. Your session is still open, so you can retry.',
+                    )}
+                    onAbandon={() => finishSession(
+                        () => runner.abandonSession(),
+                        'Could not abandon the session. It remains open, so you can retry.',
+                    )}
                 />
             )}
 

@@ -127,20 +127,30 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
+    width: 100%;
     padding: 0.5rem 0.75rem;
     background: #1e293b;
+    border: 1px solid transparent;
     border-radius: 6px;
     cursor: pointer;
     transition: background 0.15s;
+    font: inherit;
+    color: inherit;
+    text-align: left;
 }
 
 .exercise-option-item:hover {
     background: #334155;
 }
 
+.exercise-option-item:focus-visible {
+    outline: 2px solid #38bdf8;
+    outline-offset: 2px;
+}
+
 .exercise-option-item.selected {
     background: rgba(59, 130, 246, 0.25);
-    border: 1px solid #3b82f6;
+    border-color: #3b82f6;
 }
 
 .exercise-option-main {
