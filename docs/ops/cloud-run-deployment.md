@@ -1,22 +1,21 @@
 # GCP Cloud Run & Cloud Scheduler Deployment Guide
 
-This guide containerizes the Python Garmin ingestion/sync package and schedules three
-recurring jobs on Google Cloud Platform (GCP):
+This guide containerizes the Python Garmin ingestion/sync package and deploys a self-service HTTP API and three scheduled jobs on Google Cloud Platform (GCP):
 
-* **`garmin-sync`** -- recovery-metrics ingestion (`python -m garmin_sync sync`),
+* **`garmin-account-link`** -- self-service HTTP service used by the web app to establish per-user Garmin tokens (`python -m garmin_sync.account_link_api`)
+* **`garmin-sync`** -- multi-user recovery-metrics ingestion (`python -m garmin_sync sync-all`),
   polled every 15 min through a morning wake window rather than run once at a
   fixed time (see step 6) -- most ticks are a free Firestore freshness check,
   not a Garmin call
 * **`garmin-push-pending-workouts`** -- polls the Firestore workout queue every few
   minutes and pushes anything queued by "Sync to Garmin" in the web app
-  (`python -m garmin_sync push-pending-workouts`)
+  (`python -m garmin_sync push-pending-workouts-all`)
 * **`garmin-manual-sync`** -- polls for a "Sync Now" request queued by the web app's
   Garmin Sync Now button (e.g. because the athlete is up before the morning poll
   window) and runs an immediate forced sync if one is pending
-  (`python -m garmin_sync poll-manual-sync`)
+  (`python -m garmin_sync poll-manual-sync-all`)
 
-All three share one container image and one runtime service account; only their
-`--args` differ. Run the sections below in order.
+All four share one container image and one runtime service account. Run the sections below in order.
 
 **No local machine?** See [Deploying from GitHub Actions](#deploying-from-github-actions-no-local-machine)
 below instead -- it runs this same sequence as two `workflow_dispatch` workflows you trigger
@@ -133,18 +132,32 @@ It prompts for an MFA code interactively if your Garmin account has 2FA enabled.
 
 ---
 
-## 5. Create the three Cloud Run Jobs
+## 5. Create the Cloud Run services and jobs
 
 Copy `docs/ops/cloud-run-job.env.yaml.example` to `cloud-run-job.env.yaml`
-(gitignored) and fill in `APP_USER_ID` (your Firebase Auth UID),
-`GARMIN_TOKEN_BUCKET` (`${GCP_PROJECT}-garmin-tokens`), and `GCP_PROJECT_ID`.
+(gitignored) and fill in `GARMIN_TOKEN_BUCKET` (`${GCP_PROJECT}-garmin-tokens`) and `GCP_PROJECT_ID`.
+
+```bash
+# Garmin's interactive MFA continuation requires the same in-memory client/session.
+# max-instances=1 intentionally preserves that invariant without persisting a password
+# or SSO session. If the instance restarts, the short-lived challenge simply expires
+# and the user restarts login.
+gcloud run deploy garmin-account-link \
+  --image=${IMAGE_TAG} --region=${REGION} \
+  --service-account=${JOB_SA_EMAIL} \
+  --env-vars-file=cloud-run-job.env.yaml \
+  --command=python --args=-m,garmin_sync.account_link_api \
+  --port=8080 --timeout=300 --concurrency=10 \
+  --min-instances=0 --max-instances=1 \
+  --allow-unauthenticated
+```
 
 ```bash
 gcloud run jobs create garmin-sync \
   --image=${IMAGE_TAG} --region=${REGION} \
   --service-account=${JOB_SA_EMAIL} \
   --env-vars-file=cloud-run-job.env.yaml \
-  --args=sync \
+  --args=sync-all \
   --max-retries=0
 ```
 
@@ -153,7 +166,7 @@ gcloud run jobs create garmin-push-pending-workouts \
   --image=${IMAGE_TAG} --region=${REGION} \
   --service-account=${JOB_SA_EMAIL} \
   --env-vars-file=cloud-run-job.env.yaml \
-  --args=push-pending-workouts \
+  --args=push-pending-workouts-all \
   --max-retries=0
 ```
 
@@ -162,7 +175,7 @@ gcloud run jobs create garmin-manual-sync \
   --image=${IMAGE_TAG} --region=${REGION} \
   --service-account=${JOB_SA_EMAIL} \
   --env-vars-file=cloud-run-job.env.yaml \
-  --args=poll-manual-sync \
+  --args=poll-manual-sync-all \
   --max-retries=0
 ```
 
