@@ -37,7 +37,9 @@ def _chmod_secure(path: Path, mode: int) -> None:
 
             fd = os.open(path, flags)
             try:
-                os.fchmod(fd, mode)
+                fchmod_fn = getattr(os, "fchmod", None)
+                if fchmod_fn is not None:
+                    fchmod_fn(fd, mode)
             finally:
                 os.close(fd)
             return

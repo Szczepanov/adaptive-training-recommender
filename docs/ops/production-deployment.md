@@ -13,7 +13,7 @@ a merge to `main` must not silently turn that acknowledgement into an unattended
 
 A production run promotes one Git SHA in dependency order:
 
-1. **Full CI release gate** — Python 3.12/3.14 tests, lint/type checks, frontend tests and
+1. **Full CI release gate** — Python 3.14 tests, lint/type checks, frontend tests and
    Firestore rules emulator suite, simulations, production frontend build, dependency audits,
    and Docker build.
 2. **Garmin backend** — build and push the SHA-tagged image, deploy `garmin-account-link`, the

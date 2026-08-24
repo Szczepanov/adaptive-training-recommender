@@ -205,7 +205,7 @@ class GarminSyncService:
         """
         if not provider.capabilities.activity_details:
             return {}
-        fetch_detail = getattr(provider, "fetch_activity_detail", None)
+        fetch_detail: Any = getattr(provider, "fetch_activity_detail", None)
         if not callable(fetch_detail):
             return {}
 
@@ -222,7 +222,7 @@ class GarminSyncService:
                 continue
             assert activity.activity_id is not None
             try:
-                result = fetch_detail(activity.activity_id)
+                result: Any = fetch_detail(activity.activity_id)
                 details[activity.activity_id] = result.canonical
             except GarminConnectTooManyRequestsError as error:
                 logger.warning(
@@ -406,12 +406,12 @@ class GarminSyncService:
         can omit the optional capability without making recovery sync fail.
         """
         provider = self._init_provider()
-        fetch_targets = getattr(provider, "fetch_performance_targets", None)
-        persist_targets = getattr(self.repository, "upsert_garmin_performance_targets", None)
+        fetch_targets: Any = getattr(provider, "fetch_performance_targets", None)
+        persist_targets: Any = getattr(self.repository, "upsert_garmin_performance_targets", None)
         if not callable(fetch_targets) or not callable(persist_targets):
             return
         try:
-            result = fetch_targets()
+            result: Any = fetch_targets()
             sync_run_id = _new_sync_run_id(f"targets-{target_iso}")
             for endpoint, payload in result.raw_payloads.items():
                 if payload is not None:
@@ -431,11 +431,11 @@ class GarminSyncService:
         """Best-effort current gear/shoe tracking import."""
         try:
             provider = self._init_provider()
-            fetch_gear = getattr(provider, "fetch_gear", None)
-            persist_gear = getattr(self.repository, "upsert_garmin_gear", None)
+            fetch_gear: Any = getattr(provider, "fetch_gear", None)
+            persist_gear: Any = getattr(self.repository, "upsert_garmin_gear", None)
             if not callable(fetch_gear) or not callable(persist_gear):
                 return
-            result = fetch_gear()
+            result: Any = fetch_gear()
             sync_run_id = _new_sync_run_id(f"gear-{target_iso}")
             for endpoint, payload in result.raw_payloads.items():
                 if payload is not None:
@@ -483,9 +483,10 @@ class GarminSyncService:
         if auto_backfill_cold_start:
             window_start_iso = get_date_string(n_days_ago(target_date, 56))
             window_end_iso = get_date_string(n_days_ago(target_date, 1))
-            get_hist = getattr(self.repository, "get_historical_snapshots", None)
+            get_hist: Any = getattr(self.repository, "get_historical_snapshots", None)
             if callable(get_hist):
-                history = get_hist(window_start_iso, window_end_iso)
+                history_raw: Any = get_hist(window_start_iso, window_end_iso)
+                history = list(history_raw)
                 if len(history) < 14:
                     logger.info(
                         f"Cold start detected for user=<UID-redacted>: found only {len(history)} "
@@ -632,7 +633,7 @@ class GarminSyncService:
                     for future in concurrent.futures.as_completed(future_to_activity):
                         activity = future_to_activity[future]
                         try:
-                            result = future.result()
+                            result: Any = future.result()
                             if activity.activity_id:
                                 details_by_activity_id[activity.activity_id] = result.canonical
                         except GarminConnectTooManyRequestsError as error:
@@ -1065,7 +1066,7 @@ class GarminSyncService:
         claim_id = uuid.uuid4().hex
         claimed_payload: list[dict[str, Any]] = []
 
-        @firestore.transactional
+        @firestore.transactional  # pyright: ignore[reportAttributeAccessIssue]
         def claim_pending(transaction: Any) -> bool:
             snapshot = request_ref.get(transaction=transaction)
             if not snapshot.exists:
@@ -1156,7 +1157,7 @@ class GarminSyncService:
         finisher must leave it alone rather than overwriting a newer request with a
         stale outcome."""
 
-        @firestore.transactional
+        @firestore.transactional  # pyright: ignore[reportAttributeAccessIssue]
         def finish(transaction: Any) -> None:
             snapshot = request_ref.get(transaction=transaction)
             if not snapshot.exists:

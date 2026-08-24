@@ -3,7 +3,7 @@ name = "adaptive-training-recommender"
 version = "0.1.0"
 description = "Garmin data fetcher for adaptive training"
 readme = "README.md"
-requires-python = ">=3.12,<3.15"
+requires-python = ">=3.14,<3.15"
 dependencies = [
     "firebase-admin",
     "garminconnect>=0.3.8,<0.4",
@@ -45,15 +45,21 @@ branch = true
 
 [tool.ruff]
 line-length = 100
-target-version = "py312"
+target-version = "py313"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B"]
 ignore = ["E501", "RUF001", "RUF002", "RUF003"]
 
 [tool.mypy]
-python_version = "3.12"
+python_version = "3.14"
 files = ["src/garmin_sync"]
 disallow_untyped_defs = true
 check_untyped_defs = true
 ignore_missing_imports = true
+
+[tool.pyright]
+venvPath = "."
+venv = ".venv"
+include = ["src/garmin_sync"]
+pythonVersion = "3.14"
