@@ -372,7 +372,7 @@ export const ManualSessionBuilder: React.FC<ManualSessionBuilderProps> = ({ user
                                                     return <div key={alt.id} className="builder-alternative-row">
                                                         <input value={alt.title} onChange={event => updateAlternative(blockIndex, stepIndex, alt.id, altExercise === '__custom__' ? undefined : altExercise, event.target.value)} aria-label="Alternative title" />
                                                         <select value={altExercise} onChange={event => {
-                                                            const exercise = EXERCISES.find(item => item.id === event.target.value);
+                                                            const exercise = EXERCISES_BY_ID.get(event.target.value);
                                                             updateAlternative(blockIndex, stepIndex, alt.id, exercise?.id, exercise?.name ?? alt.title);
                                                         }} aria-label="Alternative movement"><option value="__custom__">Custom / free text</option>{EXERCISES.map(exercise => <option key={exercise.id} value={exercise.id}>{exercise.name}</option>)}</select>
                                                         <button type="button" onClick={() => removeAlternative(blockIndex, stepIndex, alt.id)} aria-label="Remove alternative">Remove</button>
