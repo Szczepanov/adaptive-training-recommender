@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { evaluateEnvelopes, evaluateReadinessAndSafetyEnvelope, evaluateTraining } from './rules';
+import { evaluateEnvelopes, evaluateReadinessAndSafetyEnvelope, evaluateTrainingWithIntent } from './rules';
 import type { DailyReadiness, EngineObjectiveInput, SubjectiveInput, UserContext } from './models';
 
 function context(): UserContext {
@@ -108,9 +108,11 @@ describe('plan-judge calibration policy guards', () => {
         expect(result.mode).toBe('train');
     });
 
-    it('reacts to a strong acute RHR elevation even when the other recovery signals are green', () => {
+    it('reacts at the acute RHR floor when the other recovery signals are green', () => {
+        // +7 bpm against the 3.5-bpm personal SD is exactly 2 SD. With the 0.3 RHR
+        // weight that yields the 0.60 acute-deviation floor used by the explicit guard.
         const result = evaluateReadinessAndSafetyEnvelope(
-            readiness({}, { rhr: 56, rhr_delta: 6, rhr_delta_28d: 6 }),
+            readiness({}, { rhr: 57, rhr_delta: 7, rhr_delta_28d: 7 }),
             context(),
             '2026-08-24',
         );
@@ -134,10 +136,12 @@ describe('plan-judge calibration policy guards', () => {
         expect(at.plan.maxAllowableTier).toBe('Hard');
     });
 
-    it('auto-applies a template easier dose when a modify-day pick supports one', () => {
-        const result = evaluateTraining(
+    it('auto-applies a template easier dose on the intent-aware modify path', async () => {
+        const result = await evaluateTrainingWithIntent(
+            'calibration-test-user',
             readiness({ stress: 9, timeAvailable: 15, preferredModalityToday: 'Mobility' }),
             context(),
+            [],
             '2026-08-24',
         );
 
