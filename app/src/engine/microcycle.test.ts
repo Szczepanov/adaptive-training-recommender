@@ -225,7 +225,12 @@ describe('taper as an explicit contract (Phase 5.7)', () => {
     const microcycle = generateWeeklyObjectives(result.phase, '2026-06-27', result.focusEvent);
     const objective = microcycle.objectives.find(o => o.key === 'race_specific_endurance');
     expect(objective?.title).toBe('Cycling Race-Specific Endurance');
-    expect(objective?.qualification?.minimumStimulus?.aerobicEndurance).toBe(0.6);
+    // Gated on repeatedSurges, not aerobicEndurance: this branch fires for surge/criterium
+    // -flavored demand, and a compact, time-efficient surge session is expected to trade
+    // away aerobic volume for repeatability -- an aerobicEndurance floor here would
+    // disqualify exactly the session type this branch exists for.
+    expect(objective?.qualification?.minimumStimulus?.aerobicEndurance).toBeUndefined();
+    expect(objective?.qualification?.minimumStimulus?.repeatedSurges).toBe(0.6);
   });
 
   it('plan-derived: the event-relative cycling plan requests taper_sharpening and race_week_strength coverage during its taper block', async () => {

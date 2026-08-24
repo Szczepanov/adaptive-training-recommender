@@ -35,7 +35,7 @@ function canonicalise(coverage: typeof SEPTEMBER_CYCLING_EVENT_SESSION_COVERAGE)
 }
 
 const FROZEN_KEY_COUNT = 18;
-const FROZEN_SHA256 = '59885e143647867a26b62163ed4a9f80c95a759e8c40c9d608d2f5de4329ba3d';
+const FROZEN_SHA256 = '85cac3dbc01b147cb0bed1c4dc4b01a84b5379524158f050030e922bd1f87899';
 
 const CONTRACT_CHANGE_MESSAGE = [
     'SEPTEMBER_CYCLING_EVENT_SESSION_COVERAGE is the frozen event-directed cycling contract',

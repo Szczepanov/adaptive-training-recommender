@@ -293,6 +293,13 @@ export function evaluateReadinessAndSafetyEnvelope(
     }
     const conservativeBias = context.preferences.conservativeBias ? CONSERVATIVE_BIAS_STRAIN_OFFSET : 0;
     const extremeFatigue = subjective.fatigue > 8 || subjective.soreness > 8 || subjective.painFlag;
+    const severeSubjectiveDistress = (subjective.fatigue >= 8 && subjective.readiness <= 4) ||
+        (subjective.readiness <= 3 && subjective.stress >= 8) ||
+        (subjective.fatigue >= 8 && subjective.stress >= 8);
+    const acuteBiometricStrainFloor = (rhrStrain.acuteDeviation >= 0.6 && objective.rhr_delta !== null && objective.rhr_delta >= 6) ||
+        (hrvStrain.acuteDeviation >= 1.0 && objective.hrv_delta !== null && objective.hrv_delta <= -15);
+    const acuteSubjectiveModify = subjective.fatigue >= 8 || subjective.readiness <= 3 || subjective.stress >= 9 || (subjective.readiness <= 4 && subjective.fatigue >= 6);
+
     const recentHardSessionsCount = objective.last_3_days_hard_sessions_count || 0;
     const recentHardSessionsPenalty = recentHardSessionsCount >= 2 ? RECENT_HARD_SESSIONS_STRAIN : 0;
     const objectiveStrain = totalMetricStrain + sleepFloorPenalty + bodyBatteryDeficit + conservativeBias + recentHardSessionsPenalty;
@@ -307,14 +314,14 @@ export function evaluateReadinessAndSafetyEnvelope(
     const strainForThresholds = objectiveStrain + subjectiveDrift;
 
     const lowBodyBatteryRecovery = objective.body_battery_wake !== null && objective.body_battery_wake <= BODY_BATTERY_RECOVER_THRESHOLD;
-    const fatigueTriggeredRecover = overallFatigueScore > 7 || extremeFatigue || lowBodyBatteryRecovery || strainForThresholds >= STRAIN_RECOVER_THRESHOLD;
+    const fatigueTriggeredRecover = overallFatigueScore > 7 || extremeFatigue || severeSubjectiveDistress || lowBodyBatteryRecovery || strainForThresholds >= STRAIN_RECOVER_THRESHOLD;
     let mode: 'train' | 'modify' | 'recover' = fatigueTriggeredRecover
         ? 'recover'
-        : (overallFatigueScore > 5 || subjective.soreness > 6 || strainForThresholds >= STRAIN_MODIFY_THRESHOLD) ? 'modify' : 'train';
+        : (overallFatigueScore > 5 || subjective.soreness > 6 || acuteSubjectiveModify || acuteBiometricStrainFloor || strainForThresholds >= STRAIN_MODIFY_THRESHOLD) ? 'modify' : 'train';
 
     const strainWithoutDrift = objectiveStrain - totalMultiDayDrift;
-    const counterfactualRecover = overallFatigueScore > 7 || extremeFatigue || strainWithoutDrift >= STRAIN_RECOVER_THRESHOLD;
-    const counterfactualModify = counterfactualRecover || overallFatigueScore > 5 || subjective.soreness > 6 || strainWithoutDrift >= STRAIN_MODIFY_THRESHOLD;
+    const counterfactualRecover = overallFatigueScore > 7 || extremeFatigue || severeSubjectiveDistress || strainWithoutDrift >= STRAIN_RECOVER_THRESHOLD;
+    const counterfactualModify = counterfactualRecover || overallFatigueScore > 5 || subjective.soreness > 6 || acuteSubjectiveModify || acuteBiometricStrainFloor || strainWithoutDrift >= STRAIN_MODIFY_THRESHOLD;
     const counterfactualModeWithoutDrift = counterfactualRecover ? 'recover' : (counterfactualModify ? 'modify' : 'train');
     const multiDayDriftIsDecisionRelevant = (mode !== 'train') && (mode !== counterfactualModeWithoutDrift);
 
@@ -323,8 +330,8 @@ export function evaluateReadinessAndSafetyEnvelope(
     // objective multi-day-drift axis) through the same threshold logic, so a caller can tell
     // whether subjective drift specifically changed the mode. Inert under 'off' (subjectiveDrift
     // is always 0 there, so modeWithoutSubjectiveDrift always equals mode).
-    const recoverWithoutSubjectiveDrift = overallFatigueScore > 7 || extremeFatigue || lowBodyBatteryRecovery || objectiveStrain >= STRAIN_RECOVER_THRESHOLD;
-    const modifyWithoutSubjectiveDrift = recoverWithoutSubjectiveDrift || overallFatigueScore > 5 || subjective.soreness > 6 || objectiveStrain >= STRAIN_MODIFY_THRESHOLD;
+    const recoverWithoutSubjectiveDrift = overallFatigueScore > 7 || extremeFatigue || severeSubjectiveDistress || lowBodyBatteryRecovery || objectiveStrain >= STRAIN_RECOVER_THRESHOLD;
+    const modifyWithoutSubjectiveDrift = recoverWithoutSubjectiveDrift || overallFatigueScore > 5 || subjective.soreness > 6 || acuteSubjectiveModify || acuteBiometricStrainFloor || objectiveStrain >= STRAIN_MODIFY_THRESHOLD;
     const modeWithoutSubjectiveDrift = recoverWithoutSubjectiveDrift ? 'recover' : (modifyWithoutSubjectiveDrift ? 'modify' : 'train');
     const subjectiveDriftIsDecisionRelevant = (mode !== 'train') && (mode !== modeWithoutSubjectiveDrift);
 
@@ -654,6 +661,27 @@ export async function evaluateTrainingWithIntent(
         ? 'External plan fallback: no imported session is placed today, so the built-in planner is choosing this session. '
         : '';
     const pick = rankingResult.accepted[0];
+    // A 'modify' mode whose top-ranked candidate is already low-cost enough to survive
+    // the modify ceiling unchanged (a bad subjective checkin on an already-easy day, most
+    // commonly) previously fell through as a same-template, same-duration recommendation
+    // -- 'modify' meant nothing an athlete could see. Auto-applying the template's own
+    // easier dose (the same mechanism `adjustSessionRecommendation('easier', ...)` uses
+    // for an explicit athlete request) keeps 'modify' visibly distinct from 'train'
+    // whenever the template offers a lighter variant, without inventing a second
+    // eligibility/ranking path.
+    const modifyDoseAdjustment = mode === 'modify' && pick?.template.easierDose
+        ? {
+            activeDose: pick.template.easierDose,
+            adjustment: {
+                direction: 'easier' as const,
+                tier: 1 as const,
+                originalTemplateId: pick.template.id,
+                originalTemplateTitle: pick.template.title,
+                adjustedDoseLabel: pick.template.easierDose.label,
+                rationale: `Today's readiness called for a modify-tier day, so this session automatically uses its easier dose (${pick.template.easierDose.label}) rather than the full prescription.`,
+            },
+        }
+        : {};
     if (!pick) {
         const safeRecovery = candidates.find(template => template.category === 'Rest' || template.category === 'Mobility/Recovery')
             ?? ENRICHED_TEMPLATES.find(template => template.category === 'Rest')
@@ -680,8 +708,9 @@ export async function evaluateTrainingWithIntent(
         template: pick.template,
         plannedDose: intent.plannedDose,
         executionDose: resolveExecutionDose(intent.plannedDose, envelopes.plan, null),
-        rationale: `${externalFallbackPrefix}${phaseContext} ${pick.rationale}`,
+        rationale: modifyDoseAdjustment.adjustment ? `${externalFallbackPrefix}${phaseContext} ${pick.rationale} ${modifyDoseAdjustment.adjustment.rationale}` : `${externalFallbackPrefix}${phaseContext} ${pick.rationale}`,
         mode, envelopes, telemetry,
+        ...modifyDoseAdjustment,
         ...(externalEventAdvisory ? {
             externalPrescription: externalEventAdvisory.prescription,
             externalVerdict: externalEventAdvisory.verdict,
@@ -705,7 +734,12 @@ export function evaluateEnvelopes(readiness: DailyReadiness, context: UserContex
     let maxAllowableTier: 'Rest' | 'Mobility' | 'Easy' | 'Moderate' | 'Hard' = 'Hard';
     if (readiness.subjective.alreadyTrainedToday) maxAllowableTier = 'Rest';
     else if (isPain) maxAllowableTier = 'Mobility';
-    else if (readiness.objective.body_battery_wake !== null && readiness.objective.body_battery_wake < 25) maxAllowableTier = 'Easy';
+    else if (
+        (readiness.objective.body_battery_wake !== null && readiness.objective.body_battery_wake < 30) ||
+        (readiness.objective.sleep_score !== null && readiness.objective.sleep_score < 55)
+    ) {
+        maxAllowableTier = 'Easy';
+    }
     return {
         safety: { clinicalFlagActive, clinicalReason: clinicalFlagActive ? 'Active pain or injury flag reported.' : null, restrictedModalities },
         plan: { maxAllowableTier, taperActive: false, reason: null },

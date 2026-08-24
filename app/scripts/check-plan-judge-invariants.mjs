@@ -80,6 +80,7 @@ const templateSequenceDistance = (left, right) => {
   }
   return different / n;
 };
+const templateCount = (item, templateId) => (item.plan ?? []).filter((day) => day.session?.templateId === templateId).length;
 
 const runningRestricted = required('judge_injury_running_restricted');
 for (const day of runningRestricted.plan) {
@@ -97,8 +98,11 @@ for (const day of max45.plan) {
     fail(day.session.durationMin <= 45, `${day.date}: 45-minute weekday case selected ${day.session.templateId} with minimum duration ${day.session.durationMin}`);
   }
 }
-// Deferred to the engine-behavior follow-up: require a feasible <=45 minute cycling
-// race-specific session once the compact criterium template exists in the catalog.
+const compactRaceSpecific = max45.plan.find((day) => day.session.category === 'Race-Specific Endurance' && (day.session.durationMin ?? Number.POSITIVE_INFINITY) <= 45);
+fail(Boolean(compactRaceSpecific), '45-minute capacity case never receives a feasible <=45 minute race-specific cycling session.');
+if (compactRaceSpecific) {
+  fail(compactRaceSpecific.session.templateId === 'end_crit_surges_01', `45-minute criterium capacity case used ${compactRaceSpecific.session.templateId} instead of the compact criterium-specific template.`);
+}
 
 const travel = required('judge_mode_travel_overlay');
 fail(Array.isArray(travel.input.authoredPlanBlocks) && travel.input.authoredPlanBlocks.length === 1, 'Travel case lost its authored plan block during scenario construction.');
@@ -132,8 +136,17 @@ const critB = required('judge_demand_crit_B');
 const granB = required('judge_demand_gran_B');
 const demandDistanceA = templateSequenceDistance(critA, granA);
 const demandDistanceB = templateSequenceDistance(critB, granB);
-// Deferred to the engine-behavior follow-up: assert demandDistanceA/B > 0 once event
-// demand is expected to produce distinct criterium vs gran-fondo template sequences.
+fail(demandDistanceA > 0, 'A-priority criterium and gran-fondo cases produce identical selected-template sequences.');
+fail(demandDistanceB > 0, 'B-priority criterium and gran-fondo cases produce identical selected-template sequences.');
+
+// Sequence distance alone is too weak: an unrelated recovery/strength shuffle could satisfy
+// it while the event-specific choice stayed generic. At 40 days out the compact criterium
+// template is eligible and is the intended deterministic proof that repeated-surge demand
+// reaches selection. The long gran-fondo control must not receive that specialist session.
+const critACompactCount = templateCount(critA, 'end_crit_surges_01');
+const granACompactCount = templateCount(granA, 'end_crit_surges_01');
+fail(critACompactCount > 0, 'A-priority criterium case never selects the compact criterium surge template.');
+fail(granACompactCount === 0, `A-priority gran-fondo case selected the compact criterium surge template ${granACompactCount} time(s).`);
 
 if (failures.length > 0) {
   console.error('Plan-judge invariant failures:');
@@ -144,3 +157,4 @@ const familiesSha256 = createHash('sha256').update(raw).digest('hex');
 console.log(`Plan-judge invariants passed for ${cases.size} cases across ${families.length} families.`);
 console.log(`Families SHA-256: ${familiesSha256}`);
 console.log(`Event-demand sequence distance: A=${demandDistanceA.toFixed(3)}, B=${demandDistanceB.toFixed(3)}.`);
+console.log(`Compact criterium template count: criterium A=${critACompactCount}, gran fondo A=${granACompactCount}.`);

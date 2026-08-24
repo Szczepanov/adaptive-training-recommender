@@ -2,6 +2,8 @@ import type {
     FatigueState,
     FixedActivity,
     AuthoredPlanBlock,
+    GuardrailKey,
+    InjuryConstraint,
     IntensityClass,
     PlannedDose,
     SessionHistoryEntry,
@@ -19,6 +21,7 @@ import { addDaysToLocalDateString, getDayDiff, getLocalDateString } from '../uti
 import { qualifiesForObjective } from './microcycle';
 import { buildCoverageState, coverageNeedTierForTemplate, type CoverageState } from './coverage';
 import { resolvePlanDefinitionForEvent } from './planSchedule';
+import { resolveInjuryRestrictions } from './injuryPolicy';
 
 const STRENGTH_CATEGORIES: SessionTemplate['category'][] = [
     'Upper-body Strength', 'Lower-body Strength', 'Full-body Strength', 'Power Maintenance',
@@ -76,6 +79,8 @@ export interface OptimizationOptions {
     resolveMinimumDaysAfterHardLowerBody?: (templateId: string) => number | undefined;
     /** Explicit, user-authored date overlays applied to the focus event plan. */
     authoredPlanBlocks?: readonly AuthoredPlanBlock[];
+    /** Resolved safety guardrails, including structured injury-derived guardrails. */
+    guardrails?: GuardrailKey[];
 }
 
 export interface OptimizationContext {
@@ -83,6 +88,7 @@ export interface OptimizationContext {
     fatigueState: FatigueState;
     availability: ResolvedAvailability;
     injuryConstraints: string[];
+    guardrails: GuardrailKey[];
     preferences: UserPreferences;
     coverageState: CoverageState;
     options: OptimizationOptions;
@@ -296,6 +302,45 @@ export function evaluateRecoveryConstraints(
         if (priorHeavyStrength) reasons.push('ANCHOR_PROTECTION_VIOLATION');
     }
 
+    const focusEvent = options.focusEvent;
+    if (focusEvent && (focusEvent.category === 'cycling_event' || focusEvent.category === 'running_race') && (focusEvent.priority === 'A' || focusEvent.priority === 'B')) {
+        const raceDate = focusEvent.timing?.planningDate ?? focusEvent.date;
+        const daysToRace = getDayDiff(raceDate, targetDate);
+        if (daysToRace >= 1 && daysToRace <= 3) {
+            const isStrengthModality = template.modality === 'Strength' || STRENGTH_CATEGORIES.includes(template.category);
+            if (isStrengthModality) {
+                reasons.push('PRE_EVENT_STRENGTH_RESTRICTION');
+            }
+        }
+        if (daysToRace >= 1 && daysToRace <= 2) {
+            const isHardSession = template.systemicCost > 0.45 || template.category === 'Hard Endurance' || (daysToRace === 1 && template.category === 'Race-Specific Endurance');
+            if (isHardSession) {
+                reasons.push('PRE_EVENT_TAPER_RESTRICTION');
+            }
+        }
+        if (daysToRace >= 3 && daysToRace <= 7) {
+            const isExhaustiveSession = template.systemicCost >= 0.75 || (template.title ?? '').toLowerCase().includes('vo2');
+            if (isExhaustiveSession) {
+                reasons.push('PRE_EVENT_TAPER_RESTRICTION');
+            }
+        }
+    }
+
+    const minDaysSpacing = options.resolveMinimumDaysAfterHardLowerBody?.(template.id);
+    if (minDaysSpacing === undefined || minDaysSpacing > 1) {
+        const priorHeavyLowerBody = history.find(h => {
+            const diff = getDayDiff(targetDate, h.date);
+            return diff === 1 && (
+                (h.category && HEAVY_LOWER_BODY_STRENGTH_CATEGORIES.includes(h.category)) ||
+                (h.modality === 'Strength' && (h.lowerBodyCost ?? 0) >= 0.6) ||
+                (h.modality === 'Strength' && (h.systemicCost ?? 0) >= 0.65)
+            );
+        });
+        if (priorHeavyLowerBody && (template.modality === 'Strength' || STRENGTH_CATEGORIES.includes(template.category))) {
+            reasons.push('POST_HEAVY_STRENGTH_BUFFER');
+        }
+    }
+
     return reasons;
 }
 
@@ -392,7 +437,26 @@ export function buildOptimizationContext(
     };
 
     const availability = options.resolvedAvailability ?? resolveAvailability(date, null, fixedActivities, context);
-    const injuryConstraints = context.constraints?.restrictedModalities ?? [];
+    const injuries = context.trainingSettings?.injuries
+        ?? (context.constraints as { injuries?: InjuryConstraint[] })?.injuries
+        ?? (context as { injuries?: InjuryConstraint[] })?.injuries
+        ?? [];
+    const activeInjuries = resolveInjuryRestrictions(injuries, date);
+    const injuryConstraints = Array.from(new Set([
+        ...(context.constraints?.restrictedModalities ?? []),
+        ...activeInjuries.restrictedModalities,
+    ]));
+    const directGuardrails = (context as { guardrails?: Partial<Record<GuardrailKey, boolean>> }).guardrails ?? {};
+    const configuredGuardrails = context.trainingSettings?.guardrails ?? {};
+    const enabledGuardrails = (record: Partial<Record<GuardrailKey, boolean>>) => Object.entries(record)
+        .filter(([, enabled]) => enabled)
+        .map(([key]) => key as GuardrailKey);
+    const guardrails = Array.from(new Set<GuardrailKey>([
+        ...(context.constraints.impliedGuardrails ?? []),
+        ...activeInjuries.impliedGuardrails,
+        ...enabledGuardrails(configuredGuardrails),
+        ...enabledGuardrails(directGuardrails),
+    ]));
 
     const rawHistory: (RecentHistoryEntry | SessionHistoryEntry)[] = options.recentHistory ?? (intent.history ?? []).map(e => {
         const completedDate = 'completedDate' in e && typeof e.completedDate === 'string' ? e.completedDate : undefined;
@@ -441,6 +505,7 @@ export function buildOptimizationContext(
         fatigueState: intent.fatigue,
         availability,
         injuryConstraints,
+        guardrails,
         preferences: effectivePreferences,
         coverageState,
         options: {
@@ -451,6 +516,7 @@ export function buildOptimizationContext(
             adjacentToAnchor: options.adjacentToAnchor ?? false,
             coverageState,
             fatigueTier: options.fatigueTier ?? 'train',
+            guardrails,
             ...(intent.plannedDose ? { plannedDose: intent.plannedDose } : {}),
             ...(options.resolvedAvailability ? { resolvedAvailability: options.resolvedAvailability } : {}),
             ...(options.resolveMinimumDaysAfterHardLowerBody ? { resolveMinimumDaysAfterHardLowerBody: options.resolveMinimumDaysAfterHardLowerBody } : {}),
@@ -478,6 +544,7 @@ export function rankCandidates(
     const isStrengthResolved = !unresolvedObjectives.some(o => o.key === 'strength_maintenance' || o.key === 'strength_development');
     const coverageState = options.coverageState;
     const recoveryStyle = preferences.preferredRecoveryStyle ?? 'mixed';
+
     const recoveryPreferenceTierFor = (template: SessionTemplate): 0 | 1 => {
         if ((options.fatigueTier ?? 'train') !== 'recover') return 0;
         if (template.category !== 'Rest' && template.category !== 'Mobility/Recovery') return 0;
@@ -535,8 +602,29 @@ export function rankCandidates(
                     : (template.modality === 'Strength' && (obj.key === 'strength_maintenance' || obj.key === 'strength_development'))
             );
             const eventPriorityApplies = !categoryLower.includes('strength') || satisfiesUnresolvedObjective || fulfilsNominatedAnchor;
-            if (matchesEvent && eventPriorityApplies) benefit *= focusEvent.priority === 'A' ? 1.40 : 1.25;
-            else if (!matchesEvent && !isPreferred(template) && !satisfiesUnresolvedObjective && unresolvedObjectives.length > 0) benefit *= 0.20;
+            if (matchesEvent && eventPriorityApplies) {
+                benefit *= focusEvent.priority === 'A' ? 1.40 : 1.25;
+
+                // Priority B: cap race-specific endurance sessions to 1 per week, directing the 2nd quality day to general tempo/threshold
+                if (focusEvent.priority === 'B' && template.category === 'Race-Specific Endurance') {
+                    const recentRaceSpecific = history.filter(h =>
+                        getDayDiff(targetDate, h.date) <= 6 &&
+                        h.category === 'Race-Specific Endurance'
+                    ).length;
+                    if (recentRaceSpecific >= 1) {
+                        benefit *= 0.35;
+                    }
+                }
+
+                // Long horizon (>21 days): prioritize foundational threshold/tempo over peak race sharpening
+                const raceDate = focusEvent.timing?.planningDate ?? focusEvent.date;
+                const daysToRace = getDayDiff(raceDate, targetDate);
+                if (daysToRace > 21 && template.category === 'Race-Specific Endurance') {
+                    benefit *= 0.50;
+                }
+            } else if (!matchesEvent && !isPreferred(template) && !satisfiesUnresolvedObjective && unresolvedObjectives.length > 0) {
+                benefit *= 0.20;
+            }
         }
 
         if (needsMultisportModalityCoverage(template, focusEvent, history, targetDate)) {
@@ -546,6 +634,9 @@ export function rankCandidates(
 
         let costPenalty = calculateFatigueCostPenalty(template.costProfile, fatigueState);
         if (extraMargin && template.systemicCost > 0.5) costPenalty += 0.3;
+        if (preferences.conservativeBias) {
+            if (template.systemicCost >= 0.6) costPenalty += 0.35;
+        }
 
         if (excludedReasons.length > 0) {
             const item: RankedCandidate = {
@@ -560,9 +651,60 @@ export function rankCandidates(
         let prefMultiplier = 1.0;
         if (isDisliked(template)) prefMultiplier = 0.2;
         else if (isPreferred(template)) prefMultiplier = 1.3;
+        if (preferences.conservativeBias) {
+            if (template.category === 'Rest' || template.category === 'Mobility/Recovery') prefMultiplier *= 1.25;
+            else if (template.systemicCost <= 0.4) prefMultiplier *= 1.15;
+            else prefMultiplier *= 0.85;
+        }
+
+        const hasLargeWeekdayBudget = (preferences.defaultWeekdayTimeMin ?? 0) >= 80 || availability.maxTimeMinutes >= 80;
+        if (hasLargeWeekdayBudget && (template.category === 'Easy Endurance' || template.category === 'Hard Endurance' || template.category === 'Moderate Endurance')) {
+            if ((template.durationMin ?? 0) >= 60) {
+                prefMultiplier *= 1.30;
+            } else if ((template.durationMin ?? 0) <= 45 && (preferences.defaultWeekdayTimeMin ?? 0) >= 80) {
+                prefMultiplier *= 0.80;
+            }
+        }
+
+        const isGranFondo = focusEvent?.demandProfile && (focusEvent.demandProfile.aerobicEndurance ?? 0) >= 0.85;
+        if (isGranFondo && (template.category === 'Easy Endurance' || template.category === 'Moderate Endurance')) {
+            prefMultiplier *= 1.20;
+        }
+
+        const usedYesterday = history.some(h => getDayDiff(targetDate, h.date) === 1 && h.templateId === template.id);
+        if (usedYesterday) prefMultiplier *= 0.2;
 
         const isStrengthCategory = STRENGTH_CATEGORIES.includes(template.category);
-        if (isStrengthResolved && isStrengthCategory) prefMultiplier *= 0.20;
+        if (isStrengthResolved && isStrengthCategory) {
+            if (focusEvent) {
+                prefMultiplier *= 0.20;
+            } else {
+                const strengthInLast7Days = history.filter(h => getDayDiff(targetDate, h.date) <= 7 && (h.modality === 'Strength' || (h.category && STRENGTH_CATEGORIES.includes(h.category)))).length;
+                if (strengthInLast7Days < 2 && !usedYesterday) {
+                    prefMultiplier *= 1.15;
+                } else {
+                    prefMultiplier *= 0.20;
+                }
+            }
+        }
+
+        const hasLowerBodyGuardrail = (options.guardrails ?? []).includes('avoid_heavy_lower_body');
+        if (!isStrengthResolved && hasLowerBodyGuardrail && (template.category === 'Upper-body Strength' || (template.title ?? '').toLowerCase().includes('core'))) {
+            prefMultiplier *= 1.60;
+        }
+
+        const lastRecovery = history
+            .filter(h => getDayDiff(targetDate, h.date) >= 1 && (h.category === 'Rest' || h.category === 'Mobility/Recovery'))
+            .sort((a, b) => getDayDiff(targetDate, a.date) - getDayDiff(targetDate, b.date))[0];
+        const lastRecoveryWasRest = !lastRecovery || lastRecovery.category === 'Rest';
+
+        if (recoveryStyle === 'mixed' && (template.category === 'Rest' || template.category === 'Mobility/Recovery')) {
+            if (lastRecoveryWasRest && template.category === 'Mobility/Recovery') {
+                prefMultiplier *= 1.40;
+            } else if (!lastRecoveryWasRest && template.category === 'Rest') {
+                prefMultiplier *= 1.40;
+            }
+        }
 
         const lastEntry = history
             .filter(h => getDayDiff(targetDate, h.date) >= 1)
@@ -571,11 +713,33 @@ export function rankCandidates(
         const candidateIsHighIntensity = template.systemicCost >= INTENSITY_STACK_THRESHOLD;
         if (lastWasHighIntensity && candidateIsHighIntensity) prefMultiplier *= INTENSITY_STACK_PENALTY;
 
-        const usedYesterday = history.some(h => getDayDiff(targetDate, h.date) === 1 && h.templateId === template.id);
-        if (usedYesterday) prefMultiplier *= 0.2;
+        // Consecutive training days spacing (prevents monotonous 7-14 day training streaks without recovery)
+        let streak = 0;
+        let checkOffset = 1;
+        while (checkOffset <= 14) {
+            const checkDate = addDaysToLocalDateString(targetDate, -checkOffset);
+            const entry = history.find(h => h.date === checkDate);
+            if (!entry || entry.category === 'Rest' || entry.category === 'Mobility/Recovery') {
+                break;
+            }
+            if ((entry.systemicCost ?? 0) >= 0.40) {
+                streak++;
+            }
+            checkOffset++;
+        }
 
         const isAerobicDefault = template.category === 'Easy Endurance' || (template.title ?? '').toLowerCase().includes('zone 2');
-        if (unresolvedObjectives.length === 0 && isAerobicDefault) prefMultiplier *= 1.25;
+        if (unresolvedObjectives.length === 0) {
+            if (streak >= 3) {
+                if (template.category === 'Rest' || template.category === 'Mobility/Recovery') {
+                    prefMultiplier *= 2.0;
+                } else if (isAerobicDefault) {
+                    prefMultiplier *= (streak >= 4 ? 0.1 : 0.3);
+                }
+            } else if (isAerobicDefault) {
+                prefMultiplier *= 1.25;
+            }
+        }
 
         if (fulfilsNominatedAnchor) prefMultiplier *= ANCHOR_ROLE_BOOST;
         if (options.adjacentToAnchor && HEAVY_LOWER_BODY_STRENGTH_CATEGORIES.includes(template.category) && template.systemicCost >= INTENSITY_STACK_THRESHOLD) {

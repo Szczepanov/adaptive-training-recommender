@@ -27,7 +27,7 @@ for (const path of [inputPath, familiesPath, promptPath, schemaPath, corpusPath]
   if (!existsSync(path)) throw new Error(`Missing AI plan judge artifact: ${path}`);
 }
 
-const hashFile = (path) => createHash('sha256').update(readFileSync(path)).digest('hex');
+const hashFile = (path) => createHash('sha256').update(readFileSync(path, 'utf8').replace(/\r\n/g, '\n')).digest('hex');
 const boundedNumber = (value, min, max, field) => {
   if (typeof value !== 'number' || !Number.isFinite(value) || value < min || value > max) {
     throw new Error(`${field} must be a finite number in [${min}, ${max}], got ${JSON.stringify(value)}`);
@@ -69,6 +69,13 @@ for (const family of expectedFamilies) {
   if (new Set(caseIds).size !== caseIds.length) throw new Error(`Family ${family.familyId} contains duplicate case ids.`);
   expectedByFamily.set(family.familyId, new Set(caseIds));
 }
+
+const caseSetContract = [...expectedByFamily.entries()]
+  .map(([familyId, caseIds]) => ({ familyId, caseIds: [...caseIds].sort() }))
+  .sort((a, b) => a.familyId.localeCompare(b.familyId));
+const caseSetSha256 = createHash('sha256')
+  .update(JSON.stringify(caseSetContract))
+  .digest('hex');
 
 const rawRows = parseJsonl(inputPath);
 const seenFamilies = new Set();
@@ -164,16 +171,27 @@ try {
 }
 if (!corpus || typeof corpus !== 'object' || typeof corpus.schema !== 'string') throw new Error(`Malformed corpus metadata in ${corpusPath}.`);
 
+const manifestPath = resolve(outputDir, 'judge-run-manifest.json');
+let manifest = null;
+if (existsSync(manifestPath)) {
+  try {
+    manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+  } catch {
+    // Best-effort manifest reading only.
+  }
+}
+
 const provenance = {
   corpusCommit: corpus.commit ?? 'unknown',
   corpusSchema: corpus.schema,
   corpusSha256: hashFile(corpusPath),
   familiesSha256: hashFile(familiesPath),
+  caseSetSha256,
   promptSha256: hashFile(promptPath),
   responseSchemaSha256: hashFile(schemaPath),
   judgeScoresSha256: hashFile(inputPath),
-  judgeModel: process.env.JUDGE_MODEL ?? process.env.LOCAL_JUDGE_MODEL ?? process.env.OLLAMA_MODEL ?? 'unknown',
-  judgeProvider: process.env.JUDGE_PROVIDER ?? 'unknown',
+  judgeModel: process.env.JUDGE_MODEL ?? manifest?.judgeModel ?? process.env.LOCAL_JUDGE_MODEL ?? process.env.OLLAMA_MODEL ?? 'unknown',
+  judgeProvider: process.env.JUDGE_PROVIDER ?? manifest?.judgeProvider ?? 'unknown',
   analyzedAt: new Date().toISOString(),
 };
 

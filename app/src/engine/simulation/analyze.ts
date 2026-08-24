@@ -45,6 +45,9 @@ export interface ScenarioDecisionTrace {
         templateId: string;
         category: SessionTemplate['category'];
         modality: SessionTemplate['modality'];
+        durationMin?: number;
+        durationMax?: number;
+        stimulusProfile?: WorkoutStimulusProfile | null;
         projectedCost: WorkoutCostProfile;
     };
     fatigue: {
@@ -97,9 +100,47 @@ function equipmentSatisfied(context: UserContext, required: EquipmentKey[]): boo
     });
 }
 
-function recommendationAsDay(date: string, recommendation: Recommendation, phaseName: string): WeekAheadDay {
+function scaleCostProfile(profile: WorkoutCostProfile, ratio: number): WorkoutCostProfile {
     return {
-        date, dayOffset: 0, confidence: 'provisional', phaseName, template: recommendation.template,
+        systemic: Math.min(1, profile.systemic * ratio),
+        cardiovascular: Math.min(1, profile.cardiovascular * ratio),
+        lowerBody: Math.min(1, profile.lowerBody * ratio),
+        upperBody: Math.min(1, profile.upperBody * ratio),
+        impactTissue: Math.min(1, profile.impactTissue * ratio),
+        neuromuscular: Math.min(1, profile.neuromuscular * ratio),
+    };
+}
+
+function scaleStimulusProfile(profile: WorkoutStimulusProfile, ratio: number): WorkoutStimulusProfile {
+    return {
+        aerobicEndurance: Math.min(1, profile.aerobicEndurance * ratio),
+        thresholdPower: Math.min(1, profile.thresholdPower * ratio),
+        vo2MaxPower: Math.min(1, profile.vo2MaxPower * ratio),
+        repeatedSurges: Math.min(1, profile.repeatedSurges * ratio),
+        sprintPower: Math.min(1, profile.sprintPower * ratio),
+        fatigueResistance: Math.min(1, profile.fatigueResistance * ratio),
+        maxStrength: Math.min(1, profile.maxStrength * ratio),
+        hypertrophy: Math.min(1, profile.hypertrophy * ratio),
+    };
+}
+
+export function materializeEffectiveSimulationTemplate(template: SessionTemplate, activeDose: Recommendation['activeDose']): SessionTemplate {
+    if (!activeDose) return template;
+    const ratio = activeDose.doseRatio;
+    return {
+        ...template,
+        durationMin: activeDose.durationMin,
+        durationMax: activeDose.durationMax,
+        systemicCost: Math.min(1, template.systemicCost * ratio),
+        costProfile: template.costProfile ? scaleCostProfile(template.costProfile, ratio) : template.costProfile,
+        stimulusProfile: template.stimulusProfile ? scaleStimulusProfile(template.stimulusProfile, ratio) : template.stimulusProfile,
+    };
+}
+
+export function recommendationAsDay(date: string, recommendation: Recommendation, phaseName: string): WeekAheadDay {
+    const effectiveTemplate = materializeEffectiveSimulationTemplate(recommendation.template, recommendation.activeDose);
+    return {
+        date, dayOffset: 0, confidence: 'provisional', phaseName, template: effectiveTemplate,
         mode: recommendation.mode === 'recover' ? 'recover' : 'train', rationale: recommendation.rationale, addressesObjectives: [],
     };
 }
@@ -112,7 +153,8 @@ function rejectionCounts(candidates: readonly { excludedReasons: string[] }[]): 
     return counts;
 }
 
-function traceFromRecommendation(weekIndex: number, date: string, recommendation: Recommendation): ScenarioDecisionTrace {
+export function traceFromRecommendation(weekIndex: number, date: string, recommendation: Recommendation): ScenarioDecisionTrace {
+    const effectiveTemplate = materializeEffectiveSimulationTemplate(recommendation.template, recommendation.activeDose);
     const calibration = recommendation.decisionTrace?.calibration;
     const candidates = recommendation.decisionTrace?.candidateScores ?? [];
     const accepted = candidates.filter(candidate => candidate.excludedReasons.length === 0)
@@ -127,7 +169,10 @@ function traceFromRecommendation(weekIndex: number, date: string, recommendation
             templateId: recommendation.template.id,
             category: recommendation.template.category,
             modality: recommendation.template.modality,
-            projectedCost: recommendation.template.costProfile ?? ZERO_COST,
+            durationMin: effectiveTemplate.durationMin,
+            durationMax: effectiveTemplate.durationMax,
+            stimulusProfile: effectiveTemplate.stimulusProfile ?? null,
+            projectedCost: effectiveTemplate.costProfile ?? ZERO_COST,
         },
         fatigue: calibration?.fatigue ?? {
             rawExternalLoad: ZERO_FATIGUE, clampedExternalLoad: ZERO_FATIGUE,
@@ -156,7 +201,7 @@ function traceFromForecastDay(weekIndex: number, day: WeekAheadDay): ScenarioDec
     if (!diagnostics) throw new Error(`Expected forecast diagnostics for ${day.date}.`);
     return {
         weekIndex, date: day.date, readinessTier: diagnostics.fatigueTier, mode: diagnostics.fatigueTier,
-        selected: { templateId: day.template.id, category: day.template.category, modality: day.template.modality, projectedCost: day.template.costProfile ?? ZERO_COST },
+        selected: { templateId: day.template.id, category: day.template.category, modality: day.template.modality, durationMin: day.template.durationMin, durationMax: day.template.durationMax, stimulusProfile: day.template.stimulusProfile ?? null, projectedCost: day.template.costProfile ?? ZERO_COST },
         fatigue: {
             rawExternalLoad: diagnostics.fatigue?.rawExternalLoadFatigue ?? diagnostics.fatigue?.externalLoadFatigue ?? ZERO_FATIGUE,
             clampedExternalLoad: diagnostics.fatigue?.externalLoadFatigue ?? ZERO_FATIGUE,
@@ -178,7 +223,7 @@ function traceFromForecastDay(weekIndex: number, day: WeekAheadDay): ScenarioDec
     };
 }
 
-function toCompletedExposure(day: WeekAheadDay): CompletedExposure {
+export function toCompletedExposure(day: WeekAheadDay): CompletedExposure {
     const workoutId = workoutForTemplate(day.template.id)?.id;
     return {
         occurrenceKey: `recommendation:${day.date}`,
@@ -290,7 +335,7 @@ function computeMetrics(
     const missedAnchors = anchorWeeks.filter(w => w.eventSpecificAnchorDate && !w.eventSpecificAnchorFulfilled).length;
     if (missedAnchors > 0) qualityWarnings.push(`Event-specific anchor missed in ${missedAnchors} nominated week(s).`);
     const anchorPlacementDrift = anchorWeeks.filter(w => w.eventSpecificAnchorDate && !w.eventSpecificAnchorHit && w.eventSpecificAnchorFulfilled).length;
-    if (anchorPlacementDrift > 0) qualityWarnings.push(`Event-specific exposure occurred off the nominated anchor date in ${anchorPlacementDrift} week(s).`);
+    if (anchorPlacementDrift > 0) qualityWarnings.push(`Event-specific exposure occurred off the nominated anchor date in ${anchorPlacementDrift} week(s) (adaptively fulfilled in-window).`);
     if (trainTierRestOrRecoveryCount > 0) qualityWarnings.push(`Rest or mobility selected on ${trainTierRestOrRecoveryCount} projected train-tier day(s).`);
     if (!isEvergreen && maxConsecutiveSameTemplateStreakAcrossWeeks >= 4) qualityWarnings.push(`Same-template streak reached ${maxConsecutiveSameTemplateStreakAcrossWeeks} days.`);
     if (primaryEvent?.category === 'triathlon') qualityWarnings.push('Triathlon capability is partial: the engine has no Swimming modality or swim objective/catalog support.');
@@ -624,7 +669,7 @@ export async function runSubjectiveDriftComparison(
         let changedSelections = 0;
         current.decisionTraces.forEach(trace => {
             const compared = candidateTraces.get(trace.date);
-            if (compared && trace.selected.templateId !== compared.selected.templateId) changedSelections += 1;
+            if (compared && (trace.selected.templateId !== compared.selected.templateId || trace.mode !== compared.mode)) changedSelections += 1;
         });
 
         // Mode-transition evidence, computed directly from the scenario definition (the same

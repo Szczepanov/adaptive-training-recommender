@@ -77,10 +77,10 @@ function durationReferenceMin(range: Pick<ExternalPlanSession['gating'], 'durati
 
 /**
  * The fallback tables are calibrated against catalog-sized sessions, not against an
- * abstract one-hour constant. Use the median duration of comparable catalog templates as
- * the reference so duration enters the same coarse inference without adding a new magic
- * number. This is still an estimate; every resulting stimulus is discounted at the
- * `authoredExternal` evidence rung.
+ * abstract one-hour constant. Imported sessions are untrusted estimates, so use the
+ * upper-quartile duration of comparable catalog templates rather than the median. This is
+ * intentionally conservative: adding a new short specialist template must not silently
+ * increase inferred load/stimulus or objective credit for every unrelated imported session.
  */
 function catalogDurationReferenceMin(
     modality: SessionTemplate['modality'],
@@ -91,7 +91,9 @@ function catalogDurationReferenceMin(
         .map(template => (template.durationMin + template.durationMax) / 2)
         .filter(duration => Number.isFinite(duration) && duration > 0)
         .sort((left, right) => left - right);
-    return durations.length > 0 ? durations[Math.floor(durations.length / 2)] : null;
+    if (durations.length === 0) return null;
+    const upperQuartileIndex = Math.ceil((durations.length - 1) * 0.75);
+    return durations[upperQuartileIndex];
 }
 
 /** Structural profile interfaces intentionally do not expose a string index signature.
@@ -108,9 +110,10 @@ function scaleProfile<T extends object>(profile: T, factor: number): T {
  * `intensity` × authored duration, reusing the same conservative fallback tables that
  * already handle an unmatched Garmin activity (ADR-0019 D-EXTTIER).
  *
- * Duration is relative to the median comparable catalog session. Short authored sessions
- * therefore receive less inferred load/stimulus; longer ones receive more, with every axis
- * clamped to the engine's existing 0..1 profile contract. No AI-supplied cost is accepted.
+ * Duration is relative to a conservative comparable catalog reference. Short authored
+ * sessions therefore receive less inferred load/stimulus; longer ones receive more, with
+ * every axis clamped to the engine's existing 0..1 profile contract. No AI-supplied cost
+ * is accepted.
  *
  * The schema deliberately accepts no cost input: an AI asked for a calibrated 0–1 load
  * figure supplies a confident one, and it would silently move the `modify`-mode ceiling.

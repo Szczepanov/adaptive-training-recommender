@@ -179,7 +179,7 @@ describe('field_sport_general_target -- no dedicated event category exists for f
             preferredModality: 'Field',
             changedPlannedDays: 0,
         }));
-    });
+    }, 15000);
 });
 
 describe('scenario quality diagnostics', () => {

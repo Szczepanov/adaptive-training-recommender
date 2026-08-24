@@ -121,6 +121,26 @@ reviewable.
 - A richer weekly contract can expose previously hidden coverage misses that the current
   stimulus ledger calls "resolved".
 
+## Amendments
+
+### 2026-08-24 — compact criterium surge session added to `short_surges` and `outdoor_event_specific`
+
+`cycling_criterium_surges_01` (engine template `end_crit_surges_01`, 35-45 minutes) was
+added to the workout catalog as a time-efficient, surge-focused alternative to the
+existing `outdoor_event_specific` options, both of which require 50+ minutes. It was never
+added to `SEPTEMBER_CYCLING_EVENT_SESSION_COVERAGE`'s `workoutIds`, so under D6-G (role
+fulfilment is explicit — exact catalog identity, never inferred from stimulus/category) it
+could not fulfil the `short_surges` or `outdoor_event_specific` required roles: a
+criterium athlete capped at 45 minutes on weekdays had no catalog identity able to
+discharge either role at all that week, regardless of demand profile.
+
+`workoutIds` for both keys now include `cycling_criterium_surges_01`. No coverage key,
+phase list, or requirement level changed — this is a membership addition to two existing
+roles, consistent with `outdoor_event_specific` and `short_surges` already sharing
+`cycling_event_specific_endurance_01`. `FROZEN_SHA256` in
+`app/src/workouts/frozenEventCoverage.test.ts` was updated in the same commit;
+`FROZEN_KEY_COUNT` (18) is unchanged.
+
 ## Related
 
 - `docs/plans/phase-6-2c-recommendation-quality-and-weekly-coverage.md`

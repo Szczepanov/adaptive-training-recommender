@@ -110,13 +110,24 @@ export const TAPER_SHARPENING_TITLE = 'Taper Sharpening (event-specific freshnes
  *   - Phase 5.6's per-contributor objectives (resolveMultiEventObjectives below), each
  *     derived from that contributor's own demand/category/taper state, never a blend
  *     with the authority's.
+ *
+ * `demand` still drives objective *inclusion* and target-stimulus magnitude, which are
+ * meant to ramp with the phase-blended vector the taper authority passes in. But which
+ * *flavor* of race-specific objective an event wants (sustained-durability gran fondo vs
+ * surge-repeatable criterium) is a fact about the event itself, not about how close it
+ * is -- blending it toward DEFAULT_BASE_DEMAND during Base/Build can pull a genuinely
+ * low-surge event's blended fatigueResistance under the durability-branch threshold,
+ * misclassifying it as surge-specific for every week outside Specificity/Peak. `rawDemand`
+ * (defaults to `demand`, so the already-raw multi-event contributor call is unaffected)
+ * is used for that classification only.
  */
 export function objectivesFromDemand(
     demand: EventDemandProfile,
     category: UserEvent['category'] | undefined,
     taperActive: boolean,
     isPostEventRecovery: boolean,
-    allowedModalities: SessionTemplate['modality'][]
+    allowedModalities: SessionTemplate['modality'][],
+    rawDemand: EventDemandProfile = demand
 ): WeeklyObjective[] {
     const objectives: WeeklyObjective[] = [];
 
@@ -161,17 +172,44 @@ export function objectivesFromDemand(
     });
 
     if (category === 'cycling_event' && !isPostEventRecovery) {
-        if (!taperActive && (demand.fatigueResistance >= 0.7 || demand.repeatedSurges >= 0.6)) {
-            objectives.push({
-                id: 'obj_cycling_race_specific', key: 'race_specific_endurance', title: 'Cycling Race-Specific Endurance',
-                targetExposures: 1, completedExposures: 0,
-                targetStimulus: { aerobicEndurance: 0.6, repeatedSurges: 0.6 },
-                qualification: {
-                    minimumStimulus: { aerobicEndurance: 0.6 },
-                    allowedModalities: ['Cycling'],
-                    allowedCategories: ['Race-Specific Endurance'],
-                },
-            });
+        if (!taperActive) {
+            // Whether a cycling-specific objective appears at all still ramps with the
+            // phase-blended vector (a distant event's demand is intentionally attenuated
+            // toward DEFAULT_BASE_DEMAND outside Specificity/Peak). But which *flavor* it
+            // takes -- sustained-durability gran fondo vs surge-repeatable criterium -- is
+            // a fact about the event itself, not about how close it is, so that choice
+            // uses rawDemand (see this function's doc comment above).
+            const includesRaceSpecific = demand.fatigueResistance >= 0.7 || (demand.repeatedSurges ?? 0) >= 0.6;
+            if (includesRaceSpecific) {
+                if (rawDemand.fatigueResistance >= 0.8 && rawDemand.aerobicEndurance >= 0.8 && (rawDemand.repeatedSurges ?? 0) < 0.6) {
+                    // High-durability / Gran Fondo profile: emphasize sustained aerobic durability and fatigue resistance
+                    objectives.push({
+                        id: 'obj_cycling_gran_fondo_durability', key: 'race_specific_endurance', title: 'Cycling Aerobic Durability & Tempo',
+                        targetExposures: 1, completedExposures: 0,
+                        targetStimulus: { aerobicEndurance: 0.9, fatigueResistance: 0.85, thresholdPower: 0.6 },
+                        qualification: {
+                            minimumStimulus: { aerobicEndurance: 0.6 },
+                            allowedModalities: ['Cycling'],
+                        },
+                    });
+                } else {
+                    objectives.push({
+                        id: 'obj_cycling_race_specific', key: 'race_specific_endurance', title: 'Cycling Race-Specific Endurance',
+                        targetExposures: 1, completedExposures: 0,
+                        targetStimulus: { aerobicEndurance: 0.6, repeatedSurges: 0.6 },
+                        qualification: {
+                            // Gated on repeatedSurges, not aerobicEndurance: this branch fires
+                            // for surge/criterium-flavored demand (see the condition above), and
+                            // a compact, time-efficient surge session is expected to trade away
+                            // aerobic volume for repeatability -- an aerobicEndurance floor here
+                            // would disqualify exactly the session type this branch exists for.
+                            minimumStimulus: { repeatedSurges: 0.6 },
+                            allowedModalities: ['Cycling'],
+                            allowedCategories: ['Race-Specific Endurance'],
+                        },
+                    });
+                }
+            }
         } else if (taperActive) {
             objectives.push({
                 id: 'obj_taper_sharpening', key: 'race_specific_endurance', title: TAPER_SHARPENING_TITLE,
@@ -296,6 +334,7 @@ export function evaluatePeriodizationPhase(
 
     const { event: focusEvent, daysToEvent } = sortedEvents[0];
     const partialEffort = focusEvent.lifecycle === 'DNF';
+    const demandVector = focusEvent.demandProfile ?? resolveDemandProfile(focusEvent.category, (focusEvent as { eventPreset?: string; sportSpecificDemand?: string }).eventPreset ?? (focusEvent as { eventPreset?: string; sportSpecificDemand?: string }).sportSpecificDemand);
     let phase: PhaseWeights;
 
     // 3. Evaluate Phase Transitions & Continuous Demand Weightings
@@ -318,7 +357,7 @@ export function evaluatePeriodizationPhase(
             const taperProgress = 1 - (daysToEvent / taper.durationDays);
             phase = {
                 phaseName: 'Peak/Taper',
-                targetDemandVector: focusEvent.demandProfile,
+                targetDemandVector: demandVector,
                 volumeScale: 1.0 - (0.4 * taperProgress),
                 intensityScale: 1.0,
                 taperActive: true,
@@ -326,7 +365,7 @@ export function evaluatePeriodizationPhase(
         } else if (daysToEvent <= 35) {
             phase = {
                 phaseName: 'Specificity',
-                targetDemandVector: focusEvent.demandProfile,
+                targetDemandVector: demandVector,
                 volumeScale: 1.0,
                 intensityScale: 1.1,
                 taperActive: false,
@@ -334,7 +373,7 @@ export function evaluatePeriodizationPhase(
         } else if (daysToEvent <= 84) {
             phase = {
                 phaseName: 'Build',
-                targetDemandVector: blendDemand(DEFAULT_BASE_DEMAND, focusEvent.demandProfile, 0.6),
+                targetDemandVector: blendDemand(DEFAULT_BASE_DEMAND, demandVector, 0.6),
                 volumeScale: 1.1,
                 intensityScale: 0.9,
                 taperActive: false,
@@ -342,7 +381,7 @@ export function evaluatePeriodizationPhase(
         } else {
             phase = {
                 phaseName: 'Base',
-                targetDemandVector: blendDemand(DEFAULT_BASE_DEMAND, focusEvent.demandProfile, 0.3),
+                targetDemandVector: blendDemand(DEFAULT_BASE_DEMAND, demandVector, 0.3),
                 volumeScale: 1.0,
                 intensityScale: 0.8,
                 taperActive: false,

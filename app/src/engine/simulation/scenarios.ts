@@ -19,6 +19,7 @@ import {
     REFERENCE_SUBJECTIVE_BASELINE_POLICY,
     type SubjectiveCheckinForBaseline,
 } from '../subjectiveBaseline';
+import { makeThreshold3x17Exposure } from './deliveredDoseScenarios';
 
 /**
  * One named, reproducible athlete configuration the simulation harness runs the real
@@ -565,6 +566,42 @@ export const SCENARIOS: AthleteScenario[] = [
             { readiness: 8, sleepQuality: 8, fatigue: 2, soreness: 2, stress: 2, motivation: 8, timeAvailable: 120 },
             { last_3_days_hard_sessions_count: 1, sleep_score: 88, sleep_duration_min: 480, body_battery_wake: 90 },
         ),
+    },
+    {
+        id: 'delivered_dose_threshold_3x17_exact',
+        label: 'Delivered dose: 3x17m threshold exact execution',
+        description: 'Yesterday completed exact 3x17m threshold intervals at 95% FTP. Engine must enforce post-threshold aerobic spacing before the next high-intensity session.',
+        context: context({ indoor_bike: true, free_weights: true }, ['Cycling'], [], { weekdayMaxMinutes: 90 }),
+        event: eventOn('delivered-exact-event', 35, 'cycling_event', 'road_race', 'A'),
+        startDate: START_DATE,
+        weeks: 1,
+        initialHistory: [makeThreshold3x17Exposure('2026-08-06', 'exact')],
+        tags: ['delivered-dose', 'threshold-intervals', 'fatigue'],
+        readinessForWeek: () => stableReadiness({ readiness: 7, fatigue: 4, soreness: 4 }),
+    },
+    {
+        id: 'delivered_dose_threshold_3x17_surged',
+        label: 'Delivered dose: 3x17m threshold surged/over-delivered',
+        description: 'Yesterday over-paced threshold session at 105% FTP leading to acute neuromuscular failure in rep 3. Higher fatigue requires extra recovery buffer.',
+        context: context({ indoor_bike: true, free_weights: true }, ['Cycling'], [], { weekdayMaxMinutes: 90 }),
+        event: eventOn('delivered-surged-event', 35, 'cycling_event', 'road_race', 'A'),
+        startDate: START_DATE,
+        weeks: 1,
+        initialHistory: [makeThreshold3x17Exposure('2026-08-06', 'surged')],
+        tags: ['delivered-dose', 'threshold-intervals', 'fatigue'],
+        readinessForWeek: () => stableReadiness({ readiness: 5, fatigue: 7, soreness: 6 }),
+    },
+    {
+        id: 'delivered_dose_threshold_3x17_curtailed',
+        label: 'Delivered dose: 3x17m threshold curtailed (2 of 3)',
+        description: 'Yesterday cut short threshold session after 2 of 3 reps (34 min in Zone 4). Moderate load allows quicker resumption of training.',
+        context: context({ indoor_bike: true, free_weights: true }, ['Cycling'], [], { weekdayMaxMinutes: 90 }),
+        event: eventOn('delivered-curtailed-event', 35, 'cycling_event', 'road_race', 'A'),
+        startDate: START_DATE,
+        weeks: 1,
+        initialHistory: [makeThreshold3x17Exposure('2026-08-06', 'curtailed')],
+        tags: ['delivered-dose', 'threshold-intervals', 'fatigue'],
+        readinessForWeek: () => stableReadiness({ readiness: 7, fatigue: 4, soreness: 3 }),
     },
     ...SUBJECTIVE_PROFILE_KINDS.map(subjectiveProfileScenario),
 ];

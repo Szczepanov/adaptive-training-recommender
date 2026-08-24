@@ -98,13 +98,28 @@ export function generateWeeklyObjectives(
                         targetStimulus = TAPER_SHARPENING_TARGET_STIMULUS;
                         qualification = TAPER_SHARPENING_QUALIFICATION;
                     } else {
-                        title = 'Cycling Race-Specific Endurance';
-                        targetStimulus = { aerobicEndurance: 0.6, repeatedSurges: 0.6 };
-                        qualification = {
-                            minimumStimulus: { aerobicEndurance: 0.6 },
-                            allowedModalities: ['Cycling'],
-                            allowedCategories: ['Race-Specific Endurance'],
-                        };
+                        const demand = focusEvent?.demandProfile;
+                        if (demand && demand.fatigueResistance >= 0.8 && demand.aerobicEndurance >= 0.8 && (demand.repeatedSurges ?? 0) < 0.6) {
+                            title = 'Cycling Aerobic Durability & Tempo';
+                            targetStimulus = { aerobicEndurance: 0.9, fatigueResistance: 0.85, thresholdPower: 0.6 };
+                            qualification = {
+                                minimumStimulus: { aerobicEndurance: 0.6 },
+                                allowedModalities: ['Cycling'],
+                                allowedCategories: ['Race-Specific Endurance'],
+                            };
+                        } else {
+                            title = 'Cycling Race-Specific Endurance';
+                            targetStimulus = { aerobicEndurance: 0.6, repeatedSurges: 0.6 };
+                            qualification = {
+                                // See the matching branch in periodization.ts's
+                                // objectivesFromDemand: gated on repeatedSurges, not
+                                // aerobicEndurance, so a compact surge-focused session
+                                // (deliberately light on aerobic volume) still qualifies.
+                                minimumStimulus: { repeatedSurges: 0.6 },
+                                allowedModalities: ['Cycling'],
+                                allowedCategories: ['Race-Specific Endurance'],
+                            };
+                        }
                     }
                     break;
                 case 'vo2_max':
@@ -146,7 +161,13 @@ export function generateWeeklyObjectives(
         focusEvent?.category,
         phaseWeights.taperActive,
         phaseWeights.phaseName === 'Post-Event Recovery',
-        allowedModalities
+        allowedModalities,
+        // Which race-specific flavor (durability vs surge) an event wants is a fact
+        // about the event, not about how close it is -- use the event's own demand,
+        // never the phase-blended vector above, or Base/Build blending toward
+        // DEFAULT_BASE_DEMAND can misclassify a genuinely low-surge event as surge-
+        // specific for every week outside Specificity/Peak.
+        focusEvent?.demandProfile
     );
 
     return { windowStartDate, objectives };

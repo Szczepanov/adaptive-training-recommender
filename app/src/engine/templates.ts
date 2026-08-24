@@ -108,6 +108,19 @@ export const TEMPLATES: SessionTemplate[] = [
         }
     },
     {
+        id: "mob_travel_flow_01",
+        category: "Mobility/Recovery",
+        modality: "Mobility",
+        durationMin: 20,
+        durationMax: 35,
+        title: "Hotel Room Mobility & Core Flow",
+        description: "Zero-equipment travel mobility flow targeting thoracic spine, hip flexors, and core stability after travel.",
+        requiredEquipment: [],
+        environment: 'indoor', safetyTags: [],
+        systemicCost: 0.15,
+        objectiveTransferable: true,
+    },
+    {
         id: "end_easy_01",
         category: "Easy Endurance",
         modality: "Cycling",
@@ -528,9 +541,25 @@ export const TEMPLATES: SessionTemplate[] = [
         environment: 'outdoor', safetyTags: [],
         systemicCost: 0.65,
         objectiveTransferable: false,
-        stimulusProfile: { aerobicEndurance: 0.8, thresholdPower: 0.4, vo2MaxPower: 0.4, repeatedSurges: 0.6, sprintPower: 0.1, fatigueResistance: 0.7, maxStrength: 0, hypertrophy: 0 },
+        stimulusProfile: { aerobicEndurance: 0.9, thresholdPower: 0.4, vo2MaxPower: 0.3, repeatedSurges: 0.4, sprintPower: 0.1, fatigueResistance: 0.9, maxStrength: 0, hypertrophy: 0 },
         costProfile: { systemic: 0.55, cardiovascular: 0.6, lowerBody: 0.35, upperBody: 0.1, impactTissue: 0.15, neuromuscular: 0.3 },
         phaseEligibility: { requiresFocusEvent: true, excludeTaper: true }
+    },
+    {
+        id: "end_crit_surges_01",
+        category: "Race-Specific Endurance",
+        modality: "Cycling",
+        durationMin: 35,
+        durationMax: 45,
+        title: "Compact Criterium Surge Session",
+        description: "Time-efficient race-specific cycling with repeated short surges, VO2-oriented recoveries and a controlled fast finish for surge-heavy events.",
+        requiredEquipment: [],
+        environment: 'outdoor', safetyTags: [],
+        systemicCost: 0.65,
+        objectiveTransferable: false,
+        stimulusProfile: { aerobicEndurance: 0.45, thresholdPower: 0.65, vo2MaxPower: 0.75, repeatedSurges: 0.95, sprintPower: 0.25, fatigueResistance: 0.45, maxStrength: 0, hypertrophy: 0 },
+        costProfile: { systemic: 0.55, cardiovascular: 0.7, lowerBody: 0.4, upperBody: 0.05, impactTissue: 0.1, neuromuscular: 0.6 },
+        phaseEligibility: { requiresFocusEvent: true, maxDaysToEvent: 42, excludeTaper: true }
     },
     {
         id: "end_race_sim_01",
@@ -560,7 +589,7 @@ export const TEMPLATES: SessionTemplate[] = [
         environment: 'outdoor', safetyTags: [],
         systemicCost: 0.45,
         objectiveTransferable: false,
-        stimulusProfile: { aerobicEndurance: 0.3, thresholdPower: 0.6, vo2MaxPower: 0.5, repeatedSurges: 0.5, sprintPower: 0.1, fatigueResistance: 0.4, maxStrength: 0, hypertrophy: 0 },
+        stimulusProfile: { aerobicEndurance: 0.3, thresholdPower: 0.6, vo2MaxPower: 0.5, repeatedSurges: 0.5, sprintPower: 0.1, fatigueResistance: 0.60, maxStrength: 0, hypertrophy: 0 },
         costProfile: { systemic: 0.4, cardiovascular: 0.5, lowerBody: 0.25, upperBody: 0.05, impactTissue: 0.1, neuromuscular: 0.35 },
         phaseEligibility: { requiresFocusEvent: true, requiresTaper: true }
     },

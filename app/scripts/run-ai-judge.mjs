@@ -59,7 +59,8 @@ const openaiKey = process.env.OPENAI_API_KEY;
 const provider = isLocal ? 'local' : deepseekKey ? 'deepseek' : geminiKey ? 'gemini' : openaiKey ? 'openai' : null;
 const apiKey = isLocal ? 'local' : (deepseekKey || geminiKey || openaiKey);
 const isQuick = process.argv.includes('--quick') || process.argv.includes('--flash');
-const isFresh = process.argv.includes('--fresh') || process.argv.includes('--force');
+const isResume = process.argv.includes('--resume');
+const isFresh = (process.argv.includes('--fresh') || process.argv.includes('--force')) && !isResume;
 const isDebug = process.argv.includes('--debug') || process.env.DEBUG === 'true' || process.env.DEBUG === '1';
 
 if (!provider || !apiKey) {
@@ -68,17 +69,35 @@ if (!provider || !apiKey) {
   process.exit(1);
 }
 
+function getCliArg(name) {
+  const exactIndex = process.argv.indexOf(name);
+  if (exactIndex !== -1 && exactIndex + 1 < process.argv.length && !process.argv[exactIndex + 1].startsWith('--')) {
+    return process.argv[exactIndex + 1];
+  }
+  const prefix = `${name}=`;
+  const prefixItem = process.argv.find((arg) => arg.startsWith(prefix));
+  if (prefixItem) {
+    return prefixItem.slice(prefix.length);
+  }
+  return null;
+}
+
+const cliModel = getCliArg('--model');
+const configuredJudgeModel = process.env.JUDGE_MODEL || process.env.AI_JUDGE_MODEL;
 const localModelEnv = process.env.LOCAL_JUDGE_MODEL || process.env.OLLAMA_MODEL;
+const localQuickModelEnv = process.env.LOCAL_JUDGE_QUICK_MODEL || process.env.OLLAMA_QUICK_MODEL;
 const knownCloudModels = new Set(['deepseek-v4-pro', 'deepseek-v4-flash', 'gpt-4o', 'gemini-2.5-flash', 'gemini-1.5-pro']);
-const configuredJudgeModel = process.env.JUDGE_MODEL;
+const defaultLocalModel = isQuick
+  ? (localQuickModelEnv || localModelEnv || (knownCloudModels.has(configuredJudgeModel) ? undefined : configuredJudgeModel) || 'hf.co/empero-ai/Qwen3.8-9B-Distill-GGUF:Q4_K_M')
+  : (localModelEnv || (knownCloudModels.has(configuredJudgeModel) ? undefined : configuredJudgeModel) || 'hf.co/empero-ai/Qwen3.8-9B-Distill-GGUF:Q4_K_M');
 const defaultModel = isLocal
-  ? (localModelEnv || (knownCloudModels.has(configuredJudgeModel) ? undefined : configuredJudgeModel) || 'hf.co/empero-ai/Qwen3.8-9B-Distill-GGUF:Q4_K_M')
+  ? defaultLocalModel
   : provider === 'deepseek'
     ? (isQuick ? 'deepseek-v4-flash' : 'deepseek-v4-pro')
     : provider === 'gemini'
       ? 'gemini-2.5-flash'
       : 'gpt-4o';
-const model = isLocal ? defaultModel : (configuredJudgeModel || defaultModel);
+const model = cliModel || (isLocal ? defaultModel : (configuredJudgeModel || defaultModel));
 const thinkingEnabled = !isQuick && process.env.THINKING_MODE !== 'disabled';
 const reasoningEffort = process.env.REASONING_EFFORT || 'low';
 
@@ -87,6 +106,11 @@ function positiveInt(value, fallback) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
+const defaultTimeoutMs = isLocal ? 600_000 : 180_000;
+const requestTimeoutMs = positiveInt(
+  process.env.JUDGE_TIMEOUT_MS || process.env.REQUEST_TIMEOUT_MS || process.env.LOCAL_TIMEOUT_MS,
+  defaultTimeoutMs,
+);
 const localNumCtx = positiveInt(process.env.NUM_CTX || process.env.OLLAMA_NUM_CTX, 16384);
 const localNumPredict = positiveInt(process.env.NUM_PREDICT || process.env.OLLAMA_NUM_PREDICT, 8192);
 const rawLocalUrl = process.env.LOCAL_LLM_URL || process.env.OLLAMA_BASE_URL;
@@ -272,7 +296,7 @@ async function flushOllamaMemory() {
   try {
     const endpointUrl = new URL(localEndpoint);
     const origin = `${endpointUrl.protocol}//${endpointUrl.host}`;
-    const response = await fetch(`${origin}/api/ps`);
+    const response = await fetch(`${origin}/api/ps`, { signal: AbortSignal.timeout(5000) });
     if (!response.ok) return;
     const data = await response.json();
     for (const loaded of data.models ?? []) {
@@ -283,6 +307,7 @@ async function flushOllamaMemory() {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ model: loadedModel, keep_alive: 0 }),
+          signal: AbortSignal.timeout(5000),
         });
         log(`🧹 Flushed stale Ollama model '${loadedModel}' from memory`);
       } catch {
@@ -309,6 +334,7 @@ async function callDeepSeek(familyJson) {
     const response = await fetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+      signal: AbortSignal.timeout(requestTimeoutMs),
       body: JSON.stringify({
         model,
         messages: [
@@ -339,6 +365,7 @@ async function callGemini(familyJson) {
     const response = await fetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      signal: AbortSignal.timeout(requestTimeoutMs),
       body: JSON.stringify({
         contents: [{ parts: [{ text: userPrompt }] }],
         generationConfig: { responseMimeType: 'application/json', temperature: 0.2 },
@@ -358,6 +385,7 @@ async function callOpenAI(familyJson) {
     const response = await fetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+      signal: AbortSignal.timeout(requestTimeoutMs),
       body: JSON.stringify({
         model,
         messages: [
@@ -402,6 +430,7 @@ async function callLocal(familyJson) {
     const response = await fetch(localEndpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: 'Bearer local' },
+      signal: AbortSignal.timeout(requestTimeoutMs),
       body: JSON.stringify(body),
     });
     if (!response.ok) throw new Error(`Local LLM (${localEndpoint}) failed (${response.status}): ${await response.text()}`);
@@ -427,9 +456,16 @@ async function callWithRetry(familyJson, familyId, expectedCaseIds, retries = 3)
       return validateAndNormalizeJudgeRow(rawResult, familyId, expectedCaseIds);
     } catch (error) {
       lastError = error;
-      if (attempt === retries) break;
+      const isTimeout = error?.name === 'TimeoutError' || error?.name === 'AbortError' || String(error).toLowerCase().includes('timeout') || String(error).toLowerCase().includes('aborted');
+      const errorMsg = isTimeout
+        ? `Request timed out after ${Math.round(requestTimeoutMs / 1000)}s`
+        : (error instanceof Error ? error.message : String(error));
+      if (attempt === retries) {
+        lastError = new Error(errorMsg);
+        break;
+      }
       const delaySeconds = attempt * 3;
-      process.stdout.write(`\n[${getTimestamp()}] ⚠️ ${familyId} attempt ${attempt} rejected: ${error instanceof Error ? error.message : String(error)}. Retrying in ${delaySeconds}s...\n`);
+      process.stdout.write(`\n[${getTimestamp()}] ⚠️ ${familyId} attempt ${attempt} rejected: ${errorMsg}. Retrying in ${delaySeconds}s...\n`);
       await new Promise((resolvePromise) => setTimeout(resolvePromise, delaySeconds * 1000));
     }
   }
@@ -488,8 +524,9 @@ if (provider === 'local') {
   log(`🔧 Endpoint: ${localEndpoint}`);
   log(`🔧 num_ctx: ${localNumCtx} | num_predict: ${localNumPredict}`);
 }
+log(`⏱️ Request timeout: ${Math.round(requestTimeoutMs / 1000)}s`);
 log(`🔒 Evidence mode: strict — missing scores/cases/assessment fields are rejected, never synthesized.`);
-log(`♻️ Cache: ${isFresh ? 'disabled (--fresh)' : `${cachedByFamily.size} compatible familie(s) reusable`}`);
+log(`♻️ Cache: ${isFresh ? 'disabled (--fresh)' : `${cachedByFamily.size} compatible family result(s) reusable (resuming)`}`);
 log(`Evaluating ${familyRows.length} sensitivity families...\n`);
 
 const evaluatedRows = [];
@@ -515,7 +552,7 @@ for (let index = 0; index < familyRows.length; index += 1) {
     if (isDebug) console.log(JSON.stringify(judged, null, 2));
   } catch (error) {
     console.error(`\n[${getTimestamp()}] ❌ Failed to judge family '${family.familyId}': ${error instanceof Error ? error.message : String(error)}`);
-    console.error(`Partial validated output is preserved at ${outputPath}; rerun without --fresh to resume only if the manifest still matches.`);
+    console.error(`Partial validated output is preserved at ${outputPath}; rerun with \`npm run judge:local:resume\` or without --fresh to resume only if the manifest still matches.`);
     process.exit(1);
   }
 }
