@@ -68,6 +68,8 @@ export default defineConfig({
   test: {
     coverage: {
       provider: 'v8',
+      include: ['src/**/*.{ts,tsx}'],
+      exclude: ['src/**/*.test.{ts,tsx}', 'src/**/*.spec.{ts,tsx}', 'src/**/*.d.ts', 'src/visual/**'],
       reporter: ['text', 'json', 'html'],
       reportsDirectory: 'artifacts/coverage/frontend',
     },

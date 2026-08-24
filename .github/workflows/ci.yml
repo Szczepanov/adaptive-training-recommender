@@ -44,17 +44,11 @@ jobs:
       - name: Install dependencies
         run: uv sync --frozen
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v7
-        with:
-          node-version: "22"
-          cache: "npm"
-          cache-dependency-path: app/package-lock.json
-
-      - name: Install app dependencies
-        run: npm --prefix app ci
-
-      - name: Run pre-commit checks
+      - name: Run repository hygiene pre-commit checks
+        env:
+          # Dedicated CI steps below own these checks. Skip their pre-commit copies so
+          # the matrix does not repeat Ruff/mypy/lock work or install Node just for ESLint.
+          SKIP: uv-lock,ruff-check,ruff-format,mypy,eslint
         run: uv run pre-commit run --all-files --show-diff-on-failure
 
       - name: Lint Python with ruff
@@ -115,6 +109,9 @@ jobs:
       - name: Install Node dependencies
         run: npm ci
 
+      - name: Type check frontend
+        run: npm run typecheck
+
       - name: Lint frontend
         run: npm run lint
 
@@ -133,10 +130,7 @@ jobs:
           fi
           node scripts/check-policy-drift.mjs "${BASE_SHA}"
 
-      - name: Run frontend test suite
-        run: npm test
-
-      - name: Generate frontend coverage report
+      - name: Run frontend test suite with coverage
         run: npm run test:coverage
 
       - name: Upload frontend coverage report
@@ -159,8 +153,8 @@ jobs:
         run: npm run simulate:diff
         continue-on-error: true
 
-      - name: Build frontend
-        run: npm run build
+      - name: Build frontend bundle
+        run: npm run build:bundle
 
       - name: Node dependency audit
         run: npm audit --audit-level=high
