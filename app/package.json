@@ -17,6 +17,7 @@
     "simulate:calibrate": "node scripts/simulate-calibrate.mjs",
     "simulate:plan-judge": "node scripts/simulate-plan-judge.mjs",
     "analyze:plan-judge": "node scripts/analyze-plan-judge.mjs",
+    "judge:diff": "node scripts/check-plan-judge-drift.mjs",
     "simulate:fatigue-fusion": "node scripts/simulate-fatigue-fusion.mjs",
     "simulate:subjective-drift": "node scripts/simulate-subjective-drift.mjs",
     "evidence:health-anomaly": "node scripts/health-anomaly-evidence.mjs",

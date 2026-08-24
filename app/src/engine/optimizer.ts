@@ -546,6 +546,7 @@ export function rankCandidates(
 
         let costPenalty = calculateFatigueCostPenalty(template.costProfile, fatigueState);
         if (extraMargin && template.systemicCost > 0.5) costPenalty += 0.3;
+        if (preferences.conservativeBias && template.systemicCost >= 0.7) costPenalty += 0.2;
 
         if (excludedReasons.length > 0) {
             const item: RankedCandidate = {
@@ -560,6 +561,7 @@ export function rankCandidates(
         let prefMultiplier = 1.0;
         if (isDisliked(template)) prefMultiplier = 0.2;
         else if (isPreferred(template)) prefMultiplier = 1.3;
+        if (preferences.conservativeBias && template.systemicCost <= 0.5 && template.category !== 'Rest') prefMultiplier *= 1.1;
 
         const isStrengthCategory = STRENGTH_CATEGORIES.includes(template.category);
         if (isStrengthResolved && isStrengthCategory) prefMultiplier *= 0.20;
