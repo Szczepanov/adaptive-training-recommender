@@ -5,12 +5,13 @@ import { execSync } from 'node:child_process';
 
 import { resolveJudgeConfig } from './ai-judge/config.mjs';
 import { generateFamilyResponseSchema } from './ai-judge/schema.mjs';
-import { compactFamilyForJudge, loadJudgeArtifacts } from './ai-judge/packets.mjs';
+import { formatFamilyForPacketVersion, loadJudgeArtifacts } from './ai-judge/packets.mjs';
 import { validateAndNormalizeJudgeRow, classifyError, isRetryableError } from './ai-judge/validation.mjs';
 import { appendAttemptRecord, atomicWriteFile, atomicWriteJson, computeContextUtilization } from './ai-judge/telemetry.mjs';
 import { preflightOllama, cleanupOllamaMemory } from './ai-judge/runtime.mjs';
 import { callProvider } from './ai-judge/providers/index.mjs';
 import { aggregateFamilySamples, deriveSampleSeed } from './ai-judge/aggregate.mjs';
+import { auditFamilyDiagnostics, appendDiagnosticAuditRecords } from './ai-judge/diagnosticsAudit.mjs';
 
 function getTimestamp() {
   return new Date().toLocaleTimeString('en-GB', { hour12: false });
@@ -33,6 +34,7 @@ const scoresPath = resolve(outputDir, 'judge-scores.jsonl');
 const samplesPath = resolve(outputDir, 'judge-samples.jsonl');
 const attemptsPath = resolve(outputDir, 'judge-attempts.jsonl');
 const stabilityPath = resolve(outputDir, 'judge-stability.json');
+const diagnosticAuditPath = resolve(outputDir, 'judge-diagnostic-audit.jsonl');
 const manifestPath = resolve(outputDir, 'judge-run-manifest.json');
 
 // Ensure artifacts exist or generate deterministic corpus
@@ -55,6 +57,7 @@ const runIdentity = {
   responseSchemaSha256: hashFile(schemaPath),
   judgeModel: config.model,
   judgeProvider: config.provider,
+  packetVersion: config.packetVersion,
   samples: config.samples,
   baseSeed: config.baseSeed,
   seedStrategy: config.seedStrategy,
@@ -124,6 +127,7 @@ if (config.isFresh || !reuseCache) {
   writeFileSync(scoresPath, '', 'utf8');
   writeFileSync(samplesPath, '', 'utf8');
   writeFileSync(attemptsPath, '', 'utf8');
+  if (config.withDiagnosticsAudit) writeFileSync(diagnosticAuditPath, '', 'utf8');
 }
 
 // Runtime preflight & cleanup
@@ -132,7 +136,9 @@ const preflight = await preflightOllama(config, log);
 
 log(`=== AI Plan Judge: ${config.provider.toUpperCase()} / ${config.model} ===`);
 log(`🧠 Thinking mode: ${config.thinkingEnabled ? 'enabled' : 'disabled'}`);
+log(`📦 Packet version: ${config.packetVersion} ${config.packetVersion === 'v2' ? '(blind view + derived features)' : '(legacy v1)'}`);
 log(`🎲 Samples: ${config.samples} (seed: ${config.baseSeed}, strategy: ${config.seedStrategy})`);
+if (config.withDiagnosticsAudit) log(`🔬 Diagnostic audit pass: enabled (-> judge-diagnostic-audit.jsonl)`);
 if (config.provider === 'local') {
   log(`🔧 Endpoint: ${config.local.endpoint}`);
   log(`🔧 num_ctx: ${config.local.numCtx} | num_predict: ${config.local.numPredict}`);
@@ -149,7 +155,7 @@ async function judgeFamilySampleWithRetry({
   seed,
   retries = 3,
 }) {
-  const packet = compactFamilyForJudge(family);
+  const packet = formatFamilyForPacketVersion(family, config.packetVersion);
   const packetJson = JSON.stringify(packet);
   let lastError;
 
@@ -274,6 +280,11 @@ for (let index = 0; index < familyRows.length; index += 1) {
     // Update judge-scores.jsonl
     const scoresContent = evaluatedRows.map((r) => JSON.stringify(r)).join('\n') + '\n';
     atomicWriteFile(scoresPath, scoresContent);
+
+    if (config.withDiagnosticsAudit) {
+      const auditRecords = auditFamilyDiagnostics(family, aggregateResult);
+      appendDiagnosticAuditRecords(diagnosticAuditPath, auditRecords);
+    }
 
     const elapsedSeconds = Math.round((Date.now() - startMs) / 1000);
     const spreadInfo = config.samples > 1 ? ` (MAD: ±${stability.familySensitivityMad})` : '';

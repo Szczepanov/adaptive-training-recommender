@@ -64,6 +64,10 @@ export function resolveJudgeConfig(argv = process.argv.slice(2), env = process.e
   const isFresh = parseCliFlag(argv, '--fresh', '--force') && !isResume;
   const isDebug = parseCliFlag(argv, '--debug') || env.DEBUG === 'true' || env.DEBUG === '1';
   const exclusiveOllama = parseCliFlag(argv, '--exclusive-ollama') || env.JUDGE_EXCLUSIVE_OLLAMA === '1' || env.JUDGE_FLUSH_OLLAMA === '1';
+  const isBlind = parseCliFlag(argv, '--blind', '-b');
+  const cliPacketVersion = parseCliArg(argv, 'packet-version');
+  const packetVersion = isBlind ? 'v2' : (cliPacketVersion || env.JUDGE_PACKET_VERSION || 'v1');
+  const withDiagnosticsAudit = parseCliFlag(argv, '--with-diagnostics-audit', '--audit-diagnostics') || env.JUDGE_DIAGNOSTICS_AUDIT === '1';
 
   const deepseekKey = env.DEEPSEEK_API_KEY;
   const geminiKey = env.GEMINI_API_KEY || env.GOOGLE_API_KEY;
@@ -176,6 +180,8 @@ export function resolveJudgeConfig(argv = process.argv.slice(2), env = process.e
     isResume,
     isDebug,
     exclusiveOllama,
+    packetVersion,
+    withDiagnosticsAudit,
     local: {
       endpoint: localEndpoint,
       isOllama: localIsOllama,
